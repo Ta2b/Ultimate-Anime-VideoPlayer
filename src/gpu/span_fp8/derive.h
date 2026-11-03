@@ -22,9 +22,11 @@ inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
 
-// Les échelles des 25 tenseurs quantifiés d'après les maxima observés : maximum / 448. Refus
-// FormatUnsupported si un maximum est nul ou non fini (corpus inutilisable, ou réseau qui déborde).
-std::expected<std::array<float, kScaleCount>, Refusal> scales_from_peaks(std::span<const float> peaks);
+// Les échelles des 1 + 3·blocks tenseurs quantifiés d'après les maxima observés : maximum / 448 (peaks garde
+// ses 25 places, les suivantes à 1). Refus FormatUnsupported si un maximum servi est nul ou non fini (corpus
+// inutilisable, ou réseau qui déborde).
+std::expected<std::array<float, kScaleCount>, Refusal> scales_from_peaks(std::span<const float> peaks,
+                                                                         std::size_t blocks = kBlocks);
 
 // PSNR et SSIM d'une image de validation.
 struct ImageScore {

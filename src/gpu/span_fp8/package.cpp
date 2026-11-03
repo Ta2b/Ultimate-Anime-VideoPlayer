@@ -127,12 +127,20 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
   if (std::memcmp(bytes.data(), kMagic.data(), kMagic.size()) != 0)
     return refuse(RefusalCode::FormatUnsupported, "paquet SPAN FP8 : signature absente");
   const std::byte* head = bytes.data() + kMagic.size();
-  if (get_u32(head) != kVersion)
+  const std::uint32_t version = get_u32(head);
+  if (version != 1 && version != kVersion)
     return refuse(RefusalCode::FormatUnsupported,
-                  std::format("paquet SPAN FP8 : version {} inconnue", get_u32(head)));
-  if (get_u32(head + 4) != static_cast<std::uint32_t>(kBlocks) ||
-      get_u32(head + 8) != static_cast<std::uint32_t>(kChannels) || get_u32(head + 12) != 0)
-    return refuse(RefusalCode::FormatUnsupported, "paquet SPAN FP8 : seuls 8 blocs de 64 canaux sont pris");
+                  std::format("paquet SPAN FP8 : version {} inconnue", version));
+  const std::uint32_t block_count = get_u32(head + 4);
+  const std::uint32_t real = version == 1 ? (get_u32(head + 12) == 0 ? kChannels : 0U) : get_u32(head + 12);
+  const bool shape_ok =
+      get_u32(head + 8) == static_cast<std::uint32_t>(kChannels) &&
+      (version == 1 ? block_count == static_cast<std::uint32_t>(kBlocks)
+                    : block_count >= 1 && block_count <= static_cast<std::uint32_t>(kBlocks)) &&
+      (real == 48 || real == static_cast<std::uint32_t>(kChannels));
+  if (!shape_ok)
+    return refuse(RefusalCode::FormatUnsupported,
+                  "paquet SPAN FP8 : 1 à 8 blocs rangés en 64 canaux (48 ou 64 réels) attendus");
   const std::uint64_t payload = get_u64(head + 16);
   if (payload != bytes.size() - kHeaderBytes)
     return refuse(RefusalCode::FileUnreadable, "paquet SPAN FP8 tronqué ou trop long");
@@ -141,13 +149,17 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
     return refuse(RefusalCode::FileUnreadable, "paquet SPAN FP8 : somme de contrôle fausse");
 
   Package package;
+  package.blocks.resize(block_count);
+  package.real_channels = static_cast<int>(real);
+  package.scales.fill(1.0F);
+  const std::size_t scales = scale_count(block_count);
   Reader in(body);
   const auto bad = [] {
     return refuse(RefusalCode::FormatUnsupported, "paquet SPAN FP8 : contenu incohérent");
   };
-  if (!in.take(kScaleCount, sizeof(float), package.scales.data())) return bad();
-  for (const float s : package.scales)
-    if (!(s > 0.0F) || !std::isfinite(s)) return bad();
+  if (!in.take(scales, sizeof(float), package.scales.data())) return bad();
+  for (std::size_t i = 0; i < scales; ++i)
+    if (!(package.scales[i] > 0.0F) || !std::isfinite(package.scales[i])) return bad();
   if (!read_conv(in, package.first, kFirstWeights, kChannels)) return bad();
   for (Block& block : package.blocks) {
     for (Conv& conv : block.conv)
@@ -163,7 +175,7 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
 std::vector<std::byte> serialize(const Package& package) {
   std::vector<std::byte> body;
   const auto* scales = reinterpret_cast<const std::byte*>(package.scales.data());
-  body.insert(body.end(), scales, scales + sizeof(float) * kScaleCount);
+  body.insert(body.end(), scales, scales + sizeof(float) * scale_count(package.blocks.size()));
   put_conv(body, package.first);
   for (const Block& block : package.blocks) {
     for (const Conv& conv : block.conv) put_conv(body, conv);
@@ -176,9 +188,9 @@ std::vector<std::byte> serialize(const Package& package) {
   out.reserve(kHeaderBytes + body.size());
   for (const char c : kMagic) out.push_back(static_cast<std::byte>(c));
   put_u32(out, kVersion);
-  put_u32(out, static_cast<std::uint32_t>(kBlocks));
+  put_u32(out, static_cast<std::uint32_t>(package.blocks.size()));
   put_u32(out, static_cast<std::uint32_t>(kChannels));
-  put_u32(out, 0);
+  put_u32(out, static_cast<std::uint32_t>(package.real_channels));
   put_u64(out, body.size());
   put_u32(out, crc32(body));
   put_u32(out, 0);
@@ -186,8 +198,9 @@ std::vector<std::byte> serialize(const Package& package) {
   return out;
 }
 
-Package synthetic(float fill) {
+Package synthetic(float fill, int blocks) {
   Package package;
+  package.blocks.resize(static_cast<std::size_t>(blocks));
   package.scales.fill(0.05F);
   package.first = filled(kFirstWeights, kChannels, fill);
   for (Block& block : package.blocks) {

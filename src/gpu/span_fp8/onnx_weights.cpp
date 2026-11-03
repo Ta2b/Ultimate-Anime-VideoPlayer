@@ -28,13 +28,15 @@ std::string shape_text(const std::vector<std::int64_t>& dims) {
   return out + ")";
 }
 
-// (sortie, entrée, ligne, colonne) -> (sortie, ligne, colonne, entrée) en FP16, entrées complétées de zéros
-// jusqu'à pad_to (0 : pas de complément).
-std::vector<std::uint16_t> krsc(const Tensor& w, std::int64_t pad_to) {
+// (sortie, entrée, ligne, colonne) -> (sortie, ligne, colonne, entrée) en FP16, sorties complétées de zéros
+// jusqu'à out_to et entrées jusqu'à in_to (0 : pas de complément). Étape 3.2b : un modèle à 48 canaux rangé
+// en 64.
+std::vector<std::uint16_t> krsc_padded(const Tensor& w, std::int64_t out_to, std::int64_t in_to) {
   const auto o = static_cast<std::size_t>(w.dims[0]), i = static_cast<std::size_t>(w.dims[1]);
   const auto r = static_cast<std::size_t>(w.dims[2]), s = static_cast<std::size_t>(w.dims[3]);
-  const std::size_t padded = std::max(i, static_cast<std::size_t>(pad_to));
-  std::vector<std::uint16_t> out(o * r * s * padded, 0);
+  const std::size_t outs = std::max(o, static_cast<std::size_t>(out_to));
+  const std::size_t padded = std::max(i, static_cast<std::size_t>(in_to));
+  std::vector<std::uint16_t> out(outs * r * s * padded, 0);
   for (std::size_t oo = 0; oo < o; ++oo)
     for (std::size_t ii = 0; ii < i; ++ii)
       for (std::size_t rr = 0; rr < r; ++rr)
@@ -44,10 +46,25 @@ std::vector<std::uint16_t> krsc(const Tensor& w, std::int64_t pad_to) {
   return out;
 }
 
-// Une convolution 1×1 : (sortie, entrée, 1, 1) -> (sortie, entrée).
-std::vector<std::uint16_t> flat(const Tensor& w) {
-  std::vector<std::uint16_t> out(w.floats.size());
-  for (std::size_t i = 0; i < out.size(); ++i) out[i] = kernels::ref::float_to_half(w.floats[i]);
+// Une convolution 1×1 : (sortie, entrée, 1, 1) -> (sortie, entrée), complétée de zéros à out_to × in_to.
+// group : les entrées viennent par groupes de dims[1] / groups canaux réels (le Concat de conv_cat : quatre
+// tenseurs de C canaux), chaque groupe rangé sur in_to / groups places (la colonne s·C + j va en s·64 + j).
+std::vector<std::uint16_t> flat_padded(const Tensor& w, std::size_t out_to, std::size_t in_to,
+                                       std::size_t groups = 1) {
+  const auto o = static_cast<std::size_t>(w.dims[0]), i = static_cast<std::size_t>(w.dims[1]);
+  const std::size_t outs = std::max(o, out_to), ins = std::max(i, in_to);
+  const std::size_t real_group = i / groups, padded_group = ins / groups;
+  std::vector<std::uint16_t> out(outs * ins, 0);
+  for (std::size_t oo = 0; oo < o; ++oo)
+    for (std::size_t ii = 0; ii < i; ++ii)
+      out[oo * ins + (ii / real_group) * padded_group + ii % real_group] =
+          kernels::ref::float_to_half(w.floats[oo * i + ii]);
+  return out;
+}
+
+std::vector<float> bias_padded(const std::vector<float>& bias, std::size_t to) {
+  std::vector<float> out = bias;
+  if (out.size() < to) out.resize(to, 0.0F);
   return out;
 }
 
@@ -72,11 +89,12 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
   const Tensor* first = find("conv_1.1.eval_conv.weight");
   if (first == nullptr)
     return refuse("pas un SPAN AnimeJaNai « unshuffle » (conv_1.1.eval_conv.weight absent)");
-  if (first->dims != std::vector<std::int64_t>{kChannels, kUnshuffled, 3, 3})
-    return refuse(
-        std::format("conv_1 de forme {} : seul le SPAN à {} canaux est pris (le modèle b5f48 à 48 "
-                    "canaux reste sur TensorRT FP16)",
-                    shape_text(first->dims), kChannels));
+  // 64 canaux (b8f64) ou 48 (b5f48, rangé en 64 avec des zéros : étape 3.2b).
+  const std::int64_t channels = first->dims.size() == 4 ? first->dims[0] : 0;
+  if ((channels != kChannels && channels != 48) ||
+      first->dims != std::vector<std::int64_t>{channels, kUnshuffled, 3, 3})
+    return refuse(std::format("conv_1 de forme {} : seuls les SPAN à 48 ou {} canaux sont pris",
+                              shape_text(first->dims), kChannels));
   std::set<int> blocks;
   for (const Tensor& tensor : graph.initializers) {
     if (!tensor.name.starts_with("block_")) continue;
@@ -86,13 +104,16 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
     number = static_cast<int>(std::strtol(begin, &end, 10));
     if (end != begin && *end == '.') blocks.insert(number);
   }
-  if (blocks.size() != static_cast<std::size_t>(kBlocks) || *blocks.begin() != 1 ||
-      *blocks.rbegin() != kBlocks)
-    return refuse(std::format("{} blocs trouvés, {} attendus", blocks.size(), kBlocks));
+  const int block_count = static_cast<int>(blocks.size());
+  if (blocks.empty() || block_count > kBlocks || *blocks.begin() != 1 || *blocks.rbegin() != block_count)
+    return refuse(
+        std::format("{} blocs trouvés, 1 à {} numérotés depuis 1 attendus", blocks.size(), kBlocks));
 
+  // shape : la forme du modèle ; out_to, in_to : celle du paquet (64 canaux) ; groups : voir flat_padded.
   const auto conv = [&](const std::string& weight, const std::string& bias,
                         const std::vector<std::int64_t>& shape, Conv& out, bool three_by_three,
-                        std::int64_t pad) -> std::expected<void, Refusal> {
+                        std::int64_t out_to, std::int64_t in_to,
+                        std::size_t groups = 1) -> std::expected<void, Refusal> {
     const Tensor* w = find(weight);
     const Tensor* b = find(bias);
     if (w == nullptr) return refuse(std::format("{} : absent, {} attendu", weight, shape_text(shape)));
@@ -100,39 +121,44 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
       return refuse(std::format("{} : {}, {} attendu", weight, shape_text(w->dims), shape_text(shape)));
     if (b == nullptr || b->floats.size() != static_cast<std::size_t>(shape[0]))
       return refuse(std::format("{} : biais absent ou de mauvaise taille", bias));
-    out.weights = three_by_three ? krsc(*w, pad) : flat(*w);
-    out.bias = b->floats;
+    out.weights = three_by_three ? krsc_padded(*w, out_to, in_to)
+                                 : flat_padded(*w, static_cast<std::size_t>(out_to),
+                                               static_cast<std::size_t>(in_to), groups);
+    out.bias = bias_padded(b->floats, static_cast<std::size_t>(std::max(out_to, shape[0])));
     return {};
   };
 
   Package package;
   package.scales.fill(1.0F);
-  if (auto ok = conv("conv_1.1.eval_conv.weight", "conv_1.1.eval_conv.bias", {kChannels, kUnshuffled, 3, 3},
-                     package.first, true, kUnshuffledPadded);
+  package.blocks.resize(static_cast<std::size_t>(block_count));
+  package.real_channels = static_cast<int>(channels);
+  const std::int64_t c = channels;
+  if (auto ok = conv("conv_1.1.eval_conv.weight", "conv_1.1.eval_conv.bias", {c, kUnshuffled, 3, 3},
+                     package.first, true, kChannels, kUnshuffledPadded);
       !ok)
     return std::unexpected(std::move(ok.error()));
-  for (int k = 1; k <= kBlocks; ++k) {
+  for (int k = 1; k <= block_count; ++k) {
     Block& block = package.blocks[static_cast<std::size_t>(k - 1)];
     constexpr std::array<const char*, 3> kNames{"c1_r", "c2_r", "c3_r"};
     for (std::size_t i = 0; i < kNames.size(); ++i) {
       const std::string base = std::format("block_{}.{}.eval_conv", k, kNames[i]);
       if (auto ok =
-              conv(base + ".weight", base + ".bias", {kChannels, kChannels, 3, 3}, block.conv[i], true, 0);
+              conv(base + ".weight", base + ".bias", {c, c, 3, 3}, block.conv[i], true, kChannels, kChannels);
           !ok)
         return std::unexpected(std::move(ok.error()));
     }
     const std::string att = std::format("block_{}.att_conv", k);
     if (auto ok =
-            conv(att + ".weight", att + ".bias", {kChannels, kChannels, 1, 1}, block.attention, false, 0);
+            conv(att + ".weight", att + ".bias", {c, c, 1, 1}, block.attention, false, kChannels, kChannels);
         !ok)
       return std::unexpected(std::move(ok.error()));
   }
-  if (auto ok = conv("conv_cat.weight", "conv_cat.bias", {kChannels, kConcatChannels, 1, 1}, package.concat,
-                     false, 0);
+  if (auto ok = conv("conv_cat.weight", "conv_cat.bias", {c, 4 * c, 1, 1}, package.concat, false, kChannels,
+                     kConcatChannels, 4);
       !ok)
     return std::unexpected(std::move(ok.error()));
-  if (auto ok = conv("to_pixel.eval_conv.weight", "to_pixel.eval_conv.bias",
-                     {kPixelChannels, kChannels, 3, 3}, package.pixel, true, 0);
+  if (auto ok = conv("to_pixel.eval_conv.weight", "to_pixel.eval_conv.bias", {kPixelChannels, c, 3, 3},
+                     package.pixel, true, kPixelChannels, kChannels);
       !ok)
     return std::unexpected(std::move(ok.error()));
 
@@ -146,7 +172,7 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
       producer[out] = &node;
     }
   std::vector<std::string> needed{"/conv_1/conv_1.1/eval_conv/Conv_output_0"};
-  for (int k = 1; k <= kBlocks; ++k) {
+  for (int k = 1; k <= block_count; ++k) {
     needed.push_back(std::format("/block_{}/act1/Relu_output_0", k));
     needed.push_back(std::format("/block_{}/act1_1/Relu_output_0", k));
     needed.push_back(std::format("/block_{}/Mul_output_0", k));
@@ -185,8 +211,8 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
   if (concat == nullptr || concat->op_type != "Concat" || concat->inputs.size() != 4)
     return refuse("conv_cat : son entrée n'est pas un Concat de quatre tenseurs");
   const std::array<std::string, 4> expected_order{
-      "/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", kBlocks),
-      "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", kBlocks)};
+      "/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", block_count),
+      "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", block_count)};
   for (std::size_t i = 0; i < expected_order.size(); ++i) {
     const std::string got = through_identity(concat->inputs[i]);
     if (got != expected_order[i])

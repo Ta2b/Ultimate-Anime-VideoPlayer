@@ -12,6 +12,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "kernels/ref/half.h"
+
 namespace ajp::gpu::span_fp8 {
 namespace {
 
@@ -35,35 +37,37 @@ Node node(std::string op, std::vector<std::string> in, std::string out) {
       .name = op + out, .op_type = std::move(op), .inputs = std::move(in), .outputs = {std::move(out)}};
 }
 
-// Un SPAN b8f64 aux poids réguliers, du graphe que les noyaux supposent (les noms, pas les calculs).
-Model synthetic_model(int channels = kChannels) {
+// Un SPAN aux poids réguliers (b8f64 par défaut ; b5f48 : channels 48, blocks 5), du graphe que les noyaux
+// supposent (les noms, pas les calculs).
+Model synthetic_model(int channels = kChannels, int blocks = kBlocks) {
   Model model;
   auto& g = model.graph;
+  const std::int64_t c = channels;
   g.inputs.push_back({.name = "input"});
   g.outputs.push_back({.name = "output"});
-  g.initializers.push_back(tensor("conv_1.1.eval_conv.weight", {channels, 12, 3, 3}));
-  g.initializers.push_back(tensor("conv_1.1.eval_conv.bias", {channels}));
-  for (int k = 1; k <= kBlocks; ++k) {
+  g.initializers.push_back(tensor("conv_1.1.eval_conv.weight", {c, 12, 3, 3}));
+  g.initializers.push_back(tensor("conv_1.1.eval_conv.bias", {c}));
+  for (int k = 1; k <= blocks; ++k) {
     for (const char* n : {"c1_r", "c2_r", "c3_r"}) {
-      g.initializers.push_back(tensor(std::format("block_{}.{}.eval_conv.weight", k, n), {64, 64, 3, 3}));
-      g.initializers.push_back(tensor(std::format("block_{}.{}.eval_conv.bias", k, n), {64}));
+      g.initializers.push_back(tensor(std::format("block_{}.{}.eval_conv.weight", k, n), {c, c, 3, 3}));
+      g.initializers.push_back(tensor(std::format("block_{}.{}.eval_conv.bias", k, n), {c}));
     }
-    g.initializers.push_back(tensor(std::format("block_{}.att_conv.weight", k), {64, 64, 1, 1}));
-    g.initializers.push_back(tensor(std::format("block_{}.att_conv.bias", k), {64}));
+    g.initializers.push_back(tensor(std::format("block_{}.att_conv.weight", k), {c, c, 1, 1}));
+    g.initializers.push_back(tensor(std::format("block_{}.att_conv.bias", k), {c}));
     g.nodes.push_back(node("Relu", {"x"}, std::format("/block_{}/act1/Relu_output_0", k)));
     g.nodes.push_back(node("Relu", {"x"}, std::format("/block_{}/act1_1/Relu_output_0", k)));
     g.nodes.push_back(node("Mul", {"x"}, std::format("/block_{}/Mul_output_0", k)));
   }
   g.nodes.push_back(
       node("Concat",
-           {"/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", kBlocks),
-            "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", kBlocks)},
+           {"/conv_1/conv_1.1/eval_conv/Conv_output_0", std::format("/block_{}/Mul_output_0", blocks),
+            "/block_1/Mul_output_0", std::format("/block_{}/act1/Relu_output_0", blocks)},
            "/Concat_output_0"));
   g.nodes.push_back(
       node("Conv", {"/Concat_output_0", "conv_cat.weight", "conv_cat.bias"}, "/conv_cat/Conv_output_0"));
-  g.initializers.push_back(tensor("conv_cat.weight", {64, 256, 1, 1}));
-  g.initializers.push_back(tensor("conv_cat.bias", {64}));
-  g.initializers.push_back(tensor("to_pixel.eval_conv.weight", {48, 64, 3, 3}));
+  g.initializers.push_back(tensor("conv_cat.weight", {c, 4 * c, 1, 1}));
+  g.initializers.push_back(tensor("conv_cat.bias", {c}));
+  g.initializers.push_back(tensor("to_pixel.eval_conv.weight", {48, c, 3, 3}));
   g.initializers.push_back(tensor("to_pixel.eval_conv.bias", {48}));
   g.nodes.push_back(node("Conv", {"x"}, "/conv_1/conv_1.1/eval_conv/Conv_output_0"));
   Node transpose = node("Transpose", {"a"}, "/conv_1/conv_1.0/Transpose_output_0");
@@ -111,20 +115,20 @@ TEST_CASE("un SPAN b8f64 se range comme le paquet le veut", "[span_fp8][onnx]") 
   CHECK(parse(serialize(ready)));
 }
 
-TEST_CASE("un autre SPAN que le b8f64 est refusé avant tout calcul", "[span_fp8][onnx]") {
-  const auto narrow = package_from_onnx(synthetic_model(48));
+TEST_CASE("un SPAN de forme inconnue est refusé avant tout calcul", "[span_fp8][onnx]") {
+  const auto narrow = package_from_onnx(synthetic_model(32));
   REQUIRE_FALSE(narrow);
   CHECK(narrow.error().code == RefusalCode::FormatUnsupported);
-  CHECK(narrow.error().detail.find("64 canaux") != std::string::npos);
+  CHECK(narrow.error().detail.find("48 ou 64 canaux") != std::string::npos);
 
   Model not_span;
   not_span.graph.inputs.push_back({.name = "input"});
   not_span.graph.outputs.push_back({.name = "output"});
   CHECK_FALSE(package_from_onnx(not_span));
 
-  Model fewer = synthetic_model();
-  std::erase_if(fewer.graph.initializers, [](const Tensor& t) { return t.name.starts_with("block_8."); });
-  const auto seven = package_from_onnx(fewer);
+  Model holed = synthetic_model();
+  std::erase_if(holed.graph.initializers, [](const Tensor& t) { return t.name.starts_with("block_3."); });
+  const auto seven = package_from_onnx(holed);
   REQUIRE_FALSE(seven);
   CHECK(seven.error().detail.find("7 blocs") != std::string::npos);
 
@@ -153,6 +157,52 @@ TEST_CASE("un graphe dont le dégroupage ou le DepthToSpace diffèrent est refus
   const auto absent = package_from_onnx(missing);
   REQUIRE_FALSE(absent);
   CHECK(absent.error().detail.find("/block_5/act1_1/Relu_output_0") != std::string::npos);
+}
+
+TEST_CASE("un SPAN b5f48 se range en 64 canaux remplis de zéros (3.2b)", "[span_fp8][onnx]") {
+  Model model = synthetic_model(48, 5);
+  // conv_cat : chaque colonne porte son numéro, pour suivre où elle est rangée.
+  for (Tensor& t : model.graph.initializers) {
+    if (t.name != "conv_cat.weight") continue;
+    for (std::size_t o = 0; o < 48; ++o)
+      for (std::size_t i = 0; i < 192; ++i) t.floats[o * 192 + i] = static_cast<float>(i + 1);
+  }
+  const auto package = package_from_onnx(model);
+  REQUIRE(package);
+  CHECK(package->blocks.size() == 5U);
+  CHECK(package->real_channels == 48);
+  CHECK(package->first.weights.size() == std::size_t{64} * 9 * 16);
+  CHECK(package->blocks[4].conv[1].weights.size() == std::size_t{64} * 9 * 64);
+  CHECK(package->blocks[4].attention.weights.size() == std::size_t{64} * 64);
+  CHECK(package->blocks[0].conv[0].bias.size() == 64U);
+  CHECK(package->blocks[0].conv[0].bias[47] == 0.25F);
+  CHECK(package->blocks[0].conv[0].bias[48] == 0.0F);
+  CHECK(package->pixel.weights.size() == std::size_t{48} * 9 * 64);
+  REQUIRE(package->concat.weights.size() == std::size_t{64} * 256);
+  // La colonne s·48 + j du modèle va en s·64 + j ; les colonnes ajoutées et les sorties ajoutées sont nulles.
+  const auto at = [&](std::size_t o, std::size_t i) {
+    return kernels::ref::half_to_float(package->concat.weights[o * 256 + i]);
+  };
+  for (std::size_t s = 0; s < 4; ++s) {
+    CHECK(at(0, s * 64 + 0) == static_cast<float>(s * 48 + 1));
+    CHECK(at(7, s * 64 + 47) == static_cast<float>(s * 48 + 48));
+    CHECK(at(0, s * 64 + 48) == 0.0F);
+    CHECK(at(0, s * 64 + 63) == 0.0F);
+  }
+  CHECK(at(48, 0) == 0.0F);
+  // Une sortie de bloc 3×3 ajoutée (48 à 63) n'a que des poids nuls, une entrée ajoutée aussi.
+  const std::vector<std::uint16_t>& w = package->blocks[2].conv[2].weights;
+  CHECK(w[(48 * 9) * 64] == 0);
+  CHECK(w[47] != 0);
+  CHECK(w[48] == 0);
+  // Il se sérialise en version 2 et se relit à l'identique.
+  Package ready = *package;
+  ready.scales.fill(0.05F);
+  const auto back = parse(serialize(ready));
+  REQUIRE(back);
+  CHECK(back->blocks.size() == 5U);
+  CHECK(back->real_channels == 48);
+  CHECK(back->concat.weights == package->concat.weights);
 }
 
 TEST_CASE("le Concat de conv_cat doit avoir l'ordre des tranches des noyaux (3.2a)", "[span_fp8][onnx]") {

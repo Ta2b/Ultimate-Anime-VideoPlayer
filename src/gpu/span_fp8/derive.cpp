@@ -20,12 +20,16 @@ std::string quoted(std::string_view text) {
 
 }  // namespace
 
-std::expected<std::array<float, kScaleCount>, Refusal> scales_from_peaks(std::span<const float> peaks) {
-  if (peaks.size() != static_cast<std::size_t>(kScaleCount))
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported,
-                                   std::format("{} maxima reçus, {} attendus", peaks.size(), kScaleCount)});
+std::expected<std::array<float, kScaleCount>, Refusal> scales_from_peaks(std::span<const float> peaks,
+                                                                         std::size_t blocks) {
+  if (peaks.size() != static_cast<std::size_t>(kScaleCount) || blocks < 1 ||
+      blocks > static_cast<std::size_t>(kBlocks))
+    return std::unexpected(Refusal{
+        RefusalCode::FormatUnsupported,
+        std::format("{} maxima reçus pour {} blocs, {} attendus", peaks.size(), blocks, kScaleCount)});
   std::array<float, kScaleCount> scales{};
-  for (std::size_t i = 0; i < peaks.size(); ++i) {
+  scales.fill(1.0F);
+  for (std::size_t i = 0; i < scale_count(blocks); ++i) {
     if (!std::isfinite(peaks[i]))
       return std::unexpected(Refusal{
           RefusalCode::FormatUnsupported,
