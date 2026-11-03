@@ -60,7 +60,10 @@ struct IngestParams {
   // Depuis l'étape 5.3, une passe tuilée (ingest_tiled) fait les deux en mémoire partagée quand la
   // tuile tient dans 40 Ko ; rows ne sert plus qu'au-delà (réduction de plus de ~4 fois).
   float* rows = nullptr;
-  int tile_rows = 0;  // posé par launch_ingest pour la passe tuilée (étape 5.3)
+  int tile_rows = 0;
+  // À la taille de l'image seulement : débande dans la même passe (étape 5.4, ingest_deband). Réduite,
+  // l'image passe encore par launch_deband (recalculer la réduction aux 5 points coûterait ~5 passes).
+  bool deband = false;  // posé par launch_ingest pour la passe tuilée (étape 5.3)
 };
 
 // Octets de IngestParams::rows pour ces paramètres ; 0 sans filtre séparable (même taille, Area).

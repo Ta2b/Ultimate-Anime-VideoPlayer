@@ -1,6 +1,7 @@
 // Noyaux provisoires de la tranche verticale (voir slice_kernels.h).
 #include <cuda_fp16.h>
 
+#include "gpu/cuda/backend/deband_kernels.cuh"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/slice_kernels.h"
 
@@ -288,6 +289,29 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest(Inges
   store_rgb(p, x, y, rgb_at(p, x, y));
 }
 
+// À la taille de l'image, débandée dans la même passe (étape 5.4) : les cinq points de la croix du
+// débandage (deband_kernels.cuh) sont convertis ici, arrondis en FP16 comme s'ils avaient été écrits par
+// ingest puis relus par deband ; plus de tampon de travail ni de seconde passe. Noyau lourd (5 rgb_at).
+__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) ingest_deband(IngestParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.out_width || y >= p.out_height) return;
+  const int2 o = deband_offset(x, y);
+  const auto half_rgb = [&](int ox, int oy) {
+    const float3 c = rgb_at(p, min(max(x + ox, 0), p.width - 1), min(max(y + oy, 0), p.height - 1));
+    return make_float3(__half2float(__float2half_rn(c.x)), __half2float(__float2half_rn(c.y)),
+                       __half2float(__float2half_rn(c.z)));
+  };
+  const float3 v = half_rgb(0, 0);
+  const float3 a = half_rgb(o.x, o.y);
+  const float3 b = half_rgb(-o.x, -o.y);
+  const float3 d = half_rgb(-o.y, o.x);
+  const float3 e = half_rgb(o.y, -o.x);
+  store_rgb(p, x, y,
+            make_float3(deband_rule(v.x, a.x, b.x, d.x, e.x), deband_rule(v.y, a.y, b.y, d.y, e.y),
+                        deband_rule(v.z, a.z, b.z, d.z, e.z)));
+}
+
 // Réduction Area, en une passe (3 × 3 pixels de source au plus à 1,5). Noyau lourd : sm_120
 // débordait de 8 octets sous 64 registres.
 __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) ingest_area(IngestParams p) {
@@ -343,6 +367,10 @@ cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream) {
   const dim3 block(kBlock, kBlock);
   const dim3 out = grid_for(params.out_width, params.out_height);
   if (params.out_width == params.width && params.out_height == params.height) {
+    if (params.deband) {
+      ingest_deband<<<out, block, 0, stream>>>(params);
+      return cudaGetLastError();
+    }
     ingest<<<out, block, 0, stream>>>(params);
     return cudaGetLastError();
   }
