@@ -96,3 +96,13 @@ TEST_CASE("Ligne de l'OSD avec la mémoire vidéo", "[app][telemetry]") {
 }
 
 }  // namespace ajp::app::play
+
+TEST_CASE("Énergie : millijoules par image neuve, compteur absent ou qui recule ignoré", "[app][telemetry]") {
+  using ajp::app::play::millijoules_per_frame;
+  REQUIRE(millijoules_per_frame(1000, 3400, 100));
+  CHECK(*millijoules_per_frame(1000, 3400, 100) == 24.0);
+  CHECK_FALSE(millijoules_per_frame(0, 3400, 100));     // compteur absent au début
+  CHECK_FALSE(millijoules_per_frame(3400, 1000, 100));  // il recule
+  CHECK_FALSE(millijoules_per_frame(1000, 1000, 100));
+  CHECK_FALSE(millijoules_per_frame(1000, 3400, 0));
+}
