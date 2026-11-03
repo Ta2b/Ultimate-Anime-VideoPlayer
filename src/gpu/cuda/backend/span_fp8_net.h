@@ -1,7 +1,8 @@
 // Le SPAN entier en FP8 (noyaux CUTLASS, docs/span-fp8-cutlass.md), vu de l'extérieur : aucun en-tête CUTLASS
 // ici, ils restent dans span_fp8_net.cu. Dégroupage, conv_1 (FP16), huit blocs SPAB en FP8 E4M3,
-// concaténation des quatre tenseurs, conv_cat, to_pixel (FP16) et DepthToSpace, lancés l'un après l'autre sur
-// le flux donné. Entrée 1×3×H×W et sortie 1×3×2H×2W en FP16 NCHW, comme le SPAN en ONNX.
+// concaténation des quatre tenseurs, conv_cat, to_pixel (FP16, DepthToSpace fondu à son épilogue), lancés
+// l'un après l'autre sur le flux donné. Entrée 1×3×H×W et sortie 1×3×2H×2W en FP16 NCHW, comme le SPAN en
+// ONNX.
 //
 // Cette interface n'emploie ni std::expected ni <format> : nvcc (EDG) ne les lit pas, et le .cu qui
 // l'implémente est compilé par lui. span_fp8_engine.cpp la convertit en Refusal.
@@ -34,6 +35,14 @@ struct SpanFp8Weights {
   SpanFp8ConvView pixel;
 };
 
+// Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.
+// Seuls les pixels de 0 à width-1 et de 0 à height-1 sont écrits.
+struct SpanFp8Ring {
+  cudaSurfaceObject_t surface = 0;
+  int width = 0;
+  int height = 0;
+};
+
 enum class SpanFp8Status : std::uint8_t { Ok, OutOfMemory, Failed };
 
 class SpanFp8Net {
@@ -62,9 +71,11 @@ class SpanFp8Net {
   bool launch(cudaStream_t stream, const void* input, void* output, std::string& error);
   // launch en deux parts (étape 3.3) : le corps (dégroupage, conv_1, blocs, conv_cat ; 3·blocs + 3
   // lancements) ne dépend que de l'entrée et de la zone, une capture de graphe le prend par adresse d'entrée
-  // ; la queue (to_pixel et DepthToSpace, 2 lancements) écrit la sortie, lancée en direct avec son adresse.
+  // ; la queue (to_pixel, DepthToSpace fondu : 1 lancement) écrit la sortie, lancée en direct avec son
+  // adresse. output peut être nul si ring porte une surface : l'image ne va alors qu'à l'anneau, au bit près
+  // de ce que write_rgba16 écrirait de la sortie FP16.
   bool launch_body(cudaStream_t stream, const void* input, std::string& error);
-  bool launch_tail(cudaStream_t stream, void* output, std::string& error);
+  bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error);
 
  private:
   struct Impl;

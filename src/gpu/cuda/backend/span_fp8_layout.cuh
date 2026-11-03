@@ -1,6 +1,7 @@
 #pragma once
-// Les deux noyaux de mise en page du SPAN entier en FP8, communs au réseau FP8 (span_fp8_net.cu) et au réseau
-// de référence FP16 (span_fp8_ref.cu) : dégroupage 2×2 et DepthToSpace. Dans un espace de noms anonyme, pour
+// Le noyau de mise en page du SPAN entier en FP8, commun au réseau FP8 (span_fp8_net.cu) et au réseau de
+// référence FP16 (span_fp8_ref.cu) : dégroupage 2×2. DepthToSpace est fondu à l'épilogue de to_pixel dans le
+// premier (étape 3.4a) et reste un noyau à part dans la seconde. Dans un espace de noms anonyme, pour
 // que chaque unité de compilation garde les siens.
 #include <cstddef>
 #include <cuda_fp16.h>
@@ -71,23 +72,6 @@ __global__ void unshuffle_kernel(const __half* in, __half* out, int height, int 
   uint4* o = reinterpret_cast<uint4*>(out + static_cast<size_t>(idx) * 16);
   o[0] = *reinterpret_cast<uint4*>(&v[0]);
   o[1] = *reinterpret_cast<uint4*>(&v[8]);
-}
-
-// DepthToSpace(4, mode CRD du modèle) : NHWC 48 canaux -> NCHW 3×4h×4w ; canal d'entrée = c·16 + bh·4 + bw.
-__global__ void depth_to_space_kernel(const __half* in, __half* out, int h, int w) {
-  const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);  // (pixel, bh, c)
-  if (idx >= h * w * 12) return;
-  const int c = idx % 3, bh = (idx / 3) % 4, pix = idx / 12;
-  const int y = pix / w, x = pix % w;
-  const __half* p = in + static_cast<size_t>(pix) * 48 + static_cast<size_t>(c * 16 + bh * 4);
-  __half o[4];
-#pragma unroll
-  for (int bw = 0; bw < 4; ++bw) o[bw] = p[bw];
-  *reinterpret_cast<uint2*>(
-      out +
-      (static_cast<size_t>(c) * static_cast<size_t>(4 * h) + static_cast<size_t>(4 * y + bh)) *
-          static_cast<size_t>(4 * w) +
-      static_cast<size_t>(4 * x)) = *reinterpret_cast<uint2*>(o);
 }
 
 }  // namespace

@@ -19,6 +19,23 @@
 namespace ajp::gpu::cuda {
 namespace {
 
+// DepthToSpace(4, mode CRD du modèle) : NHWC 48 canaux -> NCHW 3×4h×4w ; canal d'entrée = c·16 + bh·4 + bw.
+__global__ void depth_to_space_kernel(const __half* in, __half* out, int h, int w) {
+  const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);  // (pixel, bh, c)
+  if (idx >= h * w * 12) return;
+  const int c = idx % 3, bh = (idx / 3) % 4, pix = idx / 12;
+  const int y = pix / w, x = pix % w;
+  const __half* p = in + static_cast<size_t>(pix) * 48 + static_cast<size_t>(c * 16 + bh * 4);
+  __half o[4];
+#pragma unroll
+  for (int bw = 0; bw < 4; ++bw) o[bw] = p[bw];
+  *reinterpret_cast<uint2*>(
+      out +
+      (static_cast<size_t>(c) * static_cast<size_t>(4 * h) + static_cast<size_t>(4 * y + bh)) *
+          static_cast<size_t>(4 * w) +
+      static_cast<size_t>(4 * x)) = *reinterpret_cast<uint2*>(o);
+}
+
 namespace sk = span_fp8_kernels;
 using F16 = cutlass::half_t;
 
