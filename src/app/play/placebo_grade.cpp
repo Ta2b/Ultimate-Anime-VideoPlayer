@@ -204,7 +204,7 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   const pl_gpu gpu = s.vk->gpu;
   if (s.ramp_renderer == nullptr) s.ramp_renderer = pl_renderer_create(s.log, gpu);
   if (!s.ramp_grade) {
-    auto grade = render::Grade::create(gpu, s.grade_body, s.no_skin_mask);
+    auto grade = render::Grade::create(gpu, s.grade_body, s.skin_mask);
     if (!grade) return std::unexpected(std::move(grade.error()));
     s.ramp_grade.emplace(std::move(*grade));
   }

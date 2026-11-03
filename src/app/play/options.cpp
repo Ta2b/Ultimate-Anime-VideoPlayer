@@ -146,8 +146,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.skip_held = true;
     } else if (arg == "--grade-deband") {
       options.grade_deband = true;
-    } else if (arg == "--no-skin-mask") {
-      options.no_skin_mask = true;
+    } else if (arg == "--skin-mask") {
+      options.skin_mask = true;
     } else if (arg == "--legacy-grade") {
       options.legacy_grade = true;
     } else if (arg == "--no-resume") {
@@ -416,7 +416,7 @@ std::string play_usage() {
       "                         coût propre de chaque moteur\n"
       "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
       "                         (en essai ; éteint par défaut)\n"
-      "  --no-skin-mask      essai : le grade ne distingue plus la peau\n"
+      "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
       "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"

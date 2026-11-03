@@ -285,14 +285,14 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   composed = active;
 }
 
-std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool no_skin_mask) {
+std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool skin_mask) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
   const bool legacy = body == GradeBody::Legacy;
   std::string text(shaders::anime_hdr_params);
   text += legacy ? shaders::anime_hdr_grade : shaders::anime_hdr_fused;
-  if (no_skin_mask) {
-    // Essai (--no-skin-mask) : le masque peau lissé rend toujours 0.
+  if (!skin_mask) {
+    // Le masque peau (damier sur le grain d'une peau pâle, mesuré à l'écran) est coupé sauf --skin-mask.
     constexpr std::string_view kHead = "float skin_area(vec2 pos) {";
     if (const auto at = text.find(kHead); at != std::string::npos)
       text.insert(at + kHead.size(), "\n    return 0.0;\n}\nfloat skin_area_off(vec2 pos) {");
