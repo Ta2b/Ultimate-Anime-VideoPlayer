@@ -47,7 +47,7 @@ constexpr std::string_view kMatrixFp8 = "coopmat_fp8";      // produits E4M3 × 
 constexpr std::string_view kMatrixFp8Shader = "net_conv_coopmat_fp8_f16";
 constexpr std::string_view kWinograd = "winograd";             // F(2×2, 3×3)
 constexpr std::uint32_t kMaxSplit = 8;                         // tranches de K au plus (V1)
-constexpr std::uint64_t kSplitMaxPixels = 256 * 256;           // découpe de K proposée jusque-là
+constexpr std::uint64_t kSplitMaxPixels = 256ULL * 256ULL;     // découpe de K proposée jusque-là
 constexpr std::string_view kWinogradPacked = "winograd_f16p";  // F(2×2, 3×3) en fp16 empaqueté
 constexpr std::uint32_t kMaxGroups = 65535;
 

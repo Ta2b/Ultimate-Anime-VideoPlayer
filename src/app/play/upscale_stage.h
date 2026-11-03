@@ -184,7 +184,7 @@ class UpscaleStage final : public RingStage {
   // Les entrées de la passe pour cet appel (rife_input, ou rife_time quand les images y sont), puis la passe.
   std::expected<void, Refusal> run_drba(const kernels::DrbaCall& call, std::span<gpu::Tensor> results);
   // Copie d'une image de la taille de out (côté tenu) : l'écriture du ring, ou une copie de tenseur.
-  std::expected<void, Refusal> copy_out(const gpu::Tensor& image, const Target& out);
+  std::expected<void, Refusal> copy_out(const gpu::Tensor& image, const Target& out) const;
   // L'instant se rend sans passe : le côté de la paire qu'il regarde est un dessin tenu.
   bool drba_side_held(const kernels::DrbaCall& call) const;
   // Mesures en avance (upscale_ahead.cpp) : quand l'image suivante attend déjà derrière celle-ci,

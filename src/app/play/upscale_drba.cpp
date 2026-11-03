@@ -77,7 +77,9 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
   drba_.continuous = false;
   if (drba_.bridge_ticket) {
     // L'image d'avant est l'image sautée : gardée si rien ne la coupe de l'image de reprise.
-    auto bridged = setup_.backend->kernels()->scores_take(*std::exchange(drba_.bridge_ticket, std::nullopt));
+    const auto ticket = drba_.bridge_ticket.value();
+    drba_.bridge_ticket.reset();
+    auto bridged = setup_.backend->kernels()->scores_take(ticket);
     if (!bridged) return std::unexpected(std::move(bridged.error()));
     drba_.before_ok =
         previous_ && previous_->epoch == frame.epoch && !kernels::is_scene_cut(bridged->scene_score);
@@ -168,8 +170,11 @@ void UpscaleStage::keep_skipped(const DecodedFrame& frame) {
   drba_.bridge_ticket.reset();
   if (!drba() || drba_.after_id != frame.id || drba_.after_epoch != frame.epoch) return;
   // Sa mesure contre l'image d'avant ne sert plus : relue (le GPU l'a finie) pour ne pas la laisser en vol.
-  if (drba_.after_ticket)
-    (void)setup_.backend->kernels()->scores_take(*std::exchange(drba_.after_ticket, std::nullopt));
+  if (drba_.after_ticket) {
+    const auto ticket = drba_.after_ticket.value();
+    drba_.after_ticket.reset();
+    [[maybe_unused]] const auto dropped = setup_.backend->kernels()->scores_take(ticket);
+  }
   drba_.after_scores.reset();
   drba_.after_id.reset();
   // L'image sautée prend la place de la dernière calculée, qui ne sert plus : à la reprise, elle passe
@@ -241,7 +246,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba(std::uint32_t output
   return ops.rife_crop(rife_out_->tensor(), middle());
 }
 
-std::expected<void, Refusal> UpscaleStage::copy_out(const gpu::Tensor& image, const Target& out) {
+std::expected<void, Refusal> UpscaleStage::copy_out(const gpu::Tensor& image, const Target& out) const {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (out.ring != nullptr) return ops.write_ring(image, *out.ring->slot, out.ring->sync);
   return ops.resample(image, kernels::Filter::Area, *out.tensor);

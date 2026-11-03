@@ -225,7 +225,8 @@ char kind_letter(LearnSample::Kind kind) {
 template <typename T>
 bool number(std::string_view text, T& out) {
   const char* end = text.data() + text.size();
-  const auto [ptr, ec] = core::from_chars(text.data(), end, out);
+  const auto [ptr, ec] = core::from_chars(
+      text.data(), end, out);  // NOLINT(bugprone-suspicious-stringview-data-usage) : bornée par end
   return ec == std::errc{} && ptr == end;
 }
 

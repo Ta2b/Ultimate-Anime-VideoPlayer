@@ -165,8 +165,9 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::create
 DrbaFusedEngine::~DrbaFusedEngine() = default;
 
 BufferView DrbaFusedEngine::scratch(std::size_t offset, std::int64_t elements) const {
-  return {
-      .buffer = scratch_->handle(), .offset = offset, .size = static_cast<VkDeviceSize>(elements) * kHalf};
+  return {.buffer = scratch_.value().handle(),
+          .offset = offset,
+          .size = static_cast<VkDeviceSize>(elements) * kHalf};
 }
 
 std::expected<DrbaFusedEngine::Glue*, Refusal> DrbaFusedEngine::glue_for(std::span<const BufferView, 4> io,
@@ -326,10 +327,11 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(BackendQueue& queue, std::
   const BufferView images{.buffer = x2.buffer,
                           .offset = x2.offset,
                           .size = static_cast<VkDeviceSize>(kDrbaFusedImagePlanes * enc_plane) * kHalf};
-  const BufferView encoded{
-      .buffer = x2.buffer,
-      .offset = x2.offset + static_cast<VkDeviceSize>(kDrbaFusedImagePlanes * enc_plane) * kHalf,
-      .size = static_cast<VkDeviceSize>(3 * kDrbaFusedEncodeChannels * enc_plane) * kHalf};
+  const BufferView encoded{.buffer = x2.buffer,
+                           .offset = x2.offset + static_cast<VkDeviceSize>(kDrbaFusedImagePlanes) *
+                                                     static_cast<VkDeviceSize>(enc_plane) * kHalf,
+                           .size = static_cast<VkDeviceSize>(3 * kDrbaFusedEncodeChannels) *
+                                   static_cast<VkDeviceSize>(enc_plane) * kHalf};
   if (times_only) {
     if (auto ok = queue.submit(*(*glue)->times); !ok) return ok;  // pre, plans du temps seuls
   } else {

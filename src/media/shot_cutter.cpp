@@ -160,9 +160,9 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
       closed = close_shot(pending_->pts_us);
       frames_.clear();
     }
-    frames_.push_back(*pending_);
+    frames_.push_back(pending_.value());
     if (!flash) {
-      anchor_ = *pending_;
+      anchor_ = pending_.value();
       recent_.push_back(jump);
       if (recent_.size() > kRecent) recent_.erase(recent_.begin());
     }

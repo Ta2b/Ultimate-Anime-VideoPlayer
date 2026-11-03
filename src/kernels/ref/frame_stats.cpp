@@ -116,7 +116,7 @@ Result<FrameCounts> frame_counts(const RgbImage& rgb, FrameTransfer transfer) {
   c.y0 = static_cast<std::uint32_t>(y0), c.y1 = static_cast<std::uint32_t>(y1);
   // Sommes en double : l'ordre des additions du noyau (par fil, puis en arbre) ne se refait pas.
   double luma_sum = 0.0, blue_sum = 0.0, chroma_sum = 0.0, nits_sum = 0.0, maxrgb_sum = 0.0;
-  std::array<double, fs::kZones * fs::kZones> zone_sum{};
+  std::array<double, static_cast<std::size_t>(fs::kZones) * fs::kZones> zone_sum{};
   for (int gy = y0; gy < y1; ++gy) {
     for (int gx = x0; gx < x1; ++gx) {
       const Point& p = points[at(gx, gy)];
@@ -130,7 +130,7 @@ Result<FrameCounts> frame_counts(const RgbImage& rgb, FrameTransfer transfer) {
       ++c.maxrgb_hist[static_cast<std::size_t>(bin_of(code, fs::kLinearBins))];
       ++c.i_hist[static_cast<std::size_t>(bin_of(ictcp_i(n2020), fs::kLinearBins))];
       const int zx = (gx - x0) * fs::kZones / (x1 - x0), zy = (gy - y0) * fs::kZones / (y1 - y0);
-      const auto zone = static_cast<std::size_t>(zy * fs::kZones + zx);
+      const std::size_t zone = static_cast<std::size_t>(zy) * fs::kZones + static_cast<std::size_t>(zx);
       zone_sum[zone] += p.luma;
       ++c.zone_count[zone];
       ++c.points;
