@@ -65,7 +65,9 @@ struct SpanAutoTick {
   std::optional<std::string> notify;  // à afficher à l'écran
   bool reopen = false;                // le paquet est prêt : rouvrir la chaîne pour l'utiliser
 };
+// quiet (cran posé par un préréglage, étape 3.6) : rien à l'écran et pas de réouverture, le paquet sert à
+// l'ouverture suivante ; le journal dit tout.
 SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare, SpanJob& job,
-                            std::string_view key);
+                            std::string_view key, bool quiet = false);
 
 }  // namespace ajp::app::play

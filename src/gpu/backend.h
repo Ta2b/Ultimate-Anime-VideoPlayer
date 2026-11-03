@@ -69,7 +69,8 @@ namespace ajp::gpu {
 // 23 : SpanFp8Request::hard, SpanFp8ImageScore au 99,9e centile, SpanFp8Derivation::hard_scores (étape 3.7a).
 // 24 : BackendCaps::gpu_arch et span_fp8_kernels, SpanFp8Request::validate_only, SpanFp8Derivation::gpu_arch
 // et kernels_version (étape 3.7b).
-inline constexpr int kBackendAbi = 24;
+// 25 : SpanFp8Request::min_free_ratio (étape 3.6).
+inline constexpr int kBackendAbi = 25;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -175,6 +176,9 @@ struct SpanFp8Request {
   // Validation seule (étape 3.7b : une taille nouvelle) : les échelles et le drapeau acc16 du paquet tels
   // quels, sans calibration (calibration peut être vide), une seule variante jugée.
   bool validate_only = false;
+  // Étape 3.6 : refus GpuMemoryExhausted si la VRAM libre est sous min_free_ratio × le besoin estimé de la
+  // dérivation (0 : pas de contrôle ; la préparation lancée par un préréglage met 1,5).
+  double min_free_ratio = 0.0;
 };
 
 struct SpanFp8ImageScore {

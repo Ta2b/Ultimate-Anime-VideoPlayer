@@ -163,6 +163,16 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
                         .note = std::format("{} ({})", prepare::utf8_path(onnx.filename()), scores)};
 }
 
+std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVariantCaps& caps,
+                                                bool strict) {
+  std::vector<SpanVariantKind> order;
+  if (tier == PrecisionTier::Performance && caps.cutlass) order.push_back(SpanVariantKind::Fp8Cutlass);
+  if (tier == PrecisionTier::Performance && caps.fp8 && !strict) order.push_back(SpanVariantKind::Fp8);
+  if (tier != PrecisionTier::Quality && caps.int8) order.push_back(SpanVariantKind::Int8);
+  if (tier == PrecisionTier::Quality) order.push_back(SpanVariantKind::Fp32);
+  return order;
+}
+
 std::expected<ReceiptSizes, Refusal> read_receipt_sizes(const std::filesystem::path& receipt_path) {
   std::ifstream in(receipt_path, std::ios::binary);
   if (!in)

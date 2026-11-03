@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/interfaces/catch_interfaces_capture.hpp>
@@ -88,6 +89,20 @@ TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 se lit encore, sans valoir reçu v2 (3
   REQUIRE(found.variant);
   CHECK_FALSE(found.variant->receipt_v2);  // l'Auto ne le prend pas
   CHECK(found.unvalidated_size.empty());
+}
+
+TEST_CASE("l'ordre des variantes de SPAN : la plus basse précision qui passe la porte (3.6)",
+          "[app][int8][fp8c]") {
+  using enum SpanVariantKind;
+  const SpanVariantCaps ada{.cutlass = true, .fp8 = true, .int8 = true};
+  CHECK(span_variant_order(PrecisionTier::Performance, ada, false) == std::vector{Fp8Cutlass, Fp8, Int8});
+  // Un préréglage : sans le FP8 par Q/DQ et ses seuils lâches.
+  CHECK(span_variant_order(PrecisionTier::Performance, ada, true) == std::vector{Fp8Cutlass, Int8});
+  CHECK(span_variant_order(PrecisionTier::Balanced, ada, true) == std::vector{Int8});
+  CHECK(span_variant_order(PrecisionTier::Quality, ada, true) == std::vector{Fp32});
+  const SpanVariantCaps turing{.cutlass = false, .fp8 = false, .int8 = true};
+  CHECK(span_variant_order(PrecisionTier::Performance, turing, true) == std::vector{Int8});
+  CHECK(span_variant_order(PrecisionTier::Performance, SpanVariantCaps{}, true).empty());  // Vulkan : le FP16
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : un score que le FP8 par Q/DQ accepterait ne suffit pas", "[app][int8][fp8c]") {

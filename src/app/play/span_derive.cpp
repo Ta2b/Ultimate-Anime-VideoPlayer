@@ -206,6 +206,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
 
   gpu::SpanFp8Request request;
   request.package = gpu::span_fp8::serialize(*weights);
+  request.min_free_ratio = plan.min_free_ratio;
   prepare::Sha256 corpus;
   const auto still_of = [](media::Still& still) {
     return gpu::SpanStill{.width = still.width, .height = still.height, .rgb = std::move(still.rgb)};
@@ -344,6 +345,7 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   gpu::SpanFp8Request request;
   request.package = bytes;
   request.validate_only = true;
+  request.min_free_ratio = plan.min_free_ratio;
   for (const std::size_t i : split.validation) {
     media::Still& still = (*taken)[i];
     request.validation.push_back(
@@ -391,7 +393,7 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
                               const std::string& unavailable, const media::StillReduce& reduce,
-                              const SpanFp8Context& context) {
+                              const SpanFp8Context& context, bool automatic) {
   SpanPrepare prepare;
   if (!supported) {
     prepare.note =
@@ -425,10 +427,11 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     return prepare;
   }
   prepare.offered = true;
-  prepare.run = [library, init, model, models_dir, video, reduce, validate](
+  prepare.run = [library, init, model, models_dir, video, reduce, validate, automatic](
                     SpanDeriveProgress& progress,
                     const std::stop_token& stop) -> std::expected<std::string, Refusal> {
-    const SpanDerivePlan plan{.model = model, .models_dir = models_dir};
+    SpanDerivePlan plan{.model = model, .models_dir = models_dir};
+    if (automatic) plan.min_free_ratio = kAutoMinFreeRatio;
     const SpanStillsSource stills = [&](const std::stop_token& token,
                                         const std::function<void(float)>& report) {
       return media::extract_stills(video, media::StillsSpec{.reduce = reduce}, token, report);

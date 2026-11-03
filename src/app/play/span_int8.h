@@ -63,6 +63,19 @@ struct SpanInt8Lookup {
   std::string unvalidated_size;
 };
 
+// Ce que le moteur sait calculer, pour l'ordre des variantes (BackendCaps).
+struct SpanVariantCaps {
+  bool cutlass = false;  // span_fp8_cutlass
+  bool fp8 = false;      // graphes Q/DQ FP8
+  bool int8 = false;
+};
+
+// Les variantes de SPAN à essayer, dans l'ordre, pour un cran (étape 3.6 ; « la plus basse précision qui
+// passe la porte ») : Performance prend le SPAN FP8 CUTLASS, puis le FP8 par Q/DQ, puis l'INT8 ; Équilibre
+// l'INT8 ; Qualité le FP32. strict (cran choisi par un préréglage, pas à la main) : sans le FP8 par Q/DQ,
+// dont les seuils sont lâches ; la chaîne y demande aussi un reçu v2 au FP8 CUTLASS.
+std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVariantCaps& caps, bool strict);
+
 // Les listes de tailles d'un reçu v2 et son texte (validation seule, étape 3.7b). Refus FileUnreadable.
 struct ReceiptSizes {
   std::string text;

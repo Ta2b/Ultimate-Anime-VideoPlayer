@@ -128,6 +128,22 @@ TEST_CASE("la boucle du lecteur annonce la progression puis rouvre la chaîne à
   CHECK(runs == 1);
 }
 
+TEST_CASE("posé par un préréglage, le cran Performance se prépare en silence, sans rouvrir (3.6)",
+          "[span_auto]") {
+  ajp::app::play::FrenchUi french;
+  int runs = 0;
+  const SpanPrepare prepare = offered_with(runs);
+  SpanJob job;
+  const SpanAutoTick first = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v", true);
+  CHECK_FALSE(first.notify.has_value());
+  CHECK_FALSE(first.reopen);
+  job.note->pending->wait();
+  const SpanAutoTick done = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v", true);
+  CHECK_FALSE(done.notify.has_value());
+  CHECK_FALSE(done.reopen);  // le paquet sert à l'ouverture suivante
+  CHECK(runs == 1);
+}
+
 TEST_CASE("un refus des garde-fous est dit avec ses dB, la lecture reste en FP16, sans réessai",
           "[span_auto]") {
   ajp::app::play::FrenchUi french;

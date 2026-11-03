@@ -71,12 +71,17 @@ bool should_start_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
 }
 
 SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare, SpanJob& job,
-                            std::string_view key) {
+                            std::string_view key, bool quiet) {
   SpanAutoTick tick;
   PrepareNote& note = *job.note;
   poll_prepare(note);
   if (note.completed) {
     note.completed = false;
+    if (quiet) {
+      log_channel("app")->info("SPAN Performance (prereglage) : {}, pris a l'ouverture suivante",
+                               note.refused ? "refuse" : "pret");
+      return tick;
+    }
     if (note.refused) {
       tick.notify = span_failure_text(note.text);
     } else {
@@ -86,13 +91,14 @@ SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
     return tick;
   }
   if (note.pending) {
-    if (note.progress) tick.notify = span_progress_text(note.progress->get().first);
+    if (note.progress && !quiet) tick.notify = span_progress_text(note.progress->get().first);
     return tick;
   }
   if (should_start_span_auto(precision, prepare, false, key, job.attempted)) {
     job.attempted = std::string(key);
-    log_channel("app")->info("SPAN Performance : preparation lancee pour {}", key);
-    if (start_span_prepare(prepare, note)) tick.notify = span_progress_text(0.0F);
+    log_channel("app")->info("SPAN Performance : preparation lancee pour {}{}", key,
+                             quiet ? " (silencieuse)" : "");
+    if (start_span_prepare(prepare, note) && !quiet) tick.notify = span_progress_text(0.0F);
   }
   return tick;
 }

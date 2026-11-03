@@ -103,6 +103,21 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   auto parsed = span_fp8::parse(request.package);
   if (!parsed) return std::unexpected(std::move(parsed.error()));
   if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
+  if (request.min_free_ratio > 0.0) {
+    // Étape 3.6 : une préparation de fond ne prend pas la mémoire dont la lecture a besoin. Besoin estimé :
+    // zone du réseau FP8 (768 o par pixel de caractéristiques) et de la référence FP16 (1 120 o), entrée et
+    // deux sorties FP16, poids.
+    const auto features = static_cast<double>(plane) / 4.0;
+    const double need = features * (768.0 + 1120.0) + static_cast<double>(plane) * 3.0 * 2.0 * 9.0 + 8.0e6;
+    std::size_t free_bytes = 0, total_bytes = 0;
+    if (const cudaError_t e = cudaMemGetInfo(&free_bytes, &total_bytes); e != cudaSuccess)
+      return cuda_refusal(e, "cudaMemGetInfo");
+    if (static_cast<double>(free_bytes) < request.min_free_ratio * need)
+      return refuse(
+          RefusalCode::GpuMemoryExhausted,
+          std::format("dérivation du SPAN FP8 : {} Mo de VRAM libres, {:.0f} Mo demandés ({} × le besoin)",
+                      free_bytes >> 20U, request.min_free_ratio * need / 1048576.0, request.min_free_ratio));
+  }
 
   const auto report = [&](float fraction, const char* stage) {
     if (progress.report) progress.report(fraction, stage);
@@ -128,7 +143,13 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
     return cuda_refusal(e, "cudaMalloc");
   if (auto e = cudaMalloc(&scratch.output_fp8, in_bytes * 4); e != cudaSuccess)
     return cuda_refusal(e, "cudaMalloc");
-  if (auto e = cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking); e != cudaSuccess)
+  // Étape 3.6 : le flux à la priorité la plus basse, derrière ceux de la lecture.
+  int least = 0, greatest = 0;
+  if (cudaDeviceGetStreamPriorityRange(&least, &greatest) != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    least = 0;
+  }
+  if (auto e = cudaStreamCreateWithPriority(&scratch.stream, cudaStreamNonBlocking, least); e != cudaSuccess)
     return cuda_refusal(e, "cudaStreamCreate");
   const auto upload = [&](const SpanStill& still) -> std::expected<void, Refusal> {
     const std::vector<__half> half = to_half(still);
