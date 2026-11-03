@@ -124,6 +124,22 @@ class LiveSettings {
     if (!auto_on_ && !free_on_) return;
     ledger_[ledger_next_++ % ledger_.size()] = Expected{.id = id, .images = images, .lead_us = lead_us};
   }
+  // gpu : `count` images de la paire de l'image `id` ne seront pas écrites (déjà à l'écran). Si les autres
+  // sont toutes vues, la paire se clôt ici.
+  void auto_unexpect(std::uint32_t id, int count) {
+    const std::scoped_lock lock(mutex_);
+    if (!auto_on_ && !free_on_) return;
+    for (Expected& e : ledger_) {
+      if (e.id != id || e.images == 0) continue;
+      e.images = std::max(e.images - count, 0);
+      if (e.images == 0) {
+        e = Expected{};
+      } else if (free_on_ && e.seen >= e.images) {
+        close_expected(e, frame_done_us_);
+      }
+      return;
+    }
+  }
   // main : une image de sortie vue écrite. La dernière d'une paire (left == right) clôt sa mesure.
   // repeated : une copie d'une image déjà calculée, qui avance la paire sans ajouter de temps occupé.
   void auto_written(std::uint32_t left, std::uint32_t right, std::int64_t submitted_us, std::int64_t done_us,
@@ -145,16 +161,7 @@ class LiveSettings {
       // Auto : la source clôt la paire. mode Rapide : la dernière image de la paire, qui n'est pas forcément
       // la source.
       const bool last = free_on_ ? ++e.seen >= e.images : left == right;
-      if (last) {
-        const int computed = std::max(e.images - e.repeats, 1);  // les copies ne coûtent rien
-        if (auto_on_) {
-          auto_.cost(computed, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us),
-                     done_us);
-        }
-        if (free_on_) free_.cost(computed, e.busy_us + e.lead_us, done_us);
-        previous_done_us_ = done_us;
-        e = Expected{};
-      }
+      if (last) close_expected(e, done_us);
       return;
     }
   }
@@ -325,6 +332,16 @@ class LiveSettings {
     int repeats = 0;           // dont des copies, sans calcul
     std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
   };
+  // Clôt la mesure d'une paire : son coût de service, sans les copies. Sous le verrou.
+  void close_expected(Expected& e, std::int64_t done_us) {
+    const int computed = std::max(e.images - e.repeats, 1);  // les copies ne coûtent rien
+    if (auto_on_) {
+      auto_.cost(computed, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us), done_us);
+    }
+    if (free_on_) free_.cost(computed, e.busy_us + e.lead_us, done_us);
+    previous_done_us_ = done_us;
+    e = Expected{};
+  }
   std::array<Expected, 16> ledger_{};
   std::size_t ledger_next_ = 0;
   std::int64_t previous_done_us_ =

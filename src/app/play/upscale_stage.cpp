@@ -434,13 +434,14 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // de kMaxSpanReuse de suite, comptées depuis la dernière vraie passe : un fondu lent, tenu paire
   // par paire, ne fige pas l'image.
   reuse_span_ = setup_.engine != nullptr && held && spans_reused_in_row_ < kMaxSpanReuse &&
-                (warps_spanned() || output_has_source_);
+                (warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_));
   spans_reused_in_row_ = reuse_span_ ? spans_reused_in_row_ + 1 : 0;
   if (reuse_span_) ++spans_reused_;
   // Après un dessin tenu, b paraît à 1/2 sans passe ni warp (poses_copy) : une seule image écrite.
   copy_pair_ = runs && setup_.skip_held && by_motion() && setup_.live && setup_.live->keep_poses() &&
                before_ == PairMotion::Still && intermediates_ > 0;
   copy_written_ = false;
+  b_shown_ = false;
   // Dessin tenu qui reprend l'agrandissement de la précédente, dont l'image est à l'écran : la source
   // est bit à bit celle qui est affichée, ni écrite ni présentée.
   held_same_ = setup_.skip_held && runs == false && outputs_ == 1 && reuse_span_ && shown_source_;
@@ -516,6 +517,7 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
 
 RingStage::Fate UpscaleStage::fate(const DecodedFrame& /*frame*/, std::uint32_t output) {
   if (held_same_) return Fate::Same;
+  if (setup_.skip_held && drba()) return drba_fate(output);
   if (!copy_pair_) return Fate::Write;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   if (poses_copy(true, true, instant.t) == PoseCopy::Before || copy_written_) return Fate::Same;
@@ -523,12 +525,43 @@ RingStage::Fate UpscaleStage::fate(const DecodedFrame& /*frame*/, std::uint32_t 
   return Fate::Write;
 }
 
-void UpscaleStage::skip(const DecodedFrame& frame, std::uint32_t /*output*/) {
+void UpscaleStage::skip(const DecodedFrame& frame, std::uint32_t output) {
+  if (setup_.skip_held && drba()) {
+    if (setup_.live) setup_.live->auto_unexpect(frame.id.value, 1);
+    if (instants_[std::min<std::size_t>(output, instants_.size() - 1)].t >= 1.0F) {
+      previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+    }
+    return;
+  }
   // La source tenue n'est pas écrite : l'étage la tient pour la dernière vue, comme après une écriture.
   if (!held_same_) return;
   // reuse_span_ : l'agrandissement de la précédente sert à celle-ci, sans calcul (ne peut pas échouer).
   if (auto ok = span_current(); !ok) return;
   previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+}
+
+RingStage::Output UpscaleStage::held_b(Output made, const DecodedFrame& frame, std::uint32_t output) {
+  const bool on_b = instants_[std::min<std::size_t>(output, instants_.size() - 1)].t >= 0.5F;
+  if (setup_.skip_held && drba() && drba_held_ && on_b) {
+    made.left = frame.id;
+    made.right = frame.id;
+    shown_source_ = true;
+  }
+  return made;
+}
+
+// DistilDRBA : un côté tenu rend l'image du côté sans passe. Avant ½ (côté a tenu), l'écran montre déjà a ;
+// dès ½ (côté b tenu), le premier instant écrit b, les suivants et la source sont déjà à l'écran.
+RingStage::Fate UpscaleStage::drba_fate(std::uint32_t output) {
+  const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
+  if (instant.t >= 1.0F) return b_shown_ ? Fate::Same : Fate::Write;
+  const kernels::DrbaCall call = kernels::drba_call(instant.t);
+  if (call.on_b && !settle_after_scores()) return Fate::Write;  // l'erreur sort à produce
+  if (!drba_side_held(call)) return Fate::Write;
+  if (!call.on_b) return shown_source_ ? Fate::Same : Fate::Write;
+  if (b_shown_) return Fate::Same;
+  b_shown_ = true;
+  return Fate::Write;
 }
 
 std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFrame& frame,
@@ -586,7 +619,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     }
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     made.repeated = drba_held_;
-    return made;
+    return held_b(made, frame, output);
   }
   if (by_motion() && ring_direct_) {  // sans SPAN : le warp écrit la sortie elle-même
     if (auto ok = interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now, Target{.ring = &ring});
@@ -596,7 +629,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     output_has_source_ = false;
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     made.repeated = drba_held_;
-    return made;
+    return held_b(made, frame, output);
   }
   if (by_motion() || gmfss() || drba()) {
     auto ok = gmfss()         ? interpolate_gmfss(output)
@@ -614,7 +647,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   // ×1,5 : l'image n'est pas sur la grille de cette paire, elle sert seulement de suivante.
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
   made.repeated = drba_held_;
-  return made;
+  return held_b(made, frame, output);
 }
 
 std::expected<void, Refusal> UpscaleStage::span_current() {

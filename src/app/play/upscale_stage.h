@@ -125,6 +125,10 @@ class UpscaleStage final : public RingStage {
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
   Fate fate(const DecodedFrame& frame, std::uint32_t output) override;
   void skip(const DecodedFrame& frame, std::uint32_t output) override;
+  Fate drba_fate(std::uint32_t output);
+  // DistilDRBA, instant écrit pour b tenu : c'est l'image source elle-même (left == right), à l'écran
+  // ensuite.
+  Output held_b(Output made, const DecodedFrame& frame, std::uint32_t output);
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
   // Où va une image intermédiaire : un tenseur, ou directement le slot du ring (ring_direct_).
@@ -271,6 +275,7 @@ class UpscaleStage final : public RingStage {
   static constexpr int kMaxSpanReuse = 2;
   bool reuse_span_ = false;
   bool copy_pair_ = false;          // RIFE avec poses après un dessin tenu : pas de passe, b seule est écrite
+  bool b_shown_ = false;            // DistilDRBA : b est écrite dans cette paire (côté b tenu)
   bool held_same_ = false;          // source d'un dessin tenu, déjà à l'écran : Same
   bool shown_source_ = false;       // la dernière image écrite est une source
   bool copy_written_ = false;       // b est écrite dans cette paire
