@@ -122,6 +122,8 @@ struct PlayOptions {
   // --legacy-grade : le grade d'avant en neuf passes, qui mesure la scène lui-même (render::GradeBody),
   // gardé une version pour comparer.
   bool legacy_grade = false;
+  // --no-grade-deband : essai, le grade ne fait plus précéder la source d'un débandage (placebo_screen.cpp).
+  bool no_grade_deband = false;
   // --no-vrr : traite l'écran comme à fréquence fixe même si le VRR est armé (essai du mode Rapide sur les
   // vsyncs).
   bool no_vrr = false;
