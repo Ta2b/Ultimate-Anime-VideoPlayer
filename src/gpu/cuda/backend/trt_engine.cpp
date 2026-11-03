@@ -112,10 +112,11 @@ std::int64_t TrtEngine::activation_bytes() const {
 }
 
 void TrtEngine::drop_graphs() {
-  for (const Graph& graph : graphs_) {
-    if (graph.exec != nullptr) cudaGraphExecDestroy(graph.exec);
+  for (cudaGraphExec_t exec : execs_) {
+    if (exec != nullptr) cudaGraphExecDestroy(exec);
   }
-  graphs_.clear();
+  execs_.clear();
+  book_.clear();
 }
 
 std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
@@ -245,35 +246,31 @@ std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
                                                 std::span<const Tensor> inputs,
                                                 std::span<const Tensor> outputs) {
   if (auto ok = place(arena, inputs, outputs); !ok) return ok;
-  if (graphs_off_) return launch(stream, nullptr);
+  if (book_.off()) return launch(stream, {});
   std::vector<std::uintptr_t> addresses;
   addresses.reserve(inputs.size() + outputs.size());
   for (const Tensor& t : inputs) addresses.push_back(t.handle + t.offset);
   for (const Tensor& t : outputs) addresses.push_back(t.handle + t.offset);
-  auto found = std::ranges::find(graphs_, addresses, &Graph::addresses);
-  if (found == graphs_.end()) {
-    if (graphs_.size() >= kMaxGraphs) return launch(stream, nullptr);
-    graphs_.push_back(Graph{.addresses = std::move(addresses)});
-    found = graphs_.end() - 1;
-  }
-  return launch(stream, &*found);
+  return launch(stream, book_.next(addresses));
 }
 
-std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream, Graph* graph) {
+std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
+                                               const GraphBook<std::vector<std::uintptr_t>>::Pick& pick) {
   const auto direct = [&]() -> std::expected<void, Refusal> {
     if (!context_->enqueueV3(stream))
       return refuse(RefusalCode::VendorCallFailed, "IExecutionContext::enqueueV3 a échoué");
     return {};
   };
-  if (graph == nullptr) return direct();
-  if (graph->exec != nullptr) {
-    if (cudaGraphLaunch(graph->exec, stream) != cudaSuccess)
+  if (pick.step == GraphStep::Direct || pick.step == GraphStep::Overflow || pick.step == GraphStep::Warm)
+    return direct();  // Warm : le premier lancement fait ses allocations hors capture
+  if (execs_.size() <= pick.index) execs_.resize(pick.index + 1, nullptr);
+  cudaGraphExec_t& exec = execs_[pick.index];
+  if (pick.step == GraphStep::Replay) {
+    if (cudaGraphLaunch(exec, stream) != cudaSuccess) {
+      book_.launch_failed();
       return refuse(RefusalCode::VendorCallFailed, "cudaGraphLaunch a échoué");
+    }
     return {};
-  }
-  if (!graph->warmed) {  // le premier lancement fait ses allocations hors capture
-    graph->warmed = true;
-    return direct();
   }
   cudaGraph_t captured = nullptr;
   bool queued = false;
@@ -282,28 +279,24 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream, Graph* graph
     queued = context_->enqueueV3(stream);
     error = cudaStreamEndCapture(stream, &captured);  // termine aussi une capture invalidée
   }
-  if (error == cudaSuccess && queued && captured != nullptr)
-    error = cudaGraphInstantiate(&graph->exec, captured, 0);
+  if (error == cudaSuccess && queued && captured != nullptr) error = cudaGraphInstantiate(&exec, captured, 0);
   if (captured != nullptr) cudaGraphDestroy(captured);
   if (error != cudaSuccess || !queued || captured == nullptr) {
-    // Capture refusée : rien n'a tourné (la capture enregistre sans exécuter), le lancement
-    // direct fait le travail et l'erreur est effacée. Le lancement suivant réessaie ; après
-    // kCaptureAttempts refus, les graphes sont coupés et le backend le dit dans le journal.
-    graph->exec = nullptr;
+    // Capture refusée : rien n'a tourné (la capture enregistre sans exécuter), le lancement direct fait le
+    // travail et l'erreur est effacée. Le lancement suivant réessaie ; après kCaptureAttempts refus, le
+    // registre coupe les graphes et le backend le dit dans le journal.
+    exec = nullptr;
     static_cast<void>(cudaGetLastError());
-    ++capture_failures_;
-    if (capture_failures_ >= kCaptureAttempts) {
-      graphs_off_ = true;
-      notice_ = std::format("graphes CUDA coupés : capture refusée {} fois, dernière erreur : {}",
-                            capture_failures_,
-                            !queued                ? "enqueueV3 a échoué pendant la capture"
-                            : error != cudaSuccess ? cudaGetErrorString(error)
-                                                   : "graphe vide");
-    }
+    book_.captured(false, !queued                ? "enqueueV3 a échoué pendant la capture"
+                          : error != cudaSuccess ? cudaGetErrorString(error)
+                                                 : "graphe vide");
     return direct();
   }
-  if (cudaGraphLaunch(graph->exec, stream) != cudaSuccess)
+  book_.captured(true);
+  if (cudaGraphLaunch(exec, stream) != cudaSuccess) {
+    book_.launch_failed();
     return refuse(RefusalCode::VendorCallFailed, "cudaGraphLaunch a échoué");
+  }
   return {};
 }
 
