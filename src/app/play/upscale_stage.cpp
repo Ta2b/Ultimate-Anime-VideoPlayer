@@ -251,8 +251,8 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
 std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& frame) {
   AJP_TRACE("upscale.outputs");
   if (frame.width != setup_.source_width || frame.height != setup_.source_height) {
-    return refuse(RefusalCode::ShapeInvalid,
-                  std::format("image {}x{} : la source est en {}x{}", frame.width, frame.height,
+    return refuse(RefusalCode::SourceResized,
+                  std::format("{}x{} (la chaîne était en {}x{})", frame.width, frame.height,
                               setup_.source_width, setup_.source_height));
   }
   gpu::KernelOps& ops = *setup_.backend->kernels();

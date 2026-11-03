@@ -169,7 +169,8 @@ class Session {
   std::int64_t idle_wait_us(std::int64_t host_now);
   // La fenêtre a changé d'écran : nouvelle période et nouvelle fréquence, la synchro les suit.
   void set_display(std::int64_t period_us, double hz);
-  bool quit_asked() const { return quit_; }  // q ou fenêtre fermée, pas la fin du fichier
+  bool resize_asked() const { return resized_; }  // la source a changé de taille : rouvrir la chaîne
+  bool quit_asked() const { return quit_; }       // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
   std::uint32_t epoch() const { return epoch_; }
   // La dernière image reçue du GPU pour l'époque en cours (la plus avancée de la file) ; nullptr : aucune.
@@ -206,6 +207,7 @@ class Session {
   bool paused_ = false;                           // pause demandée par l'utilisateur
   bool stream_ended_ = false;
   bool finished_ = false;
+  bool resized_ = false;
   bool quit_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
   // Seek dont une boîte a refusé le Flush ou le Seek : rejoué par tick, jusqu'à ce que tout passe.

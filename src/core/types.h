@@ -80,6 +80,8 @@ enum class RefusalCode : std::uint8_t {
   OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
   GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
   ShapeInvalid,      // formes incompatibles, dimension impossible à déduire, ou taille refusée par un noyau
+  SourceResized,  // la source change de taille en cours de lecture : le détail porte « LxH » ; la chaîne se
+                  // rouvre
 
   // core : threads et backends chargés à l'exécution
   ThreadFailed,    // une exception a interrompu le corps d'un thread, qui s'est arrêté
@@ -223,6 +225,8 @@ constexpr std::string_view name(RefusalCode code) {
       return "GraphInvalid";
     case RefusalCode::ShapeInvalid:
       return "ShapeInvalid";
+    case RefusalCode::SourceResized:
+      return "SourceResized";
     case RefusalCode::ThreadFailed:
       return "ThreadFailed";
     case RefusalCode::AbiMismatch:

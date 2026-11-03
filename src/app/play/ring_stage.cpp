@@ -88,6 +88,10 @@ void RingStage::run(const std::stop_token& stop, const ThreadReport& report) {
 
 void RingStage::fail(const ThreadReport& report, const Refusal& refusal) {
   failed_ = true;  // une image refusée arrête la vidéo : l'OSD le dit, main arrête la lecture
+  if (refusal.code == RefusalCode::SourceResized) {  // main rouvre la chaîne à la nouvelle taille
+    report(refusal);
+    return;
+  }
   report(Refusal{RefusalCode::ThreadFailed, std::format("{} {}", name(refusal.code), refusal.detail)});
 }
 
