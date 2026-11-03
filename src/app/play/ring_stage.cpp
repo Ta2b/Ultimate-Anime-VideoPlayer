@@ -141,6 +141,7 @@ void RingStage::emit(const ThreadReport& report) {
                            .pts_us = produced->pts_us,
                            .left = produced->left,
                            .right = produced->right,
+                           .repeated = produced->repeated,
                            .uninterpolated = produced->uninterpolated,
                            .debanded = produced->debanded,
                            .epoch = frame.epoch,

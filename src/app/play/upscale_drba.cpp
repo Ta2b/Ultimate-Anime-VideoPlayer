@@ -232,6 +232,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba(std::uint32_t output
   }
   if (drba_side_held(call)) {
     ++drba_.held;
+    drba_held_ = true;
     return ops.resample(rgb_[call.on_b ? current_ : current_ ^ 1U]->tensor(), kernels::Filter::Area,
                         middle());
   }
@@ -266,6 +267,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba_motion(std::uint32_t
   const gpu::Tensor& b = spanned_images ? spanned(current_) : rgb_[current_]->tensor();
   if (held) {
     ++drba_.held;
+    drba_held_ = true;
     return copy_out(call.on_b ? b : a, out);
   }
   // Le warp final du graphe lit l'image du centre (flot 0-1, poids du masque) et celle du côté choisi

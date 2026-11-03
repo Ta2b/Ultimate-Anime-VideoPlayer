@@ -65,6 +65,7 @@ class RingStage : public VideoStage, public FrameSink {
     SourceId right;
     bool uninterpolated = false;  // RingFrame::uninterpolated
     bool debanded = false;        // RingFrame::debanded
+    bool repeated = false;        // RingFrame::repeated : copie d'une image déjà calculée
   };
   // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
   // par défaut 1. Un refus arrête la vidéo comme un refus de produce, et plus de kMaxOutputs aussi.
