@@ -44,21 +44,29 @@ constexpr int kConcat = 4 * kChannels;
 constexpr int kPixel = 48;
 constexpr int kScaleCount = SpanFp8Weights::kScales;
 
-// Poids FP8 d'un bloc : échelle par tenseur « maximum / 448 », arrondi au plus proche, saturé.
-float quantize_fp8(const std::uint16_t* half_bits, std::size_t count, std::vector<std::uint8_t>& out) {
+// Poids FP8 d'un bloc, rangés [sortie][ligne][colonne][entrée] : échelle par canal de sortie (étape 10.3,
+// gpu/span_fp8/quantize.h) « maximum du canal / 448 » (1 pour un canal nul), arrondi au plus proche, saturé.
+std::array<float, 64> quantize_fp8(const std::uint16_t* half_bits, std::size_t count,
+                                   std::vector<std::uint8_t>& out) {
+  constexpr std::size_t kOut = 64;
+  const std::size_t per = count / kOut;
   std::vector<float> values(count);
-  float peak = 0.F;
   for (std::size_t i = 0; i < count; ++i) {
     __half h;
     std::memcpy(&h, &half_bits[i], sizeof(h));
     values[i] = __half2float(h);
-    peak = std::max(peak, std::abs(values[i]));
   }
-  const float scale = peak > 0.F ? peak / 448.F : 1.F;
+  std::array<float, kOut> scales{};
   out.resize(values.size());
-  for (std::size_t i = 0; i < values.size(); ++i)
-    out[i] = static_cast<std::uint8_t>(__nv_cvt_float_to_fp8(values[i] / scale, __NV_SATFINITE, __NV_E4M3));
-  return scale;
+  for (std::size_t c = 0; c < kOut; ++c) {
+    float peak = 0.F;
+    for (std::size_t i = c * per; i < (c + 1) * per; ++i) peak = std::max(peak, std::abs(values[i]));
+    scales[c] = peak > 0.F ? peak / 448.F : 1.F;
+    for (std::size_t i = c * per; i < (c + 1) * per; ++i)
+      out[i] =
+          static_cast<std::uint8_t>(__nv_cvt_float_to_fp8(values[i] / scales[c], __NV_SATFINITE, __NV_E4M3));
+  }
+  return scales;
 }
 
 constexpr std::int64_t kAlign = 256;
@@ -78,7 +86,8 @@ struct SpanFp8Net::Impl {
   struct BlockWeights {
     std::array<Device, 3> w, b;
     Device att_w, att_b;
-    std::array<float, 3> w_scale{};
+    std::array<std::array<float, 64>, 3> w_scale{};  // par canal de sortie (étape 10.3)
+    std::array<Device, 3> alpha;  // 64 flottants chacun : échelle de l'activation × échelle du canal
   };
   std::array<BlockWeights, kBlocks> blocks;
   int used = kBlocks;  // blocs du modèle (étape 3.2c)
@@ -141,7 +150,7 @@ struct SpanFp8Net::Impl {
       BlockWeights& bw = blocks[bi];
       {  // c1 + Relu -> FP8 ; pour le dernier bloc, aussi FP16 dans la tranche 3 (son relu1)
         sk::KP k;
-        k.alpha = s_in * bw.w_scale[0];
+        k.alpha_col = bw.alpha[0].as<float>();
         k.bias = bw.b[0].as<float>();
         k.out8 = r1;
         k.inv_s8 = 1.F / s_r1;
@@ -153,7 +162,7 @@ struct SpanFp8Net::Impl {
       }
       {
         sk::KP k;
-        k.alpha = s_r1 * bw.w_scale[1];
+        k.alpha_col = bw.alpha[1].as<float>();
         k.bias = bw.b[1].as<float>();
         k.out8 = r2;
         k.inv_s8 = 1.F / s_r2;
@@ -163,7 +172,7 @@ struct SpanFp8Net::Impl {
         sk::KP k;
         k.skip = xin;
         k.skip_scale = s_in;
-        k.alpha = s_r2 * bw.w_scale[2];
+        k.alpha_col = bw.alpha[2].as<float>();
         k.bias = bw.b[2].as<float>();
         k.w1 = bw.att_w.as<__half>();
         k.b1 = bw.att_b.as<float>();
@@ -273,7 +282,13 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
     for (std::size_t i = 0; i < 3; ++i) {
       std::vector<std::uint8_t> q;
       bw.w_scale[i] = quantize_fp8(weights.conv[b][i].weights, kBlockWeights, q);
+      // L'activation qui entre dans la convolution i du bloc b : celle de bind (s_in, s_r1, s_r2).
+      const float s_act =
+          i == 0 ? (b == 0 ? impl->scales[0] : impl->scales[1 + 3 * (b - 1) + 2]) : impl->scales[i + 3 * b];
+      std::array<float, 64> alpha{};
+      for (std::size_t c = 0; c < alpha.size(); ++c) alpha[c] = s_act * bw.w_scale[i][c];
       if (!sent(bw.w[i].upload(q.data(), q.size()), "poids FP8") ||
+          !sent(bw.alpha[i].upload(alpha.data(), sizeof(alpha)), "échelles des poids FP8") ||
           !put_bias(bw.b[i], weights.conv[b][i], kChannels))
         return nullptr;
     }
