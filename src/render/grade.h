@@ -24,7 +24,8 @@ enum class GradeBody : std::uint8_t { Fused, Legacy };
 class Grade {
  public:
   // VendorCallFailed : un hook ne se lit pas ; FieldMissing : un //!PARAM attendu manque.
-  static std::expected<Grade, Refusal> create(pl_gpu gpu, GradeBody body = GradeBody::Fused);
+  static std::expected<Grade, Refusal> create(pl_gpu gpu, GradeBody body = GradeBody::Fused,
+                                              bool no_skin_mask = false);
 
   Grade(Grade&&) noexcept;
   Grade& operator=(Grade&&) noexcept;

@@ -194,6 +194,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .allow_software = options.software_gpu,
                                         .legacy_grade = options.legacy_grade,
                                         .grade_deband = options.grade_deband,
+                                        .no_skin_mask = options.no_skin_mask,
                                         .shader_cache = paths.data / "shaders.cache"});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);

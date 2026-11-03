@@ -91,6 +91,18 @@ float skin_mask(vec3 ictcp) {
          * smoothstep(0.008, 0.018, chroma) * (1.0 - smoothstep(0.095, 0.13, chroma));
 }
 
+// Le masque peau, moyenne 3x3 (pas de 2 px) de celui des pixels voisins. Decide pixel par pixel, il basculait
+// de 0 a 1 sur le tramage fin d'une peau pale d'anime (rampes de chroma et de teinte tres etroites) : un
+// damier de peau / pas peau, que le grade rend tres visible (la peau recoit une autre courbe). Moyenne, il
+// suit la surface de la peau et non le grain.
+float skin_area(vec2 pos) {
+    float acc = 0.0;
+    for (int j = -1; j <= 1; j++)
+    for (int i = -1; i <= 1; i++)
+        acc += skin_mask(to_ictcp(ajg_decode(HOOKED_tex(pos + vec2(float(i), float(j)) * 2.0 * HOOKED_pt).rgb)));
+    return acc / 9.0;
+}
+
 // Peau : une surface eclairee, jamais un eclat. La courbe HDR emmenait la peau claire d'anime
 // (sRGB 255, 232, 214) vers 550 nits sur un ecran de 1000 : delavee, presque blanche. Au-dessus de
 // k (15 % du pic, 100 a 200 nits), sa luminance ne monte plus qu'en racine : 290 nits pour cette
@@ -208,13 +220,14 @@ vec4 hook() {
     float em_base_now = mix(mix(em_base, ad_em_base, t_scene), gl_em_base, glow);
     float em_pow_now = mix(mix(em_pow, ad_em_pow, t_scene), gl_em_pow, glow);
     vec3 lin = ajg_decode(px.rgb);
+    const float skin_sm = skin_area(HOOKED_pos);
     // L'isolement se mesure sur l'image d'origine, comme les cartes de zone.
     float y_src = dot(lin, vec3(0.2627, 0.6780, 0.0593));
     if (emulate > 0.5) {
         // Visages constants d'un plan à l'autre : la peau ne suit le gris moyen du plan (scène sombre, claire,
         // éclat) qu'à 40 % ; le reste vient du milieu des deux réglages, le même pour tous les plans. Le décor
         // garde toute son adaptation, le contraste entre la peau et lui suit encore la scène.
-        float skin_src = (ad_on > 0.5) ? skin_mask(to_ictcp(lin)) : 0.0;
+        float skin_src = (ad_on > 0.5) ? skin_sm : 0.0;
         vec3 looked = truehdr_look(lin, em_base_now, em_pow_now);
         if (skin_src > 0.0) {
             const float kSkinAnchor = 0.6;
@@ -241,7 +254,7 @@ vec4 hook() {
     // Peak 1000 ; sinon tires de la moyenne d'image de l'EDID).
     float abl_scale = fs_apl >= 0.0 ? 1.0 - abl * smoothstep(abl_lo, abl_hi, fs_apl) : 1.0;
     vec3 ictcp_in = to_ictcp(lin);
-    float skin = skin_mask(ictcp_in);
+    float skin = skin_sm;
     // Lumiere coloree sur un fond clair (neon, ecran, lampe teintee dans une scene de jour) : traitee selon
     // son voisinage, pas selon la scene. Sur un fond sombre, elle garde tout son eclat et ses renforts de
     // couleur ; sur un fond clair (zone de ~2,5 % de l'image au-dessus de ~60 nits), une couleur saturee et
