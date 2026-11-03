@@ -25,6 +25,11 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
   (4.22 lite en 128×64 sur lavapipe : 74,6 dB).
   Les tampons intermédiaires (≈ 120 Mo à 768×1280) suivent les activations dans la zone partagée de la voie.
 - Deux sorties : l'image (RIFE image) ou le flot et le masque (variante mouvement, le chemin par défaut du lecteur).
+- Entrée par pointeurs (étape 5.2, backend TensorRT) : les noyaux CUDA calculent le maillage (plans 7 à 10) au lieu de
+  le lire, aux mêmes expressions et au même arrondi que `rife_input`, et lisent l'instant à l'élément 0 du plan 6.
+  Quand le dernier moteur à lire l'entrée est la chaîne fusionnée, `rife_time` n'écrit plus qu'un demi-flottant au lieu
+  d'un plan entier ; un moteur TensorRT entier ou DistilDRBA fusionné qui lit la même adresse ramène l'écriture du plan
+  entier. Les plans 0 à 5 restent copiés (l'encodeur les veut remplis au multiple de 64). Le chemin Vulkan ne change pas.
 - Repli sur le RIFE entier : réglage éteint, autre backend, cran de précision hors Équilibre, entrée v2 (7 plans),
   structure inconnue, taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne
   passe trois fois sur une image de zéros (exécution à froid, capture du graphe, rejeu) avec synchronisation : une

@@ -1,6 +1,7 @@
 // RIFE dans le backend TensorRT de la tranche verticale : entrée remplie (rife_input, puis son
 // instant seul par rife_time, les paires suivantes sans le maillage par rife_pair), recadrage de
 // la sortie (rife_crop, du contrat) et mesures d'une paire (scores_start, scores_take).
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <cuda.h>
@@ -91,6 +92,17 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
   return launched;
 }
 
+void TensorRtBackend::note_rife_reader(const Tensor& input, bool compact) {
+  const std::uintptr_t key = input.handle + input.offset;
+  const auto found = std::ranges::find(compact_rife_inputs_, key);
+  if (compact && found == compact_rife_inputs_.end()) {
+    if (compact_rife_inputs_.size() >= 8) compact_rife_inputs_.erase(compact_rife_inputs_.begin());
+    compact_rife_inputs_.push_back(key);
+  } else if (!compact && found != compact_rife_inputs_.end()) {
+    compact_rife_inputs_.erase(found);
+  }
+}
+
 std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, float t) {
   const std::int64_t planes = input.shape.dims[1];
   if (!kernels::is_rife_input_planes(planes) || !fp16_planes(input, planes)) {
@@ -107,9 +119,13 @@ std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, flo
       static_cast<std::size_t>(width_of(input)) * static_cast<std::size_t>(height_of(input));
   const CUdeviceptr time_plane =
       input.handle + input.offset + std::size_t{kernels::kRifeChannelTime} * plane * sizeof(std::uint16_t);
+  // RIFE fusionné ne lit que l'élément 0 du plan (étape 5.2) : un demi-flottant au lieu d'un plan entier.
+  const bool compact =
+      std::ranges::find(compact_rife_inputs_, input.handle + input.offset) != compact_rife_inputs_.end();
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
-  const CUresult set = cuMemsetD16Async(time_plane, kernels::ref::float_to_half(t), plane, stream_);
+  const CUresult set =
+      cuMemsetD16Async(time_plane, kernels::ref::float_to_half(t), compact ? 1 : plane, stream_);
   timing.end(stream_);
   if (set != CUDA_SUCCESS)
     return refuse(RefusalCode::VendorCallFailed,
