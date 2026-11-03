@@ -6,5 +6,6 @@ ajp_add_unit_tests(media
     gpu_decode_test.cpp hw_test.cpp language_test.cpp packet_reserve_test.cpp packet_test.cpp seek_test.cpp
     selection_test.cpp shot_test.cpp source_test.cpp stills_test.cpp track_language_test.cpp
   DEPS ajp::dep::ffmpeg ajp::dep::vulkan)
-target_compile_definitions(ajp_media_tests PRIVATE AJP_MEDIA_CLIP_DIR="${CMAKE_CURRENT_BINARY_DIR}/clips")
+target_compile_definitions(ajp_media_tests PRIVATE AJP_MEDIA_CLIP_DIR="${CMAKE_CURRENT_BINARY_DIR}/clips"
+                                           AJP_DATA_DIR="${CMAKE_SOURCE_DIR}/data")
 
