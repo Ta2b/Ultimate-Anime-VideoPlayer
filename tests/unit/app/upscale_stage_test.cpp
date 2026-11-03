@@ -680,6 +680,27 @@ TEST_CASE("Étage gpu : DistilDRBA rend b sans passe quand (b, après) est un de
   CHECK(rig.backend.count("engine drba") == 2);
 }
 
+TEST_CASE("Étage gpu : en lecture, DistilDRBA écrit b une fois quand (b, après) est tenu, sans la source",
+          "[app][stage]") {
+  Rig rig;
+  rig.backend.score(SourceId{4}, SourceId{5}, 0.0, 10);  // dessin tenu
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  s.skip_held = true;
+  rig.start(std::move(s));
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(6));
+  rig.stage.reset();
+
+  const std::vector<RingFrame> frames = rig.sink.frames();
+  // 4 paraît à ½ de 3-4 (b tenu) ; la source 4 et la source 5 (paire tenue) sont déjà à l'écran.
+  CHECK(shape_of(frames) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "4"});
+  CHECK(frames[5].pts_us == 140'000);
+  CHECK(rig.backend.count("engine drba") == 2);
+  CHECK(rig.reported().empty());
+}
+
 TEST_CASE("Étage gpu : DistilDRBA mouvement, un SPAN par source et le warp après", "[app][stage]") {
   Rig rig;
   UpscaleSetup s = rig.setup(true);
