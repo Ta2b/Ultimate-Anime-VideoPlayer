@@ -206,6 +206,80 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest_colum
   store_rgb(p, x, y, make_float3(sum.x * norm, sum.y * norm, sum.z * norm));
 }
 
+// Réduction étirée en une passe tuilée (étape 5.3) : un bloc de 32 × 8 fils rend une tuile de sortie de
+// kTileWidth × kTileHeight. Les lignes de source dont la tuile a besoin sont d'abord filtrées vers ses 32
+// colonnes en mémoire partagée (FP32), puis chaque fil en tire deux pixels de sortie. Mêmes prises, mêmes
+// sommes dans le même ordre et même normalisation que ingest_rows puis ingest_columns : même résultat, sans
+// le tampon rows ni son aller-retour en mémoire globale.
+constexpr int kTileWidth = 32;
+constexpr int kTileHeight = 16;
+constexpr int kTileThreadsY = 8;
+
+__global__ void __launch_bounds__(kTileWidth* kTileThreadsY) ingest_tiled(IngestParams p) {
+  extern __shared__ float tile[];  // 3 plans de p.tile_rows × kTileWidth
+  const int x0 = static_cast<int>(blockIdx.x) * kTileWidth;
+  const int y0 = static_cast<int>(blockIdx.y) * kTileHeight;
+  const int y_last = min(y0 + kTileHeight, p.out_height) - 1;
+  const Taps top = taps_for(p, y0, p.height, p.out_height);
+  const Taps bottom = taps_for(p, y_last, p.height, p.out_height);
+  const int first_row = top.first;
+  const int rows = min(bottom.first + bottom.count - first_row, p.tile_rows);
+  const std::size_t tile_plane = static_cast<std::size_t>(p.tile_rows) * kTileWidth;
+  const int thread = static_cast<int>(threadIdx.y) * kTileWidth + static_cast<int>(threadIdx.x);
+
+  // 1. Les lignes first_row… de la source (bords répétés), filtrées vers les colonnes x0… de la tuile.
+#pragma unroll 1
+  for (int k = thread; k < rows * kTileWidth; k += kTileWidth * kTileThreadsY) {
+    const int r = k / kTileWidth;
+    const int cx = k - r * kTileWidth;
+    const int x = x0 + cx;
+    if (x >= p.out_width) continue;
+    const int y = clamp_index(first_row + r, p.height);
+    const Taps t = taps_for(p, x, p.width, p.out_width);
+    float3 line = make_float3(0.0F, 0.0F, 0.0F);
+    float total = 0.0F;
+#pragma unroll 1
+    for (int i = 0; i < t.count; ++i) {
+      const float w = tap_weight(p, t, i);
+      total += w;
+      if (w == 0.0F) continue;
+      const float3 c = rgb_at(p, clamp_index(t.first + i, p.width), y);
+      line.x += c.x * w;
+      line.y += c.y * w;
+      line.z += c.z * w;
+    }
+    const float norm = 1.0F / total;
+    tile[k] = line.x * norm;
+    tile[tile_plane + k] = line.y * norm;
+    tile[2 * tile_plane + k] = line.z * norm;
+  }
+  __syncthreads();
+
+  // 2. Chaque fil : la colonne x0 + threadIdx.x, aux lignes de sortie y0 + threadIdx.y et + 8.
+  const int x = x0 + static_cast<int>(threadIdx.x);
+  if (x >= p.out_width) return;
+#pragma unroll 1
+  for (int y = y0 + static_cast<int>(threadIdx.y); y <= y_last; y += kTileThreadsY) {
+    const Taps t = taps_for(p, y, p.height, p.out_height);
+    float3 sum = make_float3(0.0F, 0.0F, 0.0F);
+    float total = 0.0F;
+#pragma unroll 1
+    for (int j = 0; j < t.count; ++j) {
+      const float w = tap_weight(p, t, j);
+      if (w == 0.0F) continue;
+      total += w;
+      const int r = t.first + j - first_row;
+      if (r < 0 || r >= rows) continue;  // jamais : la tuile couvre les prises de ses lignes
+      const std::size_t at = static_cast<std::size_t>(r) * kTileWidth + threadIdx.x;
+      sum.x += tile[at] * w;
+      sum.y += tile[tile_plane + at] * w;
+      sum.z += tile[2 * tile_plane + at] * w;
+    }
+    const float norm = 1.0F / total;
+    store_rgb(p, x, y, make_float3(sum.x * norm, sum.y * norm, sum.z * norm));
+  }
+}
+
 // À la taille de l'image : la conversion seule, le cas courant (registres de ce seul chemin).
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest(IngestParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
@@ -239,11 +313,28 @@ dim3 grid_for(int width, int height) {
               static_cast<unsigned>((height + kBlock - 1) / kBlock));
 }
 
+// Lignes de source qu'une tuile de kTileHeight lignes de sortie lit au plus : ses centres s'étendent sur
+// (kTileHeight − 1) × échelle, plus le rayon étiré de part et d'autre, plus les arrondis (ceil, floor) et
+// une marge pour les écarts d'un ulp entre l'hôte et l'appareil.
+int tile_rows_for(const IngestParams& p) {
+  const double scale = static_cast<double>(p.height) / static_cast<double>(p.out_height);
+  const double radius =
+      p.reduce_kind == kReduceTriangle ? 1.0 : (p.reduce_kind == kReduceSpline36 ? 3.0 : 2.0);
+  return static_cast<int>((kTileHeight - 1) * scale + 2.0 * radius * scale) + 4;
+}
+
+// La passe tuilée tient-elle dans kMaxTileBytes de mémoire partagée ? Sinon, les deux passes.
+constexpr std::size_t kMaxTileBytes = 40 * 1024;
+std::size_t tile_bytes(const IngestParams& p) {
+  return std::size_t{3} * static_cast<std::size_t>(tile_rows_for(p)) * kTileWidth * sizeof(float);
+}
+
 }  // namespace
 
 std::size_t ingest_rows_bytes(const IngestParams& params) {
   const bool same = params.out_width == params.width && params.out_height == params.height;
   if (same || params.reduce_kind == kReduceArea) return 0;
+  if (tile_bytes(params) <= kMaxTileBytes) return 0;  // passe tuilée : pas de tampon (étape 5.3)
   return std::size_t{3} * static_cast<std::size_t>(params.out_width) *
          static_cast<std::size_t>(params.height) * sizeof(float);
 }
@@ -259,6 +350,15 @@ cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream) {
     ingest_area<<<out, block, 0, stream>>>(params);
     return cudaGetLastError();
   }
+  if (tile_bytes(params) <= kMaxTileBytes) {
+    IngestParams tiled = params;
+    tiled.tile_rows = tile_rows_for(params);
+    const dim3 tiles(static_cast<unsigned>((params.out_width + kTileWidth - 1) / kTileWidth),
+                     static_cast<unsigned>((params.out_height + kTileHeight - 1) / kTileHeight));
+    ingest_tiled<<<tiles, dim3(kTileWidth, kTileThreadsY), tile_bytes(params), stream>>>(tiled);
+    return cudaGetLastError();
+  }
+  // Au-delà (réduction de plus de ~4 fois en Spline36) : deux passes par le tampon rows.
   if (params.rows == nullptr) return cudaErrorInvalidValue;
   ingest_rows<<<grid_for(params.out_width, params.height), block, 0, stream>>>(params);
   if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;

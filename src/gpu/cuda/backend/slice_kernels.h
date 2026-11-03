@@ -57,7 +57,10 @@ struct IngestParams {
   // Filtres étirés (triangle, cubique, Spline36) : deux passes séparables, la première convertit et
   // filtre les lignes dans rows (3 × height × out_width, FP32, ingest_rows_bytes octets), la
   // seconde filtre les colonnes. Les prises par pixel passent de nx × ny à nx + ny.
+  // Depuis l'étape 5.3, une passe tuilée (ingest_tiled) fait les deux en mémoire partagée quand la
+  // tuile tient dans 40 Ko ; rows ne sert plus qu'au-delà (réduction de plus de ~4 fois).
   float* rows = nullptr;
+  int tile_rows = 0;  // posé par launch_ingest pour la passe tuilée (étape 5.3)
 };
 
 // Octets de IngestParams::rows pour ces paramètres ; 0 sans filtre séparable (même taille, Area).

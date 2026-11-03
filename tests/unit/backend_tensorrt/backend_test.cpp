@@ -312,10 +312,11 @@ TEST_CASE("Backend TensorRT : réductions triangle et cubiques fusionnées, cont
   REQUIRE(small);
   REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*full)->tensor()));
   const auto base = download((*full)->tensor());
-  const std::array<gpu::Reduction, 4> filters{{
+  const std::array<gpu::Reduction, 5> filters{{
       {.kind = gpu::ReduceKind::Triangle},
       {.kind = gpu::ReduceKind::Spline36},
-      {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.5F},                // Catmull-Rom
+      {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.0F},  // Hermite (étape 5.3 : passe tuilée)
+      {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.5F},  // Catmull-Rom
       {.kind = gpu::ReduceKind::Cubic, .b = 1.0F / 3.0F, .c = 1.0F / 3.0F},  // Mitchell
   }};
   for (const gpu::Reduction& filter : filters) {
@@ -376,13 +377,14 @@ TEST_CASE("Backend TensorRT : coût des réductions 1080p vers 720p", "[.bench][
     const char* name;
     gpu::Reduction reduce;
   };
-  const std::array<Named, 6> filters{{
+  const std::array<Named, 7> filters{{
       {"Area", {}},
       {"Bilinear (triangle)", {.kind = gpu::ReduceKind::Triangle}},
       {"Spline36", {.kind = gpu::ReduceKind::Spline36}},
       {"Bicubic (B=1, C=0)", {.kind = gpu::ReduceKind::Cubic, .b = 1.0F, .c = 0.0F}},
       {"Mitchell", {.kind = gpu::ReduceKind::Cubic, .b = 1.0F / 3.0F, .c = 1.0F / 3.0F}},
       {"Catmull-Rom", {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.5F}},
+      {"Hermite", {.kind = gpu::ReduceKind::Cubic, .b = 0.0F, .c = 0.0F}},
   }};
   for (const Named& filter : filters) {
     const gpu::IngestSpec spec{.reduce = filter.reduce};
