@@ -68,6 +68,16 @@ SharedActivations::~SharedActivations() {
   if (data_ != nullptr) cudaFree(data_);
 }
 
+void* SharedActivations::allocate(std::size_t bytes) {
+  if (alloc_) return alloc_(bytes);
+  void* memory = nullptr;
+  if (cudaMalloc(&memory, bytes) != cudaSuccess) {
+    static_cast<void>(clear_error());
+    return nullptr;
+  }
+  return memory;
+}
+
 std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
   if (bytes <= bytes_) return {};
   const auto refused = [bytes] {
@@ -76,9 +86,8 @@ std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
   };
   // La nouvelle zone d'abord, l'ancienne intacte : un refus ne laisse pas aux moteurs déjà posés
   // un pointeur libéré.
-  void* fresh = nullptr;
-  if (cudaMalloc(&fresh, static_cast<std::size_t>(bytes)) != cudaSuccess) {
-    static_cast<void>(cudaGetLastError());
+  void* fresh = allocate(static_cast<std::size_t>(bytes));
+  if (fresh == nullptr) {
     if (data_ == nullptr) return refused();
     // Pas de place pour les deux zones à la fois : l'ancienne part avant le nouvel essai. Les
     // moteurs la reposent (generation change) ; sans zone ils échoueront à l'exécution, sans
@@ -88,14 +97,17 @@ std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
     data_ = nullptr;
     bytes_ = 0;
     ++generation_;
-    if (cudaMalloc(&fresh, static_cast<std::size_t>(bytes)) != cudaSuccess) {
-      static_cast<void>(cudaGetLastError());
-      return refused();
-    }
+    fresh = allocate(static_cast<std::size_t>(bytes));
+    if (fresh == nullptr) return refused();
   } else if (data_ != nullptr) {
-    // Les moteurs déjà posés sur l'ancienne zone peuvent encore y travailler.
-    cudaDeviceSynchronize();
-    cudaFree(data_);
+    // Les moteurs déjà posés sur l'ancienne zone peuvent encore y travailler : rendue derrière toutes les
+    // voies quand le backend s'en charge, sinon après synchronisation de l'appareil.
+    if (release_) {
+      release_(data_);
+    } else {
+      cudaDeviceSynchronize();
+      cudaFree(data_);
+    }
   }
   data_ = fresh;
   bytes_ = bytes;

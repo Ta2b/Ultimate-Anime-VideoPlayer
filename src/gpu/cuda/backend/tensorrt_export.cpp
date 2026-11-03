@@ -46,29 +46,47 @@ void signal_done(void* opaque) {
   delete signal;  // NOLINT(cppcoreguidelines-owning-memory) : alloué par write_yuv pour ce rappel
 }
 
-// Une table de poids copiée sur l'appareil : début de chaque sortie et poids, à la suite.
-std::expected<void, Refusal> upload(const kernels::ref::Weights& table, int*& start, float*& weights) {
+// Une table de poids copiée sur l'appareil : début de chaque sortie et poids, à la suite. Sur la file de la
+// voie, dans le pool (étape 11.4) : ni cudaMalloc ni cudaMemcpy, qui attendent l'appareil entier ; la file
+// est attendue avant de rendre la main, les tables de l'hôte meurent au retour.
+std::expected<void, Refusal> upload(const kernels::ref::Weights& table, int*& start, float*& weights,
+                                    cudaStream_t stream) {
   const std::size_t starts = table.start.size() * sizeof(int);
   const std::size_t taps = table.w.size() * sizeof(float);
-  if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&start), starts), "cudaMalloc"); !ok)
-    return ok;
-  if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&weights), taps), "cudaMalloc"); !ok)
+  if (auto ok =
+          cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&start), starts, stream), "cudaMallocAsync");
+      !ok)
     return ok;
   if (auto ok =
-          cuda_check(cudaMemcpy(start, table.start.data(), starts, cudaMemcpyHostToDevice), "cudaMemcpy");
+          cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&weights), taps, stream), "cudaMallocAsync");
+      !ok)
+    return ok;
+  if (auto ok = cuda_check(cudaMemcpyAsync(start, table.start.data(), starts, cudaMemcpyHostToDevice, stream),
+                           "cudaMemcpyAsync");
       !ok) {
     return ok;
   }
-  return cuda_check(cudaMemcpy(weights, table.w.data(), taps, cudaMemcpyHostToDevice), "cudaMemcpy");
+  if (auto ok = cuda_check(cudaMemcpyAsync(weights, table.w.data(), taps, cudaMemcpyHostToDevice, stream),
+                           "cudaMemcpyAsync");
+      !ok) {
+    return ok;
+  }
+  return cuda_check(cudaStreamSynchronize(stream), "cudaStreamSynchronize");
 }
 
 }  // namespace
 
-void TensorRtBackend::release_yuv_tables() {
-  // cudaFree attend la fin de tout ce que l'appareil exécute : les écritures qui lisent ces tables.
+void TensorRtBackend::release_yuv_tables(bool behind_lanes) {
+  // Les écritures qui lisent ces tables peuvent être en vol : en lecture, rendues derrière toutes les voies
+  // (free_after_lanes) ; à la destruction, cudaFree attend la fin de tout ce que l'appareil exécute.
   for (void* p : {static_cast<void*>(yuv_.x_start), static_cast<void*>(yuv_.x_weights),
                   static_cast<void*>(yuv_.y_start), static_cast<void*>(yuv_.y_weights), yuv_.rows}) {
-    if (p != nullptr) cudaFree(p);
+    if (p == nullptr) continue;
+    if (behind_lanes) {
+      free_after_lanes(p);
+    } else {
+      cudaFree(p);
+    }
   }
   yuv_ = YuvTables{};
 }
@@ -76,7 +94,7 @@ void TensorRtBackend::release_yuv_tables() {
 std::expected<void, Refusal> TensorRtBackend::yuv_tables(int width, int height, kernels::Siting siting) {
   if (yuv_.rows != nullptr && yuv_.width == width && yuv_.height == height && yuv_.siting == siting)
     return {};
-  release_yuv_tables();
+  release_yuv_tables(true);
   const kernels::ChromaShift shift = kernels::chroma_shift_down(siting);
   const auto wx = kernels::ref::compute_weights(width, width / 2, shift.x, kernels::kChainChromaFilter);
   const auto wy = kernels::ref::compute_weights(height, height / 2, shift.y, kernels::kChainChromaFilter);
@@ -88,9 +106,11 @@ std::expected<void, Refusal> TensorRtBackend::yuv_tables(int width, int height, 
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("write_yuv : {} et {} prises, {} au plus", wx->taps, wy->taps, kMaxYuvTaps));
   }
-  if (auto ok = upload(*wx, yuv_.x_start, yuv_.x_weights); !ok) return ok;
-  if (auto ok = upload(*wy, yuv_.y_start, yuv_.y_weights); !ok) return ok;
-  if (auto ok = cuda_check(cudaMalloc(&yuv_.rows, yuv_rows_bytes(width, height)), "cudaMalloc"); !ok)
+  if (auto ok = upload(*wx, yuv_.x_start, yuv_.x_weights, stream_); !ok) return ok;
+  if (auto ok = upload(*wy, yuv_.y_start, yuv_.y_weights, stream_); !ok) return ok;
+  if (auto ok =
+          cuda_check(cudaMallocAsync(&yuv_.rows, yuv_rows_bytes(width, height), stream_), "cudaMallocAsync");
+      !ok)
     return ok;
   yuv_.width = width;
   yuv_.height = height;
