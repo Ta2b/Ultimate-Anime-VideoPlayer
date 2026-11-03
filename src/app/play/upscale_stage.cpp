@@ -424,14 +424,19 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     ++interpolated_;
     if (setup_.live) setup_.live->count_interpolated();
   }
-  if (auto_measured) setup_.live->auto_expect(frame.id.value, static_cast<int>(outputs_), lead_us);
-  if (free_mode && facts.same_epoch) {
-    setup_.live->auto_expect(frame.id.value, static_cast<int>(outputs_), lead_us);
-    setup_.live->free_produced(static_cast<int>(outputs_), host_now_us());
-  }
   // Garder les poses : la paire précédente compte si elle précède vraiment celle-ci ; une paire
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
+  // Après un dessin tenu, b paraît à 1/2 sans passe ni warp (poses_copy) : une seule image écrite.
+  copy_pair_ = runs && setup_.skip_held && by_motion() && setup_.live && setup_.live->keep_poses() &&
+               before_ == PairMotion::Still && intermediates_ > 0;
+  copy_written_ = false;
+  const int written = copy_pair_ ? 1 : static_cast<int>(outputs_);
+  if (auto_measured) setup_.live->auto_expect(frame.id.value, written, lead_us);
+  if (free_mode && facts.same_epoch) {
+    setup_.live->auto_expect(frame.id.value, written, lead_us);
+    setup_.live->free_produced(written, host_now_us());
+  }
   const bool held = facts.scores && !kernels::is_scene_cut(facts.scores->scene_score) &&
                     kernels::is_held(facts.scores->worst_block);
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
@@ -443,7 +448,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   spans_reused_in_row_ = reuse_span_ ? spans_reused_in_row_ + 1 : 0;
   if (reuse_span_) ++spans_reused_;
   if (intermediates_ > 0) mid_ ^= 1U;
-  if (intermediates_ > 0 && (setup_.rife != nullptr || by_motion())) {
+  if (intermediates_ > 0 && !copy_pair_ && (setup_.rife != nullptr || by_motion())) {
     if (auto ok = prepare_rife_input(); !ok) return std::unexpected(std::move(ok.error()));
   }
   if (drba()) {
@@ -506,6 +511,14 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   return true;
 }
 
+RingStage::Fate UpscaleStage::fate(const DecodedFrame& /*frame*/, std::uint32_t output) {
+  if (!copy_pair_) return Fate::Write;
+  const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
+  if (poses_copy(true, true, instant.t) == PoseCopy::Before || copy_written_) return Fate::Same;
+  copy_written_ = true;  // le premier instant après 1/2 : b, à son pts ; les suivants sont déjà à l'écran
+  return Fate::Write;
+}
+
 std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFrame& frame,
                                                                 std::uint32_t output, std::uint32_t slot,
                                                                 std::uint64_t wait_value,
@@ -514,7 +527,8 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const gpu::Tensor& now = rgb_[current_]->tensor();
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   const bool last = output + 1 >= outputs_;
-  if (instant.t >= 1.0F) {  // l'image elle-même, toujours la dernière de la paire
+  const bool b_early = copy_pair_ && instant.t < 1.0F;  // b écrite à un instant intermédiaire
+  if (instant.t >= 1.0F || b_early) {                   // l'image elle-même
     use_lane(gpu::Lane::Upscale);
     std::expected<void, Refusal> ok;
     if (warps_spanned()) {
@@ -527,7 +541,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     if (!ok) return std::unexpected(std::move(ok.error()));
     output_has_source_ = setup_.engine != nullptr;
     previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
-    return Output{.pts_us = frame.pts_us,
+    return Output{.pts_us = b_early ? instant.pts_us : frame.pts_us,
                   .left = frame.id,
                   .right = frame.id,
                   .uninterpolated = uninterpolated_,

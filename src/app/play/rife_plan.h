@@ -34,4 +34,13 @@ struct PairFacts {
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.
 bool rife_runs(const PairFacts& facts);
 
+// Dessin tenu avant la paire (la paire précédente n'a pas bougé) : RIFE avec poses n'a rien à calculer
+// (mouvement précédent nul, kernels/spec/poses.h : a tient jusqu'à 1/2, puis b paraît). Avant 1/2 :
+// l'instant est a, déjà à l'écran (Before) ; à 1/2 et après : b (After).
+enum class PoseCopy : std::uint8_t { None, Before, After };
+constexpr PoseCopy poses_copy(bool keep_poses, bool before_still, float t) {
+  if (!keep_poses || !before_still) return PoseCopy::None;
+  return t < 0.5F ? PoseCopy::Before : PoseCopy::After;
+}
+
 }  // namespace ajp::app::play

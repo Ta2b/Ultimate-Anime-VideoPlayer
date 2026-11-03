@@ -56,7 +56,9 @@ class YuvSlots {
 struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
   gpu::Engine* engine = nullptr;    // SPAN aux formes de travail ; nullptr : sans agrandissement
-  gpu::Engine* rife = nullptr;      // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
+  // Lecture (horloge présente) : un instant identique à l'image affichée n'est ni calculé ni écrit.
+  bool skip_held = false;
+  gpu::Engine* rife = nullptr;  // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
   // Variante mouvement de RIFE (motion_model.h) : flot et masque, warp à la sortie. Remplace rife ;
   // une passe au milieu de la paire la sert toute quand le mouvement est faible.
   gpu::Engine* rife_motion = nullptr;
@@ -121,6 +123,7 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> allocate();
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
+  Fate fate(const DecodedFrame& frame, std::uint32_t output) override;
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output, std::uint32_t slot,
                                          std::uint64_t wait_value, std::uint64_t signal_value) override;
   // Où va une image intermédiaire : un tenseur, ou directement le slot du ring (ring_direct_).
@@ -266,6 +269,8 @@ class UpscaleStage final : public RingStage {
   // tampon de spanned_).
   static constexpr int kMaxSpanReuse = 2;
   bool reuse_span_ = false;
+  bool copy_pair_ = false;          // RIFE avec poses après un dessin tenu : pas de passe, b seule est écrite
+  bool copy_written_ = false;       // b est écrite dans cette paire
   bool output_has_source_ = false;  // output_ tient SPAN de l'image précédente
   int spans_reused_in_row_ = 0;
   std::uint64_t spans_reused_ = 0;
