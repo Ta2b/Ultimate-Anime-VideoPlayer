@@ -20,6 +20,7 @@
 
 #include "backend_fixture.h"
 #include "backend_frames.h"
+#include "gpu/cuda/backend/deband_kernels.h"
 #include "kernels/ref/color.h"
 #include "kernels/ref/half.h"
 #include "kernels/ref/warp.h"
@@ -147,6 +148,25 @@ TEST_CASE("Backend TensorRT : ingestion avec débandage fusionné, tampons agran
     }
     CHECK(worst <= 3.0 / 1000.0 + 1e-3);
     CHECK(changed > 0.0);
+    // Étape 5.4 : débandé dans l'ingestion même, le résultat est celui du noyau de débandage séparé sur
+    // l'image ingérée, à 1e-3 près (attendu : au bit près).
+    auto apart_out = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+    REQUIRE(apart_out);
+    REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+    const auto pointer = [](const gpu::Tensor& t) {
+      return reinterpret_cast<void*>(t.handle + t.offset);  // NOLINT(performance-no-int-to-ptr)
+    };
+    REQUIRE(gpu::cuda::launch_deband({.in = pointer((*plain)->tensor()),
+                                      .out = pointer((*apart_out)->tensor()),
+                                      .width = w,
+                                      .height = h},
+                                     nullptr) == cudaSuccess);
+    REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+    const auto separate = download((*apart_out)->tensor());
+    double apart = 0.0;
+    for (std::size_t i = 0; i < separate.size(); ++i)
+      apart = std::max(apart, std::fabs(static_cast<double>(separate[i]) - static_cast<double>(got[i])));
+    CHECK(apart <= 1e-3);
   }
 }
 

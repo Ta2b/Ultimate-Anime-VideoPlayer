@@ -171,10 +171,14 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     ingest_rows_size_ = rows;
   }
   params.rows = ingest_rows_;
-  // Débandage fusionné : l'ingestion écrit dans le tampon de travail, le débandage dans rgb.
+  // Débandage : à même taille, dans l'ingestion elle-même (étape 5.4) ; réduite, l'ingestion écrit dans le
+  // tampon de travail et le débandage dans rgb.
+  const bool same_size = out_width == frame.width && out_height == frame.height;
+  params.deband = spec.deband && same_size;
+  const bool deband_pass = spec.deband && !same_size;
   const std::size_t deband_bytes =
       std::size_t{3} * static_cast<std::size_t>(out_width) * static_cast<std::size_t>(out_height) * 2U;
-  if (spec.deband) {
+  if (deband_pass) {
     if (auto ok = reserve_deband(deband_bytes); !ok) return ok;
     params.rgb = deband_out_;
   }
@@ -182,7 +186,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
                                              reinterpret_cast<std::uintptr_t>(&deband_out_)};
   const std::array<std::uintptr_t, 1> reads{reinterpret_cast<std::uintptr_t>(&deband_out_)};
   if (auto ok =
-          order(std::span(reads).first(spec.deband ? 1 : 0), std::span(writes).first(spec.deband ? 3 : 2));
+          order(std::span(reads).first(deband_pass ? 1 : 0), std::span(writes).first(deband_pass ? 3 : 2));
       !ok)
     return ok;
   if (host) {
@@ -204,7 +208,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   GpuTiming& timing = stage("ingestion");
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_ingest(params, stream_), "ingest<<<>>>"); !ok) return ok;
-  if (spec.deband) {
+  if (deband_pass) {
     const DebandParams deband{
         .in = deband_out_, .out = address(rgb), .width = out_width, .height = out_height};
     if (auto ok = cuda_check(launch_deband(deband, stream_), "deband<<<>>>"); !ok) return ok;
