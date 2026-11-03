@@ -132,10 +132,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     if (wanted.rife_auto) controls.notify(i18n::tr("Interpolation: Auto"), now_us);
   }
   if (wanted.auto_free != r.auto_free) {
-    log_channel("app")->info("mode d'Auto en direct : {}",
-                             wanted.auto_free ? "rapide" : "stable");
-    controls.notify(wanted.auto_free ? i18n::tr("Auto: Fast") : i18n::tr("Auto: Stable"),
-                    now_us);
+    log_channel("app")->info("mode d'Auto en direct : {}", wanted.auto_free ? "rapide" : "stable");
+    controls.notify(wanted.auto_free ? i18n::tr("Auto: Fast") : i18n::tr("Auto: Stable"), now_us);
   }
   if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||
                          wanted.hdr_native != r.hdr_native)) {
