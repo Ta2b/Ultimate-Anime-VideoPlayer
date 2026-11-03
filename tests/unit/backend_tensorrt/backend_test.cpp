@@ -21,11 +21,13 @@
 #include "backend_fixture.h"
 #include "backend_frames.h"
 #include "gpu/cuda/backend/deband_kernels.h"
+#include "gpu/cuda/backend/slice_kernels.h"
 #include "kernels/ref/color.h"
 #include "kernels/ref/half.h"
 #include "kernels/ref/warp.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
+#include "kernels/spec/ring_pack.h"
 #include "prepare/sha256.h"
 
 namespace {
@@ -168,6 +170,63 @@ TEST_CASE("Backend TensorRT : ingestion avec débandage fusionné, tampons agran
       apart = std::max(apart, std::fabs(static_cast<double>(separate[i]) - static_cast<double>(got[i])));
     CHECK(apart <= 1e-3);
   }
+}
+
+TEST_CASE("Backend TensorRT : l'écriture de l'anneau en RGB10A2 suit kernels/spec/ring_pack.h au bit près",
+          "[backend_tensorrt][cuda][ring]") {
+  // Étape 5.5b : store_ring, seule fonction d'écriture de l'anneau, sur une surface de 32 bits par pixel.
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 1031;  // tous les codes 10 bits, et quelques valeurs hors de [0, 1]
+  constexpr int h = 3;
+  const std::size_t plane = static_cast<std::size_t>(w) * h;
+  std::vector<std::uint16_t> rgb(3 * plane);
+  std::vector<float> values(3 * plane);
+  for (std::size_t c = 0; c < 3; ++c) {
+    for (std::size_t i = 0; i < plane; ++i) {
+      const int x = static_cast<int>(i % w);
+      const float v = x < 1024 ? static_cast<float>((x + 17 * static_cast<int>(c)) % 1024) / 1023.0F
+                               : (x % 2 == 0 ? -0.25F : 1.5F);
+      rgb[c * plane + i] = kernels::ref::float_to_half(v);
+      values[c * plane + i] = kernels::ref::half_to_float(rgb[c * plane + i]);
+    }
+  }
+  void* device = nullptr;
+  REQUIRE(cudaMalloc(&device, rgb.size() * 2) == cudaSuccess);
+  REQUIRE(cudaMemcpy(device, rgb.data(), rgb.size() * 2, cudaMemcpyHostToDevice) == cudaSuccess);
+  cudaArray_t array = nullptr;
+  const cudaChannelFormatDesc format = cudaCreateChannelDesc<unsigned int>();
+  REQUIRE(cudaMallocArray(&array, &format, w, h, cudaArraySurfaceLoadStore) == cudaSuccess);
+  cudaResourceDesc resource{};
+  resource.resType = cudaResourceTypeArray;
+  resource.res.array.array = array;
+  cudaSurfaceObject_t surface = 0;
+  REQUIRE(cudaCreateSurfaceObject(&surface, &resource) == cudaSuccess);
+  for (const bool dither : {false, true}) {
+    CAPTURE(dither);
+    const gpu::cuda::WriteParams params{
+        .rgb = device,
+        .width = w,
+        .height = h,
+        .surface = {.object = surface, .packing = gpu::cuda::RingPacking::Rgb10a2, .dither = dither}};
+    REQUIRE(gpu::cuda::launch_write_rgba16(params, nullptr) == cudaSuccess);
+    std::vector<std::uint32_t> got(plane);
+    REQUIRE(cudaMemcpy2DFromArray(got.data(), w * 4, array, 0, 0, w * 4, h, cudaMemcpyDeviceToHost) ==
+            cudaSuccess);
+    std::size_t differ = 0;
+    for (std::size_t i = 0; i < plane; ++i) {
+      const auto x = static_cast<std::uint32_t>(i % w), y = static_cast<std::uint32_t>(i / w);
+      const auto code = [&](float v) {
+        return dither ? kernels::unorm10_dithered(v, kernels::ring_tpdf(x, y)) : kernels::unorm10(v);
+      };
+      const std::uint32_t want =
+          kernels::pack_rgb10a2(code(values[i]), code(values[plane + i]), code(values[2 * plane + i]));
+      if (got[i] != want) ++differ;
+    }
+    CHECK(differ == 0);
+  }
+  cudaDestroySurfaceObject(surface);
+  cudaFreeArray(array);
+  cudaFree(device);
 }
 
 TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme celles de NVDEC",

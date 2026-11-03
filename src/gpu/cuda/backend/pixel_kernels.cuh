@@ -5,8 +5,11 @@
 // Réductions d'un bloc par mélange de registres, sans arbre en mémoire partagée.
 #pragma once
 
+#include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+
+#include "gpu/cuda/backend/ring_surface.h"
 
 namespace ajp::gpu::cuda {
 
@@ -40,12 +43,48 @@ __device__ inline unsigned short unorm16(float v) {
   return static_cast<unsigned short>(v * 65535.0F + 0.5F);
 }
 
-// Un pixel RGB FP16 dans un slot RGBA16 UNORM du ring (ref::to_rgba16), alpha opaque : le code que
-// write_rgba16 écrirait du tenseur FP16, au bit près.
-__device__ inline void store_rgba16(cudaSurfaceObject_t surface, int x, int y, __half r, __half g, __half b) {
+// kernels/spec/ring_pack.h, aux mêmes arrondis (sans contraction en FMA) : unorm10, ring_hash, ring_tpdf,
+// unorm10_dithered.
+__device__ inline float clamp_unit(float v) {
+  return v != v ? 0.0F : fminf(fmaxf(v, 0.0F), 1.0F);  // NaN donne 0
+}
+__device__ inline std::uint32_t unorm10(float v) {
+  return static_cast<std::uint32_t>(__fadd_rn(__fmul_rn(clamp_unit(v), 1023.0F), 0.5F));
+}
+__device__ inline std::uint32_t ring_hash(std::uint32_t x, std::uint32_t y, std::uint32_t salt) {
+  std::uint32_t v = x * 0x9E3779B1U ^ y * 0x85EBCA77U ^ salt * 0xC2B2AE3DU;
+  v = v * 747796405U + 2891336453U;
+  v = ((v >> ((v >> 28U) + 4U)) ^ v) * 277803737U;
+  return (v >> 22U) ^ v;
+}
+__device__ inline float ring_uniform(std::uint32_t x, std::uint32_t y, std::uint32_t salt) {
+  return __fmul_rn(static_cast<float>(ring_hash(x, y, salt) >> 8U), 1.0F / 16777216.0F);
+}
+__device__ inline std::uint32_t unorm10_dithered(float v, int x, int y) {
+  const auto ux = static_cast<std::uint32_t>(x);
+  const auto uy = static_cast<std::uint32_t>(y);
+  const float noise = __fadd_rn(__fadd_rn(ring_uniform(ux, uy, 5U), ring_uniform(ux, uy, 6U)), -1.0F);
+  const float biased = __fadd_rn(__fadd_rn(__fmul_rn(clamp_unit(v), 1023.0F), 0.5F), noise);
+  if (!(biased > 0.0F)) return 0U;
+  return biased >= 1023.0F ? 1023U : static_cast<std::uint32_t>(biased);
+}
+
+// Un pixel RGB FP16 dans un emplacement de l'anneau, alpha opaque (étape 5.5b, seule fonction d'écriture de
+// l'anneau). RGBA16 : le code que write_rgba16 écrirait du tenseur FP16 (ref::to_rgba16), au bit près ;
+// RGB10A2 : r | g << 10 | b << 20 | 3 << 30 (kernels/spec/ring_pack.h), tramé si surface.dither.
+__device__ inline void store_ring(const RingSurface& surface, int x, int y, __half r, __half g, __half b) {
+  if (surface.packing == RingPacking::Rgb10a2) {
+    const float fr = __half2float(r), fg = __half2float(g), fb = __half2float(b);
+    const std::uint32_t pr = surface.dither ? unorm10_dithered(fr, x, y) : unorm10(fr);
+    const std::uint32_t pg = surface.dither ? unorm10_dithered(fg, x, y) : unorm10(fg);
+    const std::uint32_t pb = surface.dither ? unorm10_dithered(fb, x, y) : unorm10(fb);
+    const std::uint32_t pixel = pr | (pg << 10U) | (pb << 20U) | (3U << 30U);
+    surf2Dwrite(pixel, surface.object, x * static_cast<int>(sizeof(std::uint32_t)), y);
+    return;
+  }
   const ushort4 pixel =
       make_ushort4(unorm16(__half2float(r)), unorm16(__half2float(g)), unorm16(__half2float(b)), 65535);
-  surf2Dwrite(pixel, surface, x * static_cast<int>(sizeof(ushort4)), y);
+  surf2Dwrite(pixel, surface.object, x * static_cast<int>(sizeof(ushort4)), y);
 }
 
 struct Sum {

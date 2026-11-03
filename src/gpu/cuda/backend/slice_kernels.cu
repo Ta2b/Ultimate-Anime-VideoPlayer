@@ -329,7 +329,7 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) write_rgba16
   const std::size_t i =
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
   const auto* in = static_cast<const __half*>(p.rgb);
-  store_rgba16(p.surface, x, y, in[i], in[plane + i], in[2 * plane + i]);
+  store_ring(p.surface, x, y, in[i], in[plane + i], in[2 * plane + i]);
 }
 
 dim3 grid_for(int width, int height) {

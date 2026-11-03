@@ -6,7 +6,7 @@
 //            de concaténation : pas de ligne ld16 en éléments)
 //   Mode 1 : fin de bloc SPAN (saut x + Tanh(conv 1x1 de c3) + produit), mêmes sorties
 //   Mode 2 : to_pixel (étape 3.4a) : biais puis DepthToSpace(4, CRD) fondu, écriture NCHW FP16 de la sortie
-//            et/ou RGBA16 UNORM sur la surface d'un emplacement de l'anneau (store_rgba16)
+//            et/ou sur la surface d'un emplacement de l'anneau (store_ring)
 // Le warp porte les colonnes de sortie complètes (jusqu'à 64) : l'accumulateur m16n8 de deux tuiles voisines
 // est l'opérande A d'un mma m16n8k16 f16 pour la conv 1x1.
 #include <cstdint>
@@ -20,6 +20,7 @@
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/numeric_types.h"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
+#include "gpu/cuda/backend/ring_surface.h"
 
 namespace ajp::gpu::cuda::span_fp8_kernels {
 
@@ -39,7 +40,7 @@ struct KP {
   int fh = 0, fw = 0;           // hauteur et largeur de la convolution (posées par Launcher::init)
   // Mode 2 : out16 est la sortie NCHW 3×4fh×4fw (ou nullptr) ; surface un emplacement RGBA16 UNORM de
   // surf_w×surf_h pixels au plus (0 : pas d'anneau).
-  cudaSurfaceObject_t surface = 0;
+  RingSurface surface{};  // emplacement de l'anneau (ring_surface.h) ; object 0 : aucun
   int surf_w = 0, surf_h = 0;
 };
 
@@ -171,12 +172,12 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
             for (int c = 0; c < 3; ++c)
               *reinterpret_cast<__half2*>(tp.out16 + c * plane + long(oy) * ow + ox) = rgb[c];
           }
-          if (tp.surface != 0 && oy < tp.surf_h) {
+          if (tp.surface.object != 0 && oy < tp.surf_h) {
             if (ox < tp.surf_w)
-              store_rgba16(tp.surface, ox, oy, __low2half(rgb[0]), __low2half(rgb[1]), __low2half(rgb[2]));
+              store_ring(tp.surface, ox, oy, __low2half(rgb[0]), __low2half(rgb[1]), __low2half(rgb[2]));
             if (ox + 1 < tp.surf_w)
-              store_rgba16(tp.surface, ox + 1, oy, __high2half(rgb[0]), __high2half(rgb[1]),
-                           __high2half(rgb[2]));
+              store_ring(tp.surface, ox + 1, oy, __high2half(rgb[0]), __high2half(rgb[1]),
+                         __high2half(rgb[2]));
           }
         }
       }

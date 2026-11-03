@@ -14,6 +14,8 @@
 #include <cstdint>
 #include <cuda_runtime_api.h>
 
+#include "gpu/cuda/backend/ring_surface.h"
+
 namespace ajp::gpu::cuda {
 
 // Filtre de la réduction fusionnée (IngestParams::reduce_kind).
@@ -75,7 +77,7 @@ struct WriteParams {
   const void* rgb = nullptr;  // 1 × 3 × height × width, FP16
   int width = 0;
   int height = 0;
-  cudaSurfaceObject_t surface = 0;  // RGBA16 UNORM
+  RingSurface surface{};  // emplacement de l'anneau (ring_surface.h) ; object 0 : aucun
 };
 
 cudaError_t launch_write_rgba16(const WriteParams& params, cudaStream_t stream);

@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <cuda_runtime_api.h>
 
+#include "gpu/cuda/backend/ring_surface.h"
+
 namespace ajp::gpu::cuda {
 
 struct SoftSplatParams {
@@ -75,7 +77,7 @@ struct GmfssComposeParams {
   float t = 0.5F;
   void* out = nullptr;  // 1 × 3 × height × width
   // Non nul : la sortie va dans ce slot RGBA16 UNORM du ring, comme WarpBlendParams::surface.
-  cudaSurfaceObject_t surface = 0;
+  RingSurface surface{};  // emplacement de l'anneau (ring_surface.h) ; object 0 : aucun
   // Objets texture des sources de travail et de la fusion (vues en largeur × plans · hauteur), ou
   // 0. Les trois présents, largeur paire et tenseurs pleine taille alignés sur 4 octets : lecture
   // par le filtre bilinéaire matériel, deux pixels par fil (half2) ; sinon, la lecture exacte.

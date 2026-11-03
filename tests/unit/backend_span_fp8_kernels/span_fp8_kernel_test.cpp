@@ -185,12 +185,13 @@ TEST_CASE("l'épilogue de to_pixel écrit l'anneau au bit près de write_rgba16"
 
   net->bind(workspace.data);
   REQUIRE(net->launch_body(nullptr, in.data, error));
-  REQUIRE(net->launch_tail(nullptr, out.data, SpanFp8Ring{fused.object, out_w, out_h}, error));
-  const WriteParams params{.rgb = out.data, .width = out_w, .height = out_h, .surface = reference.object};
+  REQUIRE(net->launch_tail(nullptr, out.data, SpanFp8Ring{{.object = fused.object}, out_w, out_h}, error));
+  const WriteParams params{
+      .rgb = out.data, .width = out_w, .height = out_h, .surface = {.object = reference.object}};
   REQUIRE(launch_write_rgba16(params, nullptr) == cudaSuccess);
   // Sans sortie FP16 : l'anneau seul, même image.
   REQUIRE(net->launch_body(nullptr, in.data, error));
-  REQUIRE(net->launch_tail(nullptr, nullptr, SpanFp8Ring{alone.object, out_w, out_h}, error));
+  REQUIRE(net->launch_tail(nullptr, nullptr, SpanFp8Ring{{.object = alone.object}, out_w, out_h}, error));
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
 
   const std::vector<ushort4> a = fused.read();
