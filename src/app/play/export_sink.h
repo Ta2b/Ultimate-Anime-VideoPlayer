@@ -12,12 +12,14 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -80,6 +82,10 @@ class ExportSink final : public YuvSlots {
   const std::vector<RingSlotDesc>& slots() const { return descs_; }
   // Thread gpu : l'image du slot et son signal.
   gpu::YuvTarget target(std::uint32_t slot, std::uint64_t done_value) const override;
+  // Les signaux, sur une page à eux : le backend les fait écrire par le GPU (étape 11.5).
+  std::span<std::byte> fence_block() const override {
+    return {reinterpret_cast<std::byte*>(fences_.get()), sizeof(Fences)};
+  }
 
   // Thread main. L'écriture de frame finie côté GPU.
   bool ready(const RingFrame& frame) const;
@@ -89,9 +95,11 @@ class ExportSink final : public YuvSlots {
   std::expected<AVFrame*, Refusal> take(std::uint32_t slot);
 
  private:
-  struct Fences {
+  static constexpr std::size_t kPage = 4096;
+  struct alignas(kPage) Fences {
     std::array<std::atomic<std::uint64_t>, kMaxRingSlots> done{};
   };
+  static_assert(sizeof(Fences) % kPage == 0);
   explicit ExportSink(ExportSinkSetup setup);
   std::expected<void, Refusal> check(const AVFrame& frame) const;
 

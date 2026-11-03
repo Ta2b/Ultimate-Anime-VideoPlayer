@@ -327,6 +327,14 @@ class KernelOps {
       std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "frame_stats : absent de ce backend"});
   }
+  // L'appareil répond-il encore (étape 11.5) ? Chaque file interrogée sans l'attendre ; DeviceLost quand le
+  // contexte est perdu. RingStage le demande quand une image attend un slot depuis plus de 200 ms.
+  virtual std::expected<void, Refusal> health() { return {}; }
+  // Les signaux YuvTarget::done logés dans block (alignée sur une page, en multiple de pages), écrits par le
+  // GPU lui-même au lieu d'un rappel hôte (étape 11.5). Faux : le backend garde le rappel. unmap_fences
+  // attend les écritures en vol et rend le bloc ; à appeler avant de le libérer.
+  virtual bool map_fences(std::span<std::byte> /*block*/) { return false; }
+  virtual void unmap_fences(std::span<std::byte> /*block*/) {}
   // Statistiques de luminance d'une image (0 à 1, pondération BT.709 des canaux) : moyenne, centiles et parts
   // de noir et de clair. La pré-analyse des plans les mesure (media/shot_cutter.h).
   struct SceneStats {

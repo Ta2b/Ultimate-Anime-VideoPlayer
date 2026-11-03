@@ -90,6 +90,11 @@ class RingStage : public VideoStage, public FrameSink {
   virtual Fate fate(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) { return Fate::Write; }
   // Appelée à la place de produce pour une sortie Same : la sous-classe tient ses comptes à jour.
   virtual void skip(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) {}
+  // Une image attend un slot depuis plus de kHealthAfterUs : l'appareil est-il encore là (étape 11.5) ? Un
+  // refus (DeviceLost) arrête la vidéo comme un refus de produce, au lieu d'attendre un SlotFree qui ne
+  // viendra pas. Par défaut : rien à vérifier.
+  static constexpr std::int64_t kHealthAfterUs = 200'000;
+  virtual std::expected<void, Refusal> health() { return {}; }
   // Écrit la sortie output (0 ≤ output < outputs(frame)) dans le slot : attendre wait_value côté
   // GPU, signaler signal_value (impaire).
   virtual std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output,
@@ -116,6 +121,7 @@ class RingStage : public VideoStage, public FrameSink {
   std::vector<bool> free_;
   std::uint32_t epoch_ = 0;
   bool failed_ = false;
+  std::int64_t slot_wait_since_us_ = 0;  // l'image en tête attend un slot depuis cet instant ; 0 : non
   std::jthread thread_;
 };
 

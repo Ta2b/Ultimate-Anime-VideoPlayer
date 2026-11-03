@@ -1,5 +1,7 @@
 #include "core/inbox.h"
 
+#include <chrono>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -100,4 +102,19 @@ TEST_CASE("Inbox : plusieurs producteurs, un consommateur, rien de perdu", "[Inb
   }
   consumer.join();
   for (int count : seen) CHECK(count == 1);
+}
+
+TEST_CASE("Inbox : wait_for rend la main au délai sans message, et le message sinon", "[Inbox]") {
+  TestInbox inbox({2, 1});
+  std::stop_source stop;
+  const auto start = std::chrono::steady_clock::now();
+  CHECK_FALSE(inbox.wait_for(stop.get_token(), std::chrono::milliseconds(20)).has_value());
+  CHECK(std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(20));
+  CHECK_FALSE(stop.stop_requested());
+  CHECK(inbox.try_push(Frame{7}));
+  auto message = inbox.wait_for(stop.get_token(), std::chrono::seconds(5));
+  REQUIRE(message.has_value());
+  CHECK(std::get<Frame>(*message).index == 7);
+  stop.request_stop();
+  CHECK_FALSE(inbox.wait_for(stop.get_token(), std::chrono::seconds(5)).has_value());
 }

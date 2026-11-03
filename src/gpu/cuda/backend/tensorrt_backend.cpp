@@ -257,6 +257,8 @@ TensorRtBackend::~TensorRtBackend() {
   }
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();
+  for (const MappedFences& block : mapped_fences_) cudaHostUnregister(block.host);  // pas rendus par l'étage
+  mapped_fences_.clear();
   runtime_.reset();
   for (Held& held : held_) {
     held.data.reset();

@@ -51,6 +51,9 @@ class YuvSlots {
  public:
   virtual ~YuvSlots() = default;
   virtual gpu::YuvTarget target(std::uint32_t slot, std::uint64_t done_value) const = 0;
+  // Le bloc qui loge les signaux done des cibles, aligné sur une page et en multiple de pages, pour que le
+  // backend y écrive depuis le GPU (KernelOps::map_fences) ; vide : rappels hôtes.
+  virtual std::span<std::byte> fence_block() const { return {}; }
 };
 
 struct UpscaleSetup {
@@ -122,6 +125,7 @@ class UpscaleStage final : public RingStage {
   UpscaleStage(VideoStageInit init, UpscaleSetup setup);
   std::expected<void, Refusal> allocate();
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
+  std::expected<void, Refusal> health() override { return setup_.backend->kernels()->health(); }
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
   Fate fate(const DecodedFrame& frame, std::uint32_t output) override;
   void skip(const DecodedFrame& frame, std::uint32_t output) override;
@@ -476,6 +480,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu
   std::uint64_t rife_runs_ = 0;
   std::uint64_t skipped_ = 0;     // images source sautées avant calcul (passed)
+  bool fences_mapped_ = false;    // les signaux de l'export écrits par le GPU (KernelOps::map_fences)
   std::uint64_t late_pairs_ = 0;  // paires dont des instants sont sautés pour rattraper l'horloge
   std::uint64_t late_instants_ = 0;
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN

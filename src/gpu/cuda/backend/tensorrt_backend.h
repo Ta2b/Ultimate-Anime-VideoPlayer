@@ -9,6 +9,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <expected>
@@ -125,6 +126,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                                   float t, const RingTarget& ring) override;
   // Export par puits CUDA (tensorrt_export.cpp) : RGB → NV12 ou P010 dans l'image de l'encodeur.
   std::expected<void, Refusal> write_yuv(const Tensor& rgb, const YuvTarget& target) override;
+  // Étape 11.5 (tensorrt_export.cpp) : chaque voie interrogée par cudaStreamQuery ; les signaux de l'export
+  // dans une page enregistrée (cudaHostRegister), écrits par cuStreamWriteValue64 derrière les noyaux.
+  std::expected<void, Refusal> health() override;
+  bool map_fences(std::span<std::byte> block) override;
+  void unmap_fences(std::span<std::byte> block) override;
 
  private:
   // Une image décodée tenue jusqu'à la fin de son ingestion côté GPU : FFmpeg la réécrit dès
@@ -379,6 +385,15 @@ class TensorRtBackend final : public Backend, public KernelOps {
     void* rows = nullptr;
   };
   YuvTables yuv_;
+  // Blocs de signaux enregistrés (map_fences) : adresse hôte, taille, adresse vue de l'appareil.
+  struct MappedFences {
+    std::byte* host = nullptr;
+    std::size_t bytes = 0;
+    std::uintptr_t device = 0;
+  };
+  std::vector<MappedFences> mapped_fences_;
+  // L'adresse d'appareil de done dans un bloc enregistré ; 0 : hors de tout bloc (rappel hôte).
+  std::uintptr_t mapped_fence(const void* done) const;
   std::expected<void, Refusal> yuv_tables(int width, int height, kernels::Siting siting);
   void release_yuv_tables(bool behind_lanes = false);  // true en lecture : derrière les voies (11.4)
   // Objets texture par adresse et forme (texture()) ; au-delà de kTextures, tous détruits et
