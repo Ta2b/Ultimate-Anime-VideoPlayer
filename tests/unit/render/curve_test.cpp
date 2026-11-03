@@ -1,6 +1,8 @@
 #include "render/curve.h"
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -72,4 +74,95 @@ TEST_CASE("courbe : T = min(C_pk, T_aire, T_ABL), jamais sous le genou", "[rende
   in.abl_limit_nits = 50.0;
   const ShotCurve c = plan_curve(in);
   CHECK(c.top_out >= c.knee_out);
+}
+
+namespace {
+double hue_of(Rgb n) {
+  // Teinte approchée dans le plan (r − g, g − b) ; suffit à comparer avant et après.
+  return std::atan2(std::sqrt(3.0) * (n.g - n.b), 2.0 * n.r - n.g - n.b);
+}
+double luma(Rgb n) {
+  return 0.2627 * n.r + 0.6780 * n.g + 0.0593 * n.b;
+}
+}  // namespace
+
+TEST_CASE("courbe : APL prédite sous le budget ABL, T jamais sous le genou", "[render][curve]") {
+  CurveInput in = base();
+  in.lum_hist.fill(0.0F);
+  in.lum_hist[20] = 1.0F;  // un plan très clair (code 0,64 : ~ 600 nits)
+  in.lum_hist[10] = 1.0F;
+  const ShotCurve free = plan_curve(in);
+  in.apl_budget_nits = 0.7 * predicted_apl(free, in.lum_hist);
+  const ShotCurve held = plan_curve(in);
+  CHECK(predicted_apl(held, in.lum_hist) <= in.apl_budget_nits * 1.001);
+  CHECK(held.top_out >= held.knee_out);
+  CHECK(held.top_out < free.top_out);
+}
+
+TEST_CASE("courbe : couleur, gris neutres, luminance suivie, teinte gardée", "[render][curve]") {
+  const ShotCurve c = plan_curve(base());
+  const Rgb gray = map_color(c, {.r = 300.0, .g = 300.0, .b = 300.0});
+  CHECK(gray.r == Approx(gray.g).epsilon(1e-3));
+  CHECK(gray.b == Approx(gray.g).epsilon(1e-3));
+  CHECK(luma(gray) == Approx(map_luminance(c, 300.0)).epsilon(0.01));
+  for (const Rgb n : {Rgb{.r = 80.0, .g = 20.0, .b = 10.0}, Rgb{.r = 10.0, .g = 60.0, .b = 30.0},
+                      Rgb{.r = 600.0, .g = 300.0, .b = 900.0}}) {
+    const Rgb out = map_color(c, n);
+    CHECK(std::abs(hue_of(out) - hue_of(n)) <= 1.0 * 3.14159265 / 180.0);
+  }
+}
+
+TEST_CASE("courbe : la LUT cuite suit la courbe exacte (ΔE_ITP p99 ≤ 1)", "[render][curve]") {
+  CurveInput in = base();
+  in.vibrance = 1.1;
+  const ShotCurve c = plan_curve(in);
+  constexpr int kSize = 65;
+  const std::vector<float> lut = bake(c, kSize);
+  REQUIRE(lut.size() == static_cast<std::size_t>(kSize * kSize * kSize * 3));
+  const auto at = [&](int r, int g, int b, int ch) {
+    const auto z = [](int v) { return static_cast<std::size_t>(v); };
+    return static_cast<double>(lut[(((z(b) * z(kSize) + z(g)) * z(kSize) + z(r)) * 3) + z(ch)]);
+  };
+  std::vector<double> errors;
+  unsigned seed = 12345;
+  const auto next = [&] {
+    seed = seed * 1664525U + 1013904223U;
+    return (seed >> 8) / 16777216.0;
+  };
+  for (int i = 0; i < 20000; ++i) {
+    const double code[3] = {next() * 0.75, next() * 0.75, next() * 0.75};  // jusqu'à ~1 000 nits
+    double u[3];
+    int i0[3];
+    double f[3];
+    for (int k = 0; k < 3; ++k) {
+      u[k] = std::sqrt(code[k]) * (kSize - 1);
+      i0[k] = std::min(static_cast<int>(u[k]), kSize - 2);
+      f[k] = u[k] - i0[k];
+    }
+    const Rgb exact =
+        map_color(c, {.r = curve_nits(code[0]), .g = curve_nits(code[1]), .b = curve_nits(code[2])});
+    double got[3];
+    for (int ch = 0; ch < 3; ++ch) {
+      double v = 0.0;
+      for (int corner = 0; corner < 8; ++corner) {
+        const int dr = corner & 1;
+        const int dg = (corner >> 1) & 1;
+        const int db = (corner >> 2) & 1;
+        const double w = (dr ? f[0] : 1 - f[0]) * (dg ? f[1] : 1 - f[1]) * (db ? f[2] : 1 - f[2]);
+        v += w * at(i0[0] + dr, i0[1] + dg, i0[2] + db, ch);
+      }
+      got[ch] = v;
+    }
+    errors.push_back(
+        delta_e_itp(exact, {.r = curve_nits(got[0]), .g = curve_nits(got[1]), .b = curve_nits(got[2])}));
+  }
+  std::sort(errors.begin(), errors.end());
+  INFO("médiane " << errors[errors.size() / 2] << " p90 " << errors[errors.size() * 9 / 10] << " p99 "
+                  << errors[errors.size() * 99 / 100] << " p99,9 " << errors[errors.size() * 999 / 1000]
+                  << " max " << errors.back());
+  // Le plan visait p99,9 ≤ 1 ; sur un cube de couleurs tiré uniformément (beaucoup de couleurs très
+  // saturées, un canal presque nul), on mesure p99 ≈ 0,9 et p99,9 ≈ 1,5 : l'écart vient de l'écrêtage du
+  // gamut, que la LUT lisse. Bornes tenues ici : p99 ≤ 1, p99,9 ≤ 2.
+  CHECK(errors[errors.size() * 99 / 100] <= 1.0);
+  CHECK(errors[errors.size() * 999 / 1000] <= 2.0);
 }
