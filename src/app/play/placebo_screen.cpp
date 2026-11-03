@@ -185,6 +185,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   const pl_gpu gpu = s.vk->gpu;
   const std::int64_t start = host_now_us();
   OutputSize out = size();
+  std::int64_t acquired = start;  // fin de l'acquisition de l'image de la swapchain
   pl_frame target{};
   if (s.offscreen) {
     auto drawn = s.offscreen_target();
@@ -201,6 +202,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     if (!pl_swapchain_start_frame(s.swapchain, &swframe))
       return ScreenTiming{.presented = false};  // fenêtre cachée
     pl_frame_from_swapchain(&target, &swframe);
+    acquired = host_now_us();
   }
   s.hdr_output = target.color.transfer == PL_COLOR_TRC_PQ;
   s.target_color = target.color;
@@ -269,7 +271,8 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     pl_gpu_flush(gpu);
     const std::int64_t submitted = host_now_us();
     const std::int64_t presented = s.offscreen_present();
-    return ScreenTiming{.render_us = submitted - start,
+    return ScreenTiming{.acquire_us = acquired - start,
+                        .render_us = submitted - acquired,
                         .present_us = presented,
                         .queue_wait_us = presented - submitted,
                         .presented = true};
@@ -279,7 +282,8 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   const std::int64_t submitted = host_now_us();
   pl_swapchain_swap_buffers(s.swapchain);  // FIFO : attend une place en file quand elle est pleine
   const std::int64_t presented = host_now_us();
-  return ScreenTiming{.render_us = submitted - start,
+  return ScreenTiming{.acquire_us = acquired - start,
+                      .render_us = submitted - acquired,
                       .present_us = presented,
                       .queue_wait_us = presented - submitted,
                       .presented = true};

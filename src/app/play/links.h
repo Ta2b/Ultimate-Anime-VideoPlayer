@@ -103,7 +103,8 @@ struct OutputSize {
 
 // Ce qu'une présentation a coûté, mesuré par l'écran.
 struct ScreenTiming {
-  std::int64_t render_us = 0;   // composition (grade, sous-titres, OSD) soumise
+  std::int64_t acquire_us = 0;  // attente d'une image de la swapchain (start_frame)
+  std::int64_t render_us = 0;   // composition (grade, sous-titres, OSD) soumise, l'acquisition exclue
   std::int64_t present_us = 0;  // instant hôte où l'image est partie à l'écran
   // Temps passé à attendre une place dans la file de l'écran : au-delà d'une fraction de
   // période, la file est pleine et l'image paraîtra après celles qui y sont déjà.

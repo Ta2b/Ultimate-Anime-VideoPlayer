@@ -45,6 +45,7 @@
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
+#include "app/play/present_stats.h"
 #include "app/play/profiles.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
@@ -353,7 +354,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::ofstream stats;
   if (options.stats) {
     stats.open(*options.stats);
-    stats << "host_us\tpts_us\tfresh\trender_us\tinterval_us\tdropped\twhy\tmissing\tlag_us\n";
+    stats << stats_header();
   }
   const core::KeyMap& keys = configured_keys();
   std::optional<Refusal> failure;

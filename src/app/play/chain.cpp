@@ -10,6 +10,7 @@
 #include "app/play/episodes.h"
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
+#include "app/play/present_stats.h"
 #include "audio/devices.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -430,9 +431,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
 }
 
 void write_record(std::ofstream& stats, const PresentRecord& record) {
-  stats << record.host_us << '\t' << record.pts_us << '\t' << (record.fresh ? 1 : 0) << '\t'
-        << record.render_us << '\t' << record.interval_us << '\t' << record.dropped << '\t' << record.why
-        << '\t' << record.missing << '\t' << record.lag_us << '\t' << record.uninterpolated << '\n';
+  stats << stats_line(record);
 }
 
 void log_summary(const Session& session) {
