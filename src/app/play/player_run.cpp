@@ -328,6 +328,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
   if (c.model) p.profiles.default_model = c.model->default_name;
   p.ui.set_profiles(view_of(p.profiles));
+  const std::filesystem::path settings_dir = p.settings_path.parent_path();  // isolé par --data-dir
   Chain chain{
       .session = session,
       .screen = out,
@@ -349,8 +350,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .luts_dir = p.paths.engines.parent_path() / "luts",
       .source_hdr = source_hdr,
       .kernels = c.backend ? c.backend->kernels() : nullptr,
-      .adaptive_log = {.path = p.paths.engines.parent_path() / "adaptive-log.tsv"},
-      .learn = LearnTrack{.log = p.paths.engines.parent_path() / "adaptive-learning.tsv"},
+      .adaptive_log = {.path = settings_dir / "adaptive-log.tsv"},
+      .learn = LearnTrack{.log = settings_dir / "adaptive-learning.tsv"},
       .shots = p.shots};
   apply_oled_care(chain, settings);
 
