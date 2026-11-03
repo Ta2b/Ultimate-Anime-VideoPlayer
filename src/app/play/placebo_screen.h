@@ -54,9 +54,9 @@ struct ScreenOptions {
   // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;
-  bool allow_software = false;   // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
-  bool legacy_grade = false;     // --legacy-grade : le grade d'avant (render::GradeBody::Legacy)
-  bool no_grade_deband = false;  // --no-grade-deband : pas de débandage devant le grade
+  bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
+  bool legacy_grade = false;    // --legacy-grade : le grade d'avant (render::GradeBody::Legacy)
+  bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.
   std::filesystem::path shader_cache;

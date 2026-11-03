@@ -193,7 +193,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
                                         .allow_software = options.software_gpu,
                                         .legacy_grade = options.legacy_grade,
-                                        .no_grade_deband = options.no_grade_deband,
+                                        .grade_deband = options.grade_deband,
                                         .shader_cache = paths.data / "shaders.cache"});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
