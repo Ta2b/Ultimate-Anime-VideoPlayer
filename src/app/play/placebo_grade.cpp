@@ -112,7 +112,9 @@ pl_color_space color_space_of(const ColorInfo& color) {
 }  // namespace
 
 void PlaceboScreen::set_source_color(const ColorInfo& color) {
-  impl_->source = color_space_of(color);
+  const pl_color_space space = color_space_of(color);
+  if (!pl_color_space_equal(&space, &impl_->source)) ++impl_->grade_serial;
+  impl_->source = space;
 }
 
 void PlaceboScreen::set_sample_aspect(double sar) {
@@ -156,16 +158,23 @@ std::expected<void, Refusal> PlaceboScreen::set_looks(
     const std::array<const render::CubeLut*, render::kLookSlots>& luts) {
   if (!impl_->grade) return refuse(RefusalCode::HdrUnavailable, "look : pas de grade sur cette sortie");
   if (auto set = impl_->grade->set_looks(luts); !set) return set;
+  ++impl_->grade_serial;
   impl_->select_grade(impl_->target_color);  // les paramètres du look repartent dans le nouveau hook
   return {};
 }
 
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
+  const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
-  if (!grade || !params) return;
-  if (*params != grade->params()) grade->set_params(*params);
-  grade_loaded_pq = target.transfer == PL_COLOR_TRC_PQ;
+  if (grade && params) {
+    if (*params != grade->params()) {
+      grade->set_params(*params);
+      ++grade_serial;
+    }
+    grade_loaded_pq = target.transfer == PL_COLOR_TRC_PQ;
+  }
+  if (grade_loaded_pq != before) ++grade_serial;
 }
 
 void PlaceboScreen::Impl::match_kwin() {
@@ -175,9 +184,12 @@ void PlaceboScreen::Impl::match_kwin() {
   // du contenu : KWin le ramène à son blanc (render::kwin_hint).
   const double peak = grade->params().peak;
   const render::KwinHint hint = render::kwin_hint(peak, *kde_sdr_nits);
-  grade->set_kwin_match(
+  const std::optional<render::Grade::KwinMatch> match =
       on ? std::optional(render::Grade::KwinMatch{.reference = *kde_sdr_nits, .peak = hint.panel_peak_nits})
-         : std::nullopt);
+         : std::nullopt;
+  if (match != kwin_applied) ++grade_serial;
+  kwin_applied = match;
+  grade->set_kwin_match(match);
   const double max_nits = on ? hint.max_content_nits : 0.0;
   if (max_nits == hinted_max_nits) return;
   hinted_max_nits = max_nits;

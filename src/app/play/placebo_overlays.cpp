@@ -86,15 +86,16 @@ std::expected<bool, Refusal> Overlays::add(Layer& layer, const subs::SubtitleFra
   return true;
 }
 
-std::expected<std::span<const pl_overlay>, Refusal> Overlays::build(const subs::SubtitleFrame* subtitles,
-                                                                    const std::span<const std::string>* osd,
-                                                                    OsdText& text, OutputSize out,
-                                                                    int ui_bottom, int ui_top) {
+std::expected<Overlays::Built, Refusal> Overlays::build(const subs::SubtitleFrame* subtitles,
+                                                        const std::span<const std::string>* osd,
+                                                        OsdText& text, OutputSize out, int ui_bottom,
+                                                        int ui_top) {
   count_ = 0;
   if (subtitles != nullptr) {
     if (auto added = add(subtitles_, *subtitles, out, ui_bottom); !added)
       return std::unexpected(std::move(added.error()));
   }
+  const auto subtitle_count = static_cast<std::size_t>(count_);
   if (osd != nullptr) {
     auto frame = text.render(*osd, out);
     if (!frame) return std::unexpected(std::move(frame.error()));
@@ -106,7 +107,8 @@ std::expected<std::span<const pl_overlay>, Refusal> Overlays::build(const subs::
       }
     }
   }
-  return std::span<const pl_overlay>(overlays_.data(), static_cast<std::size_t>(count_));
+  const std::span<const pl_overlay> all(overlays_.data(), static_cast<std::size_t>(count_));
+  return Built{.all = all, .subtitles = all.first(subtitle_count), .osd = all.subspan(subtitle_count)};
 }
 
 }  // namespace ajp::app::play
