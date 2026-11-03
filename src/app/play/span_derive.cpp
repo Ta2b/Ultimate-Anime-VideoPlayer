@@ -398,7 +398,8 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
   if (!supported) {
     prepare.note =
         i18n::tr("Performance mode (FP8) is not available: ") +
-        (unavailable.empty() ? std::string(i18n::tr("it needs an RTX 40 (Ada) with the TensorRT engine"))
+        (unavailable.empty() ? std::string(i18n::tr(
+                                   "it needs an RTX 40 (Ada) or RTX 50 (Blackwell) with the TensorRT engine"))
                              : unavailable) +
         ".";
     return prepare;

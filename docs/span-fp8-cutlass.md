@@ -159,7 +159,7 @@ refusée passe à la suivante.
 
 | Cas | Où | Effet |
 |---|---|---|
-| GPU autre que sm 8.9 (Turing, Ampere, Blackwell sm 12.0) | `BackendCaps::span_fp8_cutlass` faux ; le lecteur n'essaie pas la variante | variante suivante |
+| GPU autre que sm 8.9 et sm 12.0 (Turing, Ampere, Blackwell des centres de calcul) | `BackendCaps::span_fp8_cutlass` faux ; le lecteur n'essaie pas la variante | variante suivante |
 | Backend construit sans CUTLASS (hors Linux, `third_party/cutlass` absent, `AJP_WITH_SPAN_FP8=OFF`, pas de CUDA) | `span_fp8_net_none.cpp` : capacité fausse | variante suivante |
 | Reçu absent, refusé, d'un autre modèle, paquet modifié | `find_span_variant` | variante suivante |
 | Reçu v2 d'une autre architecture ou d'autres noyaux, taille refusée | `find_span_variant` avec `SpanFp8Context` | variante suivante |
@@ -205,11 +205,25 @@ PSNR moyen 51,5 dB, pire 50,7 dB, SSIM 0,9969, réseau FP8 9,23 ms. Test `[.span
 SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Lecture `ajp play --stats`, 24 i/s, ABAB 3 tours, médiane
 « moteur » : 14,60 / 14,54 / 14,58 ms avec le paquet natif contre 15,55 / 15,55 / 15,52 ms en FP16 (−6 %, même effet d'horloges que ci-dessus).
 
+## Autres architectures (chantier 10)
+
+- **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour
+  `89-real;120` (CUDA 12.8 au moins), et `supported_device` prend 12.0. C'est la même boucle CUTLASS : le `mma`
+  FP8 m16n8k32 existe dès sm 89 (garde CUTLASS `>= 890`). Le reçu v2 porte `gpu_arch = "sm_120"`, donc un
+  paquet d'une RTX 40 n'y sert pas sans revalidation, et la porte décide. **Jamais lancé sur une RTX 50** : sur
+  la carte, il faut vérifier `ptxas --verbose` sans débordement, une mémoire partagée ≥ 57 Ko,
+  `cuobjdump -sass -arch sm_120` avec du MMA FP8 natif, et la tuile TM ∈ {128, 256} au banc. Visé :
+  ≤ 0,70 × TensorRT FP16.
+- **Poids par canal (étape 10.3)** : voir « Le paquet » ; `kKernelsVersion` = 2.
+- **Ampere et Turing (étapes 10.1, 10.4 à 10.6)** : on mesure d'abord l'INT8 de TensorRT, déjà branché
+  (`tools/span/quantize_span.py`, puis `tools/fp8/abab_trt.sh` sur une RTX 30 et une RTX 20). S'il tient
+  ≤ 0,75 × FP16 (Ampere) ou ≤ 0,80 × (Turing) avec un reçu valide, cette voie suffit et les noyaux INT8 CUTLASS
+  (10.5, 10.6) tombent pour cette architecture. La référence FP16 recompilée pour 75 et 86 (10.4) ne sert que
+  la dérivation native de ces noyaux : elle attend la même mesure. Aucune de ces cartes n'est dans la maison,
+  la décision reste ouverte et sera documentée ici.
+
 ## Ce qui est connu et pas fait
 
-- **sm 12.0 (Blackwell, RTX 50)** : non pris. Le module est compilé pour 89 seulement (`CUDA_ARCHITECTURES
-  89` de la bibliothèque des noyaux) ; un portage demande de mesurer les mêmes `mma` E4M3 et les tuiles, sur
-  une carte que je n'ai pas. Le repli est automatique.
 - **Tailles dynamiques** : le moteur est à une taille fixe, comme les moteurs TensorRT du lecteur (un changement
   de taille de travail recharge la chaîne). Depuis l'étape 3.1, l'épilogue garde les lignes au-delà de M : toute taille paire (à valider sur la RTX : memcheck à 0 en 960×540).
 - **Modèle Performance b5f48 (48 canaux, 5 blocs)** : pris depuis les étapes 3.2b et 3.2c, rangé en 64 canaux
