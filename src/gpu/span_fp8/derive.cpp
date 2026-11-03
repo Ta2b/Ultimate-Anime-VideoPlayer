@@ -104,6 +104,25 @@ Crop kernel_crop(int width, int height, int max_width, int max_height) {
   return Crop{.width = w, .height = h};
 }
 
+Verdict judge_hardened(std::span<const ImageScore> scores, std::span<const ImageScore> hard) {
+  Verdict verdict = judge(scores);
+  for (const auto group : {scores, hard})
+    for (const ImageScore& score : group) {
+      verdict.error_p999_worst = std::max(verdict.error_p999_worst, score.error_p999);
+      verdict.dark_error_p999_worst = std::max(verdict.dark_error_p999_worst, score.dark_error_p999);
+    }
+  verdict.hard_images = static_cast<int>(hard.size());
+  if (!hard.empty()) {
+    verdict.hard_psnr_worst_db = hard.front().psnr_db;
+    for (const ImageScore& score : hard)
+      verdict.hard_psnr_worst_db = std::min(verdict.hard_psnr_worst_db, score.psnr_db);
+  }
+  verdict.passed = verdict.passed && verdict.error_p999_worst <= kMaxErrorP999 &&
+                   verdict.dark_error_p999_worst <= kMaxDarkErrorP999 &&
+                   (hard.empty() || verdict.hard_psnr_worst_db >= kMinHardPsnrWorstDb);
+  return verdict;
+}
+
 bool keep_acc16(const Verdict& f32, const Verdict& f16) {
   return f32.passed && f16.passed && f32.psnr_mean_db - f16.psnr_mean_db <= kMaxAcc16PsnrLossDb;
 }

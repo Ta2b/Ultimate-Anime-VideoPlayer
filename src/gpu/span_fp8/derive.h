@@ -21,6 +21,13 @@ inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v1";
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
+// Étape 3.7a, porte durcie : 99,9e centile de l'erreur absolue (sur [0, 1]) des images de validation et des
+// cas durs, le même sur les pixels sombres, et pire PSNR des cas durs. Valeurs de départ du plan ; à ajuster
+// à 1,25 × celles du b8f64 accepté, mesurées sur la RTX (docs/span-fp8-cutlass.md).
+inline constexpr double kErrorQuantile = 0.999;
+inline constexpr double kMaxErrorP999 = 4.0 / 255.0;
+inline constexpr double kMaxDarkErrorP999 = 2.0 / 255.0;
+inline constexpr double kMinHardPsnrWorstDb = 36.0;
 // Étape 3.5a : l'accumulateur f16 hors blocs ne coûte pas plus que ceci au PSNR moyen.
 inline constexpr double kMaxAcc16PsnrLossDb = 0.3;
 
@@ -34,6 +41,8 @@ std::expected<std::array<float, kScaleCount>, Refusal> scales_from_peaks(std::sp
 struct ImageScore {
   double psnr_db = 0.0;
   double ssim = 0.0;
+  double error_p999 = 0.0;       // abs_error_quantile(…, kErrorQuantile) ; 0 : non mesuré (outil Python)
+  double dark_error_p999 = 0.0;  // dark_abs_error_quantile(…, kErrorQuantile)
 };
 
 struct Verdict {
@@ -41,11 +50,21 @@ struct Verdict {
   double psnr_worst_db = 0.0;
   double ssim_worst = 0.0;
   bool passed = false;
+  // Porte durcie (judge_hardened) ; 0 et 0 cas durs pour judge seul.
+  double error_p999_worst = 0.0;
+  double dark_error_p999_worst = 0.0;
+  double hard_psnr_worst_db = 0.0;
+  int hard_images = 0;
 };
 
 // Moyenne et pires valeurs, et leur comparaison aux seuils. Sans image, rien ne passe.
 Verdict judge(std::span<const ImageScore> scores, double min_psnr_mean = kMinPsnrMeanDb,
               double min_psnr_worst = kMinPsnrWorstDb, double min_ssim_worst = kMinSsimWorst);
+
+// judge, puis la porte durcie (étape 3.7a) : pire 99,9e centile ≤ kMaxErrorP999 et, sur le sombre, ≤
+// kMaxDarkErrorP999, sur les images de validation et les cas durs ; pire PSNR des cas durs ≥
+// kMinHardPsnrWorstDb. Sans cas dur, seule la partie centile s'applique.
+Verdict judge_hardened(std::span<const ImageScore> scores, std::span<const ImageScore> hard);
 
 // Garder l'accumulateur f16 hors blocs (étape 3.5a) : sa variante passe la porte, la variante f32 aussi, et
 // le PSNR moyen perd au plus kMaxAcc16PsnrLossDb.

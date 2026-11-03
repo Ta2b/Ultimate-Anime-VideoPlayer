@@ -7,6 +7,7 @@
 
 #include "app/play/i18n.h"
 #include "app/play/span_int8.h"
+#include "gpu/span_fp8/hard_cases.h"
 #include "gpu/span_fp8/onnx_weights.h"
 #include "gpu/span_fp8/package.h"
 #include "prepare/sha256.h"
@@ -184,6 +185,11 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   }
   for (const std::size_t i : split.validation) request.validation.push_back(still_of((*taken)[i]));
   taken->clear();
+  // Étape 3.7a : les cas durs, à la taille des images de validation.
+  for (gpu::span_fp8::HardCase& hard :
+       gpu::span_fp8::hard_cases(request.validation.front().width, request.validation.front().height))
+    request.hard.push_back(
+        gpu::SpanStill{.width = hard.width, .height = hard.height, .rgb = std::move(hard.rgb)});
 
   progress.set(0.3F, i18n::tr("calibration"));
   gpu::Progress backend_progress{.report =
@@ -201,20 +207,24 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   const int width = request.validation.front().width;
   const int height = request.validation.front().height;
   report.size = std::format("{}x{}", width, height);
-  std::vector<gpu::span_fp8::ImageScore> scores;
-  for (const gpu::SpanFp8ImageScore& score : derived->scores)
-    scores.push_back({.psnr_db = score.psnr_db, .ssim = score.ssim});
-  report.verdict = gpu::span_fp8::judge(scores);
+  const auto scores_of = [](const std::vector<gpu::SpanFp8ImageScore>& from) {
+    std::vector<gpu::span_fp8::ImageScore> out;
+    for (const gpu::SpanFp8ImageScore& score : from)
+      out.push_back({.psnr_db = score.psnr_db,
+                     .ssim = score.ssim,
+                     .error_p999 = score.error_p999,
+                     .dark_error_p999 = score.dark_error_p999});
+    return out;
+  };
+  report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived->scores), scores_of(derived->hard_scores));
   report.passed = report.verdict.passed;
   // Étape 3.5a : la variante à accumulateur f16 hors blocs, si elle passe la porte et perd au plus 0,3 dB de
   // PSNR moyen ; c'est alors elle que le paquet, le reçu et le temps décrivent.
   bool acc16 = false;
   double kernels_ms = derived->kernels_ms;
   if (!derived->scores_acc16.empty()) {
-    std::vector<gpu::span_fp8::ImageScore> scores16;
-    for (const gpu::SpanFp8ImageScore& score : derived->scores_acc16)
-      scores16.push_back({.psnr_db = score.psnr_db, .ssim = score.ssim});
-    const gpu::span_fp8::Verdict verdict16 = gpu::span_fp8::judge(scores16);
+    const gpu::span_fp8::Verdict verdict16 = gpu::span_fp8::judge_hardened(
+        scores_of(derived->scores_acc16), scores_of(derived->hard_scores_acc16));
     if (gpu::span_fp8::keep_acc16(report.verdict, verdict16)) {
       acc16 = true;
       report.verdict = verdict16;
@@ -259,9 +269,13 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
     return std::unexpected(std::move(ok.error()));
   if (!report.passed) report.package.clear();
 
-  const std::string scores_text =
+  std::string scores_text =
       i18n::tr_format("mean PSNR {} dB, worst {} dB, worst SSIM {}", db(report.verdict.psnr_mean_db),
                       db(report.verdict.psnr_worst_db), ratio(report.verdict.ssim_worst));
+  scores_text += i18n::tr_format(", 99.9th percentile error {}/255 (dark {}/255), hard frames worst {} dB",
+                                 db(255.0 * report.verdict.error_p999_worst),
+                                 db(255.0 * report.verdict.dark_error_p999_worst),
+                                 db(report.verdict.hard_psnr_worst_db));
   if (report.passed) {
     report.text = i18n::tr_format(
         "Performance mode ready: {} ({} calibration frames, {} validation frames at {}, kernels {} ms). It "

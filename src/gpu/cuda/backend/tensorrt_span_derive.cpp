@@ -96,7 +96,7 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   if (const std::string why = span_fp8::size_refusal(height, width); !why.empty())
     return refuse(RefusalCode::FormatUnsupported, "dérivation du SPAN FP8 : " + why);
   const std::size_t plane = static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
-  for (const auto* group : {&request.calibration, &request.validation})
+  for (const auto* group : {&request.calibration, &request.validation, &request.hard})
     for (const SpanStill& still : *group)
       if (still.width != width || still.height != height || still.rgb.size() != 3 * plane)
         return refuse(RefusalCode::ShapeInvalid, "dérivation du SPAN FP8 : images de tailles différentes");
@@ -143,7 +143,8 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   };
 
   // --- 1. calibration : les maxima des tenseurs, sur les images de calibration
-  const auto total = static_cast<float>(request.calibration.size() + request.validation.size());
+  const auto total =
+      static_cast<float>(request.calibration.size() + request.validation.size() + request.hard.size());
   float done = 0.0F;
   for (const SpanStill& still : request.calibration) {
     if (cancelled()) return stopped();
@@ -179,40 +180,53 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   net->bind(scratch.workspace);
   if (net16) net16->bind(scratch.workspace);  // même zone : les deux passent l'un après l'autre
 
-  // --- 3. validation, sur des images que la calibration n'a pas vues
+  // --- 3. validation, sur des images que la calibration n'a pas vues, puis les cas durs (étape 3.7a)
   std::vector<__half> half(3 * plane * 4);
-  for (const SpanStill& still : request.validation) {
-    if (cancelled()) return stopped();
-    if (auto ok = upload(still); !ok) return std::unexpected(std::move(ok.error()));
-    if (!reference->run(scratch.stream, scratch.input, scratch.output_ref, false, why))
-      return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
-    if (!net->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
-      return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
-    if (auto e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess) return cuda_refusal(e, "exécution");
-    if (auto e = cudaMemcpy(half.data(), scratch.output_ref, in_bytes * 4, cudaMemcpyDeviceToHost);
-        e != cudaSuccess)
-      return cuda_refusal(e, "cudaMemcpy");
-    const std::vector<float> expected = to_unit(half);
-    const auto score = [&](std::vector<SpanFp8ImageScore>& into) -> std::expected<void, Refusal> {
-      if (auto e = cudaMemcpy(half.data(), scratch.output_fp8, in_bytes * 4, cudaMemcpyDeviceToHost);
-          e != cudaSuccess)
-        return cuda_refusal(e, "cudaMemcpy");
-      const std::vector<float> got = to_unit(half);
-      into.push_back({.psnr_db = span_fp8::psnr(expected, got),
-                      .ssim = span_fp8::ssim(2 * width, 2 * height, expected, got)});
-      return {};
-    };
-    if (auto ok = score(result.scores); !ok) return std::unexpected(std::move(ok.error()));
-    if (net16) {
-      if (!net16->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
-        return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 (f16) : " + why);
+  const auto judge_all = [&](const std::vector<SpanStill>& stills, std::vector<SpanFp8ImageScore>& scores,
+                             std::vector<SpanFp8ImageScore>& scores16,
+                             const char* stage) -> std::expected<void, Refusal> {
+    for (const SpanStill& still : stills) {
+      if (cancelled()) return stopped();
+      if (auto ok = upload(still); !ok) return ok;
+      if (!reference->run(scratch.stream, scratch.input, scratch.output_ref, false, why))
+        return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
+      if (!net->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
+        return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
       if (auto e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
         return cuda_refusal(e, "exécution");
-      if (auto ok = score(result.scores_acc16); !ok) return std::unexpected(std::move(ok.error()));
+      if (auto e = cudaMemcpy(half.data(), scratch.output_ref, in_bytes * 4, cudaMemcpyDeviceToHost);
+          e != cudaSuccess)
+        return cuda_refusal(e, "cudaMemcpy");
+      const std::vector<float> expected = to_unit(half);
+      const auto score = [&](std::vector<SpanFp8ImageScore>& into) -> std::expected<void, Refusal> {
+        if (auto e = cudaMemcpy(half.data(), scratch.output_fp8, in_bytes * 4, cudaMemcpyDeviceToHost);
+            e != cudaSuccess)
+          return cuda_refusal(e, "cudaMemcpy");
+        const std::vector<float> got = to_unit(half);
+        into.push_back({.psnr_db = span_fp8::psnr(expected, got),
+                        .ssim = span_fp8::ssim(2 * width, 2 * height, expected, got),
+                        .error_p999 = span_fp8::abs_error_quantile(expected, got, span_fp8::kErrorQuantile),
+                        .dark_error_p999 = span_fp8::dark_abs_error_quantile(2 * width, 2 * height, expected,
+                                                                             got, span_fp8::kErrorQuantile)});
+        return {};
+      };
+      if (auto ok = score(scores); !ok) return ok;
+      if (net16) {
+        if (!net16->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
+          return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 (f16) : " + why);
+        if (auto e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
+          return cuda_refusal(e, "exécution");
+        if (auto ok = score(scores16); !ok) return ok;
+      }
+      done += 1.0F;
+      report(0.05F + 0.55F * done / total, stage);
     }
-    done += 1.0F;
-    report(0.05F + 0.55F * done / total, "validation");
-  }
+    return {};
+  };
+  if (auto ok = judge_all(request.validation, result.scores, result.scores_acc16, "validation"); !ok)
+    return std::unexpected(std::move(ok.error()));
+  if (auto ok = judge_all(request.hard, result.hard_scores, result.hard_scores_acc16, "validation"); !ok)
+    return std::unexpected(std::move(ok.error()));
 
   // --- 4. le temps du réseau FP8 (et de sa variante f16)
   report(0.9F, "mesure du temps");

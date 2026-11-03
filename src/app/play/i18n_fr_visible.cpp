@@ -27,6 +27,8 @@ constexpr std::array kVisibleTexts{
     Entry{" · probably OLED (EDID)", " · OLED probable (EDID)"},
     Entry{" · {} (known model)", " · {} (modèle connu)"},
     Entry{" · {} lost", " · {} perdues"},
+    Entry{", 99.9th percentile error {}/255 (dark {}/255), hard frames worst {} dB",
+          ", erreur au 99,9e centile {}/255 (sombre {}/255), pire cas dur {} dB"},
     Entry{"\"{}\" cannot be read: {}", "« {} » ne se lit pas : {}"},
     Entry{", average {:.0f}", ", moyenne {:.0f}"},
     Entry{", black {:.5f} nit", ", noir {:.5f} nit"},

@@ -12,6 +12,7 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -102,7 +103,9 @@ SpanStillsSource source_of(std::vector<media::Still> stills) {
 struct FakeBackend {
   double psnr = 50.0;
   double ssim = 0.995;
-  double psnr16 = 0.0;  // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
+  double psnr16 = 0.0;              // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
+  double error_p999 = 1.0 / 255.0;  // 99,9e centile de l'erreur de chaque image (3.7a)
+  double hard_psnr = 40.0;          // PSNR de chaque cas dur rendu (3.7a)
   bool refuse = false;
   mutable gpu::SpanFp8Request seen;
   SpanDeriver deriver() const {
@@ -115,7 +118,9 @@ struct FakeBackend {
       gpu::SpanFp8Derivation derivation;
       derivation.scales.fill(0.05F);
       derivation.peaks.fill(22.4F);
-      derivation.scores.assign(request.validation.size(), {.psnr_db = psnr, .ssim = ssim});
+      derivation.scores.assign(request.validation.size(),
+                               {.psnr_db = psnr, .ssim = ssim, .error_p999 = error_p999});
+      derivation.hard_scores.assign(3, {.psnr_db = hard_psnr, .ssim = ssim, .error_p999 = error_p999});
       derivation.kernels_ms = 9.2;
       if (psnr16 > 0.0) {
         derivation.scores_acc16.assign(request.validation.size(), {.psnr_db = psnr16, .ssim = ssim});
@@ -214,6 +219,25 @@ TEST_CASE("le paquet prend l'accumulateur f16 hors blocs à 0,3 dB du f32 au plu
   const auto parsed = gpu::span_fp8::parse(std::as_bytes(std::span(bytes)));
   REQUIRE(parsed);
   CHECK(parsed->acc16 == kept);
+}
+
+TEST_CASE("la porte durcie refuse au 99,9e centile ou sur un cas dur (3.7a)", "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
+  const auto [p999, hard, passes] =
+      GENERATE(std::tuple{1.0 / 255.0, 40.0, true}, std::tuple{5.0 / 255.0, 40.0, false},
+               std::tuple{1.0 / 255.0, 35.0, false});
+  INFO(p999 * 255.0 << "/255, cas durs " << hard << " dB");
+  const Folder folder;
+  FakeBackend backend;
+  backend.error_p999 = p999;
+  backend.hard_psnr = hard;
+  SpanDeriveProgress progress;
+  const auto report =
+      derive_span_fp8(folder.plan(), source_of(twelve()), backend.deriver(), progress, std::stop_token{});
+  REQUIRE(report);
+  CHECK(report->passed == passes);
+  CHECK(report->verdict.hard_images == 3);
+  CHECK(report->text.find("99,9e centile") != std::string::npos);
 }
 
 TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paquet d'avant",
