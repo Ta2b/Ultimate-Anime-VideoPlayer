@@ -292,6 +292,31 @@ départagerait.
   plus que les 48 Mo de L2 de la 4070 Ti) ; peut-être un peu pour RIFE en 720p. Le lecteur ne règle
   `setPersistentCacheLimit` qu'après un gain mesuré, et alors pour ce moteur seulement.
 
+## Plan NVIDIA, chantier 11 : robustesse CUDA (novembre, écrit dans le cloud sans compilateur CUDA)
+
+Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_WITH_CUDA=ON`, puis
+`ctest -L cuda` (ou `ajp_backend_tensorrt_tests "[backend_tensorrt]"`).
+
+- **11.1 et 11.2, graphes** : `ajp_backend_tensorrt_tests "[cuda]"` passe, dont les tests de
+  `cuda_status_test.cpp` (erreurs collantes, DeviceLost). En lecture, aucun « graphes CUDA coupés »
+  dans le journal.
+- **11.3, changement de résolution** : `ffmpeg -f concat -safe 0 -i liste.txt -c copy taille.ts`
+  (un 720p puis un 1080p), puis `ajp play taille.ts --seconds=30` va jusqu'au bout ; le journal dit la
+  réouverture à la nouvelle taille.
+- **11.4, plus de synchronisation de l'appareil** : `nsys profile --trace=cuda` sur 30 s de lecture
+  ×4, puis `nsys stats -r cuda_api_sum` : ni `cudaFree` ni `cudaDeviceSynchronize` après la première
+  image. Test : « détruire un tenseur pendant 50 ms de travail en vol rend la main en moins de 2 ms ».
+- **11.5, export** : le journal de l'export dit « signaux de l'export écrits par le GPU, sans rappel
+  hôte » ; `[backend_tensorrt][cuda][export]` passe (signaux dans une page enregistrée). Débit de
+  l'export contre la passe précédente (pas de baisse attendue).
+- **11.6, priorités** : rien à voir à l'œil ; les graphes refaits une fois au premier enfilage
+  (journal), pas plus.
+- **11.7, à mesurer, puis décider** : `nsys --gpuctxsw=true` 3 voies contre `--one-lane`, 1080p et
+  720p Rapide ; 3 voies gardées seulement si ≥ 1,05 × une voie sous charge. La décision va dans un ADR
+  « voies et priorités : décision mesurée ».
+- **11.8, seulement si la trace le justifie** : la composition attend sa tranche de temps plus de
+  0,5 ms au p95.
+
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
 Backend Vulkan seul (pas de matrices coopératives, ROCm ne sert pas Navi 24 : MIGraphX n'est plus
