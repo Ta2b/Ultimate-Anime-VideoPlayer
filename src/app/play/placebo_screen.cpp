@@ -136,7 +136,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   // sous le grade, même le débandage demandé à la main part sans grain.
   if (deband)
     params.deband_params = graded_now ? &kGradeDeband : &pl_deband_default_params;
-  else if (graded_now && !source_debanded)
+  else if (graded_now && !source_debanded && !no_grade_deband)
     params.deband_params = &kGradeDeband;
   if (graded_now) {
     const std::span<const pl_hook* const> hooks = grade->hooks();
