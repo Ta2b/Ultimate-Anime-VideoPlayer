@@ -317,6 +317,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, écriture), résumé au
   // journal à la destruction du backend.
   std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
+  // Étape 5.2 : entrées de RIFE (adresse du tenseur) que le dernier moteur à les lire était RIFE fusionné.
+  // Ses noyaux calculent le maillage et lisent l'instant à l'élément 0 du plan 6 : rife_time n'y écrit qu'un
+  // demi-flottant. Un moteur TensorRT ou DistilDRBA fusionné qui lit la même adresse la retire.
+  std::vector<std::uintptr_t> compact_rife_inputs_;
+  void note_rife_reader(const Tensor& input, bool compact);
   GpuTiming& stage(std::string_view name);
   std::unique_ptr<GpuTiming> chain_timing_;           // de l'ingestion à la fin du moteur
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice

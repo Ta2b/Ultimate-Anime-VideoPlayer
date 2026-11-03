@@ -13,6 +13,19 @@
 namespace ajp::gpu::cuda {
 namespace {
 
+// Maillage de RIFE v1 au pixel (x, y) d'une entrée w × h, calculé au lieu d'être lu dans les plans 7 à 10
+// (étape 5.2) : mêmes expressions et même arrondi __float2half_rn que rife_input (rife_kernels.cu), donc les
+// valeurs que le noyau d'entrée y écrit, au bit près.
+struct Mesh {
+  float gx0, gy0, sx, sy;
+};
+__device__ __forceinline__ Mesh mesh_at(int x, int y, int w, int h) {
+  return {__half2float(__float2half_rn(2.0F * static_cast<float>(x) / static_cast<float>(w - 1) - 1.0F)),
+          __half2float(__float2half_rn(2.0F * static_cast<float>(y) / static_cast<float>(h - 1) - 1.0F)),
+          __half2float(__float2half_rn(2.0F / static_cast<float>(w - 1))),
+          __half2float(__float2half_rn(2.0F / static_cast<float>(h - 1)))};
+}
+
 __device__ __forceinline__ float rounded(float v) {
   return __half2float(__float2half_rn(v));
 }
@@ -109,6 +122,12 @@ __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
                             ? input + static_cast<std::size_t>(c) * plane
                             : (c < 14 ? encode + static_cast<std::size_t>(c - 6) * plane : input + 6 * plane);
     const std::size_t w = static_cast<std::size_t>(p.width);
+    if (c == 14) {  // l'instant : l'élément 0 du plan 6 seul est tenu (étape 5.2, rife_time)
+      x[static_cast<std::size_t>(c) * out_plane +
+        static_cast<std::size_t>(oy) * static_cast<std::size_t>(p.out_width) + static_cast<std::size_t>(ox)] =
+          src[0];
+      continue;
+    }
     const float v = (__half2float(src[i00]) + __half2float(src[i00 + 1]) + __half2float(src[i00 + w]) +
                      __half2float(src[i00 + w + 1])) *
                     0.25F;
@@ -169,14 +188,11 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
       }
 
       // Warp des deux images (7 canaux chacune : 3 de l'image, 4 de l'encodage).
-      const float gx0 = __half2float(input[7 * plane + i]);
-      const float gy0 = __half2float(input[8 * plane + i]);
-      const float sx = __half2float(input[9 * plane + i]);
-      const float sy = __half2float(input[10 * plane + i]);
+      const Mesh m = mesh_at(px, py, p.width, p.height);
 #pragma unroll
       for (int n = 0; n < 2; ++n) {
-        const float gx = __fadd_rn(gx0, __fmul_rn(fl[2 * n], sx));
-        const float gy = __fadd_rn(gy0, __fmul_rn(fl[2 * n + 1], sy));
+        const float gx = __fadd_rn(m.gx0, __fmul_rn(fl[2 * n], m.sx));
+        const float gy = __fadd_rn(m.gy0, __fmul_rn(fl[2 * n + 1], m.sy));
         const Tap tap = grid_tap(gx, gy, p.width, p.height);
 #pragma unroll
         for (int ch = 0; ch < 7; ++ch) {
@@ -186,7 +202,7 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
           acc[dst] += rounded(bilinear(src, tap, p.width));
         }
       }
-      acc[14] += __half2float(input[6 * plane + i]);
+      acc[14] += __half2float(input[6 * plane]);  // l'instant, à l'élément 0 (étape 5.2)
       // Masque et attributs du dernier bloc calculé.
       {
         float r[9];
@@ -233,15 +249,12 @@ __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
     out_mask[i] = __float2half_rn(sig);
     return;
   }
-  const float gx0 = __half2float(input[7 * plane + i]);
-  const float gy0 = __half2float(input[8 * plane + i]);
-  const float sx = __half2float(input[9 * plane + i]);
-  const float sy = __half2float(input[10 * plane + i]);
+  const Mesh m = mesh_at(x, y, p.width, p.height);
   float warped[2][3];
 #pragma unroll
   for (int n = 0; n < 2; ++n) {
-    const float gx = __fadd_rn(gx0, __fmul_rn(fl[2 * n], sx));
-    const float gy = __fadd_rn(gy0, __fmul_rn(fl[2 * n + 1], sy));
+    const float gx = __fadd_rn(m.gx0, __fmul_rn(fl[2 * n], m.sx));
+    const float gy = __fadd_rn(m.gy0, __fmul_rn(fl[2 * n + 1], m.sy));
     const Tap tap = grid_tap(gx, gy, p.width, p.height);
 #pragma unroll
     for (int ch = 0; ch < 3; ++ch)

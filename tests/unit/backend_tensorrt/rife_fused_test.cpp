@@ -396,6 +396,23 @@ void compare_engines(const std::string& file, bool motion) {
     // 30 dB attrape encore un mauvais câblage (une sortie fausse tombe sous 20 dB).
     CHECK(score >= 30.0);
   }
+
+  // Étape 5.2 : le dernier lecteur de l'entrée est RIFE fusionné, rife_time n'écrit plus que l'élément 0 du
+  // plan de l'instant ; la chaîne fusionnée à l'instant 0,3 doit suivre le moteur entier qui lit une entrée
+  // complète (rife_input à 0,3).
+  REQUIRE(loaded.backend->kernels()->rife_time((*input)->tensor(), 0.3F));
+  const auto got_time = run(**fused, shapes);
+  REQUIRE(loaded.backend->kernels()->rife_input((*a)->tensor(), (*b)->tensor(), 0.3F, (*input)->tensor()));
+  const auto want_time = run(**reference, shapes);
+  REQUIRE(want_time.size() == got_time.size());
+  for (std::size_t i = 0; i < want_time.size(); ++i) {
+    const std::vector<double> x(got_time[i].begin(), got_time[i].end());
+    const std::vector<double> y(want_time[i].begin(), want_time[i].end());
+    double worst = 0.0;
+    const double score = psnr_of(x, y, worst);
+    WARN(file << " instant 0,3 par rife_time, sortie " << i << " : PSNR " << score << " dB");
+    CHECK(score >= 30.0);
+  }
 }
 
 }  // namespace
