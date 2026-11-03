@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "gpu/ir/graph.h"
+#include "gpu/vulkan/backend/drba_fused_engine.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_gate.h"
@@ -16,6 +17,7 @@
 #include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
+#include "prepare/drba_split.h"
 #include "prepare/rife_split.h"
 
 namespace ajp::gpu::vk {
@@ -268,6 +270,7 @@ BackendCaps VulkanBackend::capabilities() const {
           .int8 = false,
           // Les noyaux de colle lisent et écrivent des tenseurs FP16.
           .rife_fused = profile_.target.f16_storage,
+          .drba_fused = profile_.target.f16_storage,
           .matrix_units = profile_.target.matrix_units,
           .import_formats = {},
           .lanes = queue_ ? queue_->lanes() : 1};
@@ -290,6 +293,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (progress.stop.stop_requested()) return refuse_backend(RefusalCode::Cancelled, "construction annulée");
   if (runtime_) return build_runtime(model, shapes, progress);
   if (prepare::is_rife_fused_manifest(model.onnx_path)) return build_rife_fused(model, shapes, progress);
+  if (prepare::is_drba_fused_manifest(model.onnx_path)) return build_drba_fused(model, shapes, progress);
   auto request = request_of(model, shapes);
   if (!request) return std::unexpected(request.error());
   const std::uint64_t key = net::artifact_key(*request, profile_);
@@ -351,6 +355,7 @@ void VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data) {
 std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifact& artifact) {
   if (runtime_) return load_runtime(artifact);
   if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
+  if (drba_fused_artifact_key_parse(artifact.cache_key)) return load_drba_fused(artifact);
   auto bytes = net::read_file(artifact.path);
   if (!bytes) return std::unexpected(bytes.error());
   auto data = net::deserialize(*bytes);
@@ -407,6 +412,10 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
   if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine)) {
     if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
     return rife->enqueue(*queue_, inputs, outputs);
+  }
+  if (auto* drba = dynamic_cast<DrbaFusedEngine*>(&engine)) {
+    if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+    return drba->enqueue(*queue_, inputs, outputs);
   }
   auto* vulkan = dynamic_cast<VulkanEngine*>(&engine);
   if (vulkan == nullptr) return refuse_backend(RefusalCode::InputMismatch, "moteur d'un autre backend");

@@ -1,0 +1,47 @@
+#version 450
+// DistilDRBA fusionné, post : les encodages réduits de X_1 (moyenne des pixels 2o, 2o+1) et de X_0 (4o+1,
+// 4o+2) depuis la sortie de l'encodeur rangée dans X_2 (canaux 9 à 56). Voir drba_fused.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) readonly buffer X2 { AJP_TENSOR v[]; } x2;
+layout(std430, binding = 1) writeonly buffer X1 { AJP_TENSOR v[]; } x1;
+layout(std430, binding = 2) writeonly buffer X0 { AJP_TENSOR v[]; } x0;
+
+layout(push_constant) uniform Push {
+  uint enc_height;  // H / t
+  uint enc_width;
+  uint groups_x;
+} pc;
+
+void main() {
+  uint j = gl_GlobalInvocationID.y * pc.groups_x * 256u + gl_GlobalInvocationID.x;
+  uint w1 = pc.enc_width / 2u;
+  uint w0 = pc.enc_width / 4u;
+  uint plane1 = (pc.enc_height / 2u) * w1;
+  uint plane0 = (pc.enc_height / 4u) * w0;
+  uint d;
+  uint ow;
+  uint plane;
+  bool first;
+  if (j < 48u * plane1) {
+    d = 2u, ow = w1, plane = plane1, first = true;
+  } else if (j < 48u * plane1 + 48u * plane0) {
+    j -= 48u * plane1, d = 4u, ow = w0, plane = plane0, first = false;
+  } else {
+    return;
+  }
+  uint c = j / plane;
+  uint r = j % plane;
+  uint oy = r / ow;
+  uint ox = r % ow;
+  uint base = d / 2u - 1u;
+  uint src = (9u + c) * pc.enc_height * pc.enc_width;
+  uint i00 = src + (d * oy + base) * pc.enc_width + d * ox + base;
+  precise float v = (float(x2.v[i00]) + float(x2.v[i00 + 1u]) + float(x2.v[i00 + pc.enc_width]) +
+                     float(x2.v[i00 + pc.enc_width + 1u])) * 0.25;
+  if (first) x1.v[(9u + c) * plane + r] = AJP_TENSOR(v);
+  else x0.v[(9u + c) * plane + r] = AJP_TENSOR(v);
+}
