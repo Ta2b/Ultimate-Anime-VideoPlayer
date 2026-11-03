@@ -31,6 +31,15 @@ struct DisplayModel {
   std::optional<double> frame_average_content_nits() const;
 };
 
+// --hdr-metadata : ce que la sortie annonce à KWin et ce que la passe « kwin » du grade vise.
+// max_content_nits est le pic du contenu (annoncé à la swapchain : KWin le ramène à son blanc, panneau =
+// contenu × référence / 203) ; panel_peak_nits, le même pic en nits affichés, que la passe écrête.
+struct KwinHint {
+  double panel_peak_nits = 0.0;
+  double max_content_nits = 0.0;
+};
+KwinHint kwin_hint(double content_peak_nits, double reference_nits);
+
 // La part de L_max(2 %) que la courbe QD-OLED garde à cette surface (1 à 2 % et moins, 0,257 à 100 %).
 double oled_abl_ratio(double area);
 

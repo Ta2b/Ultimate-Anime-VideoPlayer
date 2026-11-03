@@ -24,6 +24,7 @@
 #include "app/play/placebo_screen.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "render/display_model.h"
 
 namespace ajp::app::play {
 namespace {
@@ -170,11 +171,14 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
 void PlaceboScreen::Impl::match_kwin() {
   if (!kde_sdr_nits || !grade || swapchain == nullptr) return;
   const bool on = hdr_output && grade_loaded_pq == true;
+  // Le pic du grade est en unités du contenu ; la passe écrête au pic du panneau, et la sortie annonce celui
+  // du contenu : KWin le ramène à son blanc (render::kwin_hint).
   const double peak = grade->params().peak;
-  grade->set_kwin_match(on ? std::optional(render::Grade::KwinMatch{.reference = *kde_sdr_nits, .peak = peak})
-                           : std::nullopt);
-  // KWin écrête à son pic ce qui dépasse le maximum annoncé, ramené à son blanc : peak × 203 / référence.
-  const double max_nits = on ? peak * 203.0 / *kde_sdr_nits : 0.0;
+  const render::KwinHint hint = render::kwin_hint(peak, *kde_sdr_nits);
+  grade->set_kwin_match(
+      on ? std::optional(render::Grade::KwinMatch{.reference = *kde_sdr_nits, .peak = hint.panel_peak_nits})
+         : std::nullopt);
+  const double max_nits = on ? hint.max_content_nits : 0.0;
   if (max_nits == hinted_max_nits) return;
   hinted_max_nits = max_nits;
   pl_color_space space = pl_color_space_hdr10;

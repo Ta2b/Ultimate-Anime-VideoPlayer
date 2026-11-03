@@ -33,3 +33,12 @@ TEST_CASE("Modèle d'écran : limiteur d'une dalle OLED, pic tenu par un LCD", "
   CHECK(lcd.max_nits(1.0) == 1000.0);
   CHECK_FALSE(lcd.frame_average_content_nits());
 }
+
+TEST_CASE("--hdr-metadata : le maximum annoncé est le pic du contenu", "[render][display]") {
+  const ajp::render::KwinHint kde = ajp::render::kwin_hint(1000.0, 300.0);
+  CHECK(kde.max_content_nits == 1000.0);
+  CHECK_THAT(kde.panel_peak_nits, Catch::Matchers::WithinAbs(1477.8, 0.1));
+  const ajp::render::KwinHint identity = ajp::render::kwin_hint(1000.0, 203.0);
+  CHECK_THAT(identity.panel_peak_nits, Catch::Matchers::WithinAbs(1000.0, 1e-9));
+  CHECK(identity.max_content_nits == 1000.0);
+}
