@@ -25,7 +25,8 @@ struct SpanFp8ConvView {
 struct SpanFp8Weights {
   static constexpr int kBlocks = 8;
   static constexpr int kScales = 1 + 3 * kBlocks;
-  const float* scales = nullptr;  // kScales échelles E4M3 d'activation
+  int blocks = kBlocks;           // 2 à kBlocks (étape 3.2c : le b5f48 en a 5)
+  const float* scales = nullptr;  // 1 + 3·blocks échelles E4M3 d'activation (kScales places)
   SpanFp8ConvView first;
   SpanFp8ConvView conv[kBlocks][3];
   SpanFp8ConvView attention[kBlocks];

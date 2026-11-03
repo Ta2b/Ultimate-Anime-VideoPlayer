@@ -57,10 +57,10 @@ TEST_CASE("le cran Performance de SPAN est offert dès que le moteur sait les no
   // Pas de paquet dans le dossier : l'offre ne dépend plus de lui.
   CHECK(span_tiers(model, dir / "modeles", false, true).performance);
   CHECK_FALSE(span_tiers(model, dir / "modeles", false, false).performance);
-  // Le modèle de 48 canaux n'est pas pris par les noyaux.
+  // Le modèle de 48 canaux aussi, depuis l'étape 3.2c (rangé en 64 canaux).
   const fs::path small = dir / "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx";
   std::ofstream(small) << "modele";
-  CHECK_FALSE(span_tiers(small, dir / "modeles", false, true).performance);
+  CHECK(span_tiers(small, dir / "modeles", false, true).performance);
   fs::remove_all(dir);
 }
 

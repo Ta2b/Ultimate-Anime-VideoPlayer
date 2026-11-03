@@ -76,6 +76,7 @@ struct SpanFp8Net::Impl {
     std::array<float, 3> w_scale{};
   };
   std::array<BlockWeights, kBlocks> blocks;
+  int used = kBlocks;  // blocs du modèle (étape 3.2c)
   std::array<float, kScaleCount> scales{};
 
   // Lancements : leurs paramètres portent les adresses de la zone de travail (bind).
@@ -122,7 +123,7 @@ struct SpanFp8Net::Impl {
       k.ld16 = kConcat;
       c1.init(h, w, 3, 1, kPadded, kChannels, reinterpret_cast<const F16*>(unshuffled), c1_w.as<F16>(), k);
     }
-    for (int b = 0; b < kBlocks; ++b) {
+    for (int b = 0; b < used; ++b) {
       const auto bi = static_cast<std::size_t>(b);
       const float s_in = b == 0 ? scales[0] : scales[static_cast<std::size_t>(1 + 3 * (b - 1) + 2)];
       const float s_r1 = scales[static_cast<std::size_t>(1 + 3 * b)];
@@ -131,13 +132,13 @@ struct SpanFp8Net::Impl {
       const std::uint8_t* xin = x[b % 2];
       std::uint8_t* xout = x[(b + 1) % 2];
       BlockWeights& bw = blocks[bi];
-      {  // c1 + Relu -> FP8 ; pour le bloc 8, aussi FP16 dans la tranche 3 (relu1 du dernier bloc)
+      {  // c1 + Relu -> FP8 ; pour le dernier bloc, aussi FP16 dans la tranche 3 (son relu1)
         sk::KP k;
         k.alpha = s_in * bw.w_scale[0];
         k.bias = bw.b[0].as<float>();
         k.out8 = r1;
         k.inv_s8 = 1.F / s_r1;
-        if (b == kBlocks - 1) {
+        if (b == used - 1) {
           k.out16 = cat_in + 3 * kChannels;
           k.ld16 = kConcat;
         }
@@ -159,7 +160,7 @@ struct SpanFp8Net::Impl {
         k.bias = bw.b[2].as<float>();
         k.w1 = bw.att_w.as<__half>();
         k.b1 = bw.att_b.as<float>();
-        if (b < kBlocks - 1) {
+        if (b < used - 1) {
           k.out8 = xout;
           k.inv_s8 = 1.F / s_out;
         }
@@ -167,7 +168,7 @@ struct SpanFp8Net::Impl {
           k.out16 = cat_in + 2 * kChannels;
           k.ld16 = kConcat;
         }
-        if (b == kBlocks - 1) {  // sortie du bloc 8 : tranche 1
+        if (b == used - 1) {  // sortie du dernier bloc : tranche 1
           k.out16 = cat_in + kChannels;
           k.ld16 = kConcat;
         }
@@ -187,7 +188,7 @@ struct SpanFp8Net::Impl {
       pix.init(h, w, 3, 1, kChannels, kPixel, reinterpret_cast<const F16*>(cat_out), pix_w.as<F16>(), p);
     }
     attribute = c1.attribute;
-    for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b)
+    for (std::size_t b = 0; b < static_cast<std::size_t>(used); ++b)
       for (const cudaError_t e : {la[b].attribute, lb[b].attribute, lc[b].attribute})
         if (attribute == cudaSuccess) attribute = e;
     for (const cudaError_t e : {cat.attribute, pix.attribute})
@@ -221,7 +222,16 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
   impl->h = height / 2;
   impl->w = width / 2;
   impl->npix = static_cast<std::int64_t>(impl->h) * impl->w;
-  for (std::size_t i = 0; i < static_cast<std::size_t>(kScaleCount); ++i) impl->scales[i] = weights.scales[i];
+  // Deux blocs au moins : le premier et le dernier écrivent chacun leur tranche de la concaténation.
+  if (weights.blocks < 2 || weights.blocks > kBlocks) {
+    status = SpanFp8Status::Failed;
+    error = "nombre de blocs hors de 2 à 8";
+    return nullptr;
+  }
+  impl->used = weights.blocks;
+  impl->scales.fill(1.F);
+  for (std::size_t i = 0; i < static_cast<std::size_t>(1 + 3 * weights.blocks); ++i)
+    impl->scales[i] = weights.scales[i];
 
   // false : l'envoi a échoué, status et error le disent.
   const auto sent = [&](cudaError_t result, const char* what) {
@@ -246,7 +256,7 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
       !put_half(impl->pix_w, weights.pixel, std::size_t{kPixel} * 9 * kChannels) ||
       !put_bias(impl->pix_b, weights.pixel, kPixel))
     return nullptr;
-  for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b) {
+  for (std::size_t b = 0; b < static_cast<std::size_t>(impl->used); ++b) {
     Impl::BlockWeights& bw = impl->blocks[b];
     for (std::size_t i = 0; i < 3; ++i) {
       std::vector<std::uint8_t> q;
@@ -278,7 +288,7 @@ bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, st
   unshuffle_kernel<<<blocks, 256, 0, stream>>>(static_cast<const __half*>(input), n.unshuffled_ptr, n.height,
                                                n.width);
   n.c1.launch(stream);
-  for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b) {
+  for (std::size_t b = 0; b < static_cast<std::size_t>(n.used); ++b) {
     n.la[b].launch(stream);
     n.lb[b].launch(stream);
     n.lc[b].launch(stream);

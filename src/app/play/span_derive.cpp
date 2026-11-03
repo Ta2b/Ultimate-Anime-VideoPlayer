@@ -279,12 +279,6 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     prepare.note = i18n::tr("No SPAN model in use: nothing to prepare.");
     return prepare;
   }
-  // Le modèle « Performance » b5f48 a 48 canaux et 5 blocs : les noyaux prennent le b8f64 seulement.
-  if (model.filename().string().contains("b5f48")) {
-    prepare.note = i18n::tr(
-        "This SPAN model (b5f48, 48 channels) is not supported by the FP8 kernels: pick a Balanced model.");
-    return prepare;
-  }
   if (const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, model, models_dir);
       found.variant) {
     prepare.ready = true;

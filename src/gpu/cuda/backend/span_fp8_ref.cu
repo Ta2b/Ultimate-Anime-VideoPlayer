@@ -102,6 +102,7 @@ struct SpanFp8Reference::Impl {
     Device att_w, att_b;
   };
   std::array<BlockWeights, kBlocks> blocks;
+  int used = kBlocks;  // blocs du modèle (étape 3.2c)
   Device workspace;
   Device peak_device;
 
@@ -140,7 +141,7 @@ struct SpanFp8Reference::Impl {
       k.ld16 = kChannels;
       c1.init(h, w, 3, 1, kPadded, kChannels, reinterpret_cast<const F16*>(unshuffled), c1_w.as<F16>(), k);
     }
-    for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b) {
+    for (std::size_t b = 0; b < static_cast<std::size_t>(used); ++b) {
       BlockWeights& bw = blocks[b];
       __half* x = ab[b % 2];
       __half* t = ab[(b + 1) % 2];
@@ -173,7 +174,7 @@ struct SpanFp8Reference::Impl {
       pix.init(h, w, 3, 1, kChannels, kPixel, reinterpret_cast<const F16*>(cat_out), pix_w.as<F16>(), p);
     }
     attribute = c1.attribute;
-    for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b)
+    for (std::size_t b = 0; b < static_cast<std::size_t>(used); ++b)
       for (const cudaError_t e : {la[b].attribute, lb[b].attribute, lc[b].attribute})
         if (attribute == cudaSuccess) attribute = e;
     for (const cudaError_t e : {cat.attribute, pix.attribute})
@@ -193,6 +194,12 @@ std::unique_ptr<SpanFp8Reference> SpanFp8Reference::create(const SpanFp8Weights&
   impl->h = height / 2;
   impl->w = width / 2;
   impl->npix = static_cast<std::int64_t>(impl->h) * impl->w;
+  if (weights.blocks < 2 || weights.blocks > kBlocks) {
+    status = SpanFp8Status::Failed;
+    error = "nombre de blocs hors de 2 à 8";
+    return nullptr;
+  }
+  impl->used = weights.blocks;
 
   const auto sent = [&](cudaError_t result, const char* what) {
     if (result == cudaSuccess) return true;
@@ -216,7 +223,7 @@ std::unique_ptr<SpanFp8Reference> SpanFp8Reference::create(const SpanFp8Weights&
       !put_half(impl->pix_w, weights.pixel, std::size_t{kPixel} * 9 * kChannels) ||
       !put_bias(impl->pix_b, weights.pixel, kPixel))
     return nullptr;
-  for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b) {
+  for (std::size_t b = 0; b < static_cast<std::size_t>(impl->used); ++b) {
     Impl::BlockWeights& bw = impl->blocks[b];
     for (std::size_t i = 0; i < 3; ++i)
       if (!put_half(bw.w[i], weights.conv[b][i], kBlockWeights) ||
@@ -290,13 +297,13 @@ bool SpanFp8Reference::run(cudaStream_t stream, const void* input, void* output,
   conv("conv d'entrée", n.c1);
   observe(0, n.ab[0]);
   to_slice(n.ab[0], 0);
-  for (std::size_t b = 0; b < static_cast<std::size_t>(kBlocks); ++b) {
+  for (std::size_t b = 0; b < static_cast<std::size_t>(n.used); ++b) {
     const int base = 1 + 3 * static_cast<int>(b);
     __half* t = n.ab[(b + 1) % 2];
     const __half* x = n.ab[b % 2];
     conv("conv a", n.la[b]);
     observe(base, n.r1);
-    if (b == static_cast<std::size_t>(kBlocks - 1)) to_slice(n.r1, 3);
+    if (b == static_cast<std::size_t>(n.used - 1)) to_slice(n.r1, 3);
     conv("conv b", n.lb[b]);
     observe(base + 1, n.r2);
     conv("conv c", n.lc[b]);
@@ -306,7 +313,7 @@ bool SpanFp8Reference::run(cudaStream_t stream, const void* input, void* output,
     watch("fin de bloc", dim3(end_blocks), dim3(128), 0);
     observe(base + 2, t);
     if (b == 0) to_slice(t, 2);
-    if (b == static_cast<std::size_t>(kBlocks - 1)) to_slice(t, 1);
+    if (b == static_cast<std::size_t>(n.used - 1)) to_slice(t, 1);
   }
   conv("conv de concaténation", n.cat);
   conv("conv de pixels", n.pix);

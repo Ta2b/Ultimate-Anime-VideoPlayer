@@ -327,8 +327,8 @@ TEST_CASE("la préparation n'est offerte qu'avec un moteur qui la calcule et une
   const SpanPrepare b5f48 = make_span_prepare(
       nullptr, init, true, folder.root / "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
       folder.models(), video);
-  CHECK_FALSE(b5f48.offered);
-  CHECK(b5f48.note.find("48 canaux") != std::string::npos);
+  CHECK(b5f48.offered);  // pris depuis l'étape 3.2c, rangé en 64 canaux
+  CHECK(b5f48.note.find("48 canaux") == std::string::npos);
 
   const SpanPrepare fresh = make_span_prepare(nullptr, init, true, folder.model, folder.models(), video);
   CHECK(fresh.offered);

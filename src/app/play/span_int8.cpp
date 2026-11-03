@@ -59,9 +59,9 @@ SpanInt8Lookup refused(std::string note) {
 TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
                        bool cutlass_engine) {
   // Le moteur qui sait les noyaux CUTLASS suffit : le lecteur fabrique lui-même le paquet au premier
-  // démarrage avec ce cran (span_auto.h), et la lecture reste en FP16 d'ici là. Le modèle « Performance »
-  // b5f48 (48 canaux) n'est pas pris par les noyaux.
-  const bool cutlass_possible = cutlass_engine && !span.filename().string().contains("b5f48");
+  // démarrage avec ce cran (span_auto.h), et la lecture reste en FP16 d'ici là. Le b5f48 (48 canaux, 5 blocs)
+  // est pris depuis l'étape 3.2c, rangé en 64 canaux.
+  const bool cutlass_possible = cutlass_engine;
   return TierSupport{
       .performance = cutlass_possible ||
                      (fp8_engine && find_span_variant(SpanVariantKind::Fp8, span, dir).variant.has_value()),

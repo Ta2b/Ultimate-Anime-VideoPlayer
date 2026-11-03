@@ -84,12 +84,11 @@ int main(int argc, char* const* argv) {
   if (!SpanFp8Net::supported_device(props.major, props.minor))
     return fail("appareil sans noyaux FP8 CUTLASS");
 
-  if (package->blocks.size() != static_cast<std::size_t>(ajp::gpu::cuda::SpanFp8Weights::kBlocks))
-    return fail("paquet à moins de 8 blocs : noyaux à 8 blocs seulement (étape 3.2c)");
   ajp::gpu::cuda::SpanFp8Weights weights;
   const auto view = [](const ajp::gpu::span_fp8::Conv& conv) {
     return ajp::gpu::cuda::SpanFp8ConvView{.weights = conv.weights.data(), .bias = conv.bias.data()};
   };
+  weights.blocks = static_cast<int>(package->blocks.size());
   weights.scales = package->scales.data();
   weights.first = view(package->first);
   for (std::size_t b = 0; b < package->blocks.size(); ++b) {

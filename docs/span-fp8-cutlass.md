@@ -123,7 +123,7 @@ pas, et vit dans le dossier « modeles » des données du lecteur à côté des 
 
 Le corpus est celui de `quantize_span.py` (images d'anime SDR 8 bits, aucune sortie RTX HDR/TrueHDR/RTX Video ;
 un cinquième des images, choisies par SHA-256, valide et ne calibre jamais). Le script : contrôle le graphe
-(refuse le b5f48 à 48 canaux avant tout calcul), calibre en FP32 sur ONNX Runtime CPU, écrit le paquet, fait
+(prend le b8f64 et le b5f48, ce dernier rangé en 64 canaux remplis de zéros), calibre en FP32 sur ONNX Runtime CPU, écrit le paquet, fait
 tourner les noyaux du lecteur sur les images de validation (`ajp_span_fp8_run`) et les compare au SPAN d'origine
 en FP32, mesure (avec `--trtexec`) le gain sur TensorRT FP16 et exige 1,05. Il écrit
 `<nom>-fp8c-<16 chiffres du SHA-256 du modèle>.span8` et son reçu `.toml` (format `ajp-span-fp8c-v1`) ; si un
@@ -144,7 +144,7 @@ par TensorRT. Chacune refusée passe à la suivante.
 | Backend construit sans CUTLASS (hors Linux, `third_party/cutlass` absent, `AJP_WITH_SPAN_FP8=OFF`, pas de CUDA) | `span_fp8_net_none.cpp` : capacité fausse | variante suivante |
 | Reçu absent, refusé, d'un autre modèle, paquet modifié | `find_span_variant` | variante suivante |
 | Taille que les noyaux ne prennent pas : hauteur ou largeur impaire, forme libre (depuis l'étape 3.1, 960×540 et toute taille paire sont prises) | `build` refuse (`FormatUnsupported`) | variante suivante |
-| Canaux ≠ 64 ou ≠ 8 blocs (b5f48) | `derive_span_fp8.py` n'écrit rien ; `parse` refuse un autre en-tête | pas de variante |
+| Canaux autres que 48 ou 64, moins de 2 ou plus de 8 blocs | `derive_span_fp8.py` n'écrit rien ; `parse` refuse un autre en-tête | pas de variante |
 | Paquet illisible, tronqué, CRC faux | `build` | variante suivante |
 | Mémoire insuffisante, noyau qui ne tourne pas (CUDA), sortie non finie | `load` : poids envoyés, zone réservée, une image de zéros passée par les noyaux | variante suivante |
 | Erreur CUDA en lecture après un chargement réussi | `enqueue` rend un refus, comme un moteur TensorRT | traité comme toute erreur d'exécution du moteur (arrêt de la chaîne) ; pas de bascule à chaud |
@@ -162,7 +162,7 @@ Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « É
 
 | Étape | Où | Définition |
 |---|---|---|
-| Poids et graphe | `gpu/span_fp8/onnx_weights.{h,cpp}` | lecture ONNX en C++ ; refuse le b5f48 (48 canaux), les 8 blocs, les noms des 25 tenseurs, le dégroupage (Transpose 0,1,3,5,2,4) et DepthToSpace(4, CRD) |
+| Poids et graphe | `gpu/span_fp8/onnx_weights.{h,cpp}` | lecture ONNX en C++ ; 48 ou 64 canaux (48 rangés en 64), 2 à 8 blocs, les noms des 1 + 3·blocs tenseurs, l'ordre du Concat de conv_cat, le dégroupage (Transpose 0,1,3,5,2,4) et DepthToSpace(4, CRD) |
 | Images | `media/stills.{h,cpp}` | 24 instants de 8 % à 92 % de la durée, décodage logiciel, découpe centrale ≤ 1920×1088 alignée sur 128×4, RGB 8 bits ; noires et aplats écartés, les 12 plus contrastées gardées ; HDR (PQ, HLG, BT.2020) refusé ; rien n'est conservé |
 | Calibration | `Backend::derive_span_fp8` (`tensorrt_span_derive.cpp`, `span_fp8_ref.cu`) | 8 images : le SPAN en FP16 par les mêmes convolutions CUTLASS (accumulation FP32) relève le maximum de \|valeur\| des 25 tenseurs ; échelle = maximum / 448, comme l'outil Python |
 | Validation | idem | 4 images mises de côté (une sur trois) : sortie du réseau FP8 contre la même référence FP16, PSNR et SSIM de `quantize_span.py` (`gpu/span_fp8/metrics.cpp`) ; garde-fous du reçu : 42 dB moyen, 38 dB pire, SSIM pire 0,985 |
@@ -187,8 +187,9 @@ SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Le
   une carte que je n'ai pas. Le repli est automatique.
 - **Tailles dynamiques** : le moteur est à une taille fixe, comme les moteurs TensorRT du lecteur (un changement
   de taille de travail recharge la chaîne). Depuis l'étape 3.1, l'épilogue garde les lignes au-delà de M : toute taille paire (à valider sur la RTX : memcheck à 0 en 960×540).
-- **Modèle Performance b5f48 (48 canaux, 5 blocs)** : refusé, reste sur TensorRT FP16. Le prototype et ces
-  noyaux supposent 64 canaux.
+- **Modèle Performance b5f48 (48 canaux, 5 blocs)** : pris depuis les étapes 3.2b et 3.2c, rangé en 64 canaux
+  remplis de zéros (Relu(0) = 0, (t + x)·tanh(0) = 0) et les noyaux bouclés sur 5 blocs ; paquet version 2.
+  Visé : FP8 ≤ 0,72 × TensorRT FP16 en 720p et ≤ 0,70 en 1080p, reçu 42/38/0,985 (à mesurer sur la RTX).
 - **Windows** : le module n'est pas construit (`AJP_WITH_SPAN_FP8` vaut OFF hors Linux), CUTLASS n'y a pas été
   essayé avec MSVC. Le lecteur se comporte comme avant.
 - **Batch** 1 seulement.
