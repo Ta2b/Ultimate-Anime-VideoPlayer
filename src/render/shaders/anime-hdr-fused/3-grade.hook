@@ -3,15 +3,17 @@
 //!BIND AJG_LOCAL
 //!BIND AJG_AREAT
 //!DESC AnimeJaNai HDR grade - noirs, eclats, vibrance (scene donnee par le lecteur)
-//@AJG_LOOK_BINDS@
+//@AJG_GRADE_BINDS@
 
 //@AJG_FUNCS@
 //@AJG_LOOK_FUNCS@
+//@AJG_BLACK_FUNCS@
 
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
     px.rgb = ajg_encode(ajg_grade(ajg_decode(px.rgb), skin_area(HOOKED_pos), AJG_LOCAL_tex(AJG_LOCAL_pos).x,
                                   AJG_AREAT_tex(AJG_AREAT_pos).x));
     //@AJG_LOOK@
+    //@AJG_BLACK@
     return px;
 }

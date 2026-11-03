@@ -90,6 +90,24 @@ std::vector<std::uint16_t> sdr_image() {
   return pixels;
 }
 
+// Les composantes où le corps fusionné s'écarte de la chaîne à passes séparées de plus que l'arrondi de
+// celle-ci : elle range l'image entre le grade et le look (ou le vrai noir, ou KWin) en demi-flottants
+// (11 bits de mantisse : 4 codes 16 bits sous le code 0,125, jusqu'à 32 au-dessus de 0,5), la passe unique ne
+// l'arrondit plus. L'écart est donc borné par ce pas, étiré `stretch` fois au plus par ce qui suit, plus 2
+// codes (le critère du plan). Mesuré sur lavapipe : 1,9 pas pour un arrondi retiré, 2,75 pour deux (look puis
+// KWin).
+std::size_t beyond_half_float(const std::vector<std::uint16_t>& x, const std::vector<std::uint16_t>& y,
+                              double stretch = 2.0) {
+  std::size_t outside = 0;
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    if (i % 4 == 3) continue;
+    const double v = std::max(int(y[i]), 1) / 65535.0;
+    const double step = std::ldexp(1.0, static_cast<int>(std::floor(std::log2(v))) - 10) * 65535.0;
+    if (std::abs(int(x[i]) - int(y[i])) > 2.0 + stretch * step) ++outside;
+  }
+  return outside;
+}
+
 struct Case {
   const char* name;
   GradeParams params;
@@ -189,7 +207,7 @@ TEST_CASE("grade fusionné : empreintes des images gradées inchangées par les 
       {"vibrance-punch", 0xfaed7dfec8eed895ULL},
       {"noir", 0x28e0e7de6f239eafULL},
       {"looks", 0x351f506e24ab7ed1ULL},
-      {"looks-noir-kwin", 0x814afb1ec82427cbULL},
+      {"looks-noir-kwin", 0xd20d357b9f179df8ULL},
       {"sdr", 0xd5f812967d41a93aULL},
       {"split/defaut", 0x982fd46364b7d7bfULL},
       {"split/eclats", 0xa0d9c6dfab01903ULL},
@@ -250,19 +268,54 @@ TEST_CASE("look lu dans la passe du grade = passe du look", "[render][gpu][lut]"
     const std::vector<std::uint16_t> x = graded_image(fused, scene(), c.params);
     const std::vector<std::uint16_t> y = graded_image(split, scene(), c.params);
     REQUIRE(x.size() == y.size());
-    // La chaîne à deux passes range l'image entre le grade et le look en demi-flottants (11 bits de mantisse
-    // : jusqu'à 32 codes 16 bits au-dessus du code 0,5) ; la passe unique ne l'arrondit plus. L'écart est
-    // donc borné par ce pas, étiré au plus deux fois par la LUT et l'encodage du look, plus 2 codes (critère
-    // du plan).
-    std::size_t outside = 0;
-    for (std::size_t i = 0; i < x.size(); ++i) {
-      if (i % 4 == 3) continue;
-      const double v = std::max(int(y[i]), 1) / 65535.0;
-      const double half_step = std::ldexp(1.0, static_cast<int>(std::floor(std::log2(v))) - 10) * 65535.0;
-      if (std::abs(int(x[i]) - int(y[i])) > 2.0 + 2.0 * half_step) ++outside;
-    }
-    CHECK(outside == 0);
+    CHECK(beyond_half_float(x, y, c.kwin ? 3.0 : 2.0) == 0);  // KWin : un second arrondi retiré
   }
+}
+
+// Des quasi-noirs gris (rampe de 0 à 1 nit), des quasi-noirs colorés et des voisins clairs : le pied du vrai
+// noir et son max local jouent tous deux.
+std::vector<std::uint16_t> dark_scene() {
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (int y = 0; y < kSide; ++y)
+    for (int x = 0; x < kSide; ++x) {
+      double r = 1.0 * (x + 1) / kSide;
+      double g = r;
+      double b = r;
+      if (y >= kSide / 2 && y < 3 * kSide / 4) {  // quasi-noirs colorés
+        g = r * 0.3;
+        b = r * 0.1;
+      }
+      if (y >= 3 * kSide / 4 && (x / 8 + y / 8) % 2 == 0) r = g = b = 60.0;  // voisins clairs
+      const auto at = (static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4;
+      pixels[at] = static_cast<std::uint16_t>(std::lround(nits_to_pq(r) * 65535.0));
+      pixels[at + 1] = static_cast<std::uint16_t>(std::lround(nits_to_pq(g) * 65535.0));
+      pixels[at + 2] = static_cast<std::uint16_t>(std::lround(nits_to_pq(b) * 65535.0));
+      pixels[at + 3] = 65535;
+    }
+  return pixels;
+}
+
+TEST_CASE("vrai noir et KWin dans la passe du grade, comme les deux passes", "[render][gpu]") {
+  Gpu fused(GradeBody::Fused);
+  require_device(fused);
+  REQUIRE(fused.grade);
+  Gpu split(GradeBody::FusedSplit);
+  REQUIRE(split.grade);
+  GradeParams p = strong(0.5);
+  p.black_lo = 0.05;
+  p.black_hi = 0.5;
+  const bool kwin = GENERATE(false, true);
+  INFO((kwin ? "KWin" : "sans KWin"));
+  for (Gpu* gpu : {&fused, &split})
+    gpu->grade->set_kwin_match(kwin ? std::optional(Grade::KwinMatch{.reference = 200.0, .peak = 800.0})
+                                    : std::nullopt);
+  const std::vector<std::uint16_t> source = dark_scene();
+  const std::vector<std::uint16_t> x = graded_image(fused, source, p);
+  const std::vector<std::uint16_t> y = graded_image(split, source, p);
+  // Mesuré sur lavapipe : 4 codes au pire sans KWin, 8 avec, gris et couleurs, voisins clairs compris.
+  CHECK(beyond_half_float(x, y) == 0);
+  // Le pied agit bien : la moitié sombre de la rampe grise est à 0.
+  CHECK(x[(static_cast<std::size_t>(kSide / 4) * kSide + 2) * 4] == 0);
 }
 
 }  // namespace ajp::render

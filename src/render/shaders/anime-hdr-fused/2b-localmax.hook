@@ -1,0 +1,45 @@
+//@AJG_LOCALMAX_BEGIN@
+//!HOOK OUTPUT
+//!BIND HOOKED
+//!BIND AJG_LOCAL
+//!BIND AJG_AREAT
+//@AJG_LOOK_BINDS@
+//!SAVE AJG_LOCALMAX
+//!WIDTH HOOKED.w 8 /
+//!HEIGHT HOOKED.h 8 /
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - max local 8x8 gradé (vrai noir)
+
+// Le vrai noir lu dans la passe du grade (GradeBody::Fused, chantier 2.3) : le max local 8x8 du maxRGB de
+// l'image gradée, que la passe à part mesurait sur l'image déjà gradée, est pris ici avant le grade : le
+// pixel le plus clair du bloc (maxRGB de la source) est gradé avec sa vraie couleur, ses cartes et le look.
+// Toujours posée (le grade lie AJG_LOCALMAX, et libplacebo saute un hook dont une texture manque) : sans vrai
+// noir, elle rend 0 sans rien lire.
+
+//@AJG_FUNCS@
+//@AJG_LOOK_FUNCS@
+
+vec4 hook() {
+    if (black_hi <= black_lo) return vec4(0.0);
+    ivec2 size = ivec2(HOOKED_size);
+    ivec2 base = ivec2(HOOKED_pos * HOOKED_size) - ivec2(4);
+    float best = -1.0;
+    ivec2 at = clamp(base, ivec2(0), size - ivec2(1));
+    for (int j = 0; j < 8; j++)
+    for (int i = 0; i < 8; i++) {
+        ivec2 p = clamp(base + ivec2(i, j), ivec2(0), size - ivec2(1));
+        vec3 c = texelFetch(HOOKED_raw, p, 0).rgb;
+        float m = max(c.r, max(c.g, c.b));
+        if (m > best) {
+            best = m;
+            at = p;
+        }
+    }
+    vec2 pos = (vec2(at) + 0.5) / vec2(size);
+    vec3 e = ajg_encode(ajg_grade(ajg_decode(texelFetch(HOOKED_raw, at, 0).rgb), skin_area(pos),
+                                  AJG_LOCAL_tex(pos).x, AJG_AREAT_tex(pos).x));
+    //@AJG_LOOK_E@
+    return vec4(max(e.r, max(e.g, e.b)), 0.0, 0.0, 1.0);
+}
+//@AJG_LOCALMAX_END@
+
