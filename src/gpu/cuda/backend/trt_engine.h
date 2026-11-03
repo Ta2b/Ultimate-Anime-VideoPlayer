@@ -119,7 +119,8 @@ class TrtEngine final : public Engine {
   // Une capture refusée est réessayée au lancement suivant : un appel CUDA d'un autre fil au
   // mauvais moment peut l'invalider (les noyaux NVENC sur le flux par défaut le faisaient avant
   // aux_streams_) ; graphs_off_ après kCaptureAttempts refus, et les lancements restent directs.
-  static constexpr std::size_t kMaxGraphs = 16;  // SPAN voit 8 jeux d'adresses avec DistilDRBA
+  static constexpr std::size_t kMaxGraphs =
+      8;  // 16 faisait échouer le chargement du backend et baissait le PSNR du RIFE fusionné (mesuré, PR 322)
   static constexpr int kCaptureAttempts = 3;
   GraphBook<std::vector<std::uintptr_t>> book_{kMaxGraphs, kCaptureAttempts};
   std::vector<cudaGraphExec_t> execs_;  // les graphes, rangés par l'indice du registre
