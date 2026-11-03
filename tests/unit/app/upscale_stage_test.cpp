@@ -138,6 +138,27 @@ TEST_CASE("Étage gpu : sans interpolation, une sortie par image, slots et séma
   CHECK(rig.reported().empty());
 }
 
+TEST_CASE("×1 : l'image agrandie part par enqueue_ring, une seule fois", "[app][stage]") {
+  Rig rig;
+  rig.start(rig.setup(false));
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(6));
+  rig.stage.reset();
+  // Une image : un enqueue_ring, qui fait SPAN et l'écriture de son emplacement ; rien d'autre n'écrit.
+  CHECK(rig.backend.count("enqueue_ring") == 6);
+  CHECK(rig.backend.count("engine span") == 6);
+  CHECK(rig.backend.written().size() == 6);
+  const std::vector<std::string> log = rig.backend.log();
+  for (std::size_t i = 0; i + 1 < log.size(); ++i) {
+    if (log[i] != "enqueue_ring") continue;
+    INFO("entrée " << i);
+    CHECK(log[i + 1] == "engine span");
+    REQUIRE(i + 2 < log.size());
+    CHECK(log[i + 2].starts_with("write "));
+  }
+  CHECK(rig.reported().empty());
+}
+
 TEST_CASE("Étage gpu : RIFE ×2, une image intermédiaire par paire ; coupe et dessin tenu sans RIFE",
           "[app][stage]") {
   Rig rig;

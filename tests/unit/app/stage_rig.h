@@ -118,6 +118,13 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   }
   std::expected<void, Refusal> enqueue(gpu::Engine& engine, std::span<const gpu::Tensor> inputs,
                                        std::span<gpu::Tensor> outputs) override;
+  // Note « enqueue_ring » puis le chemin commun (enqueue et write_ring, chacun dans le journal).
+  std::expected<void, Refusal> enqueue_ring(gpu::Engine& engine, std::span<const gpu::Tensor> inputs,
+                                            std::span<gpu::Tensor> outputs,
+                                            const gpu::RingTarget& target) override {
+    if (auto ok = note("enqueue_ring"); !ok) return ok;
+    return gpu::Backend::enqueue_ring(engine, inputs, outputs, target);
+  }
   std::expected<gpu::Fence, Refusal> signal() override { return gpu::Fence{.handle = 1, .value = ++fence_}; }
   std::expected<void, Refusal> wait(const gpu::Fence& /*fence*/) override { return {}; }
 

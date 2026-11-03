@@ -69,6 +69,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Dérivation du paquet « .span8 » (tensorrt_span_derive.cpp).
   std::expected<SpanFp8Derivation, Refusal> derive_span_fp8(const SpanFp8Request& request,
                                                             Progress& progress) override;
+  // Un SpanFp8Engine écrit l'emplacement depuis l'épilogue de to_pixel (tensorrt_span_fp8.cpp) ; tout autre
+  // moteur prend le chemin commun (enqueue puis write_ring).
+  std::expected<void, Refusal> enqueue_ring(Engine& engine, std::span<const Tensor> inputs,
+                                            std::span<Tensor> outputs, const RingTarget& target) override;
 
   // KernelOps : ingest et write_ring ; les autres noyaux de la chaîne sont refusés ici.
   std::expected<void, Refusal> ingest(const DecodedFrame& frame, const IngestSpec& spec,
@@ -180,8 +184,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // l'ONNX.
   std::expected<Artifact, Refusal> build_span_fp8(const ModelSpec& model, const ShapeSet& shapes);
   std::expected<std::unique_ptr<Engine>, Refusal> load_span_fp8(const Artifact& artifact);
+  // ring non nul (étape 3.4b) : corps du réseau, attente de l'emplacement, queue qui écrit aussi sa surface,
+  // signal.
   std::expected<void, Refusal> enqueue_span_fp8(SpanFp8Engine& engine, std::span<const Tensor> inputs,
-                                                std::span<Tensor> outputs);
+                                                std::span<Tensor> outputs, const RingTarget* ring = nullptr);
   // RIFE fusionné (tensorrt_rife_fused.cpp) : un manifeste « .rifefused » à la place de l'ONNX, six moteurs
   // construits par trtexec, chargés ensemble.
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,

@@ -189,6 +189,7 @@ TEST_CASE("Étage gpu : avec le puits de l'export, chaque sortie part en YUV dan
   CHECK(rig.backend.count("warp_blend_ring") == 0);
   CHECK(rig.backend.count("warp_blend") == 2);
   CHECK(rig.backend.count("write_yuv") == frames.size());
+  CHECK(rig.backend.count("enqueue_ring") == 0);  // en export, le chemin YUV est inchangé (étape 3.4b)
   CHECK(rig.reported().empty());
 }
 
