@@ -62,6 +62,23 @@ TEST_CASE("le verdict tient aux trois seuils du reçu", "[span_fp8][derive]") {
   CHECK_FALSE(judge({}).passed);                                                    // aucune image
 }
 
+TEST_CASE("l'accumulateur f16 n'est gardé qu'à 0,3 dB de PSNR moyen du f32, porte passée (3.5a)",
+          "[span_fp8][derive]") {
+  const Verdict f32{.psnr_mean_db = 48.0, .psnr_worst_db = 44.0, .ssim_worst = 0.99, .passed = true};
+  Verdict f16 = f32;
+  f16.psnr_mean_db = 47.75;
+  CHECK(keep_acc16(f32, f16));
+  f16.psnr_mean_db = 47.6;
+  CHECK_FALSE(keep_acc16(f32, f16));  // perd 0,4 dB
+  f16.psnr_mean_db = 48.2;
+  f16.passed = false;
+  CHECK_FALSE(keep_acc16(f32, f16));  // meilleur en moyenne, mais la porte ne passe pas
+  Verdict failed = f32;
+  failed.passed = false;
+  f16.passed = true;
+  CHECK_FALSE(keep_acc16(failed, f16));
+}
+
 TEST_CASE("le reçu a les clés et la mise en forme de l'outil Python", "[span_fp8][derive]") {
   Receipt receipt;
   receipt.source = "2x_AnimeJaNai.onnx";

@@ -3,13 +3,14 @@
 //
 //   en-tête de 40 octets : « AJPSPAN8 », version (u32 = 2 ; 1 reste lue), blocs (u32, 1 à 8 ; 8 en
 //   version 1), canaux rangés (u32 = 64), canaux réels du modèle (u32 : 48 ou 64 ; 0 en version 1, lu 64),
-//   taille de la charge (u64), CRC-32 de la charge (u32), réservé (u32 = 0) ;
-//   charge : les 1 + 3·blocs échelles E4M3 des activations (f32, voir ci-dessous), puis conv_1, les blocs,
-//   conv_cat et to_pixel. Un modèle à 48 canaux (b5f48) est rangé en 64 canaux remplis de zéros (étape 3.2b)
-//   : Relu(0) = 0 et (t + x)·tanh(0) = 0, les canaux ajoutés restent nuls d'un bout à l'autre. Poids en FP16
-//   (ceux du modèle, sans perte), rangés [sortie][ligne][colonne][entrée] ; biais en f32. Les poids des
-//   convolutions de bloc sont ramenés en FP8 au chargement, à l'échelle de leur tenseur (maximum / 448) : le
-//   paquet ne porte donc que des valeurs que le modèle d'origine contient.
+//   taille de la charge (u64), CRC-32 de la charge (u32), drapeaux (u32 : bit 0 = accumulateur f16 hors
+//   blocs, étape 3.5 ; 0 en version 1, les autres bits refusés) ; charge : les 1 + 3·blocs échelles E4M3 des
+//   activations (f32, voir ci-dessous), puis conv_1, les blocs, conv_cat et to_pixel. Un modèle à 48 canaux
+//   (b5f48) est rangé en 64 canaux remplis de zéros (étape 3.2b) : Relu(0) = 0 et (t + x)·tanh(0) = 0, les
+//   canaux ajoutés restent nuls d'un bout à l'autre. Poids en FP16 (ceux du modèle, sans perte), rangés
+//   [sortie][ligne][colonne][entrée] ; biais en f32. Les poids des convolutions de bloc sont ramenés en FP8
+//   au chargement, à l'échelle de leur tenseur (maximum / 448) : le paquet ne porte donc que des valeurs que
+//   le modèle d'origine contient.
 //
 // Échelles : [0] sortie de conv_1 ; pour le bloc b (0 à 7) : [1+3b] sortie du premier Relu, [2+3b] du second,
 // [3+3b] sortie du bloc. Une échelle est « maximum observé / 448 » sur le corpus de calibration.
@@ -56,7 +57,12 @@ struct Package {
   int real_channels = kChannels;  // 48 (b5f48, rangé en 64 avec des zéros) ou 64
   Conv concat;                    // conv_cat : 1×1, 256 → 64
   Conv pixel;                     // to_pixel : 3×3, 64 → 48
+  // conv_cat et to_pixel accumulent en f16 (étape 3.5a, mesuré −2,7 % au banc) ; posé par la dérivation
+  // seulement si la porte passe et que le PSNR moyen perd au plus kMaxAcc16PsnrLossDb (derive.h).
+  bool acc16 = false;
 };
+
+inline constexpr std::uint32_t kFlagAcc16 = 1U;
 
 // Le dégroupage prend des blocs 2×2 : hauteur et largeur paires. La dernière tuile de 128 lignes des noyaux
 // garde ses lignes au-delà de M (étape 3.1) : plus de multiple de 128.

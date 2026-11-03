@@ -206,10 +206,27 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
     scores.push_back({.psnr_db = score.psnr_db, .ssim = score.ssim});
   report.verdict = gpu::span_fp8::judge(scores);
   report.passed = report.verdict.passed;
+  // Étape 3.5a : la variante à accumulateur f16 hors blocs, si elle passe la porte et perd au plus 0,3 dB de
+  // PSNR moyen ; c'est alors elle que le paquet, le reçu et le temps décrivent.
+  bool acc16 = false;
+  double kernels_ms = derived->kernels_ms;
+  if (!derived->scores_acc16.empty()) {
+    std::vector<gpu::span_fp8::ImageScore> scores16;
+    for (const gpu::SpanFp8ImageScore& score : derived->scores_acc16)
+      scores16.push_back({.psnr_db = score.psnr_db, .ssim = score.ssim});
+    const gpu::span_fp8::Verdict verdict16 = gpu::span_fp8::judge(scores16);
+    if (gpu::span_fp8::keep_acc16(report.verdict, verdict16)) {
+      acc16 = true;
+      report.verdict = verdict16;
+      kernels_ms = derived->kernels_ms_acc16;
+    }
+  }
+  report.acc16 = acc16;
 
   // Le paquet jugé est celui dont les échelles viennent de cette calibration, et pas un autre.
   gpu::span_fp8::Package package = std::move(*weights);
   package.scales = derived->scales;
+  package.acc16 = acc16;
   const std::vector<std::byte> bytes = gpu::span_fp8::serialize(package);
   const std::string package_sha =
       prepare::sha256_hex(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
@@ -222,7 +239,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   receipt.source_sha256 = *source_sha;
   receipt.model_sha256 = report.passed ? package_sha : std::string();
   receipt.quantizer = plan.quantizer;
-  receipt.kernels_ms = derived->kernels_ms;
+  receipt.kernels_ms = kernels_ms;
   receipt.calibration_images = report.calibration_images;
   receipt.calibration_crops = report.calibration_images;  // des images entières, pas des découpes de 576²
   receipt.calibration_crop = width;
@@ -249,8 +266,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
     report.text = i18n::tr_format(
         "Performance mode ready: {} ({} calibration frames, {} validation frames at {}, kernels {} ms). It "
         "is used the next time a video opens.",
-        scores_text, report.calibration_images, report.validation_images, report.size,
-        db(derived->kernels_ms));
+        scores_text, report.calibration_images, report.validation_images, report.size, db(kernels_ms));
   } else {
     report.text = i18n::tr_format(
         "Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays on TensorRT "

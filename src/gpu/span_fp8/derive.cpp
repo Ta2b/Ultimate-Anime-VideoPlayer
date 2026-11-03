@@ -104,4 +104,8 @@ Crop kernel_crop(int width, int height, int max_width, int max_height) {
   return Crop{.width = w, .height = h};
 }
 
+bool keep_acc16(const Verdict& f32, const Verdict& f16) {
+  return f32.passed && f16.passed && f32.psnr_mean_db - f16.psnr_mean_db <= kMaxAcc16PsnrLossDb;
+}
+
 }  // namespace ajp::gpu::span_fp8

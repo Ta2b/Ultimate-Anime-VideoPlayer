@@ -32,6 +32,10 @@ using C16 = sk::Cfg<F16, 128, 32, 32, 4, float>;
 using LC1 = sk::Launcher<C16A, 0, false>;
 using LCAT = sk::Launcher<C16, 0, false>;
 using LPIX = sk::Launcher<C16, 2, false>;  // to_pixel, DepthToSpace fondu (étape 3.4a)
+// Étape 3.5a : les mêmes, accumulateur f16 (mma m16n8k16 .f16.f16.f16.f16), choisis par le paquet.
+using C16H = sk::Cfg<F16, 128, 32, 32, 4, F16>;
+using LCATH = sk::Launcher<C16H, 0, false>;
+using LPIXH = sk::Launcher<C16H, 2, false>;
 
 constexpr int kBlocks = SpanFp8Weights::kBlocks;
 constexpr int kChannels = 64;
@@ -86,6 +90,9 @@ struct SpanFp8Net::Impl {
   std::array<LT, kBlocks> lc;
   LCAT cat;
   LPIX pix;
+  LCATH cat16;
+  LPIXH pix16;
+  bool acc16 = false;
   void* workspace = nullptr;
   cudaError_t attribute = cudaSuccess;
 
@@ -180,16 +187,23 @@ struct SpanFp8Net::Impl {
       k.bias = cat_b.as<float>();
       k.out16 = cat_out;
       k.ld16 = kChannels;
-      cat.init(h, w, 1, 0, kConcat, kChannels, reinterpret_cast<const F16*>(cat_in), cat_w.as<F16>(), k);
       sk::KP p;  // sortie et surface posées à chaque lancement (launch_tail)
       p.bias = pix_b.as<float>();
-      pix.init(h, w, 3, 1, kChannels, kPixel, reinterpret_cast<const F16*>(cat_out), pix_w.as<F16>(), p);
+      const auto* cat_src = reinterpret_cast<const F16*>(cat_in);
+      const auto* pix_src = reinterpret_cast<const F16*>(cat_out);
+      if (acc16) {
+        cat16.init(h, w, 1, 0, kConcat, kChannels, cat_src, cat_w.as<F16>(), k);
+        pix16.init(h, w, 3, 1, kChannels, kPixel, pix_src, pix_w.as<F16>(), p);
+      } else {
+        cat.init(h, w, 1, 0, kConcat, kChannels, cat_src, cat_w.as<F16>(), k);
+        pix.init(h, w, 3, 1, kChannels, kPixel, pix_src, pix_w.as<F16>(), p);
+      }
     }
     attribute = c1.attribute;
     for (std::size_t b = 0; b < static_cast<std::size_t>(used); ++b)
       for (const cudaError_t e : {la[b].attribute, lb[b].attribute, lc[b].attribute})
         if (attribute == cudaSuccess) attribute = e;
-    for (const cudaError_t e : {cat.attribute, pix.attribute})
+    for (const cudaError_t e : {cat.attribute, pix.attribute, cat16.attribute, pix16.attribute})
       if (attribute == cudaSuccess) attribute = e;
   }
 
@@ -226,6 +240,7 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
     return nullptr;
   }
   impl->used = weights.blocks;
+  impl->acc16 = weights.acc16;
   impl->scales.fill(1.F);
   for (std::size_t i = 0; i < static_cast<std::size_t>(1 + 3 * weights.blocks); ++i)
     impl->scales[i] = weights.scales[i];
@@ -294,7 +309,10 @@ bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string
     n.lb[b].launch(stream);
     n.lc[b].launch(stream);
   }
-  n.cat.launch(stream);
+  if (n.acc16)
+    n.cat16.launch(stream);
+  else
+    n.cat.launch(stream);
   const cudaError_t result = cudaGetLastError();
   if (result != cudaSuccess) {
     error = std::string("lancement des noyaux : ") + cudaGetErrorString(result);
@@ -313,11 +331,17 @@ bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, const SpanFp8Rin
     error = "ni sortie ni surface";
     return false;
   }
-  n.pix.kp.out16 = static_cast<__half*>(output);
-  n.pix.kp.surface = ring.surface;
-  n.pix.kp.surf_w = ring.width;
-  n.pix.kp.surf_h = ring.height;
-  n.pix.launch(stream);
+  const auto tail = [&](auto& pix) {
+    pix.kp.out16 = static_cast<__half*>(output);
+    pix.kp.surface = ring.surface;
+    pix.kp.surf_w = ring.width;
+    pix.kp.surf_h = ring.height;
+    pix.launch(stream);
+  };
+  if (n.acc16)
+    tail(n.pix16);
+  else
+    tail(n.pix);
   const cudaError_t result = cudaGetLastError();
   if (result != cudaSuccess) {
     error = std::string("lancement des noyaux : ") + cudaGetErrorString(result);

@@ -33,6 +33,7 @@ struct SpanFp8Weights {
   SpanFp8ConvView attention[kBlocks];
   SpanFp8ConvView concat;
   SpanFp8ConvView pixel;
+  bool acc16 = false;  // conv_cat et to_pixel accumulent en f16 (étape 3.5a)
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.

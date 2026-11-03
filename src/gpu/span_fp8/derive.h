@@ -21,6 +21,8 @@ inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v1";
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
+// Étape 3.5a : l'accumulateur f16 hors blocs ne coûte pas plus que ceci au PSNR moyen.
+inline constexpr double kMaxAcc16PsnrLossDb = 0.3;
 
 // Les échelles des 1 + 3·blocks tenseurs quantifiés d'après les maxima observés : maximum / 448 (peaks garde
 // ses 25 places, les suivantes à 1). Refus FormatUnsupported si un maximum servi est nul ou non fini (corpus
@@ -44,6 +46,10 @@ struct Verdict {
 // Moyenne et pires valeurs, et leur comparaison aux seuils. Sans image, rien ne passe.
 Verdict judge(std::span<const ImageScore> scores, double min_psnr_mean = kMinPsnrMeanDb,
               double min_psnr_worst = kMinPsnrWorstDb, double min_ssim_worst = kMinSsimWorst);
+
+// Garder l'accumulateur f16 hors blocs (étape 3.5a) : sa variante passe la porte, la variante f32 aussi, et
+// le PSNR moyen perd au plus kMaxAcc16PsnrLossDb.
+bool keep_acc16(const Verdict& f32, const Verdict& f16);
 
 // Le reçu « .toml » : mêmes clés, même ordre et même mise en forme que write_receipt de quantize_span.py
 // (flottants à quatre décimales). Les champs de l'outil Python qu'une dérivation native ne mesure pas

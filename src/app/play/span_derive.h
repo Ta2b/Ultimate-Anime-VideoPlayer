@@ -77,7 +77,8 @@ struct SpanDerivePlan {
 struct SpanDeriveReport {
   bool passed = false;
   gpu::SpanFp8Derivation derivation;
-  gpu::span_fp8::Verdict verdict;
+  gpu::span_fp8::Verdict verdict;  // celui de la variante gardée
+  bool acc16 = false;              // la variante à accumulateur f16 hors blocs est gardée (étape 3.5a)
   int calibration_images = 0;
   int validation_images = 0;
   std::string size;               // « 1920x1080 »

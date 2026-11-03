@@ -94,7 +94,7 @@ Ce que `parse` accepte (`src/gpu/span_fp8/package.h`), petit-boutiste :
 
 ```
 en-tête, 40 octets : "AJPSPAN8" · version u32 (1) · blocs u32 (8) · canaux u32 (64) · réservé u32 (0)
-                     · taille de la charge u64 · CRC-32 de la charge u32 · réservé u32 (0)
+                     · taille de la charge u64 · CRC-32 de la charge u32 · drapeaux u32 (bit 0 : acc16)
 charge :  échelles f32 × 25      [0] sortie de conv_1 ; bloc b (0..7) : [1+3b] relu1, [2+3b] relu2, [3+3b] sortie
           conv_1   : poids f16 [64][3][3][16] (4 canaux nuls), biais f32 [64]
           bloc 1..8 : c1, c2, c3 : poids f16 [64][3][3][64], biais f32 [64] ;
@@ -192,6 +192,11 @@ SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Le
   Visé : FP8 ≤ 0,72 × TensorRT FP16 en 720p et ≤ 0,70 en 1080p, reçu 42/38/0,985 (à mesurer sur la RTX).
 - **Windows** : le module n'est pas construit (`AJP_WITH_SPAN_FP8` vaut OFF hors Linux), CUTLASS n'y a pas été
   essayé avec MSVC. Le lecteur se comporte comme avant.
+- **Accumulateur f16** (étape 3.5) : (a) hors blocs, `conv_cat` et `to_pixel` peuvent accumuler en f16 (mesuré
+  −2,7 % au banc) ; la dérivation juge les deux variantes sur les mêmes images et ne pose le drapeau `acc16` du
+  paquet que si la variante f16 passe la porte et perd au plus 0,3 dB de PSNR moyen (`keep_acc16`). (b) Dans les
+  blocs (`mma …f16.e4m3.e4m3.f16`, CUDA ≥ 12.8, poids remis à l'échelle par 2^−k) : piste non codée, à mesurer
+  d'abord sur la RTX (critère ≥ −10 % sur SPAN et porte tenue, sinon abandonnée).
 - **Batch** 1 seulement.
 - **Mémoire** : 400 Mo de zone à 1080p (768 o/pixel), plus 2 Mo de poids ; à comparer aux activations de
   TensorRT, qui s'additionnent à celles de RIFE dans la même zone. Sur une carte de 6 Go c'est à surveiller.
