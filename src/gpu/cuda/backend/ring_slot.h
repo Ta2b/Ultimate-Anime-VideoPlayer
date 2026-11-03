@@ -1,4 +1,4 @@
-// Un slot du ring (VkImage RGBA16 et son sémaphore timeline, exportés par render) importé
+// Un slot du ring (VkImage RGBA16 ou RGB10A2 et son sémaphore timeline, exportés par render) importé
 // dans CUDA : une surface d'écriture et le sémaphore, à la manière de l'interop CUDA de mpv
 // (video/out/hwdec/hwdec_cuda_vk.c).
 //
@@ -19,7 +19,7 @@ namespace ajp::gpu::cuda {
 
 class ImportedSlot {
  public:
-  // Refus : format autre que RGBA16 UNORM ou handle autre qu'un descripteur (FormatUnsupported),
+  // Refus : format autre que RGBA16 ou RGB10A2 UNORM, ou handle autre qu'un descripteur (FormatUnsupported),
   // taille nulle (ShapeInvalid), import refusé par CUDA (VendorCallFailed).
   static std::expected<std::unique_ptr<ImportedSlot>, Refusal> import(const RingSlotDesc& slot);
   ~ImportedSlot();

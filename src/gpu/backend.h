@@ -70,7 +70,8 @@ namespace ajp::gpu {
 // 24 : BackendCaps::gpu_arch et span_fp8_kernels, SpanFp8Request::validate_only, SpanFp8Derivation::gpu_arch
 // et kernels_version (étape 3.7b).
 // 25 : SpanFp8Request::min_free_ratio (étape 3.6).
-inline constexpr int kBackendAbi = 25;
+// 26 : BackendCaps::ring_rgb10a2, RingFormat::Rgb10a2Unorm importé (étape 5.5a).
+inline constexpr int kBackendAbi = 26;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -125,6 +126,8 @@ struct BackendCaps {
   int lanes = 1;
   // Images intermédiaires écrites directement dans le slot (KernelOps::warp_blend_ring…).
   bool ring_targets = false;
+  // Emplacements RGB10A2 UNORM importés et écrits (store_ring, étape 5.5) ; sinon RGBA16 seul.
+  bool ring_rgb10a2 = false;
   // KernelOps::write_yuv : une image écrite en YUV dans la mémoire CUDA de l'encodeur, sur le
   // contexte primaire de l'appareil de rendu (celui de NVENC).
   bool yuv_targets = false;

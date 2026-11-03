@@ -29,9 +29,10 @@ int duplicate(const ExportedHandle& handle) {
 }  // namespace
 
 std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const RingSlotDesc& slot) {
-  if (slot.format != RingFormat::Rgba16Unorm) {
+  const bool ten_bits = slot.format == RingFormat::Rgb10a2Unorm;
+  if (slot.format != RingFormat::Rgba16Unorm && !ten_bits) {
     return refuse(RefusalCode::FormatUnsupported,
-                  std::format("slot {} : seul RGBA16 UNORM est importé", slot.index));
+                  std::format("slot {} : seuls RGBA16 et RGB10A2 UNORM sont importés", slot.index));
   }
   if (slot.memory.kind != kKind || slot.semaphore_handle.kind != kKind) {
     return refuse(RefusalCode::FormatUnsupported,
@@ -41,13 +42,18 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
     return refuse(RefusalCode::ShapeInvalid, std::format("slot {} : taille nulle", slot.index));
   }
   std::unique_ptr<ImportedSlot> imported(new ImportedSlot(slot));
+  imported->packing_ = ten_bits ? RingPacking::Rgb10a2 : RingPacking::Rgba16;
 
   // Mémoire et image mappée, avec ou sans le drapeau « dédiée ». Les images du ring viennent de libplacebo,
   // souvent dédiées : CUDA veut alors le drapeau. Une image sous-allouée (décalage non nul, ou allocation
   // partagée) l'accepte à l'import et refuse le mappage (cudaErrorInvalidValue) : tout est refait sans.
   cudaExternalMemoryMipmappedArrayDesc array{};
   array.offset = slot.memory_offset;
-  array.formatDesc = cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindUnsigned);
+  // RGB10A2 (étape 5.5a) : le format 1010102 de CUDA ; les noyaux n'y font que des écritures brutes de
+  // 32 bits (store_ring), un tableau de 32 bits non signés sert de repli si le pilote refuse ce format.
+  array.formatDesc =
+      ten_bits ? cudaCreateChannelDesc(10, 10, 10, 2, cudaChannelFormatKindUnsignedNormalized1010102)
+               : cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindUnsigned);
   array.extent = cudaExtent{.width = static_cast<std::size_t>(slot.width),
                             .height = static_cast<std::size_t>(slot.height),
                             .depth = 0};
@@ -88,8 +94,14 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
     }
     return {};
   };
-  if (slot.memory_offset != 0 || !map(cudaExternalMemoryDedicated)) {
-    if (auto ok = map(0); !ok) return std::unexpected(ok.error());
+  const auto map_any = [&]() -> std::expected<void, Refusal> {
+    if (slot.memory_offset == 0 && map(cudaExternalMemoryDedicated)) return {};
+    return map(0);
+  };
+  if (auto ok = map_any(); !ok) {
+    if (!ten_bits) return std::unexpected(ok.error());
+    array.formatDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindUnsigned);
+    if (auto again = map_any(); !again) return std::unexpected(again.error());
   }
   cudaArray_t level = nullptr;
   if (auto ok =

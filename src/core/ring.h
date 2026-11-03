@@ -38,8 +38,10 @@
 
 namespace ajp {
 
-// Rgba16Unorm partout ; Yuv444p16 reste réservé au contrat des slots, sans chemin qui l'écrive.
-enum class RingFormat : std::uint8_t { Rgba16Unorm, Yuv444p16 };
+// Rgba16Unorm par défaut ; Rgb10a2Unorm (VK_FORMAT_A2B10G10R10_UNORM_PACK32, moitié moins de mémoire) sous
+// TensorRT avec --ring-rgb10a2 (étape 5.5a) ; Yuv444p16 reste réservé au contrat des slots, sans chemin qui
+// l'écrive. Ajouté en fin d'énumération : les valeurs d'avant ne changent pas.
+enum class RingFormat : std::uint8_t { Rgba16Unorm, Yuv444p16, Rgb10a2Unorm };
 
 // Disposition d'un slot quand il passe de main à gpu ou de gpu à main : VK_IMAGE_LAYOUT_GENERAL.
 inline constexpr std::uint32_t kRingLayout = 1;
