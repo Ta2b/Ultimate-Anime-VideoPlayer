@@ -329,6 +329,16 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
 - **À décider après mesure** : 3.4c (dégroupage fondu, si ≥ 4 % du SPAN FP8 en 1080p), 3.5b (accumulation f16
   dans les blocs, gardée si ≥ −10 %).
 
+## Plan NVIDIA, chantier 10 : basse précision pour toute RTX
+
+- **10.1** (sur une RTX 30 et une RTX 20, si l'occasion se présente) : `python3 -I tools/span/quantize_span.py SPAN.onnx
+  --corpus IMAGES --out ~/.local/share/ajp/ajp/modeles`, puis `tools/fp8/abab_trt.sh SPAN.onnx SPAN-int8.onnx
+  "input:1x3x720x1280" 3`. Le rapport décide de 10.4 à 10.6.
+- **10.2** : la construction passe avec `120` dans les architectures (pas de débordement de registres au ptxas) ;
+  sur une RTX 50 seulement, les vérifications de `span-fp8-cutlass.md`.
+- **10.3** : sur la 4070 Ti, la dérivation donne un PSNR moyen ≥ celui d'avant (reçu de la passe du chantier 3)
+  et le temps du réseau à ±1 %.
+
 ## Plan NVIDIA, chantier 5 : passes en trop et anneau RGB10A2 (novembre, sans compilateur CUDA)
 
 - **5.1** : `nsys stats -r cuda_gpu_kern_sum` d'une lecture TensorRT FP16, la part de `write_rgba16` notée
