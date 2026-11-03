@@ -125,6 +125,9 @@ struct PlayOptions {
   // --legacy-grade : le grade d'avant en neuf passes, qui mesure la scène lui-même (render::GradeBody),
   // gardé une version pour comparer.
   bool legacy_grade = false;
+  // --legacy-grade=split : le grade actuel, le look dans sa passe à part (render::GradeBody::FusedSplit),
+  // pour l'A/B du chantier 2a.
+  bool split_look = false;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;

@@ -57,6 +57,7 @@ struct ScreenOptions {
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
   bool hdr_anime = false;       // --hdr-anime : render::GradeBody::Anime
   bool legacy_grade = false;    // --legacy-grade : le grade d'avant (render::GradeBody::Legacy)
+  bool split_look = false;      // --legacy-grade=split : render::GradeBody::FusedSplit
   bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)
   bool skin_mask = false;       // --skin-mask : le masque peau du grade rend 0 (essai)
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
