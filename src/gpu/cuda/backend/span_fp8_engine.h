@@ -59,6 +59,14 @@ class SpanFp8Engine final : public Engine {
   // Pose les adresses et lance les noyaux sur stream. arena : la zone de la voie de stream.
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+  // enqueue en deux temps (étape 3.4b) : enqueue_body vérifie les tenseurs, pose la zone et lance le corps ;
+  // enqueue_tail lance to_pixel, qui écrit outputs[0] et, si ring porte une surface, l'emplacement de
+  // l'anneau. Entre les deux, l'appelant peut attendre l'emplacement sur stream.
+  std::expected<void, Refusal> enqueue_body(cudaStream_t stream,
+                                            const std::shared_ptr<SharedActivations>& arena,
+                                            std::span<const Tensor> inputs, std::span<const Tensor> outputs);
+  std::expected<void, Refusal> enqueue_tail(cudaStream_t stream, std::span<const Tensor> outputs,
+                                            const SpanFp8Ring& ring);
 
   // Le mot du moteur pour le journal (graphes coupés, plus de place), une fois ; vide sinon.
   std::string take_notice() { return book_.take_notice(); }

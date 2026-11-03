@@ -3,6 +3,7 @@
 // fait reprendre la chaîne sur TensorRT FP16 (chain_setup.cpp) : le SPAN d'origine n'est jamais touché.
 #include <format>
 
+#include "gpu/cuda/backend/ring_slot.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/span_fp8/package.h"
@@ -57,9 +58,23 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   return std::unique_ptr<Engine>(std::move(*engine));
 }
 
+std::expected<void, Refusal> TensorRtBackend::enqueue_ring(Engine& engine, std::span<const Tensor> inputs,
+                                                           std::span<Tensor> outputs,
+                                                           const RingTarget& target) {
+  auto* fused = dynamic_cast<SpanFp8Engine*>(&engine);
+  // La sortie doit avoir la taille de l'emplacement (write_ring le refuserait sinon) : le chemin commun dit
+  // alors pourquoi.
+  const bool direct = fused != nullptr && target.slot != nullptr && outputs.size() == 1 &&
+                      outputs[0].type == TensorType::F16 && outputs[0].shape.dims[2] == target.slot->height &&
+                      outputs[0].shape.dims[3] == target.slot->width;
+  if (!direct) return Backend::enqueue_ring(engine, inputs, outputs, target);
+  return enqueue_span_fp8(*fused, inputs, outputs, &target);
+}
+
 std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& engine,
                                                                std::span<const Tensor> inputs,
-                                                               std::span<Tensor> outputs) {
+                                                               std::span<Tensor> outputs,
+                                                               const RingTarget* ring) {
   if (auto ok = bind(); !ok) return ok;
   // Les noyaux lisent l'entrée, écrivent la sortie et leur zone d'activation.
   const std::shared_ptr<SharedActivations>& zone = arena();
@@ -73,13 +88,29 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   GpuTiming& timing = stage(std::format("moteur FP8 {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
   span_timing_->begin(stream_);
   timing.begin(stream_);
-  auto queued = engine.enqueue(stream_, zone, inputs, outputs);
+  ImportedSlot* imported = nullptr;
+  auto queued =
+      engine.enqueue_body(stream_, zone, inputs, outputs).and_then([&]() -> std::expected<void, Refusal> {
+        if (ring != nullptr) {
+          // L'attente de l'emplacement vient après le corps : SPAN n'est pas retenu derrière un emplacement
+          // que l'affichage tient encore, seule la queue l'est.
+          auto begun = begin_slot(*ring->slot, ring->sync);
+          if (!begun) return std::unexpected(std::move(begun.error()));
+          imported = *begun;
+        }
+        const SpanFp8Ring surface = imported == nullptr ? SpanFp8Ring{}
+                                                        : SpanFp8Ring{.surface = imported->surface(),
+                                                                      .width = ring->slot->width,
+                                                                      .height = ring->slot->height};
+        return engine.enqueue_tail(stream_, outputs, surface);
+      });
   timing.end(stream_);
   span_timing_->end(stream_);
   chain_timing_->end(stream_);
   if (std::string notice = engine.take_notice(); !notice.empty())
     log(BackendLogLevel::Warn, std::format("SPAN FP8 {}×{} : {}", shape.dims[3], shape.dims[2], notice));
-  return queued;
+  if (!queued || imported == nullptr) return queued;
+  return imported->signal(ring->sync.signal_value, stream_);
 }
 
 }  // namespace ajp::gpu::cuda

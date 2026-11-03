@@ -184,6 +184,15 @@ std::expected<void, Refusal> SpanFp8Engine::enqueue(cudaStream_t stream,
                                                     const std::shared_ptr<SharedActivations>& arena,
                                                     std::span<const Tensor> inputs,
                                                     std::span<const Tensor> outputs) {
+  return enqueue_body(stream, arena, inputs, outputs).and_then([&] {
+    return enqueue_tail(stream, outputs, {});
+  });
+}
+
+std::expected<void, Refusal> SpanFp8Engine::enqueue_body(cudaStream_t stream,
+                                                         const std::shared_ptr<SharedActivations>& arena,
+                                                         std::span<const Tensor> inputs,
+                                                         std::span<const Tensor> outputs) {
   if (arena) arena->set_last_user(this);
   if (inputs.size() != 1 || outputs.size() != 1)
     return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : une entrée et une sortie attendues");
@@ -197,10 +206,17 @@ std::expected<void, Refusal> SpanFp8Engine::enqueue(cudaStream_t stream,
   if (auto ok = use_zone(arena); !ok) return ok;
   // NOLINTBEGIN(performance-no-int-to-ptr) : un tenseur porte son adresse CUDA en entier
   const void* source = reinterpret_cast<const void*>(in.handle + in.offset);
-  void* target = reinterpret_cast<void*>(out.handle + out.offset);
   // NOLINTEND(performance-no-int-to-ptr)
-  if (auto ok = body(stream, source); !ok) return ok;
-  if (std::string why; !net_->launch_tail(stream, target, {}, why))
+  return body(stream, source);
+}
+
+std::expected<void, Refusal> SpanFp8Engine::enqueue_tail(cudaStream_t stream, std::span<const Tensor> outputs,
+                                                         const SpanFp8Ring& ring) {
+  if (outputs.size() != 1) return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : une sortie attendue");
+  const Tensor& out = outputs[0];
+  // NOLINTNEXTLINE(performance-no-int-to-ptr) : un tenseur porte son adresse CUDA en entier
+  void* target = reinterpret_cast<void*>(out.handle + out.offset);
+  if (std::string why; !net_->launch_tail(stream, target, ring, why))
     return refuse(RefusalCode::VendorCallFailed, "SPAN FP8 : " + why);
   return {};
 }

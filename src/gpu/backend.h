@@ -64,7 +64,8 @@ namespace ajp::gpu {
 // kernels/spec/frame_stats.h).
 // 20 : KernelOps::health, map_fences et unmap_fences (étape 11.5 : signal d'export écrit par le GPU,
 // contexte perdu vu sans attendre le délai).
-inline constexpr int kBackendAbi = 20;
+// 21 : Backend::enqueue_ring (étape 3.4b : le SPAN FP8 écrit l'emplacement de l'anneau depuis son épilogue).
+inline constexpr int kBackendAbi = 21;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -245,6 +246,20 @@ class Backend {
   virtual std::expected<SpanFp8Derivation, Refusal> derive_span_fp8(const SpanFp8Request& /*request*/,
                                                                     Progress& /*progress*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "ce moteur ne dérive pas le SPAN FP8"});
+  }
+  // enqueue, puis l'image de outputs[0] dans l'emplacement de target, au protocole de write_ring (attente de
+  // wait_value, signal de signal_value). Un backend qui sait écrire l'emplacement depuis le moteur même (le
+  // SPAN FP8 du backend TensorRT, étape 3.4b) le fait sans écriture à part ; outputs[0] est écrit aussi.
+  virtual std::expected<void, Refusal> enqueue_ring(Engine& engine, std::span<const Tensor> inputs,
+                                                    std::span<Tensor> outputs, const RingTarget& target) {
+    if (outputs.empty() || target.slot == nullptr)
+      return std::unexpected(
+          Refusal{RefusalCode::InputMismatch, "enqueue_ring : sortie ou emplacement absents"});
+    KernelOps* ops = kernels();
+    if (ops == nullptr)
+      return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "enqueue_ring : backend sans noyaux"});
+    if (auto ok = enqueue(engine, inputs, outputs); !ok) return ok;
+    return ops->write_ring(outputs[0], *target.slot, target.sync);
   }
 };
 

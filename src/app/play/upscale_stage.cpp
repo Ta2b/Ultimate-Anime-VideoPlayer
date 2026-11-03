@@ -683,6 +683,12 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
   if (setup_.engine == nullptr) return write_slot(rgb, slot, sync);
   const std::array inputs{rgb};
   std::array outputs{output_->tensor()};
+  // Sans export YUV : SPAN et l'écriture de l'emplacement en un appel (étape 3.4b), que le backend sait
+  // fondre (le SPAN FP8 écrit l'anneau depuis son épilogue) ; la sortie est écrite aussi (reuse_span_).
+  if (!setup_.yuv_slots) {
+    return setup_.backend->enqueue_ring(*setup_.engine, inputs, outputs,
+                                        gpu::RingTarget{.slot = &setup_.slots[slot], .sync = sync});
+  }
   if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok) return ok;
   return write_slot(output_->tensor(), slot, sync);
 }
