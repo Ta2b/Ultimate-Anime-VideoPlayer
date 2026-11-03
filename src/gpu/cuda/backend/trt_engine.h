@@ -129,6 +129,10 @@ class TrtEngine final : public Engine {
   // noyaux de l'encodeur NVENC) dépend alors d'elles ; pendant une capture, ce lancement l'invalide
   // (CUDA 906 chez lui, 901 ici).
   std::vector<cudaStream_t> aux_streams_;
+  int aux_priority_ = 0;  // priorité des files auxiliaires : celle de la voie qui lance (étape 11.6)
+  // Les files auxiliaires refaites à la priorité de `stream` si elle a changé ; les graphes capturés sur les
+  // anciennes sont oubliés.
+  std::expected<void, Refusal> match_aux_priority(cudaStream_t stream);
   std::shared_ptr<SharedActivations> shared_;
   std::uint64_t shared_generation_ = 0;  // zone posée sur le contexte ; 0 : aucune
   void drop_graphs();
