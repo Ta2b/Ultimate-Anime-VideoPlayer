@@ -212,7 +212,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.extra = &chain_stats;
   session_config.latency = &live->latency();
   session_config.on_written = [live](const RingFrame& frame, std::int64_t done_us) {
-    live->auto_written(frame.left.value, frame.right.value, frame.submitted_us, done_us);
+    live->auto_written(frame.left.value, frame.right.value, frame.submitted_us, done_us, frame.repeated);
   };
   log->info("{}", label_text);
   for (const std::string& line : session_config.tracks) log->info("{}", line);

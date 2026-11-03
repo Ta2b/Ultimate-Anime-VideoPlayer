@@ -125,8 +125,9 @@ class LiveSettings {
     ledger_[ledger_next_++ % ledger_.size()] = Expected{.id = id, .images = images, .lead_us = lead_us};
   }
   // main : une image de sortie vue écrite. La dernière d'une paire (left == right) clôt sa mesure.
-  void auto_written(std::uint32_t left, std::uint32_t right, std::int64_t submitted_us,
-                    std::int64_t done_us) {
+  // repeated : une copie d'une image déjà calculée, qui avance la paire sans ajouter de temps occupé.
+  void auto_written(std::uint32_t left, std::uint32_t right, std::int64_t submitted_us, std::int64_t done_us,
+                    bool repeated = false) {
     const std::scoped_lock lock(mutex_);
     if (!auto_on_ && !free_on_) return;
     // Le temps propre de cette image : de sa soumission (ou de la fin de la précédente, si le GPU était
@@ -136,16 +137,21 @@ class LiveSettings {
     for (Expected& e : ledger_) {
       if (e.id != right || e.images == 0) continue;
       if (e.first_us == 0 || submitted_us < e.first_us) e.first_us = submitted_us;
-      e.busy_us += service;
+      if (repeated) {
+        ++e.repeats;
+      } else {
+        e.busy_us += service;
+      }
       // Auto : la source clôt la paire. mode Rapide : la dernière image de la paire, qui n'est pas forcément
       // la source.
       const bool last = free_on_ ? ++e.seen >= e.images : left == right;
       if (last) {
+        const int computed = std::max(e.images - e.repeats, 1);  // les copies ne coûtent rien
         if (auto_on_) {
-          auto_.cost(e.images, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us),
+          auto_.cost(computed, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us),
                      done_us);
         }
-        if (free_on_) free_.cost(e.images, e.busy_us + e.lead_us, done_us);
+        if (free_on_) free_.cost(computed, e.busy_us + e.lead_us, done_us);
         previous_done_us_ = done_us;
         e = Expected{};
       }
@@ -316,6 +322,7 @@ class LiveSettings {
     std::int64_t lead_us = 0;
     std::int64_t first_us = 0;
     int seen = 0;              // images vues écrites (mode Rapide)
+    int repeats = 0;           // dont des copies, sans calcul
     std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
   };
   std::array<Expected, 16> ledger_{};

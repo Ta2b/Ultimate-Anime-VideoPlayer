@@ -476,6 +476,8 @@ class UpscaleStage final : public RingStage {
   std::uint64_t interpolated_ = 0;
   std::uint64_t cuts_ = 0;
   std::uint64_t held_ = 0;
+  bool drba_held_ =
+      false;  // l'instant en cours de production est une copie d'un côté tenu (Output::repeated)
   static constexpr std::size_t kScoresWaitKept = 4096;
   std::vector<std::int64_t> scores_wait_us_;  // les dernières attentes hôte de scores_now, pour le profil
   std::size_t scores_wait_next_ = 0;          // case réécrite quand le tampon est plein

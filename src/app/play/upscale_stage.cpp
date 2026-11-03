@@ -531,11 +531,11 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
-  const Output made{
-      .pts_us = instant.pts_us, .left = previous_->id, .right = frame.id, .debanded = debanded_};
+  Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id, .debanded = debanded_};
   gmfss_.a = GmfssFrameKey{.id = previous_->id,
                            .epoch = previous_->epoch};  // GMFSS fusionné : les images de la paire
   gmfss_.b = GmfssFrameKey{.id = frame.id, .epoch = frame.epoch};
+  drba_held_ = false;
   use_lane(gpu::Lane::Interpolate);
   next_middle();  // l'autre tampon : SPAN ou l'écriture du ring lit peut-être encore le précédent
   const gpu::RingTarget ring{.slot = &setup_.slots[slot], .sync = sync};
@@ -553,6 +553,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
       if (auto ok = write_slot(*out.tensor, slot, sync); !ok) return std::unexpected(std::move(ok.error()));
     }
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+    made.repeated = drba_held_;
     return made;
   }
   if (by_motion() && ring_direct_) {  // sans SPAN : le warp écrit la sortie elle-même
@@ -562,6 +563,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     use_lane(gpu::Lane::Upscale);
     output_has_source_ = false;
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+    made.repeated = drba_held_;
     return made;
   }
   if (by_motion() || gmfss() || drba()) {
@@ -579,6 +581,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   output_has_source_ = false;
   // ×1,5 : l'image n'est pas sur la grille de cette paire, elle sert seulement de suivante.
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
+  made.repeated = drba_held_;
   return made;
 }
 
