@@ -2,6 +2,7 @@
 // du ring.
 #include <algorithm>
 #include <array>
+#include <cuda.h>
 #include <format>
 #include <span>
 
@@ -351,8 +352,24 @@ std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, cons
   return (*imported)->signal(sync.signal_value, stream_);
 }
 
-std::expected<void, Refusal> TensorRtBackend::resample(const Tensor&, kernels::Filter, const Tensor&) {
-  return not_here("resample");
+// À forme égale, un rééchantillonnage est l'identité : une copie appareil → appareil, dans l'ordre de la
+// file (DistilDRBA, côté tenu). À forme différente, le backend ne sait pas faire (refus not_here).
+std::expected<void, Refusal> TensorRtBackend::resample(const Tensor& in, kernels::Filter, const Tensor& out) {
+  if (in.handle == 0 || out.handle == 0 || in.type != out.type || in.shape != out.shape ||
+      in.type != TensorType::F16) {
+    return not_here("resample");
+  }
+  const std::size_t bytes =
+      static_cast<std::size_t>(in.shape.dims[0] * in.shape.dims[1] * in.shape.dims[2] * in.shape.dims[3]) *
+      sizeof(std::uint16_t);
+  if (auto ok = bind(); !ok) return ok;
+  if (auto ok = order({in.handle}, {out.handle}); !ok) return ok;
+  const CUresult copied = cuMemcpyDtoDAsync(static_cast<CUdeviceptr>(out.handle + out.offset),
+                                            static_cast<CUdeviceptr>(in.handle + in.offset), bytes, stream_);
+  if (copied != CUDA_SUCCESS)
+    return refuse(RefusalCode::VendorCallFailed,
+                  std::format("cuMemcpyDtoDAsync : erreur {}", static_cast<int>(copied)));
+  return {};
 }
 std::expected<void, Refusal> TensorRtBackend::rife_pad(const DecodedFrame&, const Tensor&) {
   return not_here("rife_pad");

@@ -56,7 +56,12 @@ TEST_CASE("Backend TensorRT : ABI et refus nommés", "[backend_tensorrt][cuda]")
   REQUIRE(ops != nullptr);
   auto tensor = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 8, 8}});
   REQUIRE(tensor);
-  CHECK(ops->resample((*tensor)->tensor(), kernels::Filter::Area, (*tensor)->tensor()).error().code ==
+  // Forme égale : copie (DistilDRBA, côté tenu). Forme différente : refus.
+  auto copy = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 8, 8}});
+  auto larger = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 16, 16}});
+  REQUIRE((copy && larger));
+  CHECK(ops->resample((*tensor)->tensor(), kernels::Filter::Area, (*copy)->tensor()));
+  CHECK(ops->resample((*tensor)->tensor(), kernels::Filter::Area, (*larger)->tensor()).error().code ==
         RefusalCode::FormatUnsupported);
   const RingSlotDesc odd{.width = 8, .height = 8};
   CHECK(ops->write_ring((*tensor)->tensor(), odd, {.wait_value = 2, .signal_value = 2}).error().code ==
