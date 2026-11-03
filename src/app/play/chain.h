@@ -10,6 +10,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "app/play/chain_adaptive_log.h"
@@ -71,8 +72,12 @@ struct Chain {
   PlaySettings& running;  // réglages en cours, gardés dans play.toml
   ProfileState& profiles;
   bool rife_loaded = false;
-  int auto_peak = 0;                               // pic automatique de l'écran, en nits
-  bool dirty = false;                              // play.toml à réécrire
+  int auto_peak = 0;   // pic automatique de l'écran, en nits
+  bool dirty = false;  // play.toml à réécrire
+  // Raccourcis du clavier (Ctrl+G, interpolation, tout couper) : valables pour la séance, pas écrits dans
+  // play.toml. Chaque champ garde la valeur du fichier jusqu'à ce que le menu change ce réglage.
+  std::optional<bool> kept_grade;
+  std::optional<std::pair<int, int>> kept_rife;    // facteur, dénominateur
   std::optional<PlaySettings> reopen;              // demandé par le menu des paramètres
   std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir

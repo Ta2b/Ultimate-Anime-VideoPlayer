@@ -72,10 +72,21 @@ PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings) {
   if (to.hdr_wanted) {
     settings.hdr_native = to.hdr_wanted->hdr_native;
   }
+  if (to.kept_grade) settings.grade = *to.kept_grade;
+  if (to.kept_rife) {
+    settings.rife_factor = to.kept_rife->first;
+    settings.rife_factor_den = to.kept_rife->second;
+  }
   return settings;
 }
 
 namespace {
+
+// Un raccourci change la chaîne pour la séance : play.toml garde ce qu'il avait avant.
+void keep_for_file(Chain& to, bool grade, bool rife) {
+  if (grade && !to.kept_grade) to.kept_grade = to.running.grade;
+  if (rife && !to.kept_rife) to.kept_rife = std::pair{to.running.rife_factor, to.running.rife_factor_den};
+}
 
 // Piste audio : le pont change de piste à l'époque du seek qui suit, à la position courante.
 void switch_audio(Chain& to, int track, std::int64_t now_us) {
@@ -278,6 +289,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             if (std::holds_alternative<cmd::ToggleGrade>(command)) {
               PlaySettings wanted = to.running;
               wanted.grade = !wanted.grade;
+              keep_for_file(to, true, false);
               switch_chain(to, wanted, now_us);
               return;
             }
@@ -285,6 +297,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               PlaySettings wanted = to.running;
               wanted.rife_factor = wanted.rife_factor >= 2 ? 0 : kDefaultRifeFactor;
               if (wanted.rife_factor == kDefaultRifeFactor) wanted.rife_factor_den = 1;
+              keep_for_file(to, false, true);
               switch_chain(to, wanted, now_us);
               return;
             }
@@ -292,6 +305,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               PlaySettings wanted = to.running;
               wanted.grade = false;
               wanted.rife_factor = 0;
+              keep_for_file(to, true, true);
               switch_chain(to, wanted, now_us);
               return;
             }
@@ -389,6 +403,12 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             // retenu : sauf si l'utilisateur a lui-même changé le mode HDR, le profil garde le mode
             // demandé (with_intended_hdr).
             if (apply.settings.hdr_native != to.running.hdr_native) to.hdr_wanted.reset();
+            // Le menu qui change un de ces réglages le choisit pour de bon ; sinon le raccourci reste de
+            // séance.
+            if (apply.settings.grade != to.running.grade) to.kept_grade.reset();
+            if (apply.settings.rife_factor != to.running.rife_factor ||
+                apply.settings.rife_factor_den != to.running.rife_factor_den)
+              to.kept_rife.reset();
             const PlaySettings intended = with_intended_hdr(to, apply.settings);
             if (chain_differs(with_intended_hdr(to, to.running), intended)) {
               remember_chain(to.profiles, intended);
