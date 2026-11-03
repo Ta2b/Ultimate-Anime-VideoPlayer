@@ -25,6 +25,10 @@ silence, sans rouvrir la chaîne, sur un flux CUDA à la priorité la plus basse
 - Un paquet d'une carte ne sert pas sur une autre sans revalidation ; changer les noyaux demande d'augmenter
   `SpanFp8Net::kKernelsVersion`.
 - `kBackendAbi` est monté à chaque étape (21 à 25) : les backends installés se réinstallent.
+- Chantier 10 : les mêmes noyaux FP8 servent les RTX 50 (sm 12.0, étape 10.2), les poids FP8 prennent une
+  échelle par canal (10.3, `kKernelsVersion` 2). Sur Ampere et Turing, l'INT8 de TensorRT (déjà dans l'ordre des
+  variantes) est mesuré d'abord (10.1) ; les noyaux INT8 CUTLASS (10.5, 10.6) et leur référence (10.4) ne se font
+  que s'il manque sa cible (≤ 0,75 × FP16 sur Ampere, ≤ 0,80 × sur Turing). NVFP4 reste hors plan.
 - À mesurer sur la RTX avant de tenir la décision pour acquise : seuils de la porte ramenés à 1,25 × ceux du
   b8f64 accepté, b5f48 FP8 ≤ 0,72 × FP16 en 720p et ≤ 0,70 en 1080p, 1 graphe et ≤ 2 lancements par SPAN,
   memcheck à 0 de 480p à 1080p, SPAN −30 % et J par image −25 % à 24 i/s. Si l'un manque, l'Auto repasse à
