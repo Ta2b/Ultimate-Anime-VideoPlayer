@@ -119,6 +119,7 @@ struct PlaceboScreen::Impl {
   pl_renderer renderer = nullptr;
   pl_cache shader_cache = nullptr;                          // ScreenOptions::shader_cache (placebo_open.cpp)
   render::GradeBody grade_body = render::GradeBody::Fused;  // ScreenOptions::legacy_grade
+  bool no_skin_mask = false;                                // ScreenOptions::no_skin_mask
   bool grade_deband = false;                                // ScreenOptions::grade_deband
   std::filesystem::path shader_cache_file;
   GpuDevice device;
