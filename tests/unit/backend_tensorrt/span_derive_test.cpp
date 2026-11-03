@@ -24,6 +24,7 @@
 
 #include "backend_fixture.h"
 #include "gpu/span_fp8/derive.h"
+#include "gpu/span_fp8/hard_cases.h"
 #include "gpu/span_fp8/onnx_weights.h"
 #include "gpu/span_fp8/package.h"
 #include "prepare/sha256.h"
@@ -131,6 +132,9 @@ TEST_CASE("Backend TensorRT : la dérivation native du SPAN FP8 sur douze images
   }
   REQUIRE(request.calibration.size() == 8);
   REQUIRE(request.validation.size() == 4);
+  for (gpu::span_fp8::HardCase& hard : gpu::span_fp8::hard_cases(kWidth, kHeight))  // porte durcie (3.7a)
+    request.hard.push_back(
+        gpu::SpanStill{.width = hard.width, .height = hard.height, .rgb = std::move(hard.rgb)});
 
   gpu::Progress progress;
   const double begin = now_ms();
@@ -138,12 +142,20 @@ TEST_CASE("Backend TensorRT : la dérivation native du SPAN FP8 sur douze images
   const double derive_ms = now_ms() - begin;
   INFO((derived ? std::string() : derived.error().detail));
   REQUIRE(derived);
-  std::vector<gpu::span_fp8::ImageScore> scores;
-  for (const gpu::SpanFp8ImageScore& score : derived->scores) {
-    scores.push_back({.psnr_db = score.psnr_db, .ssim = score.ssim});
-    WARN("validation : PSNR " << score.psnr_db << " dB, SSIM " << score.ssim);
-  }
-  const gpu::span_fp8::Verdict verdict = gpu::span_fp8::judge(scores);
+  const auto scores_of = [](const std::vector<gpu::SpanFp8ImageScore>& from) {
+    std::vector<gpu::span_fp8::ImageScore> out;
+    for (const gpu::SpanFp8ImageScore& score : from) {
+      out.push_back({.psnr_db = score.psnr_db,
+                     .ssim = score.ssim,
+                     .error_p999 = score.error_p999,
+                     .dark_error_p999 = score.dark_error_p999});
+      WARN("PSNR " << score.psnr_db << " dB, SSIM " << score.ssim << ", p99,9 " << 255.0 * score.error_p999
+                   << "/255, sombres " << 255.0 * score.dark_error_p999 << "/255");
+    }
+    return out;
+  };
+  const gpu::span_fp8::Verdict verdict =
+      gpu::span_fp8::judge_hardened(scores_of(derived->scores), scores_of(derived->hard_scores));
   WARN("dérivation en " << derive_ms << " ms ; PSNR moyen " << verdict.psnr_mean_db << " dB, pire "
                         << verdict.psnr_worst_db << " dB, pire SSIM " << verdict.ssim_worst
                         << " ; réseau FP8 " << derived->kernels_ms << " ms ; référence "
@@ -151,6 +163,27 @@ TEST_CASE("Backend TensorRT : la dérivation native du SPAN FP8 sur douze images
   CHECK(derived->reference == "cutlass-fp16");
   CHECK(verdict.passed);
   CHECK(verdict.psnr_mean_db >= 42.0);
+  WARN("cas durs : pire PSNR " << verdict.hard_psnr_worst_db << " dB");
+
+  // Critère de l'étape 3.7a : le même paquet aux échelles divisées par 4 (saturation en FP8) échoue à la
+  // porte.
+  {
+    gpu::span_fp8::Package quartered = *weights;
+    quartered.scales = derived->scales;
+    for (float& scale : quartered.scales) scale /= 4.0F;
+    gpu::SpanFp8Request check = request;
+    check.package = gpu::span_fp8::serialize(quartered);
+    check.validate_only = true;
+    gpu::Progress check_progress;
+    auto judged = loaded.backend->derive_span_fp8(check, check_progress);
+    INFO((judged ? std::string() : judged.error().detail));
+    REQUIRE(judged);
+    const gpu::span_fp8::Verdict bad =
+        gpu::span_fp8::judge_hardened(scores_of(judged->scores), scores_of(judged->hard_scores));
+    WARN("échelles / 4 : PSNR moyen " << bad.psnr_mean_db << " dB, cas durs " << bad.hard_psnr_worst_db
+                                      << " dB");
+    CHECK_FALSE(bad.passed);
+  }
 
   // Le temps : le paquet dérivé, chargé comme le lecteur le charge, contre le moteur TensorRT FP16.
   const fs::path dir = fs::temp_directory_path() / "ajp-span-derive-backend-test";

@@ -1,8 +1,10 @@
 # SPAN entier en FP8 par noyaux CUTLASS (cran Performance)
 
 Le cran **Performance** de la précision de SPAN peut calculer le réseau entier par des noyaux CUTLASS en FP8
-(E4M3) à la place du moteur TensorRT FP16, sur une RTX 40 (sm 8.9). Jamais par défaut : le cran Équilibre
-(TensorRT FP16) reste le réseau tel que livré, et tout ce qui manque ou échoue ramène le lecteur dessus.
+(E4M3) à la place du moteur TensorRT FP16, sur une RTX 40 (sm 8.9). Depuis l'étape 3.6 (ADR 0007), les
+préréglages posent ce cran : le paquet sert dès qu'un reçu v2 de cette carte, de ces noyaux et de cette taille
+de travail passe la porte durcie ; sinon INT8 s'il passe, sinon le SPAN tel que livré en FP16 (cran Équilibre).
+Tout ce qui manque ou échoue ramène le lecteur sur le FP16 d'origine.
 
 Prototype et banc : `tools/bench/fp8/cutlass/` de la branche `worktree-agent-a2f39568384b17d35` (`span_net.cu`,
 `span_net_kernels.h`, `span_net.py`, `resultats_net_*.txt`). Ce document dit ce qui en est devenu produit.
@@ -49,6 +51,17 @@ Entrée 1×3×H×W FP16 (NCHW), sortie 1×3×2H×2W FP16, comme le SPAN en ONNX 
 Une boucle principale CUTLASS (convolution implicit GEMM, `mma.sync` m16n8k32 E4M3) et un épilogue écrit à la
 main (`span_fp8_kernels.cuh`) : biais, Relu, requantification, tanh. 29 lancements par image, sans allocation ni
 synchronisation : ils se capturent dans un graphe CUDA tels quels.
+
+Graphe CUDA en lecture (étape 3.3, `span_fp8_engine.{h,cpp}`) : le corps (dégroupage, conv_1, les blocs,
+conv_cat) est capturé par adresse d'entrée, 4 graphes au plus (`GraphBook`, même logique que `TrtEngine` et
+`RifeFusedEngine` : lancement direct, capture au deuxième, rejeu, graphes jetés quand la zone change) ; la
+queue (`to_pixel`) part en direct avec ses adresses de sortie. Un `cudaGraphLaunch` refusé repasse en direct
+sans arrêter la lecture. Visé : 1 `cudaGraphLaunch` et au plus 2 `cudaLaunchKernel` par SPAN.
+
+Écriture de l'anneau (étape 3.4b) : `Backend::enqueue_ring` (par défaut `enqueue` puis `write_ring`, le
+moteur Vulkan ne change pas). Pour un SPAN FP8 : graphe du corps, attente de l'emplacement, `to_pixel` qui
+écrit la surface, signal ; `UpscaleStage::finish` s'en sert quand il n'y a pas d'export YUV. Plus de
+`write_rgba16` en ×1 ni en variante image.
 
 ### Choix : (B) exécuteur direct dans le backend, pas (A) plugin TensorRT
 
@@ -135,14 +148,18 @@ un reçu d'un autre modèle, ni un paquet modifié depuis son reçu.
 
 ## Repli sur TensorRT FP16
 
-À Performance, l'ordre des variantes est : paquet CUTLASS, FP8 par Q/DQ, INT8, puis le SPAN tel que livré en FP16
-par TensorRT. Chacune refusée passe à la suivante.
+À Performance choisi à la main (préréglage Personnalisé), l'ordre des variantes est : paquet CUTLASS, FP8 par
+Q/DQ, INT8, puis le SPAN tel que livré en FP16 par TensorRT. Posé par un préréglage, le FP8 par Q/DQ (seuils
+lâches) et le paquet CUTLASS à reçu v1 n'entrent pas (`span_variant_order(tier, caps, strict)`). Chacune
+refusée passe à la suivante.
 
 | Cas | Où | Effet |
 |---|---|---|
 | GPU autre que sm 8.9 (Turing, Ampere, Blackwell sm 12.0) | `BackendCaps::span_fp8_cutlass` faux ; le lecteur n'essaie pas la variante | variante suivante |
 | Backend construit sans CUTLASS (hors Linux, `third_party/cutlass` absent, `AJP_WITH_SPAN_FP8=OFF`, pas de CUDA) | `span_fp8_net_none.cpp` : capacité fausse | variante suivante |
 | Reçu absent, refusé, d'un autre modèle, paquet modifié | `find_span_variant` | variante suivante |
+| Reçu v2 d'une autre architecture ou d'autres noyaux, taille refusée | `find_span_variant` avec `SpanFp8Context` | variante suivante |
+| Taille de travail pas encore jugée | `find_span_variant` rend `unvalidated_size` | variante suivante, validation seule offerte (silencieuse en Auto) |
 | Taille que les noyaux ne prennent pas : hauteur ou largeur impaire, forme libre (depuis l'étape 3.1, 960×540 et toute taille paire sont prises) | `build` refuse (`FormatUnsupported`) | variante suivante |
 | Canaux autres que 48 ou 64, moins de 2 ou plus de 8 blocs | `derive_span_fp8.py` n'écrit rien ; `parse` refuse un autre en-tête | pas de variante |
 | Paquet illisible, tronqué, CRC faux | `build` | variante suivante |
