@@ -24,7 +24,6 @@
           "name": "ffmpeg",
           "default-features": false,
           "features": [
-            "amf",
             "avcodec",
             "avformat",
             "swresample",
