@@ -103,8 +103,10 @@ void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradePara
   p.gl_vibrance = vibrance_effect(s.adaptive_glow_vibrance);
   p.gl_em_base = p.em_base;
   p.gl_em_pow = p.em_pow;
-  if (p.emulate > 0.5) {
-    const double top = sdr_out ? 400.0 : std::min(400.0, 0.5 * peak);
+  // Sortie SDR : le blanc est fixe, un gris plus bas veut dire « plus sombre » et non « moins d'expansion » :
+  // l'adaptatif n'y règle que les noirs et les couleurs, la courbe reste celle du gris de base.
+  if (p.emulate > 0.5 && !sdr_out) {
+    const double top = std::min(400.0, 0.5 * peak);
     const auto base = [top](double gray) { return std::clamp(4.0 * gray, 40.0, top); };
     const auto power = [](double gray) { return std::clamp(6.0 * std::pow(50.0 / gray, 0.35), 2.0, 16.0); };
     p.ad_em_base = base(s.adaptive_gray);
@@ -308,10 +310,14 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
     // blanc seulement +50 % à highlights = 1.
     const double room = peak / paper;
     p.in_max = paper;
-    const double h = response(s.highlights, 1.0, 1.0);
-    p.area_gain = std::min(1.0 + 0.8 * h, room);
+    // Les curseurs visibles (Éclats, Aplats, Couleurs : ceux de l'interface sur une sortie HDR) règlent aussi
+    // ce mode ; leurs défauts (0,25 ; 0 ; 0,10) donnent les valeurs de départ d'avant (0,50 ; 0,15), pour que
+    // le rendu par défaut ne change pas.
+    const double h = response(std::min(2.0 * s.highlights_rtx, 1.0), 1.0, 1.0);
+    const double areas = response(s.area_rtx, 1.0, 1.0);
+    p.area_gain = std::min(1.0 + 0.8 * (h + areas), room);
     p.spec_gain = std::max(p.area_gain, 1.0 + h * (room - 1.0));
-    p.vibrance = vibrance_effect(s.vibrance);
+    p.vibrance = vibrance_effect(std::min(1.5 * s.vibrance_rtx, 1.0));
   } else {
     // L'aspect TrueHDR émulé et le HDR natif atteignent déjà le pic : les aplats restent, les
     // éclats isolés montent, à partir de la moitié du pic.
