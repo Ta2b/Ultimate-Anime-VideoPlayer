@@ -51,12 +51,15 @@ TEST_CASE("un paquet tronqué, abîmé ou d'une autre version est refusé", "[sp
   CHECK(parse(magic).error().code == RefusalCode::FormatUnsupported);
 
   std::vector<std::byte> version = good;
-  version[8] = std::byte{2};
+  version[8] = std::byte{3};
   CHECK(parse(version).error().code == RefusalCode::FormatUnsupported);
 
   std::vector<std::byte> blocks = good;
-  blocks[12] = std::byte{5};  // 5 blocs : pas ce SPAN
+  blocks[12] = std::byte{9};  // 9 blocs : au-delà de ce que les noyaux portent
   CHECK(parse(blocks).error().code == RefusalCode::FormatUnsupported);
+  std::vector<std::byte> fewer = good;
+  fewer[12] = std::byte{5};  // l'en-tête dit 5 blocs, la charge en porte 8
+  CHECK(parse(fewer).error().code == RefusalCode::FormatUnsupported);
 }
 
 TEST_CASE("une échelle nulle ou un poids infini rend le paquet inutilisable", "[span_fp8]") {
@@ -71,6 +74,33 @@ TEST_CASE("une échelle nulle ou un poids infini rend le paquet inutilisable", "
   Package nan = synthetic();
   nan.first.bias[0] = std::numeric_limits<float>::quiet_NaN();
   CHECK_FALSE(parse(serialize(nan)));
+}
+
+TEST_CASE("un paquet v1 b8f64 se relit toujours, un v2 à 5 blocs aussi (3.2b)", "[span_fp8]") {
+  std::vector<std::byte> v1 = valid_bytes();
+  // L'en-tête d'une version 1 : version 1, 8 blocs, 64 canaux, réservé 0 (la charge, et son CRC, identiques).
+  v1[8] = std::byte{1};
+  for (std::size_t i = 20; i < 24; ++i) v1[i] = std::byte{0};
+  const auto old = parse(v1);
+  REQUIRE(old);
+  CHECK(old->blocks.size() == 8U);
+  CHECK(old->real_channels == 64);
+  // Une version 1 à 5 blocs n'existe pas.
+  std::vector<std::byte> v1_five = v1;
+  v1_five[12] = std::byte{5};
+  CHECK_FALSE(parse(v1_five));
+
+  Package five = synthetic(0.01F, 5);
+  five.real_channels = 48;
+  const auto back = parse(serialize(five));
+  REQUIRE(back);
+  CHECK(back->blocks.size() == 5U);
+  CHECK(back->real_channels == 48);
+  CHECK(back->scales[15] == 0.05F);
+  CHECK(back->scales[16] == 1.0F);  // au-delà des 1 + 3·5 échelles servies
+  Package none = synthetic(0.01F, 5);
+  none.blocks.clear();
+  CHECK_FALSE(parse(serialize(none)));
 }
 
 TEST_CASE("le CRC-32 est celui de zlib", "[span_fp8]") {

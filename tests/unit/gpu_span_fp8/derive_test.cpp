@@ -21,6 +21,17 @@ TEST_CASE("les échelles sont le maximum observé sur 448", "[span_fp8][derive]"
   CHECK((*scales)[3] == Catch::Approx(0.1F));
 }
 
+TEST_CASE("à 5 blocs, seules les 16 premières échelles servent (3.2b)", "[span_fp8][derive]") {
+  std::vector<float> peaks(kScaleCount, 0.0F);  // au-delà de 1 + 3·5 : nuls, ignorés
+  for (std::size_t i = 0; i < 16; ++i) peaks[i] = 4.48F;
+  const auto scales = scales_from_peaks(peaks, 5);
+  REQUIRE(scales);
+  CHECK((*scales)[15] == Catch::Approx(0.01F));
+  CHECK((*scales)[16] == 1.0F);
+  CHECK_FALSE(scales_from_peaks(peaks));  // à 8 blocs, le maximum 16 est nul
+  CHECK_FALSE(scales_from_peaks(peaks, 0));
+}
+
 TEST_CASE("un maximum nul, infini ou absent refuse la dérivation", "[span_fp8][derive]") {
   std::vector<float> peaks(kScaleCount, 1.0F);
   peaks[7] = 0.0F;

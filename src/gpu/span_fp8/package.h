@@ -1,12 +1,15 @@
 // Le paquet de poids du SPAN entier en FP8 : ce que tools/span/derive_span_fp8.py écrit et ce que les noyaux
 // CUTLASS du backend TensorRT chargent (docs/span-fp8-cutlass.md). Un fichier « .span8 », petit-boutiste :
 //
-//   en-tête de 40 octets : « AJPSPAN8 », version (u32 = 1), blocs (u32 = 8), canaux (u32 = 64), réservé
-//   (u32 = 0), taille de la charge (u64), CRC-32 de la charge (u32), réservé (u32 = 0) ;
-//   charge : les 25 échelles E4M3 des activations (f32, voir ci-dessous), puis conv_1, les 8 blocs, conv_cat
-//   et to_pixel. Poids en FP16 (ceux du modèle, sans perte), rangés [sortie][ligne][colonne][entrée] ; biais
-//   en f32. Les poids des convolutions de bloc sont ramenés en FP8 au chargement, à l'échelle de leur tenseur
-//   (maximum / 448) : le paquet ne porte donc que des valeurs que le modèle d'origine contient.
+//   en-tête de 40 octets : « AJPSPAN8 », version (u32 = 2 ; 1 reste lue), blocs (u32, 1 à 8 ; 8 en
+//   version 1), canaux rangés (u32 = 64), canaux réels du modèle (u32 : 48 ou 64 ; 0 en version 1, lu 64),
+//   taille de la charge (u64), CRC-32 de la charge (u32), réservé (u32 = 0) ;
+//   charge : les 1 + 3·blocs échelles E4M3 des activations (f32, voir ci-dessous), puis conv_1, les blocs,
+//   conv_cat et to_pixel. Un modèle à 48 canaux (b5f48) est rangé en 64 canaux remplis de zéros (étape 3.2b)
+//   : Relu(0) = 0 et (t + x)·tanh(0) = 0, les canaux ajoutés restent nuls d'un bout à l'autre. Poids en FP16
+//   (ceux du modèle, sans perte), rangés [sortie][ligne][colonne][entrée] ; biais en f32. Les poids des
+//   convolutions de bloc sont ramenés en FP8 au chargement, à l'échelle de leur tenseur (maximum / 448) : le
+//   paquet ne porte donc que des valeurs que le modèle d'origine contient.
 //
 // Échelles : [0] sortie de conv_1 ; pour le bloc b (0 à 7) : [1+3b] sortie du premier Relu, [2+3b] du second,
 // [3+3b] sortie du bloc. Une échelle est « maximum observé / 448 » sur le corpus de calibration.
@@ -25,14 +28,14 @@
 namespace ajp::gpu::span_fp8 {
 
 inline constexpr std::size_t kHeaderBytes = 40;
-inline constexpr std::uint32_t kVersion = 1;
-inline constexpr int kBlocks = 8;
+inline constexpr std::uint32_t kVersion = 2;
+inline constexpr int kBlocks = 8;  // au plus ; le b8f64 en a 8, le b5f48 5
 inline constexpr int kChannels = 64;
 inline constexpr int kUnshuffled = 12;        // canaux après le dégroupage 2×2 des 3 plans
 inline constexpr int kUnshuffledPadded = 16;  // conv_1 lit 16 canaux, les 4 derniers nuls
 inline constexpr int kConcatChannels = 4 * kChannels;
-inline constexpr int kPixelChannels = 48;  // 3 plans × 4 × 4, avant DepthToSpace
-inline constexpr int kScaleCount = 1 + 3 * kBlocks;
+inline constexpr int kPixelChannels = 48;            // 3 plans × 4 × 4, avant DepthToSpace
+inline constexpr int kScaleCount = 1 + 3 * kBlocks;  // au plus : 1 + 3·blocs servent
 inline constexpr std::size_t kMaxPackageBytes = std::size_t{64} << 20U;  // le vrai pèse environ 2 Mo
 
 // Une convolution : poids FP16 (motif binaire IEEE 754 demi-précision) et biais f32.
@@ -47,11 +50,12 @@ struct Block {
 };
 
 struct Package {
-  std::array<float, kScaleCount> scales{};
-  Conv first;  // conv_1 : 3×3, 16 → 64 (4 canaux nuls)
-  std::array<Block, kBlocks> blocks;
-  Conv concat;  // conv_cat : 1×1, 256 → 64
-  Conv pixel;   // to_pixel : 3×3, 64 → 48
+  std::array<float, kScaleCount> scales{};  // 1 + 3·blocks.size() servent, les autres à 1
+  Conv first;                               // conv_1 : 3×3, 16 → 64 (4 canaux nuls)
+  std::vector<Block> blocks{static_cast<std::size_t>(kBlocks)};  // 1 à kBlocks
+  int real_channels = kChannels;  // 48 (b5f48, rangé en 64 avec des zéros) ou 64
+  Conv concat;                    // conv_cat : 1×1, 256 → 64
+  Conv pixel;                     // to_pixel : 3×3, 64 → 48
 };
 
 // Le dégroupage prend des blocs 2×2 : hauteur et largeur paires. La dernière tuile de 128 lignes des noyaux
@@ -71,6 +75,11 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes);
 std::vector<std::byte> serialize(const Package& package);
 
 // Un paquet de la forme du vrai, rempli de valeurs régulières (tests sans modèle).
-Package synthetic(float fill = 0.01F);
+Package synthetic(float fill = 0.01F, int blocks = kBlocks);
+
+// Échelles qui servent pour ce nombre de blocs.
+constexpr std::size_t scale_count(std::size_t blocks) {
+  return 1 + 3 * blocks;
+}
 
 }  // namespace ajp::gpu::span_fp8
