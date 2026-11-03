@@ -13,6 +13,7 @@
 
 #include "core/ring.h"
 #include "core/types.h"
+#include "gpu/cuda/backend/ring_surface.h"
 
 namespace ajp::gpu::cuda {
 
@@ -26,7 +27,8 @@ class ImportedSlot {
   ImportedSlot& operator=(const ImportedSlot&) = delete;
 
   const RingSlotDesc& desc() const { return desc_; }
-  cudaSurfaceObject_t surface() const { return surface_; }
+  // La surface et son empaquetage, pour store_ring (pixel_kernels.cuh).
+  RingSurface surface() const { return {.object = surface_, .packing = packing_}; }
   // Attend wait_value puis, après les noyaux enfilés entre-temps, signale signal_value.
   std::expected<void, Refusal> wait(std::uint64_t value, cudaStream_t stream) const;
   std::expected<void, Refusal> signal(std::uint64_t value, cudaStream_t stream) const;
@@ -38,6 +40,7 @@ class ImportedSlot {
   cudaExternalMemory_t memory_ = nullptr;
   cudaMipmappedArray_t mipmaps_ = nullptr;
   cudaSurfaceObject_t surface_ = 0;
+  RingPacking packing_ = RingPacking::Rgba16;
   cudaExternalSemaphore_t semaphore_ = nullptr;
 };
 

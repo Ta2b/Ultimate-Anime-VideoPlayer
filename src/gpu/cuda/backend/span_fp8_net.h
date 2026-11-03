@@ -13,6 +13,8 @@
 #include <memory>
 #include <string>
 
+#include "gpu/cuda/backend/ring_surface.h"
+
 namespace ajp::gpu::cuda {
 
 // Une convolution vue sans copie : poids FP16 (motifs binaires) rangés [sortie][ligne][colonne][entrée],
@@ -39,7 +41,7 @@ struct SpanFp8Weights {
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.
 // Seuls les pixels de 0 à width-1 et de 0 à height-1 sont écrits.
 struct SpanFp8Ring {
-  cudaSurfaceObject_t surface = 0;
+  RingSurface surface{};  // emplacement de l'anneau (ring_surface.h) ; object 0 : aucun
   int width = 0;
   int height = 0;
 };

@@ -298,8 +298,8 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) compose(Gmfs
   }
   float rgb[3];
   compose_pixel<Exact>(p, compose_reads(p), x, y, ha, hb, rgb);
-  if (p.surface != 0) {
-    store_rgba16(p.surface, x, y, __float2half_rn(rgb[0]), __float2half_rn(rgb[1]), __float2half_rn(rgb[2]));
+  if (p.surface.object != 0) {
+    store_ring(p.surface, x, y, __float2half_rn(rgb[0]), __float2half_rn(rgb[1]), __float2half_rn(rgb[2]));
     return;
   }
   auto* out = static_cast<__half*>(p.out);
@@ -332,11 +332,10 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) compose_filt
   float right[3];
   compose_pixel<Filtered>(p, reads, x, y, ha[0], hb[0], left);
   compose_pixel<Filtered>(p, reads, x + 1, y, ha[1], hb[1], right);
-  if (p.surface != 0) {
-    store_rgba16(p.surface, x, y, __float2half_rn(left[0]), __float2half_rn(left[1]),
-                 __float2half_rn(left[2]));
-    store_rgba16(p.surface, x + 1, y, __float2half_rn(right[0]), __float2half_rn(right[1]),
-                 __float2half_rn(right[2]));
+  if (p.surface.object != 0) {
+    store_ring(p.surface, x, y, __float2half_rn(left[0]), __float2half_rn(left[1]), __float2half_rn(left[2]));
+    store_ring(p.surface, x + 1, y, __float2half_rn(right[0]), __float2half_rn(right[1]),
+               __float2half_rn(right[2]));
     return;
   }
   auto* out = static_cast<__half2*>(p.out);

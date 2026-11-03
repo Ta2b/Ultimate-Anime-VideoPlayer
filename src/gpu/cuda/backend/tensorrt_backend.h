@@ -246,8 +246,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
                                        const Tensor& low_b, const Tensor& fusion,
                                        const kernels::Window& window, float t, const Target& target);
-  // launch(surface) chronométré sous name : surface nulle vers un tenseur ; vers un slot, l'attente
-  // de wait_value avant et le signal après, comme write_ring.
+  // launch(surface) chronométré sous name : surface nulle (object 0) vers un tenseur ; vers un slot,
+  // l'attente de wait_value avant et le signal après, comme write_ring.
   template <typename Launch>
   std::expected<void, Refusal> launch_into(const Target& target, std::string_view name, Launch&& launch) {
     ImportedSlot* imported = nullptr;
@@ -258,7 +258,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
     }
     GpuTiming& timing = stage(name);
     timing.begin(stream_);
-    std::expected<void, Refusal> launched = launch(imported != nullptr ? imported->surface() : 0);
+    std::expected<void, Refusal> launched = launch(imported != nullptr ? imported->surface() : RingSurface{});
     timing.end(stream_);
     if (!launched || imported == nullptr) return launched;
     return imported->signal(target.ring->sync.signal_value, stream_);

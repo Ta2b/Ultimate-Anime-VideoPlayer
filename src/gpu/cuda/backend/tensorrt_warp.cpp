@@ -143,7 +143,7 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
   const std::array reads{a.handle, b.handle, motion.flow.handle, motion.mask.handle, previous};
   const std::array writes{out != nullptr ? out->handle : 0};
   if (auto ok = order(reads, std::span(writes).first(out != nullptr ? 1 : 0)); !ok) return ok;
-  return launch_into(target, "warp et mélange", [&](cudaSurfaceObject_t surface) {
+  return launch_into(target, "warp et mélange", [&](RingSurface surface) {
     WarpBlendParams into = params;
     into.surface = surface;
     return cuda_check(launch_warp_blend(into, stream_), "warp_blend<<<>>>");

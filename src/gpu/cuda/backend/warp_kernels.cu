@@ -130,8 +130,8 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(W
   if (x >= p.width || y >= p.height) return;
   float rgb[3];
   warp_pixel<Exact>(p, x, y, rgb);
-  if (p.surface != 0) {
-    store_rgba16(p.surface, x, y, __float2half_rn(rgb[0]), __float2half_rn(rgb[1]), __float2half_rn(rgb[2]));
+  if (p.surface.object != 0) {
+    store_ring(p.surface, x, y, __float2half_rn(rgb[0]), __float2half_rn(rgb[1]), __float2half_rn(rgb[2]));
     return;
   }
   auto* out = static_cast<__half*>(p.out);
@@ -158,9 +158,9 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend_f
       pair[c] = k == 0 ? __halves2half2(v, v) : __halves2half2(__low2half(pair[c]), v);
     }
   }
-  if (p.surface != 0) {
-    store_rgba16(p.surface, x, y, __low2half(pair[0]), __low2half(pair[1]), __low2half(pair[2]));
-    store_rgba16(p.surface, x + 1, y, __high2half(pair[0]), __high2half(pair[1]), __high2half(pair[2]));
+  if (p.surface.object != 0) {
+    store_ring(p.surface, x, y, __low2half(pair[0]), __low2half(pair[1]), __low2half(pair[2]));
+    store_ring(p.surface, x + 1, y, __high2half(pair[0]), __high2half(pair[1]), __high2half(pair[2]));
     return;
   }
   auto* out = static_cast<__half2*>(p.out);

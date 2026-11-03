@@ -298,7 +298,7 @@ std::expected<void, Refusal> TensorRtBackend::compose(const Tensor& high_a, cons
   const std::array reads{high_a.handle, high_b.handle, low_a.handle, low_b.handle, fusion.handle};
   const std::array writes{target.out != nullptr ? target.out->handle : 0};
   if (auto ok = order(reads, std::span(writes).first(target.out != nullptr ? 1 : 0)); !ok) return ok;
-  return launch_into(target, "composition de GMFSS", [&](cudaSurfaceObject_t surface) {
+  return launch_into(target, "composition de GMFSS", [&](RingSurface surface) {
     GmfssComposeParams into = params;
     into.surface = surface;
     return cuda_check(launch_gmfss_compose(into, stream_), "gmfss_compose<<<>>>");

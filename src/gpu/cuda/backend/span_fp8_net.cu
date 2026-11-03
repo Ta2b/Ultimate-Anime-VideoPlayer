@@ -327,7 +327,7 @@ bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, const SpanFp8Rin
     error = "zone de travail absente";
     return false;
   }
-  if (output == nullptr && ring.surface == 0) {
+  if (output == nullptr && ring.surface.object == 0) {
     error = "ni sortie ni surface";
     return false;
   }
