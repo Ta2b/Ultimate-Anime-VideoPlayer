@@ -17,6 +17,12 @@ constexpr std::array<AblPoint, 5> kQdOled{
 
 }  // namespace
 
+KwinHint kwin_hint(double content_peak_nits, double reference_nits) {
+  const DisplayModel model{.panel_peak_nits = content_peak_nits * reference_nits / kContentReferenceNits,
+                           .reference_nits = reference_nits};
+  return {.panel_peak_nits = model.panel_peak_nits, .max_content_nits = content_peak_nits};
+}
+
 double oled_abl_ratio(double area) {
   const double a = std::clamp(area, kQdOled.front().area, 1.0);
   // Interpolée en log de la surface et en log de la luminance : la courbe d'un limiteur est à peu près une
