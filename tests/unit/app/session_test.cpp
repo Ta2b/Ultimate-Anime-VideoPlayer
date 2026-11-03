@@ -655,6 +655,16 @@ TEST_CASE("Un refus fatal d'un thread arrête la lecture et s'affiche", "[app][s
   CHECK(rig.session.refusals()[0] == "gpu : ThreadFailed boum");
 }
 
+TEST_CASE("Un changement de taille de la source arrête la session et demande la réouverture",
+          "[app][session]") {
+  ajp::app::play::FrenchUi french;
+  Rig rig;
+  CHECK_FALSE(rig.session.resize_asked());
+  rig.session.handle(StageRefusal{.stage = "gpu", .refusal = {RefusalCode::SourceResized, "1920x1080"}});
+  CHECK(rig.session.resize_asked());
+  CHECK(rig.session.finished());
+}
+
 TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]") {
   ajp::app::play::FrenchUi french;
   Rig rig(SessionConfig{.header = {"SPAN ×2"}, .stats = {.all = true}});

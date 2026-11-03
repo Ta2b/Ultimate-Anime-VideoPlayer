@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -737,6 +738,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       log->warn("{}", written.error().detail);
   }
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
+  // La source a changé de taille en cours de lecture : la chaîne se rouvre à la nouvelle taille, au même
+  // endroit ; au-delà de 4 réouvertures par minute, c'est un refus.
+  if (session.resize_asked() && !chain.reopen && !failure) {
+    static std::deque<std::int64_t> resizes;
+    const std::int64_t now = host_now_us();
+    while (!resizes.empty() && now - resizes.front() > 60'000'000) resizes.pop_front();
+    if (resizes.size() >= 4) {
+      failure = Refusal{RefusalCode::SourceResized, "la source change de taille trop souvent"};
+    } else {
+      resizes.push_back(now);
+      log->info("la source a changé de taille : réouverture de la chaîne");
+      chain.reopen = chain.running;
+    }
+  }
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&
       chain.running.autoplay_next && !p.options.file.empty()) {

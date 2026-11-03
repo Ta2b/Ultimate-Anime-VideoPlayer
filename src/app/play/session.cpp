@@ -245,7 +245,8 @@ void Session::on_refusal(const StageRefusal& refusal) {
       std::format("{} : {} {}", refusal.stage, name(refusal.refusal.code), refusal.refusal.detail));
   if (refusals_.size() > kMaxRefusals) refusals_.erase(refusals_.begin());
   osd_at_us_.reset();  // le refus paraît au tour suivant
-  if (refusal.fatal) finished_ = true;
+  if (refusal.refusal.code == RefusalCode::SourceResized) resized_ = true;
+  if (refusal.fatal || resized_) finished_ = true;
 }
 
 void Session::request_subtitles(const RingFrame& frame) {
