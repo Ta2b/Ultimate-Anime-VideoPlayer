@@ -32,7 +32,14 @@ struct GpuSample {
   unsigned vram_used_mib = 0;
   unsigned vram_total_mib = 0;  // 0 : inconnue
   std::uint64_t throttle = 0;   // masque des raisons d'écrêtage d'NVML
+  std::uint64_t energy_mj =
+      0;  // énergie totale depuis le chargement du pilote (NVML, Volta et plus) ; 0 : inconnue
 };
+
+// Millijoules par image neuve entre deux relevés du compteur d'énergie. Rien si un relevé manque (0), si le
+// compteur recule ou si aucune image n'est neuve.
+std::optional<double> millijoules_per_frame(std::uint64_t start_mj, std::uint64_t end_mj,
+                                            std::int64_t frames);
 
 // L'UUID d'un appareil Vulkan tel que NVML le nomme : « GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx ».
 std::string nvml_uuid_text(const DeviceUuid& uuid);

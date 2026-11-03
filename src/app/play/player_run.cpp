@@ -180,6 +180,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
+  const std::uint64_t energy_start_mj =
+      telemetry ? telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj : 0;
   const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
                                fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
@@ -695,6 +697,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers
   p.quit = session.quit_asked();
   log_summary(session);
+  if (telemetry) {
+    // Énergie de la lecture : le compteur NVML relevé au début et à la fin (au plus 500 ms de retard).
+    const std::uint64_t energy_end_mj = telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj;
+    if (const auto per_frame =
+            millijoules_per_frame(energy_start_mj, energy_end_mj, session.stats().new_frames))
+      log->info("énergie : {:.1f} J, {:.1f} mJ par image neuve",
+                static_cast<double>(energy_end_mj - energy_start_mj) / 1000.0, *per_frame);
+  }
   if (p.options.bench_out) {
     const GpuFacts gpu = gpu_facts(p.screen);
     const FrameStats& seen = session.stats();

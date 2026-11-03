@@ -143,6 +143,12 @@ bool nvidia_driver_older_than(std::string_view version, int major, int minor, in
   return parts < std::array<int, 3>{major, minor, patch};
 }
 
+std::optional<double> millijoules_per_frame(std::uint64_t start_mj, std::uint64_t end_mj,
+                                            std::int64_t frames) {
+  if (start_mj == 0 || end_mj <= start_mj || frames <= 0) return std::nullopt;
+  return static_cast<double>(end_mj - start_mj) / static_cast<double>(frames);
+}
+
 #if defined(__linux__) || defined(_WIN32)
 
 namespace {
@@ -217,6 +223,7 @@ struct GpuTelemetry::Impl {
   int (*pcie_width)(Handle, unsigned*) = nullptr;
   int (*throttle)(Handle, unsigned long long*) = nullptr;
   int (*memory)(Handle, NvmlMemory*) = nullptr;
+  int (*energy)(Handle, unsigned long long*) = nullptr;
   std::optional<GpuSample> last;
   std::int64_t last_us = 0;
 
@@ -295,6 +302,7 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
   bind(impl->pcie_width, "nvmlDeviceGetCurrPcieLinkWidth");
   bind(impl->throttle, "nvmlDeviceGetCurrentClocksThrottleReasons");
   bind(impl->memory, "nvmlDeviceGetMemoryInfo");
+  bind(impl->energy, "nvmlDeviceGetTotalEnergyConsumption");
   if (impl->clock == nullptr) return nullptr;
   return std::unique_ptr<GpuTelemetry>(new GpuTelemetry(std::move(impl)));
 }
@@ -352,6 +360,10 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
   if (i.throttle != nullptr) {
     unsigned long long mask = 0;
     if (i.throttle(i.device, &mask) == 0) s.throttle = mask;
+  }
+  if (i.energy != nullptr) {
+    unsigned long long total = 0;
+    if (i.energy(i.device, &total) == 0) s.energy_mj = total;
   }
   i.last = s;
   i.last_us = host_us;
