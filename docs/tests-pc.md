@@ -355,6 +355,15 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   (`--stats`), export P010 ≥ 50 dB contre RGBA16. Si tout passe, RGB10A2 devient le défaut sous TensorRT
   (ADR 0008).
 
+## Plan NVIDIA, chantier 2b : composition gardée (novembre, écrit dans le cloud)
+
+- **2.6** : en pause avec la barre de lecture visible, puis avec la cadence fixe à 165 Hz sur une source 24 i/s
+  sans interpolation, le journal de fermeture dit « composition gardee : N recompositions, M recopies » avec
+  N proche du nombre d'images neuves (±1 %). Sous-titres, OSD (`--stats`) et barre de lecture se voient comme
+  avant, à la bonne place, sans traînée quand l'OSD change. « profil GPU » : ms GPU/s d'affichage −180 au
+  moins à 165 Hz ; redessin ≤ 0,25 ms en 4K. Changer de look, de grade ou de taille de fenêtre en pause doit
+  se voir tout de suite.
+
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
 Backend Vulkan seul (pas de matrices coopératives, ROCm ne sert pas Navi 24 : MIGraphX n'est plus

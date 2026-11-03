@@ -326,6 +326,7 @@ PlaceboScreen::Impl::~Impl() {
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
   for (pl_tex& tex : offscreen_tex)
     if (tex != nullptr) pl_tex_destroy(vk->gpu, &tex);
+  if (composed != nullptr) pl_tex_destroy(vk->gpu, &composed);
   share.reset();  // avant l'appareil qu'il prête
   if (!grade_gpu_us.empty()) {
     std::ranges::sort(grade_gpu_us);
@@ -335,6 +336,9 @@ PlaceboScreen::Impl::~Impl() {
     channel->info("profil GPU · grade HDR : médiane {:.2f} ms, p95 {:.2f} ms ({} images)", at(0.5) / 1000.0,
                   at(0.95) / 1000.0, grade_gpu_us.size());
   }
+  if (recompositions + reuses > 0)
+    channel->info("composition gardee : {} recompositions, {} recopies sans recomposition", recompositions,
+                  reuses);
   ui.reset();
   grade.reset();
   ramp_grade.reset();

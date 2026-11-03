@@ -19,6 +19,7 @@
 #include <libplacebo/vulkan.h>
 #include <spdlog/logger.h>
 
+#include "app/play/compose_key.h"
 #include "app/play/links.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_imgui.h"
@@ -112,6 +113,18 @@ struct PlaceboScreen::Impl {
   void open_shader_cache(const std::filesystem::path& file);
   void save_shader_cache();
   std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target) const;
+  // La composition gardée (ShowRequest::redraws_expected) : vidéo et sous-titres composés dans `composed`
+  // quand la clé change, puis recopiés dans la cible. false : la cible ne se prête pas à la copie, rien n'est
+  // dessiné et la composition directe s'impose.
+  std::expected<bool, Refusal> compose_kept(const pl_frame* image, const pl_frame& target,
+                                            const ComposeKey& key, std::span<const pl_overlay> subtitles);
+  // Les seuls calques (l'OSD) sur la cible, sans l'image (renderer.h : image NULL).
+  std::expected<void, Refusal> draw_overlays(const pl_frame& target,
+                                             std::span<const pl_overlay> layers) const;
+  pl_tex composed = nullptr;
+  std::optional<ComposeKey> composed_key;
+  std::uint64_t recompositions = 0;  // compositions gardées refaites, puis recopies sans recomposition
+  std::uint64_t reuses = 0;
   // L'interface par-dessus la composition ; un refus est écrit au journal une fois, la lecture
   // continue sans elle.
   void draw_ui(const ImDrawData* ui, const pl_frame& target);
