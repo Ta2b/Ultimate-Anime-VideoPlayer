@@ -58,4 +58,24 @@ TEST_CASE("SSIM : la valeur de l'outil Python sur deux petites images", "[span_f
   CHECK(ssim(kW, kH, a, b) == Catch::Approx(0.8070049854).margin(1e-6));
 }
 
+TEST_CASE("le quantile de l'erreur absolue se prend au rang, sur tout ou sur le sombre (3.7a)",
+          "[span_fp8][metrics]") {
+  // 1000 échantillons : 999 à 0, un à 0,5. Le 99,9e centile (rang 998) vaut 0, le maximum 0,5.
+  std::vector<float> a(1000, 0.0F), b(1000, 0.0F);
+  b[17] = 0.5F;
+  CHECK(abs_error_quantile(a, b, 0.999) == 0.0);
+  CHECK(abs_error_quantile(a, b, 1.0) == Catch::Approx(0.5));
+  b[18] = 0.25F;  // deux sur mille : le rang 998 tombe sur le second plus grand
+  CHECK(abs_error_quantile(a, b, 0.999) == Catch::Approx(0.25));
+  CHECK(abs_error_quantile(a, std::vector<float>(3, 0.0F), 0.5) == 0.0);  // tailles différentes
+
+  // 2×1 pixels : un sombre (0,05), un clair (0,8) ; l'erreur du clair ne compte pas sur le sombre.
+  const std::vector<float> ref{0.05F, 0.8F, 0.05F, 0.8F, 0.05F, 0.8F};
+  const std::vector<float> got{0.06F, 0.5F, 0.07F, 0.5F, 0.05F, 0.5F};
+  CHECK(dark_abs_error_quantile(2, 1, ref, got, 1.0) == Catch::Approx(0.02).margin(1e-6));
+  CHECK(abs_error_quantile(ref, got, 1.0) == Catch::Approx(0.3).margin(1e-6));
+  const std::vector<float> bright(6, 0.9F);
+  CHECK(dark_abs_error_quantile(2, 1, bright, got, 1.0) == 0.0);  // aucun pixel sombre
+}
+
 }  // namespace ajp::gpu::span_fp8

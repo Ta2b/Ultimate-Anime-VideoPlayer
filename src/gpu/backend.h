@@ -66,7 +66,8 @@ namespace ajp::gpu {
 // contexte perdu vu sans attendre le délai).
 // 21 : Backend::enqueue_ring (étape 3.4b : le SPAN FP8 écrit l'emplacement de l'anneau depuis son épilogue).
 // 22 : SpanFp8Derivation::scores_acc16 et kernels_ms_acc16 (étape 3.5a).
-inline constexpr int kBackendAbi = 22;
+// 23 : SpanFp8Request::hard, SpanFp8ImageScore au 99,9e centile, SpanFp8Derivation::hard_scores (étape 3.7a).
+inline constexpr int kBackendAbi = 23;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -164,11 +165,14 @@ struct SpanFp8Request {
   std::vector<std::byte> package;
   std::vector<SpanStill> calibration;  // les maxima des tenseurs se relèvent sur elles
   std::vector<SpanStill> validation;   // mises de côté : jugent la sortie FP8 contre la référence FP16
+  std::vector<SpanStill> hard;         // cas durs (gpu/span_fp8/hard_cases.h) : jugés aussi, sans calibrer
 };
 
 struct SpanFp8ImageScore {
   double psnr_db = 0.0;
   double ssim = 0.0;
+  double error_p999 = 0.0;       // 99,9e centile de |FP8 − FP16| (étape 3.7a)
+  double dark_error_p999 = 0.0;  // le même sur les pixels sombres de la référence
 };
 
 struct SpanFp8Derivation {
@@ -180,6 +184,9 @@ struct SpanFp8Derivation {
   // La même chose, conv_cat et to_pixel accumulant en f16 (étape 3.5a) ; vide si le backend ne l'essaie pas.
   std::vector<SpanFp8ImageScore> scores_acc16;
   double kernels_ms_acc16 = 0.0;
+  // Les cas durs de la requête, pour chaque variante (étape 3.7a).
+  std::vector<SpanFp8ImageScore> hard_scores;
+  std::vector<SpanFp8ImageScore> hard_scores_acc16;
   std::string reference;  // d'où vient la sortie de référence, « cutlass-fp16 »
 };
 

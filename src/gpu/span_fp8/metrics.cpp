@@ -97,4 +97,38 @@ double ssim(int width, int height, std::span<const float> a, std::span<const flo
   return total / static_cast<double>(out_w * out_h);
 }
 
+namespace {
+
+double quantile_of(std::vector<float>& errors, double q) {
+  if (errors.empty()) return 0.0;
+  const double clamped = std::clamp(q, 0.0, 1.0);
+  const auto rank = static_cast<std::size_t>(std::floor(clamped * static_cast<double>(errors.size() - 1)));
+  std::ranges::nth_element(errors, errors.begin() + static_cast<std::ptrdiff_t>(rank));
+  return static_cast<double>(errors[rank]);
+}
+
+}  // namespace
+
+double abs_error_quantile(std::span<const float> a, std::span<const float> b, double q) {
+  if (a.size() != b.size() || a.empty()) return 0.0;
+  std::vector<float> errors(a.size());
+  for (std::size_t i = 0; i < a.size(); ++i) errors[i] = std::abs(a[i] - b[i]);
+  return quantile_of(errors, q);
+}
+
+double dark_abs_error_quantile(int width, int height, std::span<const float> a, std::span<const float> b,
+                               double q, double dark) {
+  const auto w_px = static_cast<std::size_t>(std::max(width, 0));
+  const auto h_px = static_cast<std::size_t>(std::max(height, 0));
+  const std::size_t plane = w_px * h_px;
+  if (plane == 0 || a.size() != 3 * plane || b.size() != a.size()) return 0.0;
+  std::vector<float> errors;
+  for (std::size_t i = 0; i < plane; ++i) {
+    const double luma = 0.2126 * a[i] + 0.7152 * a[plane + i] + 0.0722 * a[2 * plane + i];
+    if (luma >= dark) continue;
+    for (std::size_t c = 0; c < 3; ++c) errors.push_back(std::abs(a[c * plane + i] - b[c * plane + i]));
+  }
+  return quantile_of(errors, q);
+}
+
 }  // namespace ajp::gpu::span_fp8

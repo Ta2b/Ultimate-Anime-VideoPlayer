@@ -62,6 +62,30 @@ TEST_CASE("le verdict tient aux trois seuils du reçu", "[span_fp8][derive]") {
   CHECK_FALSE(judge({}).passed);                                                    // aucune image
 }
 
+TEST_CASE("la porte durcie tient au 99,9e centile, au sombre et aux cas durs (3.7a)", "[span_fp8][derive]") {
+  const std::vector<ImageScore> good{{50.0, 0.995, 2.0 / 255.0, 1.0 / 255.0},
+                                     {46.0, 0.99, 3.0 / 255.0, 1.5 / 255.0}};
+  const std::vector<ImageScore> hard{{40.0, 0.99, 3.5 / 255.0, 1.0 / 255.0}, {37.0, 0.98, 1.0 / 255.0, 0.0}};
+  const Verdict ok = judge_hardened(good, hard);
+  CHECK(ok.passed);
+  CHECK(ok.error_p999_worst == Catch::Approx(3.5 / 255.0));
+  CHECK(ok.dark_error_p999_worst == Catch::Approx(1.5 / 255.0));
+  CHECK(ok.hard_psnr_worst_db == Catch::Approx(37.0));
+  CHECK(ok.hard_images == 2);
+  CHECK(judge_hardened(good, {}).passed);  // sans cas dur : la partie centile seule
+
+  std::vector<ImageScore> loud = good;
+  loud[1].error_p999 = 4.5 / 255.0;
+  CHECK_FALSE(judge_hardened(loud, hard).passed);
+  std::vector<ImageScore> dark = good;
+  dark[0].dark_error_p999 = 2.5 / 255.0;
+  CHECK_FALSE(judge_hardened(dark, hard).passed);
+  std::vector<ImageScore> broken = hard;
+  broken[1].psnr_db = 35.9;
+  CHECK_FALSE(judge_hardened(good, broken).passed);
+  CHECK_FALSE(judge_hardened({}, hard).passed);  // sans validation, rien ne passe
+}
+
 TEST_CASE("l'accumulateur f16 n'est gardé qu'à 0,3 dB de PSNR moyen du f32, porte passée (3.5a)",
           "[span_fp8][derive]") {
   const Verdict f32{.psnr_mean_db = 48.0, .psnr_worst_db = 44.0, .ssim_worst = 0.99, .passed = true};
