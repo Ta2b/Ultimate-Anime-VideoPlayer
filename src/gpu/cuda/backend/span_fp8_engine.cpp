@@ -8,6 +8,7 @@
 #include <system_error>
 #include <vector>
 
+#include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/span_fp8/package.h"
 
 namespace ajp::gpu::cuda {
@@ -127,7 +128,18 @@ bool is_span_fp8_package(const std::filesystem::path& path) {
   return path.extension() == ".span8";
 }
 
-SpanFp8Engine::~SpanFp8Engine() = default;
+SpanFp8Engine::~SpanFp8Engine() {
+  drop_graphs();
+}
+
+void SpanFp8Engine::drop_graphs() {
+  for (cudaGraphExec_t& exec : execs_) {
+    if (exec != nullptr) cudaGraphExecDestroy(exec);
+    exec = nullptr;
+  }
+  execs_.clear();
+  book_.clear();
+}
 
 std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
     const std::filesystem::path& package, int height, int width,
@@ -160,6 +172,7 @@ std::expected<void, Refusal> SpanFp8Engine::use_zone(const std::shared_ptr<Share
   if (auto ok = zone->reserve(net_->workspace_bytes()); !ok) return ok;
   // Une zone agrandie (generation change) ou une autre voie : les paramètres des noyaux portent des adresses.
   if (zone != zone_ || zone->generation() != generation_) {
+    drop_graphs();  // les graphes portent les adresses de l'ancienne zone
     net_->bind(zone->data());
     zone_ = zone;
     generation_ = zone->generation();
@@ -186,9 +199,58 @@ std::expected<void, Refusal> SpanFp8Engine::enqueue(cudaStream_t stream,
   const void* source = reinterpret_cast<const void*>(in.handle + in.offset);
   void* target = reinterpret_cast<void*>(out.handle + out.offset);
   // NOLINTEND(performance-no-int-to-ptr)
-  if (std::string why; !net_->launch(stream, source, target, why))
+  if (auto ok = body(stream, source); !ok) return ok;
+  if (std::string why; !net_->launch_tail(stream, target, why))
     return refuse(RefusalCode::VendorCallFailed, "SPAN FP8 : " + why);
   return {};
+}
+
+std::expected<void, Refusal> SpanFp8Engine::body(cudaStream_t stream, const void* source) {
+  const auto direct = [&]() -> std::expected<void, Refusal> {
+    if (std::string why; !net_->launch_body(stream, source, why))
+      return refuse(RefusalCode::VendorCallFailed, "SPAN FP8 : " + why);
+    return {};
+  };
+  const GraphBook<std::uintptr_t>::Pick pick = book_.next(reinterpret_cast<std::uintptr_t>(source));
+  if (pick.step == GraphStep::Direct || pick.step == GraphStep::Overflow || pick.step == GraphStep::Warm)
+    return direct();  // Warm : le premier lancement d'une adresse, hors capture
+  if (execs_.size() <= pick.index) execs_.resize(pick.index + 1, nullptr);
+  cudaGraphExec_t& exec = execs_[pick.index];
+  if (pick.step == GraphStep::Capture) {
+    cudaGraph_t captured = nullptr;
+    std::string why;
+    bool queued = false;
+    cudaError_t error = cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal);
+    if (error == cudaSuccess) {
+      queued = net_->launch_body(stream, source, why);
+      error = cudaStreamEndCapture(stream, &captured);  // termine aussi une capture invalidée
+    }
+    if (error == cudaSuccess && queued && captured != nullptr)
+      error = cudaGraphInstantiate(&exec, captured, 0);
+    if (captured != nullptr) cudaGraphDestroy(captured);
+    const bool ok = error == cudaSuccess && queued && captured != nullptr;
+    book_.captured(
+        ok, !queued ? why : std::string(error != cudaSuccess ? cudaGetErrorString(error) : "graphe vide"));
+    if (!ok) {
+      // Capture refusée : rien n'a tourné (la capture enregistre sans exécuter), le lancement direct fait le
+      // travail.
+      exec = nullptr;
+      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+        return std::unexpected(cuda_refusal(lost, "SPAN FP8 : capture du graphe"));
+      return direct();
+    }
+  }
+  // Rejeu. Refusé sans erreur collante : graphe détruit, lancement direct, recapture au passage suivant
+  // (après GraphBook::kMaxLaunchFailures refus, graphes coupés) ; une erreur collante : contexte perdu.
+  const cudaError_t launched = cudaGraphLaunch(exec, stream);
+  if (launched == cudaSuccess) return {};
+  if (sticky(launched)) return std::unexpected(cuda_refusal(launched, "SPAN FP8 : cudaGraphLaunch"));
+  cudaGraphExecDestroy(exec);
+  exec = nullptr;
+  book_.launch_failed(pick.index);
+  if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+    return std::unexpected(cuda_refusal(lost, "SPAN FP8 : cudaGraphLaunch"));
+  return direct();
 }
 
 }  // namespace ajp::gpu::cuda

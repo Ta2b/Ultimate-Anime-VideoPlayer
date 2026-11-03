@@ -34,6 +34,16 @@ bool SpanFp8Net::launch(cudaStream_t /*stream*/, const void* /*input*/, void* /*
   return false;
 }
 
+bool SpanFp8Net::launch_body(cudaStream_t /*stream*/, const void* /*input*/, std::string& error) {
+  error = "noyaux absents";
+  return false;
+}
+
+bool SpanFp8Net::launch_tail(cudaStream_t /*stream*/, void* /*output*/, std::string& error) {
+  error = "noyaux absents";
+  return false;
+}
+
 struct SpanFp8Reference::Impl {};
 
 SpanFp8Reference::SpanFp8Reference(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

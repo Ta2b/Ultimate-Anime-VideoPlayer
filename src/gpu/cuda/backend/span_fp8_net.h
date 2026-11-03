@@ -60,6 +60,11 @@ class SpanFp8Net {
   // Lance les noyaux sur stream. input : 3×H×W FP16, output : 3×2H×2W FP16 (adresses d'appareil). Faux si un
   // lancement échoue (cudaGetLastError), avec le motif dans error.
   bool launch(cudaStream_t stream, const void* input, void* output, std::string& error);
+  // launch en deux parts (étape 3.3) : le corps (dégroupage, conv_1, blocs, conv_cat ; 3·blocs + 3
+  // lancements) ne dépend que de l'entrée et de la zone, une capture de graphe le prend par adresse d'entrée
+  // ; la queue (to_pixel et DepthToSpace, 2 lancements) écrit la sortie, lancée en direct avec son adresse.
+  bool launch_body(cudaStream_t stream, const void* input, std::string& error);
+  bool launch_tail(cudaStream_t stream, void* output, std::string& error);
 
  private:
   struct Impl;
