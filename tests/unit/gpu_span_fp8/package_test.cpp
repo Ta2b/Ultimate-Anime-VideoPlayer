@@ -32,6 +32,20 @@ TEST_CASE("un paquet écrit se relit à l'identique", "[span_fp8]") {
   CHECK(back->pixel.bias.size() == 48U);
 }
 
+TEST_CASE("le drapeau d'accumulateur f16 se relit, un drapeau inconnu est refusé (3.5a)", "[span_fp8]") {
+  Package original = synthetic();
+  CHECK_FALSE(parse(serialize(original))->acc16);
+  original.acc16 = true;
+  std::vector<std::byte> bytes = serialize(original);
+  const auto back = parse(bytes);
+  REQUIRE(back);
+  CHECK(back->acc16);
+  bytes[36] = std::byte{0x02};  // drapeaux : magie 8 + 28 octets ; hors de la charge, le CRC tient
+  const auto unknown = parse(bytes);
+  REQUIRE_FALSE(unknown);
+  CHECK(unknown.error().code == RefusalCode::FormatUnsupported);
+}
+
 TEST_CASE("un paquet tronqué, abîmé ou d'une autre version est refusé", "[span_fp8]") {
   const std::vector<std::byte> good = valid_bytes();
   REQUIRE(parse(good));

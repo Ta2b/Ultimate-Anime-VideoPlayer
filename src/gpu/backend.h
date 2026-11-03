@@ -65,7 +65,8 @@ namespace ajp::gpu {
 // 20 : KernelOps::health, map_fences et unmap_fences (étape 11.5 : signal d'export écrit par le GPU,
 // contexte perdu vu sans attendre le délai).
 // 21 : Backend::enqueue_ring (étape 3.4b : le SPAN FP8 écrit l'emplacement de l'anneau depuis son épilogue).
-inline constexpr int kBackendAbi = 21;
+// 22 : SpanFp8Derivation::scores_acc16 et kernels_ms_acc16 (étape 3.5a).
+inline constexpr int kBackendAbi = 22;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -176,7 +177,10 @@ struct SpanFp8Derivation {
       scales{};  // les échelles E4M3 qu'on en tire (maximum / 448), celles qui ont été jugées
   std::vector<SpanFp8ImageScore> scores;  // une par image de validation
   double kernels_ms = 0.0;                // médiane du SPAN FP8 sur la taille des images
-  std::string reference;                  // d'où vient la sortie de référence, « cutlass-fp16 »
+  // La même chose, conv_cat et to_pixel accumulant en f16 (étape 3.5a) ; vide si le backend ne l'essaie pas.
+  std::vector<SpanFp8ImageScore> scores_acc16;
+  double kernels_ms_acc16 = 0.0;
+  std::string reference;  // d'où vient la sortie de référence, « cutlass-fp16 »
 };
 
 // Moteur chargé et prêt à recevoir enqueue(). Possédé par un Program. Son code vit dans la

@@ -132,6 +132,10 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
     return refuse(RefusalCode::FormatUnsupported,
                   std::format("paquet SPAN FP8 : version {} inconnue", version));
   const std::uint32_t block_count = get_u32(head + 4);
+  const std::uint32_t flags = get_u32(head + 28);
+  if ((flags & ~kFlagAcc16) != 0U)
+    return refuse(RefusalCode::FormatUnsupported,
+                  std::format("paquet SPAN FP8 : drapeaux {:#x} inconnus", flags & ~kFlagAcc16));
   const std::uint32_t real = version == 1 ? (get_u32(head + 12) == 0 ? kChannels : 0U) : get_u32(head + 12);
   const bool shape_ok =
       get_u32(head + 8) == static_cast<std::uint32_t>(kChannels) &&
@@ -151,6 +155,7 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
   Package package;
   package.blocks.resize(block_count);
   package.real_channels = static_cast<int>(real);
+  package.acc16 = (flags & kFlagAcc16) != 0U;
   package.scales.fill(1.0F);
   const std::size_t scales = scale_count(block_count);
   Reader in(body);
@@ -193,7 +198,7 @@ std::vector<std::byte> serialize(const Package& package) {
   put_u32(out, static_cast<std::uint32_t>(package.real_channels));
   put_u64(out, body.size());
   put_u32(out, crc32(body));
-  put_u32(out, 0);
+  put_u32(out, package.acc16 ? kFlagAcc16 : 0U);
   out.insert(out.end(), body.begin(), body.end());
   return out;
 }

@@ -8,6 +8,8 @@
 //   2. Le réseau FP8 (span_fp8_net.h), à ces échelles, passe les images de validation, mises de côté ; sa
 //      sortie est jugée contre celle de la même référence FP16 (PSNR, SSIM de gpu/span_fp8/metrics.h).
 //   3. Le temps du réseau FP8 sur cette taille est mesuré.
+//   La variante à accumulateur f16 hors blocs (conv_cat et to_pixel, étape 3.5a) passe les mêmes images et la
+//   même mesure ; l'application la garde si sa porte passe et que le PSNR moyen perd ≤ 0,3 dB.
 //
 // La référence est le SPAN en FP16 par les convolutions CUTLASS, pas le moteur TensorRT : construire un
 // moteur TensorRT pour la dériver coûterait une minute, et ses échelles seraient relevées sur un graphe fondu
@@ -162,15 +164,20 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
 
   // --- 2. le réseau FP8 à ces échelles
   weights.scales = result.scales.data();
+  weights.acc16 = false;
   const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, height, width, status, why);
   if (!net)
     return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
                                                        : RefusalCode::VendorCallFailed,
                   "dérivation du SPAN FP8 : envoi des poids : " + why);
+  weights.acc16 = true;
+  // Variante f16 : un refus ici ne fait pas échouer la dérivation, elle n'est simplement pas proposée.
+  const std::unique_ptr<SpanFp8Net> net16 = SpanFp8Net::create(weights, height, width, status, why);
   if (auto e = cudaMalloc(&scratch.workspace, static_cast<std::size_t>(net->workspace_bytes()));
       e != cudaSuccess)
     return cuda_refusal(e, "cudaMalloc");
   net->bind(scratch.workspace);
+  if (net16) net16->bind(scratch.workspace);  // même zone : les deux passent l'un après l'autre
 
   // --- 3. validation, sur des images que la calibration n'a pas vues
   std::vector<__half> half(3 * plane * 4);
@@ -186,52 +193,75 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
         e != cudaSuccess)
       return cuda_refusal(e, "cudaMemcpy");
     const std::vector<float> expected = to_unit(half);
-    if (auto e = cudaMemcpy(half.data(), scratch.output_fp8, in_bytes * 4, cudaMemcpyDeviceToHost);
-        e != cudaSuccess)
-      return cuda_refusal(e, "cudaMemcpy");
-    const std::vector<float> got = to_unit(half);
-    result.scores.push_back({.psnr_db = span_fp8::psnr(expected, got),
-                             .ssim = span_fp8::ssim(2 * width, 2 * height, expected, got)});
+    const auto score = [&](std::vector<SpanFp8ImageScore>& into) -> std::expected<void, Refusal> {
+      if (auto e = cudaMemcpy(half.data(), scratch.output_fp8, in_bytes * 4, cudaMemcpyDeviceToHost);
+          e != cudaSuccess)
+        return cuda_refusal(e, "cudaMemcpy");
+      const std::vector<float> got = to_unit(half);
+      into.push_back({.psnr_db = span_fp8::psnr(expected, got),
+                      .ssim = span_fp8::ssim(2 * width, 2 * height, expected, got)});
+      return {};
+    };
+    if (auto ok = score(result.scores); !ok) return std::unexpected(std::move(ok.error()));
+    if (net16) {
+      if (!net16->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
+        return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 (f16) : " + why);
+      if (auto e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
+        return cuda_refusal(e, "exécution");
+      if (auto ok = score(result.scores_acc16); !ok) return std::unexpected(std::move(ok.error()));
+    }
     done += 1.0F;
     report(0.05F + 0.55F * done / total, "validation");
   }
 
-  // --- 4. le temps du réseau FP8
+  // --- 4. le temps du réseau FP8 (et de sa variante f16)
   report(0.9F, "mesure du temps");
-  constexpr int kWarmup = 5;
-  constexpr int kRuns = 21;
-  std::vector<cudaEvent_t> events(kRuns + 1, nullptr);
-  for (cudaEvent_t& event : events) {
-    if (auto e = cudaEventCreate(&event); e != cudaSuccess) {
-      for (cudaEvent_t made : events)
-        if (made != nullptr) cudaEventDestroy(made);
-      return cuda_refusal(e, "cudaEventCreate");
+  const auto time = [&](SpanFp8Net& timed_net) -> std::expected<double, Refusal> {
+    constexpr int kWarmup = 5;
+    constexpr int kRuns = 21;
+    std::vector<cudaEvent_t> events(kRuns + 1, nullptr);
+    for (cudaEvent_t& event : events) {
+      if (auto e = cudaEventCreate(&event); e != cudaSuccess) {
+        for (cudaEvent_t made : events)
+          if (made != nullptr) cudaEventDestroy(made);
+        return cuda_refusal(e, "cudaEventCreate");
+      }
     }
-  }
-  std::expected<void, Refusal> timed;
-  for (int i = 0; i < kWarmup && timed; ++i)
-    if (!net->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
-      timed = refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
-  for (int i = 0; i < kRuns && timed; ++i) {
-    cudaEventRecord(events[static_cast<std::size_t>(i)], scratch.stream);
-    if (!net->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
-      timed = refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
-  }
-  cudaEventRecord(events[kRuns], scratch.stream);
-  if (const cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess && timed)
-    timed = cuda_refusal(e, "mesure");
-  if (timed) {
-    std::vector<float> ms;
-    for (std::size_t i = 0; i < static_cast<std::size_t>(kRuns); ++i) {
-      float one = 0.0F;
-      cudaEventElapsedTime(&one, events[i], events[i + 1]);
-      ms.push_back(one);
+    std::expected<void, Refusal> timed;
+    for (int i = 0; i < kWarmup && timed; ++i)
+      if (!timed_net.launch(scratch.stream, scratch.input, scratch.output_fp8, why))
+        timed = refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
+    for (int i = 0; i < kRuns && timed; ++i) {
+      cudaEventRecord(events[static_cast<std::size_t>(i)], scratch.stream);
+      if (!timed_net.launch(scratch.stream, scratch.input, scratch.output_fp8, why))
+        timed = refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
     }
-    std::ranges::sort(ms);
-    result.kernels_ms = static_cast<double>(ms[ms.size() / 2]);
+    cudaEventRecord(events[kRuns], scratch.stream);
+    if (const cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess && timed)
+      timed = cuda_refusal(e, "mesure");
+    double median = 0.0;
+    if (timed) {
+      std::vector<float> ms;
+      for (std::size_t i = 0; i < static_cast<std::size_t>(kRuns); ++i) {
+        float one = 0.0F;
+        cudaEventElapsedTime(&one, events[i], events[i + 1]);
+        ms.push_back(one);
+      }
+      std::ranges::sort(ms);
+      median = static_cast<double>(ms[ms.size() / 2]);
+    }
+    for (cudaEvent_t event : events) cudaEventDestroy(event);
+    if (!timed) return std::unexpected(std::move(timed.error()));
+    return median;
+  };
+  auto median = time(*net);
+  if (!median) return std::unexpected(std::move(median.error()));
+  result.kernels_ms = *median;
+  if (net16) {
+    auto median16 = time(*net16);
+    if (!median16) return std::unexpected(std::move(median16.error()));
+    result.kernels_ms_acc16 = *median16;
   }
-  for (cudaEvent_t event : events) cudaEventDestroy(event);
-  if (!timed) return std::unexpected(std::move(timed.error()));
   result.reference = "cutlass-fp16";
   report(1.0F, "terminé");
   return result;

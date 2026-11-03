@@ -12,9 +12,11 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "app/play/auto_bench.h"
 #include "app/play/settings_system.h"
@@ -100,6 +102,7 @@ SpanStillsSource source_of(std::vector<media::Still> stills) {
 struct FakeBackend {
   double psnr = 50.0;
   double ssim = 0.995;
+  double psnr16 = 0.0;  // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
   bool refuse = false;
   mutable gpu::SpanFp8Request seen;
   SpanDeriver deriver() const {
@@ -114,6 +117,10 @@ struct FakeBackend {
       derivation.peaks.fill(22.4F);
       derivation.scores.assign(request.validation.size(), {.psnr_db = psnr, .ssim = ssim});
       derivation.kernels_ms = 9.2;
+      if (psnr16 > 0.0) {
+        derivation.scores_acc16.assign(request.validation.size(), {.psnr_db = psnr16, .ssim = ssim});
+        derivation.kernels_ms_acc16 = 8.9;
+      }
       derivation.reference = "cutlass-fp16";
       return std::expected<gpu::SpanFp8Derivation, Refusal>(derivation);
     };
@@ -183,6 +190,30 @@ TEST_CASE("une dérivation qui passe écrit le paquet et son reçu, que le lecte
   CHECK(receipt.str().find("format = \"ajp-span-fp8c-v1\"") != std::string::npos);
   CHECK(receipt.str().find("reference = \"cutlass-fp16\"") != std::string::npos);
   CHECK(receipt.str().find("validation_size = \"128x4\"") != std::string::npos);
+}
+
+TEST_CASE("le paquet prend l'accumulateur f16 hors blocs à 0,3 dB du f32 au plus (3.5a)",
+          "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
+  const auto [psnr16, kept] = GENERATE(std::pair{49.8, true}, std::pair{49.6, false});
+  INFO(psnr16);
+  const Folder folder;
+  FakeBackend backend;
+  backend.psnr16 = psnr16;
+  SpanDeriveProgress progress;
+  const auto report =
+      derive_span_fp8(folder.plan(), source_of(twelve()), backend.deriver(), progress, std::stop_token{});
+  REQUIRE(report);
+  CHECK(report->passed);
+  CHECK(report->acc16 == kept);
+  CHECK(report->verdict.psnr_mean_db == (kept ? psnr16 : 50.0));
+  std::ifstream in(folder.package(), std::ios::binary);
+  std::ostringstream text;
+  text << in.rdbuf();
+  const std::string bytes = text.str();
+  const auto parsed = gpu::span_fp8::parse(std::as_bytes(std::span(bytes)));
+  REQUIRE(parsed);
+  CHECK(parsed->acc16 == kept);
 }
 
 TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paquet d'avant",
