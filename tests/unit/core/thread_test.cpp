@@ -7,9 +7,12 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "core/thread_role.h"
 
 using ajp::Refusal;
 using ajp::RefusalCode;
@@ -152,3 +155,22 @@ TEST_CASE("refusal_from_exception : le code demandé et le texte de l'exception"
   CHECK(refusal.code == RefusalCode::DecodeFailed);
   CHECK(refusal.detail == "thread source : indice 9");
 }
+
+#if defined(__linux__)
+TEST_CASE("Priorité : le crochet relève la lecture et l'audio, pas le fond", "[thread][core]") {
+  static std::atomic<int> raised{0};
+  const bool accepted = ajp::set_thread_priority_raiser([]() noexcept {
+    ++raised;
+    return true;
+  });
+  CHECK(accepted);  // le thread appelant est relevé tout de suite
+  const int base = raised.load();
+  std::thread([] {
+    ajp::set_thread_role(ajp::ThreadRole::Playback);
+    ajp::set_thread_role(ajp::ThreadRole::Audio);
+    ajp::set_thread_role(ajp::ThreadRole::Background);
+  }).join();
+  CHECK(raised.load() == base + 2);
+  CHECK(ajp::set_thread_priority_raiser(nullptr) == false);
+}
+#endif

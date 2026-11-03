@@ -348,6 +348,16 @@ int main(int argc, char** argv) {
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
   }
+  // Linux : le thread principal et ceux de la lecture passent devant les travaux de fond (rtkit au besoin).
+  {
+    const bool raised = ajp::set_thread_priority_raiser(
+        []() noexcept { return SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_HIGH); });
+#ifdef __linux__
+    ajp::log_channel("app")->info("priorité haute : {}", raised ? "accordée" : "refusée");
+#else
+    static_cast<void>(raised);
+#endif
+  }
   // L'audio est facultatif : sans serveur ni carte son (machine virtuelle, session sans PipeWire), la vidéo
   // joue sur l'horloge hôte (le sink audio retente l'initialisation et dit son refus) au lieu de ne pas
   // démarrer.

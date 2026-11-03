@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "core/thread.h"
+#include "core/thread_role.h"
 #include "media/source_loop.h"
 
 namespace ajp::media {
@@ -61,10 +62,13 @@ std::expected<std::unique_ptr<SourceThread>, Refusal> SourceThread::start(Source
   if (auto kept = media.demuxer.keep_only(wanted); !kept) return std::unexpected(kept.error());
 
   SourceListener* listener = links.listener;
-  auto thread = start_thread(
-      "source", ThreadReport([listener](const Refusal& refusal) { listener->failed(refusal); }),
-      [loop = SourceLoop(std::move(media), std::move(links), inbox)](
-          const std::stop_token& stop, const ThreadReport& /*report*/) mutable { loop.run(stop); });
+  auto thread =
+      start_thread("source", ThreadReport([listener](const Refusal& refusal) { listener->failed(refusal); }),
+                   [loop = SourceLoop(std::move(media), std::move(links), inbox)](
+                       const std::stop_token& stop, const ThreadReport& /*report*/) mutable {
+                     set_thread_role(ThreadRole::Playback);  // devant la pré-analyse, qui décode aussi
+                     loop.run(stop);
+                   });
   if (!thread) return std::unexpected(std::move(thread.error()));
   std::unique_ptr<SourceThread> source(new SourceThread());
   source->thread_ = std::move(*thread);
