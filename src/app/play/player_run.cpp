@@ -105,7 +105,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
-  if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us);
+  const std::optional<ColorInfo> early_color = media::track_color(video);
+  const bool early_hdr =
+      early_color && (early_color->transfer == Transfer::Pq || early_color->transfer == Transfer::Hlg);
+  if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
   auto prepared = prepare_chain(p, settings);
   if (!prepared) return std::unexpected(std::move(prepared.error()));
   if (!*prepared) {  // q ou la fenêtre fermée pendant la préparation des moteurs
@@ -123,7 +126,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::string screen_key = p.display ? display_key(*p.display) : std::string();
   settings = with_calibrated_grade(std::move(settings), screen_key);
   if (!settings.grade_values.adaptive && p.shots != nullptr)
-    open_shots(*p.shots, p.options.file, settings, start_us);
+    open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
   const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
   // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Un écran SDR n'a pas de HDR à
   // offrir (le panneau le grise) : l'image reste en SDR, et le grade (contraste, saturation, préréglage) s'y

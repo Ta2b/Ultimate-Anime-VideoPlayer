@@ -75,8 +75,11 @@ void ShotJob::retire() noexcept {
 }
 
 void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
-                std::int64_t start_us) {
-  if (!settings.grade || !settings.grade_values.adaptive || file.empty()) {
+                std::int64_t start_us, bool source_hdr) {
+  // Le grade d'une source HDR est neutre (grade_params.cpp) : sans grade natif HDR demandé, aucun plan à
+  // lire.
+  if (!settings.grade || !settings.grade_values.adaptive || file.empty() ||
+      (source_hdr && !settings.hdr_native)) {
     work.current.probe.reset();
     return;
   }

@@ -48,8 +48,9 @@ struct ShotWork {
 // À l'ouverture d'une chaîne : reprend la vidéo du cache, ou lance l'analyse (depuis la part gardée) ; la
 // garde pour le même fichier ; rien sans grade adaptatif (l'analyse en cours
 // s'arrête).
+// Une source HDR (PQ, HLG) sans grade natif HDR n'en a pas besoin : rien ne part.
 void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
-                std::int64_t start_us);
+                std::int64_t start_us, bool source_hdr = false);
 
 // Le cache : à appeler à chaque tour, ne fait rien la plupart du temps.
 void tend_shots(ShotWork& work);
