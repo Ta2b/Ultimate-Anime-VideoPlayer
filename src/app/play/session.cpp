@@ -456,7 +456,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                            .why = std::move(why),
                            .missing = stats_.missing,
                            .lag_us = fresh && stats_.lag.count() > 0 ? stats_.lag.latest() : 0,
-                           .uninterpolated = stats_.uninterpolated};
+                           .uninterpolated = stats_.uninterpolated,
+                           .display_gpu_us = timing->display_gpu_us};
   }
   check_end(host_now);
   return record;

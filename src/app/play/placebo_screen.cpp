@@ -139,14 +139,19 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
     const std::span<const pl_hook* const> hooks = grade->hooks();
     params.hooks = hooks.data();
     params.num_hooks = static_cast<int>(hooks.size());
-    params.info_callback = [](void* priv, const pl_render_info* info) {
-      const char* what = info->pass->shader->description;
-      if (what != nullptr && std::string_view(what).find("AnimeJaNai") != std::string_view::npos)
-        static_cast<const Impl*>(priv)->grade_frame_ns += info->pass->last;
-    };
-    params.info_priv = const_cast<Impl*>(this);
-    grade_frame_ns = 0;
   }
+  // Le temps GPU de chaque passe, toujours relevé (libplacebo le rend avec un retard d'une image ou deux) :
+  // toutes les passes pour l'affichage, celles du grade à part.
+  params.info_callback = [](void* priv, const pl_render_info* info) {
+    Impl& self = *static_cast<Impl*>(priv);
+    self.display_frame_ns += info->pass->last;
+    const char* what = info->pass->shader->description;
+    if (what != nullptr && std::string_view(what).find("AnimeJaNai") != std::string_view::npos)
+      self.grade_frame_ns += info->pass->last;
+  };
+  params.info_priv = const_cast<Impl*>(this);
+  grade_frame_ns = 0;
+  display_frame_ns = 0;
   if (image == nullptr) pl_frame_clear(vk->gpu, &target, std::array<float, 3>{0.0F, 0.0F, 0.0F}.data());
   if (!pl_render_image(renderer, image, &target, &params)) {
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image a échoué"});
@@ -275,6 +280,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                         .render_us = submitted - acquired,
                         .present_us = presented,
                         .queue_wait_us = presented - submitted,
+                        .display_gpu_us = static_cast<std::int64_t>(s.display_frame_ns / 1000),
                         .presented = true};
   }
   if (!pl_swapchain_submit_frame(s.swapchain))
@@ -286,6 +292,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                       .render_us = submitted - acquired,
                       .present_us = presented,
                       .queue_wait_us = presented - submitted,
+                      .display_gpu_us = static_cast<std::int64_t>(s.display_frame_ns / 1000),
                       .presented = true};
 }
 
