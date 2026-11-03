@@ -31,6 +31,7 @@ using C16A = sk::Cfg<F16, 128, 32, 32, 4, float, cutlass::conv::IteratorAlgorith
 using C16 = sk::Cfg<F16, 128, 32, 32, 4, float>;
 using LC1 = sk::Launcher<C16A, 0, false>;
 using LCAT = sk::Launcher<C16, 0, false>;
+using LPIX = sk::Launcher<C16, 2, false>;  // to_pixel, DepthToSpace fondu (étape 3.4a)
 
 constexpr int kBlocks = SpanFp8Weights::kBlocks;
 constexpr int kChannels = 64;
@@ -83,7 +84,8 @@ struct SpanFp8Net::Impl {
   LC1 c1;
   std::array<L8, kBlocks> la, lb;
   std::array<LT, kBlocks> lc;
-  LCAT cat, pix;
+  LCAT cat;
+  LPIX pix;
   void* workspace = nullptr;
   cudaError_t attribute = cudaSuccess;
 
@@ -92,8 +94,8 @@ struct SpanFp8Net::Impl {
   std::int64_t tiled() const { return (npix + 127) / 128 * 128; }
 
   std::int64_t workspace_bytes() const {
-    // concaténation FP16 de 256 canaux + quatre tampons FP8 de 64 canaux ; dégroupage, sortie de conv_cat et
-    // de to_pixel recouvrent des tampons FP8 alors inactifs.
+    // concaténation FP16 de 256 canaux + quatre tampons FP8 de 64 canaux ; dégroupage et sortie de conv_cat
+    // recouvrent des tampons FP8 alors inactifs. to_pixel écrit droit dans la sortie (étape 3.4a).
     const std::int64_t rows = tiled();
     return 2 * kAlign + align_up(rows * 512) + align_up(rows * 256);
   }
@@ -110,9 +112,7 @@ struct SpanFp8Net::Impl {
     std::uint8_t* r2 = region + rows * 192;
     __half* unshuffled = reinterpret_cast<__half*>(r1);
     __half* cat_out = reinterpret_cast<__half*>(r1);
-    __half* pix_out = reinterpret_cast<__half*>(x[0]);
     unshuffled_ptr = unshuffled;
-    pix_out_ptr = pix_out;
 
     {  // conv_1 : sorties FP8 (entrée du bloc 1) et FP16 (tranche 0 de la concaténation)
       sk::KP k;
@@ -181,10 +181,8 @@ struct SpanFp8Net::Impl {
       k.out16 = cat_out;
       k.ld16 = kChannels;
       cat.init(h, w, 1, 0, kConcat, kChannels, reinterpret_cast<const F16*>(cat_in), cat_w.as<F16>(), k);
-      sk::KP p;
+      sk::KP p;  // sortie et surface posées à chaque lancement (launch_tail)
       p.bias = pix_b.as<float>();
-      p.out16 = pix_out;
-      p.ld16 = kPixel;
       pix.init(h, w, 3, 1, kChannels, kPixel, reinterpret_cast<const F16*>(cat_out), pix_w.as<F16>(), p);
     }
     attribute = c1.attribute;
@@ -195,8 +193,7 @@ struct SpanFp8Net::Impl {
       if (attribute == cudaSuccess) attribute = e;
   }
 
-  __half* unshuffled_ptr = nullptr;  // recouvre r1 (posés par bind)
-  __half* pix_out_ptr = nullptr;     // recouvre x[0]
+  __half* unshuffled_ptr = nullptr;  // recouvre r1 (posé par bind)
 };
 
 SpanFp8Net::SpanFp8Net(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -274,7 +271,7 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
 }
 
 bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, std::string& error) {
-  return launch_body(stream, input, error) && launch_tail(stream, output, error);
+  return launch_body(stream, input, error) && launch_tail(stream, output, {}, error);
 }
 
 bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string& error) {
@@ -306,15 +303,21 @@ bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string
   return true;
 }
 
-bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, std::string& error) {
+bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error) {
   Impl& n = *impl_;
   if (n.workspace == nullptr) {
     error = "zone de travail absente";
     return false;
   }
+  if (output == nullptr && ring.surface == 0) {
+    error = "ni sortie ni surface";
+    return false;
+  }
+  n.pix.kp.out16 = static_cast<__half*>(output);
+  n.pix.kp.surface = ring.surface;
+  n.pix.kp.surf_w = ring.width;
+  n.pix.kp.surf_h = ring.height;
   n.pix.launch(stream);
-  depth_to_space_kernel<<<static_cast<int>((n.npix * 12 + 255) / 256), 256, 0, stream>>>(
-      n.pix_out_ptr, static_cast<__half*>(output), n.h, n.w);
   const cudaError_t result = cudaGetLastError();
   if (result != cudaSuccess) {
     error = std::string("lancement des noyaux : ") + cudaGetErrorString(result);

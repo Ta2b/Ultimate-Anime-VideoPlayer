@@ -44,7 +44,7 @@ Entrée 1×3×H×W FP16 (NCHW), sortie 1×3×2H×2W FP16, comme le SPAN en ONNX 
    tanh, saut, produit, requantification E4M3) ;
 4. `Concat` de 4 tenseurs FP16 (sortie de `conv_1`, sortie du bloc 8, sortie du bloc 1, premier Relu du bloc 8),
    écrits directement par les noyaux dans leur tranche d'un tampon de 256 canaux ;
-5. `conv_cat` 1×1 256→64, `to_pixel` 3×3 64→48 (FP16), DepthToSpace(4, mode CRD).
+5. `conv_cat` 1×1 256→64, `to_pixel` 3×3 64→48 (FP16), DepthToSpace(4, mode CRD). Depuis l'étape 3.4a, DepthToSpace est fondu à l'épilogue de `to_pixel` (mode 2 de `net_kernel`) : chaque fil tient R, G et B de 4 pixels de sortie, écrit la sortie NCHW FP16 en `__half2` et, si une surface est donnée, l'emplacement RGBA16 de l'anneau par `store_rgba16`, au bit près de `write_rgba16`. Le noyau `depth_to_space_kernel` ne sert plus qu'à la référence FP16.
 
 Une boucle principale CUTLASS (convolution implicit GEMM, `mma.sync` m16n8k32 E4M3) et un épilogue écrit à la
 main (`span_fp8_kernels.cuh`) : biais, Relu, requantification, tanh. 29 lancements par image, sans allocation ni

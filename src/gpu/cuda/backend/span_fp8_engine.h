@@ -3,8 +3,8 @@
 // (docs/span-fp8-cutlass.md). Les noyaux tournent sur le flux du backend ; leurs tampons intermédiaires
 // vivent dans la zone d'activation de la voie (SharedActivations), comme ceux d'un moteur TensorRT. Étape 3.3
 // : le corps du réseau est capturé en graphe CUDA par adresse d'entrée (kMaxGraphs au plus), la queue
-// (to_pixel et DepthToSpace) lancée en direct avec l'adresse de sortie : un cudaGraphLaunch et deux
-// lancements par image.
+// (to_pixel, DepthToSpace fondu depuis l'étape 3.4a) lancée en direct avec l'adresse de sortie : un
+// cudaGraphLaunch et un lancement par image.
 #pragma once
 
 #include <cstdint>

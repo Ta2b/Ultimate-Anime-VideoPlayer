@@ -200,7 +200,7 @@ std::expected<void, Refusal> SpanFp8Engine::enqueue(cudaStream_t stream,
   void* target = reinterpret_cast<void*>(out.handle + out.offset);
   // NOLINTEND(performance-no-int-to-ptr)
   if (auto ok = body(stream, source); !ok) return ok;
-  if (std::string why; !net_->launch_tail(stream, target, why))
+  if (std::string why; !net_->launch_tail(stream, target, {}, why))
     return refuse(RefusalCode::VendorCallFailed, "SPAN FP8 : " + why);
   return {};
 }

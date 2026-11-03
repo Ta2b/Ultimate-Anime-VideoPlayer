@@ -5,6 +5,8 @@
 //   Mode 0 : biais (+ Relu) puis écriture E4M3 (sortie FP8, échelle statique) et/ou FP16 (tranche d'un tampon
 //            de concaténation : pas de ligne ld16 en éléments)
 //   Mode 1 : fin de bloc SPAN (saut x + Tanh(conv 1x1 de c3) + produit), mêmes sorties
+//   Mode 2 : to_pixel (étape 3.4a) : biais puis DepthToSpace(4, CRD) fondu, écriture NCHW FP16 de la sortie
+//            et/ou RGBA16 UNORM sur la surface d'un emplacement de l'anneau (store_rgba16)
 // Le warp porte les colonnes de sortie complètes (jusqu'à 64) : l'accumulateur m16n8 de deux tuiles voisines
 // est l'opérande A d'un mma m16n8k16 f16 pour la conv 1x1.
 #include <cstdint>
@@ -17,6 +19,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/numeric_types.h"
+#include "gpu/cuda/backend/pixel_kernels.cuh"
 
 namespace ajp::gpu::cuda::span_fp8_kernels {
 
@@ -33,6 +36,11 @@ struct KP {
   int ld16 = 0;                 // pas de ligne de out16, en éléments
   int ncols = 64;               // colonnes de sortie utiles (64 ou 48)
   long rows = 0;                // lignes de la convolution (M = H·W) : la dernière tuile garde les siennes
+  int fh = 0, fw = 0;           // hauteur et largeur de la convolution (posées par Launcher::init)
+  // Mode 2 : out16 est la sortie NCHW 3×4fh×4fw (ou nullptr) ; surface un emplacement RGBA16 UNORM de
+  // surf_w×surf_h pixels au plus (0 : pas d'anneau).
+  cudaSurfaceObject_t surface = 0;
+  int surf_w = 0, surf_h = 0;
 };
 
 __device__ __forceinline__ float tanh_approx(float x) {
@@ -139,6 +147,39 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
         if (in0) store_pair(tp, r0, n * 8 + 2 * t, v[n][0], v[n][1]);
         if (in1) store_pair(tp, r1, n * 8 + 2 * t, v[n][2], v[n][3]);
       }
+    } else if constexpr (Mode == 2) {
+      // Canal = 16c + 4bh + bw. Le fil tient les colonnes 8n + 2t et 8n + 2t + 1 (n < 6) : pour j = n % 2, la
+      // ligne de sortie bh = 2j + t/2 et les pixels bw = 2(t%2) et 2(t%2) + 1 des trois plans c = n / 2, soit
+      // R, G et B complets de 4 pixels de sortie par ligne de convolution. Arrondi à half avant unorm16 : le
+      // code que write_rgba16 écrirait de la sortie FP16, au bit près.
+      const int ow = 4 * tp.fw;
+      const long plane = long(4 * tp.fh) * ow;
+#pragma unroll
+      for (int h = 0; h < 2; ++h) {
+        if (!(h ? in1 : in0)) continue;
+        const long row = h ? r1 : r0;
+        const int y = int(row / tp.fw), x = int(row % tp.fw);
+#pragma unroll
+        for (int j = 0; j < 2; ++j) {
+          const int oy = 4 * y + 2 * j + (t >> 1), ox = 4 * x + 2 * (t & 1);
+          __half2 rgb[3];
+#pragma unroll
+          for (int c = 0; c < 3; ++c)
+            rgb[c] = __floats2half2_rn(v[2 * c + j][2 * h], v[2 * c + j][2 * h + 1]);
+          if (tp.out16) {
+#pragma unroll
+            for (int c = 0; c < 3; ++c)
+              *reinterpret_cast<__half2*>(tp.out16 + c * plane + long(oy) * ow + ox) = rgb[c];
+          }
+          if (tp.surface != 0 && oy < tp.surf_h) {
+            if (ox < tp.surf_w)
+              store_rgba16(tp.surface, ox, oy, __low2half(rgb[0]), __low2half(rgb[1]), __low2half(rgb[2]));
+            if (ox + 1 < tp.surf_w)
+              store_rgba16(tp.surface, ox + 1, oy, __high2half(rgb[0]), __high2half(rgb[1]),
+                           __high2half(rgb[2]));
+          }
+        }
+      }
     } else {
       uint16_t sk[8][2];
 #pragma unroll
@@ -220,6 +261,8 @@ struct Launcher {
     kp = k;
     kp.ncols = Kout;
     kp.rows = long(H) * W;
+    kp.fh = H;
+    kp.fw = W;
     grid = typename Base::ThreadblockSwizzle().get_grid_shape(params.grid_tiled_shape);
     block = dim3(Base::kThreadCount);
     smem = ((sizeof(typename Base::Mma::SharedStorage) + 15) / 16) * 16 + 64 * 72 * 2;

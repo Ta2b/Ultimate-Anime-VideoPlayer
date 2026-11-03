@@ -39,7 +39,8 @@ bool SpanFp8Net::launch_body(cudaStream_t /*stream*/, const void* /*input*/, std
   return false;
 }
 
-bool SpanFp8Net::launch_tail(cudaStream_t /*stream*/, void* /*output*/, std::string& error) {
+bool SpanFp8Net::launch_tail(cudaStream_t /*stream*/, void* /*output*/, const SpanFp8Ring& /*ring*/,
+                             std::string& error) {
   error = "noyaux absents";
   return false;
 }
