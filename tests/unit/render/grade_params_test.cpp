@@ -70,11 +70,33 @@ TEST_CASE("route native SDR sans émulation : éclats jusqu'au pic depuis le bla
   CHECK(p.vibrance == Approx(resp(0.15, 0.8, 1.6)));
 }
 
+TEST_CASE("route native SDR sans émulation : Éclats, Aplats et Couleurs de l'interface règlent la sortie") {
+  GradeSettings base;
+  base.truehdr_look = false;
+  const auto at = [&](GradeSettings s) { return decide_grade(s, pq_context(core::HdrMode::Native))->params; };
+  const GradeParams ref = at(base);
+  GradeSettings highlights = base;
+  highlights.highlights_rtx = 0.50;
+  CHECK(at(highlights).spec_gain > ref.spec_gain);
+  GradeSettings areas = base;
+  areas.area_rtx = 0.5;
+  CHECK(at(areas).area_gain > ref.area_gain);
+  GradeSettings colors = base;
+  colors.vibrance_rtx = 0.30;
+  CHECK(at(colors).vibrance > ref.vibrance);
+  // Les valeurs cachées d'avant ne règlent plus rien.
+  GradeSettings hidden = base;
+  hidden.highlights = 1.0;
+  hidden.vibrance = 0.6;
+  CHECK(at(hidden).spec_gain == Approx(ref.spec_gain));
+  CHECK(at(hidden).vibrance == Approx(ref.vibrance));
+}
+
 TEST_CASE("le blanc papier est plafonné à 0,75 × pic et arrondi") {
   GradeSettings settings;
   settings.truehdr_look = false;
   settings.paper_white = 400.0;
-  settings.highlights = 1.0;
+  settings.highlights_rtx = 0.5;  // x 2 : le plein effet des éclats
   const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native, 401.0));
   REQUIRE(decision);
   CHECK(decision->params.paper == 301.0);  // floor(300,75 + 0,5)
@@ -156,6 +178,22 @@ TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans 
   CHECK(decide_grade(settings, context)->params.emulate == 0.0);
   context.source_hdr = true;
   CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
+}
+
+TEST_CASE("sortie SDR : le grade adaptatif ne touche que noirs et couleurs, pas la courbe des tons moyens") {
+  GradeSettings settings;
+  settings.adaptive = true;
+  settings.adaptive_gray = 15.0;  // scènes claires : « moins d'expansion » en HDR, « plus sombre » en SDR
+  settings.adaptive_glow_gray = 15.0;  // scènes sombres avec éclat
+  auto context = pq_context(core::HdrMode::Native);
+  context.output_pq = false;
+  const auto decision = decide_grade(settings, context);
+  REQUIRE(decision);
+  CHECK(decision->params.sdr_out == 1.0);
+  CHECK(decision->params.ad_em_base == Approx(decision->params.em_base));
+  CHECK(decision->params.gl_em_base == Approx(decision->params.em_base));
+  CHECK(decision->params.ad_em_pow == Approx(decision->params.em_pow));
+  CHECK(decision->params.gl_em_pow == Approx(decision->params.em_pow));
 }
 
 TEST_CASE("le mode SDR sur une sortie HDR10 est gradé comme la route native sans l'aspect TrueHDR") {
