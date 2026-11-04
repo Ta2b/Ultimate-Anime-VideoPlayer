@@ -107,4 +107,15 @@ constexpr SwapchainShape swapchain_shape(PresentLevel level) {
   return {.min_images = 4, .depth = 2};
 }
 
+// L'état de la fréquence lu par present timing (6.10) : VkSwapchainTimingPropertiesEXT dit VRR par un
+// intervalle de UINT64_MAX, une fréquence fixe par un intervalle égal à la durée d'un rafraîchissement ; rien
+// tant que la durée n'est pas connue.
+enum class RefreshState { Unknown, Fixed, Variable };
+constexpr RefreshState vrr_state(std::uint64_t duration_ns, std::uint64_t interval_ns) {
+  if (duration_ns == 0) return RefreshState::Unknown;
+  if (interval_ns == UINT64_MAX) return RefreshState::Variable;
+  if (interval_ns == duration_ns) return RefreshState::Fixed;
+  return RefreshState::Unknown;
+}
+
 }  // namespace ajp::app::play

@@ -149,6 +149,10 @@ class PlaceboScreen final : public Screen {
   std::optional<std::int64_t> written_at(const RingFrame& frame) override;
   bool wakes_on_write() const override;
   std::optional<core::VblankGrid> vblank_grid() const override;
+  // Le VRR tel que present timing le dit (6.10) : armé, non armé, ou rien (niveau sans cette lecture).
+  std::optional<bool> vrr_armed() const;
+  // Vrai une fois quand cet état vient de changer : main le relit sans attendre son tour.
+  bool vrr_changed();
   // Le veilleur d'écriture le temps d'une chaîne (--ring-watcher) : waker réveille main ; nullptr l'arrête.
   void watch_writes(void (*waker)(void*), void* context);
   void new_scene() override;

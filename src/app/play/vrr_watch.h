@@ -27,6 +27,18 @@ class VrrWatch {
     return armed_;
   }
 
+  // Une lecture sûre (present timing, 6.10) : retenue tout de suite, sans confirmation ; rien, ignorée.
+  std::optional<bool> observe_sure(std::optional<bool> reading) {
+    candidate_.reset();
+    if (!reading || *reading == armed_) return std::nullopt;
+    armed_ = *reading;
+    return armed_;
+  }
+  // La lecture de present timing si elle est là (sûre), sinon celle du système (à confirmer).
+  std::optional<bool> observe(std::optional<bool> sure, std::optional<bool> reading) {
+    return sure ? observe_sure(sure) : observe(reading);
+  }
+
   bool armed() const { return armed_; }
 
  private:
