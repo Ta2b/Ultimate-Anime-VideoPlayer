@@ -183,4 +183,22 @@ TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 1
   CHECK(more[mid][2] >= 0.0);
 }
 
+TEST_CASE("HDR anime : les noirs profonds suivent la scène, nuls en scène très sombre", "[render][gpu]") {
+  Gpu gpu(GradeBody::Anime);
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const auto dim = columns([](int) { return 2.0; });  // un gris sombre, sous le genou des noirs
+  GradeParams night = anime_params();
+  night.shadows = 1.0;
+  night.fs_apl = 1.0;  // scène très sombre
+  GradeParams none = night;
+  none.shadows = 0.0;
+  GradeParams day = night;
+  day.fs_apl = 150.0;  // scène très claire
+  const auto mid = static_cast<std::size_t>(kSide / 2);
+  const double plain = luma(graded_rgb(gpu, dim, none)[mid]);
+  CHECK(luma(graded_rgb(gpu, dim, night)[mid]) == Catch::Approx(plain).epsilon(0.01));
+  CHECK(luma(graded_rgb(gpu, dim, day)[mid]) < 0.9 * plain);
+}
+
 }  // namespace ajp::render

@@ -53,3 +53,9 @@ quelle : `--anime-contrast=N` (puissance de la luminance autour de 0,4 × le bla
 `--anime-saturation=N` (écart à la luminance × N/100, atténué vers le pic, sans canal négatif, `an_chroma`) et
 `--anime-highlights=N` (part de la montée des éclats, `an_spec`). Jamais écrits dans play.toml : les valeurs
 retenues à l'œil deviendront le défaut de la méthode.
+
+## Noirs profonds selon la scène (04/11)
+
+Sous la méthode HDR anime, le curseur « Noirs profonds » est le maximum, atteint en scène très claire
+(luminance moyenne ≥ 40 % du blanc SDR) ; l'effet descend en douceur jusqu'à 0 en scène très sombre (≤ 3 %),
+pour garder lisibles les détails des nuits. Sans mesure de la scène, le curseur s'applique tel quel.
