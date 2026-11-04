@@ -312,8 +312,10 @@ TEST_CASE("grade de l'anneau contre la référence", "[backend_tensorrt][cuda][g
           for (int x = 0; x < w; ++x)
             for (std::size_t ch = 0; ch < 3; ++ch) {
               const float v =
-                  static_cast<float>(
-                      got[(static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x)) * 4 + ch]) /
+                  static_cast<float>(got[(static_cast<std::size_t>(y) * static_cast<std::size_t>(w) +
+                                          static_cast<std::size_t>(x)) *
+                                             4 +
+                                         ch]) /
                   65535.0F;
               deltas.push_back(std::abs(v - std::clamp(want->planes[ch].at(x, y), 0.0F, 1.0F)));
             }
@@ -325,33 +327,33 @@ TEST_CASE("grade de l'anneau contre la référence", "[backend_tensorrt][cuda][g
       }
     }
   }
-
-  // La lecture trilinéaire d'une LUT n³ (R le plus rapide) comme la texture du noyau : c × (n − 1).
-  struct HostLut {
-    const std::vector<float>* rgb;
-    int n;
-    kernels::grade::V3 operator()(kernels::grade::V3 c) const {
-      const std::array<float, 3> at{c.r, c.g, c.b};
-      std::array<int, 3> lo{};
-      std::array<float, 3> t{};
-      for (std::size_t k = 0; k < 3; ++k) {
-        const float x = std::clamp(at[k], 0.0F, 1.0F) * static_cast<float>(n - 1);
-        lo[k] = std::min(static_cast<int>(x), n - 2);
-        t[k] = x - static_cast<float>(lo[k]);
-      }
-      std::array<float, 3> out{};
-      for (int corner = 0; corner < 8; ++corner) {
-        const int d[3] = {corner & 1, (corner >> 1) & 1, (corner >> 2) & 1};
-        float w = 1.0F;
-        for (std::size_t k = 0; k < 3; ++k) w *= d[k] != 0 ? t[k] : 1.0F - t[k];
-        const auto un = [](int v) { return static_cast<std::size_t>(v); };
-        const std::size_t i = ((un(lo[2] + d[2]) * un(n) + un(lo[1] + d[1])) * un(n) + un(lo[0] + d[0])) * 3;
-        for (std::size_t ch = 0; ch < 3; ++ch) out[ch] += w * (*rgb)[i + ch];
-      }
-      return {out[0], out[1], out[2]};
-    }
-  }
 }
+
+// La lecture trilinéaire d'une LUT n³ (R le plus rapide) comme la texture du noyau : c × (n − 1).
+struct HostLut {
+  const std::vector<float>* rgb;
+  int n;
+  kernels::grade::V3 operator()(kernels::grade::V3 c) const {
+    const std::array<float, 3> at{c.r, c.g, c.b};
+    std::array<int, 3> lo{};
+    std::array<float, 3> t{};
+    for (std::size_t k = 0; k < 3; ++k) {
+      const float x = std::clamp(at[k], 0.0F, 1.0F) * static_cast<float>(n - 1);
+      lo[k] = std::min(static_cast<int>(x), n - 2);
+      t[k] = x - static_cast<float>(lo[k]);
+    }
+    std::array<float, 3> out{};
+    for (int corner = 0; corner < 8; ++corner) {
+      const int d[3] = {corner & 1, (corner >> 1) & 1, (corner >> 2) & 1};
+      float w = 1.0F;
+      for (std::size_t k = 0; k < 3; ++k) w *= d[k] != 0 ? t[k] : 1.0F - t[k];
+      const auto un = [](int v) { return static_cast<std::size_t>(v); };
+      const std::size_t i = ((un(lo[2] + d[2]) * un(n) + un(lo[1] + d[1])) * un(n) + un(lo[0] + d[0])) * 3;
+      for (std::size_t ch = 0; ch < 3; ++ch) out[ch] += w * (*rgb)[i + ch];
+    }
+    return {out[0], out[1], out[2]};
+  }
+};
 
 TEST_CASE("grade de l'anneau v2 : la LUT de la courbe et le fondu contre la référence",
           "[backend_tensorrt][cuda][grade_ring]") {
