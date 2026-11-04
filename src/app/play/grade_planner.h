@@ -18,6 +18,7 @@
 #include <thread>
 #include <vector>
 
+#include "app/play/grade_taste.h"
 #include "media/shot_cutter.h"
 #include "render/cube_lut.h"
 #include "render/curve.h"
@@ -72,6 +73,10 @@ class GradePlan {
   void set_look(std::shared_ptr<const render::CubeLut> look);
   // Le décalage choisi (diaphragmes, ±kCurveMaxE) : appliqué peu à peu (take_orders).
   void set_user_e(double e);
+  // Le goût appris (8.10, grade_taste.h) : E de la classe de chaque plan ajouté à celui de l'utilisateur,
+  // pied et vibrance de la courbe.
+  void set_taste(const GradeTaste& taste);
+  const GradeTaste& taste() const { return taste_; }
   // Une nouvelle époque (saut) : tous les ordres se redonnent, les LUT cuites restent.
   void restart() { given_.clear(); }
   bool has_shots() const { return !shots_.empty(); }
@@ -106,6 +111,8 @@ class GradePlan {
   PlannerConfig config_;
   std::vector<media::Shot> shots_;
   double series_apl_nits_ = 0.0;
+  double series_mean_ = 0.0;  // luminosité médiane des plans (ShotStats::mean), pour leur classe
+  GradeTaste taste_;
   render::DisplayContract contract_;
   std::shared_ptr<const render::CubeLut> look_;
   std::uint64_t generation_ = 1;
@@ -133,6 +140,7 @@ class GradePlanner {
   void set_contract(const render::DisplayContract& contract);
   void set_look(std::shared_ptr<const render::CubeLut> look);
   void set_user_e(double e);
+  void set_taste(const GradeTaste& taste);
   void restart();
   bool has_shots() const;
   // main, à chaque image : la position de lecture (le fil cuit autour) et les ordres prêts.

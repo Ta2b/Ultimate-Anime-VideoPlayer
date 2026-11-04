@@ -35,6 +35,13 @@ double abl_at(const render::DisplayContract& c, double area) {
   return c.abl.back();
 }
 
+double median(std::vector<double>& values) {
+  if (values.empty()) return 0.0;
+  const auto mid = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
+  std::nth_element(values.begin(), mid, values.end());
+  return *mid;
+}
+
 void lower_priority() {
 #ifdef __linux__
   (void)setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10);
@@ -49,13 +56,15 @@ void GradePlan::set_shots(std::vector<media::Shot> shots) {
   shots_ = std::move(shots);
   std::vector<double> apl;
   apl.reserve(shots_.size());
-  for (const media::Shot& s : shots_) apl.push_back(s.meta.apl_mean_nits);
-  series_apl_nits_ = 0.0;
-  if (!apl.empty()) {
-    const auto mid = apl.begin() + static_cast<std::ptrdiff_t>(apl.size() / 2);
-    std::nth_element(apl.begin(), mid, apl.end());
-    series_apl_nits_ = *mid;
+  std::vector<double> mean;
+  apl.reserve(shots_.size());
+  mean.reserve(shots_.size());
+  for (const media::Shot& s : shots_) {
+    apl.push_back(s.meta.apl_mean_nits);
+    mean.push_back(s.first.mean);
   }
+  series_apl_nits_ = median(apl);
+  series_mean_ = median(mean);
   ++generation_;
   given_.clear();
 }
@@ -68,6 +77,13 @@ void GradePlan::set_contract(const render::DisplayContract& contract) {
 
 void GradePlan::set_look(std::shared_ptr<const render::CubeLut> look) {
   look_ = std::move(look);
+  ++generation_;
+}
+
+void GradePlan::set_taste(const GradeTaste& taste) {
+  const GradeTaste next = clamped(taste);
+  if (next == taste_) return;
+  taste_ = next;
   ++generation_;
 }
 
@@ -88,7 +104,8 @@ render::CurveInput GradePlan::input_of(const media::Shot& shot, double apl_nits,
       abl_at(contract_, std::max<double>(shot.meta.mean.bright, render::kAblAreas.front())) / k;
   in.apl_budget_nits = kAplBudgetShare * contract_.content_frame_average_nits();
   in.lum_hist = shot.meta.mean.lum_hist;
-  in.vibrance = config_.vibrance;
+  in.vibrance = std::max(config_.vibrance, taste_.vibrance);
+  in.toe = taste_.toe;
   return in;
 }
 
@@ -103,10 +120,13 @@ BakeJob GradePlan::job_of(std::size_t index, int part) const {
   const media::Shot& shot = shots_.at(index);
   double apl = shot.meta.apl_mean_nits > 0.0F ? shot.meta.apl_mean_nits : shot.first.apl_nits;
   if (shot.fade) apl = part == 0 ? shot.first.apl_nits : shot.last.apl_nits;
-  const double e = std::round(applied_e_ / kEStep) * kEStep;
+  // Le E de l'utilisateur et celui que le goût donne à la classe du plan, au pas des clés du cache.
+  const double wanted = std::clamp(applied_e_ + taste_.e_of(class_of(shot.first, series_mean_)),
+                                   -render::kCurveMaxE, render::kCurveMaxE);
+  const double e = std::round(wanted / kEStep) * kEStep;
   return BakeJob{.key = {.start_us = shot.start_us,
                          .part = part,
-                         .e_steps = e_steps_of(applied_e_),
+                         .e_steps = e_steps_of(wanted),
                          .generation = generation_},
                  .input = input_of(shot, apl, e)};
 }
@@ -230,6 +250,12 @@ void GradePlanner::set_look(std::shared_ptr<const render::CubeLut> look) {
 void GradePlanner::set_user_e(double e) {
   const std::scoped_lock lock(mutex_);
   plan_.set_user_e(e);
+  wake_.notify_all();
+}
+
+void GradePlanner::set_taste(const GradeTaste& taste) {
+  const std::scoped_lock lock(mutex_);
+  plan_.set_taste(taste);
   wake_.notify_all();
 }
 

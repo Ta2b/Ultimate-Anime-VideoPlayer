@@ -348,7 +348,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .source_hdr = source_hdr,
       .kernels = c.backend ? c.backend->kernels() : nullptr,
       .adaptive_log = {.path = settings_dir / "adaptive-log.tsv"},
-      .learn = LearnTrack{.log = settings_dir / "adaptive-learning.tsv"},
+      .learn =
+          LearnTrack{.log = settings_dir / "adaptive-learning.tsv", .contract_v2 = p.options.hdr_contract_v2},
       .shots = p.shots,
       .shot_cuts = p.options.shot_cuts};
   apply_oled_care(chain, settings);
