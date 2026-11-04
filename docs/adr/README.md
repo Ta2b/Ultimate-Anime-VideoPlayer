@@ -11,3 +11,4 @@ sa page, avec le numéro de celle qui la remplace.
 | [0004](0004-grade-scene-donnee-par-le-lecteur.md) | Le grade en trois passes, la scène mesurée par le lecteur | Acceptée (#283, #284) |
 | [0007](0007-span-basse-precision-par-defaut.md) | SPAN basse précision par défaut, derrière une porte durcie et un reçu v2 | Acceptée (#365 à #376), mesures RTX à faire |
 | [0008](0008-anneau-rgb10a2.md) | Anneau RGB10A2 derrière un interrupteur ; TensorRT n'écrit pas dans l'anneau | Acceptée (#378 à #383), défaut à mesurer |
+| [0009](0009-grade-dans-l-anneau.md) | Le grade exact dans l'anneau ; la LUT réservée au chantier 8 | En cours (chantier 2c) |
