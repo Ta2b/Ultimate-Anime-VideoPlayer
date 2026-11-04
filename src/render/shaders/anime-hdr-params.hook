@@ -192,6 +192,13 @@
 //!MAXIMUM 2.8
 2.2
 
+//!PARAM sdr_tm
+//!DESC 1 = sortie SDR de la methode anime : l'image SDR passe en PQ, la courbe du plan la ramene au SDR
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
 //!PARAM adapt
 //!DESC 1 = HDR adaptatif : l'aspect TrueHDR emule suit la scene (APL, aplats clairs), 0 = courbe fixe
 //!TYPE float

@@ -155,6 +155,30 @@ TEST_CASE("HDR anime : sortie SDR inchangée", "[render][gpu]") {
   }
 }
 
+TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique sous le genou",
+          "[render][gpu]") {
+  Gpu gpu(GradeBody::Anime);
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Sans relèvement des surfaces ni éclat, l'aller-retour SDR → PQ → SDR rend l'image ; au-dessus du genou
+  // (70 % du blanc des surfaces) la courbe compresse, sans jamais dépasser le blanc ni redescendre.
+  GradeParams p = anime_params();
+  p.an_lift = 1.0;
+  p.spec_gain = 1.0;
+  sdr_tonemap(p);
+  p.sdr_gamma = 2.2;
+  const std::vector<Rgb> out = graded_codes(gpu, sdr_ramp(1.0, 1.0, 1.0), p);
+  double last = 0.0;
+  for (std::size_t x = 0; x < out.size(); ++x) {
+    const double in = (static_cast<double>(x) + 1.0) / kSide;
+    INFO("x " << x);
+    if (std::pow(in, 2.2) < 0.65) CHECK(out[x][0] == Catch::Approx(in).margin(0.02));
+    CHECK(out[x][0] <= 1.0);
+    CHECK(out[x][0] >= last - 0.01);
+    last = out[x][0];
+  }
+}
+
 TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 100 %", "[render][gpu]") {
   Gpu gpu(GradeBody::Anime);
   require_device(gpu);

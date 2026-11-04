@@ -373,6 +373,31 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
   CHECK_FALSE(black_thresholds(std::vector<double>{0.1}, 2.0));
 }
 
+TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du plan, sans vrai noir",
+          "[render]") {
+  GradeParams p;
+  p.peak = 800.0;
+  p.paper = 400.0;
+  p.sdr_white = 203.0;
+  p.an_lift = 1.15;
+  p.black_lo = 0.1;
+  p.black_hi = 2.0;
+  p.sdr_out = 1.0;
+  p.fs_apl = 10.0;  // scène sombre : toute la marge
+  sdr_tonemap(p);
+  CHECK(p.sdr_tm == 1.0);
+  CHECK(p.sdr_out == 0.0);
+  CHECK(p.black_hi == 0.0);
+  CHECK(p.tm_white == Approx(203.0 * 1.15));
+  CHECK(p.tm_top == Approx(800.0));
+  p.fs_apl = 203.0;  // scène très claire : la moitié du pic, comme 3-anime.hook
+  sdr_tonemap(p);
+  CHECK(p.tm_top == Approx(400.0));
+  p.peak = 200.0;  // jamais sous les surfaces
+  sdr_tonemap(p);
+  CHECK(p.tm_top == Approx(1.25 * p.tm_white));
+}
+
 }  // namespace ajp::render
 
 TEST_CASE("contraste et saturation au maximum : borne du curseur, punch des réglages poussés",
