@@ -80,3 +80,8 @@ des gris, 4 096 points, monotone) et la couleur (Ct/Cp de la LUT, intensité ram
 réécrite dans le domaine SDR du lecteur avec `# ajp-domain: sdr`. `--check` vérifie que l'identité et une pure
 courbe rendent une couleur identité (ΔE_ITP ≤ 0,1). Le résultat pour la pile par défaut est dans
 `data/luts-v2/` (LISEZMOI.md).
+
+Essai `--hdr-contract-v2` (chantier 8.4) : la pile par défaut, si l'utilisateur ne l'a pas changée, devient le seul
+`ver9-couleur.cube` (SDR, sa courbe neutre laissée au grade), et la sortie HDR10 annonce les métadonnées du contrat
+d'écran (C_pk, MaxFALL et noir en unités du contenu, primaires de l'EDID ou Display P3) au lieu de laisser KWin
+compresser ; `--hdr-metadata=off` n'annonce rien. `play.toml` n'en garde rien.

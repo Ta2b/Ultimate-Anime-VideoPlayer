@@ -57,3 +57,19 @@ TEST_CASE("contrat : k = 1,305, C_pk = 766, MaxFALL = 200 en contenu", "[render]
   // Une dalle LCD tient son pic sur toute surface.
   for (const double nits : ajp::render::default_abl(600.0, false)) CHECK(nits == 600.0);
 }
+
+TEST_CASE("métadonnées du contrat v2 : C_pk annoncé, MaxFALL et noir en unités du contenu",
+          "[render][display]") {
+  ajp::render::DisplayContract c{.reference_nits = 265.0, .panel_peak_nits = 1000.0};
+  c.oled = true;
+  c.min_nits = 0.0005 * 265.0 / 203.0;
+  c.abl = ajp::render::default_abl(c.panel_peak_nits, c.oled);
+  const ajp::render::ContractMetadata meta = ajp::render::contract_metadata(c);
+  CHECK_THAT(meta.max_luma, WithinRel(766.0, 1e-3));
+  CHECK(meta.max_cll == meta.max_luma);
+  CHECK_THAT(meta.max_fall, WithinRel(200.0, 0.01));
+  CHECK_THAT(meta.min_luma, WithinRel(0.0005, 1e-9));
+  CHECK(meta.primaries == ajp::render::kDisplayP3);  // sans primaires de l'EDID
+  c.primaries = ajp::render::Chromaticities{0.68, 0.30, 0.25, 0.71, 0.15, 0.06, 0.3135, 0.3291};
+  CHECK(ajp::render::contract_metadata(c).primaries == *c.primaries);
+}

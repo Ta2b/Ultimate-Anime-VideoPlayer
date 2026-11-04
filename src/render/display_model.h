@@ -61,6 +61,20 @@ struct DisplayContract {
   double content_frame_average_nits() const { return abl.back() / k(); }  // MaxFALL du contenu
   friend bool operator==(const DisplayContract&, const DisplayContract&) = default;
 };
+// Les métadonnées HDR10 du contrat v2 (8.4), en unités du contenu : KWin affiche le contenu × k, il les
+// ramène donc à l'écran telles quelles. Primaires de l'EDID, sinon Display P3 ; noir et MaxFALL divisés par k
+// ; max_luma = max_cll = C_pk.
+struct ContractMetadata {
+  Chromaticities primaries;
+  double min_luma = 0.0;
+  double max_luma = 0.0;
+  double max_cll = 0.0;
+  double max_fall = 0.0;
+  friend bool operator==(const ContractMetadata&, const ContractMetadata&) = default;
+};
+inline constexpr Chromaticities kDisplayP3{0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.3127, 0.3290};
+ContractMetadata contract_metadata(const DisplayContract& contract);
+
 // L_max par surface faute de mesure : la courbe QD-OLED relevée (cd/m², jamais au-dessus du pic, étirée si le
 // pic la dépasse) pour un OLED ; le pic partout pour un LCD.
 std::array<double, 5> default_abl(double panel_peak_nits, bool oled);

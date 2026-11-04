@@ -200,6 +200,10 @@ struct PlaceboScreen::Impl {
   VideoRate video_rate;
   // --hdr-metadata (ScreenOptions::kde_sdr_nits) : le maximum annoncé à la swapchain (0 : rien d'annoncé).
   std::optional<double> kde_sdr_nits;
+  // --hdr-contract-v2 sans --hdr-metadata=off : les métadonnées du contrat annoncées (hint_contract).
+  bool contract_v2 = false;
+  std::optional<render::ContractMetadata> hinted_contract;
+  void hint_contract();
   double hinted_max_nits = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade

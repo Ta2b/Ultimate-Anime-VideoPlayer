@@ -117,6 +117,11 @@ struct PlayOptions {
   // compression que KWin faisait sans elles ; NITS, la luminosité SDR de KDE (kDefaultKdeSdrNits sans
   // valeur). Pour comparer à l'œil avec la sortie d'aujourd'hui, sans métadonnées.
   std::optional<double> kde_sdr_nits;
+  // --hdr-contract-v2 : essai du contrat d'écran v2 (chantier 8.4) : métadonnées HDR10 exactes tirées du
+  // contrat (render::contract_metadata), sans la compression de KWin faite par le grade, et le look
+  // ver9-couleur.cube (SDR) à la place de la pile par défaut. --hdr-metadata=off : sous v2, rien d'annoncé.
+  bool hdr_contract_v2 = false;
+  bool hdr_metadata_off = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;

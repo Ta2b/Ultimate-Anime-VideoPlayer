@@ -39,6 +39,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/look_catalog.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -178,28 +179,31 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     remember_chain(profiles, *saved);
     log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
   }
+  set_contract_v2_looks(options.hdr_contract_v2);  // 8.4 : ver9-couleur.cube à la place de la pile par défaut
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
-  auto screen =
-      PlaceboScreen::open(ScreenOptions{.title = title,
-                                        .width = options.hidden ? 16 : options.window_width,
-                                        .height = options.hidden ? 9 : options.window_height,
-                                        .fullscreen = options.fullscreen && !options.hidden,
-                                        .hidden = options.hidden,
-                                        .offscreen = options.hidden,
-                                        .offscreen_width = options.window_width,
-                                        .offscreen_height = options.window_height,
-                                        .hdr = !options.sdr,
-                                        .kde_sdr_nits = options.kde_sdr_nits,
-                                        .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
-                                        .allow_software = options.software_gpu,
-                                        .hdr_anime = options.hdr_anime,
-                                        .legacy_grade = options.legacy_grade,
-                                        .split_look = options.split_look,
-                                        .grade_deband = options.grade_deband,
-                                        .skin_mask = options.skin_mask,
-                                        .grade_ring = options.grade_ring,
-                                        .present = options.present,
-                                        .shader_cache = paths.data / "shaders.cache"});
+  auto screen = PlaceboScreen::open(
+      ScreenOptions{.title = title,
+                    .width = options.hidden ? 16 : options.window_width,
+                    .height = options.hidden ? 9 : options.window_height,
+                    .fullscreen = options.fullscreen && !options.hidden,
+                    .hidden = options.hidden,
+                    .offscreen = options.hidden,
+                    .offscreen_width = options.window_width,
+                    .offscreen_height = options.window_height,
+                    .hdr = !options.sdr,
+                    .kde_sdr_nits = options.hdr_contract_v2 ? std::nullopt : options.kde_sdr_nits,
+                    .contract_v2 = options.hdr_contract_v2,
+                    .metadata_off = options.hdr_metadata_off,
+                    .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
+                    .allow_software = options.software_gpu,
+                    .hdr_anime = options.hdr_anime,
+                    .legacy_grade = options.legacy_grade,
+                    .split_look = options.split_look,
+                    .grade_deband = options.grade_deband,
+                    .skin_mask = options.skin_mask,
+                    .grade_ring = options.grade_ring,
+                    .present = options.present,
+                    .shader_cache = paths.data / "shaders.cache"});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
