@@ -248,6 +248,7 @@ struct GradeParams {
   double look_mix15 = 0.0;
   double look_white = 203.0;
   double look_pq = 0.0;
+  double look_clean = 0.0;  // 1 : la pile sur la couleur du voisinage, grain et paliers non étirés
   // Grade adaptatif des routes émulées (shader, tous GPU) : 1 pour l'activer, seuils en code PQ de la
   // luminance de la source (gamma 2,4, blanc à 203 nits, sur toutes les sorties), valeurs d'une scène claire
   // ; celles d'une scène sombre sont shadows, vibrance, em_base et em_pow.

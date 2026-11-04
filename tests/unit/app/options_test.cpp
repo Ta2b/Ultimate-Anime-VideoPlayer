@@ -108,6 +108,8 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto cuts = parse({"épisode.mkv", "--shot-cuts"});
   REQUIRE(cuts);
   CHECK(cuts->shot_cuts);
+  CHECK_FALSE(options->clean_looks);
+  CHECK(parse({"épisode.mkv", "--clean-looks"})->clean_looks);
   CHECK(options->anime_shots);  // défaut ; --no-anime-shots le coupe seul (audit F3)
   CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
   CHECK(parse({"épisode.mkv", "--no-anime-shots"})->anime_guided == options->anime_guided);

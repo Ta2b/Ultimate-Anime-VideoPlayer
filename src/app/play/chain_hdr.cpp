@@ -131,6 +131,7 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
         for (std::size_t i = 0; i < slots.size(); ++i) params.*kMixes[i] = 0.0;
       }
       params.look_pq = pq && any_pq ? 1.0 : 0.0;
+      params.look_clean = clean_looks() ? 1.0 : 0.0;
       (pq ? choice.pq : choice.sdr) = params;
     }
   }
