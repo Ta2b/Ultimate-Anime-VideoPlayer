@@ -230,6 +230,23 @@ bool PlaceboScreen::wakes_on_write() const {
   return impl_->watcher != nullptr;
 }
 
+std::optional<bool> PlaceboScreen::vrr_armed() const {
+  if (!impl_->feedback) return std::nullopt;
+  switch (impl_->feedback->refresh_state()) {
+    case RefreshState::Variable:
+      return true;
+    case RefreshState::Fixed:
+      return impl_->present_level == PresentLevel::Wayland ? std::nullopt : std::optional<bool>(false);
+    case RefreshState::Unknown:
+      break;
+  }
+  return std::nullopt;
+}
+
+bool PlaceboScreen::vrr_changed() {
+  return impl_->feedback && impl_->feedback->take_refresh_change();
+}
+
 std::optional<core::VblankGrid> PlaceboScreen::vblank_grid() const {
   const PresentFeedback* feedback = impl_->feedback.get();
   if (feedback == nullptr || !feedback->dated() || !feedback->fixed_refresh()) return std::nullopt;

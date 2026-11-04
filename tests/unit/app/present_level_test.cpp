@@ -1,6 +1,8 @@
 // Le niveau de retour de présentation (chantier 6.2, app/play/present_level.h) : la table des niveaux.
 #include "app/play/present_level.h"
 
+#include <cstdint>
+
 #include <catch2/catch_test_macros.hpp>
 
 namespace ajp::app::play {
@@ -40,6 +42,13 @@ TEST_CASE("présentation : --present et la forme de la swapchain", "[app][presen
   CHECK(swapchain_shape(PresentLevel::Timing).min_images == 4);
   CHECK(swapchain_shape(PresentLevel::Timing).depth == 2);
   CHECK(name(PresentLevel::TimingAbsolute) == "timing-absolute");
+}
+
+TEST_CASE("présentation : l'état VRR lu par present timing", "[app][present]") {
+  CHECK(vrr_state(0, 0) == RefreshState::Unknown);
+  CHECK(vrr_state(6'068'740, UINT64_MAX) == RefreshState::Variable);
+  CHECK(vrr_state(6'068'740, 6'068'740) == RefreshState::Fixed);
+  CHECK(vrr_state(6'068'740, 12'137'480) == RefreshState::Unknown);  // ni l'un ni l'autre : l'ioctl décide
 }
 
 }  // namespace ajp::app::play

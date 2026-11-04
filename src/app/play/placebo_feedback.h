@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <libplacebo/swapchain.h>
@@ -60,10 +61,18 @@ class PresentFeedback {
   }
   // Fréquence fixe dite par la swapchain (intervalle = durée) ou par le compositeur (rafraîchissement non
   // nul) ; faux en VRR ou tant que rien n'est dit.
-  bool fixed_refresh() const {
-    if (level_ == PresentLevel::Wayland) return refresh_duration_ != 0;
-    return refresh_duration_ != 0 && refresh_interval_ == refresh_duration_;
+  bool fixed_refresh() const { return refresh_state() == RefreshState::Fixed; }
+  // L'état de la fréquence (6.10) : present timing seulement ; wp_presentation ne distingue pas un
+  // rafraîchissement inconnu d'un VRR, il dit seulement Fixed quand il en donne un.
+  RefreshState refresh_state() const {
+    if (level_ == PresentLevel::Wayland)
+      return refresh_duration_ != 0 ? RefreshState::Fixed : RefreshState::Unknown;
+    if (level_ != PresentLevel::Timing && level_ != PresentLevel::TimingAbsolute)
+      return RefreshState::Unknown;
+    return vrr_state(refresh_duration_, refresh_interval_);
   }
+  // Vrai une fois après chaque changement de refresh_state() (relu au compteur de propriétés).
+  bool take_refresh_change() { return std::exchange(refresh_changed_, false); }
 
  private:
   struct Api;
@@ -97,6 +106,7 @@ class PresentFeedback {
   std::uint32_t stage_ = 0;
   std::uint64_t refresh_duration_ = 0;
   std::uint64_t refresh_interval_ = 0;
+  bool refresh_changed_ = false;
   std::uint64_t last_id_ = 0;
   std::uint64_t queue_full_ = 0;
   pl_vulkan_present present_{};

@@ -593,7 +593,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
     // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
-    if (host_now_us() - display_polled_at >= 500'000) {
+    if (host_now_us() - display_polled_at >= 500'000 || out.vrr_changed()) {  // 6.10 : sans attendre
       display_polled_at = host_now_us();
       // Le mode Performance de SPAN se prépare tout seul au cran Performance (span_auto.h) : la lecture reste
       // en FP16 pendant ce temps, puis la chaîne se rouvre pour prendre le paquet.
@@ -639,7 +639,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       show_auto();
       // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque tour (un seul ioctl).
       if (p.display && !p.display->connector.empty()) {
-        if (const auto now = vrr_watch.observe(vrr_armed_now(p.display->connector))) {
+        if (const auto now = vrr_watch.observe(out.vrr_armed(), vrr_armed_now(p.display->connector))) {
           const bool armed = !p.options.no_vrr && p.display->vrr.value_or(false) && *now;
           log->info("VRR : {}", *now ? "armé" : "non armé");
           p.ui.set_display_vrr(p.display->vrr.value_or(false), *now,

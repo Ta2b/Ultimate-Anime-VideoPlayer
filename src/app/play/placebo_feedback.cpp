@@ -192,8 +192,10 @@ void PresentFeedback::read_properties(VkSwapchainKHR swapchain) {
                    props.refreshInterval == UINT64_MAX ? std::string("variable")
                                                        : std::to_string(props.refreshInterval) + " ns");
   }
+  const RefreshState before = refresh_state();
   refresh_duration_ = props.refreshDuration;
   refresh_interval_ = props.refreshInterval;
+  if (refresh_state() != before) refresh_changed_ = true;
 #else
   (void)swapchain;
 #endif
