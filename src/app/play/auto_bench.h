@@ -16,6 +16,7 @@
 
 #include "app/play/gpu_tier.h"
 #include "core/types.h"
+#include "gpu/gpu_profile.h"
 
 namespace ajp::app::play {
 
@@ -57,6 +58,8 @@ struct BenchReading {
   std::int64_t render_median_us = 0;  // composition et soumission, médiane
   int work_height = 0;                // la hauteur de travail de la chaîne jouée ; 0 : inconnue
   std::string rife_model;  // le modèle RIFE joué (« rife_v4.25.onnx ») ; vide : inconnu ou autre moteur
+  // Le profil GPU de l'essai (0.2) : une table [[gpu_stage]] par étape ; vide : backend sans profil.
+  std::vector<gpu::GpuStageSummary> gpu_stages;
 };
 
 std::string format_reading(const BenchReading& reading);

@@ -60,14 +60,94 @@ void GpuTiming::collect() {
   samples_.clear();
 }
 
+namespace {
+
+std::string summary_of(const std::string& label, const std::vector<float>& all) {
+  if (all.empty()) return {};
+  std::vector<float> sorted = all;
+  std::ranges::sort(sorted);
+  double total = 0.0;
+  for (const float ms : sorted) total += ms;
+  return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms, total {:.0f} ms ({} mesures)",
+                     label, sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], sorted.front(),
+                     total, sorted.size());
+}
+
+}  // namespace
+
 std::string GpuTiming::summary() {
   collect();
-  if (all_.empty()) return {};
-  std::vector<float> sorted = all_;
-  std::ranges::sort(sorted);
-  return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms ({} mesures)", label_,
-                     sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], sorted.front(),
-                     sorted.size());
+  return summary_of(label_, all_);
+}
+
+GpuStageSummary GpuTiming::profile() {
+  collect();
+  return summarize(label_, all_);
+}
+
+GpuSpan::GpuSpan(std::string label) : label_(std::move(label)) {
+  for (Pair& pair : pairs_) {
+    cudaEventCreate(&pair.start);
+    cudaEventCreate(&pair.stop);
+  }
+}
+
+GpuSpan::~GpuSpan() {
+  for (Pair& pair : pairs_) {
+    if (pair.start != nullptr) cudaEventDestroy(pair.start);
+    if (pair.stop != nullptr) cudaEventDestroy(pair.stop);
+  }
+}
+
+void GpuSpan::start(std::uintptr_t key, cudaStream_t stream) {
+  collect();
+  if (key == 0) return;
+  // Une source déjà en vol sous cette clé (tenseur réutilisé avant la fin de son SPAN) : celle-ci la
+  // remplace.
+  for (Pair& pair : pairs_)
+    if (pair.state == Pair::State::Started && pair.key == key) pair.state = Pair::State::Free;
+  Pair* chosen = nullptr;
+  for (std::size_t i = 0; i < pairs_.size() && chosen == nullptr; ++i) {
+    Pair& pair = pairs_.at((next_ + i) % pairs_.size());
+    if (pair.state == Pair::State::Free) chosen = &pair;
+  }
+  if (chosen == nullptr) {  // tout est en vol : la plus ancienne pas encore finie est oubliée
+    Pair& oldest = pairs_.at(next_ % pairs_.size());
+    if (oldest.state == Pair::State::Finished) return;  // une paire finie pas encore relue : on saute
+    chosen = &oldest;
+  }
+  if (chosen->start == nullptr || cudaEventRecord(chosen->start, stream) != cudaSuccess) return;
+  chosen->key = key;
+  chosen->state = Pair::State::Started;
+  next_ = static_cast<std::size_t>(chosen - pairs_.data()) + 1;
+}
+
+void GpuSpan::finish(std::uintptr_t key, cudaStream_t stream) {
+  for (Pair& pair : pairs_) {
+    if (pair.state != Pair::State::Started || pair.key != key) continue;
+    if (cudaEventRecord(pair.stop, stream) == cudaSuccess) pair.state = Pair::State::Finished;
+    return;
+  }
+}
+
+void GpuSpan::collect() {
+  for (Pair& pair : pairs_) {
+    if (pair.state != Pair::State::Finished || cudaEventQuery(pair.stop) != cudaSuccess) continue;
+    float ms = 0.0F;
+    if (cudaEventElapsedTime(&ms, pair.start, pair.stop) == cudaSuccess && all_.size() < kMaxAll)
+      all_.push_back(ms);
+    pair.state = Pair::State::Free;
+  }
+}
+
+std::string GpuSpan::summary() {
+  collect();
+  return summary_of(label_, all_);
+}
+
+GpuStageSummary GpuSpan::profile() {
+  collect();
+  return summarize(label_, all_);
 }
 
 }  // namespace ajp::gpu::cuda

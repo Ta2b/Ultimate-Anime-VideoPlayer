@@ -72,7 +72,9 @@ namespace ajp::gpu {
 // 25 : SpanFp8Request::min_free_ratio (étape 3.6).
 // 26 : BackendCaps::ring_rgb10a2, RingFormat::Rgb10a2Unorm importé (étape 5.5a).
 // 27 : RingWrite::grade, KernelOps::grades_ring et set_grade (grade exact dans l'anneau, chantier 2.9).
-inline constexpr int kBackendAbi = 27;
+// 28 : KernelOps::gpu_profile (chantier 0.2) ; GradeOrder et GradeVersion gagnent la LUT de la courbe par plan
+// (8.6b).
+inline constexpr int kBackendAbi = 28;
 
 using DeviceUuid = ajp::DeviceUuid;
 

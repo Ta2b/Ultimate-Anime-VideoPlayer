@@ -196,8 +196,10 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   const GpuTiming::Report report = [log = init.log](std::string_view text) {
     if (log) log(BackendLogLevel::Info, text);
   };
-  backend->span_timing_ = std::make_unique<GpuTiming>("temps GPU du moteur", report);
-  backend->chain_timing_ = std::make_unique<GpuTiming>("temps GPU ingestion + moteur", report);
+  backend->role_timing_ = {std::make_unique<GpuTiming>("agrandissement", report),
+                           std::make_unique<GpuTiming>("interpolation", report),
+                           std::make_unique<GpuTiming>("mesure", nullptr)};
+  backend->chain_span_ = std::make_unique<GpuSpan>("source jusqu'à son SPAN");
   backend->trt_log_ = std::make_unique<TrtLog>(init.log);
   backend->runtime_.reset(nvinfer1::createInferRuntime(*backend->trt_log_));
   if (!backend->runtime_)
@@ -228,11 +230,19 @@ TensorRtBackend::~TensorRtBackend() {
     if (const std::string line = timing->summary(); !line.empty())
       log(BackendLogLevel::Info, "profil GPU · " + line);
   }
+  for (const auto& timing : role_timing_) {
+    if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · rôle " + line);
+  }
+  if (chain_span_) {
+    if (const std::string line = chain_span_->summary(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
+  }
   stages_.clear();
   slots_.clear();
   retired_.clear();
-  span_timing_.reset();
-  chain_timing_.reset();
+  for (auto& timing : role_timing_) timing.reset();
+  chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
   for (const PairRead& read : pair_reads_) {
     if (read.device != nullptr) cudaFree(read.device);
@@ -448,12 +458,17 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
   if (auto ok = order(reads, writes); !ok) return ok;
   const Shape shape = trt->input_shape(0);
   GpuTiming& timing = stage(std::format("moteur {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
-  span_timing_->begin(stream_);
+  // Un moteur qui agrandit (sortie plus haute que l'entrée) est le SPAN de sa source ; les autres
+  // interpolent.
+  const bool upscales =
+      !inputs.empty() && !outputs.empty() && outputs[0].shape.dims[2] > inputs[0].shape.dims[2];
+  GpuTiming& by_role = role(upscales ? Role::Upscale : Role::Interpolation);
+  by_role.begin(stream_);
   timing.begin(stream_);
   auto queued = trt->enqueue(stream_, zone, inputs, outputs);
   timing.end(stream_);
-  span_timing_->end(stream_);
-  chain_timing_->end(stream_);
+  by_role.end(stream_);
+  if (upscales) chain_span_->finish(inputs[0].handle, stream_);
   if (std::string notice = trt->take_notice(); !notice.empty()) {
     log(BackendLogLevel::Warn,
         std::format("moteur {}×{}×{} : {}", shape.dims[1], shape.dims[2], shape.dims[3], notice));
@@ -488,6 +503,20 @@ std::expected<void, Refusal> TensorRtBackend::wait(const Fence& fence) {
 }  // namespace ajp::gpu::cuda
 
 namespace ajp::gpu::cuda {
+
+std::vector<GpuStageSummary> TensorRtBackend::gpu_profile() {
+  std::vector<GpuStageSummary> out;
+  for (auto& [name, timing] : stages_) out.push_back(timing->profile());
+  for (const auto& timing : role_timing_) {
+    if (!timing) continue;
+    GpuStageSummary s = timing->profile();
+    s.name = "rôle " + s.name;
+    out.push_back(std::move(s));
+  }
+  if (chain_span_) out.push_back(chain_span_->profile());
+  std::erase_if(out, [](const GpuStageSummary& s) { return s.count == 0; });
+  return out;
+}
 
 void TensorRtBackend::push_launches() {
 #ifdef _WIN32

@@ -204,7 +204,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
         reinterpret_cast<cudaEvent_t>(frame.data->ready_event());  // NOLINT(performance-no-int-to-ptr)
     if (auto ok = cuda_check(cudaStreamWaitEvent(stream_, ready, 0), "cudaStreamWaitEvent"); !ok) return ok;
   }
-  chain_timing_->begin(stream_);
+  chain_span_->start(rgb.handle, stream_);  // la source, jusqu'à la fin de son SPAN (0.2)
   GpuTiming& timing = stage("ingestion");
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_ingest(params, stream_), "ingest<<<>>>"); !ok) return ok;

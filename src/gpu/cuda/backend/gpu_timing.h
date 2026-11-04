@@ -6,11 +6,14 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cuda_runtime_api.h>
 #include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "gpu/gpu_profile.h"
 
 namespace ajp::gpu::cuda {
 
@@ -30,6 +33,9 @@ class GpuTiming {
   // « label : médiane 4,37 ms, p95 5,10 ms (1234 mesures) », ou rien sans mesure. Relit les
   // paires finies sans attendre.
   std::string summary();
+  // Le résumé de toutes les mesures depuis la création (0.2).
+  GpuStageSummary profile();
+  const std::string& label() const { return label_; }
 
  private:
   void collect();
@@ -44,6 +50,39 @@ class GpuTiming {
   std::size_t read_ = 0;                // paires relues
   std::vector<float> samples_;
   std::vector<float> all_;  // toutes les mesures, pour summary() (kMaxAll au plus)
+  static constexpr std::size_t kMaxAll = 1 << 18;
+};
+
+// La latence d'une source, de son ingestion à la fin de son SPAN (0.2) : les deux bouts sont appariés par une
+// clé (l'adresse du tenseur ingéré, que le SPAN lit), sur des files qui peuvent différer (voies) ; les
+// événements d'une même carte se comparent d'une file à l'autre. Au plus kOpen sources en vol : la plus
+// ancienne pas encore finie est oubliée.
+class GpuSpan {
+ public:
+  static constexpr std::size_t kOpen = 16;
+  explicit GpuSpan(std::string label);
+  ~GpuSpan();
+  GpuSpan(const GpuSpan&) = delete;
+  GpuSpan& operator=(const GpuSpan&) = delete;
+
+  void start(std::uintptr_t key, cudaStream_t stream);
+  void finish(std::uintptr_t key, cudaStream_t stream);
+  std::string summary();
+  GpuStageSummary profile();
+
+ private:
+  struct Pair {
+    cudaEvent_t start = nullptr;
+    cudaEvent_t stop = nullptr;
+    std::uintptr_t key = 0;
+    enum class State : unsigned char { Free, Started, Finished } state = State::Free;
+  };
+  void collect();
+
+  std::string label_;
+  std::array<Pair, kOpen> pairs_{};
+  std::size_t next_ = 0;  // la prochaine paire à prendre (tourne)
+  std::vector<float> all_;
   static constexpr std::size_t kMaxAll = 1 << 18;
 };
 

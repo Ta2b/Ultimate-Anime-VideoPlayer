@@ -144,6 +144,22 @@ TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
   CHECK_FALSE(parse_reading("gpu = ["));
 }
 
+TEST_CASE("la lecture d'un essai : le profil GPU fait l'aller-retour en TOML", "[auto_bench][profile]") {
+  BenchReading reading{.gpu = "g", .driver = "7", .run = run(Tier::Fast, 10)};
+  reading.gpu_stages = {
+      ajp::gpu::GpuStageSummary{
+          .name = "rôle agrandissement", .count = 1200, .total_ms = 5400.5, .median_ms = 4.5, .p95_ms = 5.25},
+      ajp::gpu::GpuStageSummary{.name = "source jusqu'à son SPAN",
+                                .count = 1199,
+                                .total_ms = 7000.0,
+                                .median_ms = 5.75,
+                                .p95_ms = 6.5}};
+  const auto read = parse_reading(format_reading(reading));
+  REQUIRE(read);
+  CHECK(read->gpu_stages == reading.gpu_stages);
+  CHECK(parse_reading(format_reading(BenchReading{.run = run(Tier::Fast, 10)}))->gpu_stages.empty());
+}
+
 TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
   const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .work_dir = "/tmp/w", .seconds = 9};
