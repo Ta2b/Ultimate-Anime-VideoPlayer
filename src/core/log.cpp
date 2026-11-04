@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include <spdlog/async.h>
 #include <spdlog/sinks/dist_sink.h>
 #include <spdlog/spdlog.h>
 
@@ -91,12 +92,20 @@ std::shared_ptr<spdlog::logger> log_channel(std::string_view module) {
   return channel;
 }
 
-void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level) {
+void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level,
+                       bool asynchronous) {
   const std::shared_ptr<spdlog::logger> current = spdlog::default_logger();
   std::shared_ptr<LogHub> hub = hub_of(*current);
   if (hub == nullptr) {
     hub = std::make_shared<LogHub>();
-    auto routed = std::make_shared<spdlog::logger>(current->name(), hub);
+    std::shared_ptr<spdlog::logger> routed;
+    if (asynchronous) {
+      spdlog::init_thread_pool(kLogQueue, 1);
+      routed = std::make_shared<spdlog::async_logger>(current->name(), hub, spdlog::thread_pool(),
+                                                      spdlog::async_overflow_policy::overrun_oldest);
+    } else {
+      routed = std::make_shared<spdlog::logger>(current->name(), hub);
+    }
     routed->set_level(level);
     routed->flush_on(current->flush_level());
     spdlog::set_default_logger(std::move(routed));
