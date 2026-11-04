@@ -10,6 +10,7 @@ commande ; sans son drapeau, rien ne change.
 | A2 | `--anime-shots` | Exposition des surfaces et marge des éclats fixées par plan (pré-analyse), glissées en 250 ms aux coupes (`app/play/anime_shots.h`) | codé, à mesurer |
 | A3 | `--anime-guided` | Carte locale lue par un sur-échantillonnage bilatéral joint guidé par le pixel : le halo ne déborde plus | codé, à mesurer |
 | A4 | aucun | Visages : décodage d'un détecteur, doublons, suivi, palette de peau, exclusion des émetteurs (`render/faces.h`) | partie sans réseau codée |
+| A6 | aucun | Réseau des émetteurs : étiquettes (port numpy de A5), jeu de données, entraînement et export ONNX (`tools/grade/emitters/`) | scripts écrits, entraînement plus tard |
 | A5 | aucun | Mesures d'émetteurs v2, référence CPU (`render/emitters.h`) : pixel, bloc, couronne ; néon admis | codé, juge et étiquettes |
 
 ## A2 : décisions par plan
@@ -35,3 +36,11 @@ moins ; la porte de niveau admet le blanc (55 à 95 % du blanc de la source) ou 
 (néon, écran) ; l'étincelle est un pixel qui domine son bloc d'un diaphragme et demi. Testée sur le halo,
 l'étincelle, la chemise blanche, le visage et le néon. Elle juge les essais du shader et étiquette le jeu de
 données du réseau (A6) ; le shader garde ses portes tant que la mesure sur ton PC n'a pas tranché.
+
+## A6 : le réseau appris
+`tools/grade/emitters/` : `labels.py` (la carte v2 en numpy, `--self-test` contre le C++ à 1e-4),
+`dataset.py` (des images tirées des vidéos par ffmpeg, en tuiles 256 × 256 avec leur étiquette au 1/8 ;
+corrections à la main dans `corrections.tsv`), `train.py` (un petit réseau convolutif, perte BCE, export
+ONNX). Le contrat : entrée `pq` 1 × 3 × H × W en codes PQ BT.2020, sortie `emitters` 1 × 1 × H/8 × W/8.
+L'entraînement demande PyTorch sur un PC ; l'intégration TensorRT attend un modèle entraîné et mesuré.
+Aucun modèle n'entre dans une release sans ton accord.
