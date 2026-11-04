@@ -632,4 +632,13 @@ PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view displ
   return settings;
 }
 
+void keep_visible_shadows(PlaySettings& settings, std::string_view display) {
+  const render::GradeSettings& g = settings.grade_values;
+  if (display.empty() || !settings.grade || !g.adaptive ||
+      render::grade_limits::calibrating(g.adaptive_force))
+    return;
+  for (auto& grade : settings.display_grades)
+    if (grade.display == display && grade.active) grade.shadows = g.shadows;
+}
+
 }  // namespace ajp::app::play
