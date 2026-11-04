@@ -48,7 +48,9 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::frame_stats_start(const T
         .height = static_cast<int>(rgb.shape.dims[2]),
         .transfer = static_cast<int>(transfer),
         .counts = slot.device};
+    role(Role::Measure).begin(stream_);
     ready = cuda_check(launch_frame_stats(params, stream_), "frame_stats<<<>>>");
+    role(Role::Measure).end(stream_);
   }
   if (ready) {
     ready = cuda_check(cudaMemcpyAsync(slot.host, slot.device, kCountsBytes, cudaMemcpyDeviceToHost, stream_),

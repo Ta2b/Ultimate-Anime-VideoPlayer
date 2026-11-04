@@ -102,12 +102,11 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_drba_fused(DrbaFusedEngine
   if (auto ok = order(reads, writes); !ok) return ok;
   const Shape shape = engine.input_shape();
   GpuTiming& timing = stage(std::format("moteur DistilDRBA fusionné {}×{}", shape.dims[3], shape.dims[2]));
-  span_timing_->begin(stream_);
+  role(Role::Interpolation).begin(stream_);
   timing.begin(stream_);
   auto queued = engine.enqueue(stream_, zone, inputs, outputs);
   timing.end(stream_);
-  span_timing_->end(stream_);
-  chain_timing_->end(stream_);
+  role(Role::Interpolation).end(stream_);
   if (std::string notice = engine.take_notice(); !notice.empty())
     log(BackendLogLevel::Warn,
         std::format("DistilDRBA fusionné {}×{} : {}", shape.dims[3], shape.dims[2], notice));

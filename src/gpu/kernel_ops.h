@@ -26,6 +26,7 @@
 #include "core/frame.h"
 #include "core/ring.h"
 #include "core/types.h"
+#include "gpu/gpu_profile.h"
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
 #include "kernels/spec/grade.h"
@@ -377,6 +378,9 @@ class KernelOps {
   // L'appareil répond-il encore (étape 11.5) ? Chaque file interrogée sans l'attendre ; DeviceLost quand le
   // contexte est perdu. RingStage le demande quand une image attend un slot depuis plus de 200 ms.
   virtual std::expected<void, Refusal> health() { return {}; }
+  // Le profil GPU de la lecture (0.2, gpu_profile.h) : chaque étape mesurée depuis l'ouverture, relu sans
+  // attendre. À demander une fois le pipeline vidé. Vide : le backend ne mesure rien.
+  virtual std::vector<GpuStageSummary> gpu_profile() { return {}; }
   // Les signaux YuvTarget::done logés dans block (alignée sur une page, en multiple de pages), écrits par le
   // GPU lui-même au lieu d'un rappel hôte (étape 11.5). Faux : le backend garde le rappel. unmap_fences
   // attend les écritures en vol et rend le bloc ; à appeler avant de le libérer.

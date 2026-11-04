@@ -36,6 +36,7 @@
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/gpu_profile_out.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
@@ -784,6 +785,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session.end();
   out.flush();
   pipeline->reset();
+  if (c.backend)
+    keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2
   prepared->reset();
   if (failure) return std::unexpected(std::move(*failure));
   return reopen;

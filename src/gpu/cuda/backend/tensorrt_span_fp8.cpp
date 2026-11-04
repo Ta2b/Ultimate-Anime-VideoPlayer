@@ -86,7 +86,7 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   if (auto ok = order(reads, writes); !ok) return ok;
   const Shape shape = engine.input_shape();
   GpuTiming& timing = stage(std::format("moteur FP8 {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
-  span_timing_->begin(stream_);
+  role(Role::Upscale).begin(stream_);
   timing.begin(stream_);
   ImportedSlot* imported = nullptr;
   auto queued =
@@ -105,8 +105,8 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
         return engine.enqueue_tail(stream_, outputs, surface);
       });
   timing.end(stream_);
-  span_timing_->end(stream_);
-  chain_timing_->end(stream_);
+  role(Role::Upscale).end(stream_);
+  if (!inputs.empty()) chain_span_->finish(inputs[0].handle, stream_);
   if (std::string notice = engine.take_notice(); !notice.empty())
     log(BackendLogLevel::Warn, std::format("SPAN FP8 {}×{} : {}", shape.dims[3], shape.dims[2], notice));
   if (!queued || imported == nullptr) return queued;

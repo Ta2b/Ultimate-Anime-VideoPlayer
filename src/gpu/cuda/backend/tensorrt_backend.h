@@ -141,6 +141,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Étape 11.5 (tensorrt_export.cpp) : chaque voie interrogée par cudaStreamQuery ; les signaux de l'export
   // dans une page enregistrée (cudaHostRegister), écrits par cuStreamWriteValue64 derrière les noyaux.
   std::expected<void, Refusal> health() override;
+  std::vector<GpuStageSummary> gpu_profile() override;
   bool map_fences(std::span<std::byte> block) override;
   void unmap_fences(std::span<std::byte> block) override;
 
@@ -328,7 +329,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::uint64_t held_sequence_ = 0;
   std::array<cudaEvent_t, kFences> fences_{};
   std::uint64_t fence_count_ = 0;
-  std::unique_ptr<GpuTiming> span_timing_;  // le moteur seul
+  // Le temps des moteurs par rôle (0.2) : agrandissement, interpolation, mesure ; gardés à part, même sur une
+  // seule voie (--one-lane), pour que le profil ne mêle pas SPAN et RIFE.
+  enum class Role : unsigned char { Upscale, Interpolation, Measure };
+  static constexpr std::size_t kRoles = 3;
+  std::array<std::unique_ptr<GpuTiming>, kRoles> role_timing_;
+  GpuTiming& role(Role which) { return *role_timing_.at(static_cast<std::size_t>(which)); }
   // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, écriture), résumé au
   // journal à la destruction du backend.
   std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
@@ -338,7 +344,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::vector<std::uintptr_t> compact_rife_inputs_;
   void note_rife_reader(const Tensor& input, bool compact);
   GpuTiming& stage(std::string_view name);
-  std::unique_ptr<GpuTiming> chain_timing_;           // de l'ingestion à la fin du moteur
+  std::unique_ptr<GpuSpan> chain_span_;               // de l'ingestion d'une source à la fin de son SPAN
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice
   std::uint32_t generation_ = 0;
   // Imports d'une génération remplacée, relâchés quand retired_done_ est passé côté GPU.

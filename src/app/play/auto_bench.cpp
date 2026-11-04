@@ -137,6 +137,17 @@ std::string format_reading(const BenchReading& reading) {
   root.insert("render_median_us", reading.render_median_us);
   root.insert("work_height", static_cast<std::int64_t>(reading.work_height));
   root.insert("rife_model", reading.rife_model);
+  if (!reading.gpu_stages.empty()) {
+    toml::array stages;
+    for (const gpu::GpuStageSummary& s : reading.gpu_stages) {
+      stages.push_back(toml::table{{"name", s.name},
+                                   {"count", static_cast<std::int64_t>(s.count)},
+                                   {"total_ms", s.total_ms},
+                                   {"median_ms", s.median_ms},
+                                   {"p95_ms", s.p95_ms}});
+    }
+    root.insert("gpu_stage", std::move(stages));
+  }
   std::ostringstream out;
   out << root << '\n';
   return out.str();
@@ -166,6 +177,19 @@ std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
   reading.render_median_us = root["render_median_us"].value_or(std::int64_t{0});
   reading.work_height = static_cast<int>(root["work_height"].value_or(std::int64_t{0}));
   reading.rife_model = root["rife_model"].value_or(std::string());
+  if (const toml::array* stages = root["gpu_stage"].as_array()) {
+    for (const toml::node& node : *stages) {
+      const toml::table* s = node.as_table();
+      if (s == nullptr) continue;
+      reading.gpu_stages.push_back(gpu::GpuStageSummary{
+          .name = (*s)["name"].value_or(std::string()),
+          .count =
+              static_cast<std::size_t>(std::max<std::int64_t>((*s)["count"].value_or(std::int64_t{0}), 0)),
+          .total_ms = (*s)["total_ms"].value_or(0.0),
+          .median_ms = (*s)["median_ms"].value_or(0.0),
+          .p95_ms = (*s)["p95_ms"].value_or(0.0)});
+    }
+  }
   return reading;
 }
 
