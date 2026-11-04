@@ -138,7 +138,7 @@ inline render::GradeSettings default_grade_values() {
   g.area_rtx = 0.10;
   g.vibrance_rtx = 0.10;  // dans le doute, peu de couleur : au-delà de 0,10 les scènes chaudes sursaturent
   g.expand = 1.0;
-  g.shadows = 0.20;
+  g.shadows = 0.50;  // Tatoub, 04/11 : le maximum des noirs profonds dynamiques
   g.guard = 0.0;
   g.adaptive = true;
   g.adaptive_lo = 13.0;

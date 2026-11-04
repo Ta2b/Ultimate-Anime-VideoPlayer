@@ -90,15 +90,26 @@ void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<
   // suivent la scène (le curseur est leur maximum, en scène très claire), et le look : la LUT de base et
   // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de Tatoub du 04/11).
   section(i18n::tr("Color grading"));
-  ImGui::SliderInt(i18n::tr("LUT contrast intensity"), &d.look_contrast, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
-  grade_slider(i18n::tr("Deep blacks"), d.grade_values.shadows, render::grade_limits::kShadows);
-  panel::tip(i18n::tr("The maximum, reached in very bright scenes; it fades out in very dark scenes."));
+  render::GradeSettings& g = d.grade_values;
+  ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, 0, 200, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(i18n::tr("Contrast"), &g.anime_contrast, 0, 200, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(i18n::tr("Highlights"), &g.anime_highlights, 0, 200, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  if (panel::advanced()) {
+    ImGui::SliderInt(i18n::tr("LUT contrast intensity"), &d.look_contrast, -100, 100, "%d",
+                     ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d",
+                     ImGuiSliderFlags_AlwaysClamp);
+    grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
+    panel::tip(i18n::tr("The maximum, reached in very bright scenes; it fades out in very dark scenes."));
+  }
   if (ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;
+    g.anime_saturation = defaults.grade_values.anime_saturation;
+    g.anime_contrast = defaults.grade_values.anime_contrast;
+    g.anime_highlights = defaults.grade_values.anime_highlights;
     d.look_contrast = defaults.look_contrast;
     d.look_highlight = defaults.look_highlight;
-    d.grade_values.shadows = defaults.grade_values.shadows;
+    g.shadows = defaults.grade_values.shadows;
   }
 }
 
