@@ -8,8 +8,10 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -63,8 +65,63 @@ inline std::array<float, render::kBlackRampSteps> black_ramp_levels() {
   return levels;
 }
 
+// Une version du grade exact dans l'anneau (chantier 2c), postée par main : elle vaut pour les images de son
+// époque de pts ≥ from_pts_us et pour toutes celles des époques suivantes, jusqu'à la suivante. off : les
+// images ne sont plus gradées dans l'anneau (sortie qui n'est plus en PQ, grade coupé), l'écran reprend.
+struct GradeVersion {
+  std::uint32_t version = 0;  // donnée par LiveSettings::post_grade
+  std::uint32_t epoch = 0;
+  std::int64_t from_pts_us = 0;
+  bool off = false;
+  kernels::GradeUniforms uniforms;
+  float peak_nits = 0.0F;  // le pic de l'image gradée, que l'écran déclare (max_luma)
+  int look_size = 0;
+  std::shared_ptr<const std::vector<float>> look_rgb;    // look_size³ × 3 ; nul sans look
+  std::shared_ptr<const std::vector<float>> input_nits;  // 3 × kInputTablePoints
+  std::array<float, 9> input_matrix{};
+
+  // L'ordre que le backend copie (KernelOps::set_grade), qui pointe dans cette version.
+  gpu::GradeOrder order() const {
+    return gpu::GradeOrder{
+        .version = version,
+        .uniforms = uniforms,
+        .look_size = look_rgb ? look_size : 0,
+        .look_rgb = look_rgb ? std::span<const float>(*look_rgb) : std::span<const float>{},
+        .input_nits = input_nits ? std::span<const float>(*input_nits) : std::span<const float>{},
+        .input_matrix = input_matrix};
+  }
+};
+
+// La version qui vaut pour une image d'époque `epoch` et de pts `pts_us` parmi `posted` : la plus récente de
+// celles qui la couvrent (GradeVersion), nulle si aucune.
+inline std::shared_ptr<const GradeVersion> grade_for(
+    std::span<const std::shared_ptr<const GradeVersion>> posted, std::int64_t pts_us, std::uint32_t epoch) {
+  std::shared_ptr<const GradeVersion> best;
+  for (const auto& v : posted) {
+    if (!v) continue;
+    const bool covers =
+        v->epoch < epoch || (v->epoch == epoch && pts_us != kNoPts && pts_us >= v->from_pts_us);
+    if (covers && (!best || v->version > best->version)) best = v;
+  }
+  return best;
+}
+
 class LiveSettings {
  public:
+  // main : une nouvelle version du grade, gardée avec les gpu::kGradeOrders − 1 précédentes (la plus ancienne
+  // part). Rend son numéro, à partir de 1.
+  std::uint32_t post_grade(GradeVersion version) {
+    const std::scoped_lock lock(mutex_);
+    version.version = ++grade_versions_;
+    grades_[grade_next_++ % grades_.size()] = std::make_shared<const GradeVersion>(std::move(version));
+    return grade_versions_;
+  }
+  // gpu : la version qui vaut pour une image (grade_for), nulle si main n'en a posté aucune qui la couvre.
+  std::shared_ptr<const GradeVersion> grade_at(std::int64_t pts_us, std::uint32_t epoch) const {
+    const std::scoped_lock lock(mutex_);
+    return grade_for(grades_, pts_us, epoch);
+  }
+
   // ×num/den ; num ≤ den : aucune interpolation (le moteur reste chargé). Les deux termes dans un
   // seul atomique : jamais l'un sans l'autre.
   void set_rife_factor(Factor factor) {
@@ -342,6 +399,9 @@ class LiveSettings {
     previous_done_us_ = done_us;
     e = Expected{};
   }
+  std::array<std::shared_ptr<const GradeVersion>, gpu::kGradeOrders> grades_{};
+  std::size_t grade_next_ = 0;
+  std::uint32_t grade_versions_ = 0;
   std::array<Expected, 16> ledger_{};
   std::size_t ledger_next_ = 0;
   std::int64_t previous_done_us_ =

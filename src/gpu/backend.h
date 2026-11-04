@@ -71,7 +71,8 @@ namespace ajp::gpu {
 // et kernels_version (étape 3.7b).
 // 25 : SpanFp8Request::min_free_ratio (étape 3.6).
 // 26 : BackendCaps::ring_rgb10a2, RingFormat::Rgb10a2Unorm importé (étape 5.5a).
-inline constexpr int kBackendAbi = 26;
+// 27 : RingWrite::grade, KernelOps::grades_ring et set_grade (grade exact dans l'anneau, chantier 2.9).
+inline constexpr int kBackendAbi = 27;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -344,7 +345,7 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
     shape_fingerprint<DecodedFrame, ColorInfo, HdrMetadata, VulkanImageAccess,
                       std::expected<VulkanImageAccess, Refusal>>(),
     shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, std::optional<PairScores>, RingSlotDesc,
-                      ExportedHandle, RingTarget, YuvTarget>(),
+                      ExportedHandle, RingTarget, YuvTarget, GradeSlot, GradeOrder>(),
     shape_fingerprint<SpanStill, SpanFp8Request, SpanFp8ImageScore, SpanFp8Derivation,
                       std::expected<SpanFp8Derivation, Refusal>>(),
 });

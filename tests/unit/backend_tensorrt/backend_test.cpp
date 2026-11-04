@@ -11,6 +11,7 @@
 #include <cuda_runtime_api.h>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "kernels/ref/half.h"
 #include "kernels/ref/warp.h"
 #include "kernels/spec/detect.h"
+#include "kernels/spec/grade.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/ring_pack.h"
 #include "prepare/sha256.h"
@@ -70,6 +72,40 @@ TEST_CASE("Backend TensorRT : ABI et refus nommés", "[backend_tensorrt][cuda]")
   const RingSlotDesc odd{.width = 8, .height = 8};
   CHECK(ops->write_ring((*tensor)->tensor(), odd, {.wait_value = 2, .signal_value = 2}).error().code ==
         RefusalCode::SequenceOrder);
+}
+
+TEST_CASE("Backend TensorRT : ordres du grade de l'anneau, refus et remplacement",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps* ops = loaded.backend->kernels();
+  REQUIRE(ops != nullptr);
+  CHECK(ops->grades_ring());
+  const std::vector<float> nits(3 * static_cast<std::size_t>(kernels::grade::kInputTablePoints), 100.0F);
+  const std::vector<float> look(2 * 2 * 2 * 3, 0.5F);
+  gpu::GradeOrder order{.version = 1, .look_size = 2, .look_rgb = look, .input_nits = nits};
+  order.uniforms.look_mix = 1.0F;
+  // Version nulle, table d'entrée tronquée, look de mauvaise taille, intensité sans look : refusés.
+  gpu::GradeOrder zero = order;
+  zero.version = 0;
+  CHECK(ops->set_grade(zero).error().code == RefusalCode::FieldOutOfRange);
+  gpu::GradeOrder short_table = order;
+  short_table.input_nits = std::span<const float>(nits).first(10);
+  CHECK(ops->set_grade(short_table).error().code == RefusalCode::FieldOutOfRange);
+  gpu::GradeOrder bad_look = order;
+  bad_look.look_size = 3;
+  CHECK(ops->set_grade(bad_look).error().code == RefusalCode::FieldOutOfRange);
+  gpu::GradeOrder no_look = order;
+  no_look.look_size = 0;
+  no_look.look_rgb = {};
+  CHECK(ops->set_grade(no_look).error().code == RefusalCode::FieldOutOfRange);
+  // Plus de kGradeOrders ordres : les plus anciens sont remplacés, sans refus.
+  for (std::uint32_t v = 1; v <= gpu::kGradeOrders + 3; ++v) {
+    order.version = v;
+    INFO("version " << v);
+    CHECK(ops->set_grade(order));
+  }
 }
 
 TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[backend_tensorrt][cuda]") {

@@ -384,6 +384,10 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   CPU, historique à 1e-4.
 - **2.8, coût** : `ajp_backend_tensorrt_tests "[.grade_ring]"` : ≤ 0,30 ms par image en 1440p, ≤ 0,60 ms en
   2160p (vrai noir allumé).
+- **2.9, ordres** : `ajp_backend_tensorrt_tests "[backend_tensorrt][cuda]"` : le cas « ordres du grade de
+  l'anneau » (refus nommés, plus de 8 ordres remplacés sans erreur ni fuite). Le grade d'un emplacement passe
+  par `finish_slot` aux trois signaux (write_ring, warp et GMFSS vers l'anneau, queue du SPAN FP8) ; il ne
+  tourne qu'avec un ordre posté, donc pas avant 2.10 en lecture.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
