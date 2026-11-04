@@ -55,7 +55,7 @@ void remember_chain(ProfileState& state, const PlaySettings& s) {
   const std::array<core::UserEdit, 2> edits{
       core::edit::ProfileRules{.slot = state.active, .rules = rules_of(s, state.default_model)},
       core::edit::ProfileHdr{.slot = state.active, .mode = hdr_of(s)}};
-  auto edited = edit_profiles(state.user_path, state.data, edits);
+  auto edited = edit_profiles(state.user_path, state.data, edits, state.writer);
   if (!edited) {
     log_channel("app")->warn("user.toml : {}", edited.error().detail);
     return;

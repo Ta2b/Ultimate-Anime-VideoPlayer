@@ -382,6 +382,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   // play.toml, la position et la mémoire de l'Auto s'écrivent sur leur thread, sans attendre le disque.
   LatestWriter writer;
+  p.profiles.writer = &writer;  // user.toml aussi (1.11) ; rendu nul avant le thread
+  const std::unique_ptr<ProfileState, void (*)(ProfileState*)> profiles_writer(
+      &p.profiles, [](ProfileState* state) { state->writer = nullptr; });
+  if (p.shots != nullptr) p.shots->writer = &writer;  // le cache des plans aussi
+  const std::unique_ptr<ShotWork, void (*)(ShotWork*)> shots_writer(
+      p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });
   // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
   std::int64_t kept_us = kNoPts;
   const auto remember = [&] {

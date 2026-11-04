@@ -24,6 +24,8 @@
 
 namespace ajp::app::play {
 
+class LatestWriter;  // latest_writer.h
+
 // La base livrée : 9 profils, le 1 au démarrage.
 std::string_view base_profiles_toml();
 
@@ -57,9 +59,10 @@ void apply_user_keys(std::string_view user_toml);
 const core::KeyMap& configured_keys();
 
 std::expected<Profiles, Refusal> load_profiles(const std::filesystem::path& user_toml);
-// Applique edits à user.toml (seulement ce qui diffère de la base) et l'écrit d'un coup.
+// Applique edits à user.toml (seulement ce qui diffère de la base) et l'écrit d'un coup ; avec writer (1.11),
+// l'écriture part sur son thread (clé « user.toml ») et le profil rendu est déjà celui du fichier écrit.
 std::expected<Profiles, Refusal> edit_profiles(const std::filesystem::path& user_toml,
-                                               const Profiles& current,
-                                               std::span<const core::UserEdit> edits);
+                                               const Profiles& current, std::span<const core::UserEdit> edits,
+                                               LatestWriter* writer = nullptr);
 
 }  // namespace ajp::app::play

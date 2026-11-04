@@ -1,10 +1,12 @@
 #include "app/play/chain_shots.h"
 
 #include <algorithm>
+#include <expected>
 #include <utility>
 #include <vector>
 
 #include "app/play/chain.h"
+#include "app/play/latest_writer.h"
 #include "core/log.h"
 #include "media/shot_cache.h"
 
@@ -39,9 +41,18 @@ void keep_if_done(const ShotWork& work, ShotJob& job) {
   if (timeline.size() == 0 || timeline.first_gap_us() < timeline.end_us()) return;
   job.complete = true;
   if (work.cache_dir.empty()) return;
-  const auto log = log_channel("app");
-  if (media::save_shot_cache(work.cache_dir, job.key, timeline.shots(), true))
-    log->info("plans de {} gardés : {} plans", job.file.filename().string(), timeline.size());
+  const auto save = [dir = work.cache_dir, key = job.key, name = job.file.filename().string(),
+                     shots = timeline.shots()]() -> std::expected<void, Refusal> {
+    const auto log = log_channel("app");
+    if (media::save_shot_cache(dir, key, shots, true))
+      log->info("plans de {} gardés : {} plans", name, shots.size());
+    return {};
+  };
+  if (work.writer != nullptr) {
+    work.writer->post("shots:" + job.key, save);
+  } else {
+    static_cast<void>(save());
+  }
 }
 
 }  // namespace

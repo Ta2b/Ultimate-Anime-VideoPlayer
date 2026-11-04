@@ -41,6 +41,9 @@ struct ProfileState {
   int active = 1;
   core::SourceInfo source;
   std::string default_model;  // le modèle SPAN par défaut, pour un réglage « modèle par défaut »
+  // Le thread d'écriture de la lecture (1.11) : user.toml s'y écrit sans retenir l'affichage. Nul hors
+  // d'une lecture : sur place.
+  LatestWriter* writer = nullptr;
 };
 
 // Le mode HDR que le profil demande, quand un repli de l'environnement (sortie SDR) en fait tourner un
