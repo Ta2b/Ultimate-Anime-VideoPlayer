@@ -323,7 +323,8 @@ std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display);
 
 // Le grade PQ d'une source SDR, tourné vers une sortie SDR (méthode « HDR anime ») : sdr_tm, les bornes de la
 // courbe du plan (tm_white : les surfaces relevées ; tm_top : la marge des éclats que la méthode donne au
-// plan, selon sa luminosité moyenne fs_apl), sans vrai noir (ses seuils sont ceux d'un écran HDR).
+// plan, selon sa luminosité moyenne fs_apl), sans vrai noir (ses seuils sont ceux d'un écran HDR) ni pile de
+// LUT (étalonnée pour l'écran HDR et KWin).
 void sdr_tonemap(GradeParams& p);
 
 std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& settings,
