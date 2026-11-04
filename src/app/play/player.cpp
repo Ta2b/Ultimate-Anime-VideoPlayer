@@ -198,6 +198,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                         .grade_deband = options.grade_deband,
                                         .skin_mask = options.skin_mask,
                                         .grade_ring = options.grade_ring,
+                                        .present = options.present,
                                         .shader_cache = paths.data / "shaders.cache"});
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);

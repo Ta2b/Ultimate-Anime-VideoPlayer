@@ -78,6 +78,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto smooth = parse({"épisode.mkv", "--smooth-drawings"});
   REQUIRE(smooth);
   CHECK(smooth->smooth_drawings);
+  CHECK(options->present == PresentWanted::Open);
+  const auto present = parse({"épisode.mkv", "--present=timing"});
+  REQUIRE(present);
+  CHECK(present->present == PresentWanted::Timing);
+  CHECK_FALSE(parse({"épisode.mkv", "--present=vite"}).has_value());
   CHECK_FALSE(options->kde_sdr_nits);
   const auto metadata = parse({"épisode.mkv", "--hdr-metadata"});
   REQUIRE(metadata);

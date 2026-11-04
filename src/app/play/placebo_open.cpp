@@ -31,6 +31,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
+#include "app/play/placebo_present.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/window_size.h"
 #include "core/clock.h"
@@ -446,10 +447,15 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.get_proc_addr = impl->inst->get_proc_addr;
   vk_params.surface = impl->surface;
   vk_params.allow_software = options.allow_software;
-  const ComputeFeatures compute;
+  ComputeFeatures compute;
+  // Retour de présentation (chantier 6.2) : rien de plus demandé à --present=open.
+  PresentFeatures present_features;
+  if (options.present != PresentWanted::Open) compute.video2.pNext = present_features.head(nullptr);
   vk_params.features = &compute.features;
-  vk_params.opt_extensions = kOptionalExtensions.data();
-  vk_params.num_opt_extensions = static_cast<int>(kOptionalExtensions.size());
+  std::vector<const char*> extensions(kOptionalExtensions.begin(), kOptionalExtensions.end());
+  for (const char* extension : present_extensions(options.present)) extensions.push_back(extension);
+  vk_params.opt_extensions = extensions.data();
+  vk_params.num_opt_extensions = static_cast<int>(extensions.size());
   vk_params.extra_queues = kVideoQueueFlags | kBackendQueueFlags;
   vk_params.queue_count = static_cast<int>(kPlaceboQueues);  // la file d'après reste aux moteurs
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
@@ -467,10 +473,24 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     impl->channel->info("l'appareil n'exporte pas ses images ni ses sémaphores (fd) : ring sans poignées");
   }
 
+  // Le niveau de retour de présentation (present_level.h) : à --present=open, la swapchain d'aujourd'hui.
+  impl->present_caps =
+      options.present == PresentWanted::Open ? PresentCaps{} : read_present_caps(impl->vk, impl->surface);
+  impl->present_level = choose_present_level(impl->present_caps, options.present);
+  if (options.present != PresentWanted::Open) {
+    const PresentCaps& c = impl->present_caps;
+    impl->channel->info(
+        "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, date "
+        "absolue {}, horodatages calibrés {})",
+        name(impl->present_level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated);
+  }
+  const SwapchainShape shape = swapchain_shape(impl->present_level);
   pl_vulkan_swapchain_params sw_params{};
   sw_params.surface = impl->surface;
   sw_params.present_mode = VK_PRESENT_MODE_FIFO_KHR;
-  sw_params.swapchain_depth = kSwapchainDepth;
+  sw_params.swapchain_depth = shape.depth > 0 ? shape.depth : kSwapchainDepth;
+  sw_params.min_images = shape.min_images;
+  sw_params.present_flags = present_flags(impl->present_level, impl->present_caps);
   impl->swapchain = pl_vulkan_create_swapchain(impl->vk, &sw_params);
   if (impl->swapchain == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
