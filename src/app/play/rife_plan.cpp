@@ -5,7 +5,11 @@
 namespace ajp::app::play {
 
 bool pair_cut(const PairFacts& facts) {
-  if (facts.known_cut) return *facts.known_cut;
+  if (facts.known_cut) {
+    // Une coupe des plans sur deux images presque identiques est un effet (éclair, fumée) : pas de coupe.
+    if (*facts.known_cut && facts.scores && facts.scores->scene_score < kPlanCutFloor) return false;
+    return *facts.known_cut;
+  }
   return facts.scores && kernels::is_scene_cut(facts.scores->scene_score);
 }
 
