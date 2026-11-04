@@ -162,9 +162,9 @@ struct PlayOptions {
   // --audio-pll : l'horloge audio maîtresse filtrée par une PLL (audio::PlayerConfig::pll, 6.9). Essai,
   // éteint par défaut.
   bool audio_pll = false;
-  // --vsync-index : l'image choisie par le numéro de son vblank, avec hystérésis (SessionConfig::vsync_index,
-  // 6.6). Essai, éteint par défaut.
-  bool vsync_index = false;
+  // L'image choisie par le numéro de son vblank, avec hystérésis (SessionConfig::vsync_index, 6.6), par
+  // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
+  bool vsync_index = true;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
   // open (le défaut) : la présentation d'aujourd'hui, jusqu'aux mesures 6.11.
   PresentWanted present = PresentWanted::Open;
