@@ -434,7 +434,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   // Retour de présentation (placebo_feedback.h) : ce qui est revenu est relu, la présentation part avec
   // son identifiant et sa demande de date.
   const pl_vulkan_present* present =
-      s.feedback ? s.feedback->prepare(s.swapchain, host_now_us(), 0) : nullptr;
+      s.feedback ? s.feedback->prepare(s.swapchain, host_now_us(), request.target_us) : nullptr;
   if (present != nullptr) {
     VkResult result = VK_SUCCESS;
     const bool ok = pl_vulkan_swapchain_submit(s.swapchain, present, &result);

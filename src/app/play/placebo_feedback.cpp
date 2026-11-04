@@ -1,5 +1,6 @@
 #include "app/play/placebo_feedback.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
@@ -12,7 +13,8 @@ namespace ajp::app::play {
 #endif
 
 namespace {
-constexpr std::uint32_t kQueueSize = 16;  // dates en attente de relecture dans le pilote
+constexpr std::uint32_t kQueueSize = 16;     // dates en attente de relecture dans le pilote
+constexpr std::int64_t kMaxLeadUs = 25'000;  // avance au plus d'une date visée (6.6)
 }  // namespace
 
 struct PresentFeedback::Api {
@@ -104,7 +106,14 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
   } else if (level_ == PresentLevel::Wait) {
     poll_wait(sw, now_us);
   }
-  if (level_ != PresentLevel::TimingAbsolute) target_us = 0;
+  // Une date visée seulement au niveau TimingAbsolute en VRR (6.6) : la latence de sortie mesurée retirée,
+  // jamais dans le passé ni plus de kMaxLeadUs devant.
+  if (level_ != PresentLevel::TimingAbsolute || fixed_refresh() || target_us == 0) {
+    target_us = 0;
+  } else {
+    target_us -= clock_.output_latency_us();
+    target_us = target_us <= now_us ? 0 : std::min(target_us, now_us + kMaxLeadUs);
+  }
   // Au niveau Timing, la date n'est demandée qu'avec un domaine de temps calé.
   const core::PresentLedger::Issue issue =
       ledger_.issue(now_us, target_us, !timing || (domain_.known() && level_ != PresentLevel::Wait));

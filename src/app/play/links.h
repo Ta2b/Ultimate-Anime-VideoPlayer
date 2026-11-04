@@ -137,6 +137,9 @@ struct ShowRequest {
   // visibles) : l'écran garde l'image composée et la recopie tant qu'elle n'a pas changé
   // (app/play/compose_key.h) ; faux, il compose directement dans la cible.
   bool redraws_expected = false;
+  // L'instant hôte où l'image doit paraître (6.6, --vsync-index) ; 0 : dès que possible. Seul le niveau
+  // TimingAbsolute en VRR s'en sert.
+  std::int64_t target_us = 0;
 };
 
 // L'image de l'interface pour ce tour (ui.h) : changed demande une présentation même sans image

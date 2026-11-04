@@ -39,6 +39,10 @@ class FrameQueue {
   // qui ne l'est pas arrête le choix, et elle reste en file avec celles d'après.
   std::optional<RingFrame> pick(std::int64_t media_now_us, std::int64_t lead_us, std::vector<RingFrame>& late,
                                 const std::function<bool(const RingFrame&)>& ready = {});
+  // Le même choix, l'échéance dite par due (6.6 : par numéro de vblank) au lieu du seuil de pts.
+  std::optional<RingFrame> pick_by(const std::function<bool(const RingFrame&)>& due,
+                                   std::vector<RingFrame>& late,
+                                   const std::function<bool(const RingFrame&)>& ready = {});
 
   // Retire l'image de tête (montrée sans horloge, à l'amorce d'une époque).
   std::optional<RingFrame> pop_front();

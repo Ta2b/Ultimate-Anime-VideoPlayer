@@ -170,6 +170,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.precise_wait = true;
     } else if (arg == "--audio-pll") {
       options.audio_pll = true;
+    } else if (arg == "--vsync-index") {
+      options.vsync_index = true;
     } else if (arg.starts_with("--present=")) {
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
@@ -455,6 +457,7 @@ std::string play_usage() {
       "  --ring-watcher         essai : un thread attend l'écriture de l'anneau et réveille l'affichage\n"
       "  --precise-wait         essai : l'attente de l'image suivante à la microseconde\n"
       "  --audio-pll            essai : l'horloge audio filtrée par une boucle à verrouillage de phase\n"
+      "  --vsync-index          essai : l'image choisie par le numéro de son vblank mesuré, avec hystérésis\n"
       "  --present=NIVEAU       essai : retour de présentation auto, timing, wait, wayland ou open (défaut)\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"

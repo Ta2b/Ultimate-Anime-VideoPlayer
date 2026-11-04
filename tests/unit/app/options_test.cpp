@@ -90,6 +90,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto pll = parse({"épisode.mkv", "--audio-pll"});
   REQUIRE(pll);
   CHECK(pll->audio_pll);
+  CHECK_FALSE(options->vsync_index);
+  const auto index = parse({"épisode.mkv", "--vsync-index"});
+  REQUIRE(index);
+  CHECK(index->vsync_index);
   CHECK(options->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});
   REQUIRE(present);

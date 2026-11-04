@@ -1,5 +1,6 @@
 // La session et le retour de l'écran : veilleur d'écriture (Screen::watch, written_at, wakes_on_write ;
 // ring_watcher.h) et fréquence mesurée (Screen::vblank_grid).
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -92,6 +93,65 @@ TEST_CASE("Synchro sur l'écran : la fréquence mesurée remplace l'annoncée", 
   rig.session.set_display(6061, 165.0);
   REQUIRE(rig.stages.speeds.size() == 3);
   CHECK(rig.stages.speeds[2] == Catch::Approx(165.0 / 164.9).epsilon(1e-9));
+}
+
+// 24 im/s sur un écran à 60 Hz mesuré : une image sur deux tombe au milieu de deux vblanks ; l'horloge
+// tremble de ±0,6 ms, et le seuil de l'ancien choix tombe à 0,3 ms du milieu. Chaque image tient 3 puis 2
+// vblanks, sans jamais deux durées égales de suite.
+std::vector<int> held_vblanks(bool index) {
+  Rig rig(SessionConfig{.display_period_us = 16'667, .display_hz = 60.0, .vsync_index = index});
+  const double period = 1e6 / 60.0;
+  rig.screen.grid = core::VblankGrid{.phase_us = 0.0, .period_us = period};
+  std::uint32_t seed = 99;
+  const auto jitter = [&] {
+    seed = seed * 1'103'515'245U + 12'345U;
+    return static_cast<std::int64_t>((seed >> 8U) % 1'201U) - 600;
+  };
+  std::int64_t next_pts = 0;
+  std::uint32_t slot = 0;
+  std::vector<int> held;
+  std::int64_t shown = -1;
+  int count = 0;
+  for (int v = 1; v < 3'000; ++v) {
+    const auto host = static_cast<std::int64_t>(std::llround(period * v)) + 7'000;
+    rig.screen.now_us = host;
+    while (next_pts < host + 200'000) {
+      rig.session.handle(ring_frame(slot++ % 8, next_pts));
+      next_pts += 41'667;
+    }
+    rig.clock.value = {.media_us = host + jitter(), .host_us = host, .rate = 1.0, .epoch = 0, .valid = true};
+    const std::size_t before = rig.screen.shown.size();
+    rig.tick();
+    if (rig.screen.shown.size() > before && rig.screen.shown.back().frame) {
+      const std::int64_t pts = rig.screen.shown.back().frame->pts_us;
+      if (pts != shown) {
+        if (shown >= 0 && v > 100) held.push_back(count);
+        shown = pts;
+        count = 0;
+      }
+    }
+    ++count;
+  }
+  return held;
+}
+
+TEST_CASE("Choix par numéro de vblank : 3-2 tenu à 60 Hz malgré la gigue", "[app][session][present]") {
+  ajp::app::play::FrenchUi french;
+  const std::vector<int> held = held_vblanks(true);
+  REQUIRE(held.size() > 1'000);
+  int repeats = 0;
+  int odd = 0;
+  for (std::size_t i = 0; i < held.size(); ++i) {
+    if (held[i] != 2 && held[i] != 3) ++odd;
+    if (i > 0 && held[i] == held[i - 1]) ++repeats;
+  }
+  CHECK(odd == 0);
+  CHECK(repeats == 0);
+  // L'ancien choix, par seuil de pts, rompt le motif dans les mêmes conditions.
+  const std::vector<int> plain = held_vblanks(false);
+  int plain_repeats = 0;
+  for (std::size_t i = 1; i < plain.size(); ++i) plain_repeats += plain[i] == plain[i - 1] ? 1 : 0;
+  CHECK(plain_repeats > 0);
 }
 
 }  // namespace ajp::app::play
