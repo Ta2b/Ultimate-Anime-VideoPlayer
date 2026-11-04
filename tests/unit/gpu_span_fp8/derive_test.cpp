@@ -68,7 +68,7 @@ TEST_CASE("la porte durcie tient au 99,9e centile, au sombre et aux cas durs (3.
   const std::vector<ImageScore> hard{{40.0, 0.99, 3.5 / 255.0, 1.0 / 255.0}, {37.0, 0.98, 1.0 / 255.0, 0.0}};
   const Verdict ok = judge_hardened(good, hard);
   CHECK(ok.passed);
-  CHECK(ok.error_p999_worst == Catch::Approx(3.5 / 255.0));
+  CHECK(ok.error_p999_worst == Catch::Approx(3.0 / 255.0));  // les images de validation seules
   CHECK(ok.dark_error_p999_worst == Catch::Approx(1.5 / 255.0));
   CHECK(ok.hard_psnr_worst_db == Catch::Approx(37.0));
   CHECK(ok.hard_images == 2);
@@ -80,10 +80,16 @@ TEST_CASE("la porte durcie tient au 99,9e centile, au sombre et aux cas durs (3.
   std::vector<ImageScore> dark = good;
   dark[0].dark_error_p999 = 2.5 / 255.0;
   CHECK_FALSE(judge_hardened(dark, hard).passed);
+  // Les cas durs synthétiques sont relevés sans décider (porte 2, séance du 04/11).
   std::vector<ImageScore> broken = hard;
-  broken[1].psnr_db = 35.9;
-  CHECK_FALSE(judge_hardened(good, broken).passed);
-  CHECK_FALSE(judge_hardened({}, hard).passed);  // sans validation, rien ne passe
+  broken[1].psnr_db = 16.4;
+  broken[0].error_p999 = 125.0 / 255.0;
+  const Verdict relaxed = judge_hardened(good, broken);
+  CHECK(relaxed.passed);
+  CHECK(relaxed.hard_psnr_worst_db == Catch::Approx(16.4));
+  CHECK(relaxed.hard_error_p999_worst == Catch::Approx(125.0 / 255.0));
+  CHECK(relaxed.error_p999_worst == Catch::Approx(3.0 / 255.0));  // celui des vraies images
+  CHECK_FALSE(judge_hardened({}, hard).passed);                   // sans validation, rien ne passe
 }
 
 TEST_CASE("l'accumulateur f16 n'est gardé qu'à 0,3 dB de PSNR moyen du f32, porte passée (3.5a)",

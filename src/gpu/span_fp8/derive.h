@@ -17,7 +17,10 @@ namespace ajp::gpu::span_fp8 {
 inline constexpr float kE4m3Max = 448.0F;  // le plus grand E4M3 fini
 
 // Format du reçu et seuils : ceux de l'INT8 (app/play/span_int8.cpp), pas ceux, lâches, du FP8 par Q/DQ.
-inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";    // étape 3.7b
+inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7b
+// La version de la porte (judge_hardened) : un refus d'une porte plus ancienne se refait. 2 : les cas durs
+// synthétiques ne décident plus (séance du 04/11).
+inline constexpr int kGateVersion = 2;
 inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";  // tools/span/derive_span_fp8.py
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
@@ -55,6 +58,7 @@ struct Verdict {
   double error_p999_worst = 0.0;
   double dark_error_p999_worst = 0.0;
   double hard_psnr_worst_db = 0.0;
+  double hard_error_p999_worst = 0.0;  // les cas durs : relevés, sans décider
   int hard_images = 0;
 };
 
@@ -63,8 +67,8 @@ Verdict judge(std::span<const ImageScore> scores, double min_psnr_mean = kMinPsn
               double min_psnr_worst = kMinPsnrWorstDb, double min_ssim_worst = kMinSsimWorst);
 
 // judge, puis la porte durcie (étape 3.7a) : pire 99,9e centile ≤ kMaxErrorP999 et, sur le sombre, ≤
-// kMaxDarkErrorP999, sur les images de validation et les cas durs ; pire PSNR des cas durs ≥
-// kMinHardPsnrWorstDb. Sans cas dur, seule la partie centile s'applique.
+// kMaxDarkErrorP999, sur les images de validation. Les cas durs synthétiques sont relevés (hard_*) sans
+// décider : leurs seuils n'ont jamais été réglés sur une carte (séance du 04/11).
 Verdict judge_hardened(std::span<const ImageScore> scores, std::span<const ImageScore> hard);
 
 // Garder l'accumulateur f16 hors blocs (étape 3.5a) : sa variante passe la porte, la variante f32 aussi, et

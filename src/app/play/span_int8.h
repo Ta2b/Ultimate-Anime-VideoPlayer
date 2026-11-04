@@ -61,6 +61,9 @@ struct SpanInt8Lookup {
   // FP8 CUTLASS avec contexte : reçu v2 de cet appareil et de ces noyaux, mais pas encore jugé à cette taille
   // (« 1280x720 ») ; une validation seule la tranche (span_derive.h, validate_span_size).
   std::string unvalidated_size;
+  // FP8 CUTLASS : à refaire, pas refusé pour de bon (reçu d'une autre carte ou d'autres noyaux, ou refus
+  // d'une porte plus ancienne que gpu::span_fp8::kGateVersion) ; la préparation le refait.
+  bool stale = false;
 };
 
 // Ce que le moteur sait calculer, pour l'ordre des variantes (BackendCaps).

@@ -417,6 +417,8 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
   } else if (validate) {
     prepare.note = i18n::tr_format(
         "Not validated at {} yet: a validation pass (about ten seconds) is offered.", found.unvalidated_size);
+  } else if (found.stale) {
+    prepare.note = i18n::tr("Not prepared yet: playback stays on TensorRT FP16 at the Performance level.");
   } else if (!found.note.empty()) {
     prepare.refused = true;
     prepare.note = i18n::tr("Rejected: ") + found.note;

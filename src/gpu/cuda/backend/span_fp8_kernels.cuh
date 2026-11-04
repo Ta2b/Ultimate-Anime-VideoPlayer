@@ -253,7 +253,12 @@ struct Launcher {
   KP kp;
   dim3 grid, block;
   size_t smem = 0;
-  cudaError_t attribute = cudaSuccess;  // refus de cudaFuncSetAttribute (mémoire partagée au-delà de 48 Ko)
+  // Refus de cudaFuncSetAttribute (mémoire partagée au-delà de 48 Ko). Posé à init, puis de nouveau avant le
+  // premier lancement : net_kernel est instancié dans plusieurs .cu (référence et réseau FP8), et en Release
+  // le pliage des souches de l'hôte faisait viser à l'attribut le module d'un autre fichier que celui du
+  // lancement (« invalid argument », 58 368 o, RTX 4070 Ti, 04/11). Posé dans launch, il vise le même.
+  mutable cudaError_t attribute = cudaSuccess;
+  mutable bool armed = false;
 
   // Convolution RxR (remplissage pad), Cin canaux d'entrée, Kout canaux de sortie, image HxW.
   void init(int H, int W, int R, int pad, int Cin, int Kout, const E* in, const E* w, const KP& k) {
@@ -277,7 +282,14 @@ struct Launcher {
       attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
                                        cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
   }
-  void launch(cudaStream_t s) const { net_kernel<Base, Mode, Relu><<<grid, block, smem, s>>>(params, kp); }
+  void launch(cudaStream_t s) const {
+    if (smem > 48 * 1024 && !armed) {
+      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
+                                       cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
+      armed = true;
+    }
+    net_kernel<Base, Mode, Relu><<<grid, block, smem, s>>>(params, kp);
+  }
 };
 
 }  // namespace ajp::gpu::cuda::span_fp8_kernels
