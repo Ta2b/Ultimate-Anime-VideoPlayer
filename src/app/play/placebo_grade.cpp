@@ -6,6 +6,7 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -234,6 +235,22 @@ void PlaceboScreen::Impl::hint_contract() {
   pl_swapchain_colorspace_hint(swapchain, &space);
   channel->info("contrat v2 : métadonnées annoncées, max {:.0f} nits, MaxFALL {:.0f}, noir {:.4f}",
                 meta.max_luma, meta.max_fall, meta.min_luma);
+}
+
+bool PlaceboScreen::Impl::apply_scene_hdr(pl_color_space& image, pl_color_space& target,
+                                          std::int64_t pts) const {
+  if (!contract_v2 || !contract || pts == kNoPts || image.transfer != PL_COLOR_TRC_PQ ||
+      target.transfer != PL_COLOR_TRC_PQ)
+    return false;
+  const auto after = std::ranges::upper_bound(scene_shots, pts, {}, &media::Shot::start_us);
+  if (after == scene_shots.begin()) return false;
+  const media::Shot& shot = *std::prev(after);
+  if (pts >= shot.end_us) return false;
+  const render::SceneHdr scene{.max_nits = shot.meta.max_scl_nits, .avg_nits = shot.meta.apl_mean_nits};
+  if (!render::usable(scene)) return false;
+  render::set_scene_hdr(image, scene);
+  target.hdr.max_luma = static_cast<float>(contract->content_peak_nits());
+  return true;
 }
 
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {

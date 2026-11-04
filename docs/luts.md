@@ -89,3 +89,6 @@ Avec `--grade-ring` en plus (TensorRT), le grade de l'anneau devient une seule l
 courbe du plan (look SDR compris), cuite en fond pour le plan courant et les deux suivants, datée du début de son
 plan (la bascule se fait à l'image près), deux LUT mêlées dans un fondu. Sans plans connus (pré-analyse coupée),
 le grade d'avant reste.
+Une source HDR10 (8.9) annonce en plus, plan par plan, sa lumière mesurée par la pré-analyse (maxSCL et moyenne,
+en métadonnées HDR10+) : la spline de libplacebo la ramène à C_pk sans détection de pic, un plan sous C_pk passe
+tel quel et un plan plus clair est compressé.

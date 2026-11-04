@@ -155,6 +155,10 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   } else if (deband) {
     params.deband_params = &pl_deband_default_params;
   }
+  if (scene_hdr) {  // HDR10+ par plan (8.9) : la lumière du plan est annoncée, rien à détecter
+    params.peak_detect_params = nullptr;
+    params.color_map_params = &scene_map;
+  }
   if (graded_now) {
     const std::span<const pl_hook* const> hooks = grade->hooks();
     params.hooks = hooks.data();
@@ -253,6 +257,7 @@ void PlaceboScreen::set_contract(const render::DisplayContract& contract) {
 }
 
 void PlaceboScreen::set_plan_shots(std::vector<media::Shot> shots) {
+  if (impl_->contract_v2) impl_->scene_shots = shots;
   if (impl_->planner) impl_->planner->set_shots(std::move(shots));
 }
 
@@ -367,6 +372,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   const RingFrame* frame = request.frame;
   pl_frame image{};
   s.ring_image = false;
+  s.scene_hdr = false;
   if (frame != nullptr) {
     s.source_debanded = frame->debanded;
     s.shown_pts = frame->pts_us;
@@ -393,6 +399,8 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
         image.color.transfer = PL_COLOR_TRC_PQ;
       }
     }
+    if (!s.ring_image && !calibrating)
+      s.scene_hdr = s.apply_scene_hdr(image.color, target.color, frame->pts_us);
     image.crop = {0, 0, static_cast<float>((*tex)->params.w), static_cast<float>((*tex)->params.h)};
     pl_rect2df_aspect_set(&target.crop, pl_rect2df_aspect(&image.crop) * static_cast<float>(s.sample_aspect),
                           0.0F);
