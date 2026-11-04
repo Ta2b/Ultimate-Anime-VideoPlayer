@@ -73,6 +73,7 @@ PresentCaps read_present_caps(pl_vulkan vk, VkSurfaceKHR surface) {
       caps.present_wait2 = dev_wait2 && surf_wait2.presentWait2Supported;
       caps.timing = dev_timing && surf_timing.presentTimingSupported;
       caps.timing_absolute = dev_absolute && surf_timing.presentAtAbsoluteTimeSupported;
+      caps.present_stages = caps.timing ? surf_timing.presentStageQueries : 0;
     }
   }
 #endif

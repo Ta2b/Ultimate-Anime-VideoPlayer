@@ -23,6 +23,7 @@
 #include "app/play/links.h"
 #include "app/play/live_settings.h"
 #include "app/play/osd_text.h"
+#include "app/play/placebo_feedback.h"
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/present_level.h"
@@ -149,6 +150,7 @@ struct PlaceboScreen::Impl {
   bool grade_ring = false;                                  // ScreenOptions::grade_ring
   PresentLevel present_level = PresentLevel::Open;          // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
+  std::unique_ptr<PresentFeedback> feedback;  // niveaux Timing et Wait (placebo_feedback.h) ; nul sinon
   std::filesystem::path shader_cache_file;
   GpuDevice device;
   PlaceboRing ring;

@@ -15,9 +15,9 @@ TEST_CASE("Option --stats : l'en-tête nomme chaque colonne écrite, dans l'ordr
   CHECK(tabs(header) == kStatsColumns - 1);
   CHECK(tabs(line) == kStatsColumns - 1);
   CHECK(header.starts_with("seq\thost_us\t"));
-  CHECK(header.ends_with("display_gpu_us\n"));
+  CHECK(header.ends_with("display_gpu_us\tpresent_id\tfeedback_id\ttarget_us\tvisible_us\tvsync_k\tlevel\n"));
   CHECK(line.starts_with("7\t1000\t"));
-  CHECK(line.ends_with("\t42\n"));
+  CHECK(line.ends_with("\t42\t0\t0\t0\t0\t-1\topen\n"));
 }
 
 }  // namespace ajp::app::play

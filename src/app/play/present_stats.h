@@ -8,7 +8,7 @@
 
 namespace ajp::app::play {
 
-inline constexpr int kStatsColumns = 14;
+inline constexpr int kStatsColumns = 20;
 
 // Les noms des colonnes, séparés par des tabulations, terminés par un saut de ligne.
 std::string stats_header();

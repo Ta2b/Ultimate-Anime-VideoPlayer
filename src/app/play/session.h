@@ -122,6 +122,13 @@ struct PresentRecord {
   std::int64_t lag_us = 0;          // retard de l'image neuve sur l'horloge ; 0 pour un redessin
   std::int64_t uninterpolated = 0;  // total des instants sans image à dessein (FrameStats)
   std::int64_t display_gpu_us = 0;  // temps GPU de l'affichage (0.3 : 0 tant qu'il n'est pas relevé)
+  // Retour de présentation (ScreenTiming, 6.3) : l'identifiant de celle-ci, puis le dernier retour relu.
+  std::uint64_t present_id = 0;
+  std::uint64_t feedback_id = 0;
+  std::int64_t target_us = 0;
+  std::int64_t visible_us = 0;
+  std::int64_t vsync_k = -1;
+  std::string level = "open";
 };
 
 class Session {
