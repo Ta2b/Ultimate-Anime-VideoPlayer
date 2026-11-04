@@ -94,6 +94,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto index = parse({"épisode.mkv", "--vsync-index"});
   REQUIRE(index);
   CHECK(index->vsync_index);
+  CHECK_FALSE(options->shot_cuts);
+  const auto cuts = parse({"épisode.mkv", "--shot-cuts"});
+  REQUIRE(cuts);
+  CHECK(cuts->shot_cuts);
   CHECK_FALSE(options->hdr_contract_v2);
   const auto v2 = parse({"épisode.mkv", "--hdr-contract-v2", "--hdr-metadata=off"});
   REQUIRE(v2);

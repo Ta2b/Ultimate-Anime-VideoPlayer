@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "app/play/chain.h"
 #include "core/log.h"
@@ -150,7 +151,9 @@ void feed_plan_shots(Chain& to) {
   const media::ShotTimeline& timeline = *to.shots->current.timeline;
   if (timeline.size() == to.plan_shots_seen) return;
   to.plan_shots_seen = timeline.size();
-  to.screen.set_plan_shots(timeline.shots());
+  std::vector<media::Shot> shots = timeline.shots();
+  if (to.shot_cuts) to.live.cuts().set_shots(shots);
+  to.screen.set_plan_shots(std::move(shots));
 }
 
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {

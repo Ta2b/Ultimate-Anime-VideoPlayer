@@ -41,6 +41,8 @@ struct GradeFrame {
   cudaTextureObject_t curve_fade = 0;
   int curve_size = 0;
   float curve_mix = 0.0F;
+  // L'écart au-delà duquel la zone repart de sa mesure (kernels::grade::area_smooth).
+  float smooth_jump = kernels::grade::kSmoothJump;
   float* local = nullptr;     // 3 × local_w × local_h
   float* area = nullptr;      // area_w × area_h, la zone lissée
   float* history = nullptr;   // area_w × area_h, gardé par chaîne d'images (valeur + 1, 0 : jamais écrit)

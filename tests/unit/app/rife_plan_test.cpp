@@ -60,3 +60,18 @@ TEST_CASE("RIFE : poses_copy, a tient jusqu'à 1/2 puis b paraît, seulement apr
 }
 
 }  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("RIFE : les plans de la pré-analyse décident quand ils couvrent la paire", "[app][rife]") {
+  PairFacts measured_cut = moving(4);
+  measured_cut.scores->scene_score = kernels::kSceneCutThreshold + 0.01;
+  measured_cut.known_cut = false;  // un éclair que RIFE prend pour une coupe : les plans disent non
+  CHECK(rife_runs(measured_cut));
+  PairFacts missed = moving(4);
+  missed.known_cut = true;  // une coupe douce que RIFE ne voit pas
+  CHECK_FALSE(rife_runs(missed));
+  CHECK(pair_cut(missed));
+}
+
+}  // namespace ajp::app::play

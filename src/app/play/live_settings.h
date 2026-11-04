@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/cut_book.h"
 #include "app/play/frame_latency.h"
 #include "app/play/settings.h"
 #include "core/auto_rate.h"
@@ -122,6 +123,9 @@ inline std::shared_ptr<const GradeVersion> grade_for(
 
 class LiveSettings {
  public:
+  // Les coupes des plans de la pré-analyse (cut_book.h, --shot-cuts) : main écrit, le fil du GPU lit.
+  CutBook& cuts() { return cut_book_; }
+  const CutBook& cuts() const { return cut_book_; }
   // main : une nouvelle version du grade, gardée avec les gpu::kGradeOrders − 1 précédentes (la plus ancienne
   // part). Rend son numéro, à partir de 1.
   std::uint32_t post_grade(GradeVersion version) {
@@ -423,6 +427,7 @@ class LiveSettings {
   const media::LiveScenes& scenes() const { return scenes_; }
 
  private:
+  CutBook cut_book_;
   media::LiveScenes scenes_;
   std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};

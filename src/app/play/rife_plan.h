@@ -29,7 +29,12 @@ struct PairFacts {
   bool same_epoch = false;                // a existe et appartient à l'époque de b
   std::int64_t gap_us = 0;                // pts(b) − pts(a)
   std::optional<gpu::PairScores> scores;  // mesures de la paire ; absentes : pas mesurée
+  // La coupe selon les plans de la pré-analyse (cut_book.h, --shot-cuts) ; rien : la mesure décide.
+  std::optional<bool> known_cut;
 };
+
+// Vrai si la paire enjambe une coupe : les plans s'ils la couvrent, sinon la mesure de RIFE.
+bool pair_cut(const PairFacts& facts);
 
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.
 bool rife_runs(const PairFacts& facts);

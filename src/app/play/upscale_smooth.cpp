@@ -18,8 +18,7 @@ std::expected<void, Refusal> UpscaleStage::smooth_decide(const DecodedFrame& fra
                                                          const gpu::IngestSpec& spec, const PairFacts& facts,
                                                          bool on_grid) {
   if (!smooth_possible() || !on_grid || !facts.same_epoch || !facts.scores || smooth_second_) return {};
-  if (kernels::is_scene_cut(facts.scores->scene_score) || !kernels::is_held(facts.scores->worst_block))
-    return {};
+  if (pair_cut(facts) || !kernels::is_held(facts.scores->worst_block)) return {};
   if (setup_.live && setup_.live->keep_poses()) return {};  // les poses ont leur propre traitement du tenu
   // a doit commencer le dessin : une tenue plus longue (la paire d'avant tenait déjà) garde le rythme source.
   if (now_ == PairMotion::Still) return {};
