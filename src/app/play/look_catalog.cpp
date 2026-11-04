@@ -86,6 +86,7 @@ namespace {
 
 std::atomic<bool> contract_v2_looks{false};
 std::atomic<bool> no_looks{false};
+std::atomic<bool> clean_looks_on{false};
 
 std::vector<LookLayer> stack_of(const PlaySettings& s) {
   std::vector<LookLayer> slots{{s.look, s.look_mix}};
@@ -95,6 +96,14 @@ std::vector<LookLayer> stack_of(const PlaySettings& s) {
 }
 
 }  // namespace
+
+void set_clean_looks(bool on) {
+  clean_looks_on.store(on, std::memory_order_relaxed);
+}
+
+bool clean_looks() {
+  return clean_looks_on.load(std::memory_order_relaxed);
+}
 
 void set_contract_v2_looks(bool on) {
   contract_v2_looks.store(on, std::memory_order_relaxed);

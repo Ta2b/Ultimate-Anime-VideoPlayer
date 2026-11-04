@@ -139,6 +139,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.shot_cuts = true;
     } else if (arg == "--anime-shots") {
       options.anime_shots = true;
+    } else if (arg == "--clean-looks") {
+      options.clean_looks = true;
     } else if (arg == "--no-anime-shots") {
       options.anime_shots = false;  // le relèvement fixe, la lumière de la scène mesurée en direct
     } else if (arg == "--no-looks") {
@@ -523,6 +525,8 @@ std::string play_usage() {
       "                   du plan, changées à l'image de coupe ; --no-anime-shots : le relèvement fixe\n"
       "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
       "  --no-looks       essai : sans la pile de LUT\n"
+      "  --clean-looks    essai : la pile de LUT sans étirer le grain ni les paliers (bords francs\n"
+      "                   inchangés)\n"
       "  --bake-looks=FICHIER.cube  écrit la pile de LUT de play.toml (intensités comprises) en une seule "
       "LUT\n"
       "                   de 65 points, puis s'arrête\n"
