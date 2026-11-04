@@ -70,6 +70,7 @@ class CadenceStep {
  private:
   friend class CadenceAccumulator;
   friend class FreeGrid;
+  friend class SteadyGrid;
   // num <= 10·den borne la boucle de push() à kMaxInstantsPerPair appels.
   void add(const OutputInstant& instant) { slots_[count_++] = instant; }
 
