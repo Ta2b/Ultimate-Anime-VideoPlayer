@@ -181,6 +181,10 @@ struct PlayOptions {
   bool anime_guided = false;
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
   // : le peps de --hdr-anime et --anime-guided, à régler à l'œil (render::GradeSettings::anime_contrast…).
+  // --no-looks : la lecture sans la pile de LUT ; --anime-pure : la méthode HDR anime sans les noirs profonds
+  // ni les éclats des réglages (leurs valeurs par défaut). Essais du tri des réglages (04/11).
+  bool no_looks = false;
+  bool anime_pure = false;
   int anime_contrast = 100;
   int anime_saturation = 100;
   int anime_highlights = 100;

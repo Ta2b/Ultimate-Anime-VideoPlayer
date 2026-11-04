@@ -215,6 +215,12 @@ TEST_CASE("ajp play : le peps de --hdr-anime en %, 100 par défaut, refus hors d
   CHECK(peps->anime_contrast == 140);
   CHECK(peps->anime_saturation == 125);
   CHECK(peps->anime_highlights == 0);
+  CHECK_FALSE(plain->no_looks);
+  CHECK_FALSE(plain->anime_pure);
+  const auto bare = parse({"a.mkv", "--no-looks", "--anime-pure"});
+  REQUIRE(bare);
+  CHECK(bare->no_looks);
+  CHECK(bare->anime_pure);
   CHECK(parse({"a.mkv", "--anime-contrast=201"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--anime-saturation=fort"}).error().code == RefusalCode::FieldOutOfRange);
 }

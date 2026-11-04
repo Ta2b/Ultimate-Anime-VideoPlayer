@@ -139,6 +139,10 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.shot_cuts = true;
     } else if (arg == "--anime-shots") {
       options.anime_shots = true;
+    } else if (arg == "--no-looks") {
+      options.no_looks = true;
+    } else if (arg == "--anime-pure") {
+      options.anime_pure = true;
     } else if (arg == "--hdr-contract-v2") {
       options.hdr_contract_v2 = true;
     } else if (arg == "--hdr-metadata=off") {
@@ -497,6 +501,8 @@ std::string play_usage() {
       "  --anime-shots    essai : --hdr-anime décidée par plan (exposition, marge des éclats), glissée aux "
       "coupes\n"
       "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
+      "  --no-looks       essai : sans la pile de LUT\n"
+      "  --anime-pure     essai : --hdr-anime sans les noirs profonds ni les éclats des réglages\n"
       "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
       "                   peps de --hdr-anime : contraste, saturation, éclats, 0 à 200 % (100 : tel quel)\n"
       "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"

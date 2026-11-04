@@ -74,6 +74,7 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
 namespace {
 
 std::atomic<bool> contract_v2_looks{false};
+std::atomic<bool> no_looks{false};
 
 std::vector<LookLayer> stack_of(const PlaySettings& s) {
   std::vector<LookLayer> slots{{s.look, s.look_mix}};
@@ -88,7 +89,12 @@ void set_contract_v2_looks(bool on) {
   contract_v2_looks.store(on, std::memory_order_relaxed);
 }
 
+void set_no_looks(bool on) {
+  no_looks.store(on, std::memory_order_relaxed);
+}
+
 std::vector<LookLayer> look_slots(const PlaySettings& s) {
+  if (no_looks.load(std::memory_order_relaxed)) return {};
   std::vector<LookLayer> slots = stack_of(s);
   if (contract_v2_looks.load(std::memory_order_relaxed)) {
     static const std::vector<LookLayer> kDefault = stack_of(PlaySettings{});
