@@ -13,3 +13,4 @@ sa page, avec le numéro de celle qui la remplace.
 | [0008](0008-anneau-rgb10a2.md) | Anneau RGB10A2 derrière un interrupteur ; TensorRT n'écrit pas dans l'anneau | Acceptée (#378 à #383), défaut à mesurer |
 | [0009](0009-grade-dans-l-anneau.md) | Le grade exact dans l'anneau ; la LUT réservée au chantier 8 | En cours (chantier 2c) |
 | [0010](0010-rapide-a-pas-constant-par-plan.md) | Rapide à pas constant par plan, derrière `--fast-steady` | En cours (chantier 7, #400 à #403), mesures à faire |
+| [0011](0011-presentation-en-boucle-fermee.md) | Présentation en boucle fermée : un correctif de libplacebo, pas une swapchain maison | En cours (chantier 6) |

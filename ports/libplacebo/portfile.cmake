@@ -7,6 +7,11 @@ vcpkg_from_git(
   URL https://github.com/haasn/libplacebo.git
   REF cee9b076f2c63104ccfd497fa79c39a867293ec4
   FETCH_REF v7.360.1
+  # Présentation en boucle fermée (chantier 6.1, docs/adr/0011-presentation-en-boucle-fermee.md) :
+  # drapeaux et chaîne de création de la swapchain, VkPresentId2KHR et VkPresentTimingsInfoEXT à la
+  # présentation, swapchain courante et recréations, QUEUE_FULL sans fence attendue à l'infini. Sans
+  # present_flags ni pl_vulkan_swapchain_submit, libplacebo se comporte comme avant.
+  PATCHES 0001-ajp-present-timing.patch
 )
 
 function(ajp_fetch_submodule dir url ref)
