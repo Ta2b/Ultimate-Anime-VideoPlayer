@@ -148,8 +148,10 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else if (arg == "--hdr-metadata=off") {
       options.hdr_metadata_off = true;
       options.kde_sdr_nits.reset();
+      options.kde_sdr_auto = false;
     } else if (arg == "--hdr-metadata" || arg.starts_with("--hdr-metadata=")) {
       options.kde_sdr_nits = kDefaultKdeSdrNits;
+      options.kde_sdr_auto = arg == "--hdr-metadata";
       if (arg.size() > std::string_view("--hdr-metadata").size()) {
         const std::string_view text = arg.substr(std::string_view("--hdr-metadata=").size());
         const auto nits = number<int>(text);
@@ -494,7 +496,7 @@ std::string play_usage() {
       "  --ring-rgb10a2         anneau en RGB10A2 sous TensorRT (moitié moins de mémoire, défaut) ;\n"
       "                         --no-ring-rgb10a2 : RGBA16\n"
       "  --hdr-metadata[=NITS]  sortie HDR10 avec ses métadonnées, la compression de KWin faite par le\n"
-      "                         grade (NITS : la luminosité SDR de KDE, 200 par défaut), à comparer à l'œil\n"
+      "                         grade (NITS : la luminosité SDR de KDE, lue dans KDE sans valeur)\n"
       "  --probe-nvdec          la pré-analyse des plans décodée par NVDEC en 256x144 (défaut ;\n"
       "                         --no-probe-nvdec : décodage logiciel)\n"
       "  --shot-cuts            essai : les coupes de l'interpolation tirées des plans de la pré-analyse\n"

@@ -124,9 +124,12 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto metadata = parse({"épisode.mkv", "--hdr-metadata"});
   REQUIRE(metadata);
   CHECK(metadata->kde_sdr_nits == kDefaultKdeSdrNits);
+  CHECK(metadata->kde_sdr_auto);  // sans valeur : la luminosité SDR lue dans KDE
+  CHECK_FALSE(options->kde_sdr_auto);
   const auto brighter = parse({"épisode.mkv", "--hdr-metadata=250"});
   REQUIRE(brighter);
   CHECK(brighter->kde_sdr_nits == 250.0);
+  CHECK_FALSE(brighter->kde_sdr_auto);
   CHECK_FALSE(parse({"épisode.mkv", "--hdr-metadata=20"}));
   CHECK_FALSE(parse({"épisode.mkv", "--hdr-metadata=beaucoup"}));
   CHECK_FALSE(options->one_lane);

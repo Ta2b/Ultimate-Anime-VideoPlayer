@@ -193,6 +193,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .offscreen_height = options.window_height,
       .hdr = !options.sdr,
       .kde_sdr_nits = options.hdr_contract_v2 ? std::nullopt : options.kde_sdr_nits,
+      .kde_sdr_auto = options.kde_sdr_auto && !options.hdr_contract_v2,
       .contract_v2 = options.hdr_contract_v2,
       .metadata_off = options.hdr_metadata_off,
       .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,

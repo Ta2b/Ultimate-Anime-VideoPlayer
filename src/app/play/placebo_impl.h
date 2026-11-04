@@ -210,6 +210,7 @@ struct PlaceboScreen::Impl {
   VideoRate video_rate;
   // --hdr-metadata (ScreenOptions::kde_sdr_nits) : le maximum annoncé à la swapchain (0 : rien d'annoncé).
   std::optional<double> kde_sdr_nits;
+  bool kde_sdr_auto = false;
   // --hdr-contract-v2 sans --hdr-metadata=off : les métadonnées du contrat annoncées (hint_contract).
   bool contract_v2 = false;
   std::optional<render::ContractMetadata> hinted_contract;
@@ -228,7 +229,8 @@ struct PlaceboScreen::Impl {
   bool apply_scene_hdr(pl_color_space& image, pl_color_space& target, std::int64_t pts) const;
   double hinted_max_nits = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
-  void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
+  double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
+  void match_kwin();             // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   bool source_debanded = false;  // l'image présentée, débandée avant SPAN (RingFrame::debanded)

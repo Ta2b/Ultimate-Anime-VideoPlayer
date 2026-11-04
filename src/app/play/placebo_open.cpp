@@ -392,6 +392,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->offscreen = options.offscreen;
   impl->hdr_wanted = options.hdr;
   impl->kde_sdr_nits = options.kde_sdr_nits;
+  impl->kde_sdr_auto = options.kde_sdr_auto;
   impl->contract_v2 = options.contract_v2 && !options.metadata_off;
   if (options.contract_v2 && options.grade_ring) impl->planner = std::make_unique<GradePlanner>();
   impl->offscreen_size = {options.offscreen_width, options.offscreen_height};
