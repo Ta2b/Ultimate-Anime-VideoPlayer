@@ -117,7 +117,7 @@ constexpr std::array kSettingsPages{
           "Les looks sont des fichiers LUT (.cube) placés dans le dossier luts des données du lecteur, "
           "appliqués dans l'ordre comme les nœuds de Resolve ; un nom contenant PQ, HDR ou 2020 est lu comme "
           "une LUT d'HDR."},
-    Entry{"Contrast", "Contraste"},
+    Entry{"LUT contrast intensity", "Intensité LUT contraste"},
     Entry{"Contrast and saturation", "Contraste et saturation"},
     Entry{"Custom", "Personnalisé"},
     Entry{"Debanding", "Débandage"},
@@ -151,7 +151,7 @@ constexpr std::array kSettingsPages{
     Entry{"HDR method", "Méthode HDR"},
     Entry{"HDR output", "Sortie HDR"},
     Entry{"Hide the bar when paused (burn-in)", "Masquer la barre en pause (marquage)"},
-    Entry{"Highlights", "Éclats"},
+    Entry{"LUT highlight intensity", "Intensité LUT éclats"},
     Entry{"Interpolation", "Interpolation"},
     Entry{"Live, for Adaptive HDR and SDR output.", "En direct, pour le HDR adaptatif et la sortie SDR."},
     Entry{"Mid gray", "Gris moyen"},

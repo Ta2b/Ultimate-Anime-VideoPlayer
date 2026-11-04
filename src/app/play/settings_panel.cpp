@@ -90,8 +90,8 @@ void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<
   // suivent la scène (le curseur est leur maximum, en scène très claire), et le look : la LUT de base et
   // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de Tatoub du 04/11).
   section(i18n::tr("Color grading"));
-  ImGui::SliderInt(i18n::tr("Contrast"), &d.look_contrast, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("Highlights"), &d.look_highlight, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(i18n::tr("LUT contrast intensity"), &d.look_contrast, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
   grade_slider(i18n::tr("Deep blacks"), d.grade_values.shadows, render::grade_limits::kShadows);
   panel::tip(i18n::tr("The maximum, reached in very bright scenes; it fades out in very dark scenes."));
   if (ImGui::Button(i18n::tr("Defaults"))) {
