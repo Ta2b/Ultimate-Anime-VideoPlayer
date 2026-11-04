@@ -76,6 +76,8 @@ def verdict(a_values, b_values):
 def compare(directory):
     found = {}
     for path in sorted(glob.glob(os.path.join(directory, "extrait*-tour*-*.tsv"))):
+        if path.endswith(".gpu.tsv"):  # coûts GPU par étape, écrits à côté des stats : autre format
+            continue
         match = re.match(r"extrait(\d+)-tour(\d+)-([AB])-", os.path.basename(path))
         if not match:
             continue

@@ -8,7 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
-#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
 #include <filesystem>
 #include <memory>
 #include <span>
