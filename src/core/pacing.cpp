@@ -74,6 +74,20 @@ Ratio continued_fraction(double x) {
   return {h1, k1};
 }
 
+CadenceChoice on_timestamps(Ratio factor, double source_fps) {
+  return CadenceChoice{.factor = factor, .output_fps = source_fps * factor.value()};
+}
+
+// Le plus proche du facteur demandé, en rapport ; à égalité, le moins coûteux.
+bool closer(const CadenceChoice& a, const CadenceChoice& b, double requested) {
+  const double da = std::abs(std::log(a.factor.value() / requested));
+  const double db = std::abs(std::log(b.factor.value() / requested));
+  if (std::abs(da - db) > 1e-12) return da < db;
+  return a.factor.value() < b.factor.value();
+}
+
+}  // namespace
+
 // Le facteur qui cale la cible : une petite fraction à kMaxSpeedChange près,
 // sinon la fraction exacte, ou rien.
 std::optional<Ratio> lock_factor(double target) {
@@ -89,20 +103,6 @@ std::optional<Ratio> lock_factor(double target) {
   }
   return std::nullopt;
 }
-
-CadenceChoice on_timestamps(Ratio factor, double source_fps) {
-  return CadenceChoice{.factor = factor, .output_fps = source_fps * factor.value()};
-}
-
-// Le plus proche du facteur demandé, en rapport ; à égalité, le moins coûteux.
-bool closer(const CadenceChoice& a, const CadenceChoice& b, double requested) {
-  const double da = std::abs(std::log(a.factor.value() / requested));
-  const double db = std::abs(std::log(b.factor.value() / requested));
-  if (std::abs(da - db) > 1e-12) return da < db;
-  return a.factor.value() < b.factor.value();
-}
-
-}  // namespace
 
 double vsync_speed(double refresh_hz, double output_fps) {
   if (!(refresh_hz > 0.0 && output_fps > 0.0)) return 1.0;
