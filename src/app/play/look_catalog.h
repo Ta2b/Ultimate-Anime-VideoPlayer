@@ -38,6 +38,8 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
 std::vector<LookLayer> look_slots(const PlaySettings& s);
 inline constexpr std::string_view kContractV2Look = "ver9-couleur.cube";
 void set_contract_v2_looks(bool on);
+// --no-looks (essai du tri du 04/11) : aucune LUT, quelle que soit la pile. play.toml n'en sait rien.
+void set_no_looks(bool on);
 
 // Vrai si les deux réglages ont la même pile de fichiers (les intensités ne comptent pas).
 bool same_look_files(const PlaySettings& a, const PlaySettings& b);
