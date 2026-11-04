@@ -251,6 +251,16 @@ Quand l'écran est connu, `resolve()` passe la règle choisie par `pace_rule()` 
 une interpolation unique prend le facteur calé sur les vsyncs, et le `Plan` porte
 sa `CadenceChoice`, comprise dans son hachage.
 
+### Retour de présentation (`--present`, docs/adr/0011-presentation-en-boucle-fermee.md)
+
+L'écran (`PlaceboScreen`) choisit un niveau (`present_level.h`) : Open, la présentation d'aujourd'hui ;
+Wayland (`wp_presentation`) ; Wait (`vkWaitForPresent2KHR` sondé) ; Timing et TimingAbsolute
+(`VK_EXT_present_timing`). Chaque présentation porte un identifiant (`core/present_ledger.h`) ; les dates
+relues sans attente, sur main, nourrissent `core::VblankClock`. `Screen::vblank_grid()` en rend la grille en
+fréquence fixe : `Session::set_display` y prend la fréquence réelle, `LiveSettings::vsync_grid` la phase des
+vblanks, et, à `--vsync-index`, `Session::pick` le numéro du vblank de chaque image (`core::VsyncPicker`).
+L'état VRR qu'il lit (`vrr_state`) prime sur l'ioctl.
+
 ## Threads
 
 Un thread se lance par `start_thread()` (`core/thread.h`), jamais par un
@@ -262,7 +272,8 @@ thread démarre dans `start()` plutôt que dans son constructeur peut ainsi
 rendre le refus à son appelant.
 
 Threads du lecteur : main (SDL, interface, rendu), source (lecture et décodage),
-audio, sous-titres, prepare (la chaîne GPU). Threads des backends, lancés au
+audio, sous-titres, prepare (la chaîne GPU), et, à `--ring-watcher`, `veilleur` (attend l'écriture des slots
+de l'anneau et réveille main, `ring_watcher.h`). Threads des backends, lancés au
 premier besoin : `envoi` (backend Vulkan : copie des images hôte vers les tampons
 d'envoi, attendue seulement quand le lot part) et `openvino` (une requête
 d'inférence à la fois, exécutée hors du thread prepare pendant que la file Vulkan
