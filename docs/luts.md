@@ -103,3 +103,19 @@ Les portes de 8.11 se vérifient hors du lecteur : `tools/grade/sim/simulate.py`
 contre la référence BT.2408 (moyenne ≤ 3, p95 ≤ 6), teinte (≤ 2°, ≤ 1° sur la peau), peau (≤ 0,5 diaphragme),
 stabilité de l'APL d'un plan fixe (σ ≤ 0,5 %), images d'erreur aux coupes (0) et ColorVideoVDP (≥ −0,1 JOD, si
 pycvvdp est installé).
+
+## La pile par défaut en une seule LUT (04/11/2026)
+
+La pile de LUT de Tatoub (la LUT de base `HDR grading base ver.9.0`, puis `HDR-contrast-Enhancement-L` ×7,
+`Highlight-Enhancement-L` à 100 % et à 50 %, `skin fix` ; les emplacements à intensité 0 écartés) est cuite en une
+seule LUT, `HDR pile unique 65 point.cube` (65³ points, PQ BT.2020), qui devient le look par défaut ; la liste des
+LUT suivantes est vide par défaut (le menu Couleurs peut toujours en ajouter). Une pile choisie à la main dans un
+`play.toml` existant n'est pas touchée.
+
+    python3 -I tools/look/bake_stack.py --luts data/luts --out "data/luts/HDR pile unique 65 point.cube" \
+      --play-toml play.toml --check
+
+Le script refait la lecture du lecteur (interpolation trilinéaire, mélange `c + intensité × (lut(c) − c)`, entrées noires
+d'un gamut sans usage remplacées par leurs voisins). **Ce n'est pas identique à la pile d'origine** : l'échantillonnage
+à 65 points d'une pile très non linéaire donne, sur des images d'épisode, un écart moyen d'environ 1 code 10 bits (p99
+de 3 à 5 codes, maximum d'environ 11 sur les couleurs les plus saturées). `--check` en donne les chiffres.

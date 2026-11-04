@@ -23,8 +23,8 @@ TEST_CASE("contrat v2 : la pile par défaut devient ver9-couleur.cube, une pile 
   CHECK(v2.front().key == kContractV2Look);
   CHECK(v2.front().mix == 1.0);
   PlaySettings chosen;
-  chosen.look_layers.pop_back();
-  CHECK(look_slots(chosen).size() == defaults.look_layers.size());
+  chosen.look_layers.push_back({"HDR-contrast-Enhancement-L.cube", 1.0});
+  CHECK(look_slots(chosen).size() == 1 + defaults.look_layers.size() + 1);
   set_contract_v2_looks(false);
   CHECK(look_slots(defaults).size() == 1 + defaults.look_layers.size());
 }
