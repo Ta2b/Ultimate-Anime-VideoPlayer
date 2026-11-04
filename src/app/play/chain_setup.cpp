@@ -17,6 +17,7 @@
 #include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
 namespace {
@@ -272,6 +273,15 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                                      .kernels_version = caps.span_fp8_kernels,
                                      .width = c.work.width,
                                      .height = c.work.height};
+    // Le SPAN FP8 choisi à la main dans la liste des modèles se prépare ici, sur l'écran de chargement, comme
+    // un moteur qui se construit ; la tâche de fond (span_auto.h) ne le refait pas pour cette vidéo.
+    if (tier == PrecisionTier::Performance && !strict && caps.span_fp8_cutlass && !p.options.file.empty()) {
+      const std::optional<bool> ready =
+          prepare_span_fp8(p, init, c.model->path, variants,
+                           span_still_reduce(c.work.width, c.work.height, settings.downscale), fp8_context);
+      if (!ready) return std::nullopt;
+      p.span_job.attempted = prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file);
+    }
     for (const SpanVariantKind kind : wanted) {
       SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants,
                                                kind == SpanVariantKind::Fp8Cutlass ? &fp8_context : nullptr);

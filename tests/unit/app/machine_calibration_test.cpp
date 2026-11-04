@@ -88,8 +88,7 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
                                   .lost_percent = 0.4,
                                   .fps = 47.9,
                                   .low_fps = 41.0,
-                                  .target_fps = 48.0,
-                                  .fp8 = true}},
+                                  .target_fps = 48.0}},
                        .gpu = "RTX 4070 Ti",
                        .date = "2026-11-01",
                        .display_height = 1440};
@@ -102,24 +101,7 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   CHECK(read->tried[1].fps == 47.9);
   CHECK(read->tried[1].low_fps == 41.0);
   CHECK(read->tried[1].target_fps == 48.0);
-  CHECK(read->tried[1].fp8);
-  CHECK_FALSE(read->tried[0].fp8);  // absent du fichier (et des calibrations d'avant) : FP16
   CHECK(read->gpu == "RTX 4070 Ti");
   CHECK(read->display_height == 1440);
   CHECK_FALSE(parse_calibration("version = 1\n"));
-}
-
-TEST_CASE("un essai joué en FP8 garde le cran Performance de SPAN, la recommandation aussi",
-          "[calibration-machine]") {
-  PlaySettings base;
-  base.span_precision = PrecisionTier::Balanced;
-  const CandidateTrial fp8{.chain = {.span = true, .rife = true, .height = 540}, .holds = true, .fp8 = true};
-  const CandidateTrial fp16{.chain = {.span = true, .rife = false, .height = 720}, .holds = true};
-  CHECK(trial_settings(fp8, base).span_precision == PrecisionTier::Performance);
-  CHECK(trial_settings(fp8, base).work_height == 540);
-  CHECK(trial_settings(fp16, base).span_precision == PrecisionTier::Balanced);
-  const MachineCalibration c{.chosen = fp8.chain, .tried = {fp16, fp8}};
-  CHECK(chosen_settings(c, base).span_precision == PrecisionTier::Performance);
-  const MachineCalibration other{.chosen = fp16.chain, .tried = {fp16, fp8}};
-  CHECK(chosen_settings(other, base).span_precision == PrecisionTier::Balanced);
 }

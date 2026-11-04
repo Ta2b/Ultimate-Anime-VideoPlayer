@@ -155,11 +155,6 @@ TEST_CASE("ajp play : taille de travail, 720 lignes par défaut comme le profil 
   CHECK(work_size(1918, 1080, 720).width % 2 == 0);         // largeur paire
 }
 
-TEST_CASE("ajp play --span-prepare : prépare le mode Performance de SPAN puis quitte", "[app][options]") {
-  CHECK_FALSE(parse({"a.mkv"})->span_prepare);
-  CHECK(parse({"a.mkv", "--span-prepare"})->span_prepare);
-}
-
 TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][options]") {
   CHECK(parse({"a.mkv"})->rife_factor == kDefaultRifeFactor);
   CHECK(parse({"a.mkv", "--rife=4"})->rife_factor == 4);

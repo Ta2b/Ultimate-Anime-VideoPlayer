@@ -143,6 +143,51 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   return std::optional(std::move(*loaded));
 }
 
+std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
+                                     const std::filesystem::path& model,
+                                     const std::filesystem::path& models_dir,
+                                     const media::StillReduce& reduce, const SpanFp8Context& context) {
+  const auto log = log_channel("app");
+  const SpanPrepare prepare =
+      make_span_prepare(p.library, init, true, model, models_dir, p.options.file, {}, reduce, context);
+  if (prepare.ready) return true;
+  if (!prepare.offered || prepare.refused) {
+    log->info("SPAN FP8 : {}", prepare.note);
+    return false;
+  }
+  log->info("SPAN FP8 : preparation a l'ouverture ({})", prepare.note);
+  PrepareNote note;
+  if (!start_span_prepare(prepare, note)) return false;
+  const core::KeyMap& keys = configured_keys();
+  std::vector<Input> actions;
+  while (note.pending) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+      if (p.ui.handle(event, host_now_us(), actions)) continue;
+      if (auto input = input_of(event, keys)) actions.push_back(*input);
+    }
+    for (const Input& input : actions) {
+      const auto* command = std::get_if<Command>(&input);
+      if (command != nullptr && std::holds_alternative<cmd::Quit>(*command)) {
+        stop_and_wait(note);
+        return std::nullopt;
+      }
+    }
+    actions.clear();
+    const auto [fraction, stage] = note.progress ? note.progress->get() : std::pair<float, std::string>{};
+    const PrepareView view{.label = i18n::tr_format("Preparing engine {}", "SPAN"),
+                           .fraction = fraction,
+                           .details = {stage, model.stem().string()},
+                           .show_details = p.details};
+    if (auto shown = p.screen.show(ShowRequest{.ui = p.ui.preparation(host_now_us(), view)}); !shown)
+      log->warn("SPAN FP8 : {}", shown.error().detail);
+    (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);
+    poll_prepare(note);
+  }
+  if (!note.refused) log->info("SPAN FP8 : {}", note.text);
+  return !note.refused;
+}
+
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife_fused(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& rife_onnx,
     const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry, bool motion) {

@@ -111,6 +111,16 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane);
 
+// Le SPAN FP8 choisi dans la liste des modèles (cran Performance, réglage à la main) : sans paquet prêt pour
+// cette carte, ces noyaux et cette taille de travail, le lecteur le prépare ici, sur l'écran de chargement,
+// comme un moteur qui se construit (la première fois seulement ; une taille nouvelle : une validation d'une
+// dizaine de secondes). Rien si l'utilisateur ferme la fenêtre ou quitte ; faux si la préparation échoue ou
+// si un reçu l'a déjà refusée (la chaîne prend alors le FP16, la raison au journal).
+std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
+                                     const std::filesystem::path& model,
+                                     const std::filesystem::path& models_dir,
+                                     const media::StillReduce& reduce, const SpanFp8Context& context);
+
 // RIFE fusionné (kernels/spec/rife_fused.h) pour le modèle rife_onnx à la taille remplie de geometry : le
 // modèle coupé en six morceaux (dérivés dans models_dir, un manifeste « .rifefused » les nomme), leurs six
 // moteurs construits puis chargés en un seul, qui s'enfile comme le moteur RIFE entier. motion : la variante

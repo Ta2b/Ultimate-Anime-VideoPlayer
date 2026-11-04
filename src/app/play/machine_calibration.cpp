@@ -4,7 +4,6 @@
 #include <chrono>
 #include <format>
 #include <fstream>
-#include <map>
 #include <sstream>
 #include <system_error>
 
@@ -97,18 +96,6 @@ PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base) 
   return base;
 }
 
-PlaySettings trial_settings(const CandidateTrial& trial, PlaySettings base) {
-  base = candidate_settings(trial.chain, std::move(base));
-  if (trial.fp8 && trial.chain.span) base.span_precision = PrecisionTier::Performance;
-  return base;
-}
-
-PlaySettings chosen_settings(const MachineCalibration& calibration, PlaySettings base) {
-  const CandidateTrial* trial = find(calibration.tried, calibration.chosen);
-  if (trial != nullptr) return trial_settings(*trial, std::move(base));
-  return candidate_settings(calibration.chosen, std::move(base));
-}
-
 std::string describe(const ChainCandidate& chain) {
   std::string out = chain.span ? std::format("{}p · SPAN", chain.height) : std::string(i18n::tr("SPAN off"));
   out += chain.rife ? i18n::tr(" · RIFE 4.22 lite (auto Fast)") : i18n::tr(" · no interpolation");
@@ -137,7 +124,6 @@ std::string format_calibration(const MachineCalibration& c) {
     t.insert("fps", trial.fps);
     t.insert("low_fps", trial.low_fps);
     t.insert("target_fps", trial.target_fps);
-    if (trial.fp8) t.insert("fp8", true);
     trials.push_back(std::move(t));
   }
   root.insert("trials", std::move(trials));
@@ -172,8 +158,7 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
                            .lost_percent = (*t)["lost_percent"].value_or(-1.0),
                            .fps = (*t)["fps"].value_or(0.0),
                            .low_fps = (*t)["low_fps"].value_or(0.0),
-                           .target_fps = (*t)["target_fps"].value_or(0.0),
-                           .fp8 = (*t)["fp8"].value_or(false)});
+                           .target_fps = (*t)["target_fps"].value_or(0.0)});
     }
   }
   if (out.tried.empty())
@@ -215,29 +200,10 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
   const auto most = static_cast<float>(2 * calibration_heights(display_height).size() + 1);
   int index = 0;
-  bool fp8_possible = !plan.span_fp8_video.empty();
-  std::map<int, bool> fp8_ready;  // par hauteur de travail : le paquet FP8 prêt (préparé une fois)
   while (const auto chain = next_candidate(out.tried, display_height)) {
     if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
     const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
-    CandidateTrial trial{
-        .chain = *chain,
-        .target_fps = static_cast<double>(media::BenchClipSpec{}.fps) * (chain->rife ? 2.0 : 1.0)};
-    if (chain->span && fp8_possible && !fp8_ready.contains(chain->height)) {
-      // La préparation lit les réglages FP16 de l'essai (sa taille de travail) ; la première construit aussi
-      // les moteurs.
-      if (auto written = save_settings(settings, candidate_settings(*chain, base)); !written)
-        return std::unexpected(std::move(written.error()));
-      const bool ready =
-          prepare_span_variant(plan, {.name = describe(*chain), .settings = settings}, index, stop,
-                               fp8_ready.empty() ? plan.first_allowance : plan.build_allowance);
-      if (stop.stop_requested())
-        return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
-      if (!ready && fp8_ready.empty()) fp8_possible = false;
-      fp8_ready[chain->height] = ready;
-    }
-    trial.fp8 = chain->span && fp8_ready.contains(chain->height) && fp8_ready.at(chain->height);
-    if (auto written = save_settings(settings, trial_settings(trial, base)); !written)
+    if (auto written = save_settings(settings, candidate_settings(*chain, base)); !written)
       return std::unexpected(std::move(written.error()));
     const Variant variant{.name = describe(*chain), .settings = settings};
     // Le premier essai charge, et la première fois construit, les moteurs : il a tout son temps.
@@ -246,6 +212,9 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
     if (stop.stop_requested())
       return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
     if (!reading && index == 0) return std::unexpected(std::move(reading.error()));
+    CandidateTrial trial{
+        .chain = *chain,
+        .target_fps = static_cast<double>(media::BenchClipSpec{}.fps) * (chain->rife ? 2.0 : 1.0)};
     if (reading) {
       out.gpu = reading->gpu;
       trial.holds = holds(reading->run);
@@ -255,8 +224,7 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
       if (reading->interval_mean_us > 0) trial.fps = 1e6 / static_cast<double>(reading->interval_mean_us);
       if (reading->interval_p99_us > 0) trial.low_fps = 1e6 / static_cast<double>(reading->interval_p99_us);
     }
-    log->info("calibration de la machine : {}{} {}", describe(*chain), trial.fp8 ? " (FP8)" : "",
-              trial.holds ? "tient" : "ne tient pas");
+    log->info("calibration de la machine : {} {}", describe(*chain), trial.holds ? "tient" : "ne tient pas");
     out.tried.push_back(trial);
     ++index;
   }

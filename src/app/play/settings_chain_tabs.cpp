@@ -88,27 +88,44 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::Checkbox(i18n::tr("SPAN ×2 (AnimeJaNai)"), &d.upscale);
   ImGui::BeginDisabled(!d.upscale);
   const std::string current = d.model.empty() ? choices.default_model : d.model;
-  if (ImGui::BeginCombo(i18n::tr("Model"), model_label(current).c_str())) {
+  // Chaque modèle en FP16 et, sur une carte qui calcule le SPAN FP8 (RTX 40 et plus), en FP8 : le FP8 se
+  // prépare à la prochaine ouverture d'une vidéo, sur l'écran de chargement, comme un moteur (chain_setup).
+  const bool fp8_offered = choices.span_tiers.performance;
+  const bool fp8_now = fp8_offered && d.span_precision == PrecisionTier::Performance;
+  const auto entry = [](const std::string& model, bool fp8) {
+    return fp8 ? model_label(model) + " · FP8" : model_label(model);
+  };
+  if (ImGui::BeginCombo(i18n::tr("Model"), entry(current, fp8_now).c_str())) {
     for (const std::string& model : choices.models) {
-      const bool chosen = model == current;
-      if (ImGui::Selectable(model_label(model).c_str(), chosen))
-        d.model = model == choices.default_model ? std::string() : model;
-      if (chosen) ImGui::SetItemDefaultFocus();
+      for (const bool fp8 : {false, true}) {
+        if (fp8 && !fp8_offered) continue;
+        const bool chosen = model == current && fp8 == fp8_now;
+        ImGui::PushID(fp8 ? 1 : 0);
+        if (ImGui::Selectable(entry(model, fp8).c_str(), chosen)) {
+          d.model = model == choices.default_model ? std::string() : model;
+          if (fp8) {
+            d.span_precision = PrecisionTier::Performance;
+          } else if (d.span_precision == PrecisionTier::Performance) {
+            d.span_precision = PrecisionTier::Balanced;
+          }
+        }
+        ImGui::PopID();
+        if (chosen) ImGui::SetItemDefaultFocus();
+      }
     }
     ImGui::EndCombo();
   }
-  panel::tip(i18n::tr("Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges."));
-  if (choices.span_tiers.performance || choices.span_tiers.quality) {
-    precision_combo(i18n::tr("SPAN precision"), d.span_precision, choices.span_tiers);
-    panel::tip(i18n::tr(
-        "Balanced is FP16; Performance is FP8 on RTX 40 and newer; Quality is FP32. Reloads playback."));
+  panel::tip(fp8_offered
+                 ? i18n::tr("Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges. FP8: "
+                            "prepared once on this PC at the next video, then faster.")
+                 : i18n::tr("Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges."));
+  if (choices.span_tiers.quality) {
+    TierSupport tiers = choices.span_tiers;
+    tiers.performance = false;  // le FP8 se choisit dans la liste des modèles
+    precision_combo(i18n::tr("SPAN precision"), d.span_precision, tiers);
+    panel::tip(i18n::tr("Balanced is FP16; Quality is FP32. Reloads playback."));
   }
   ImGui::EndDisabled();
-  if (panel::advanced() && !choices.span_tiers.performance) {
-    panel::note(
-        i18n::tr("Performance (FP8) is built on your PC (see \"Prepare Performance mode\" below), for RTX 40 "
-                 "and newer."));
-  }
 
   section(i18n::tr("Resolution"));
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080 lignes », pas « 4K », que
