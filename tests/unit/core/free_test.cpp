@@ -370,14 +370,14 @@ TEST_CASE("free grid vsync : un GPU plus lent laisse l'image tenue des vsyncs de
 
 TEST_CASE("vsync phase : suit la phase des présentations et rend le vsync le plus proche", "[free][vsync]") {
   VsyncPhase phase;
-  CHECK(phase.near(1'000'000) == 1'000'000);  // inconnue
+  CHECK(phase.nearest(1'000'000) == 1'000'000);  // inconnue
   phase.set_period(kVsync);
   const std::int64_t offset = 5'000;
   for (int k = 0; k < 200; ++k) phase.note(offset + k * kVsync + (k % 3 - 1) * 300);  // gigue de ±0,3 ms
   REQUIRE(phase.known());
-  const std::int64_t near = phase.near(100 * kVsync + 7'000);
-  CHECK(off_grid(near, offset, kVsync) <= 300);
-  CHECK(std::abs(near - (100 * kVsync + 7'000)) <= kVsync / 2 + 300);
+  const std::int64_t snapped = phase.nearest(100 * kVsync + 7'000);
+  CHECK(off_grid(snapped, offset, kVsync) <= 300);
+  CHECK(std::abs(snapped - (100 * kVsync + 7'000)) <= kVsync / 2 + 300);
 }
 
 TEST_CASE("free vsync : dix minutes simulées, horloge qui dérive de ±0,1 %, sans dérive de phase",
@@ -411,7 +411,7 @@ TEST_CASE("free vsync : dix minutes simulées, horloge qui dérive de ±0,1 %, s
         grid.push(stamp(id, pts), {});
         continue;
       }
-      const std::int64_t anchor = phase.near(host_now) + delay + kVsync / 2;
+      const std::int64_t anchor = phase.nearest(host_now) + delay + kVsync / 2;
       const FreeInputs inputs{
           .ready_us = media_at(host_now) + 15'000,
           .min_gap_us = kVsync,
