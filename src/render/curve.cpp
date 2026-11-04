@@ -11,6 +11,8 @@ constexpr double kM2 = 2523.0 / 4096.0 * 128.0;
 constexpr double kC1 = 3424.0 / 4096.0;
 constexpr double kC2 = 2413.0 / 4096.0 * 32.0;
 constexpr double kC3 = 2392.0 / 4096.0 * 32.0;
+constexpr double kContentReferenceNitsCurve = 203.0;  // blanc du domaine SDR des looks (docs/luts.md)
+constexpr double kSdrGammaCurve = 2.4;
 
 }  // namespace
 
@@ -194,7 +196,50 @@ Rgb map_color(const ShotCurve& curve, Rgb n) {
   return {.r = std::max(out.r, 0.0), .g = std::max(out.g, 0.0), .b = std::max(out.b, 0.0)};
 }
 
+namespace {
+
+constexpr std::array<double, 9> kTo709{1.660491,  -0.587641, -0.072850, -0.124550, 1.132900,
+                                       -0.008349, -0.018151, -0.100579, 1.118730};
+constexpr std::array<double, 9> kTo2020{0.627404, 0.329283, 0.043313, 0.069097, 0.919540,
+                                        0.011362, 0.016391, 0.088013, 0.895595};
+
+Rgb times(const std::array<double, 9>& m, Rgb c) {
+  return {.r = m[0] * c.r + m[1] * c.g + m[2] * c.b,
+          .g = m[3] * c.r + m[4] * c.g + m[5] * c.b,
+          .b = m[6] * c.r + m[7] * c.g + m[8] * c.b};
+}
+
+// Le look SDR sur une couleur BT.2020 linéaire en nits (voir bake).
+Rgb through_look(const CubeLut& look, Rgb nits) {
+  const Rgb in709 = times(kTo709, nits);
+  const auto code = [](double n) {
+    return std::pow(std::max(n, 0.0) / kContentReferenceNitsCurve, 1.0 / kSdrGammaCurve);
+  };
+  const std::array<double, 3> s{code(in709.r), code(in709.g), code(in709.b)};
+  const double scale = std::max({1.0, s[0], s[1], s[2]});
+  const std::array<float, 3> looked = sample_lut(
+      look,
+      {static_cast<float>(s[0] / scale), static_cast<float>(s[1] / scale), static_cast<float>(s[2] / scale)});
+  const auto light = [&](float v) {
+    return kContentReferenceNitsCurve *
+           std::pow(std::max(0.0, static_cast<double>(v)) * scale, kSdrGammaCurve);
+  };
+  const Rgb delta709{.r = light(looked[0]) - std::max(in709.r, 0.0),
+                     .g = light(looked[1]) - std::max(in709.g, 0.0),
+                     .b = light(looked[2]) - std::max(in709.b, 0.0)};
+  const Rgb delta = times(kTo2020, delta709);
+  return {.r = std::max(0.0, nits.r + delta.r),
+          .g = std::max(0.0, nits.g + delta.g),
+          .b = std::max(0.0, nits.b + delta.b)};
+}
+
+}  // namespace
+
 std::vector<float> bake(const ShotCurve& curve, int size) {
+  return bake(curve, nullptr, size);
+}
+
+std::vector<float> bake(const ShotCurve& curve, const CubeLut* look_sdr, int size) {
   std::vector<float> lut(static_cast<std::size_t>(size) * static_cast<std::size_t>(size) *
                          static_cast<std::size_t>(size) * 3);
   const auto nits_at = [&](int i) {
@@ -205,7 +250,9 @@ std::vector<float> bake(const ShotCurve& curve, int size) {
   for (int b = 0; b < size; ++b) {
     for (int g = 0; g < size; ++g) {
       for (int r = 0; r < size; ++r) {
-        const Rgb out = map_color(curve, {.r = nits_at(r), .g = nits_at(g), .b = nits_at(b)});
+        Rgb in{.r = nits_at(r), .g = nits_at(g), .b = nits_at(b)};
+        if (look_sdr != nullptr) in = through_look(*look_sdr, in);
+        const Rgb out = map_color(curve, in);
         lut[at++] = static_cast<float>(curve_pq(out.r));
         lut[at++] = static_cast<float>(curve_pq(out.g));
         lut[at++] = static_cast<float>(curve_pq(out.b));

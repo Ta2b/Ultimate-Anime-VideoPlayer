@@ -7,6 +7,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -16,16 +17,18 @@
 namespace ajp::media {
 
 inline constexpr int kShotBins = 64;
-inline constexpr int kShotGrid = 4;  // grille kShotGrid × kShotGrid de luminances moyennes
+inline constexpr int kShotGrid = 4;              // grille kShotGrid × kShotGrid de luminances moyennes
+inline constexpr std::size_t kShotLumBins = 32;  // histogramme de I (ICtCp) par code PQ, pour la courbe (8.6)
 
 // La lumière d'une image en cd/m² (kernels/spec/frame_stats.h, échelle linéaire).
 struct ShotLight {
   std::array<float, kernels::frame_stats::kPercentiles.size()> maxrgb_nits{};  // centiles de maxRGB
   float apl_nits = 0.0F;
   float maxrgb_mean_nits = 0.0F;
-  float bright = 0.0F;      // part de surface claire
-  float highlights = 0.0F;  // part de hautes lumières isolées
-  float skin = 0.0F;        // part de peau
+  float bright = 0.0F;                         // part de surface claire
+  float highlights = 0.0F;                     // part de hautes lumières isolées
+  float skin = 0.0F;                           // part de peau
+  std::array<float, kShotLumBins> lum_hist{};  // parts de l'image par code PQ de I (somme 1)
   friend bool operator==(const ShotLight&, const ShotLight&) = default;
 };
 

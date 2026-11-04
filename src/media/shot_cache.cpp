@@ -13,8 +13,8 @@
 namespace ajp::media {
 namespace {
 
-// 2 : la lumière du plan (ShotMeta) ; un cache de version 1 se refait.
-constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '2'};
+// 2 : la lumière du plan (ShotMeta) ; 3 : son histogramme de I (lum_hist, 8.6). Un cache d'avant se refait.
+constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '3'};
 constexpr std::size_t kHeadBytes = 1 << 20;
 constexpr std::uint32_t kMaxShots = 200'000;
 constexpr const char* kExtension = ".shots";
@@ -59,14 +59,17 @@ void put_meta(std::string& out, const ShotMeta& m) {
   for (const float v :
        {m.mean.apl_nits, m.mean.maxrgb_mean_nits, m.mean.bright, m.mean.highlights, m.mean.skin})
     put(out, v);
+  for (const float v : m.mean.lum_hist) put(out, v);
 }
 
 bool take_meta(const std::string& in, std::size_t& at, ShotMeta& m) {
   bool ok = take(in, at, m.apl_min_nits) && take(in, at, m.apl_mean_nits) && take(in, at, m.apl_max_nits) &&
             take(in, at, m.max_scl_nits);
   for (float& v : m.mean.maxrgb_nits) ok = ok && take(in, at, v);
-  return ok && take(in, at, m.mean.apl_nits) && take(in, at, m.mean.maxrgb_mean_nits) &&
-         take(in, at, m.mean.bright) && take(in, at, m.mean.highlights) && take(in, at, m.mean.skin);
+  ok = ok && take(in, at, m.mean.apl_nits) && take(in, at, m.mean.maxrgb_mean_nits) &&
+       take(in, at, m.mean.bright) && take(in, at, m.mean.highlights) && take(in, at, m.mean.skin);
+  for (float& v : m.mean.lum_hist) ok = ok && take(in, at, v);
+  return ok;
 }
 
 std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key) {

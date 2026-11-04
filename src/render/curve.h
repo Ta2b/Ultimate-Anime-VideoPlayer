@@ -15,6 +15,8 @@
 #include <cstddef>
 #include <vector>
 
+#include "render/cube_lut.h"
+
 namespace ajp::render {
 
 inline constexpr std::size_t kCurveHistBins = 32;  // histogramme de luminance du plan, par code PQ
@@ -68,6 +70,10 @@ struct Rgb {
 Rgb map_color(const ShotCurve& curve, Rgb nits);
 // La LUT 3D (size³ entrées RGB, rouge le plus rapide) en codes PQ, indexée par √code sur chaque axe.
 std::vector<float> bake(const ShotCurve& curve, int size = 65);
+// La même, le look SDR (contrat v2 : ver9-couleur.cube, domaine BT.709 gamma 2,4, blanc 203 nits) appliqué
+// avant la courbe : la part BT.709 de la couleur passe dans le look (une couleur au-dessus du blanc y entre
+// ramenée sous 1 puis remonte d'autant), la part hors BT.709 reste. look nul : bake(curve, size).
+std::vector<float> bake(const ShotCurve& curve, const CubeLut* look_sdr, int size = 65);
 inline constexpr double kCurveMaxVibrance = 1.15;
 // ΔE_ITP (BT.2124) entre deux couleurs BT.2020 linéaires en nits ; 1 ≈ un écart à peine visible.
 double delta_e_itp(Rgb a, Rgb b);

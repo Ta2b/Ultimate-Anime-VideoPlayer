@@ -81,6 +81,7 @@ ShotMeta meta_of(std::span<const ShotFrame> frames) {
     m.bright += l.bright;
     m.highlights += l.highlights;
     m.skin += l.skin;
+    for (std::size_t i = 0; i < m.lum_hist.size(); ++i) m.lum_hist.at(i) += l.lum_hist.at(i);
   }
   const auto n = static_cast<float>(frames.size());
   for (float& v : m.maxrgb_nits) v /= n;
@@ -89,6 +90,7 @@ ShotMeta meta_of(std::span<const ShotFrame> frames) {
   m.bright /= n;
   m.highlights /= n;
   m.skin /= n;
+  for (float& part : m.lum_hist) part /= n;
   meta.apl_mean_nits = m.apl_nits;
   return meta;
 }
@@ -129,6 +131,11 @@ ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats) {
                         .bright = stats.bright,
                         .highlights = stats.highlights,
                         .skin = stats.skin};
+  // I d'ICtCp en kLinearBins cases ramenées à kShotLumBins.
+  static_assert(kernels::frame_stats::kLinearBins % kShotLumBins == 0);
+  constexpr std::size_t kGroup = kernels::frame_stats::kLinearBins / kShotLumBins;
+  for (std::size_t i = 0; i < stats.i_hist.size(); ++i)
+    out.light.lum_hist.at(i / kGroup) += stats.i_hist.at(i);
   return out;
 }
 
