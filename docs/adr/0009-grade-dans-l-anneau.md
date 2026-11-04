@@ -32,6 +32,17 @@ grade, ou refaire le grade exact dans le ring.
    grade l'emplacement juste avant son signal, et `RingFrame::grade` dit à l'écran que l'image l'est. Sans
    source débandée, en export YUV ou sur un backend sans `grades_ring()`, la version reste 0 et l'écran grade.
    L'historique de la zone repart à une nouvelle époque, à un pts qui recule ou après plus d'une seconde.
+7. **L'écran** (chantier 2.10, `--grade-ring`) : `PlaceboScreen` poste une version à chaque changement de ce
+   que le grade applique (paramètres, looks, KWin, cible), pour les images qui suivent la dernière présentée ;
+   un choix posé par `set_grade_after` part tout de suite, pour les images qui suivent `after`, comme l'écran
+   l'appliquera. Les valeurs viennent de `Grade::param_for` et `look_stack_for`, qui disent ce que
+   `set_params` poserait sans toucher aux hooks de l'écran. Seul le grade en trois passes vers une sortie PQ
+   est porté ; ailleurs l'écran poste « off ». Une image gradée se déclare dans la couleur de la cible de sa
+   version (BT.2020, PQ, son max_luma) : libplacebo n'a rien à convertir ; ni hooks ni détection de pic, et le
+   débandage seulement s'il est demandé. En pause, une image gradée par une version dépassée est récrite par
+   un seek exact sur elle (`Session::regrade_paused`, au plus une fois par 150 ms) : un réglage changé en
+   pause se voit. Le backend libère la plus ancienne version derrière l'événement de sa dernière lecture,
+   sans vider les voies.
 
 ## Mesures (chantier 2.7, lavapipe)
 - Référence contre le shader, même image 256 × 256 PQ, six réglages : ΔE_ITP p50 ≤ 0,37, p99 ≤ 1,0 sauf

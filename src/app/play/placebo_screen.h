@@ -35,6 +35,8 @@ namespace ajp::app::play {
 // quand le rendu tient dans la période, et chacune de plus retarde l'image d'une période.
 inline constexpr int kSwapchainDepth = 2;
 
+class LiveSettings;
+
 struct ScreenOptions {
   std::string title = "ajp";
   int width = 1280;
@@ -60,6 +62,7 @@ struct ScreenOptions {
   bool split_look = false;      // --legacy-grade=split : render::GradeBody::FusedSplit
   bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)
   bool skin_mask = false;       // --skin-mask : le masque peau du grade rend 0 (essai)
+  bool grade_ring = false;      // --grade-ring : le grade fait dans l'anneau (set_ring_live)
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.
   std::filesystem::path shader_cache;
@@ -140,6 +143,11 @@ class PlaceboScreen final : public Screen {
   SlotFree retire(const RingFrame& frame) override;
   bool ready(const RingFrame& frame) const override;
   void new_scene() override;
+  // Le grade de l'anneau (chantier 2c, --grade-ring) : les versions du grade sont postées dans `live` quand
+  // la sortie est en PQ et le grade en trois passes ; l'image gradée par le GPU du ring est montrée sans
+  // hooks. nullptr : rien n'est posté, l'écran grade.
+  void set_ring_live(std::shared_ptr<LiveSettings> live);
+  bool stale_grade(const RingFrame& frame) const override;
   void set_fullscreen(bool on) override;
   bool fullscreen() const override;
 

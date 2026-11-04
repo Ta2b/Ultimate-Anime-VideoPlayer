@@ -388,6 +388,11 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   l'anneau » (refus nommés, plus de 8 ordres remplacés sans erreur ni fuite). Le grade d'un emplacement passe
   par `finish_slot` aux trois signaux (write_ring, warp et GMFSS vers l'anneau, queue du SPAN FP8) ; il ne
   tourne qu'avec un ordre posté, donc pas avant 2.10 en lecture.
+- **2.10, écran** : lecture d'un épisode avec `--grade-ring` sur la sortie HDR10, puis `--stats` : aucune
+  passe « AnimeJaNai » au profil GPU de l'affichage sur les images gradées, affichage ≤ 0,4 ms par image en
+  4K ; le profil GPU du backend montre « grade de l'anneau ». À l'œil : changer un réglage du grade en pause
+  le montre en moins d'un quart de seconde ; une coupe de plan en grade adaptatif change le grade sur la
+  bonne image. Sans `--grade-ring`, rien ne change.
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

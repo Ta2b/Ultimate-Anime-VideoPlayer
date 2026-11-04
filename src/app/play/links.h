@@ -156,6 +156,9 @@ class Screen {
   // Un seek ou un autre fichier : l'état tenu d'une image à l'autre (détection de pic, grade) vient
   // de la scène d'avant et ne dit plus rien.
   virtual void new_scene() {}
+  // L'image a été gradée dans l'anneau par une version que le grade d'aujourd'hui ne lui donnerait plus
+  // (réglage changé en pause) : seule une nouvelle écriture la remet à jour.
+  virtual bool stale_grade(const RingFrame& /*frame*/) const { return false; }
   virtual void set_fullscreen(bool on) = 0;
   virtual bool fullscreen() const = 0;
 };

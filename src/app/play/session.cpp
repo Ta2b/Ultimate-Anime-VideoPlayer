@@ -174,6 +174,14 @@ void Session::toggle_fullscreen() {
   screen_.set_fullscreen(!screen_.fullscreen());
 }
 
+void Session::regrade_paused(std::int64_t host_now) {
+  constexpr std::int64_t kRegradeUs = 150'000;  // un curseur qu'on fait glisser : une écriture à la fois
+  if (!paused_ || !current_ || pending_seek_us_ || current_->pts_us == kNoPts) return;
+  if (host_now - regraded_us_ < kRegradeUs || !screen_.stale_grade(*current_)) return;
+  regraded_us_ = host_now;
+  seek_to(current_->pts_us, true);
+}
+
 void Session::seek_to(std::int64_t target_us, bool exact) {
   target_us = std::max<std::int64_t>(target_us, 0);
   if (config_.duration_us > 0) target_us = std::min(target_us, config_.duration_us);
@@ -412,6 +420,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   retire_written();
   follow_display();
   choose(host_now);
+  regrade_paused(host_now);
   follow_subtitles(host_now);
   const bool fresh = fresh_;
   bool osd_changed = false;

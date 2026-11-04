@@ -41,8 +41,10 @@ struct GradeVersionDevice {
   cudaArray_t look_array = nullptr;
   cudaTextureObject_t look = 0;
   int look_size = 0;
+  cudaEvent_t used = nullptr;  // posé après chaque grade qui la lit : sa case se libère derrière lui
 
   void release() {
+    if (used != nullptr) cudaEventDestroy(used);
     if (look != 0) cudaDestroyTextureObject(look);
     if (look_array != nullptr) cudaFreeArray(look_array);
     if (input_nits != nullptr) cudaFree(input_nits);
@@ -94,17 +96,19 @@ std::expected<void, Refusal> TensorRtBackend::set_grade(const GradeOrder& order)
   if (!grade_) grade_.reset(new GradeState());  // NOLINT(cppcoreguidelines-owning-memory)
   GradeVersionDevice& entry = grade_->versions[grade_->next % kGradeOrders];
   if (entry.version != 0) {
-    // La case la plus ancienne : des images encore en vol la lisent peut-être, sur n'importe quelle voie.
-    if (auto ok = join(); !ok) return ok;
-    if (auto ok = cuda_check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize"); !ok) return ok;
+    // La case la plus ancienne : la dernière image qui la lisait est peut-être encore en vol ; son
+    // événement le dit, sans vider les voies.
+    if (auto ok = cuda_check(cudaEventSynchronize(entry.used), "cudaEventSynchronize"); !ok) return ok;
     entry.release();
   }
   GradeVersionDevice made{.version = order.version,
                           .uniforms = order.uniforms,
                           .input_matrix = order.input_matrix,
                           .look_size = order.look_size};
-  auto ready = cuda_check(cudaMalloc(reinterpret_cast<void**>(&made.input_nits), kTable * sizeof(float)),
-                          "cudaMalloc");
+  auto ready = cuda_check(cudaEventCreateWithFlags(&made.used, cudaEventDisableTiming), "cudaEventCreate");
+  if (ready)
+    ready = cuda_check(cudaMalloc(reinterpret_cast<void**>(&made.input_nits), kTable * sizeof(float)),
+                       "cudaMalloc");
   if (ready) {
     ready = cuda_check(
         cudaMemcpy(made.input_nits, order.input_nits.data(), kTable * sizeof(float), cudaMemcpyHostToDevice),
@@ -159,9 +163,9 @@ std::expected<void, Refusal> TensorRtBackend::finish_slot(const ImportedSlot& sl
 }
 
 std::expected<void, Refusal> TensorRtBackend::grade_slot(const ImportedSlot& slot, const GradeSlot& grade) {
-  const GradeVersionDevice* version = nullptr;
+  GradeVersionDevice* version = nullptr;
   if (grade_) {
-    for (const GradeVersionDevice& v : grade_->versions) {
+    for (GradeVersionDevice& v : grade_->versions) {
       if (v.version == grade.version) version = &v;
     }
   }
@@ -235,7 +239,7 @@ std::expected<void, Refusal> TensorRtBackend::grade_slot(const ImportedSlot& slo
     return ok;
   if (auto ok = cuda_check(launch_grade_slot(frame, stream_), "grade_slot<<<>>>"); !ok) return ok;
   timing.end(stream_);
-  return {};
+  return cuda_check(cudaEventRecord(version->used, stream_), "cudaEventRecord");
 }
 
 }  // namespace ajp::gpu::cuda
