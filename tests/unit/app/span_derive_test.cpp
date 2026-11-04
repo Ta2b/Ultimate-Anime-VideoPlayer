@@ -103,7 +103,7 @@ SpanStillsSource source_of(std::vector<media::Still> stills) {
 struct FakeBackend {
   double psnr = 50.0;
   double ssim = 0.995;
-  double psnr16 = 0.0;  // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
+  double psnr16 = 0.0;              // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
   double error_p999 = 1.0 / 255.0;  // 99,9e centile de l'erreur de chaque image (3.7a)
   double hard_psnr = 40.0;          // PSNR de chaque cas dur rendu (3.7a)
   bool refuse = false;

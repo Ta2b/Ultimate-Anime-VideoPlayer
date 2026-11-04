@@ -43,7 +43,8 @@ class VrrWatch {
 
  private:
   bool armed_;
-  std::optional<bool> candidate_ = std::nullopt;  // initialisé : sinon gcc 16 signale à tort un optional non initialisé
+  std::optional<bool> candidate_ =
+      std::nullopt;  // initialisé : sinon gcc 16 signale à tort un optional non initialisé
 };
 
 }  // namespace ajp::app::play
