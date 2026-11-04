@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cuda_fp16.h>
-#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
 #include <memory>
 #include <string>
 #include <vector>
