@@ -47,11 +47,12 @@ void FreeRate::missed(std::int64_t now_us, std::int64_t lost) {
       std::min(kPressureMax, pressure(now_us) * std::pow(kPressureStep, static_cast<double>(counted)));
   last_loss_us_ = now_us;
   lost_total_ += static_cast<std::uint32_t>(lost);
-  bucket(now_us).lost += static_cast<int>(std::min<std::int64_t>(lost, 1000));
+  if (now_us >= quiet_until_us_) bucket(now_us).lost += static_cast<int>(std::min<std::int64_t>(lost, 1000));
 }
 
 void FreeRate::settle(std::int64_t now_us) {
   settled_until_us_ = std::max(settled_until_us_, now_us + kSettleUs);
+  quiet_until_us_ = std::max(quiet_until_us_, now_us + kStartUs);
 }
 
 void FreeRate::reset(std::int64_t now_us) {
@@ -59,6 +60,7 @@ void FreeRate::reset(std::int64_t now_us) {
   *this = FreeRate{};
   min_gap_us_ = gap;
   settled_until_us_ = now_us + kStartUs;  // le démarrage perd toujours quelques images : pas de repli dessus
+  quiet_until_us_ = settled_until_us_;
 }
 
 double FreeRate::pressure(std::int64_t now_us) const {
@@ -78,7 +80,12 @@ bool FreeRate::should_fall_back(std::int64_t now_us) const {
   int produced = 0;
   int lost = 0;
   sum(now_us, kFallbackWindowUs, produced, lost);
-  return lost >= kFallbackMinLost && produced > 0 && lost * 1000 >= produced * kFallbackPerMille;
+  const std::int64_t first = now_us / kBucketUs - (kFallbackWindowUs + kBucketUs - 1) / kBucketUs + 1;
+  const auto spread = std::ranges::count_if(buckets_, [&](const Bucket& b) {
+    return b.lost > 0 && b.index >= first && b.index <= now_us / kBucketUs;
+  });
+  return lost >= kFallbackMinLost && produced > 0 && lost * 1000 >= produced * kFallbackPerMille &&
+         spread >= kFallbackMinBuckets;
 }
 
 FreeInfo FreeRate::info(std::int64_t now_us) const {
