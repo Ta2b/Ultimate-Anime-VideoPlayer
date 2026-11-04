@@ -10,6 +10,7 @@ commande ; sans son drapeau, rien ne change.
 | A2 | `--anime-shots` | Exposition des surfaces et marge des éclats fixées par plan (pré-analyse), glissées en 250 ms aux coupes (`app/play/anime_shots.h`) | codé, à mesurer |
 | A3 | `--anime-guided` | Carte locale lue par un sur-échantillonnage bilatéral joint guidé par le pixel : le halo ne déborde plus | codé, à mesurer |
 | A4 | aucun | Visages : décodage d'un détecteur, doublons, suivi, palette de peau, exclusion des émetteurs (`render/faces.h`) | partie sans réseau codée |
+| A5 | aucun | Mesures d'émetteurs v2, référence CPU (`render/emitters.h`) : pixel, bloc, couronne ; néon admis | codé, juge et étiquettes |
 
 ## A2 : décisions par plan
 L'exposition suit la règle de la courbe par plan (`render/curve.h`) : 0,25 diaphragme par diaphragme
@@ -26,3 +27,11 @@ releases » et l'absence d'un modèle libre validé sur l'anime l'excluent pour 
 détecteur tournerait dans l'étage TensorRT à basse résolution, ses sorties passeraient par
 `decode_faces`, `suppress_faces` et `FaceTracker` (remis à zéro aux coupes), et `face_exclusion`
 multiplierait la carte des émetteurs par 1 − sa part.
+
+## A5 : mesures d'émetteurs v2
+Trois échelles : le pixel, le bloc 8 × 8 et une couronne de blocs à une distance de 2 à 4 (les voisins
+immédiats, souvent la même lumière, n'y entrent pas). Une lumière domine sa couronne d'un diaphragme au
+moins ; la porte de niveau admet le blanc (55 à 95 % du blanc de la source) ou une lumière saturée dès 30 %
+(néon, écran) ; l'étincelle est un pixel qui domine son bloc d'un diaphragme et demi. Testée sur le halo,
+l'étincelle, la chemise blanche, le visage et le néon. Elle juge les essais du shader et étiquette le jeu de
+données du réseau (A6) ; le shader garde ses portes tant que la mesure sur ton PC n'a pas tranché.
