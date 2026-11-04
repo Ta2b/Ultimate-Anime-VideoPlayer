@@ -509,6 +509,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     impl->feedback = std::make_unique<PresentFeedback>(
         impl->vk, impl->present_level, impl->present_caps, impl->channel,
         impl->present_level == PresentLevel::Wayland ? std::move(wayland) : nullptr);
+  if (impl->feedback) impl->feedback->record_stamps(options.screen_stamps);  // 0.7 : <stats>.screen.tsv
   log_surface_color_spaces(impl->vk, impl->surface);
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);
   impl->open_shader_cache(options.shader_cache);
