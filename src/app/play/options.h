@@ -124,6 +124,9 @@ struct PlayOptions {
   // --shot-cuts : essai, les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus
   // que signaler les désaccords) et les débuts de plan font repartir la mémoire du grade de l'anneau (8.7).
   bool shot_cuts = false;
+  // --anime-shots : essai (méga plan A2), la méthode « HDR anime » décide par plan : exposition des surfaces
+  // et marge des éclats fixées par la pré-analyse, glissant aux coupes (anime_shots.h).
+  bool anime_shots = false;
   // --probe-nvdec : essai, la pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel.
   bool probe_nvdec = false;
   bool hdr_metadata_off = false;

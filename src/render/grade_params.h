@@ -90,6 +90,8 @@ struct AdaptiveShot {
 // La lumière de la scène que le lecteur connaît (analyse à l'ingestion, pré-analyse des plans) : sa
 // luminance moyenne au blanc SDR de 203 cd/m² et sa part de grands aplats clairs. Le grade en trois passes
 // en tire son limiteur OLED et le haut de sa courbe (GradeParams::fs_apl, fs_bright).
+inline constexpr double kAnimeLift = 1.15;  // GradeParams::an_lift, sans décision par plan
+
 struct SceneLight {
   double apl_nits = 0.0;
   double lit = 0.0;
@@ -136,6 +138,9 @@ struct GradeSettings {
   std::optional<AdaptiveShot> adaptive_shot;
   // La lumière de la scène de l'image qui vient ; vide, inconnue. Jamais écrite dans play.toml.
   std::optional<SceneLight> scene_light;
+  // La méthode « HDR anime » décidée par plan (méga plan A2, --anime-shots) : l'exposition des surfaces du
+  // plan, en diaphragmes (|E| ≤ 0,25, render/curve.h) ; 0 : le relèvement fixe. Jamais écrite dans play.toml.
+  double anime_exposure = 0.0;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;
@@ -285,7 +290,7 @@ struct GradeParams {
   double fs_apl = -1.0;
   double fs_bright = 0.0;
   // Méthode « HDR anime » (GradeBody::Anime) : relèvement fixe des surfaces, le même dans tous les plans.
-  double an_lift = 1.15;
+  double an_lift = kAnimeLift;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 
