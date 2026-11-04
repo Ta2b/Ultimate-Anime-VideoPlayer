@@ -100,7 +100,10 @@ vec4 hook() {
     float gain = mix(an_lift, max(emit_out / lvl, an_lift), emitter);
 
     vec3 c = lin * gain;
-    c *= shadow_ratio(max(max(c.r, c.g), c.b), shadows);
+    // Noirs profonds selon la scene : le curseur est le maximum, atteint en scene tres claire ; l'effet
+    // descend a 0 en scene tres sombre (les details des nuits restent lisibles). Scene inconnue : le curseur.
+    float deep = fs_apl >= 0.0 ? shadows * smoothstep(0.03, 0.40, key) : shadows;
+    c *= shadow_ratio(max(max(c.r, c.g), c.b), deep);
     // Peps (--anime-contrast, --anime-saturation) : contraste en puissance de la luminance autour du gris des
     // surfaces, puis saturation (ecart a la luminance, attenuee vers le pic, jamais de canal negatif).
     // Identite exacte a an_punch = 0 et an_chroma = 1.
