@@ -374,6 +374,17 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   moins à 165 Hz ; redessin ≤ 0,25 ms en 4K. Changer de look, de grade ou de taille de fenêtre en pause doit
   se voir tout de suite.
 
+## Plan NVIDIA, chantier 2c : grade exact dans l'anneau (novembre, CUDA écrit sans compilateur)
+
+- **2.8, construction** : le journal de ptxas (`--ptxas-options=--verbose`) donne les registres de
+  `grade_local_kernel`, `grade_area_kernel`, `grade_localmax_kernel` et `grade_pixel_kernel` ; aucun débordement
+  (« spill stores » à 0), sinon la construction s'arrête (`--warn-on-spills` en erreur).
+- **2.8, exactitude** : `ajp_backend_tensorrt_tests "[grade_ring]"` : cinq réglages, deux images de suite (la
+  seconde lissée par l'historique de la première), |ΔPQ| p99,9 ≤ 2⁻¹² et max ≤ 2⁻¹¹ contre la référence
+  CPU, historique à 1e-4.
+- **2.8, coût** : `ajp_backend_tensorrt_tests "[.grade_ring]"` : ≤ 0,30 ms par image en 1440p, ≤ 0,60 ms en
+  2160p (vrai noir allumé).
+
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
 Backend Vulkan seul (pas de matrices coopératives, ROCm ne sert pas Navi 24 : MIGraphX n'est plus

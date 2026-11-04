@@ -119,22 +119,14 @@ Result<RgbImage> apply_input(const RgbImage& sdr, const GradeInput& input) {
   for (const auto& table : input.nits)
     if (table.size() != static_cast<std::size_t>(g::kInputTablePoints))
       return fail(ErrorCode::SizeMismatch, std::format("apply_input : table de {} points", table.size()));
-  const auto lookup = [](const std::vector<float>& table, float code) {
-    const float x = std::clamp(code, 0.0F, 1.0F) * static_cast<float>(g::kInputTablePoints - 1);
-    const int i = std::min(static_cast<int>(x), g::kInputTablePoints - 2);
-    const float t = x - static_cast<float>(i);
-    return table[static_cast<std::size_t>(i)] * (1.0F - t) + table[static_cast<std::size_t>(i) + 1] * t;
-  };
+  std::vector<float> nits;
+  nits.reserve(3 * static_cast<std::size_t>(g::kInputTablePoints));
+  for (const auto& table : input.nits) nits.insert(nits.end(), table.begin(), table.end());
   RgbImage out(sdr.width(), sdr.height());
-  const auto& m = input.matrix;
   for (int y = 0; y < sdr.height(); ++y)
     for (int x = 0; x < sdr.width(); ++x) {
-      const float r = lookup(input.nits[0], sdr.planes[0].at(x, y));
-      const float gr = lookup(input.nits[1], sdr.planes[1].at(x, y));
-      const float b = lookup(input.nits[2], sdr.planes[2].at(x, y));
-      const g::V3 lin{m[0] * r + m[1] * gr + m[2] * b, m[3] * r + m[4] * gr + m[5] * b,
-                      m[6] * r + m[7] * gr + m[8] * b};
-      const g::V3 pq = g::nits_to_pq(g::vmax(lin, 0.0F));
+      const g::V3 pq = g::input_code({sdr.planes[0].at(x, y), sdr.planes[1].at(x, y), sdr.planes[2].at(x, y)},
+                                     nits.data(), input.matrix.data());
       out.planes[0].at(x, y) = pq.r;
       out.planes[1].at(x, y) = pq.g;
       out.planes[2].at(x, y) = pq.b;
