@@ -33,3 +33,10 @@ silence, sans rouvrir la chaîne, sur un flux CUDA à la priorité la plus basse
   b8f64 accepté, b5f48 FP8 ≤ 0,72 × FP16 en 720p et ≤ 0,70 en 1080p, 1 graphe et ≤ 2 lancements par SPAN,
   memcheck à 0 de 480p à 1080p, SPAN −30 % et J par image −25 % à 24 i/s. Si l'un manque, l'Auto repasse à
   Équilibre par `auto_config.cpp` et cette page est remplacée.
+
+## Statut (novembre 2026)
+**Suspendue.** L'Auto pose aujourd'hui SPAN en FP16 (Équilibre, `auto_config.cpp`) : le FP8 se choisit à la
+main dans la liste des modèles (« … · FP8 ») tant que la porte ci-dessus n'est pas mesurée sur la RTX. L'audit
+de novembre (constat F6) relevait l'écart entre cette page et le défaut. Pour reprendre la décision : calibrer
+les échelles sur un corpus fixe d'anime plutôt que sur la vidéo ouverte, et juger la porte en ΔE_ITP après le
+grade (≤ 1 au p99,9 sur `tools/grade/shots30.tsv`).

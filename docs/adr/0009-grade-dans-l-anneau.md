@@ -63,3 +63,9 @@ grade, ou refaire le grade exact dans le ring.
   `kernels` (la correspondance vers `GradeUniforms` se fait au-dessus).
 - Tests : `tests/unit/kernels/grade_test.cpp` ([kernels][grade]), `tests/unit/render/grade_ring_ref_test.cpp`
   ([render][gpu][grade_ring]).
+
+## Statut (novembre 2026)
+`--grade-ring` est allumé par défaut (`options.h`), mais le grade de l'anneau ne porte que le corps `Fused` :
+avec le corps par défaut (`AnimeGuided`, la méthode « HDR anime »), la version « off » est postée et l'écran
+garde les hooks de libplacebo à chaque présentation (audit, constats F6 et F7). Porter le corps anime dans
+`kernels/spec/grade_pixel.h` reste à faire ; le point 5 ci-dessus ne décrit plus le défaut.

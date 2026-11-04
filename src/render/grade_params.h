@@ -142,7 +142,8 @@ struct GradeSettings {
   // plan, en diaphragmes (|E| ≤ 0,25, render/curve.h) ; 0 : le relèvement fixe. Jamais écrite dans play.toml.
   double anime_exposure = 0.0;
   // Le peps de la méthode « HDR anime » (--anime-contrast, --anime-saturation, --anime-highlights), en % ;
-  // 100 : la méthode telle quelle. Jamais écrit dans play.toml.
+  // 100 : la méthode telle quelle. Écrit dans play.toml par le menu (settings_toml.cpp) ; une option donnée à
+  // la main ne l'est pas (settings_to_save).
   int anime_contrast = 100;
   int anime_saturation = 100;
   int anime_highlights = 100;
