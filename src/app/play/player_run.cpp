@@ -349,7 +349,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .kernels = c.backend ? c.backend->kernels() : nullptr,
       .adaptive_log = {.path = settings_dir / "adaptive-log.tsv"},
       .learn = LearnTrack{.log = settings_dir / "adaptive-learning.tsv"},
-      .shots = p.shots};
+      .shots = p.shots,
+      .shot_cuts = p.options.shot_cuts};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;

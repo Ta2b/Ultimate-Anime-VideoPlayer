@@ -545,6 +545,9 @@ class UpscaleStage final : public RingStage {
   std::uint64_t pairs_ = 0;
   std::uint64_t interpolated_ = 0;
   std::uint64_t cuts_ = 0;
+  std::uint64_t cut_disagreements_ = 0;
+  std::int64_t graded_pts_ = kNoPts;  // la dernière image gradée dans l'anneau (début de plan, 8.7)
+  std::uint32_t graded_epoch_ = 0;    // 8.7 : la mesure de RIFE contre les plans de la pré-analyse
   std::uint64_t held_ = 0;
   bool drba_held_ =
       false;  // l'instant en cours de production est une copie d'un côté tenu (Output::repeated)

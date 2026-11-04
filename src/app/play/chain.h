@@ -119,6 +119,7 @@ struct Chain {
   // Pré-analyse des plans (chain_shots.h) : le grade adaptatif lit le plan de l'image qui vient au lieu
   // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
   ShotWork* shots = nullptr;
+  bool shot_cuts = false;  // --shot-cuts (8.7) : les plans donnent aussi les coupes de l'interpolation
   std::uint64_t adaptive_shot = 0;  // le plan dont le grade tient les valeurs ; 0 : la mesure en direct
   // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle
   // tant qu'aucune analyse ne dit mieux (un saut ne la perd pas). scene_light_at_us : son dernier envoi.

@@ -250,6 +250,8 @@ std::expected<void, Refusal> TensorRtBackend::grade_slot(const ImportedSlot& slo
   const bool follows = state.kept && known && grade.epoch == state.epoch && grade.pts_us > state.pts_us &&
                        grade.pts_us - state.pts_us <= kHistoryGapUs;
   const float dt_s = follows ? static_cast<float>(grade.pts_us - state.pts_us) * 1e-6F : 0.0F;
+  // 8.7 : plans connus, la zone repart à chaque début de plan au lieu d'un saut de valeur.
+  if (grade.known_cuts) frame.smooth_jump = 1e9F;
   state.kept = known;
   state.epoch = grade.epoch;
   state.pts_us = known ? grade.pts_us : 0;
@@ -260,7 +262,9 @@ std::expected<void, Refusal> TensorRtBackend::grade_slot(const ImportedSlot& slo
   GpuTiming& timing = stage("grade de l'anneau");
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_grade_local(frame, stream_), "grade_local<<<>>>"); !ok) return ok;
-  if (auto ok = cuda_check(launch_grade_area(frame, dt_s, !follows, stream_), "grade_area<<<>>>"); !ok)
+  if (auto ok = cuda_check(launch_grade_area(frame, dt_s, !follows || grade.shot_start, stream_),
+                           "grade_area<<<>>>");
+      !ok)
     return ok;
   if (auto ok = cuda_check(launch_grade_slot(frame, stream_), "grade_slot<<<>>>"); !ok) return ok;
   timing.end(stream_);

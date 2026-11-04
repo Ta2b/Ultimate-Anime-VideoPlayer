@@ -79,6 +79,9 @@ UpscaleStage::~UpscaleStage() {
                              factor_text(setup_.live ? setup_.live->factor_now() : setup_.rife_factor),
                              pairs_, interpolated_, cuts_, held_);
   }
+  if (setup_.live && setup_.live->cuts().active())
+    log_channel("gpu")->info("coupes : {} désaccords entre RIFE et les plans de la pré-analyse",
+                             cut_disagreements_);
   if (!scores_wait_us_.empty()) {
     std::ranges::sort(scores_wait_us_);
     log_channel("gpu")->info(
@@ -381,11 +384,17 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     lead_us = waited;
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
+    // 8.7 : les plans de la pré-analyse décident quand ils couvrent la paire ; RIFE ne fait que signaler.
+    if (setup_.live && previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts) {
+      facts.known_cut = setup_.live->cuts().cut_between(previous_->pts_us, frame.pts_us);
+      if (facts.known_cut && *facts.known_cut != kernels::is_scene_cut(scores->scene_score))
+        ++cut_disagreements_;
+    }
     if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
       ++pairs_;
       if (setup_.live) setup_.live->count_pair();
     }
-    if (kernels::is_scene_cut(scores->scene_score)) {
+    if (pair_cut(facts)) {
       forget_motion();
       ++cuts_;
       if (setup_.live) {
@@ -432,9 +441,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     }
   }
   // Coupe ou dessin tenu : les instants de la paire manquent à dessein, pas faute de temps.
-  uninterpolated_ =
-      on_grid && !runs && facts.factor > 1 && facts.scores &&
-      (kernels::is_scene_cut(facts.scores->scene_score) || kernels::is_held(facts.scores->worst_block));
+  uninterpolated_ = on_grid && !runs && facts.factor > 1 && facts.scores &&
+                    (pair_cut(facts) || kernels::is_held(facts.scores->worst_block));
   if (on_grid && !runs && cadence_) cadence_->resync();
   if (on_grid && !runs && free_mode) free_grid_.resync();
   if (on_grid && !runs && steady) steady_grid_.resync();
@@ -461,8 +469,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // Garder les poses : la paire précédente compte si elle précède vraiment celle-ci ; une paire
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
-  const bool held = facts.scores && !kernels::is_scene_cut(facts.scores->scene_score) &&
-                    kernels::is_held(facts.scores->worst_block);
+  const bool held = facts.scores && !pair_cut(facts) && kernels::is_held(facts.scores->worst_block);
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
   // Dessin tenu : l'image agrandie de la précédente sert à celle-ci, sans passe de SPAN. Pas plus
   // de kMaxSpanReuse de suite, comptées depuis la dernière vraie passe : un fondu lent, tenu paire
@@ -493,7 +500,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   if (drba()) {
     // Mesurée et sans coupe, la paire laisse a comme image d'avant à la paire suivante.
-    drba_.continuous = facts.scores.has_value() && !kernels::is_scene_cut(facts.scores->scene_score);
+    drba_.continuous = facts.scores.has_value() && !pair_cut(facts);
     if (auto ok = drba_next(frame, spec, facts.same_epoch); !ok)
       return std::unexpected(std::move(ok.error()));
   }
@@ -712,11 +719,22 @@ std::expected<gpu::GradeSlot, Refusal> UpscaleStage::grade_slot(std::int64_t pts
   if (!ops.grades_ring()) return gpu::GradeSlot{};
   const std::shared_ptr<const GradeVersion> version = setup_.live->grade_at(pts_us, epoch);
   if (!version || version->off) return gpu::GradeSlot{};
+  // 8.7 : le début d'un plan connu (--shot-cuts), entre l'image gradée d'avant et celle-ci.
+  const bool known_cuts = setup_.live->cuts().active();
+  bool shot_start = false;
+  if (known_cuts && graded_pts_ != kNoPts && graded_epoch_ == epoch && pts_us != kNoPts)
+    shot_start = setup_.live->cuts().cut_between(graded_pts_, pts_us).value_or(false);
+  graded_pts_ = pts_us;
+  graded_epoch_ = epoch;
   if (std::ranges::find(grades_sent_, version->version) == grades_sent_.end()) {
     if (auto ok = ops.set_grade(version->order()); !ok) return std::unexpected(std::move(ok.error()));
     grades_sent_[grade_sent_next_++ % grades_sent_.size()] = version->version;
   }
-  return gpu::GradeSlot{.version = version->version, .epoch = epoch, .pts_us = pts_us};
+  return gpu::GradeSlot{.version = version->version,
+                        .epoch = epoch,
+                        .pts_us = pts_us,
+                        .known_cuts = known_cuts,
+                        .shot_start = shot_start};
 }
 
 std::expected<void, Refusal> UpscaleStage::span_current() {

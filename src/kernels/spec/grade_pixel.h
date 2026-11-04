@@ -601,8 +601,10 @@ AJP_GRADE_FN float area_mean(const Fetch& local, int lw, int lh, int qx, int qy,
 
 // Le lissage temporel d'un texel de zone : `kept` la valeur gardée + 1 (0 : jamais écrite), `dt_s` l'écart
 // de pts depuis l'image précédente de la même chaîne. Rend la valeur à écrire (l'historique garde elle + 1).
-AJP_GRADE_FN float area_smooth(float value, float kept, float dt_s) {
-  if (kept > 0.5F && fabsf(kept - 1.0F - value) <= kSmoothJump)
+// jump : l'écart au-delà duquel la zone repart de sa mesure (kSmoothJump ; sans limite quand les débuts de
+// plan, connus, la font repartir, chantier 8.7).
+AJP_GRADE_FN float area_smooth(float value, float kept, float dt_s, float jump = kSmoothJump) {
+  if (kept > 0.5F && fabsf(kept - 1.0F - value) <= jump)
     value = mixf(kept - 1.0F, value, 1.0F - powf(kSmoothBase, kSmoothRate * gmax(dt_s, 0.0F)));
   return value;
 }

@@ -70,6 +70,10 @@ struct GradeSlot {
   std::uint32_t version = 0;
   std::uint32_t epoch = 0;
   std::int64_t pts_us = kNoPts;
+  // 8.7 (--shot-cuts) : les plans de la pré-analyse sont connus (la mémoire temporelle de la zone ne repart
+  // plus sur un saut de valeur) et cette image commence un plan (elle repart ici).
+  bool known_cuts = false;
+  bool shot_start = false;
 };
 
 // Synchronisation d'une écriture dans le ring (protocole de core/ring.h).

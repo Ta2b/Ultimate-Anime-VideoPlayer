@@ -141,7 +141,7 @@ __global__ void __launch_bounds__(kTile* kTile) grade_area_kernel(Launch p, floa
   const int idx = py * aw + px;
   if (idx < g::kHistoryTexels) {
     const float kept = reset ? 0.0F : p.frame.history[idx];
-    value = g::area_smooth(value, kept, dt_s);
+    value = g::area_smooth(value, kept, dt_s, p.frame.smooth_jump);
     p.frame.history[idx] = value + 1.0F;
   }
   p.frame.area[idx] = value;
