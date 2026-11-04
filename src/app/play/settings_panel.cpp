@@ -85,62 +85,21 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
   return true;
 }
 
-// Le look : jusqu'à quinze LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
-// (render/cube_lut.h) ; ceux du lecteur, puis les fichiers du dossier luts. Chaque intensité va de 0 à 1.
-void look_section(PlaySettings& d, const SettingsChoices& choices) {
-  const auto label_of = [&](const std::string& key) -> std::string {
-    if (key.empty()) return i18n::tr("None");
-    for (const render::BuiltinLook& look : render::builtin_looks())
-      if (look.key == key) return std::string(i18n::tr_view(look.label));
-    return key;
-  };
-  const std::vector<LookEntry> entries = list_looks(choices.luts_dir);
-  // Sur une sortie SDR, une pile qui contient une LUT d'HDR est coupée en entier (chain_hdr.cpp) : ses
-  // réglages n'agissent pas, ils sont grisés.
-  bool has_hdr_look = render::look_is_pq(d.look, "");
-  for (const LookLayer& layer : d.look_layers)
-    has_hdr_look = has_hdr_look || render::look_is_pq(layer.key, "");
-  const bool stack_off = !choices.hdr_output && has_hdr_look;
-  ImGui::BeginDisabled(stack_off);
-  const auto slot = [&](int number, std::string& name, double& mix) {
-    ImGui::PushID(number);
-    if (ImGui::BeginCombo(i18n::tr_format("Look {} (LUT)", number).c_str(), label_of(name).c_str())) {
-      if (ImGui::Selectable(i18n::tr("None"), name.empty())) name.clear();
-      for (const LookEntry& entry : entries)
-        if (ImGui::Selectable(entry.label.c_str(), entry.key == name)) name = entry.key;
-      ImGui::EndCombo();
-    }
-    ImGui::BeginDisabled(name.empty());
-    grade_slider(i18n::tr_format("Look {} intensity", number).c_str(), mix, core::Range<double>{0.0, 1.0});
-    ImGui::EndDisabled();
-    ImGui::PopID();
-  };
-  slot(1, d.look, d.look_mix);
-  for (std::size_t i = 0; i < d.look_layers.size(); ++i)
-    slot(static_cast<int>(i) + 2, d.look_layers[i].key, d.look_layers[i].mix);
-  // + ajoute une LUT à la fin de la pile, − retire la dernière.
-  ImGui::BeginDisabled(d.look_layers.size() + 1 >= render::kLookSlots);
-  if (ImGui::Button("+")) d.look_layers.push_back({});
-  ImGui::EndDisabled();
-  ImGui::SameLine();
-  ImGui::BeginDisabled(d.look_layers.empty());
-  if (ImGui::Button("-")) d.look_layers.pop_back();
-  ImGui::EndDisabled();
-  ImGui::EndDisabled();  // stack_off
-  if (stack_off)
-    note(i18n::tr("SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR)."));
-  note(
-      i18n::tr("Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order "
-               "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
-}
-
-void grade_tab(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& /*actions*/) {
-  // Tri du 04/11 : la méthode HDR anime (guidée, par plan) fait le rendu ; il reste les noirs profonds, qui
-  // suivent la scène (le curseur est leur maximum, en scène très claire), et la pile de LUT en avancé.
+void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<Input>& /*actions*/) {
+  // Tri du 04/11 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds, qui
+  // suivent la scène (le curseur est leur maximum, en scène très claire), et le look : la LUT de base et
+  // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de Tatoub du 04/11).
   section(i18n::tr("Color grading"));
+  ImGui::SliderInt(i18n::tr("Contrast"), &d.look_contrast, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(i18n::tr("Highlights"), &d.look_highlight, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
   grade_slider(i18n::tr("Deep blacks"), d.grade_values.shadows, render::grade_limits::kShadows);
   panel::tip(i18n::tr("The maximum, reached in very bright scenes; it fades out in very dark scenes."));
-  if (panel::advanced()) look_section(d, choices);
+  if (ImGui::Button(i18n::tr("Defaults"))) {
+    const PlaySettings defaults;
+    d.look_contrast = defaults.look_contrast;
+    d.look_highlight = defaults.look_highlight;
+    d.grade_values.shadows = defaults.grade_values.shadows;
+  }
 }
 
 // Composition finale (Image IA > Agrandissement, réglages avancés) : le filtre vers la fenêtre et le

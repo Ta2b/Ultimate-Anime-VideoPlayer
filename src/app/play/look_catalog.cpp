@@ -2,8 +2,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <format>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <mutex>
 #include <system_error>
 
 #include <SDL3/SDL_filesystem.h>
@@ -54,6 +58,13 @@ std::vector<LookEntry> list_looks(const std::filesystem::path& luts_dir) {
 std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir) {
   if (key.starts_with(render::kBuiltinPrefix)) return render::builtin_look(key);
+  if (key.starts_with(kAnimeLookPrefix)) {
+    int contrast = 0;
+    int highlight = 0;
+    if (std::sscanf(key.c_str() + kAnimeLookPrefix.size(), "%d:%d", &contrast, &highlight) != 2)
+      return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " illisible"});
+    return anime_look(contrast, highlight, luts_dir);
+  }
   if (key.empty() || key.find('/') != std::string::npos || key.find('\\') != std::string::npos)
     return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : nom de fichier invalide"});
   std::ifstream file(luts_dir / key, std::ios::binary);
@@ -93,8 +104,64 @@ void set_no_looks(bool on) {
   no_looks.store(on, std::memory_order_relaxed);
 }
 
+std::string anime_look_key(int contrast, int highlight) {
+  return std::format("{}{}:{}", kAnimeLookPrefix, contrast, highlight);
+}
+
+std::vector<double> anime_look_mixes(double units) {
+  std::vector<double> mixes;
+  while (units > 1e-9) {
+    mixes.push_back(std::min(units, 1.0));
+    units -= 1.0;
+  }
+  return mixes;
+}
+
+std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
+                                                   const std::filesystem::path& luts_dir) {
+  static std::mutex lock;
+  static std::map<std::pair<int, int>, render::CubeLut> made;
+  const std::scoped_lock held(lock);
+  if (const auto found = made.find({contrast, highlight}); found != made.end()) return found->second;
+  std::map<std::string_view, render::CubeLut> files;
+  for (const std::string_view name :
+       {kAnimeLookBase, kAnimeLookContrast, kAnimeLookHighlight, kAnimeLookSkin}) {
+    auto lut = load_look(std::string(name), luts_dir);
+    if (!lut) return std::unexpected(std::move(lut.error()));
+    files.emplace(name, std::move(*lut));
+  }
+  // L'ordre de la pile de Tatoub : base, 3/7 du contraste, éclats, skin fix, 4/7 du contraste.
+  const double c = 7.0 * (1.0 + std::clamp(contrast, -100, 100) / 100.0);
+  const double h = 1.5 * (1.0 + std::clamp(highlight, -100, 100) / 100.0);
+  std::vector<const render::CubeLut*> luts{&files.at(kAnimeLookBase)};
+  std::vector<double> mixes{1.0};
+  const auto add = [&](std::string_view name, double units) {
+    for (const double mix : anime_look_mixes(units)) {
+      luts.push_back(&files.at(name));
+      mixes.push_back(mix);
+    }
+  };
+  add(kAnimeLookContrast, c * 3.0 / 7.0);
+  add(kAnimeLookHighlight, h);
+  luts.push_back(&files.at(kAnimeLookSkin));
+  mixes.push_back(1.0);
+  add(kAnimeLookContrast, c * 4.0 / 7.0);
+  render::CubeLut out = render::compose_luts(luts, mixes);
+  out.title = "HDR anime";
+  log_channel("app")->info("look HDR anime : contrast {}, highlight {} ({} LUT)", contrast, highlight,
+                           luts.size());
+  made.emplace(std::pair{contrast, highlight}, out);
+  return out;
+}
+
 std::vector<LookLayer> look_slots(const PlaySettings& s) {
   if (no_looks.load(std::memory_order_relaxed)) return {};
+  if (contract_v2_looks.load(std::memory_order_relaxed))
+    return {LookLayer{std::string(kContractV2Look), 1.0}};
+  return {LookLayer{anime_look_key(s.look_contrast, s.look_highlight), 1.0}};
+}
+
+std::vector<LookLayer> stack_slots(const PlaySettings& s) {
   std::vector<LookLayer> slots = stack_of(s);
   if (contract_v2_looks.load(std::memory_order_relaxed)) {
     static const std::vector<LookLayer> kDefault = stack_of(PlaySettings{});

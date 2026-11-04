@@ -319,6 +319,10 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   if (auto steps = check("grade.oled_black_steps", s.oled_black_steps, render::grade_limits::kBlackSteps);
       !steps)
     return std::unexpected(steps.error());
+  for (const auto& [field, value] : {std::pair{"grade.look_contrast", s.look_contrast},
+                                     std::pair{"grade.look_highlight", s.look_highlight}}) {
+    if (auto in = check(field, value, core::Range<int>{-100, 100}); !in) return std::unexpected(in.error());
+  }
   if (auto mix = check("grade.look_mix", s.look_mix, core::Range<double>{0.0, 1.0}); !mix)
     return std::unexpected(mix.error());
   if (s.look_layers.size() + 1 > render::kLookSlots)
@@ -453,6 +457,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.adaptive_record = wanted.adaptive_record;
   s.look_mix = wanted.look_mix;
   s.look_layers = wanted.look_layers;
+  s.look_contrast = wanted.look_contrast;
+  s.look_highlight = wanted.look_highlight;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
   s.keep_poses = wanted.keep_poses;
