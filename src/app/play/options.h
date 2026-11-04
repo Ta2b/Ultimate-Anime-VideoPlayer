@@ -140,6 +140,9 @@ struct PlayOptions {
   // --smooth-drawings : un dessin tenu deux sources se fond en un seul mouvement vers le suivant (chantier
   // 7.9, UpscaleSetup::smooth_drawings). Essai, RIFE mouvement seulement, éteint par défaut.
   bool smooth_drawings = false;
+  // --ring-watcher : un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5). Essai,
+  // éteint par défaut : main sonde l'anneau.
+  bool ring_watcher = false;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
   // open (le défaut) : la présentation d'aujourd'hui, jusqu'aux mesures 6.11.
   PresentWanted present = PresentWanted::Open;

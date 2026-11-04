@@ -200,6 +200,31 @@ bool PlaceboScreen::ready(const RingFrame& frame) const {
   return impl_->ring.ready(frame);
 }
 
+void PlaceboScreen::watch_writes(void (*waker)(void*), void* context) {
+  Impl& s = *impl_;
+  s.ring.set_watcher(nullptr);
+  s.watcher.reset();
+  if (waker == nullptr || s.vk == nullptr) return;
+  const auto device_proc =
+      reinterpret_cast<PFN_vkGetDeviceProcAddr>(s.vk->get_proc_addr(s.vk->instance, "vkGetDeviceProcAddr"));
+  s.watcher = RingWatcher::start(s.vk->device, device_proc, waker, context);
+  if (!s.watcher) s.channel->warn("veilleur d'écriture indisponible : main sonde l'anneau comme avant");
+  s.ring.set_watcher(s.watcher.get());
+}
+
+void PlaceboScreen::watch(const RingFrame& frame) {
+  if (impl_->watcher) impl_->watcher->watch(impl_->ring.semaphore_of(frame), frame.ready_value);
+}
+
+std::optional<std::int64_t> PlaceboScreen::written_at(const RingFrame& frame) {
+  if (!impl_->watcher) return std::nullopt;
+  return impl_->watcher->take(impl_->ring.semaphore_of(frame), frame.ready_value);
+}
+
+bool PlaceboScreen::wakes_on_write() const {
+  return impl_->watcher != nullptr;
+}
+
 std::expected<bool, Refusal> PlaceboScreen::Impl::compose_kept(const pl_frame* image, const pl_frame& target,
                                                                const ComposeKey& key,
                                                                std::span<const pl_overlay> subtitles) {

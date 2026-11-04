@@ -217,7 +217,13 @@ SlotFree PlaceboRing::retire(pl_gpu gpu, const RingFrame& frame) {
   return release_of(frame);
 }
 
+VkSemaphore PlaceboRing::semaphore_of(const RingFrame& frame) const {
+  if (frame.generation != generation_ || frame.slot >= slots_.size()) return VK_NULL_HANDLE;
+  return slots_[frame.slot].semaphore;
+}
+
 void PlaceboRing::clear(pl_gpu gpu) {
+  if (watcher_ != nullptr) watcher_->forget_all();  // ses sémaphores vont être détruits
   if (gpu != nullptr && !slots_.empty()) pl_gpu_finish(gpu);
   for (Slot& slot : slots_) {
     if (gpu != nullptr) {

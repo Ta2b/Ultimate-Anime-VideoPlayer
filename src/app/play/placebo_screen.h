@@ -145,6 +145,11 @@ class PlaceboScreen final : public Screen {
   std::expected<ScreenTiming, Refusal> show(const ShowRequest& request) override;
   SlotFree retire(const RingFrame& frame) override;
   bool ready(const RingFrame& frame) const override;
+  void watch(const RingFrame& frame) override;
+  std::optional<std::int64_t> written_at(const RingFrame& frame) override;
+  bool wakes_on_write() const override;
+  // Le veilleur d'écriture le temps d'une chaîne (--ring-watcher) : waker réveille main ; nullptr l'arrête.
+  void watch_writes(void (*waker)(void*), void* context);
   void new_scene() override;
   // Le grade de l'anneau (chantier 2c, --grade-ring) : les versions du grade sont postées dans `live` quand
   // la sortie est en PQ et le grade en trois passes ; l'image gradée par le GPU du ring est montrée sans
@@ -159,6 +164,20 @@ class PlaceboScreen final : public Screen {
   struct Impl;
   explicit PlaceboScreen(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
+};
+
+// Le veilleur d'écriture le temps d'une portée (run_chain) : waker nul, aucun veilleur.
+class WriteWatch {
+ public:
+  WriteWatch(PlaceboScreen& screen, void (*waker)(void*), void* context) : screen_(screen) {
+    screen_.watch_writes(waker, context);
+  }
+  ~WriteWatch() { screen_.watch_writes(nullptr, nullptr); }
+  WriteWatch(const WriteWatch&) = delete;
+  WriteWatch& operator=(const WriteWatch&) = delete;
+
+ private:
+  PlaceboScreen& screen_;
 };
 
 }  // namespace ajp::app::play
