@@ -24,6 +24,11 @@ directement dans un emplacement, sans le noyau `write_rgba16` ?
    les plans sombres de `calibration.mkv`, export P010 ≥ 50 dB contre RGBA16, VRAM de l'anneau −50 %, noyaux
    d'écriture −25 %). Si le banding dépasse, on essaie le tramage forcé ; s'il dépasse encore, RGBA16 reste le
    défaut et cette page le dit.
+5. **Novembre 2026 : RGB10A2 est le défaut, et son écriture est tramée.** Le défaut a changé sans la porte de
+   l'étape 5.5c ; l'audit (constat F9) a relevé que la pile de LUT et l'expansion HDR étirent alors les paliers de
+   10 bits. `ImportedSlot::surface()` pose `dither` pour tout emplacement RGB10A2 (TPDF fixe par pixel, ±1 code).
+   Le contrôle de la porte reste à faire sur la RTX : `tools/ring/banding.py` avec `--no-ring-rgb10a2` en
+   référence.
 
 ## Conséquences
 - `kBackendAbi` passe à 26 (`BackendCaps::ring_rgb10a2`).

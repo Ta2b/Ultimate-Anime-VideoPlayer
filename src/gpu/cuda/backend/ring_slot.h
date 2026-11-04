@@ -27,8 +27,12 @@ class ImportedSlot {
   ImportedSlot& operator=(const ImportedSlot&) = delete;
 
   const RingSlotDesc& desc() const { return desc_; }
-  // La surface et son empaquetage, pour store_ring (pixel_kernels.cuh).
-  RingSurface surface() const { return {.object = surface_, .packing = packing_}; }
+  // La surface et son empaquetage, pour store_ring (pixel_kernels.cuh). En RGB10A2, l'écriture est tramée
+  // (TPDF fixe par pixel, ring_pack.h) : sans tramage, la pile de LUT et l'expansion HDR étirent les paliers
+  // de 10 bits en bandes (audit F9).
+  RingSurface surface() const {
+    return {.object = surface_, .packing = packing_, .dither = packing_ == RingPacking::Rgb10a2};
+  }
   // Attend wait_value puis, après les noyaux enfilés entre-temps, signale signal_value.
   std::expected<void, Refusal> wait(std::uint64_t value, cudaStream_t stream) const;
   std::expected<void, Refusal> signal(std::uint64_t value, cudaStream_t stream) const;
