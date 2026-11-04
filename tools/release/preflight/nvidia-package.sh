@@ -45,6 +45,8 @@ mkdir -p "$CTX/tools/deps" "$CTX/tools/release"
 cp "$REPO/tools/release/preflight/Dockerfile" "$CTX/"
 cp "$REPO/tools/deps/linux-from-source.sh" "$CTX/tools/deps/"
 cp "$REPO/tools/release/versions.env" "$REPO/tools/release/rocm-apt.sh" "$CTX/tools/release/"
+mkdir -p "$CTX/ports/libplacebo"
+cp "$REPO/ports/libplacebo/0001-ajp-present-timing.patch" "$CTX/ports/libplacebo/"
 docker build -q -t "$IMAGE:$STAGE" --target "$STAGE" "$CTX" >/dev/null
 echo "image $IMAGE:$STAGE à jour"
 

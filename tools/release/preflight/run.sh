@@ -43,6 +43,8 @@ mkdir -p "$CTX/tools/deps" "$CTX/tools/release"
 cp "$HERE/Dockerfile" "$CTX/"
 cp "$ROOT/tools/deps/linux-from-source.sh" "$CTX/tools/deps/"
 cp "$ROOT/tools/release/versions.env" "$ROOT/tools/release/rocm-apt.sh" "$CTX/tools/release/"
+mkdir -p "$CTX/ports/libplacebo"
+cp "$ROOT/ports/libplacebo/0001-ajp-present-timing.patch" "$CTX/ports/libplacebo/"
 build_image() {  # étage [base de l'étage tests]
   check_disk
   docker build -q -t "$IMAGE:$1" --target "$1" ${2:+--build-arg TEST_BASE="$2"} "$CTX" >/dev/null
