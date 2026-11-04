@@ -159,9 +159,9 @@ TEST_CASE("Backend TensorRT : un paquet SPAN FP8 inutilisable est refusé par so
   write_bytes(truncated, bytes);
   CHECK_FALSE(loaded.backend->build(spec_of(truncated), fixed(1088, 1920), progress));
 
-  // Une taille que les noyaux ne prennent pas (540x960 : 129 600 pixels de caractéristiques) ; une forme
-  // libre.
-  const auto odd = loaded.backend->build(spec_of(good), fixed(540, 960), progress);
+  // Une taille que les noyaux ne prennent pas (541x960 : hauteur impaire, le dégroupage 2x2 l'exige paire ;
+  // depuis l'étape 3.1 toute taille paire passe, 540x960 comprise) ; une forme libre.
+  const auto odd = loaded.backend->build(spec_of(good), fixed(541, 960), progress);
   REQUIRE_FALSE(odd);
   CHECK(odd.error().code == RefusalCode::FormatUnsupported);
   const gpu::Shape low{.dims = {1, 3, 544, 960}}, high{.dims = {1, 3, 1088, 1920}};
