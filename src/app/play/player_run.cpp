@@ -430,14 +430,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
   };
   // Repli du Rapide pour la séance seulement : play.toml garde le choix, qu'un choix explicite annule.
-  bool free_fallback = false;
+  core::FreeFallback free_fallback;  // revient au Rapide après un calme (core/free_rate.h)
   bool free_chosen = chain.running.auto_free;
   const auto apply_auto = [&] {
     if (chain.running.auto_free != free_chosen) {
       free_chosen = chain.running.auto_free;
-      free_fallback = false;
+      free_fallback.clear();
     }
-    const bool free_wanted = free_requested(chain.running, free_fallback);
+    const bool free_wanted = free_requested(chain.running, free_fallback.active(host_now_us()));
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
     // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
     // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
@@ -623,7 +623,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (chain.live.free_should_fall_back(host_now_us())) {
           log->warn("Mode Rapide : trop d'images perdues ({}) : retour au mode Stable",
                     free_status_text(chain.live.free_info(host_now_us())));
-          free_fallback = true;
+          free_fallback.fell_back(host_now_us());
           p.ui.controls().notify(i18n::tr("Fast mode: too many frames lost, back to Stable"), host_now_us());
           apply_auto();
         }

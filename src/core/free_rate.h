@@ -13,6 +13,7 @@
 // - Repli : 5 % d'images perdues ou plus sur 5 s (et au moins 10) rendent la main au mode Auto.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 
@@ -42,6 +43,9 @@ class FreeRate {
   static constexpr std::int64_t kBucketUs = 250'000;
   static constexpr int kFallbackMinLost = 10;
   static constexpr int kFallbackPerMille = 50;  // 5 %
+  // Des pertes durables seulement : réparties sur au moins 4 tranches de 250 ms de la fenêtre (une seconde),
+  // pas un à-coup isolé.
+  static constexpr int kFallbackMinBuckets = 4;
 
   // L'écart minimal entre deux images (période de l'écran ou du plafond), en µs de temps réel.
   void set_min_gap(std::int64_t us) { min_gap_us_ = us; }
@@ -54,7 +58,8 @@ class FreeRate {
   void produced(int images, std::int64_t now_us);
   // `lost` images sautées ou manquées à l'écran depuis le dernier appel.
   void missed(std::int64_t now_us, std::int64_t lost);
-  // Seek, reprise, (re)chargement.
+  // Seek, reprise, (re)chargement : les mesures du coût s'arrêtent kSettleUs ; les pertes ne comptent pas
+  // pour le repli pendant kStartUs, comme au démarrage (la file se remplit, les moteurs repartent).
   void settle(std::int64_t now_us);
   // Repart de zéro (le mode vient d'être activé).
   void reset(std::int64_t now_us);
@@ -80,8 +85,34 @@ class FreeRate {
   double pressure_ = 1.0;
   std::int64_t last_loss_us_ = 0;
   std::int64_t settled_until_us_ = 0;
+  std::int64_t quiet_until_us_ = 0;  // avant : les pertes ne comptent pas pour le repli
   std::uint32_t lost_total_ = 0;
   std::array<Bucket, 24> buckets_{};
+};
+
+// Le repli du Rapide vers Stable, pour la séance : il revient au Rapide après un calme, plus long à chaque
+// repli (1 min, 2, 4… au plus 10 min) ; un choix explicite du mode l'efface.
+class FreeFallback {
+ public:
+  static constexpr std::int64_t kRetryUs = 60'000'000;
+  static constexpr std::int64_t kRetryMaxUs = 600'000'000;
+
+  void fell_back(std::int64_t now_us) {
+    active_ = true;
+    retry_at_us_ = now_us + delay_us_;
+    delay_us_ = std::min(delay_us_ * 2, kRetryMaxUs);
+  }
+  // Vrai tant que le repli tient ; faux dès que l'heure de réessayer le Rapide est venue.
+  bool active(std::int64_t now_us) {
+    if (active_ && now_us >= retry_at_us_) active_ = false;
+    return active_;
+  }
+  void clear() { *this = FreeFallback{}; }
+
+ private:
+  bool active_ = false;
+  std::int64_t retry_at_us_ = 0;
+  std::int64_t delay_us_ = kRetryUs;
 };
 
 }  // namespace ajp::core
