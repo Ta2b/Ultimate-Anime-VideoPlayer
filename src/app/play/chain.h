@@ -213,7 +213,9 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak,
                              const std::optional<render::BlackThresholds>& black = {},
                              bool source_hdr = false);
 // La sortie de l'écran, pour l'OSD et le journal.
-std::string output_text(const PlaceboScreen& screen, const PlaySettings& s);
+// La ligne « Sortie » des contrôles ; une source HDR sans « étalonnage des sources HDR » le dit : le grade
+// coché n'y fait rien (mode Neutre).
+std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool source_hdr = false);
 double fps_of(const media::Rational& rate);
 
 ProfilesView view_of(const ProfileState& state);

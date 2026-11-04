@@ -211,12 +211,15 @@ void tend_looks(Chain& to, std::int64_t now_us) {
     to.ui.controls().notify(i18n::tr_format("Look unreadable: {}", failed), now_us);
 }
 
-std::string output_text(const PlaceboScreen& screen, const PlaySettings& s) {
+std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool source_hdr) {
   std::string text = screen.output_description();
   if (s.hdr_native && screen.hdr_output()) {
     text += i18n::tr(" · adaptive HDR");
   }
-  if (s.grade) text += i18n::tr(" · grade");
+  if (s.grade && source_hdr && !s.grade_native_hdr)
+    text += i18n::tr(" · grade off: HDR source");
+  else if (s.grade)
+    text += i18n::tr(" · grade");
   return text;
 }
 

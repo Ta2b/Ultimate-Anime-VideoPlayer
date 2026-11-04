@@ -182,7 +182,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
       wanted.look_contrast != r.look_contrast || wanted.look_highlight != r.look_highlight) {
     set_grade(to, wanted);
     to.black_dirty = true;
-    to.session.set_output(output_text(to.screen, wanted));
+    to.session.set_output(output_text(to.screen, wanted, to.source_hdr));
     if (wanted.grade != r.grade)
       controls.notify(std::string(wanted.grade ? i18n::tr("Grade on") : i18n::tr("Grade off")), now_us);
   }
