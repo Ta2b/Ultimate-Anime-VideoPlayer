@@ -25,6 +25,7 @@
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
 #include "app/play/default_player.h"
+#include "app/play/display_contract.h"
 #include "app/play/display_edid.h"
 #include "app/play/drba_model.h"
 #include "app/play/engine_build.h"
@@ -77,25 +78,6 @@ namespace {
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus : le seuil de réactivité aux messages des threads.
 constexpr std::int32_t kPausedWaitMs = 10;
-
-// Le réveil de la boucle d'affichage par un message des autres threads : un événement SDL à elle, poussé une
-// fois par attente (pending), qui fait rendre SDL_WaitEventTimeout.
-struct LoopWake {
-  std::atomic<bool> pending{false};
-  std::uint32_t event = 0;  // 0 : SDL n'a plus d'événement à donner, l'attente va à son terme
-  static void push(void* context) {
-    auto* self = static_cast<LoopWake*>(context);
-    if (self->event == 0 || self->pending.exchange(true, std::memory_order_relaxed)) return;
-    SDL_Event wake{};
-    wake.type = self->event;
-    (void)SDL_PushEvent(&wake);
-  }
-};
-
-std::uint32_t loop_wake_event() {
-  static const std::uint32_t registered = SDL_RegisterEvents(1);
-  return registered;
-}
 
 }  // namespace
 
@@ -429,6 +411,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t known_period_us = display_period_us(out.window());
   SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
   double session_hz_seen = known_hz;
+  ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
   const auto read_display_facts = [&] {
     if (const double hz = display_refresh_hz(out.window()); hz > 0.0) {
       known_hz = hz;
@@ -608,6 +591,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       // L'écran change (éteint puis rallumé, autre sortie, nouveau mode) : on relit sa fréquence, son VRR et
       // son état, sans quoi la cadence restait celle de l'écran d'avant.
       read_display_facts();
+      if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
       const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());
       const bool display_changed =
           display_id != known_display || (display_id != 0 && known_hz > 0.0 && known_hz != session_hz_seen);

@@ -147,12 +147,35 @@ std::string trimmed(const std::filesystem::path& path) {
 
 }  // namespace
 
+namespace {
+
+std::optional<render::Chromaticities> edid_primaries(std::span<const std::uint8_t> base) {
+  const std::uint8_t low_rg = base[0x19];
+  const std::uint8_t low_bw = base[0x1A];
+  const auto at = [&](std::size_t high, std::uint8_t low, unsigned shift) {
+    return static_cast<double>((static_cast<unsigned>(base[high]) << 2U) | ((low >> shift) & 0x03U)) / 1024.0;
+  };
+  const render::Chromaticities c{.rx = at(0x1B, low_rg, 6),
+                                 .ry = at(0x1C, low_rg, 4),
+                                 .gx = at(0x1D, low_rg, 2),
+                                 .gy = at(0x1E, low_rg, 0),
+                                 .bx = at(0x1F, low_bw, 6),
+                                 .by = at(0x20, low_bw, 4),
+                                 .wx = at(0x21, low_bw, 2),
+                                 .wy = at(0x22, low_bw, 0)};
+  if (std::abs(c.wx - 0.3127) > 0.01 || std::abs(c.wy - 0.3290) > 0.01) return std::nullopt;
+  return c;
+}
+
+}  // namespace
+
 DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
   DisplayFacts out;
   if (edid.size() < kBlock) return out;
   out.name = monitor_name(edid.first(kBlock));
   out.manufacturer = pnp_id(edid[8], edid[9]);
   out.product = static_cast<std::uint16_t>(edid[10] | (edid[11] << 8U));
+  out.primaries = edid_primaries(edid.first(kBlock));
   // Quatre descripteurs de 18 octets dans le bloc de base, de l'octet 54 : 00 00 00 FD est la plage de
   // fréquences.
   for (std::size_t at = 54; at + 18 <= kBlock; at += 18) {

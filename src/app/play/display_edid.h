@@ -15,6 +15,8 @@
 #include <string>
 #include <string_view>
 
+#include "render/display_model.h"
+
 namespace ajp::app::play {
 
 enum class OledSource : std::uint8_t { DisplayId, KnownModel, Heuristic, Unknown };
@@ -41,6 +43,9 @@ struct DisplayFacts {
   std::optional<bool> vrr_armed;
   // Fréquence verticale minimale du descripteur de plage 0xFD de l'EDID (Hz) : le plancher du VRR.
   std::optional<int> vrr_min_hz;
+  // Primaires et blanc des octets 0x19 à 0x22 du bloc de base (10 bits : (fort << 2 | faible) / 1024),
+  // gardés seulement si le blanc est à ±0,01 de D65.
+  std::optional<render::Chromaticities> primaries;
   OledSource source = OledSource::Unknown;
 };
 

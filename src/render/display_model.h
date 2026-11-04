@@ -10,6 +10,7 @@
 //   100 %, ramenée à son pic ; un LCD tient son pic sur toute la surface.
 #pragma once
 
+#include <array>
 #include <optional>
 
 namespace ajp::render {
@@ -39,6 +40,30 @@ struct KwinHint {
   double max_content_nits = 0.0;
 };
 KwinHint kwin_hint(double content_peak_nits, double reference_nits);
+
+// Le contrat d'écran (chantier 8.2) : ce que le lecteur sait du panneau, en nits affichés, et ce qui s'en
+// déduit en unités du contenu. k = référence / 203 : KWin affiche le contenu × k (H1 ci-dessus).
+struct Chromaticities {
+  double rx = 0.0, ry = 0.0, gx = 0.0, gy = 0.0, bx = 0.0, by = 0.0, wx = 0.0, wy = 0.0;
+  friend bool operator==(const Chromaticities&, const Chromaticities&) = default;
+};
+inline constexpr std::array<double, 5> kAblAreas{0.02, 0.10, 0.25, 0.50, 1.00};
+struct DisplayContract {
+  double reference_nits = kContentReferenceNits;  // blanc de référence du compositeur
+  double panel_peak_nits = 1000.0;                // pic du panneau, cd/m² affichées
+  std::array<double, 5> abl{};                    // L_max aux surfaces kAblAreas, cd/m² affichées
+  std::optional<Chromaticities> primaries;        // de l'EDID ; rien : inconnues
+  double min_nits = 0.0;                          // noir annoncé, cd/m² affichées
+  bool oled = false;
+
+  double k() const { return reference_nits > 0.0 ? reference_nits / kContentReferenceNits : 1.0; }
+  double content_peak_nits() const { return panel_peak_nits / k(); }      // C_pk
+  double content_frame_average_nits() const { return abl.back() / k(); }  // MaxFALL du contenu
+  friend bool operator==(const DisplayContract&, const DisplayContract&) = default;
+};
+// L_max par surface faute de mesure : la courbe QD-OLED relevée (cd/m², jamais au-dessus du pic, étirée si le
+// pic la dépasse) pour un OLED ; le pic partout pour un LCD.
+std::array<double, 5> default_abl(double panel_peak_nits, bool oled);
 
 // La part de L_max(2 %) que la courbe QD-OLED garde à cette surface (1 à 2 % et moins, 0,257 à 100 %).
 double oled_abl_ratio(double area);

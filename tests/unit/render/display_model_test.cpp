@@ -42,3 +42,18 @@ TEST_CASE("Option --hdr-metadata : le maximum annoncé est le pic du contenu", "
   CHECK_THAT(identity.panel_peak_nits, Catch::Matchers::WithinAbs(1000.0, 1e-9));
   CHECK(identity.max_content_nits == 1000.0);
 }
+
+TEST_CASE("contrat : k = 1,305, C_pk = 766, MaxFALL = 200 en contenu", "[render][display]") {
+  // KDE à 265 nits de référence sur un QD-OLED de 1000 : le plein écran du limiteur (261) vaut 200 du
+  // contenu.
+  ajp::render::DisplayContract c{.reference_nits = 265.0, .panel_peak_nits = 1000.0};
+  c.oled = true;
+  c.abl = ajp::render::default_abl(c.panel_peak_nits, c.oled);
+  CHECK_THAT(c.k(), WithinRel(265.0 / 203.0, 1e-9));
+  CHECK_THAT(c.content_peak_nits(), WithinRel(766.0, 1e-3));
+  CHECK_THAT(c.abl.back(), WithinRel(261.0, 0.01));
+  CHECK_THAT(c.content_frame_average_nits(), WithinRel(200.0, 0.01));
+  CHECK(c.abl.front() == 1000.0);
+  // Une dalle LCD tient son pic sur toute surface.
+  for (const double nits : ajp::render::default_abl(600.0, false)) CHECK(nits == 600.0);
+}

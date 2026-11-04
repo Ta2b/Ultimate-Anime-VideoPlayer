@@ -5,6 +5,7 @@
 // s'en déduit est faux dès que la luminosité SDR n'est pas 203.
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -18,6 +19,11 @@ struct KwinOutput {
 };
 // connector : « DP-1 » (le préfixe « card1- » de DRM est ôté). Rien si la sortie n'y est pas.
 std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_view connector);
+// La sortie de ce connecteur DRM (« card1-DP-1 ») lue dans ~/.config/kwinoutputconfig.json ; rien hors Linux,
+// sans le fichier ou sans la sortie.
+std::optional<KwinOutput> read_kwin_output(std::string_view connector);
+// La date de modification de ce fichier (ns), pour le relire quand KDE le réécrit ; rien sans lui.
+std::optional<std::int64_t> kwin_config_stamp();
 
 // Le pic calibré par le système pour l'écran de ce connecteur DRM (« card1-DP-1 »), en unités du contenu PQ
 // (render/display_model.h) ; headroom : la marge HDR de SDL3. Linux : la crête de KWin, sinon marge × blanc

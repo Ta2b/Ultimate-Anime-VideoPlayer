@@ -37,6 +37,14 @@ double oled_abl_ratio(double area) {
   return kQdOled.back().nits / kQdOled.front().nits;
 }
 
+std::array<double, 5> default_abl(double panel_peak_nits, bool oled) {
+  std::array<double, 5> out{};
+  const double stretch = std::max(1.0, panel_peak_nits / kQdOled.front().nits);
+  for (std::size_t i = 0; i < out.size(); ++i)
+    out[i] = oled ? std::min(panel_peak_nits, kQdOled[i].nits * stretch) : panel_peak_nits;
+  return out;
+}
+
 double DisplayModel::scale() const {
   return reference_nits > 0.0 ? reference_nits / kContentReferenceNits : 1.0;
 }
