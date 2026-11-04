@@ -54,6 +54,14 @@ TEST_CASE("Un profil fixe la chaîne, le reste des réglages ne bouge pas", "[ap
   const PlaySettings source = apply_profile(*base->profiles[8], k1080p, mine, notes);
   CHECK_FALSE(source.upscale);
   CHECK(source.rife_factor == 0);
+  // Constat 8 du grade : « Source » coupe le grade, les autres le laissent aux réglages.
+  CHECK_FALSE(base->profiles[8]->grade);
+  CHECK_FALSE(source.grade);
+  CHECK(quality.grade);
+  for (std::size_t i = 0; i < 8; ++i) CHECK(base->profiles[i]->grade);
+  PlaySettings no_grade = mine;
+  no_grade.grade = false;
+  CHECK_FALSE(apply_profile(*base->profiles[0], k1080p, no_grade, notes).grade);
 }
 
 TEST_CASE("Les réglages en cours se relisent comme un profil", "[app][profiles]") {

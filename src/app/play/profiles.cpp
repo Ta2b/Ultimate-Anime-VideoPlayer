@@ -18,7 +18,7 @@ namespace {
 constexpr std::string_view kSpanPerformance = kSpanModelId;
 constexpr std::string_view kSpanBalanced = "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16";
 
-constexpr std::string_view kBaseTemplate = R"toml(version = 5
+constexpr std::string_view kBaseTemplate = R"toml(version = 6
 start_profile = 1
 
 [[profile]]
@@ -108,6 +108,7 @@ steps = [
 slot = 9
 name = "Source"
 hdr = "off"
+grade = false
 [[profile.rule]]
 steps = []
 )toml";
@@ -140,6 +141,7 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
   settings.rife_factor = 0;
   settings.rife_factor_den = 1;
   settings.hdr_native = profile.hdr == core::HdrMode::Native;
+  if (!profile.grade) settings.grade = false;  // « Source » : l'image telle quelle (constat 8 du grade)
   const core::Rule* rule = core::match_rule(profile, source);
   if (rule == nullptr) {
     notes.emplace_back("aucune règle pour cette source : image telle quelle");

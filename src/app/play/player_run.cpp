@@ -355,6 +355,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .shot_cuts = p.options.shot_cuts,
       .anime_shots = p.options.anime_shots};
   apply_oled_care(chain, settings);
+  keep_profile_grade(chain, p.from_file.grade);
 
   std::ofstream stats;
   if (options.stats) {

@@ -45,7 +45,7 @@ TEST_CASE("Profil : format_profile se relit à l'identique", "[profile]") {
 
 TEST_CASE("Profil : le texte écrit omet les valeurs par défaut des bornes et du rythme", "[profile]") {
   const std::string text = format_profile(sample());
-  CHECK(text.starts_with("version = 5\nstart_profile = 3\n"));
+  CHECK(text.starts_with("version = 6\nstart_profile = 3\n"));
   CHECK(text.find("slot = 3\nname = \"Qualité \\\"maison\\\" \\\\ ☆\\u0009tab\"\nhdr = \"native\"") !=
         std::string::npos);
   CHECK(text.find("min_fps = 23.976\nmax_fps = 30.0\n") != std::string::npos);
@@ -53,5 +53,22 @@ TEST_CASE("Profil : le texte écrit omet les valeurs par défaut des bornes et d
   CHECK(text.find("{ kind = \"upscale\", model = \"2x_HD\", factor = 2 }") != std::string::npos);
   CHECK(text.find("[[profile.rule]]\nsteps = []\n") != std::string::npos);
   CHECK(text.find("slot = 9\nname = \"\"\nhdr = \"off\"\n") != std::string::npos);
-  CHECK(format_profile(ProfileFile{}) == "version = 5\nstart_profile = 1\n");
+  CHECK(format_profile(ProfileFile{}) == "version = 6\nstart_profile = 1\n");
+}
+
+TEST_CASE("Profil v6 : grade = false s'écrit et se relit ; la version 5 se lit, grade vrai", "[profile]") {
+  ProfileFile file;
+  file.profiles[0] = Profile{.name = "Source", .hdr = HdrMode::Off, .grade = false};
+  file.profiles[1] = Profile{.name = "Avec", .hdr = HdrMode::Native};
+  const std::string text = format_profile(file);
+  CHECK(text.find("name = \"Source\"\nhdr = \"off\"\ngrade = false\n") != std::string::npos);
+  CHECK(text.find("grade = true") == std::string::npos);
+  auto reread = parse_profile(text);
+  REQUIRE(reread);
+  CHECK(*reread == file);
+  auto old = parse_profile("version = 5\n[[profile]]\nslot = 1\nname = \"Source\"\nhdr = \"off\"\n");
+  REQUIRE(old);
+  CHECK(old->profiles[0]->grade);
+  CHECK_FALSE(parse_profile("version = 7"));
+  CHECK_FALSE(parse_profile("version = 6\n[[profile]]\nslot = 1\ngrade = 1\n"));
 }
