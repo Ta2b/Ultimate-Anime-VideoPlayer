@@ -1,5 +1,7 @@
 #include "core/log.h"
 
+#include <cstdint>
+#include <map>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -31,9 +33,32 @@ ModuleHub& module_hub() {
   return module;
 }
 
-}  // namespace
+// Un canal par module (1.11) : log_channel le rend sans recréer de logger à chaque appel. Une entrée vaut
+// pour la génération des puits (install_log_sinks, install_module_log_sinks) et le journal par défaut d'où
+// elle vient ; l'un ou l'autre changé, elle se refait.
+struct ChannelCache {
+  std::mutex mutex;
+  std::uint64_t generation = 0;  // sous mutex
+  struct Entry {
+    std::shared_ptr<spdlog::logger> logger;
+    std::uint64_t generation = 0;
+    const spdlog::logger* source = nullptr;
+  };
+  std::map<std::string, Entry, std::less<>> channels;  // sous mutex
+};
 
-std::shared_ptr<spdlog::logger> log_channel(std::string_view module) {
+ChannelCache& channel_cache() {
+  static ChannelCache cache;
+  return cache;
+}
+
+void new_generation() {
+  ChannelCache& cache = channel_cache();
+  const std::scoped_lock lock(cache.mutex);
+  ++cache.generation;
+}
+
+std::shared_ptr<spdlog::logger> make_channel(std::string_view module) {
   {
     ModuleHub& routed = module_hub();
     const std::scoped_lock lock(routed.mutex);
@@ -47,6 +72,23 @@ std::shared_ptr<spdlog::logger> log_channel(std::string_view module) {
   // journal, ou le contenu de son répartiteur sous son verrou) et son niveau est atomique : le
   // copier pendant qu'un autre thread s'en sert est sûr.
   return spdlog::default_logger()->clone(std::string(module));
+}
+
+}  // namespace
+
+std::shared_ptr<spdlog::logger> log_channel(std::string_view module) {
+  const std::shared_ptr<spdlog::logger> source = spdlog::default_logger();
+  ChannelCache& cache = channel_cache();
+  const std::scoped_lock lock(cache.mutex);
+  const auto found = cache.channels.find(module);
+  if (found != cache.channels.end() && found->second.generation == cache.generation &&
+      found->second.source == source.get())
+    return found->second.logger;
+  std::shared_ptr<spdlog::logger> channel = make_channel(module);
+  cache.channels.insert_or_assign(
+      std::string(module),
+      ChannelCache::Entry{.logger = channel, .generation = cache.generation, .source = source.get()});
+  return channel;
 }
 
 void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level) {
@@ -63,15 +105,19 @@ void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level
   }
   hub->set_level(level);
   hub->set_sinks(std::move(sinks));
+  new_generation();  // les canaux suivent le niveau
 }
 
 void install_module_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level) {
-  ModuleHub& routed = module_hub();
-  const std::scoped_lock lock(routed.mutex);
-  if (routed.hub == nullptr) routed.hub = std::make_shared<LogHub>();
-  routed.level = level;
-  routed.hub->set_level(level);
-  routed.hub->set_sinks(std::move(sinks));
+  {
+    ModuleHub& routed = module_hub();
+    const std::scoped_lock lock(routed.mutex);
+    if (routed.hub == nullptr) routed.hub = std::make_shared<LogHub>();
+    routed.level = level;
+    routed.hub->set_level(level);
+    routed.hub->set_sinks(std::move(sinks));
+  }
+  new_generation();  // hors du verrou du répartiteur : log_channel prend le cache, puis lui
 }
 
 }  // namespace ajp
