@@ -261,11 +261,9 @@ void grade_tab(PlaySettings& d, const SettingsChoices& choices, std::vector<Inpu
   if (d.hdr_native) {
     note(i18n::tr("Adaptive HDR path: libplacebo in PQ with a scene-based TrueHDR look, then the grade."));
   } else {
-    note(
-        choices.hdr_output
-            ? i18n::tr("SDR mode: the grade imitates the HDR look in the display's HDR10 container.")
-            : i18n::tr(
-                  "SDR mode: the grade imitates the HDR look without an HDR display. Vivid strengthens it."));
+    note(choices.hdr_output
+             ? i18n::tr("SDR mode: the grade imitates the HDR look in the display's HDR10 container.")
+             : i18n::tr("SDR mode: the grade imitates the HDR look without an HDR display."));
   }
 }
 

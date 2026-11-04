@@ -38,7 +38,6 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.subtitle_scale = 1.25F;
   s.stats.frames = true;
   s.stats.memory = true;
-  s.grade_preset = render::GradePreset::Custom;
   s.grade_values.shadows = 0.55;
   s.grade_values.guard = 0.25;
   s.grade_values.gamut_p3 = true;
@@ -141,7 +140,6 @@ TEST_CASE("Grade : plus de préréglages, l'ancienne clé est ignorée, gamut P3
           "[app][settings]") {
   const PlaySettings defaults;
   CHECK(defaults.grade);
-  CHECK(defaults.grade_preset == render::GradePreset::Custom);
   CHECK(defaults.grade_values.vibrance_rtx == 0.10);  // dans le doute, peu de couleur
   CHECK(defaults.grade_values.adaptive_gray == 15.0);
   const auto old = parse_settings("[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\n");
@@ -253,8 +251,7 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   live.volume = 0.5F;
   live.stats.all = true;
   live.hdr_native = true;
-  live.grade_preset = render::GradePreset::Naturel;
-  live.grade_values = render::grade_preset(render::GradePreset::Naturel);
+  live.grade_values = render::GradeSettings{};
   CHECK(change_between(running, live, true).cost == ChangeCost::Live);
   CHECK(live_part(running, live, true) == live);
   PlaySettings height = running;

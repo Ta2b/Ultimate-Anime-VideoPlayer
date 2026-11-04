@@ -165,54 +165,6 @@ GradeParams sdr_params(const GradeSettings& s) {
 
 }  // namespace
 
-GradeSettings grade_preset(GradePreset preset, GradeSettings custom) {
-  switch (preset) {
-    case GradePreset::Naturel:
-      return GradeSettings{};
-    case GradePreset::Eclatant: {
-      GradeSettings s;
-      s.shadows = 0.50;
-      s.highlights = 0.95;
-      s.highlights_rtx = 0.90;
-      s.vibrance = 0.60;
-      s.vibrance_rtx = 0.60;
-      s.area_rtx = 0.50;
-      s.guard = 0.80;
-      s.expand = 0.70;
-      s.punch_base = 0.30;   // des noirs plus profonds, des hautes lumières qui claquent
-      s.chroma_base = 0.12;  // des couleurs plus riches, sans toucher aux gris
-      return s;
-    }
-    case GradePreset::Custom:
-      return custom;
-  }
-  return custom;
-}
-
-std::string_view preset_key(GradePreset preset) {
-  switch (preset) {
-    case GradePreset::Eclatant:
-      return "eclatant";
-    case GradePreset::Naturel:
-      return "naturel";
-    case GradePreset::Custom:
-      return "perso";
-  }
-  return "perso";
-}
-
-std::string_view preset_label(GradePreset preset) {
-  switch (preset) {
-    case GradePreset::Eclatant:
-      return "Vivid";
-    case GradePreset::Naturel:
-      return "Natural";
-    case GradePreset::Custom:
-      return "Custom";
-  }
-  return "Custom";
-}
-
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
   using namespace grade_limits;
   for (const auto& result : {check("paper_white", s.paper_white, kPaperWhite),

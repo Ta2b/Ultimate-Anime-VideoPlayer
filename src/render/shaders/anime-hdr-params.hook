@@ -1,7 +1,7 @@
 // Origine : https://github.com/Ta2b/mpv-AnimeJaNai-HDR, commit 33ff79d (vu à c6fee61),
 // BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/portable_config/user-shaders/anime-hdr-grade.hook,
 // copié sous cet en-tête. Seul ajout de ce dépôt : le garde-fou des couleurs saturées (`guard`,
-// préréglage « Éclatant ») ; à guard = 0, le défaut, le shader calcule exactement comme l'original.
+// réglages poussés) ; à guard = 0, le défaut, le shader calcule exactement comme l'original.
 //
 // AnimeJaNai HDR grade - un seul shader pour RTX TrueHDR et le HDR MPV (NVIDIA / AMD / Intel).
 //

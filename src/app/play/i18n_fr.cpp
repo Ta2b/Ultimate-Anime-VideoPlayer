@@ -46,7 +46,7 @@ constexpr std::array kPlayer{
     Entry{"GMFSS unavailable: using RIFE", "GMFSS indisponible : RIFE"},
     Entry{"German", "Allemand"},
     Entry{"Grade off", "Grade désactivé"},
-    Entry{"Grade: {}", "Grade : {}"},
+    Entry{"Grade on", "Grade activé"},
     Entry{"Hindi", "Hindi"},
     Entry{"Impulse response unreadable: using the default",
           "Réponse impulsionnelle illisible : modèle d'origine"},

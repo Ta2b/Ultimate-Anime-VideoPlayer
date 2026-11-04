@@ -149,7 +149,7 @@ struct GradeSettings {
   bool gamut_p3 = false;          // limite au gamut Display P3 de l'écran
   double black_lo = 0.0;          // nits : vrai noir OLED sous ce seuil
   double black_hi = 0.0;          // nits : fin du pied ; <= black_lo, la passe est sautée
-  // Ajouts de ce dépôt (préréglage « Éclatant ») ; à 0, le grade est celui du lecteur actuel.
+  // Ajouts de ce dépôt ; à 0, le grade est celui du lecteur actuel.
   double guard = 0.0;     // garde-fou des couleurs saturées près du pic
   double area_rtx = 0.0;  // TrueHDR et son émulation : gain des grands aplats clairs (0 : aucun)
   // Couleurs étendues : les couleurs BT.709 saturées vont vers les primaires P3 (peau et gris
@@ -162,14 +162,6 @@ struct GradeSettings {
   double abl_hi = 250.0;
   friend bool operator==(const GradeSettings&, const GradeSettings&) = default;
 };
-
-// Préréglages du grade. Naturel : celui du lecteur actuel (GradeSettings{}). Éclatant : éclats,
-// aplats lumineux, couleurs, couleurs étendues et noirs poussés, garde-fou des couleurs saturées.
-enum class GradePreset : std::uint8_t { Eclatant, Naturel, Custom };
-inline constexpr int kGradePresetCount = 3;
-GradeSettings grade_preset(GradePreset preset, GradeSettings custom = {});
-std::string_view preset_key(GradePreset preset);    // « eclatant », la clé de play.toml
-std::string_view preset_label(GradePreset preset);  // « Vivid » : clé de traduction du menu (app/play/i18n.h)
 
 // FieldOutOfRange en nommant le champ (« grade.paper_white ») ; abl_hi doit dépasser abl_lo.
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& settings);

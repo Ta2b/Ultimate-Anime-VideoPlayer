@@ -25,6 +25,23 @@ double resp(double x, double hi, double gain) {
   return gain * hi * std::pow(x / hi, 0.7);
 }
 
+// Des réglages poussés (les valeurs de l'ancien préréglage « Éclatant ») : éclats, aplats lumineux, couleurs,
+// couleurs étendues et noirs poussés, garde-fou des couleurs saturées, punch et chroma de base.
+GradeSettings pushed() {
+  GradeSettings s;
+  s.shadows = 0.50;
+  s.highlights = 0.95;
+  s.highlights_rtx = 0.90;
+  s.vibrance = 0.60;
+  s.vibrance_rtx = 0.60;
+  s.area_rtx = 0.50;
+  s.guard = 0.80;
+  s.expand = 0.70;
+  s.punch_base = 0.30;
+  s.chroma_base = 0.12;
+  return s;
+}
+
 }  // namespace
 
 TEST_CASE("route native SDR avec émulation TrueHDR : les réglages par défaut du lecteur actuel") {
@@ -144,7 +161,7 @@ TEST_CASE("aspect TrueHDR émulé : les éclats montent à partir de la moitié 
 }
 
 TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans marge d'éclats") {
-  GradeSettings settings = grade_preset(GradePreset::Eclatant);
+  GradeSettings settings = pushed();
   settings.contrast = 150.0;
   settings.true_black = true;
   settings.black_lo = 0.1;
@@ -270,9 +287,9 @@ TEST_CASE("OLED : la plage du limiteur suit la moyenne d'image de l'écran") {
   CHECK(refused.error().detail.starts_with("grade.abl_hi"));
 }
 
-TEST_CASE("couleurs étendues : passées au hook, nulles par défaut, poussées par Éclatant") {
+TEST_CASE("couleurs étendues : passées au hook, nulles par défaut, poussées par des réglages poussés") {
   const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
-  const auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), pq_context(core::HdrMode::Native));
+  const auto vivid = decide_grade(pushed(), pq_context(core::HdrMode::Native));
   REQUIRE(natural);
   REQUIRE(vivid);
   CHECK(natural->params.expand == 0.0);
@@ -308,24 +325,9 @@ TEST_CASE("pic du grade : celui de l'écran s'il est connu, 1000 nits sinon") {
   CHECK_FALSE(grade_peak(display));
 }
 
-TEST_CASE("préréglages : Naturel est le grade du lecteur actuel, Éclatant pousse tout") {
-  CHECK(grade_preset(GradePreset::Naturel) == GradeSettings{});
-  const GradeSettings vivid = grade_preset(GradePreset::Eclatant);
-  const GradeSettings natural;
-  CHECK(vivid.highlights_rtx > natural.highlights_rtx);
-  CHECK(vivid.vibrance_rtx > natural.vibrance_rtx);
-  CHECK(vivid.shadows > natural.shadows);
-  CHECK(vivid.guard > 0.0);
-  CHECK(check_grade_settings(vivid).has_value());
-  GradeSettings mine;
-  mine.shadows = 0.7;
-  CHECK(grade_preset(GradePreset::Custom, mine) == mine);
-  CHECK(preset_key(GradePreset::Eclatant) == "eclatant");
-}
-
-TEST_CASE("Éclatant sur l'aspect TrueHDR : aplats et éclats montent, le garde-fou passe au hook") {
+TEST_CASE("réglages poussés sur l'aspect TrueHDR : aplats et éclats montent, le garde-fou passe au hook") {
   const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
-  const auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), pq_context(core::HdrMode::Native));
+  const auto vivid = decide_grade(pushed(), pq_context(core::HdrMode::Native));
   REQUIRE(natural);
   REQUIRE(vivid);
   CHECK(natural->params.area_gain == 1.0);
@@ -373,9 +375,10 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
 
 }  // namespace ajp::render
 
-TEST_CASE("contraste et saturation au maximum : borne du curseur, punch d'Éclatant", "[grade][punch]") {
+TEST_CASE("contraste et saturation au maximum : borne du curseur, punch des réglages poussés",
+          "[grade][punch]") {
   using namespace ajp::render;
-  GradeSettings s = grade_preset(GradePreset::Naturel);
+  GradeSettings s = GradeSettings{};
   const GradeContext context{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
   auto at_rest = decide_grade(s, context);
   REQUIRE(at_rest);
@@ -391,8 +394,8 @@ TEST_CASE("contraste et saturation au maximum : borne du curseur, punch d'Éclat
     g.contrast = 201.0;
     return g;
   }()));
-  // Éclatant ajoute son propre punch dès le départ.
-  auto vivid = decide_grade(grade_preset(GradePreset::Eclatant), context);
+  // Les réglages poussés ajoutent leur propre punch dès le départ.
+  auto vivid = decide_grade(pushed(), context);
   CHECK(vivid->params.punch == Approx(0.30));
   CHECK(vivid->params.chroma == Approx(1.12));
 }

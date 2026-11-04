@@ -24,10 +24,6 @@ TEST_CASE("le grade adaptatif se relit à l'identique et survit au changement de
   CHECK(back->grade_values.adaptive_gray == 32.0);
   CHECK(back->grade_values.adaptive_shadows == 0.7);
   CHECK(back->grade_values.adaptive_vibrance == 0.1);
-  const auto switched = ajp::app::play::with_preset(ajp::render::GradePreset::Naturel, s.grade_values);
-  CHECK(switched.adaptive);
-  CHECK(switched.adaptive_hi == 54.0);
-  CHECK(switched.adaptive_gray == 32.0);
   CHECK(ajp::app::play::PlaySettings{}.grade_values.adaptive);  // adaptatif par défaut
 }
 
