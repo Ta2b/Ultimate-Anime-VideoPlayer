@@ -17,7 +17,7 @@ namespace {
 // Un //!PARAM et le champ de GradeParams qui le règle.
 struct ParamBinding {
   std::string_view name;
-  double GradeParams::* field;
+  double GradeParams::*field;
 };
 
 constexpr std::array kGradeParams = {
@@ -86,6 +86,9 @@ constexpr std::array kGradeParams = {
     ParamBinding{"fs_apl", &GradeParams::fs_apl},
     ParamBinding{"fs_bright", &GradeParams::fs_bright},
     ParamBinding{"an_lift", &GradeParams::an_lift},
+    ParamBinding{"an_punch", &GradeParams::an_punch},
+    ParamBinding{"an_chroma", &GradeParams::an_chroma},
+    ParamBinding{"an_spec", &GradeParams::an_spec},
 };
 
 constexpr std::array kLookParams = {

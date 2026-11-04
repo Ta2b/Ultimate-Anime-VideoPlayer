@@ -203,6 +203,22 @@ TEST_CASE("ajp play : les réglages du HDR adaptatif, refus nommés hors plage",
   CHECK(parse({"a.mkv", "--truehdr-contrast=401"}).error().code == RefusalCode::FieldOutOfRange);
 }
 
+TEST_CASE("ajp play : le peps de --hdr-anime en %, 100 par défaut, refus hors de 0 à 200", "[app][options]") {
+  const auto plain = parse({"a.mkv"});
+  REQUIRE(plain);
+  CHECK(plain->anime_contrast == 100);
+  CHECK(plain->anime_saturation == 100);
+  CHECK(plain->anime_highlights == 100);
+  const auto peps =
+      parse({"a.mkv", "--anime-contrast=140", "--anime-saturation=125", "--anime-highlights=0"});
+  REQUIRE(peps);
+  CHECK(peps->anime_contrast == 140);
+  CHECK(peps->anime_saturation == 125);
+  CHECK(peps->anime_highlights == 0);
+  CHECK(parse({"a.mkv", "--anime-contrast=201"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--anime-saturation=fort"}).error().code == RefusalCode::FieldOutOfRange);
+}
+
 TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", "[app][options]") {
   const auto dir = std::filesystem::temp_directory_path() / "ajp-app-model-test";
   std::filesystem::create_directories(dir);

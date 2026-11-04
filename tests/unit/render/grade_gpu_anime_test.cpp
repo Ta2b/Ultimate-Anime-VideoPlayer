@@ -155,4 +155,32 @@ TEST_CASE("HDR anime : sortie SDR inchangée", "[render][gpu]") {
   }
 }
 
+TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 100 %", "[render][gpu]") {
+  Gpu gpu(GradeBody::Anime);
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une surface sombre (30 nits) et une claire (150 nits) : le contraste écarte les deux autour du pivot.
+  const auto grays = columns([](int x) { return x < kSide / 2 ? 30.0 : 150.0; });
+  const auto plain = graded_rgb(gpu, grays, anime_params());
+  GradeParams punchy = anime_params();
+  punchy.an_punch = 0.5;
+  const auto lifted = graded_rgb(gpu, grays, punchy);
+  const auto dark = static_cast<std::size_t>(kSide / 4);
+  const auto bright = static_cast<std::size_t>(3 * kSide / 4);
+  CHECK(luma(lifted[dark]) < luma(plain[dark]));
+  CHECK(luma(lifted[bright]) > luma(plain[bright]));
+
+  // Une surface colorée : la saturation écarte les canaux de la luminance, sans canal négatif.
+  std::vector<std::uint16_t> tinted = columns([](int) { return 80.0; });
+  for (std::size_t i = 0; i < tinted.size(); i += 4)
+    tinted[i + 2] = static_cast<std::uint16_t>(std::lround(nits_to_pq(40.0) * 65535.0));
+  const auto base = graded_rgb(gpu, tinted, anime_params());
+  GradeParams vivid = anime_params();
+  vivid.an_chroma = 1.5;
+  const auto more = graded_rgb(gpu, tinted, vivid);
+  const auto mid = static_cast<std::size_t>(kSide / 2);
+  CHECK(more[mid][0] - more[mid][2] > 1.2 * (base[mid][0] - base[mid][2]));
+  CHECK(more[mid][2] >= 0.0);
+}
+
 }  // namespace ajp::render

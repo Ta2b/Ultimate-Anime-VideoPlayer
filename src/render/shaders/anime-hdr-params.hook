@@ -459,6 +459,27 @@
 //!MAXIMUM 3.0
 1.15
 
+//!PARAM an_punch
+//!DESC HDR anime : contraste en plus autour du gris des surfaces (0 = aucun, --anime-contrast)
+//!TYPE float
+//!MINIMUM -1.0
+//!MAXIMUM 2.0
+0.0
+
+//!PARAM an_chroma
+//!DESC HDR anime : facteur de saturation (1 = identite, --anime-saturation)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+1.0
+
+//!PARAM an_spec
+//!DESC HDR anime : part de la montee des eclats (1 = celle du grade, --anime-highlights)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+1.0
+
 //!PARAM video_fps
 //!DESC Images video distinctes par seconde a l'ecran (source x interpolation) : les lissages sont en secondes
 //!TYPE float

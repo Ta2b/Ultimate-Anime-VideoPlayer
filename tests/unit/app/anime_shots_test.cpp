@@ -97,4 +97,21 @@ TEST_CASE("anime par plan : l'exposition relève les surfaces du grade, rien san
   CHECK(low->params.an_lift == Approx(render::kAnimeLift * std::exp2(-render::kCurveMaxE)));
 }
 
+TEST_CASE("anime : le peps en % devient contraste, saturation et part des éclats du grade", "[app][anime]") {
+  render::GradeSettings s;
+  const auto plain = render::decide_grade(s, pq_context());
+  REQUIRE(plain.has_value());
+  CHECK(plain->params.an_punch == Approx(0.0));
+  CHECK(plain->params.an_chroma == Approx(1.0));
+  CHECK(plain->params.an_spec == Approx(1.0));
+  s.anime_contrast = 150;
+  s.anime_saturation = 120;
+  s.anime_highlights = 0;
+  const auto peps = render::decide_grade(s, pq_context());
+  REQUIRE(peps.has_value());
+  CHECK(peps->params.an_punch == Approx(0.5));
+  CHECK(peps->params.an_chroma == Approx(1.2));
+  CHECK(peps->params.an_spec == Approx(0.0));
+}
+
 }  // namespace ajp::app::play

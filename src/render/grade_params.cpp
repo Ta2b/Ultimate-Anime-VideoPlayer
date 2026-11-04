@@ -125,6 +125,10 @@ void apply_punch(const GradeSettings& s, GradeParams& p) {
   p.punch = s.punch_base;
   p.chroma = 1.0 + s.chroma_base;
   p.pivot = 0.4 * grade_limits::kSdrWhiteNits;
+  // Le peps de la méthode « HDR anime » : 100 % partout, la méthode telle quelle.
+  p.an_punch = std::clamp((s.anime_contrast - 100) / 100.0, -1.0, 2.0);
+  p.an_chroma = std::clamp(s.anime_saturation / 100.0, 0.0, 2.0);
+  p.an_spec = std::clamp(s.anime_highlights / 100.0, 0.0, 2.0);
 }
 
 // Sortie SDR : le blanc de la source est celui de l'écran, aucune marge pour des éclats. Restent les
