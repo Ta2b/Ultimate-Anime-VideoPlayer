@@ -393,6 +393,14 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   4K ; le profil GPU du backend montre « grade de l'anneau ». À l'œil : changer un réglage du grade en pause
   le montre en moins d'un quart de seconde ; une coupe de plan en grade adaptatif change le grade sur la
   bonne image. Sans `--grade-ring`, rien ne change.
+- **2.11, porte sur 30 plans** : remplir `tools/grade/episodes.tsv` (d'après `episodes.exemple.tsv` : nuit,
+  ciel, lueur, éclair, fondu, champ/contrechamp, deux de chaque), puis
+  `tools/grade/make_stills.sh tools/grade/episodes.tsv ~/ajp-test/stills` et, avec les réglages de lecture
+  habituels dans BASE : `WINDOW=<taille de l'anneau> tools/grade/compare_shots.sh "" "--grade-ring" ~/ajp-reports/porte`
+  (par plan p95 ≤ 1 et p99,9 ≤ 3), puis `WINDOW=3840x2160` (p95 ≤ 2,5). Ensuite l'A/B à l'aveugle sur 20
+  extraits (B, le grade de l'anneau, au moins égal) et le banc 720p ×5 : au moins 90 ms GPU par seconde de
+  moins à l'affichage. Si tout passe, `FusedSplit` (`--legacy-grade=split`) part, et `--grade-ring` peut
+  devenir le défaut (à décider ensemble).
 
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 

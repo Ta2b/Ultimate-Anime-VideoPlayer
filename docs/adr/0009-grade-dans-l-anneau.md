@@ -43,6 +43,9 @@ grade, ou refaire le grade exact dans le ring.
    un seek exact sur elle (`Session::regrade_paused`, au plus une fois par 150 ms) : un réglage changé en
    pause se voit. Le backend libère la plus ancienne version derrière l'événement de sa dernière lecture,
    sans vider les voies.
+8. **La porte** (chantier 2.11) : `tools/grade/shots30.tsv` (les 18 plans de calibration.mkv et 12 plans
+   d'épisodes découpés par `make_stills.sh`), `compare_shots.sh A B SORTIE` (deux instantanés PQ par plan,
+   ΔE_ITP par `de_itp.py`, verdict par plan). `FusedSplit` ne part qu'une fois la porte passée sur le PC.
 
 ## Mesures (chantier 2.7, lavapipe)
 - Référence contre le shader, même image 256 × 256 PQ, six réglages : ΔE_ITP p50 ≤ 0,37, p99 ≤ 1,0 sauf

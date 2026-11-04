@@ -1,0 +1,35 @@
+# Les 30 plans de la porte du grade de l'anneau (chantier 2.11, docs/adr/0009-grade-dans-l-anneau.md).
+# nom	source	début (s)	genre
+# source : « cal » pour calibration.mkv (CAL), sinon « ep:NOM » pour l'extrait tools/grade/make_stills.sh
+# NOM.mkv du dossier STILLS. Les 12 plans d'épisodes se remplissent à la main (épisode, seconde) dans
+# episodes.tsv, que make_stills.sh découpe.
+cal01	cal	3	calibration
+cal02	cal	9	calibration
+cal03	cal	15	calibration
+cal04	cal	21	calibration
+cal05	cal	27	calibration
+cal06	cal	33	calibration
+cal07	cal	39	calibration
+cal08	cal	45	calibration
+cal09	cal	51	calibration
+cal10	cal	57	calibration
+cal11	cal	63	calibration
+cal12	cal	69	calibration
+cal13	cal	75	calibration
+cal14	cal	81	calibration
+cal15	cal	87	calibration
+cal16	cal	93	calibration
+cal17	cal	99	calibration
+cal18	cal	105	calibration
+nuit1	ep:nuit1	2	nuit
+nuit2	ep:nuit2	2	nuit
+ciel1	ep:ciel1	2	ciel
+ciel2	ep:ciel2	2	ciel
+lueur1	ep:lueur1	2	lueur
+lueur2	ep:lueur2	2	lueur
+eclair1	ep:eclair1	2	éclair
+eclair2	ep:eclair2	2	éclair
+fondu1	ep:fondu1	2	fondu
+fondu2	ep:fondu2	2	fondu
+champ1	ep:champ1	2	champ-contrechamp
+champ2	ep:champ2	2	champ-contrechamp

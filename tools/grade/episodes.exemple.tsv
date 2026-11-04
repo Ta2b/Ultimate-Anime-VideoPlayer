@@ -1,0 +1,14 @@
+# Les 12 plans d'épisodes de shots30.tsv : nom, épisode, seconde où le plan commence. Copier en
+# episodes.tsv, remplir, puis : tools/grade/make_stills.sh episodes.tsv DOSSIER
+nuit1	/chemin/episode01.mkv	312
+nuit2	/chemin/episode07.mkv	845
+ciel1	/chemin/episode02.mkv	95
+ciel2	/chemin/episode11.mkv	1210
+lueur1	/chemin/episode04.mkv	640
+lueur2	/chemin/episode09.mkv	402
+eclair1	/chemin/episode05.mkv	733
+eclair2	/chemin/episode12.mkv	988
+fondu1	/chemin/episode03.mkv	1320
+fondu2	/chemin/episode08.mkv	56
+champ1	/chemin/episode06.mkv	510
+champ2	/chemin/episode10.mkv	1105
