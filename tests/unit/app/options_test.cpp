@@ -108,6 +108,9 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto cuts = parse({"épisode.mkv", "--shot-cuts"});
   REQUIRE(cuts);
   CHECK(cuts->shot_cuts);
+  CHECK(options->anime_shots);  // défaut ; --no-anime-shots le coupe seul (audit F3)
+  CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
+  CHECK(parse({"épisode.mkv", "--no-anime-shots"})->anime_guided == options->anime_guided);
   CHECK_FALSE(options->hdr_contract_v2);
   const auto same = parse({"épisode.mkv", "--hdr-contract-v2"});
   REQUIRE(same);  // le rendu par défaut, exactement

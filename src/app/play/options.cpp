@@ -139,6 +139,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.shot_cuts = true;
     } else if (arg == "--anime-shots") {
       options.anime_shots = true;
+    } else if (arg == "--no-anime-shots") {
+      options.anime_shots = false;  // le relèvement fixe, la lumière de la scène mesurée en direct
     } else if (arg == "--no-looks") {
       options.no_looks = true;
     } else if (arg == "--anime-pure") {
@@ -517,8 +519,8 @@ std::string play_usage() {
       "                         (en essai ; éteint par défaut)\n"
       "  --hdr-anime      méthode HDR « anime » (surfaces ancrées, seuls les émetteurs montent), par défaut\n"
       "                   avec --anime-guided et --anime-shots ; --classic-grade : le grade d'avant\n"
-      "  --anime-shots    essai : --hdr-anime décidée par plan (exposition, marge des éclats), glissée aux "
-      "coupes\n"
+      "  --anime-shots    --hdr-anime décidée par plan (défaut) : surfaces ancrées à ±5 %, marge des éclats\n"
+      "                   du plan, changées à l'image de coupe ; --no-anime-shots : le relèvement fixe\n"
       "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
       "  --no-looks       essai : sans la pile de LUT\n"
       "  --bake-looks=FICHIER.cube  écrit la pile de LUT de play.toml (intensités comprises) en une seule "
