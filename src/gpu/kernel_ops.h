@@ -89,6 +89,14 @@ struct GradeOrder {
   std::span<const float> look_rgb;      // look_size³ × 3, R le plus rapide
   std::span<const float> input_nits;    // 3 × kernels::grade::kInputTablePoints, R, V, B bout à bout
   std::array<float, 9> input_matrix{};  // primaires de la source vers BT.2020, ligne par ligne
+  // Le grade du contrat v2 (8.6, --hdr-contract-v2 avec --grade-ring) : la LUT de la courbe du plan
+  // (curve_size³ × 3, indexée par √code PQ) remplace grade et look ; curve_fade, celle de la fin d'un fondu,
+  // mêlée par (pts − from_pts_us) / (until_pts_us − from_pts_us). curve_size 0 : le grade d'avant.
+  int curve_size = 0;
+  std::span<const float> curve_lut;
+  std::span<const float> curve_fade;
+  std::int64_t from_pts_us = 0;
+  std::int64_t until_pts_us = 0;
 };
 
 // Ordres de grade qu'un backend garde au plus : les images déjà dans l'anneau gardent le leur.

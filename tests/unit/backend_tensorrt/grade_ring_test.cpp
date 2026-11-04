@@ -13,6 +13,7 @@
 #include "backend_fixture.h"
 #include "gpu/cuda/backend/grade_kernels.h"
 #include "kernels/ref/grade.h"
+#include "kernels/spec/grade_pixel.h"
 
 using namespace ajp;
 using ajp::test::has_cuda;
@@ -321,6 +322,82 @@ TEST_CASE("grade de l'anneau contre la référence", "[backend_tensorrt][cuda][g
       CHECK(deltas.back() <= std::ldexp(1.0F, -11));
     }
   }
+}
+
+// La lecture trilinéaire d'une LUT n³ (R le plus rapide) comme la texture du noyau : c × (n − 1).
+struct HostLut {
+  const std::vector<float>* rgb;
+  int n;
+  kernels::grade::V3 operator()(kernels::grade::V3 c) const {
+    const std::array<float, 3> at{c.r, c.g, c.b};
+    std::array<int, 3> lo{};
+    std::array<float, 3> t{};
+    for (std::size_t k = 0; k < 3; ++k) {
+      const float x = std::clamp(at[k], 0.0F, 1.0F) * static_cast<float>(n - 1);
+      lo[k] = std::min(static_cast<int>(x), n - 2);
+      t[k] = x - static_cast<float>(lo[k]);
+    }
+    std::array<float, 3> out{};
+    for (int corner = 0; corner < 8; ++corner) {
+      const int d[3] = {corner & 1, (corner >> 1) & 1, (corner >> 2) & 1};
+      float w = 1.0F;
+      for (std::size_t k = 0; k < 3; ++k) w *= d[k] != 0 ? t[k] : 1.0F - t[k];
+      const auto un = [](int v) { return static_cast<std::size_t>(v); };
+      const std::size_t i = ((un(lo[2] + d[2]) * un(n) + un(lo[1] + d[1])) * un(n) + un(lo[0] + d[0])) * 3;
+      for (std::size_t ch = 0; ch < 3; ++ch) out[ch] += w * (*rgb)[i + ch];
+    }
+    return {out[0], out[1], out[2]};
+  }
+};
+
+TEST_CASE("grade de l'anneau v2 : la LUT de la courbe et le fondu contre la référence",
+          "[backend_tensorrt][cuda][grade_ring]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 250;
+  constexpr int h = 140;
+  constexpr int n = 33;
+  const kref::GradeInput input = kref::sdr_input();
+  const std::vector<float> curve = warm_lut(n);
+  std::vector<float> fade(curve.size());
+  for (std::size_t i = 0; i < fade.size(); ++i) fade[i] = 0.8F * curve[i];  // la fin du fondu, plus sombre
+  const std::vector<std::uint16_t> source = to_rgba16(scene(w, h));
+  const auto pq = kref::apply_input(from_rgba16(source, w, h), input);
+  REQUIRE(pq);
+  DeviceFrame dev(w, h, input, curve, n);
+  DeviceFrame end(w, h, input, fade, n);
+  for (const float mix : {0.0F, 0.3F, 1.0F}) {
+    INFO("mélange " << mix);
+    dev.upload(source);
+    gpu::cuda::GradeFrame f = dev.frame(kernels::GradeUniforms{}, input, false, n);
+    f.curve = dev.lut;
+    f.curve_fade = mix > 0.0F ? end.lut : 0;
+    f.curve_size = n;
+    f.curve_mix = mix;
+    REQUIRE(gpu::cuda::launch_grade_lut_slot(f, nullptr) == cudaSuccess);
+    REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+    const std::vector<std::uint16_t> got = dev.download();
+    const HostLut a{&curve, n};
+    const HostLut b{&fade, n};
+    std::vector<float> deltas;
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) {
+        const kernels::grade::V3 e{pq->planes[0].at(x, y), pq->planes[1].at(x, y), pq->planes[2].at(x, y)};
+        const kernels::grade::V3 want = kernels::grade::curve_lut_code(e, a, b, mix);
+        const float wanted[3] = {want.r, want.g, want.b};
+        for (std::size_t ch = 0; ch < 3; ++ch) {
+          const float v = static_cast<float>(
+                              got[(static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x)) * 4 + ch]) /
+                          65535.0F;
+          deltas.push_back(std::abs(v - std::clamp(wanted[ch], 0.0F, 1.0F)));
+        }
+      }
+    std::ranges::sort(deltas);
+    const float p999 = deltas[static_cast<std::size_t>(0.999 * static_cast<double>(deltas.size() - 1))];
+    INFO("|ΔPQ| p99,9 = " << p999 * 65535.0F << " codes 16 bits, max = " << deltas.back() * 65535.0F);
+    CHECK(p999 <= std::ldexp(1.0F, -12));
+  }
+  gpu::cuda::GradeFrame empty;
+  CHECK(gpu::cuda::launch_grade_lut_slot(empty, nullptr) == cudaErrorInvalidValue);
 }
 
 TEST_CASE("grade de l'anneau : entrées refusées", "[backend_tensorrt][cuda][grade_ring]") {

@@ -194,6 +194,17 @@ __global__ void __launch_bounds__(kPixelThreads) grade_pixel_kernel(Launch p) {
   store_ring(p.frame.surface, x, y, e.r, e.g, e.b);
 }
 
+__global__ void __launch_bounds__(kPixelThreads) grade_lut_kernel(GradeFrame f) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= f.width || y >= f.height) return;
+  const SurfaceFetch fetch{f.surface, f.width, f.height, f.input_nits, f.input_matrix};
+  const g::V3 e =
+      g::curve_lut_code(fetch(x, y), LookTex{f.curve, f.curve_size}, LookTex{f.curve_fade, f.curve_size},
+                        f.curve_fade != 0 ? f.curve_mix : 0.0F);
+  store_ring(f.surface, x, y, e.r, e.g, e.b);
+}
+
 dim3 grid_of(int w, int h) {
   return dim3(static_cast<unsigned>((w + kTile - 1) / kTile), static_cast<unsigned>((h + kTile - 1) / kTile));
 }
@@ -244,6 +255,14 @@ cudaError_t launch_grade_slot(const GradeFrame& frame, cudaStream_t stream) {
     if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
   }
   grade_pixel_kernel<<<grid_of(frame.width, frame.height), block, 0, stream>>>(p);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_grade_lut_slot(const GradeFrame& frame, cudaStream_t stream) {
+  if (frame.surface.object == 0 || frame.width < 1 || frame.height < 1 || frame.input_nits == nullptr ||
+      frame.curve == 0 || frame.curve_size < 2)
+    return cudaErrorInvalidValue;
+  grade_lut_kernel<<<grid_of(frame.width, frame.height), dim3(kTile, kTile), 0, stream>>>(frame);
   return cudaGetLastError();
 }
 

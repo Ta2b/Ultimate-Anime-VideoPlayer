@@ -35,6 +35,12 @@ struct GradeFrame {
   cudaTextureObject_t look = 0;
   int look_size = 0;
   kernels::GradeUniforms uniforms;
+  // Le grade du contrat v2 (8.6) : la LUT de la courbe du plan et celle de la fin d'un fondu (0 hors fondu),
+  // mêlées à curve_mix ; launch_grade_lut_slot ne lit qu'elles et l'entrée.
+  cudaTextureObject_t curve = 0;
+  cudaTextureObject_t curve_fade = 0;
+  int curve_size = 0;
+  float curve_mix = 0.0F;
   float* local = nullptr;     // 3 × local_w × local_h
   float* area = nullptr;      // area_w × area_h, la zone lissée
   float* history = nullptr;   // area_w × area_h, gardé par chaîne d'images (valeur + 1, 0 : jamais écrit)
@@ -50,5 +56,8 @@ cudaError_t launch_grade_area(const GradeFrame& frame, float dt_s, bool reset, c
 // Le max local du vrai noir (s'il est allumé), puis chaque pixel : entrée, grade, look, pied, KWin, et le
 // code PQ écrit en place.
 cudaError_t launch_grade_slot(const GradeFrame& frame, cudaStream_t stream);
+// Le grade du contrat v2 : chaque pixel, son entrée, une lecture 3D (deux dans un fondu), le code PQ écrit en
+// place. Sans cartes.
+cudaError_t launch_grade_lut_slot(const GradeFrame& frame, cudaStream_t stream);
 
 }  // namespace ajp::gpu::cuda

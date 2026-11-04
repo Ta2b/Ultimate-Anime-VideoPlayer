@@ -145,6 +145,14 @@ std::optional<ShotScene> next_live(Chain& to) {
   return pts ? live_scene(to, *pts) : std::nullopt;
 }
 
+void feed_plan_shots(Chain& to) {
+  if (to.shots == nullptr || !to.shots->current.timeline || to.shots->current.file != to.file) return;
+  const media::ShotTimeline& timeline = *to.shots->current.timeline;
+  if (timeline.size() == to.plan_shots_seen) return;
+  to.plan_shots_seen = timeline.size();
+  to.screen.set_plan_shots(timeline.shots());
+}
+
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   if (to.shots == nullptr || !to.shots->current.timeline || to.shots->current.file != to.file) {
     const auto pts = next_pts(to);

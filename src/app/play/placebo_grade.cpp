@@ -167,6 +167,9 @@ std::expected<void, Refusal> PlaceboScreen::set_looks(
     const std::array<const render::CubeLut*, render::kLookSlots>& luts) {
   if (!impl_->grade) return refuse(RefusalCode::HdrUnavailable, "look : pas de grade sur cette sortie");
   if (auto set = impl_->grade->set_looks(luts); !set) return set;
+  if (impl_->planner)  // le look SDR du contrat v2, cuit avant la courbe
+    impl_->planner->set_look(luts[0] != nullptr ? std::make_shared<const render::CubeLut>(*luts[0])
+                                                : nullptr);
   ++impl_->grade_serial;
   impl_->select_grade(impl_->target_color);  // les paramètres du look repartent dans le nouveau hook
   return {};
@@ -350,6 +353,56 @@ const pl_color_space* PlaceboScreen::Impl::ring_space(std::uint32_t version) con
   return nullptr;
 }
 
+bool PlaceboScreen::Impl::ring_input() {
+  const pl_color_space target = target_color;
+  // L'entrée SDR → PQ de libplacebo pour ce couple source, cible, relevée par une rampe sans hook.
+  if (ring_nits && pl_color_space_equal(&ring_input_source, &source) &&
+      pl_color_space_equal(&ring_input_target, &target))
+    return true;
+  if (ramp_renderer == nullptr) ramp_renderer = pl_renderer_create(log, vk->gpu);
+  auto captured = render::capture_grade_input(ramp_renderer, vk->gpu, source, target);
+  if (!captured) {
+    channel->warn("grade de l'anneau : entrée non relevée ({}), l'écran garde le grade",
+                  captured.error().detail);
+    ring_nits.reset();
+    return false;
+  }
+  std::vector<float> nits;
+  nits.reserve(3 * static_cast<std::size_t>(render::kGradeInputPoints));
+  for (const std::vector<float>& channel_nits : captured->nits)
+    nits.insert(nits.end(), channel_nits.begin(), channel_nits.end());
+  ring_nits = std::make_shared<const std::vector<float>>(std::move(nits));
+  ring_matrix = captured->matrix;
+  ring_input_source = source;
+  ring_input_target = target;
+  return true;
+}
+
+// Le grade v2 : les ordres prêts du planificateur, datés du début de leur plan, une version chacun.
+bool PlaceboScreen::Impl::post_plan() {
+  if (!planner || !planner->has_shots() || target_color.transfer != PL_COLOR_TRC_PQ || !ring_input())
+    return false;
+  if (std::exchange(plan_epoch, shown_epoch) != shown_epoch) planner->restart();
+  const std::int64_t pts = shown_pts == kNoPts ? 0 : shown_pts;
+  for (GradePlanOrder& order : planner->take_orders(pts, host_now_us())) {
+    GradeVersion version{.epoch = shown_epoch, .from_pts_us = order.from_pts_us};
+    version.uniforms.look_mix = 0.0F;
+    version.peak_nits =
+        static_cast<float>(contract ? contract->content_peak_nits() : target_color.hdr.max_luma);
+    version.input_nits = ring_nits;
+    version.input_matrix = ring_matrix;
+    version.curve_size = order.size;
+    version.curve_lut = std::move(order.lut);
+    version.curve_fade = std::move(order.fade_to);
+    version.until_pts_us = order.until_pts_us;
+    const std::uint32_t posted = ring_live->post_grade(std::move(version));
+    ring_versions[ring_next++ % ring_versions.size()] = RingVersion{.version = posted, .space = target_color};
+    ring_posted = true;
+    ring_on = true;
+  }
+  return true;
+}
+
 void PlaceboScreen::Impl::post_ring(const render::GradeChoice& choice, std::int64_t from_pts,
                                     std::uint32_t epoch) {
   if (!grade_ring || !ring_live) return;
@@ -372,26 +425,9 @@ void PlaceboScreen::Impl::post_ring(const render::GradeChoice& choice, std::int6
     post_off();
     return;
   }
-  // L'entrée SDR → PQ de libplacebo pour ce couple source, cible, relevée par une rampe sans hook.
-  if (!ring_nits || !pl_color_space_equal(&ring_input_source, &source) ||
-      !pl_color_space_equal(&ring_input_target, &target)) {
-    if (ramp_renderer == nullptr) ramp_renderer = pl_renderer_create(log, vk->gpu);
-    auto captured = render::capture_grade_input(ramp_renderer, vk->gpu, source, target);
-    if (!captured) {
-      channel->warn("grade de l'anneau : entrée non relevée ({}), l'écran garde le grade",
-                    captured.error().detail);
-      ring_nits.reset();
-      post_off();
-      return;
-    }
-    std::vector<float> nits;
-    nits.reserve(3 * static_cast<std::size_t>(render::kGradeInputPoints));
-    for (const std::vector<float>& channel_nits : captured->nits)
-      nits.insert(nits.end(), channel_nits.begin(), channel_nits.end());
-    ring_nits = std::make_shared<const std::vector<float>>(std::move(nits));
-    ring_matrix = captured->matrix;
-    ring_input_source = source;
-    ring_input_target = target;
+  if (!ring_input()) {
+    post_off();
+    return;
   }
   // KWin comme match_kwin le poserait pour ce pic.
   std::optional<render::Grade::KwinMatch> kwin;
@@ -426,6 +462,7 @@ void PlaceboScreen::Impl::post_ring(const render::GradeChoice& choice, std::int6
 
 void PlaceboScreen::Impl::follow_ring() {
   if (!grade_ring || !ring_live) return;
+  if (post_plan()) return;                  // 8.6 : le grade v2 par plan
   if (std::exchange(ring_absorb, false)) {  // le choix posté d'avance vient de passer à l'écran
     ring_serial = grade_serial;
     ring_target = target_color;

@@ -520,6 +520,17 @@ AJP_GRADE_FN V3 grade_pixel(V3 code, float skin_sm, float local_raw, float area_
   return kwin_code(e, u);
 }
 
+// Le grade du contrat v2 (chantier 8.6) : une seule lecture de la LUT de la courbe du plan (render::bake,
+// indexée par √code PQ sur chaque axe), mêlée à `mix` à celle de la fin d'un fondu (`fade_to`, mix 0 hors
+// fondu). Le look SDR et la courbe y sont déjà cuits.
+template <class Lut>
+AJP_GRADE_FN V3 curve_lut_code(V3 e, const Lut& lut, const Lut& fade_to, float mix) {
+  const V3 at = vpow(vclamp(e, 0.0F, 1.0F), 0.5F);
+  const V3 c = lut(at);
+  if (mix <= 0.0F) return c;
+  return vmix(c, fade_to(at), gclamp(mix, 0.0F, 1.0F));
+}
+
 // La carte locale (1-local.hook) : le SDR encodé tel que la mesure le prend, et la luminance en PQ.
 AJP_GRADE_FN V3 local_sdr_rgb(V3 e, const GradeUniforms& u) {
   if (u.sdr_out > 0.5F) return vclamp(e, 0.0F, 1.0F);

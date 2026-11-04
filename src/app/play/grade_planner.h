@@ -72,6 +72,9 @@ class GradePlan {
   void set_look(std::shared_ptr<const render::CubeLut> look);
   // Le décalage choisi (diaphragmes, ±kCurveMaxE) : appliqué peu à peu (take_orders).
   void set_user_e(double e);
+  // Une nouvelle époque (saut) : tous les ordres se redonnent, les LUT cuites restent.
+  void restart() { given_.clear(); }
+  bool has_shots() const { return !shots_.empty(); }
 
   // Les cuissons qui manquent pour le plan de pts et les kPlanAhead suivants, dans l'ordre.
   std::vector<BakeJob> wanted(std::int64_t pts_us) const;
@@ -130,6 +133,8 @@ class GradePlanner {
   void set_contract(const render::DisplayContract& contract);
   void set_look(std::shared_ptr<const render::CubeLut> look);
   void set_user_e(double e);
+  void restart();
+  bool has_shots() const;
   // main, à chaque image : la position de lecture (le fil cuit autour) et les ordres prêts.
   std::vector<GradePlanOrder> take_orders(std::int64_t pts_us, std::int64_t now_us);
   std::size_t baked() const;

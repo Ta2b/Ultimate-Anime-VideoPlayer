@@ -250,6 +250,7 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   // Le lecteur décide de la scène : le plan de la pré-analyse (chain_shots.h) s'il est connu, sinon la scène
   // vue à l'ingestion ; le grade d'avant (--legacy-grade) la mesure lui-même faute des deux.
   std::optional<ShotScene> shot;
+  feed_plan_shots(to);
   if (g.adaptive && g.adaptive_force < 0.0) shot = next_shot(to, now_us);
   light_tick(to, shot ? shot : next_live(to), now_us, shot && shot->serial != to.adaptive_shot);
   if (!g.adaptive || !shot) {

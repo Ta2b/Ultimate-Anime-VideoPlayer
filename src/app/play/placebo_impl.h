@@ -20,6 +20,7 @@
 #include <spdlog/logger.h>
 
 #include "app/play/compose_key.h"
+#include "app/play/grade_planner.h"
 #include "app/play/links.h"
 #include "app/play/live_settings.h"
 #include "app/play/osd_text.h"
@@ -204,6 +205,11 @@ struct PlaceboScreen::Impl {
   bool contract_v2 = false;
   std::optional<render::ContractMetadata> hinted_contract;
   void hint_contract();
+  // Le grade v2 dans l'anneau (8.6, --hdr-contract-v2 avec --grade-ring) : les LUT par plan cuites en fond.
+  std::unique_ptr<GradePlanner> planner;
+  std::uint32_t plan_epoch = 0;
+  bool post_plan();   // faux : pas de plans, le grade d'avant
+  bool ring_input();  // l'entrée SDR → PQ de libplacebo pour ce couple source, cible (ring_nits)
   double hinted_max_nits = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade

@@ -82,6 +82,12 @@ struct GradeVersion {
   std::shared_ptr<const std::vector<float>> look_rgb;    // look_size³ × 3 ; nul sans look
   std::shared_ptr<const std::vector<float>> input_nits;  // 3 × kInputTablePoints
   std::array<float, 9> input_matrix{};
+  // Le grade du contrat v2 (8.6, gpu::GradeOrder::curve_size) : la LUT de la courbe du plan et celle de la
+  // fin d'un fondu, jusqu'à until_pts_us.
+  int curve_size = 0;
+  std::shared_ptr<const std::vector<float>> curve_lut;
+  std::shared_ptr<const std::vector<float>> curve_fade;
+  std::int64_t until_pts_us = 0;
 
   // L'ordre que le backend copie (KernelOps::set_grade), qui pointe dans cette version.
   gpu::GradeOrder order() const {
@@ -91,7 +97,12 @@ struct GradeVersion {
         .look_size = look_rgb ? look_size : 0,
         .look_rgb = look_rgb ? std::span<const float>(*look_rgb) : std::span<const float>{},
         .input_nits = input_nits ? std::span<const float>(*input_nits) : std::span<const float>{},
-        .input_matrix = input_matrix};
+        .input_matrix = input_matrix,
+        .curve_size = curve_lut ? curve_size : 0,
+        .curve_lut = curve_lut ? std::span<const float>(*curve_lut) : std::span<const float>{},
+        .curve_fade = curve_fade ? std::span<const float>(*curve_fade) : std::span<const float>{},
+        .from_pts_us = from_pts_us,
+        .until_pts_us = until_pts_us};
   }
 };
 
