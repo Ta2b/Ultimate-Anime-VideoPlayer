@@ -185,6 +185,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
+  const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
   const std::uint64_t energy_start_mj =
@@ -433,8 +434,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       known_period_us = display_period_us(out.window());
     }
   };
-  // Repli du Rapide : pour la séance seulement, play.toml garde le choix ; un choix explicite le remet à
-  // faux.
+  // Repli du Rapide pour la séance seulement : play.toml garde le choix, qu'un choix explicite annule.
   bool free_fallback = false;
   bool free_chosen = chain.running.auto_free;
   const auto apply_auto = [&] {

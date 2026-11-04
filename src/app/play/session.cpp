@@ -231,6 +231,7 @@ void Session::on_frame(const RingFrame& frame) {
   // Une image reçue tient son slot jusqu'à être écrite : jamais plus de kMaxRingSlots en attente.
   if (config_.latency != nullptr && frame.submitted_us > 0 && unmeasured_.size() < kMaxRingSlots)
     unmeasured_.push_back(frame);
+  screen_.watch(frame);
   queue_.push(frame);
   newest_ = frame;
   request_subtitles(frame);
@@ -300,8 +301,10 @@ void Session::measure_latency(std::int64_t host_now) {
   if (config_.latency == nullptr) return;
   std::erase_if(unmeasured_, [&](const RingFrame& frame) {
     if (!screen_.ready(frame)) return false;
-    config_.latency->observe(host_now - frame.submitted_us);
-    if (config_.on_written) config_.on_written(frame, host_now);
+    // L'heure où le veilleur l'a vue écrite, sinon celle de ce tour (au plus une attente de main plus tard).
+    const std::int64_t written = screen_.written_at(frame).value_or(host_now);
+    config_.latency->observe(written - frame.submitted_us);
+    if (config_.on_written) config_.on_written(frame, written);
     return true;
   });
 }
@@ -534,7 +537,8 @@ std::int64_t Session::idle_wait_us(std::int64_t host_now) {
   if (prerolling_) return kPollUs;
   const RingFrame* head = queue_.first_of(epoch_);
   if (head == nullptr) return kIdleUs;
-  if (!screen_.ready(*head)) return kPollUs;
+  // Pas encore écrite : le veilleur réveille main à son écriture, sinon main la sonde.
+  if (!screen_.ready(*head)) return screen_.wakes_on_write() ? kIdleUs : kPollUs;
   const ClockSnapshot now = clock_.snapshot();
   if (!now.valid || now.epoch != epoch_ || now.rate <= 0.0 || head->pts_us == kNoPts) return kPollUs;
   const std::int64_t period = display_period();

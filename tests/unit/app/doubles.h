@@ -81,6 +81,19 @@ struct FakeScreen final : Screen {
     return std::ranges::find(unwritten, frame.slot) == unwritten.end();
   }
   void write(std::uint32_t slot) { std::erase(unwritten, slot); }
+  // Veilleur d'écriture (Screen::watch) : les slots surveillés, l'heure vue de leur écriture.
+  bool waking = false;
+  std::vector<std::uint32_t> watched;
+  std::vector<std::pair<std::uint32_t, std::int64_t>> written_us;
+  void watch(const RingFrame& frame) override { watched.push_back(frame.slot); }
+  std::optional<std::int64_t> written_at(const RingFrame& frame) override {
+    const auto it = std::ranges::find(written_us, frame.slot, &std::pair<std::uint32_t, std::int64_t>::first);
+    if (it == written_us.end()) return std::nullopt;
+    const std::int64_t at = it->second;
+    written_us.erase(it);
+    return at;
+  }
+  bool wakes_on_write() const override { return waking; }
   void set_fullscreen(bool on) override { is_fullscreen = on; }
   bool fullscreen() const override { return is_fullscreen; }
   // Les versions du grade de l'anneau que l'écran dit dépassées (Screen::stale_grade).

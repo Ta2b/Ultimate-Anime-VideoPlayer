@@ -162,6 +162,11 @@ class Screen {
   // l'image ferait attendre son écriture à la file de l'affichage, et derrière elle chaque
   // présentation suivante, interface et OSD compris. Faute de pouvoir le lire : vrai.
   virtual bool ready(const RingFrame& /*frame*/) const { return true; }
+  // Veilleur d'écriture (6.5, --ring-watcher) : surveiller l'écriture d'une image reçue ; l'heure exacte où
+  // elle a été vue écrite, une fois ; et si une écriture finie réveille main (sinon il sonde ready).
+  virtual void watch(const RingFrame& /*frame*/) {}
+  virtual std::optional<std::int64_t> written_at(const RingFrame& /*frame*/) { return std::nullopt; }
+  virtual bool wakes_on_write() const { return false; }
   // Un seek ou un autre fichier : l'état tenu d'une image à l'autre (détection de pic, grade) vient
   // de la scène d'avant et ne dit plus rien.
   virtual void new_scene() {}

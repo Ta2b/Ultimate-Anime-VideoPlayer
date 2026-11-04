@@ -27,6 +27,7 @@
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/present_level.h"
+#include "app/play/ring_watcher.h"
 #include "app/play/video_rate.h"
 #include "app/play/vulkan_share.h"
 #include "core/gpu_device.h"
@@ -55,6 +56,11 @@ class PlaceboRing {
   // Le sémaphore du slot a atteint ready_value : l'image est écrite. Lu sans attendre.
   bool ready(const RingFrame& frame) const;
   void clear(pl_gpu gpu);
+  // Le sémaphore du slot d'un RingFrame du ring courant, sinon VK_NULL_HANDLE.
+  VkSemaphore semaphore_of(const RingFrame& frame) const;
+  // Le veilleur d'écriture (ring_watcher.h) qui attend ces sémaphores : oublié avant leur destruction.
+  void set_watcher(RingWatcher* watcher) { watcher_ = watcher; }
+  VkDevice device() const { return device_; }
 
  private:
   struct Slot {
@@ -72,6 +78,7 @@ class PlaceboRing {
   bool external_ = true;
   VkDevice device_ = VK_NULL_HANDLE;
   PFN_vkGetSemaphoreCounterValue counter_ = nullptr;
+  RingWatcher* watcher_ = nullptr;
 };
 
 // Sous-titres et OSD en calques monochromes, au-dessus de l'image, en pixels de la sortie.
@@ -150,7 +157,9 @@ struct PlaceboScreen::Impl {
   bool grade_ring = false;                                  // ScreenOptions::grade_ring
   PresentLevel present_level = PresentLevel::Open;          // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
-  std::unique_ptr<PresentFeedback> feedback;  // niveaux Timing et Wait (placebo_feedback.h) ; nul sinon
+  std::unique_ptr<PresentFeedback> feedback;
+  std::unique_ptr<RingWatcher> watcher;  // --ring-watcher (ring_watcher.h), le temps d'une chaîne  // niveaux
+                                         // Timing et Wait (placebo_feedback.h) ; nul sinon
   std::filesystem::path shader_cache_file;
   GpuDevice device;
   PlaceboRing ring;
