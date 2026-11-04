@@ -25,6 +25,7 @@
 #include "app/play/osd_text.h"
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/present_level.h"
 #include "app/play/video_rate.h"
 #include "app/play/vulkan_share.h"
 #include "core/gpu_device.h"
@@ -146,6 +147,8 @@ struct PlaceboScreen::Impl {
   bool skin_mask = false;                                   // ScreenOptions::skin_mask
   bool grade_deband = false;                                // ScreenOptions::grade_deband
   bool grade_ring = false;                                  // ScreenOptions::grade_ring
+  PresentLevel present_level = PresentLevel::Open;          // ScreenOptions::present (present_level.h)
+  PresentCaps present_caps;
   std::filesystem::path shader_cache_file;
   GpuDevice device;
   PlaceboRing ring;

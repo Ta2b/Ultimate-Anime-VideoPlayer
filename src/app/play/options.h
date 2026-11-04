@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/present_level.h"
 #include "core/profile.h"
 #include "core/types.h"
 
@@ -139,6 +140,9 @@ struct PlayOptions {
   // --smooth-drawings : un dessin tenu deux sources se fond en un seul mouvement vers le suivant (chantier
   // 7.9, UpscaleSetup::smooth_drawings). Essai, RIFE mouvement seulement, éteint par défaut.
   bool smooth_drawings = false;
+  // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
+  // open (le défaut) : la présentation d'aujourd'hui, jusqu'aux mesures 6.11.
+  PresentWanted present = PresentWanted::Open;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;

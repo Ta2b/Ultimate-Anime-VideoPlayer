@@ -17,6 +17,7 @@
 
 #include "app/play/final_scaler.h"
 #include "app/play/links.h"
+#include "app/play/present_level.h"
 #include "core/frame.h"
 #include "core/gpu_device.h"
 #include "core/ring.h"
@@ -63,6 +64,8 @@ struct ScreenOptions {
   bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)
   bool skin_mask = false;       // --skin-mask : le masque peau du grade rend 0 (essai)
   bool grade_ring = false;      // --grade-ring : le grade fait dans l'anneau (set_ring_live)
+  // --present : le retour de présentation (chantier 6, present_level.h) ; open, celle d'aujourd'hui.
+  PresentWanted present = PresentWanted::Open;
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.
   std::filesystem::path shader_cache;
