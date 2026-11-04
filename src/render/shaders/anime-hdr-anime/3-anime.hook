@@ -95,9 +95,15 @@ vec4 hook() {
     float key = clamp((fs_apl >= 0.0 ? fs_apl : 0.15 * white) / sdr_white, 0.0, 1.0);
     float p_hl = peak * mix(1.0, 0.5, smoothstep(0.30, 0.70, key));
     float lvl = max(base, y * spark);
-    float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * (spec_gain - 1.0) * an_spec);
+    // Le curseur Eclats (an_spec, 1 : la methode telle quelle) agit meme quand l'ancien curseur des eclats
+    // (spec_gain) est a 0 : au-dessus de 100 %, les lumieres montent jusqu'a 2,5 fois de plus a 200 % ; en
+    // dessous, elles redescendent jusqu'a 25 % sous les surfaces a 0 %.
+    float boost = (spec_gain - 1.0) * an_spec +
+                  (an_spec >= 1.0 ? 1.5 * (an_spec - 1.0) : -0.25 * (1.0 - an_spec));
+    float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * boost);
     emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
-    float gain = mix(an_lift, max(emit_out / lvl, an_lift), emitter);
+    float floor_gain = an_lift * (an_spec >= 1.0 ? 1.0 : mix(0.75, 1.0, an_spec));
+    float gain = mix(an_lift, max(emit_out / lvl, floor_gain), emitter);
 
     vec3 c = lin * gain;
     // Noirs profonds selon la scene : le curseur est le maximum, atteint en scene tres claire ; l'effet

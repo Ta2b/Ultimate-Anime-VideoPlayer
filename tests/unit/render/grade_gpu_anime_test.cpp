@@ -89,6 +89,27 @@ TEST_CASE("HDR anime : une lumière isolée monte, son entourage non", "[render]
   CHECK(dark == Catch::Approx(1.15 * 3.0).epsilon(0.05));
 }
 
+TEST_CASE("HDR anime : le curseur Éclats agit même sans l'ancien curseur des éclats", "[render][gpu]") {
+  Gpu gpu(GradeBody::Anime);
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // La configuration de Tatoub : highlights_rtx à 0, donc spec_gain = 1.
+  const auto halo = columns([](int x) { return x >= 104 && x < 152 ? 195.0 : 3.0; });
+  const auto centre = [&](double an_spec) {
+    GradeParams p = anime_params();
+    p.spec_gain = 1.0;
+    p.an_spec = an_spec;
+    return luma(graded_rgb(gpu, halo, p)[128]);
+  };
+  const double off = centre(0.0);
+  const double plain = centre(1.0);
+  const double strong = centre(2.0);
+  INFO("0 % " << off << ", 100 % " << plain << ", 200 % " << strong);
+  CHECK(plain == Catch::Approx(1.15 * 195.0).epsilon(0.05));  // 100 % : la méthode telle quelle
+  CHECK(strong > 1.8 * plain);
+  CHECK(off < 0.85 * plain);
+}
+
 TEST_CASE("HDR anime : route adaptative (paper = demi-pic), la lumière monte aussi", "[render][gpu]") {
   Gpu gpu(GradeBody::Anime);
   require_device(gpu);
