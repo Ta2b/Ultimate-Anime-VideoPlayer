@@ -54,6 +54,11 @@ std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
                                                    const std::filesystem::path& luts_dir);
 inline constexpr std::string_view kContractV2Look = "ver9-couleur.cube";
 void set_contract_v2_looks(bool on);
+// --clean-looks (audit F1) : la pile de LUT s'applique à la couleur du voisinage, le grain et les paliers
+// passent à leur contraste d'origine au lieu d'être étirés par la pente de la pile ; les bords francs
+// (traits, lumières) gardent la pile entière. Lu par grade_of (GradeParams::look_clean).
+void set_clean_looks(bool on);
+bool clean_looks();
 // --no-looks (essai du tri du 04/11) : aucune LUT, quelle que soit la pile. play.toml n'en sait rien.
 void set_no_looks(bool on);
 

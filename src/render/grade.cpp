@@ -110,6 +110,7 @@ constexpr std::array kLookParams = {
     ParamBinding{"look_mix15", &GradeParams::look_mix15},
     ParamBinding{"look_white", &GradeParams::look_white},
     ParamBinding{"look_pq", &GradeParams::look_pq},
+    ParamBinding{"look_clean", &GradeParams::look_clean},
     ParamBinding{"sdr_out", &GradeParams::sdr_out},
     ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
     ParamBinding{"peak", &GradeParams::peak},

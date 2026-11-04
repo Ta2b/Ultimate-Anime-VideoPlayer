@@ -180,6 +180,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
   }
   set_no_looks(options.no_looks);
+  set_clean_looks(options.clean_looks);            // audit F1 : grain et paliers non étirés par la pile
   set_contract_v2_looks(options.hdr_contract_v2);  // 8.4 : ver9-couleur.cube à la place de la pile par défaut
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
