@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 
 #include <libplacebo/shaders/custom.h>
 
@@ -62,6 +63,13 @@ class Grade {
   // Dans l'ordre d'exécution : les passes du grade (trois, ou neuf pour celui d'avant), le look, puis le vrai
   // noir.
   std::span<const pl_hook* const> hooks() const;
+  // La valeur posée d'un //!PARAM de la passe du grade (après set_params, set_video_fps, set_kwin_match),
+  // nullopt s'il n'y est pas : le grade de l'anneau (kernels/spec/grade.h) en reprend les valeurs.
+  std::optional<float> param(std::string_view name) const;
+  // La pile de LUT composée que lit le hook (look_mix à 1, 65 points), nullptr sans look actif.
+  const CubeLut* look_stack() const;
+  // Faux : le masque peau est coupé (sans --skin-mask).
+  bool skin_mask() const;
   // La mire d'étalonnage, qui remplace l'image par des patchs en luminance absolue (PQ).
   const pl_hook* calibration() const;
 

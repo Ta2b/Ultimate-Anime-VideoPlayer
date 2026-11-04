@@ -342,6 +342,8 @@ struct Grade::Impl {
   std::array<std::optional<CubeLut>, kLookSlots> sources;
   std::optional<std::array<double, kLookSlots>> composed_for;
   bool composed = false;  // la texture du look est la pile composée (sinon une identité)
+  CubeLut stack;          // la pile composée lue par le hook quand composed
+  bool skin_mask = true;
 
   // La pile composée pour les intensités de `wanted`, refaite si elles changent ; le hook du look est
   // alors reconstruit, et ses paramètres sont à réécrire.
@@ -377,7 +379,7 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   }
   if (composed_for == mixes) return;
   composed_for = mixes;
-  const CubeLut stack = active ? compose_luts(luts, mixes) : CubeLut{};
+  stack = active ? compose_luts(luts, mixes) : CubeLut{};
   std::array<const CubeLut*, kLookSlots> slots{};
   if (active) slots[0] = &stack;
   if (body == GradeBody::Fused) {
@@ -410,6 +412,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
   impl->body = body;
+  impl->skin_mask = skin_mask;
   const bool legacy = body == GradeBody::Legacy;
   std::string text(shaders::anime_hdr_params);
   if (body == GradeBody::Anime) {
@@ -521,6 +524,19 @@ void Grade::Impl::put_kwin() {
     put("kwin_ref", std::clamp(kwin->reference, 50.0, 1000.0));
     put("kwin_peak", std::clamp(kwin->peak, 100.0, 10000.0));
   }
+}
+
+std::optional<float> Grade::param(std::string_view name) const {
+  if (const pl_var_data* data = find_param(*impl_->grade.hook, name)) return data->f;
+  return std::nullopt;
+}
+
+const CubeLut* Grade::look_stack() const {
+  return impl_->composed ? &impl_->stack : nullptr;
+}
+
+bool Grade::skin_mask() const {
+  return impl_->skin_mask;
 }
 
 const GradeParams& Grade::params() const {
