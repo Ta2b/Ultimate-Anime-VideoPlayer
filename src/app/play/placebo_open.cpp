@@ -516,6 +516,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
   impl->grade_deband = options.grade_deband;
   impl->skin_mask = options.skin_mask;
+  impl->grade_ring = options.grade_ring;
   impl->grade_body = options.legacy_grade ? render::GradeBody::Legacy
                      : options.hdr_anime  ? render::GradeBody::Anime
                      : options.split_look ? render::GradeBody::FusedSplit

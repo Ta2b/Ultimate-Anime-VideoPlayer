@@ -83,6 +83,11 @@ struct FakeScreen final : Screen {
   void write(std::uint32_t slot) { std::erase(unwritten, slot); }
   void set_fullscreen(bool on) override { is_fullscreen = on; }
   bool fullscreen() const override { return is_fullscreen; }
+  // Les versions du grade de l'anneau que l'écran dit dépassées (Screen::stale_grade).
+  std::vector<std::uint32_t> stale_versions;
+  bool stale_grade(const RingFrame& frame) const override {
+    return frame.grade != 0 && std::ranges::find(stale_versions, frame.grade) != stale_versions.end();
+  }
 };
 
 struct FakeClock final : MasterClock {

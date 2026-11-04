@@ -359,4 +359,45 @@ TEST_CASE("grade de l'anneau : l'entrée SDR → PQ de libplacebo relevée par u
   CHECK(de.back() <= 25.0F);
 }
 
+TEST_CASE("grade de l'anneau : param_for et look_stack_for disent d'avance ce que set_params posera",
+          "[render][gpu][grade_ring]") {
+  Gpu gpu(GradeBody::Fused);
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const CubeLut a = warm();
+  const CubeLut b = curve();
+  std::array<const CubeLut*, kLookSlots> luts{};
+  luts[0] = &a;
+  luts[1] = &b;
+  REQUIRE(gpu.grade->set_looks(luts));
+  const std::vector<Case> all = cases();
+  const Grade::KwinMatch kwin{.reference = 200.0, .peak = 800.0};
+  for (std::size_t i = 0; i < all.size(); ++i) {
+    // Le grade porte le cas précédent ; on demande le suivant sans le poser.
+    const Case& now = all[i];
+    const Case& next = all[(i + 1) % all.size()];
+    INFO(now.name << " → " << next.name);
+    gpu.grade->set_params(now.params);
+    gpu.grade->set_kwin_match(std::nullopt);
+    std::vector<float> told;
+    for (const auto& field : kernels::kGradeUniformFields) {
+      const std::optional<float> value = gpu.grade->param_for(field.name, next.params, kwin);
+      INFO(field.name);
+      REQUIRE(value.has_value());
+      told.push_back(*value);
+    }
+    const std::optional<CubeLut> stack = gpu.grade->look_stack_for(next.params);
+    gpu.grade->set_params(next.params);
+    gpu.grade->set_kwin_match(kwin);
+    std::size_t k = 0;
+    for (const auto& field : kernels::kGradeUniformFields) {
+      INFO(field.name);
+      CHECK(told[k++] == *gpu.grade->param(field.name));
+    }
+    const CubeLut* posed = gpu.grade->look_stack();
+    REQUIRE(stack.has_value() == (posed != nullptr));
+    if (posed != nullptr) CHECK(stack->rgb == posed->rgb);
+  }
+}
+
 }  // namespace ajp::render

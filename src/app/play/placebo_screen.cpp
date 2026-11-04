@@ -125,7 +125,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   }
   // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
   // HDR10), il est sauté.
-  const bool graded_now = grade.has_value() && graded(target.color);
+  const bool graded_now = !ring_image && grade.has_value() && graded(target.color);
   // Le grade étire la source (plus de nits, plus de couleur) : les paliers d'un dégradé 8 bits, invisibles en
   // SDR, ressortent en bandes dans un halo ou un ciel, mais le débandage de libplacebo (échantillonnage
   // aléatoire) fabriquait du bruit dans les aplats sombres que le grade étire (mesuré : écart-type 16x16 de
@@ -140,7 +140,12 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   // sous le grade, même le débandage demandé à la main part sans grain.
   // Mesuré : même sans grain, ce débandage fabrique du bruit dans les aplats sombres que le grade étire ;
   // sous le grade il n'est donc posé (réglage manuel compris) que par --grade-deband.
-  if (graded_now) {
+  if (ring_image) {
+    // Gradée dans l'anneau (chantier 2c) : ni hooks, ni détection de pic (l'image déclare la cible de sa
+    // version), et le débandage seulement s'il est demandé, sans grain.
+    params.peak_detect_params = nullptr;
+    if (deband) params.deband_params = &kGradeDeband;
+  } else if (graded_now) {
     if (grade_deband && (deband || !source_debanded)) params.deband_params = &kGradeDeband;
   } else if (deband) {
     params.deband_params = &pl_deband_default_params;
@@ -277,6 +282,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   s.take_next_grade(request.frame);
   s.select_grade(s.target_color);
   s.match_kwin();
+  s.follow_ring();
   if (request.frame != nullptr && request.frame->pts_us != kNoPts && s.grade) {
     s.video_rate.observe(request.frame->pts_us, request.frame->epoch);
     s.grade->set_video_fps(s.video_rate.fps());
@@ -292,8 +298,11 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   }
   const RingFrame* frame = request.frame;
   pl_frame image{};
+  s.ring_image = false;
   if (frame != nullptr) {
     s.source_debanded = frame->debanded;
+    s.shown_pts = frame->pts_us;
+    s.shown_epoch = frame->epoch;
     auto tex = s.ring.acquire(gpu, *frame);
     if (!tex) return std::unexpected(std::move(tex.error()));
     image.num_planes = 1;
@@ -304,6 +313,18 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     image.planes[0].component_mapping[2] = 2;
     image.repr = pl_color_repr_rgb;
     image.color = s.source;
+    // Gradée dans l'anneau : des codes PQ BT.2020 déjà faits pour la cible de leur version, montrés tels
+    // quels.
+    s.ring_image = frame->grade != 0;
+    if (s.ring_image) {
+      if (const pl_color_space* space = s.ring_space(frame->grade)) {
+        image.color = *space;
+      } else {
+        image.color = s.target_color;
+        image.color.primaries = PL_COLOR_PRIM_BT_2020;
+        image.color.transfer = PL_COLOR_TRC_PQ;
+      }
+    }
     image.crop = {0, 0, static_cast<float>((*tex)->params.w), static_cast<float>((*tex)->params.h)};
     pl_rect2df_aspect_set(&target.crop, pl_rect2df_aspect(&image.crop) * static_cast<float>(s.sample_aspect),
                           0.0F);

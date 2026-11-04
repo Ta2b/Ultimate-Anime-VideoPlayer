@@ -795,3 +795,56 @@ TEST_CASE("Latence de l'écran : file pleine, l'image passe après celle déjà 
 
 }  // namespace
 }  // namespace ajp::app::play
+
+namespace ajp::app::play {
+namespace {
+
+TEST_CASE(
+    "Grade de l'anneau : en pause, l'image gradée par une version dépassée est récrite par un seek exact",
+    "[app][session][grade_ring]") {
+  ajp::app::play::FrenchUi french;
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  RingFrame graded = ring_frame(0, 1'000'000);
+  graded.grade = 3;
+  rig.session.handle(RingFrame{graded});
+  rig.tick();
+  rig.session.command(cmd::Pause{});
+  rig.stages.log.clear();
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  CHECK(rig.stages.log.empty());  // la version est la bonne : rien
+
+  rig.screen.stale_versions = {3};
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  CHECK(rig.stages.log == std::vector<std::string>{"pause", "flush 1", "seek 1000000"});
+  CHECK(rig.session.paused());
+  // Le seek attend sa première image : pas d'autre écriture d'ici là.
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  CHECK(rig.stages.log.size() == 3);
+  RingFrame again = ring_frame(1, 1'000'000, 1);
+  again.grade = 4;
+  rig.session.handle(RingFrame{again});
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  CHECK(rig.shown_pts() == 1'000'000);
+  CHECK(rig.stages.log.size() == 3);  // la nouvelle version n'est pas dépassée
+}
+
+TEST_CASE("Grade de l'anneau : en lecture, une version dépassée ne demande rien",
+          "[app][session][grade_ring]") {
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  rig.screen.stale_versions = {3};
+  RingFrame graded = ring_frame(0, 1'000'000);
+  graded.grade = 3;
+  rig.session.handle(RingFrame{graded});
+  rig.tick();
+  rig.stages.log.clear();
+  rig.screen.now_us += 1'000'000;
+  rig.tick();
+  for (const std::string& entry : rig.stages.log) CHECK_FALSE(entry.starts_with("seek"));
+}
+
+}  // namespace
+}  // namespace ajp::app::play
