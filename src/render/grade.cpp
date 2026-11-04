@@ -112,8 +112,7 @@ constexpr std::array kLookParams = {
     ParamBinding{"look_pq", &GradeParams::look_pq},
     ParamBinding{"sdr_out", &GradeParams::sdr_out},
     ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
-    ParamBinding{"peak", &GradeParams::peak},         ParamBinding{"sdr_tm", &GradeParams::sdr_tm},
-    ParamBinding{"tm_white", &GradeParams::tm_white}, ParamBinding{"tm_top", &GradeParams::tm_top},
+    ParamBinding{"peak", &GradeParams::peak},
 };
 
 // Sortie SDR de la méthode anime (GradeParams::sdr_tm) : la première passe met l'image SDR de la cible en PQ
@@ -261,6 +260,8 @@ constexpr std::array kBlackParams = {
     ParamBinding{"black_lo", &GradeParams::black_lo}, ParamBinding{"black_hi", &GradeParams::black_hi},
     ParamBinding{"sdr_out", &GradeParams::sdr_out},   ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
     ParamBinding{"peak", &GradeParams::peak},
+    ParamBinding{"sdr_tm", &GradeParams::sdr_tm},     ParamBinding{"tm_white", &GradeParams::tm_white},
+    ParamBinding{"tm_top", &GradeParams::tm_top},
 };
 
 pl_var_data* find_param(const pl_hook& hook, std::string_view name) {
