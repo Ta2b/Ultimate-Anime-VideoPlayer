@@ -18,7 +18,7 @@ class VrrWatch {
       candidate_.reset();
       return std::nullopt;
     }
-    if (!candidate_ || *candidate_ != *reading) {  // (écrit ainsi : gcc 16 signale à tort un optional non initialisé)
+    if (candidate_ != reading) {
       candidate_ = reading;  // première lecture différente : on attend la confirmation
       return std::nullopt;
     }
@@ -43,7 +43,7 @@ class VrrWatch {
 
  private:
   bool armed_;
-  std::optional<bool> candidate_;
+  std::optional<bool> candidate_ = std::nullopt;  // initialisé : sinon gcc 16 signale à tort un optional non initialisé
 };
 
 }  // namespace ajp::app::play
