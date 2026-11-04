@@ -355,6 +355,18 @@ int main(int argc, char** argv) {
       }
       std::fprintf(stderr, "ajp : mise à jour impossible : %s\n", applied.error().detail.c_str());
     }
+    // La garde : une version appliquée qui ne mène aucune lecture à son terme revient à l'ancienne.
+    const ajp::app::play::UpdateState before = state;
+    const auto restored =
+        ajp::app::play::guard_new_version(update, state, ajp::app::play::installed_version());
+    if (state != before) {
+      if (const auto kept = ajp::app::play::save_update_state(data / "update.toml", state); !kept)
+        std::fprintf(stderr, "ajp : update.toml : %s\n", kept.error().detail.c_str());
+    }
+    if (restored) {
+      std::fprintf(stderr, "ajp : %s\n", restored->c_str());
+      return relaunch(place.executable, argc, argv);
+    }
   }
   // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
@@ -462,6 +474,12 @@ int main(int argc, char** argv) {
   std::filesystem::create_directories(paths.engines, error);
   const auto played = ajp::app::play::play(*options, paths);
   SDL_Quit();
+  if (played && !options->data_dir && !options->bench_out) {
+    // Une lecture menée à son terme : la version en cours est confirmée (updater.h, étape 4).
+    ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
+    if (ajp::app::play::confirm_version(state, ajp::app::play::installed_version()))
+      static_cast<void>(ajp::app::play::save_update_state(data / "update.toml", state));
+  }
   if (played && engines_updated) return relaunch(place.executable, argc, argv);
   if (played) return 0;
   // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.

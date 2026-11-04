@@ -46,7 +46,12 @@ TEST_CASE("mises à jour : l'état fait l'aller-retour", "[updater]") {
                     .staged_version = "0.6.0",
                     .staged_file = "/d/a.tar.gz",
                     .previous_version = "0.5.0",
-                    .last_error = "non"};
+                    .last_error = "non",
+                    .staged_sha256 = "ab",
+                    .staged_size = 12,
+                    .unconfirmed_version = "0.6.0",
+                    .unconfirmed_launches = 2,
+                    .skipped_version = "0.5.9"};
   const auto read_back = parse_update_state(format_update_state(state));
   REQUIRE(read_back);
   CHECK(*read_back == state);
@@ -96,6 +101,59 @@ TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
   // Sans archive préparée, rien ne se passe.
   UpdateState empty;
   CHECK_FALSE(apply_staged_update(paths, empty));
+  fs::remove_all(root);
+}
+
+TEST_CASE("mises à jour : archive revérifiée, lecteur exigé, garde qui remet l'ancienne", "[updater]") {
+  const fs::path root = fs::temp_directory_path() / "ajp-updater-guard-test";
+  fs::remove_all(root);
+  const fs::path install = root / "install";
+  const fs::path data = root / "data";
+  write(install / "ajp", "ancien");
+  write(root / "src" / "ajp-linux-x64" / "ajp", "nouveau");
+  write(root / "vide" / "ajp-linux-x64" / "lisez-moi", "pas de lecteur");
+  const fs::path archive = data / "updates" / "0.6.0" / "ajp-linux-x64.tar.gz";
+  const fs::path hollow = data / "updates" / "0.6.0" / "vide.tar.gz";
+  fs::create_directories(archive.parent_path());
+  REQUIRE(std::system(("tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64")
+                          .c_str()) == 0);
+  REQUIRE(std::system(("tar -czf '" + hollow.string() + "' -C '" + (root / "vide").string() + "' ajp-linux-x64")
+                          .c_str()) == 0);
+  const UpdatePaths paths{.data = data, .install = install, .executable = install / "ajp"};
+
+  // Une archive qui ne correspond plus à son SHA-256 : refusée, l'installation reste.
+  UpdateState changed{.staged_version = "0.6.0",
+                      .staged_file = archive.string(),
+                      .staged_sha256 = std::string(64, '0'),
+                      .staged_size = fs::file_size(archive)};
+  CHECK_FALSE(apply_staged_update(paths, changed));
+  CHECK(read(install / "ajp") == "ancien");
+  REQUIRE(std::system(("tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64")
+                          .c_str()) == 0);
+
+  // Une archive sans le lecteur : refusée.
+  UpdateState empty_archive{.staged_version = "0.6.0", .staged_file = hollow.string()};
+  CHECK_FALSE(apply_staged_update(paths, empty_archive));
+  CHECK(read(install / "ajp") == "ancien");
+
+  // Appliquée, puis trois lancements sans lecture menée à son terme : le quatrième remet l'ancienne.
+  UpdateState state{.staged_version = "0.6.0", .staged_file = archive.string()};
+  REQUIRE(apply_staged_update(paths, state));
+  CHECK(state.unconfirmed_version == "0.6.0");
+  write(install / "lib.so.old", "reste");
+  for (int launch = 1; launch <= kMaxUnconfirmedLaunches; ++launch)
+    CHECK_FALSE(guard_new_version(paths, state, "0.6.0"));
+  CHECK_FALSE(fs::exists(install / "lib.so.old"));
+  CHECK(guard_new_version(paths, state, "0.6.0"));
+  CHECK(read(install / "ajp") == "ancien");
+  CHECK(state.skipped_version == "0.6.0");
+  CHECK(state.unconfirmed_version.empty());
+
+  // Une version confirmée par une lecture : la garde ne fait plus rien.
+  UpdateState good{.unconfirmed_version = "0.7.0", .unconfirmed_launches = 1};
+  CHECK_FALSE(confirm_version(good, "0.6.0"));
+  CHECK(confirm_version(good, "0.7.0"));
+  CHECK_FALSE(guard_new_version(paths, good, "0.7.0"));
   fs::remove_all(root);
 }
 #endif
