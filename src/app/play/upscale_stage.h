@@ -108,6 +108,10 @@ struct UpscaleSetup {
   // du niveau 1, corrigées du résidu de la fusion). Sans effet pour les autres estimateurs ou sans
   // SPAN.
   bool warp_after_span = false;
+  // Rapide à pas constant (chantier 7.6) : chaque instant est comparé à l'horloge prédite juste avant son
+  // calcul ; passé, il n'est ni calculé ni écrit (Fate::Late). Une source en retard garde son SPAN quand la
+  // paire suivante le lit. Sans DistilDRBA ni copie de b (poses gardées).
+  bool late_fate = false;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
   // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
   // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.
@@ -129,6 +133,7 @@ class UpscaleStage final : public RingStage {
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
   Fate fate(const DecodedFrame& frame, std::uint32_t output) override;
   void skip(const DecodedFrame& frame, std::uint32_t output) override;
+  std::expected<void, Refusal> late(const DecodedFrame& frame, std::uint32_t output) override;
   Fate drba_fate(std::uint32_t output);
   // DistilDRBA, instant écrit pour b tenu : c'est l'image source elle-même (left == right), à l'écran
   // ensuite.
@@ -489,6 +494,18 @@ class UpscaleStage final : public RingStage {
   bool fences_mapped_ = false;    // les signaux de l'export écrits par le GPU (KernelOps::map_fences)
   std::uint64_t late_pairs_ = 0;  // paires dont des instants sont sautés pour rattraper l'horloge
   std::uint64_t late_instants_ = 0;
+  // Fate::Late (UpscaleSetup::late_fate) : vrai pour la paire en cours ; les instants laissés, et ceux
+  // calculés quand même après leur instant (le critère du chantier 7.6 : 0).
+  bool late_fate_now_ = false;
+  std::uint64_t late_dropped_ = 0;
+  std::uint64_t late_computed_ = 0;
+  // Les images intermédiaires de la paire déjà calculées, et le rang de celle en cours : la première prépare
+  // la paire (mouvement, graphe GMFSS), même quand des instants de tête sont laissés en retard.
+  std::uint32_t middles_done_ = 0;
+  std::uint32_t middle_rank_ = 0;
+  bool first_middle() const { return middle_rank_ == 0; }
+  // L'instant de la sortie serait passé quand une image soumise maintenant paraîtrait.
+  bool instant_late(const DecodedFrame& frame, std::uint32_t output) const;
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
   // Warp après SPAN : deux images sources agrandies (span_of_), et l'image intermédiaire (une par
   // instant à tour de rôle, comme middles_).

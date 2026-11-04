@@ -147,10 +147,19 @@ void RingStage::emit(const ThreadReport& report) {
       front_done_ = 0;
     }
     while (front_done_ < front_outputs_) {
-      if (fate(frame, front_done_) == Fate::Same) {
+      const Fate verdict = fate(frame, front_done_);
+      if (verdict == Fate::Same) {
         skip(frame, front_done_);
         ++front_done_;
         gap_ = true;
+        continue;
+      }
+      if (verdict == Fate::Late) {
+        if (auto ok = late(frame, front_done_); !ok) {
+          fail(report, ok.error());
+          break;
+        }
+        ++front_done_;
         continue;
       }
       std::uint32_t slot = 0;

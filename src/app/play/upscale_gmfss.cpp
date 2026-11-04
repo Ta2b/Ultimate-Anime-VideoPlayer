@@ -205,7 +205,7 @@ std::expected<void, Refusal> UpscaleStage::gmfss_features_of(std::size_t slot, s
 std::expected<void, Refusal> UpscaleStage::run_gmfss(std::uint32_t output,
                                                      std::span<const gpu::KernelOps::SplatJob> extra) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  if (output == 0) {  // le graphe « paire » sert toutes les images intermédiaires de la paire
+  if (first_middle()) {  // le graphe « paire » sert toutes les images intermédiaires de la paire
     if (auto ok = ops.gmfss_frames(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(),
                                    gmfss_.frames->tensor());
         !ok) {
