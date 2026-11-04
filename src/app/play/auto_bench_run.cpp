@@ -6,8 +6,10 @@
 #include <fstream>
 #include <system_error>
 
+#include "app/play/engine_switch.h"
 #include "app/play/i18n.h"
 #include "core/log.h"
+#include "core/settings.h"
 #include "media/bench_clip.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
@@ -104,6 +106,15 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
 
 namespace {
 
+// TensorRT installé : les essais jouent SPAN et RIFE dessus, quel que soit le moteur choisi par
+// l'utilisateur. Hors NVIDIA, sa bibliothèque refuse la carte et Vulkan reste le recours (engine_switch.h).
+void prefer_tensorrt(const std::filesystem::path& file) {
+  auto engines = core::load_settings(file);
+  if (!engines || !std::ranges::contains(engines->installed_engines, core::EngineId::TensorRt)) return;
+  if (auto saved = core::save_settings(file, using_engine(*engines, core::EngineId::TensorRt)); !saved)
+    log_channel("app")->warn("bench : TensorRT non imposé ({})", saved.error().detail);
+}
+
 // Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas), dit en
 // une phrase (what : « des réglages « Rapide » »). allowance : le délai de plus que la durée de l'essai.
 Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Variant* variant, int index,
@@ -121,6 +132,7 @@ Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Va
   std::filesystem::create_directories(dir / "reglages", error);
   if (!plan.data.empty() && std::filesystem::exists(plan.data / "settings.toml", error)) {
     std::filesystem::copy_file(plan.data / "settings.toml", dir / "reglages" / "settings.toml", error);
+    prefer_tensorrt(dir / "reglages" / "settings.toml");
   } else {
     std::ofstream(dir / "reglages" / "settings.toml")
         << "version = 1\nfirst_run_done = true\nfirst_run_step = 8\n";
