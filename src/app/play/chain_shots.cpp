@@ -88,7 +88,7 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
   if (work.current.file == file && work.current.timeline) {
     if (work.current.complete) return;
     if (!work.current.probe) {  // arrêtée quand le grade adaptatif s'est coupé : elle reprend
-      work.current.probe = media::ShotProbe::start(file, *work.current.timeline, from);
+      work.current.probe = media::ShotProbe::start(file, *work.current.timeline, from, work.probe);
     } else if (!work.current.probe->failure()) {
       work.current.probe->seek(from);
     }
@@ -101,7 +101,8 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
     log->info("plans de {} lus du cache : {} plans", file.filename().string(), work.current.timeline->size());
     return;
   }
-  if (!work.current.probe) work.current.probe = media::ShotProbe::start(file, *work.current.timeline, from);
+  if (!work.current.probe)
+    work.current.probe = media::ShotProbe::start(file, *work.current.timeline, from, work.probe);
 }
 
 void tend_shots(ShotWork& work) {
@@ -169,7 +170,8 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   // puis la calibration ou le panneau le rallume) : l'analyse arrêtée à l'ouverture reprend ici, sinon seul
   // ce qu'elle avait vu en partant serait connu.
   if (!job.probe && !job.complete && view.position_us != kNoPts)
-    job.probe = media::ShotProbe::start(job.file, *job.timeline, std::max<std::int64_t>(view.position_us, 0));
+    job.probe = media::ShotProbe::start(job.file, *job.timeline, std::max<std::int64_t>(view.position_us, 0),
+                                        to.shots->probe);
   media::ShotProbe* probe = job.probe.get();
   if (probe != nullptr && view.position_us != kNoPts) {
     probe->set_playhead(view.position_us);

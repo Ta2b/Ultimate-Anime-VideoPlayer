@@ -227,3 +227,28 @@ TEST_CASE("plans : scènes vues à l'ingestion, coupes et sauts", "[media][shots
   CHECK_FALSE(live.at(0));
   CHECK(live.at(kFrame)->serial != bright->serial);
 }
+
+// 8.8, à lancer sur une machine NVIDIA (ctest -R shot_nvdec ou le binaire avec "[.shot_nvdec]") : la
+// pré-analyse décodée par NVDEC en 256 × 144 retrouve les dix-huit plans de la logicielle, à une image près,
+// et leur APL à 3 %.
+TEST_CASE("plans : NVDEC réduit retrouve les plans du logiciel", "[.shot_nvdec][media][shots]") {
+  const std::filesystem::path clip = test::require_clip(test::shots_clip());
+  const auto analyse = [&](ShotProbeOptions options) {
+    ShotTimeline timeline;
+    const auto probe = ShotProbe::start(clip, timeline, 0, std::move(options));
+    for (int i = 0; i < 600 && !probe->finished(); ++i)
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    REQUIRE(probe->finished());
+    REQUIRE_FALSE(probe->failure());
+    return timeline.shots();
+  };
+  const std::vector<Shot> software = analyse({});
+  const std::vector<Shot> reduced = analyse(ShotProbeOptions{.cuvid_resize = kProbeCuvidSize});
+  REQUIRE(software.size() == 18);
+  REQUIRE(reduced.size() == software.size());
+  for (std::size_t i = 0; i < software.size(); ++i) {
+    INFO("plan " << i);
+    CHECK(std::abs(reduced[i].start_us - software[i].start_us) <= 42'000);
+    CHECK(reduced[i].meta.apl_mean_nits == Approx(software[i].meta.apl_mean_nits).epsilon(0.03));
+  }
+}

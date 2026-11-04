@@ -124,6 +124,8 @@ struct PlayOptions {
   // --shot-cuts : essai, les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus
   // que signaler les désaccords) et les débuts de plan font repartir la mémoire du grade de l'anneau (8.7).
   bool shot_cuts = false;
+  // --probe-nvdec : essai, la pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel.
+  bool probe_nvdec = false;
   bool hdr_metadata_off = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.

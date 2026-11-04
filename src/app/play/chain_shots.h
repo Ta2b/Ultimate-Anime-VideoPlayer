@@ -42,6 +42,7 @@ struct ShotJob {
 // Ce qui vit d'une vidéo à l'autre (le lecteur) : le cache et la vidéo lue.
 struct ShotWork {
   std::filesystem::path cache_dir;  // vide : pas de cache
+  media::ShotProbeOptions probe;    // les réglages de l'analyse (--probe-nvdec : cuvid_resize)
   ShotJob current;
 };
 
