@@ -137,6 +137,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.probe_nvdec = false;
     } else if (arg == "--shot-cuts") {
       options.shot_cuts = true;
+    } else if (arg == "--no-shot-cuts") {
+      options.shot_cuts = false;  // les coupes de l'interpolation mesurées par RIFE seul
     } else if (arg == "--anime-shots") {
       options.anime_shots = true;
     } else if (arg == "--clean-looks") {
@@ -512,7 +514,8 @@ std::string play_usage() {
       "                         laissée à KWin (Windows : écrêtage au pic de l'écran)\n"
       "  --probe-nvdec          la pré-analyse des plans décodée par NVDEC en 256x144 (défaut ;\n"
       "                         --no-probe-nvdec : décodage logiciel)\n"
-      "  --shot-cuts            essai : les coupes de l'interpolation tirées des plans de la pré-analyse\n"
+      "  --no-shot-cuts         les coupes de l'interpolation mesurées par RIFE seul (défaut : les plans\n"
+      "                         de la pré-analyse décident, RIFE quand ils ne couvrent pas la paire)\n"
       "  --hdr-contract-v2      le rendu par défaut : le pic et le blanc de l'écran lus chez le système\n"
       "                         règlent la compression du grade et les métadonnées\n"
       "  --hdr-contract-v2-curve  essai : courbe par plan du contrat v2, métadonnées exactes du\n"
