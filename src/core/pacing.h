@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 
 #include "core/profile.h"
 #include "core/resolve.h"
@@ -41,6 +42,10 @@ double vsync_speed(double refresh_hz, double output_fps);
 
 // Cale un facteur imposé sur l'écran, sans le changer. Facteur 1 : aucune interpolation ; au
 // plus kMaxInstantsPerPair (core/cadence.h), ce que tient l'accumulateur de cadence.
+// Le facteur qui cale la cible : une petite fraction à pacing::kMaxSpeedChange près, sinon la fraction
+// exacte, ou rien (cible ≤ 1).
+std::optional<Ratio> lock_factor(double target);
+
 std::expected<CadenceChoice, Refusal> fit_cadence(const DisplayInfo& display, double source_fps,
                                                   Ratio factor);
 
