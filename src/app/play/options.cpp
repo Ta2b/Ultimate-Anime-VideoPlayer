@@ -190,6 +190,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.precise_wait = false;
     } else if (arg == "--audio-pll") {
       options.audio_pll = true;
+    } else if (arg == "--no-audio-pll") {
+      options.audio_pll = false;
     } else if (arg == "--vsync-index") {
       options.vsync_index = true;
     } else if (arg == "--no-vsync-index") {
@@ -488,7 +490,8 @@ std::string play_usage() {
       "                         --no-ring-watcher : l'affichage sonde)\n"
       "  --precise-wait         l'attente de l'image suivante à la microseconde (défaut ; --no-precise-wait :\n"
       "                         à la milliseconde)\n"
-      "  --audio-pll            essai : l'horloge audio filtrée par une boucle à verrouillage de phase\n"
+      "  --audio-pll            l'horloge audio filtrée par une boucle à verrouillage de phase (défaut ;\n"
+      "                         --no-audio-pll : l'horloge brute)\n"
       "  --vsync-index          l'image choisie par le numéro de son vblank mesuré, avec hystérésis (défaut ;\n"
       "                         --no-vsync-index : l'horloge)\n"
       "  --present=NIVEAU       essai : retour de présentation auto, timing, wait, wayland ou open (défaut)\n"

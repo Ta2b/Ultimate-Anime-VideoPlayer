@@ -89,10 +89,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(precise);
   CHECK(precise->precise_wait);
   CHECK_FALSE(parse({"épisode.mkv", "--no-precise-wait"})->precise_wait);
-  CHECK_FALSE(options->audio_pll);
+  CHECK(options->audio_pll);
   const auto pll = parse({"épisode.mkv", "--audio-pll"});
   REQUIRE(pll);
   CHECK(pll->audio_pll);
+  CHECK_FALSE(parse({"épisode.mkv", "--no-audio-pll"})->audio_pll);
   CHECK(options->vsync_index);
   const auto index = parse({"épisode.mkv", "--vsync-index"});
   REQUIRE(index);

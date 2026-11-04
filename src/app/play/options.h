@@ -159,9 +159,9 @@ struct PlayOptions {
   // L'attente de la boucle d'affichage à la microseconde (loop_wait.h, 6.7), par défaut ; --no-precise-wait :
   // l'attente d'événement SDL à la milliseconde.
   bool precise_wait = true;
-  // --audio-pll : l'horloge audio maîtresse filtrée par une PLL (audio::PlayerConfig::pll, 6.9). Essai,
-  // éteint par défaut.
-  bool audio_pll = false;
+  // L'horloge audio maîtresse filtrée par une PLL (audio::PlayerConfig::pll, 6.9), par défaut ;
+  // --no-audio-pll : l'horloge brute.
+  bool audio_pll = true;
   // L'image choisie par le numéro de son vblank, avec hystérésis (SessionConfig::vsync_index, 6.6), par
   // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
   bool vsync_index = true;
