@@ -224,6 +224,7 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) {
   PlaySettings s = wanted;
   s.grade_values.scene_light = to.scene_light;
+  s.grade_values.anime_exposure = to.anime_e;
   if (to.adaptive_shot != 0 && s.grade_values.adaptive) {
     // Le shader du grade reçoit la position du plan analysé à la place de la sienne (render/grade_params.h).
     s.grade_values.adaptive_shot = render::AdaptiveShot{
@@ -276,9 +277,26 @@ namespace {
 
 // La lumière de la scène pour le grade en trois passes : envoyée quand elle change vraiment (3 % de
 // luminance moyenne, 2 points de part claire), au plus tous les dixièmes de seconde, sauf à une coupe.
-void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t now_us, bool cut) {
+// Sous --anime-shots (méga plan A2), un plan de la pré-analyse fixe aussi l'exposition de la méthode « HDR
+// anime », et l'une et l'autre glissent aux coupes (anime_shots.h) : envoyées à chaque tour du glissé.
+void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t now_us, bool cut,
+                bool planned) {
   if (!scene || !to.running.grade) return;
-  const render::SceneLight& light = scene->light;
+  render::SceneLight light = scene->light;
+  if (to.anime_shots && planned) {
+    to.anime_glide.aim({.e = anime_exposure(light.apl_nits, to.anime_series_apl), .light = light}, now_us,
+                       cut);
+    const AnimeShotLook shown = to.anime_glide.at(now_us);
+    const bool moved =
+        std::abs(shown.e - to.anime_e) > 0.005 || !to.scene_light || shown.light != *to.scene_light;
+    if (!moved) return;
+    to.anime_e = shown.e;
+    to.scene_light = shown.light;
+    to.scene_light_at_us = now_us;
+    set_grade(to, to.running, true);
+    return;
+  }
+  to.anime_e = 0.0;  // sans plan analysé : le relèvement fixe
   if (to.scene_light) {
     const render::SceneLight& was = *to.scene_light;
     const bool moved = std::abs(light.apl_nits - was.apl_nits) > std::max(0.03 * was.apl_nits, 0.25) ||
@@ -300,7 +318,8 @@ void adaptive_tick(Chain& to, std::int64_t now_us) {
   std::optional<ShotScene> shot;
   feed_plan_shots(to);
   if (g.adaptive && g.adaptive_force < 0.0) shot = next_shot(to, now_us);
-  light_tick(to, shot ? shot : next_live(to), now_us, shot && shot->serial != to.adaptive_shot);
+  light_tick(to, shot ? shot : next_live(to), now_us, shot && shot->serial != to.adaptive_shot,
+             shot.has_value());
   if (!g.adaptive || !shot) {
     to.ui.set_adaptive_scene({});
     to.learn.seen.reset();

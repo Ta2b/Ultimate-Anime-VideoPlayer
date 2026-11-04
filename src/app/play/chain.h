@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/anime_shots.h"
 #include "app/play/chain_adaptive_log.h"
 #include "app/play/display_edid.h"
 #include "app/play/grade_learning.h"
@@ -147,6 +148,12 @@ struct Chain {
   // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
   ShotWork* shots = nullptr;
   bool shot_cuts = false;  // --shot-cuts (8.7) : les plans donnent aussi les coupes de l'interpolation
+  // --anime-shots (méga plan A2) : la méthode « HDR anime » décide par plan (anime_shots.h) ; anime_glide, ce
+  // qu'elle montre, anime_series_apl la médiane des APL des plans connus.
+  bool anime_shots = false;
+  AnimeGlide anime_glide;
+  double anime_series_apl = 0.0;
+  double anime_e = 0.0;             // l'exposition envoyée au grade (GradeSettings::anime_exposure)
   std::uint64_t adaptive_shot = 0;  // le plan dont le grade tient les valeurs ; 0 : la mesure en direct
   // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle
   // tant qu'aucune analyse ne dit mieux (un saut ne la perd pas). scene_light_at_us : son dernier envoi.

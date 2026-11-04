@@ -133,6 +133,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.probe_nvdec = true;
     } else if (arg == "--shot-cuts") {
       options.shot_cuts = true;
+    } else if (arg == "--anime-shots") {
+      options.anime_shots = true;
     } else if (arg == "--hdr-contract-v2") {
       options.hdr_contract_v2 = true;
     } else if (arg == "--hdr-metadata=off") {
@@ -459,6 +461,8 @@ std::string play_usage() {
       "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
       "                         (en essai ; éteint par défaut)\n"
       "  --hdr-anime      essai : méthode HDR « anime » (surfaces ancrées, seuls les émetteurs montent)\n"
+      "  --anime-shots    essai : --hdr-anime décidée par plan (exposition, marge des éclats), glissée aux "
+      "coupes\n"
       "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
       "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"

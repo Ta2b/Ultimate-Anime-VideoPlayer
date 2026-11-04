@@ -5,6 +5,8 @@
 #include <format>
 #include <string_view>
 
+#include "render/curve.h"
+
 namespace ajp::render {
 namespace {
 
@@ -67,6 +69,7 @@ void apply_scene_light(const GradeSettings& s, GradeParams& p) {
   if (!s.scene_light) return;
   p.fs_apl = std::max(s.scene_light->apl_nits, 0.0) * p.sdr_white / grade_limits::kSdrWhiteNits;
   p.fs_bright = std::clamp(s.scene_light->lit, 0.0, 1.0);
+  p.an_lift = kAnimeLift * std::exp2(std::clamp(s.anime_exposure, -kCurveMaxE, kCurveMaxE));
 }
 
 void apply_adaptive(const GradeSettings& s, double peak, bool sdr_out, GradeParams& p) {
