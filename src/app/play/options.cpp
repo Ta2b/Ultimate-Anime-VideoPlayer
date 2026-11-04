@@ -184,6 +184,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.ring_watcher = true;
     } else if (arg == "--precise-wait") {
       options.precise_wait = true;
+    } else if (arg == "--no-precise-wait") {
+      options.precise_wait = false;
     } else if (arg == "--audio-pll") {
       options.audio_pll = true;
     } else if (arg == "--vsync-index") {
@@ -481,7 +483,8 @@ std::string play_usage() {
       "  --fast-steady          essai : mode Rapide à pas constant, N images par source fixe dans un plan\n"
       "  --smooth-drawings      essai : un dessin tenu deux images se fond en un mouvement (RIFE mouvement)\n"
       "  --ring-watcher         essai : un thread attend l'écriture de l'anneau et réveille l'affichage\n"
-      "  --precise-wait         essai : l'attente de l'image suivante à la microseconde\n"
+      "  --precise-wait         l'attente de l'image suivante à la microseconde (défaut ; --no-precise-wait :\n"
+      "                         à la milliseconde)\n"
       "  --audio-pll            essai : l'horloge audio filtrée par une boucle à verrouillage de phase\n"
       "  --vsync-index          l'image choisie par le numéro de son vblank mesuré, avec hystérésis (défaut ;\n"
       "                         --no-vsync-index : l'horloge)\n"
