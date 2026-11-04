@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cwchar>
 #include <filesystem>
 #include <format>
 #include <system_error>
@@ -19,15 +20,80 @@
 
 namespace ajp::app::play {
 
-// Période de rafraîchissement de l'écran de la fenêtre, d'après SDL ; 0 si inconnue (la session
-// la mesure alors sur les présentations).
+#if defined(_WIN32)
+namespace {
+
+struct WindowsMode {
+  int width = 0;
+  int height = 0;
+  double hz = 0.0;
+};
+
+// Le mode de l'écran de la fenêtre selon la configuration d'affichage de Windows (QueryDisplayConfig), pour
+// l'écran où la fenêtre est vraiment (MonitorFromWindow, pas le premier écran) : la définition du bureau en
+// pixels réels, que la mise à l'échelle et la virtualisation DPI ne touchent pas, et la fréquence exacte du
+// signal en fraction (59,94 Hz = 60000/1001 ; 143,86 Hz), là où le mode de SDL vient de dmDisplayFrequency,
+// un entier.
+std::optional<WindowsMode> windows_mode(SDL_Window* window) {
+  auto* hwnd = static_cast<HWND>(
+      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+  if (hwnd == nullptr) return std::nullopt;
+  MONITORINFOEXW monitor{};
+  monitor.cbSize = sizeof(monitor);
+  if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor) == 0) return std::nullopt;
+  UINT32 paths = 0;
+  UINT32 modes = 0;
+  if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &paths, &modes) != ERROR_SUCCESS)
+    return std::nullopt;
+  std::vector<DISPLAYCONFIG_PATH_INFO> path_info(paths);
+  std::vector<DISPLAYCONFIG_MODE_INFO> mode_info(modes);
+  if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &paths, path_info.data(), &modes, mode_info.data(),
+                         nullptr) != ERROR_SUCCESS)
+    return std::nullopt;
+  for (UINT32 i = 0; i < paths; ++i) {
+    const DISPLAYCONFIG_PATH_INFO& path = path_info[i];
+    DISPLAYCONFIG_SOURCE_DEVICE_NAME source{};
+    source.header = {DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, sizeof(source), path.sourceInfo.adapterId,
+                     path.sourceInfo.id};
+    if (DisplayConfigGetDeviceInfo(&source.header) != ERROR_SUCCESS ||
+        std::wcscmp(source.viewGdiDeviceName, monitor.szDevice) != 0)
+      continue;
+    WindowsMode out{};
+    if (const UINT32 at = path.sourceInfo.modeInfoIdx;
+        at < modes && mode_info[at].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE) {
+      out.width = static_cast<int>(mode_info[at].sourceMode.width);
+      out.height = static_cast<int>(mode_info[at].sourceMode.height);
+    }
+    // Le signal envoyé à l'écran (vSyncFreq), sinon la fréquence du chemin ; en VRR, la fréquence maximale.
+    DISPLAYCONFIG_RATIONAL rate = path.targetInfo.refreshRate;
+    if (const UINT32 at = path.targetInfo.modeInfoIdx;
+        at < modes && mode_info[at].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_TARGET) {
+      const DISPLAYCONFIG_RATIONAL signal = mode_info[at].targetMode.targetVideoSignalInfo.vSyncFreq;
+      if (signal.Numerator > 0 && signal.Denominator > 0) rate = signal;
+    }
+    if (rate.Numerator > 0 && rate.Denominator > 0)
+      out.hz = static_cast<double>(rate.Numerator) / static_cast<double>(rate.Denominator);
+    return out;
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+#endif
+
+// Période de rafraîchissement de l'écran de la fenêtre, d'après Windows (exacte) ou SDL ; 0 si inconnue (la
+// session la mesure alors sur les présentations).
 std::int64_t display_period_us(SDL_Window* window) {
+  if (const double hz = display_refresh_hz(window); hz > 1.0) return std::llround(1e6 / hz);
   const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
   if (mode == nullptr || mode->refresh_rate <= 0.0F) return 0;
   return static_cast<std::int64_t>(1e6 / static_cast<double>(mode->refresh_rate));
 }
 
 double display_refresh_hz(SDL_Window* window) {
+#if defined(_WIN32)
+  if (const auto windows = windows_mode(window); windows && windows->hz > 1.0) return windows->hz;
+#endif
   const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
   if (mode == nullptr) return 0.0;
   if (mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0)
@@ -42,6 +108,10 @@ namespace {
 // l'échelle (un écran 4K à 200 % : 1920 × 1080, densité 2) ; Windows peut aussi le virtualiser : son
 // mode courant (EnumDisplaySettings) a le dernier mot quand il est plus grand.
 OutputSize display_pixels(SDL_Window* window) {
+#if defined(_WIN32)
+  if (const auto windows = windows_mode(window); windows && windows->width > 0 && windows->height > 0)
+    return {windows->width, windows->height};
+#endif
   OutputSize out{};
   if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
       mode != nullptr && mode->w > 0 && mode->h > 0) {
