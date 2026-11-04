@@ -128,9 +128,11 @@ struct PlayOptions {
 #else
   bool kde_sdr_auto = false;
 #endif
-  // --hdr-contract-v2 : essai du contrat d'écran v2 (chantier 8.4) : métadonnées HDR10 exactes tirées du
-  // contrat (render::contract_metadata), sans la compression de KWin faite par le grade, et le look
-  // ver9-couleur.cube (SDR) à la place de la pile par défaut. --hdr-metadata=off : sous v2, rien d'annoncé.
+  // --hdr-contract-v2-curve : essai du contrat d'écran v2 (chantier 8.4) : courbe par plan, métadonnées
+  // HDR10 exactes tirées du contrat (render::contract_metadata), sans la compression de KWin faite par le
+  // grade, et le look ver9-couleur.cube (SDR) à la place de la pile par défaut. --hdr-metadata=off : sous
+  // v2, rien d'annoncé. --hdr-contract-v2 seul donne le rendu par défaut (le contrat règle déjà la sortie :
+  // pic et blanc lus chez le système, compression du grade et métadonnées, kde_sdr_auto).
   bool hdr_contract_v2 = false;
   // --shot-cuts : essai, les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus
   // que signaler les désaccords) et les débuts de plan font repartir la mémoire du grade de l'anneau (8.7).

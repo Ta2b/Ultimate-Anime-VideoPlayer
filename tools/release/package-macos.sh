@@ -32,7 +32,7 @@ cp "$AJP_DEPS_PREFIX/onnxruntime/LICENSE" "$APP/Contents/Resources/licenses/onnx
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/licenses/"
 # Les LUT d'HDR (data/luts), lues dans luts/ à côté de SDL_GetBasePath, Contents/Resources ici.
 cp -R "$ROOT/data/luts" "$APP/Contents/Resources/luts"
-cp "$ROOT/data/luts-v2/"*.cube "$APP/Contents/Resources/luts/"  # le look du contrat v2 (--hdr-contract-v2)
+cp "$ROOT/data/luts-v2/"*.cube "$APP/Contents/Resources/luts/"  # le look du contrat v2 (--hdr-contract-v2-curve)
 # La vidéo de la calibration du grade (data/calibration), dans calibration/ à côté de SDL_GetBasePath.
 mkdir -p "$APP/Contents/Resources/calibration"
 cp "$ROOT/data/calibration/calibration.mkv" "$APP/Contents/Resources/calibration/"

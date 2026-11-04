@@ -109,7 +109,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(cuts);
   CHECK(cuts->shot_cuts);
   CHECK_FALSE(options->hdr_contract_v2);
-  const auto v2 = parse({"épisode.mkv", "--hdr-contract-v2", "--hdr-metadata=off"});
+  const auto same = parse({"épisode.mkv", "--hdr-contract-v2"});
+  REQUIRE(same);  // le rendu par défaut, exactement
+  CHECK_FALSE(same->hdr_contract_v2);
+  CHECK(same->kde_sdr_auto == options->kde_sdr_auto);
+  const auto v2 = parse({"épisode.mkv", "--hdr-contract-v2-curve", "--hdr-metadata=off"});
   REQUIRE(v2);
   CHECK(v2->hdr_contract_v2);
   CHECK(v2->hdr_metadata_off);

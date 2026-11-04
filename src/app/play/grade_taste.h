@@ -1,5 +1,5 @@
-// Le goût de l'utilisateur pour le grade du contrat v2 (chantier 8.10, essai --hdr-contract-v2) : ce que
-// l'apprentissage retient quand la courbe par plan (render/curve.h) remplace le grade adaptatif.
+// Le goût de l'utilisateur pour le grade du contrat v2 (chantier 8.10, essai --hdr-contract-v2-curve) : ce
+// que l'apprentissage retient quand la courbe par plan (render/curve.h) remplace le grade adaptatif.
 //
 // - gris → un décalage E par classe de scène (sombre, sombre avec éclat, claire, ciel), ±kCurveMaxE ;
 // - noirs → le contraste du pied de la courbe (±kCurveMaxToe) ;

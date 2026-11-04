@@ -211,18 +211,19 @@ struct PlaceboScreen::Impl {
   // --hdr-metadata (ScreenOptions::kde_sdr_nits) : le maximum annoncé à la swapchain (0 : rien d'annoncé).
   std::optional<double> kde_sdr_nits;
   bool kde_sdr_auto = false;
-  // --hdr-contract-v2 sans --hdr-metadata=off : les métadonnées du contrat annoncées (hint_contract).
+  // --hdr-contract-v2-curve sans --hdr-metadata=off : les métadonnées du contrat annoncées (hint_contract).
   bool contract_v2 = false;
   std::optional<render::ContractMetadata> hinted_contract;
   void hint_contract();
-  // Le grade v2 dans l'anneau (8.6, --hdr-contract-v2 avec --grade-ring) : les LUT par plan cuites en fond.
+  // Le grade v2 dans l'anneau (8.6, --hdr-contract-v2-curve avec --grade-ring) : les LUT par plan cuites en
+  // fond.
   std::unique_ptr<GradePlanner> planner;
   std::uint32_t plan_epoch = 0;
   bool post_plan();   // faux : pas de plans, le grade d'avant
   bool ring_input();  // l'entrée SDR → PQ de libplacebo pour ce couple source, cible (ring_nits)
-  // HDR10+ par plan (8.9, --hdr-contract-v2) : une source PQ annonce la lumière du plan de l'image (ShotMeta)
-  // et la spline de libplacebo la ramène à C_pk, sans détection de pic. scene_hdr : cette composition le
-  // fait.
+  // HDR10+ par plan (8.9, --hdr-contract-v2-curve) : une source PQ annonce la lumière du plan de l'image
+  // (ShotMeta) et la spline de libplacebo la ramène à C_pk, sans détection de pic. scene_hdr : cette
+  // composition le fait.
   std::vector<media::Shot> scene_shots;
   bool scene_hdr = false;
   pl_color_map_params scene_map = render::scene_color_map();
