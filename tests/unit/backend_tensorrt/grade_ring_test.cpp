@@ -443,7 +443,22 @@ TEST_CASE("grade de l'anneau : coût en 1440p et 2160p", "[.grade_ring][backend_
     float ms = 0.0F;
     REQUIRE(cudaEventElapsedTime(&ms, start, stop) == cudaSuccess);
     const float per = ms / kRuns;
-    WARN(w << "x" << h << " : " << per << " ms par image");
+    // Le détail par noyau, pour savoir où va le temps (carte locale, zone, pixel).
+    const auto timed = [&](auto&& launch) {
+      REQUIRE(cudaEventRecord(start, nullptr) == cudaSuccess);
+      for (int i = 0; i < kRuns; ++i) REQUIRE(launch() == cudaSuccess);
+      REQUIRE(cudaEventRecord(stop, nullptr) == cudaSuccess);
+      REQUIRE(cudaEventSynchronize(stop) == cudaSuccess);
+      float total = 0.0F;
+      REQUIRE(cudaEventElapsedTime(&total, start, stop) == cudaSuccess);
+      return total / kRuns;
+    };
+    const float local_ms = timed([&] { return gpu::cuda::launch_grade_local(f, nullptr); });
+    const float area_ms =
+        timed([&] { return gpu::cuda::launch_grade_area(f, 1.0F / 24.0F, false, nullptr); });
+    const float slot_ms = timed([&] { return gpu::cuda::launch_grade_slot(f, nullptr); });
+    WARN(w << "x" << h << " : " << per << " ms par image (locale " << local_ms << ", zone " << area_ms
+           << ", pixel et vrai noir " << slot_ms << ")");
     CHECK(per <= static_cast<float>(limit) / 100.0F);
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
