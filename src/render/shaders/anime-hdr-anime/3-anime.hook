@@ -78,8 +78,8 @@ vec4 hook() {
     float y_pq = pq_of(y);
 
     // Cartes floues : niveau du bloc (8x8, bilineaire) et de la zone (~2,5 % de l'image).
-    float local_lin = AJG_LOCAL_tex(AJG_LOCAL_pos).x;
-    float local_pq = an_local(y_pq, local_lin);
+    float local_bilin = AJG_LOCAL_tex(AJG_LOCAL_pos).x;  // en PQ, comme toute la carte
+    float local_pq = an_local(y_pq, local_bilin);
     float area_pq = AJG_AREAT_tex(AJG_AREAT_pos).x;
     float base = max(pq_to_nits(vec3(local_pq)).x, 1e-3);
 
@@ -87,8 +87,9 @@ vec4 hook() {
     // un aplat sombre plus clair que son entourage n'est pas une lumiere).
     float iso = smoothstep(0.05, 0.25, local_pq - area_pq);
     float gate = smoothstep(pq_of(0.55 * white), pq_of(0.95 * white), local_pq);
-    // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain).
-    float spark = smoothstep(0.08, 0.20, y_pq - local_lin) * smoothstep(pq_of(0.6 * white), pq_of(white), y);
+    // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain), et il est proche du
+    // blanc. La porte compare des codes PQ (y_pq) : y, en nits, la laissait ouverte des 1 nit.
+    float spark = smoothstep(0.08, 0.20, y_pq - local_bilin) * smoothstep(pq_of(0.6 * white), pq_of(white), y_pq);
     float emitter = max(iso * gate, spark);
 
     // Marge des eclats : le pic en scene sombre, la moitie en scene tres claire (limiteur de l'OLED).
