@@ -500,7 +500,13 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                            .missing = stats_.missing,
                            .lag_us = fresh && stats_.lag.count() > 0 ? stats_.lag.latest() : 0,
                            .uninterpolated = stats_.uninterpolated,
-                           .display_gpu_us = timing->display_gpu_us};
+                           .display_gpu_us = timing->display_gpu_us,
+                           .present_id = timing->present_id,
+                           .feedback_id = timing->feedback_id,
+                           .target_us = timing->target_us,
+                           .visible_us = timing->visible_us,
+                           .vsync_k = timing->vsync_k,
+                           .level = std::string(name(timing->level))};
   }
   check_end(host_now);
   return record;

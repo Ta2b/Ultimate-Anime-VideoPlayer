@@ -394,17 +394,37 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                         .display_gpu_us = static_cast<std::int64_t>(s.display_frame_ns / 1000),
                         .presented = true};
   }
-  if (!pl_swapchain_submit_frame(s.swapchain))
+  // Retour de présentation (placebo_feedback.h) : ce qui est revenu est relu, la présentation part avec
+  // son identifiant et sa demande de date.
+  const pl_vulkan_present* present =
+      s.feedback ? s.feedback->prepare(s.swapchain, host_now_us(), 0) : nullptr;
+  if (present != nullptr) {
+    VkResult result = VK_SUCCESS;
+    const bool ok = pl_vulkan_swapchain_submit(s.swapchain, present, &result);
+    s.feedback->submitted(result);
+    if (!ok) return refuse(RefusalCode::VendorCallFailed, "pl_vulkan_swapchain_submit");
+  } else if (!pl_swapchain_submit_frame(s.swapchain)) {
     return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
+  }
   const std::int64_t submitted = host_now_us();
   pl_swapchain_swap_buffers(s.swapchain);  // FIFO : attend une place en file quand elle est pleine
   const std::int64_t presented = host_now_us();
-  return ScreenTiming{.acquire_us = acquired - start,
+  ScreenTiming timing{.acquire_us = acquired - start,
                       .render_us = submitted - acquired,
                       .present_us = presented,
                       .queue_wait_us = presented - submitted,
                       .display_gpu_us = static_cast<std::int64_t>(s.display_frame_ns / 1000),
                       .presented = true};
+  if (s.feedback) {
+    const FeedbackRead& read = s.feedback->last_read();
+    timing.present_id = s.feedback->last_id();
+    timing.level = s.feedback->level();
+    timing.feedback_id = read.id;
+    timing.target_us = read.target_us;
+    timing.visible_us = read.visible_us;
+    timing.vsync_k = read.vsync_k;
+  }
+  return timing;
 }
 
 }  // namespace ajp::app::play

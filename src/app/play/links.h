@@ -19,6 +19,7 @@
 #include <string>
 #include <utility>
 
+#include "app/play/present_level.h"
 #include "core/inbox.h"
 #include "core/messages.h"
 #include "core/ring.h"
@@ -111,6 +112,14 @@ struct ScreenTiming {
   std::int64_t queue_wait_us = 0;
   std::int64_t display_gpu_us = 0;  // temps GPU des passes d'affichage (libplacebo, avec son retard)
   bool presented = true;            // false : fenêtre cachée ou réduite, rien de présenté
+  // Retour de présentation (6.3, niveaux Timing et Wait ; tout à 0 au niveau Open) : l'identifiant de
+  // cette présentation, et le dernier retour relu avant elle (celui d'une présentation antérieure).
+  PresentLevel level = PresentLevel::Open;
+  std::uint64_t present_id = 0;
+  std::uint64_t feedback_id = 0;  // 0 : rien relu à ce tour
+  std::int64_t target_us = 0;     // date visée de la présentation revenue (0 : aucune)
+  std::int64_t visible_us = 0;    // date où elle est apparue, heure hôte
+  std::int64_t vsync_k = -1;      // son vblank sur la grille mesurée ; −1 sans grille
 };
 
 struct ShowRequest {

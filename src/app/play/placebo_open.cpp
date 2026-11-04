@@ -349,6 +349,7 @@ PlaceboScreen::Impl::~Impl() {
   ring.clear(vk != nullptr ? vk->gpu : nullptr);
   pl_renderer_destroy(&renderer);
   save_shader_cache();
+  feedback.reset();
   pl_swapchain_destroy(&swapchain);
   pl_vulkan_destroy(&vk);
   if (surface != VK_NULL_HANDLE) SDL_Vulkan_DestroySurface(inst->instance, surface, nullptr);
@@ -494,6 +495,9 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->swapchain = pl_vulkan_create_swapchain(impl->vk, &sw_params);
   if (impl->swapchain == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
+  if (impl->present_level != PresentLevel::Open && impl->present_level != PresentLevel::Wayland)
+    impl->feedback =
+        std::make_unique<PresentFeedback>(impl->vk, impl->present_level, impl->present_caps, impl->channel);
   log_surface_color_spaces(impl->vk, impl->surface);
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);
   impl->open_shader_cache(options.shader_cache);

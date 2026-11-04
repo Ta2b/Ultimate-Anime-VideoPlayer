@@ -16,6 +16,8 @@ import sys
 
 COLUMNS = ["seq", "host_us", "pts_us", "fresh", "acquire_us", "render_us", "queue_wait_us", "interval_us",
            "dropped", "why", "missing", "lag_us", "uninterpolated", "display_gpu_us"]
+# Colonnes du retour de présentation (6.3), absentes des relevés d'avant.
+FEEDBACK = ["present_id", "feedback_id", "target_us", "visible_us", "vsync_k", "level"]
 
 
 def percentile(values, p):
@@ -31,13 +33,13 @@ def read_stats(path):
     rows = []
     with open(path, encoding="utf-8") as handle:
         header = handle.readline().rstrip("\n").split("\t")
-        if header != COLUMNS:
+        if header not in (COLUMNS, COLUMNS + FEEDBACK):
             raise ValueError(f"{path} : en-tête inattendu ({len(header)} colonnes, {len(COLUMNS)} attendues)")
         for line in handle:
             fields = line.rstrip("\n").split("\t")
-            if len(fields) != len(COLUMNS):
+            if len(fields) != len(header):
                 continue
-            rows.append(dict(zip(COLUMNS, fields)))
+            rows.append(dict(zip(header, fields)))
     return rows
 
 
@@ -47,7 +49,11 @@ def summarize(rows):
         return None
     span_s = (int(rows[-1]["host_us"]) - int(rows[0]["host_us"])) / 1e6
     intervals = [int(r["interval_us"]) for r in fresh if int(r["interval_us"]) > 0]
+    # Écart visé − affiché, sur les présentations revenues avec une date visée.
+    misses = [int(r["visible_us"]) - int(r["target_us"]) for r in rows
+              if r.get("feedback_id", "0") != "0" and int(r.get("target_us", "0")) > 0]
     return {
+        "sigma_vise_ms": (statistics.pstdev(misses) / 1000.0) if len(misses) > 1 else 0.0,
         "images_neuves_s": len(fresh) / span_s if span_s > 0 else 0.0,
         "p50_ms": percentile(intervals, 50) / 1000.0,
         "p95_ms": percentile(intervals, 95) / 1000.0,
@@ -80,7 +86,7 @@ def compare(directory):
     for extrait in sorted({key[0] for key in found}):
         lines.append(f"extrait {extrait}")
         for name in ("images_neuves_s", "p50_ms", "p95_ms", "p99_ms", "sigma_ms", "pertes", "acquire_ms",
-                     "render_ms"):
+                     "render_ms", "sigma_vise_ms"):
             a = [s[name] for s in found.get((extrait, "A"), [])]
             b = [s[name] for s in found.get((extrait, "B"), [])]
             if not a or not b:

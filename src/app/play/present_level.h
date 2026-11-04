@@ -26,6 +26,7 @@ struct PresentCaps {
   bool present_wait2 = false;         // idem
   bool timing = false;                // VkPhysicalDevicePresentTimingFeaturesEXT::presentTiming et la surface
   bool timing_absolute = false;       // presentAtAbsoluteTime, de l'appareil et de la surface
+  std::uint32_t present_stages = 0;   // VkPresentStageFlagsEXT que la surface sait dater
   bool calibrated = false;            // VK_KHR_calibrated_timestamps (horloge du GPU recalée sur l'hôte)
   bool wayland_presentation = false;  // wp_presentation offert par le compositeur (6.4)
 };

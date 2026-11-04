@@ -31,6 +31,12 @@ constexpr std::array<Column, kStatsColumns> kColumns{{
     {"lag_us", [](const PresentRecord& r) { return number(r.lag_us); }},
     {"uninterpolated", [](const PresentRecord& r) { return number(r.uninterpolated); }},
     {"display_gpu_us", [](const PresentRecord& r) { return number(r.display_gpu_us); }},
+    {"present_id", [](const PresentRecord& r) { return std::to_string(r.present_id); }},
+    {"feedback_id", [](const PresentRecord& r) { return std::to_string(r.feedback_id); }},
+    {"target_us", [](const PresentRecord& r) { return number(r.target_us); }},
+    {"visible_us", [](const PresentRecord& r) { return number(r.visible_us); }},
+    {"vsync_k", [](const PresentRecord& r) { return number(r.vsync_k); }},
+    {"level", [](const PresentRecord& r) { return r.level; }},
 }};
 
 }  // namespace
