@@ -4,6 +4,7 @@
 #include <format>
 #include <utility>
 
+#include "app/play/latest_writer.h"
 #include "core/cadence.h"
 #include "core/engines.h"
 #include "core/log.h"
@@ -270,14 +271,18 @@ std::expected<Profiles, Refusal> load_profiles(const std::filesystem::path& user
 }
 
 std::expected<Profiles, Refusal> edit_profiles(const std::filesystem::path& user_toml,
-                                               const Profiles& current,
-                                               std::span<const core::UserEdit> edits) {
+                                               const Profiles& current, std::span<const core::UserEdit> edits,
+                                               LatestWriter* writer) {
   auto text = core::apply_edits(base_profiles_toml(), current.user_text, edits);
   if (!text) return std::unexpected(std::move(text.error()));
   auto layered = core::parse_layered(base_profiles_toml(), *text);
   if (!layered) return std::unexpected(std::move(layered.error()));
-  if (auto written = core::write_text_atomically(user_toml, *text); !written)
+  if (writer != nullptr) {
+    writer->post("user.toml",
+                 [user_toml, copy = *text] { return core::write_text_atomically(user_toml, copy); });
+  } else if (auto written = core::write_text_atomically(user_toml, *text); !written) {
     return std::unexpected(std::move(written.error()));
+  }
   return Profiles{.file = std::move(layered->profile), .user_text = std::move(*text)};
 }
 

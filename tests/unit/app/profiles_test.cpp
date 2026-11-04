@@ -7,8 +7,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/latest_writer.h"
 #include "core/engines.h"
 #include "core/profile.h"
+#include "core/user_overlay.h"
 
 namespace ajp::app::play {
 namespace {
@@ -127,6 +129,33 @@ TEST_CASE("user.toml : absent, la base ; une modification n'écrit que ce qui di
   auto back = edit_profiles(user, *reread, reset);
   REQUIRE(back);
   CHECK(back->file.profiles[1]->name == "Fluide 1440p ×4");
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("user.toml : écrit par le thread d'écriture, le même contenu", "[app][writer]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-profiles-writer-test";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const auto direct = dir / "direct.toml";
+  const auto threaded = dir / "user.toml";
+  auto profiles = load_profiles(threaded);
+  REQUIRE(profiles);
+  const std::vector<core::UserEdit> edits{core::edit::StartProfile{.slot = 2},
+                                          core::edit::ProfileName{.slot = 3, .name = "Le soir"}};
+  auto here = edit_profiles(direct, *profiles, edits);
+  REQUIRE(here);
+  {
+    LatestWriter writer;
+    auto posted = edit_profiles(threaded, *profiles, edits, &writer);
+    REQUIRE(posted);
+    CHECK(posted->user_text == here->user_text);  // le profil rendu tout de suite est celui du fichier
+    writer.flush();
+  }
+  const auto a = core::read_text_file(direct);
+  const auto b = core::read_text_file(threaded);
+  REQUIRE(a);
+  REQUIRE(b);
+  CHECK(*a == *b);
   std::filesystem::remove_all(dir);
 }
 

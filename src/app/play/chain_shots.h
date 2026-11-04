@@ -39,11 +39,15 @@ struct ShotJob {
   void retire() noexcept;
 };
 
+class LatestWriter;  // latest_writer.h
+
 // Ce qui vit d'une vidéo à l'autre (le lecteur) : le cache et la vidéo lue.
 struct ShotWork {
   std::filesystem::path cache_dir;  // vide : pas de cache
   media::ShotProbeOptions probe;    // les réglages de l'analyse (--probe-nvdec : cuvid_resize)
   ShotJob current;
+  // Le thread d'écriture de la lecture (1.11) : le cache des plans complets s'y écrit. Nul : sur place.
+  LatestWriter* writer = nullptr;
 };
 
 // À l'ouverture d'une chaîne : reprend la vidéo du cache, ou lance l'analyse (depuis la part gardée) ; la
