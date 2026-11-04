@@ -8,6 +8,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <spdlog/logger.h>
@@ -20,7 +22,26 @@ struct WaylandDone {
   std::uint64_t id = 0;
   std::int64_t visible_us = 0;   // 0 : image écartée par le compositeur (discarded)
   std::uint32_t refresh_ns = 0;  // durée d'un rafraîchissement dite par le compositeur ; 0 : inconnue ou VRR
+  std::uint64_t msc = 0;         // compteur des rafraîchissements de la sortie (0 : inconnu)
+  std::uint32_t flags = 0;       // wp_presentation_feedback.kind (vsync, horloge matérielle, zéro copie…)
 };
+
+// L'horodatage d'une image vue (0.7) : ce que dit wp_presentation_feedback.presented, en clair.
+struct ScreenStamp {
+  std::uint64_t seq = 0;  // la présentation (PresentFeedback)
+  std::int64_t presented_us = 0;
+  std::uint32_t refresh_ns = 0;
+  std::uint64_t msc = 0;
+  std::uint32_t flags = 0;
+  friend bool operator==(const ScreenStamp&, const ScreenStamp&) = default;
+};
+// Les arguments de presented (secondes sur 64 bits en deux moitiés, nanosecondes, MSC en deux moitiés).
+ScreenStamp stamp_of(std::uint64_t seq, std::uint32_t sec_hi, std::uint32_t sec_lo, std::uint32_t nsec,
+                     std::uint32_t refresh_ns, std::uint32_t seq_hi, std::uint32_t seq_lo,
+                     std::uint32_t flags);
+// <stats>.screen.tsv : l'en-tête, puis une ligne par image vue.
+std::string_view screen_stamp_header();
+std::string screen_stamp_line(const ScreenStamp& stamp);
 
 class WaylandPresentation {
  public:

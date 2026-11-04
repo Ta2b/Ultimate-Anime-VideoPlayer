@@ -7,6 +7,8 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -73,6 +75,9 @@ class PresentFeedback {
   }
   // Vrai une fois après chaque changement de refresh_state() (relu au compteur de propriétés).
   bool take_refresh_change() { return std::exchange(refresh_changed_, false); }
+  // <stats>.screen.tsv (0.7) : chaque retour wp_presentation (niveau Wayland) y est écrit, une ligne par
+  // image.
+  void record_stamps(const std::filesystem::path& file);
 
  private:
   struct Api;
@@ -92,6 +97,7 @@ class PresentFeedback {
   std::unique_ptr<Api> api_;
   std::unique_ptr<WaylandPresentation> wayland_;
   std::vector<WaylandDone> wayland_done_;
+  std::ofstream stamps_;
   std::uint64_t discarded_ = 0;  // écartées par le compositeur (niveau Wayland)
   core::PresentLedger ledger_;
   core::TimeDomainMap domain_;

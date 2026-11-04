@@ -76,6 +76,9 @@ struct ScreenOptions {
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.
   std::filesystem::path shader_cache;
+  // --stats avec le retour wp_presentation (--present, niveau Wayland) : <stats>.screen.tsv, les horodatages
+  // du compositeur (0.7). Vide : rien.
+  std::filesystem::path screen_stamps;
 };
 
 class PlaceboScreen final : public Screen {

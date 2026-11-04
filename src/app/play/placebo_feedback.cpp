@@ -321,11 +321,23 @@ void PresentFeedback::poll_wait(VkSwapchainKHR swapchain, std::int64_t now_us) {
 #endif
 }
 
+void PresentFeedback::record_stamps(const std::filesystem::path& file) {
+  if (!wayland_ || file.empty()) return;
+  stamps_.open(file, std::ios::binary | std::ios::trunc);
+  if (stamps_) stamps_ << screen_stamp_header();
+}
+
 void PresentFeedback::read_wayland() {
   if (!wayland_) return;
   wayland_done_.clear();
   wayland_->read(wayland_done_);
   for (const WaylandDone& done : wayland_done_) {
+    if (stamps_.is_open())
+      stamps_ << screen_stamp_line(ScreenStamp{.seq = done.id,
+                                               .presented_us = done.visible_us,
+                                               .refresh_ns = done.refresh_ns,
+                                               .msc = done.msc,
+                                               .flags = done.flags});
     if (done.visible_us == 0) {
       if (ledger_.report(done.id, 0)) ++discarded_;
       continue;

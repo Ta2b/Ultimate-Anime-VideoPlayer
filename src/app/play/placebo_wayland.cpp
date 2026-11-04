@@ -1,5 +1,7 @@
 #include "app/play/placebo_wayland.h"
 
+#include <format>
+
 #ifdef AJP_WITH_WAYLAND_PRESENTATION
 #include <cstring>
 #include <poll.h>
@@ -14,6 +16,25 @@
 #endif
 
 namespace ajp::app::play {
+
+ScreenStamp stamp_of(std::uint64_t seq, std::uint32_t sec_hi, std::uint32_t sec_lo, std::uint32_t nsec,
+                     std::uint32_t refresh_ns, std::uint32_t seq_hi, std::uint32_t seq_lo,
+                     std::uint32_t flags) {
+  const auto sec = static_cast<std::int64_t>((std::uint64_t{sec_hi} << 32U) | sec_lo);
+  return ScreenStamp{.seq = seq,
+                     .presented_us = sec * 1'000'000 + std::int64_t{nsec} / 1000,
+                     .refresh_ns = refresh_ns,
+                     .msc = (std::uint64_t{seq_hi} << 32U) | seq_lo,
+                     .flags = flags};
+}
+
+std::string_view screen_stamp_header() {
+  return "seq\tpresented_us\trefresh_ns\tmsc\tflags\n";
+}
+
+std::string screen_stamp_line(const ScreenStamp& s) {
+  return std::format("{}\t{}\t{}\t{}\t{:#x}\n", s.seq, s.presented_us, s.refresh_ns, s.msc, s.flags);
+}
 
 #ifdef AJP_WITH_WAYLAND_PRESENTATION
 
@@ -34,9 +55,13 @@ struct WaylandPresentation::State {
   std::vector<WaylandDone> early;           // arrivés hors read()
   std::vector<Pending*> pending;
 
-  void finish(Pending* p, std::int64_t visible_us, std::uint32_t refresh_ns) {
+  void finish(Pending* p, const ScreenStamp& stamp) {
     (out != nullptr ? *out : early)
-        .push_back(WaylandDone{.id = p->id, .visible_us = visible_us, .refresh_ns = refresh_ns});
+        .push_back(WaylandDone{.id = p->id,
+                               .visible_us = stamp.presented_us,
+                               .refresh_ns = stamp.refresh_ns,
+                               .msc = stamp.msc,
+                               .flags = stamp.flags});
     wp_presentation_feedback_destroy(p->feedback);
     std::erase(pending, p);
     delete p;
@@ -81,15 +106,15 @@ constexpr wp_presentation_listener kPresentation{.clock_id = on_clock};
 void on_sync_output(void*, struct wp_presentation_feedback*, wl_output*) {}
 
 void on_presented(void* data, struct wp_presentation_feedback*, std::uint32_t sec_hi, std::uint32_t sec_lo,
-                  std::uint32_t nsec, std::uint32_t refresh, std::uint32_t, std::uint32_t, std::uint32_t) {
+                  std::uint32_t nsec, std::uint32_t refresh, std::uint32_t seq_hi, std::uint32_t seq_lo,
+                  std::uint32_t flags) {
   auto* p = static_cast<State::Pending*>(data);
-  const auto sec = static_cast<std::int64_t>((std::uint64_t{sec_hi} << 32U) | sec_lo);
-  p->owner->finish(p, sec * 1'000'000 + std::int64_t{nsec} / 1000, refresh);
+  p->owner->finish(p, stamp_of(p->id, sec_hi, sec_lo, nsec, refresh, seq_hi, seq_lo, flags));
 }
 
 void on_discarded(void* data, struct wp_presentation_feedback*) {
   auto* p = static_cast<State::Pending*>(data);
-  p->owner->finish(p, 0, 0);
+  p->owner->finish(p, ScreenStamp{.seq = p->id});
 }
 
 constexpr wp_presentation_feedback_listener kFeedback{
