@@ -34,6 +34,13 @@ struct PairFacts {
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.
 bool rife_runs(const PairFacts& facts);
 
+// Smooth (--smooth-drawings, chantier 7.9) : un dessin tenu deux sources (a, a', puis b nouveau) se fond en
+// un seul mouvement de a vers b. L'instant t de la paire (a, a') donne u = t / 2 entre a et b ; celui de la
+// paire (a', b) donne u = 1/2 + t / 2. Linéaire sur toute la tenue.
+constexpr double smooth_hold_u(double t, bool second) {
+  return second ? 0.5 + t / 2.0 : t / 2.0;
+}
+
 // Dessin tenu avant la paire (la paire précédente n'a pas bougé) : RIFE avec poses n'a rien à calculer
 // (mouvement précédent nul, kernels/spec/poses.h : a tient jusqu'à 1/2, puis b paraît). Avant 1/2 :
 // l'instant est a, déjà à l'écran (Before) ; à 1/2 et après : b (After).

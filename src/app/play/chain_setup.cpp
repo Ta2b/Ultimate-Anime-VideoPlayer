@@ -128,6 +128,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                      : drba_motion ? drba_size.height
                                    : 0,
       .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, top_factor),
+      .smooth_drawings = smooth_drawings,
       .slots = std::move(slots)};
 }
 
@@ -180,6 +181,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   ChainEngines c;
   c.one_lane = p.options.one_lane;
   c.skip_held = p.options.skip_held;
+  c.smooth_drawings = p.options.smooth_drawings;
   if (settings.upscale) {
     auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
     if (!chosen) return std::unexpected(std::move(chosen.error()));

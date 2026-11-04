@@ -74,6 +74,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto steady = parse({"épisode.mkv", "--fast-steady"});
   REQUIRE(steady);
   CHECK(steady->fast_steady);
+  CHECK_FALSE(options->smooth_drawings);
+  const auto smooth = parse({"épisode.mkv", "--smooth-drawings"});
+  REQUIRE(smooth);
+  CHECK(smooth->smooth_drawings);
   CHECK_FALSE(options->kde_sdr_nits);
   const auto metadata = parse({"épisode.mkv", "--hdr-metadata"});
   REQUIRE(metadata);

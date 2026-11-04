@@ -57,6 +57,8 @@ UpscaleStage::~UpscaleStage() {
         "(côté tenu)",
         drba_.runs, drba_.edges, drba_.held);
   }
+  if (setup_.smooth_drawings)
+    log_channel("gpu")->info("Smooth : {} tenues de deux sources fondues en un mouvement", smoothed_holds_);
   if (setup_.late_fate) {
     log_channel("gpu")->info(
         "Rapide : {} instants laissés en retard sans calcul, {} calculés après leur instant", late_dropped_,
@@ -269,6 +271,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   gpu::KernelOps& ops = *setup_.backend->kernels();
   use_lane(gpu::Lane::Measure);  // ingestion, mesures de la paire, suivante en avance
   current_ ^= 1U;
+  frame_id_ = frame.id;
   rife_in_pair_ = false;  // les images de rife_in() sont celles de la paire d'avant
   gpu::IngestSpec spec;
   if (setup_.live) spec.reduce = setup_.live->reduction();
@@ -395,13 +398,18 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       if (setup_.live) setup_.live->count_held();
     }
   }
+  // Smooth : une tenue de deux sources fondue en un mouvement (upscale_smooth.cpp).
+  smooth_second_ = std::exchange(smooth_first_, false) && facts.same_epoch;
+  smooth_spanned_ = false;
+  if (auto ok = smooth_decide(frame, spec, facts, on_grid); !ok)
+    return std::unexpected(std::move(ok.error()));
   // L'image seule si l'interpolation ne tourne pas ; la grille repart alors d'elle.
   outputs_ = 1;
   intermediates_ = 0;
   middles_done_ = 0;
   middle_rank_ = 0;
   instants_[0] = Instant{.t = 1.0F, .pts_us = frame.pts_us};
-  const bool runs = on_grid && rife_runs(facts);
+  const bool runs = on_grid && (smooth_first_ || rife_runs(facts));
   // Mode auto : seules les paires qui ont chargé le GPU disent s'il tient ; à ×1 rien ne tourne, le
   // temps seul compte. Coupe de scène ou dessin tenu : aucun verdict, mais le moteur vit.
   const bool auto_measured =
@@ -434,15 +442,17 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     outputs_ = 0;
     std::size_t skipped = 0;
     for (const core::OutputInstant& at : step->instants()) {
-      const bool source = at.is_source();
+      // Smooth, première paire : la source tenue elle-même devient un instant du mouvement vers b.
+      const bool source = at.is_source() && !smooth_first_;
       if (!source && skipped < late) {  // déjà en retard : sauté
         ++skipped;
         continue;
       }
-      instants_[outputs_++] = Instant{
-          .t = source ? 1.0F
-                      : static_cast<float>(static_cast<double>(at.t.num) / static_cast<double>(at.t.den)),
-          .pts_us = source ? frame.pts_us : at.pts_us.value_or(frame.pts_us)};
+      double t = static_cast<double>(at.t.num) / static_cast<double>(at.t.den);
+      if (smooth_first_ || (smooth_second_ && !source)) t = smooth_hold_u(t, smooth_second_);
+      instants_[outputs_++] =
+          Instant{.t = source ? 1.0F : static_cast<float>(t),
+                  .pts_us = at.is_source() ? frame.pts_us : at.pts_us.value_or(frame.pts_us)};
       if (!source) ++intermediates_;
     }
     ++interpolated_;
@@ -632,7 +642,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   middle_rank_ = middles_done_++;
   Output made{.pts_us = instant.pts_us,
               .left = previous_->id,
-              .right = frame.id,
+              .right = smooth_first_ ? smooth_b_id_ : frame.id,
               .debanded = debanded_,
               .grade = grade->version};
   gmfss_.a = GmfssFrameKey{.id = previous_->id,
@@ -645,10 +655,13 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   const gpu::RingTarget ring{.slot = &setup_.slots[slot], .sync = sync};
   if (warps_spanned()) {
     const Target out = ring_direct_ ? Target{.ring = &ring} : Target{.tensor = &middle_out()};
+    if (smooth_first_) {
+      if (auto ok = span_smooth_b(); !ok) return std::unexpected(std::move(ok.error()));
+    }
+    const gpu::Tensor& b_spanned = smooth_first_ ? spanned_[span_ahead_buf_]->tensor() : spanned(current_);
     if (auto ok = gmfss() ? interpolate_gmfss_spanned(output, spanned(current_ ^ 1U), spanned(current_), out)
-                  : drba_motion()
-                      ? interpolate_drba_motion(output, true, out)
-                      : interpolate_by_motion(output, spanned(current_ ^ 1U), spanned(current_), out);
+                  : drba_motion() ? interpolate_drba_motion(output, true, out)
+                                  : interpolate_by_motion(output, spanned(current_ ^ 1U), b_spanned, out);
         !ok) {
       return std::unexpected(std::move(ok.error()));
     }
@@ -661,7 +674,8 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     return held_b(made, frame, output);
   }
   if (by_motion() && ring_direct_) {  // sans SPAN : le warp écrit la sortie elle-même
-    if (auto ok = interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now, Target{.ring = &ring});
+    if (auto ok = interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(),
+                                        smooth_first_ ? smooth_b_rgb() : now, Target{.ring = &ring});
         !ok)
       return std::unexpected(std::move(ok.error()));
     use_lane(gpu::Lane::Upscale);
@@ -673,9 +687,10 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   if (by_motion() || gmfss() || drba()) {
     auto ok = gmfss()         ? interpolate_gmfss(output)
               : drba_motion() ? interpolate_drba_motion(output, false, Target{.tensor = &middle()})
-              : drba()        ? interpolate_drba(output)
-                              : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(), now,
-                                                      Target{.tensor = &middle()});
+              : drba()
+                  ? interpolate_drba(output)
+                  : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(),
+                                          smooth_first_ ? smooth_b_rgb() : now, Target{.tensor = &middle()});
     if (!ok) return std::unexpected(std::move(ok.error()));
   } else if (auto ok = interpolate_image(instant.t); !ok) {
     return std::unexpected(std::move(ok.error()));
@@ -713,6 +728,9 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   }
   // L'autre tampon que celui de la précédente, qui reste le bord a des warps de la paire.
   span_of_[current_] = span_of_[current_ ^ 1U] ^ 1U;
+  // Smooth : le SPAN de cette image a été fait en avance, dans ce même tampon (span_smooth_b).
+  if (std::exchange(span_ahead_, std::nullopt) == frame_id_ && span_ahead_buf_ == span_of_[current_])
+    return {};
   // Sur la voie de SPAN, au milieu du travail de la paire : la voie de l'appelant reprend après.
   const gpu::Lane back = lane_;
   use_lane(gpu::Lane::Upscale);
