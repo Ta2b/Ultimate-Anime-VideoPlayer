@@ -577,9 +577,12 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
                                                                 std::uint64_t wait_value,
                                                                 std::uint64_t signal_value) {
   AJP_TRACE("upscale.produce");
-  const gpu::RingWrite sync{.wait_value = wait_value, .signal_value = signal_value};
   const gpu::Tensor& now = rgb_[current_]->tensor();
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
+  // Le pts de l'image écrite : la source elle-même, ou l'instant (intermédiaire, b écrite en avance).
+  auto grade = grade_slot(instant.t >= 1.0F ? frame.pts_us : instant.pts_us, frame.epoch);
+  if (!grade) return std::unexpected(std::move(grade.error()));
+  const gpu::RingWrite sync{.wait_value = wait_value, .signal_value = signal_value, .grade = *grade};
   const bool last = output + 1 >= outputs_;
   const bool b_early = copy_pair_ && instant.t < 1.0F;  // b écrite à un instant intermédiaire
   if (instant.t >= 1.0F || b_early) {                   // l'image elle-même
@@ -600,11 +603,16 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
                   .left = frame.id,
                   .right = frame.id,
                   .uninterpolated = uninterpolated_,
-                  .debanded = debanded_};
+                  .debanded = debanded_,
+                  .grade = grade->version};
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
-  Output made{.pts_us = instant.pts_us, .left = previous_->id, .right = frame.id, .debanded = debanded_};
+  Output made{.pts_us = instant.pts_us,
+              .left = previous_->id,
+              .right = frame.id,
+              .debanded = debanded_,
+              .grade = grade->version};
   gmfss_.a = GmfssFrameKey{.id = previous_->id,
                            .epoch = previous_->epoch};  // GMFSS fusionné : les images de la paire
   gmfss_.b = GmfssFrameKey{.id = frame.id, .epoch = frame.epoch};
@@ -657,6 +665,21 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
   made.repeated = drba_held_;
   return held_b(made, frame, output);
+}
+
+std::expected<gpu::GradeSlot, Refusal> UpscaleStage::grade_slot(std::int64_t pts_us, std::uint32_t epoch) {
+  // Le grade de l'anneau lit une source débandée (l'écran ne débande plus après lui) et écrit l'anneau RVB ;
+  // l'export YUV et un backend qui ne sait pas grader gardent le grade de l'écran.
+  if (!debanded_ || setup_.yuv_slots || !setup_.live) return gpu::GradeSlot{};
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (!ops.grades_ring()) return gpu::GradeSlot{};
+  const std::shared_ptr<const GradeVersion> version = setup_.live->grade_at(pts_us, epoch);
+  if (!version || version->off) return gpu::GradeSlot{};
+  if (std::ranges::find(grades_sent_, version->version) == grades_sent_.end()) {
+    if (auto ok = ops.set_grade(version->order()); !ok) return std::unexpected(std::move(ok.error()));
+    grades_sent_[grade_sent_next_++ % grades_sent_.size()] = version->version;
+  }
+  return gpu::GradeSlot{.version = version->version, .epoch = epoch, .pts_us = pts_us};
 }
 
 std::expected<void, Refusal> UpscaleStage::span_current() {

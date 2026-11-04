@@ -217,6 +217,7 @@ TensorRtBackend::~TensorRtBackend() {
   if (stream_ == nullptr) return;
   cudaSetDevice(device_);
   destroy_textures();
+  grade_.reset();
   if (const int used = std::popcount(used_lanes_); used > 1 && !stages_.empty()) {
     log(BackendLogLevel::Info,
         std::format("profil GPU · {} voies en parallèle : chaque temps court sur la file de son étape, "

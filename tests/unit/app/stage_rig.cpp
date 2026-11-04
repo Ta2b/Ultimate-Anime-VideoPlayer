@@ -84,8 +84,10 @@ std::expected<void, Refusal> FakeBackend::note_ring(std::string entry, const gpu
   const std::scoped_lock lock(mutex_);
   if (!ring_targets_) return refuse(RefusalCode::FormatUnsupported, std::format("{} : absent", entry));
   push(std::move(entry));
-  written_.push_back(
-      {.slot = ring.slot->index, .wait_value = ring.sync.wait_value, .signal_value = ring.sync.signal_value});
+  written_.push_back({.slot = ring.slot->index,
+                      .wait_value = ring.sync.wait_value,
+                      .signal_value = ring.sync.signal_value,
+                      .grade = ring.sync.grade});
   return {};
 }
 
@@ -142,7 +144,10 @@ std::expected<void, Refusal> FakeBackend::write_ring(const gpu::Tensor&, const R
                                                      const gpu::RingWrite& sync) {
   const std::scoped_lock lock(mutex_);
   push(std::format("write {}", slot.index));
-  written_.push_back({.slot = slot.index, .wait_value = sync.wait_value, .signal_value = sync.signal_value});
+  written_.push_back({.slot = slot.index,
+                      .wait_value = sync.wait_value,
+                      .signal_value = sync.signal_value,
+                      .grade = sync.grade});
   return {};
 }
 

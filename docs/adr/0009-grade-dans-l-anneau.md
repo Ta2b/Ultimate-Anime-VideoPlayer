@@ -25,6 +25,14 @@ grade, ou refaire le grade exact dans le ring.
 5. Le shader reste la vérité de l'aspect et le chemin par défaut ; le ring ne gradera que derrière `--grade-ring`
    (chantier 2.9), et `FusedSplit` ne part qu'après la porte des 30 plans (2.11).
 
+6. **La version par image** (chantier 2.9) : main poste une `GradeVersion` (`LiveSettings::post_grade`), qui
+   vaut pour les images de son époque de pts ≥ `from_pts_us` et pour les époques suivantes ; les 8 dernières
+   sont gardées (`gpu::kGradeOrders`). L'étage la choisit au pts de chaque image écrite (`grade_at`), la confie
+   au backend à sa première image (`KernelOps::set_grade`) et la nomme dans `RingWrite::grade` ; le backend
+   grade l'emplacement juste avant son signal, et `RingFrame::grade` dit à l'écran que l'image l'est. Sans
+   source débandée, en export YUV ou sur un backend sans `grades_ring()`, la version reste 0 et l'écran grade.
+   L'historique de la zone repart à une nouvelle époque, à un pts qui recule ou après plus d'une seconde.
+
 ## Mesures (chantier 2.7, lavapipe)
 - Référence contre le shader, même image 256 × 256 PQ, six réglages : ΔE_ITP p50 ≤ 0,37, p99 ≤ 1,0 sauf
   l'aspect TrueHDR adaptatif (3,7) et vibrance + saturation au bord du gamut (2,0). L'entrée SDR captée puis

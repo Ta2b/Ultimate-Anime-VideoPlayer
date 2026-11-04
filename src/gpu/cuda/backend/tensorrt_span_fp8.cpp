@@ -110,7 +110,7 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   if (std::string notice = engine.take_notice(); !notice.empty())
     log(BackendLogLevel::Warn, std::format("SPAN FP8 {}×{} : {}", shape.dims[3], shape.dims[2], notice));
   if (!queued || imported == nullptr) return queued;
-  return imported->signal(ring->sync.signal_value, stream_);
+  return finish_slot(*imported, ring->sync);
 }
 
 }  // namespace ajp::gpu::cuda

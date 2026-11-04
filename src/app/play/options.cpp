@@ -156,6 +156,10 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.legacy_grade = true;
     } else if (arg == "--legacy-grade=split") {
       options.split_look = true;
+    } else if (arg == "--grade-ring" || arg == "--grade-ring=on") {
+      options.grade_ring = true;
+    } else if (arg == "--grade-ring=off") {
+      options.grade_ring = false;
     } else if (arg == "--no-resume") {
       options.resume = false;
     } else if (arg == "--register" || arg == "--unregister") {
@@ -428,6 +432,8 @@ std::string play_usage() {
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
       "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"
       "  --legacy-grade=split   le grade actuel, le look dans sa passe à part (comparaison A/B)\n"
+      "  --grade-ring[=off]     essai : le grade fait par CUDA dans l'anneau, montré tel quel (éteint par\n"
+      "                         défaut)\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"

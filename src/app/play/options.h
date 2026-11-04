@@ -128,6 +128,10 @@ struct PlayOptions {
   // --legacy-grade=split : le grade actuel, le look dans sa passe à part (render::GradeBody::FusedSplit),
   // pour l'A/B du chantier 2a.
   bool split_look = false;
+  // --grade-ring : le grade exact fait dans l'anneau par le backend CUDA (chantier 2c,
+  // docs/adr/0009-grade-dans-l-anneau.md), l'écran montrant les images gradées sans hooks ; --grade-ring=off
+  // ou absent : le grade reste en shader à l'écran. Éteint par défaut jusqu'à la porte des 30 plans (2.11).
+  bool grade_ring = false;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;

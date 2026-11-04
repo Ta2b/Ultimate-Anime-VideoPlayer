@@ -63,6 +63,13 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(split);
   CHECK(split->split_look);
   CHECK_FALSE(split->legacy_grade);
+  CHECK_FALSE(options->grade_ring);
+  const auto ring = parse({"épisode.mkv", "--grade-ring"});
+  REQUIRE(ring);
+  CHECK(ring->grade_ring);
+  const auto ring_off = parse({"épisode.mkv", "--grade-ring", "--grade-ring=off"});
+  REQUIRE(ring_off);
+  CHECK_FALSE(ring_off->grade_ring);
   CHECK_FALSE(options->kde_sdr_nits);
   const auto metadata = parse({"épisode.mkv", "--hdr-metadata"});
   REQUIRE(metadata);

@@ -38,6 +38,10 @@ namespace ajp::gpu::cuda {
 
 class TrtLog;
 class SharedActivations;
+struct GradeState;
+struct GradeStateDeleter {
+  void operator()(GradeState* state) const;  // tensorrt_grade.cpp
+};
 class SpanFp8Engine;
 class RifeFusedEngine;
 class DrbaFusedEngine;
@@ -99,6 +103,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
   std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
   bool debands_on_ingest() const override { return true; }
+  // Le grade exact dans l'anneau (tensorrt_grade.cpp).
+  bool grades_ring() const override { return true; }
+  std::expected<void, Refusal> set_grade(const GradeOrder& order) override;
   std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
                                           const Tensor& out) override;
   std::expected<void, Refusal> soft_splat_all(std::span<const KernelOps::SplatJob> jobs) override;
@@ -228,6 +235,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // La partie de begin_write propre au slot : protocole, import, attente de wait_value. Les voies
   // sont ordonnées par l'appelant.
   std::expected<ImportedSlot*, Refusal> begin_slot(const RingSlotDesc& desc, const RingWrite& sync);
+  // La fin de l'écriture d'un slot : son grade (sync.grade.version non nulle, tensorrt_grade.cpp) puis le
+  // signal de signal_value.
+  std::expected<void, Refusal> finish_slot(const ImportedSlot& slot, const RingWrite& sync);
+  std::expected<void, Refusal> grade_slot(const ImportedSlot& slot, const GradeSlot& grade);
   // Où écrit un warp ou une composition : le tenseur out, ou directement le slot de ring.
   struct Target {
     const Tensor* out = nullptr;
@@ -261,7 +272,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
     std::expected<void, Refusal> launched = launch(imported != nullptr ? imported->surface() : RingSurface{});
     timing.end(stream_);
     if (!launched || imported == nullptr) return launched;
-    return imported->signal(target.ring->sync.signal_value, stream_);
+    return finish_slot(*imported, target.ring->sync);
   }
   // Objet texture d'un tenseur FP16 lu par le filtre bilinéaire (warp, composition de GMFSS ;
   // tensorrt_textures.cpp), créé à sa première lecture et gardé ; 0 quand le tenseur n'y est pas
@@ -369,6 +380,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   float* ingest_rows_ = nullptr;
   std::size_t ingest_rows_size_ = 0;
   // Image ingérée avant son débandage (ingest avec IngestSpec::deband), à la taille de la plus grande vue.
+  std::unique_ptr<GradeState, GradeStateDeleter> grade_;  // ordres et cartes du grade de l'anneau
   void* deband_out_ = nullptr;
   std::size_t deband_out_size_ = 0;
   // Envois des images du décodage logiciel (host_upload.h), créés à la première.

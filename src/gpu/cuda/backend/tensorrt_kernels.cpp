@@ -323,7 +323,7 @@ std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, cons
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_write_rgba16(params, stream_), "write_rgba16<<<>>>"); !ok) return ok;
   timing.end(stream_);
-  return (*imported)->signal(sync.signal_value, stream_);
+  return finish_slot(**imported, sync);
 }
 
 // À forme égale, un rééchantillonnage est l'identité : une copie appareil → appareil, dans l'ordre de la
