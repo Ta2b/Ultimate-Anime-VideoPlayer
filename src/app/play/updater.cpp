@@ -54,7 +54,8 @@ std::string trimmed(std::string text) {
   return text;
 }
 
-// curl du système : https seulement, délai borné.
+// curl du système : https seulement, délai borné. Un fichier absent du serveur (HTTP 404) est refusé
+// TrackUnavailable, que check_for_update distingue d'une panne.
 std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, int max_seconds,
                                    const std::stop_token& stop) {
   const auto curl = system_tool("curl");
@@ -64,7 +65,16 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
                             .args = {"-fsSL", "--proto", "=https", "--max-time", std::to_string(max_seconds),
                                      "-o", prepare::utf8_path(file), std::string(url)},
                             .timeout = std::chrono::seconds(max_seconds + 10)};
-  return run_tool(spec, {}, stop, i18n::tr("download"));
+  std::string last;
+  auto exit = prepare::run_process(spec, [&](std::string_view line) { last = line; }, stop);
+  if (!exit) return std::unexpected(exit.error());
+  if (exit->kind == prepare::ExitKind::Cancelled)
+    return refuse(RefusalCode::Cancelled, i18n::tr("download cancelled"));
+  if (exit->kind != prepare::ExitKind::Exited)
+    return refuse(RefusalCode::DecodeFailed,
+                  std::format("{} : {}", i18n::tr("download"), prepare::describe(*exit)));
+  if (exit->code == 0) return {};
+  return std::unexpected(curl_failure(static_cast<int>(exit->code), last));
 }
 
 // Copie récursive qui remplace les fichiers même en service : le fichier est retiré (ou, sous Windows,
@@ -200,6 +210,51 @@ bool update_due(const UpdateState& state, std::string_view mode, std::string_vie
          now_unix < state.last_check_unix;
 }
 
+int curl_http_status(std::string_view message) {
+  // « curl: (22) The requested URL returned error: 404 »
+  const std::size_t at = message.rfind("error: ");
+  if (at == std::string_view::npos) return 0;
+  int status = 0;
+  for (std::size_t i = at + 7; i < message.size() && message[i] >= '0' && message[i] <= '9'; ++i)
+    status = status * 10 + (message[i] - '0');
+  return status >= 100 && status < 600 ? status : 0;
+}
+
+Refusal curl_failure(int code, std::string_view message) {
+  const std::string what = i18n::tr("download");
+  const auto failed = [&](RefusalCode refusal, std::string text) {
+    return Refusal{refusal, std::format("{} : {}", what, text)};
+  };
+  switch (code) {
+    case 22: {
+      const int status = curl_http_status(message);
+      if (status == 404)
+        return failed(RefusalCode::TrackUnavailable, i18n::tr("file not found on the server"));
+      if (status != 0)
+        return failed(RefusalCode::DecodeFailed,
+                      i18n::tr_format("the server refused the download (HTTP {})", status));
+      return failed(RefusalCode::DecodeFailed, i18n::tr("the server refused the download"));
+    }
+    case 5:
+    case 6:
+      return failed(RefusalCode::DecodeFailed, i18n::tr("no Internet connection (server name not found)"));
+    case 7:
+      return failed(RefusalCode::DecodeFailed, i18n::tr("the update server cannot be reached"));
+    case 28:
+      return failed(RefusalCode::DecodeFailed, i18n::tr("the update server took too long to answer"));
+    case 35:
+    case 51:
+    case 58:
+    case 60:
+    case 77:
+      return failed(RefusalCode::DecodeFailed, i18n::tr("secure connection failed (certificate or proxy)"));
+    case 23:
+      return failed(RefusalCode::FileUnwritable, i18n::tr("cannot write the downloaded file"));
+    default:
+      return failed(RefusalCode::DecodeFailed, i18n::tr_format("download failed (curl code {})", code));
+  }
+}
+
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop) {
   const std::string_view key = update_public_key();
   if (key.empty())
@@ -218,7 +273,15 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
     }
   } cleanup{dir};
   const std::string url = manifest_url(release_repo(), channel);
-  if (auto got = fetch(url, dir / "manifest.toml", 30, stop); !got) return std::unexpected(got.error());
+  if (auto got = fetch(url, dir / "manifest.toml", 30, stop); !got) {
+    // Rien de publié sur ce canal : pas une panne, il n'y a simplement rien de plus récent.
+    if (got.error().code == RefusalCode::TrackUnavailable)
+      return CheckResult{
+          .newer = std::nullopt,
+          .message = i18n::tr_format(
+              "No version is published on the \"{}\" channel yet: the player is up to date", channel)};
+    return std::unexpected(got.error());
+  }
   if (auto got = fetch(url + ".sig", dir / "manifest.toml.sig", 30, stop); !got)
     return std::unexpected(got.error());
   const std::string manifest_text = read_all(dir / "manifest.toml");

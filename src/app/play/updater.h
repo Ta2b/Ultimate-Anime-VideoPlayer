@@ -77,7 +77,15 @@ struct CheckResult {
   std::string message;  // « à jour », « 0.7.0 disponible »…
 };
 
-// Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible.
+// Le statut HTTP d'un message d'erreur de curl (« … returned error: 404 ») ; 0 : aucun.
+int curl_http_status(std::string_view message);
+
+// Le refus lisible d'un échec de curl (code de sortie, dernière ligne écrite) : « pas de connexion Internet
+// »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
+Refusal curl_failure(int code, std::string_view message);
+
+// Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible. Un
+// canal sans manifeste publié (HTTP 404) n'est pas un refus : le lecteur est à jour.
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop);
 
 // Télécharge l'archive du manifeste sous <données>/updates, vérifie taille et SHA-256 ; rend son chemin.

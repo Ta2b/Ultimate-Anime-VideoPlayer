@@ -63,6 +63,23 @@ TEST_CASE("mises à jour : manifeste attendu selon le canal", "[updater]") {
   CHECK(manifest_url("a/b", "preview") == "https://github.com/a/b/releases/download/preview/manifest.toml");
 }
 
+TEST_CASE("mises à jour : un échec de curl se lit, un manifeste absent n'est pas une panne", "[updater]") {
+  CHECK(curl_http_status("curl: (22) The requested URL returned error: 404") == 404);
+  CHECK(curl_http_status("curl: (6) Could not resolve host: github.com") == 0);
+  CHECK(curl_failure(22, "curl: (22) The requested URL returned error: 404").code ==
+        ajp::RefusalCode::TrackUnavailable);
+  const ajp::Refusal forbidden = curl_failure(22, "curl: (22) The requested URL returned error: 403");
+  CHECK(forbidden.code != ajp::RefusalCode::TrackUnavailable);
+  CHECK(forbidden.detail.find("403") != std::string::npos);
+  for (const int code : {6, 7, 28, 35, 60, 3}) {
+    const ajp::Refusal refusal = curl_failure(code, "curl: (x) détail");
+    CHECK(refusal.code != ajp::RefusalCode::TrackUnavailable);
+    CHECK(refusal.detail.find("code 22") == std::string::npos);
+    CHECK(!refusal.detail.empty());
+  }
+  CHECK(curl_failure(3, "").detail.find("3") != std::string::npos);
+}
+
 #if !defined(_WIN32)
 TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
   const fs::path root = fs::temp_directory_path() / "ajp-updater-test";
