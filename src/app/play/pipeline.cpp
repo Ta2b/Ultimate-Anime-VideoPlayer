@@ -94,6 +94,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
         audio_failure = std::move(output.error());
       } else {
         audio::AudioThreadOptions options{
+            .player = {.pll = config.audio_pll},
             .credit = [inbox = &p->source_inbox_](Credit credit) { inbox->try_push(credit); },
             .refused = [mail = &p->mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
         auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
