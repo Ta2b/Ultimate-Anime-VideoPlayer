@@ -162,6 +162,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.grade_ring = false;
     } else if (arg == "--fast-steady") {
       options.fast_steady = true;
+    } else if (arg == "--smooth-drawings") {
+      options.smooth_drawings = true;
     } else if (arg == "--no-resume") {
       options.resume = false;
     } else if (arg == "--register" || arg == "--unregister") {
@@ -437,6 +439,7 @@ std::string play_usage() {
       "  --grade-ring[=off]     essai : le grade fait par CUDA dans l'anneau, montré tel quel (éteint par\n"
       "                         défaut)\n"
       "  --fast-steady          essai : mode Rapide à pas constant, N images par source fixe dans un plan\n"
+      "  --smooth-drawings      essai : un dessin tenu deux images se fond en un mouvement (RIFE mouvement)\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"

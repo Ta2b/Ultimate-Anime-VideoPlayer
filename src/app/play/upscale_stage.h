@@ -31,6 +31,7 @@
 #include "app/play/gmfss_features.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
+#include "app/play/rife_plan.h"
 #include "app/play/ring_stage.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
@@ -113,6 +114,10 @@ struct UpscaleSetup {
   // calcul ; passé, il n'est ni calculé ni écrit (Fate::Late). Une source en retard garde son SPAN quand la
   // paire suivante le lit. Sans DistilDRBA ni copie de b (poses gardées).
   bool late_fate = false;
+  // --smooth-drawings (chantier 7.9, essai) : un dessin tenu deux sources, suivi d'un dessin nouveau déjà
+  // ingéré, se fond en un seul mouvement (rife_plan.h, smooth_hold_u) au lieu de rester figé puis de sauter.
+  // RIFE mouvement seulement, sans poses gardées ; une tenue plus longue garde le rythme des sources.
+  bool smooth_drawings = false;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
   // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
   // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.
@@ -171,7 +176,7 @@ class UpscaleStage final : public RingStage {
   bool gmfss_fused() const { return setup_.gmfss_features != nullptr; }
   bool drba() const { return setup_.distil_drba != nullptr; }
   bool drba_motion() const { return drba() && setup_.drba_motion; }
-  bool wants_next() const override { return drba(); }
+  bool wants_next() const override { return drba() || smooth_possible(); }
   // DistilDRBA (upscale_drba.cpp) : ses tenseurs ; l'arrivée de l'image b à la place de son
   // ingestion (rgb_[current_] reçoit b, l'image d'avant la paire passe dans drba_.before) ; les
   // mesures de la paire (reprises de l'arrivée précédente si elle les a prises pour sa suivante) ;
@@ -506,6 +511,28 @@ class UpscaleStage final : public RingStage {
   std::uint32_t middles_done_ = 0;
   std::uint32_t middle_rank_ = 0;
   bool first_middle() const { return middle_rank_ == 0; }
+  // Smooth (upscale_smooth.cpp) : la paire en cours est la première d'une tenue fondue (b : smooth_b_id_,
+  // l'image ingérée en avance), ou la seconde ; les mesures de la paire d'après, prises en avance.
+  bool smooth_possible() const {
+    return setup_.smooth_drawings && by_motion() && !gmfss() && !drba() && interpolates();
+  }
+  std::expected<void, Refusal> smooth_decide(const DecodedFrame& frame, const gpu::IngestSpec& spec,
+                                             const PairFacts& facts, bool on_grid);
+  // Warp après SPAN : SPAN de b (l'image en avance) dans le tampon libre, une fois par paire fondue.
+  std::expected<void, Refusal> span_smooth_b();
+  const gpu::Tensor& smooth_b_rgb() const { return ahead_.rgb->tensor(); }
+  const gpu::Tensor& smooth_b_rife() const {
+    return ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
+  }
+  bool smooth_first_ = false;
+  bool smooth_second_ = false;
+  SourceId smooth_b_id_;
+  SourceId frame_id_;                                                // l'image en tête (outputs)
+  std::optional<std::pair<SourceId, gpu::PairScores>> ahead_taken_;  // (gauche, mesures de la suivante)
+  std::optional<SourceId> span_ahead_;  // SPAN de cette image déjà fait (span_smooth_b), dans span_ahead_buf_
+  std::uint32_t span_ahead_buf_ = 0;
+  bool smooth_spanned_ = false;  // span_smooth_b fait pour la paire en cours
+  std::uint64_t smoothed_holds_ = 0;
   // L'instant de la sortie serait passé quand une image soumise maintenant paraîtrait.
   bool instant_late(const DecodedFrame& frame, std::uint32_t output) const;
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN

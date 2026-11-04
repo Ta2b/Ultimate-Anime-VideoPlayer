@@ -60,6 +60,9 @@ std::expected<bool, Refusal> UpscaleStage::deband_source(const gpu::Tensor& rgb)
 
 std::expected<gpu::PairScores, Refusal> UpscaleStage::pair_scores() {
   gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (auto taken = std::exchange(ahead_taken_, std::nullopt);
+      taken && previous_ && taken->first == previous_->id)
+    return taken->second;  // Smooth : relues en avance
   const std::uint64_t ticket = std::exchange(ahead_.ticket, 0);
   if (ticket != 0 && previous_ && ahead_.left == previous_->id) {
     if (auto taken = ops.scores_take(ticket)) return taken;
@@ -72,6 +75,8 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   const DecodedFrame* after = next();
   if (after == nullptr || after->width != setup_.source_width || after->height != setup_.source_height)
     return {};
+  // Déjà ingérée en avance plus tôt dans cette paire (Smooth) : rien à refaire.
+  if (ahead_.id == after->id && ahead_.epoch == after->epoch && ahead_.reduce == spec.reduce) return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   auto debanded = ingest_source(*after, spec, ahead_.rgb->tensor());
   if (!debanded) return std::unexpected(std::move(debanded.error()));
@@ -111,7 +116,7 @@ std::expected<void, Refusal> UpscaleStage::prepare_rife_input() {
 std::expected<void, Refusal> UpscaleStage::write_rife_pair(float t) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const gpu::Tensor& a = rife_source(current_ ^ 1U);
-  const gpu::Tensor& b = rife_source(current_);
+  const gpu::Tensor& b = smooth_first_ ? smooth_b_rife() : rife_source(current_);
   std::expected<void, Refusal> ok;
   bool written = false;
   if (rife_mesh_[rife_pair_] && rife_pair_op_) {

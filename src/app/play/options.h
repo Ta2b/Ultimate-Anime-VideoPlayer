@@ -136,6 +136,9 @@ struct PlayOptions {
   // source, constant dans un plan, au lieu de la grille libre. Essai, éteint par défaut jusqu'aux
   // mesures 7.10.
   bool fast_steady = false;
+  // --smooth-drawings : un dessin tenu deux sources se fond en un seul mouvement vers le suivant (chantier
+  // 7.9, UpscaleSetup::smooth_drawings). Essai, RIFE mouvement seulement, éteint par défaut.
+  bool smooth_drawings = false;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;
