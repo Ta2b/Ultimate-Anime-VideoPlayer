@@ -126,7 +126,7 @@ struct PlayOptions {
   bool shot_cuts = false;
   // --anime-shots : essai (méga plan A2), la méthode « HDR anime » décide par plan : exposition des surfaces
   // et marge des éclats fixées par la pré-analyse, glissant aux coupes (anime_shots.h).
-  bool anime_shots = false;
+  bool anime_shots = true;  // par défaut depuis le 04/11 (choix de Tatoub)
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
@@ -175,10 +175,10 @@ struct PlayOptions {
   PresentWanted present = PresentWanted::Wait;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
-  bool hdr_anime = false;
+  bool hdr_anime = true;  // par défaut depuis le 04/11 ; --classic-grade : le grade d'avant (Fused)
   // --anime-guided : essai (méga plan A3), --hdr-anime avec la carte locale guidée par le pixel (le halo ne
   // déborde plus sur la surface voisine) ; implique --hdr-anime.
-  bool anime_guided = false;
+  bool anime_guided = true;  // par défaut depuis le 04/11
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
   // : le peps de --hdr-anime et --anime-guided, à régler à l'œil (render::GradeSettings::anime_contrast…).
   // --no-looks : la lecture sans la pile de LUT ; --anime-pure : la méthode HDR anime sans les noirs profonds
