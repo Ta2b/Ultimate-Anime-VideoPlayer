@@ -1,6 +1,7 @@
 // La méthode « HDR anime » (GradeBody::Anime) sur le GPU : les surfaces gardent leur niveau d'un plan à
 // l'autre et leur grain, seuls les émetteurs montent. Mêmes conditions que grade_gpu_test.cpp.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -87,6 +88,33 @@ TEST_CASE("HDR anime : une lumière isolée monte, son entourage non", "[render]
   CHECK(centre > 1.8 * 195.0);
   CHECK(centre <= kPeak);
   CHECK(dark == Catch::Approx(1.15 * 3.0).epsilon(0.05));
+}
+
+TEST_CASE("HDR anime : une peau claire près d'un fond sombre n'est pas une lumière (audit F2)",
+          "[render][gpu]") {
+  Gpu gpu(GradeBody::Anime);
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une bande de peau claire (255/232/214 en sRGB, ramenée en BT.2020 linéaire à un blanc de 203 nits) de
+  // 48 colonnes sur un fond sombre : la même forme que la lumière isolée ci-dessus.
+  constexpr std::array<double, 3> kSkin{187.2, 166.2, 140.0};
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (std::size_t y = 0; y < static_cast<std::size_t>(kSide); ++y) {
+    for (std::size_t x = 0; x < static_cast<std::size_t>(kSide); ++x) {
+      std::uint16_t* px = &pixels[(y * static_cast<std::size_t>(kSide) + x) * 4];
+      for (std::size_t c = 0; c < 3; ++c) {
+        const double nits = x >= 104 && x < 152 ? kSkin[c] : 3.0;
+        px[c] = static_cast<std::uint16_t>(std::lround(std::clamp(nits_to_pq(nits), 0.0, 1.0) * 65535.0));
+      }
+      px[3] = 65535;
+    }
+  }
+  const auto line = graded_rgb(gpu, pixels, anime_params());
+  const double skin_in = 0.2627 * kSkin[0] + 0.6780 * kSkin[1] + 0.0593 * kSkin[2];
+  for (const std::size_t x : {std::size_t{106}, std::size_t{128}, std::size_t{149}}) {
+    INFO("colonne " << x << " : " << luma(line[x]) << " nits");
+    CHECK(luma(line[x]) == Catch::Approx(1.15 * skin_in).epsilon(0.05));  // le relèvement des surfaces seul
+  }
 }
 
 TEST_CASE("HDR anime : le curseur Éclats agit même sans l'ancien curseur des éclats", "[render][gpu]") {
