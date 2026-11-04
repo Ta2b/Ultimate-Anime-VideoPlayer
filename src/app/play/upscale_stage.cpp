@@ -293,7 +293,12 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   std::optional<core::CadenceStep> step;
   // mode Rapide : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
   const bool free_mode = interpolates() && setup_.live && setup_.live->free_active();
-  if (free_mode) {
+  const bool steady = free_mode && setup_.live->steady_active();
+  if (steady) {
+    cadence_.reset();
+    free_grid_.reset();
+    step = steady_grid_.push(core::stamp_of(frame), setup_.live->steady_factor());
+  } else if (free_mode) {
     cadence_.reset();
     step = free_grid_.push(core::stamp_of(frame), free_inputs(frame.epoch));
   } else if (factor.num > factor.den &&
@@ -315,6 +320,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     cadence_.reset();
   }
   if (!free_mode) free_grid_.reset();
+  if (!steady) steady_grid_.reset();
   const bool on_grid = step && step->event == core::GridEvent::Pair && !step->instants().empty() &&
                        !step->instants().front().is_source();
   // ×N demandé, arrondi au-dessus (×1,5 compte pour ×2) ; 1 : pas d'interpolation.
@@ -356,7 +362,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
   // DistilDRBA mesure aussi une paire « source seule » (facteur 1) : sans cela, la paire suivante n'aurait
   // pas les mesures du côté d'avant.
-  if ((facts.factor > 1 || drba()) && facts.same_epoch) {
+  // Rapide à pas constant : chaque paire est mesurée, à N = 1 aussi (les coupes changent N).
+  if ((facts.factor > 1 || drba() || steady) && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
     auto scores = drba() ? drba_scores(frame) : pair_scores();
     // Les dernières attentes seulement : le journal de fin les résume, la mémoire reste bornée.
@@ -381,6 +388,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       if (setup_.live) {
         setup_.live->count_cut();
         setup_.live->auto_cut(host_now_us());
+        setup_.live->free_cut(host_now_us());
       }
     } else if (kernels::is_held(scores->worst_block)) {
       ++held_;
@@ -421,6 +429,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       (kernels::is_scene_cut(facts.scores->scene_score) || kernels::is_held(facts.scores->worst_block));
   if (on_grid && !runs && cadence_) cadence_->resync();
   if (on_grid && !runs && free_mode) free_grid_.resync();
+  if (on_grid && !runs && steady) steady_grid_.resync();
   if (runs && step) {
     outputs_ = 0;
     std::size_t skipped = 0;
@@ -457,7 +466,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                before_ == PairMotion::Still && intermediates_ > 0;
   copy_written_ = false;
   b_shown_ = false;
-  late_fate_now_ = setup_.late_fate && free_mode && !drba() && !copy_pair_ && setup_.clock != nullptr;
+  late_fate_now_ =
+      (setup_.late_fate || steady) && free_mode && !drba() && !copy_pair_ && setup_.clock != nullptr;
   // Dessin tenu qui reprend l'agrandissement de la précédente, dont l'image est à l'écran : la source
   // est bit à bit celle qui est affichée, ni écrite ni présentée.
   held_same_ = setup_.skip_held && runs == false && outputs_ == 1 && reuse_span_ && shown_source_;
@@ -524,6 +534,7 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   previous_.reset();
   cadence_.reset();
   free_grid_.reset();
+  steady_grid_.reset();
   drba_.continuous = false;
   keep_skipped(frame);
   ++skipped_;

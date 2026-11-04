@@ -19,6 +19,7 @@
 #include "app/play/settings.h"
 #include "core/auto_rate.h"
 #include "core/free_rate.h"
+#include "core/steady_rate.h"
 #include "core/vsync_phase.h"
 #include "gpu/kernel_ops.h"
 #include "media/live_scenes.h"
@@ -173,6 +174,7 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     if (auto_on_) auto_.settle(now_us);
     if (free_on_) free_.settle(now_us);
+    if (steady_on_) steady_.settle(now_us);
   }
   // gpu : la paire de l'image `id` crée `images` images ; `lead_us` : l'attente de ses mesures avant
   // soumission. main la retrouve par auto_written pour en tirer le coût de service.
@@ -262,15 +264,51 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     return free_on_;
   }
+  // Rapide à pas constant (--fast-steady, chantier 7.7, core/steady_rate.h) : dans le mode Rapide, N images
+  // par source, constant dans un plan, à la place de la grille libre. `display` : l'écran (VRR ou fréquence
+  // fixe, sa fréquence ou le plafond) ; sans a priori, N part de 1 et s'amorce sur les premières paires.
+  // `prior` : la droite a priori t(n) = a + b·n (banc, profil) ; nulle : l'amorçage sur les premières paires.
+  void set_steady(bool on, const core::FreeDisplay& display, double source_fps, core::CostLine prior = {}) {
+    const std::scoped_lock lock(mutex_);
+    if (on && (!steady_on_ || display.vrr != steady_display_.vrr || display.hz != steady_display_.hz ||
+               source_fps != steady_fps_)) {
+      steady_.configure({}, display, source_fps);
+      if (prior.a > 0.0 || prior.b > 0.0) steady_.prior(prior);
+      steady_display_ = display;
+      steady_fps_ = source_fps;
+    }
+    steady_on_ = on;
+  }
+  bool steady_active() const {
+    const std::scoped_lock lock(mutex_);
+    return free_on_ && steady_on_;
+  }
+  // gpu : N pour la paire préparée maintenant.
+  core::Ratio steady_factor() const {
+    const std::scoped_lock lock(mutex_);
+    return steady_on_ ? steady_.factor() : core::Ratio{1, 1};
+  }
+  // gpu : une coupe de scène vue sur la paire ; N repart de l'a priori corrigé.
+  void free_cut(std::int64_t now_us) {
+    const std::scoped_lock lock(mutex_);
+    if (free_on_ && steady_on_) steady_.scene_cut(now_us);
+  }
+  core::SteadyInfo steady_info() const {
+    const std::scoped_lock lock(mutex_);
+    return steady_.info();
+  }
   // gpu : les images planifiées par la paire préparée.
   void free_produced(int images, std::int64_t now_us) {
     const std::scoped_lock lock(mutex_);
     if (free_on_) free_.produced(images, now_us);
+    if (free_on_ && steady_on_) steady_.produced(images, now_us);
   }
   // main : images sautées ou manquées à l'écran depuis le dernier appel.
   void free_missed(std::int64_t now_us, std::int64_t lost) {
     const std::scoped_lock lock(mutex_);
     if (free_on_) free_.missed(now_us, lost);
+    if (free_on_ && steady_on_ && lost > 0)
+      steady_.lost(now_us, static_cast<int>(std::min<std::int64_t>(lost, 1000)));
   }
   // gpu : l'écart de service de la prochaine paire, en temps réel (0 : pas de mesure), et l'écart minimal.
   std::pair<std::int64_t, std::int64_t> free_step(std::int64_t now_us) const {
@@ -308,6 +346,7 @@ class LiveSettings {
   }
   bool free_should_fall_back(std::int64_t now_us) const {
     const std::scoped_lock lock(mutex_);
+    if (free_on_ && steady_on_) return steady_.should_fall_back(now_us);
     return free_on_ && free_.should_fall_back(now_us);
   }
   core::FreeInfo free_info(std::int64_t now_us) const {
@@ -379,6 +418,10 @@ class LiveSettings {
   core::VsyncPhase vsync_;
   std::int64_t vsync_delay_us_ = 0;
   core::FreeRate free_;
+  bool steady_on_ = false;
+  core::SteadyRate steady_;
+  core::FreeDisplay steady_display_;
+  double steady_fps_ = 0.0;
   std::int64_t frame_done_us_ = 0;
   struct Expected {
     std::uint32_t id = 0;
@@ -396,6 +439,7 @@ class LiveSettings {
       auto_.cost(computed, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us), done_us);
     }
     if (free_on_) free_.cost(computed, e.busy_us + e.lead_us, done_us);
+    if (free_on_ && steady_on_) steady_.pair_cost(computed, e.busy_us + e.lead_us, done_us);
     previous_done_us_ = done_us;
     e = Expected{};
   }

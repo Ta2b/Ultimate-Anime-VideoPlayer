@@ -132,6 +132,10 @@ struct PlayOptions {
   // docs/adr/0009-grade-dans-l-anneau.md), l'écran montrant les images gradées sans hooks ; --grade-ring=off
   // ou absent : le grade reste en shader à l'écran. Éteint par défaut jusqu'à la porte des 30 plans (2.11).
   bool grade_ring = false;
+  // --fast-steady : le mode Rapide à pas constant par plan (chantier 7, core/steady_rate.h) : N images par
+  // source, constant dans un plan, au lieu de la grille libre. Essai, éteint par défaut jusqu'aux
+  // mesures 7.10.
+  bool fast_steady = false;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;

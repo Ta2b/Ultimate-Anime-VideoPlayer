@@ -17,6 +17,9 @@
 // - Urgence : `urgent_losses` images perdues en `urgent_window_us` : N ← min(N − un demi-pas,
 //   choix(a priori × s)), gelé jusqu'à la coupe suivante.
 // - Repli : à N = 1 seulement, 5 % d'images perdues ou plus sur 5 s (et au moins 10).
+// - Sans a priori (ni banc ni profil) : après `early_pairs` paires mesurées, la droite a = 0, b = coût moyen
+//   par image. Elle surestime le coût au-dessus du nombre d'images mesuré (a/n + b ≥ b) : N monte prudemment,
+//   puis l'échelle mesurée la corrige plan après plan.
 #pragma once
 
 #include <array>
@@ -116,6 +119,8 @@ class SteadyRate {
   double plan_ratio_sum_ = 0.0;  // coût mesuré / a priori, paire par paire, dans ce plan
   int plan_ratio_n_ = 0;
   int early_over_ = 0;
+  double boot_per_image_sum_ = 0.0;  // sans a priori : coût par image des premières paires
+  int boot_n_ = 0;
   std::int64_t settled_until_us_ = 0;
   std::array<std::int64_t, 8> recent_losses_{};  // instants des dernières pertes
   std::size_t next_loss_ = 0;

@@ -35,6 +35,7 @@
 #include "core/cadence.h"
 #include "core/free_grid.h"
 #include "core/ring.h"
+#include "core/steady_grid.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/distil_drba.h"
@@ -346,7 +347,8 @@ class UpscaleStage final : public RingStage {
   std::expected<bool, Refusal> ingest_source(const DecodedFrame& frame, gpu::IngestSpec spec,
                                              const gpu::Tensor& rgb);
   std::optional<core::CadenceAccumulator> cadence_;
-  core::FreeGrid free_grid_;  // mode Rapide : la grille des instants à la place de cadence_
+  core::SteadyGrid steady_grid_;  // Rapide à pas constant (--fast-steady) : N images par source
+  core::FreeGrid free_grid_;      // mode Rapide : la grille des instants à la place de cadence_
   core::FreeInputs free_inputs(std::uint32_t epoch) const;
   MotionEngine engine_kind() const {
     return gmfss() ? MotionEngine::Gmfss : drba() ? MotionEngine::DistilDrba : MotionEngine::Rife;

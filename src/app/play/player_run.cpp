@@ -464,13 +464,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
                         granularity);
-    // Écart minimal entre deux images : la période de l'écran ou du plafond, à 1 % près (jamais plus vite).
-    // Écran à fréquence fixe (sans VRR, ou VRR coupé) : les instants tombent sur les vsyncs, l'écart minimal
-    // est la période de l'écran (ou du plafond, s'il est plus lent).
+    // Écart minimal : la période de l'écran ou du plafond, à 1 % près ; à fréquence fixe, sur les vsyncs.
     const std::int64_t refresh_us = known_period_us;
     const bool vsync = free && !vrr_armed;
     chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * 0.99)) : 0,
                         host_now_us());
+    chain.live.set_steady(free && p.options.fast_steady, {.vrr = vrr_armed, .hz = limit_hz},
+                          fps_of(video.frame_rate));
     chain.live.set_vsync(vsync ? refresh_us : 0, session.visible_delay_us());
   };
   apply_auto();

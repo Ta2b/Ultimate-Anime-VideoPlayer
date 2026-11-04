@@ -103,6 +103,13 @@ void SteadyRate::pair_cost(int images, std::int64_t gpu_us, std::int64_t now_us)
   if (images < 1 || gpu_us <= 0 || now_us < settled_until_us_) return;
   plan_.add(images, gpu_us, now_us);
   ++plan_pairs_;
+  if (!has_prior_) {
+    boot_per_image_sum_ += static_cast<double>(gpu_us) / static_cast<double>(images);
+    if (++boot_n_ >= params_.early_pairs) {
+      prior(CostLine{.a = 0.0, .b = boot_per_image_sum_ / static_cast<double>(boot_n_)});
+      return;
+    }
+  }
   if (has_prior_) {
     const double expected = prior_.a + prior_.b * static_cast<double>(images);
     if (expected > 0.0) {
