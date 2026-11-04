@@ -1,0 +1,16 @@
+# Looks du contrat d'écran v2 (chantier 8)
+
+`ver9-couleur.cube` : la couleur de la pile par défaut du lecteur (`HDR grading base ver.9.0 33 point`, puis
+`Black-Enhancement-L`, `Shadow-Enhancement-L`, `HDR-contrast-Enhancement-L` × 2, `Midtone-gamma-Enhancement-C`,
+`boost black maintain chroma`, `HDR-contrast-Enhancement-L`), sans sa courbe neutre, dans le domaine SDR du
+lecteur (BT.709, gamma 2,4, blanc 203 nits ; `# ajp-domain: sdr`). Dérivée des LUT de `data/luts/` (même
+provenance, voir `data/luts/ATTRIBUTION.md`), par :
+
+    cd data/luts && python3 -I ../../tools/look/split_hdr_lut.py "HDR grading base ver.9.0 33 point.cube" \
+      Black-Enhancement-L.cube Shadow-Enhancement-L.cube HDR-contrast-Enhancement-L.cube \
+      HDR-contrast-Enhancement-L.cube Midtone-gamma-Enhancement-C.cube "boost black maintain chroma.cube" \
+      HDR-contrast-Enhancement-L.cube --out ../luts-v2 --compose ver9-couleur.cube
+
+Rapport de la pile : courbe neutre 1 → 0,0, 5 → 7,7, 20 → 52,5, 50 → 146,1, 100 → 426,5, 203 → 1 824,7 nits ;
+décalage de teinte de la couleur, moyenne 3,74°, p95 10,31°. Pas encore livrée ni lue : le contrat v2 (8.4,
+éteint) en fera le look par défaut, la courbe par plan (render/curve) remplaçant la courbe neutre.
