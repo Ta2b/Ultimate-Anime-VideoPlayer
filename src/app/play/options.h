@@ -201,9 +201,9 @@ struct PlayOptions {
   // (render::compose_luts, 65 points : la même image que la pile) et écrite là ; le lecteur s'arrête.
   std::optional<std::filesystem::path> bake_looks;
   bool anime_pure = false;
-  // --clean-looks : essai (audit F1), la pile de LUT sur la couleur du voisinage ; le grain et les paliers
-  // gardent leur contraste d'origine, les bords francs la pile entière (look_catalog.h, set_clean_looks).
-  bool clean_looks = false;
+  // La pile de LUT sur la couleur du voisinage (audit F1) ; le grain et les paliers gardent leur contraste
+  // d'origine, les bords francs la pile entière (look_catalog.h, set_clean_looks). --no-clean-looks la coupe.
+  bool clean_looks = true;  // par défaut depuis le 04/11 (choix de Tatoub)
   int anime_contrast = 100;
   int anime_saturation = 100;
   int anime_highlights = 100;
