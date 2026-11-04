@@ -67,10 +67,13 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
         !automatic)
       d.true_hdr_peak = peak;
     ImGui::EndDisabled();
+#if defined(__linux__)
     // Sous KDE, le pic est en nits du contenu : KWin les affiche × luminosité SDR / 203 (system_peak.cpp).
+    // Windows affiche le PQ d'une application tel quel : contenu = écran, rien à dire.
     note(
         i18n::tr("In content nits: KDE shows them brighter (× its SDR brightness / 203), so a 1000-nit "
                  "screen reads lower here."));
+#endif
     panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
     ImGui::EndDisabled();
   }
