@@ -73,3 +73,10 @@ des cinq scènes de Re:Zero ép. 18 de Tatoub (`~/ajp-reports/parametres-tatoub-
 44 = sombre, 135 = très clair, soit 13 % et 54 % de luminance en RGB complet). Sans RTX HDR (HDR adaptatif, sortie SDR
 gradée : tous les GPU), le shader du grade fait la même chose avec le code PQ moyen très lissé de l'image qu'il reçoit
 (la source convertie ; seuils convertis en codes PQ, gris moyen = la courbe TrueHDR émulée). Pas encore adaptatifs : le contraste et l'intensité des LUT.
+
+## Séparer une LUT d'HDR en courbe et couleur (chantier 8.3)
+`tools/look/split_hdr_lut.py` lit une LUT PQ BT.2020 (ou une pile, `--compose`), en tire la courbe neutre (axe
+des gris, 4 096 points, monotone) et la couleur (Ct/Cp de la LUT, intensité ramenée par l'inverse de la courbe),
+réécrite dans le domaine SDR du lecteur avec `# ajp-domain: sdr`. `--check` vérifie que l'identité et une pure
+courbe rendent une couleur identité (ΔE_ITP ≤ 0,1). Le résultat pour la pile par défaut est dans
+`data/luts-v2/` (LISEZMOI.md).
