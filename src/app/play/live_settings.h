@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -20,6 +21,7 @@
 #include "core/auto_rate.h"
 #include "core/free_rate.h"
 #include "core/steady_rate.h"
+#include "core/vblank_clock.h"
 #include "core/vsync_phase.h"
 #include "gpu/kernel_ops.h"
 #include "media/live_scenes.h"
@@ -327,9 +329,12 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     return free_on_ ? vsync_.period_us() : 0;
   }
-  void vsync_note(std::int64_t present_us) {
+  // measured : la grille des vblanks du retour de présentation (Screen::vblank_grid, 6.8), qui prime sur la
+  // phase estimée des présentations.
+  void vsync_note(std::int64_t present_us, std::optional<core::VblankGrid> measured = std::nullopt) {
     const std::scoped_lock lock(mutex_);
     if (free_on_) vsync_.note(present_us);
+    measured_ = measured;
   }
   // gpu : la période de l'écran et un instant hôte où l'image choisie au vsync le plus proche de `host_us`
   // est celle dont le pts tombe pile sur la grille (période 0 : pas de grille ou phase inconnue).
@@ -339,7 +344,15 @@ class LiveSettings {
   };
   VsyncGrid vsync_grid(std::int64_t host_us) const {
     const std::scoped_lock lock(mutex_);
-    if (!free_on_ || vsync_.period_us() <= 0 || !vsync_.known()) return {};
+    if (!free_on_ || vsync_.period_us() <= 0) return {};
+    if (measured_ && measured_->period_us > 0.0) {
+      // Les dates de la grille sont celles de l'affichage : le délai de présentation y est déjà.
+      const double index = std::round(measured_->index_of(static_cast<double>(host_us)));
+      const auto period = std::llround(measured_->period_us);
+      return {.period_us = period,
+              .anchor_host_us = std::llround(measured_->at(static_cast<std::int64_t>(index))) + period / 2};
+    }
+    if (!vsync_.known()) return {};
     // Choisie une demi-période après son pts, affichée au vsync d'après : pts = vsync + délai + période / 2.
     return {.period_us = vsync_.period_us(),
             .anchor_host_us = vsync_.near(host_us) + vsync_delay_us_ + vsync_.period_us() / 2};
@@ -417,6 +430,7 @@ class LiveSettings {
   bool free_on_ = false;
   core::VsyncPhase vsync_;
   std::int64_t vsync_delay_us_ = 0;
+  std::optional<core::VblankGrid> measured_;
   core::FreeRate free_;
   bool steady_on_ = false;
   core::SteadyRate steady_;

@@ -148,6 +148,7 @@ class PlaceboScreen final : public Screen {
   void watch(const RingFrame& frame) override;
   std::optional<std::int64_t> written_at(const RingFrame& frame) override;
   bool wakes_on_write() const override;
+  std::optional<core::VblankGrid> vblank_grid() const override;
   // Le veilleur d'écriture le temps d'une chaîne (--ring-watcher) : waker réveille main ; nullptr l'arrête.
   void watch_writes(void (*waker)(void*), void* context);
   void new_scene() override;

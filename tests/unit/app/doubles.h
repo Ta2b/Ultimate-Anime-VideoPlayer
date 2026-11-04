@@ -94,6 +94,8 @@ struct FakeScreen final : Screen {
     return at;
   }
   bool wakes_on_write() const override { return waking; }
+  std::optional<core::VblankGrid> grid;  // Screen::vblank_grid
+  std::optional<core::VblankGrid> vblank_grid() const override { return grid; }
   void set_fullscreen(bool on) override { is_fullscreen = on; }
   bool fullscreen() const override { return is_fullscreen; }
   // Les versions du grade de l'anneau que l'écran dit dépassées (Screen::stale_grade).

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -26,6 +27,10 @@
 #include "core/trace.h"
 
 namespace ajp::app::play {
+namespace {
+// Observations de la grille des vblanks avant de s'y fier pour la synchro (≈ 0,7 s à 165 Hz).
+constexpr std::size_t kGridSamples = 120;
+}  // namespace
 namespace {
 
 // Blanc de l'interface dans une sortie HDR : le blanc de référence (BT.2408), comme le SDR.
@@ -223,6 +228,13 @@ std::optional<std::int64_t> PlaceboScreen::written_at(const RingFrame& frame) {
 
 bool PlaceboScreen::wakes_on_write() const {
   return impl_->watcher != nullptr;
+}
+
+std::optional<core::VblankGrid> PlaceboScreen::vblank_grid() const {
+  const PresentFeedback* feedback = impl_->feedback.get();
+  if (feedback == nullptr || !feedback->dated() || !feedback->fixed_refresh()) return std::nullopt;
+  if (feedback->clock().samples() < kGridSamples) return std::nullopt;
+  return feedback->clock().grid();
 }
 
 std::expected<bool, Refusal> PlaceboScreen::Impl::compose_kept(const pl_frame* image, const pl_frame& target,
