@@ -6,11 +6,14 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "app/play/display_contract.h"
 #include "french_ui.h"
 
 using namespace ajp::app::play;
 using Catch::Approx;
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -116,4 +119,39 @@ TEST_CASE("DisplayID 2.0, bloc 0x21 : AMOLED est définitif", "[app][display]") 
 TEST_CASE("EDID trop court : OLED inconnu", "[app][display]") {
   ajp::app::play::FrenchUi french;
   CHECK(parse_edid(std::span<const std::uint8_t>(kQdOledEdid).first(64)).source == OledSource::Unknown);
+}
+
+TEST_CASE("EDID : primaires des octets 0x19 à 0x22", "[app][display]") {
+  const DisplayFacts d = parse_edid(kQdOledEdid);
+  REQUIRE(d.primaries);
+  CHECK_THAT(d.primaries->rx, WithinAbs(0.6836, 1e-4));
+  CHECK_THAT(d.primaries->ry, WithinAbs(0.3047, 1e-4));
+  CHECK_THAT(d.primaries->gx, WithinAbs(0.2500, 1e-4));
+  CHECK_THAT(d.primaries->gy, WithinAbs(0.7148, 1e-4));
+  CHECK_THAT(d.primaries->bx, WithinAbs(0.1475, 1e-4));
+  CHECK_THAT(d.primaries->by, WithinAbs(0.0615, 1e-4));
+  CHECK_THAT(d.primaries->wx, WithinAbs(0.3135, 1e-4));
+  CHECK_THAT(d.primaries->wy, WithinAbs(0.3291, 1e-4));
+}
+
+TEST_CASE("Contrat d'écran : KWin, puis la marge de SDL, puis l'EDID", "[app][display]") {
+  const DisplayFacts d = parse_edid(kQdOledEdid);
+  // KDE assombri : référence 83, pas de pic réglé, marge SDL 4 → pic 332.
+  const auto dim = contract_of(d, KwinOutput{.reference = 83.0}, 4.0, std::nullopt);
+  CHECK(dim.reference_nits == 83.0);
+  CHECK_THAT(dim.panel_peak_nits, WithinAbs(332.0, 1e-9));
+  CHECK(dim.oled);
+  CHECK(dim.primaries == d.primaries);
+  for (const double nits : dim.abl) CHECK(nits <= dim.panel_peak_nits);
+  // Le pic réglé dans KDE l'emporte sur la marge.
+  CHECK(contract_of(d, KwinOutput{.peak_override = 900.0, .reference = 203.0}, 4.0, std::nullopt)
+            .panel_peak_nits == 900.0);
+  // Sans KWin ni marge : l'EDID et 203.
+  const auto bare = contract_of(d, std::nullopt, 1.0, std::nullopt);
+  CHECK(bare.reference_nits == 203.0);
+  CHECK(bare.panel_peak_nits == d.peak_nits.value_or(1000.0));
+  // La courbe mesurée remplace celle par défaut.
+  const MeasuredAbl measured{.nits = {990.0, 900.0, 600.0, 400.0, 250.0}};
+  CHECK(contract_of(d, std::nullopt, 1.0, measured).abl.back() == 250.0);
+  CHECK(describe(dim).find("référence 83 nits") != std::string::npos);
 }

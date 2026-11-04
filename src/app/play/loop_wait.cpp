@@ -29,6 +29,19 @@ void tighten_timer_slack() {
 
 }  // namespace
 
+void LoopWake::push(void* context) {
+  auto* self = static_cast<LoopWake*>(context);
+  if (self->event == 0 || self->pending.exchange(true, std::memory_order_relaxed)) return;
+  SDL_Event wake{};
+  wake.type = self->event;
+  (void)SDL_PushEvent(&wake);
+}
+
+std::uint32_t loop_wake_event() {
+  static const std::uint32_t registered = SDL_RegisterEvents(1);
+  return registered;
+}
+
 void wait_loop(std::int64_t wait_us, bool precise) {
   if (!precise) {
     (void)SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(std::max<std::int64_t>(wait_us / 1000, 1)));

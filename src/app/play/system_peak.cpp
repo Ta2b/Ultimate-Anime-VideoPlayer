@@ -137,12 +137,7 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
   if (port.starts_with("card")) {
     if (const std::size_t dash = port.find('-'); dash != std::string_view::npos) port.remove_prefix(dash + 1);
   }
-  const char* home = SDL_GetUserFolder(SDL_FOLDER_HOME);
-  if (home == nullptr || port.empty()) return std::nullopt;
-  std::ifstream in(std::filesystem::path(home) / ".config" / "kwinoutputconfig.json", std::ios::binary);
-  if (!in) return std::nullopt;
-  const std::string json{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-  const std::optional<KwinOutput> output = parse_kwin_output(json, port);
+  const std::optional<KwinOutput> output = read_kwin_output(connector);
   if (!output) return std::nullopt;
   // H1 : KWin affiche le contenu × blanc de référence / 203 (render/display_model.h) ; le pic se vise en
   // unités du contenu.
@@ -163,6 +158,47 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
     return model.content_peak_nits();
   }
   return std::nullopt;
+#else
+  return std::nullopt;
+#endif
+}
+
+namespace {
+
+std::optional<std::filesystem::path> kwin_config_path() {
+  const char* home = SDL_GetUserFolder(SDL_FOLDER_HOME);
+  if (home == nullptr) return std::nullopt;
+  return std::filesystem::path(home) / ".config" / "kwinoutputconfig.json";
+}
+
+}  // namespace
+
+std::optional<KwinOutput> read_kwin_output(std::string_view connector) {
+#ifdef __linux__
+  std::string_view port = connector;
+  if (port.starts_with("card")) {
+    if (const std::size_t dash = port.find('-'); dash != std::string_view::npos) port.remove_prefix(dash + 1);
+  }
+  const auto path = kwin_config_path();
+  if (!path || port.empty()) return std::nullopt;
+  std::ifstream in(*path, std::ios::binary);
+  if (!in) return std::nullopt;
+  const std::string json{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  return parse_kwin_output(json, port);
+#else
+  (void)connector;
+  return std::nullopt;
+#endif
+}
+
+std::optional<std::int64_t> kwin_config_stamp() {
+#ifdef __linux__
+  const auto path = kwin_config_path();
+  if (!path) return std::nullopt;
+  std::error_code error;
+  const auto stamp = std::filesystem::last_write_time(*path, error);
+  if (error) return std::nullopt;
+  return static_cast<std::int64_t>(stamp.time_since_epoch().count());
 #else
   return std::nullopt;
 #endif

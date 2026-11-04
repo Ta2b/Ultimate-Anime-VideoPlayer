@@ -158,6 +158,7 @@ struct PlaceboScreen::Impl {
   PresentLevel present_level = PresentLevel::Open;          // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
   std::unique_ptr<PresentFeedback> feedback;
+  std::optional<render::DisplayContract> contract;  // 8.2 : le contrat d'écran relu, servi au contrat v2
   std::unique_ptr<RingWatcher> watcher;  // --ring-watcher (ring_watcher.h), le temps d'une chaîne  // niveaux
                                          // Timing et Wait (placebo_feedback.h) ; nul sinon
   std::filesystem::path shader_cache_file;

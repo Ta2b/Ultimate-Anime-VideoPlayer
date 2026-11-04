@@ -247,6 +247,14 @@ bool PlaceboScreen::vrr_changed() {
   return impl_->feedback && impl_->feedback->take_refresh_change();
 }
 
+void PlaceboScreen::set_contract(const render::DisplayContract& contract) {
+  impl_->contract = contract;
+}
+
+const std::optional<render::DisplayContract>& PlaceboScreen::contract() const {
+  return impl_->contract;
+}
+
 std::optional<core::VblankGrid> PlaceboScreen::vblank_grid() const {
   const PresentFeedback* feedback = impl_->feedback.get();
   if (feedback == nullptr || !feedback->dated() || !feedback->fixed_refresh()) return std::nullopt;

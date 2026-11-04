@@ -24,6 +24,7 @@
 #include "core/types.h"
 #include "media/hw_api.h"
 #include "render/cube_lut.h"
+#include "render/display_model.h"
 #include "render/grade_params.h"
 
 struct SDL_Window;
@@ -155,6 +156,9 @@ class PlaceboScreen final : public Screen {
   bool vrr_changed();
   // Le veilleur d'écriture le temps d'une chaîne (--ring-watcher) : waker réveille main ; nullptr l'arrête.
   void watch_writes(void (*waker)(void*), void* context);
+  // Le contrat d'écran relu (8.2, display_contract.h) : gardé pour le grade et la swapchain du contrat v2.
+  void set_contract(const render::DisplayContract& contract);
+  const std::optional<render::DisplayContract>& contract() const;
   void new_scene() override;
   // Le grade de l'anneau (chantier 2c, --grade-ring) : les versions du grade sont postées dans `live` quand
   // la sortie est en PQ et le grade en trois passes ; l'image gradée par le GPU du ring est montrée sans
