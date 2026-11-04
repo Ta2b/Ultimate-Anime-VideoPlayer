@@ -112,6 +112,37 @@ TEST_CASE("HDR anime : route adaptative (paper = demi-pic), la lumière monte au
   CHECK(luma(wall[128]) == Catch::Approx(1.15 * 60.0).epsilon(0.03));
 }
 
+TEST_CASE("HDR anime guidée (A3) : le halo ne déborde plus sur le fond, la lumière monte autant",
+          "[render][gpu]") {
+  Gpu plain(GradeBody::Anime);
+  require_device(plain);
+  REQUIRE(plain.grade);
+  Gpu guided(GradeBody::AnimeGuided);
+  REQUIRE(guided.grade);
+  // Le halo de 48 colonnes (195 nits) sur le fond sombre (3 nits) ; ses bords tombent au milieu d'un bloc 8x8
+  // décalé (100 et 156) : le bilinéaire y mêle le bloc clair et le bloc sombre.
+  const auto source = columns([](int x) { return x >= 100 && x < 156 ? 195.0 : 3.0; });
+  const auto a = graded_rgb(plain, source, anime_params());
+  const auto b = graded_rgb(guided, source, anime_params());
+  // Le centre : la même montée.
+  CHECK(luma(b[128]) == Catch::Approx(luma(a[128])).epsilon(0.03));
+  // Le fond juste à côté du halo : au relèvement fixe avec la carte guidée, jamais plus haut que sans.
+  double worst_guided = 0.0;
+  double worst_plain = 0.0;
+  for (const int x : {94, 95, 96, 97, 98, 99, 156, 157, 158, 159, 160, 161}) {
+    worst_guided = std::max(worst_guided, luma(b[static_cast<std::size_t>(x)]));
+    worst_plain = std::max(worst_plain, luma(a[static_cast<std::size_t>(x)]));
+  }
+  INFO("fond au bord : guidé " << worst_guided << " nits, bilinéaire " << worst_plain << " nits");
+  CHECK(worst_guided <= worst_plain + 0.05);
+  CHECK(worst_guided == Catch::Approx(1.15 * 3.0).epsilon(0.10));
+  // Le bord clair du halo : monte au moins autant que sans la carte guidée.
+  for (const int x : {100, 101, 154, 155}) {
+    INFO("bord clair " << x);
+    CHECK(luma(b[static_cast<std::size_t>(x)]) >= 0.97 * luma(a[static_cast<std::size_t>(x)]));
+  }
+}
+
 TEST_CASE("HDR anime : sortie SDR inchangée", "[render][gpu]") {
   Gpu gpu(GradeBody::Anime);
   require_device(gpu);

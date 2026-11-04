@@ -163,6 +163,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.skin_mask = true;
     } else if (arg == "--hdr-anime") {
       options.hdr_anime = true;
+    } else if (arg == "--anime-guided") {
+      options.hdr_anime = true;
+      options.anime_guided = true;
     } else if (arg == "--legacy-grade") {
       options.legacy_grade = true;
     } else if (arg == "--legacy-grade=split") {
@@ -463,6 +466,7 @@ std::string play_usage() {
       "  --hdr-anime      essai : méthode HDR « anime » (surfaces ancrées, seuls les émetteurs montent)\n"
       "  --anime-shots    essai : --hdr-anime décidée par plan (exposition, marge des éclats), glissée aux "
       "coupes\n"
+      "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
       "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
       "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"

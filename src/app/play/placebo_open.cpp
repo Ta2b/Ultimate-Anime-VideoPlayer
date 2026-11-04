@@ -553,10 +553,11 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->grade_deband = options.grade_deband;
   impl->skin_mask = options.skin_mask;
   impl->grade_ring = options.grade_ring;
-  impl->grade_body = options.legacy_grade ? render::GradeBody::Legacy
-                     : options.hdr_anime  ? render::GradeBody::Anime
-                     : options.split_look ? render::GradeBody::FusedSplit
-                                          : render::GradeBody::Fused;
+  impl->grade_body = options.legacy_grade   ? render::GradeBody::Legacy
+                     : options.anime_guided ? render::GradeBody::AnimeGuided
+                     : options.hdr_anime    ? render::GradeBody::Anime
+                     : options.split_look   ? render::GradeBody::FusedSplit
+                                            : render::GradeBody::Fused;
   if (auto grade = render::Grade::create(gpu, impl->grade_body, impl->skin_mask)) {
     impl->grade.emplace(std::move(*grade));
   } else {

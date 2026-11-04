@@ -415,11 +415,19 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
   impl->skin_mask = skin_mask;
   const bool legacy = body == GradeBody::Legacy;
   std::string text(shaders::anime_hdr_params);
-  if (body == GradeBody::Anime) {
+  const bool anime = body == GradeBody::Anime || body == GradeBody::AnimeGuided;
+  if (anime) {
     // Les deux premières passes (carte locale, zone) du grade en trois passes, puis la passe « anime ».
     const std::string_view fused = shaders::anime_hdr_fused;
     text += fused.substr(0, fused.find("//@AJG_LOCALMAX_BEGIN@"));
     text += shaders::anime_hdr_anime;
+    if (body == GradeBody::AnimeGuided) {
+      constexpr std::string_view kLocal = "float an_local(float y_pq, float plain) {";
+      if (const auto at = text.find(kLocal); at != std::string::npos)
+        text.insert(
+            at + kLocal.size(),
+            "\n    return an_local_guided(y_pq, plain);\n}\nfloat an_local_plain(float y_pq, float plain) {");
+    }
   } else if (legacy) {
     text += shaders::anime_hdr_grade;
   } else if (body == GradeBody::Fused) {
@@ -435,12 +443,11 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
     if (const auto at = text.find(kHead); at != std::string::npos)
       text.insert(at + kHead.size(), "\n    return 0.0;\n}\nfloat skin_area_off(vec2 pos) {");
   }
-  auto grade = body == GradeBody::Fused
-                   ? parse_fused(gpu, text, neutral_lut())
-                   : parse(gpu, text,
-                           legacy ? "anime-hdr-grade"
-                                  : (body == GradeBody::Anime ? "anime-hdr-anime" : "anime-hdr-fused"),
-                           kGradeParams);
+  auto grade =
+      body == GradeBody::Fused
+          ? parse_fused(gpu, text, neutral_lut())
+          : parse(gpu, text, legacy ? "anime-hdr-grade" : (anime ? "anime-hdr-anime" : "anime-hdr-fused"),
+                  kGradeParams);
   if (!grade) return std::unexpected(grade.error());
   if (body == GradeBody::Fused) impl->grade_text = std::move(text);
   impl->grade = std::move(*grade);
