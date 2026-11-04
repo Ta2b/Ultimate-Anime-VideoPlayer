@@ -10,6 +10,7 @@
 
 #include <imgui.h>
 
+#include "app/play/calibration_images.h"
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 #include "media/bench_clip.h"
@@ -38,7 +39,8 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
                        .data = data,
                        .display_width = choices.display_height * 16 / 9,
                        .display_height = choices.display_height,
-                       .display_hdr = choices.hdr_output};
+                       .display_hdr = choices.hdr_output,
+                       .span_fp8_video = calibration_clip()};
   const int height = choices.display_height > 0 ? choices.display_height : 1080;
   bench.pending = std::make_shared<std::future<std::expected<MachineCalibration, Refusal>>>(std::async(
       std::launch::async,
@@ -152,7 +154,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
           ImGui::SetTooltip("%s", i18n::tr_format("{:.1f} % lost", trial.lost_percent).c_str());
         ImGui::TableNextColumn();
         if (ImGui::SmallButton(i18n::tr("Apply"))) {
-          d = candidate_settings(trial.chain, std::move(d));
+          d = trial_settings(trial, std::move(d));
           applied = true;
         }
         if (recommended) panel::badge(i18n::tr("Recommended"), panel::kGood);

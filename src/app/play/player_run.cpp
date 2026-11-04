@@ -252,6 +252,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .height = work.height},
                 settings.preset != Preset::Custom)
           : SpanPrepare{};
+  if (p.options.span_prepare)
+    return prepare_span_now(span_prepare).transform([] { return std::optional<Reopen>(); });
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
