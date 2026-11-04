@@ -91,7 +91,7 @@ namespace ajp::render {
 
 TEST_CASE("les looks maison sont des LUT valides, bornées, qui gardent le noir et le blanc",
           "[render][lut][looks]") {
-  REQUIRE(builtin_looks().size() == 4);
+  REQUIRE(builtin_looks().size() == 5);
   for (const BuiltinLook& look : builtin_looks()) {
     const auto lut = builtin_look(look.key);
     REQUIRE(lut);
@@ -107,6 +107,27 @@ TEST_CASE("les looks maison sont des LUT valides, bornées, qui gardent le noir 
     CHECK(std::abs(lut->rgb[mid] - lut->rgb[mid + 1]) < 0.08F);
   }
   CHECK_FALSE(builtin_look("maison:inconnu"));
+}
+
+TEST_CASE("le look explosif (B6) pousse plus loin que le vif, contraste et couleurs",
+          "[render][lut][looks]") {
+  const auto vivid = builtin_look("maison:vif");
+  const auto loud = builtin_look("maison:explosif");
+  REQUIRE(vivid);
+  REQUIRE(loud);
+  const auto at = [](int r, int g, int b) {
+    return (static_cast<std::size_t>(b) * 33U * 33U + static_cast<std::size_t>(g) * 33U +
+            static_cast<std::size_t>(r)) *
+           3U;
+  };
+  // Un gris sombre plus sombre, un gris clair plus clair.
+  CHECK(loud->rgb[at(8, 8, 8)] < vivid->rgb[at(8, 8, 8)]);
+  CHECK(loud->rgb[at(24, 24, 24)] > vivid->rgb[at(24, 24, 24)]);
+  // Un bleu moyen plus saturé : moins de rouge dedans.
+  CHECK(loud->rgb[at(8, 10, 22)] <= vivid->rgb[at(8, 10, 22)]);
+  // Le noir et le blanc tiennent.
+  CHECK(loud->rgb[at(0, 0, 0)] == 0.0F);
+  CHECK(loud->rgb[at(32, 32, 32)] > 0.99F);
 }
 
 TEST_CASE("les looks maison changent l'image : le vif sature, le pastel relève les noirs",
