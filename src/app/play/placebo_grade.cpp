@@ -198,13 +198,19 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
 // La luminosité SDR de KDE que la passe « kwin » imite : celle du contrat d'écran (lue dans KDE) quand
 // --hdr-metadata n'a pas de valeur et que KDE la donne, sinon celle de l'option.
 double PlaceboScreen::Impl::sdr_reference() const {
-  if (kde_sdr_auto && contract && contract->reference_nits > 0.0) return contract->reference_nits;
+  if (kde_sdr_auto && contract && contract->from_compositor) return contract->reference_nits;
   return kde_sdr_nits.value_or(kDefaultKdeSdrNits);
 }
 
+// La passe « kwin » et les métadonnées : demandées (--hdr-metadata=NITS), ou par défaut quand KDE donne sa
+// luminosité SDR.
+bool PlaceboScreen::Impl::kwin_metadata() const {
+  return kde_sdr_nits.has_value() || (kde_sdr_auto && contract && contract->from_compositor);
+}
+
 void PlaceboScreen::Impl::match_kwin() {
-  if (!kde_sdr_nits || !grade || swapchain == nullptr) return;
-  const bool on = hdr_output && grade_loaded_pq == true;
+  if (!grade || swapchain == nullptr) return;
+  const bool on = kwin_metadata() && hdr_output && grade_loaded_pq == true;
   // Le pic du grade est en unités du contenu ; la passe écrête au pic du panneau, et la sortie annonce celui
   // du contenu : KWin le ramène à son blanc (render::kwin_hint).
   const double peak = grade->params().peak;
@@ -461,7 +467,7 @@ void PlaceboScreen::Impl::post_ring(const render::GradeChoice& choice, std::int6
   }
   // KWin comme match_kwin le poserait pour ce pic.
   std::optional<render::Grade::KwinMatch> kwin;
-  if (kde_sdr_nits) {
+  if (kwin_metadata()) {
     const double reference = sdr_reference();
     const render::KwinHint hint = render::kwin_hint(params->peak, reference);
     kwin = render::Grade::KwinMatch{.reference = reference, .peak = hint.panel_peak_nits};

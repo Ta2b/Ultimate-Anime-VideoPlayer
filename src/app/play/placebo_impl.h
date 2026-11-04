@@ -229,6 +229,7 @@ struct PlaceboScreen::Impl {
   bool apply_scene_hdr(pl_color_space& image, pl_color_space& target, std::int64_t pts) const;
   double hinted_max_nits = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
+  bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
   void match_kwin();             // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish

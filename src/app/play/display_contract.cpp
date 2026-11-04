@@ -25,6 +25,7 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
   render::DisplayContract out;
   out.oled = facts.oled;
   out.reference_nits = kwin && kwin->reference ? *kwin->reference : render::kContentReferenceNits;
+  out.from_compositor = kwin && kwin->reference;
   // La crête : celle réglée dans KDE, sinon la marge de SDL × la référence, sinon l'EDID.
   if (kwin && kwin->peak_override) {
     out.panel_peak_nits = *kwin->peak_override;

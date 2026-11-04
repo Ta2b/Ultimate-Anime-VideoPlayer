@@ -142,6 +142,7 @@ TEST_CASE("Contrat d'écran : KWin, puis la marge de SDL, puis l'EDID", "[app][d
   // KDE assombri : référence 83, pas de pic réglé, marge SDL 4 → pic 332.
   const auto dim = contract_of(d, KwinOutput{.reference = 83.0}, 4.0, std::nullopt);
   CHECK(dim.reference_nits == 83.0);
+  CHECK(dim.from_compositor);
   CHECK_THAT(dim.panel_peak_nits, WithinAbs(332.0, 1e-9));
   CHECK(dim.oled);
   CHECK(dim.primaries == d.primaries);
@@ -152,6 +153,7 @@ TEST_CASE("Contrat d'écran : KWin, puis la marge de SDL, puis l'EDID", "[app][d
   // Sans KWin ni marge : l'EDID et 203.
   const auto bare = contract_of(d, std::nullopt, 1.0, std::nullopt);
   CHECK(bare.reference_nits == 203.0);
+  CHECK_FALSE(bare.from_compositor);
   CHECK(bare.panel_peak_nits == d.peak_nits.value_or(1000.0));
   // La courbe mesurée remplace celle par défaut.
   const MeasuredAbl measured{.nits = {990.0, 900.0, 600.0, 400.0, 250.0}};

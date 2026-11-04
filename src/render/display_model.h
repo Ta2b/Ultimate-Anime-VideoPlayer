@@ -55,6 +55,7 @@ struct DisplayContract {
   std::optional<Chromaticities> primaries;        // de l'EDID ; rien : inconnues
   double min_nits = 0.0;                          // noir annoncé, cd/m² affichées
   bool oled = false;
+  bool from_compositor = false;  // la référence et le pic lus chez le compositeur (KDE), pas supposés
 
   double k() const { return reference_nits > 0.0 ? reference_nits / kContentReferenceNits : 1.0; }
   double content_peak_nits() const { return panel_peak_nits / k(); }      // C_pk

@@ -118,7 +118,14 @@ struct PlayOptions {
   // valeur). Pour comparer à l'œil avec la sortie d'aujourd'hui, sans métadonnées.
   std::optional<double> kde_sdr_nits;
   // --hdr-metadata sans valeur : la luminosité SDR lue dans KDE (le contrat d'écran), kde_sdr_nits en repli.
+  // Par défaut sous Linux : dès que KDE donne sa luminosité SDR, la sortie annonce ses métadonnées et le
+  // grade fait la compression de KWin vers le pic de l'écran (le même rendu, adapté à chaque écran).
+  // --no-hdr-metadata : la sortie d'avant, sans métadonnées, la compression laissée à KWin.
+#if defined(__linux__)
+  bool kde_sdr_auto = true;
+#else
   bool kde_sdr_auto = false;
+#endif
   // --hdr-contract-v2 : essai du contrat d'écran v2 (chantier 8.4) : métadonnées HDR10 exactes tirées du
   // contrat (render::contract_metadata), sans la compression de KWin faite par le grade, et le look
   // ver9-couleur.cube (SDR) à la place de la pile par défaut. --hdr-metadata=off : sous v2, rien d'annoncé.
