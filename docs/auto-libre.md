@@ -7,6 +7,37 @@ de `core/auto_rate.*` ne change pas). Cahier des charges de Tatoub : « pas de c
 parler, juste un interpolateur qui envoie le plus d'images qu'il peut, et nous on ajuste la vitesse du flux
 pour que la vidéo garde une vitesse constante, exactement comme sur les jeux vidéo ».
 
+## 0. Rapide à pas constant (`--fast-steady`, chantier 7, essai)
+
+La grille libre ci-dessous reste le défaut. `--fast-steady` la remplace, dans le mode Rapide seulement, par
+N images par source, N constant dans un plan (décision : [ADR 0010](adr/0010-rapide-a-pas-constant-par-plan.md)).
+
+| Pièce | Rôle |
+| --- | --- |
+| `core/steady_rate.{h,cpp}` (`SteadyRate`) | Choisit N, le plus grand candidat tel que (a + b·N + d·N)·1,15 ≤ P. En VRR, des demi-pas sous la fréquence de l'écran ; à fréquence fixe, les facteurs qui calent l'écran. À chaque coupe : l'a priori × l'échelle mesurée. Un réajustement par plan. Urgence à 2 pertes en 1 s. Repli à N = 1 seulement. |
+| `core/steady_grid.{h,cpp}` (`SteadyGrid`) | Enveloppe `CadenceAccumulator`. Les instants g + j·(d − g)/N sont exacts ; quand N change, `retarget` garde la phase ; à N = 1, la source seule. |
+| `UpscaleStage` | Chaque paire est mesurée, à N = 1 aussi. Une coupe appelle `LiveSettings::free_cut`. `Fate::Late` laisse sans calcul un instant passé (`upscale_late.cpp`). |
+| `LiveSettings::set_steady` | Configure `SteadyRate` selon l'écran et le fps. Il reçoit les coûts de paire, les images produites, les pertes, les settle et les coupes, par les mêmes chemins que le Rapide libre. |
+| `ChainStats` | `output_fps()` = fps × N. La ligne de stats montre N, l'échelle s, le budget et les pertes. |
+
+Bancs (tests `[steady]`) :
+
+| Banc | Résultat |
+| --- | --- |
+| T1 | Une heure à N = 6,5 : intervalles de 6 416 à 6 417 µs, σ 0,47 µs, dérive < 1 µs. |
+| T4 | Coupes vers des plans 1,8 fois plus lourds : 0 perte, N moyen ≥ 75 % de l'optimum. |
+| T5 | Pointe de 10 s : 9 pertes avec l'urgence, contre 662 sans. |
+| T6 | Changements de N sans trou ni doublon. |
+| T7 | À 59,94 Hz : tous les instants à ≤ 2 µs d'un vsync. |
+| T8 | Plans tirés au hasard : N ≥ 85 % de l'optimum. |
+| T9 | Dix minutes : 47,95 / 35,96 / 95,6 i/s, 0 perte. |
+| T10 | d = 1,6 ms fait passer N de 6,5 à 5. |
+
+Restent :
+- les mesures sur le PC (7.10) et le coût d'affichage d, encore à 0 ;
+- un a priori venu du banc ou du profil (sans lui, N s'amorce sur les 4 premières paires) ;
+- Smooth (7.9), en option.
+
 ## 1. Analyse de faisabilité
 
 ### Ce qui existe
