@@ -346,10 +346,14 @@ class LiveSettings {
   }
   // measured : la grille des vblanks du retour de présentation (Screen::vblank_grid, 6.8), qui prime sur la
   // phase estimée des présentations.
-  void vsync_note(std::int64_t present_us, std::optional<core::VblankGrid> measured = std::nullopt) {
+  // `display_gpu_us` (7.3) : le temps GPU de toutes les passes de l'écran pour cette image (0 : inconnu),
+  // le d du Rapide à pas constant, lissé à 0,1 (core/steady_rate.h).
+  void vsync_note(std::int64_t present_us, std::optional<core::VblankGrid> measured = std::nullopt,
+                  std::int64_t display_gpu_us = 0) {
     const std::scoped_lock lock(mutex_);
     if (free_on_) vsync_.note(present_us);
     measured_ = measured;
+    if (steady_on_ && display_gpu_us > 0) steady_.display_cost(display_gpu_us);
   }
   // gpu : la période de l'écran et un instant hôte où l'image choisie au vsync le plus proche de `host_us`
   // est celle dont le pts tombe pile sur la grille (période 0 : pas de grille ou phase inconnue).

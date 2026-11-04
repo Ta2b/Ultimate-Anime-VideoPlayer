@@ -692,7 +692,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       failure = std::move(record.error());
       break;
     }
-    if (*record && (*record)->fresh) chain.live.vsync_note((*record)->host_us, out.vblank_grid());
+    if (*record && (*record)->fresh)
+      chain.live.vsync_note((*record)->host_us, out.vblank_grid(), (*record)->display_gpu_us);
     if (*record && stats.is_open()) write_record(stats, **record);
     // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme. En
     // lecture, la boucle dort jusqu'à l'échéance de l'image suivante (Session::idle_wait_us) ; en pause,

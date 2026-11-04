@@ -132,4 +132,17 @@ TEST_CASE("Mode Rapide : la grille des vblanks mesurée prime sur la phase estim
   CHECK(live.vsync_grid(1'000'500).period_us == 0);
 }
 
+TEST_CASE("Rapide à pas constant (7.3) : le temps GPU de l'écran devient d, lissé", "[app][free]") {
+  LiveSettings live;
+  live.vsync_note(1'000'000, std::nullopt, 1'600);  // éteint : rien n'est retenu
+  live.set_steady(true, {.vrr = true, .hz = 165.0}, 24.0);
+  CHECK(live.steady_info().display_us == 0);
+  live.vsync_note(1'000'000, std::nullopt, 1'600);
+  CHECK(live.steady_info().display_us == 1'600);
+  live.vsync_note(1'006'000, std::nullopt, 0);  // inconnu : ignoré
+  CHECK(live.steady_info().display_us == 1'600);
+  live.vsync_note(1'012'000, std::nullopt, 2'600);  // lissé à 0,1
+  CHECK(live.steady_info().display_us == 1'700);
+}
+
 }  // namespace ajp::app::play
