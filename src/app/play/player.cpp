@@ -179,7 +179,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     remember_chain(profiles, *saved);
     log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
   }
-  set_contract_v2_looks(options.hdr_contract_v2);  // 8.4 : ver9-couleur.cube à la place de la pile par défaut
+  // 8.4 : ver9-couleur.cube à la place de la pile par défaut, seulement avec --hdr-contract-v2=ver9.
+  set_contract_v2_looks(options.hdr_contract_v2 && options.contract_v2_ver9);
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,

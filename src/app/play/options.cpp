@@ -141,6 +141,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.anime_shots = true;
     } else if (arg == "--hdr-contract-v2") {
       options.hdr_contract_v2 = true;
+    } else if (arg == "--hdr-contract-v2=ver9") {
+      options.hdr_contract_v2 = true;
+      options.contract_v2_ver9 = true;
     } else if (arg == "--hdr-metadata=off") {
       options.hdr_metadata_off = true;
       options.kde_sdr_nits.reset();
@@ -487,8 +490,9 @@ std::string play_usage() {
       "  --probe-nvdec          la pré-analyse des plans décodée par NVDEC en 256x144 (défaut ;\n"
       "                         --no-probe-nvdec : décodage logiciel)\n"
       "  --shot-cuts            essai : les coupes de l'interpolation tirées des plans de la pré-analyse\n"
-      "  --hdr-contract-v2      essai : contrat d'écran v2, métadonnées exactes du contrat, look\n"
-      "                         ver9-couleur.cube (--hdr-metadata=off : rien d'annoncé)\n"
+      "  --hdr-contract-v2      essai : contrat d'écran v2, métadonnées exactes du contrat, la pile de LUT\n"
+      "                         gardée (--hdr-metadata=off : rien d'annoncé)\n"
+      "  --hdr-contract-v2=ver9 essai : le même, le seul look ver9-couleur.cube à la place de la pile\n"
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
       "                         coût propre de chaque moteur\n"
       "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
