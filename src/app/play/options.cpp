@@ -174,10 +174,14 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else if (arg == "--anime-guided") {
       options.hdr_anime = true;
       options.anime_guided = true;
+    } else if (arg == "--classic-grade") {
+      options.hdr_anime = options.anime_guided = options.anime_shots = false;
     } else if (arg == "--legacy-grade") {
       options.legacy_grade = true;
+      options.hdr_anime = options.anime_guided = options.anime_shots = false;
     } else if (arg == "--legacy-grade=split") {
       options.split_look = true;
+      options.hdr_anime = options.anime_guided = options.anime_shots = false;
     } else if (arg == "--grade-ring" || arg == "--grade-ring=on") {
       options.grade_ring = true;
     } else if (arg == "--grade-ring=off") {
@@ -500,7 +504,8 @@ std::string play_usage() {
       "                         coût propre de chaque moteur\n"
       "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
       "                         (en essai ; éteint par défaut)\n"
-      "  --hdr-anime      essai : méthode HDR « anime » (surfaces ancrées, seuls les émetteurs montent)\n"
+      "  --hdr-anime      méthode HDR « anime » (surfaces ancrées, seuls les émetteurs montent), par défaut\n"
+      "                   avec --anime-guided et --anime-shots ; --classic-grade : le grade d'avant\n"
       "  --anime-shots    essai : --hdr-anime décidée par plan (exposition, marge des éclats), glissée aux "
       "coupes\n"
       "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
