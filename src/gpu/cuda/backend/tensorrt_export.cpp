@@ -188,7 +188,12 @@ std::expected<void, Refusal> TensorRtBackend::write_yuv(const Tensor& rgb, const
     const CUresult r =
         cuStreamWriteValue64(stream_, static_cast<CUdeviceptr>(device),
                              static_cast<cuuint64_t>(target.done_value), CU_STREAM_WRITE_VALUE_DEFAULT);
-    if (r == CUDA_SUCCESS) return {};
+    if (r == CUDA_SUCCESS) {
+      // WDDM (12.3) : le lot de lancements part tout de suite, signal compris ; sinon il attendrait le
+      // prochain appel qui force l'envoi, une image plus tard.
+      push_launches();
+      return {};
+    }
     // Refusé : le rappel hôte, comme sans bloc enregistré.
   }
   auto* signal = new (std::nothrow) DoneSignal{.done = target.done, .value = target.done_value};
@@ -197,6 +202,7 @@ std::expected<void, Refusal> TensorRtBackend::write_yuv(const Tensor& rgb, const
     delete signal;  // NOLINT(cppcoreguidelines-owning-memory) : le rappel ne viendra pas
     return ok;
   }
+  push_launches();  // WDDM : le rappel part avec ce lot, pas avec l'image suivante
   return {};
 }
 
