@@ -88,7 +88,7 @@ std::string resolution_text(int height);
 enum class SpanOrder : std::uint8_t { Auto, Before, After };
 inline constexpr int kSpanOrderCount = 3;
 inline constexpr int kWarpAfterSpanAbove = 1080;
-std::string_view name(SpanOrder order);   // « auto », la clé de play.toml
+std::string_view name(SpanOrder order);  // « auto », la clé de play.toml
 std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p ou dès ×3) », pour le menu
 inline constexpr int kWarpAfterSpanFactor = 3;
 // Le warp passe-t-il après SPAN pour une sortie de output_height lignes, au facteur le plus haut que la
@@ -300,6 +300,11 @@ struct PlaySettings {
   // dans adaptive-log.tsv, à côté de play.toml, pendant que l'utilisateur règle à l'œil.
   bool adaptive_record = true;
   double look_mix = 1.0;
+  // Le look de la méthode HDR anime (04/11, idée de Tatoub) : la LUT de base et « skin fix », fixes, et deux
+  // curseurs de -100 à 100 sur les LUT de contraste et d'éclats ; 0 : sa pile du 04/11 (contraste ×7, éclats
+  // ×1,5), le défaut. -100 : la LUT retirée ; 100 : son intensité doublée. La pile ci-dessus n'est plus lue.
+  int look_contrast = 0;
+  int look_highlight = 0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
   // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1. Vide par
   // défaut : la pile de Tatoub est cuite en une seule LUT (tools/look/bake_stack.py, data/luts/).
