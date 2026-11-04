@@ -4,13 +4,15 @@
 ΔE_ITP = 720 · ‖(ΔI, ΔT, ΔP)‖ (ITU-R BT.2124), avec T = Ct / 2 et P = Cp ; 1 est à peu près le seuil
 visible. Rendu : moyenne, p95, p99, p99,9 et maximum sur tous les pixels.
 
-  de_itp.py A.ppm B.ppm [--max-p95 0.2] [--heatmap carte.ppm]
-      code retour 1 si p95 dépasse --max-p95 ; --heatmap écrit une carte 8 bits (noir 0, blanc >= 2).
+  de_itp.py A.ppm B.ppm [--max-p95 0.2] [--max-p999 3] [--heatmap carte.ppm] [--json]
+      code retour 1 si p95 dépasse --max-p95 ou p99,9 --max-p999 ; --heatmap écrit une carte 8 bits (noir 0,
+      blanc >= 2) ; --json écrit le résumé en JSON sur une ligne (tools/grade/compare_shots.sh).
 
 Les PPM viennent de `ajp play … --snapshot=FICHIER.pq.ppm --snapshot-at=S` sur une sortie HDR10
 (placebo_snapshot.cpp : P6, maximum 65535, poids fort d'abord). A : `--legacy-grade=split`, B : par défaut.
 """
 import argparse
+import json
 import sys
 
 import numpy as np
@@ -95,7 +97,9 @@ def main(argv=None):
     parser.add_argument("a")
     parser.add_argument("b")
     parser.add_argument("--max-p95", type=float, default=None)
+    parser.add_argument("--max-p999", type=float, default=None)
     parser.add_argument("--heatmap", default=None)
+    parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     a = read_ppm16(args.a)
     b = read_ppm16(args.b)
@@ -104,11 +108,17 @@ def main(argv=None):
         return 2
     de = delta_e(a, b)
     s = summary(de)
-    print("ΔE_ITP : " + ", ".join(f"{k} {v:.3f}" for k, v in s.items()))
+    if args.json:
+        print(json.dumps(s))
+    else:
+        print("ΔE_ITP : " + ", ".join(f"{k} {v:.3f}" for k, v in s.items()))
     if args.heatmap:
         write_heatmap(args.heatmap, de)
     if args.max_p95 is not None and s["p95"] > args.max_p95:
         print(f"p95 {s['p95']:.3f} au-dessus de {args.max_p95}", file=sys.stderr)
+        return 1
+    if args.max_p999 is not None and s["p99.9"] > args.max_p999:
+        print(f"p99,9 {s['p99.9']:.3f} au-dessus de {args.max_p999}", file=sys.stderr)
         return 1
     return 0
 
