@@ -166,3 +166,18 @@ TEST_CASE("courbe : la LUT cuite suit la courbe exacte (ΔE_ITP p99 ≤ 1)", "[r
   CHECK(errors[errors.size() * 99 / 100] <= 1.0);
   CHECK(errors[errors.size() * 999 / 1000] <= 2.0);
 }
+
+TEST_CASE("courbe : le look SDR avant la courbe, l'identité ne change rien", "[render][curve]") {
+  const ShotCurve curve = plan_curve(CurveInput{.shot_apl_nits = 40.0, .series_apl_nits = 40.0});
+  const std::vector<float> plain = bake(curve, 17);
+  const CubeLut identity = identity_lut(33);
+  const std::vector<float> looked = bake(curve, &identity, 17);
+  REQUIRE(looked.size() == plain.size());
+  float worst = 0.0F;
+  for (std::size_t i = 0; i < plain.size(); ++i) worst = std::max(worst, std::abs(looked[i] - plain[i]));
+  CHECK(worst <= 5e-4F);  // 2⁻¹¹ en PQ : le float de la lecture trilinéaire et des matrices
+  // Un look qui assombrit la moitié du domaine SDR change la LUT cuite.
+  CubeLut darker = identity;
+  for (float& v : darker.rgb) v *= 0.9F;
+  CHECK(bake(curve, &darker, 17) != plain);
+}

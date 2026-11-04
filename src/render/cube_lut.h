@@ -3,6 +3,7 @@
 // puis B.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -46,6 +47,10 @@ std::string lut_texture_block(const CubeLut& lut, std::string_view name);
 // et ce noir assombrit les pixels proches du bord ; ces entrées (sortie noire pour une entrée qui ne l'est
 // pas) sont recopiées du voisin valide le plus proche. Rend le nombre d'entrées remplacées.
 std::size_t fill_unreachable(CubeLut& lut);
+
+// La lecture trilinéaire de la texture (comme le hook du look) : le point c, borné à [0, 1]³, tombe à
+// c × (size − 1) dans la grille.
+std::array<float, 3> sample_lut(const CubeLut& lut, const std::array<float, 3>& c);
 
 // La LUT neutre (identité) de `size` points.
 CubeLut identity_lut(int size);
