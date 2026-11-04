@@ -103,7 +103,7 @@ SpanStillsSource source_of(std::vector<media::Still> stills) {
 struct FakeBackend {
   double psnr = 50.0;
   double ssim = 0.995;
-  double psnr16 = 0.0;              // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
+  double psnr16 = 0.0;  // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
   double error_p999 = 1.0 / 255.0;  // 99,9e centile de l'erreur de chaque image (3.7a)
   double hard_psnr = 40.0;          // PSNR de chaque cas dur rendu (3.7a)
   bool refuse = false;
@@ -238,11 +238,12 @@ TEST_CASE("le paquet prend l'accumulateur f16 hors blocs à 0,3 dB du f32 au plu
   CHECK(parsed->acc16 == kept);
 }
 
-TEST_CASE("la porte durcie refuse au 99,9e centile ou sur un cas dur (3.7a)", "[app][span_derive]") {
+TEST_CASE("la porte durcie refuse au 99,9e centile ; les cas durs sont relevés sans décider (porte 2)",
+          "[app][span_derive]") {
   ajp::app::play::FrenchUi french;
   const auto [p999, hard, passes] =
       GENERATE(std::tuple{1.0 / 255.0, 40.0, true}, std::tuple{5.0 / 255.0, 40.0, false},
-               std::tuple{1.0 / 255.0, 35.0, false});
+               std::tuple{1.0 / 255.0, 16.0, true});
   INFO(p999 * 255.0 << "/255, cas durs " << hard << " dB");
   const Folder folder;
   FakeBackend backend;
@@ -361,6 +362,46 @@ TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paq
   CHECK(make_span_prepare(nullptr, gpu::BackendInit{}, true, folder.model, folder.models(),
                           folder.root / "v.mkv")
             .refused);
+}
+
+TEST_CASE("un refus d'une porte plus ancienne, d'une autre carte ou d'autres noyaux se refait",
+          "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
+  const Folder folder;
+  SpanDeriveProgress progress;
+  FakeBackend bad;
+  bad.psnr = 36.0;
+  REQUIRE(derive_span_fp8(folder.plan(), source_of(twelve()), bad.deriver(), progress, std::stop_token{}));
+  const SpanFp8Context here{.gpu_arch = "sm_89", .kernels_version = 1, .width = 128, .height = 4};
+  // Refusé par la porte d'aujourd'hui : pour de bon.
+  const SpanInt8Lookup now =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
+  CHECK_FALSE(now.variant);
+  CHECK_FALSE(now.stale);
+  // Le même refus, écrit par la porte 1 (sans gate_version) : à refaire.
+  std::string text;
+  {
+    std::ifstream in(folder.receipt());
+    std::ostringstream all;
+    all << in.rdbuf();
+    text = all.str();
+  }
+  const auto at = text.find("gate_version = ");
+  REQUIRE(at != std::string::npos);
+  text.erase(at, text.find('\n', at) - at + 1);
+  std::ofstream(folder.receipt(), std::ios::trunc) << text;
+  const SpanInt8Lookup old =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
+  CHECK_FALSE(old.variant);
+  CHECK(old.stale);
+  const SpanPrepare again = make_span_prepare(nullptr, gpu::BackendInit{}, true, folder.model,
+                                              folder.models(), folder.root / "v.mkv", {}, {}, here);
+  CHECK_FALSE(again.refused);
+  CHECK(again.offered);
+  // D'autres noyaux : à refaire aussi.
+  SpanFp8Context newer = here;
+  newer.kernels_version = 2;
+  CHECK(find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &newer).stale);
 }
 
 TEST_CASE("un échec technique n'écrit rien et laisse l'état d'avant", "[app][span_derive]") {

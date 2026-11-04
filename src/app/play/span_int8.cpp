@@ -125,11 +125,20 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
                          .receipt_v2 = v2};
   const std::string scores = std::format("PSNR moyen {:.1f} dB, pire {:.1f} dB, pire SSIM {:.4f}",
                                          variant.psnr_mean_db, variant.psnr_worst_db, variant.ssim_worst);
+  // Un refus d'une porte plus ancienne, ou d'une autre carte ou d'autres noyaux, se refait (stale).
+  const bool old_gate =
+      v2 && fp8 != nullptr && receipt["gate_version"].value_or(std::int64_t{1}) < gpu::span_fp8::kGateVersion;
+  const auto stale = [](std::string note) {
+    SpanInt8Lookup out = refused(std::move(note));
+    out.stale = true;
+    return out;
+  };
   if (!receipt["passed"].value_or(false) || variant.psnr_mean_db < limits.min_psnr_mean ||
       variant.psnr_worst_db < limits.min_psnr_worst || variant.ssim_worst < limits.min_ssim_worst) {
-    return refused(
+    const std::string note =
         i18n::tr_format("{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)",
-                        where, scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst));
+                        where, scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst);
+    return old_gate ? stale(note) : refused(note);
   }
   auto model_sha = prepare::sha256_file_known(variant.onnx);
   if (!model_sha) return refused(model_sha.error().detail);
@@ -139,12 +148,12 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
     // Étape 3.7b : le paquet ne vaut que pour l'appareil, les noyaux et les tailles où la porte l'a jugé.
     const std::string_view arch = receipt["gpu_arch"].value_or(std::string_view());
     if (arch != fp8->gpu_arch)
-      return refused(
+      return stale(
           i18n::tr_format("{}: derived on {}, this GPU is {}: prepare it again", where, arch, fp8->gpu_arch));
     const auto kernels = receipt["kernels_version"].value_or(std::int64_t{0});
     if (kernels != fp8->kernels_version)
-      return refused(i18n::tr_format("{}: kernels version {}, this engine has {}: prepare it again", where,
-                                     kernels, fp8->kernels_version));
+      return stale(i18n::tr_format("{}: kernels version {}, this engine has {}: prepare it again", where,
+                                   kernels, fp8->kernels_version));
     const std::string size = gpu::span_fp8::size_key(fp8->width, fp8->height);
     const auto listed = [&](std::string_view key) {
       if (const toml::array* sizes = receipt[key].as_array())
@@ -152,7 +161,10 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
           if (entry.value_or(std::string_view()) == size) return true;
       return false;
     };
-    if (listed("refused_sizes")) return refused(i18n::tr_format("{}: rejected at {}", where, size));
+    if (listed("refused_sizes")) {
+      const std::string note = i18n::tr_format("{}: rejected at {}", where, size);
+      return old_gate ? stale(note) : refused(note);
+    }
     if (!listed("validated_sizes")) {
       SpanInt8Lookup pending = refused(i18n::tr_format("{}: not validated at {} yet", where, size));
       pending.unvalidated_size = size;
