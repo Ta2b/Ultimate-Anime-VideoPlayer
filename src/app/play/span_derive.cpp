@@ -371,7 +371,8 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   drop(sizes->validated);
   drop(sizes->refused);
   (report.passed ? sizes->validated : sizes->refused).push_back(report.size);
-  const std::string text = gpu::span_fp8::with_sizes(sizes->text, sizes->validated, sizes->refused);
+  const std::string text =
+      with_gate_refusals(gpu::span_fp8::with_sizes(sizes->text, sizes->validated, sizes->refused), sizes->refused);
   progress.set(0.97F, i18n::tr("writing"));
   if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, i18n::tr("preparation interrupted"));
   // Le paquet garde ses octets : il vaut toujours aux autres tailles de son reçu.
