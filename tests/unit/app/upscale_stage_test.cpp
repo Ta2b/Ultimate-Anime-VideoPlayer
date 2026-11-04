@@ -23,56 +23,13 @@
 #include "core/clock.h"
 #include "doubles.h"
 #include "stage_rig.h"
+#include "upscale_rig.h"
 
 namespace ajp::app::play {
 namespace {
 
 using namespace std::chrono_literals;
-
-constexpr int kWidth = 320;
-constexpr int kHeight = 180;
-constexpr std::int64_t kPeriodUs = 40'000;
-
-struct Rig : test::StageRig {
-  test::FakeEngine span{"span", {"input"}, {"output"}};
-  test::FakeEngine rife{"rife", {"input"}, {"output"}};
-  test::FakeEngine drba{"drba", {"pair01", "pair12"}, {"output"}};
-  test::FakeEngine drba_motion{"drba_motion", {"pair01", "pair12"}, {"flow", "mask"}};
-  test::FakeEngine motion{"rife_motion", {"input"}, {"flow", "mask"}};
-  std::shared_ptr<LiveSettings> live = std::make_shared<LiveSettings>();
-
-  // SPAN toujours ; RIFE ×num/den par les réglages en direct quand with_rife.
-  UpscaleSetup setup(bool with_rife, Factor factor = {.num = 2, .den = 1}, std::uint32_t slot_count = 4) {
-    live->set_rife_factor(with_rife ? factor : Factor{.num = 1, .den = 1});
-    return UpscaleSetup{.backend = &backend,
-                        .engine = &span,
-                        .rife = with_rife ? &rife : nullptr,
-                        .live = live,
-                        .source_width = kWidth,
-                        .source_height = kHeight,
-                        .slots = slots(slot_count, kWidth * kSpanFactor, kHeight * kSpanFactor)};
-  }
-  void start(UpscaleSetup s, const MasterClock* clock = nullptr) {
-    auto started = UpscaleStage::start(init(clock), std::move(s));
-    if (!started) FAIL("refus " << name(started.error().code) << " : " << started.error().detail);
-    stage = std::move(*started);
-  }
-  // Pousse les images id = first … last, à kPeriodUs d'écart, dans l'époque donnée.
-  void feed(std::uint32_t first, std::uint32_t last, std::uint32_t epoch = 0) {
-    for (std::uint32_t id = first; id <= last; ++id)
-      REQUIRE(push(test::host_frame(id, kWidth, kHeight, static_cast<std::int64_t>(id) * kPeriodUs, epoch)));
-  }
-};
-
-// « 3 » : la source 3 telle quelle ; « 2-3 » : une image entre les sources 2 et 3.
-std::vector<std::string> shape_of(const std::vector<RingFrame>& frames) {
-  std::vector<std::string> out;
-  for (const RingFrame& f : frames) {
-    out.push_back(f.left == f.right ? std::to_string(f.left.value)
-                                    : std::to_string(f.left.value) + "-" + std::to_string(f.right.value));
-  }
-  return out;
-}
+using namespace upscale_test;
 
 // La voie attendue d'un travail du journal (« ingest 3 » : measure) ; vide pour les autres (alloc).
 std::string lane_of(std::string_view entry) {
@@ -98,12 +55,6 @@ std::map<std::string, int> check_lanes(const std::vector<std::string>& laned) {
     ++per_lane[want];
   }
   return per_lane;
-}
-
-std::vector<std::int64_t> pts_of(const std::vector<RingFrame>& frames) {
-  std::vector<std::int64_t> out;
-  for (const RingFrame& f : frames) out.push_back(f.pts_us);
-  return out;
 }
 
 }  // namespace
@@ -661,144 +612,6 @@ TEST_CASE("Étage gpu : un instant en retard est sauté, les suivants de la pair
   CHECK(rig.live->counts().interpolated == 2);
 }
 
-TEST_CASE("Étage gpu : DistilDRBA attend l'image suivante, la dernière n'est pas montrée", "[app][stage]") {
-  Rig rig;
-  UpscaleSetup s = rig.setup(true);
-  s.rife = nullptr;
-  s.distil_drba = &rig.drba;
-  rig.start(std::move(s));
-  rig.feed(1, 4);
-  REQUIRE(rig.collect(5));
-  REQUIRE_FALSE(rig.collect(6, true, 200ms));
-  CHECK(rig.stage->idle());  // la dernière image attend sa suivante : rien d'autre ne sortira
-  rig.stage.reset();
-
-  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3"});
-  CHECK(rig.backend.count("engine drba") == 2);
-  CHECK(rig.backend.count("rife_input") == 4);  // deux entrées par passe
-  CHECK(rig.backend.count("ingest 4") == 1);    // ingérée en avance, derrière la source 3
-  CHECK(rig.credits.load() == 3);
-}
-
-TEST_CASE("Étage gpu : DistilDRBA rend b sans passe quand (b, après) est un dessin tenu", "[app][stage]") {
-  Rig rig;
-  rig.backend.score(SourceId{4}, SourceId{5}, 0.0, 10);  // dessin tenu
-  UpscaleSetup s = rig.setup(true);
-  s.rife = nullptr;
-  s.distil_drba = &rig.drba;
-  rig.start(std::move(s));
-  rig.feed(1, 6);
-  REQUIRE(rig.collect(8));
-  rig.stage.reset();
-
-  CHECK(shape_of(rig.sink.frames()) ==
-        std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "3-4", "4", "5"});
-  // 3-4 à ½ est centrée sur 4, dont la paire suivante (4, 5) est tenue : l'image 4 telle quelle.
-  CHECK(rig.backend.count("engine drba") == 2);
-}
-
-TEST_CASE("Étage gpu : en lecture, DistilDRBA écrit b une fois quand (b, après) est tenu, sans la source",
-          "[app][stage]") {
-  Rig rig;
-  rig.backend.score(SourceId{4}, SourceId{5}, 0.0, 10);  // dessin tenu
-  UpscaleSetup s = rig.setup(true);
-  s.rife = nullptr;
-  s.distil_drba = &rig.drba;
-  s.skip_held = true;
-  rig.start(std::move(s));
-  rig.feed(1, 6);
-  REQUIRE(rig.collect(6));
-  rig.stage.reset();
-
-  const std::vector<RingFrame> frames = rig.sink.frames();
-  CHECK(shape_of(frames) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "4"});
-  CHECK(frames[5].pts_us == 140'000);
-  CHECK(rig.backend.count("engine drba") == 2);
-}
-
-TEST_CASE("Étage gpu : DistilDRBA mouvement, un SPAN par source et le warp après", "[app][stage]") {
-  Rig rig;
-  UpscaleSetup s = rig.setup(true);
-  s.rife = nullptr;
-  s.distil_drba = &rig.drba_motion;
-  s.drba_motion = true;
-  s.warp_after_span = true;
-  rig.start(std::move(s));
-  rig.feed(1, 4);
-  REQUIRE(rig.collect(5));
-  rig.stage.reset();
-
-  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3"});
-  CHECK(rig.backend.count("engine drba_motion") == 2);
-  // SPAN sur les trois sources montrées seulement : les images créées sont warpées depuis elles.
-  CHECK(rig.backend.count("engine span") == 3);
-  CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
-}
-
-TEST_CASE("Étage gpu : DistilDRBA mouvement estimé plus petit que le travail, sur des copies réduites",
-          "[app][stage]") {
-  Rig rig;
-  UpscaleSetup s = rig.setup(true);
-  s.rife = nullptr;
-  s.distil_drba = &rig.drba_motion;
-  s.drba_motion = true;
-  s.warp_after_span = true;
-  s.rife_width = kWidth / 2;
-  s.rife_height = kHeight / 2;
-  rig.start(std::move(s));
-  rig.feed(1, 4);
-  REQUIRE(rig.collect(5));
-  rig.stage.reset();
-
-  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2", "2-3", "3"});
-  CHECK(rig.backend.count("engine drba_motion") == 2);
-  // Chaque source deux fois : au travail et réduite ; la réduite de l'image d'après resservant comme b.
-  for (const char* entry : {"ingest 1", "ingest 2", "ingest 3", "ingest 4"})
-    CHECK(rig.backend.count(entry) == 2);
-  CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
-}
-
-TEST_CASE("Étage gpu : DistilDRBA image refusé plus petit que le travail", "[app][stage]") {
-  Rig rig;
-  UpscaleSetup s = rig.setup(true);
-  s.rife = nullptr;
-  s.distil_drba = &rig.drba;
-  s.rife_width = kWidth / 2;
-  s.rife_height = kHeight / 2;
-  auto started = UpscaleStage::start(rig.init(), std::move(s));
-  REQUIRE_FALSE(started);
-  CHECK(started.error().code == RefusalCode::ShapeInvalid);
-}
-
-TEST_CASE("Étage gpu : refus de démarrage nommés", "[app][stage]") {
-  Rig rig;
-  const auto refused = [&](UpscaleSetup s) {
-    auto started = UpscaleStage::start(rig.init(), std::move(s));
-    REQUIRE_FALSE(started);
-    return started.error().code;
-  };
-  UpscaleSetup work = rig.setup(false);
-  work.work_width = kWidth * 2;
-  work.work_height = kHeight;
-  CHECK(refused(std::move(work)) == RefusalCode::ShapeInvalid);
-  UpscaleSetup slots = rig.setup(false);
-  slots.slots = test::StageRig::slots(2, kWidth, kHeight);  // la taille de travail, pas celle de SPAN
-  CHECK(refused(std::move(slots)) == RefusalCode::ShapeInvalid);
-  UpscaleSetup two = rig.setup(true);
-  two.distil_drba = &rig.drba;
-  CHECK(refused(std::move(two)) == RefusalCode::FieldOutOfRange);
-  UpscaleSetup planes = rig.setup(true);
-  planes.rife_planes = 5;
-  CHECK(refused(std::move(planes)) == RefusalCode::InputMismatch);
-  UpscaleSetup fixed = rig.setup(true);
-  fixed.live = nullptr;
-  fixed.rife_factor = Factor{.num = 1, .den = 1};  // sans réglages en direct, le facteur doit interpoler
-  CHECK(refused(std::move(fixed)) == RefusalCode::FieldOutOfRange);
-  UpscaleSetup none = rig.setup(false);
-  none.backend = nullptr;
-  CHECK(refused(std::move(none)) == RefusalCode::FieldMissing);
-}
-
 TEST_CASE("Étage gpu : une image refusée arrête la vidéo, les suivantes rendent leur place", "[app][stage]") {
   Rig rig;
   rig.backend.refuse_ingest(SourceId{3});
@@ -816,75 +629,6 @@ TEST_CASE("Étage gpu : une image refusée arrête la vidéo, les suivantes rend
   REQUIRE(reported.size() == 1);
   CHECK(reported[0].code == RefusalCode::ThreadFailed);
   CHECK(reported[0].detail.contains("image 3 refusée"));
-}
-
-}  // namespace ajp::app::play
-
-namespace ajp::app::play {
-
-TEST_CASE("Étage gpu : la version du grade de l'anneau suit le pts de chaque image écrite",
-          "[app][stage][grade_ring]") {
-  const bool with_rife = GENERATE(false, true);
-  INFO("RIFE " << with_rife);
-  Rig rig;
-  rig.backend.offer_grade(true);
-  rig.live->set_deband_source(true);
-  const std::uint32_t version = rig.live->post_grade(GradeVersion{.epoch = 0, .from_pts_us = 100'000});
-  rig.start(rig.setup(with_rife));
-  rig.feed(1, 6);
-  const std::size_t expected = with_rife ? 11 : 6;
-  REQUIRE(rig.collect(expected));
-  rig.stage.reset();
-
-  const std::vector<RingFrame> frames = rig.sink.frames();
-  const std::vector<test::RingWritten> written = rig.backend.written();
-  REQUIRE(frames.size() == expected);
-  REQUIRE(written.size() == expected);
-  for (std::size_t i = 0; i < frames.size(); ++i) {
-    INFO("image " << i << ", pts " << frames[i].pts_us);
-    CHECK(frames[i].debanded);
-    CHECK(frames[i].grade == (frames[i].pts_us >= 100'000 ? version : 0U));
-    CHECK(written[i].grade.version == frames[i].grade);
-    if (written[i].grade.version != 0) {
-      CHECK(written[i].grade.pts_us == frames[i].pts_us);
-      CHECK(written[i].grade.epoch == 0);
-    }
-  }
-  CHECK(rig.backend.count(std::format("set_grade {}", version)) == 1);  // confié une fois
-  CHECK(rig.reported().empty());
-}
-
-TEST_CASE("Étage gpu : sans grade dans le backend ni débandage, l'écran garde le grade",
-          "[app][stage][grade_ring]") {
-  const bool backend_grades = GENERATE(false, true);
-  INFO("backend qui grade " << backend_grades);
-  Rig rig;
-  rig.backend.offer_grade(backend_grades);
-  rig.live->set_deband_source(!backend_grades);  // grade sans débandage, ou débandage sans grade
-  rig.live->post_grade(GradeVersion{.epoch = 0, .from_pts_us = 0});
-  rig.start(rig.setup(false));
-  rig.feed(1, 4);
-  REQUIRE(rig.collect(4));
-  rig.stage.reset();
-  for (const RingFrame& f : rig.sink.frames()) CHECK(f.grade == 0);
-  for (const test::RingWritten& w : rig.backend.written()) CHECK(w.grade.version == 0);
-  CHECK(rig.backend.count("set_grade 1") == 0);
-}
-
-TEST_CASE("Étage gpu : un ordre « off » rend les images suivantes à l'écran", "[app][stage][grade_ring]") {
-  Rig rig;
-  rig.backend.offer_grade(true);
-  rig.live->set_deband_source(true);
-  const std::uint32_t on = rig.live->post_grade(GradeVersion{.epoch = 0, .from_pts_us = 0});
-  rig.live->post_grade(GradeVersion{.epoch = 0, .from_pts_us = 160'000, .off = true});
-  rig.start(rig.setup(false));
-  rig.feed(1, 6);
-  REQUIRE(rig.collect(6));
-  rig.stage.reset();
-  for (const RingFrame& f : rig.sink.frames()) {
-    INFO("pts " << f.pts_us);
-    CHECK(f.grade == (f.pts_us < 160'000 ? on : 0U));
-  }
 }
 
 }  // namespace ajp::app::play
