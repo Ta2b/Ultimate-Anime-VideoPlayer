@@ -129,6 +129,9 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                      : drba_motion ? drba_size.height
                                    : 0,
       .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, top_factor),
+      // En lecture (horloge présente), un instant déjà passé n'est ni calculé ni écrit, en Rapide comme à pas
+      // constant : l'image serait jetée par la présentation (audit F11).
+      .late_fate = clock != nullptr,
       .smooth_drawings = smooth_drawings,
       .slots = std::move(slots)};
 }
