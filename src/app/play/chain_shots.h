@@ -51,10 +51,12 @@ struct ShotWork {
 };
 
 // À l'ouverture d'une chaîne : reprend la vidéo du cache, ou lance l'analyse (depuis la part gardée) ; la
-// garde pour le même fichier ; rien sans grade adaptatif (l'analyse en cours
+// garde pour le même fichier ; rien sans grade adaptatif ni lecteur des plans (l'analyse en cours
 // s'arrête).
 // Une source HDR (PQ, HLG) sans grade natif HDR n'en a pas besoin : rien ne part.
-void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
+// plans : la méthode « HDR anime » par plan (--anime-shots, défaut) ou les coupes des plans (--shot-cuts)
+// les lisent aussi, sans grade adaptatif.
+void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings, bool plans,
                 std::int64_t start_us, bool source_hdr = false);
 
 // Le cache : à appeler à chaque tour, ne fait rien la plupart du temps.
