@@ -23,7 +23,6 @@ constexpr VkImageLayout kLayout = VK_IMAGE_LAYOUT_GENERAL;
 // Les poignées que le backend TensorRT importe dans CUDA : descripteurs sous Linux, HANDLE NT
 // sous Windows.
 #ifdef _WIN32
-constexpr pl_handle_type kExport = PL_HANDLE_WIN32;
 constexpr HandleKind kExportKind = HandleKind::OpaqueWin32;
 std::uintptr_t raw_handle(const pl_handle& handle) {
   return reinterpret_cast<std::uintptr_t>(handle.handle);
@@ -32,7 +31,6 @@ void close_handle(std::uintptr_t handle) {
   CloseHandle(reinterpret_cast<HANDLE>(handle));
 }
 #else
-constexpr pl_handle_type kExport = PL_HANDLE_FD;
 constexpr HandleKind kExportKind = HandleKind::OpaqueFd;
 std::uintptr_t raw_handle(const pl_handle& handle) {
   return static_cast<std::uintptr_t>(handle.fd);
@@ -117,8 +115,8 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   // backend Vulkan écrit sur l'appareil même du rendu. Un appareil qui n'exporte pas (lavapipe)
   // garde un ring sans poignées.
   const bool exported =
-      external && (gpu->export_caps.tex & kExport) != 0 && (gpu->export_caps.sync & kExport) != 0;
-  const pl_handle_type handles = exported ? kExport : pl_handle_type{};
+      external && (gpu->export_caps.tex & kRingHandle) != 0 && (gpu->export_caps.sync & kRingHandle) != 0;
+  const pl_handle_type handles = exported ? kRingHandle : pl_handle_type{};
   const HandleKind kind = exported ? kExportKind : HandleKind::None;
   std::vector<RingSlotDesc> descs;
   for (std::uint32_t i = 0; i < count; ++i) {

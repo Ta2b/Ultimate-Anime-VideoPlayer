@@ -471,9 +471,11 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     impl->channel->info("appareil Vulkan non partagé avec FFmpeg : {} ; ses images passeront par l'hôte",
                         share.error().detail);
   }
-  if ((gpu->export_caps.tex & PL_HANDLE_FD) == 0 || (gpu->export_caps.sync & PL_HANDLE_FD) == 0) {
-    // Sans export, le backend TensorRT ne peut pas importer le ring ; le backend Vulkan s'en passe.
-    impl->channel->info("l'appareil n'exporte pas ses images ni ses sémaphores (fd) : ring sans poignées");
+  if ((gpu->export_caps.tex & kRingHandle) == 0 || (gpu->export_caps.sync & kRingHandle) == 0) {
+    // Sans export, le backend TensorRT ne peut pas importer le ring ; le backend Vulkan s'en passe. La
+    // poignée est celle du système (kRingHandle) : sous Windows, un HANDLE NT, jamais un descripteur.
+    impl->channel->info("l'appareil n'exporte pas ses images ni ses sémaphores ({}) : ring sans poignées",
+                        kRingHandle == PL_HANDLE_FD ? "fd" : "HANDLE NT");
   }
 
   // Le niveau de retour de présentation (present_level.h) : à --present=open, la swapchain d'aujourd'hui.
