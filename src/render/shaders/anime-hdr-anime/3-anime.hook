@@ -40,6 +40,19 @@ float shadow_ratio(float m, float depth) {
     return 1.0 - depth * u * u;
 }
 
+// Teinte de peau (audit F2) : R >= G >= B, teinte de 15 a 45 degres, saturation moderee (0,12 a 0,60 en
+// BT.2020 lineaire). Un blanc (saturation < 0,1) et un feu, un neon, un coucher de soleil (> 0,7) n'en sont
+// pas. Douce aux bords : 0 hors de la plage, 1 au milieu.
+float skin_like(vec3 c) {
+    float mx = max(max(c.r, c.g), c.b);
+    float mn = min(min(c.r, c.g), c.b);
+    if (mx <= 1e-4 || c.r < c.g || c.g < c.b) return 0.0;
+    float sat = (mx - mn) / mx;
+    float hue = 60.0 * (c.g - c.b) / max(c.r - c.b, 1e-6);
+    return smoothstep(10.0, 16.0, hue) * (1.0 - smoothstep(44.0, 52.0, hue)) *
+           smoothstep(0.08, 0.12, sat) * (1.0 - smoothstep(0.60, 0.70, sat));
+}
+
 // Carte locale guidee (mega plan A3, --anime-guided) : la carte 1/8 relevee par un sur-echantillonnage
 // bilateral joint, guide par le pixel. Un pixel sombre au bord d'une lumiere lit les blocs sombres, un pixel
 // clair les blocs clairs : le halo ne deborde plus d'un demi-bloc sur la surface voisine.
@@ -87,6 +100,10 @@ vec4 hook() {
     // un aplat sombre plus clair que son entourage n'est pas une lumiere).
     float iso = smoothstep(0.05, 0.25, local_pq - area_pq);
     float gate = smoothstep(pq_of(0.55 * white), pq_of(0.95 * white), local_pq);
+    // Audit F2 : une peau n'est jamais une lumiere. Une peau claire pres d'un fond sombre gardait la porte
+    // ouverte et s'eclairait comme une lampe au bord des visages. La teinte et la saturation ne dependent pas
+    // de la luminance : le grain d'une peau ne fait pas osciller la porte (pas de damier).
+    gate *= 1.0 - skin_like(lin);
     // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain), et il est proche du
     // blanc. La porte compare des codes PQ (y_pq) : y, en nits, la laissait ouverte des 1 nit.
     float spark = smoothstep(0.08, 0.20, y_pq - local_bilin) * smoothstep(pq_of(0.6 * white), pq_of(white), y_pq);
