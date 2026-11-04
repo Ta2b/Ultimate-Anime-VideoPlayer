@@ -333,6 +333,24 @@ TEST_CASE("une taille se valide seule, sans recalibrer, et se note au reçu (3.7
       find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
   CHECK_FALSE(found.variant);
   CHECK(found.note.find("refusé en 128x4") != std::string::npos);
+
+  // Le même refus écrit par un lecteur plus ancien, sans la ligne de la porte d'aujourd'hui : à revalider.
+  std::string text;
+  {
+    std::ifstream in(folder.receipt());
+    std::ostringstream all;
+    all << in.rdbuf();
+    text = all.str();
+  }
+  const auto at = text.find(gate_refusals_key() + " = ");
+  REQUIRE(at != std::string::npos);
+  text.erase(at, text.find('\n', at) - at + 1);
+  std::ofstream(folder.receipt(), std::ios::trunc) << text;
+  const SpanInt8Lookup older =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
+  CHECK_FALSE(older.variant);
+  CHECK_FALSE(older.stale);
+  CHECK(older.unvalidated_size == "128x4");
 }
 
 TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paquet d'avant",

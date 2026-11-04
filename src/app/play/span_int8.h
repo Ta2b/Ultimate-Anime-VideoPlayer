@@ -86,6 +86,10 @@ struct ReceiptSizes {
   std::vector<std::string> refused;
 };
 std::expected<ReceiptSizes, Refusal> read_receipt_sizes(const std::filesystem::path& receipt);
+// Les refus de taille notés aussi sous la porte qui les a pris (« refused_sizes_gate3 ») : un refus de
+// refused_sizes que la porte d'aujourd'hui n'a pas noté (lecteur plus ancien, porte d'avant) se revalide.
+std::string gate_refusals_key();
+std::string with_gate_refusals(std::string_view receipt, const std::vector<std::string>& refused);
 
 // Ce que la chaîne sait du SPAN FP8 CUTLASS au chargement (étape 3.7b) : BackendCaps::gpu_arch et
 // span_fp8_kernels, et la taille de travail. Un reçu v2 d'une autre architecture ou d'autres noyaux est
