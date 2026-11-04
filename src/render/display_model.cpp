@@ -45,6 +45,15 @@ std::array<double, 5> default_abl(double panel_peak_nits, bool oled) {
   return out;
 }
 
+ContractMetadata contract_metadata(const DisplayContract& contract) {
+  const double k = contract.k();
+  return ContractMetadata{.primaries = contract.primaries.value_or(kDisplayP3),
+                          .min_luma = contract.min_nits / k,
+                          .max_luma = contract.content_peak_nits(),
+                          .max_cll = contract.content_peak_nits(),
+                          .max_fall = contract.content_frame_average_nits()};
+}
+
 double DisplayModel::scale() const {
   return reference_nits > 0.0 ? reference_nits / kContentReferenceNits : 1.0;
 }

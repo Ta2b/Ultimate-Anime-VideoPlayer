@@ -11,6 +11,7 @@ provenance, voir `data/luts/ATTRIBUTION.md`), par :
       HDR-contrast-Enhancement-L.cube Midtone-gamma-Enhancement-C.cube "boost black maintain chroma.cube" \
       HDR-contrast-Enhancement-L.cube --out ../luts-v2 --compose ver9-couleur.cube
 
-Rapport de la pile : courbe neutre 1 → 0,0, 5 → 7,7, 20 → 52,5, 50 → 146,1, 100 → 426,5, 203 → 1 824,7 nits ;
-décalage de teinte de la couleur, moyenne 3,74°, p95 10,31°. Pas encore livrée ni lue : le contrat v2 (8.4,
-éteint) en fera le look par défaut, la courbe par plan (render/curve) remplaçant la courbe neutre.
+Rapport de la pile : courbe neutre 1 → 0,0, 5 → 7,7, 20 → 52,6, 50 → 146,4, 100 → 428,9, 203 → 1 816,6 nits ;
+décalage de teinte de la couleur, moyenne 3,68°, p95 10,28° ; les gris restent gris (écart ≤ 2·10⁻⁶). Livrée dans `luts/` à côté des autres ; sous
+`--hdr-contract-v2` (8.4, essai), elle remplace la pile par défaut, la courbe par plan (render/curve) prenant la
+place de la courbe neutre (8.6).

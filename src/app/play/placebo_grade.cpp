@@ -213,6 +213,26 @@ void PlaceboScreen::Impl::match_kwin() {
                 max_nits, peak, *kde_sdr_nits);
 }
 
+void PlaceboScreen::Impl::hint_contract() {
+  if (!contract_v2 || !contract || swapchain == nullptr || !hdr_output) return;
+  const render::ContractMetadata meta = render::contract_metadata(*contract);
+  if (hinted_contract == meta) return;
+  hinted_contract = meta;
+  pl_color_space space = pl_color_space_hdr10;
+  const render::Chromaticities& p = meta.primaries;
+  space.hdr.prim = pl_raw_primaries{.red = {static_cast<float>(p.rx), static_cast<float>(p.ry)},
+                                    .green = {static_cast<float>(p.gx), static_cast<float>(p.gy)},
+                                    .blue = {static_cast<float>(p.bx), static_cast<float>(p.by)},
+                                    .white = {static_cast<float>(p.wx), static_cast<float>(p.wy)}};
+  space.hdr.min_luma = static_cast<float>(std::max(meta.min_luma, 0.0001));
+  space.hdr.max_luma = static_cast<float>(meta.max_luma);
+  space.hdr.max_cll = static_cast<float>(meta.max_cll);
+  space.hdr.max_fall = static_cast<float>(meta.max_fall);
+  pl_swapchain_colorspace_hint(swapchain, &space);
+  channel->info("contrat v2 : métadonnées annoncées, max {:.0f} nits, MaxFALL {:.0f}, noir {:.4f}",
+                meta.max_luma, meta.max_fall, meta.min_luma);
+}
+
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
   return grade && grade_loaded_pq == pq && (pq || sdr_gamma(target).has_value());

@@ -344,6 +344,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   s.take_next_grade(request.frame);
   s.select_grade(s.target_color);
   s.match_kwin();
+  s.hint_contract();
   s.follow_ring();
   if (request.frame != nullptr && request.frame->pts_us != kNoPts && s.grade) {
     s.video_rate.observe(request.frame->pts_us, request.frame->epoch);

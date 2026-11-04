@@ -1,6 +1,7 @@
 #include "app/play/look_catalog.h"
 
 #include <algorithm>
+#include <atomic>
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -70,10 +71,29 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
   return lut;
 }
 
-std::vector<LookLayer> look_slots(const PlaySettings& s) {
+namespace {
+
+std::atomic<bool> contract_v2_looks{false};
+
+std::vector<LookLayer> stack_of(const PlaySettings& s) {
   std::vector<LookLayer> slots{{s.look, s.look_mix}};
   for (const LookLayer& layer : s.look_layers) slots.push_back(layer);
   if (slots.size() > render::kLookSlots) slots.resize(render::kLookSlots);
+  return slots;
+}
+
+}  // namespace
+
+void set_contract_v2_looks(bool on) {
+  contract_v2_looks.store(on, std::memory_order_relaxed);
+}
+
+std::vector<LookLayer> look_slots(const PlaySettings& s) {
+  std::vector<LookLayer> slots = stack_of(s);
+  if (contract_v2_looks.load(std::memory_order_relaxed)) {
+    static const std::vector<LookLayer> kDefault = stack_of(PlaySettings{});
+    if (slots == kDefault) return {LookLayer{std::string(kContractV2Look), 1.0}};
+  }
   return slots;
 }
 

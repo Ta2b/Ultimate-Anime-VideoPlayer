@@ -5,6 +5,7 @@
 #include <expected>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "app/play/settings.h"
@@ -32,7 +33,11 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
 
 // Les noms des LUT de la pile dans l'ordre des emplacements (le premier, puis ceux de look_layers, au plus
 // render::kLookSlots) et leur intensité.
+// Sous --hdr-contract-v2 (8.4, set_contract_v2_looks), la pile par défaut, intensités comprises, devient le
+// seul kContractV2Look ; une pile choisie par l'utilisateur reste la sienne. play.toml n'en sait rien.
 std::vector<LookLayer> look_slots(const PlaySettings& s);
+inline constexpr std::string_view kContractV2Look = "ver9-couleur.cube";
+void set_contract_v2_looks(bool on);
 
 // Vrai si les deux réglages ont la même pile de fichiers (les intensités ne comptent pas).
 bool same_look_files(const PlaySettings& a, const PlaySettings& b);

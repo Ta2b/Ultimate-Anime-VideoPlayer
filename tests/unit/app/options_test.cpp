@@ -94,6 +94,12 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto index = parse({"épisode.mkv", "--vsync-index"});
   REQUIRE(index);
   CHECK(index->vsync_index);
+  CHECK_FALSE(options->hdr_contract_v2);
+  const auto v2 = parse({"épisode.mkv", "--hdr-contract-v2", "--hdr-metadata=off"});
+  REQUIRE(v2);
+  CHECK(v2->hdr_contract_v2);
+  CHECK(v2->hdr_metadata_off);
+  CHECK_FALSE(v2->kde_sdr_nits);
   CHECK(options->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});
   REQUIRE(present);

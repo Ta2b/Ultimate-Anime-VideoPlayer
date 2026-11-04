@@ -145,25 +145,6 @@ def fill_dark_zone(table):
     return table, filled
 
 
-def pchip(x, y, at):
-    """Interpolation cubique monotone de Fritsch-Carlson des points (x, y) en `at`."""
-    h = np.diff(x)
-    delta = np.diff(y) / h
-    slope = np.zeros_like(y)
-    same_sign = delta[:-1] * delta[1:] > 0
-    w1 = 2.0 * h[1:] + h[:-1]
-    w2 = h[1:] + 2.0 * h[:-1]
-    inner = np.where(same_sign, (w1 + w2) / (w1 / np.where(same_sign, delta[:-1], 1.0)
-                                                 + w2 / np.where(same_sign, delta[1:], 1.0)), 0.0)
-    slope[1:-1] = inner
-    slope[0], slope[-1] = delta[0], delta[-1]
-    i = np.clip(np.searchsorted(x, at, side="right") - 1, 0, len(x) - 2)
-    t = (at - x[i]) / h[i]
-    h00, h10 = (1 + 2 * t) * (1 - t) ** 2, t * (1 - t) ** 2
-    h01, h11 = t * t * (3 - 2 * t), t * t * (t - 1)
-    return h00 * y[i] + h10 * h[i] * slope[i] + h01 * y[i + 1] + h11 * h[i] * slope[i + 1]
-
-
 def sample(table, rgb):
     """Interpolation trilinéaire de la table en des couleurs rgb (… × 3) dans 0..1."""
     size = table.shape[0]
@@ -181,19 +162,16 @@ def sample(table, rgb):
 
 
 class Split:
-    """La courbe neutre d'une LUT PQ et sa composante couleur."""
+    """La courbe neutre d'une LUT PQ et sa composante couleur. lut : codes PQ (… × 3) → codes PQ, la table lue
+    comme le lecteur la lit (sample) ou une fonction exacte (--check)."""
 
-    def __init__(self, table):
-        self.table = table
-        # Les nœuds gris de la table seulement : entre deux, l'interpolation trilinéaire mêle des nœuds colorés
-        # et l'axe des gris n'y est plus gris. Les intensités des nœuds, rendues monotones, puis Fritsch-Carlson.
-        size = table.shape[0]
-        nodes = np.linspace(0.0, 1.0, size)
-        diagonal = table[np.arange(size), np.arange(size), np.arange(size)]
-        intensity = np.maximum.accumulate(ictcp_of_pq(diagonal)[:, 0])
+    def __init__(self, lut):
+        self.lut = lut
+        # L'axe des gris tel que le lecteur le lit : entre deux nœuds gris, l'interpolation trilinéaire mêle des
+        # nœuds colorés, la courbe est celle-là (rendue monotone, puis strictement croissante : un plat de la
+        # LUT s'inverse sans ambiguïté, pente minimale 1e-6).
         self.grey = np.linspace(0.0, 1.0, CURVE_POINTS)
-        curve = np.maximum.accumulate(pchip(nodes, intensity, self.grey))
-        # Strictement croissante : un plat de la LUT s'inverse sans ambiguïté (pente minimale 1e-6).
+        curve = np.maximum.accumulate(ictcp_of_pq(lut(np.repeat(self.grey[:, None], 3, axis=1)))[:, 0])
         self.curve = curve + 1e-6 * self.grey
 
     def neutral_nits(self, nits):
@@ -202,10 +180,18 @@ class Split:
 
     def color(self, rgb_pq):
         """La composante couleur sur des codes PQ : intensité ramenée par l'inverse de la courbe, Ct/Cp de la
-        LUT."""
-        ictcp = ictcp_of_pq(sample(self.table, rgb_pq))
+        LUT moins ceux qu'elle donne au gris de même intensité (la teinte des gris est celle de la courbe : un
+        gris reste gris)."""
+        ictcp = ictcp_of_pq(self.lut(rgb_pq))
+        grey = np.repeat(np.clip(ictcp_of_pq(rgb_pq)[..., 0:1], 0.0, 1.0), 3, axis=-1)
+        tint = ictcp_of_pq(self.lut(grey))
+        ictcp[..., 1:] -= tint[..., 1:]
         ictcp[..., 0] = np.interp(ictcp[..., 0], self.curve, self.grey)
         return np.clip(pq_of_ictcp(ictcp), 0.0, 1.0)
+
+
+def table_lut(table):
+    return lambda rgb: sample(table, rgb)
 
 
 def sdr_to_pq(sdr):
@@ -219,9 +205,22 @@ def soft_clip(x):
     return np.where(x <= SOFT_KNEE, x, SOFT_KNEE + span * np.tanh((x - SOFT_KNEE) / span))
 
 
+def soft_gamut(rgb):
+    """L'écrêtage doux d'une couleur codée : sa plus forte composante m passe par soft_clip, la couleur se
+    resserre vers son gris (luma BT.709) pour y tenir. Un gris n'est jamais touché, ni une couleur sous le
+    genou."""
+    luma = np.clip(rgb @ np.array([0.2126, 0.7152, 0.0722]), 0.0, 1.0)[..., None]
+    m = rgb.max(axis=-1, keepdims=True)
+    target = soft_clip(m)
+    spread = m - luma
+    t = np.where(spread > 1e-9, (target - luma) / np.where(spread > 1e-9, spread, 1.0), 1.0)
+    out = luma + np.clip(t, 0.0, 1.0) * (rgb - luma)
+    return np.clip(out, 0.0, 1.0)
+
+
 def pq_to_sdr(pq):
     linear709 = (pq_to_linear(pq) @ BT2020_TO_709.T) * (10000.0 / REFERENCE_NITS)
-    return soft_clip(np.power(np.maximum(linear709, 0.0), 1.0 / SDR_GAMMA))
+    return soft_gamut(np.power(np.maximum(linear709, 0.0), 1.0 / SDR_GAMMA))
 
 
 def sdr_color_table(split, size):
@@ -272,30 +271,34 @@ def check():
     """L'identité rend l'identité ; une LUT de pure courbe en I rend une couleur identité."""
     grid = identity_table(33)
     failures = 0
-    # Points de contrôle : les nœuds de la grille jusqu'au blanc de référence (le domaine SDR du lecteur) ; entre
-    # les nœuds, l'écart est celui de l'interpolation de la table, le même dans le lecteur.
-    nodes = grid.reshape(-1, 3)
-    probe = nodes[nodes.max(axis=1) <= linear_to_pq(REFERENCE_NITS / 10000.0) + 1e-9]
+    # Points de contrôle : des couleurs du domaine SDR du lecteur (jusqu'au blanc de référence).
+    probe = sdr_to_pq(np.random.default_rng(3).random((20000, 3)))
 
-    identity = Split(grid)
+    identity = Split(table_lut(grid))
     de = float(delta_e_itp(identity.color(probe), probe).max())
     print(f"identité : ΔE_ITP max {de:.4f}")
     failures += de > CHECK_MAX_DE
 
-    # Pure courbe : I' = I (1,2 − 0,2 I) (l'expansion douce d'une LUT de base), Ct/Cp gardés.
-    ictcp = ictcp_of_pq(grid)
-    ictcp[..., 0] *= 1.2 - 0.2 * ictcp[..., 0]
-    curve_only = Split(pq_of_ictcp(ictcp))
+    # Pure courbe, exacte (sans table) : I' = I^0,9 (l'expansion d'une LUT de base), Ct/Cp gardés.
+    def curve_lut(rgb):
+        ictcp = ictcp_of_pq(rgb)
+        ictcp[..., 0] = np.power(np.clip(ictcp[..., 0], 0.0, 1.0), 0.9)
+        return pq_of_ictcp(ictcp)
+
+    curve_only = Split(curve_lut)
     de = float(delta_e_itp(curve_only.color(probe), probe).max())
     nits = curve_only.neutral_nits(REFERENCE_NITS)
     print(f"pure courbe : ΔE_ITP max {de:.4f} (203 nits → {nits:.1f})")
     failures += de > CHECK_MAX_DE
 
-    # En SDR, l'identité jusqu'au genou de l'écrêtage doux.
+    # En SDR, l'identité jusqu'au genou de l'écrêtage doux, et les gris jusqu'au blanc.
     sdr, ref = sdr_color_table(identity, 17), identity_table(17)
     below = ref.max(axis=-1) <= SOFT_KNEE
     err = float(np.abs(sdr - ref)[below].max())
-    print(f"identité SDR (sous le genou {SOFT_KNEE}) : écart max {err:.5f}")
+    grey = np.arange(17)
+    err_grey = float(np.abs(sdr[grey, grey, grey] - ref[grey, grey, grey]).max())
+    print(f"identité SDR : écart max {err:.5f} sous le genou {SOFT_KNEE}, {err_grey:.5f} sur les gris")
+    err = max(err, err_grey)
     failures += err > 2e-3
     print("--check :", "réussi" if failures == 0 else "ÉCHEC")
     return 0 if failures == 0 else 1
@@ -319,14 +322,14 @@ def main():
     tables = []
     for path in args.luts:
         table, filled = fill_dark_zone(read_cube(path))
-        split = Split(table)
+        split = Split(table_lut(table))
         report(os.path.basename(path), split, filled)
         out = os.path.join(args.out, color_name(path))
         write_cube(out, sdr_color_table(split, args.size), color_name(path)[:-5], "sdr")
         print(f"  écrit : {out}")
         tables.append(table)
     if args.compose:
-        split = Split(chain(tables))
+        split = Split(table_lut(chain(tables)))
         report(f"pile de {len(tables)} LUT", split, 0)
         out = os.path.join(args.out, args.compose)
         write_cube(out, sdr_color_table(split, args.size), os.path.splitext(args.compose)[0], "sdr")
