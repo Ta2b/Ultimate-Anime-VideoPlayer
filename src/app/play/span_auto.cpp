@@ -104,4 +104,20 @@ SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
   return tick;
 }
 
+std::expected<void, Refusal> prepare_span_now(const SpanPrepare& prepare) {
+  const auto log = log_channel("app");
+  if (prepare.ready) {
+    log->info("SPAN Performance : {}", prepare.note);
+    return {};
+  }
+  if (!prepare.offered || !prepare.run || prepare.refused)
+    return std::unexpected(Refusal{RefusalCode::ModelUnavailable, prepare.note});
+  SpanDeriveProgress progress;
+  const std::stop_source stop;
+  auto done = prepare.run(progress, stop.get_token());
+  if (!done) return std::unexpected(std::move(done.error()));
+  log->info("SPAN Performance : {}", *done);
+  return {};
+}
+
 }  // namespace ajp::app::play

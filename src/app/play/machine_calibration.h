@@ -45,6 +45,7 @@ struct CandidateTrial {
   double fps = 0.0;            // images neuves par seconde obtenues, en moyenne
   double low_fps = 0.0;        // le « 1 % low » : d'après les 1 % d'écarts les plus longs
   double target_fps = 0.0;     // celles visées : la séquence (24 i/s), doublée par RIFE
+  bool fp8 = false;            // SPAN joué en mode Performance (FP8 CUTLASS), son paquet préparé avant
 };
 
 // Les hauteurs essayées pour un écran de cette hauteur, de la plus lourde à la plus légère : au plus la
@@ -59,6 +60,9 @@ ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
 // Personnalisé, réduction Hermite, RIFE 4.22 lite en mode auto Rapide.
 PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base);
+// Ceux d'un essai : candidate_settings, plus le cran Performance de SPAN quand il a joué en FP8.
+PlaySettings trial_settings(const CandidateTrial& trial, PlaySettings base);
+
 // « 720p · SPAN · RIFE 4.22 lite (auto Rapide) » ; pour le tableau et le journal.
 std::string describe(const ChainCandidate& chain);
 
@@ -69,6 +73,9 @@ struct MachineCalibration {
   std::string date;  // AAAA-MM-JJ
   int display_height = 0;
 };
+
+// Les réglages de la chaîne recommandée (trial_settings de son essai).
+PlaySettings chosen_settings(const MachineCalibration& calibration, PlaySettings base);
 
 // Le fichier des résultats (calibration.toml, à côté de play.toml), que calibrate_machine écrit quand
 // plan.data est donné.
@@ -81,7 +88,10 @@ std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
 
 // Les essais, l'un après l'autre (au plus une dizaine) : base porte les réglages de l'utilisateur, fraction
 // reçoit l'avancement (0 à 1). La séquence du bench s'écrit dans plan.video si elle manque. Refus : Cancelled
-// sur demande d'arrêt, DecodeFailed si le premier essai ne rend rien.
+// sur demande d'arrêt, DecodeFailed si le premier essai ne rend rien. Avec plan.span_fp8_video, chaque
+// hauteur de SPAN prépare d'abord le mode Performance (FP8) : dérivé au premier palier, validé (une dizaine
+// de secondes) aux suivants ; ses essais jouent alors en FP8. Un premier refus (autre carte, moteur Vulkan…)
+// le coupe pour la suite.
 std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& plan, const PlaySettings& base,
                                                              int display_height, const std::stop_token& stop,
                                                              const std::function<void(float)>& fraction);

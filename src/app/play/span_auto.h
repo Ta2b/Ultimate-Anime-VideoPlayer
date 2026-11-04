@@ -8,6 +8,7 @@
 // et le panneau des réglages (qui la montre et sait la refaire). Rien ne dépend du panneau ouvert.
 #pragma once
 
+#include <expected>
 #include <memory>
 #include <optional>
 #include <string>
@@ -59,6 +60,10 @@ std::string span_failure_text(std::string_view detail);
 // ne tourne et cette clé n'a pas déjà été tentée.
 bool should_start_span_auto(PrecisionTier precision, const SpanPrepare& prepare, bool job_running,
                             std::string_view key, std::string_view attempted);
+
+// « ajp play --span-prepare » (la calibration de l'assistant) : la préparation tout de suite, sur ce fil,
+// sans lecture. Rien si le paquet est prêt (déjà, ou au bout de la préparation) ; sinon pourquoi.
+std::expected<void, Refusal> prepare_span_now(const SpanPrepare& prepare);
 
 // Ce que la boucle du lecteur doit faire de la tâche à ce tour.
 struct SpanAutoTick {

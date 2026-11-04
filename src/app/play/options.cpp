@@ -116,6 +116,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.fullscreen = true;
     } else if (arg == "--hidden") {
       options.hidden = true;
+    } else if (arg == "--span-prepare") {
+      options.span_prepare = true;
     } else if (arg == "--mute") {
       options.mute = true;
       options.given.emplace_back(arg);
@@ -484,6 +486,7 @@ std::string play_usage() {
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"
+      "  --span-prepare         prépare le mode Performance de SPAN (FP8) sur cette vidéo, puis quitte\n"
       "  --data-dir=DOSSIER     réglages, profils et journal dans ce dossier (moteurs et modèles partagés)\n"
       "  --bench-level=N        joue la chaîne du niveau 0 à 4 (ou auto) ; --bench-out=FICHIER y écrit les "
       "mesures\n"

@@ -49,6 +49,9 @@ struct BenchPlan {
   int display_width = 0;
   int display_height = 0;
   bool display_hdr = true;
+  // La vidéo sur laquelle la calibration de la machine prépare le mode Performance de SPAN (FP8) avant ses
+  // essais SPAN (calibration.mkv) ; vide ou absente : les essais restent en FP16.
+  std::filesystem::path span_fp8_video;
 };
 
 // La ligne de commande de l'enfant d'un niveau (level absent : « auto », le niveau estimé de la machine).
@@ -77,6 +80,12 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
 std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const Variant& variant, int index,
                                                   const std::stop_token& stop,
                                                   std::chrono::seconds allowance);
+
+// La préparation du mode Performance de SPAN (FP8, span_auto.h) pour les réglages d'une variante, dans un
+// enfant « ajp play <plan.span_fp8_video> --span-prepare » (index : son dossier jetable) : vrai si le paquet
+// est prêt pour sa taille de travail. allowance : son délai (le premier construit aussi les moteurs).
+bool prepare_span_variant(const BenchPlan& plan, const Variant& variant, int index,
+                          const std::stop_token& stop, std::chrono::seconds allowance);
 
 struct CompareOutcome {
   Variant a;
