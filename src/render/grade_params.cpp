@@ -303,6 +303,15 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
 }
 
 void sdr_tonemap(GradeParams& p) {
+  // Sans la pile de LUT : réglée pour compenser la compression de KWin, elle porte le blanc SDR vers 5 500
+  // nits, et la courbe vers le SDR en écrêtait le quart de la plage au blanc (audit F5).
+  for (double GradeParams::* mix :
+       {&GradeParams::look_mix, &GradeParams::look_mix2, &GradeParams::look_mix3, &GradeParams::look_mix4,
+        &GradeParams::look_mix5, &GradeParams::look_mix6, &GradeParams::look_mix7, &GradeParams::look_mix8,
+        &GradeParams::look_mix9, &GradeParams::look_mix10, &GradeParams::look_mix11, &GradeParams::look_mix12,
+        &GradeParams::look_mix13, &GradeParams::look_mix14, &GradeParams::look_mix15})
+    p.*mix = 0.0;
+  p.look_pq = 0.0;
   p.sdr_tm = 1.0;
   p.sdr_out = 0.0;
   p.black_lo = 0.0;
