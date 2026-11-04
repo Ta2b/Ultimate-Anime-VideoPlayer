@@ -79,10 +79,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto smooth = parse({"épisode.mkv", "--smooth-drawings"});
   REQUIRE(smooth);
   CHECK(smooth->smooth_drawings);
-  CHECK_FALSE(options->ring_watcher);
+  CHECK(options->ring_watcher);
   const auto watcher = parse({"épisode.mkv", "--ring-watcher"});
   REQUIRE(watcher);
   CHECK(watcher->ring_watcher);
+  CHECK_FALSE(parse({"épisode.mkv", "--no-ring-watcher"})->ring_watcher);
   CHECK(options->precise_wait);
   const auto precise = parse({"épisode.mkv", "--precise-wait"});
   REQUIRE(precise);

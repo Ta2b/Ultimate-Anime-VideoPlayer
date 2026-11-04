@@ -153,9 +153,9 @@ struct PlayOptions {
   // --smooth-drawings : un dessin tenu deux sources se fond en un seul mouvement vers le suivant (chantier
   // 7.9, UpscaleSetup::smooth_drawings). Essai, RIFE mouvement seulement, éteint par défaut.
   bool smooth_drawings = false;
-  // --ring-watcher : un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5). Essai,
-  // éteint par défaut : main sonde l'anneau.
-  bool ring_watcher = false;
+  // Un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5), par défaut ;
+  // --no-ring-watcher : main sonde l'anneau.
+  bool ring_watcher = true;
   // L'attente de la boucle d'affichage à la microseconde (loop_wait.h, 6.7), par défaut ; --no-precise-wait :
   // l'attente d'événement SDL à la milliseconde.
   bool precise_wait = true;
