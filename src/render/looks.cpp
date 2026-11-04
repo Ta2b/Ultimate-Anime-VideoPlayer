@@ -21,11 +21,13 @@ struct Recipe {
   float warm_boost = 0.0F;   // saturation en plus des rouges et oranges
 };
 
-constexpr std::array<BuiltinLook, 4> kLooks{{
+constexpr std::array<BuiltinLook, 5> kLooks{{
     {.key = "maison:vif", .label = "Vivid"},
     {.key = "maison:shinkai", .label = "Cool sky"},
     {.key = "maison:pastel", .label = "Warm pastel"},
     {.key = "maison:aplats", .label = "Crisp flats"},
+    // Méga plan B6 : proposé au menu, jamais posé de lui-même ; la pile de LUT par défaut ne change pas.
+    {.key = "maison:explosif", .label = "Explosive"},
 }};
 
 Recipe recipe_of(std::string_view key) {
@@ -50,6 +52,14 @@ Recipe recipe_of(std::string_view key) {
     r.shadow_tint = {0.012F, 0.004F, -0.004F};
     r.light_tint = {0.02F, 0.01F, -0.015F};
     r.warm_boost = 0.18F;
+  } else if (key ==
+             "maison:explosif") {  // le plus percutant : contraste et couleurs au maximum, éclats relevés
+    r.contrast = 0.70F;
+    r.saturation = 1.50F;
+    r.lift = -0.02F;
+    r.gain = 1.08F;
+    r.warm_boost = 0.15F;
+    r.cool_boost = 0.15F;
   } else {  // « aplats » : contraste fort, noirs creusés, couleurs d'aplat franches
     r.contrast = 0.55F;
     r.saturation = 1.28F;

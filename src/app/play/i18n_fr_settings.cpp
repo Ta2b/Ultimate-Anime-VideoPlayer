@@ -107,6 +107,7 @@ constexpr std::array kSettingsPages{
     Entry{"Cool sky", "Ciel froid"},
     Entry{"Warm pastel", "Pastel chaud"},
     Entry{"Crisp flats", "Aplats nets"},
+    Entry{"Explosive", "Explosif"},
     Entry{"Looks are LUT files (.cube) placed in the luts folder of the player's data, applied in order like "
           "Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs.",
           "Les looks sont des fichiers LUT (.cube) placés dans le dossier luts des données du lecteur, "
