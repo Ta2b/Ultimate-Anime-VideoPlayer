@@ -18,7 +18,7 @@ class VrrWatch {
       candidate_.reset();
       return std::nullopt;
     }
-    if (candidate_ != reading) {
+    if (!candidate_ || *candidate_ != *reading) {  // (écrit ainsi : gcc 16 signale à tort un optional non initialisé)
       candidate_ = reading;  // première lecture différente : on attend la confirmation
       return std::nullopt;
     }
