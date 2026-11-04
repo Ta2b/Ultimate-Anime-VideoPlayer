@@ -298,6 +298,7 @@ std::expected<bool, Refusal> PlaceboScreen::Impl::compose_kept(const pl_frame* i
     params.format = format;
     params.renderable = true;
     params.blit_src = true;
+    params.blit_dst = true;  // le fond noir d'une présentation sans image s'écrit par un effacement
     if (!pl_tex_recreate(gpu, &composed, &params)) return false;  // la composition directe reste
     pl_frame into = target;
     into.planes[0].texture = composed;
@@ -324,7 +325,10 @@ std::expected<void, Refusal> PlaceboScreen::Impl::draw_overlays(const pl_frame& 
   pl_frame on = target;
   on.overlays = layers.data();
   on.num_overlays = static_cast<int>(layers.size());
-  if (!pl_render_image(renderer, nullptr, &on, &pl_render_default_params))
+  // Sans image, libplacebo efface la cible avant de dessiner : ici elle porte déjà la composition recopiée.
+  pl_render_params params = pl_render_default_params;
+  params.border = PL_CLEAR_SKIP;
+  if (!pl_render_image(renderer, nullptr, &on, &params))
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image (OSD) a échoué"});
   return {};
 }

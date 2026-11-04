@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cuda_fp16.h>
-#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -180,14 +180,16 @@ TEST_CASE("l'épilogue de to_pixel écrit l'anneau au bit près de write_rgba16"
   DeviceBytes out(in_count * 4 * sizeof(__half));
   const int out_w = 2 * width - trim, out_h = 2 * height - trim;
   const Surface fused(out_w, out_h);
-  const Surface reference(out_w, out_h);
+  // La référence est écrite sur la surface entière : write_rgba16 lit la sortie FP16 avec sa largeur complète
+  // (2 × width), puis on ne compare que la partie que l'emplacement rogné reçoit.
+  const Surface reference(2 * width, 2 * height);
   const Surface alone(out_w, out_h);
 
   net->bind(workspace.data);
   REQUIRE(net->launch_body(nullptr, in.data, error));
   REQUIRE(net->launch_tail(nullptr, out.data, SpanFp8Ring{{.object = fused.object}, out_w, out_h}, error));
   const WriteParams params{
-      .rgb = out.data, .width = out_w, .height = out_h, .surface = {.object = reference.object}};
+      .rgb = out.data, .width = 2 * width, .height = 2 * height, .surface = {.object = reference.object}};
   REQUIRE(launch_write_rgba16(params, nullptr) == cudaSuccess);
   // Sans sortie FP16 : l'anneau seul, même image.
   REQUIRE(net->launch_body(nullptr, in.data, error));
@@ -198,11 +200,17 @@ TEST_CASE("l'épilogue de to_pixel écrit l'anneau au bit près de write_rgba16"
   const std::vector<ushort4> b = reference.read();
   const std::vector<ushort4> c = alone.read();
   std::size_t differ = 0, differ_alone = 0, low = 0, high = 0;
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    if (std::memcmp(&a[i], &b[i], sizeof(ushort4)) != 0) ++differ;
-    if (std::memcmp(&c[i], &b[i], sizeof(ushort4)) != 0) ++differ_alone;
-    if (b[i].x == 0) ++low;
-    if (b[i].x == 65535) ++high;
+  for (int y = 0; y < out_h; ++y) {
+    for (int x = 0; x < out_w; ++x) {
+      const auto at =
+          static_cast<std::size_t>(y) * static_cast<std::size_t>(out_w) + static_cast<std::size_t>(x);
+      const auto in_full =
+          static_cast<std::size_t>(y) * static_cast<std::size_t>(2 * width) + static_cast<std::size_t>(x);
+      if (std::memcmp(&a[at], &b[in_full], sizeof(ushort4)) != 0) ++differ;
+      if (std::memcmp(&c[at], &b[in_full], sizeof(ushort4)) != 0) ++differ_alone;
+      if (b[in_full].x == 0) ++low;
+      if (b[in_full].x == 65535) ++high;
+    }
   }
   CHECK(differ == 0);
   CHECK(differ_alone == 0);

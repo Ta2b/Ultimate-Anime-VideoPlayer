@@ -123,8 +123,10 @@ TEST_CASE("Backend : construction, chargement et enqueue d'un SPAN contre l'inte
   // Mauvais tenseur : refus nommé, rien de soumis.
   auto wrong = require_value(backend->alloc_tensor(type, Shape{{1, 3, 20, 30}}));
   std::array bad{wrong->tensor()};
+  // La relecture de la sortie a elle-même soumis une copie : « rien de soumis » se juge contre la valeur d'avant.
+  const std::uint64_t before_refusal = require_value(backend->signal()).value;
   require_refusal(backend->enqueue(*engine, bad, outputs), RefusalCode::InputMismatch);
-  CHECK(require_value(backend->signal()).value == 2);
+  CHECK(require_value(backend->signal()).value == before_refusal);
 
   // Un second build trouve l'artefact valable en cache.
   const auto again = build(*backend, model, shapes(20, 28));

@@ -5,7 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>

@@ -129,8 +129,12 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.sdr = true;
     } else if (arg == "--ring-rgb10a2") {
       options.ring_rgb10a2 = true;
+    } else if (arg == "--no-ring-rgb10a2") {
+      options.ring_rgb10a2 = false;
     } else if (arg == "--probe-nvdec") {
       options.probe_nvdec = true;
+    } else if (arg == "--no-probe-nvdec") {
+      options.probe_nvdec = false;
     } else if (arg == "--shot-cuts") {
       options.shot_cuts = true;
     } else if (arg == "--anime-shots") {
@@ -180,18 +184,28 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.smooth_drawings = true;
     } else if (arg == "--ring-watcher") {
       options.ring_watcher = true;
+    } else if (arg == "--no-ring-watcher") {
+      options.ring_watcher = false;
     } else if (arg == "--precise-wait") {
       options.precise_wait = true;
+    } else if (arg == "--no-precise-wait") {
+      options.precise_wait = false;
     } else if (arg == "--audio-pll") {
       options.audio_pll = true;
+    } else if (arg == "--no-audio-pll") {
+      options.audio_pll = false;
     } else if (arg == "--vsync-index") {
       options.vsync_index = true;
+    } else if (arg == "--no-vsync-index") {
+      options.vsync_index = false;
     } else if (arg.starts_with("--present=")) {
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
         return refuse(RefusalCode::FieldOutOfRange,
                       std::format("{} : auto, timing, wait, wayland ou open", arg));
       options.present = *wanted;
+    } else if (arg == "--no-present") {
+      options.present = PresentWanted::Open;
     } else if (arg == "--no-resume") {
       options.resume = false;
     } else if (arg == "--register" || arg == "--unregister") {
@@ -453,10 +467,12 @@ std::string play_usage() {
       "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
       "  --sdr                  sortie SDR même sur un écran HDR (essais du grade SDR)\n"
-      "  --ring-rgb10a2         anneau en RGB10A2 sous TensorRT (moitié moins de mémoire), à mesurer\n"
+      "  --ring-rgb10a2         anneau en RGB10A2 sous TensorRT (moitié moins de mémoire, défaut) ;\n"
+      "                         --no-ring-rgb10a2 : RGBA16\n"
       "  --hdr-metadata[=NITS]  sortie HDR10 avec ses métadonnées, la compression de KWin faite par le\n"
       "                         grade (NITS : la luminosité SDR de KDE, 200 par défaut), à comparer à l'œil\n"
-      "  --probe-nvdec          essai : la pré-analyse des plans décodée par NVDEC en 256x144\n"
+      "  --probe-nvdec          la pré-analyse des plans décodée par NVDEC en 256x144 (défaut ;\n"
+      "                         --no-probe-nvdec : décodage logiciel)\n"
       "  --shot-cuts            essai : les coupes de l'interpolation tirées des plans de la pré-analyse\n"
       "  --hdr-contract-v2      essai : contrat d'écran v2, métadonnées exactes du contrat, look\n"
       "                         ver9-couleur.cube (--hdr-metadata=off : rien d'annoncé)\n"
@@ -476,11 +492,18 @@ std::string play_usage() {
       "                         défaut)\n"
       "  --fast-steady          essai : mode Rapide à pas constant, N images par source fixe dans un plan\n"
       "  --smooth-drawings      essai : un dessin tenu deux images se fond en un mouvement (RIFE mouvement)\n"
-      "  --ring-watcher         essai : un thread attend l'écriture de l'anneau et réveille l'affichage\n"
-      "  --precise-wait         essai : l'attente de l'image suivante à la microseconde\n"
-      "  --audio-pll            essai : l'horloge audio filtrée par une boucle à verrouillage de phase\n"
-      "  --vsync-index          essai : l'image choisie par le numéro de son vblank mesuré, avec hystérésis\n"
-      "  --present=NIVEAU       essai : retour de présentation auto, timing, wait, wayland ou open (défaut)\n"
+      "  --ring-watcher         un thread attend l'écriture de l'anneau et réveille l'affichage (défaut ;\n"
+      "                         --no-ring-watcher : l'affichage sonde)\n"
+      "  --precise-wait         l'attente de l'image suivante à la microseconde (défaut ; --no-precise-wait "
+      ":\n"
+      "                         à la milliseconde)\n"
+      "  --audio-pll            l'horloge audio filtrée par une boucle à verrouillage de phase (défaut ;\n"
+      "                         --no-audio-pll : l'horloge brute)\n"
+      "  --vsync-index          l'image choisie par le numéro de son vblank mesuré, avec hystérésis (défaut "
+      ";\n"
+      "                         --no-vsync-index : l'horloge)\n"
+      "  --present=NIVEAU       retour de présentation wait (défaut), auto, timing, wayland ou open ;\n"
+      "                         --no-present : open, la présentation d'avant\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"

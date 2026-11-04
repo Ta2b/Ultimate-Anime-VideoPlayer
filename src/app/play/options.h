@@ -110,9 +110,9 @@ struct PlayOptions {
   bool software_gpu = false;
   // --sdr : sortie SDR même sur un écran HDR (la swapchain ne demande pas HDR10), pour les essais.
   bool sdr = false;
-  // --ring-rgb10a2 : anneau en RGB10A2 UNORM sous TensorRT (moitié moins de mémoire, étape 5.5a), pour la
-  // mesure du banding ; repli silencieux sur RGBA16 si l'appareil ne le prend pas.
-  bool ring_rgb10a2 = false;
+  // Anneau en RGB10A2 UNORM sous TensorRT (moitié moins de mémoire, étape 5.5a), par défaut ;
+  // --no-ring-rgb10a2 : RGBA16. Repli silencieux sur RGBA16 si l'appareil ne le prend pas.
+  bool ring_rgb10a2 = true;
   // --hdr-metadata[=NITS] : la sortie HDR10 porte ses métadonnées (son vrai maximum), et le grade fait la
   // compression que KWin faisait sans elles ; NITS, la luminosité SDR de KDE (kDefaultKdeSdrNits sans
   // valeur). Pour comparer à l'œil avec la sortie d'aujourd'hui, sans métadonnées.
@@ -127,8 +127,9 @@ struct PlayOptions {
   // --anime-shots : essai (méga plan A2), la méthode « HDR anime » décide par plan : exposition des surfaces
   // et marge des éclats fixées par la pré-analyse, glissant aux coupes (anime_shots.h).
   bool anime_shots = false;
-  // --probe-nvdec : essai, la pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel.
-  bool probe_nvdec = false;
+  // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
+  // --no-probe-nvdec : décodage logiciel.
+  bool probe_nvdec = true;
   bool hdr_metadata_off = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
@@ -153,21 +154,23 @@ struct PlayOptions {
   // --smooth-drawings : un dessin tenu deux sources se fond en un seul mouvement vers le suivant (chantier
   // 7.9, UpscaleSetup::smooth_drawings). Essai, RIFE mouvement seulement, éteint par défaut.
   bool smooth_drawings = false;
-  // --ring-watcher : un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5). Essai,
-  // éteint par défaut : main sonde l'anneau.
-  bool ring_watcher = false;
-  // --precise-wait : l'attente de la boucle d'affichage à la microseconde (loop_wait.h, 6.7). Essai, éteint
-  // par défaut : l'attente d'événement SDL à la milliseconde.
-  bool precise_wait = false;
-  // --audio-pll : l'horloge audio maîtresse filtrée par une PLL (audio::PlayerConfig::pll, 6.9). Essai,
-  // éteint par défaut.
-  bool audio_pll = false;
-  // --vsync-index : l'image choisie par le numéro de son vblank, avec hystérésis (SessionConfig::vsync_index,
-  // 6.6). Essai, éteint par défaut.
-  bool vsync_index = false;
+  // Un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5), par défaut ;
+  // --no-ring-watcher : main sonde l'anneau.
+  bool ring_watcher = true;
+  // L'attente de la boucle d'affichage à la microseconde (loop_wait.h, 6.7), par défaut ; --no-precise-wait :
+  // l'attente d'événement SDL à la milliseconde.
+  bool precise_wait = true;
+  // L'horloge audio maîtresse filtrée par une PLL (audio::PlayerConfig::pll, 6.9), par défaut ;
+  // --no-audio-pll : l'horloge brute.
+  bool audio_pll = true;
+  // L'image choisie par le numéro de son vblank, avec hystérésis (SessionConfig::vsync_index, 6.6), par
+  // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
+  bool vsync_index = true;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
-  // open (le défaut) : la présentation d'aujourd'hui, jusqu'aux mesures 6.11.
-  PresentWanted present = PresentWanted::Open;
+  // wait (le défaut) : present_wait2, ou le meilleur niveau en dessous si l'appareil ne l'offre pas ; auto et
+  // timing ne rendent aucun retour sur NVIDIA 615 / KDE Wayland (séance du 04/11 : 0 revenue) ; --no-present
+  // ou --present=open : la présentation d'avant.
+  PresentWanted present = PresentWanted::Wait;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;

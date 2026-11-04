@@ -165,8 +165,6 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
     for (int tx = 0; tx < taps; ++tx) {
       const int px = p.reduce * ox + base + tx;
       const int py = p.reduce * oy + base + ty;
-      const std::size_t i =
-          static_cast<std::size_t>(py) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(px);
 
       // Flot accumulé (Add : sommes FP16 de chaque bloc, multiplié par l'échelle de son Resize).
       float fl[4];

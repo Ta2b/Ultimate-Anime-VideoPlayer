@@ -24,7 +24,7 @@ constexpr int kTile = 16;                 // 16 × 16 fils, comme le shader de z
 constexpr int kHalo = g::kBlurRadius;     // 7
 constexpr int kSpan = kTile + 2 * kHalo;  // 30
 
-__device__ inline int clampi(int v, int lo, int hi) {
+__host__ __device__ inline int clampi(int v, int lo, int hi) {
   return v < lo ? lo : (v > hi ? hi : v);
 }
 
