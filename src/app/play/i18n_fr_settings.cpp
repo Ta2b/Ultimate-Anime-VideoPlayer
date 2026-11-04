@@ -9,6 +9,7 @@ namespace {
 constexpr std::array kSettingsPages{
     Entry{" · RIFE 4.22 lite (auto Fast)", " · RIFE 4.22 lite (auto Rapide)"},
     Entry{" · no interpolation", " · sans interpolation"},
+    Entry{"Display peak", "Pic de l'écran"},
     Entry{"SPAN off", "SPAN coupé"},
     Entry{"Apply", "Appliquer"},
     Entry{"Bench results", "Résultats du bench"},
@@ -28,6 +29,9 @@ constexpr std::array kSettingsPages{
     Entry{"Testing settings on a very demanding sequence: a few minutes.",
           "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
     Entry{"The bench failed: {}", "Le bench a échoué : {}"},
+    Entry{
+        "The maximum, reached in very bright scenes; it fades out in very dark scenes.",
+        "Le maximum, atteint dans les scènes très claires ; l'effet s'efface dans les scènes très sombres."},
     Entry{"holds", "tient"},
     Entry{"Downscale", "Downscale"},
     Entry{"Upscale", "Upscale"},

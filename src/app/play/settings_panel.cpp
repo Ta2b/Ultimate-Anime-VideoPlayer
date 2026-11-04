@@ -51,37 +51,25 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   if (!choices.hdr_output)
     note(i18n::tr("SDR display: HDR is unavailable. The Color page's grade imitates the HDR look."));
-  panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée
-  ImGui::BeginDisabled(!choices.hdr_output);
-  section(i18n::tr("Adaptive HDR settings"));
-  bool automatic = d.true_hdr_peak == 0;
-  if (ImGui::Checkbox(i18n::tr_format("Auto peak ({} nits)", choices.auto_peak).c_str(), &automatic))
-    d.true_hdr_peak =
-        automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
-  ImGui::BeginDisabled(automatic);
-  int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
-  if (ImGui::SliderInt(i18n::tr("Peak (nits)"), &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi, "%d",
-                       ImGuiSliderFlags_AlwaysClamp) &&
-      !automatic)
-    d.true_hdr_peak = peak;
-  ImGui::EndDisabled();
+  // Tri du 04/11 : la méthode HDR anime règle seule la luminosité ; reste le pic de l'écran, en avancé.
   if (panel::advanced()) {
-    ImGui::BeginDisabled(d.grade && d.grade_values.adaptive);  // le grade adaptatif le pilote
-    ImGui::SliderInt(i18n::tr("Mid gray"), &d.true_hdr_gray, limits::kTrueHdrGray.lo, limits::kTrueHdrGray.hi,
-                     "%d", ImGuiSliderFlags_AlwaysClamp);
+    panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée
+    ImGui::BeginDisabled(!choices.hdr_output);
+    section(i18n::tr("Display peak"));
+    bool automatic = d.true_hdr_peak == 0;
+    if (ImGui::Checkbox(i18n::tr_format("Auto peak ({} nits)", choices.auto_peak).c_str(), &automatic))
+      d.true_hdr_peak =
+          automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
+    ImGui::BeginDisabled(automatic);
+    int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
+    if (ImGui::SliderInt(i18n::tr("Peak (nits)"), &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi,
+                         "%d", ImGuiSliderFlags_AlwaysClamp) &&
+        !automatic)
+      d.true_hdr_peak = peak;
     ImGui::EndDisabled();
-    panel::tip(
-        i18n::tr("With Adapt to scene brightness on, this is the middle gray of dark scenes; bright "
-                 "scenes use Middle gray, bright scene (Color page)."));
+    panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
+    ImGui::EndDisabled();
   }
-  if (panel::advanced() && ImGui::Button(i18n::tr("Defaults"))) {
-    const PlaySettings defaults;
-    d.true_hdr_peak = defaults.true_hdr_peak;
-    d.true_hdr_gray = defaults.true_hdr_gray;
-  }
-  note(i18n::tr("Applied live. Adaptive HDR follows the scene: less expansion on bright scenes."));
-  panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
-  ImGui::EndDisabled();
 }
 
 // Un curseur sur un réglage du grade (double) ; true s'il a bougé. La valeur revient arrondie au
@@ -95,23 +83,6 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
     return false;
   value = std::clamp(std::round(static_cast<double>(shown) * 100.0) / 100.0, range.lo, range.hi);
   return true;
-}
-
-// Contraste et saturation : ceux de TrueHDR, que le HDR adaptatif émule, et que la sortie SDR
-// gradée reprend autour du gris moyen (render::sdr_params) ; un seul réglage pour les trois.
-void look_section(PlaySettings& d) {
-  section(i18n::tr("Contrast and saturation"));
-  ImGui::SliderInt(i18n::tr("Contrast"), &d.true_hdr_contrast, limits::kTrueHdrContrast.lo,
-                   limits::kTrueHdrContrast.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("Saturation"), &d.true_hdr_saturation, limits::kTrueHdrSaturation.lo,
-                   limits::kTrueHdrSaturation.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
-  if (ImGui::Button(i18n::tr("Reset contrast and saturation"))) {
-    const PlaySettings defaults;
-    d.true_hdr_contrast = defaults.true_hdr_contrast;
-    d.true_hdr_saturation = defaults.true_hdr_saturation;
-  }
-  note(i18n::tr("Live, for Adaptive HDR and SDR output."));
-  if (!d.grade) note(i18n::tr("Turn on \"Color grading\" below."));
 }
 
 // Le look : jusqu'à quinze LUT 3D .cube enchaînées dans l'ordre, comme des nœuds de Resolve
@@ -163,108 +134,13 @@ void look_section(PlaySettings& d, const SettingsChoices& choices) {
                "like Resolve nodes; names containing PQ, HDR or 2020 are read as HDR LUTs."));
 }
 
-// Grade adaptatif : les curseurs du grade et le gris moyen sont la scène sombre ; ces valeurs, la
-// scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur TensorRT). Hors du bloc
-// désactivé du grade : section() ouvre un encadré, et un BeginDisabled ne peut pas le traverser.
-void adaptive_section(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
-  using namespace render::grade_limits;
-  render::GradeSettings& g = d.grade_values;
-  // Grade adaptatif : les curseurs ci-dessus et le gris moyen sont la scène sombre ; ces
-  // valeurs, la scène claire, mélangées selon la luminance moyenne lissée de l'image source (moteur
-  // TensorRT).
-  section(i18n::tr("Adaptive to scene brightness"));
-  // Sans profil de calibration pour cet écran, rien à adapter : la calibration l'active (onglet Calibration).
-  const bool calibrated = calibrated_grade(d, choices.display_key) != nullptr;
-  ImGui::BeginDisabled(!calibrated && !g.adaptive);
-  ImGui::Checkbox(i18n::tr("Adapt to scene brightness"), &g.adaptive);
-  ImGui::EndDisabled();
-  if (!calibrated && !g.adaptive)
-    note(
-        i18n::tr("Calibrate a grade profile for this display first: the adaptive grade turns on at the "
-                 "end of the calibration."));
-  ImGui::BeginDisabled(!g.adaptive);
-  const auto percent_slider = [](const char* label, double& value) {
-    auto shown = static_cast<float>(value);
-    if (ImGui::SliderFloat(label, &shown, static_cast<float>(kAdaptiveLuma.lo),
-                           static_cast<float>(kAdaptiveLuma.hi), "%.0f %%", ImGuiSliderFlags_AlwaysClamp))
-      value = std::clamp(std::round(static_cast<double>(shown)), kAdaptiveLuma.lo, kAdaptiveLuma.hi);
-  };
-  percent_slider(i18n::tr("Dark scene up to"), g.adaptive_lo);
-  percent_slider(i18n::tr("Bright scene from"), g.adaptive_hi);
-  if (g.adaptive_hi <= g.adaptive_lo) g.adaptive_hi = std::min(g.adaptive_lo + 1.0, kAdaptiveLuma.hi);
-  grade_slider(i18n::tr("Deep blacks, bright scene"), g.adaptive_shadows, kShadows);
-  ImGui::BeginDisabled(!choices.hdr_output);  // la vibrance adaptative ne joue pas en sortie SDR
-  grade_slider(i18n::tr("Colors, saturated blue scene"), g.adaptive_vibrance, kVibrance);
-  ImGui::EndDisabled();
-  grade_slider(i18n::tr("Colors cut, bright scene"), g.adaptive_vibrance_cut, kAdaptiveCut);
-  auto gray = static_cast<float>(g.adaptive_gray);
-  if (ImGui::SliderFloat(i18n::tr("Middle gray, bright scene"), &gray, static_cast<float>(kMiddleGray.lo),
-                         static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
-    g.adaptive_gray = std::clamp(std::round(static_cast<double>(gray)), kMiddleGray.lo, kMiddleGray.hi);
-  auto glow_gray = static_cast<float>(g.adaptive_glow_gray);
-  if (ImGui::SliderFloat(i18n::tr("Middle gray, glow scene"), &glow_gray, static_cast<float>(kMiddleGray.lo),
-                         static_cast<float>(kMiddleGray.hi), "%.0f", ImGuiSliderFlags_AlwaysClamp))
-    g.adaptive_glow_gray =
-        std::clamp(std::round(static_cast<double>(glow_gray)), kMiddleGray.lo, kMiddleGray.hi);
-  grade_slider(i18n::tr("Deep blacks, glow scene"), g.adaptive_glow_shadows, kShadows);
-  grade_slider(i18n::tr("Colors, glow scene"), g.adaptive_glow_vibrance, kVibrance);
-  ImGui::EndDisabled();
-  scene_correction(d, choices, actions);
-  ImGui::BeginDisabled(!g.adaptive);  // les statistiques ne s'écrivent que sous le grade adaptatif
-  ImGui::Checkbox(i18n::tr("Record scene statistics (learning)"), &d.adaptive_record);
-  ImGui::EndDisabled();
-  note(
-      i18n::tr("The sliders above and the middle gray are for dark scenes; the values here apply to bright "
-               "scenes, blended with the source's smoothed average brightness. A dark scene with a bright "
-               "glow (magic circle, lamp at night) is judged by its background and takes its own values."));
-}
-
-void grade_tab(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
-  // Le grade s'applique sur toutes les routes, le mode SDR compris : il imite le rendu HDR (contraste,
-  // couleurs riches, hautes lumières) pour ceux qui n'ont pas d'écran HDR. L'onglet reste actif.
-  look_section(d);
+void grade_tab(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& /*actions*/) {
+  // Tri du 04/11 : la méthode HDR anime (guidée, par plan) fait le rendu ; il reste les noirs profonds, qui
+  // suivent la scène (le curseur est leur maximum, en scène très claire), et la pile de LUT en avancé.
   section(i18n::tr("Color grading"));
-  ImGui::Checkbox(i18n::tr("Color grading"), &d.grade);
-  ImGui::BeginDisabled(!d.grade);
-  if (panel::advanced()) look_section(d, choices);  // la pile de LUT : réglages avancés seulement
-  render::GradeSettings& g = d.grade_values;
-  using namespace render::grade_limits;
-  bool moved = false;
-  if (panel::advanced()) {
-    // Le grade adaptatif a la main sur le grade : ses curseurs se figent tant qu'il est coché.
-    if (g.adaptive)
-      note(i18n::tr("The adaptive grade drives these settings: untick it to set them by hand."));
-    ImGui::BeginDisabled(g.adaptive);
-    // Sur une sortie SDR, ni les éclats, ni les zones claires, ni le gamut large n'ont d'effet (sdr_params).
-    ImGui::BeginDisabled(!choices.hdr_output);
-    moved |= grade_slider(i18n::tr("Highlights"), g.highlights_rtx, kHighlights);
-    moved |= grade_slider(i18n::tr("Bright areas"), g.area_rtx, kAreaRtx);
-    ImGui::EndDisabled();
-    moved |= grade_slider(i18n::tr("Colors"), g.vibrance_rtx, kVibrance);
-    ImGui::BeginDisabled(!choices.hdr_output);
-    moved |= grade_slider(i18n::tr("Wide colors"), g.expand, kExpand);
-    ImGui::EndDisabled();
-    moved |= grade_slider(i18n::tr("Deep blacks"), g.shadows, kShadows);
-    moved |= grade_slider(i18n::tr("Color limiter"), g.guard, kGuard);
-    (void)moved;
-    ImGui::BeginDisabled(!choices.hdr_output);
-    ImGui::Checkbox(i18n::tr("Display P3 gamut"), &g.gamut_p3);
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();  // grade adaptatif
-    if (!choices.hdr_output)
-      note(
-          i18n::tr("SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut have no effect "
-                   "and are greyed out."));
-  }
-  ImGui::EndDisabled();
-  if (panel::advanced()) adaptive_section(d, choices, actions);
-  if (d.hdr_native) {
-    note(i18n::tr("Adaptive HDR path: libplacebo in PQ with a scene-based TrueHDR look, then the grade."));
-  } else {
-    note(choices.hdr_output
-             ? i18n::tr("SDR mode: the grade imitates the HDR look in the display's HDR10 container.")
-             : i18n::tr("SDR mode: the grade imitates the HDR look without an HDR display."));
-  }
+  grade_slider(i18n::tr("Deep blacks"), d.grade_values.shadows, render::grade_limits::kShadows);
+  panel::tip(i18n::tr("The maximum, reached in very bright scenes; it fades out in very dark scenes."));
+  if (panel::advanced()) look_section(d, choices);
 }
 
 // Composition finale (Image IA > Agrandissement, réglages avancés) : le filtre vers la fenêtre et le
@@ -630,7 +506,10 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "HDR") {
         hdr_tab(draft_, choices);
         if (!grade_wizard_) grade_wizard_ = std::make_unique<GradeWizard>();
-        grade_calibration(draft_, choices, *grade_wizard_, scale, io.DisplaySize.x - pad - width, actions);
+        // La calibration du grade d'avant ne s'ouvre plus d'ici (tri du 04/11) ; celle que l'assistant lance
+        // va à son terme.
+        if (grade_wizard_->step > 0 || grade_wizard_->autostart)
+          grade_calibration(draft_, choices, *grade_wizard_, scale, io.DisplaySize.x - pad - width, actions);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
         grade_tab(draft_, choices, actions);
