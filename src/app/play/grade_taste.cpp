@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "core/charconv.h"
 #include "render/adaptive_rules.h"
 #include "render/curve.h"
 
@@ -33,12 +34,12 @@ double age_weight(std::int64_t unix_s, std::int64_t now_unix) {
 }
 
 bool number(std::string_view text, double& out) {
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
+  const auto [end, error] = core::from_chars(text.data(), text.data() + text.size(), out);
   return error == std::errc{} && end == text.data() + text.size();
 }
 
 bool number(std::string_view text, std::int64_t& out) {
-  const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
+  const auto [end, error] = core::from_chars(text.data(), text.data() + text.size(), out);
   return error == std::errc{} && end == text.data() + text.size();
 }
 

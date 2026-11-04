@@ -20,7 +20,7 @@ class VsyncPhase {
   void note(std::int64_t host_us);
   bool known() const { return known_; }
   // Le vsync (instant hôte) le plus proche de host_us ; host_us si la phase est inconnue.
-  std::int64_t near(std::int64_t host_us) const;
+  std::int64_t nearest(std::int64_t host_us) const;  // pas « near » : une macro de windows.h
 
  private:
   std::int64_t period_us_ = 0;

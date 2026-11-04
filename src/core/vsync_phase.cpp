@@ -25,7 +25,7 @@ void VsyncPhase::note(std::int64_t host_us) {
   phase_us_ = std::fmod(phase_us_ + kSmoothing * delta + period, period);
 }
 
-std::int64_t VsyncPhase::near(std::int64_t host_us) const {
+std::int64_t VsyncPhase::nearest(std::int64_t host_us) const {
   if (!known_ || period_us_ <= 0) return host_us;
   const auto period = static_cast<double>(period_us_);
   const double k = std::round((static_cast<double>(host_us) - phase_us_) / period);

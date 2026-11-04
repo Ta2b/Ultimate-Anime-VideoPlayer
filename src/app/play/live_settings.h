@@ -374,7 +374,7 @@ class LiveSettings {
     if (!vsync_.known()) return {};
     // Choisie une demi-période après son pts, affichée au vsync d'après : pts = vsync + délai + période / 2.
     return {.period_us = vsync_.period_us(),
-            .anchor_host_us = vsync_.near(host_us) + vsync_delay_us_ + vsync_.period_us() / 2};
+            .anchor_host_us = vsync_.nearest(host_us) + vsync_delay_us_ + vsync_.period_us() / 2};
   }
   bool free_should_fall_back(std::int64_t now_us) const {
     const std::scoped_lock lock(mutex_);
