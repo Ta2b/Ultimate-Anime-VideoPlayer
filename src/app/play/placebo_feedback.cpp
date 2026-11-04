@@ -36,12 +36,14 @@ struct PresentFeedback::TimingStorage {
 };
 
 PresentFeedback::PresentFeedback(pl_vulkan vk, PresentLevel level, const PresentCaps& caps,
-                                 std::shared_ptr<spdlog::logger> channel)
+                                 std::shared_ptr<spdlog::logger> channel,
+                                 std::unique_ptr<WaylandPresentation> wayland)
     : vk_(vk),
       level_(level),
       caps_(caps),
       channel_(std::move(channel)),
       api_(std::make_unique<Api>()),
+      wayland_(std::move(wayland)),
       timing_(std::make_unique<TimingStorage>()) {
 #ifdef AJP_PRESENT_FEEDBACK
   const auto load = [&](auto& into, const char* fn) {
@@ -71,10 +73,10 @@ PresentFeedback::PresentFeedback(pl_vulkan vk, PresentLevel level, const Present
 
 PresentFeedback::~PresentFeedback() {
   channel_->info(
-      "présentation : niveau {}, {} présentées, {} revenues, {} perdues, {} sans demande de date, {} file "
-      "pleine ; {:.3f} Hz mesurés, latence de sortie {} µs",
-      name(level_), ledger_.issued(), ledger_.returned(), ledger_.lost(), ledger_.untimed(), queue_full_,
-      clock_.hz(), clock_.output_latency_us());
+      "présentation : niveau {}, {} présentées, {} revenues ({} écartées), {} perdues, {} sans demande de "
+      "date, {} file pleine ; {:.3f} Hz mesurés, latence de sortie {} µs",
+      name(level_), ledger_.issued(), ledger_.returned(), discarded_, ledger_.lost(), ledger_.untimed(),
+      queue_full_, clock_.hz(), clock_.output_latency_us());
 }
 
 const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::int64_t now_us,
@@ -86,6 +88,14 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
   if (recreations != recreations_) {
     recreations_ = recreations;
     new_swapchain(sw, now_us);
+  }
+  if (level_ == PresentLevel::Wayland) {
+    // wp_presentation : pas d'identifiant Vulkan (la swapchain n'en a pas), la demande part au compositeur.
+    read_wayland();
+    const core::PresentLedger::Issue issue = ledger_.issue(now_us, 0, wayland_ != nullptr);
+    last_id_ = issue.id;
+    if (wayland_ && issue.timing) wayland_->request(issue.id);
+    return nullptr;
   }
   const bool timing = level_ == PresentLevel::Timing || level_ == PresentLevel::TimingAbsolute;
   if (timing) {
@@ -99,6 +109,7 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
   const core::PresentLedger::Issue issue =
       ledger_.issue(now_us, target_us, !timing || (domain_.known() && level_ != PresentLevel::Wait));
   last_id_ = issue.id;
+  // Wait et Timing seulement : la swapchain a VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR (present_flags).
   present_ = pl_vulkan_present{.present_id = caps_.present_id2 ? issue.id : 0, .timing = nullptr};
 #ifdef AJP_PRESENT_FEEDBACK
   if (timing && issue.timing) {
@@ -133,6 +144,7 @@ void PresentFeedback::submitted(VkResult result) {
 }
 
 void PresentFeedback::new_swapchain(VkSwapchainKHR swapchain, std::int64_t now_us) {
+  if (level_ == PresentLevel::Wayland) return;  // les retours du compositeur suivent la surface
   ledger_.forget();
   domain_.reset();
   local_domain_ = false;
@@ -296,6 +308,20 @@ void PresentFeedback::poll_wait(VkSwapchainKHR swapchain, std::int64_t now_us) {
   (void)swapchain;
   (void)now_us;
 #endif
+}
+
+void PresentFeedback::read_wayland() {
+  if (!wayland_) return;
+  wayland_done_.clear();
+  wayland_->read(wayland_done_);
+  for (const WaylandDone& done : wayland_done_) {
+    if (done.visible_us == 0) {
+      if (ledger_.report(done.id, 0)) ++discarded_;
+      continue;
+    }
+    if (done.refresh_ns != 0) refresh_duration_ = done.refresh_ns;
+    accept(done.id, done.visible_us, true);
+  }
 }
 
 void PresentFeedback::accept(std::uint64_t id, std::int64_t visible_us, bool dated) {

@@ -477,13 +477,19 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   // Le niveau de retour de présentation (present_level.h) : à --present=open, la swapchain d'aujourd'hui.
   impl->present_caps =
       options.present == PresentWanted::Open ? PresentCaps{} : read_present_caps(impl->vk, impl->surface);
+  // wp_presentation (placebo_wayland.h), seulement s'il peut servir.
+  std::unique_ptr<WaylandPresentation> wayland;
+  if (options.present == PresentWanted::Auto || options.present == PresentWanted::Wayland)
+    wayland = WaylandPresentation::open(impl->window, impl->channel);
+  impl->present_caps.wayland_presentation = wayland != nullptr;
   impl->present_level = choose_present_level(impl->present_caps, options.present);
   if (options.present != PresentWanted::Open) {
     const PresentCaps& c = impl->present_caps;
     impl->channel->info(
         "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, date "
-        "absolue {}, horodatages calibrés {})",
-        name(impl->present_level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated);
+        "absolue {}, horodatages calibrés {}, wp_presentation {})",
+        name(impl->present_level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated,
+        c.wayland_presentation);
   }
   const SwapchainShape shape = swapchain_shape(impl->present_level);
   pl_vulkan_swapchain_params sw_params{};
@@ -495,9 +501,10 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->swapchain = pl_vulkan_create_swapchain(impl->vk, &sw_params);
   if (impl->swapchain == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
-  if (impl->present_level != PresentLevel::Open && impl->present_level != PresentLevel::Wayland)
-    impl->feedback =
-        std::make_unique<PresentFeedback>(impl->vk, impl->present_level, impl->present_caps, impl->channel);
+  if (impl->present_level != PresentLevel::Open)
+    impl->feedback = std::make_unique<PresentFeedback>(
+        impl->vk, impl->present_level, impl->present_caps, impl->channel,
+        impl->present_level == PresentLevel::Wayland ? std::move(wayland) : nullptr);
   log_surface_color_spaces(impl->vk, impl->surface);
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);
   impl->open_shader_cache(options.shader_cache);
