@@ -162,7 +162,7 @@ using Rgb = std::array<double, 3>;
 // L'image entière passée par le grade : ses codes 16 bits RGBA.
 inline std::vector<std::uint16_t> graded_image(Gpu& gpu, const std::vector<std::uint16_t>& source,
                                                const GradeParams& params) {
-  const bool sdr = params.sdr_out > 0.5;
+  const bool sdr = params.sdr_out > 0.5 || params.sdr_tm > 0.5;  // sdr_tm : cible SDR, grade en PQ
   const pl_gpu g = gpu.vk->gpu;
   pl_tex_params tex_params{};
   tex_params.w = kSide;
