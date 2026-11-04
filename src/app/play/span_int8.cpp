@@ -172,9 +172,11 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
     };
     if (listed("refused_sizes")) {
       const std::string note = i18n::tr_format("{}: rejected at {}", where, size);
-      return old_gate ? stale(note) : refused(note);
+      if (old_gate) return stale(note);
+      if (listed(gate_refusals_key())) return refused(note);
+      // Refusé par un lecteur plus ancien : la porte d'aujourd'hui rejuge cette taille.
     }
-    if (!listed("validated_sizes")) {
+    if (!listed("validated_sizes") || listed("refused_sizes")) {
       SpanInt8Lookup pending = refused(i18n::tr_format("{}: not validated at {} yet", where, size));
       pending.unvalidated_size = size;
       return pending;
@@ -215,6 +217,28 @@ std::expected<ReceiptSizes, Refusal> read_receipt_sizes(const std::filesystem::p
   take("validated_sizes", out.validated);
   take("refused_sizes", out.refused);
   return out;
+}
+
+std::string gate_refusals_key() {
+  return std::format("refused_sizes_gate{}", gpu::span_fp8::kGateVersion);
+}
+
+std::string with_gate_refusals(std::string_view receipt, const std::vector<std::string>& refused) {
+  const std::string key = gate_refusals_key();
+  const std::string head = key + " =";
+  std::string out;
+  std::size_t at = 0;
+  while (at < receipt.size()) {
+    std::size_t end = receipt.find('\n', at);
+    if (end == std::string_view::npos) end = receipt.size();
+    const std::string_view line = receipt.substr(at, end - at);
+    if (!line.starts_with(head)) {
+      out += line;
+      out += '\n';
+    }
+    at = end + 1;
+  }
+  return out + gpu::span_fp8::sizes_line(key, refused) + "\n";
 }
 
 std::optional<std::string> span_int8_source(const std::string& file, SpanVariantKind* kind) {
