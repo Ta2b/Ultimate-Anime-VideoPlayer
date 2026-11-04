@@ -145,9 +145,9 @@ struct PlayOptions {
   bool split_look = false;
   // --grade-ring : le grade exact fait dans l'anneau par le backend CUDA (chantier 2c,
   // docs/adr/0009-grade-dans-l-anneau.md), l'écran montrant les images gradées sans hooks ; --grade-ring=off
-  // : le grade reste en shader à l'écran. Allumé par défaut depuis le 04/11 : à l'œil de Tatoub, il est
-  // supérieur au grade à l'écran et corrige les petits défauts des peaux (la porte des 30 plans, 2.11, reste
-  // à faire).
+  // : le grade reste en shader à l'écran. Allumé par défaut depuis le 04/11 (à l'œil de Tatoub, supérieur au
+  // grade à l'écran). Il ne s'applique qu'au corps Fused (placebo_grade.cpp) : avec le corps par défaut
+  // (AnimeGuided), l'interrupteur ne change pas l'image. La porte des 30 plans (2.11) reste à faire.
   bool grade_ring = true;
   // --fast-steady : le mode Rapide à pas constant par plan (chantier 7, core/steady_rate.h) : N images par
   // source, constant dans un plan, au lieu de la grille libre. Essai, éteint par défaut jusqu'aux
