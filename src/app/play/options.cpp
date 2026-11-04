@@ -129,6 +129,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.sdr = true;
     } else if (arg == "--ring-rgb10a2") {
       options.ring_rgb10a2 = true;
+    } else if (arg == "--probe-nvdec") {
+      options.probe_nvdec = true;
     } else if (arg == "--shot-cuts") {
       options.shot_cuts = true;
     } else if (arg == "--hdr-contract-v2") {
@@ -448,6 +450,7 @@ std::string play_usage() {
       "  --ring-rgb10a2         anneau en RGB10A2 sous TensorRT (moitié moins de mémoire), à mesurer\n"
       "  --hdr-metadata[=NITS]  sortie HDR10 avec ses métadonnées, la compression de KWin faite par le\n"
       "                         grade (NITS : la luminosité SDR de KDE, 200 par défaut), à comparer à l'œil\n"
+      "  --probe-nvdec          essai : la pré-analyse des plans décodée par NVDEC en 256x144\n"
       "  --shot-cuts            essai : les coupes de l'interpolation tirées des plans de la pré-analyse\n"
       "  --hdr-contract-v2      essai : contrat d'écran v2, métadonnées exactes du contrat, look\n"
       "                         ver9-couleur.cube (--hdr-metadata=off : rien d'annoncé)\n"

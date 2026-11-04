@@ -172,8 +172,9 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   const int auto_threads = std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 4);
 #endif
   const int threads = options_.threads > 0 ? options_.threads : auto_threads;
-  auto decoder =
-      VideoDecoder::open(*video, DecoderOptions{.attempts = {HwApi::Software}, .threads = threads});
+  auto decoder = VideoDecoder::open(
+      *video, DecoderOptions{
+                  .attempts = {HwApi::Software}, .threads = threads, .cuvid_resize = options_.cuvid_resize});
   if (!decoder) return fail(std::move(decoder.error()));
 
   // Repart de at_us : le plan en cours est clos là, un nouveau découpage commence (son premier plan n'a pas

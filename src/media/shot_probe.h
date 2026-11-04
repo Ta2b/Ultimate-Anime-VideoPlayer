@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 
 #include "core/frame.h"
@@ -32,7 +33,11 @@ struct ShotProbeOptions {
   int threads = 0;  // threads du décodeur ; 0 : la moitié des cœurs, 2 à 4 (1 sous Windows)
   std::int64_t lead_us = 180'000'000;      // avance au-delà de laquelle l'analyse attend
   std::int64_t skip_known_us = 5'000'000;  // zone déjà analysée plus longue : sautée
+  // --probe-nvdec (8.8) : les images décodées par NVDEC à cette taille (DecoderOptions::cuvid_resize) ;
+  // vide : le décodeur logiciel en pleine taille.
+  std::string cuvid_resize;
 };
+inline constexpr const char* kProbeCuvidSize = "256x144";
 
 class ShotProbe {
  public:

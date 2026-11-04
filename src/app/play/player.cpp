@@ -284,6 +284,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
   ShotWork shots{.cache_dir = paths.data / "plans"};
+  if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
   bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
   // PlayFile (la calibration du grade) : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;

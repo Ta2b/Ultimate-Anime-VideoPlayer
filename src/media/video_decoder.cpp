@@ -10,6 +10,7 @@
 
 extern "C" {
 #include <libavutil/cpu.h>
+#include <libavutil/dict.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/mathematics.h>
 }
@@ -160,7 +161,8 @@ struct VideoDecoder::State {
     return {};
   }
 
-  std::expected<void, Refusal> open_codec(const AVCodec& decoder, const TrackInfo& track, int threads) {
+  std::expected<void, Refusal> open_codec(const AVCodec& decoder, const TrackInfo& track, int threads,
+                                          const std::string& resize = {}) {
     CodecContextPtr ctx(avcodec_alloc_context3(&decoder));
     if (!ctx) return refuse(RefusalCode::DecoderUnavailable, "contexte de codec : mémoire insuffisante");
     if (const int err = avcodec_parameters_to_context(ctx.get(), &track.parameters->av()); err < 0) {
@@ -173,9 +175,12 @@ struct VideoDecoder::State {
     ctx->thread_count = hw.device ? 1 : software_threads(threads);
     if (hw.device) ctx->hw_device_ctx = av_buffer_ref(hw.device.get());
     if (direct) ctx->hwaccel_flags |= AV_HWACCEL_FLAG_UNSAFE_OUTPUT;
-    if (const int err = avcodec_open2(ctx.get(), &decoder, nullptr); err < 0) {
+    AVDictionary* settings = nullptr;
+    if (!resize.empty()) (void)av_dict_set(&settings, "resize", resize.c_str(), 0);
+    const int err = avcodec_open2(ctx.get(), &decoder, &settings);
+    av_dict_free(&settings);
+    if (err < 0)
       return refuse_av(RefusalCode::DecoderUnavailable, std::format("{} : avcodec_open2", name(api)), err);
-    }
     codec = std::move(ctx);
     return {};
   }
@@ -192,6 +197,20 @@ struct VideoDecoder::State {
       if (decoder == nullptr) {
         return refuse(RefusalCode::DecoderUnavailable,
                       std::format("aucun décodeur {}", avcodec_get_name(id)));
+      }
+      // 8.8 : l'image réduite par NVDEC, sinon le logiciel ordinaire.
+      if (!options.cuvid_resize.empty()) {
+        const std::string cuvid = std::format("{}_cuvid", avcodec_get_name(id));
+        if (const AVCodec* reduced = avcodec_find_decoder_by_name(cuvid.c_str()); reduced == nullptr) {
+          log->info("{} absent de FFmpeg : décodage logiciel en pleine taille", cuvid);
+        } else if (auto opened_reduced = open_codec(*reduced, track, 1, options.cuvid_resize);
+                   !opened_reduced) {
+          log->info("{} refusé ({}) : décodage logiciel en pleine taille", cuvid,
+                    opened_reduced.error().detail);
+        } else {
+          log->info("{} : images réduites à {}", cuvid, options.cuvid_resize);
+          return {};
+        }
       }
       return open_codec(*decoder, track, options.threads);
     }

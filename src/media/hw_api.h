@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -62,6 +63,11 @@ struct DecoderOptions {
   // mapperait pas, et l'image serait perdue. Le prix : environ 25 surfaces de plus qu'avec la
   // copie, ~80 Mo en 1080p 8 bits ; au-delà de kMaxDirectSurfacePixels, la copie reste.
   int direct_surfaces = 0;
+  // Décodage logiciel par le décodeur NVDEC de FFmpeg (<codec>_cuvid) qui rend l'image réduite à cette taille
+  // (« 256x144 », son option resize) en mémoire hôte : la pré-analyse des plans (8.8) n'a besoin que de peu
+  // de points. Vide, ou décodeur cuvid absent ou refusé (pas de GPU NVIDIA) : le décodeur logiciel ordinaire,
+  // le repli journalisé.
+  std::string cuvid_resize;
 };
 
 inline constexpr int kMaxExtraHwFrames = 32;
