@@ -356,6 +356,9 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.was_given("--truehdr-saturation")) s.true_hdr_saturation = options.true_hdr_saturation;
   if (options.was_given("--truehdr-gray")) s.true_hdr_gray = options.true_hdr_gray;
   if (options.was_given("--truehdr-peak")) s.true_hdr_peak = options.true_hdr_peak;
+  s.grade_values.anime_contrast = options.anime_contrast;
+  s.grade_values.anime_saturation = options.anime_saturation;
+  s.grade_values.anime_highlights = options.anime_highlights;
   return s;
 }
 

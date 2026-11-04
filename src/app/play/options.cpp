@@ -228,6 +228,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
                                           "--keys",
                                           "--work-height",
                                           "--rife-model",
+                                          "--anime-contrast",
+                                          "--anime-saturation",
+                                          "--anime-highlights",
                                           "--rife",
                                           "--truehdr-peak",
                                           "--truehdr-contrast",
@@ -284,6 +287,16 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           if (name == "--truehdr-contrast") options.true_hdr_contrast = *setting;
           if (name == "--truehdr-saturation") options.true_hdr_saturation = *setting;
           if (name == "--truehdr-gray") options.true_hdr_gray = *setting;
+        } else if (name == "--anime-contrast" || name == "--anime-saturation" ||
+                   name == "--anime-highlights") {
+          const auto percent = number<int>(text);
+          if (!percent || *percent < 0 || *percent > 200) {
+            return refuse(RefusalCode::FieldOutOfRange,
+                          std::format("{} : « {} » n'est pas un pourcentage entre 0 et 200", name, text));
+          }
+          if (name == "--anime-contrast") options.anime_contrast = *percent;
+          if (name == "--anime-saturation") options.anime_saturation = *percent;
+          if (name == "--anime-highlights") options.anime_highlights = *percent;
         } else if (name == "--rife-model") {
           options.rife_model = std::filesystem::path(text);
         } else if (name == "--rife") {
@@ -484,6 +497,8 @@ std::string play_usage() {
       "  --anime-shots    essai : --hdr-anime décidée par plan (exposition, marge des éclats), glissée aux "
       "coupes\n"
       "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
+      "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
+      "                   peps de --hdr-anime : contraste, saturation, éclats, 0 à 200 % (100 : tel quel)\n"
       "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
       "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"

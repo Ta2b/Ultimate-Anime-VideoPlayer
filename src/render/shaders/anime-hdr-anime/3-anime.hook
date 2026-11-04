@@ -95,12 +95,31 @@ vec4 hook() {
     float key = clamp((fs_apl >= 0.0 ? fs_apl : 0.15 * white) / sdr_white, 0.0, 1.0);
     float p_hl = peak * mix(1.0, 0.5, smoothstep(0.30, 0.70, key));
     float lvl = max(base, y * spark);
-    float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * (spec_gain - 1.0));
+    float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * (spec_gain - 1.0) * an_spec);
     emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
     float gain = mix(an_lift, max(emit_out / lvl, an_lift), emitter);
 
     vec3 c = lin * gain;
     c *= shadow_ratio(max(max(c.r, c.g), c.b), shadows);
+    // Peps (--anime-contrast, --anime-saturation) : contraste en puissance de la luminance autour du gris des
+    // surfaces, puis saturation (ecart a la luminance, attenuee vers le pic, jamais de canal negatif).
+    // Identite exacte a an_punch = 0 et an_chroma = 1.
+    float yc = dot(c, LUMA);
+    if (yc > 1e-4 && an_punch != 0.0) {
+        float pivot = 0.4 * white;
+        float x = yc / pivot;
+        float shaped = pivot * pow(x, 1.0 + an_punch * (x >= 1.0 ? 0.55 : 0.40));
+        c *= shaped / yc;
+        yc = shaped;
+    }
+    if (yc > 1e-4 && an_chroma != 1.0) {
+        float k = 1.0 + (an_chroma - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yc));
+        vec3 d = c - vec3(yc);
+        float room = 1e6;
+        for (int i = 0; i < 3; i++)
+            if (d[i] < 0.0) room = min(room, yc / -d[i]);
+        c = vec3(yc) + d * clamp(k, 0.0, room);
+    }
     // Garde-fou : jamais au-dessus du pic, teinte gardee.
     float m = max(max(c.r, c.g), c.b);
     if (m > 1e-4) c *= shoulder(m, 0.80 * peak, peak) / m;

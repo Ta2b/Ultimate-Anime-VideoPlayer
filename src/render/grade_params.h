@@ -141,6 +141,11 @@ struct GradeSettings {
   // La méthode « HDR anime » décidée par plan (méga plan A2, --anime-shots) : l'exposition des surfaces du
   // plan, en diaphragmes (|E| ≤ 0,25, render/curve.h) ; 0 : le relèvement fixe. Jamais écrite dans play.toml.
   double anime_exposure = 0.0;
+  // Le peps de la méthode « HDR anime » (--anime-contrast, --anime-saturation, --anime-highlights), en % ;
+  // 100 : la méthode telle quelle. Jamais écrit dans play.toml.
+  int anime_contrast = 100;
+  int anime_saturation = 100;
+  int anime_highlights = 100;
   double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
   double middle_gray = 50.0;
@@ -283,6 +288,9 @@ struct GradeParams {
   double fs_bright = 0.0;
   // Méthode « HDR anime » (GradeBody::Anime) : relèvement fixe des surfaces, le même dans tous les plans.
   double an_lift = kAnimeLift;
+  double an_punch = 0.0;   // --anime-contrast : contraste en plus (0 : aucun)
+  double an_chroma = 1.0;  // --anime-saturation : facteur de saturation (1 : identité)
+  double an_spec = 1.0;    // --anime-highlights : part de la montée des éclats (1 : celle du grade)
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

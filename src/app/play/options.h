@@ -177,6 +177,11 @@ struct PlayOptions {
   // --anime-guided : essai (méga plan A3), --hdr-anime avec la carte locale guidée par le pixel (le halo ne
   // déborde plus sur la surface voisine) ; implique --hdr-anime.
   bool anime_guided = false;
+  // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
+  // : le peps de --hdr-anime et --anime-guided, à régler à l'œil (render::GradeSettings::anime_contrast…).
+  int anime_contrast = 100;
+  int anime_saturation = 100;
+  int anime_highlights = 100;
   // --grade-deband : le grade fait précéder la source d'un débandage (placebo_screen.cpp) ; coupé par défaut.
   bool grade_deband = false;
   bool skin_mask = false;  // --skin-mask : le grade distingue la peau (coupé par défaut)
