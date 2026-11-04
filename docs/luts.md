@@ -96,3 +96,10 @@ L'apprentissage (8.10) suit la courbe par plan sous cet essai : les corrections 
 de migration (gris → décalage E par classe de scène sombre, éclat, claire ou ciel, ±0,25 ; noirs → contraste du
 pied ; couleurs → vibrance, au plus 1,15) et s'écrivent dans `adaptive-learning-v2.tsv` ; les échantillons
 d'`adaptive-learning.tsv`, faits pour l'autre grade, sont écartés et comptés au journal (app/play/grade_taste.h).
+Les portes de 8.11 se vérifient hors du lecteur : `tools/grade/sim/simulate.py` passe une liste de plans (ou
+`--synthetic 30`) par le portage Python de la courbe (`tools/grade/sim/curve.py`, comparé à la version C++ par
+`--self-test`) et dit, plan par plan, E, T, le pic et l'APL affichés (pic ≤ C_pk + 0,5 %, APL ≤ 0,9 × MaxFALL) ;
+`tools/grade/check_hdr.py` lit les instantanés PQ des 30 plans (compare_shots.sh) et vérifie pic, APL, ΔE_ITP sous K
+contre la référence BT.2408 (moyenne ≤ 3, p95 ≤ 6), teinte (≤ 2°, ≤ 1° sur la peau), peau (≤ 0,5 diaphragme),
+stabilité de l'APL d'un plan fixe (σ ≤ 0,5 %), images d'erreur aux coupes (0) et ColorVideoVDP (≥ −0,1 JOD, si
+pycvvdp est installé).
