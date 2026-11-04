@@ -217,9 +217,9 @@ struct GradeParams {
   // Sortie SDR : 1, l'image de la cible est en BT.709 au gamma sdr_gamma, son blanc à `peak` nits.
   double sdr_out = 0.0;
   double sdr_gamma = 2.2;
-  // Sortie SDR de la méthode « HDR anime » (sdr_tonemap) : 1, l'image SDR passe en PQ avant le grade, le grade
-  // et la pile de LUT d'HDR travaillent comme sur un écran HDR de `peak` nits, puis une courbe par plan ramène
-  // tm_white (les surfaces) au blanc SDR et tm_top (la marge des éclats du plan) juste sous lui.
+  // Sortie SDR de la méthode « HDR anime » (sdr_tonemap) : 1, l'image SDR passe en PQ avant le grade, le
+  // grade et la pile de LUT d'HDR travaillent comme sur un écran HDR de `peak` nits, puis une courbe par plan
+  // ramène tm_white (les surfaces) au blanc SDR et tm_top (la marge des éclats du plan) juste sous lui.
   double sdr_tm = 0.0;
   double tm_white = 233.0;
   double tm_top = 1000.0;
@@ -322,8 +322,8 @@ struct GradeDecision {
 std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display);
 
 // Le grade PQ d'une source SDR, tourné vers une sortie SDR (méthode « HDR anime ») : sdr_tm, les bornes de la
-// courbe du plan (tm_white : les surfaces relevées ; tm_top : la marge des éclats que la méthode donne au plan,
-// selon sa luminosité moyenne fs_apl), sans vrai noir (ses seuils sont ceux d'un écran HDR).
+// courbe du plan (tm_white : les surfaces relevées ; tm_top : la marge des éclats que la méthode donne au
+// plan, selon sa luminosité moyenne fs_apl), sans vrai noir (ses seuils sont ceux d'un écran HDR).
 void sdr_tonemap(GradeParams& p);
 
 std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& settings,

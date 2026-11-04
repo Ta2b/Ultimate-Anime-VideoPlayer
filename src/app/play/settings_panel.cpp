@@ -91,9 +91,11 @@ void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<
   // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de Tatoub du 04/11).
   section(i18n::tr("Color grading"));
   render::GradeSettings& g = d.grade_values;
-  ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, 0, 200, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, 0, 200, "%d %%",
+                   ImGuiSliderFlags_AlwaysClamp);
   ImGui::SliderInt(i18n::tr("Contrast"), &g.anime_contrast, 0, 200, "%d %%", ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("Highlights"), &g.anime_highlights, 0, 200, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(i18n::tr("Highlights"), &g.anime_highlights, 0, 200, "%d %%",
+                   ImGuiSliderFlags_AlwaysClamp);
   if (panel::advanced()) {
     ImGui::SliderInt(i18n::tr("LUT contrast intensity"), &d.look_contrast, -100, 100, "%d",
                      ImGuiSliderFlags_AlwaysClamp);

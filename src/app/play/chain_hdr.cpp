@@ -134,8 +134,8 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
       (pq ? choice.pq : choice.sdr) = params;
     }
   }
-  // La méthode « HDR anime » vers un écran SDR : son rendu PQ (pile de LUT d'HDR comprise), ramené au SDR plan
-  // par plan ; l'écran ne la prend qu'avec ce corps de grade.
+  // La méthode « HDR anime » vers un écran SDR : son rendu PQ (pile de LUT d'HDR comprise), ramené au SDR
+  // plan par plan ; l'écran ne la prend qu'avec ce corps de grade.
   if (!source_hdr && choice.pq) {
     render::GradeParams anime = *choice.pq;
     render::sdr_tonemap(anime);
