@@ -1,5 +1,7 @@
 #include "app/play/live_settings.h"
 
+#include <cmath>
+
 #include <catch2/catch_test_macros.hpp>
 
 namespace ajp::app::play {
@@ -106,6 +108,28 @@ TEST_CASE("Grade de l'anneau : l'ordre confié au backend pointe dans la version
   CHECK(order.uniforms.look_mix == 0.25F);
   v.look_rgb.reset();
   CHECK(v.order().look_size == 0);  // sans pile, aucun look
+}
+
+TEST_CASE("Mode Rapide : la grille des vblanks mesurée prime sur la phase estimée", "[app][free][present]") {
+  LiveSettings live;
+  live.set_free(true, 6061, 0);
+  live.set_vsync(6061, 3'000);  // 165 Hz annoncés, 3 ms entre présentation et affichage
+  live.vsync_note(1'000'000);
+  const LiveSettings::VsyncGrid estimated = live.vsync_grid(1'000'500);
+  CHECK(estimated.period_us == 6061);
+  // 164,78 Hz mesurés, vblanks affichés à 2 000 000 + k × 6068,7 µs.
+  const core::VblankGrid measured{.phase_us = 2'000'000.0, .period_us = 1e6 / 164.78};
+  live.vsync_note(1'006'061, measured);
+  const LiveSettings::VsyncGrid grid = live.vsync_grid(2'000'000 + 10 * 6069 + 1'000);
+  CHECK(grid.period_us == 6069);
+  CHECK(grid.anchor_host_us == std::llround(measured.at(10)) + 6069 / 2);
+  // Sans grille mesurée (niveau Open), la phase estimée revient.
+  live.vsync_note(1'012'122);
+  CHECK(live.vsync_grid(1'000'500).period_us == 6061);
+  // VRR : aucune grille, mesurée ou non.
+  live.set_vsync(0, 0);
+  live.vsync_note(1'018'183, measured);
+  CHECK(live.vsync_grid(1'000'500).period_us == 0);
 }
 
 }  // namespace ajp::app::play

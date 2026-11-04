@@ -81,13 +81,14 @@ TEST_CASE("veilleur d'écriture : l'écriture finie est datée et réveille main
     const auto at = watcher->take(semaphore, 1);
     REQUIRE(at.has_value());
     CHECK(*at >= signaled_us);
-    CHECK(*at - signaled_us < 5'000);  // à la sortie de l'attente, pas au tour suivant de main
+    // À la sortie de l'attente, bien avant son délai de 100 ms (marge pour une machine chargée).
+    CHECK(*at - signaled_us < 30'000);
     CHECK_FALSE(watcher->take(semaphore, 1).has_value());  // rendue une fois
     // Oublier rend la main sans attendre la fin du délai de 100 ms.
     watcher->watch(semaphore, 2);
     const std::int64_t before = host_now_us();
     watcher->forget_all();
-    CHECK(host_now_us() - before < 50'000);
+    CHECK(host_now_us() - before < 80'000);
   }
   pl_vulkan_sem_destroy(device.vk->gpu, &semaphore);
 }

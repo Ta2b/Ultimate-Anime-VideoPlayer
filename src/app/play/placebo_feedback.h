@@ -53,6 +53,17 @@ class PresentFeedback {
   // en VRR), en ns ; 0 tant qu'inconnues.
   std::uint64_t refresh_duration_ns() const { return refresh_duration_; }
   std::uint64_t refresh_interval_ns() const { return refresh_interval_; }
+  // Les dates relues sont celles de l'affichage (Timing ou Wayland), pas d'un simple sondage (Wait).
+  bool dated() const {
+    return level_ == PresentLevel::Timing || level_ == PresentLevel::TimingAbsolute ||
+           level_ == PresentLevel::Wayland;
+  }
+  // Fréquence fixe dite par la swapchain (intervalle = durée) ou par le compositeur (rafraîchissement non
+  // nul) ; faux en VRR ou tant que rien n'est dit.
+  bool fixed_refresh() const {
+    if (level_ == PresentLevel::Wayland) return refresh_duration_ != 0;
+    return refresh_duration_ != 0 && refresh_interval_ == refresh_duration_;
+  }
 
  private:
   struct Api;

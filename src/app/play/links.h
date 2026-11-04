@@ -24,6 +24,7 @@
 #include "core/messages.h"
 #include "core/ring.h"
 #include "core/types.h"
+#include "core/vblank_clock.h"
 #include "subs/subtitle_frame.h"
 #include "subs/subtitle_renderer.h"
 
@@ -167,6 +168,9 @@ class Screen {
   virtual void watch(const RingFrame& /*frame*/) {}
   virtual std::optional<std::int64_t> written_at(const RingFrame& /*frame*/) { return std::nullopt; }
   virtual bool wakes_on_write() const { return false; }
+  // La grille des vblanks mesurée par le retour de présentation (6.8), en fréquence fixe et assez
+  // d'observations ; rien au niveau Open, en VRR ou tant qu'elle n'est pas sûre.
+  virtual std::optional<core::VblankGrid> vblank_grid() const { return std::nullopt; }
   // Un seek ou un autre fichier : l'état tenu d'une image à l'autre (détection de pic, grade) vient
   // de la scène d'avant et ne dit plus rien.
   virtual void new_scene() {}

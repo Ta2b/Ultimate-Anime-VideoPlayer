@@ -1,6 +1,7 @@
 #include "app/play/session.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <type_traits>
 #include <utility>
@@ -579,6 +580,17 @@ std::int64_t Session::display_delay_us(std::int64_t period) const {
 }
 
 void Session::set_display(std::int64_t period_us, double hz) {
+  // La fréquence mesurée par le retour de présentation (6.8) : 164,78 Hz et non les 165 annoncés, l'écart
+  // de 0,13 % dépassant la borne de la synchro (pacing.h). Même mode à 2 % près ; à 0,002 Hz près, la
+  // fréquence d'avant reste (pas de vitesse redemandée à chaque relevé).
+  if (const auto grid = screen_.vblank_grid(); grid && grid->period_us > 0.0 && hz > 0.0) {
+    const double measured = 1e6 / grid->period_us;
+    if (std::abs(measured - hz) < hz * 0.02) {
+      const bool same = config_.display_hz > 0.0 && std::abs(measured - config_.display_hz) < 0.002;
+      hz = same ? config_.display_hz : measured;
+      period_us = same ? config_.display_period_us : std::llround(grid->period_us);
+    }
+  }
   if (period_us == config_.display_period_us && hz == config_.display_hz) return;
   config_.display_period_us = period_us;
   config_.display_hz = hz;
