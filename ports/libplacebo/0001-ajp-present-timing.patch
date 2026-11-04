@@ -1,0 +1,260 @@
+diff --git a/src/include/libplacebo/vulkan.h b/src/include/libplacebo/vulkan.h
+index f873f54..02d6ae7 100644
+--- a/src/include/libplacebo/vulkan.h
++++ b/src/include/libplacebo/vulkan.h
+@@ -368,6 +368,21 @@ struct pl_vulkan_swapchain_params {
+     // be used to prefer formats with higher color bit depth. This is a hint,
+     // if no matching format is found, lower bit depths will be accepted.
+     uint8_t color_bits;
++
++    // AJP present timing patch. Extra `VkSwapchainCreateFlagsKHR` added at
++    // every (re)creation, e.g. VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR,
++    // VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR or
++    // VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT. The matching device features
++    // must be enabled by the user. 0 keeps the default behavior.
++    VkSwapchainCreateFlagsKHR present_flags;
++
++    // Optional structure chain appended to `VkSwapchainCreateInfoKHR`. Must
++    // stay valid for the lifetime of the swapchain.
++    const void *create_pnext;
++
++    // If nonzero, the requested `minImageCount` (clamped to the surface
++    // capabilities) instead of `swapchain_depth + 1`.
++    int min_images;
+ };
+ 
+ #define pl_vulkan_swapchain_params(...) (&(struct pl_vulkan_swapchain_params) { __VA_ARGS__ })
+@@ -384,6 +399,37 @@ PL_API pl_swapchain pl_vulkan_create_swapchain(pl_vulkan vk,
+ // who have `params->allow_suboptimal` enabled.
+ PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);
+ 
++// AJP present timing patch: what `pl_vulkan_swapchain_submit` chains to the
++// presentation.
++struct pl_vulkan_present {
++    // If nonzero, chained as `VkPresentId2KHR` (requires
++    // VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR in `present_flags`).
++    uint64_t present_id;
++
++    // If non-NULL, a `const VkPresentTimingInfoEXT *` chained through
++    // `VkPresentTimingsInfoEXT` (requires
++    // VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT). Declared as `void` so that
++    // the struct layout does not depend on the Vulkan headers version.
++    const void *timing;
++};
++
++// Like `pl_swapchain_submit_frame`, with the presentation parameters above.
++// `result`, if non-NULL, receives the VkResult of vkQueuePresentKHR (or
++// VK_SUCCESS if it was not reached). VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT
++// counts as a queued image: the call returns true, the result tells the
++// caller to stop requesting timings until it has read some back.
++PL_API bool pl_vulkan_swapchain_submit(pl_swapchain sw,
++                                       const struct pl_vulkan_present *present,
++                                       VkResult *result);
++
++// The current VkSwapchainKHR, valid between `pl_swapchain_start_frame` and
++// the following submission, on the same thread. `recreations`, if non-NULL,
++// receives the number of times the swapchain was (re)created so far: when it
++// changes, per-swapchain state (timing queue size, properties) must be set
++// again.
++PL_API VkSwapchainKHR pl_vulkan_swapchain_current(pl_swapchain sw,
++                                                  uint64_t *recreations);
++
+ // Vulkan interop API, for sharing a single VkDevice (and associated vulkan
+ // resources) directly with the API user. The use of this API is a bit sketchy
+ // and requires careful communication of Vulkan API state.
+diff --git a/src/vulkan/swapchain.c b/src/vulkan/swapchain.c
+index fa38e9c..90c57f2 100644
+--- a/src/vulkan/swapchain.c
++++ b/src/vulkan/swapchain.c
+@@ -31,6 +31,7 @@ struct vk_swapchain {
+     PL_ARRAY(VkSemaphore) sems_in;  // pool of semaphores used to acquire images
+     PL_ARRAY(VkSemaphore) sems_out; // pool of semaphores used to present images
+     PL_ARRAY(VkFence) fences_out;   // pool of fences for presented images
++    PL_ARRAY(bool) orphaned;        // fence whose present may never signal it
+     int idx_sems_in;                // index of next free semaphore to acquire
+     int last_imgidx;                // the image index last acquired (for submit)
+ };
+@@ -58,6 +59,8 @@ struct priv {
+     struct pl_color_repr color_repr;
+     struct pl_color_space color_space;
+     struct pl_hdr_metadata hdr_metadata;
++    uint64_t recreations;           // successful (re)creations so far
++    PL_ARRAY(VkFence) orphans;      // replaced fences, destroyed at the end
+ };
+ 
+ static const struct pl_sw_fns vulkan_swapchain;
+@@ -389,7 +392,8 @@ pl_swapchain pl_vulkan_create_swapchain(pl_vulkan plvk,
+                                               : VK_SHARING_MODE_EXCLUSIVE,
+         .queueFamilyIndexCount = vk->pools.num,
+         .pQueueFamilyIndices = p->queue_families,
+-        .minImageCount = p->swapchain_depth + 1, // +1 for the FB
++        .minImageCount = params->min_images > 0 ? params->min_images
++                                                : p->swapchain_depth + 1, // +1 for the FB
+         .presentMode = params->present_mode,
+         .clipped = true,
+     };
+@@ -462,8 +466,19 @@ static bool swapchain_destroy(pl_swapchain sw, struct vk_swapchain **ptr,
+         return true;
+ 
+     if (vk_sw->fences_out.num > 0) {
+-        VkResult res = vk->WaitForFences(vk->dev, vk_sw->fences_out.num,
+-                                         vk_sw->fences_out.elem, VK_TRUE, timeout);
++        // A fence whose present was refused (QUEUE_FULL) may never signal:
++        // it is not waited on, and destroyed with the swapchain object
++        for (int i = 0; i < vk_sw->fences_out.num; i++) {
++            if (!vk_sw->orphaned.elem[i])
++                continue;
++            PL_ARRAY_APPEND(sw, p->orphans, vk_sw->fences_out.elem[i]);
++            PL_ARRAY_REMOVE_AT(vk_sw->fences_out, i);
++            PL_ARRAY_REMOVE_AT(vk_sw->orphaned, i);
++            i--;
++        }
++        VkResult res = vk_sw->fences_out.num == 0 ? VK_SUCCESS :
++            vk->WaitForFences(vk->dev, vk_sw->fences_out.num,
++                              vk_sw->fences_out.elem, VK_TRUE, timeout);
+         if (res == VK_NOT_READY || res == VK_TIMEOUT)
+             return false;
+         for (int i = 0; i < vk_sw->fences_out.num; i++)
+@@ -512,6 +527,8 @@ static void vk_sw_destroy(pl_swapchain sw)
+ 
+     cleanup_retired_swapchains(sw, UINT64_MAX);
+     swapchain_destroy(sw, &p->current, UINT64_MAX);
++    for (int i = 0; i < p->orphans.num; i++)
++        vk->DestroyFence(vk->dev, p->orphans.elem[i], PL_VK_ALLOC);
+ 
+     pl_mutex_destroy(&p->lock);
+     pl_free((void *) sw);
+@@ -747,6 +764,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
+     if (use_deferred_alloc)
+         sinfo.flags |= VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR;
+ 
++    sinfo.flags |= p->params.present_flags;
++    vk_link_struct(&sinfo, p->params.create_pnext);
++
+     PL_DEBUG(sw, "(Re)creating swapchain of size %dx%d",
+              sinfo.imageExtent.width,
+              sinfo.imageExtent.height);
+@@ -807,7 +827,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
+         snprintf(name, sizeof(name), "present fence #%d", i);
+         PL_VK_NAME(FENCE, fence, name);
+         PL_ARRAY_APPEND(current, current->fences_out, fence);
++        PL_ARRAY_APPEND(current, current->orphaned, false);
+     }
++    p->recreations++;
+ 
+     // Note: `p->color_space.hdr` is (re-)applied by `set_hdr_metadata`
+     map_color_space(sinfo.imageColorSpace, &p->color_space);
+@@ -866,8 +888,24 @@ static bool vk_sw_start_frame(pl_swapchain sw,
+             p->current->last_imgidx = imgidx;
+             if (p->current->fences_out.num > 0) {
+                 VkFence *pfence = &p->current->fences_out.elem[imgidx];
+-                vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE, UINT64_MAX);
+-                vk->ResetFences(vk->dev, 1, pfence);
++                bool *orphan = &p->current->orphaned.elem[imgidx];
++                // A refused present (QUEUE_FULL, seen on NVIDIA 615.78.08)
++                // may leave its fence unsignaled forever: wait 50 ms, then
++                // replace it; the old one is destroyed after vk_wait_idle
++                VkResult wres = vk->WaitForFences(vk->dev, 1, pfence, VK_TRUE,
++                                                  *orphan ? 50000000 : UINT64_MAX);
++                if (*orphan && wres == VK_TIMEOUT) {
++                    static const VkFenceCreateInfo finfo = {
++                        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
++                    };
++                    VkFence fresh;
++                    VK(vk->CreateFence(vk->dev, &finfo, PL_VK_ALLOC, &fresh));
++                    PL_ARRAY_APPEND(sw, p->orphans, *pfence);
++                    *pfence = fresh;
++                } else {
++                    vk->ResetFences(vk->dev, 1, pfence);
++                }
++                *orphan = false;
+             }
+             if (!vk_sw_image_init(sw, imgidx))
+                 goto error;
+@@ -915,7 +953,16 @@ static void present_cb(struct priv *p, void *arg)
+ 
+ VK_CB_FUNC_DEF(present_cb);
+ 
++static bool vk_sw_submit_ex(pl_swapchain sw, const struct pl_vulkan_present *present,
++                            VkResult *out_res);
++
+ static bool vk_sw_submit_frame(pl_swapchain sw)
++{
++    return vk_sw_submit_ex(sw, NULL, NULL);
++}
++
++static bool vk_sw_submit_ex(pl_swapchain sw, const struct pl_vulkan_present *present,
++                            VkResult *out_res)
+ {
+     pl_gpu gpu = sw->gpu;
+     struct priv *p = PL_PRIV(sw);
+@@ -978,13 +1025,45 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
+     if (current->fences_out.num > 0) {
+         VkFence *pfence = &current->fences_out.elem[idx];
+         fenceInfo.pFences = pfence;
+-        pinfo.pNext = &fenceInfo;
++        vk_link_struct(&pinfo, &fenceInfo);
+     }
+ 
++#ifdef VK_KHR_present_id2
++    VkPresentId2KHR id_info = {
++        .sType = VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR,
++        .swapchainCount = 1,
++        .pPresentIds = present ? &present->present_id : NULL,
++    };
++    if (present && present->present_id)
++        vk_link_struct(&pinfo, &id_info);
++#endif
++#ifdef VK_EXT_present_timing
++    VkPresentTimingsInfoEXT timings_info = {
++        .sType = VK_STRUCTURE_TYPE_PRESENT_TIMINGS_INFO_EXT,
++        .swapchainCount = 1,
++        .pTimingInfos = present ? (const VkPresentTimingInfoEXT *) present->timing : NULL,
++    };
++    if (present && present->timing)
++        vk_link_struct(&pinfo, &timings_info);
++#endif
++
+     PL_TRACE(vk, "vkQueuePresentKHR waits on 0x%"PRIx64, (uint64_t) sem_out);
+     vk->lock_queue(vk->queue_ctx, pool->qf, qidx);
+     VkResult res = vk->QueuePresentKHR(queue, &pinfo);
+     vk->unlock_queue(vk->queue_ctx, pool->qf, qidx);
++    if (out_res)
++        *out_res = res;
++
++#ifdef VK_EXT_present_timing
++    // The timing queue is full: the image counts as queued (its semaphore
++    // wait still executes), but its fence may never signal
++    if (res == VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT) {
++        if (current->orphaned.num > 0)
++            current->orphaned.elem[idx] = true;
++        pl_mutex_unlock(&p->lock);
++        return true;
++    }
++#endif
+     pl_mutex_unlock(&p->lock);
+ 
+     switch (res) {
+@@ -1058,6 +1137,22 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
+     return p->suboptimal;
+ }
+ 
++bool pl_vulkan_swapchain_submit(pl_swapchain sw, const struct pl_vulkan_present *present,
++                                VkResult *result)
++{
++    if (result)
++        *result = VK_SUCCESS;
++    return vk_sw_submit_ex(sw, present, result);
++}
++
++VkSwapchainKHR pl_vulkan_swapchain_current(pl_swapchain sw, uint64_t *recreations)
++{
++    struct priv *p = PL_PRIV(sw);
++    if (recreations)
++        *recreations = p->recreations;
++    return p->current ? p->current->swapchain : VK_NULL_HANDLE;
++}
++
+ static const struct pl_sw_fns vulkan_swapchain = {
+     .destroy            = vk_sw_destroy,
+     .latency            = vk_sw_latency,
