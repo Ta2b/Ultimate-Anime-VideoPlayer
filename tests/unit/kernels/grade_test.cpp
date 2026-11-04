@@ -2,6 +2,7 @@
 // cartes (tailles, max local, lissage de la zone) et refus.
 #include "kernels/ref/grade.h"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 

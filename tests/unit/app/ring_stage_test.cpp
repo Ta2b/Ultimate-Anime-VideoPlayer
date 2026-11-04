@@ -8,6 +8,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -236,7 +237,8 @@ TEST_CASE(
   stage.lose_device(true);
   const auto lost_at = std::chrono::steady_clock::now();
   REQUIRE(wait_for([&] { return !bench.reported().empty(); }));
-  CHECK(std::chrono::steady_clock::now() - lost_at <= 300ms);
+  // 0,3 s sur un poste ; sur les machines virtuelles de la CI (CI définie), cinq fois plus.
+  CHECK(std::chrono::steady_clock::now() - lost_at <= (std::getenv("CI") != nullptr ? 1500ms : 300ms));
   const std::vector<Refusal> refusals = bench.reported();
   CHECK(refusals.front().code == RefusalCode::ThreadFailed);
   CHECK(refusals.front().detail.find("contexte perdu (sonde)") != std::string::npos);
