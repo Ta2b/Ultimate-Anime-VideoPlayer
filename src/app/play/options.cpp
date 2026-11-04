@@ -204,6 +204,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
         return refuse(RefusalCode::FieldOutOfRange,
                       std::format("{} : auto, timing, wait, wayland ou open", arg));
       options.present = *wanted;
+    } else if (arg == "--no-present") {
+      options.present = PresentWanted::Open;
     } else if (arg == "--no-resume") {
       options.resume = false;
     } else if (arg == "--register" || arg == "--unregister") {
@@ -497,7 +499,8 @@ std::string play_usage() {
       "                         --no-audio-pll : l'horloge brute)\n"
       "  --vsync-index          l'image choisie par le numéro de son vblank mesuré, avec hystérésis (défaut ;\n"
       "                         --no-vsync-index : l'horloge)\n"
-      "  --present=NIVEAU       essai : retour de présentation auto, timing, wait, wayland ou open (défaut)\n"
+      "  --present=NIVEAU       retour de présentation auto (défaut), timing, wait, wayland ou open ;\n"
+      "                         --no-present : open, la présentation d'avant\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"

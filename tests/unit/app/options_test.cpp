@@ -114,7 +114,8 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   CHECK(v2->hdr_contract_v2);
   CHECK(v2->hdr_metadata_off);
   CHECK_FALSE(v2->kde_sdr_nits);
-  CHECK(options->present == PresentWanted::Open);
+  CHECK(options->present == PresentWanted::Auto);
+  CHECK(parse({"épisode.mkv", "--no-present"})->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});
   REQUIRE(present);
   CHECK(present->present == PresentWanted::Timing);

@@ -167,8 +167,9 @@ struct PlayOptions {
   // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
   bool vsync_index = true;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
-  // open (le défaut) : la présentation d'aujourd'hui, jusqu'aux mesures 6.11.
-  PresentWanted present = PresentWanted::Open;
+  // auto (le défaut) : le meilleur niveau que l'appareil offre ; --no-present ou --present=open : la
+  // présentation d'avant.
+  PresentWanted present = PresentWanted::Auto;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;
