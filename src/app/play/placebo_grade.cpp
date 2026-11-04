@@ -198,13 +198,22 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
 // La luminosité SDR de KDE que la passe « kwin » imite : celle du contrat d'écran (lue dans KDE) quand
 // --hdr-metadata n'a pas de valeur et que KDE la donne, sinon celle de l'option.
 double PlaceboScreen::Impl::sdr_reference() const {
+#if defined(_WIN32)
+  // Windows n'applique pas son blanc SDR au PQ d'une application : contenu = écran (k = 1), la passe
+  // compresse comme KWin à 203 nits, vers le pic de l'écran lu dans DXGI.
+  return render::kContentReferenceNits;
+#else
   if (kde_sdr_auto && contract && contract->from_compositor) return contract->reference_nits;
   return kde_sdr_nits.value_or(kDefaultKdeSdrNits);
+#endif
 }
 
 // La passe « kwin » et les métadonnées : demandées (--hdr-metadata=NITS), ou par défaut quand KDE donne sa
-// luminosité SDR.
+// luminosité SDR, et toujours sous Windows (sauf --no-hdr-metadata).
 bool PlaceboScreen::Impl::kwin_metadata() const {
+#if defined(_WIN32)
+  if (kde_sdr_auto) return true;  // pas de compositeur qui compresse : le grade le fait toujours
+#endif
   return kde_sdr_nits.has_value() || (kde_sdr_auto && contract && contract->from_compositor);
 }
 
@@ -232,7 +241,7 @@ void PlaceboScreen::Impl::match_kwin() {
     space.hdr.max_cll = static_cast<float>(max_nits);
   }
   pl_swapchain_colorspace_hint(swapchain, &space);
-  channel->info("--hdr-metadata : maximum annoncé {:.0f} nits (pic {:.0f}, luminosité SDR de KDE {:.0f})",
+  channel->info("--hdr-metadata : maximum annoncé {:.0f} nits (pic {:.0f}, blanc SDR de référence {:.0f})",
                 max_nits, peak, reference);
 }
 

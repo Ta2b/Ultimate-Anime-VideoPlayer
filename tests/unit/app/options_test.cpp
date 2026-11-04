@@ -125,8 +125,8 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(metadata);
   CHECK(metadata->kde_sdr_nits == kDefaultKdeSdrNits);
   CHECK(metadata->kde_sdr_auto);  // sans valeur : la luminosité SDR lue dans KDE
-#if defined(__linux__)
-  CHECK(options->kde_sdr_auto);  // défaut sous Linux : la luminosité SDR de KDE, dès qu'il la donne
+#if defined(__linux__) || defined(_WIN32)
+  CHECK(options->kde_sdr_auto);  // défaut sous Linux (KDE) et Windows : métadonnées et compression du grade
 #else
   CHECK_FALSE(options->kde_sdr_auto);
 #endif

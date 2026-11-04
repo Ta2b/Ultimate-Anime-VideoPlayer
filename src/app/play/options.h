@@ -120,8 +120,10 @@ struct PlayOptions {
   // --hdr-metadata sans valeur : la luminosité SDR lue dans KDE (le contrat d'écran), kde_sdr_nits en repli.
   // Par défaut sous Linux : dès que KDE donne sa luminosité SDR, la sortie annonce ses métadonnées et le
   // grade fait la compression de KWin vers le pic de l'écran (le même rendu, adapté à chaque écran).
-  // --no-hdr-metadata : la sortie d'avant, sans métadonnées, la compression laissée à KWin.
-#if defined(__linux__)
+  // Par défaut sous Windows aussi : Windows affiche le PQ tel quel, sans compression, et la pile de LUT y
+  // écrêtait au pic du panneau ; le grade fait la même compression que KWin à son blanc neutre (203 nits).
+  // --no-hdr-metadata : la sortie d'avant, sans métadonnées, la compression laissée à KWin (Windows : rien).
+#if defined(__linux__) || defined(_WIN32)
   bool kde_sdr_auto = true;
 #else
   bool kde_sdr_auto = false;
