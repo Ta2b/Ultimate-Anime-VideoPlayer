@@ -195,10 +195,12 @@ class LiveSettings {
   }
   // gpu : la paire de l'image `id` crée `images` images ; `lead_us` : l'attente de ses mesures avant
   // soumission. main la retrouve par auto_written pour en tirer le coût de service.
-  void auto_expect(std::uint32_t id, int images, std::int64_t lead_us) {
+  // `heavy` : une paire en mouvement fort (mode Rapide : son coût se mesure à part, core/free_rate.h).
+  void auto_expect(std::uint32_t id, int images, std::int64_t lead_us, bool heavy = false) {
     const std::scoped_lock lock(mutex_);
     if (!auto_on_ && !free_on_) return;
-    ledger_[ledger_next_++ % ledger_.size()] = Expected{.id = id, .images = images, .lead_us = lead_us};
+    ledger_[ledger_next_++ % ledger_.size()] =
+        Expected{.id = id, .images = images, .lead_us = lead_us, .heavy = heavy};
   }
   // gpu : `count` images de la paire de l'image `id` ne seront pas écrites (déjà à l'écran). Si les autres
   // sont toutes vues, la paire se clôt ici.
@@ -328,9 +330,10 @@ class LiveSettings {
       steady_.lost(now_us, static_cast<int>(std::min<std::int64_t>(lost, 1000)));
   }
   // gpu : l'écart de service de la prochaine paire, en temps réel (0 : pas de mesure), et l'écart minimal.
-  std::pair<std::int64_t, std::int64_t> free_step(std::int64_t now_us) const {
+  // `heavy` : la paire est annoncée en mouvement fort.
+  std::pair<std::int64_t, std::int64_t> free_step(std::int64_t now_us, bool heavy = false) const {
     const std::scoped_lock lock(mutex_);
-    return {free_.step_us(now_us), free_.min_gap_us()};
+    return {free_.step_us(now_us, heavy), free_.min_gap_us()};
   }
   // mode Rapide sans VRR : les instants tombent sur les vsyncs (core/free_grid.h). `period_us` : la période
   // de l'écran (0 : VRR, aucune grille) ; main donne chaque présentation neuve (vsync_note) et le délai entre
@@ -465,6 +468,7 @@ class LiveSettings {
     int seen = 0;              // images vues écrites (mode Rapide)
     int repeats = 0;           // dont des copies, sans calcul
     std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
+    bool heavy = false;        // mouvement fort
   };
   // Clôt la mesure d'une paire : son coût de service, sans les copies. Sous le verrou.
   void close_expected(Expected& e, std::int64_t done_us) {
@@ -472,7 +476,7 @@ class LiveSettings {
     if (auto_on_) {
       auto_.cost(computed, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us), done_us);
     }
-    if (free_on_) free_.cost(computed, e.busy_us + e.lead_us, done_us);
+    if (free_on_) free_.cost(computed, e.busy_us + e.lead_us, done_us, e.heavy);
     if (free_on_ && steady_on_) steady_.pair_cost(computed, e.busy_us + e.lead_us, done_us);
     previous_done_us_ = done_us;
     e = Expected{};

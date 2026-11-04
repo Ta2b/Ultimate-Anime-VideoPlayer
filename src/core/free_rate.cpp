@@ -24,15 +24,16 @@ void FreeRate::sum(std::int64_t now_us, std::int64_t span_us, int& produced, int
   }
 }
 
-void FreeRate::cost(int images, std::int64_t busy_us, std::int64_t now_us) {
+void FreeRate::cost(int images, std::int64_t busy_us, std::int64_t now_us, bool heavy) {
   if (images < 2 || busy_us <= 0 || now_us < settled_until_us_) return;
   const double sample = static_cast<double>(std::min(busy_us, kMaxSampleUs * images)) / images;
-  if (service_us_ <= 0.0) {
-    service_us_ = sample;
-  } else if (sample > service_us_) {
-    service_us_ += 0.6 * (sample - service_us_);  // une scène lourde : tout de suite
+  double& service = heavy ? heavy_us_ : service_us_;
+  if (service <= 0.0) {
+    service = sample;
+  } else if (sample > service) {
+    service += 0.6 * (sample - service);  // une scène lourde : tout de suite
   } else {
-    service_us_ += 0.12 * (sample - service_us_);  // une scène légère : lentement
+    service += 0.12 * (sample - service);  // une scène légère : lentement
   }
 }
 
@@ -70,9 +71,13 @@ double FreeRate::pressure(std::int64_t now_us) const {
   return 1.0 + (pressure_ - 1.0) * std::exp(-static_cast<double>(calm) / static_cast<double>(kReleaseUs));
 }
 
-std::int64_t FreeRate::step_us(std::int64_t now_us) const {
-  if (service_us_ <= 0.0) return 0;
-  const auto step = static_cast<std::int64_t>(std::llround(service_us_ * kMargin * pressure(now_us)));
+std::int64_t FreeRate::step_us(std::int64_t now_us, bool heavy) const {
+  double service = service_us_;
+  // Mouvement fort annoncé : son propre temps, jamais moins qu'une paire calme ; deviné s'il manque.
+  if (heavy) service = heavy_us_ > 0.0 ? std::max(heavy_us_, service_us_) : service_us_ * kHeavyGuess;
+  if (service <= 0.0) service = heavy_us_;  // que des paires lourdes mesurées
+  if (service <= 0.0) return 0;
+  const auto step = static_cast<std::int64_t>(std::llround(service * kMargin * pressure(now_us)));
   return std::max(step, min_gap_us_);
 }
 
@@ -95,6 +100,7 @@ FreeInfo FreeRate::info(std::int64_t now_us) const {
   sum(now_us, 2'000'000, produced, lost);
   out.fps = static_cast<double>(produced) * 1e6 / 2'000'000.0;
   out.service_us = static_cast<std::int64_t>(std::llround(service_us_));
+  out.heavy_service_us = static_cast<std::int64_t>(std::llround(heavy_us_));
   out.step_us = step_us(now_us);
   out.pressure = pressure(now_us);
   out.lost = lost_total_;
