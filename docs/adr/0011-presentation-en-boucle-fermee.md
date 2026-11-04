@@ -36,3 +36,27 @@ présentation, et n'expose pas la `VkSwapchainKHR` courante. Deux voies étaient
   - 6.3 : retour par present timing ;
   - 6.4 : repli `wp_presentation` ;
   - 6.5 : veilleur d'écriture.
+
+## Mise en œuvre (6.2 à 6.10)
+Tout est derrière une option d'essai ; sans option, le lecteur se comporte comme avant.
+
+| Option | Étape | Ce qu'elle fait |
+| --- | --- | --- |
+| `--present=auto\|timing\|wait\|wayland` | 6.2 à 6.4, 6.8, 6.10 | Retour de présentation au plus haut niveau offert (`present_level.h`). La grille des vblanks mesurée (`core::VblankClock`) remplace la fréquence annoncée pour la synchro audio et la grille du mode Rapide ; l'état VRR lu par present timing prime sur l'ioctl. |
+| `--ring-watcher` | 6.5 | Un thread attend l'écriture des slots et réveille main (`ring_watcher.h`). |
+| `--precise-wait` | 6.7 | Attente de l'image suivante à la microseconde (`loop_wait.h`). |
+| `--audio-pll` | 6.9 | Horloge audio filtrée par une PLL (`core/clock_pll.h`). |
+| `--vsync-index` | 6.6 | Image choisie par le numéro de son vblank, avec hystérésis ; date visée en VRR au niveau TimingAbsolute. Demande `--present`. |
+
+Les modules :
+- `core/present_ledger.h` : identifiants, appariement des retours (désordre, partiels), suspension sur file
+  pleine, domaine de temps recalé toutes les 2 s quand le pilote ne date pas en CLOCK_MONOTONIC ;
+- `app/play/placebo_feedback.h` : la partie Vulkan (file de retour de 16, VkPresentTimingInfoEXT, relecture
+  par `vkGetPastPresentationTimingEXT` sans attente, `vkWaitForPresent2KHR` sondé à délai 0 au niveau Wait) ;
+- `app/play/placebo_wayland.h` : `wp_presentation` sur une file d'événements à nous, lecture sans attente ;
+  compilé seulement avec wayland-client et wayland-scanner.
+
+`--stats` gagne les colonnes `present_id`, `feedback_id`, `target_us`, `visible_us`, `vsync_k` et `level`
+(`tools/bench/banc_resume.py` lit les deux formats). Au journal, à la fermeture : présentées, revenues,
+perdues, file pleine, fréquence mesurée, latence de sortie. Les critères de 6.11 (σ visé − affiché, réveils de
+main, p99 de l'attente, σ de `lag_us`) se mesurent sur le PC, en A/B contre `--present=open`.

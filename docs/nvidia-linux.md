@@ -188,11 +188,19 @@ E1 : état du BAR (le lecteur l'affiche maintenant). E2 : Vulkan contre TensorRT
 de l'OSD le montre). E5 : trace Nsight Systems de 20 s en ×3, avec `CUDA_DEVICE_MAX_CONNECTIONS` par
 défaut puis à 8. E6 : SPAN INT8 contre FP16.
 
+Présentation (chantier 6, `docs/adr/0011-presentation-en-boucle-fermee.md`) : P1, A/B
+`--present=open` contre `--present=auto`, avec et sans `--no-vrr`, `KWIN_LOG_PERFORMANCE_DATA=1` comme
+vérité indépendante, en `--stats` (colonnes `visible_us`, `vsync_k`). P2 : `--ring-watcher` (réveils de main
+par `grep ctxt /proc/<pid>/task/<tid>/status`). P3 : `--precise-wait`. P4 : `--audio-pll` (σ de `lag_us`).
+P5 : `--vsync-index` à 60 Hz fixe, 10 min, aucune alternance. P6 : `--present=wayland`, ordre du retour
+contre le commit avec `WAYLAND_DEBUG=1`. Le journal donne à la fermeture le niveau retenu, les présentations
+revenues et perdues, les files pleines, la fréquence mesurée.
+
 ## Pas encore fait
 
 LN-02/03/12/20 sont des mesures ou des modèles (INT8 de RIFE, flux optique matériel). LN-11 (famille
-de files de calcul dédiée), LN-16 (préréglages Vulkan pour d'autres modèles) et LN-17 (présentation
-horodatée) attendent les mesures E2 et E5. LN-18 (blanc de référence de KWin) demande
+de files de calcul dédiée) et LN-16 (préréglages Vulkan pour d'autres modèles) attendent les mesures E2 et
+E5 ; LN-17 (présentation horodatée) est écrit derrière `--present` et attend P1. LN-18 (blanc de référence de KWin) demande
 `color-management-v1` ou libdisplay-info. La vitesse de lecture demande un étirement audio sans
 changement de hauteur (le régulateur de dérive est borné à quelques millièmes).
 
