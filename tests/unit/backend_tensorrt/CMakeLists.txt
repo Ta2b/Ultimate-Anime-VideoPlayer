@@ -24,7 +24,7 @@ set(AJP_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.dr
 # la vidéo à deux instants) ; vides, le test se SKIP.
 set(AJP_GMFSS_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des GMFSS ONNX du lecteur (test caché [.gmfss_fused])")
 set(AJP_GMFSS_IMAGES "" CACHE STRING "Dix images PPM 640x384 séparées par des virgules (test caché [.gmfss_fused])")
-add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp gmfss_fused_test.cpp gmfss_test.cpp
+add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp gmfss_fused_test.cpp grade_ring_test.cpp gmfss_test.cpp
   rife_fused_test.cpp span_derive_test.cpp span_fp8_test.cpp)
 # Test caché [.gmfss_split] : la paire GMFSS d'avant (67 canaux), celle d'après (sans Concat) et la fusion, aux
 # tailles fixées (1280x768) ; vides, le test se SKIP.

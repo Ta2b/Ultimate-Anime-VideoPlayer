@@ -165,6 +165,25 @@ AJP_GRADE_FN V3 nits_to_pq(V3 n) {
   return vpow((v3(0.8359375F) + 18.8515625F * q) / (v3(1.0F) + 18.6875F * q), 78.84375F);
 }
 
+// L'entrée du ring (GradeInput, kernels/ref/grade.h) : `nits` les trois tables de kInputTablePoints
+// luminances mises bout à bout (R, G, B), lues par interpolation linéaire, puis la matrice `m` (ligne par
+// ligne) et le PQ.
+AJP_GRADE_FN float input_lookup(const float* table, float code) {
+  const float x = gclamp(code, 0.0F, 1.0F) * static_cast<float>(kInputTablePoints - 1);
+  int i = static_cast<int>(x);
+  i = i > kInputTablePoints - 2 ? kInputTablePoints - 2 : i;
+  const float t = x - static_cast<float>(i);
+  return table[i] * (1.0F - t) + table[i + 1] * t;
+}
+AJP_GRADE_FN V3 input_code(V3 code, const float* nits, const float* m) {
+  const float r = input_lookup(nits, code.r);
+  const float g = input_lookup(nits + kInputTablePoints, code.g);
+  const float b = input_lookup(nits + 2 * kInputTablePoints, code.b);
+  const V3 lin{m[0] * r + m[1] * g + m[2] * b, m[3] * r + m[4] * g + m[5] * b,
+               m[6] * r + m[7] * g + m[8] * b};
+  return nits_to_pq(vmax(lin, 0.0F));
+}
+
 AJP_GRADE_FN float scene_apl(const GradeUniforms& u) {
   return u.fs_apl >= 0.0F ? u.fs_apl : 0.15F * u.sdr_white;
 }
