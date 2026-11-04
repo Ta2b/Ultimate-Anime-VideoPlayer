@@ -374,6 +374,9 @@ void forget_calibrated_grade(PlaySettings& settings, std::string_view display, s
 // Grade adaptatif coché et un profil de cet écran en service : ses réglages remplacent ceux du grade ; sinon,
 // inchangés.
 PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display);
+// « Noirs profonds » réglé dans le menu pendant qu'un profil calibré est en service : le profil le prend,
+// sans quoi with_calibrated_grade le défait à l'ouverture suivante (le curseur visible a le dernier mot).
+void keep_visible_shadows(PlaySettings& settings, std::string_view display);
 
 // Fichier absent : les réglages par défaut.
 std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path);

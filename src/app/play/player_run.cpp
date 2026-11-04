@@ -391,6 +391,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.shots != nullptr) p.shots->writer = &writer;  // le cache des plans aussi
   const std::unique_ptr<ShotWork, void (*)(ShotWork*)> shots_writer(
       p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });
+  // Ce que play.toml garde ; « Noirs profonds » réglé ici entre dans le profil calibré en service.
+  const auto saved_settings = [&] {
+    PlaySettings saved =
+        settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options);
+    keep_visible_shadows(saved, screen_key);
+    return saved;
+  };
   // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
   std::int64_t kept_us = kNoPts;
   const auto remember = [&] {
@@ -676,10 +683,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
       writer.post("play.toml",
-                  [path = p.settings_path, saved = settings_to_save(with_intended_hdr(chain, chain.running),
-                                                                    p.from_file, p.started, p.options)] {
-                    return save_settings(path, saved);
-                  });
+                  [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
       chain.dirty = false;
       saved_at = host_now_us();
     }
@@ -707,10 +711,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   if (chain.dirty) {
     writer.post("play.toml",
-                [path = p.settings_path, saved = settings_to_save(with_intended_hdr(chain, chain.running),
-                                                                  p.from_file, p.started, p.options)] {
-                  return save_settings(path, saved);
-                });
+                [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
   }
   remember();
   writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers

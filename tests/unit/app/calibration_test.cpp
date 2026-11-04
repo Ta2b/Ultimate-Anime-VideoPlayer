@@ -114,6 +114,11 @@ TEST_CASE("calibration du grade : gardée par écran, reprise à l'ouverture si 
   CHECK(applied.true_hdr_gray == 42);
   CHECK(applied.grade_values.adaptive_vibrance_cut == Approx(0.55));
   CHECK(with_calibrated_grade(fresh, "GSM-5BBF").true_hdr_gray == 50);  // un autre écran
+  // « Noirs profonds » réglé dans le menu : le profil le garde, l'ouverture suivante ne le défait plus.
+  PlaySettings moved = applied;
+  moved.grade_values.shadows = 0.7;
+  keep_visible_shadows(moved, "CND-8CD7");
+  CHECK(with_calibrated_grade(moved, "CND-8CD7").grade_values.shadows == Approx(0.7));
   forget_calibrated_grade(fresh, "CND-8CD7", "Soir");
   CHECK(calibrated_grade(fresh, "CND-8CD7") == nullptr);
 }
