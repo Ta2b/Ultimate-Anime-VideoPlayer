@@ -609,7 +609,8 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
   CHECK(no_mix->look_layers.at(0).mix == 1.0);
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook = '../x.cube'\n").has_value());
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
-  const ajp::app::play::PlaySettings defaults;  // la pile de LUT de Tatoub, cuite en une seule LUT (bake_stack.py)
+  const ajp::app::play::PlaySettings
+      defaults;  // la pile de LUT de Tatoub, cuite en une seule LUT (bake_stack.py)
   CHECK(defaults.look == "HDR pile unique 65 point.cube");
   CHECK(defaults.look_layers.empty());
 }
