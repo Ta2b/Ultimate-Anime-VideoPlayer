@@ -110,7 +110,8 @@ struct GradeUniforms {
 };
 
 // Les champs de GradeUniforms sous le nom de leur //!PARAM (skin_on n'en est pas un).
-using GradeUniformMember = float GradeUniforms::*;  // l'alias évite un faux « unnecessary parentheses » (nvcc, hôte)
+using GradeUniformMember =
+    float GradeUniforms::*;  // l'alias évite un faux « unnecessary parentheses » (nvcc, hôte)
 struct GradeUniformField {
   const char* name;
   GradeUniformMember field;
