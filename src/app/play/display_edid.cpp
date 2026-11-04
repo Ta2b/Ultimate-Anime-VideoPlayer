@@ -28,7 +28,6 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <dxgi1_5.h>
 #include <windows.h>
 // SetupAPI après windows.h.
 #include <setupapi.h>
@@ -40,10 +39,13 @@ namespace {
 constexpr std::size_t kBlock = 128;
 constexpr std::uint8_t kCtaTag = 0x02;
 constexpr std::uint8_t kDisplayIdTag = 0x70;
-constexpr std::uint8_t kCtaExtended = 7;           // étiquette « étendue » d'un bloc de données CTA
-constexpr std::uint8_t kCtaHdrStatic = 0x06;       // métadonnées HDR statiques
-constexpr std::uint8_t kDisplayParameters = 0x21;  // DisplayID 2.0
-constexpr std::size_t kTechnologyByte = 0x1E;      // dans le bloc 0x21, en-tête compris
+constexpr std::uint8_t kCtaVendor = 3;                 // bloc propre au fabricant (tag 3)
+constexpr std::uint8_t kDisplayIdAdaptiveSync = 0x2B;  // DisplayID 2.0
+constexpr int kMinVrrSpanHz = 10;                      // une plage plus étroite n'est pas du VRR
+constexpr std::uint8_t kCtaExtended = 7;               // étiquette « étendue » d'un bloc de données CTA
+constexpr std::uint8_t kCtaHdrStatic = 0x06;           // métadonnées HDR statiques
+constexpr std::uint8_t kDisplayParameters = 0x21;      // DisplayID 2.0
+constexpr std::size_t kTechnologyByte = 0x1E;          // dans le bloc 0x21, en-tête compris
 constexpr std::uint8_t kAmoled = 0b010;
 constexpr double kOledBlackNits = 0.001;
 constexpr int kOledBlackCode = 2;
@@ -70,12 +72,43 @@ std::string monitor_name(std::span<const std::uint8_t> base) {
   return {};
 }
 
-void read_cta(std::span<const std::uint8_t> block, DisplayFacts& out) {
+// Les plages VRR trouvées, par source ; parse_edid garde la première qui se tient, dans l'ordre des champs.
+struct VrrSources {
+  std::optional<DisplayFacts::VrrRange> displayid;
+  std::optional<DisplayFacts::VrrRange> freesync;
+  std::optional<DisplayFacts::VrrRange> hdmi;
+  std::optional<DisplayFacts::VrrRange> descriptor;  // 0xFD, si l'EDID se dit à fréquence continue
+};
+
+// Une plage VRR qui se tient (max − min > kMinVrrSpanHz) ; la première trouvée d'une source reste.
+void offer_range(std::optional<DisplayFacts::VrrRange>& slot, int min_hz, int max_hz) {
+  if (slot || min_hz <= 0 || max_hz - min_hz <= kMinVrrSpanHz) return;
+  slot = DisplayFacts::VrrRange{.min_hz = min_hz, .max_hz = max_hz};
+}
+
+bool has_oui(std::span<const std::uint8_t> payload, std::uint8_t a, std::uint8_t b, std::uint8_t c) {
+  return payload.size() >= 3 && payload[0] == a && payload[1] == b && payload[2] == c;
+}
+
+// Les blocs propres au fabricant de CTA-861 qui disent une plage VRR : AMD FreeSync (OUI 00-00-1A, octets
+// de la charge 5 et 6) et HDMI Forum (OUI C4-5D-D8, HF-VSDB : VRRmin octet 8 bits 5:0, VRRmax octets 8
+// bits 7:6 et 9).
+void read_vendor_vrr(std::span<const std::uint8_t> payload, VrrSources& vrr) {
+  if (has_oui(payload, 0x1A, 0x00, 0x00) && payload.size() >= 7)
+    offer_range(vrr.freesync, payload[5], payload[6]);
+  if (has_oui(payload, 0xD8, 0x5D, 0xC4) && payload.size() >= 10) {
+    const int max_hz = static_cast<int>(((payload[8] & 0xC0U) << 2U) | payload[9]);
+    offer_range(vrr.hdmi, payload[8] & 0x3FU, max_hz);
+  }
+}
+
+void read_cta(std::span<const std::uint8_t> block, DisplayFacts& out, VrrSources& vrr) {
   const std::size_t end = std::min<std::size_t>(block[2], kBlock - 1);
   for (std::size_t at = 4; at < end;) {
     const std::uint8_t tag = block[at] >> 5U;
     const std::size_t length = block[at] & 0x1FU;
     if (at + 1 + length > end) break;
+    if (tag == kCtaVendor) read_vendor_vrr(block.subspan(at + 1, length), vrr);
     if (tag == kCtaExtended && length >= 3 && block[at + 1] == kCtaHdrStatic) {
       const std::span<const std::uint8_t> hdr = block.subspan(at + 2, length - 1);
       out.pq = (hdr[0] & 0x04U) != 0;
@@ -90,12 +123,18 @@ void read_cta(std::span<const std::uint8_t> block, DisplayFacts& out) {
   }
 }
 
-void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out) {
+void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out, VrrSources& vrr) {
   const std::size_t end = std::min<std::size_t>(5 + block[2], kBlock - 1);
   for (std::size_t at = 5; at + 3 <= end;) {
     const std::uint8_t tag = block[at];
     const std::size_t length = block[at + 2];
     if (at + 3 + length > end) break;
+    if (tag == kDisplayIdAdaptiveSync) {
+      // Des descripteurs de 6 octets : minimum (octet 2), maximum − 1 sur 10 bits (octets 3 et 4, bits 1:0).
+      for (std::size_t d = at + 3; d + 6 <= at + 3 + length; d += 6)
+        offer_range(vrr.displayid, block[d + 2],
+                    static_cast<int>(((block[d + 4] & 0x03U) << 8U) | block[d + 3]) + 1);
+    }
     if (tag == kDisplayParameters && 3 + length > kTechnologyByte) {
       const std::span<const std::uint8_t> params = block.subspan(at, 3 + length);
       out.displayid_oled = ((params[kTechnologyByte] >> 4U) & 0x7U) == kAmoled;
@@ -178,18 +217,30 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
   out.primaries = edid_primaries(edid.first(kBlock));
   // Quatre descripteurs de 18 octets dans le bloc de base, de l'octet 54 : 00 00 00 FD est la plage de
   // fréquences.
+  // Le descripteur 0xFD ne dit une fréquence variable que sur un EDID 1.4 à fréquence continue : un écran
+  // 60 Hz fixe y annonce souvent 56 à 76 Hz.
+  const bool continuous = edid[0x12] == 1 && edid[0x13] >= 4 && (edid[0x18] & 0x01U) != 0;
+  VrrSources vrr;
   for (std::size_t at = 54; at + 18 <= kBlock; at += 18) {
     if (edid[at] == 0 && edid[at + 1] == 0 && edid[at + 2] == 0 && edid[at + 3] == 0xFD) {
-      // Octet 4, bits 0-1 : 3 = le minimum vertical se lit +255.
-      const int offset = (edid[at + 4] & 0x03U) == 0x03U ? 255 : 0;
-      if (edid[at + 5] != 0) out.vrr_min_hz = edid[at + 5] + offset;
+      // Octet 4, bits 1:0 : 2 = le maximum vertical se lit +255, 3 = le minimum aussi.
+      const int min_offset = (edid[at + 4] & 0x03U) == 0x03U ? 255 : 0;
+      const int max_offset = (edid[at + 4] & 0x02U) != 0 ? 255 : 0;
+      if (edid[at + 5] != 0) {
+        out.vrr_min_hz = edid[at + 5] + min_offset;
+        if (continuous) offer_range(vrr.descriptor, *out.vrr_min_hz, edid[at + 6] + max_offset);
+      }
     }
   }
   for (std::size_t at = kBlock; at + kBlock <= edid.size(); at += kBlock) {
     const std::span<const std::uint8_t> block = edid.subspan(at, kBlock);
-    if (block[0] == kCtaTag) read_cta(block, out);
-    if (block[0] == kDisplayIdTag) read_displayid(block, out);
+    if (block[0] == kCtaTag) read_cta(block, out, vrr);
+    if (block[0] == kDisplayIdTag) read_displayid(block, out, vrr);
   }
+  out.vrr_range = vrr.displayid  ? vrr.displayid
+                  : vrr.freesync ? vrr.freesync
+                  : vrr.hdmi     ? vrr.hdmi
+                                 : vrr.descriptor;
   if (out.displayid_oled) {
     out.oled = *out.displayid_oled;
     out.source = OledSource::DisplayId;
@@ -246,26 +297,6 @@ std::string describe(const DisplayFacts& d) {
 namespace {
 
 #ifdef _WIN32
-// Windows laisse présenter sans attendre le vsync (DXGI_FEATURE_PRESENT_ALLOW_TEARING) : l'écran à
-// fréquence variable est là et le système l'utilise. Rien si DXGI 1.5 manque.
-std::optional<bool> windows_vrr() {
-  IDXGIFactory1* factory = nullptr;
-  if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))) ||
-      factory == nullptr)
-    return std::nullopt;
-  std::optional<bool> result;
-  IDXGIFactory5* newer = nullptr;
-  if (SUCCEEDED(factory->QueryInterface(__uuidof(IDXGIFactory5), reinterpret_cast<void**>(&newer))) &&
-      newer) {
-    BOOL tearing = FALSE;
-    if (SUCCEEDED(newer->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing, sizeof(tearing))))
-      result = tearing != FALSE;
-    newer->Release();
-  }
-  factory->Release();
-  return result;
-}
-
 // Les écrans présents (classe de périphériques Monitor) et l'EDID que Windows garde de chacun dans
 // le registre (Enum\DISPLAY\…\Device Parameters\EDID), lisible sans droits.
 std::vector<DisplayFacts> connected_displays() {
@@ -288,8 +319,8 @@ std::vector<DisplayFacts> connected_displays() {
     edid.resize(size);
     DisplayFacts facts = parse_edid(edid);
     facts.connector = std::format("monitor{}", i);
-    facts.vrr = windows_vrr();
-    facts.vrr_armed = facts.vrr;
+    // La capacité, jamais le tearing (12.2) ; armé ou non, seul le retour de présentation le dit (6.10).
+    facts.vrr = facts.vrr_range.has_value();
     found.push_back(std::move(facts));
   }
   SetupDiDestroyDeviceInfoList(set);

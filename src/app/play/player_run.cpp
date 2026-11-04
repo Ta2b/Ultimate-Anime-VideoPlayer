@@ -483,7 +483,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   VrrWatch vrr_watch(vrr_armed);
   // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
   const auto apply_floor = [&] {
-    const int min_hz = p.display ? p.display->vrr_min_hz.value_or(0) : 0;
+    const int min_hz = p.display ? p.display->vrr_floor_hz() : 0;
     session.set_vrr_floor(vrr_armed ? core::vrr_floor_us(min_hz) : 0);
   };
   apply_floor();
