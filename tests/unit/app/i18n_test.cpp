@@ -128,6 +128,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "placebo_export_vulkan.cpp",
                                         "placebo_imgui.cpp",
                                         "placebo_feedback.cpp",
+                                        "placebo_wayland.cpp",
                                         "placebo_open.cpp",
                                         "placebo_ring.cpp",
                                         "placebo_grade.cpp",

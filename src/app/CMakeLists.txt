@@ -8,7 +8,7 @@ ajp_add_module(app
   SOURCES
     play/apple_model.cpp play/auto_bench.cpp play/auto_bench_run.cpp play/machine_calibration.cpp play/settings_bench_results.cpp play/output_choice.cpp play/bench_steps.cpp play/span_auto.cpp play/auto_config.cpp play/backend_library.cpp play/bridges.cpp play/build_progress.cpp play/chain.cpp play/chain_adaptive_log.cpp play/chain_hdr.cpp play/chain_shots.cpp play/chain_learning.cpp play/grade_learning.cpp play/chain_setup.cpp play/chain_stats.cpp play/look_catalog.cpp play/model_choice.cpp play/chapters.cpp play/controls.cpp play/controls_draw.cpp play/controls_icons.cpp play/default_player.cpp play/derived_model.cpp play/span_derive.cpp play/span_int8.cpp play/display_edid.cpp play/drba_model.cpp play/engine_build.cpp play/episodes.cpp play/engine_downloads.cpp play/engine_install.cpp play/engine_screen.cpp play/engine_switch.cpp play/ed25519.cpp play/engine_tools.cpp play/updater.cpp play/export_job.cpp play/export_run.cpp play/export_sink.cpp play/first_run.cpp play/wizard.cpp play/gpu_tier.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu_tiers_data.cpp" play/home_screen.cpp play/i18n.cpp play/i18n_fr.cpp play/i18n_fr_settings.cpp play/i18n_fr_calibration.cpp play/i18n_fr_image.cpp play/i18n_fr_sound.cpp play/i18n_fr_system.cpp play/i18n_fr_wizard.cpp play/i18n_fr_messages.cpp play/i18n_fr_stats.cpp play/i18n_fr_visible.cpp play/home_view.cpp play/host_facts.cpp play/system_peak.cpp play/system_language.cpp play/calibration_images.cpp
     play/external_subtitles.cpp play/frame_queue.cpp play/frame_stats.cpp play/gmfss_model.cpp play/gpu_telemetry.cpp play/input.cpp play/motion_model.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
-    play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
+    play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/latest_writer.cpp play/profiles.cpp play/resume.cpp
     play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/gmfss_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/settings.cpp play/settings_toml.cpp play/settings_toml_display.cpp play/settings_calibration.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp
     play/upscale_ahead.cpp play/upscale_drba.cpp play/upscale_gmfss.cpp play/upscale_late.cpp play/upscale_motion.cpp play/upscale_smooth.cpp play/upscale_stage.cpp play/vulkan_share.cpp play/wiring.cpp
@@ -30,6 +30,27 @@ add_custom_command(
 # advapi32 et shell32.
 if(WIN32)
   target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 winmm user32)
+endif()
+# wp_presentation (placebo_wayland.cpp) : le code client du protocole, produit par wayland-scanner depuis
+# third_party/wayland-protocols/presentation-time.xml.
+if(TARGET ajp::dep::wayland)
+  set(ajp_wl_xml "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/presentation-time.xml")
+  set(ajp_wl_dir "${CMAKE_CURRENT_BINARY_DIR}/wayland")
+  add_custom_command(
+    OUTPUT "${ajp_wl_dir}/presentation-time-client.h" "${ajp_wl_dir}/presentation-time-protocol.c"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${ajp_wl_dir}"
+    COMMAND "${AJP_WAYLAND_SCANNER}" client-header "${ajp_wl_xml}" "${ajp_wl_dir}/presentation-time-client.h"
+    COMMAND "${AJP_WAYLAND_SCANNER}" private-code "${ajp_wl_xml}" "${ajp_wl_dir}/presentation-time-protocol.c"
+    DEPENDS "${ajp_wl_xml}"
+    COMMENT "wayland-scanner : presentation-time"
+    VERBATIM)
+  add_library(ajp_wayland_presentation STATIC "${ajp_wl_dir}/presentation-time-protocol.c")
+  set_target_properties(ajp_wayland_presentation PROPERTIES LINKER_LANGUAGE C POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(ajp_wayland_presentation SYSTEM PUBLIC "${ajp_wl_dir}")
+  target_link_libraries(ajp_wayland_presentation PUBLIC ajp::dep::wayland)
+  target_sources(ajp_app PRIVATE "${ajp_wl_dir}/presentation-time-client.h")
+  target_link_libraries(ajp_app PRIVATE ajp_wayland_presentation)
+  target_compile_definitions(ajp_app PRIVATE AJP_WITH_WAYLAND_PRESENTATION=1)
 endif()
 # Police de l'interface : celle du bureau par fontconfig quand il est là, sinon celle d'ImGui.
 if(TARGET ajp::dep::fontconfig)

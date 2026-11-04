@@ -78,6 +78,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
 endif()
 
+# wp_presentation (--present=wayland, docs/adr/0011) : wayland-client et wayland-scanner, facultatifs ; sans
+# eux le niveau Wayland n'est jamais offert.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  pkg_check_modules(AJP_WAYLAND QUIET IMPORTED_TARGET wayland-client)
+  find_program(AJP_WAYLAND_SCANNER NAMES wayland-scanner)
+  if(AJP_WAYLAND_FOUND AND AJP_WAYLAND_SCANNER)
+    enable_language(C)  # le code du protocole produit par wayland-scanner
+    ajp_alias_dep(wayland PkgConfig::AJP_WAYLAND)
+  endif()
+endif()
+
 find_package(SDL3 CONFIG REQUIRED)
 
 ajp_alias_dep(sdl3 SDL3::SDL3)

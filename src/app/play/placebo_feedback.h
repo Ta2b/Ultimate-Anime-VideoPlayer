@@ -8,11 +8,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 #include <spdlog/logger.h>
 
+#include "app/play/placebo_wayland.h"
 #include "app/play/present_level.h"
 #include "core/present_ledger.h"
 #include "core/vblank_clock.h"
@@ -29,8 +31,9 @@ struct FeedbackRead {
 
 class PresentFeedback {
  public:
+  // wayland : la source du retour au niveau Wayland (placebo_wayland.h), nulle aux autres.
   PresentFeedback(pl_vulkan vk, PresentLevel level, const PresentCaps& caps,
-                  std::shared_ptr<spdlog::logger> channel);
+                  std::shared_ptr<spdlog::logger> channel, std::unique_ptr<WaylandPresentation> wayland = {});
   ~PresentFeedback();
   PresentFeedback(const PresentFeedback&) = delete;
   PresentFeedback& operator=(const PresentFeedback&) = delete;
@@ -60,12 +63,16 @@ class PresentFeedback {
   void read_back(VkSwapchainKHR swapchain, std::int64_t now_us);
   void poll_wait(VkSwapchainKHR swapchain, std::int64_t now_us);
   void accept(std::uint64_t id, std::int64_t visible_us, bool dated);
+  void read_wayland();
 
   pl_vulkan vk_;
   PresentLevel level_;
   PresentCaps caps_;
   std::shared_ptr<spdlog::logger> channel_;
   std::unique_ptr<Api> api_;
+  std::unique_ptr<WaylandPresentation> wayland_;
+  std::vector<WaylandDone> wayland_done_;
+  std::uint64_t discarded_ = 0;  // écartées par le compositeur (niveau Wayland)
   core::PresentLedger ledger_;
   core::TimeDomainMap domain_;
   core::VblankClock clock_;
