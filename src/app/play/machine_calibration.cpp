@@ -217,7 +217,8 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
   const auto most = static_cast<float>(2 * calibration_heights(display_height).size() + 1);
   int index = 0;
-  // SPAN en FP8 d'abord ; le premier essai SPAN dit si la carte l'a pris, sinon tout passe au FP16.
+  // SPAN en FP8 d'abord ; le premier essai SPAN à kFp8JudgeHeight ou plus dit si la carte l'a pris, sinon
+  // la suite passe au FP16.
   out.span_fp8 = true;
   bool fp8_known = false;
   while (const auto chain = next_candidate(out.tried, display_height)) {
@@ -232,6 +233,10 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
                                 out.tried.empty() ? plan.first_allowance : plan.build_allowance);
     if (stop.stop_requested())
       return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
+    // Le FP8 se juge à partir de kFp8JudgeHeight : plus bas, la porte de qualité le refuse souvent (erreur
+    // relative plus forte sur une petite image) et le lecteur y joue Balanced en FP16, bon marché à cette
+    // taille ; ce refus ne dit rien de la carte.
+    const bool judges_fp8 = chain->span && !fp8_known && chain->height >= kFp8JudgeHeight;
     if (!reading && chain->span && !fp8_known) {
       // Le premier essai en FP8 n'a rien rendu (préparation du FP8 ratée…) : le FP16 avant de conclure.
       log->warn("calibration de la machine : essai SPAN FP8 sans mesure ({}), essais en FP16",
@@ -242,7 +247,7 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
       continue;
     }
     if (!reading && out.tried.empty()) return std::unexpected(std::move(reading.error()));
-    if (chain->span && !fp8_known && reading) {
+    if (judges_fp8 && reading) {
       fp8_known = true;
       if (reading->span_variant != kCalibrationFp8Variant) {
         // La carte ne prend pas le FP8 (ou le modèle Balanced manque) : l'essai se refait en FP16.

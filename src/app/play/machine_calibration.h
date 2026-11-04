@@ -41,6 +41,9 @@ inline constexpr std::string_view kCalibrationFp8Variant = "FP8 CUTLASS";
 // Les hauteurs de travail possibles, de la plus légère à la plus lourde.
 inline constexpr std::array<int, 6> kCalibrationHeights{360, 480, 540, 720, 900, 1080};
 
+// La hauteur de travail à partir de laquelle un essai SPAN dit si la carte prend le FP8.
+inline constexpr int kFp8JudgeHeight = 720;
+
 struct ChainCandidate {
   bool span = true;
   bool rife = true;

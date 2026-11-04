@@ -241,7 +241,8 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   if (display_height < 360) display_height = 2160;
   const auto base = sdl_path(SDL_GetBasePath());
   char* pref = SDL_GetPrefPath("ajp", "ajp");
-  const auto data = play::user_data(sdl_path(pref));
+  // Le dossier des réglages du lecteur (settings.toml, moteurs choisis), comme le panneau du bench.
+  const auto data = sdl_path(pref);
   SDL_free(pref);
   std::error_code error;
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
