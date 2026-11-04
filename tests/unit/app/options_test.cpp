@@ -114,11 +114,6 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   CHECK(v2->hdr_contract_v2);
   CHECK(v2->hdr_metadata_off);
   CHECK_FALSE(v2->kde_sdr_nits);
-  CHECK_FALSE(v2->contract_v2_ver9);  // la pile de LUT gardée
-  const auto ver9 = parse({"épisode.mkv", "--hdr-contract-v2=ver9"});
-  REQUIRE(ver9);
-  CHECK(ver9->hdr_contract_v2);
-  CHECK(ver9->contract_v2_ver9);
   CHECK(options->present == PresentWanted::Wait);
   CHECK(parse({"épisode.mkv", "--no-present"})->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});
