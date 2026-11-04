@@ -221,6 +221,7 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   // la suite passe au FP16.
   out.span_fp8 = true;
   bool fp8_known = false;
+  std::optional<ChainCandidate> retried;  // la chaîne déjà rejouée une fois
   while (const auto chain = next_candidate(out.tried, display_height)) {
     if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
     const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
@@ -269,6 +270,15 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
                            static_cast<double>(presents);
       if (reading->interval_mean_us > 0) trial.fps = 1e6 / static_cast<double>(reading->interval_mean_us);
       if (reading->interval_p99_us > 0) trial.low_fps = 1e6 / static_cast<double>(reading->interval_p99_us);
+    }
+    // Un essai qui ne tient pas se rejoue une fois : le premier d'une taille construit son moteur à froid et
+    // perd quelques images au démarrage, que le second, moteur en cache, ne perd plus.
+    if (reading && !trial.holds && retried != *chain) {
+      log->info("calibration de la machine : {} ne tient pas ({:.1f} % perdues), rejoué une fois",
+                describe(*chain), trial.lost_percent);
+      retried = *chain;
+      ++index;
+      continue;
     }
     log->info("calibration de la machine : {} {}", describe(*chain), trial.holds ? "tient" : "ne tient pas");
     out.tried.push_back(trial);
