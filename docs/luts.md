@@ -85,3 +85,7 @@ Essai `--hdr-contract-v2` (chantier 8.4) : la pile par défaut, si l'utilisateur
 `ver9-couleur.cube` (SDR, sa courbe neutre laissée au grade), et la sortie HDR10 annonce les métadonnées du contrat
 d'écran (C_pk, MaxFALL et noir en unités du contenu, primaires de l'EDID ou Display P3) au lieu de laisser KWin
 compresser ; `--hdr-metadata=off` n'annonce rien. `play.toml` n'en garde rien.
+Avec `--grade-ring` en plus (TensorRT), le grade de l'anneau devient une seule lecture 3D par pixel : la LUT de la
+courbe du plan (look SDR compris), cuite en fond pour le plan courant et les deux suivants, datée du début de son
+plan (la bascule se fait à l'image près), deux LUT mêlées dans un fondu. Sans plans connus (pré-analyse coupée),
+le grade d'avant reste.

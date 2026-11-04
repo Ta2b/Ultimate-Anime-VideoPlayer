@@ -249,6 +249,11 @@ bool PlaceboScreen::vrr_changed() {
 
 void PlaceboScreen::set_contract(const render::DisplayContract& contract) {
   impl_->contract = contract;
+  if (impl_->planner) impl_->planner->set_contract(contract);
+}
+
+void PlaceboScreen::set_plan_shots(std::vector<media::Shot> shots) {
+  if (impl_->planner) impl_->planner->set_shots(std::move(shots));
 }
 
 const std::optional<render::DisplayContract>& PlaceboScreen::contract() const {

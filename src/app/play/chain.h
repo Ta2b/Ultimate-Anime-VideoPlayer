@@ -127,6 +127,7 @@ struct Chain {
   std::int64_t shots_seek_us = 0;
   std::int64_t shots_newest_pts = kNoPts;
   std::int64_t shots_step_us = 41'667;
+  std::size_t plan_shots_seen = 0;  // feed_plan_shots : les plans déjà passés à l'écran
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de

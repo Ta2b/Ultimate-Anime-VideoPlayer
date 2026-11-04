@@ -23,6 +23,7 @@
 #include "core/ring.h"
 #include "core/types.h"
 #include "media/hw_api.h"
+#include "media/shot_cutter.h"
 #include "render/cube_lut.h"
 #include "render/display_model.h"
 #include "render/grade_params.h"
@@ -162,6 +163,8 @@ class PlaceboScreen final : public Screen {
   void watch_writes(void (*waker)(void*), void* context);
   // Le contrat d'écran relu (8.2, display_contract.h) : gardé pour le grade et la swapchain du contrat v2.
   void set_contract(const render::DisplayContract& contract);
+  // Les plans de la pré-analyse, pour le grade v2 dans l'anneau (8.6) ; rien hors de cet essai.
+  void set_plan_shots(std::vector<media::Shot> shots);
   const std::optional<render::DisplayContract>& contract() const;
   void new_scene() override;
   // Le grade de l'anneau (chantier 2c, --grade-ring) : les versions du grade sont postées dans `live` quand

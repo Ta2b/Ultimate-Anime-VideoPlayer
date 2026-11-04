@@ -39,6 +39,7 @@ namespace ajp::gpu::cuda {
 class TrtLog;
 class SharedActivations;
 struct GradeState;
+struct GradeVersionDevice;
 struct GradeStateDeleter {
   void operator()(GradeState* state) const;  // tensorrt_grade.cpp
 };
@@ -239,6 +240,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // signal de signal_value.
   std::expected<void, Refusal> finish_slot(const ImportedSlot& slot, const RingWrite& sync);
   std::expected<void, Refusal> grade_slot(const ImportedSlot& slot, const GradeSlot& grade);
+  // Le grade du contrat v2 (8.6) : la LUT de la courbe du plan, sans cartes.
+  std::expected<void, Refusal> grade_lut_slot(const ImportedSlot& slot, const GradeSlot& grade,
+                                              const GradeVersionDevice& version);
   // Où écrit un warp ou une composition : le tenseur out, ou directement le slot de ring.
   struct Target {
     const Tensor* out = nullptr;

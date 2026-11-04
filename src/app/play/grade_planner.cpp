@@ -233,6 +233,16 @@ void GradePlanner::set_user_e(double e) {
   wake_.notify_all();
 }
 
+void GradePlanner::restart() {
+  const std::scoped_lock lock(mutex_);
+  plan_.restart();
+}
+
+bool GradePlanner::has_shots() const {
+  const std::scoped_lock lock(mutex_);
+  return plan_.has_shots();
+}
+
 std::vector<GradePlanOrder> GradePlanner::take_orders(std::int64_t pts_us, std::int64_t now_us) {
   const std::scoped_lock lock(mutex_);
   if (pts_us != position_us_) {

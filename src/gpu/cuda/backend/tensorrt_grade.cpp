@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cuda_runtime.h>  // cudaCreateChannelDesc, make_cudaExtent
 #include <format>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +31,36 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 // d'avant n'est plus la voisine (saut, image tenue longtemps).
 constexpr std::int64_t kHistoryGapUs = 1'000'000;
 
+// Une LUT n³ × 3 en texture 3D float4 (filtre linéaire, coordonnées normalisées, bords tenus).
+std::expected<void, Refusal> lut_texture(std::span<const float> rgb, std::size_t n, cudaArray_t* array,
+                                         cudaTextureObject_t* texture) {
+  std::vector<float> rgba(n * n * n * 4);
+  for (std::size_t i = 0; i < n * n * n; ++i) {
+    rgba[i * 4 + 0] = rgb[i * 3 + 0];
+    rgba[i * 4 + 1] = rgb[i * 3 + 1];
+    rgba[i * 4 + 2] = rgb[i * 3 + 2];
+    rgba[i * 4 + 3] = 1.0F;
+  }
+  const cudaChannelFormatDesc f4 = cudaCreateChannelDesc<float4>();
+  if (auto ok = cuda_check(cudaMalloc3DArray(array, &f4, make_cudaExtent(n, n, n)), "cudaMalloc3DArray"); !ok)
+    return ok;
+  cudaMemcpy3DParms copy{};
+  copy.srcPtr = make_cudaPitchedPtr(rgba.data(), n * 4 * sizeof(float), n, n);
+  copy.dstArray = *array;
+  copy.extent = make_cudaExtent(n, n, n);
+  copy.kind = cudaMemcpyHostToDevice;
+  if (auto ok = cuda_check(cudaMemcpy3D(&copy), "cudaMemcpy3D"); !ok) return ok;
+  cudaResourceDesc resource{};
+  resource.resType = cudaResourceTypeArray;
+  resource.res.array.array = *array;
+  cudaTextureDesc tex{};
+  tex.addressMode[0] = tex.addressMode[1] = tex.addressMode[2] = cudaAddressModeClamp;
+  tex.filterMode = cudaFilterModeLinear;
+  tex.readMode = cudaReadModeElementType;
+  tex.normalizedCoords = 1;
+  return cuda_check(cudaCreateTextureObject(texture, &resource, &tex, nullptr), "cudaCreateTextureObject");
+}
+
 }  // namespace
 
 // Un ordre en mémoire de l'appareil.
@@ -41,10 +72,22 @@ struct GradeVersionDevice {
   cudaArray_t look_array = nullptr;
   cudaTextureObject_t look = 0;
   int look_size = 0;
+  // Le grade du contrat v2 (8.6) : la LUT de la courbe du plan, celle de la fin d'un fondu, leur plage.
+  cudaArray_t curve_array = nullptr;
+  cudaTextureObject_t curve = 0;
+  cudaArray_t fade_array = nullptr;
+  cudaTextureObject_t curve_fade = 0;
+  int curve_size = 0;
+  std::int64_t from_pts_us = 0;
+  std::int64_t until_pts_us = 0;
   cudaEvent_t used = nullptr;  // posé après chaque grade qui la lit : sa case se libère derrière lui
 
   void release() {
     if (used != nullptr) cudaEventDestroy(used);
+    if (curve != 0) cudaDestroyTextureObject(curve);
+    if (curve_array != nullptr) cudaFreeArray(curve_array);
+    if (curve_fade != 0) cudaDestroyTextureObject(curve_fade);
+    if (fade_array != nullptr) cudaFreeArray(fade_array);
     if (look != 0) cudaDestroyTextureObject(look);
     if (look_array != nullptr) cudaFreeArray(look_array);
     if (input_nits != nullptr) cudaFree(input_nits);
@@ -89,6 +132,12 @@ std::expected<void, Refusal> TensorRtBackend::set_grade(const GradeOrder& order)
     return refuse(RefusalCode::FieldOutOfRange, std::format("set_grade : look de taille {} et {} valeurs",
                                                             order.look_size, order.look_rgb.size()));
   }
+  const auto c = static_cast<std::size_t>(std::max(order.curve_size, 0));
+  if (order.curve_size != 0 && (order.curve_size < 2 || order.curve_lut.size() != c * c * c * 3 ||
+                                (!order.curve_fade.empty() && order.curve_fade.size() != c * c * c * 3))) {
+    return refuse(RefusalCode::FieldOutOfRange, std::format("set_grade : courbe de taille {} et {} valeurs",
+                                                            order.curve_size, order.curve_lut.size()));
+  }
   if (order.look_size == 0 && order.uniforms.look_mix > 0.0F) {
     return refuse(RefusalCode::FieldOutOfRange, "set_grade : intensité du look sans look");
   }
@@ -104,7 +153,10 @@ std::expected<void, Refusal> TensorRtBackend::set_grade(const GradeOrder& order)
   GradeVersionDevice made{.version = order.version,
                           .uniforms = order.uniforms,
                           .input_matrix = order.input_matrix,
-                          .look_size = order.look_size};
+                          .look_size = order.look_size,
+                          .curve_size = order.curve_size,
+                          .from_pts_us = order.from_pts_us,
+                          .until_pts_us = order.until_pts_us};
   auto ready = cuda_check(cudaEventCreateWithFlags(&made.used, cudaEventDisableTiming), "cudaEventCreate");
   if (ready)
     ready = cuda_check(cudaMalloc(reinterpret_cast<void**>(&made.input_nits), kTable * sizeof(float)),
@@ -114,38 +166,10 @@ std::expected<void, Refusal> TensorRtBackend::set_grade(const GradeOrder& order)
         cudaMemcpy(made.input_nits, order.input_nits.data(), kTable * sizeof(float), cudaMemcpyHostToDevice),
         "cudaMemcpy");
   }
-  if (ready && n != 0) {
-    std::vector<float> rgba(n * n * n * 4);
-    for (std::size_t i = 0; i < n * n * n; ++i) {
-      rgba[i * 4 + 0] = order.look_rgb[i * 3 + 0];
-      rgba[i * 4 + 1] = order.look_rgb[i * 3 + 1];
-      rgba[i * 4 + 2] = order.look_rgb[i * 3 + 2];
-      rgba[i * 4 + 3] = 1.0F;
-    }
-    const cudaChannelFormatDesc f4 = cudaCreateChannelDesc<float4>();
-    ready =
-        cuda_check(cudaMalloc3DArray(&made.look_array, &f4, make_cudaExtent(n, n, n)), "cudaMalloc3DArray");
-    if (ready) {
-      cudaMemcpy3DParms copy{};
-      copy.srcPtr = make_cudaPitchedPtr(rgba.data(), n * 4 * sizeof(float), n, n);
-      copy.dstArray = made.look_array;
-      copy.extent = make_cudaExtent(n, n, n);
-      copy.kind = cudaMemcpyHostToDevice;
-      ready = cuda_check(cudaMemcpy3D(&copy), "cudaMemcpy3D");
-    }
-    if (ready) {
-      cudaResourceDesc resource{};
-      resource.resType = cudaResourceTypeArray;
-      resource.res.array.array = made.look_array;
-      cudaTextureDesc tex{};
-      tex.addressMode[0] = tex.addressMode[1] = tex.addressMode[2] = cudaAddressModeClamp;
-      tex.filterMode = cudaFilterModeLinear;
-      tex.readMode = cudaReadModeElementType;
-      tex.normalizedCoords = 1;
-      ready = cuda_check(cudaCreateTextureObject(&made.look, &resource, &tex, nullptr),
-                         "cudaCreateTextureObject");
-    }
-  }
+  if (ready && n != 0) ready = lut_texture(order.look_rgb, n, &made.look_array, &made.look);
+  if (ready && c != 0) ready = lut_texture(order.curve_lut, c, &made.curve_array, &made.curve);
+  if (ready && c != 0 && !order.curve_fade.empty())
+    ready = lut_texture(order.curve_fade, c, &made.fade_array, &made.curve_fade);
   if (!ready) {
     made.release();
     return ready;
@@ -175,6 +199,7 @@ std::expected<void, Refusal> TensorRtBackend::grade_slot(const ImportedSlot& slo
   }
   GradeState& state = *grade_;
   const RingSlotDesc& desc = slot.desc();
+  if (version->curve != 0) return grade_lut_slot(slot, grade, *version);
   const bool skin = version->uniforms.skin_on >= 0.5F;
   // Les cartes à la taille de l'anneau ; un changement de taille (ou le masque peau allumé) les refait.
   if (state.block == nullptr || state.width != desc.width || state.height != desc.height ||
@@ -240,6 +265,34 @@ std::expected<void, Refusal> TensorRtBackend::grade_slot(const ImportedSlot& slo
   if (auto ok = cuda_check(launch_grade_slot(frame, stream_), "grade_slot<<<>>>"); !ok) return ok;
   timing.end(stream_);
   return cuda_check(cudaEventRecord(version->used, stream_), "cudaEventRecord");
+}
+
+std::expected<void, Refusal> TensorRtBackend::grade_lut_slot(const ImportedSlot& slot, const GradeSlot& grade,
+                                                             const GradeVersionDevice& version) {
+  const RingSlotDesc& desc = slot.desc();
+  float mix = 0.0F;
+  if (version.curve_fade != 0 && grade.pts_us != kNoPts && version.until_pts_us > version.from_pts_us) {
+    mix = static_cast<float>(grade.pts_us - version.from_pts_us) /
+          static_cast<float>(version.until_pts_us - version.from_pts_us);
+    mix = std::clamp(mix, 0.0F, 1.0F);
+  }
+  GradeFrame frame{.surface = slot.surface(),
+                   .width = desc.width,
+                   .height = desc.height,
+                   .input_nits = version.input_nits,
+                   .uniforms = version.uniforms,
+                   .curve = version.curve,
+                   .curve_fade = version.curve_fade,
+                   .curve_size = version.curve_size,
+                   .curve_mix = mix};
+  std::copy(version.input_matrix.begin(), version.input_matrix.end(), frame.input_matrix);
+  const auto nits = reinterpret_cast<std::uintptr_t>(version.input_nits);
+  if (auto ok = order({nits}, {}); !ok) return ok;
+  GpuTiming& timing = stage("grade de l'anneau (v2)");
+  timing.begin(stream_);
+  if (auto ok = cuda_check(launch_grade_lut_slot(frame, stream_), "grade_lut<<<>>>"); !ok) return ok;
+  timing.end(stream_);
+  return cuda_check(cudaEventRecord(version.used, stream_), "cudaEventRecord");
 }
 
 }  // namespace ajp::gpu::cuda
