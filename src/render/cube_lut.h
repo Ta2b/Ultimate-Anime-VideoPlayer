@@ -39,6 +39,10 @@ std::expected<CubeLut, Refusal> parse_cube(std::string_view text);
 CubeLut compose_luts(std::span<const CubeLut* const> luts, std::span<const double> mixes,
                      int size = kLutMaxSize);
 
+// Le texte .cube d'une LUT (TITLE, LUT_3D_SIZE, puis les points, rouge le plus rapide), relisible par
+// parse_cube à 1e-6 près.
+std::string write_cube(const CubeLut& lut);
+
 // Le texte d'un bloc //!TEXTURE libplacebo (rgba16hf, linéaire, bords tenus) nommé `name`, données comprises.
 std::string lut_texture_block(const CubeLut& lut, std::string_view name);
 

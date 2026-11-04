@@ -541,4 +541,34 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   }
 }
 
+// --bake-looks : la pile de LUT des réglages en une seule, comme le lecteur la lit (intensités, ordre).
+std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_file,
+                                        const std::filesystem::path& luts_dir,
+                                        const std::filesystem::path& out) {
+  auto settings = load_settings(settings_file);
+  if (!settings) return std::unexpected(std::move(settings.error()));
+  const PlaySettings& s = *settings;
+  LoadedLooks looks = load_looks(s, luts_dir);
+  if (!looks.failed.empty())
+    return refuse(RefusalCode::FileUnreadable,
+                  std::format("--bake-looks : {} illisible", looks.failed.front()));
+  const std::vector<LookLayer> slots = look_slots(s);
+  std::array<const render::CubeLut*, render::kLookSlots> luts{};
+  std::array<double, render::kLookSlots> mixes{};
+  for (std::size_t i = 0; i < render::kLookSlots && i < slots.size(); ++i) {
+    if (!looks.luts.at(i)) continue;
+    luts.at(i) = &*looks.luts.at(i);
+    mixes.at(i) = slots[i].mix;
+    log_channel("app")->info("--bake-looks : {} à {:.0f} %", slots[i].key, 100.0 * slots[i].mix);
+  }
+  render::CubeLut baked = render::compose_luts(luts, mixes);
+  baked.title = "ajp anime HDR (pile composee)";
+  std::ofstream file(out, std::ios::binary);
+  file << render::write_cube(baked);
+  if (!file)
+    return refuse(RefusalCode::FileUnreadable, std::format("--bake-looks : {} ne s'écrit pas", out.string()));
+  log_channel("app")->info("--bake-looks : {} écrit ({} points)", out.string(), baked.size);
+  return {};
+}
+
 }  // namespace ajp::app::play

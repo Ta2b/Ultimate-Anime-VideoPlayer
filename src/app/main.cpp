@@ -344,6 +344,12 @@ int main(int argc, char** argv) {
     ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
                                   ajp::app::play::installed_version());
   }
+  if (options->bake_looks) {
+    const auto baked =
+        ajp::app::play::bake_looks(settings_dir / "play.toml", data / "luts", *options->bake_looks);
+    if (!baked) return fail(baked.error());
+    return 0;
+  }
   av_log_set_level(AV_LOG_ERROR);  // FFmpeg écrit sur stderr ; ses avertissements de sonde sont du bruit
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
