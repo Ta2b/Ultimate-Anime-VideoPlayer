@@ -426,6 +426,9 @@ TEST_CASE("grade de l'anneau : coût en 1440p et 2160p", "[.grade_ring][backend_
     kernels::GradeUniforms u;
     u.black_lo = 0.002F;
     u.black_hi = 0.02F;
+    // Le masque peau coupé, comme le lecteur sans --skin-mask (placebo_grade.cpp) : allumé, il ajoute
+    // 3,4 ms en 1440p et 7,7 ms en 2160p (mesure du 04/11).
+    u.skin_on = 0.0F;
     const gpu::cuda::GradeFrame f = dev.frame(u, input, false, 0);
     cudaEvent_t start = nullptr;
     cudaEvent_t stop = nullptr;
