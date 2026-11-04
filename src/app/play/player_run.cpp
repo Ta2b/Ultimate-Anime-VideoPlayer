@@ -140,8 +140,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("sortie SDR : pas de HDR adaptatif, image SDR gradée");
     settings.hdr_native = false;
   }
-  // La couleur de la source telle que le flux l'étiquette : l'écran convertit depuis elle (gamut, courbe,
-  // HDR10 ou HLG).
+  // La couleur de la source telle que le flux l'étiquette : l'écran en convertit gamut, courbe, HDR10, HLG.
   const std::optional<ColorInfo> source_color = media::track_color(video);
   const ColorInfo source = source_color.value_or(ColorInfo{});
   const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
@@ -171,8 +170,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = work_size(width, height, settings.work_height);
-        // Étape 5.5a : anneau RGB10A2 derrière --ring-rgb10a2, tant que la porte de banding n'est pas
-        // mesurée.
+        // Étape 5.5a : anneau RGB10A2 derrière --ring-rgb10a2, tant que la porte de banding n'est pas faite.
         const RingFormat ring_format =
             p.options.ring_rgb10a2 && c.backend && c.backend->capabilities().ring_rgb10a2
                 ? RingFormat::Rgb10a2Unorm
