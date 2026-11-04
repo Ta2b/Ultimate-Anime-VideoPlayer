@@ -121,6 +121,8 @@ constexpr std::array kVisibleTexts{
     Entry{"{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)",
           "{} : sous les garde-fous ({} ; il faut {:.0f} dB, {:.0f} dB et {:.3f})"},
     Entry{"{}: changed since its receipt", "{} : modifié depuis son reçu"},
+    Entry{"{}: rejected at the 99.9th percentile ({:.1f}/255, dark {:.1f}/255; {} passes)",
+          "{} : refusé au 99,9e centile ({:.1f}/255, sombre {:.1f}/255 ; {} passe)"},
     Entry{"{}: derived on {}, this GPU is {}: prepare it again",
           "{} : dérivé sur {}, ce GPU est {} : à préparer de nouveau"},
     Entry{"{}: kernels version {}, this engine has {}: prepare it again",

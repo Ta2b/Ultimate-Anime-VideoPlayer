@@ -133,11 +133,20 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
     out.stale = true;
     return out;
   };
-  if (!receipt["passed"].value_or(false) || variant.psnr_mean_db < limits.min_psnr_mean ||
-      variant.psnr_worst_db < limits.min_psnr_worst || variant.ssim_worst < limits.min_ssim_worst) {
+  const bool scores_pass = variant.psnr_mean_db >= limits.min_psnr_mean &&
+                           variant.psnr_worst_db >= limits.min_psnr_worst &&
+                           variant.ssim_worst >= limits.min_ssim_worst;
+  if (!receipt["passed"].value_or(false) || !scores_pass) {
+    // PSNR et SSIM passent mais le reçu refuse : c'est la porte durcie (99,9e centile) qui a dit non.
     const std::string note =
-        i18n::tr_format("{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)",
-                        where, scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst);
+        scores_pass && v2
+            ? i18n::tr_format(
+                  "{}: rejected at the 99.9th percentile ({:.1f}/255, dark {:.1f}/255; {} passes)", where,
+                  255.0 * receipt["error_p999_worst"].value_or(0.0),
+                  255.0 * receipt["dark_error_p999_worst"].value_or(0.0), scores)
+            : i18n::tr_format(
+                  "{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)", where,
+                  scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst);
     return old_gate ? stale(note) : refused(note);
   }
   auto model_sha = prepare::sha256_file_known(variant.onnx);

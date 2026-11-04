@@ -75,10 +75,10 @@ TEST_CASE("la porte durcie tient au 99,9e centile, au sombre et aux cas durs (3.
   CHECK(judge_hardened(good, {}).passed);  // sans cas dur : la partie centile seule
 
   std::vector<ImageScore> loud = good;
-  loud[1].error_p999 = 4.5 / 255.0;
+  loud[1].error_p999 = 10.5 / 255.0;
   CHECK_FALSE(judge_hardened(loud, hard).passed);
   std::vector<ImageScore> dark = good;
-  dark[0].dark_error_p999 = 2.5 / 255.0;
+  dark[0].dark_error_p999 = 5.0 / 255.0;
   CHECK_FALSE(judge_hardened(dark, hard).passed);
   // Les cas durs synthétiques sont relevés sans décider (porte 2, séance du 04/11).
   std::vector<ImageScore> broken = hard;

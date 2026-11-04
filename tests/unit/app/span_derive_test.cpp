@@ -242,7 +242,7 @@ TEST_CASE("la porte durcie refuse au 99,9e centile ; les cas durs sont relevés 
           "[app][span_derive]") {
   ajp::app::play::FrenchUi french;
   const auto [p999, hard, passes] =
-      GENERATE(std::tuple{1.0 / 255.0, 40.0, true}, std::tuple{5.0 / 255.0, 40.0, false},
+      GENERATE(std::tuple{1.0 / 255.0, 40.0, true}, std::tuple{11.0 / 255.0, 40.0, false},
                std::tuple{1.0 / 255.0, 16.0, true});
   INFO(p999 * 255.0 << "/255, cas durs " << hard << " dB");
   const Folder folder;

@@ -20,17 +20,18 @@ inline constexpr float kE4m3Max = 448.0F;  // le plus grand E4M3 fini
 inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7b
 // La version de la porte (judge_hardened) : un refus d'une porte plus ancienne se refait. 2 : les cas durs
 // synthétiques ne décident plus (séance du 04/11).
-inline constexpr int kGateVersion = 2;
+inline constexpr int kGateVersion = 3;  // 3 : centiles réglés sur la RTX 4070 Ti (04/11)
 inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";  // tools/span/derive_span_fp8.py
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
-// Étape 3.7a, porte durcie : 99,9e centile de l'erreur absolue (sur [0, 1]) des images de validation et des
-// cas durs, le même sur les pixels sombres, et pire PSNR des cas durs. Valeurs de départ du plan ; à ajuster
-// à 1,25 × celles du b8f64 accepté, mesurées sur la RTX (docs/span-fp8-cutlass.md).
+// Étape 3.7a, porte durcie : 99,9e centile de l'erreur absolue (sur [0, 1]) des images de validation, le même
+// sur les pixels sombres. Réglés comme le plan le prévoyait, à 1,25 × ceux du b8f64 mesurés sur la RTX 4070
+// Ti (04/11 : 8,1/255 et 3,6/255 à 720p, PSNR 52,0 dB) ; les valeurs de départ (4/255 et 2/255) refusaient
+// tout.
 inline constexpr double kErrorQuantile = 0.999;
-inline constexpr double kMaxErrorP999 = 4.0 / 255.0;
-inline constexpr double kMaxDarkErrorP999 = 2.0 / 255.0;
+inline constexpr double kMaxErrorP999 = 10.0 / 255.0;
+inline constexpr double kMaxDarkErrorP999 = 4.5 / 255.0;
 inline constexpr double kMinHardPsnrWorstDb = 36.0;
 // Étape 3.5a : l'accumulateur f16 hors blocs ne coûte pas plus que ceci au PSNR moyen.
 inline constexpr double kMaxAcc16PsnrLossDb = 0.3;
