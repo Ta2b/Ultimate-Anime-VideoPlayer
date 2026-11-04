@@ -15,3 +15,7 @@ ajoutés tels quels, octet pour octet. Ils comprennent notamment les LUT de la p
 ## Usage dans le lecteur
 Ce sont des LUT d'HDR (étalonnées pour des codes PQ BT.2020) : le lecteur les applique en sortie HDR et coupe la pile
 en sortie SDR (docs/luts.md). Les fichiers se déposent aussi à la main dans le dossier `luts` des données du lecteur.
+
+## Fichier dérivé
+`HDR pile unique 65 point.cube` n'est pas un fichier d'origine : il est calculé par `tools/look/bake_stack.py` à partir des
+LUT ci-dessus (la pile par défaut du lecteur en une seule LUT, docs/luts.md). Il hérite de leur provenance et de leur incertitude de licence.

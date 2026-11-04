@@ -295,18 +295,15 @@ struct PlaySettings {
   // Le look : une LUT 3D .cube (render/cube_lut.h) mélangée après le grade. Vide : aucun. « maison:... » : un
   // look du lecteur (render/looks.h) ; sinon le nom d'un fichier du dossier luts des données. Intensité de 0
   // à 1.
-  std::string look = "HDR grading base ver.9.0 33 point.cube";
+  std::string look = "HDR pile unique 65 point.cube";
   // Apprentissage du grade adaptatif : une ligne par seconde (statistiques de la scène et réglages courants)
   // dans adaptive-log.tsv, à côté de play.toml, pendant que l'utilisateur règle à l'œil.
   bool adaptive_record = true;
   double look_mix = 1.0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
-  // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1.
-  std::vector<LookLayer> look_layers{
-      {"Black-Enhancement-L.cube", 1.0},         {"Shadow-Enhancement-L.cube", 1.0},
-      {"HDR-contrast-Enhancement-L.cube", 1.0},  {"HDR-contrast-Enhancement-L.cube", 1.0},
-      {"Midtone-gamma-Enhancement-C.cube", 1.0}, {"boost black maintain chroma.cube", 1.0},
-      {"HDR-contrast-Enhancement-L.cube", 1.0}};
+  // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1. Vide par
+  // défaut : la pile de Tatoub est cuite en une seule LUT (tools/look/bake_stack.py, data/luts/).
+  std::vector<LookLayer> look_layers{};
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;
