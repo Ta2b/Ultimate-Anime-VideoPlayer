@@ -241,6 +241,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
                                           "--truehdr-saturation",
                                           "--truehdr-gray",
                                           "--data-dir",
+                                          "--bake-looks",
                                           "--bench-level",
                                           "--bench-out"}) {
         auto value = valued(args, i, name);
@@ -255,6 +256,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           applied = window(text, options);
         } else if (name == "--data-dir") {
           options.data_dir = std::filesystem::path(text);
+        } else if (name == "--bake-looks") {
+          options.bake_looks = std::filesystem::path(text);
         } else if (name == "--bench-out") {
           options.bench_out = std::filesystem::path(text);
         } else if (name == "--bench-level") {
@@ -502,6 +505,9 @@ std::string play_usage() {
       "coupes\n"
       "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
       "  --no-looks       essai : sans la pile de LUT\n"
+      "  --bake-looks=FICHIER.cube  écrit la pile de LUT de play.toml (intensités comprises) en une seule "
+      "LUT\n"
+      "                   de 65 points, puis s'arrête\n"
       "  --anime-pure     essai : --hdr-anime sans les noirs profonds ni les éclats des réglages\n"
       "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
       "                   peps de --hdr-anime : contraste, saturation, éclats, 0 à 200 % (100 : tel quel)\n"

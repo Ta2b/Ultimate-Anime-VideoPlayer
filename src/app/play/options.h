@@ -184,6 +184,9 @@ struct PlayOptions {
   // --no-looks : la lecture sans la pile de LUT ; --anime-pure : la méthode HDR anime sans les noirs profonds
   // ni les éclats des réglages (leurs valeurs par défaut). Essais du tri des réglages (04/11).
   bool no_looks = false;
+  // --bake-looks=FICHIER.cube : la pile de LUT de play.toml, intensités comprises, composée en une seule LUT
+  // (render::compose_luts, 65 points : la même image que la pile) et écrite là ; le lecteur s'arrête.
+  std::optional<std::filesystem::path> bake_looks;
   bool anime_pure = false;
   int anime_contrast = 100;
   int anime_saturation = 100;

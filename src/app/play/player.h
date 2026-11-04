@@ -37,4 +37,10 @@ struct PlayerPaths {
 // initialisé (vidéo et audio) et les puits du journal installés.
 std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths);
 
+// --bake-looks : la pile de LUT de `settings_file` (play.toml), intensités et ordre compris, composée en une
+// seule LUT de 65 points écrite dans `out` ; sans fenêtre.
+std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_file,
+                                        const std::filesystem::path& luts_dir,
+                                        const std::filesystem::path& out);
+
 }  // namespace ajp::app::play

@@ -236,5 +236,19 @@ TEST_CASE("compose_luts : deux LUT s'enchaînent dans l'ordre, une intensité nu
   CHECK(at(none, 32, 16, 48, 2) == Catch::Approx(0.75F));
 }
 
+TEST_CASE("write_cube : la LUT écrite se relit à 1e-6 près, titre et taille compris", "[render][lut]") {
+  CubeLut lut;
+  lut.size = 17;
+  lut.title = "ajp anime HDR (pile composee)";
+  lut.rgb.resize(17 * 17 * 17 * 3);
+  for (std::size_t i = 0; i < lut.rgb.size(); ++i) lut.rgb[i] = static_cast<float>((i * 37) % 1000) / 999.0F;
+  const auto back = parse_cube(write_cube(lut));
+  REQUIRE(back);
+  CHECK(back->size == 17);
+  CHECK(back->title == lut.title);
+  REQUIRE(back->rgb.size() == lut.rgb.size());
+  for (std::size_t i = 0; i < lut.rgb.size(); ++i) CHECK(back->rgb[i] == Approx(lut.rgb[i]).margin(1e-6));
+}
+
 }  // namespace
 }  // namespace ajp::render

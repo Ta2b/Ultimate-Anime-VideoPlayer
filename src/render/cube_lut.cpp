@@ -329,4 +329,13 @@ CubeLut compose_luts(std::span<const CubeLut* const> luts, std::span<const doubl
   return out;
 }
 
+std::string write_cube(const CubeLut& lut) {
+  std::string out;
+  out.reserve(lut.rgb.size() * 9 + 64);
+  out += std::format("TITLE \"{}\"\nLUT_3D_SIZE {}\n", lut.title, lut.size);
+  for (std::size_t i = 0; i + 2 < lut.rgb.size(); i += 3)
+    out += std::format("{:.6f} {:.6f} {:.6f}\n", lut.rgb[i], lut.rgb[i + 1], lut.rgb[i + 2]);
+  return out;
+}
+
 }  // namespace ajp::render
