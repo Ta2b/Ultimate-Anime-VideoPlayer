@@ -268,87 +268,90 @@ kernels::RgbImage from_rgba16(const std::vector<std::uint16_t>& codes, int w, in
 
 TEST_CASE("grade de l'anneau contre la référence", "[backend_tensorrt][cuda][grade_ring]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  constexpr int w = 250;  // ni 8 ni 32 ne la divisent : les cartes arrondies comme libplacebo
-  constexpr int h = 140;
   constexpr int n = 17;
-  const kref::GradeInput input = kref::sdr_input();
-  const std::vector<float> lut = warm_lut(n);
-  const std::vector<std::uint16_t> source = to_rgba16(scene(w, h));
-  const kernels::RgbImage codes = from_rgba16(source, w, h);
-  const auto pq = kref::apply_input(codes, input);
-  REQUIRE(pq);
-  DeviceFrame dev(w, h, input, lut, n);
-  for (const Case& c : cases()) {
-    INFO(c.name);
-    const kref::GradeLook look = c.look ? kref::GradeLook{.size = n, .rgb = lut} : kref::GradeLook{};
-    std::vector<float> previous;
-    // Deux images de suite : la première sans historique (époque neuve), la seconde lissée par la première.
-    for (int frame = 0; frame < 2; ++frame) {
-      INFO("image " << frame);
-      dev.upload(source);
-      const gpu::cuda::GradeFrame f = dev.frame(c.uniforms, input, c.look, n);
-      const float dt = 1.0F / 24.0F;
-      REQUIRE(gpu::cuda::launch_grade_local(f, nullptr) == cudaSuccess);
-      REQUIRE(gpu::cuda::launch_grade_area(f, dt, frame == 0, nullptr) == cudaSuccess);
-      REQUIRE(gpu::cuda::launch_grade_slot(f, nullptr) == cudaSuccess);
-      REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
-      const std::vector<std::uint16_t> got = dev.download();
+  // 250 × 140 : ni 8 ni 32 ne la divisent, les cartes arrondies comme libplacebo ; 256 × 144 : multiple de 8,
+  // la carte locale par tuiles (grade_local_tiled_kernel).
+  for (const auto [w, h] : {std::array{250, 140}, std::array{256, 144}}) {
+    INFO(w << "x" << h);
+    const kref::GradeInput input = kref::sdr_input();
+    const std::vector<float> lut = warm_lut(n);
+    const std::vector<std::uint16_t> source = to_rgba16(scene(w, h));
+    const kernels::RgbImage codes = from_rgba16(source, w, h);
+    const auto pq = kref::apply_input(codes, input);
+    REQUIRE(pq);
+    DeviceFrame dev(w, h, input, lut, n);
+    for (const Case& c : cases()) {
+      INFO(c.name);
+      const kref::GradeLook look = c.look ? kref::GradeLook{.size = n, .rgb = lut} : kref::GradeLook{};
+      std::vector<float> previous;
+      // Deux images de suite : la première sans historique (époque neuve), la seconde lissée par la première.
+      for (int frame = 0; frame < 2; ++frame) {
+        INFO("image " << frame);
+        dev.upload(source);
+        const gpu::cuda::GradeFrame f = dev.frame(c.uniforms, input, c.look, n);
+        const float dt = 1.0F / 24.0F;
+        REQUIRE(gpu::cuda::launch_grade_local(f, nullptr) == cudaSuccess);
+        REQUIRE(gpu::cuda::launch_grade_area(f, dt, frame == 0, nullptr) == cudaSuccess);
+        REQUIRE(gpu::cuda::launch_grade_slot(f, nullptr) == cudaSuccess);
+        REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+        const std::vector<std::uint16_t> got = dev.download();
 
-      const auto maps = kref::grade_maps(*pq, c.uniforms, look, previous, dt);
-      REQUIRE(maps);
-      const auto want = kref::grade_image(*pq, *maps, c.uniforms, look);
-      REQUIRE(want);
-      previous = maps->history;
-      const std::vector<float> history = dev.history_host();
-      float history_worst = 0.0F;
-      for (std::size_t i = 0; i < history.size(); ++i)
-        history_worst = std::max(history_worst, std::abs(history[i] - maps->history[i]));
-      CHECK(history_worst <= 1e-4F);
+        const auto maps = kref::grade_maps(*pq, c.uniforms, look, previous, dt);
+        REQUIRE(maps);
+        const auto want = kref::grade_image(*pq, *maps, c.uniforms, look);
+        REQUIRE(want);
+        previous = maps->history;
+        const std::vector<float> history = dev.history_host();
+        float history_worst = 0.0F;
+        for (std::size_t i = 0; i < history.size(); ++i)
+          history_worst = std::max(history_worst, std::abs(history[i] - maps->history[i]));
+        CHECK(history_worst <= 1e-4F);
 
-      std::vector<float> deltas;
-      for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x)
-          for (std::size_t ch = 0; ch < 3; ++ch) {
-            const float v =
-                static_cast<float>(
-                    got[(static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x)) * 4 + ch]) /
-                65535.0F;
-            deltas.push_back(std::abs(v - std::clamp(want->planes[ch].at(x, y), 0.0F, 1.0F)));
-          }
-      std::ranges::sort(deltas);
-      const float p999 = deltas[static_cast<std::size_t>(0.999 * static_cast<double>(deltas.size() - 1))];
-      INFO("|ΔPQ| p99,9 = " << p999 * 65535.0F << " codes 16 bits, max = " << deltas.back() * 65535.0F);
-      CHECK(p999 <= std::ldexp(1.0F, -12));
-      CHECK(deltas.back() <= std::ldexp(1.0F, -11));
+        std::vector<float> deltas;
+        for (int y = 0; y < h; ++y)
+          for (int x = 0; x < w; ++x)
+            for (std::size_t ch = 0; ch < 3; ++ch) {
+              const float v =
+                  static_cast<float>(
+                      got[(static_cast<std::size_t>(y) * w + static_cast<std::size_t>(x)) * 4 + ch]) /
+                  65535.0F;
+              deltas.push_back(std::abs(v - std::clamp(want->planes[ch].at(x, y), 0.0F, 1.0F)));
+            }
+        std::ranges::sort(deltas);
+        const float p999 = deltas[static_cast<std::size_t>(0.999 * static_cast<double>(deltas.size() - 1))];
+        INFO("|ΔPQ| p99,9 = " << p999 * 65535.0F << " codes 16 bits, max = " << deltas.back() * 65535.0F);
+        CHECK(p999 <= std::ldexp(1.0F, -12));
+        CHECK(deltas.back() <= std::ldexp(1.0F, -11));
+      }
+    }
+  }
+
+  // La lecture trilinéaire d'une LUT n³ (R le plus rapide) comme la texture du noyau : c × (n − 1).
+  struct HostLut {
+    const std::vector<float>* rgb;
+    int n;
+    kernels::grade::V3 operator()(kernels::grade::V3 c) const {
+      const std::array<float, 3> at{c.r, c.g, c.b};
+      std::array<int, 3> lo{};
+      std::array<float, 3> t{};
+      for (std::size_t k = 0; k < 3; ++k) {
+        const float x = std::clamp(at[k], 0.0F, 1.0F) * static_cast<float>(n - 1);
+        lo[k] = std::min(static_cast<int>(x), n - 2);
+        t[k] = x - static_cast<float>(lo[k]);
+      }
+      std::array<float, 3> out{};
+      for (int corner = 0; corner < 8; ++corner) {
+        const int d[3] = {corner & 1, (corner >> 1) & 1, (corner >> 2) & 1};
+        float w = 1.0F;
+        for (std::size_t k = 0; k < 3; ++k) w *= d[k] != 0 ? t[k] : 1.0F - t[k];
+        const auto un = [](int v) { return static_cast<std::size_t>(v); };
+        const std::size_t i = ((un(lo[2] + d[2]) * un(n) + un(lo[1] + d[1])) * un(n) + un(lo[0] + d[0])) * 3;
+        for (std::size_t ch = 0; ch < 3; ++ch) out[ch] += w * (*rgb)[i + ch];
+      }
+      return {out[0], out[1], out[2]};
     }
   }
 }
-
-// La lecture trilinéaire d'une LUT n³ (R le plus rapide) comme la texture du noyau : c × (n − 1).
-struct HostLut {
-  const std::vector<float>* rgb;
-  int n;
-  kernels::grade::V3 operator()(kernels::grade::V3 c) const {
-    const std::array<float, 3> at{c.r, c.g, c.b};
-    std::array<int, 3> lo{};
-    std::array<float, 3> t{};
-    for (std::size_t k = 0; k < 3; ++k) {
-      const float x = std::clamp(at[k], 0.0F, 1.0F) * static_cast<float>(n - 1);
-      lo[k] = std::min(static_cast<int>(x), n - 2);
-      t[k] = x - static_cast<float>(lo[k]);
-    }
-    std::array<float, 3> out{};
-    for (int corner = 0; corner < 8; ++corner) {
-      const int d[3] = {corner & 1, (corner >> 1) & 1, (corner >> 2) & 1};
-      float w = 1.0F;
-      for (std::size_t k = 0; k < 3; ++k) w *= d[k] != 0 ? t[k] : 1.0F - t[k];
-      const auto un = [](int v) { return static_cast<std::size_t>(v); };
-      const std::size_t i = ((un(lo[2] + d[2]) * un(n) + un(lo[1] + d[1])) * un(n) + un(lo[0] + d[0])) * 3;
-      for (std::size_t ch = 0; ch < 3; ++ch) out[ch] += w * (*rgb)[i + ch];
-    }
-    return {out[0], out[1], out[2]};
-  }
-};
 
 TEST_CASE("grade de l'anneau v2 : la LUT de la courbe et le fondu contre la référence",
           "[backend_tensorrt][cuda][grade_ring]") {

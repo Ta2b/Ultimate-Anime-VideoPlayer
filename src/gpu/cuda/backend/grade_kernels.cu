@@ -99,6 +99,51 @@ __global__ void __launch_bounds__(kPixelThreads) grade_local_kernel(Launch p) {
   out[2] = v.b;
 }
 
+// La carte locale quand le bloc tombe sur les pixels (largeur et hauteur multiples de 8) : chaque lecture
+// bilinéaire de local_texel est alors au coin de 4 pixels, soit leur moyenne. Un fil par pixel (lectures
+// voisines entre fils, au lieu de 64 lectures en série par texel), la tuile de 16 × 16 en mémoire partagée :
+// 2 × 2 texels par bloc, sommés dans le même ordre que local_texel.
+__global__ void __launch_bounds__(kTile* kTile) grade_local_tiled_kernel(Launch p) {
+  __shared__ float code[kTile][kTile][3];
+  __shared__ float quad[kTile / 2][kTile / 2][3];
+  const int tx = static_cast<int>(threadIdx.x);
+  const int ty = static_cast<int>(threadIdx.y);
+  const int x = static_cast<int>(blockIdx.x) * kTile + tx;
+  const int y = static_cast<int>(blockIdx.y) * kTile + ty;
+  const g::V3 e = x < p.frame.width && y < p.frame.height ? device_fetch(p)(x, y) : g::v3(0.0F);
+  code[ty][tx][0] = e.r;
+  code[ty][tx][1] = e.g;
+  code[ty][tx][2] = e.b;
+  __syncthreads();
+  if (tx < kTile / 2 && ty < kTile / 2) {
+    const auto at = [&](int i, int j) { return g::V3{code[j][i][0], code[j][i][1], code[j][i][2]}; };
+    const int qx = 2 * tx;
+    const int qy = 2 * ty;
+    const g::V3 top = g::vmix(at(qx, qy), at(qx + 1, qy), 0.5F);
+    const g::V3 bottom = g::vmix(at(qx, qy + 1), at(qx + 1, qy + 1), 0.5F);
+    const g::V3 v = g::local_sample(g::vmix(top, bottom, 0.5F), p.frame.uniforms);
+    quad[ty][tx][0] = v.r;
+    quad[ty][tx][1] = v.g;
+    quad[ty][tx][2] = v.b;
+  }
+  __syncthreads();
+  if (tx >= 2 || ty >= 2) return;
+  const int lx = static_cast<int>(blockIdx.x) * 2 + tx;
+  const int ly = static_cast<int>(blockIdx.y) * 2 + ty;
+  if (lx >= p.sizes.local_w || ly >= p.sizes.local_h) return;
+  g::V3 acc = g::v3(0.0F);
+  for (int j = 0; j < 4; j++)
+    for (int i = 0; i < 4; i++) {
+      const float* q = quad[ty * 4 + j][tx * 4 + i];
+      acc = acc + g::V3{q[0], q[1], q[2]};
+    }
+  acc = acc / 16.0F;
+  float* out = p.frame.local + (ly * p.sizes.local_w + lx) * 3;
+  out[0] = acc.r;
+  out[1] = acc.g;
+  out[2] = acc.b;
+}
+
 __global__ void __launch_bounds__(kPixelThreads) grade_skin_kernel(Launch p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -231,7 +276,13 @@ cudaError_t launch_grade_local(const GradeFrame& frame, cudaStream_t stream) {
   if (!valid(frame)) return cudaErrorInvalidValue;
   const Launch p{frame, grade_map_sizes(frame.width, frame.height)};
   const dim3 block(kTile, kTile);
-  grade_local_kernel<<<grid_of(p.sizes.local_w, p.sizes.local_h), block, 0, stream>>>(p);
+  const bool tiled = frame.width % g::kLocalDiv == 0 && frame.height % g::kLocalDiv == 0 &&
+                     p.sizes.local_w * g::kLocalDiv == frame.width &&
+                     p.sizes.local_h * g::kLocalDiv == frame.height;
+  if (tiled)
+    grade_local_tiled_kernel<<<grid_of(frame.width, frame.height), block, 0, stream>>>(p);
+  else
+    grade_local_kernel<<<grid_of(p.sizes.local_w, p.sizes.local_h), block, 0, stream>>>(p);
   if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
   if (frame.uniforms.skin_on > 0.5F)
     grade_skin_kernel<<<grid_of(frame.width, frame.height), block, 0, stream>>>(p);
