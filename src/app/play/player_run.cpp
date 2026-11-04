@@ -42,6 +42,7 @@
 #include "app/play/input.h"
 #include "app/play/latest_writer.h"
 #include "app/play/look_catalog.h"
+#include "app/play/loop_wait.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -702,10 +703,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // lecture, la boucle dort jusqu'à l'échéance de l'image suivante (Session::idle_wait_us) ; en pause,
     // au plus kPausedWaitMs. Un message des autres threads (une image, un seek) la réveille.
     if (!*record) {
-      // Une image reçue par la boîte, ou une touche, réveille l'attente avant son terme.
       const std::int64_t wait_us =
           session.view().paused ? std::int64_t{kPausedWaitMs} * 1000 : session.idle_wait_us(host_now_us());
-      (void)SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(std::max<std::int64_t>(wait_us / 1000, 1)));
+      wait_loop(wait_us, p.options.precise_wait);  // --precise-wait : à la microseconde (6.7)
       wake.pending.store(false, std::memory_order_relaxed);
     }
   }
