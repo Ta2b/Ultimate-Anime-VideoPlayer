@@ -75,11 +75,13 @@ system_lib() {
 # libbz2.so.1.0, par exemple, n'existe que sous Debian et Ubuntu (Fedora n'a que libbz2.so.1) : le
 # FFmpeg livré la demandait et le lecteur ne démarrait pas sous Fedora. Une bibliothèque hors de
 # cette liste fait refuser le paquet : la livrer (system_lib), ou s'en passer.
+# libwayland-client.so.0 : lue par le retour de présentation du compositeur (wp_presentation, libajp_wayland_presentation) ;
+# même nom sur Debian, Ubuntu, Fedora et Arch, et installée avec Mesa et SDL3 sous Wayland.
 PORTABLE_SONAMES=" ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 librt.so.1
   libresolv.so.2 libutil.so.1 libgcc_s.so.1 libstdc++.so.6 libX11.so.6 libxcb.so.1 libdrm.so.2
   libvulkan.so.1 libva.so.2 libva-drm.so.2 libva-x11.so.2 libOpenCL.so.1 libze_loader.so.1
   libcuda.so.1 libfontconfig.so.1 libfreetype.so.6 libharfbuzz.so.0 libz.so.1 liblzma.so.5
-  libzstd.so.1 "
+  libzstd.so.1 libwayland-client.so.0 "
 PORTABLE_SONAMES="${PORTABLE_SONAMES//$'\n'/ }"
 
 check_portable() {  # dossier des binaires vérifiés, [autres dossiers livrés à côté…]
