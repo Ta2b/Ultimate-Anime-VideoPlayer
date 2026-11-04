@@ -16,6 +16,7 @@
 // Cible ajp::core_log : dépend de spdlog seulement, en dépendance privée des modules.
 #pragma once
 
+#include <cstddef>
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -32,7 +33,12 @@ std::shared_ptr<spdlog::logger> log_channel(std::string_view module);
 
 // Remplace les puits de tous les canaux par sinks, au niveau level. Le premier appel pose un
 // répartiteur unique dans le journal par défaut ; les suivants ne changent que son contenu.
-void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level);
+// asynchronous (1.11, au premier appel seulement) : les lignes passent par une file bornée (kLogQueue,
+// les plus anciennes perdues si elle déborde) et un thread de spdlog écrit les puits ; le thread qui
+// journalise n'attend plus le disque.
+inline constexpr std::size_t kLogQueue = 8192;
+void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level,
+                       bool asynchronous = false);
 
 // Pour une bibliothèque chargée à l'exécution (un backend) : les canaux que ce binaire crée
 // ensuite écrivent dans sinks, au niveau level, par un répartiteur propre au binaire (core_log

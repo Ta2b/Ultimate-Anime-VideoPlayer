@@ -338,7 +338,7 @@ int main(int argc, char** argv) {
     }
   }
   const bool logs_to_file = sinks.size() > 1;
-  ajp::install_log_sinks(std::move(sinks), spdlog::level::info);
+  ajp::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
   if (logs_to_file) {
     spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
     ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
