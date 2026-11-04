@@ -502,7 +502,7 @@ std::string play_usage() {
       "  --vsync-index          l'image choisie par le numéro de son vblank mesuré, avec hystérésis (défaut "
       ";\n"
       "                         --no-vsync-index : l'horloge)\n"
-      "  --present=NIVEAU       retour de présentation auto (défaut), timing, wait, wayland ou open ;\n"
+      "  --present=NIVEAU       retour de présentation wait (défaut), auto, timing, wayland ou open ;\n"
       "                         --no-present : open, la présentation d'avant\n"
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"

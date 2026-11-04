@@ -167,9 +167,10 @@ struct PlayOptions {
   // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
   bool vsync_index = true;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
-  // auto (le défaut) : le meilleur niveau que l'appareil offre ; --no-present ou --present=open : la
-  // présentation d'avant.
-  PresentWanted present = PresentWanted::Auto;
+  // wait (le défaut) : present_wait2, ou le meilleur niveau en dessous si l'appareil ne l'offre pas ; auto et
+  // timing ne rendent aucun retour sur NVIDIA 615 / KDE Wayland (séance du 04/11 : 0 revenue) ; --no-present
+  // ou --present=open : la présentation d'avant.
+  PresentWanted present = PresentWanted::Wait;
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;
