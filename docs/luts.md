@@ -55,6 +55,10 @@ de FreeVisuals (gratuit pour usage personnel et commercial selon leur page), « 
 Modes de ton « vivid » (blanc SDR au pic) et « reference » (BT.2408, 203 nits), styles « natural », « cinematic »,
 « night » en préréglages du grade, choix de l'EOTF d'entrée (BT.1886 ou sRGB), dither à la quantification PQ.
 
+Avec `--grade-ring` (essai), la pile de LUT composée est appliquée par le GPU du moteur, dans l'anneau, juste
+après le grade : même pile (65 points, intensités comprises), même ordre, lue en flottant au lieu du demi-flottant
+de la texture de l'écran. Rien ne change dans le menu ni dans `play.toml`.
+
 Dans `play.toml`, la première LUT est `grade.look` / `grade.look_mix`, les suivantes `grade.looks` (noms) et `grade.looks_mix` (intensités), dans l'ordre.
 
 ## Grade adaptatif à la luminosité de la scène
