@@ -302,6 +302,19 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   return decision;
 }
 
+void sdr_tonemap(GradeParams& p) {
+  p.sdr_tm = 1.0;
+  p.sdr_out = 0.0;
+  p.black_lo = 0.0;
+  p.black_hi = 0.0;
+  // Les mêmes bornes que 3-anime.hook : le blanc de la source, la clé de la scène, la marge des éclats.
+  const double white = p.adapt > 0.5 ? p.sdr_white : p.paper;
+  const double key = std::clamp((p.fs_apl >= 0.0 ? p.fs_apl : 0.15 * white) / p.sdr_white, 0.0, 1.0);
+  const double t = std::clamp((key - 0.30) / 0.40, 0.0, 1.0);
+  p.tm_white = p.sdr_white * p.an_lift;
+  p.tm_top = std::max(p.peak * (1.0 - 0.5 * t * t * (3.0 - 2.0 * t)), 1.25 * p.tm_white);
+}
+
 std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nits, double steps) {
   if (step_nits.size() < 2 || std::isnan(steps)) return std::nullopt;
   steps = std::clamp(steps, grade_limits::kBlackSteps.lo, grade_limits::kBlackSteps.hi);

@@ -57,11 +57,15 @@ std::optional<double> sdr_gamma(const pl_color_space& color) {
 }
 
 // Le grade d'une cible : celui du PQ, ou celui du SDR à l'exposant de la cible.
-std::optional<render::GradeParams> grade_for(const render::GradeChoice& choice, const pl_color_space& color) {
+// La méthode « HDR anime » vers un écran SDR prend son rendu PQ ramené au SDR (GradeChoice::sdr_anime).
+std::optional<render::GradeParams> grade_for(const render::GradeChoice& choice, const pl_color_space& color,
+                                             render::GradeBody body) {
   if (color.transfer == PL_COLOR_TRC_PQ) return choice.pq;
   const std::optional<double> gamma = sdr_gamma(color);
-  if (!gamma || !choice.sdr) return std::nullopt;
-  render::GradeParams params = *choice.sdr;
+  const bool anime = body == render::GradeBody::Anime || body == render::GradeBody::AnimeGuided;
+  const std::optional<render::GradeParams>& sdr = anime && choice.sdr_anime ? choice.sdr_anime : choice.sdr;
+  if (!gamma || !sdr) return std::nullopt;
+  render::GradeParams params = *sdr;
   params.sdr_gamma = *gamma;
   return params;
 }
@@ -177,7 +181,7 @@ std::expected<void, Refusal> PlaceboScreen::set_looks(
 }
 
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
-  const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
+  const std::optional<render::GradeParams> params = grade_for(grade_choice, target, grade_body);
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
   if (grade && params) {
@@ -430,7 +434,7 @@ void PlaceboScreen::Impl::post_ring(const render::GradeChoice& choice, std::int6
   // Le grade en trois passes vers une sortie PQ seulement : les autres corps et le SDR restent à l'écran.
   std::optional<render::GradeParams> params;
   if (grade && grade_body == render::GradeBody::Fused && target.transfer == PL_COLOR_TRC_PQ)
-    params = grade_for(choice, target);
+    params = grade_for(choice, target, grade_body);
   const auto post_off = [&] {
     if (ring_posted && !ring_on) return;
     version.off = true;
