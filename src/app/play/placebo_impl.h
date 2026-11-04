@@ -35,6 +35,7 @@
 #include "core/ring.h"
 #include "render/grade.h"
 #include "render/grade_input.h"
+#include "render/scene_hdr.h"
 #include "subs/subtitle_frame.h"
 
 namespace ajp::app::play {
@@ -210,6 +211,13 @@ struct PlaceboScreen::Impl {
   std::uint32_t plan_epoch = 0;
   bool post_plan();   // faux : pas de plans, le grade d'avant
   bool ring_input();  // l'entrée SDR → PQ de libplacebo pour ce couple source, cible (ring_nits)
+  // HDR10+ par plan (8.9, --hdr-contract-v2) : une source PQ annonce la lumière du plan de l'image (ShotMeta)
+  // et la spline de libplacebo la ramène à C_pk, sans détection de pic. scene_hdr : cette composition le
+  // fait.
+  std::vector<media::Shot> scene_shots;
+  bool scene_hdr = false;
+  pl_color_map_params scene_map = render::scene_color_map();
+  bool apply_scene_hdr(pl_color_space& image, pl_color_space& target, std::int64_t pts) const;
   double hinted_max_nits = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
