@@ -62,6 +62,10 @@ constexpr std::array kSettingsPages{
     Entry{"Auto (after SPAN above 1080p or from ×3)", "Auto (après SPAN au-dessus de 1080p ou dès ×3)"},
     Entry{"Auto (from the display)", "Auto (selon l'écran)"},
     Entry{"Auto peak ({} nits)", "Pic automatique ({} nits)"},
+    Entry{"In content nits: KDE shows them brighter (× its SDR brightness / 203), so a 1000-nit screen reads "
+          "lower here.",
+          "En nits du contenu : KDE les affiche plus haut (× sa luminosité SDR / 203), un écran de 1000 nits "
+          "lit donc moins ici."},
     Entry{
         "Auto picks the settings for your card, display and video. Changing one by hand switches to Custom.",
         "Auto choisit les réglages selon votre carte, votre écran et la vidéo. En modifier un passe en "
