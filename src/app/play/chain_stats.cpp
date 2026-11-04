@@ -109,6 +109,19 @@ std::string free_status_text(const core::FreeInfo& info) {
   return text;
 }
 
+std::string steady_status_text(const core::SteadyInfo& info) {
+  // Les mêmes mots que le Rapide libre (aucune clé de traduction de plus) ; N et l'échelle sont des nombres.
+  std::string n = std::format("{:.1f}", info.factor.value());
+  std::ranges::replace(n, '.', ',');
+  std::string text = std::format("{} · N ×{}", i18n::tr("Fast"), n);
+  std::string scale = std::format("{:.2f}", info.scale);
+  std::ranges::replace(scale, '.', ',');
+  text += std::format(" · s {}", scale);
+  if (info.budget_us > 0) text += " · " + format_ms(info.budget_us);
+  if (info.lost > 0) text += i18n::tr_format(" · {} lost", info.lost);
+  return text;
+}
+
 std::optional<std::string> ChainStats::rife() const {
   if (!interpolates_) return std::nullopt;
   const RifeCounts c = live_.counts();
@@ -117,12 +130,18 @@ std::optional<std::string> ChainStats::rife() const {
                       live_.free_active() ? std::string("libre") : factor_text(live_.factor_now()), c.pairs,
                       c.interpolated, c.held, c.cuts, c.late);
   if (live_.auto_active()) line += " · " + auto_status_text(live_.auto_info(host_now_us()), source_fps_);
-  if (live_.free_active()) line += " · " + free_status_text(live_.free_info(host_now_us()));
+  if (live_.steady_active()) {
+    line += " · " + steady_status_text(live_.steady_info());
+  } else if (live_.free_active()) {
+    line += " · " + free_status_text(live_.free_info(host_now_us()));
+  }
   return line;
 }
 
 double ChainStats::output_fps() const {
   if (source_fps_ <= 0.0) return 0.0;
+  // Rapide à pas constant : N images par source, la synchro de l'écran et le compte des manques suivent.
+  if (live_.steady_active()) return source_fps_ * live_.steady_factor().value();
   if (live_.free_active()) return 0.0;  // aucune cadence : l'écart des images est celui du temps de service
   const Factor factor = live_.factor_now();  // rien, 0 ou 1 : pas d'interpolation
   return interpolates_ && factor.den > 0 && factor.num > factor.den ? source_fps_ * factor.num / factor.den
@@ -134,7 +153,7 @@ std::int64_t ChainStats::source_period_us() const {
 }
 
 std::int64_t ChainStats::output_period_us() const {
-  if (live_.free_active()) {
+  if (live_.free_active() && !live_.steady_active()) {
     const std::int64_t step = live_.free_info(host_now_us()).step_us;
     // Sur un écran fixe, un écart entre deux images est un nombre entier de vsyncs : jusqu'au vsync au-dessus
     // du pas, ce n'est pas une image manquée.

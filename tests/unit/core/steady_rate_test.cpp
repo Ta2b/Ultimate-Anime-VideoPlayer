@@ -202,4 +202,22 @@ TEST_CASE("Rapide à pas constant : le repli seulement à N = 1", "[free][steady
   CHECK_FALSE(rate.info().frozen);
 }
 
+TEST_CASE("Rapide à pas constant : sans a priori, N part de 1 et monte après quelques paires",
+          "[free][steady]") {
+  SteadyRate rate;
+  rate.configure({}, {.vrr = true, .hz = 164.78}, kFps);
+  CHECK(rate.factor() == Ratio{1, 1});
+  // À N = 1, une paire de 1 image coûte a + b = 8 ms : la droite d'amorçage (0, 8 ms) tient 36,3 / 8 = 4,5.
+  std::int64_t now = 0;
+  for (int i = 0; i < 4; ++i, now += 41'708) rate.pair_cost(1, 8'000, now);
+  CHECK(rate.factor() == Ratio{9, 2});
+  // Le vrai coût à 4,5 (3 + 5 × 4,5 = 25,5 ms) reste dans le budget : aucune perte dans le banc.
+  Scenario s;
+  s.prior_mul = 0.0;  // aucun a priori
+  const Outcome o = run(s);
+  INFO("pertes " << o.lost << ", N moyen " << o.mean_n << ", optimum " << o.optimum_n);
+  CHECK(static_cast<double>(o.lost) <= 0.002 * static_cast<double>(o.produced));
+  CHECK(o.mean_n >= 0.75 * o.optimum_n);
+}
+
 }  // namespace ajp::core

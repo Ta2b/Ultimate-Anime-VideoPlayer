@@ -34,6 +34,8 @@ std::string auto_factor_text(int centi);
 std::string auto_status_text(const core::AutoInfo& info, double source_fps);
 // Le mode Rapide : « Rapide · 87 i/s · limite GPU 78 % · écart service 11,4 ms ».
 std::string free_status_text(const core::FreeInfo& info);
+// Rapide à pas constant : N, l'échelle mesurée, le budget, les pertes.
+std::string steady_status_text(const core::SteadyInfo& info);
 
 // Mesures de la chaîne pour l'OSD. interpolation : rien sans interpolation ; sinon son moteur,
 // « RIFE » ou « flux optique », en tête de la ligne des compteurs. source_fps : images par
