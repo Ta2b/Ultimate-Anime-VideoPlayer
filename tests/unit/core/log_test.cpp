@@ -64,5 +64,20 @@ TEST_CASE("Journal : un canal n'entre pas au registre de spdlog", "[log]") {
   const std::shared_ptr<spdlog::logger> channel = ajp::log_channel("prepare");
   CHECK(channel->name() == "prepare");
   CHECK(spdlog::get("prepare") == nullptr);
-  CHECK(channel != ajp::log_channel("prepare"));  // chaque appel rend son propre canal
+  CHECK(channel == ajp::log_channel("prepare"));  // 1.11 : un canal par module, gardé
+}
+
+TEST_CASE("Journal : un seul canal par module, refait quand les puits changent", "[core][log]") {
+  Capture capture;
+  ajp::install_log_sinks({capture.sink()}, spdlog::level::info);
+  const auto first = ajp::log_channel("unique");
+  CHECK(ajp::log_channel("unique") == first);  // le même logger, pas un nouveau à chaque appel
+  CHECK(ajp::log_channel("autre") != first);
+  // Un niveau réinstallé : le canal se refait et suit le niveau.
+  ajp::install_log_sinks({capture.sink()}, spdlog::level::warn);
+  const auto again = ajp::log_channel("unique");
+  CHECK(again != first);
+  CHECK(again->level() == spdlog::level::warn);
+  CHECK(ajp::log_channel("unique") == again);
+  ajp::install_log_sinks({std::make_shared<spdlog::sinks::null_sink_mt>()}, spdlog::level::info);
 }
