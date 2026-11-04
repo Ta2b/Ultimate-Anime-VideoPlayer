@@ -110,8 +110,8 @@ struct PlayOptions {
   bool software_gpu = false;
   // --sdr : sortie SDR même sur un écran HDR (la swapchain ne demande pas HDR10), pour les essais.
   bool sdr = false;
-  // Anneau en RGB10A2 UNORM sous TensorRT (moitié moins de mémoire, étape 5.5a), par défaut ; --no-ring-rgb10a2 :
-  // RGBA16. Repli silencieux sur RGBA16 si l'appareil ne le prend pas.
+  // Anneau en RGB10A2 UNORM sous TensorRT (moitié moins de mémoire, étape 5.5a), par défaut ;
+  // --no-ring-rgb10a2 : RGBA16. Repli silencieux sur RGBA16 si l'appareil ne le prend pas.
   bool ring_rgb10a2 = true;
   // --hdr-metadata[=NITS] : la sortie HDR10 porte ses métadonnées (son vrai maximum), et le grade fait la
   // compression que KWin faisait sans elles ; NITS, la luminosité SDR de KDE (kDefaultKdeSdrNits sans
