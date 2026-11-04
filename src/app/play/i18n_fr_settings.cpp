@@ -118,6 +118,7 @@ constexpr std::array kSettingsPages{
           "appliqués dans l'ordre comme les nœuds de Resolve ; un nom contenant PQ, HDR ou 2020 est lu comme "
           "une LUT d'HDR."},
     Entry{"LUT contrast intensity", "Intensité LUT contraste"},
+    Entry{"Contrast", "Contraste"},
     Entry{"Contrast and saturation", "Contraste et saturation"},
     Entry{"Custom", "Personnalisé"},
     Entry{"Debanding", "Débandage"},
@@ -207,6 +208,7 @@ constexpr std::array kSettingsPages{
           "SPAN est rechargé (construit la première fois pour cette taille)"},
     Entry{"SPAN switches to {} (built the first time for this size)",
           "SPAN passe en {} (construit la première fois pour cette taille)"},
+    Entry{"Highlights", "Éclats"},
     Entry{"Saturation", "Saturation"},
     Entry{"Scaler", "Filtre de mise à l'échelle"},
     Entry{"Scales all text, panels included. Live.",

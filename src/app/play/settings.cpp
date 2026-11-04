@@ -323,6 +323,11 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                                      std::pair{"grade.look_highlight", s.look_highlight}}) {
     if (auto in = check(field, value, core::Range<int>{-100, 100}); !in) return std::unexpected(in.error());
   }
+  for (const auto& [field, value] : {std::pair{"grade.anime_contrast", s.grade_values.anime_contrast},
+                                     std::pair{"grade.anime_saturation", s.grade_values.anime_saturation},
+                                     std::pair{"grade.anime_highlights", s.grade_values.anime_highlights}}) {
+    if (auto in = check(field, value, core::Range<int>{0, 200}); !in) return std::unexpected(in.error());
+  }
   if (auto mix = check("grade.look_mix", s.look_mix, core::Range<double>{0.0, 1.0}); !mix)
     return std::unexpected(mix.error());
   if (s.look_layers.size() + 1 > render::kLookSlots)
@@ -365,9 +370,9 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
     s.grade_values.shadows = plain.shadows;
     s.grade_values.highlights_rtx = plain.highlights_rtx;
   }
-  s.grade_values.anime_contrast = options.anime_contrast;
-  s.grade_values.anime_saturation = options.anime_saturation;
-  s.grade_values.anime_highlights = options.anime_highlights;
+  if (options.was_given("--anime-contrast")) s.grade_values.anime_contrast = options.anime_contrast;
+  if (options.was_given("--anime-saturation")) s.grade_values.anime_saturation = options.anime_saturation;
+  if (options.was_given("--anime-highlights")) s.grade_values.anime_highlights = options.anime_highlights;
   return s;
 }
 
@@ -387,6 +392,14 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--truehdr-saturation", &PlaySettings::true_hdr_saturation);
   keep("--truehdr-gray", &PlaySettings::true_hdr_gray);
   keep("--truehdr-peak", &PlaySettings::true_hdr_peak);
+  // Les peps de l'anime vivent dans grade_values : une option donnée à la main n'est pas enregistrée.
+  const auto keep_grade = [&](std::string_view option, int render::GradeSettings::* member) {
+    if (options.was_given(option) && running.grade_values.*member == started.grade_values.*member)
+      out.grade_values.*member = from_file.grade_values.*member;
+  };
+  keep_grade("--anime-contrast", &render::GradeSettings::anime_contrast);
+  keep_grade("--anime-saturation", &render::GradeSettings::anime_saturation);
+  keep_grade("--anime-highlights", &render::GradeSettings::anime_highlights);
   return out;
 }
 

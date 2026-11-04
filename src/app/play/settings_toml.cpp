@@ -411,6 +411,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
     reads.push_back(read(*grade, "grade", "look_contrast", s.look_contrast));
     reads.push_back(read(*grade, "grade", "look_highlight", s.look_highlight));
+    reads.push_back(read(*grade, "grade", "anime_contrast", v.anime_contrast));
+    reads.push_back(read(*grade, "grade", "anime_saturation", v.anime_saturation));
+    reads.push_back(read(*grade, "grade", "anime_highlights", v.anime_highlights));
     reads.push_back(read_look_layers(*grade, s.look_layers));
     std::string oled(name(s.oled_black));
     reads.push_back(read(*grade, "grade", "oled_black", oled));
@@ -555,6 +558,9 @@ std::string format_settings(const PlaySettings& s) {
                                    {"look_mix", hundredth(s.look_mix)},
                                    {"look_contrast", s.look_contrast},
                                    {"look_highlight", s.look_highlight},
+                                   {"anime_contrast", g.anime_contrast},
+                                   {"anime_saturation", g.anime_saturation},
+                                   {"anime_highlights", g.anime_highlights},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
   if (!s.look_layers.empty()) {
