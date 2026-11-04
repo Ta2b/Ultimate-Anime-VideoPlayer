@@ -99,10 +99,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(index);
   CHECK(index->vsync_index);
   CHECK_FALSE(parse({"épisode.mkv", "--no-vsync-index"})->vsync_index);
-  CHECK_FALSE(options->probe_nvdec);
+  CHECK(options->probe_nvdec);
   const auto nvdec = parse({"épisode.mkv", "--probe-nvdec"});
   REQUIRE(nvdec);
   CHECK(nvdec->probe_nvdec);
+  CHECK_FALSE(parse({"épisode.mkv", "--no-probe-nvdec"})->probe_nvdec);
   CHECK_FALSE(options->shot_cuts);
   const auto cuts = parse({"épisode.mkv", "--shot-cuts"});
   REQUIRE(cuts);
