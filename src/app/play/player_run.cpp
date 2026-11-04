@@ -198,6 +198,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.screen.set_sample_aspect(session_config.video_sar);
   session_config.stop_after_us = options.stop_after_us;
   session_config.fullscreen_after_us = options.fullscreen_after_us;
+  session_config.vsync_index = options.vsync_index;
   session_config.header = {label_text};
   session_config.tracks = (*pipeline)->describe();
   {
@@ -395,8 +396,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.ui.controls().notify(p.notice, host_now_us());
     p.notice.clear();
   }
-  // play.toml, la position et la mémoire du mode Auto s'écrivent sur le thread d'écriture : jamais d'attente
-  // du disque entre deux images.
+  // play.toml, la position et la mémoire de l'Auto s'écrivent sur leur thread, sans attendre le disque.
   LatestWriter writer;
   // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
   std::int64_t kept_us = kNoPts;

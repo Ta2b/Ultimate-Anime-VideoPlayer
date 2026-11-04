@@ -29,6 +29,7 @@
 #include "core/clock.h"
 #include "core/messages.h"
 #include "core/ring.h"
+#include "core/vsync_index.h"
 #include "subs/subtitle_frame.h"
 #include "subs/subtitle_renderer.h"
 
@@ -95,6 +96,10 @@ struct SessionConfig {
   // que le VRR reste à une fréquence constante (une fréquence qui varie fait scintiller les scènes
   // sombres d'un OLED). Sans effet si la période est inconnue.
   bool steady_cadence = false;
+  // --vsync-index (6.6) : avec la grille des vblanks mesurée (Screen::vblank_grid), l'image se choisit par le
+  // numéro de son vblank, avec hystérésis près du milieu (core::VsyncPicker) ; et, en VRR au niveau
+  // TimingAbsolute, l'image part avec la date de son pts (ShowRequest::target_us).
+  bool vsync_index = false;
   std::int64_t vrr_floor_us =
       0;                // VRR armé : plancher de l'écran (core/vrr_floor.h) ; 0 : pas de représentation
   StatsSettings stats;  // mesures affichées (Tab bascule toutes)
@@ -233,9 +238,12 @@ class Session {
   std::int64_t audio_stall_grace_us_ = 1'500'000;
 
   FrameQueue queue_;
-  std::optional<RingFrame> newest_;    // newest_frame
-  std::optional<RingFrame> current_;   // montrée, slot tenu par main
-  std::vector<RingFrame> late_;        // réservé une fois, réutilisé à chaque tour
+  std::optional<RingFrame> newest_;   // newest_frame
+  std::optional<RingFrame> current_;  // montrée, slot tenu par main
+  std::vector<RingFrame> late_;       // réservé une fois, réutilisé à chaque tour
+  core::VsyncPicker vsync_picker_;    // SessionConfig::vsync_index
+  std::int64_t target_host_us_ = 0;   // l'instant hôte où le pts de l'image choisie tombe (0 : aucun)
+  std::optional<RingFrame> pick(const ClockSnapshot& now, std::int64_t host_now, std::int64_t lead_us);
   std::vector<RingFrame> unwritten_;   // rendues par main avant d'être écrites : parties une fois écrites
   std::vector<RingFrame> unmeasured_;  // reçues, pas encore vues écrites : leur retard reste à mesurer
   SubtitleQueue subtitles_{kMaxKeptSubtitles};

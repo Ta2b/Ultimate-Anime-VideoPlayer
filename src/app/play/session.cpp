@@ -346,9 +346,7 @@ void Session::choose(std::int64_t host_now) {
   late_.clear();
   // Seules les images déjà écrites : l'écran garde la sienne tant que la suivante se calcule, au
   // lieu d'attendre le GPU des moteurs à chaque présentation.
-  const std::optional<RingFrame> picked =
-      queue_.pick(now.media_at(host_now), lead_us, late_,
-                  [this](const RingFrame& frame) { return screen_.ready(frame); });
+  const std::optional<RingFrame> picked = pick(now, host_now, lead_us);
   for (const RingFrame& frame : late_) {
     retire(frame);
     ++stats_.dropped;
@@ -358,6 +356,36 @@ void Session::choose(std::int64_t host_now) {
   current_ = picked;
   fresh_ = true;
   last_fresh_host_us_ = host_now;
+}
+
+std::optional<RingFrame> Session::pick(const ClockSnapshot& now, std::int64_t host_now,
+                                       std::int64_t lead_us) {
+  const auto ready = [this](const RingFrame& frame) { return screen_.ready(frame); };
+  // L'instant hôte où le pts d'une image tombe sur l'horloge.
+  const auto host_of = [&](const RingFrame& frame) {
+    return host_now +
+           static_cast<std::int64_t>(std::llround(static_cast<double>(frame.pts_us - now.media_at(host_now)) /
+                                                  std::max(now.rate, 1e-6)));
+  };
+  std::optional<RingFrame> picked;
+  const std::optional<core::VblankGrid> grid = config_.vsync_index ? screen_.vblank_grid() : std::nullopt;
+  if (grid && grid->period_us > 0.0 && now.rate > 0.0) {
+    // Le vblank où paraîtra l'image présentée maintenant ; l'image retenue est la dernière dont le vblank
+    // (arrondi avec hystérésis près du milieu) n'est pas après lui.
+    const double next =
+        std::ceil(grid->index_of(static_cast<double>(host_now + display_delay_us(display_period()))));
+    picked = queue_.pick_by(
+        [&](const RingFrame& frame) {
+          return static_cast<double>(
+                     vsync_picker_.pick(grid->index_of(static_cast<double>(host_of(frame))))) <= next;
+        },
+        late_, ready);
+  } else {
+    picked = queue_.pick(now.media_at(host_now), lead_us, late_, ready);
+  }
+  target_host_us_ =
+      config_.vsync_index && picked && picked->pts_us != kNoPts && now.rate > 0.0 ? host_of(*picked) : 0;
+  return picked;
 }
 
 // Des images attendent une horloge qui ne court pas : l'audio maître n'en fournit plus (piste
@@ -469,7 +497,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                             .ui_top = ui.draw != nullptr ? ui.top : 0,
                             .calibration = ui.calibration,
                             .redraws_expected = config_.steady_cadence || config_.vrr_floor_us > 0 ||
-                                                ui.draw != nullptr || !osd_.empty()};
+                                                ui.draw != nullptr || !osd_.empty(),
+                            .target_us = fresh_ ? target_host_us_ : 0};
   auto timing = screen_.show(request);
   if (!timing) return std::unexpected(std::move(timing.error()));
 
