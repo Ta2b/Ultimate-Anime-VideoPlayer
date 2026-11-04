@@ -1,8 +1,10 @@
 // Méga plan A2 (essai --anime-shots) : la méthode « HDR anime » (--hdr-anime) décide par plan. Son
 // exposition des surfaces (an_lift) et sa marge des éclats (la luminance moyenne de la scène, fs_apl) sont
-// fixées par la pré-analyse, une fois par plan, et glissent aux coupes au lieu de sauter. La règle de
-// l'exposition est celle de la courbe par plan (render/curve.h, 8.5) : 0,25 diaphragme par diaphragme d'APL
-// du plan rapportée à la médiane de la série, |E| ≤ 0,25.
+// fixées par la pré-analyse, une fois par plan, et changent à l'image de coupe (audit F3 : un glissé après
+// la coupe se voyait, un changement à la coupe est masqué par elle). La règle de l'exposition est celle de
+// la courbe par plan (render/curve.h, 8.5) : 0,25 diaphragme par diaphragme d'APL du plan rapportée à la
+// médiane de la série, mais bornée à |E| ≤ kAnimeSurfaceMaxE : la peau et les surfaces restent ancrées
+// (±5 % d'un plan à l'autre, ≈ 3 ΔE) ; la marge des éclats suit, elle, la lumière de chaque plan.
 #pragma once
 
 #include <cstdint>
@@ -13,7 +15,8 @@
 
 namespace ajp::app::play {
 
-inline constexpr std::int64_t kAnimeGlideUs = 250'000;  // le glissé d'une coupe
+inline constexpr std::int64_t kAnimeGlideUs = 250'000;  // le glissé d'un même plan mieux connu
+inline constexpr double kAnimeSurfaceMaxE = 0.07;       // 2^0,07 = +5 % : surfaces ancrées entre plans
 
 // L'exposition d'un plan, en diaphragmes ; 0 sans série connue.
 double anime_exposure(double shot_apl_nits, double series_apl_nits);
@@ -27,8 +30,8 @@ struct AnimeShotLook {
   friend bool operator==(const AnimeShotLook&, const AnimeShotLook&) = default;
 };
 
-// Le glissé d'un plan à l'autre : à une coupe, de ce qui était montré vers le nouveau plan en kAnimeGlideUs
-// (smoothstep) ; hors coupe (le même plan, mieux connu), aussitôt.
+// D'un plan à l'autre : à une coupe, le nouveau plan aussitôt (à l'image de coupe) ; hors coupe (le même
+// plan, mieux connu), aussitôt aussi, un glissé en cours finissant vers la nouvelle valeur.
 class AnimeGlide {
  public:
   void aim(const AnimeShotLook& target, std::int64_t now_us, bool cut);

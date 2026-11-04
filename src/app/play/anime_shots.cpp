@@ -11,7 +11,7 @@ namespace ajp::app::play {
 double anime_exposure(double shot_apl_nits, double series_apl_nits) {
   if (!(shot_apl_nits > 0.0) || !(series_apl_nits > 0.0)) return 0.0;
   const double e = -render::kCurveSlope * std::log2(shot_apl_nits / series_apl_nits);
-  return std::clamp(e, -render::kCurveMaxE, render::kCurveMaxE);
+  return std::clamp(e, -kAnimeSurfaceMaxE, kAnimeSurfaceMaxE);
 }
 
 double series_apl_of(const std::vector<media::Shot>& shots) {
@@ -38,9 +38,10 @@ void AnimeGlide::aim(const AnimeShotLook& target, std::int64_t now_us, bool cut)
     known_ = true;
     return;
   }
-  from_ = at(now_us);
+  // Une coupe : le nouveau plan à l'image de coupe, sans glissé après elle.
+  from_ = target;
   to_ = target;
-  start_us_ = now_us;
+  start_us_ = now_us - kAnimeGlideUs;
 }
 
 AnimeShotLook AnimeGlide::at(std::int64_t now_us) const {
