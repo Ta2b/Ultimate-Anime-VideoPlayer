@@ -64,11 +64,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(split);
   CHECK(split->split_look);
   CHECK_FALSE(split->legacy_grade);
-  CHECK_FALSE(options->grade_ring);
+  CHECK(options->grade_ring);  // par défaut depuis le 04/11
   const auto ring = parse({"épisode.mkv", "--grade-ring"});
   REQUIRE(ring);
   CHECK(ring->grade_ring);
-  const auto ring_off = parse({"épisode.mkv", "--grade-ring", "--grade-ring=off"});
+  const auto ring_off = parse({"épisode.mkv", "--grade-ring=off"});
   REQUIRE(ring_off);
   CHECK_FALSE(ring_off->grade_ring);
   CHECK_FALSE(options->fast_steady);
