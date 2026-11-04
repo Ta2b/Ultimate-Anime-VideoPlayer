@@ -215,22 +215,6 @@ std::string_view label(OledBlack mode) {
   return i18n::tr("Auto (from the display)");
 }
 
-render::GradeSettings with_preset(render::GradePreset preset, const render::GradeSettings& current) {
-  render::GradeSettings out = render::grade_preset(preset, current);
-  out.gamut_p3 = current.gamut_p3;
-  out.adaptive = current.adaptive;  // le grade adaptatif suit l'utilisateur, pas le préréglage
-  out.adaptive_lo = current.adaptive_lo;
-  out.adaptive_hi = current.adaptive_hi;
-  out.adaptive_shadows = current.adaptive_shadows;
-  out.adaptive_vibrance = current.adaptive_vibrance;
-  out.adaptive_vibrance_cut = current.adaptive_vibrance_cut;
-  out.adaptive_gray = current.adaptive_gray;
-  out.adaptive_glow_gray = current.adaptive_glow_gray;
-  out.adaptive_glow_shadows = current.adaptive_glow_shadows;
-  out.adaptive_glow_vibrance = current.adaptive_glow_vibrance;
-  return out;
-}
-
 std::string_view name(Downscale filter) {
   return kDownscales[static_cast<std::size_t>(filter)].key;
 }
@@ -456,7 +440,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.subtitle_scale = wanted.subtitle_scale;
   s.language_presets = wanted.language_presets;  // au prochain fichier
   s.grade = wanted.grade;
-  s.grade_preset = wanted.grade_preset;
   s.grade_values = wanted.grade_values;
   s.look = wanted.look;
   s.adaptive_record = wanted.adaptive_record;

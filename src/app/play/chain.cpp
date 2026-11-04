@@ -170,18 +170,14 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (!same_look_files(wanted, r)) {
     start_looks(to, wanted);  // lues en fond, posées au tour suivant (tend_looks)
   }
-  if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
-      wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || look_changed ||
-      wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
+  if (wanted.grade != r.grade || wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native ||
+      look_changed || wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
       wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers) {
     set_grade(to, wanted);
     to.black_dirty = true;
     to.session.set_output(output_text(to.screen, wanted));
-    if (wanted.grade_preset != r.grade_preset || wanted.grade != r.grade) {
-      controls.notify(wanted.grade ? i18n::tr_format("Grade: {}", grade_label(wanted.grade_preset))
-                                   : std::string(i18n::tr("Grade off")),
-                      now_us);
-    }
+    if (wanted.grade != r.grade)
+      controls.notify(std::string(wanted.grade ? i18n::tr("Grade on") : i18n::tr("Grade off")), now_us);
   }
   if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
     to.screen.set_finish(wanted.final_scaler, wanted.deband);
@@ -210,11 +206,11 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   // Grade et finition agissent sur l'image tenue : sans cette demande, en pause (ou entre deux
   // images neuves) rien ne la recomposait et le réglage n'apparaissait qu'au mouvement suivant.
-  if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
-      wanted.grade_values != r.grade_values || wanted.final_scaler != r.final_scaler ||
-      wanted.deband != r.deband || wanted.hdr_native != r.hdr_native || look_changed ||
-      wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
-      wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers)
+  if (wanted.grade != r.grade || wanted.grade_values != r.grade_values ||
+      wanted.final_scaler != r.final_scaler || wanted.deband != r.deband ||
+      wanted.hdr_native != r.hdr_native || look_changed || wanted.oled_black != r.oled_black ||
+      wanted.oled_black_steps != r.oled_black_steps || wanted.look != r.look ||
+      wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers)
     to.session.request_present();
   r = wanted;
   r.volume = controls.volume();

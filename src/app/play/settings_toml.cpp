@@ -380,7 +380,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*oled, "oled", "steady_cadence", s.steady_cadence));
   }
   if (const toml::table* grade = section(root, "grade")) {
-    std::string preset(render::preset_key(s.grade_preset));
+    std::string preset;  // l'ancienne clé « preset » : lue, puis ignorée
     render::GradeSettings& v = s.grade_values;
     reads.push_back(read(*grade, "grade", "enabled", s.grade));
     reads.push_back(read(*grade, "grade", "preset", preset));
@@ -423,8 +423,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     if (!oled_known)
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("grade.oled_black : « {} »", oled)));
-    // L'ancienne clé « preset » est lue et ignorée : plus de préréglages, les valeurs du fichier font foi.
-    s.grade_preset = render::GradePreset::Custom;
+    // Plus de préréglages : les valeurs du fichier font foi.
     // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
     const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
     for (double* x : {&v.shadows, &v.highlights, &v.highlights_rtx, &v.vibrance, &v.vibrance_rtx, &v.area_rtx,

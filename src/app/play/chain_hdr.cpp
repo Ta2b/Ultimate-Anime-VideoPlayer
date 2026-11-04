@@ -209,7 +209,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s) {
   if (s.hdr_native && screen.hdr_output()) {
     text += i18n::tr(" · adaptive HDR");
   }
-  if (s.grade) text += i18n::tr_format(" · grade {}", grade_label(s.grade_preset));
+  if (s.grade) text += i18n::tr(" · grade");
   return text;
 }
 

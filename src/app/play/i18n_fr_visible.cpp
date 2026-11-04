@@ -17,7 +17,7 @@ constexpr std::array kVisibleTexts{
     Entry{" · VRR off", " · VRR inactif"},
     Entry{" · VRR on", " · VRR actif"},
     Entry{" · adaptive HDR", " · HDR adaptatif"},
-    Entry{" · grade {}", " · étalonnage {}"},
+    Entry{" · grade", " · étalonnage"},
     Entry{" · last change: {}", " · dernier changement : {}"},
     Entry{" · learned limit ×{}", " · plafond appris ×{}"},
     Entry{" · not OLED (DisplayID)", " · pas OLED (DisplayID)"},
