@@ -69,8 +69,9 @@ struct LearnTrack {
   std::int64_t still_us = 0;
   int corrections = -1;  // -1 : fichier pas encore lu
   int approvals = 0;
-  // --hdr-contract-v2 (8.10) : le goût du grade v2 (grade_taste.h) s'apprend dans adaptive-learning-v2.tsv,
-  // et les échantillons de `log` (l'autre grade) sont écartés. taste_set : le goût posé sur l'écran.
+  // --hdr-contract-v2-curve (8.10) : le goût du grade v2 (grade_taste.h) s'apprend dans
+  // adaptive-learning-v2.tsv, et les échantillons de `log` (l'autre grade) sont écartés. taste_set : le goût
+  // posé sur l'écran.
   bool contract_v2 = false;
   bool taste_set = false;
 };

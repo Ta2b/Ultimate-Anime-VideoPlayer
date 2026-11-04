@@ -58,8 +58,8 @@ struct ScreenOptions {
   // grade fait lui-même la compression que KWin faisait sans métadonnées (render::Grade::set_kwin_match).
   std::optional<double> kde_sdr_nits;
   bool kde_sdr_auto = false;  // la luminosité SDR du contrat d'écran (KDE), kde_sdr_nits en repli
-  // --hdr-contract-v2 : les métadonnées du contrat d'écran (set_contract) annoncées à la swapchain, sans
-  // kde_sdr_nits ; metadata_off : rien d'annoncé (--hdr-metadata=off).
+  // --hdr-contract-v2-curve : les métadonnées du contrat d'écran (set_contract) annoncées à la swapchain,
+  // sans kde_sdr_nits ; metadata_off : rien d'annoncé (--hdr-metadata=off).
   bool contract_v2 = false;
   bool metadata_off = false;
   // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par

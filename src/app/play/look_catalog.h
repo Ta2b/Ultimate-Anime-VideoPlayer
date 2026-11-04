@@ -33,10 +33,10 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
 
 // Les noms des LUT de la pile dans l'ordre des emplacements (le premier, puis ceux de look_layers, au plus
 // render::kLookSlots) et leur intensité.
-// Sous --hdr-contract-v2 (8.4, set_contract_v2_looks), la pile par défaut, intensités comprises, devient le
-// seul kContractV2Look ; une pile choisie par l'utilisateur reste la sienne. play.toml n'en sait rien.
-// Depuis le 04/11, la pile est le look HDR anime seul (anime_look, les curseurs look_contrast et
-// look_highlight) ; --no-looks : rien ; --hdr-contract-v2 : kContractV2Look. stack_slots : la pile de
+// Sous --hdr-contract-v2-curve (8.4, set_contract_v2_looks), la pile par défaut, intensités comprises,
+// devient le seul kContractV2Look ; une pile choisie par l'utilisateur reste la sienne. play.toml n'en sait
+// rien. Depuis le 04/11, la pile est le look HDR anime seul (anime_look, les curseurs look_contrast et
+// look_highlight) ; --no-looks : rien ; --hdr-contract-v2-curve : kContractV2Look. stack_slots : la pile de
 // play.toml d'avant (look, look_layers), que le lecteur ne lit plus.
 std::vector<LookLayer> look_slots(const PlaySettings& s);
 std::vector<LookLayer> stack_slots(const PlaySettings& s);

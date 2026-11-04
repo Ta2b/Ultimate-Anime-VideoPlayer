@@ -146,7 +146,7 @@ printf 'version %s\ncommit %s\n' "$TAG" "$COMMIT" > "$STAGE/BUILD_INFO.txt"
 cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
 # Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
 cp -R "$ROOT/data/luts" "$STAGE/luts"
-cp "$ROOT/data/luts-v2/"*.cube "$STAGE/luts/"  # le look du contrat v2 (--hdr-contract-v2)
+cp "$ROOT/data/luts-v2/"*.cube "$STAGE/luts/"  # le look du contrat v2 (--hdr-contract-v2-curve)
 # La vidéo de la calibration du grade (data/calibration), lue dans calibration/ à côté du lecteur.
 mkdir -p "$STAGE/calibration"
 cp "$ROOT/data/calibration/calibration.mkv" "$STAGE/calibration/"
