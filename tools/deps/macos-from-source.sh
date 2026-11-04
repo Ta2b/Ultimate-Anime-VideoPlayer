@@ -13,6 +13,7 @@ WORK="${2:-$PREFIX/../ajp-deps-src}"
 JOBS="$(sysctl -n hw.ncpu)"
 mkdir -p "$PREFIX" "$WORK"
 WORK="$(cd "$WORK" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # le dépôt : ports/ et ses correctifs
 
 BREW_DEPS=(ninja meson pkgconf nasm autoconf automake libtool cmake
   molten-vk vulkan-loader shaderc glslang spirv-tools dav1d little-cms2
@@ -121,9 +122,16 @@ PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
   -Dopengl=disabled -Dd3d11=disabled -Ddemos=false -Dtests=false
   -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml")
 # Le registre Vulkan vient de vulkan-headers : une autre version rebâtit libplacebo.
-signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers)"
+# Le correctif de présentation (chantier 6.1), le même que sous Linux et le port vcpkg : le lecteur lit ses types
+# (pl_vulkan_present, placebo_feedback.h) ; sa somme entre dans la signature.
+placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
+signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(shasum -a 256 "$placebo_patch" | cut -c1-16)"
 if ! done_marker libplacebo "$signature"; then
   git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
+  # Appliqué une fois : déjà là (une construction interrompue), rien à refaire.
+  if ! git -C "$WORK/libplacebo" apply --reverse --check "$placebo_patch" 2>/dev/null; then
+    git -C "$WORK/libplacebo" apply "$placebo_patch"
+  fi
   rm -rf "$WORK/libplacebo/_build"
   meson setup "$WORK/libplacebo/_build" "$WORK/libplacebo" "${PLACEBO_OPTS[@]}"
   meson compile -C "$WORK/libplacebo/_build"
