@@ -16,7 +16,6 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 
-#include "app/play/calibration_images.h"
 #include "app/play/default_player.h"
 #include "app/play/engine_downloads.h"
 #include "app/play/engine_switch.h"
@@ -110,8 +109,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                  .data = data_dir,
                  .display_width = display_width(screen.window()),
                  .display_height = display_height(screen.window()),
-                 .display_hdr = screen.hdr_output(),
-                 .span_fp8_video = calibration_clip()};
+                 .display_hdr = screen.hdr_output()};
   const int height = plan.display_height;
   auto worker = start_thread("calibration", ThreadReport([shared](const Refusal& refusal) {
                                const std::scoped_lock lock(shared->mutex);
@@ -154,7 +152,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     ui.controls().defer(i18n::tr("Machine calibration failed: Auto preset (see log)"));
     return base;
   }
-  return chosen_settings(**shared->result, std::move(base));
+  return candidate_settings((*shared->result)->chosen, std::move(base));
 }
 
 // Après la calibration de la machine, sur un écran HDR : HDR (la calibration du grade suit) ou SDR. Rien si

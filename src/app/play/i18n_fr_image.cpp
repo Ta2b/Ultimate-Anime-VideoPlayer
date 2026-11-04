@@ -30,8 +30,8 @@ constexpr std::array kImageTabs{
     Entry{"Auto", "Auto"},
     Entry{"Auto limit", "Plafond d'Auto"},
     Entry{"Auto mode", "Mode d'Auto"},
-    Entry{"Balanced is FP16; Performance is FP8 on RTX 40 and newer; Quality is FP32. Reloads playback.",
-          "Équilibre : FP16 ; Performance : FP8 sur RTX 40 et après ; Qualité : FP32. Recharge la lecture."},
+    Entry{"Balanced is FP16; Quality is FP32. Reloads playback.",
+          "Équilibre : FP16 ; Qualité : FP32. Recharge la lecture."},
     Entry{"Characters animated on twos keep their rhythm while the background interpolates. Applies live; "
           "DistilDRBA does this itself.",
           "Un personnage animé « en deux » garde son rythme pendant que le fond s'interpole. En direct ; "
@@ -83,14 +83,15 @@ constexpr std::array kImageTabs{
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
-    Entry{"Performance (FP8) is built on your PC (see \"Prepare Performance mode\" below), for RTX 40 and "
-          "newer.",
-          "Performance (FP8) se fabrique sur votre PC (voir « Préparer le mode Performance » plus bas), pour "
-          "RTX 40 et après."},
     Entry{"Performance (FP8): add {} (from the models release) to {}.",
           "Performance (FP8) : ajoutez {} (release des modèles) dans {}."},
     Entry{"Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges.",
           "Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets."},
+    Entry{
+        "Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges. FP8: prepared once on this PC "
+        "at the next video, then faster.",
+        "Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets. FP8 : "
+        "préparé une fois sur ce PC à la prochaine vidéo, puis plus rapide."},
     Entry{"RIFE model", "Modèle RIFE"},
     Entry{"RIFE: the default engine, fast and good everywhere.",
           "RIFE : le moteur de base, rapide et bon partout."},

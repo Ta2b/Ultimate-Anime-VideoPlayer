@@ -104,20 +104,6 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
 
 namespace {
 
-// Le dossier de réglages jetable d'un essai : les moteurs choisis par l'utilisateur et l'assistant déjà vu
-// (sinon chaque essai rouvrirait l'écran de bienvenue et n'avancerait pas), puis le play.toml de la variante.
-void settings_dir(const BenchPlan& plan, const Variant* variant, const std::filesystem::path& dir) {
-  std::error_code error;
-  std::filesystem::create_directories(dir, error);
-  if (!plan.data.empty() && std::filesystem::exists(plan.data / "settings.toml", error)) {
-    std::filesystem::copy_file(plan.data / "settings.toml", dir / "settings.toml", error);
-  } else {
-    std::ofstream(dir / "settings.toml") << "version = 1\nfirst_run_done = true\nfirst_run_step = 8\n";
-  }
-  if (variant != nullptr && !variant->settings.empty())
-    std::filesystem::copy_file(variant->settings, dir / "play.toml", error);
-}
-
 // Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas), dit en
 // une phrase (what : « des réglages « Rapide » »). allowance : le délai de plus que la durée de l'essai.
 Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Variant* variant, int index,
@@ -129,7 +115,18 @@ Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Va
   std::filesystem::remove_all(dir, error);
   std::filesystem::create_directories(dir, error);
   const std::filesystem::path out = dir / "mesures.toml";
-  settings_dir(plan, variant, dir / "reglages");
+  // Le dossier de réglages jetable de l'essai : les moteurs choisis par l'utilisateur et l'assistant déjà vu
+  // (sinon chaque essai rouvrirait l'écran de bienvenue et n'avancerait pas), puis le play.toml de la
+  // variante.
+  std::filesystem::create_directories(dir / "reglages", error);
+  if (!plan.data.empty() && std::filesystem::exists(plan.data / "settings.toml", error)) {
+    std::filesystem::copy_file(plan.data / "settings.toml", dir / "reglages" / "settings.toml", error);
+  } else {
+    std::ofstream(dir / "reglages" / "settings.toml")
+        << "version = 1\nfirst_run_done = true\nfirst_run_step = 8\n";
+  }
+  if (variant != nullptr && !variant->settings.empty())
+    std::filesystem::copy_file(variant->settings, dir / "reglages" / "play.toml", error);
   const std::chrono::seconds limit = std::chrono::seconds(plan.seconds) + allowance;
   prepare::ProcessSpec spec{.program = plan.executable,
                             .args = variant != nullptr
@@ -203,30 +200,6 @@ std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const V
         RefusalCode::DecodeFailed,
         trial.why.empty() ? i18n::tr_format("the \"{}\" variant produced nothing", variant.name) : trial.why);
   return std::move(*trial.reading);
-}
-
-bool prepare_span_variant(const BenchPlan& plan, const Variant& variant, int index,
-                          const std::stop_token& stop, std::chrono::seconds allowance) {
-  std::error_code error;
-  if (plan.span_fp8_video.empty() || !std::filesystem::is_regular_file(plan.span_fp8_video, error))
-    return false;
-  const std::filesystem::path dir = plan.work_dir / std::format("fp8-{}", index);
-  std::filesystem::remove_all(dir, error);
-  settings_dir(plan, &variant, dir / "reglages");
-  std::vector<std::string> args{
-      "play",           prepare::utf8_path(plan.span_fp8_video),
-      "--span-prepare", "--mute",
-      "--no-resume",    std::format("--data-dir={}", prepare::utf8_path(dir / "reglages"))};
-  window_args(plan, args);
-  const auto log = log_channel("app");
-  const auto exit = prepare::run_process(
-      prepare::ProcessSpec{.program = plan.executable, .args = std::move(args), .timeout = allowance},
-      [&](std::string_view line) { log->info("FP8 : {}", line); }, stop);
-  std::filesystem::remove_all(dir, error);
-  const bool ready = exit && exit->kind == prepare::ExitKind::Exited && exit->code == 0;
-  log->info("calibration de la machine : mode Performance de SPAN (FP8) {} pour {}",
-            ready ? "pret" : "refuse", variant.name);
-  return ready;
 }
 
 std::expected<CompareOutcome, Refusal> run_compare(const BenchPlan& plan, const Variant& a, const Variant& b,
