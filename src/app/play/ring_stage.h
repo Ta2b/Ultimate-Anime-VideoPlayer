@@ -86,11 +86,16 @@ class RingStage : public VideoStage, public FrameSink {
   }
   // Le destin d'une sortie : Write l'écrit dans un slot, Same la laisse telle que l'écran la montre déjà
   // (aucun slot, aucun RingFrame) ; la sortie suivante qui s'écrit porte alors uninterpolated, car l'écart
-  // qui la précède n'est pas un manque.
-  enum class Fate : std::uint8_t { Write, Same };
+  // qui la précède n'est pas un manque. Late (Rapide à pas constant, chantier 7.6) : l'instant serait passé
+  // quand l'image paraîtrait ; ni calculé ni écrit, il manque bien (late() à la place de produce).
+  enum class Fate : std::uint8_t { Write, Same, Late };
   virtual Fate fate(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) { return Fate::Write; }
   // Appelée à la place de produce pour une sortie Same : la sous-classe tient ses comptes à jour.
   virtual void skip(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) {}
+  // Appelée à la place de produce pour une sortie Late ; un refus arrête la vidéo comme un refus de produce.
+  virtual std::expected<void, Refusal> late(const DecodedFrame& /*frame*/, std::uint32_t /*output*/) {
+    return {};
+  }
   // Une image attend un slot depuis plus de kHealthAfterUs : l'appareil est-il encore là (étape 11.5) ? Un
   // refus (DeviceLost) arrête la vidéo comme un refus de produce, au lieu d'attendre un SlotFree qui ne
   // viendra pas. Par défaut : rien à vérifier.

@@ -57,6 +57,11 @@ UpscaleStage::~UpscaleStage() {
         "(côté tenu)",
         drba_.runs, drba_.edges, drba_.held);
   }
+  if (setup_.late_fate) {
+    log_channel("gpu")->info(
+        "Rapide : {} instants laissés en retard sans calcul, {} calculés après leur instant", late_dropped_,
+        late_computed_);
+  }
   if (late_pairs_ > 0) {
     log_channel("gpu")->info("RIFE : {} paires en retard sur l'horloge, {} instants sautés pour la rattraper",
                              late_pairs_, late_instants_);
@@ -385,6 +390,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // L'image seule si l'interpolation ne tourne pas ; la grille repart alors d'elle.
   outputs_ = 1;
   intermediates_ = 0;
+  middles_done_ = 0;
+  middle_rank_ = 0;
   instants_[0] = Instant{.t = 1.0F, .pts_us = frame.pts_us};
   const bool runs = on_grid && rife_runs(facts);
   // Mode auto : seules les paires qui ont chargé le GPU disent s'il tient ; à ×1 rien ne tourne, le
@@ -450,6 +457,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                before_ == PairMotion::Still && intermediates_ > 0;
   copy_written_ = false;
   b_shown_ = false;
+  late_fate_now_ = setup_.late_fate && free_mode && !drba() && !copy_pair_ && setup_.clock != nullptr;
   // Dessin tenu qui reprend l'agrandissement de la précédente, dont l'image est à l'écran : la source
   // est bit à bit celle qui est affichée, ni écrite ni présentée.
   held_same_ = setup_.skip_held && runs == false && outputs_ == 1 && reuse_span_ && shown_source_;
@@ -523,9 +531,10 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
   return true;
 }
 
-RingStage::Fate UpscaleStage::fate(const DecodedFrame& /*frame*/, std::uint32_t output) {
+RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t output) {
   if (held_same_) return Fate::Same;
   if (setup_.skip_held && drba()) return drba_fate(output);
+  if (late_fate_now_ && instant_late(frame, output)) return Fate::Late;
   if (!copy_pair_) return Fate::Write;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   if (poses_copy(true, true, instant.t) == PoseCopy::Before || copy_written_) return Fate::Same;
@@ -579,6 +588,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   AJP_TRACE("upscale.produce");
   const gpu::Tensor& now = rgb_[current_]->tensor();
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
+  if (late_fate_now_ && instant_late(frame, output)) ++late_computed_;  // entre fate et ici : ne doit pas
   // Le pts de l'image écrite : la source elle-même, ou l'instant (intermédiaire, b écrite en avance).
   auto grade = grade_slot(instant.t >= 1.0F ? frame.pts_us : instant.pts_us, frame.epoch);
   if (!grade) return std::unexpected(std::move(grade.error()));
@@ -608,6 +618,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
+  middle_rank_ = middles_done_++;
   Output made{.pts_us = instant.pts_us,
               .left = previous_->id,
               .right = frame.id,

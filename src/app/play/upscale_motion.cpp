@@ -85,7 +85,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   const gpu::Motion middle = mid_motion(mid_);
   // Mouvement d'un autre instant que le milieu, tel quel (t = 1/2 au warp : « estimé »).
   const gpu::Motion other{.flow = flow_->tensor(), .mask = mask_->tensor(), .area = middle.area};
-  if (output == 0) {
+  if (first_middle()) {
     poses_ = setup_.live && setup_.live->keep_poses();
     single_run_ = false;
     if (auto ok = settle_motion(); !ok) return ok;
@@ -135,7 +135,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   }
   if (direct_run_) {
     if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
-    if (output == 0) {
+    if (first_middle()) {
       // Au premier instant s, le plus grand déplacement vaut max(s, 1 − s) de celui de la paire,
       // contre 1/2 au milieu : mis à l'échelle du milieu pour le seuil, relu à la paire suivante.
       auto ticket = ops.flow_max_start(other);
