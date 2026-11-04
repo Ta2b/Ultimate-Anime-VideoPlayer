@@ -64,11 +64,15 @@ struct Rule {
 struct Profile {
   std::string name;
   HdrMode hdr = HdrMode::Off;
+  // Version 6 (constat 8 de l'audit du grade) : faux, le profil coupe le grade le temps qu'il est actif
+  // (« Source » : l'image telle quelle) ; vrai, le grade reste celui des réglages. Absent : vrai.
+  bool grade = true;
   std::vector<Rule> rules;
   friend bool operator==(const Profile&, const Profile&) = default;
 };
 
-inline constexpr int kProfileVersion = 5;
+inline constexpr int kProfileVersion = 6;
+inline constexpr int kProfileOldestVersion = 5;  // lue telle quelle : grade absent, donc vrai
 inline constexpr std::size_t kProfileSlots = 9;
 
 struct ProfileFile {

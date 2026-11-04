@@ -68,6 +68,12 @@ bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
          a.downscale != b.downscale || factor_of(a) != factor_of(b) || a.hdr_native != b.hdr_native;
 }
 
+void keep_profile_grade(Chain& to, bool saved_grade) {
+  const int slot = std::clamp(to.profiles.active, 1, static_cast<int>(core::kProfileSlots));
+  const auto& profile = to.profiles.data.file.profiles[static_cast<std::size_t>(slot - 1)];
+  if (profile && !profile->grade && !to.kept_grade) to.kept_grade = saved_grade;
+}
+
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings) {
   if (to.hdr_wanted) {
     settings.hdr_native = to.hdr_wanted->hdr_native;
@@ -226,7 +232,10 @@ void switch_profile(Chain& to, int slot, std::int64_t now_us) {
     return;
   }
   std::vector<std::string> notes;
-  const PlaySettings wanted = apply_profile(*profile, to.profiles.source, to.running, notes);
+  // Un profil sans grade le coupe pour la séance (play.toml garde celui des réglages) ; le suivant le rend.
+  if (!profile->grade) keep_for_file(to, true, false);
+  PlaySettings wanted = apply_profile(*profile, to.profiles.source, to.running, notes);
+  if (profile->grade && to.kept_grade) wanted.grade = *std::exchange(to.kept_grade, std::nullopt);
   for (const std::string& line : notes) log_channel("app")->warn("profil {} : {}", slot, line);
   log_channel("app")->info("profil {} « {} »", slot, profile->name);
   to.profiles.active = slot;

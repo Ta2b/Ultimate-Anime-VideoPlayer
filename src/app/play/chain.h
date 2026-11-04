@@ -170,6 +170,8 @@ struct Chain {
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
 // repli : ce que remember_chain et play.toml retiennent.
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
+// Au lancement : le profil actif sans grade (« Source ») l'a coupé ; play.toml garde saved_grade.
+void keep_profile_grade(Chain& to, bool saved_grade);
 
 // Les réglages avec, pour le grade adaptatif, noirs, couleurs et gris moyen glissés de la scène sombre (t =
 // 0, les curseurs) vers la scène claire (t = 1). t = 0 ou adaptatif coupé : les réglages tels quels.

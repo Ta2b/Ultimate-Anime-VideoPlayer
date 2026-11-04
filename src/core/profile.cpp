@@ -211,6 +211,9 @@ std::expected<Profile, Refusal> parse_one_profile(const toml::table& table, cons
     if (!mode) return std::unexpected(mode.error());
     profile.hdr = *mode;
   }
+  auto grade = optional_field<bool>(table, "grade", where);
+  if (!grade) return std::unexpected(grade.error());
+  profile.grade = grade->value_or(true);
 
   if (const toml::node* rules_node = table.get("rule")) {
     const toml::array* rules = rules_node->as_array();
@@ -308,7 +311,7 @@ std::expected<ProfileFile, Refusal> parse_profile(std::string_view toml_text) {
 
   auto version = required_field<std::int64_t>(root, "version", "profil");
   if (!version) return std::unexpected(version.error());
-  if (*version != kProfileVersion) {
+  if (*version < kProfileOldestVersion || *version > kProfileVersion) {
     return refuse(RefusalCode::ProfileVersion, std::format("version = {}", *version));
   }
 
@@ -365,6 +368,7 @@ std::string format_profile(const ProfileFile& file) {
     const Profile& profile = *slot;
     text += std::format("\n[[profile]]\nslot = {}\nname = {}\nhdr = {}\n", i + 1, toml_string(profile.name),
                         toml_string(enum_name(profile.hdr, kHdrModes)));
+    if (!profile.grade) text += "grade = false\n";
     for (const Rule& rule : profile.rules) text += format_rule(rule);
   }
   return text;
