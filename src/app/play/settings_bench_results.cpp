@@ -120,6 +120,8 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     const MachineCalibration& r = *bench.result;
     note(i18n::tr_format("{} · {} · display {}p", r.gpu.empty() ? i18n::tr("Unknown graphics card") : r.gpu,
                          r.date, r.display_height));
+    note(r.span_fp8 ? i18n::tr("SPAN: Balanced Sharp in FP8.")
+                    : i18n::tr("SPAN: Performance Sharp in FP16 (no FP8 on this card)."));
     constexpr ImGuiTableFlags kFlags =
         ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX;
     if (ImGui::BeginTable("##bench", 6, kFlags)) {
@@ -152,7 +154,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
           ImGui::SetTooltip("%s", i18n::tr_format("{:.1f} % lost", trial.lost_percent).c_str());
         ImGui::TableNextColumn();
         if (ImGui::SmallButton(i18n::tr("Apply"))) {
-          d = candidate_settings(trial.chain, std::move(d));
+          d = candidate_settings(trial.chain, std::move(d), r.span_fp8);
           applied = true;
         }
         if (recommended) panel::badge(i18n::tr("Recommended"), panel::kGood);

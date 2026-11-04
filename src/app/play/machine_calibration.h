@@ -4,12 +4,16 @@
 // chargement.
 //
 // Les hauteurs de travail essayées s'arrêtent à la moitié de l'écran : SPAN double l'image, au-delà sa sortie
-// dépasserait l'écran (1080p : 540p au plus, 1440p : 720p, 4K : 1080p). La recherche part du plus haut palier
-// permis avec SPAN + RIFE 4.22 lite en mode auto Rapide, et descend jusqu'au premier qui tient. Sans palier
-// qui tienne, l'interpolation sort de l'équation (SPAN seul), puis SPAN (RIFE seul) : entre SPAN et RIFE,
-// SPAN passe toujours avant, c'est lui qui change le plus l'image. RIFE seul (SPAN coupé) est essayé en
-// dernier dans tous les cas, pour comparer dans le tableau. Ici la recherche, pure, et le fichier des
-// résultats ; les essais (des « ajp play » enfants, auto_bench_run.h) dans le .cpp.
+// dépasserait l'écran (1080p : 540p au plus, 1440p : 720p, 4K : 1080p). Deux familles, dans l'ordre (choix de
+// Tatoub, 04/11) :
+//   1. SPAN seul, du palier le plus léger au plus lourd, jusqu'au premier qui ne tient pas ;
+//   2. SPAN + RIFE 4.22 lite en mode auto Rapide, du plus haut palier que SPAN seul a tenu vers le bas,
+//      jusqu'au premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas
+//      ne se tient pas avec RIFE.
+// SPAN est le Balanced Sharp en FP8 quand la carte le prend (FP8 CUTLASS), sinon le Performance Sharp en
+// FP16. Sans palier SPAN qui tienne, RIFE seul (SPAN coupé) est le recours. GMFSS et DistilDRBA ne sont pas
+// essayés. Ici la recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants,
+// auto_bench_run.h) dans le .cpp.
 #pragma once
 
 #include <array>
@@ -28,6 +32,12 @@
 namespace ajp::app::play {
 
 inline constexpr std::string_view kCalibrationRife = "rife_v4.22_lite.onnx";
+// SPAN des essais : le Balanced Sharp en FP8 (précision Performance), sinon le modèle par défaut du lecteur,
+// le Performance Sharp, en FP16 (précision Équilibre).
+inline constexpr std::string_view kCalibrationSpanFp8 =
+    "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
+// Ce que l'essai d'un SPAN FP8 doit avoir joué (BenchReading::span_variant) pour que la recherche le garde.
+inline constexpr std::string_view kCalibrationFp8Variant = "FP8 CUTLASS";
 // Les hauteurs de travail possibles, de la plus légère à la plus lourde.
 inline constexpr std::array<int, 6> kCalibrationHeights{360, 480, 540, 720, 900, 1080};
 
@@ -53,12 +63,14 @@ std::vector<int> calibration_heights(int display_height);
 
 // Le prochain essai après ceux déjà faits ; rien quand la recherche est finie.
 std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int display_height);
-// La chaîne recommandée : le plus haut palier qui tient de la meilleure famille (SPAN + RIFE, SPAN seul,
-// RIFE seul) ; ni SPAN ni RIFE si rien ne tient.
+// La chaîne recommandée : SPAN passe avant l'interpolation, donc le plus haut palier SPAN qui tient, avec
+// RIFE s'il tient aussi à ce palier (sinon SPAN seul) ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni
+// RIFE si rien ne tient. Les paliers plus bas avec RIFE restent au tableau, au choix de l'utilisateur.
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
-// Personnalisé, réduction Hermite, RIFE 4.22 lite en mode auto Rapide.
-PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base);
+// Personnalisé, réduction Hermite, RIFE 4.22 lite en mode auto Rapide ; span_fp8 : SPAN Balanced Sharp en
+// précision Performance (FP8), sinon le SPAN par défaut en FP16.
+PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base, bool span_fp8 = false);
 // « 720p · SPAN · RIFE 4.22 lite (auto Rapide) » ; pour le tableau et le journal.
 std::string describe(const ChainCandidate& chain);
 
@@ -68,6 +80,7 @@ struct MachineCalibration {
   std::string gpu;
   std::string date;  // AAAA-MM-JJ
   int display_height = 0;
+  bool span_fp8 = false;  // les essais SPAN ont joué le Balanced Sharp en FP8
 };
 
 // Le fichier des résultats (calibration.toml, à côté de play.toml), que calibrate_machine écrit quand

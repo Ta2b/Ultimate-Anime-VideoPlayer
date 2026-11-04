@@ -106,6 +106,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     return std::nullopt;
   }
   ChainEngines& c = **prepared;
+  // La variante de SPAN chargée, pour la mesure d'un essai du bench (--bench-out).
+  const std::string span_variant = c.span_int8 ? std::string(variant_text(c.span_int8->kind))
+                                   : c.model   ? std::string("FP16")
+                                               : std::string();
   const int factor = c.factor;
   const WorkSize work = c.work;
   const bool rife_loaded = c.interpolates();
@@ -744,7 +748,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .interval_mean_us = static_cast<std::int64_t>(seen.frame_interval.mean()),
                                .render_median_us = seen.render.median(),
                                .work_height = chain.running.work_height,
-                               .rife_model = chain.running.rife_model};
+                               .rife_model = chain.running.rife_model,
+                               .span_variant = span_variant};
     if (auto written = save_reading(*p.options.bench_out, reading); !written)
       log->warn("{}", written.error().detail);
   }

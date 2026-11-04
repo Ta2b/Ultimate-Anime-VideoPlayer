@@ -56,35 +56,50 @@ std::vector<int> calibration_heights(int display_height) {
 }
 
 std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int display_height) {
-  const std::vector<int> heights = calibration_heights(display_height);
-  bool held = false;
-  for (const bool rife : {true, false}) {
-    const ChainCandidate family{.span = true, .rife = rife, .height = 0};
-    if (const auto height = next_height(tried, family, heights, held))
-      return ChainCandidate{.span = true, .rife = rife, .height = *height};
-    if (held) break;  // la meilleure famille qui tient : SPAN seul n'est pas essayé
+  const std::vector<int> heavy_first = calibration_heights(display_height);
+  // 1. SPAN seul, en montant, jusqu'au premier palier qui ne tient pas.
+  int span_top = 0;
+  for (auto it = heavy_first.rbegin(); it != heavy_first.rend(); ++it) {
+    const ChainCandidate chain{.span = true, .rife = false, .height = *it};
+    const CandidateTrial* trial = find(tried, chain);
+    if (trial == nullptr) return chain;
+    if (!trial->holds) break;
+    span_top = *it;
   }
-  // RIFE seul (SPAN coupé) : de quoi comparer, et le recours quand SPAN ne tient nulle part.
+  if (span_top > 0) {
+    // 2. SPAN + RIFE, du plus haut palier de SPAN seul vers le bas, jusqu'au premier qui tient.
+    std::vector<int> below;
+    for (const int height : heavy_first)
+      if (height <= span_top) below.push_back(height);
+    bool held = false;
+    if (const auto height = next_height(tried, ChainCandidate{.span = true, .rife = true}, below, held))
+      return ChainCandidate{.span = true, .rife = true, .height = *height};
+    return std::nullopt;
+  }
+  // SPAN ne tient nulle part : RIFE seul (SPAN coupé), le recours.
   if (find(tried, kRifeOnly) == nullptr) return kRifeOnly;
   return std::nullopt;
 }
 
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
-  for (const ChainCandidate family :
-       {ChainCandidate{.span = true, .rife = true}, ChainCandidate{.span = true, .rife = false}, kRifeOnly}) {
-    std::optional<ChainCandidate> best;
-    for (const CandidateTrial& trial : tried) {
-      if (!trial.holds || trial.chain.span != family.span || trial.chain.rife != family.rife) continue;
-      if (!best || trial.chain.height > best->height) best = trial.chain;
-    }
-    if (best) return *best;
+  // SPAN passe avant l'interpolation (choix de Tatoub) : le plus haut palier SPAN qui tient, avec RIFE s'il
+  // tient aussi à ce palier ; un SPAN plus bas avec RIFE n'est qu'une ligne du tableau, au choix.
+  std::optional<ChainCandidate> best;
+  for (const CandidateTrial& trial : tried) {
+    if (!trial.holds || !trial.chain.span) continue;
+    const ChainCandidate& c = trial.chain;
+    if (!best || c.height > best->height || (c.height == best->height && c.rife && !best->rife)) best = c;
   }
+  if (best) return *best;
+  if (const CandidateTrial* rife = find(tried, kRifeOnly); rife != nullptr && rife->holds) return kRifeOnly;
   return ChainCandidate{.span = false, .rife = false, .height = 0};
 }
 
-PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base) {
+PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base, bool span_fp8) {
   base.preset = Preset::Custom;
   base.upscale = chain.span;
+  base.model = span_fp8 ? std::string(kCalibrationSpanFp8) : std::string();
+  base.span_precision = span_fp8 ? PrecisionTier::Performance : PrecisionTier::Balanced;
   base.work_height = chain.span ? chain.height : 0;
   base.downscale = Downscale::Hermite;
   base.motion_engine = MotionEngine::Rife;
@@ -108,6 +123,7 @@ std::string format_calibration(const MachineCalibration& c) {
   root.insert("gpu", c.gpu);
   root.insert("date", c.date);
   root.insert("display_height", static_cast<std::int64_t>(c.display_height));
+  root.insert("span_fp8", c.span_fp8);
   const auto chain_table = [](const ChainCandidate& chain) {
     toml::table t;
     t.insert("span", chain.span);
@@ -148,6 +164,7 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
   out.gpu = root["gpu"].value_or(std::string());
   out.date = root["date"].value_or(std::string());
   out.display_height = static_cast<int>(root["display_height"].value_or(std::int64_t{0}));
+  out.span_fp8 = root["span_fp8"].value_or(false);
   if (const toml::table* chosen = root["chosen"].as_table()) out.chosen = chain_of(*chosen);
   if (const toml::array* trials = root["trials"].as_array()) {
     for (const toml::node& node : *trials) {
@@ -200,18 +217,42 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
   const auto most = static_cast<float>(2 * calibration_heights(display_height).size() + 1);
   int index = 0;
+  // SPAN en FP8 d'abord ; le premier essai SPAN dit si la carte l'a pris, sinon tout passe au FP16.
+  out.span_fp8 = true;
+  bool fp8_known = false;
   while (const auto chain = next_candidate(out.tried, display_height)) {
     if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
     const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
-    if (auto written = save_settings(settings, candidate_settings(*chain, base)); !written)
+    if (auto written = save_settings(settings, candidate_settings(*chain, base, out.span_fp8)); !written)
       return std::unexpected(std::move(written.error()));
     const Variant variant{.name = describe(*chain), .settings = settings};
-    // Le premier essai charge, et la première fois construit, les moteurs : il a tout son temps.
-    auto reading =
-        play_variant(plan, variant, index, stop, index == 0 ? plan.first_allowance : plan.build_allowance);
+    // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps (le
+    // FP16 aussi, après un essai FP8 que la carte n'a pas pris).
+    auto reading = play_variant(plan, variant, index, stop,
+                                out.tried.empty() ? plan.first_allowance : plan.build_allowance);
     if (stop.stop_requested())
       return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
-    if (!reading && index == 0) return std::unexpected(std::move(reading.error()));
+    if (!reading && chain->span && !fp8_known) {
+      // Le premier essai en FP8 n'a rien rendu (préparation du FP8 ratée…) : le FP16 avant de conclure.
+      log->warn("calibration de la machine : essai SPAN FP8 sans mesure ({}), essais en FP16",
+                reading.error().detail);
+      fp8_known = true;
+      out.span_fp8 = false;
+      ++index;
+      continue;
+    }
+    if (!reading && out.tried.empty()) return std::unexpected(std::move(reading.error()));
+    if (chain->span && !fp8_known && reading) {
+      fp8_known = true;
+      if (reading->span_variant != kCalibrationFp8Variant) {
+        // La carte ne prend pas le FP8 (ou le modèle Balanced manque) : l'essai se refait en FP16.
+        log->info("calibration de la machine : SPAN FP8 non pris ({}), essais en FP16",
+                  reading->span_variant.empty() ? "variante inconnue" : reading->span_variant);
+        out.span_fp8 = false;
+        ++index;
+        continue;
+      }
+    }
     CandidateTrial trial{
         .chain = *chain,
         .target_fps = static_cast<double>(media::BenchClipSpec{}.fps) * (chain->rife ? 2.0 : 1.0)};
