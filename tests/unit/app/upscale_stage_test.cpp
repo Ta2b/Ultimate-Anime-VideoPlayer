@@ -251,6 +251,27 @@ TEST_CASE("Étage gpu : RIFE mouvement, le mouvement qui se lève compte à la p
   CHECK(rig.backend.count("flow_max_now") == 0);
 }
 
+TEST_CASE("Étage gpu : RIFE mouvement avec poses, un mouvement fort a RIFE à chaque instant (audit F10)",
+          "[app][stage]") {
+  Rig rig;
+  rig.live->set_keep_poses(true);
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.feed(1, 3);  // (1,2) et (2,3) calmes : le milieu seul, extrapolé
+  REQUIRE(rig.collect(7));
+  CHECK(rig.backend.count("engine rife_motion") == 2);
+  rig.backend.motion_max(40.0F);
+  rig.feed(4, 5);
+  REQUIRE(rig.collect(7 + 6));
+  rig.stage.reset();
+  // (3,4) se décide sur la mesure calme de (2,3) : le milieu ; la sienne, forte, donne à (4,5) le milieu (les
+  // poses de la paire d'après) et RIFE à 1/3 et 2/3.
+  CHECK(rig.backend.count("engine rife_motion") == 2 + 1 + 3);
+  CHECK(rig.backend.count("flow_max_now") == 0);
+}
+
 TEST_CASE("Étage gpu : mesures, SPAN et RIFE chacun sur sa voie, SPAN avant le warp aussi", "[app][stage]") {
   SECTION("RIFE image ×3") {
     Rig rig;

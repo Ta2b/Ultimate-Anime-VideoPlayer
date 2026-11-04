@@ -102,7 +102,16 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
       if (auto ok = run_motion(0.5F, middle.flow, middle.mask); !ok) return ok;
       if (poses_) {
         single_run_ = true;
-        motion_measured_ = false;  // aucune mesure : la paire d'après attend la sienne
+        motion_measured_ = false;
+        // Audit F10 : le mouvement du milieu mesuré en fond, relu à la paire suivante (settle_motion) ; une
+        // paire qui suit un mouvement fort a RIFE à chaque instant, et non le milieu extrapolé.
+        if (intermediates_ > 1 && flow_max_async_) {
+          if (auto ticket = ops.flow_max_start(middle))
+            motion_ = PendingMotion{.ticket = *ticket, .scale = 1.0F, .known = true};
+          else
+            flow_max_async_ = false;
+        }
+        if (strong_motion_ && intermediates_ > 1) ++multi_pairs_;
       } else if (intermediates_ > 1) {
         // Warp après SPAN : SPAN de b enfilé entre la mesure et sa relecture, qui ne l'attend pas.
         auto ticket = ops.flow_max_start(middle);
@@ -154,6 +163,12 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   // après la passe de RIFE et la mesure que l'hôte attend : elles ne passent pas derrière SPAN.
   if (warps_spanned()) {
     if (auto ok = span_current(); !ok) return ok;
+  }
+  // Garder les poses, mouvement fort : RIFE à l'instant exact (l'atout de RIFE), les poses ne valent que pour
+  // les paires calmes, où le milieu extrapolé ne laisse pas de double contour.
+  if (poses_ && strong_motion_ && t != 0.5F) {
+    if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
+    return blend(a, b, other, 0.5F, out);
   }
   if (poses_ && before_ != PairMotion::Unknown) {
     const gpu::Motion previous = mid_motion(mid_ ^ 1U);
