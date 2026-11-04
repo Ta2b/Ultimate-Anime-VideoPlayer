@@ -40,6 +40,8 @@ $Extra = @()
 if ($env:AJP_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" }
 # Triplet sans Debug (x64-windows-release) : la moitié des ports à compiler sur la CI.
 if ($WinMl -eq "ON") { $Extra += "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT" }
+# SPAN FP8 CUTLASS sous MSVC (12.4) : à l'essai, éteint par défaut hors Linux.
+if ($Cuda -eq "ON" -and $env:AJP_WITH_SPAN_FP8) { $Extra += "-DAJP_WITH_SPAN_FP8=$env:AJP_WITH_SPAN_FP8" }
 if ($Cuda -eq "ON" -and $env:AJP_TENSORRT_ROOT) { $Extra += "-DAJP_TENSORRT_ROOT=$env:AJP_TENSORRT_ROOT" }
 if ($env:AJP_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"

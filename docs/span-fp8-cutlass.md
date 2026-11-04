@@ -229,8 +229,11 @@ SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Le
 - **Modèle Performance b5f48 (48 canaux, 5 blocs)** : pris depuis les étapes 3.2b et 3.2c, rangé en 64 canaux
   remplis de zéros (Relu(0) = 0, (t + x)·tanh(0) = 0) et les noyaux bouclés sur 5 blocs ; paquet version 2.
   Visé : FP8 ≤ 0,72 × TensorRT FP16 en 720p et ≤ 0,70 en 1080p, reçu 42/38/0,985 (à mesurer sur la RTX).
-- **Windows** : le module n'est pas construit (`AJP_WITH_SPAN_FP8` vaut OFF hors Linux), CUTLASS n'y a pas été
-  essayé avec MSVC. Le lecteur se comporte comme avant.
+- **Windows** (12.4) : le module se construit à la demande (`-DAJP_WITH_SPAN_FP8=ON` ; `AJP_WITH_SPAN_FP8=ON` pour
+  `package-windows.ps1` ; entrée `span_fp8` de `release-windows.yml`, avec `tensorrt`), avec le préprocesseur conforme
+  de MSVC (`/Zc:preprocessor`). Le défaut y reste OFF : il ne passera ON qu'avec le même PSNR et le même gain qu'en
+  Linux à ±3 %, mesurés sur la RTX ; sinon il reste OFF, et cette ligne le dit. Éteint, le lecteur se comporte comme
+  avant.
 - **Accumulateur f16** (étape 3.5) : (a) hors blocs, `conv_cat` et `to_pixel` peuvent accumuler en f16 (mesuré
   −2,7 % au banc) ; la dérivation juge les deux variantes sur les mêmes images et ne pose le drapeau `acc16` du
   paquet que si la variante f16 passe la porte et perd au plus 0,3 dB de PSNR moyen (`keep_acc16`). (b) Dans les

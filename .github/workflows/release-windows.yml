@@ -14,6 +14,10 @@ on:
         description: "Construire TensorRT : j'accepte les licences du kit CUDA et de TensorRT de NVIDIA"
         type: boolean
         default: false
+      span_fp8:
+        description: "Avec TensorRT : construire aussi les noyaux CUTLASS du SPAN FP8 sous MSVC (essai 12.4)"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -86,6 +90,7 @@ jobs:
           $env:AJP_WITH_OPENVINO = "ON"
           $env:AJP_WITH_WINML = "ON"
           if ("${{ inputs.tensorrt }}" -eq "true") { $env:AJP_WITH_CUDA = "ON" }
+          if ("${{ inputs.tensorrt }}" -eq "true" -and "${{ inputs.span_fp8 }}" -eq "true") { $env:AJP_WITH_SPAN_FP8 = "ON" }
           $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
           if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
           # TensorRT se construit sur un poste Windows NVIDIA et se joint à la release AVANT l'étiquette avec son index

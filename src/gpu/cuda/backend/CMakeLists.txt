@@ -18,7 +18,10 @@ set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDE
 
 # Le SPAN entier en FP8 par noyaux CUTLASS (docs/span-fp8-cutlass.md). CUTLASS est vendorisé (third_party/cutlass,
 # BSD-3-Clause, en-têtes seulement) ; les noyaux n'existent que pour sm 8.9, et sont éteints sans CUDA, sans les
-# en-têtes, ou hors Linux (Windows : jamais construit ni mesuré, voir le document). Éteints, une version vide (span_fp8_net_none.cpp) du même
+# en-têtes, ou par défaut hors Linux. Windows (12.4) : -DAJP_WITH_SPAN_FP8=ON les construit avec MSVC
+# (/Zc:preprocessor ci-dessous ; AJP_WITH_SPAN_FP8=ON pour package-windows.ps1, entrée span_fp8 de
+# release-windows.yml) ; le défaut y reste OFF tant que PSNR et gain ne sont pas mesurés sur la RTX à ±3 % de
+# Linux (docs/span-fp8-cutlass.md). Éteints, une version vide (span_fp8_net_none.cpp) du même
 # contrat refuse toute demande et la chaîne reste sur TensorRT.
 set(AJP_CUTLASS_INCLUDE "${PROJECT_SOURCE_DIR}/third_party/cutlass/include")
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${AJP_CUTLASS_INCLUDE}/cutlass/cutlass.h")
