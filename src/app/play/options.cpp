@@ -129,6 +129,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.sdr = true;
     } else if (arg == "--ring-rgb10a2") {
       options.ring_rgb10a2 = true;
+    } else if (arg == "--no-ring-rgb10a2") {
+      options.ring_rgb10a2 = false;
     } else if (arg == "--probe-nvdec") {
       options.probe_nvdec = true;
     } else if (arg == "--shot-cuts") {
@@ -453,7 +455,7 @@ std::string play_usage() {
       "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
       "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
       "  --sdr                  sortie SDR même sur un écran HDR (essais du grade SDR)\n"
-      "  --ring-rgb10a2         anneau en RGB10A2 sous TensorRT (moitié moins de mémoire), à mesurer\n"
+      "  --ring-rgb10a2         anneau en RGB10A2 sous TensorRT (moitié moins de mémoire), par défaut ; --no-ring-rgb10a2 : RGBA16\n"
       "  --hdr-metadata[=NITS]  sortie HDR10 avec ses métadonnées, la compression de KWin faite par le\n"
       "                         grade (NITS : la luminosité SDR de KDE, 200 par défaut), à comparer à l'œil\n"
       "  --probe-nvdec          essai : la pré-analyse des plans décodée par NVDEC en 256x144\n"
