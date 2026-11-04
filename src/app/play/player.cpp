@@ -197,6 +197,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
       .allow_software = options.software_gpu,
       .hdr_anime = options.hdr_anime,
+      .anime_guided = options.anime_guided,
       .legacy_grade = options.legacy_grade,
       .split_look = options.split_look,
       .grade_deband = options.grade_deband,

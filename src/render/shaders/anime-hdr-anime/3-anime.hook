@@ -40,6 +40,33 @@ float shadow_ratio(float m, float depth) {
     return 1.0 - depth * u * u;
 }
 
+// Carte locale guidee (mega plan A3, --anime-guided) : la carte 1/8 relevee par un sur-echantillonnage
+// bilateral joint, guide par le pixel. Un pixel sombre au bord d'une lumiere lit les blocs sombres, un pixel
+// clair les blocs clairs : le halo ne deborde plus d'un demi-bloc sur la surface voisine.
+float an_local_guided(float y_pq, float plain) {
+    vec2 t = AJG_LOCAL_pos * AJG_LOCAL_size - 0.5;
+    vec2 base = floor(t);
+    vec2 f = t - base;
+    float acc = 0.0;
+    float wsum = 0.0;
+    for (int j = -1; j <= 2; j++) {
+        for (int i = -1; i <= 2; i++) {
+            vec2 d = abs(vec2(float(i), float(j)) - f);
+            float ws = max(0.0, 1.0 - 0.5 * d.x) * max(0.0, 1.0 - 0.5 * d.y);
+            float v = AJG_LOCAL_tex((base + vec2(float(i), float(j)) + 0.5) * AJG_LOCAL_pt).x;
+            float r = (v - y_pq) / 0.06;
+            float w = ws * (exp(-r * r) + 1e-4);
+            acc += w * v;
+            wsum += w;
+        }
+    }
+    return wsum > 0.0 ? acc / wsum : plain;
+}
+// La carte locale au pixel : bilineaire (defaut).
+float an_local(float y_pq, float plain) {
+    return plain;
+}
+
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
     if (sdr_out > 0.5) return px;
@@ -51,7 +78,8 @@ vec4 hook() {
     float y_pq = pq_of(y);
 
     // Cartes floues : niveau du bloc (8x8, bilineaire) et de la zone (~2,5 % de l'image).
-    float local_pq = AJG_LOCAL_tex(AJG_LOCAL_pos).x;
+    float local_lin = AJG_LOCAL_tex(AJG_LOCAL_pos).x;
+    float local_pq = an_local(y_pq, local_lin);
     float area_pq = AJG_AREAT_tex(AJG_AREAT_pos).x;
     float base = max(pq_to_nits(vec3(local_pq)).x, 1e-3);
 
@@ -60,7 +88,7 @@ vec4 hook() {
     float iso = smoothstep(0.05, 0.25, local_pq - area_pq);
     float gate = smoothstep(pq_of(0.55 * white), pq_of(0.95 * white), local_pq);
     // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain).
-    float spark = smoothstep(0.08, 0.20, y_pq - local_pq) * smoothstep(pq_of(0.6 * white), pq_of(white), y);
+    float spark = smoothstep(0.08, 0.20, y_pq - local_lin) * smoothstep(pq_of(0.6 * white), pq_of(white), y);
     float emitter = max(iso * gate, spark);
 
     // Marge des eclats : le pic en scene sombre, la moitie en scene tres claire (limiteur de l'OLED).

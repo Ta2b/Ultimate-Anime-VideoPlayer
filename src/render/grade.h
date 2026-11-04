@@ -25,7 +25,9 @@ namespace ajp::render {
 // Fused : le grade en trois passes, le look lu dans la passe du grade ; FusedSplit : les mêmes passes, le
 // look dans sa passe à part (la chaîne d'avant 2.2, --legacy-grade=split) ; Legacy : neuf passes ; Anime :
 // --hdr-anime.
-enum class GradeBody : std::uint8_t { Fused, Legacy, Anime, FusedSplit };
+// AnimeGuided : Anime, la carte locale lue par un sur-échantillonnage guidé par le pixel (méga plan A3,
+// --anime-guided).
+enum class GradeBody : std::uint8_t { Fused, Legacy, Anime, FusedSplit, AnimeGuided };
 
 class Grade {
  public:

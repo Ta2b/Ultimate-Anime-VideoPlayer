@@ -66,6 +66,7 @@ struct ScreenOptions {
   bool smooth_motion = false;
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
   bool hdr_anime = false;       // --hdr-anime : render::GradeBody::Anime
+  bool anime_guided = false;    // --anime-guided : render::GradeBody::AnimeGuided (méga plan A3)
   bool legacy_grade = false;    // --legacy-grade : le grade d'avant (render::GradeBody::Legacy)
   bool split_look = false;      // --legacy-grade=split : render::GradeBody::FusedSplit
   bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)

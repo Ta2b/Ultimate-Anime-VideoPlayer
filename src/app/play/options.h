@@ -171,6 +171,9 @@ struct PlayOptions {
   // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
   // défaut.
   bool hdr_anime = false;
+  // --anime-guided : essai (méga plan A3), --hdr-anime avec la carte locale guidée par le pixel (le halo ne
+  // déborde plus sur la surface voisine) ; implique --hdr-anime.
+  bool anime_guided = false;
   // --grade-deband : le grade fait précéder la source d'un débandage (placebo_screen.cpp) ; coupé par défaut.
   bool grade_deband = false;
   bool skin_mask = false;  // --skin-mask : le grade distingue la peau (coupé par défaut)
