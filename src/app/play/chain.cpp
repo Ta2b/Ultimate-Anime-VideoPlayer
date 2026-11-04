@@ -168,8 +168,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                             wanted.true_hdr_gray != r.true_hdr_gray ||
                             wanted.true_hdr_peak != r.true_hdr_peak;
   if (!same_look_files(wanted, r)) {
-    for (const std::string& failed : apply_looks(to.screen, wanted, to.luts_dir))
-      controls.notify(i18n::tr_format("Look unreadable: {}", failed), now_us);
+    start_looks(to, wanted);  // lues en fond, posées au tour suivant (tend_looks)
   }
   if (wanted.grade != r.grade || wanted.grade_preset != r.grade_preset ||
       wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native || look_changed ||

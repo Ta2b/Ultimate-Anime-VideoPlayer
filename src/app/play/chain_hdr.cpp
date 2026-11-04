@@ -7,9 +7,13 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <system_error>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include "app/play/chain.h"
 #include "app/play/chain_adaptive_log.h"
@@ -133,28 +137,71 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
   return choice;
 }
 
-std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& s,
-                                     const std::filesystem::path& luts_dir) {
+LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_dir) {
   const std::vector<LookLayer> keys = look_slots(s);
-  std::array<std::optional<render::CubeLut>, render::kLookSlots> loaded;
-  std::array<const render::CubeLut*, render::kLookSlots> luts{};
-  std::vector<std::string> failed;
+  LoadedLooks out;
   for (std::size_t i = 0; i < render::kLookSlots; ++i) {
     if (i >= keys.size() || keys[i].key.empty()) continue;
     auto lut = load_look(keys[i].key, luts_dir);
     if (!lut) {
       log_channel("app")->warn("look : {}", lut.error().detail);
-      failed.push_back(keys[i].key);
+      out.failed.push_back(keys[i].key);
       continue;
     }
     log_channel("app")->info("look {} : {} ({} points)", i + 1, keys[i].key, lut->size);
-    luts[i] = &loaded[i].emplace(std::move(*lut));
+    out.luts.at(i).emplace(std::move(*lut));
   }
+  return out;
+}
+
+std::vector<std::string> show_looks(PlaceboScreen& screen, LoadedLooks& looks) {
+  std::array<const render::CubeLut*, render::kLookSlots> luts{};
+  for (std::size_t i = 0; i < render::kLookSlots; ++i)
+    if (looks.luts.at(i)) luts.at(i) = &*looks.luts.at(i);
+  std::vector<std::string> failed = std::move(looks.failed);
   if (auto set = screen.set_looks(luts); !set) {
     log_channel("app")->warn("look : {}", set.error().detail);
     failed.push_back(set.error().detail);
   }
   return failed;
+}
+
+std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& s,
+                                     const std::filesystem::path& luts_dir) {
+  LoadedLooks looks = load_looks(s, luts_dir);
+  return show_looks(screen, looks);
+}
+
+void start_looks(Chain& to, const PlaySettings& s) {
+  auto job = std::make_shared<LookLoad::Job>();
+  std::jthread thread([job, s, dir = to.luts_dir] {
+    LoadedLooks looks = load_looks(s, dir);
+    const std::scoped_lock lock(job->mutex);
+    job->result.emplace(std::move(looks));
+    job->done = true;
+  });
+  to.look_loads.push_back(LookLoad{.job = std::move(job), .thread = std::move(thread)});
+}
+
+void tend_looks(Chain& to, std::int64_t now_us) {
+  if (to.look_loads.empty()) return;
+  if (!to.look_loads.back().job->done) {
+    // Les lectures d'avant finies ne servent plus : leur fil se joint tout de suite.
+    for (std::size_t i = to.look_loads.size() - 1; i-- > 0;)
+      if (to.look_loads[i].job->done)
+        to.look_loads.erase(to.look_loads.begin() + static_cast<std::ptrdiff_t>(i));
+    return;
+  }
+  std::optional<LoadedLooks> looks;
+  {
+    LookLoad::Job& job = *to.look_loads.back().job;
+    const std::scoped_lock lock(job.mutex);
+    looks = std::move(job.result);
+  }
+  to.look_loads.clear();  // la dernière est finie ; les autres se joignent (leur lecture se termine)
+  if (!looks) return;
+  for (const std::string& failed : show_looks(to.screen, *looks))
+    to.ui.controls().notify(i18n::tr_format("Look unreadable: {}", failed), now_us);
 }
 
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s) {
@@ -246,6 +293,7 @@ void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t n
 }  // namespace
 
 void adaptive_tick(Chain& to, std::int64_t now_us) {
+  tend_looks(to, now_us);  // un look changé : posé une fois lu (1.11)
   const render::GradeSettings& g = to.running.grade_values;
   // Le lecteur décide de la scène : le plan de la pré-analyse (chain_shots.h) s'il est connu, sinon la scène
   // vue à l'ingestion ; le grade d'avant (--legacy-grade) la mesure lui-même faute des deux.

@@ -3,13 +3,18 @@
 // thread main seul y touche (player.cpp ouvre la chaîne et tient la boucle).
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -67,6 +72,21 @@ struct LearnTrack {
   // et les échantillons de `log` (l'autre grade) sont écartés. taste_set : le goût posé sur l'écran.
   bool contract_v2 = false;
   bool taste_set = false;
+};
+
+// Les LUT d'un look lues sur un fil de fond (1.11) : le résultat, posé sur l'écran au tour suivant.
+struct LoadedLooks {
+  std::array<std::optional<render::CubeLut>, render::kLookSlots> luts;
+  std::vector<std::string> failed;  // les clés illisibles
+};
+struct LookLoad {
+  struct Job {
+    std::mutex mutex;
+    std::optional<LoadedLooks> result;  // sous mutex
+    std::atomic<bool> done{false};
+  };
+  std::shared_ptr<Job> job;
+  std::jthread thread;
 };
 
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
@@ -136,6 +156,8 @@ struct Chain {
   std::int64_t shots_newest_pts = kNoPts;
   std::int64_t shots_step_us = 41'667;
   std::size_t plan_shots_seen = 0;  // feed_plan_shots : les plans déjà passés à l'écran
+  // Les lectures de LUT en cours (start_looks) ; seule la dernière sera posée. Jointes à la fin de la chaîne.
+  std::vector<LookLoad> look_loads;
 };
 
 // Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
@@ -167,6 +189,12 @@ void forget_learning(Chain& to, std::int64_t now_us);
 // manquent ou ne se lisent pas (une ligne de journal chacune) ; elles sont alors sautées.
 std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& s,
                                      const std::filesystem::path& luts_dir);
+// Les mêmes, lues sur un fil de fond (un changement de look pendant la lecture) : tend_looks, à chaque tour,
+// pose la dernière demandée une fois lue et dit à l'OSD celles qui ne se lisent pas.
+LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_dir);
+std::vector<std::string> show_looks(PlaceboScreen& screen, LoadedLooks& looks);
+void start_looks(Chain& to, const PlaySettings& s);
+void tend_looks(Chain& to, std::int64_t now_us);
 
 // Le grade de la chaîne pour chaque sortie : en PQ, route native si le HDR natif est choisi, aucun sinon ;
 // en SDR, sur toutes les routes. Rien là où il est neutre.
