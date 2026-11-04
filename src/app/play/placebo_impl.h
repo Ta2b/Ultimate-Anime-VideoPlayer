@@ -121,6 +121,14 @@ class Overlays {
   int count_ = 0;
 };
 
+// Les poignées du ring que le backend TensorRT importe dans CUDA : HANDLE NT sous Windows, descripteurs
+// ailleurs (placebo_ring.cpp les exporte, placebo_open.cpp vérifie que l'appareil les offre).
+#ifdef _WIN32
+inline constexpr pl_handle_type kRingHandle = PL_HANDLE_WIN32;
+#else
+inline constexpr pl_handle_type kRingHandle = PL_HANDLE_FD;
+#endif
+
 struct PlaceboScreen::Impl {
   ~Impl();
   void open_shader_cache(const std::filesystem::path& file);
