@@ -70,8 +70,14 @@ TEST_CASE("RIFE : les plans de la pré-analyse décident quand ils couvrent la p
   CHECK(rife_runs(measured_cut));
   PairFacts missed = moving(4);
   missed.known_cut = true;  // une coupe douce que RIFE ne voit pas
+  missed.scores->scene_score = 0.13;
   CHECK_FALSE(rife_runs(missed));
   CHECK(pair_cut(missed));
+  PairFacts effect = moving(4);
+  effect.known_cut = true;  // les plans coupent sur deux images presque identiques : un effet
+  effect.scores->scene_score = kPlanCutFloor - 0.01;
+  CHECK_FALSE(pair_cut(effect));
+  CHECK(rife_runs(effect));
 }
 
 }  // namespace ajp::app::play

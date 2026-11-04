@@ -104,10 +104,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(nvdec);
   CHECK(nvdec->probe_nvdec);
   CHECK_FALSE(parse({"épisode.mkv", "--no-probe-nvdec"})->probe_nvdec);
-  CHECK_FALSE(options->shot_cuts);
-  const auto cuts = parse({"épisode.mkv", "--shot-cuts"});
+  CHECK(options->shot_cuts);  // défaut
+  const auto cuts = parse({"épisode.mkv", "--no-shot-cuts"});
   REQUIRE(cuts);
-  CHECK(cuts->shot_cuts);
+  CHECK_FALSE(cuts->shot_cuts);
+  CHECK(parse({"épisode.mkv", "--shot-cuts"})->shot_cuts);
   CHECK(options->clean_looks);  // défaut (audit F1)
   CHECK_FALSE(parse({"épisode.mkv", "--no-clean-looks"})->clean_looks);
   CHECK(parse({"épisode.mkv", "--clean-looks"})->clean_looks);

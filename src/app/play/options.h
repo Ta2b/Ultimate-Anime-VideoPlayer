@@ -134,9 +134,10 @@ struct PlayOptions {
   // v2, rien d'annoncé. --hdr-contract-v2 seul donne le rendu par défaut (le contrat règle déjà la sortie :
   // pic et blanc lus chez le système, compression du grade et métadonnées, kde_sdr_auto).
   bool hdr_contract_v2 = false;
-  // --shot-cuts : essai, les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus
-  // que signaler les désaccords) et les débuts de plan font repartir la mémoire du grade de l'anneau (8.7).
-  bool shot_cuts = false;
+  // Les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus que signaler les
+  // désaccords) et les débuts de plan font repartir la mémoire du grade de l'anneau (8.7). --no-shot-cuts
+  // les coupe.
+  bool shot_cuts = true;  // par défaut depuis le 04/11 (désaccords jugés à l'image)
   // --anime-shots : essai (méga plan A2), la méthode « HDR anime » décide par plan : exposition des surfaces
   // et marge des éclats fixées par la pré-analyse, glissant aux coupes (anime_shots.h).
   bool anime_shots = true;  // par défaut depuis le 04/11 (choix de Tatoub)
