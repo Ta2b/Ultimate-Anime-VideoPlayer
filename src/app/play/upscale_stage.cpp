@@ -20,6 +20,8 @@
 namespace ajp::app::play {
 namespace {
 
+constexpr std::uint64_t kDisagreementsLogged = 100;
+
 std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
@@ -387,8 +389,14 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     // 8.7 : les plans de la pré-analyse décident quand ils couvrent la paire ; RIFE ne fait que signaler.
     if (setup_.live && previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts) {
       facts.known_cut = setup_.live->cuts().cut_between(previous_->pts_us, frame.pts_us);
-      if (facts.known_cut && *facts.known_cut != kernels::is_scene_cut(scores->scene_score))
-        ++cut_disagreements_;
+      if (facts.known_cut && *facts.known_cut != kernels::is_scene_cut(scores->scene_score)) {
+        // Les premiers au journal : de quoi juger à l'image qui a raison.
+        if (++cut_disagreements_ <= kDisagreementsLogged)
+          log_channel("gpu")->info("coupes : désaccord {:.3f} s → {:.3f} s, plans : {}, RIFE : {} (score {:.3f})",
+                                   static_cast<double>(previous_->pts_us) / 1e6,
+                                   static_cast<double>(frame.pts_us) / 1e6, *facts.known_cut ? "coupe" : "plan",
+                                   *facts.known_cut ? "plan" : "coupe", scores->scene_score);
+      }
     }
     if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
       ++pairs_;
