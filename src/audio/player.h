@@ -28,6 +28,7 @@
 #include "audio/packet.h"
 #include "audio/pcm.h"
 #include "core/clock.h"
+#include "core/clock_pll.h"
 #include "core/messages.h"
 #include "core/types.h"
 
@@ -46,6 +47,9 @@ struct PlayerConfig {
   std::int64_t queue_target_us = 200'000;  // audio gardé d'avance dans la file du périphérique
   std::int64_t resync_us = 50'000;         // écart à l'écran au-delà duquel on recale franchement
   DriftGains drift;
+  // L'horloge publiée filtrée par une PLL du second ordre (core/clock_pll.h, étape 6.9, essai --audio-pll) :
+  // la gigue des relevés du périphérique ne passe plus dans l'horloge maîtresse.
+  bool pll = false;
 };
 
 // La configuration telle quelle si elle est dans ses bornes, un refus sinon.
@@ -103,6 +107,10 @@ class AudioPlayer {
   std::shared_ptr<spdlog::logger> log_;
   std::shared_ptr<AudioClock> clock_;
   std::shared_ptr<const MasterClock> master_;  // nul : l'audio est maître
+  void restart_pll() {
+    pll_.reset();
+    last_publish_us_.reset();
+  }
   DriftRegulator regulator_;
   std::optional<AudioDecoder> decoder_;
   std::optional<AudioTrack> track_;  // la piste ouverte
@@ -110,6 +118,8 @@ class AudioPlayer {
   std::deque<PcmBlock> ready_;       // décodés, pas encore poussés
   std::optional<std::int64_t> trim_before_us_;
   std::optional<std::int64_t> last_follow_us_;
+  core::ClockPll pll_;                           // PlayerConfig::pll
+  std::optional<std::int64_t> last_publish_us_;  // relevé précédent filtré par pll_
   std::uint32_t epoch_ = 0;
   bool paused_ = true;
   bool aligning_ = false;     // le prochain bloc se cale sur l'horloge maître

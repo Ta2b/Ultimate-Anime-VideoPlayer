@@ -86,6 +86,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto precise = parse({"épisode.mkv", "--precise-wait"});
   REQUIRE(precise);
   CHECK(precise->precise_wait);
+  CHECK_FALSE(options->audio_pll);
+  const auto pll = parse({"épisode.mkv", "--audio-pll"});
+  REQUIRE(pll);
+  CHECK(pll->audio_pll);
   CHECK(options->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});
   REQUIRE(present);

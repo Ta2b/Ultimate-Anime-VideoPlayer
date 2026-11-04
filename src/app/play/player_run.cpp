@@ -133,9 +133,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!settings.grade_values.adaptive && p.shots != nullptr)
     open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
   const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
-  // La sortie est HDR10 : l'écran en reçoit, et --sdr ne l'a pas coupée. Un écran SDR n'a pas de HDR à
-  // offrir (le panneau le grise) : l'image reste en SDR, et le grade (contraste, saturation, préréglage) s'y
-  // applique.
+  // Sortie HDR10 : l'écran en reçoit et --sdr ne l'a pas coupée. Un écran SDR n'a pas de HDR à offrir (le
+  // panneau le grise) : l'image reste en SDR, et le grade (contraste, saturation, préréglage) s'y applique.
   const bool hdr_out = !p.options.sdr && content_peak_nits(p.screen.window()).has_value();
   if (!hdr_out && settings.hdr_native) {
     log->info("sortie SDR : pas de HDR adaptatif, image SDR gradée");
@@ -162,6 +161,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
       .languages = {.presets = settings.language_presets},
       .audio_device = settings.audio_device,
+      .audio_pll = p.options.audio_pll,
       .audio_track = p.audio_track,
       .subtitle_track = p.subtitle_track};
   PlaceboScreen& out = p.screen;

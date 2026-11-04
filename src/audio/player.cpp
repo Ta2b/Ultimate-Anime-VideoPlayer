@@ -158,6 +158,7 @@ void AudioPlayer::start_epoch(std::uint32_t epoch) {
   aligning_ = master_ != nullptr;
   regulator_.restart();
   last_follow_us_.reset();
+  restart_pll();
   clock_->publish({.epoch = epoch, .valid = false});
 }
 
@@ -264,11 +265,22 @@ void AudioPlayer::publish(std::int64_t heard_us, const DeviceReading& reading) {
     return;
   }
   // En manque de trames, l'audio maître s'arrête : l'image l'attend.
-  clock_->publish({.media_us = heard_us,
-                   .host_us = reading.host_us,
-                   .rate = starving ? 0.0 : output_->ratio(),
-                   .epoch = epoch_,
-                   .valid = true});
+  std::int64_t media_us = heard_us;
+  double rate = starving ? 0.0 : output_->ratio();
+  if (config_.pll && !starving) {
+    // L'écart entendu − hôte filtré : la gigue de l'instant du relevé ne passe plus dans l'horloge ; la
+    // dérive suivie corrige la vitesse publiée, à ±0,05 % au plus.
+    const double interval = last_publish_us_ ? static_cast<double>(reading.host_us - *last_publish_us_) : 0.0;
+    const core::ClockPll::Out filtered =
+        pll_.update(static_cast<double>(heard_us - reading.host_us), interval);
+    media_us = reading.host_us + std::llround(filtered.offset_us);
+    rate *= filtered.speed;
+    last_publish_us_ = reading.host_us;
+  } else {
+    restart_pll();
+  }
+  clock_->publish(
+      {.media_us = media_us, .host_us = reading.host_us, .rate = rate, .epoch = epoch_, .valid = true});
 }
 
 void AudioPlayer::follow(std::int64_t heard_us, const DeviceReading& reading) {
@@ -296,6 +308,7 @@ void AudioPlayer::realign() {
 }
 
 void AudioPlayer::pause() {
+  restart_pll();  // l'horloge s'arrête : l'écart entendu − hôte repartira d'ailleurs
   if (paused_) return;
   paused_ = true;
   output_->pause();

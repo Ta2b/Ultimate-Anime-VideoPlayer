@@ -271,3 +271,40 @@ TEST_CASE("AudioPlayer : à court d'audio l'horloge attend, en fin de piste elle
   CHECK(ended.clock().rate == 1.0);
   CHECK(ended.clock().media_us == paused.media_us);
 }
+
+TEST_CASE("AudioPlayer : la PLL filtre la gigue des relevés du périphérique", "[audio][player][clock]") {
+  // Le périphérique lit 10 ms toutes les 10 ms ; l'instant hôte de chaque relevé tremble de ±2 ms. L'erreur
+  // de l'horloge publiée, lue à l'instant vrai de chaque relevé, a un écart type divisé par 3 au moins.
+  const auto sigma_ms = [](bool pll) {
+    Rig rig(PlayerConfig{.pll = pll});
+    rig.feed(encode_sine({.seconds = 4.0, .start_us = 0}));
+    rig.player->handle(Command{cmd::Play{}});
+    std::uint32_t seed = 12345;
+    const auto jitter = [&] {
+      seed = seed * 1'103'515'245U + 12'345U;
+      return static_cast<std::int64_t>((seed >> 8U) % 4'001U) - 2'000;
+    };
+    const std::int64_t t0 = rig.now_us() + 100'000;
+    double sum = 0.0;
+    double squares = 0.0;
+    int count = 0;
+    std::int64_t heard_first = 0;
+    for (int k = 0; k < 300; ++k) {
+      const std::int64_t truth = t0 + std::int64_t{k} * 10'000;
+      rig.player->handle(rig.fake->play(480, truth + jitter()));
+      const ClockSnapshot now = rig.clock();
+      if (k == 0) heard_first = now.media_at(truth);
+      if (k < 100) continue;  // verrouillage
+      const auto error = static_cast<double>(now.media_at(truth) - heard_first - std::int64_t{k} * 10'000);
+      sum += error;
+      squares += error * error;
+      ++count;
+    }
+    const double mean = sum / count;
+    return std::sqrt(squares / count - mean * mean) / 1000.0;
+  };
+  const double raw = sigma_ms(false);
+  const double filtered = sigma_ms(true);
+  CHECK(raw > 0.8);
+  CHECK(filtered * 3.0 < raw);
+}
