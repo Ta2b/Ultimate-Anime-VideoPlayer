@@ -261,6 +261,10 @@ void PlaceboScreen::set_plan_shots(std::vector<media::Shot> shots) {
   if (impl_->planner) impl_->planner->set_shots(std::move(shots));
 }
 
+void PlaceboScreen::set_taste(const GradeTaste& taste) {
+  if (impl_->planner) impl_->planner->set_taste(taste);
+}
+
 const std::optional<render::DisplayContract>& PlaceboScreen::contract() const {
   return impl_->contract;
 }

@@ -34,6 +34,9 @@ struct CurveInput {
   double apl_budget_nits = 0.0;
   std::array<float, kCurveHistBins> lum_hist{};
   double vibrance = 1.0;  // gain de chroma hors du secteur des peaux, au plus 1,15
+  // Contraste du pied (8.10, ±kCurveMaxToe) : sous kCurveToeNits, la sortie est multipliée par
+  // (nits / kCurveToeNits)^toe ; positif creuse les ombres, négatif les ouvre. 0 : sans effet.
+  double toe = 0.0;
 };
 
 struct ShotCurve {
@@ -46,10 +49,13 @@ struct ShotCurve {
   double m0 = 0.0;        // pentes Hermite en PQ, au genou et en haut
   double m1 = 0.0;
   double vibrance = 1.0;
+  double toe = 0.0;
 };
 
 inline constexpr double kCurveMaxE = 0.25;
 inline constexpr double kCurveSlope = 0.25;
+inline constexpr double kCurveMaxToe = 0.2;
+inline constexpr double kCurveToeNits = 20.0;  // nits du contenu
 
 double curve_pq(double nits);  // PQ (ST 2084) de nits, 0 à 1
 double curve_nits(double pq);  // l'inverse

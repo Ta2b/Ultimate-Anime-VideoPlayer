@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "app/play/final_scaler.h"
+#include "app/play/grade_taste.h"
 #include "app/play/links.h"
 #include "app/play/present_level.h"
 #include "core/frame.h"
@@ -165,6 +166,8 @@ class PlaceboScreen final : public Screen {
   void set_contract(const render::DisplayContract& contract);
   // Les plans de la pré-analyse, pour le grade v2 dans l'anneau (8.6) ; rien hors de cet essai.
   void set_plan_shots(std::vector<media::Shot> shots);
+  // Le goût appris du grade v2 (8.10, grade_taste.h) ; rien hors de l'essai du grade v2 dans l'anneau.
+  void set_taste(const GradeTaste& taste);
   const std::optional<render::DisplayContract>& contract() const;
   void new_scene() override;
   // Le grade de l'anneau (chantier 2c, --grade-ring) : les versions du grade sont postées dans `live` quand

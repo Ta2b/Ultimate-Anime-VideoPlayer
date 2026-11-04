@@ -230,6 +230,7 @@ constexpr std::array kCalibration{
           "Il faut au moins deux corrections : réglez d'abord quelques scènes avec « Cette scène »."},
     Entry{"Grade learned from {} corrections: gap {:.0f} % → {:.0f} %",
           "Grade appris de {} corrections : écart {:.0f} % → {:.0f} %"},
+    Entry{"Grade learned from {} corrections", "Grade appris de {} corrections"},
     Entry{"Grade corrections forgotten", "Corrections du grade oubliées"},
 };
 

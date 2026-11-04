@@ -52,6 +52,7 @@ ShotCurve plan_curve(const CurveInput& in) {
   c.e = std::clamp(e, -kCurveMaxE, kCurveMaxE);
   c.gain = std::exp2(c.e);
   c.vibrance = std::clamp(in.vibrance, 1.0, kCurveMaxVibrance);
+  c.toe = std::clamp(in.toe, -kCurveMaxToe, kCurveMaxToe);
   c.knee_in = 0.75 * 203.0;
   c.knee_out = c.knee_in * c.gain;
   double top = in.panel_peak_nits;
@@ -76,8 +77,22 @@ ShotCurve plan_curve(const CurveInput& in) {
   return c;
 }
 
+namespace {
+
+double map_body(const ShotCurve& c, double nits);
+
+}  // namespace
+
 double map_luminance(const ShotCurve& c, double nits) {
   if (nits <= 0.0) return 0.0;
+  const double out = map_body(c, nits);
+  if (c.toe == 0.0 || nits >= kCurveToeNits) return out;
+  return out * std::pow(nits / kCurveToeNits, c.toe);
+}
+
+namespace {
+
+double map_body(const ShotCurve& c, double nits) {
   if (nits < 0.5) {  // pied : le gain revient vers 1 dans les noirs
     const double t = std::clamp((nits - 0.1) / 0.4, 0.0, 1.0);
     const double s = t * t * (3.0 - 2.0 * t);
@@ -97,6 +112,8 @@ double map_luminance(const ShotCurve& c, double nits) {
                    (t3 - t2) * w * c.m1;
   return curve_nits(y);
 }
+
+}  // namespace
 
 double predicted_apl(const ShotCurve& c, const std::array<float, kCurveHistBins>& hist) {
   double weight = 0.0;

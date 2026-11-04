@@ -92,3 +92,7 @@ le grade d'avant reste.
 Une source HDR10 (8.9) annonce en plus, plan par plan, sa lumière mesurée par la pré-analyse (maxSCL et moyenne,
 en métadonnées HDR10+) : la spline de libplacebo la ramène à C_pk sans détection de pic, un plan sous C_pk passe
 tel quel et un plan plus clair est compressé.
+L'apprentissage (8.10) suit la courbe par plan sous cet essai : les corrections des curseurs passent par une table
+de migration (gris → décalage E par classe de scène sombre, éclat, claire ou ciel, ±0,25 ; noirs → contraste du
+pied ; couleurs → vibrance, au plus 1,15) et s'écrivent dans `adaptive-learning-v2.tsv` ; les échantillons
+d'`adaptive-learning.tsv`, faits pour l'autre grade, sont écartés et comptés au journal (app/play/grade_taste.h).
