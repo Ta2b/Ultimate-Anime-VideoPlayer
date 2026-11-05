@@ -104,7 +104,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   auto shared = std::make_shared<Shared>();
   std::error_code error;
   BenchPlan plan{.executable = paths.executable,
-                 .video = data_dir / "bench-clip-v2.mkv",
+                 .video = data_dir / "bench-clip-v3.mkv",
                  .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
                  .data = data_dir,
                  .display_width = display_width(screen.window()),

@@ -33,7 +33,7 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
   const std::filesystem::path data = choices.settings_dir;
   std::error_code error;
   const BenchPlan plan{.executable = choices.place.executable,
-                       .video = data / "bench-clip-v2.mkv",
+                       .video = data / "bench-clip-v3.mkv",
                        .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
                        .data = data,
                        .display_width = choices.display_height * 16 / 9,

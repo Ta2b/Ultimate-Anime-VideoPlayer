@@ -1,7 +1,8 @@
 // La séquence de l'évaluation de la machine (« Évaluer ma machine », ajp bench) : un court clip synthétique,
 // écrit une fois par le lecteur lui-même, pour que l'évaluation n'ait besoin d'aucune vidéo
-// (docs/plan-v0.6.md). Du mouvement sévère dans le style d'une animation : fond de couleurs plates qui défile
-// vite, aplats aux contours francs qui se croisent, hachures fines, une coupe de scène par seconde.
+// (docs/plan-v0.6.md). Version 3 : des plans de deux secondes, calme puis combat rapide puis combat sombre,
+// en boucle ; fond qui défile (40 px par image en combat), personnages qui traversent l'écran en une seconde
+// et se masquent, lame qui tourne, hachures fines, dégradés sombres et grain sur toute l'image.
 #pragma once
 
 #include <expected>
@@ -18,7 +19,7 @@ struct BenchClipSpec {
   int seconds = 12;
 };
 
-// Écrit le clip (MKV, MPEG-4 partie 2, ~20 Mb/s : un décodeur que toutes les machines ont) ; remplace le
+// Écrit le clip (MKV, MPEG-4 partie 2, ~30 Mb/s : un décodeur que toutes les machines ont) ; remplace le
 // fichier s'il existe. Refus : LibraryUnavailable si FFmpeg n'a pas l'encodeur ou le conteneur,
 // FileUnwritable si le fichier ne s'écrit pas.
 std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
