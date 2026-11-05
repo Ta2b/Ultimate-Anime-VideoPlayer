@@ -384,6 +384,13 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   if (options.hidden) flags |= SDL_WINDOW_BORDERLESS | SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY;
   // Hors écran : rien n'est jamais présenté, la fenêtre (qui porte la surface Vulkan) reste cachée.
   if (options.offscreen) flags = (flags & ~SDL_WINDOW_FULLSCREEN) | SDL_WINDOW_HIDDEN;
+#ifdef _WIN32
+  // Windows montre la fenêtre dès sa création : pendant l'ouverture de Vulkan (une à deux secondes), on
+  // voyait une fenêtre vide, puis, après la mise à l'échelle du bureau (fit_display_scale), l'ancienne image
+  // dans un coin. Elle reste cachée jusqu'à ce que la swapchain ait sa taille, à la fin de l'ouverture.
+  const bool show_when_ready = !options.offscreen && !options.hidden;
+  if (show_when_ready) flags |= SDL_WINDOW_HIDDEN;
+#endif
   impl->window = SDL_CreateWindow(options.title.c_str(), options.width, options.height, flags);
   if (impl->window == nullptr) {
     return refuse(RefusalCode::LibraryUnavailable, std::format("SDL_CreateWindow : {}", SDL_GetError()));
@@ -565,6 +572,16 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     impl->channel->warn("grade HDR indisponible : {}", grade.error().detail);
   }
   impl->source = pl_color_space_bt709;
+#ifdef _WIN32
+  if (show_when_ready) {
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSizeInPixels(impl->window, &width, &height);
+    if (width > 0 && height > 0) pl_swapchain_resize(impl->swapchain, &width, &height);
+    SDL_ShowWindow(impl->window);
+    SDL_RaiseWindow(impl->window);
+  }
+#endif
   return std::unique_ptr<PlaceboScreen>(new PlaceboScreen(std::move(impl)));
 }
 
