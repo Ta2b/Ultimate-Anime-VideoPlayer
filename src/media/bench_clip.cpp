@@ -86,9 +86,9 @@ void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
     float u = std::fmod(travel + 0.37F * static_cast<float>(who), 2.0F);
     if (u > 1.0F) u = 2.0F - u;  // aller-retour
     const float cx = static_cast<float>(width) * (who == 0 ? u : 1.0F - u);
-    const float cy =
-        fh * (who == 0 ? 0.45F : 0.60F) +
-        (fast ? 140.0F : 40.0F) * std::sin(6.2832F * (phase * (fast ? 3.0F : 1.0F) + 0.5F * who));
+    const float cy = fh * (who == 0 ? 0.45F : 0.60F) +
+                     (fast ? 140.0F : 40.0F) *
+                         std::sin(6.2832F * (phase * (fast ? 3.0F : 1.0F) + 0.5F * static_cast<float>(who)));
     const float rx = static_cast<float>(width) * (who == 0 ? 0.09F : 0.07F);
     const float ry = fh * (who == 0 ? 0.22F : 0.18F);
     const int x0 = std::max(0, static_cast<int>(cx - rx - 6));
