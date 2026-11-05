@@ -104,14 +104,17 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
         single_run_ = true;
         motion_measured_ = false;
         // Audit F10 : le mouvement du milieu mesuré en fond, relu à la paire suivante (settle_motion) ; une
-        // paire qui suit un mouvement fort a RIFE à chaque instant, et non le milieu extrapolé.
-        if (intermediates_ > 1 && flow_max_async_) {
+        // paire qui suit un mouvement fort a RIFE à chaque instant, et non le milieu extrapolé. Mesuré à
+        // chaque paire, une seule image intermédiaire comprise : en Rapide sur un GPU chargé (ou à ×1,5),
+        // l'unique instant tombe rarement à 1/2, et sans mesure il gardait le milieu extrapolé en plein
+        // mouvement (hachures, contours doublés).
+        if (flow_max_async_) {
           if (auto ticket = ops.flow_max_start(middle))
             motion_ = PendingMotion{.ticket = *ticket, .scale = 1.0F, .known = true};
           else
             flow_max_async_ = false;
         }
-        if (strong_motion_ && intermediates_ > 1) ++multi_pairs_;
+        if (strong_motion_ && (intermediates_ > 1 || t != 0.5F)) ++multi_pairs_;
       } else if (intermediates_ > 1) {
         // Warp après SPAN : SPAN de b enfilé entre la mesure et sa relecture, qui ne l'attend pas.
         auto ticket = ops.flow_max_start(middle);

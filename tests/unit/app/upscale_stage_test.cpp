@@ -272,6 +272,30 @@ TEST_CASE("Étage gpu : RIFE mouvement avec poses, un mouvement fort a RIFE à c
   CHECK(rig.backend.count("flow_max_now") == 0);
 }
 
+TEST_CASE("Étage gpu : RIFE mouvement avec poses, une seule image intermédiaire mesurée aussi (×1,5)",
+          "[app][stage]") {
+  // En Rapide sur un GPU chargé, ou à ×1,5, la paire n'a qu'un instant, rarement à 1/2 : sans mesure du
+  // milieu, un mouvement fort gardait le milieu extrapolé (hachures, contours doublés).
+  Rig rig;
+  rig.live->set_keep_poses(true);
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 2});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.feed(1, 5);  // calme : le milieu seul, une passe par paire
+  REQUIRE(rig.collect(7));
+  CHECK(rig.backend.count("engine rife_motion") == 4);
+  CHECK(rig.backend.count("flow_max_start") == 4);
+  rig.backend.motion_max(40.0F);
+  rig.feed(6, 11);
+  REQUIRE(rig.collect(16));
+  rig.stage.reset();
+  // Six paires de plus, chacune mesurée ; dès la mesure forte relue, RIFE aussi à l'instant hors milieu.
+  CHECK(rig.backend.count("flow_max_start") == 10);
+  CHECK(rig.backend.count("engine rife_motion") == 15);
+  CHECK(rig.backend.count("flow_max_now") == 0);
+}
+
 TEST_CASE("Étage gpu : mesures, SPAN et RIFE chacun sur sa voie, SPAN avant le warp aussi", "[app][stage]") {
   SECTION("RIFE image ×3") {
     Rig rig;
