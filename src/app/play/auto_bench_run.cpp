@@ -111,8 +111,10 @@ namespace {
 void prefer_tensorrt(const std::filesystem::path& file) {
   auto engines = core::load_settings(file);
   if (!engines || !std::ranges::contains(engines->installed_engines, core::EngineId::TensorRt)) return;
-  if (auto saved = core::save_settings(file, using_engine(*engines, core::EngineId::TensorRt)); !saved)
-    log_channel("app")->warn("bench : TensorRT non imposé ({})", saved.error().detail);
+  if (auto saved = core::save_settings(file, using_engine(*engines, core::EngineId::TensorRt)); !saved) {
+    const auto log = log_channel("app");
+    log->warn("bench : TensorRT non imposé ({})", saved.error().detail);
+  }
 }
 
 // Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas), dit en
