@@ -733,26 +733,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 static_cast<double>(energy_end_mj - energy_start_mj) / 1000.0, *per_frame);
   }
   if (p.options.bench_out) {
-    const GpuFacts gpu = gpu_facts(p.screen);
-    const FrameStats& seen = session.stats();
-    const BenchReading reading{.gpu = gpu.name,
-                               .driver = gpu.driver,
-                               .run = {.level = static_cast<Tier>(p.options.bench_level.value_or(0)),
-                                       .presents = seen.presents,
-                                       .dropped = seen.dropped,
-                                       .missing = seen.missing,
-                                       .lag_p95_us = seen.lag.percentile(95),
-                                       .period_us = bench_period_us},
-                               .interval_median_us = seen.frame_interval.median(),
-                               .interval_p95_us = seen.frame_interval.percentile(95),
-                               .interval_p99_us = seen.frame_interval.percentile(99),
-                               .interval_mean_us = static_cast<std::int64_t>(seen.frame_interval.mean()),
-                               .render_median_us = seen.render.median(),
-                               .work_height = chain.running.work_height,
-                               .rife_model = chain.running.rife_model,
-                               .span_variant = span_variant};
-    if (auto written = save_reading(*p.options.bench_out, reading); !written)
-      log->warn("{}", written.error().detail);
+    write_bench_reading(*p.options.bench_out, gpu_facts(p.screen), session.stats(),
+                        BenchChain{.level = static_cast<Tier>(p.options.bench_level.value_or(0)),
+                                   .period_us = bench_period_us,
+                                   .work_height = chain.running.work_height,
+                                   .rife_model = chain.running.rife_model,
+                                   .span_variant = span_variant});
   }
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   // La source a changé de taille en cours de lecture : la chaîne se rouvre à la nouvelle taille, au même

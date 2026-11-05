@@ -35,4 +35,26 @@ void keep_gpu_profile(std::span<const gpu::GpuStageSummary> stages,
   }
 }
 
+void write_bench_reading(const std::filesystem::path& file, const GpuFacts& gpu, const FrameStats& seen,
+                         const BenchChain& chain) {
+  const BenchReading reading{.gpu = gpu.name,
+                             .driver = gpu.driver,
+                             .run = {.level = chain.level,
+                                     .presents = seen.presents,
+                                     .dropped = seen.dropped,
+                                     .missing = seen.missing,
+                                     .lag_p95_us = seen.lag.percentile(95),
+                                     .period_us = chain.period_us},
+                             .interval_median_us = seen.frame_interval.median(),
+                             .interval_p95_us = seen.frame_interval.percentile(95),
+                             .interval_p99_us = seen.frame_interval.percentile(99),
+                             .interval_mean_us = static_cast<std::int64_t>(seen.frame_interval.mean()),
+                             .render_median_us = seen.render.median(),
+                             .work_height = chain.work_height,
+                             .rife_model = chain.rife_model,
+                             .span_variant = chain.span_variant};
+  if (auto written = save_reading(file, reading); !written)
+    log_channel("app")->warn("{}", written.error().detail);
+}
+
 }  // namespace ajp::app::play
