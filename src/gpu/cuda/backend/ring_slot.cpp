@@ -95,7 +95,10 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
     return {};
   };
   const auto map_any = [&]() -> std::expected<void, Refusal> {
-    if (slot.memory_offset == 0 && map(cudaExternalMemoryDedicated)) return {};
+    // Le drapeau « dédiée » seulement si Vulkan l'a vraiment dédiée : sur une page partagée d'un bloc
+    // (décalage 0 compris), le pilote Windows accepte le mappage dédié et range mal les tuiles de l'image
+    // (bandes verticales sous SPAN TensorRT dès que l'anneau est plus petit que 2160 lignes).
+    if (slot.dedicated && slot.memory_offset == 0 && map(cudaExternalMemoryDedicated)) return {};
     return map(0);
   };
   if (auto ok = map_any(); !ok) {

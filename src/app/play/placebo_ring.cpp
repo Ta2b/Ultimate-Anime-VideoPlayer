@@ -41,6 +41,19 @@ void close_handle(std::uintptr_t handle) {
 #endif
 static_assert(static_cast<std::uint32_t>(kLayout) == kRingLayout);
 
+// libplacebo dédie l'allocation d'une image (VkMemoryDedicatedAllocateInfo) quand le pilote le préfère
+// (vulkan/gpu_tex.c, prefersDedicatedAllocation) ; sinon l'image est une page d'un bloc partagé, même à
+// un décalage nul. CUDA doit le savoir pour mapper l'image avec la bonne disposition (ring_slot.cpp).
+bool dedicated_image(PFN_vkGetImageMemoryRequirements2 requirements, VkDevice device, VkImage image) {
+  if (requirements == nullptr || device == VK_NULL_HANDLE || image == VK_NULL_HANDLE) return false;
+  VkMemoryDedicatedRequirements dedicated{.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS};
+  VkMemoryRequirements2 reqs{.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, .pNext = &dedicated};
+  const VkImageMemoryRequirementsInfo2 info{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+                                            .image = image};
+  requirements(device, &info, &reqs);
+  return dedicated.prefersDedicatedAllocation == VK_TRUE;
+}
+
 // Cède tex à CUDA : la transition et le transfert de file sont faits quand sem atteint value.
 // qf : VK_QUEUE_FAMILY_EXTERNAL pour CUDA, VK_QUEUE_FAMILY_IGNORED sur le même VkDevice (le backend
 // Vulkan écrit le slot sans acquisition : aucun transfert de propriété, core/ring.h).
@@ -91,10 +104,17 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   const pl_vulkan vk = pl_vulkan_get(gpu);
   device_ = VK_NULL_HANDLE;
   counter_ = nullptr;
+  PFN_vkGetImageMemoryRequirements2 requirements = nullptr;
   if (vk != nullptr) {
     const auto device_proc =
         reinterpret_cast<PFN_vkGetDeviceProcAddr>(vk->get_proc_addr(vk->instance, "vkGetDeviceProcAddr"));
     if (device_proc != nullptr) {
+      requirements = reinterpret_cast<PFN_vkGetImageMemoryRequirements2>(
+          device_proc(vk->device, "vkGetImageMemoryRequirements2"));
+      if (requirements == nullptr) {
+        requirements = reinterpret_cast<PFN_vkGetImageMemoryRequirements2>(
+            device_proc(vk->device, "vkGetImageMemoryRequirements2KHR"));
+      }
       counter_ = reinterpret_cast<PFN_vkGetSemaphoreCounterValue>(
           device_proc(vk->device, "vkGetSemaphoreCounterValue"));
       if (counter_ == nullptr) {
@@ -165,6 +185,7 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
         .memory = {.kind = kind, .value = exported ? raw_handle(slot.tex->shared_mem.handle) : 0},
         .memory_size = slot.tex->shared_mem.size,
         .memory_offset = slot.tex->shared_mem.offset,
+        .dedicated = exported && vk != nullptr && dedicated_image(requirements, vk->device, image),
         .semaphore = reinterpret_cast<std::uint64_t>(slot.semaphore),
         .semaphore_handle = {.kind = kind, .value = slot.semaphore_export.value_or(0)},
     });
