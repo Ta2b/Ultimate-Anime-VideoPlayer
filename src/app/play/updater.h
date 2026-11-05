@@ -5,8 +5,12 @@
 //      HTTPS.
 //   2. Préparation : l'archive du système, téléchargée à côté, sa taille et son SHA-256 comparés au
 //   manifeste.
-//   3. Application : au prochain lancement, jamais en pleine lecture ; l'ancienne version est copiée dans
+//   3. Application : au prochain lancement, jamais en pleine lecture ; l'archive est vérifiée de nouveau
+//      (taille, SHA-256) et doit contenir le lecteur, puis l'ancienne version est copiée dans
 //      <données>/updates/previous pour le retour arrière. Une mise à jour ratée laisse l'ancienne en place.
+//   4. Garde : la nouvelle version n'est confirmée qu'après une lecture menée à son terme ; après
+//      kMaxUnconfirmedLaunches lancements sans confirmation (elle plante au démarrage), l'ancienne revient
+//      d'elle-même.
 // Sans clé de signature compilée, rien n'est cru : la vérification dit pourquoi et ne fait rien d'autre.
 #pragma once
 
@@ -42,6 +46,11 @@ struct UpdateState {
   std::string staged_file;       // son archive, sous <données>/updates
   std::string previous_version;  // celle que le retour arrière rend
   std::string last_error;
+  std::string staged_sha256;       // de l'archive préparée, revérifiée avant l'application
+  std::uint64_t staged_size = 0;
+  std::string unconfirmed_version;  // appliquée, pas encore confirmée par une lecture menée à son terme
+  int unconfirmed_launches = 0;     // ses lancements depuis
+  std::string skipped_version;      // retirée par la garde : signalée, plus jamais préparée d'elle-même
   friend bool operator==(const UpdateState&, const UpdateState&) = default;
 };
 
@@ -68,7 +77,15 @@ struct CheckResult {
   std::string message;  // « à jour », « 0.7.0 disponible »…
 };
 
-// Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible.
+// Le statut HTTP d'un message d'erreur de curl (« … returned error: 404 ») ; 0 : aucun.
+int curl_http_status(std::string_view message);
+
+// Le refus lisible d'un échec de curl (code de sortie, dernière ligne écrite) : « pas de connexion Internet
+// »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
+Refusal curl_failure(int code, std::string_view message);
+
+// Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible. Un
+// canal sans manifeste publié (HTTP 404) n'est pas un refus : le lecteur est à jour.
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop);
 
 // Télécharge l'archive du manifeste sous <données>/updates, vérifie taille et SHA-256 ; rend son chemin.
@@ -83,6 +100,17 @@ std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths
 
 // Remet la version gardée dans previous. Même contrat.
 std::expected<std::string, Refusal> roll_back_update(const UpdatePaths& paths, UpdateState& state);
+
+// Lancements d'une version appliquée sans lecture menée à son terme, au-delà desquels elle est retirée.
+inline constexpr int kMaxUnconfirmedLaunches = 3;
+
+// Au lancement (étape 4) : compte un lancement de la version appliquée pas encore confirmée ; au-delà de
+// kMaxUnconfirmedLaunches, remet l'ancienne (rend son message : le lecteur se relance). Retire aussi les
+// « .old » qu'une application a laissés (Windows). L'état est mis à jour (pas écrit).
+std::optional<std::string> guard_new_version(const UpdatePaths& paths, UpdateState& state,
+                                             std::string_view running_version);
+// Une lecture menée à son terme : la version en cours est bonne. Vrai si l'état a changé.
+bool confirm_version(UpdateState& state, std::string_view running_version);
 
 // Pourquoi ce lecteur ne se met pas à jour lui-même : « mis à jour par votre gestionnaire de paquets »
 // (Flatpak, dossier en lecture seule). Vide : il le peut.
