@@ -64,6 +64,9 @@ struct SpanInt8Lookup {
   // FP8 CUTLASS : à refaire, pas refusé pour de bon (reçu d'une autre carte ou d'autres noyaux, ou refus
   // d'une porte plus ancienne que gpu::span_fp8::kGateVersion) ; la préparation le refait.
   bool stale = false;
+  // FP8 CUTLASS : le paquet valable pour cet appareil et ces noyaux, mais pas jugé (ou refusé) à cette
+  // taille. Le bench seul le joue (pour le temps de calcul, jamais pour l'image), sans valider sur son clip.
+  std::optional<SpanInt8> unjudged;
 };
 
 // Ce que le moteur sait calculer, pour l'ordre des variantes (BackendCaps).

@@ -26,32 +26,47 @@ TEST_CASE("les paliers s'arrêtent à la moitié de l'écran", "[calibration-mac
   CHECK(calibration_heights(600) == std::vector<int>{360});
 }
 
-TEST_CASE("la calibration part du plus haut palier permis avec SPAN + RIFE et descend",
+TEST_CASE("la calibration monte SPAN seul, puis descend SPAN + RIFE depuis son plus haut palier",
           "[calibration-machine]") {
-  // 1440p, tout tient : 720p + SPAN + RIFE d'emblée, puis RIFE seul pour comparer.
+  using C = ChainCandidate;
+  // 1440p, tout tient : SPAN seul 360 → 720, puis SPAN + RIFE à 720 d'emblée.
   auto tried = search(1440, [](const ChainCandidate&) { return true; });
-  REQUIRE(tried.size() == 2);
-  CHECK(tried[0].chain == ChainCandidate{.span = true, .rife = true, .height = 720});
-  CHECK(tried[1].chain == ChainCandidate{.span = false, .rife = true, .height = 0});
-  CHECK(best_candidate(tried) == tried[0].chain);
-  // 1080p : départ à 540p.
-  CHECK(search(1080, [](const ChainCandidate&) { return true; })[0].chain.height == 540);
-  // 1440p, 540p tient : 720, 540, puis RIFE seul.
+  REQUIRE(tried.size() == 5);
+  CHECK(tried[0].chain == C{.span = true, .rife = false, .height = 360});
+  CHECK(tried[3].chain == C{.span = true, .rife = false, .height = 720});
+  CHECK(tried[4].chain == C{.span = true, .rife = true, .height = 720});
+  CHECK(best_candidate(tried) == tried[4].chain);
+  // 1080p : SPAN seul s'arrête à 540p.
+  tried = search(1080, [](const ChainCandidate&) { return true; });
+  REQUIRE(tried.size() == 4);
+  CHECK(tried.back().chain == C{.span = true, .rife = true, .height = 540});
+  // 1440p, 540p tient au plus : SPAN seul s'arrête au premier échec (720), SPAN + RIFE part de 540.
   tried = search(1440, [](const ChainCandidate& c) { return c.height <= 540; });
-  CHECK(tried.size() == 3);
-  CHECK(best_candidate(tried) == ChainCandidate{.span = true, .rife = true, .height = 540});
+  REQUIRE(tried.size() == 5);
+  CHECK(tried[3].chain == C{.span = true, .rife = false, .height = 720});
+  CHECK(tried[4].chain == C{.span = true, .rife = true, .height = 540});
+  CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 540});
 }
 
-TEST_CASE("la calibration lâche RIFE avant SPAN, puis tout", "[calibration-machine]") {
-  // Rien avec RIFE : SPAN seul, du haut vers le bas.
+TEST_CASE("la calibration garde SPAN seul quand RIFE ne tient pas, RIFE seul en recours",
+          "[calibration-machine]") {
+  using C = ChainCandidate;
+  // RIFE ne tient nulle part : SPAN + RIFE descend jusqu'au bout, SPAN seul est gardé.
   auto tried = search(1440, [](const ChainCandidate& c) { return c.span && !c.rife && c.height <= 540; });
-  CHECK(best_candidate(tried) == ChainCandidate{.span = true, .rife = false, .height = 540});
-  // SPAN nulle part : RIFE seul.
+  CHECK(tried.size() == 4 + 3);
+  CHECK(best_candidate(tried) == C{.span = true, .rife = false, .height = 540});
+  // SPAN haut sans RIFE passe avant SPAN bas avec RIFE : 720p seul est recommandé, 480p + RIFE reste au
+  // tableau.
+  tried = search(1440, [](const ChainCandidate& c) { return !c.rife || c.height <= 480; });
+  CHECK(tried.back().chain == C{.span = true, .rife = true, .height = 480});
+  CHECK(best_candidate(tried) == C{.span = true, .rife = false, .height = 720});
+  // SPAN nulle part : RIFE seul, sans SPAN + RIFE.
   tried = search(1080, [](const ChainCandidate& c) { return !c.span; });
-  CHECK(best_candidate(tried) == ChainCandidate{.span = false, .rife = true, .height = 0});
-  // Rien ne tient : 3 paliers par famille SPAN sur un écran 1080p, puis RIFE seul ; ni l'un ni l'autre.
+  REQUIRE(tried.size() == 2);
+  CHECK(best_candidate(tried) == C{.span = false, .rife = true, .height = 0});
+  // Rien ne tient : SPAN seul au plus léger, puis RIFE seul ; ni l'un ni l'autre.
   tried = search(1080, [](const ChainCandidate&) { return false; });
-  CHECK(tried.size() == 7);
+  CHECK(tried.size() == 2);
   CHECK_FALSE(best_candidate(tried).span);
   CHECK_FALSE(best_candidate(tried).rife);
 }
@@ -70,6 +85,11 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, RIFE 4.22 lite 
   CHECK(s.auto_free);
   CHECK(s.rife_factor == 2);
   CHECK(s.true_hdr_contrast == 150);  // le reste des réglages de l'utilisateur
+  CHECK(s.model.empty());              // SPAN par défaut (Performance Sharp) en FP16
+  CHECK(s.span_precision == PrecisionTier::Balanced);
+  const PlaySettings fp8 = candidate_settings({.span = true, .rife = true, .height = 540}, base, true);
+  CHECK(fp8.model == kCalibrationSpanFp8);
+  CHECK(fp8.span_precision == PrecisionTier::Performance);
   const PlaySettings plain = candidate_settings({.span = false, .rife = false, .height = 0}, base);
   CHECK_FALSE(plain.upscale);
   CHECK_FALSE(plain.rife_auto);
@@ -91,7 +111,8 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
                                   .target_fps = 48.0}},
                        .gpu = "RTX 4070 Ti",
                        .date = "2026-11-01",
-                       .display_height = 1440};
+                       .display_height = 1440,
+                       .span_fp8 = true};
   const auto read = parse_calibration(format_calibration(c));
   REQUIRE(read);
   CHECK(read->chosen == c.chosen);
@@ -103,5 +124,6 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   CHECK(read->tried[1].target_fps == 48.0);
   CHECK(read->gpu == "RTX 4070 Ti");
   CHECK(read->display_height == 1440);
+  CHECK(read->span_fp8);
   CHECK_FALSE(parse_calibration("version = 1\n"));
 }
