@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <format>
@@ -200,9 +201,14 @@ std::vector<std::byte> tiny_pair(std::string_view version, const std::vector<std
   return model;
 }
 
+// Chaque réécriture avance la date d'une seconde : gmfss_graph_state retient un état par (taille, date), et
+// NTFS peut garder la même date pour deux écritures rapprochées (test qui tombait sous Windows).
 void put(const std::filesystem::path& file, const std::vector<std::byte>& bytes) {
+  static auto stamp = std::filesystem::file_time_type::clock::now();
   std::ofstream(file, std::ios::binary)
       .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  stamp += std::chrono::seconds(1);
+  std::filesystem::last_write_time(file, stamp);
 }
 
 TEST_CASE("GMFSS : un graphe d'un export périmé n'est jamais utilisé, un ancien reste lu",
