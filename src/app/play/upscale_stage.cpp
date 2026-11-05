@@ -400,10 +400,10 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       if (facts.known_cut && *facts.known_cut != kernels::is_scene_cut(scores->scene_score)) {
         // Les premiers au journal : de quoi juger à l'image qui a raison.
         if (++cut_disagreements_ <= kDisagreementsLogged)
-          log_channel("gpu")->info("coupes : désaccord {:.3f} s → {:.3f} s, plans : {}, RIFE : {} (score {:.3f})",
-                                   static_cast<double>(previous_->pts_us) / 1e6,
-                                   static_cast<double>(frame.pts_us) / 1e6, *facts.known_cut ? "coupe" : "plan",
-                                   *facts.known_cut ? "plan" : "coupe", scores->scene_score);
+          log_channel("gpu")->info(
+              "coupes : désaccord {:.3f} s → {:.3f} s, plans : {}, RIFE : {} (score {:.3f})",
+              static_cast<double>(previous_->pts_us) / 1e6, static_cast<double>(frame.pts_us) / 1e6,
+              *facts.known_cut ? "coupe" : "plan", *facts.known_cut ? "plan" : "coupe", scores->scene_score);
       }
     }
     if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole

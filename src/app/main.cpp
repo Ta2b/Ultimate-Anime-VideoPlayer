@@ -222,8 +222,8 @@ int run_bench_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
-// « ajp calibrate [--display-height=N] [--visible] » : le bench de la page « Résultats du bench », en ligne de
-// commande (essais sur le PC de Tatoub) ; écrit calibration.toml dans les données de l'utilisateur.
+// « ajp calibrate [--display-height=N] [--visible] » : le bench de la page « Résultats du bench », en ligne
+// de commande (essais sur le PC de Tatoub) ; écrit calibration.toml dans les données de l'utilisateur.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
   int display_height = 2160;
@@ -253,8 +253,8 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
                              .display_width = display_height * 16 / 9,
                              .display_height = display_height};
   const auto base_settings = play::load_settings(data / "play.toml");
-  const auto done = play::calibrate_machine(plan, base_settings.value_or(play::PlaySettings{}), display_height,
-                                            std::stop_token{}, [](float fraction) {
+  const auto done = play::calibrate_machine(plan, base_settings.value_or(play::PlaySettings{}),
+                                            display_height, std::stop_token{}, [](float fraction) {
                                               std::fprintf(stdout, "%.0f %%\n", 100.0F * fraction);
                                               std::fflush(stdout);
                                             });
@@ -262,8 +262,8 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   std::fprintf(stdout, "SPAN %s\n", done->span_fp8 ? "Balanced Sharp FP8" : "Performance Sharp FP16");
   for (const play::CandidateTrial& t : done->tried)
     std::fprintf(stdout, "%-48s %s  %.1f / %.0f i/s, 1 %% low %.1f, %.1f %% perdues%s\n",
-                 play::describe(t.chain).c_str(), t.holds ? "tient     " : "ne tient pas", t.fps, t.target_fps,
-                 t.low_fps, t.lost_percent, t.chain == done->chosen ? "  ← recommandé" : "");
+                 play::describe(t.chain).c_str(), t.holds ? "tient     " : "ne tient pas", t.fps,
+                 t.target_fps, t.low_fps, t.lost_percent, t.chain == done->chosen ? "  ← recommandé" : "");
   return 0;
 }
 

@@ -420,9 +420,9 @@ std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths
   // Une archive sans le lecteur ne remplace rien : l'installation resterait sans exécutable.
   if (!paths.executable.empty() && !fs::is_regular_file(root / paths.executable.filename(), error)) {
     fs::remove_all(extract, error);
-    return refuse(RefusalCode::FileUnreadable,
-                  i18n::tr_format("the archive does not contain {}",
-                                  prepare::utf8_path(paths.executable.filename())));
+    return refuse(
+        RefusalCode::FileUnreadable,
+        i18n::tr_format("the archive does not contain {}", prepare::utf8_path(paths.executable.filename())));
   }
   fs::remove_all(previous, error);
   fs::create_directories(previous, error);
@@ -473,8 +473,8 @@ std::optional<std::string> guard_new_version(const UpdatePaths& paths, UpdateSta
   // Les « .old » d'une application (fichiers en service renommés, Windows) : plus en service à présent.
   if (!paths.install.empty() && fs::is_directory(paths.install, error)) {
     std::vector<fs::path> old;
-    for (const fs::directory_entry& entry :
-         fs::recursive_directory_iterator(paths.install, fs::directory_options::skip_permission_denied, error))
+    for (const fs::directory_entry& entry : fs::recursive_directory_iterator(
+             paths.install, fs::directory_options::skip_permission_denied, error))
       if (entry.path().extension() == ".old" && entry.is_regular_file(error)) old.push_back(entry.path());
     for (const fs::path& file : old) fs::remove(file, error);
   }
