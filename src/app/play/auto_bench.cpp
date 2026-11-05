@@ -137,6 +137,7 @@ std::string format_reading(const BenchReading& reading) {
   root.insert("render_median_us", reading.render_median_us);
   root.insert("work_height", static_cast<std::int64_t>(reading.work_height));
   root.insert("rife_model", reading.rife_model);
+  root.insert("span_variant", reading.span_variant);
   if (!reading.gpu_stages.empty()) {
     toml::array stages;
     for (const gpu::GpuStageSummary& s : reading.gpu_stages) {
@@ -177,6 +178,7 @@ std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
   reading.render_median_us = root["render_median_us"].value_or(std::int64_t{0});
   reading.work_height = static_cast<int>(root["work_height"].value_or(std::int64_t{0}));
   reading.rife_model = root["rife_model"].value_or(std::string());
+  reading.span_variant = root["span_variant"].value_or(std::string());
   if (const toml::array* stages = root["gpu_stage"].as_array()) {
     for (const toml::node& node : *stages) {
       const toml::table* s = node.as_table();

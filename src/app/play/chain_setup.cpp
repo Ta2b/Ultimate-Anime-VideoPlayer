@@ -278,7 +278,11 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                                      .height = c.work.height};
     // Le SPAN FP8 choisi à la main dans la liste des modèles se prépare ici, sur l'écran de chargement, comme
     // un moteur qui se construit ; la tâche de fond (span_auto.h) ne le refait pas pour cette vidéo.
-    if (tier == PrecisionTier::Performance && !strict && caps.span_fp8_cutlass && !p.options.file.empty()) {
+    // Le bench (--bench-out) ne valide jamais sur son clip : une mire synthétique aux bords nets jugerait le
+    // FP8 bien plus durement qu'un épisode et écrirait ses refus dans le reçu de l'utilisateur.
+    const bool bench = p.options.bench_out.has_value();
+    if (tier == PrecisionTier::Performance && !strict && caps.span_fp8_cutlass && !p.options.file.empty() &&
+        !bench) {
       const std::optional<bool> ready =
           prepare_span_fp8(p, init, c.model->path, variants,
                            span_still_reduce(c.work.width, c.work.height, settings.downscale), fp8_context);
@@ -289,6 +293,12 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants,
                                                kind == SpanVariantKind::Fp8Cutlass ? &fp8_context : nullptr);
       if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
+      if (!found.variant && bench && found.unjudged) {
+        // Le bench mesure le temps du FP8 à cette taille ; la lecture d'un épisode la jugera sur ses images.
+        log->info("SPAN {} : pas jugé à {}x{}, joué pour le bench seulement", variant_text(kind),
+                  c.work.width, c.work.height);
+        found.variant = std::move(found.unjudged);
+      }
       if (!found.variant) continue;
       if (strict && kind == SpanVariantKind::Fp8Cutlass && !found.variant->receipt_v2) {
         log->info("SPAN FP8 CUTLASS : reçu v1, pas pris par un préréglage (préparer de nouveau)");
