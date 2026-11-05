@@ -478,6 +478,9 @@ class UpscaleStage final : public RingStage {
   // RIFE à chaque instant sans passe au milieu (direct_run_), et la mesure de son premier instant,
   // lancée sans attente, décide de la suivante. Oublié à une coupe ou à un saut (forget_motion).
   bool strong_motion_ = false;
+  // Mode Rapide : la paire préparée est annoncée en mouvement fort (strong_motion_ relu avant sa grille), son
+  // écart se planifie sur le temps de service lourd (core/free_rate.h).
+  bool heavy_pair_ = false;
   bool direct_run_ = false;
   bool flow_max_async_ = true;  // faux si le backend n'a pas flow_max_start
   struct PendingMotion {

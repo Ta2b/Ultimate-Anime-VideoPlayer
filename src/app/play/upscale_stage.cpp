@@ -302,6 +302,14 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // mode Rapide : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
   const bool free_mode = interpolates() && setup_.live && setup_.live->free_active();
   const bool steady = free_mode && setup_.live->steady_active();
+  // Mouvement fort anticipé : la mesure du milieu de la paire d'avant, relue avant la grille de celle-ci,
+  // dit si elle sera lourde (RIFE à chaque instant) ; la grille libre planifie alors son écart en
+  // conséquence.
+  heavy_pair_ = false;
+  if (free_mode && !steady && by_motion()) {
+    if (auto ok = settle_motion(); !ok) return std::unexpected(std::move(ok.error()));
+    heavy_pair_ = strong_motion_;
+  }
   if (steady) {
     cadence_.reset();
     free_grid_.reset();
@@ -499,7 +507,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   const int written = copy_pair_ ? 1 : held_same_ ? 0 : static_cast<int>(outputs_);
   if (auto_measured) setup_.live->auto_expect(frame.id.value, written, lead_us);
   if (free_mode && facts.same_epoch) {
-    setup_.live->auto_expect(frame.id.value, written, lead_us);
+    setup_.live->auto_expect(frame.id.value, written, lead_us, heavy_pair_);
     if (written > 0) setup_.live->free_produced(written, host_now_us());
   }
   if (intermediates_ > 0) mid_ ^= 1U;
@@ -526,7 +534,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
 core::FreeInputs UpscaleStage::free_inputs(std::uint32_t epoch) const {
   core::FreeInputs inputs;
   const std::int64_t at = host_now_us();
-  const auto [step_real, gap_real] = setup_.live->free_step(at);
+  const auto [step_real, gap_real] = setup_.live->free_step(at, heavy_pair_);
   double rate = 1.0;
   const ClockSnapshot now = setup_.clock != nullptr ? setup_.clock->snapshot() : ClockSnapshot{};
   const bool running = now.valid && now.epoch == epoch && now.rate > 0.0;

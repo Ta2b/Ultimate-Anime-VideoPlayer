@@ -175,6 +175,25 @@ TEST_CASE("free rate : monte vite, descend lentement", "[free]") {
   CHECK(slow.info(now).service_us >= 18'000);  // et une scène légère s'installe lentement
 }
 
+TEST_CASE("free rate : le mouvement fort annoncé se planifie sur son propre temps de service", "[free]") {
+  FreeRate rate;
+  rate.set_min_gap(1'000);
+  const std::int64_t now = 5'000'000;
+  rate.cost(6, 6 * 3'000, now);  // paires calmes : le milieu et les poses
+  CHECK(rate.step_us(now) == 3'300);
+  // Pas encore de paire lourde mesurée : la calme × kHeavyGuess.
+  CHECK(rate.step_us(now, true) == 6'600);
+  rate.cost(6, 6 * 9'000, now, true);  // RIFE à chaque instant
+  CHECK(rate.step_us(now, true) == 9'900);
+  CHECK(rate.step_us(now) == 3'300);  // les paires calmes gardent leur temps
+  CHECK(rate.info(now).heavy_service_us == 9'000);
+  // Une paire lourde ne se planifie jamais plus serrée qu'une calme.
+  FreeRate odd;
+  odd.cost(2, 2 * 8'000, now);
+  odd.cost(2, 2 * 2'000, now, true);
+  CHECK(odd.step_us(now, true) == odd.step_us(now));
+}
+
 TEST_CASE("free rate : la contre-pression élargit tout de suite et ne se relâche qu'après 1 s", "[free]") {
   FreeRate rate;
   const std::int64_t t0 = 5'000'000;
