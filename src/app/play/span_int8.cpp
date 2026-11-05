@@ -173,12 +173,17 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
     if (listed("refused_sizes")) {
       const std::string note = i18n::tr_format("{}: rejected at {}", where, size);
       if (old_gate) return stale(note);
-      if (listed(gate_refusals_key())) return refused(note);
+      if (listed(gate_refusals_key())) {
+        SpanInt8Lookup out = refused(note);
+        out.unjudged = variant;
+        return out;
+      }
       // Refusé par un lecteur plus ancien : la porte d'aujourd'hui rejuge cette taille.
     }
     if (!listed("validated_sizes") || listed("refused_sizes")) {
       SpanInt8Lookup pending = refused(i18n::tr_format("{}: not validated at {} yet", where, size));
       pending.unvalidated_size = size;
+      pending.unjudged = variant;
       return pending;
     }
   }

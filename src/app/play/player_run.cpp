@@ -604,7 +604,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       display_polled_at = host_now_us();
       // Le mode Performance de SPAN se prépare tout seul au cran Performance (span_auto.h) : la lecture reste
       // en FP16 pendant ce temps, puis la chaîne se rouvre pour prendre le paquet.
-      if (!p.options.file.empty() && c.model) {
+      if (!p.options.file.empty() && c.model &&
+          !p.options.bench_out) {  // le bench ne valide pas sur son clip
         const SpanAutoTick span =
             tick_span_auto(chain.running.span_precision, span_prepare, p.span_job,
                            prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file),
