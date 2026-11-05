@@ -22,13 +22,24 @@ Rgb palette(int scene, int index) {
   return kColors[static_cast<std::size_t>((scene * 3 + index) % 8)];
 }
 
-void put(AVFrame& frame, int x, int y, Rgb c) {
+// Un grain d'image fixe par pixel et par image (hachage, sans état) : ±5 codes de luma, comme le grain
+// d'une source réelle ; RIFE et le décodeur n'ont plus d'aplats parfaits.
+int grain(int x, int y, int index) {
+  std::uint32_t h = static_cast<std::uint32_t>(x) * 73856093U ^ static_cast<std::uint32_t>(y) * 19349663U ^
+                    static_cast<std::uint32_t>(index) * 83492791U;
+  h ^= h >> 13;
+  h *= 0x5bd1e995U;
+  h ^= h >> 15;
+  return static_cast<int>(h % 11U) - 5;
+}
+
+void put(AVFrame& frame, int x, int y, Rgb c, int noise = 0) {
   // BT.709 limité, YUV 4:2:0 : Y partout, U et V au pixel pair.
   const float r = c.r;
   const float g = c.g;
   const float b = c.b;
-  const auto luma =
-      static_cast<std::uint8_t>(std::clamp(16.0F + 0.1826F * r + 0.6142F * g + 0.0620F * b, 16.0F, 235.0F));
+  const auto luma = static_cast<std::uint8_t>(
+      std::clamp(16.0F + 0.1826F * r + 0.6142F * g + 0.0620F * b + static_cast<float>(noise), 16.0F, 235.0F));
   frame.data[0][y * frame.linesize[0] + x] = luma;
   if (((x | y) & 1) == 0) {
     frame.data[1][(y / 2) * frame.linesize[1] + x / 2] = static_cast<std::uint8_t>(
@@ -38,33 +49,48 @@ void put(AVFrame& frame, int x, int y, Rgb c) {
   }
 }
 
+Rgb scaled(Rgb c, float k) {
+  return {static_cast<std::uint8_t>(std::min(255.0F, static_cast<float>(c.r) * k)),
+          static_cast<std::uint8_t>(std::min(255.0F, static_cast<float>(c.g) * k)),
+          static_cast<std::uint8_t>(std::min(255.0F, static_cast<float>(c.b) * k))};
+}
+
+// Trois sortes de plans de deux secondes, en boucle : calme (le mode auto monte haut), combat rapide (il doit
+// redescendre à temps), combat dans le noir (dégradés sombres, là où le FP8 et le débandage souffrent).
+// Le passage d'un plan calme à un plan rapide est ce qui fait perdre des images à un contrôleur en retard.
 void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
   const int scene = index / (fps * 2);  // une coupe toutes les deux secondes
-  const int t = index % (fps * 2);      // l'instant dans la scène (sur deux secondes)
-  const int pan = (index * 12) % 4096;  // le fond défile : 12 px par image (un travelling vif)
+  const int t = index % (fps * 2);      // l'instant dans le plan
+  const int kind = scene % 3;           // 0 calme, 1 rapide, 2 rapide et sombre
+  const bool fast = kind != 0;
+  const float dark = kind == 2 ? 0.22F : 1.0F;
+  // Le fond défile : 3 px par image au calme, 40 en combat (un travelling très vif en 1080p).
+  const int pan = (t * (fast ? 40 : 3) + scene * 517) % 8192;
   const int band = std::max(1, height / 9);
+  const float fh = static_cast<float>(height);
   for (int y = 0; y < height; ++y) {
+    const float shade = dark * (0.70F + 0.30F * static_cast<float>(y) / fh);  // dégradé vertical
     for (int x = 0; x < width; ++x) {
-      // Fond : bandes verticales plates qui défilent, avec un dégradé léger vertical.
       const int column = ((x + pan) / (width / 6)) % 4;
-      Rgb color = palette(scene, column);
-      const float shade = 0.82F + 0.18F * static_cast<float>(y) / static_cast<float>(height);
-      color = {static_cast<std::uint8_t>(static_cast<float>(color.r) * shade),
-               static_cast<std::uint8_t>(static_cast<float>(color.g) * shade),
-               static_cast<std::uint8_t>(static_cast<float>(color.b) * shade)};
-      // Hachures fines (cheveux, herbe) : de la haute fréquence au contour franc.
-      if (((x + y * 2 + pan / 3) % 14) < 2 && (y / band) % 2 == 0) color = palette(scene, 5);
-      put(frame, x, y, color);
+      Rgb color = scaled(palette(scene, column), shade);
+      // Hachures fines (cheveux, herbe) : de la haute fréquence au contour franc, qui défile aussi.
+      if (((x + y * 2 + pan / 3) % 14) < 2 && (y / band) % 2 == 0) color = scaled(palette(scene, 5), dark);
+      put(frame, x, y, color, grain(x, y, index));
     }
   }
-  // Deux personnages : un aplat arrondi à contour sombre, qui se croisent à des vitesses différentes.
+  const float phase = static_cast<float>(t) / static_cast<float>(fps * 2);
+  // Deux personnages : un aplat arrondi à contour sombre ; en combat ils traversent l'écran en une seconde
+  // (80 px par image), se croisent et rebondissent, avec occlusion de l'un par l'autre.
   for (int who = 0; who < 2; ++who) {
-    const float phase = static_cast<float>(t) / static_cast<float>(fps * 2);
-    const float cx = static_cast<float>(width) * (who == 0 ? phase : 1.0F - phase);
-    const float cy = static_cast<float>(height) * (who == 0 ? 0.45F : 0.62F) +
-                     60.0F * std::sin(6.2832F * (phase * 2.0F + static_cast<float>(who)));
-    const float rx = static_cast<float>(width) * 0.09F;
-    const float ry = static_cast<float>(height) * 0.22F;
+    const float travel = fast ? 2.0F * phase : 0.25F * phase;  // largeurs parcourues dans le plan
+    float u = std::fmod(travel + 0.37F * static_cast<float>(who), 2.0F);
+    if (u > 1.0F) u = 2.0F - u;  // aller-retour
+    const float cx = static_cast<float>(width) * (who == 0 ? u : 1.0F - u);
+    const float cy =
+        fh * (who == 0 ? 0.45F : 0.60F) +
+        (fast ? 140.0F : 40.0F) * std::sin(6.2832F * (phase * (fast ? 3.0F : 1.0F) + 0.5F * who));
+    const float rx = static_cast<float>(width) * (who == 0 ? 0.09F : 0.07F);
+    const float ry = fh * (who == 0 ? 0.22F : 0.18F);
     const int x0 = std::max(0, static_cast<int>(cx - rx - 6));
     const int x1 = std::min(width - 1, static_cast<int>(cx + rx + 6));
     const int y0 = std::max(0, static_cast<int>(cy - ry - 6));
@@ -75,9 +101,32 @@ void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
         const float dy = (static_cast<float>(y) - cy) / ry;
         const float d = dx * dx + dy * dy;
         if (d <= 1.0F)
-          put(frame, x, y, palette(scene + who + 1, 1 + who));
+          put(frame, x, y, scaled(palette(scene + who + 1, 1 + who), std::max(dark, 0.35F)),
+              grain(x, y, index));
         else if (d <= 1.12F)
           put(frame, x, y, {20, 20, 28});
+      }
+    }
+  }
+  // Une lame qui tourne (un coup d'épée) : du mouvement qui n'est pas une translation, le plus dur pour RIFE.
+  if (fast) {
+    const float angle = 6.2832F * phase * 2.5F;
+    const float ca = std::cos(angle);
+    const float sa = std::sin(angle);
+    const float ox = static_cast<float>(width) * 0.5F;
+    const float oy = fh * 0.5F;
+    const float length = fh * 0.42F;
+    const int reach = static_cast<int>(length) + 4;
+    for (int y = std::max(0, static_cast<int>(oy) - reach);
+         y < std::min(height, static_cast<int>(oy) + reach); ++y) {
+      for (int x = std::max(0, static_cast<int>(ox) - reach);
+           x < std::min(width, static_cast<int>(ox) + reach); ++x) {
+        const float px = static_cast<float>(x) - ox;
+        const float py = static_cast<float>(y) - oy;
+        const float along = px * ca + py * sa;
+        const float across = -px * sa + py * ca;
+        if (along >= 0.0F && along <= length && std::abs(across) <= 7.0F)
+          put(frame, x, y, scaled({235, 240, 255}, std::max(dark * 1.6F, 0.6F)));
       }
     }
   }
@@ -107,7 +156,7 @@ std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
   encoder->time_base = AVRational{1, spec.fps};
   encoder->framerate = AVRational{spec.fps, 1};
   encoder->pix_fmt = AV_PIX_FMT_YUV420P;
-  encoder->bit_rate = 20'000'000;
+  encoder->bit_rate = 30'000'000;  // le grain demande plus que les aplats
   encoder->gop_size = spec.fps;
   encoder->max_b_frames = 0;
   encoder->colorspace = AVCOL_SPC_BT709;

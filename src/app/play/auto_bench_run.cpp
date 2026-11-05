@@ -379,7 +379,7 @@ std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
   // (media/bench_clip.h).
   BenchPlan own = plan;
   if (own.video.empty()) {
-    own.video = data_dir / "bench-clip-v2.mkv";
+    own.video = data_dir / "bench-clip-v3.mkv";
     std::error_code error;
     if (!std::filesystem::is_regular_file(own.video, error)) {
       if (plan.shown != nullptr)
