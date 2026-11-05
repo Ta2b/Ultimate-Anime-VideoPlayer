@@ -80,6 +80,20 @@ bool PlaceboScreen::hdr_output() const {
   return impl_->hdr_output;
 }
 
+void PlaceboScreen::set_sdr_output(bool sdr) {
+  Impl& s = *impl_;
+  if (sdr == s.sdr_forced) return;
+  s.sdr_forced = sdr;
+  s.hdr_wanted = s.hdr_allowed && !sdr;
+  s.channel->info("sortie demandée : {}", sdr || !s.hdr_allowed ? "SDR" : "HDR10");  // i18n-ok : journal
+  if (s.swapchain == nullptr) return;
+  // Les métadonnées annoncées repartent de zéro : au retour en HDR, match_kwin et hint_contract les reposent.
+  s.hinted_max_nits = 0.0;
+  s.hinted_contract.reset();
+  pl_swapchain_colorspace_hint(s.swapchain, s.hdr_wanted ? &pl_color_space_hdr10 : nullptr);
+  s.composed_key.reset();
+}
+
 void PlaceboScreen::new_scene() {
   if (impl_->renderer != nullptr) pl_renderer_flush_cache(impl_->renderer);
   ++impl_->grade_serial;

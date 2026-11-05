@@ -398,6 +398,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->fullscreen = options.fullscreen && !options.offscreen;
   impl->offscreen = options.offscreen;
   impl->hdr_wanted = options.hdr;
+  impl->hdr_allowed = options.hdr;
   impl->kde_sdr_nits = options.kde_sdr_nits;
   impl->kde_sdr_auto = options.kde_sdr_auto;
   impl->contract_v2 = options.contract_v2 && !options.metadata_off;

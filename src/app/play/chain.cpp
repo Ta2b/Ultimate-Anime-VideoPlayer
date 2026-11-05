@@ -180,6 +180,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
       look_changed || wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
       wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers ||
       wanted.look_contrast != r.look_contrast || wanted.look_highlight != r.look_highlight) {
+    // SDR ou HDR en direct : la swapchain change d'espace de couleur à la présentation suivante.
+    if (wanted.hdr_native != r.hdr_native) to.screen.set_sdr_output(!wanted.hdr_native);
     set_grade(to, wanted);
     to.black_dirty = true;
     to.session.set_output(output_text(to.screen, wanted, to.source_hdr));

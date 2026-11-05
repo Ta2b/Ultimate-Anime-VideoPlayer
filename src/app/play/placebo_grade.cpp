@@ -219,6 +219,12 @@ bool PlaceboScreen::Impl::kwin_metadata() const {
 
 void PlaceboScreen::Impl::match_kwin() {
   if (!grade || swapchain == nullptr) return;
+  if (sdr_forced) {  // swapchain en SDR : rien à annoncer, et une annonce la remettrait en HDR10
+    if (kwin_applied) ++grade_serial;
+    kwin_applied.reset();
+    grade->set_kwin_match(std::nullopt);
+    return;
+  }
   const bool on = kwin_metadata() && hdr_output && grade_loaded_pq == true;
   // Le pic du grade est en unités du contenu ; la passe écrête au pic du panneau, et la sortie annonce celui
   // du contenu : KWin le ramène à son blanc (render::kwin_hint).
@@ -246,7 +252,7 @@ void PlaceboScreen::Impl::match_kwin() {
 }
 
 void PlaceboScreen::Impl::hint_contract() {
-  if (!contract_v2 || !contract || swapchain == nullptr || !hdr_output) return;
+  if (!contract_v2 || !contract || swapchain == nullptr || !hdr_output || sdr_forced) return;
   const render::ContractMetadata meta = render::contract_metadata(*contract);
   if (hinted_contract == meta) return;
   hinted_contract = meta;

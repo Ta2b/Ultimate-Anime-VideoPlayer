@@ -186,7 +186,9 @@ struct PlaceboScreen::Impl {
   // Le rendu hors écran des essais du bench (ScreenOptions::offscreen) : deux images en file, la cadence de
   // l'écran simulée.
   bool offscreen = false;
-  bool hdr_wanted = true;  // ScreenOptions::hdr : la sortie hors écran en HDR10
+  bool hdr_wanted = true;   // ScreenOptions::hdr : la sortie hors écran en HDR10
+  bool hdr_allowed = true;  // ScreenOptions::hdr (faux avec --sdr) : HDR10 demandable à la swapchain
+  bool sdr_forced = false;  // la méthode HDR « SDR » : swapchain en SDR même sur un écran HDR
   OutputSize offscreen_size;
   std::array<pl_tex, 2> offscreen_tex{};
   std::size_t offscreen_index = 0;
