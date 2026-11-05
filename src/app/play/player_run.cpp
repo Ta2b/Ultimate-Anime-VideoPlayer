@@ -129,6 +129,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("sortie SDR : pas de HDR adaptatif, image SDR gradée");
     settings.hdr_native = false;
   }
+  // La méthode « SDR » met la swapchain en SDR, comme --sdr : sinon l'image SDR partait dans une sortie
+  // HDR10.
+  p.screen.set_sdr_output(!settings.hdr_native);
   // La couleur de la source telle que le flux l'étiquette : l'écran en convertit gamut, courbe, HDR10, HLG.
   const std::optional<ColorInfo> source_color = media::track_color(video);
   const ColorInfo source = source_color.value_or(ColorInfo{});
