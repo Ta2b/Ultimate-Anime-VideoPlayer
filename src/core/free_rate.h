@@ -11,6 +11,10 @@
 // - Contre-pression : une image sautée ou manquée à l'écran élargit l'écart tout de suite (× 1,12 par
 //   image perdue, au plus × 2) ; elle ne se relâche qu'après 1 s sans perte, puis lentement (3 s).
 // - Repli : 5 % d'images perdues ou plus sur 5 s (et au moins 10) rendent la main au mode Auto.
+// - Mouvement fort anticipé : une paire en mouvement fort coûte bien plus par image (RIFE à chaque instant au
+//   lieu du milieu et des poses). Son temps de service se mesure à part, et le lecteur, qui sait une paire à
+//   l'avance qu'elle sera lourde, planifie son écart sur ce temps-là, avant que la chaîne ne décroche. Sans
+//   mesure lourde encore, l'écart est celui d'une paire calme × kHeavyGuess.
 #pragma once
 
 #include <algorithm>
@@ -24,6 +28,7 @@ struct FreeInfo {
   int load_pct = -1;            // temps de service × cadence en % d'une seconde de GPU ; -1 : inconnu
   std::int64_t step_us = 0;     // l'écart de service planifié ; 0 : inconnu
   std::int64_t service_us = 0;  // le temps de service d'une image mesuré ; 0 : inconnu
+  std::int64_t heavy_service_us = 0;  // le même, en mouvement fort ; 0 : pas encore mesuré
   double pressure = 1.0;        // contre-pression (1 : aucune)
   std::uint32_t lost = 0;       // images perdues depuis le début
 };
@@ -46,14 +51,15 @@ class FreeRate {
   // Des pertes durables seulement : réparties sur au moins 4 tranches de 250 ms de la fenêtre (une seconde),
   // pas un à-coup isolé.
   static constexpr int kFallbackMinBuckets = 4;
+  static constexpr double kHeavyGuess = 2.0;  // paire lourde jamais mesurée : coût d'une calme × 2
 
   // L'écart minimal entre deux images (période de l'écran ou du plafond), en µs de temps réel.
   void set_min_gap(std::int64_t us) { min_gap_us_ = us; }
   std::int64_t min_gap_us() const { return min_gap_us_; }
 
   // Une paire de `images` (>= 2) images a occupé le GPU `busy_us` ; une image seule ne dit rien du coût
-  // d'une image interpolée.
-  void cost(int images, std::int64_t busy_us, std::int64_t now_us);
+  // d'une image interpolée. `heavy` : une paire en mouvement fort, mesurée à part.
+  void cost(int images, std::int64_t busy_us, std::int64_t now_us, bool heavy = false);
   // `images` images planifiées par la paire qui vient d'être préparée.
   void produced(int images, std::int64_t now_us);
   // `lost` images sautées ou manquées à l'écran depuis le dernier appel.
@@ -65,8 +71,8 @@ class FreeRate {
   void reset(std::int64_t now_us);
 
   // Le temps de service d'une image, avec marge et pression, en µs de temps réel ; au moins l'écart
-  // minimal. 0 tant qu'aucune mesure n'existe.
-  std::int64_t step_us(std::int64_t now_us) const;
+  // minimal. 0 tant qu'aucune mesure n'existe. `heavy` : pour une paire annoncée en mouvement fort.
+  std::int64_t step_us(std::int64_t now_us, bool heavy = false) const;
   double pressure(std::int64_t now_us) const;
   bool should_fall_back(std::int64_t now_us) const;
   FreeInfo info(std::int64_t now_us) const;
@@ -82,6 +88,7 @@ class FreeRate {
 
   std::int64_t min_gap_us_ = 0;
   double service_us_ = 0.0;
+  double heavy_us_ = 0.0;  // temps de service d'une image en mouvement fort ; 0 : jamais mesuré
   double pressure_ = 1.0;
   std::int64_t last_loss_us_ = 0;
   std::int64_t settled_until_us_ = 0;
