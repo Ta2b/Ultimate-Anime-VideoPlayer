@@ -7,7 +7,10 @@ include_guard(GLOBAL)
 
 function(ajp_set_warnings target)
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+    # C4324 : le bourrage voulu des alignas(page) ; C4996 (_CRT_SECURE_NO_WARNINGS) : getenv et sscanf de
+    # la CRT standard, que MSVC 14.51 (image windows-2025 de novembre 2026) refuse sous /WX.
+    target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /wd4324)
+    target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
     if(AJP_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE /WX)
     endif()

@@ -84,13 +84,19 @@ std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& 
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
   // SPAN passe avant l'interpolation (choix de Tatoub) : le plus haut palier SPAN qui tient, avec RIFE s'il
   // tient aussi à ce palier ; un SPAN plus bas avec RIFE n'est qu'une ligne du tableau, au choix.
-  std::optional<ChainCandidate> best;
+  // Un rang entier (palier, puis RIFE) plutôt qu'un std::optional comparé champ à champ : MSVC 14.51 en /O2
+  // perdait le départage par RIFE à palier égal (test de la calibration, release Windows 0.9.0).
+  const CandidateTrial* best = nullptr;
+  int best_rank = -1;
   for (const CandidateTrial& trial : tried) {
     if (!trial.holds || !trial.chain.span) continue;
-    const ChainCandidate& c = trial.chain;
-    if (!best || c.height > best->height || (c.height == best->height && c.rife && !best->rife)) best = c;
+    const int rank = trial.chain.height * 2 + (trial.chain.rife ? 1 : 0);
+    if (rank > best_rank) {
+      best_rank = rank;
+      best = &trial;
+    }
   }
-  if (best) return *best;
+  if (best != nullptr) return best->chain;
   if (const CandidateTrial* rife = find(tried, kRifeOnly); rife != nullptr && rife->holds) return kRifeOnly;
   return ChainCandidate{.span = false, .rife = false, .height = 0};
 }
