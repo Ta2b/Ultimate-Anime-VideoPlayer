@@ -72,6 +72,10 @@ struct RingSlotDesc {
   ExportedHandle memory;            // la mémoire de l'image
   std::uint64_t memory_size = 0;    // octets de l'allocation exportée
   std::uint64_t memory_offset = 0;  // début de l'image dans l'allocation
+  // L'allocation est dédiée à l'image (VkMemoryDedicatedAllocateInfo) : CUDA ne prend le drapeau
+  // cudaExternalMemoryDedicated que dans ce cas. Sous Windows, le pilote l'accepte aussi sur une mémoire
+  // partagée par plusieurs images (décalage 0) et lit alors l'image avec une mauvaise disposition.
+  bool dedicated = false;
   std::uint64_t semaphore = 0;      // VkSemaphore timeline du slot
   ExportedHandle semaphore_handle;  // le même sémaphore, exporté
 };

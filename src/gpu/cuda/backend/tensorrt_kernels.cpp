@@ -268,6 +268,11 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::slot(const RingSlotDesc& 
     auto fresh = ImportedSlot::import(desc);
     if (!fresh) return std::unexpected(std::move(fresh.error()));
     imported = std::move(*fresh);
+    log(BackendLogLevel::Info,
+        std::format(
+            "anneau : slot {} {}x{} importé dans CUDA, mémoire {} (décalage {}, {} octets)",  // i18n-ok
+            desc.index, desc.width, desc.height, desc.dedicated ? "dédiée" : "partagée", desc.memory_offset,
+            desc.memory_size));
   }
   const RingSlotDesc& known = imported->desc();
   if (known.width != desc.width || known.height != desc.height || known.format != desc.format) {
