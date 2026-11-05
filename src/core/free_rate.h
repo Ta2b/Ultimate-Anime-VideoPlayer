@@ -24,13 +24,13 @@
 namespace ajp::core {
 
 struct FreeInfo {
-  double fps = 0.0;             // images créées par seconde (fenêtre de 2 s) ; 0 : pas encore mesuré
-  int load_pct = -1;            // temps de service × cadence en % d'une seconde de GPU ; -1 : inconnu
-  std::int64_t step_us = 0;     // l'écart de service planifié ; 0 : inconnu
-  std::int64_t service_us = 0;  // le temps de service d'une image mesuré ; 0 : inconnu
+  double fps = 0.0;                   // images créées par seconde (fenêtre de 2 s) ; 0 : pas encore mesuré
+  int load_pct = -1;                  // temps de service × cadence en % d'une seconde de GPU ; -1 : inconnu
+  std::int64_t step_us = 0;           // l'écart de service planifié ; 0 : inconnu
+  std::int64_t service_us = 0;        // le temps de service d'une image mesuré ; 0 : inconnu
   std::int64_t heavy_service_us = 0;  // le même, en mouvement fort ; 0 : pas encore mesuré
-  double pressure = 1.0;        // contre-pression (1 : aucune)
-  std::uint32_t lost = 0;       // images perdues depuis le début
+  double pressure = 1.0;              // contre-pression (1 : aucune)
+  std::uint32_t lost = 0;             // images perdues depuis le début
 };
 
 class FreeRate {

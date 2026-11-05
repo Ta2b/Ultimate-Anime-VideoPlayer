@@ -132,10 +132,12 @@ TEST_CASE("mises à jour : archive revérifiée, lecteur exigé, garde qui remet
   const fs::path archive = data / "updates" / "0.6.0" / "ajp-linux-x64.tar.gz";
   const fs::path hollow = data / "updates" / "0.6.0" / "vide.tar.gz";
   fs::create_directories(archive.parent_path());
-  REQUIRE(std::system(("tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64")
-                          .c_str()) == 0);
-  REQUIRE(std::system(("tar -czf '" + hollow.string() + "' -C '" + (root / "vide").string() + "' ajp-linux-x64")
-                          .c_str()) == 0);
+  REQUIRE(
+      std::system(("tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64")
+                      .c_str()) == 0);
+  REQUIRE(
+      std::system(("tar -czf '" + hollow.string() + "' -C '" + (root / "vide").string() + "' ajp-linux-x64")
+                      .c_str()) == 0);
   const UpdatePaths paths{.data = data, .install = install, .executable = install / "ajp"};
 
   // Une archive qui ne correspond plus à son SHA-256 : refusée, l'installation reste.
@@ -145,8 +147,9 @@ TEST_CASE("mises à jour : archive revérifiée, lecteur exigé, garde qui remet
                       .staged_size = fs::file_size(archive)};
   CHECK_FALSE(apply_staged_update(paths, changed));
   CHECK(read(install / "ajp") == "ancien");
-  REQUIRE(std::system(("tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64")
-                          .c_str()) == 0);
+  REQUIRE(
+      std::system(("tar -czf '" + archive.string() + "' -C '" + (root / "src").string() + "' ajp-linux-x64")
+                      .c_str()) == 0);
 
   // Une archive sans le lecteur : refusée.
   UpdateState empty_archive{.staged_version = "0.6.0", .staged_file = hollow.string()};

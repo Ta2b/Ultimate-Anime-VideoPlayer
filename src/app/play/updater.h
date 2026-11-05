@@ -46,7 +46,7 @@ struct UpdateState {
   std::string staged_file;       // son archive, sous <données>/updates
   std::string previous_version;  // celle que le retour arrière rend
   std::string last_error;
-  std::string staged_sha256;       // de l'archive préparée, revérifiée avant l'application
+  std::string staged_sha256;  // de l'archive préparée, revérifiée avant l'application
   std::uint64_t staged_size = 0;
   std::string unconfirmed_version;  // appliquée, pas encore confirmée par une lecture menée à son terme
   int unconfirmed_launches = 0;     // ses lancements depuis

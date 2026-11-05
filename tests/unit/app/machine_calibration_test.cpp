@@ -85,7 +85,7 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, RIFE 4.22 lite 
   CHECK(s.auto_free);
   CHECK(s.rife_factor == 2);
   CHECK(s.true_hdr_contrast == 150);  // le reste des réglages de l'utilisateur
-  CHECK(s.model.empty());              // SPAN par défaut (Performance Sharp) en FP16
+  CHECK(s.model.empty());             // SPAN par défaut (Performance Sharp) en FP16
   CHECK(s.span_precision == PrecisionTier::Balanced);
   const PlaySettings fp8 = candidate_settings({.span = true, .rife = true, .height = 540}, base, true);
   CHECK(fp8.model == kCalibrationSpanFp8);
