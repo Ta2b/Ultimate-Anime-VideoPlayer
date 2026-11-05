@@ -43,6 +43,10 @@ if ($WinMl -eq "ON") { $Extra += "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT" }
 # SPAN FP8 CUTLASS sous MSVC (12.4) : à l'essai, éteint par défaut hors Linux.
 if ($Cuda -eq "ON" -and $env:AJP_WITH_SPAN_FP8) { $Extra += "-DAJP_WITH_SPAN_FP8=$env:AJP_WITH_SPAN_FP8" }
 if ($Cuda -eq "ON" -and $env:AJP_TENSORRT_ROOT) { $Extra += "-DAJP_TENSORRT_ROOT=$env:AJP_TENSORRT_ROOT" }
+# sccache sur la CI (release-windows.yml) : les objets de cl.exe repris d'une construction à l'autre.
+if ($env:AJP_COMPILER_LAUNCHER) {
+  $Extra += "-DCMAKE_C_COMPILER_LAUNCHER=$env:AJP_COMPILER_LAUNCHER", "-DCMAKE_CXX_COMPILER_LAUNCHER=$env:AJP_COMPILER_LAUNCHER"
+}
 if ($env:AJP_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
 }

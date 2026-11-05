@@ -34,6 +34,10 @@ jobs:
       AJP_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
       AJP_VCPKG_TRIPLET: x64-windows-release
+      # sccache (cache GitHub) pour cl.exe : sans lui, les ~780 objets se recompilent à chaque release (~25 min).
+      # En Release, sans informations de débogage, cl.exe est mis en cache tel quel.
+      SCCACHE_GHA_ENABLED: "true"
+      AJP_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@v4
       # Restauration et sauvegarde séparées : les ports déjà compilés restent en cache même quand
@@ -57,6 +61,7 @@ jobs:
           git -C $env:AJP_VCPKG checkout -q $baseline
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@v1
+      - uses: mozilla-actions/sccache-action@v0.0.9
       # OpenVINO par sa roue PyPI, qui porte ses en-têtes, ses bibliothèques et sa configuration
       # CMake, à la version de tools/release/versions.env (la même que sous Linux).
       - name: OpenVINO
