@@ -29,7 +29,7 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
 
 - **Agrandissement ×2** par les modèles SPAN d'AnimeJaNai HD V3.1 : une source 720p ou 1080p devient
   1440p ou 4K, traits nets et aplats propres.
-- **Interpolation** par RIFE 4.22 lite (DistilDRBA au choix). Le mode Auto vise la fréquence de votre écran et
+- **Interpolation** par RIFE 4.22 lite, ou 4.25 aux niveaux Qualité et Ultra (DistilDRBA au choix). Le mode Auto vise la fréquence de votre écran et
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
 - **HDR anime** : l'anime SDR passe en HDR10 avec un grade guidé plan par plan. Les surfaces restent à leur place,
