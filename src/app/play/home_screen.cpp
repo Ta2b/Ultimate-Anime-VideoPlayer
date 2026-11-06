@@ -36,10 +36,10 @@
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
-#include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
 #include "app/play/span_auto.h"
 #include "app/play/span_int8.h"
+#include "app/play/user_keys.h"
 #include "audio/devices.h"
 #include "core/clock.h"
 #include "core/engines.h"
@@ -206,17 +206,9 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .settings_dir = h.settings_path.parent_path()};
 }
 
-// Les réglages que la lecture prendra : play.toml, la chaîne du profil actif pour la source type,
-// puis les options de la ligne de commande.
-PlaySettings home_settings(const HomeScreen& h, const HomeState& st, const PlaySettings& base) {
-  PlaySettings settings = base;
-  if (const auto& profile =
-          st.profiles.data.file
-              .profiles[static_cast<std::size_t>(std::clamp(st.profiles.active, 1, 9) - 1)]) {
-    std::vector<std::string> notes;
-    settings = apply_profile(*profile, kHomeSource, base, notes);
-  }
-  return settings_for(settings, h.options);
+// Les réglages que la lecture prendra : play.toml, puis les options de la ligne de commande.
+PlaySettings home_settings(const HomeScreen& h, const PlaySettings& base) {
+  return settings_for(base, h.options);
 }
 
 }  // namespace
@@ -243,14 +235,10 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   const auto log = log_channel("app");
   log->info("accueil : Ouvrir une vidéo, ou un fichier glissé sur la fenêtre");
   SDL_SetWindowTitle(h.screen.window(), "ajp");
-  st.profiles.source = kHomeSource;
   const PlaySettings from_file = st.saved;
-  PlaySettings running = home_settings(h, st, st.saved);
+  PlaySettings running = home_settings(h, st.saved);
   const PlaySettings started = running;
-  const auto refresh = [&] {
-    h.ui.set_settings(running, home_choices(h, st, running));
-    h.ui.set_profiles(view_of(st.profiles));
-  };
+  const auto refresh = [&] { h.ui.set_settings(running, home_choices(h, st, running)); };
   refresh();
   h.ui.open_settings();
   const auto pick = std::make_shared<FilePick>();
@@ -270,11 +258,6 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     h.ui.set_running(running);
     dirty = true;
   };
-  const auto use_profile = [&] {
-    changed(home_settings(h, st, running));
-    h.ui.set_profiles(view_of(st.profiles));
-  };
-
   const core::KeyMap& keys = configured_keys();
   const std::int64_t opened = host_now_us();
   std::vector<Input> actions;
@@ -295,88 +278,60 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     }
     if (!chosen) chosen = pick->take();
     for (const Input& input : actions) {
-      std::visit(
-          Overloaded{[&](const Command& command) {
-                       if (std::holds_alternative<cmd::Quit>(command)) {
-                         quit = true;
-                       } else if (const auto* select = std::get_if<cmd::SelectProfile>(&command)) {
-                         if (!st.profiles.data.file
-                                  .profiles[static_cast<std::size_t>(std::clamp(select->slot, 1, 9) - 1)])
-                           return;
-                         st.profiles.active = std::clamp(select->slot, 1, 9);
-                         log->info("profil {}", st.profiles.active);
-                         use_profile();
-                       }
-                     },
-                     [&](const ToggleFullscreen&) { h.screen.set_fullscreen(!h.screen.fullscreen()); },
-                     [&](const LeaveFullscreen&) {
-                       if (h.ui.settings_open()) {
-                         h.ui.close_settings();
-                       } else if (h.screen.fullscreen()) {
-                         h.screen.set_fullscreen(false);
-                       }
-                     },
-                     [&](const ToggleSettings&) { h.ui.toggle_settings(); },
-                     [&](const ToggleMute&) {
-                       static_cast<void>(h.ui.controls().toggle_mute());
-                       changed(running);
-                     },
-                     [&](const VolumeStep& step) {
-                       static_cast<void>(h.ui.controls().step_volume(step.delta));
-                       changed(running);
-                     },
-                     [&](const ApplySettings& apply) {
-                       // Comme pendant la lecture : changer la chaîne au menu modifie le profil actif.
-                       if (chain_differs(running, apply.settings)) {
-                         remember_chain(st.profiles, apply.settings);
-                         h.ui.set_profiles(view_of(st.profiles));
-                       }
-                       changed(apply.settings);
-                     },
-                     [&](const EditProfile& edit) {
-                       const std::array<core::UserEdit, 1> edits{edit.edit};
-                       auto edited = edit_profiles(st.profiles.user_path, st.profiles.data, edits);
-                       if (!edited) {
-                         log->warn("user.toml : {}", edited.error().detail);
-                         return;
-                       }
-                       st.profiles.data = std::move(*edited);
-                       h.ui.set_profiles(view_of(st.profiles));
-                       if (std::holds_alternative<core::edit::ResetProfile>(edit.edit)) use_profile();
-                     },
-                     [&](const UseEngine& use) {
-                       st.engines = using_engine(std::move(st.engines), use.id);
-                       if (auto written = core::save_settings(h.settings_path.parent_path() / "settings.toml",
-                                                              st.engines);
-                           !written)
-                         log->warn("{}", written.error().detail);
-                       log->info("moteur des réseaux : {}", engine_label(use.id));
-                       refresh();
-                     },
-                     [&](const OpenEngineScreen&) {
-                       const EngineScreen screen{
-                           .screen = h.screen,
-                           .ui = h.ui,
-                           .options = h.options,
-                           .paths = h.paths,
-                           .catalog = h.catalog,
-                           .engines_path = h.settings_path.parent_path() / "settings.toml"};
-                       auto shown =
-                           run_engine_screen(screen, st.engines, st.profiles, true, st.next_key, st.snapshot);
-                       if (!shown) {
-                         log->warn("écran des moteurs : {}", shown.error().detail);
-                       } else if (!*shown) {
-                         quit = true;
-                       }
-                       refresh();
-                     },
-                     [&](const PlayFile& play) {
-                       if (play.file.empty() || chosen) return;
-                       chosen = play.file;
-                       st.start = play;
-                     },
-                     [](const auto&) {}},  // pistes, chapitres, export : rien sans vidéo
-          input);
+      std::visit(Overloaded{[&](const Command& command) {
+                              if (std::holds_alternative<cmd::Quit>(command)) quit = true;
+                            },
+                            [&](const ToggleFullscreen&) { h.screen.set_fullscreen(!h.screen.fullscreen()); },
+                            [&](const LeaveFullscreen&) {
+                              if (h.ui.settings_open()) {
+                                h.ui.close_settings();
+                              } else if (h.screen.fullscreen()) {
+                                h.screen.set_fullscreen(false);
+                              }
+                            },
+                            [&](const ToggleSettings&) { h.ui.toggle_settings(); },
+                            [&](const ToggleMute&) {
+                              static_cast<void>(h.ui.controls().toggle_mute());
+                              changed(running);
+                            },
+                            [&](const VolumeStep& step) {
+                              static_cast<void>(h.ui.controls().step_volume(step.delta));
+                              changed(running);
+                            },
+                            [&](const ApplySettings& apply) { changed(apply.settings); },
+                            [&](const UseEngine& use) {
+                              st.engines = using_engine(std::move(st.engines), use.id);
+                              if (auto written = core::save_settings(
+                                      h.settings_path.parent_path() / "settings.toml", st.engines);
+                                  !written)
+                                log->warn("{}", written.error().detail);
+                              log->info("moteur des réseaux : {}", engine_label(use.id));
+                              refresh();
+                            },
+                            [&](const OpenEngineScreen&) {
+                              const EngineScreen screen{
+                                  .screen = h.screen,
+                                  .ui = h.ui,
+                                  .options = h.options,
+                                  .paths = h.paths,
+                                  .catalog = h.catalog,
+                                  .engines_path = h.settings_path.parent_path() / "settings.toml"};
+                              auto shown =
+                                  run_engine_screen(screen, st.engines, true, st.next_key, st.snapshot);
+                              if (!shown) {
+                                log->warn("écran des moteurs : {}", shown.error().detail);
+                              } else if (!*shown) {
+                                quit = true;
+                              }
+                              refresh();
+                            },
+                            [&](const PlayFile& play) {
+                              if (play.file.empty() || chosen) return;
+                              chosen = play.file;
+                              st.start = play;
+                            },
+                            [](const auto&) {}},  // pistes, chapitres, export : rien sans vidéo
+                 input);
     }
     actions.clear();
     if (dirty && host_now_us() - saved_at >= 1'000'000) save();

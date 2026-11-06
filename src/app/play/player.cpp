@@ -44,13 +44,13 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/player_run.h"
-#include "app/play/profiles.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
 #include "app/play/ui.h"
 #include "app/play/updater.h"
 #include "app/play/upscale_stage.h"
+#include "app/play/user_keys.h"
 #include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -154,30 +154,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           });
     }
   }
-  // Le profil de démarrage fixe la chaîne ; les options données la remplacent pour cette lecture.
-  ProfileState profiles{.user_path = settings_path.parent_path() / "user.toml",
-                        .source = given ? core::SourceInfo{.width = given->width,
-                                                           .height = given->height,
-                                                           .fps = fps_of(given->frame_rate)}
-                                        : kHomeSource};
-  if (auto loaded = load_profiles(profiles.user_path)) {
-    apply_user_keys(loaded->user_text);
-    profiles.data = std::move(*loaded);
-  } else {
-    log->warn("{} ; profils de base", loaded.error().detail);
-    startup_notes.push_back(set_aside(profiles.user_path, loaded.error()));
-    profiles.data = Profiles{.file = *core::parse_profile(base_profiles_toml())};
-  }
-  profiles.active = profiles.data.file.start_profile;
-  // Premier lancement avec profils : la chaîne de play.toml (celle d'avant les profils) devient
-  // celle du profil de démarrage, au lieu d'être remplacée par la base.
-  std::error_code missing;
-  if (!std::filesystem::exists(profiles.user_path, missing) &&
-      std::filesystem::exists(settings_path, missing)) {
-    profiles.default_model = std::string(kSpanModelId);
-    remember_chain(profiles, *saved);
-    log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
-  }
+  // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.
+  load_user_keys(settings_path.parent_path() / "user.toml");
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -246,7 +224,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // Une vidéo ouverte directement (double-clic, argument) se lit tout de suite : l'assistant ne
   // la bloque pas, et il se présentera au prochain lancement depuis l'accueil.
   if (options.first_run || (!engines->first_run_done && !given)) {
-    auto shown = run_engine_screen(engine_screen, *engines, profiles, false, next_key, snapshot);
+    auto shown = run_engine_screen(engine_screen, *engines, false, next_key, snapshot);
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};
     // L'assistant vient d'écrire play.toml (HDR, chaîne calibrée, auto Rapide) : l'accueil part de là, sans
@@ -299,11 +277,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                         .settings_path = settings_path};
   while (true) {
     if (file.empty()) {
-      HomeState state{.saved = *saved,
-                      .profiles = profiles,
-                      .engines = *engines,
-                      .next_key = next_key,
-                      .snapshot = snapshot};
+      HomeState state{.saved = *saved, .engines = *engines, .next_key = next_key, .snapshot = snapshot};
       auto picked = run_home(home, state, problem);
       if (!picked) return std::unexpected(std::move(picked.error()));
       if (!*picked) return {};
@@ -338,20 +312,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     }
     PlayOptions file_options = options;
     file_options.file = file;
-    profiles.source =
-        core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
+    const core::SourceInfo source{
+        .width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
 
-    PlaySettings from_profile = *saved;
-    // L'essai d'une variante (« ajp compare », la calibration de la machine) joue son play.toml tel quel : le
-    // profil de démarrage referait la chaîne.
-    const bool variant_trial = options.bench_out && !options.bench_level;
-    if (const auto& start = profiles.data.file.profiles[static_cast<std::size_t>(profiles.active - 1)];
-        start && !variant_trial) {
-      std::vector<std::string> notes;
-      from_profile = apply_profile(*start, profiles.source, *saved, notes);
-      for (const std::string& line : notes) log->warn("profil {} : {}", profiles.active, line);
-      log->info("profil {} « {} »", profiles.active, start->name);
-    }
+    PlaySettings chosen = *saved;
     // La tranche mesurée par « Évaluer ma machine » (bench.toml), si elle est de cette carte.
     std::optional<BenchResult> measured_tier;
     if (auto bench = load_bench(settings_path.parent_path() / "bench.toml"))
@@ -363,23 +327,23 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // Un essai du benchmark : la chaîne du niveau demandé (ou de l'estimé), sans priorité ni profil.
       if (*file_options.bench_level >= 0) tier = static_cast<Tier>(*file_options.bench_level);
       file_options.bench_level = static_cast<int>(tier);
-      from_profile.preset = Preset::Auto;
-      from_profile.priority = Priority::Balance;
+      chosen.preset = Preset::Auto;
+      chosen.priority = Priority::Balance;
     }
     // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et ce pilote, et pas pour un
     // essai.
     const GpuFacts here = gpu_facts(**screen);
     const bool explored = measured_tier && !file_options.bench_level && measured_tier->gpu == here.name &&
                           measured_tier->driver == here.driver;
-    from_profile =
-        apply_preset(from_profile,
+    chosen =
+        apply_preset(chosen,
                      Machine{.tier = tier,
                              .display_height = display_height((*screen)->window()),
                              .display_hz = display_refresh_hz((*screen)->window()),
                              .explored_work_height = explored ? measured_tier->work_height : 0,
                              .explored_rife_model = explored ? measured_tier->rife_model : std::string()},
-                     profiles.source);
-    PlaySettings settings = settings_for(from_profile, file_options);
+                     source);
+    PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
     // Le module chargé a été remplacé sur le disque (moteur mis à jour depuis l'écran des moteurs) : il ne se
@@ -430,7 +394,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .snapshot = std::move(snapshot),
                   .details = settings.stats.all,
                   .next_key = next_key,
-                  .profiles = std::move(profiles),
                   .engines = std::move(*engines),
                   .display = read_display(display_name((*screen)->window()))};
     player.shots = &shots;
@@ -527,7 +490,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     library = std::move(player.library);
     snapshot = std::move(player.snapshot);
     next_key = player.next_key;
-    profiles = std::move(player.profiles);
     *engines = std::move(player.engines);
     // Un changement de moteur pendant la lecture a déjà rouvert la bibliothèque sur le préféré.
     if (library && engine_of_library(library->path()) ==

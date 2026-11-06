@@ -248,7 +248,7 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, MachineNote& b
 // Général > Réinitialiser.
 // Vrai quand « Tout réinitialiser » est pressé : le panneau rouvre alors la vidéo avec les réglages par
 // défaut, sans attendre « Appliquer ».
-bool reset_page(PlaySettings& draft, std::vector<Input>& actions, const ProfilesView& view) {
+bool reset_page(PlaySettings& draft) {
   bool reset_all = false;
   section(i18n::tr("All settings"));
   note(
@@ -258,13 +258,8 @@ bool reset_page(PlaySettings& draft, std::vector<Input>& actions, const Profiles
     PlaySettings fresh;
     fresh.engines_dir = draft.engines_dir;
     draft = fresh;
-    actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
     reset_all = true;
   }
-  section(i18n::tr("Profile defaults"));
-  note(i18n::tr("Resets the active profile (Ctrl+1 to Ctrl+9); other profiles are untouched."));
-  if (ImGui::Button(i18n::tr("Reset profile")))
-    actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
   return reset_all;
 }
 
@@ -476,7 +471,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       } else if (name == "Statistics") {
         stats_tab(draft_);
       } else if (name == "Reset") {
-        if (reset_page(draft_, actions, choices.profiles)) result.reopen = draft_;
+        if (reset_page(draft_)) result.reopen = draft_;
       }
     }
     panel::end_page();

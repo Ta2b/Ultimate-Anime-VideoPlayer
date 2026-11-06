@@ -68,24 +68,8 @@ constexpr std::array<std::pair<std::string_view, Key>, 29> kNamedKeys{{
 }};
 
 constexpr std::array<std::string_view, kActionCount> kActionNames{
-    "pause",
-    "seek_backward",
-    "seek_forward",
-    "step_forward",
-    "step_backward",
-    "profile_1",
-    "profile_2",
-    "profile_3",
-    "profile_4",
-    "profile_5",
-    "profile_6",
-    "profile_7",
-    "profile_8",
-    "profile_9",
-    "processing_off",
-    "toggle_grade",
-    "toggle_interpolation",
-    "toggle_osd",
+    "pause",          "seek_backward", "seek_forward",         "step_forward", "step_backward",
+    "processing_off", "toggle_grade",  "toggle_interpolation", "toggle_osd",
 };
 
 std::optional<Key> parse_key(std::string_view text) {
@@ -195,17 +179,7 @@ Command command_for(Action action) {
       return cmd::ToggleInterpolation{};
     case Action::ToggleOsd:
       return cmd::ToggleOsd{};
-    // Chaque cas est nommé : une action ajoutée sans commande fait échouer -Wswitch.
-    case Action::Profile1:
-    case Action::Profile2:
-    case Action::Profile3:
-    case Action::Profile4:
-    case Action::Profile5:
-    case Action::Profile6:
-    case Action::Profile7:
-    case Action::Profile8:
-    case Action::Profile9:
-      return cmd::SelectProfile{.slot = static_cast<int>(index(action) - index(Action::Profile1)) + 1};
+      // Chaque cas est nommé : une action ajoutée sans commande fait échouer -Wswitch.
   }
   return cmd::TogglePause{};  // inatteignable : le switch couvre chaque action
 }
@@ -217,10 +191,6 @@ KeyMap KeyMap::defaults() {
   map.chords_[index(Action::SeekForward)] = Chord{.key = Key::Right};
   map.chords_[index(Action::StepForward)] = Chord{.key = Key::Period};
   map.chords_[index(Action::StepBackward)] = Chord{.key = Key::Comma};
-  for (int slot = 1; slot <= 9; ++slot) {
-    map.chords_[index(Action::Profile1) + static_cast<std::size_t>(slot - 1)] =
-        ctrl(offset(Key::Digit0, slot));
-  }
   map.chords_[index(Action::ProcessingOff)] = ctrl(Key::Digit0);
   map.chords_[index(Action::ToggleGrade)] = ctrl(Key::G);
   map.chords_[index(Action::ToggleInterpolation)] = ctrl(Key::I);
@@ -271,6 +241,8 @@ std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml) {
   std::vector<Action> redefined;
   for (const auto& [key, node] : *keys) {
     const std::string where = std::format("keys.{}", key.str());
+    // Les raccourcis des profils (retirés) d'un ancien user.toml : sans objet.
+    if (key.str().starts_with("profile_")) continue;
     const std::optional<Action> action = parse_action(key.str());
     if (!action) return refuse(RefusalCode::KeyUnknown, where);
     const std::optional<std::string> text = node.value_exact<std::string>();

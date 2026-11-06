@@ -1,5 +1,5 @@
 // La chaîne ouverte par « ajp play » et ce que les actions de l'utilisateur y changent : touches,
-// menu des paramètres en direct, pistes, profils, grade HDR et vrai noir OLED, soins OLED. Le
+// menu des paramètres en direct, pistes, grade HDR et vrai noir OLED, soins OLED. Le
 // thread main seul y touche (player.cpp ouvre la chaîne et tient la boucle).
 #pragma once
 
@@ -25,7 +25,6 @@
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
-#include "app/play/profiles.h"
 #include "app/play/session.h"
 #include "app/play/settings.h"
 #include "app/play/ui.h"
@@ -38,19 +37,7 @@ namespace ajp::app::play {
 
 struct ShotWork;  // chain_shots.h
 
-// Les profils de la lecture : user.toml, le profil actif, la source pour choisir leur règle.
-struct ProfileState {
-  std::filesystem::path user_path;
-  Profiles data;
-  int active = 1;
-  core::SourceInfo source;
-  std::string default_model;  // le modèle SPAN par défaut, pour un réglage « modèle par défaut »
-  // Le thread d'écriture de la lecture (1.11) : user.toml s'y écrit sans retenir l'affichage. Nul hors
-  // d'une lecture : sur place.
-  LatestWriter* writer = nullptr;
-};
-
-// Le mode HDR que le profil demande, quand un repli de l'environnement (sortie SDR) en fait tourner un
+// Le mode HDR que les réglages demandent, quand un repli de l'environnement (sortie SDR) en fait tourner un
 // autre : le repli n'est jamais mémorisé à la place de la préférence.
 struct HdrIntent {
   bool hdr_native = false;
@@ -79,7 +66,6 @@ struct Chain {
   Pipeline& pipeline;
   LiveSettings& live;
   PlaySettings& running;  // réglages en cours, gardés dans play.toml
-  ProfileState& profiles;
   bool rife_loaded = false;
   int auto_peak = 0;   // pic automatique de l'écran, en nits
   bool dirty = false;  // play.toml à réécrire
@@ -129,11 +115,9 @@ struct Chain {
   std::vector<LookLoad> look_loads;
 };
 
-// Les réglages avec, pendant un repli HDR, le mode que le profil demande à la place du mode de
-// repli : ce que remember_chain et play.toml retiennent.
+// Les réglages avec, pendant un repli HDR, le mode que les réglages demandent à la place du mode de
+// repli : ce que play.toml retient.
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
-// Au lancement : le profil actif sans grade (« Source ») l'a coupé ; play.toml garde saved_grade.
-void keep_profile_grade(Chain& to, bool saved_grade);
 
 // Une fois par tour : pose le look lu sur un fil de fond, lit le plan analysé de l'image qui vient
 // (chain_shots.h), sinon la scène vue en direct, et envoie sa lumière au grade quand elle change.
@@ -161,12 +145,6 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak,
 // coché n'y fait rien (mode Neutre).
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool source_hdr = false);
 double fps_of(const media::Rational& rate);
-
-ProfilesView view_of(const ProfileState& state);
-// La chaîne en cours devient celle du profil actif, dans user.toml.
-void remember_chain(ProfileState& state, const PlaySettings& s);
-// La chaîne (modèle, hauteur, RIFE, HDR) diffère : le profil actif la retient.
-bool chain_differs(const PlaySettings& a, const PlaySettings& b);
 
 // Soins OLED, grade avec les seuils du vrai noir, et recalage de ces seuils sur la rampe mesurée.
 void apply_oled_care(Chain& to, const PlaySettings& s);

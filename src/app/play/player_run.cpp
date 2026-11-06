@@ -50,7 +50,6 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/present_stats.h"
-#include "app/play/profiles.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
@@ -59,6 +58,7 @@
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
+#include "app/play/user_keys.h"
 #include "app/play/vrr_watch.h"
 #include "audio/devices.h"
 #include "core/auto_memory.h"
@@ -92,7 +92,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("interpolation {} : débranchée de la lecture, RIFE à sa place", label(settings.motion_engine));
     settings.motion_engine = MotionEngine::Rife;
   }
-  // Le mode HDR demandé, avant tout repli de l'environnement : c'est lui que les profils gardent.
+  // Le mode HDR demandé, avant tout repli de l'environnement : c'est lui que play.toml garde.
   const HdrIntent wanted_hdr{.hdr_native = settings.hdr_native};
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
@@ -314,10 +314,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .fp8_reason = fp8_reason,
           .span_job = p.span_job.note,
           .settings_dir = p.settings_path.parent_path()});
-  p.profiles.source =
-      core::SourceInfo{.width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
-  if (c.model) p.profiles.default_model = c.model->default_name;
-  p.ui.set_profiles(view_of(p.profiles));
   const std::filesystem::path settings_dir = p.settings_path.parent_path();  // isolé par --data-dir
   Chain chain{
       .session = session,
@@ -326,7 +322,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .pipeline = **pipeline,
       .live = *live,
       .running = settings,
-      .profiles = p.profiles,
       .rife_loaded = rife_loaded,
       .auto_peak = auto_peak,
       .file = p.options.file,
@@ -344,7 +339,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .shot_cuts = p.options.shot_cuts,
       .anime_shots = p.options.anime_shots};
   apply_oled_care(chain, settings);
-  keep_profile_grade(chain, p.from_file.grade);
 
   std::ofstream stats;
   if (options.stats) {
@@ -374,9 +368,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   // play.toml, la position et la mémoire de l'Auto s'écrivent sur leur thread, sans attendre le disque.
   LatestWriter writer;
-  p.profiles.writer = &writer;  // user.toml aussi (1.11) ; rendu nul avant le thread
-  const std::unique_ptr<ProfileState, void (*)(ProfileState*)> profiles_writer(
-      &p.profiles, [](ProfileState* state) { state->writer = nullptr; });
   if (p.shots != nullptr) p.shots->writer = &writer;  // le cache des plans aussi
   const std::unique_ptr<ShotWork, void (*)(ShotWork*)> shots_writer(
       p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });

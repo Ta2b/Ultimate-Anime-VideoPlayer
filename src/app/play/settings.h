@@ -6,9 +6,6 @@
 // Un changement s'applique en direct (réglages du HDR, facteur RIFE, réduction, son,
 // statistiques) ou demande de rouvrir la chaîne à la même position (modèle, hauteur de travail,
 // RIFE sans moteur chargé) : le menu le dit avant d'appliquer.
-//
-// Provisoire : les profils (core/profile.h, user.toml) remplacent ce fichier quand la coquille
-// de l'application est fusionnée ; les clés gardent les mêmes noms et plages.
 #pragma once
 
 #include <array>

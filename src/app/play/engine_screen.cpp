@@ -24,9 +24,9 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
-#include "app/play/profiles.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
+#include "app/play/user_keys.h"
 #include "app/play/wizard.h"
 #include "core/clock.h"
 #include "core/keys.h"
@@ -157,16 +157,12 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
 
 }  // namespace
 
-std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines,
-                                               ProfileState& profiles, bool revisit, std::size_t& next_key,
-                                               SnapshotPlan& snapshot) {
+std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
+                                               std::size_t& next_key, SnapshotPlan& snapshot) {
   const auto log = log_channel("app");
   const GpuFacts gpu = gpu_facts(s.screen);
-  ProfilesView choice = view_of(profiles);
-  if (!engines.first_run_done) choice.start = start_profile_for(gpu);
   log->info("{} : {}", revisit ? "écran des moteurs" : "bienvenue", gpu_line(gpu));
-  FirstRunView view =
-      first_run_view(gpu, engines_here(s.options, s.paths, s.catalog, gpu.name), std::move(choice), engines);
+  FirstRunView view = first_run_view(gpu, engines_here(s.options, s.paths, s.catalog, gpu.name), engines);
   // L'assistant du premier lancement (ou de --first-run, ou relancé depuis les paramètres) ; rouvert depuis
   // l'onglet Moteurs, l'ancien écran des seuls moteurs.
   const bool wizard_mode = !revisit || s.restart_wizard;
@@ -210,7 +206,6 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   const std::optional<core::EngineId> kept = before.preferred[usage(core::Usage::Upscale)];
   if (revisit && kept && chosen(engines, *kept) && !network_added(before, engines))
     engines = using_engine(std::move(engines), *kept);
-  std::optional<PlaySettings> calibrated_chain;  // la chaîne de la calibration de la machine
   if (wizard_mode) {
     const Wizard& wizard = (*chosen_view)->wizard;
     engines = wizard_settings(wizard, std::move(engines));
@@ -227,7 +222,6 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
           calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
       if (!calibrated) return false;
       chosen_play = std::move(*calibrated);
-      calibrated_chain = chosen_play;
     }
     if (auto written = save_settings(play_path, chosen_play); !written)
       log->warn("{}", written.error().detail);
@@ -245,17 +239,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   }
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);
-  const std::array<core::UserEdit, 1> start{core::edit::StartProfile{.slot = (*chosen_view)->profiles.start}};
-  if (auto edited = edit_profiles(profiles.user_path, profiles.data, start)) {
-    profiles.data = std::move(*edited);
-  } else {
-    log->warn("user.toml : {}", edited.error().detail);
-  }
-  if (!revisit) profiles.active = profiles.data.file.start_profile;
-  // La chaîne calibrée devient celle du profil de démarrage : sans quoi elle prendrait le pas sur play.toml.
-  if (calibrated_chain) remember_chain(profiles, *calibrated_chain);
-  log->info("moteurs choisis : {} ; profil de démarrage {}", chosen_line(engines),
-            profiles.data.file.start_profile);
+  log->info("moteurs choisis : {}", chosen_line(engines));
   return true;
 }
 
@@ -307,7 +291,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
     if (auto written = core::save_settings(screen.engines_path, p.engines); !written)
       log->warn("{}", written.error().detail);
   } else {
-    auto shown = run_engine_screen(screen, p.engines, p.profiles, true, p.next_key, p.snapshot);
+    auto shown = run_engine_screen(screen, p.engines, true, p.next_key, p.snapshot);
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return false;
   }

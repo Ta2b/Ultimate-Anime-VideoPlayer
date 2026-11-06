@@ -89,7 +89,6 @@ class PlayerUi {
     choices_.window_fullscreen = fullscreen;
   }
   void set_running(const PlaySettings& running);
-  void set_profiles(ProfilesView profiles);
   void set_black_status(std::string status);  // ligne du vrai noir dans l'onglet Grade
   void toggle_settings();
   void open_settings();

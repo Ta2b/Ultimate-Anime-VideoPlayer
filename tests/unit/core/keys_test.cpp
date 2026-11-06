@@ -43,8 +43,7 @@ TEST_CASE("Raccourcis : les touches par défaut du plan donnent leurs commandes"
   CHECK(std::get<cmd::StepFrame>(command_of(map, key(Key::Period))).direction == 1);
   CHECK(std::get<cmd::StepFrame>(command_of(map, key(Key::Comma))).direction == -1);
 
-  CHECK(std::get<cmd::SelectProfile>(command_of(map, ctrl(Key::Digit1))).slot == 1);
-  CHECK(std::get<cmd::SelectProfile>(command_of(map, ctrl(Key::Digit9))).slot == 9);
+  CHECK_FALSE(map.command_for(ctrl(Key::Digit1)));  // les profils, retirés
   CHECK(std::holds_alternative<cmd::ProcessingOff>(command_of(map, ctrl(Key::Digit0))));
   CHECK(std::holds_alternative<cmd::ToggleGrade>(command_of(map, ctrl(Key::G))));
   CHECK(std::holds_alternative<cmd::ToggleInterpolation>(command_of(map, ctrl(Key::I))));
@@ -60,9 +59,9 @@ TEST_CASE("Raccourcis : chaque action a un nom de [keys] qui se relit", "[keys]"
     CHECK(parse_action(action_name(action)) == action);
   }
   CHECK(action_name(Action::TogglePause) == "pause");
-  CHECK(action_name(Action::Profile3) == "profile_3");
+  CHECK(action_name(Action::ToggleGrade) == "toggle_grade");
   CHECK_FALSE(parse_action("Pause"));
-  CHECK_FALSE(parse_action("profile_10"));
+  CHECK_FALSE(parse_action("profile_3"));
 }
 
 TEST_CASE("Raccourcis : le texte d'une touche se lit sans égard à la casse et s'écrit canonique", "[keys]") {
@@ -103,13 +102,11 @@ TEST_CASE("Raccourcis : chaque touche, avec chaque modificateur, s'écrit puis s
   }
 }
 
-TEST_CASE("Raccourcis : Ctrl+1 à Ctrl+9 choisissent chacun leur profil", "[keys]") {
-  const KeyMap map = KeyMap::defaults();
-  for (int slot = 1; slot <= 9; ++slot) {
-    const auto action = static_cast<Action>(static_cast<int>(Action::Profile1) + slot - 1);
-    CHECK(std::get<cmd::SelectProfile>(command_for(action)).slot == slot);
-    CHECK(map.action_for(ctrl(static_cast<Key>(static_cast<int>(Key::Digit0) + slot))) == action);
-  }
+TEST_CASE("Raccourcis : ceux des profils retirés d'un ancien user.toml sont ignorés", "[keys]") {
+  auto old = parse_keys("[keys]\nprofile_3 = \"F3\"\ntoggle_osd = \"F1\"\n");
+  REQUIRE(old);
+  CHECK(old->chord(Action::ToggleOsd) == key(Key::F1));
+  CHECK_FALSE(old->action_for(key(Key::F3)));
 }
 
 TEST_CASE("Raccourcis : une touche inconnue est un refus nommé", "[keys]") {
@@ -151,7 +148,7 @@ TEST_CASE("Raccourcis : un conflit, une action ou une touche inconnue sont refus
   CHECK(conflict.error().detail.find("toggle_osd") != std::string::npos);
   CHECK(conflict.error().detail.find("pause") != std::string::npos);
 
-  CHECK(keys_refusal("[keys]\ntoggle_grade = \"Ctrl+1\"\n") == RefusalCode::KeyConflict);
+  CHECK(keys_refusal("[keys]\ntoggle_grade = \"Ctrl+0\"\n") == RefusalCode::KeyConflict);
   CHECK(keys_refusal("[keys]\nzoom = \"Z\"\n") == RefusalCode::KeyUnknown);
   CHECK(keys_refusal("[keys]\npause = \"Ctrl+Nope\"\n") == RefusalCode::KeyUnknown);
   CHECK(keys_refusal("[keys]\npause = 3\n") == RefusalCode::FieldType);

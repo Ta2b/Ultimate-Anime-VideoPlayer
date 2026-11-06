@@ -1,8 +1,7 @@
 // L'écran de bienvenue du premier lancement : le GPU vu par Vulkan, les moteurs que
 // core::recommend_engines propose pour lui (Vulkan toujours, les autres au choix, avec badges et
-// présélection) et le profil de démarrage. « Commencer » écrit settings.toml (moteurs choisis,
-// first_run_done) et user.toml (start_profile) ; --first-run remontre l'écran, comme le bouton de
-// l'onglet Moteurs pendant la lecture.
+// présélection). « Commencer » écrit settings.toml (moteurs choisis, first_run_done) ; --first-run
+// remontre l'écran, comme le bouton de l'onglet Moteurs pendant la lecture.
 //
 // SPAN et RIFE passent par TensorRT sur une carte NVIDIA qui l'a choisi, sinon par le backend
 // Vulkan. Ce qui change se dit au journal.
@@ -56,11 +55,6 @@ std::string gpu_line(const GpuFacts& gpu);
 // carte n'est pas une carte à mémoire dédiée ou que le pilote n'expose pas de tas visible.
 std::string rebar_text(const GpuFacts& gpu);
 
-// Profil de démarrage conseillé : 1 (1440p, RIFE ×3) pour une RTX ou une RDNA3/RDNA4 de 11 Go et
-// plus, 7 (1080p, ×2)
-// pour une RTX plus petite et pour les autres cartes de 4 Go et plus hors Intel, 9 (source) sinon.
-int start_profile_for(const GpuFacts& gpu);
-
 // Un moteur que ce lecteur sait télécharger (engines.lock pour cet OS).
 struct EngineDownload {
   core::EngineId id = core::EngineId::TensorRt;
@@ -97,7 +91,6 @@ struct EngineRow {
 struct FirstRunView {
   std::string gpu;
   std::vector<EngineRow> engines;
-  ProfilesView profiles;   // .start : le profil choisi
   bool done = false;       // « Commencer »
   bool revisit = false;    // rouvert depuis l'onglet Moteurs : la lecture reprend ensuite
   bool cancelled = false;  // « Annuler » (revisit seulement) : rien ne change
@@ -109,9 +102,8 @@ struct FirstRunView {
 };
 
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,
-// selon le choix de current ensuite (Vulkan toujours) ; profiles.start garde le profil donné.
-FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, ProfilesView profiles,
-                            const core::Settings& current = {});
+// selon le choix de current ensuite (Vulkan toujours).
+FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const core::Settings& current = {});
 
 // settings avec les moteurs choisis, ceux présents, les préférés qui en découlent, et
 // first_run_done.

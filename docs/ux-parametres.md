@@ -143,8 +143,9 @@ Avancé
 
 - **9 catégories**, 2 à 4 sous-catégories chacune. Les langues, l'export et les moteurs ont leur catégorie
   (demande du 28/10) ; rien n'est caché dans un onglet fourre-tout.
-- **Profils** : l'écran disparaît pour l'instant (demande du 28/10). Les 9 profils et le profil de démarrage
-  restent dans `play.toml` et dans le code ; « retour au profil d'origine » passe dans Avancé > Réinitialiser.
+- **Profils** : retirés du lecteur (novembre 2026). Plus d'onglet, plus de Ctrl+1 à Ctrl+9, plus de profil de
+  démarrage : `play.toml` garde la dernière chaîne jouée, `user.toml` ne fournit plus que `[keys]` (les anciennes
+  clés `profile_N` sont ignorées). Ctrl+0 (sans traitement) reste.
 - **Image IA** : par défaut (préréglage choisi dans *Général > Configuration*, 4.7) les pages Agrandissement et Fluidité
   sont **en lecture** (valeurs choisies par l'automatique, grisées avec « Auto »), et se débloquent en
   *Personnalisé*. Elle regroupe agrandissement et interpolation : une seule chaîne (la résolution de travail décide ce que
