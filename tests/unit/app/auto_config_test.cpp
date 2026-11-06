@@ -29,7 +29,8 @@ TEST_CASE("Personnalisé ne touche à rien", "[auto_config]") {
   s.rife_factor = 5;
   s.motion_engine = MotionEngine::Gmfss;
   CHECK(apply_preset(s, Machine{Tier::Ultra, 2160, 165.0}, k1080p24) == s);
-  CHECK(PlaySettings{}.preset == Preset::Custom);  // les réglages d'avant ne bougent pas
+  // Auto par défaut : un premier double-clic sur une vidéo, sans assistant, ne prend pas la chaîne lourde.
+  CHECK(PlaySettings{}.preset == Preset::Auto);
 }
 
 TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {

@@ -179,7 +179,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
   std::vector<std::string> legacy_audio;
   std::vector<std::string> legacy_subtitles;
   std::vector<std::expected<void, Refusal>> reads;
-  if (const toml::table* automatic = section(root, "auto")) {
+  const toml::table* automatic = section(root, "auto");
+  if (automatic == nullptr && !root.empty()) s.preset = Preset::Custom;  // play.toml d'avant [auto]
+  if (automatic != nullptr) {
     std::string preset(key(s.preset));
     std::string priority(key(s.priority));
     reads.push_back(read(*automatic, "auto", "preset", preset));
