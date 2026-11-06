@@ -239,18 +239,11 @@ std::string_view badge_text(Badge badge) {
   return {};
 }
 
-std::optional<Badge> badge_of(MotionEngine engine) {
-  switch (engine) {
-    case MotionEngine::Rife:
-      return Badge::Recommended;
-    case MotionEngine::Gmfss:
-      return Badge::Finest;
-    case MotionEngine::GmfssUnion:
-      return Badge::Heaviest;
-    case MotionEngine::DistilDrba:
-      return Badge::Experimental;
-    case MotionEngine::Apple:
-      return std::nullopt;
+std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model) {
+  for (const InterpChoice& choice : kInterpLevels) {
+    if (choice.engine != engine) continue;
+    if (engine == MotionEngine::Rife && choice.rife_model != rife_model) continue;
+    return choice.level;
   }
   return std::nullopt;
 }

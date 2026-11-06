@@ -38,38 +38,29 @@ constexpr std::array kImageTabs{
           "DistilDRBA le fait seul."},
     Entry{"DistilDRBA model not found in {} ({}); RIFE is used instead.",
           "Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place."},
-    Entry{"DistilDRBA: a three-frame RIFE trained to imitate DRBA; it holds poses by itself, at about RIFE "
-          "4.22 lite's cost. One frame of delay.",
-          "DistilDRBA : un RIFE à trois images entraîné à imiter DRBA ; il garde les poses seul, pour le "
-          "coût de RIFE 4.22 lite. Une image de retard."},
     Entry{"Double the frames (NVIDIA driver)", "Doubler les images (pilote NVIDIA)"},
     Entry{"Downscaler", "Réduction"},
     Entry{"Export skips no frames: each created frame costs a pass.",
           "L'export ne saute aucune image : chaque image créée coûte une passe."},
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
-    Entry{"Fused GMFSS", "GMFSS fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
-    Entry{"GMFSS", "GMFSS"},
-    Entry{
-        "GMFSS Fortuna: built for animation, the cleanest in-between frames at several times RIFE's cost. "
-        "Built on first use (several minutes). Experimental.",
-        "GMFSS Fortuna : conçu pour l'animation, les images intermédiaires les plus propres, pour plusieurs "
-        "fois le coût de RIFE. Construit à la première utilisation (plusieurs minutes). Expérimental."},
-    Entry{"GMFSS Union: GMFSS blended with a built-in RIFE, fewer artifacts on fast motion, a bit slower. "
-          "Built on first use.",
-          "GMFSS Union : GMFSS mêlé à un RIFE intégré, moins de défauts sur les mouvements rapides, un peu "
-          "plus lent. Construit à la première utilisation."},
-    Entry{"GMFSS models not found in {} ({} and {}); RIFE is used instead.",
-          "Modèles GMFSS introuvables dans {} ({} et {}) ; RIFE prend la place."},
-    Entry{"GMFSS precision. Performance is FP8 on RTX 40 and newer (15% faster); Quality is FP32. Reloads "
-          "playback.",
-          "Précision de GMFSS. Performance : FP8 sur RTX 40 et après (−15 %) ; Qualité : FP32. Recharge la "
-          "lecture."},
+    Entry{"Very fast", "Très rapide"},
+    Entry{"Balanced", "Équilibré"},
+    Entry{"System (macOS)", "Système (macOS)"},
+    Entry{"DistilDRBA: the lightest; it keeps characters animated on twos on their rhythm. One frame of "
+          "delay.",
+          "DistilDRBA : le plus léger ; les personnages animés à une image sur deux gardent leur rythme. Une "
+          "image de retard."},
+    Entry{"RIFE 4.22 lite: light and clean, for most graphics cards.",
+          "RIFE 4.22 lite : léger et propre, pour la plupart des cartes graphiques."},
+    Entry{"RIFE 4.25: cleaner in-between frames, for recent graphics cards.",
+          "RIFE 4.25 : des images intermédiaires plus propres, pour les cartes graphiques récentes."},
+    Entry{"Very fast is the lightest, Balanced the cleanest. Applies after a short reload.",
+          "Très rapide est le plus léger, Équilibré le plus propre. S'applique après un court rechargement."},
     Entry{"Greyed out: above the display ({:.0f} Hz for {} fps).",
           "Grisé : au-delà de l'écran ({:.0f} Hz pour {} i/s)."},
     Entry{"Greyed out: turn on RIFE at ×2 or more, or playback stalls.",
           "Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale."},
-    Entry{"Interpolation engine", "Moteur d'interpolation"},
     Entry{"Keep poses (DRBA) with RIFE", "Garder les poses (DRBA) avec RIFE"},
     Entry{"Maximum (display)", "Maximum (écran)"},
     Entry{"Model", "Modèle"},
@@ -82,8 +73,6 @@ constexpr std::array kImageTabs{
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
-    Entry{"Performance (FP8): add {} (from the models release) to {}.",
-          "Performance (FP8) : ajoutez {} (release des modèles) dans {}."},
     Entry{"Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges.",
           "Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets."},
     Entry{
@@ -92,8 +81,6 @@ constexpr std::array kImageTabs{
         "Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets. FP8 : "
         "préparé une fois sur ce PC à la prochaine vidéo, puis plus rapide."},
     Entry{"RIFE model", "Modèle RIFE"},
-    Entry{"RIFE: the default engine, fast and good everywhere.",
-          "RIFE : le moteur de base, rapide et bon partout."},
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},
     Entry{"SPAN ×2 (AnimeJaNai)", "SPAN ×2 (AnimeJaNai)"},
@@ -114,10 +101,6 @@ constexpr std::array kImageTabs{
           "playback; built on first use for this size.",
           "Coupe RIFE en petits moteurs TensorRT : environ trois fois plus rapide. TensorRT seulement. "
           "Recharge la lecture ; construit à la première utilisation pour cette taille."},
-    Entry{"Splits the GMFSS pair into two TensorRT engines so each frame's features are computed once. "
-          "TensorRT only, Balanced precision. Reloads playback.",
-          "Coupe la paire GMFSS en deux moteurs TensorRT : les caractéristiques de chaque image ne sont "
-          "calculées qu'une fois. TensorRT seulement, précision Équilibre. Recharge la lecture."},
     Entry{"Stable", "Stable"},
     Entry{"Stable follows what the GPU can hold in steps (×1 to ×6). Fast has no steps and falls back to "
           "Stable if too many frames are lost. Playback only.",
@@ -130,9 +113,6 @@ constexpr std::array kImageTabs{
           "La cadence la plus haute visée par Auto. Elle baisse seule sur les scènes lourdes."},
     Entry{"The size the video is reduced to before SPAN, which doubles it: 720p gives 1440p.",
           "Taille à laquelle la vidéo est ramenée avant SPAN, qui la double : 720p donne du 1440p."},
-    Entry{"Union adds a built-in RIFE to GMFSS: fewer artifacts on fast motion, a bit slower.",
-          "Union ajoute un RIFE intégré à GMFSS : moins de défauts sur les mouvements rapides, un peu plus "
-          "lent."},
     Entry{"VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync).",
           "VRR coupé par le système : activez la synchronisation adaptative (KDE : Affichage > "
           "Synchronisation adaptative)."},

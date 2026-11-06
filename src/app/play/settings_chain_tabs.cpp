@@ -8,7 +8,6 @@
 #include <imgui.h>
 
 #include "app/play/drba_model.h"
-#include "app/play/gmfss_model.h"
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
 
@@ -57,23 +56,17 @@ bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& 
   return changed;
 }
 
-std::string motion_description(MotionEngine engine) {
-  switch (engine) {
-    case MotionEngine::Rife:
-      return i18n::tr("RIFE: the default engine, fast and good everywhere.");
-    case MotionEngine::Gmfss:
+std::string motion_description(const InterpChoice& choice) {
+  switch (choice.level) {
+    case InterpLevel::VeryFast:
       return i18n::tr(
-          "GMFSS Fortuna: built for animation, the cleanest in-between frames at several times RIFE's cost. "
-          "Built on first use (several minutes). Experimental.");
-    case MotionEngine::GmfssUnion:
-      return i18n::tr(
-          "GMFSS Union: GMFSS blended with a built-in RIFE, fewer artifacts on fast motion, a bit slower. "
-          "Built on first use.");
-    case MotionEngine::DistilDrba:
-      return i18n::tr(
-          "DistilDRBA: a three-frame RIFE trained to imitate DRBA; it holds poses by itself, at about RIFE "
-          "4.22 lite's cost. One frame of delay.");
-    case MotionEngine::Apple:
+          "DistilDRBA: the lightest; it keeps characters animated on twos on their rhythm. One frame of "
+          "delay.");
+    case InterpLevel::Fast:
+      return i18n::tr("RIFE 4.22 lite: light and clean, for most graphics cards.");
+    case InterpLevel::Balanced:
+      return i18n::tr("RIFE 4.25: cleaner in-between frames, for recent graphics cards.");
+    case InterpLevel::System:
       return i18n::tr(
           "Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.");
@@ -216,6 +209,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     for (const Factor factor : kFactors) {
       const bool chosen = !d.rife_auto && (now == factor || (factor.num == 0 && now.num <= now.den));
+      // Les facteurs fixes servent à l'export (et à --rife=N) : la lecture garde Auto ou rien.
+      if (!exporting && factor.num > factor.den && !chosen) continue;
       const ImGuiSelectableFlags flags = too_fast(factor) && !chosen ? ImGuiSelectableFlags_Disabled : 0;
       if (ImGui::Selectable(factor_label(factor).c_str(), chosen, flags)) {
         d.rife_factor = factor.num;
@@ -284,79 +279,61 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   ImGui::EndDisabled();
   if (!choices.rife_available)
     note(i18n::tr("No interpolation model found: put a RIFE model in the models folder."));
-  section(i18n::tr("Interpolation engine"));
-  // Les moteurs se rangent sur une ligne tant qu'ils y tiennent (pastille comprise), sinon à la ligne.
-  const float row_left = ImGui::GetCursorScreenPos().x;
-  const float row_right = row_left + ImGui::GetContentRegionAvail().x;
-  bool first_engine = true;
-  for (int i = 0; i < kMotionEngineCount; ++i) {
-    const auto engine = static_cast<MotionEngine>(i);
-    if (!offered(engine)) continue;
-    if (!first_engine) {
-      const ImGuiStyle& style = ImGui::GetStyle();
-      const std::string name(label(engine));
-      float need = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(name.c_str()).x;
-      if (const auto mark = badge_of(engine))
-        need += style.ItemSpacing.x + ImGui::CalcTextSize(std::string(badge_text(*mark)).c_str()).x + 12.0F;
-      if (ImGui::GetItemRectMax().x + style.ItemSpacing.x * 2.0F + need <= row_right) ImGui::SameLine();
+  // Le niveau : un nom pour tous (Très rapide, Rapide, Équilibré), le modèle derrière nommé en mode avancé.
+  const std::string rife_now = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
+  const std::optional<InterpLevel> level_now = interp_level(d.motion_engine, rife_now);
+  const auto level_name = [](InterpLevel level) -> std::string {
+    switch (level) {
+      case InterpLevel::VeryFast:
+        return i18n::tr("Very fast");
+      case InterpLevel::Fast:
+        return i18n::tr("Fast");
+      case InterpLevel::Balanced:
+        return i18n::tr("Balanced");
+      case InterpLevel::System:
+        return i18n::tr("System (macOS)");
     }
-    first_engine = false;
-    if (ImGui::RadioButton(std::string(label(engine)).c_str(), d.motion_engine == engine))
-      d.motion_engine = engine;
-    panel::tip(motion_description(engine));
-    if (const auto mark = badge_of(engine)) {
-      // Une chaîne de « ? : » se met en page autrement d'une version de clang-format à l'autre : un if.
-      ImVec4 color = panel::kExperimental;
-      if (*mark == Badge::Recommended) {
-        color = panel::kGood;
-      } else if (*mark == Badge::Heaviest) {
-        color = panel::kWarn;
-      } else if (*mark == Badge::Finest) {
-        color = panel::kFine;
+    return {};
+  };
+  const auto model_name = [](const InterpChoice& choice) {
+    return choice.engine == MotionEngine::Rife ? rife_label(std::string(choice.rife_model))
+                                               : std::string(label(choice.engine));
+  };
+  const auto level_text = [&](const InterpChoice& choice) {
+    std::string text = level_name(choice.level);
+    if (panel::advanced()) text += " · " + model_name(choice);
+    if (choice.engine == MotionEngine::Rife && choice.rife_model == choices.default_rife_model)
+      text += i18n::tr(" (recommended)");
+    return text;
+  };
+  const auto present = [&](const InterpChoice& choice) {
+    if (!offered(choice.engine)) return false;
+    if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
+    if (choice.engine == MotionEngine::Rife)
+      return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
+    return true;
+  };
+  std::string shown = level_now ? std::string() : rife_label(rife_now);
+  if (d.motion_engine != MotionEngine::Rife && !level_now) shown = std::string(label(d.motion_engine));
+  for (const InterpChoice& choice : kInterpLevels) {
+    if (level_now == choice.level) shown = level_text(choice);
+  }
+  ImGui::BeginDisabled(!choices.rife_available);
+  if (ImGui::BeginCombo(i18n::tr("Level"), shown.c_str())) {
+    for (const InterpChoice& choice : kInterpLevels) {
+      if (!present(choice)) continue;
+      if (ImGui::Selectable(level_text(choice).c_str(), level_now == choice.level)) {
+        d.motion_engine = choice.engine;
+        if (choice.engine == MotionEngine::Rife)
+          d.rife_model = choice.rife_model == choices.default_rife_model ? std::string()
+                                                                         : std::string(choice.rife_model);
       }
-      panel::badge(std::string(badge_text(*mark)).c_str(), color);
+      panel::tip(motion_description(choice));
     }
+    ImGui::EndCombo();
   }
-  if (!choices.rife_models.empty() && panel::advanced()) {
-    ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
-    const std::string current = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
-    if (ImGui::BeginCombo(i18n::tr("RIFE model"), rife_label(current).c_str())) {
-      for (const RifeEntry& entry : rife_menu(choices.rife_models)) {
-        const bool chosen = entry.file == current;
-        if (!entry.present) continue;  // un modèle absent n'est pas une option
-        std::string text = rife_label(entry.file);
-        if (entry.file == choices.default_rife_model) text += i18n::tr(" · suggested for this card");
-        if (ImGui::Selectable(text.c_str(), chosen))
-          d.rife_model = entry.file == choices.default_rife_model ? std::string() : entry.file;
-        if (chosen) ImGui::SetItemDefaultFocus();
-      }
-      ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-  }
-  if (is_gmfss(d.motion_engine) && panel::advanced()) {
-    const bool union_model = d.motion_engine == MotionEngine::GmfssUnion;
-    const TierSupport& tiers = union_model ? choices.gmfss_union_tiers : choices.gmfss_tiers;
-    precision_combo(i18n::tr("GMFSS"), d.gmfss_precision, tiers);
-    panel::tip(
-        i18n::tr("GMFSS precision. Performance is FP8 on RTX 40 and newer (15% faster); Quality is FP32. "
-                 "Reloads playback."));
-    if (!tiers.performance) {
-      note(i18n::tr_format("Performance (FP8): add {} (from the models release) to {}.",
-                           gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true,
-                                       PrecisionTier::Performance)
-                               .pair,
-                           choices.rife_folder));
-    }
-    if (union_model) {
-      note(i18n::tr("Union adds a built-in RIFE to GMFSS: fewer artifacts on fast motion, a bit slower."));
-    }
-    if (!(union_model ? choices.gmfss_union_available : choices.gmfss_available)) {
-      const GmfssFiles files = gmfss_files(union_model ? GmfssVariant::Union : GmfssVariant::Base, true);
-      note(i18n::tr_format("GMFSS models not found in {} ({} and {}); RIFE is used instead.",
-                           choices.rife_folder, files.pair, files.fusion));
-    }
-  }
+  ImGui::EndDisabled();
+  panel::tip(i18n::tr("Very fast is the lightest, Balanced the cleanest. Applies after a short reload."));
   if (d.motion_engine == MotionEngine::DistilDrba && !choices.distil_drba_available) {
     note(i18n::tr_format("DistilDRBA model not found in {} ({}); RIFE is used instead.", choices.rife_folder,
                          kDistilDrbaFile));
@@ -389,13 +366,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   panel::tip(
       i18n::tr("Splits DistilDRBA into small TensorRT engines: more than twice as fast. TensorRT only, "
                "Balanced precision. Reloads playback; built on first use for this size."));
-  ImGui::BeginDisabled(!is_gmfss(d.motion_engine));
-  ImGui::Checkbox(i18n::tr("Fused GMFSS"), &d.gmfss_fused);
-  ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Splits the GMFSS pair into two TensorRT engines so each frame's features are computed once. "
-               "TensorRT only, Balanced precision. Reloads playback."));
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && !is_gmfss(d.motion_engine));
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   if (ImGui::BeginCombo(i18n::tr("Warp and SPAN"), std::string(label(d.span_order)).c_str())) {
     for (int i = 0; i < kSpanOrderCount; ++i) {
       const auto order = static_cast<SpanOrder>(i);

@@ -78,6 +78,13 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK(offered(MotionEngine::Rife));
   CHECK_FALSE(offered(MotionEngine::Gmfss));  // débranché de la lecture
   CHECK_FALSE(offered(MotionEngine::GmfssUnion));
+  // Les niveaux du menu : Très rapide, Rapide, Équilibré, puis Apple.
+  CHECK(interp_level(MotionEngine::DistilDrba, "") == InterpLevel::VeryFast);
+  CHECK(interp_level(MotionEngine::Rife, "rife_v4.22_lite.onnx") == InterpLevel::Fast);
+  CHECK(interp_level(MotionEngine::Rife, "rife_v4.25.onnx") == InterpLevel::Balanced);
+  CHECK(interp_level(MotionEngine::Apple, "") == InterpLevel::System);
+  CHECK_FALSE(interp_level(MotionEngine::Rife, "rife_v4.6.onnx"));
+  CHECK_FALSE(interp_level(MotionEngine::Gmfss, ""));
 }
 
 TEST_CASE("Mode HDR : HDR adaptatif ou SDR, et les fichiers d'avant", "[app][settings]") {
@@ -441,9 +448,6 @@ TEST_CASE("repères des listes et résolution en français courant", "[settings]
   using namespace ajp::app::play;
   CHECK(resolution_text(720) == "720p");
   CHECK(badge_text(Badge::Finest) == "Finest");
-  CHECK(badge_of(MotionEngine::Gmfss) == Badge::Finest);
-  CHECK(badge_of(MotionEngine::GmfssUnion) == Badge::Heaviest);
-  CHECK(badge_of(MotionEngine::Rife) == Badge::Recommended);
   CHECK(badge_of(Downscale::Hermite) == Badge::Recommended);
   CHECK_FALSE(badge_of(Downscale::Mitchell));
   CHECK_FALSE(badge_of(Downscale::Area));

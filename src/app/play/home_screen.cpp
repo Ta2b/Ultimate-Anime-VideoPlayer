@@ -130,9 +130,6 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
                                      h.paths.models))
     rife = std::move(*found);
   const std::vector<std::filesystem::path> places = gmfss_dirs(h.paths, rife);
-  // Sans vidéo ouverte, on ne sait pas quel moteur sera pris : GMFSS ne tourne que sous TensorRT,
-  // donc sur une carte NVIDIA.
-  const bool gmfss = find_gmfss(places).has_value() && gpu_facts(h.screen).vendor == GpuVendor::Nvidia;
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
   // Sans moteur chargé, le FP8 se présume sur une RTX (le moteur TensorRT le calcule dès Ada) ; la chaîne
@@ -174,11 +171,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .source_fps = kHomeSource.fps,
       .source_rate = media::Rational{.num = 24000, .den = 1001},
       .display_hz = period > 0 ? 1e6 / static_cast<double>(period) : 0.0,
-      .rife_available = rife.has_value() || gmfss || drba || offered(MotionEngine::Apple),
-      .gmfss_available = gmfss,
-      .gmfss_union_available = gmfss && find_gmfss(places, GmfssVariant::Union).has_value(),
-      .gmfss_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Base, fp8_engine) : TierSupport{},
-      .gmfss_union_tiers = gmfss ? gmfss_tiers(places, GmfssVariant::Union, fp8_engine) : TierSupport{},
+      .rife_available = rife.has_value() || drba || offered(MotionEngine::Apple),
       .span_tiers = model
                         ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine,
                                      fp8_facts.capability)  // les noyaux CUTLASS se présument sur une RTX 40
