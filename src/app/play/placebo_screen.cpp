@@ -146,10 +146,18 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   // Sous le grade, le débandage de libplacebo (échantillonnage aléatoire) fabriquait du bruit dans les aplats
   // sombres que le grade étire (mesuré : écart-type 16x16 de 1,0 contre 0,0) : il ne se pose que sans grade.
   if (!graded_now && deband) params.deband_params = &pl_deband_default_params;
+  // La netteté sur MAIN d'abord, puis les passes du grade sur OUTPUT.
+  std::array<const pl_hook*, 16> hooks{};
+  std::size_t count = 0;
+  if (sharpen && sharpen->hook() != nullptr) hooks[count++] = sharpen->hook();
   if (graded_now) {
-    const std::span<const pl_hook* const> hooks = grade->hooks();
+    for (const pl_hook* hook : grade->hooks()) {
+      if (count < hooks.size()) hooks[count++] = hook;
+    }
+  }
+  if (count > 0) {
     params.hooks = hooks.data();
-    params.num_hooks = static_cast<int>(hooks.size());
+    params.num_hooks = static_cast<int>(count);
   }
   // Le temps GPU de chaque passe, toujours relevé (libplacebo le rend avec un retard d'une image ou deux) :
   // toutes les passes pour l'affichage, celles du grade à part.
@@ -376,6 +384,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                              .grade_serial = s.grade_serial,
                              .final_scaler = s.final_scaler,
                              .deband = s.deband,
+                             .sharpness = s.sharpness,
                              .sar = s.sample_aspect,
                              .transfer = static_cast<int>(target.color.transfer),
                              .primaries = static_cast<int>(target.color.primaries),

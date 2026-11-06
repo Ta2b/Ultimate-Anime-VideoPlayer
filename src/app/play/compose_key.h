@@ -31,6 +31,7 @@ struct ComposeKey {
   std::uint64_t grade_serial = 0;
   FinalScaler final_scaler = FinalScaler::Default;
   bool deband = false;
+  int sharpness = 0;
   double sar = 1.0;
   int transfer = 0;  // ceux de la cible (pl_color_transfer, pl_color_primaries)
   int primaries = 0;
@@ -66,6 +67,7 @@ struct ComposeState {
   std::uint64_t grade_serial = 0;
   FinalScaler final_scaler = FinalScaler::Default;
   bool deband = false;
+  int sharpness = 0;
   double sar = 1.0;
   int transfer = 0;
   int primaries = 0;
@@ -94,6 +96,7 @@ inline ComposeKey compose_key(const RingFrame* frame, const subs::SubtitleFrame*
   key.grade_serial = state.grade_serial;
   key.final_scaler = state.final_scaler;
   key.deband = state.deband;
+  key.sharpness = state.sharpness;
   key.sar = state.sar;
   key.transfer = state.transfer;
   key.primaries = state.primaries;

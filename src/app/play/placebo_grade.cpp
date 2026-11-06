@@ -125,9 +125,11 @@ void PlaceboScreen::set_sample_aspect(double sar) {
   impl_->sample_aspect = std::isfinite(sar) && sar > 0.0 ? sar : 1.0;
 }
 
-void PlaceboScreen::set_finish(FinalScaler scaler, bool deband) {
+void PlaceboScreen::set_finish(FinalScaler scaler, bool deband, int sharpness) {
   impl_->final_scaler = scaler;
   impl_->deband = deband;
+  impl_->sharpness = std::clamp(sharpness, 0, 100);
+  if (impl_->sharpen) impl_->sharpen->set_strength(impl_->sharpness / 100.0);
 }
 
 void PlaceboScreen::set_grade(const render::GradeChoice& choice) {

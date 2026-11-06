@@ -1,0 +1,33 @@
+// AJP - netteté : un masque flou adaptatif sur MAIN, après SPAN et avant le filtre final vers la fenêtre.
+// Propre à ce dépôt. Le détail (le pixel moins la moyenne de ses quatre voisins) est ajouté, réduit près
+// des extrêmes du voisinage (comme un renforcement adaptatif au contraste) : les traits nets ne prennent
+// pas de halo et les aplats restent lisses. Le lecteur ne pose pas ce hook à force 0 : l'image reste alors
+// identique, octet pour octet.
+
+//!PARAM sharpness
+//!DESC Force de la netteté (0 = aucune, 1 = la plus forte)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!HOOK MAIN
+//!BIND HOOKED
+//!DESC AJP netteté (masque flou adaptatif)
+
+vec4 hook() {
+  vec4 c = HOOKED_texOff(vec2(0.0, 0.0));
+  vec3 n = HOOKED_texOff(vec2(0.0, -1.0)).rgb;
+  vec3 s = HOOKED_texOff(vec2(0.0, 1.0)).rgb;
+  vec3 e = HOOKED_texOff(vec2(1.0, 0.0)).rgb;
+  vec3 w = HOOKED_texOff(vec2(-1.0, 0.0)).rgb;
+  vec3 lo = min(c.rgb, min(min(n, s), min(e, w)));
+  vec3 hi = max(c.rgb, max(max(n, s), max(e, w)));
+  // La marge vers 0 et vers 1, relative au plus clair du voisinage : faible sur un trait contrasté.
+  vec3 room = sqrt(clamp(min(lo, 1.0 - hi) / max(hi, vec3(1e-4)), 0.0, 1.0));
+  vec3 detail = c.rgb - 0.25 * (n + s + e + w);
+  vec3 sharp = c.rgb + 2.0 * sharpness * room * detail;
+  // Un dépassement borné à une fraction de l'écart local : pas de liseré clair ou sombre.
+  vec3 pad = 0.1 * (hi - lo);
+  return vec4(clamp(sharp, lo - pad, hi + pad), c.a);
+}

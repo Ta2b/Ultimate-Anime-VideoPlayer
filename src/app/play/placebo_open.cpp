@@ -562,6 +562,11 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   } else {
     impl->channel->warn("grade HDR indisponible : {}", grade.error().detail);
   }
+  if (auto sharpen = render::Sharpen::create(gpu)) {
+    impl->sharpen.emplace(std::move(*sharpen));
+  } else {
+    impl->channel->warn("netteté indisponible : {}", sharpen.error().detail);
+  }
   impl->source = pl_color_space_bt709;
 #ifdef _WIN32
   if (show_when_ready) {

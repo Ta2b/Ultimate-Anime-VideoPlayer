@@ -124,8 +124,9 @@ class PlaceboScreen final : public Screen {
   // Les LUT du look (render/grade.h : set_looks) ; nullptr : aucune. Refus si libplacebo ne lit pas la
   // texture.
   std::expected<void, Refusal> set_looks(const std::array<const render::CubeLut*, render::kLookSlots>& luts);
-  // Composition finale : filtre qui étire vers la fenêtre, débandage ; sans effet sur l'export.
-  void set_finish(FinalScaler scaler, bool deband);
+  // Composition finale : filtre qui étire vers la fenêtre, débandage, netteté (0 à 100 %, render/sharpen.h) ;
+  // sans effet sur l'export.
+  void set_finish(FinalScaler scaler, bool deband, int sharpness);
   bool hdr_output() const;  // la dernière présentation était en PQ
   // Sortie SDR même sur un écran HDR (HDR du système absent ou trop sombre, system_hdr) : la swapchain change
   // d'espace de couleur à la présentation suivante, sans réouverture. Faux : HDR10 si l'écran en reçoit et
