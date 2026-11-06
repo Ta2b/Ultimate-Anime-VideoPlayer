@@ -411,3 +411,26 @@ TEST_CASE("SourceThread : après une fin sur erreur, un seek relit le fichier", 
   CHECK(source.listener.wait_end(1));
   REQUIRE(pts.size() == 100);  // les essais ratés sont épuisés : tout le fichier se lit
 }
+
+TEST_CASE("SourceThread : une source aux dimensions impaires arrive paire, sans refus", "[media][source]") {
+  ClipSpec spec = full_clip();
+  spec.name = "odd.mkv";
+  spec.width = 65;  // comme 853×480 : la chaîne refuse une largeur ou une hauteur impaire
+  spec.height = 49;
+  const std::filesystem::path path = require_clip(spec);
+  auto demuxer = Demuxer::open(path);
+  REQUIRE(demuxer.has_value());
+  CHECK(demuxer->tracks().front().width == 64);
+  CHECK(demuxer->tracks().front().height == 48);
+  Running source(path, 4);
+  const DecodedFrame first = source.pop();
+  CHECK(first.width == 64);
+  CHECK(first.height == 48);
+  // Les pixels gardés sont ceux de la source, sans décalage : le coin haut-gauche du motif.
+  const auto luma = first.data->host_plane(0);
+  CHECK(static_cast<int>(luma[0]) == pattern(0, 0, 0, 0, 8));
+  CHECK(static_cast<int>(luma[63]) == pattern(0, 63, 0, 0, 8));
+  const std::vector<std::int64_t> rest = play_to_end(source);
+  CHECK(rest.size() == 29);
+  CHECK(source.listener.failure_count() == 0);
+}

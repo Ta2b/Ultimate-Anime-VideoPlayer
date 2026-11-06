@@ -13,6 +13,7 @@ extern "C" {
 #include <libavutil/time.h>
 }
 
+#include "core/frame.h"
 #include "media/av_util.h"
 #include "media/log.h"
 
@@ -109,8 +110,9 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
   };
   if (info.language == "und") info.language.clear();  // « indéterminée » : absente
   if (kind == TrackKind::Video) {
-    info.width = par.width;
-    info.height = par.height;
+    // Comme les images décodées (core/frame.h) : la chaîne se prépare pour la taille qu'elle recevra.
+    info.width = chain_dimension(par.width);
+    info.height = chain_dimension(par.height);
     info.frame_rate = frame_rate_of(stream);
     const AVRational sar =
         stream.sample_aspect_ratio.num > 0 ? stream.sample_aspect_ratio : par.sample_aspect_ratio;

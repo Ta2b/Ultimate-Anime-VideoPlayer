@@ -137,6 +137,13 @@ class FrameData {
   virtual std::shared_ptr<const void> native_pool() const { return nullptr; }
 };
 
+// La chaîne ne travaille que sur des dimensions paires (chroma 4:2:0, noyaux Vulkan et CUDA) : une
+// source impaire (853×480, 1279×720) perd sa dernière colonne ou sa dernière ligne à l'ingestion,
+// ce qui ne se voit pas, au lieu d'être refusée.
+constexpr int chain_dimension(int n) {
+  return n - (n & 1);
+}
+
 struct DecodedFrame {
   SourceId id;  // identité explicite : le pool recycle les adresses
   int width = 0;
