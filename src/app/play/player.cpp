@@ -267,6 +267,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   const bool relaunched = std::filesystem::remove(relaunch_marker, marker_error);
   bool engines_updated = false;
   auto updated = update_stale_engines(**screen, **ui, catalog, *engines, engines_updated);
+  // Le moteur vérifié ici : un autre choisi ensuite à l'accueil se vérifie à son ouverture.
+  const std::optional<core::EngineId> checked_engine =
+      engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];
   if (!updated) return std::unexpected(std::move(updated.error()));
   if (!*updated) return {};
   if (engines_updated && !relaunched && paths.relaunch != nullptr) {
@@ -399,6 +402,19 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];
     if (library && wanted != library_wanted) library.reset();
     if (!library) {
+      // Un moteur choisi à l'accueil depuis le lancement, installé par une version précédente : mis à jour
+      // avant d'ouvrir, comme au lancement (une seule relance).
+      bool stale_updated = false;
+      if (wanted != checked_engine) {
+        auto stale = update_stale_engines(**screen, **ui, catalog, *engines, stale_updated);
+        if (!stale) return std::unexpected(std::move(stale.error()));
+        if (!*stale) return {};
+      }
+      if (stale_updated && paths.relaunch != nullptr) {
+        log->info("moteurs mis à jour : le lecteur se relance");
+        *paths.relaunch = true;
+        return {};
+      }
       show_loading(**screen, **ui, "Chargement");
       const gpu::BackendInit probe{
           .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};

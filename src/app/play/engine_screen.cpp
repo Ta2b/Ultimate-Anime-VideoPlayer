@@ -339,6 +339,17 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return false;
   }
+  // Le moteur choisi en cours de lecture, installé par une version précédente : son module se met à jour
+  // ici comme au lancement, sinon il serait refusé (interface changée) et Vulkan resterait en service.
+  bool updated = false;
+  auto stale = update_stale_engines(p.screen, p.ui, p.catalog, p.engines, updated);
+  if (!stale) return std::unexpected(std::move(stale.error()));
+  if (!*stale) return false;
+  if (updated && p.paths.relaunch != nullptr) {
+    log->info("moteurs mis à jour : le lecteur se relance");
+    *p.paths.relaunch = true;
+    return false;
+  }
   show_loading(p.screen, p.ui, i18n::tr("Loading the engine"));
   const gpu::BackendInit probe{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
