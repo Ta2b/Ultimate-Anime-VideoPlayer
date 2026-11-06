@@ -74,7 +74,8 @@ namespace ajp::gpu {
 // 27 : RingWrite::grade, KernelOps::grades_ring et set_grade (grade exact dans l'anneau, chantier 2.9).
 // 28 : KernelOps::gpu_profile (chantier 0.2) ; GradeOrder et GradeVersion gagnent la LUT de la courbe par
 // plan (8.6b).
-inline constexpr int kBackendAbi = 28;
+// 29 : le grade de l'anneau retiré (RingWrite::grade, GradeSlot, GradeOrder, grades_ring, set_grade).
+inline constexpr int kBackendAbi = 29;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -347,7 +348,7 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
     shape_fingerprint<DecodedFrame, ColorInfo, HdrMetadata, VulkanImageAccess,
                       std::expected<VulkanImageAccess, Refusal>>(),
     shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, std::optional<PairScores>, RingSlotDesc,
-                      ExportedHandle, RingTarget, YuvTarget, GradeSlot, GradeOrder>(),
+                      ExportedHandle, RingTarget, YuvTarget>(),
     shape_fingerprint<SpanStill, SpanFp8Request, SpanFp8ImageScore, SpanFp8Derivation,
                       std::expected<SpanFp8Derivation, Refusal>>(),
 });

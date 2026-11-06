@@ -128,15 +128,8 @@ struct PlayOptions {
 #else
   bool kde_sdr_auto = false;
 #endif
-  // --hdr-contract-v2-curve : essai du contrat d'écran v2 (chantier 8.4) : courbe par plan, métadonnées
-  // HDR10 exactes tirées du contrat (render::contract_metadata), sans la compression de KWin faite par le
-  // grade, et le look ver9-couleur.cube (SDR) à la place de la pile par défaut. --hdr-metadata=off : sous
-  // v2, rien d'annoncé. --hdr-contract-v2 seul donne le rendu par défaut (le contrat règle déjà la sortie :
-  // pic et blanc lus chez le système, compression du grade et métadonnées, kde_sdr_auto).
-  bool hdr_contract_v2 = false;
   // Les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus que signaler les
-  // désaccords) et les débuts de plan font repartir la mémoire du grade de l'anneau (8.7). --no-shot-cuts
-  // les coupe.
+  // désaccords) ; --no-shot-cuts les coupe.
   bool shot_cuts = true;  // par défaut depuis le 04/11 (désaccords jugés à l'image)
   // --anime-shots : essai (méga plan A2), la méthode « HDR anime » décide par plan : exposition des surfaces
   // et marge des éclats fixées par la pré-analyse, glissant aux coupes (anime_shots.h).
@@ -144,19 +137,12 @@ struct PlayOptions {
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
-  bool hdr_metadata_off = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;
-  // --grade-ring : le grade exact fait dans l'anneau par le backend CUDA (chantier 2c,
-  // docs/adr/0009-grade-dans-l-anneau.md), l'écran montrant les images gradées sans hooks ; --grade-ring=off
-  // : le grade reste en shader à l'écran. Allumé par défaut depuis le 04/11 (à l'œil de Tatoub, supérieur au
-  // grade à l'écran). Il ne s'applique qu'au corps Fused (placebo_grade.cpp) : avec le corps par défaut
-  // (AnimeGuided), l'interrupteur ne change pas l'image. La porte des 30 plans (2.11) reste à faire.
-  bool grade_ring = true;
   // --fast-steady : le mode Rapide à pas constant par plan (chantier 7, core/steady_rate.h) : N images par
   // source, constant dans un plan, au lieu de la grille libre. Essai, éteint par défaut jusqu'aux
   // mesures 7.10.

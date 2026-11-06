@@ -98,9 +98,6 @@ struct RingFrame {
   bool uninterpolated = false;
   // Les sources de l'image ont été débandées avant SPAN (KernelOps::deband) : l'écran ne débande plus.
   bool debanded = false;
-  // La version du grade (gpu::GradeSlot) laissée dans l'image par le backend : codes PQ BT.2020 déjà gradés,
-  // que l'écran montre sans hooks. 0 : l'image n'est pas gradée, l'écran la grade lui-même.
-  std::uint32_t grade = 0;
   std::uint32_t epoch = 0;        // d'une époque passée : main ne la présente pas, mais rend le slot
   std::uint64_t ready_value = 0;  // valeur du sémaphore du slot à attendre avant lecture
   // Instant hôte (host_now_us) où gpu a soumis l'écriture du slot ; 0 : inconnu. main en tire le

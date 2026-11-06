@@ -19,8 +19,7 @@ d'APL du plan rapportée à la médiane de la série, bornée à ±0,25. Sans pl
 fixe (1,15).
 
 ## A3 : écarts au plan
-Le lissage temporel existait déjà sur la carte de zone (`2-area.hook`). Les cartes transportées dans
-l'anneau sont celles du grade actuel (`--grade-ring`) ; la méthode anime se fait à l'écran.
+Le lissage temporel existait déjà sur la carte de zone (`2-area.hook`). Tout le grade se fait à l'écran.
 
 ## A4 : ce qui manque
 Aucun modèle de détection de visages n'est livré ni téléchargé : la règle « aucun fichier NVIDIA dans les

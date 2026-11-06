@@ -71,8 +71,7 @@ __device__ inline std::uint32_t unorm10_dithered(float v, int x, int y) {
 
 // Un pixel RGB dans un emplacement de l'anneau, alpha opaque (étape 5.5b, seule fonction d'écriture de
 // l'anneau). RGBA16 : unorm16 de chaque canal ; RGB10A2 : r | g << 10 | b << 20 | 3 << 30
-// (kernels/spec/ring_pack.h), tramé si surface.dither. Le grade de l'anneau (grade_kernels.cu) écrit ainsi
-// ses codes PQ en float.
+// (kernels/spec/ring_pack.h), tramé si surface.dither.
 __device__ inline void store_ring(const RingSurface& surface, int x, int y, float fr, float fg, float fb) {
   if (surface.packing == RingPacking::Rgb10a2) {
     const std::uint32_t pr = surface.dither ? unorm10_dithered(fr, x, y) : unorm10(fr);
@@ -89,21 +88,6 @@ __device__ inline void store_ring(const RingSurface& surface, int x, int y, floa
 // Le même depuis le FP16 d'un tenseur : RGBA16 au bit près de ce que write_rgba16 écrivait (ref::to_rgba16).
 __device__ inline void store_ring(const RingSurface& surface, int x, int y, __half r, __half g, __half b) {
   store_ring(surface, x, y, __half2float(r), __half2float(g), __half2float(b));
-}
-
-// Les codes d'un pixel de l'emplacement, dans [0, 1] (le grade de l'anneau les relit avant de les remplacer).
-__device__ inline float3 load_ring(const RingSurface& surface, int x, int y) {
-  if (surface.packing == RingPacking::Rgb10a2) {
-    std::uint32_t pixel = 0;
-    surf2Dread(&pixel, surface.object, x * static_cast<int>(sizeof(std::uint32_t)), y);
-    return make_float3(static_cast<float>(pixel & 1023U) / 1023.0F,
-                       static_cast<float>((pixel >> 10U) & 1023U) / 1023.0F,
-                       static_cast<float>((pixel >> 20U) & 1023U) / 1023.0F);
-  }
-  ushort4 pixel{};
-  surf2Dread(&pixel, surface.object, x * static_cast<int>(sizeof(ushort4)), y);
-  return make_float3(static_cast<float>(pixel.x) / 65535.0F, static_cast<float>(pixel.y) / 65535.0F,
-                     static_cast<float>(pixel.z) / 65535.0F);
 }
 
 struct Sum {

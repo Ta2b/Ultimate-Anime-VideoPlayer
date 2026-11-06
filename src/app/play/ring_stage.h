@@ -66,7 +66,6 @@ class RingStage : public VideoStage, public FrameSink {
     bool uninterpolated = false;  // RingFrame::uninterpolated
     bool debanded = false;        // RingFrame::debanded
     bool repeated = false;        // RingFrame::repeated : copie d'une image déjà calculée
-    std::uint32_t grade = 0;      // RingFrame::grade : la version du grade écrite dans l'emplacement
   };
   // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
   // par défaut 1. Un refus arrête la vidéo comme un refus de produce, et plus de kMaxOutputs aussi.

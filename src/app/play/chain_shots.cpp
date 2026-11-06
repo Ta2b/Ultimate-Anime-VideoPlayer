@@ -166,7 +166,6 @@ void feed_plan_shots(Chain& to) {
   std::vector<media::Shot> shots = timeline.shots();
   if (to.anime_shots) to.anime_series_apl = series_apl_of(shots);
   if (to.shot_cuts) to.live.cuts().set_shots(shots);
-  to.screen.set_plan_shots(std::move(shots));
 }
 
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {

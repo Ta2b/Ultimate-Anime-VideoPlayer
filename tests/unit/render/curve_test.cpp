@@ -8,8 +8,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "kernels/spec/grade_pixel.h"
-
 using Catch::Approx;
 using namespace ajp::render;
 
@@ -183,29 +181,4 @@ TEST_CASE("courbe : le look SDR avant la courbe, l'identité ne change rien", "[
   CubeLut darker = identity;
   for (float& v : darker.rgb) v *= 0.9F;
   CHECK(bake(curve, &darker, 17) != plain);
-}
-
-TEST_CASE("courbe : la lecture de l'anneau v2, √code et fondu mêlé par pts", "[render][curve]") {
-  namespace g = ajp::kernels::grade;
-  const ShotCurve dark = plan_curve(CurveInput{.shot_apl_nits = 10.0, .series_apl_nits = 40.0});
-  const ShotCurve bright = plan_curve(CurveInput{.shot_apl_nits = 160.0, .series_apl_nits = 40.0});
-  CubeLut a{.size = 33, .rgb = bake(dark, 33)};
-  CubeLut b{.size = 33, .rgb = bake(bright, 33)};
-  const auto lut_of = [](const CubeLut& lut) {
-    return [&lut](g::V3 c) {
-      const std::array<float, 3> v = sample_lut(lut, {c.r, c.g, c.b});
-      return g::V3{v[0], v[1], v[2]};
-    };
-  };
-  const auto la = lut_of(a);
-  const auto lb = lut_of(b);
-  const float grey = static_cast<float>(curve_pq(100.0));
-  const g::V3 e{grey, grey, grey};
-  const g::V3 at0 = g::curve_lut_code(e, la, lb, 0.0F);
-  const g::V3 at1 = g::curve_lut_code(e, la, lb, 1.0F);
-  const g::V3 mid = g::curve_lut_code(e, la, lb, 0.5F);
-  // Le gris de 100 nits suit la courbe du plan sombre, puis celle du plan clair.
-  CHECK(std::abs(at0.r - static_cast<float>(curve_pq(map_luminance(dark, 100.0)))) <= 1.0F / 1024.0F);
-  CHECK(std::abs(at1.r - static_cast<float>(curve_pq(map_luminance(bright, 100.0)))) <= 1.0F / 1024.0F);
-  CHECK(std::abs(mid.r - 0.5F * (at0.r + at1.r)) <= 1e-6F);
 }

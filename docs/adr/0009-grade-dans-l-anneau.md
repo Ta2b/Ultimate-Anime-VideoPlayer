@@ -1,5 +1,10 @@
 # 0009 — Le grade exact dans l'anneau ; la LUT réservée au chantier 8
 
+**Statut : abandonné (novembre 2026).** Le grade de l'anneau ne portait que l'ancien grade classique (Fused),
+retiré avec lui ; le seul grade du lecteur, l'HDR anime guidé, tourne à l'écran en shader. Le code (noyaux
+CUDA, référence `kernels/ref/grade`, planificateur du contrat v2, `--grade-ring`, `--hdr-contract-v2-curve`)
+est parti ; l'historique git le garde. Ce qui suit est la décision d'origine.
+
 ## Contexte
 Après le chantier 2a, le grade fusionné tient en une passe d'OUTPUT de libplacebo, précédée de trois cartes
 (locale 1/8, zone 1/32 lissée, max local du vrai noir). Il tourne à chaque présentation, sur l'image à la taille

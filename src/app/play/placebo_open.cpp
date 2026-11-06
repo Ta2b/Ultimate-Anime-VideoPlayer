@@ -401,8 +401,6 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->hdr_allowed = options.hdr;
   impl->kde_sdr_nits = options.kde_sdr_nits;
   impl->kde_sdr_auto = options.kde_sdr_auto;
-  impl->contract_v2 = options.contract_v2 && !options.metadata_off;
-  if (options.contract_v2 && options.grade_ring) impl->planner = std::make_unique<GradePlanner>();
   impl->offscreen_size = {options.offscreen_width, options.offscreen_height};
   if (const double hz = display_refresh_hz(impl->window); hz > 1.0)
     impl->period_us = static_cast<std::int64_t>(1e6 / hz);
@@ -561,7 +559,6 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
   impl->grade_deband = options.grade_deband;
   impl->skin_mask = options.skin_mask;
-  impl->grade_ring = options.grade_ring;
   if (auto grade = render::Grade::create(gpu, impl->skin_mask)) {
     impl->grade.emplace(std::move(*grade));
   } else {

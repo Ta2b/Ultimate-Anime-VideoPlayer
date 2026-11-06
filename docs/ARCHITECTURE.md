@@ -227,21 +227,6 @@ garde la médiane des neuf dernières (`app/play/frame_latency.h`, mesures hors 
 jeté par main une fois prêt, et n'est pas calculé. Sous surcharge, le GPU cesse
 ainsi de prendre du retard sur des images que personne ne verra.
 
-### Grade exact dans l'anneau (`--grade-ring`, docs/adr/0009-grade-dans-l-anneau.md)
-
-Essai, éteint par défaut. L'écran poste des versions du grade dans `LiveSettings`
-(`post_grade`) : chacune vaut pour les images de son époque de pts ≥ `from_pts_us`
-et pour les époques suivantes, les 8 dernières gardées. L'étage `gpu` choisit la
-version au pts de chaque image écrite (`grade_at`), la confie au backend une fois
-(`KernelOps::set_grade`) et la nomme dans `RingWrite::grade` ; le backend TensorRT
-grade l'emplacement juste avant son signal (`gpu/cuda/backend/grade_kernels.cu`,
-mêmes formules que la référence `kernels/ref/grade.cpp`, écrites une fois dans
-`kernels/spec/grade_pixel.h`). `RingFrame::grade` dit à l'écran que l'image est
-déjà en codes PQ BT.2020 pour la cible de sa version : il la montre sans hooks ni
-détection de pic. Version 0 (source non débandée, export YUV, backend sans
-`grades_ring()`, sortie SDR, autre corps de grade) : l'écran grade comme avant.
-En pause, une image gradée par une version dépassée est récrite par un seek exact.
-
 ### Écran et cadence (`core/resolve.h`)
 
 `DisplayInfo` décrit l'écran : taille, rafraîchissement (0 sans VRR : inconnu),

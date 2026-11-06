@@ -204,10 +204,6 @@ class Session {
   void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
   void measure_latency(std::int64_t host_now);  // les images écrites depuis le tour d'avant
   void choose(std::int64_t host_now);
-  // En pause, l'image montrée gradée dans l'anneau par une version dépassée (Screen::stale_grade) est
-  // récrite par un seek exact sur elle, au plus une fois par kRegradeUs.
-  void regrade_paused(std::int64_t host_now);
-  std::int64_t regraded_us_ = 0;
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
   void watch_clock(const ClockSnapshot& now, std::int64_t host_now);

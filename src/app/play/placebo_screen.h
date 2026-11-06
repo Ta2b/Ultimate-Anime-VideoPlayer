@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "app/play/final_scaler.h"
-#include "app/play/grade_taste.h"
 #include "app/play/links.h"
 #include "app/play/present_level.h"
 #include "core/frame.h"
@@ -24,7 +23,6 @@
 #include "core/ring.h"
 #include "core/types.h"
 #include "media/hw_api.h"
-#include "media/shot_cutter.h"
 #include "render/cube_lut.h"
 #include "render/display_model.h"
 #include "render/grade_params.h"
@@ -58,17 +56,12 @@ struct ScreenOptions {
   // grade fait lui-même la compression que KWin faisait sans métadonnées (render::Grade::set_kwin_match).
   std::optional<double> kde_sdr_nits;
   bool kde_sdr_auto = false;  // la luminosité SDR du contrat d'écran (KDE), kde_sdr_nits en repli
-  // --hdr-contract-v2-curve : les métadonnées du contrat d'écran (set_contract) annoncées à la swapchain,
-  // sans kde_sdr_nits ; metadata_off : rien d'annoncé (--hdr-metadata=off).
-  bool contract_v2 = false;
-  bool metadata_off = false;
   // Smooth Motion du pilote NVIDIA : sa couche implicite VK_LAYER_NV_present s'active par
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
   bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)
   bool skin_mask = false;       // --skin-mask : le masque peau du grade rend 0 (essai)
-  bool grade_ring = false;      // --grade-ring : le grade fait dans l'anneau (set_ring_live)
   // --present : le retour de présentation (chantier 6, present_level.h) ; open, celle d'aujourd'hui.
   PresentWanted present = PresentWanted::Open;
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
@@ -167,19 +160,10 @@ class PlaceboScreen final : public Screen {
   bool vrr_changed();
   // Le veilleur d'écriture le temps d'une chaîne (--ring-watcher) : waker réveille main ; nullptr l'arrête.
   void watch_writes(void (*waker)(void*), void* context);
-  // Le contrat d'écran relu (8.2, display_contract.h) : gardé pour le grade et la swapchain du contrat v2.
+  // Le contrat d'écran relu (8.2, display_contract.h) : gardé pour le grade.
   void set_contract(const render::DisplayContract& contract);
-  // Les plans de la pré-analyse, pour le grade v2 dans l'anneau (8.6) ; rien hors de cet essai.
-  void set_plan_shots(std::vector<media::Shot> shots);
-  // Le goût appris du grade v2 (8.10, grade_taste.h) ; rien hors de l'essai du grade v2 dans l'anneau.
-  void set_taste(const GradeTaste& taste);
   const std::optional<render::DisplayContract>& contract() const;
   void new_scene() override;
-  // Le grade de l'anneau (chantier 2c, --grade-ring) : les versions du grade sont postées dans `live` quand
-  // la sortie est en PQ et le grade en trois passes ; l'image gradée par le GPU du ring est montrée sans
-  // hooks. nullptr : rien n'est posté, l'écran grade.
-  void set_ring_live(std::shared_ptr<LiveSettings> live);
-  bool stale_grade(const RingFrame& frame) const override;
   void set_fullscreen(bool on) override;
   bool fullscreen() const override;
 

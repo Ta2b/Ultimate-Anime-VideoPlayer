@@ -55,10 +55,6 @@ de FreeVisuals (gratuit pour usage personnel et commercial selon leur page), « 
 Modes de ton « vivid » (blanc SDR au pic) et « reference » (BT.2408, 203 nits), styles « natural », « cinematic »,
 « night » en préréglages du grade, choix de l'EOTF d'entrée (BT.1886 ou sRGB), dither à la quantification PQ.
 
-Avec `--grade-ring` (essai), la pile de LUT composée est appliquée par le GPU du moteur, dans l'anneau, juste
-après le grade : même pile (65 points, intensités comprises), même ordre, lue en flottant au lieu du demi-flottant
-de la texture de l'écran. Rien ne change dans le menu ni dans `play.toml`.
-
 Dans `play.toml`, la première LUT est `grade.look` / `grade.look_mix`, les suivantes `grade.looks` (noms) et `grade.looks_mix` (intensités), dans l'ordre.
 
 ## Grade adaptatif à la luminosité de la scène
@@ -73,36 +69,6 @@ des cinq scènes de Re:Zero ép. 18 de Tatoub (`~/ajp-reports/parametres-tatoub-
 44 = sombre, 135 = très clair, soit 13 % et 54 % de luminance en RGB complet). Sans RTX HDR (HDR adaptatif, sortie SDR
 gradée : tous les GPU), le shader du grade fait la même chose avec le code PQ moyen très lissé de l'image qu'il reçoit
 (la source convertie ; seuils convertis en codes PQ, gris moyen = la courbe TrueHDR émulée). Pas encore adaptatifs : le contraste et l'intensité des LUT.
-
-## Séparer une LUT d'HDR en courbe et couleur (chantier 8.3)
-`tools/look/split_hdr_lut.py` lit une LUT PQ BT.2020 (ou une pile, `--compose`), en tire la courbe neutre (axe
-des gris, 4 096 points, monotone) et la couleur (Ct/Cp de la LUT, intensité ramenée par l'inverse de la courbe),
-réécrite dans le domaine SDR du lecteur avec `# ajp-domain: sdr`. `--check` vérifie que l'identité et une pure
-courbe rendent une couleur identité (ΔE_ITP ≤ 0,1). Le résultat pour la pile par défaut est dans
-`data/luts-v2/` (LISEZMOI.md).
-
-Essai `--hdr-contract-v2-curve` (chantier 8.4) : la pile par défaut, si l'utilisateur ne l'a pas changée, devient le seul
-`ver9-couleur.cube` (SDR, sa courbe neutre laissée au grade), et la sortie HDR10 annonce les métadonnées du contrat
-d'écran (C_pk, MaxFALL et noir en unités du contenu, primaires de l'EDID ou Display P3) au lieu de laisser KWin
-compresser ; `--hdr-metadata=off` n'annonce rien. `play.toml` n'en garde rien.
-Avec `--grade-ring` en plus (TensorRT), le grade de l'anneau devient une seule lecture 3D par pixel : la LUT de la
-courbe du plan (look SDR compris), cuite en fond pour le plan courant et les deux suivants, datée du début de son
-plan (la bascule se fait à l'image près), deux LUT mêlées dans un fondu. Sans plans connus (pré-analyse coupée),
-le grade d'avant reste.
-Une source HDR10 (8.9) annonce en plus, plan par plan, sa lumière mesurée par la pré-analyse (maxSCL et moyenne,
-en métadonnées HDR10+) : la spline de libplacebo la ramène à C_pk sans détection de pic, un plan sous C_pk passe
-tel quel et un plan plus clair est compressé.
-L'apprentissage (8.10) suit la courbe par plan sous cet essai : les corrections des curseurs passent par une table
-de migration (gris → décalage E par classe de scène sombre, éclat, claire ou ciel, ±0,25 ; noirs → contraste du
-pied ; couleurs → vibrance, au plus 1,15) et s'écrivent dans `adaptive-learning-v2.tsv` ; les échantillons
-d'`adaptive-learning.tsv`, faits pour l'autre grade, sont écartés et comptés au journal (app/play/grade_taste.h).
-Les portes de 8.11 se vérifient hors du lecteur : `tools/grade/sim/simulate.py` passe une liste de plans (ou
-`--synthetic 30`) par le portage Python de la courbe (`tools/grade/sim/curve.py`, comparé à la version C++ par
-`--self-test`) et dit, plan par plan, E, T, le pic et l'APL affichés (pic ≤ C_pk + 0,5 %, APL ≤ 0,9 × MaxFALL) ;
-`tools/grade/check_hdr.py` lit les instantanés PQ des 30 plans (compare_shots.sh) et vérifie pic, APL, ΔE_ITP sous K
-contre la référence BT.2408 (moyenne ≤ 3, p95 ≤ 6), teinte (≤ 2°, ≤ 1° sur la peau), peau (≤ 0,5 diaphragme),
-stabilité de l'APL d'un plan fixe (σ ≤ 0,5 %), images d'erreur aux coupes (0) et ColorVideoVDP (≥ −0,1 JOD, si
-pycvvdp est installé).
 
 ## La pile par défaut en une seule LUT (04/11/2026)
 

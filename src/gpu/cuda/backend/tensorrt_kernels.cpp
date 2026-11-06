@@ -331,6 +331,10 @@ std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, cons
   return finish_slot(**imported, sync);
 }
 
+std::expected<void, Refusal> TensorRtBackend::finish_slot(const ImportedSlot& slot, const RingWrite& sync) {
+  return slot.signal(sync.signal_value, stream_);
+}
+
 // À forme égale, un rééchantillonnage est l'identité : une copie appareil → appareil, dans l'ordre de la
 // file (DistilDRBA, côté tenu). À forme différente, le backend ne sait pas faire (refus not_here).
 std::expected<void, Refusal> TensorRtBackend::resample(const Tensor& in, kernels::Filter, const Tensor& out) {

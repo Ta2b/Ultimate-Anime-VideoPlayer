@@ -50,7 +50,6 @@ struct RingWritten {
   std::uint32_t slot = 0;
   std::uint64_t wait_value = 0;
   std::uint64_t signal_value = 0;
-  gpu::GradeSlot grade;
 };
 
 // Une écriture YUV de l'export (write_yuv), telle que le backend l'a reçue.
@@ -80,15 +79,9 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // BackendCaps::yuv_targets : write_yuv écrit la cible (yuv_written()) et la signale aussitôt ;
   // faux par défaut.
   void offer_yuv_targets(bool on) { yuv_targets_ = on; }
-  // Le débandage à l'ingestion et le grade de l'anneau (grades_ring, set_grade noté « set_grade v ») ;
-  // faux par défaut.
-  void offer_grade(bool on) { grade_ = on; }
+  // Le débandage à l'ingestion ; faux par défaut.
+  void offer_deband_on_ingest(bool on) { grade_ = on; }
   bool debands_on_ingest() const override { return grade_; }
-  bool grades_ring() const override { return grade_; }
-  std::expected<void, Refusal> set_grade(const gpu::GradeOrder& order) override {
-    if (!grade_) return gpu::KernelOps::set_grade(order);
-    return note(std::format("set_grade {}", order.version));
-  }
   // Le mouvement maximal que rendent flow_max_now et flow_max_take, en pixels ; 0 par défaut.
   void motion_max(float pixels) {
     const std::scoped_lock lock(mutex_);

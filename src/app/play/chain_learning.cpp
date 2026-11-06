@@ -7,7 +7,6 @@
 
 #include "app/play/calibration_images.h"
 #include "app/play/chain.h"
-#include "app/play/grade_taste.h"
 #include "app/play/i18n.h"
 #include "core/log.h"
 
@@ -20,11 +19,6 @@ constexpr std::int64_t kApproveUs = 30'000'000;  // une scène regardée sans ri
 void count_samples(LearnTrack& l) {
   l.corrections = 0;
   l.approvals = 0;
-  if (l.contract_v2) {
-    for (const TasteSample& s : read_taste_samples(taste_log_of(l.log)).samples)
-      ++(s.kind == LearnSample::Kind::Approval ? l.approvals : l.corrections);
-    return;
-  }
   for (const LearnSample& s : read_learn_samples(l.log)) {
     if (s.kind == LearnSample::Kind::Approval) {
       ++l.approvals;
@@ -36,44 +30,15 @@ void count_samples(LearnTrack& l) {
 
 void write(LearnTrack& l, LearnSample sample, const GradeCurve& curve, const SceneMix& mix) {
   sample.unix_s = static_cast<std::int64_t>(std::time(nullptr));
-  if (l.contract_v2) {  // 8.10 : la correction passe par la table de migration, dans le fichier du goût
-    append_taste_sample(
-        taste_log_of(l.log),
-        TasteSample{
-            .unix_s = sample.unix_s, .kind = sample.kind, .scene = class_of(mix), .taste = migrate(curve)});
-    ++(sample.kind == LearnSample::Kind::Approval ? l.approvals : l.corrections);
-    return;
-  }
   sample.look = look_at(curve, mix.t, mix.glow, mix.tv);
   append_learn_sample(l.log, sample);
   ++(sample.kind == LearnSample::Kind::Approval ? l.approvals : l.corrections);
-}
-
-// Le goût du grade v2, une fois par chaîne : celui qu'apprennent ses échantillons, sinon la migration des
-// réglages en cours. Les échantillons de l'autre grade sont écartés, et comptés au journal.
-void start_taste(Chain& to) {
-  LearnTrack& l = to.learn;
-  l.taste_set = true;
-  const auto log = log_channel("app");
-  if (const std::size_t old = read_learn_samples(l.log).size(); old > 0)
-    log->info("gout v2 : {} echantillons d avant la v2 ecartes ({})", old, l.log.filename().string());
-  const GradeTaste migrated = migrate(curve_of(to.running));
-  const TasteRead read = read_taste_samples(taste_log_of(l.log));
-  if (read.rejected > 0) log->info("gout v2 : {} lignes illisibles ecartees", read.rejected);
-  const auto report = learn_taste(read.samples, migrated, static_cast<std::int64_t>(std::time(nullptr)));
-  const GradeTaste taste = report ? report->taste : migrated;
-  log->info(
-      "gout v2 : E sombre {:+.2f} eclat {:+.2f} claire {:+.2f} ciel {:+.2f}, pied {:+.2f}, vibrance {:.2f}{}",
-      taste.e[0], taste.e[1], taste.e[2], taste.e[3], taste.toe, taste.vibrance,
-      report ? std::format(" ({} corrections)", report->corrections) : std::string(" (migre)"));
-  to.screen.set_taste(taste);
 }
 
 }  // namespace
 
 void learn_tick(Chain& to, std::int64_t now_us) {
   LearnTrack& l = to.learn;
-  if (!l.log.empty() && l.contract_v2 && !l.taste_set) start_taste(to);
   if (l.log.empty() || to.adaptive_luma < 0.0) return;
   if (l.corrections < 0) count_samples(l);
   const double force = to.running.grade_values.adaptive_force;
@@ -137,19 +102,6 @@ void learn_tick(Chain& to, std::int64_t now_us) {
 std::optional<PlaySettings> learned_settings(Chain& to, std::int64_t now_us) {
   Controls& controls = to.ui.controls();
   if (to.learn.log.empty()) return std::nullopt;
-  if (to.learn.contract_v2) {  // 8.10 : le goût se réapprend sur l'écran, les réglages ne changent pas
-    const std::vector<TasteSample> samples = read_taste_samples(taste_log_of(to.learn.log)).samples;
-    const auto report =
-        learn_taste(samples, migrate(curve_of(to.running)), static_cast<std::int64_t>(std::time(nullptr)));
-    if (!report) {
-      controls.notify(report.error(), now_us);
-      return std::nullopt;
-    }
-    to.learn.taste_set = false;
-    start_taste(to);
-    controls.notify(i18n::tr_format("Grade learned from {} corrections", report->corrections), now_us);
-    return std::nullopt;
-  }
   const std::vector<LearnSample> samples = read_learn_samples(to.learn.log);
   const GradeCurve now = curve_of(to.running);
   auto report = learn_grade(samples, now, static_cast<std::int64_t>(std::time(nullptr)));
@@ -193,11 +145,9 @@ void forget_learning(Chain& to, std::int64_t now_us) {
   if (to.learn.log.empty()) return;
   std::error_code error;
   std::filesystem::remove(to.learn.log, error);
-  if (to.learn.contract_v2) std::filesystem::remove(taste_log_of(to.learn.log), error);
   to.learn.corrections = 0;
   to.learn.approvals = 0;
   to.learn.pending.reset();
-  to.learn.taste_set = false;  // le goût v2 repart de la migration
   to.ui.controls().notify(i18n::tr("Grade corrections forgotten"), now_us);
 }
 

@@ -29,7 +29,6 @@
 #include "gpu/gpu_profile.h"
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
-#include "kernels/spec/grade.h"
 
 namespace ajp::gpu {
 
@@ -63,49 +62,11 @@ struct Motion {
   kernels::Window area;  // la fenêtre de l'image dans les plans remplis
 };
 
-// Le grade exact dans l'anneau (chantier 2c, docs/adr/0009-grade-dans-l-anneau.md) d'une image écrite :
-// la version d'un ordre confié au backend par set_grade, et ce qui situe l'image dans sa chaîne (le lissage
-// de la zone suit l'écart de pts ; une nouvelle époque repart sans historique). version 0 : l'image n'est
-// pas gradée dans l'anneau, l'écran garde le grade en shader.
-struct GradeSlot {
-  std::uint32_t version = 0;
-  std::uint32_t epoch = 0;
-  std::int64_t pts_us = kNoPts;
-  // 8.7 (--shot-cuts) : les plans de la pré-analyse sont connus (la mémoire temporelle de la zone ne repart
-  // plus sur un saut de valeur) et cette image commence un plan (elle repart ici).
-  bool known_cuts = false;
-  bool shot_start = false;
-};
-
 // Synchronisation d'une écriture dans le ring (protocole de core/ring.h).
 struct RingWrite {
   std::uint64_t wait_value = 0;    // SlotFree::semaphore_value ; 0 au premier tour
   std::uint64_t signal_value = 0;  // RingFrame::ready_value, impaire, > wait_value
-  GradeSlot grade;                 // gradée entre l'écriture et le signal (KernelOps::set_grade)
 };
-
-// Une version du grade, que KernelOps::set_grade copie : ses paramètres (kernels/spec/grade.h), la pile de
-// LUT composée et l'entrée SDR → PQ de libplacebo (render::capture_grade_input). Les vues ne vivent que le
-// temps de l'appel.
-struct GradeOrder {
-  std::uint32_t version = 0;  // > 0, unique pour le lecteur
-  kernels::GradeUniforms uniforms;
-  int look_size = 0;                    // 0 : aucun look (uniforms.look_mix vaut alors 0)
-  std::span<const float> look_rgb;      // look_size³ × 3, R le plus rapide
-  std::span<const float> input_nits;    // 3 × kernels::grade::kInputTablePoints, R, V, B bout à bout
-  std::array<float, 9> input_matrix{};  // primaires de la source vers BT.2020, ligne par ligne
-  // Le grade du contrat v2 (8.6, --hdr-contract-v2 avec --grade-ring) : la LUT de la courbe du plan
-  // (curve_size³ × 3, indexée par √code PQ) remplace grade et look ; curve_fade, celle de la fin d'un fondu,
-  // mêlée par (pts − from_pts_us) / (until_pts_us − from_pts_us). curve_size 0 : le grade d'avant.
-  int curve_size = 0;
-  std::span<const float> curve_lut;
-  std::span<const float> curve_fade;
-  std::int64_t from_pts_us = 0;
-  std::int64_t until_pts_us = 0;
-};
-
-// Ordres de grade qu'un backend garde au plus : les images déjà dans l'anneau gardent le leur.
-inline constexpr std::size_t kGradeOrders = 8;
 
 // Une image intermédiaire écrite directement dans un slot du ring, au protocole de write_ring :
 // ses noyaux attendent wait_value, le slot est signalé à signal_value après eux.
@@ -339,13 +300,6 @@ class KernelOps {
   }
   // Vrai si ingest() débande elle-même quand IngestSpec::deband est posé (même résultat que deband()).
   virtual bool debands_on_ingest() const { return false; }
-  // Le grade exact dans l'anneau : le backend sait grader un emplacement avant son signal
-  // (RingWrite::grade). set_grade copie l'ordre (gardé avec les kGradeOrders derniers, le plus ancien
-  // remplacé) ; une écriture qui nomme une version inconnue est refusée.
-  virtual bool grades_ring() const { return false; }
-  virtual std::expected<void, Refusal> set_grade(const GradeOrder& /*order*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "set_grade : absent de ce backend"});
-  }
   // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
   virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "fill : absent de ce backend"});

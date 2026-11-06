@@ -374,34 +374,6 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   moins à 165 Hz ; redessin ≤ 0,25 ms en 4K. Changer de look, de grade ou de taille de fenêtre en pause doit
   se voir tout de suite.
 
-## Plan NVIDIA, chantier 2c : grade exact dans l'anneau (novembre, CUDA écrit sans compilateur)
-
-- **2.8, construction** : le journal de ptxas (`--ptxas-options=--verbose`) donne les registres de
-  `grade_local_kernel`, `grade_area_kernel`, `grade_localmax_kernel` et `grade_pixel_kernel` ; aucun débordement
-  (« spill stores » à 0), sinon la construction s'arrête (`--warn-on-spills` en erreur).
-- **2.8, exactitude** : `ajp_backend_tensorrt_tests "[grade_ring]"` : cinq réglages, deux images de suite (la
-  seconde lissée par l'historique de la première), |ΔPQ| p99,9 ≤ 2⁻¹² et max ≤ 2⁻¹¹ contre la référence
-  CPU, historique à 1e-4.
-- **2.8, coût** : `ajp_backend_tensorrt_tests "[.grade_ring]"` : ≤ 0,30 ms par image en 1440p, ≤ 0,60 ms en
-  2160p (vrai noir allumé).
-- **2.9, ordres** : `ajp_backend_tensorrt_tests "[backend_tensorrt][cuda]"` : le cas « ordres du grade de
-  l'anneau » (refus nommés, plus de 8 ordres remplacés sans erreur ni fuite). Le grade d'un emplacement passe
-  par `finish_slot` aux trois signaux (write_ring, warp et GMFSS vers l'anneau, queue du SPAN FP8) ; il ne
-  tourne qu'avec un ordre posté, donc pas avant 2.10 en lecture.
-- **2.10, écran** : lecture d'un épisode avec `--grade-ring` sur la sortie HDR10, puis `--stats` : aucune
-  passe « AnimeJaNai » au profil GPU de l'affichage sur les images gradées, affichage ≤ 0,4 ms par image en
-  4K ; le profil GPU du backend montre « grade de l'anneau ». À l'œil : changer un réglage du grade en pause
-  le montre en moins d'un quart de seconde ; une coupe de plan en grade adaptatif change le grade sur la
-  bonne image. Sans `--grade-ring`, rien ne change.
-- **2.11, porte sur 30 plans** : remplir `tools/grade/episodes.tsv` (d'après `episodes.exemple.tsv` : nuit,
-  ciel, lueur, éclair, fondu, champ/contrechamp, deux de chaque), puis
-  `tools/grade/make_stills.sh tools/grade/episodes.tsv ~/ajp-test/stills` et, avec les réglages de lecture
-  habituels dans BASE : `WINDOW=<taille de l'anneau> tools/grade/compare_shots.sh "" "--grade-ring" ~/ajp-reports/porte`
-  (par plan p95 ≤ 1 et p99,9 ≤ 3), puis `WINDOW=3840x2160` (p95 ≤ 2,5). Ensuite l'A/B à l'aveugle sur 20
-  extraits (B, le grade de l'anneau, au moins égal) et le banc 720p ×5 : au moins 90 ms GPU par seconde de
-  moins à l'affichage. Si tout passe, `FusedSplit` (`--legacy-grade=split`) part, et `--grade-ring` peut
-  devenir le défaut (à décider ensemble).
-
 ## Linux sur RX 6500M (RDNA2 Navi 24, 4 Go)
 
 Backend Vulkan seul (pas de matrices coopératives, ROCm ne sert pas Navi 24 : MIGraphX n'est plus

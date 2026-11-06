@@ -20,7 +20,6 @@
 #include <spdlog/logger.h>
 
 #include "app/play/compose_key.h"
-#include "app/play/grade_planner.h"
 #include "app/play/links.h"
 #include "app/play/live_settings.h"
 #include "app/play/osd_text.h"
@@ -34,8 +33,6 @@
 #include "core/gpu_device.h"
 #include "core/ring.h"
 #include "render/grade.h"
-#include "render/grade_input.h"
-#include "render/scene_hdr.h"
 #include "subs/subtitle_frame.h"
 
 namespace ajp::app::play {
@@ -163,11 +160,10 @@ struct PlaceboScreen::Impl {
   pl_cache shader_cache = nullptr;                  // ScreenOptions::shader_cache (placebo_open.cpp)
   bool skin_mask = false;                           // ScreenOptions::skin_mask
   bool grade_deband = false;                        // ScreenOptions::grade_deband
-  bool grade_ring = false;                          // ScreenOptions::grade_ring
   PresentLevel present_level = PresentLevel::Open;  // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
   std::unique_ptr<PresentFeedback> feedback;
-  std::optional<render::DisplayContract> contract;  // 8.2 : le contrat d'écran relu, servi au contrat v2
+  std::optional<render::DisplayContract> contract;  // 8.2 : le contrat d'écran relu
   std::unique_ptr<RingWatcher> watcher;  // --ring-watcher (ring_watcher.h), le temps d'une chaîne  // niveaux
                                          // Timing et Wait (placebo_feedback.h) ; nul sinon
   std::filesystem::path shader_cache_file;
@@ -212,23 +208,6 @@ struct PlaceboScreen::Impl {
   // --hdr-metadata (ScreenOptions::kde_sdr_nits) : le maximum annoncé à la swapchain (0 : rien d'annoncé).
   std::optional<double> kde_sdr_nits;
   bool kde_sdr_auto = false;
-  // --hdr-contract-v2-curve sans --hdr-metadata=off : les métadonnées du contrat annoncées (hint_contract).
-  bool contract_v2 = false;
-  std::optional<render::ContractMetadata> hinted_contract;
-  void hint_contract();
-  // Le grade v2 dans l'anneau (8.6, --hdr-contract-v2-curve avec --grade-ring) : les LUT par plan cuites en
-  // fond.
-  std::unique_ptr<GradePlanner> planner;
-  std::uint32_t plan_epoch = 0;
-  bool post_plan();   // faux : pas de plans, le grade d'avant
-  bool ring_input();  // l'entrée SDR → PQ de libplacebo pour ce couple source, cible (ring_nits)
-  // HDR10+ par plan (8.9, --hdr-contract-v2-curve) : une source PQ annonce la lumière du plan de l'image
-  // (ShotMeta) et la spline de libplacebo la ramène à C_pk, sans détection de pic. scene_hdr : cette
-  // composition le fait.
-  std::vector<media::Shot> scene_shots;
-  bool scene_hdr = false;
-  pl_color_map_params scene_map = render::scene_color_map();
-  bool apply_scene_hdr(pl_color_space& image, pl_color_space& target, std::int64_t pts) const;
   double hinted_max_nits = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
@@ -265,38 +244,6 @@ struct PlaceboScreen::Impl {
     std::vector<double> nits;
   };
   std::optional<RampMeasure> last_ramp;
-  // Le grade de l'anneau (chantier 2c, docs/adr/0009-grade-dans-l-anneau.md, placebo_grade.cpp).
-  std::shared_ptr<LiveSettings> ring_live;  // set_ring_live ; nul : rien n'est posté
-  // Les versions postées, et la couleur que leur image gradée déclare (la cible pour laquelle elle l'est).
-  struct RingVersion {
-    std::uint32_t version = 0;
-    pl_color_space space{};
-  };
-  std::array<RingVersion, gpu::kGradeOrders> ring_versions{};
-  std::size_t ring_next = 0;
-  bool ring_posted = false;       // une version, ou un « off », est postée
-  bool ring_on = false;           // la dernière postée grade (pas « off »)
-  std::uint64_t ring_serial = 0;  // grade_serial de la dernière postée
-  pl_color_space ring_target{};   // sa cible
-  // Posée d'avance par set_grade_after : quand le choix en attente passe à l'écran, rien n'est reposté.
-  bool ring_ahead = false;
-  bool ring_absorb = false;
-  // L'entrée SDR → PQ captée (render::capture_grade_input) pour ce couple source, cible.
-  std::shared_ptr<const std::vector<float>> ring_nits;
-  std::array<float, 9> ring_matrix{};
-  pl_color_space ring_input_source{};
-  pl_color_space ring_input_target{};
-  std::shared_ptr<const std::vector<float>> ring_look;  // la dernière pile postée, gardée si elle revient
-  std::int64_t shown_pts = kNoPts;                      // la dernière image présentée
-  std::uint32_t shown_epoch = 0;
-  bool ring_image = false;  // l'image de cette composition est gradée dans l'anneau : ni hooks ni pic
-  // La couleur de l'image gradée par la version `version` ; nullptr si elle n'est plus connue.
-  const pl_color_space* ring_space(std::uint32_t version) const;
-  // Poste la version de `choice` pour les images de pts ≥ from_pts de l'époque `epoch` (et les époques
-  // suivantes), ou « off » si le grade de l'anneau ne s'applique pas à la cible.
-  void post_ring(const render::GradeChoice& choice, std::int64_t from_pts, std::uint32_t epoch);
-  // À chaque présentation : un changement de ce que le grade applique part dans une nouvelle version.
-  void follow_ring();
   mutable std::uint64_t grade_frame_ns = 0;
   mutable std::uint64_t display_frame_ns = 0;  // toutes les passes de l'affichage, de la dernière composition
   mutable std::vector<std::uint32_t> grade_gpu_us;

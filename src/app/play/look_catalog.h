@@ -31,13 +31,9 @@ std::vector<LookEntry> list_looks(const std::filesystem::path& luts_dir);
 std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir);
 
-// Les noms des LUT de la pile dans l'ordre des emplacements (le premier, puis ceux de look_layers, au plus
-// render::kLookSlots) et leur intensité.
-// Sous --hdr-contract-v2-curve (8.4, set_contract_v2_looks), la pile par défaut, intensités comprises,
-// devient le seul kContractV2Look ; une pile choisie par l'utilisateur reste la sienne. play.toml n'en sait
-// rien. Depuis le 04/11, la pile est le look HDR anime seul (anime_look, les curseurs look_contrast et
-// look_highlight) ; --no-looks : rien ; --hdr-contract-v2-curve : kContractV2Look. stack_slots : la pile de
-// play.toml d'avant (look, look_layers), que le lecteur ne lit plus.
+// Les noms des LUT de la pile dans l'ordre des emplacements et leur intensité. Depuis le 04/11, la pile est
+// le look HDR anime seul (anime_look, les curseurs look_contrast et look_highlight) ; --no-looks : rien.
+// stack_slots : la pile de play.toml d'avant (look, look_layers), que le lecteur ne lit plus.
 std::vector<LookLayer> look_slots(const PlaySettings& s);
 std::vector<LookLayer> stack_slots(const PlaySettings& s);
 // Le look HDR anime : la LUT de base, 3/7 de 7 × (1 + contraste/100) LUT de contraste, 1,5 × (1 + éclats/100)
@@ -52,8 +48,6 @@ std::string anime_look_key(int contrast, int highlight);
 std::vector<double> anime_look_mixes(double units);  // 2,5 → 1, 1, 0,5
 std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
                                                    const std::filesystem::path& luts_dir);
-inline constexpr std::string_view kContractV2Look = "ver9-couleur.cube";
-void set_contract_v2_looks(bool on);
 // --clean-looks (audit F1) : la pile de LUT s'applique à la couleur du voisinage, le grain et les paliers
 // passent à leur contraste d'origine au lieu d'être étirés par la pente de la pile ; les bords francs
 // (traits, lumières) gardent la pile entière. Lu par grade_of (GradeParams::look_clean).
