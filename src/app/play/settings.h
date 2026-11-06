@@ -166,9 +166,10 @@ struct LookLayer {
 };
 
 struct PlaySettings {
-  // Auto-configuration : Personnalisé par défaut, les réglages d'avant ne bougent pas ; le premier
-  // lancement choisit Auto. Hors Personnalisé, la chaîne est refaite à chaque vidéo.
-  Preset preset = Preset::Custom;
+  // Auto-configuration : Auto par défaut, y compris au premier double-clic sur une vidéo (l'assistant ne
+  // s'ouvre pas) et après « Tout réinitialiser ». Un play.toml d'avant la section [auto] se lit en
+  // Personnalisé : ses réglages ne bougent pas. Hors Personnalisé, la chaîne est refaite à chaque vidéo.
+  Preset preset = Preset::Auto;
   Priority priority = Priority::Balance;
   bool upscale = true;
   std::string model;  // fichier ONNX de SPAN (nom seul) ; vide : celui du lecteur actuel
