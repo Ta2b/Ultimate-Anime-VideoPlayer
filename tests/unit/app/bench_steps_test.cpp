@@ -247,10 +247,10 @@ TEST_CASE("l'évaluation monte jusqu'au dernier niveau qui tient et explique l'e
   CHECK(outcome->result.level == Tier::Normal);
   REQUIRE(lines.size() >= 2);
   CHECK(lines.front() == "Étape 1 sur 4 : préparation des moteurs et première mesure");
-  CHECK(lines[1] == "Étape 2 sur 4 : test des réglages « Rapide »");
+  CHECK(lines[1] == "Étape 2 sur 4 : test des réglages « Qualité »");
   REQUIRE(outcome->notes.size() == 1);
   CHECK(outcome->notes.front().starts_with(
-      "L'essai des réglages « Rapide » n'a rien rendu : refus : GPU saturé"));
+      "L'essai des réglages « Qualité » n'a rien rendu : refus : GPU saturé"));
   CHECK(outcome->notes.front().contains("code 3"));
   CHECK(shown.get().step == BenchStep::Levels);
 }

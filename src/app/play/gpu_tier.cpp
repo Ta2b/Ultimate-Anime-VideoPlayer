@@ -43,20 +43,22 @@ std::optional<GpuVendor> vendor_of(std::string_view key) {
 
 }  // namespace
 
+// Les noms du menu (auto_config.h : chain_level), pour que l'assistant et le menu disent le même niveau :
+// la tranche Light est le niveau Rapide, la tranche Fast le niveau Qualité.
 std::string_view tier_label(Tier tier) {
   switch (tier) {
     case Tier::Economy:
       return i18n::tr("Economy");
     case Tier::Light:
-      return i18n::tr("Light");
+      return i18n::tr("Fast");
     case Tier::Normal:
-      return "Normal";
+      return i18n::tr("Normal");
     case Tier::Fast:
-      return "Rapide";
+      return i18n::tr("Quality");
     case Tier::Ultra:
-      return "Ultra";
+      return i18n::tr("Ultra");
   }
-  return "Normal";
+  return i18n::tr("Normal");
 }
 
 std::expected<TierTable, Refusal> parse_tier_table(std::string_view text) {

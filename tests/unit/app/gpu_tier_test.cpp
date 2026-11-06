@@ -92,4 +92,7 @@ TEST_CASE("les noms de tranche", "[gpu_tier]") {
   ajp::app::play::FrenchUi french;
   CHECK(tier_label(Tier::Economy) == "Économe");
   CHECK(tier_label(Tier::Ultra) == "Ultra");
+  // Les noms du menu : la tranche Fast est le niveau Qualité (l'assistant disait « Rapide »).
+  CHECK(tier_label(Tier::Fast) == "Qualité");
+  CHECK(tier_label(Tier::Light) == "Rapide");
 }

@@ -115,7 +115,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies de calcul le
   // permettent (export_depth.h).
   const ExportDepth depth = export_depth(c.one_lane ? 1 : c.backend->capabilities().lanes);
-  show_loading(p.screen, p.ui, "Ouverture de l'export");
+  show_loading(p.screen, p.ui, i18n::tr("Opening the export"));
 
   // Ordre de déclaration = ordre inverse de destruction : l'écriture, qui rend ses images aux
   // tampons de la conversion, part avant elle ; les moteurs (prepared) partent les derniers.

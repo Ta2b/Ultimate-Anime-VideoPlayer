@@ -372,7 +372,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         *paths.relaunch = true;
         return {};
       }
-      show_loading(**screen, **ui, "Chargement");
+      show_loading(**screen, **ui, i18n::tr("Loading"));
       const gpu::BackendInit probe{
           .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};
       auto opened = open_backend(catalog, paths, *engines, probe);

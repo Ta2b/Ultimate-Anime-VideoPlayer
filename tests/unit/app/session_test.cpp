@@ -509,7 +509,7 @@ TEST_CASE("L'interface demande une présentation quand elle change, et une pour 
   CHECK_FALSE(rig.screen.shown.back().ui);
 }
 
-TEST_CASE("Statistiques masquées par défaut ; les refus restent visibles", "[app][session]") {
+TEST_CASE("Statistiques masquées par défaut ; les refus ne vont qu'aux statistiques", "[app][session]") {
   ajp::app::play::FrenchUi french;
   Rig rig(SessionConfig{.header = {"SPAN ×2"}});
   rig.session.handle(ring_frame(0, 0));
@@ -524,8 +524,12 @@ TEST_CASE("Statistiques masquées par défaut ; les refus restent visibles", "[a
   rig.session.handle(StageRefusal{.stage = "audio", .refusal = {RefusalCode::AudioDecodeFailed, "paquet"}});
   rig.screen.now_us += 300'000;
   rig.tick();
-  REQUIRE(rig.screen.shown.back().osd.size() == 1);
-  CHECK(rig.screen.shown.back().osd[0] == "audio : AudioDecodeFailed paquet");
+  CHECK(rig.screen.shown.back().osd.empty());  // pas incrusté sur l'image
+  rig.session.command(cmd::ToggleOsd{});
+  rig.screen.now_us += 300'000;
+  rig.tick();
+  REQUIRE_FALSE(rig.screen.shown.back().osd.empty());
+  CHECK(rig.screen.shown.back().osd.back() == "audio : AudioDecodeFailed paquet");
 }
 
 TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][session]") {
