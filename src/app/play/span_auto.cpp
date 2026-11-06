@@ -14,11 +14,10 @@ std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
   if (facts.backend_name != "tensorrt") {
     if (facts.tensorrt_present) {
       return i18n::tr_format(
-          "TensorRT is installed but the player uses {}: pick TensorRT in Settings > Export and engines > "
-          "Engines",
+          "TensorRT is installed but the player uses {}: pick TensorRT in Settings > General > Engines",
           facts.backend_name.empty() ? std::string(i18n::tr("another engine")) : facts.backend_name);
     }
-    return i18n::tr("TensorRT is not installed: install it in Settings > Export and engines > Engines");
+    return i18n::tr("TensorRT is not installed: install it in Settings > General > Engines");
   }
   return i18n::tr_format(
       "{} is not an NVIDIA RTX 40 (Ada) or RTX 50 (Blackwell) card, or the engine was built without these "

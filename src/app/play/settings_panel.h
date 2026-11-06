@@ -1,5 +1,5 @@
-// Le menu des paramètres : un panneau à droite de l'écran, un arbre de cinq catégories (Général, Image IA,
-// HDR et couleurs, Audio, Export et moteurs) et douze pages (settings_pages). Les réglages en direct
+// Le menu des paramètres : un panneau à droite de l'écran, un arbre de trois catégories (Vidéo, Audio et
+// lecture, Général) et dix pages (settings_pages). Les réglages en direct
 // s'appliquent pendant qu'on les change ; ceux qui demandent de rouvrir la chaîne attendent « Appliquer »,
 // sous un encadré qui dit ce qui sera reconstruit ou rechargé (settings.h : change_between).
 #pragma once
@@ -69,7 +69,7 @@ struct SettingsChoices {
   std::int64_t position_us = 0;                 // où en est sa lecture (PlayerUi::frame)
   bool paused = false;                          // sa lecture est en pause
   std::string black_status;                     // seuils du vrai noir en cours
-  // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
+  // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
   int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
@@ -157,7 +157,7 @@ class SettingsPanel {
   SystemNote system_;                           // l'onglet Système : sa dernière action
   UpdateNote updates_;                    // Général > Application : la vérification en cours ou son résultat
   BenchNote bench_;                       // « Évaluer ma machine » : l'essai en cours ou son rapport
-  std::unique_ptr<MachineNote> machine_;  // Général > Configuration : les résultats du bench
+  std::unique_ptr<MachineNote> machine_;  // Vidéo > Post-traitement : les résultats du bench
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };
 

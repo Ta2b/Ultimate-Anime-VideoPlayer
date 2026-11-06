@@ -442,7 +442,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       note(
           i18n::tr("Only a progress bar is shown; it takes a few minutes, longer the first time on a "
                    "laptop (the engines are built once)."));
-      note(i18n::tr("Skipped: the Auto preset. Redo it later in General > Setup."));
+      note(i18n::tr("Skipped: the Auto preset. Redo it later in Video > Post-processing."));
       break;
     case WizardStep::Hdr:    // retiré : le HDR suit le système
     case WizardStep::Grade:  // retiré

@@ -6,6 +6,27 @@
 configuration automatique, lecteur par défaut, mise à jour). L'implémentation avance par petites PR :
 (a) détection et tranche, (b) préréglages, (c) benchmark, (d) textes et pastilles, (e) cadre en arbre.
 
+## 0. L'arbre en vigueur (novembre 2026)
+
+Ce qui suit (sections 1 et plus) est l'historique du tri. L'arbre du code (`settings_panel.cpp`, `kPages`) est
+désormais celui-ci, trois catégories et dix pages :
+
+| Catégorie | Page | Contenu |
+|---|---|---|
+| Vidéo | Post-traitement | niveau de traitement (Auto, Économe, Rapide, Normal, Qualité, Ultra ; Personnalisé dès qu'un réglage est fait à la main), agrandissement SPAN, résolution de travail, interpolation. Avancé : préparation FP8, résultats du bench |
+| Vidéo | Couleurs | sortie HDR ou SDR (elle suit le système, pas de bouton), grade anime. Avancé : pic de l'écran |
+| Vidéo | Affichage | filtre final, débandage. Avancé : vrai noir et soins OLED |
+| Audio et lecture | Son | sortie, délai, calage sur l'écran |
+| Audio et lecture | Lecture | langues préférées, sous-titres, épisode suivant |
+| Général | Application | langue, mises à jour, lecteur par défaut |
+| Général | Moteurs | le moteur d'inférence et l'état de ses modules |
+| Général | Export | export de la chaîne en cours |
+| Général | Statistiques | ce que Tab affiche |
+| Général | À propos | la machine, l'assistant à refaire, tout réinitialiser |
+
+Plus de profils, plus de méthode HDR à choisir. Le niveau de traitement applique `apply_preset`
+(`auto_config.h`) à la machine, à l'écran et à la vidéo ouverts.
+
 ## 1. Ce qu'il y a aujourd'hui
 
 12 onglets, une soixantaine de réglages, **plus de 80 notes qui totalisent plus de 7 300 caractères** (environ

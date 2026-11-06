@@ -147,7 +147,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
                     tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
-  // Général > Configuration sans vidéo ouverte : la carte, sa tranche (mesurée ou estimée), l'écran, les
+  // Vidéo > Post-traitement sans vidéo ouverte : la carte, sa tranche (mesurée ou estimée), l'écran, les
   // sorties son, comme en lecture.
   std::optional<BenchResult> measured;
   if (auto bench = load_bench(h.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);

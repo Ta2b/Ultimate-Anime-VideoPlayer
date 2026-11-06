@@ -14,9 +14,9 @@
 
 using namespace ajp::app::play;
 
-TEST_CASE("l'arbre des réglages tient en cinq catégories et douze pages", "[settings][pages]") {
+TEST_CASE("l'arbre des réglages tient en trois catégories et dix pages", "[settings][pages]") {
   const auto pages = settings_pages();
-  CHECK(pages.size() <= 12);
+  CHECK(pages.size() <= 10);
   std::set<std::string_view> categories;
   std::set<std::string_view> names;
   std::string_view previous;
@@ -27,9 +27,9 @@ TEST_CASE("l'arbre des réglages tient en cinq catégories et douze pages", "[se
     if (page.category != previous) CHECK(categories.insert(page.category).second);
     previous = page.category;
   }
-  CHECK(categories.size() <= 5);
-  CHECK(std::string_view(pages.front().category) == "General");
-  CHECK(std::string_view(pages.front().name) == "Setup");
+  CHECK(categories.size() == 3);
+  CHECK(std::string_view(pages.front().category) == "Video");
+  CHECK(std::string_view(pages.front().name) == "Post-processing");
 }
 
 TEST_CASE("l'arbre des réglages garde les pages que les autres écrans citent", "[settings][pages]") {
@@ -40,8 +40,9 @@ TEST_CASE("l'arbre des réglages garde les pages que les autres écrans citent",
     });
   };
   // Les langues et les sous-titres, le lecteur par défaut et les mises à jour vivent ensemble.
-  CHECK(has("General", "Playback"));
+  CHECK(has("Audio and playback", "Playback"));
   CHECK(has("General", "Application"));
+  CHECK(has("General", "Engines"));  // le moteur est un réglage général (demande de Tatoub)
   CHECK_FALSE(has("General", "Languages"));
   CHECK_FALSE(has("General", "Subtitles"));
   CHECK_FALSE(has("General", "Default player"));
