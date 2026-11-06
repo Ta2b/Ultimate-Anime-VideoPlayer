@@ -248,6 +248,8 @@ void Session::on_refusal(const StageRefusal& refusal) {
   if (refusals_.size() > kMaxRefusals) refusals_.erase(refusals_.begin());
   osd_at_us_.reset();  // le refus paraît au tour suivant
   if (refusal.refusal.code == RefusalCode::SourceResized) resized_ = true;
+  if (refusal.fatal && !resized_ && !failure_)
+    failure_ = Refusal{refusal.refusal.code, std::format("{} : {}", refusal.stage, refusal.refusal.detail)};
   if (refusal.fatal || resized_) finished_ = true;
 }
 

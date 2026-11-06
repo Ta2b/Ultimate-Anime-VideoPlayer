@@ -173,6 +173,9 @@ class Session {
   void end();
 
   bool finished() const { return finished_; }
+  // Le refus fatal d'un étage qui a fini la lecture (le premier) : une erreur, pas une fin de
+  // fichier. std::nullopt après une fin normale, un arrêt demandé ou un changement de taille.
+  const std::optional<Refusal>& failure() const { return failure_; }
   // Le délai entre la présentation d'une image et son affichage, tel que choisi pour la sélection des images.
   std::int64_t visible_delay_us() const { return display_delay_us(display_period()); }
   // Après un tour sans présentation, combien la boucle peut dormir : jusqu'à l'échéance de la prochaine
@@ -219,6 +222,7 @@ class Session {
   bool paused_ = false;                           // pause demandée par l'utilisateur
   bool stream_ended_ = false;
   bool finished_ = false;
+  std::optional<Refusal> failure_;
   bool resized_ = false;
   bool quit_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
