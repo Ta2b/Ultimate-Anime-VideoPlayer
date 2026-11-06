@@ -1,11 +1,13 @@
 #include "app/play/export_run.h"
 
 #include <algorithm>
+#include <array>
 #include <deque>
 #include <format>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <system_error>
 #include <utility>
 #include <variant>
@@ -13,6 +15,7 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_timer.h>
 
 #include "app/play/i18n.h"
@@ -59,16 +62,47 @@ std::string seconds_text(double seconds) {
   return format_clock(static_cast<std::int64_t>(seconds * 1e6), 0);
 }
 
+// Une annulation demande confirmation : un export peut durer des heures, et l'annuler efface le fichier.
+// Échap ou q une première fois arme l'annulation, une seconde dans les 5 s la fait.
+constexpr std::int64_t kCancelConfirmUs = 5'000'000;
+
+// Fermer la fenêtre pendant l'export : une boîte demande s'il faut tout arrêter (vrai) ou continuer.
+bool confirm_quit(PlaceboScreen& screen) {
+  const std::string text = i18n::tr("Stop the export? The file being written will be deleted.");
+  const std::string stop = i18n::tr("Stop the export");
+  const std::string keep = i18n::tr("Continue");
+  const std::array<SDL_MessageBoxButtonData, 2> buttons{{
+      {.flags = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, .buttonID = 0, .text = keep.c_str()},
+      {.flags = 0, .buttonID = 1, .text = stop.c_str()},
+  }};
+  const SDL_MessageBoxData data{.flags = SDL_MESSAGEBOX_WARNING,
+                                .window = screen.window(),
+                                .title = "ajp",
+                                .message = text.c_str(),
+                                .numbuttons = static_cast<int>(buttons.size()),
+                                .buttons = buttons.data()};
+  int chosen = 0;
+  return SDL_ShowMessageBox(&data, &chosen) && chosen == 1;
+}
+
 // Une touche ou la fenêtre pendant l'export : annuler, quitter, plein écran, détails (Tab).
-std::optional<ExportEnd> poll_export_events(PlaceboScreen& screen, bool& details) {
+// armed_at : instant de la première demande d'annulation, en attente de sa confirmation.
+std::optional<ExportEnd> poll_export_events(PlaceboScreen& screen, bool& details,
+                                            std::optional<std::int64_t>& armed_at) {
   std::optional<ExportEnd> end;
+  const std::int64_t now = host_now_us();
+  if (armed_at && now - *armed_at > kCancelConfirmUs) armed_at.reset();
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
     if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-      end = ExportEnd::Quit;
+      if (confirm_quit(screen)) end = ExportEnd::Quit;
     } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
       if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_Q) {
-        if (!end) end = ExportEnd::Cancelled;
+        if (!armed_at) {
+          armed_at = now;
+        } else if (!end) {
+          end = ExportEnd::Cancelled;
+        }
       } else if (event.key.key == SDLK_TAB) {
         details = !details;
       } else if (event.key.key == SDLK_F) {
@@ -216,13 +250,16 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   std::int64_t converted = 0;
   std::int64_t last_pts = 0;
   bool details = true;
+  std::optional<std::int64_t> cancel_armed_at;
   const std::int64_t started = host_now_us();
   std::int64_t shown_at = 0;
   const std::function<bool(exporter::Picture&&)> push = [&](exporter::Picture&& picture) {
     return (*writer)->try_push(std::move(picture));
   };
   while (true) {
-    interrupted = poll_export_events(p.screen, details);
+    const bool was_armed = cancel_armed_at.has_value();
+    interrupted = poll_export_events(p.screen, details, cancel_armed_at);
+    if (was_armed != cancel_armed_at.has_value()) shown_at = 0;  // le libellé change tout de suite
     if (interrupted) break;
     if (auto refused = (*writer)->failure()) {
       failure = std::move(*refused);
@@ -311,7 +348,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       const std::string left =
           fraction > 0.01F ? seconds_text(elapsed * (1.0 - fraction) / fraction) : std::string("…");
       const PrepareView view{
-          .label = i18n::tr("Exporting · Esc to cancel"),
+          .label = cancel_armed_at ? i18n::tr("Press Esc again to cancel the export and delete the file")
+                                   : i18n::tr("Exporting · Esc to cancel"),
           .fraction = duration_us > 0 ? std::optional(fraction) : std::nullopt,
           .details = {i18n::tr_format("{} frames · {:.1f} fps · elapsed {} · left ~{}", converted,
                                       elapsed > 0.0 ? static_cast<double>(converted) / elapsed : 0.0,
