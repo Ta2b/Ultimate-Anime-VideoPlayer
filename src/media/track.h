@@ -55,7 +55,7 @@ struct TrackInfo {
   bool attached_picture = false;  // pochette : jamais choisie comme vidéo
   std::int64_t duration_us = 0;   // 0 si inconnue
 
-  int width = 0;  // vidéo
+  int width = 0;  // vidéo, ramenée à une valeur paire comme les images (chain_dimension, core/frame.h)
   int height = 0;
   Rational frame_rate;     // fréquence moyenne, {0, 1} si inconnue
   Rational sample_aspect;  // forme du pixel (SAR) : celle du flux, sinon du conteneur ; {0, 1} si inconnue

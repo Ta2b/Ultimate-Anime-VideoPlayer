@@ -253,8 +253,8 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
   }
 
   DecodedFrame decoded{
-      .width = frame->width,
-      .height = frame->height,
+      .width = chain_dimension(frame->width),
+      .height = chain_dimension(frame->height),
       .format = *format,
       .color = *color,
       .pts_us = pts_us,
