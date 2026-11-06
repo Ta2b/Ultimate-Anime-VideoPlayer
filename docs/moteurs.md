@@ -2,7 +2,7 @@
 
 Le lecteur fait tourner ses réseaux (SPAN pour l'agrandissement, RIFE, GMFSS et DistilDRBA pour
 l'interpolation) sur l'un de ces moteurs. Le choix se fait à l'écran des moteurs (premier lancement, ou
-Paramètres > Moteurs) et s'enregistre dans `settings.toml`.
+Paramètres > Général > Moteurs) et s'enregistre dans `settings.toml`.
 
 ## Ce qui est branché
 

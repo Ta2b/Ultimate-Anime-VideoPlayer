@@ -1,5 +1,7 @@
 # Audit esthétique et fonctionnel de l'interface (0.6.1)
 
+> **Document historique** (état de l'audit de l'interface (0.6.1)). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Demande de Tatoub : « refaire un petit audit esthétique du lecteur, des menus : que aucune écriture ne dépasse, que
 tout soit clair et simple, cohérence des catégories et sous-catégories, déplacer ou fusionner des sous-catégories si
 nécessaire, vérifier que chaque bouton fonctionne et que le tout soit beau et esthétique ». Aucune fonctionnalité

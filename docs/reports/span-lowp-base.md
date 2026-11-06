@@ -1,5 +1,7 @@
 # SPAN basse précision : banc de départ (étape 3.0)
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 À remplir lors de la passe de mesures groupée sur la RTX 4070 Ti. Rien n'a été mesuré dans le cloud (pas de GPU).
 
 ## Protocole

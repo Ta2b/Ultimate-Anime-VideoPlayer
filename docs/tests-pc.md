@@ -1,5 +1,7 @@
 # Essais à faire sur le PC de Tatoub
 
+> **Document historique** (état de les essais d'octobre). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Ce que le cloud a intégré sans pouvoir l'essayer : il n'a ni RTX, ni écran QD-OLED, ni CUDA
 (construit et vérifié seulement jusqu'à la compilation, sur lavapipe pour Vulkan). Chaque ligne dit
 quoi lancer et ce qu'on attend. L'extrait de référence reste Re:Zero S4E18, 16:00 → 18:00.

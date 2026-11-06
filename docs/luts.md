@@ -1,5 +1,12 @@
 # Looks (LUT 3D .cube)
 
+> **État actuel (novembre 2026)** : le menu ne propose plus de choisir ni d'empiler les looks. Le grade HDR anime
+> pose seul sa LUT de base et « skin fix » ; il reste deux curseurs avancés (Vidéo > Couleurs : intensité des
+> LUT de contraste et d'éclats, `look_contrast`, `look_highlight`). Les clés `look` et `look_mix` de
+> `play.toml` sont encore écrites mais le grade anime ne les lit plus (commentaire de `look_contrast`,
+> `settings.h`) ; `look_layers` reste lisible à la main. La mécanique décrite plus bas (looks maison,
+> 55 LUT d'HDR, dossier `luts`) reste celle du code de `src/render/looks.*`.
+
 Le menu **Couleurs** propose un **Look (LUT)** et son **intensité** (0 à 100 %). Le look passe après le grade
 (contraste, éclats, couleurs…) et avant le vrai noir OLED ; il agit sur toutes les routes (HDR,
 SDR, sortie SDR). Intensité à 0 : la passe est sautée, l'image est identique octet pour octet.

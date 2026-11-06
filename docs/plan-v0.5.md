@@ -1,5 +1,7 @@
 # Plan de la v0.5
 
+> **Document historique** (état de la v0.5). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Suivi de la prochaine version : **tout ce qui était prévu pour la 0.4, plus le son spatial. Rien n'est reporté.**
 Tatoub n'est plus disponible pour valider : l'avancement est autonome, chaque décision est notée ci-dessous.
 Ce fichier est mis à jour à chaque étape (cases cochées, journal daté). Les détails de conception sont dans

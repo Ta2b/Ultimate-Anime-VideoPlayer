@@ -1,5 +1,7 @@
 # Temps des noyaux Vulkan du socle sur la RTX 4070 Ti
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Banc `ajp_vk_kernels_bench` (branche `pc/vk-compute-bench`, `tools/bench/vk_kernels/`, option CMake
 `AJP_BUILD_BENCH`), mesuré le 19 octobre 2026 vers 19 h 50, sous le verrou GPU (`ajp-gpu`).
 Sorties brutes des trois passages et état de la carte : `~/ajp-reports/vk-compute-bench/`.

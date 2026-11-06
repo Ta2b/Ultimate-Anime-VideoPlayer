@@ -1,5 +1,7 @@
 # État Windows NVIDIA (poste RTX 4070 Laptop 8 Go) — 2026-10-31
 
+> **Document historique** (état de le 31/10). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Reprise du travail : ce qui est fait, mesuré, et ce qui reste. Rien n'est publié (ni release, ni `ajp-releases`, ni étiquette).
 
 ## Fait

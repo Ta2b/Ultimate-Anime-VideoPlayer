@@ -1,5 +1,7 @@
 # À tester avant d'étiqueter la v0.5.0 : Windows et macOS
 
+> **Document historique** (état de la v0.5). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Tout ce qui suit n'a **pas** été essayé : le développement s'est fait sur Linux (KDE Wayland, RTX 4070 Ti). Les tests unitaires
 passent sur Linux (`ajp_app_tests`, `ajp_core_tests`, `ajp_audio_tests`) ; la CI Windows et macOS les rejoue sans GPU.
 

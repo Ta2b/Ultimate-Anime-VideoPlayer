@@ -1,20 +1,40 @@
 # Ultimate Anime VideoPlayer
 
-Lecteur vidéo écrit en C++ pour l'anime : agrandissement AnimeJaNai (SPAN),
-interpolation (RIFE et au-delà) et grade HDR anime, en temps réel.
+Lecteur vidéo écrit en C++ pour l'anime, en temps réel :
+
+- **agrandissement** AnimeJaNai (SPAN ×2) ;
+- **interpolation** (RIFE 4.22 lite par défaut, DistilDRBA au choix) en mode Auto, qui suit ce que le GPU tient ;
+- **grade HDR anime** : l'anime SDR passe en HDR10 avec un grade guidé par plan. Le HDR suit le système, sans
+  bouton : sortie HDR quand Windows ou le compositeur envoient du HDR à un écran assez lumineux, sinon SDR gradée.
+
 L'export rejoue exactement le même traitement, sans horloge.
 
-Le lecteur s'installe léger : il embarque notre moteur Vulkan, qui tourne sur
-tout GPU récent. TensorRT, MIGraphX, OpenVINO et DirectML sont
-facultatifs et se choisissent au premier lancement, avec une présélection
-adaptée à la machine.
+Le lecteur s'installe léger : il embarque son moteur **Vulkan**, qui tourne sur tout GPU récent (AMD, Intel,
+NVIDIA). Sur une carte NVIDIA RTX, **TensorRT** se propose au premier lancement et se télécharge à part ; sous
+macOS, les réseaux passent par **Core ML**. MIGraphX et OpenVINO restent dans les sources mais sont débranchés du
+lecteur (voir [`docs/moteurs.md`](docs/moteurs.md)).
+
+## Utilisation
+
+`ajp` sans fichier ouvre l'écran d'accueil ; `ajp video.mkv` lit la vidéo. Le menu des paramètres (touche `p`) a
+trois catégories :
+
+| Catégorie | Pages |
+|---|---|
+| Vidéo | Post-traitement (niveau Économe à Ultra, agrandissement, interpolation), Couleurs, Affichage |
+| Audio et lecture | Son, Lecture (langues, sous-titres, épisode suivant) |
+| Général | Application (langue, mises à jour, lecteur par défaut), Moteurs, Export, Statistiques, À propos |
+
+Le niveau **Auto** choisit la chaîne selon la carte, l'écran et la vidéo ; un réglage fait à la main passe en
+Personnalisé. Les réglages vivent dans `play.toml` (dossier des données du lecteur), les moteurs choisis dans
+`settings.toml`, les raccourcis dans `user.toml` (`[keys]`). `ajp --help` liste les options et les touches.
 
 ## État
 
-Version 0.7 (candidates `v0.7.0-rc.*`) : lecture, agrandissement SPAN, interpolation RIFE, DistilDRBA et
-GMFSS, grade HDR anime et export, sous Linux, Windows et macOS, sur le moteur Vulkan du lecteur ou sur
-TensorRT, MIGraphX, OpenVINO, Windows ML et Core ML. Voir [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) pour
-les modules et leurs règles, et [`docs/adr/`](docs/adr/README.md) pour les décisions qui les façonnent.
+Version 0.9.1. Lecture, agrandissement, interpolation, grade HDR anime et export sous Linux, Windows et macOS.
+Pour comprendre le code : [`CLAUDE.md`](CLAUDE.md) (guide de reprise, pour un humain ou une IA), puis
+[`docs/README.md`](docs/README.md) (carte des documents, vivants et historiques),
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (modules et règles) et [`docs/adr/`](docs/adr/README.md) (décisions).
 
 ## Construire
 
@@ -41,31 +61,25 @@ ctest --preset linux-prefix
 ```
 
 Sous macOS (Apple Silicon, macOS 14+), Vulkan passe par MoltenVK, et les réseaux par Core ML
-(Neural Engine et GPU, au travers d'ONNX Runtime) avec `ajp_backend_coreml` ; le paquet `AJP.app`
-se fait ainsi, ou par le workflow « Release macOS » lancé à la main :
+(Neural Engine et GPU, au travers d'ONNX Runtime) avec `ajp_backend_coreml` :
 
 ```sh
 tools/deps/macos-from-source.sh ~/ajp-deps
 AJP_DEPS_PREFIX=~/ajp-deps tools/release/package-macos.sh   # build/package/ajp-macos-arm64.zip
 ```
 
-Une version Linux tient en un seul lecteur pour tous les GPU : `tools/release/package-linux.sh`
-produit `ajp-linux-x64.tar.gz` (lecteur, Vulkan, `engines.lock`) et un paquet par moteur construit
-(TensorRT, MIGraphX, OpenVINO). Au premier lancement, l'écran de bienvenue propose ceux qui
-conviennent au GPU ; les cochés se téléchargent depuis la release, vérifiés par leur SHA-256
-(la licence de TensorRT s'accepte à l'écran).
+## Paquets
 
-Sous Windows, le même lecteur universel se construit par vcpkg (`windows-release`) ;
-`tools/release/package-windows.ps1` produit `ajp-windows-x64.zip` et, si TensorRT est installé
-(`AJP_WITH_CUDA=ON`), son paquet de moteur. Le workflow « Release Windows » le fait à la main sur
-GitHub, sans TensorRT.
+- **Linux** : `tools/release/package-linux.sh` produit `ajp-linux-x64.tar.gz` (lecteur, Vulkan, `engines.lock`).
+  Le paquet TensorRT se construit sur un poste NVIDIA (`tools/release/trt-package.sh`).
+- **Windows** : vcpkg (`windows-release`), puis `tools/release/package-windows.ps1` produit
+  `ajp-windows-x64.zip` et, avec `AJP_WITH_CUDA=ON`, le paquet TensorRT.
+- **macOS** : `AJP.app`, ci-dessus, ou le workflow « Release macOS ».
 
-Sur les GPU AMD et Intel, les réseaux peuvent passer par le runtime du fabricant tandis que la
-chaîne reste sur Vulkan : `-DAJP_WITH_MIGRAPHX=ON` (ROCm installé) construit
-`ajp_backend_migraphx`, `-DAJP_WITH_OPENVINO=ON` construit `ajp_backend_openvino`. Chacun ne
-s'essaie que choisi à l'écran de bienvenue, et refuse les autres fabricants (Vulkan prend alors
-le relais).
+Aucun fichier de NVIDIA n'est dans nos archives : le paquet TensorRT ne porte que notre module et `trtexec`, et
+le lecteur télécharge les bibliothèques de NVIDIA après l'accord de licence ([`docs/moteurs.md`](docs/moteurs.md)).
 
 ## Licence
 
-Mozilla Public License 2.0 (fichier `LICENSE`). Les composants tiers et les modèles gardent leur licence : voir `THIRD_PARTY_NOTICES.md`.
+Mozilla Public License 2.0 (fichier `LICENSE`). Les composants tiers et les modèles gardent leur licence : voir
+`THIRD_PARTY_NOTICES.md`.

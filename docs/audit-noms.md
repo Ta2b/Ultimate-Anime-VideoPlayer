@@ -1,5 +1,7 @@
 # Audit des noms de réglages (1.0)
 
+> **Document historique** (état de l'audit des noms du 29/10). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Demande de Tatoub (29/10) : des noms adéquats, courts, comme dans mpv, VLC, MPC-HC, PotPlayer, Plex ou OBS, sans « overtalk » :
 libellé de 1 à 3 mots, infobulle d'une phrase seulement si elle sert. Chaque texte passe par `tr()` (anglais par défaut, français
 au choix : Général > Application > Language) ; ce document liste les noms avant et après, page par page, au fil des PR.

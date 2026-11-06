@@ -1,5 +1,7 @@
 # GMFSS Union : lot et recouvrement au trtexec (RTX 4070 Ti, 28 octobre 2026)
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Pour décider si l'audit code un lot (plusieurs instants dans un appel de la fusion) ou un second flux (paire n+1 pendant les fusions de n).
 Graphes ONNX FP16 du lecteur (`gmfss_fortuna_union_s05_*`), TensorRT 11.3, `--noDataTransfers`, sous le verrou GPU ; bureau actif (~35 % du GPU
 pris par Brave) : médianes. Taille de travail réelle : 540 lignes, `frames` 6×768×1280 (plans à 128), fusion à `half` 3×384×640.
