@@ -74,8 +74,8 @@ void language_section(PlaySettings& d) {
 
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
   const UpdatePaths paths{
-      .data = place.data, .install = place.executable.parent_path(), .executable = place.executable};
-  const std::filesystem::path state_file = place.data / "update.toml";
+      .data = place.app_data, .install = place.executable.parent_path(), .executable = place.executable};
+  const std::filesystem::path state_file = place.app_data / "update.toml";
   if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = result.pending->get();
     result = done ? UpdateNote{.text = *done} : UpdateNote{.text = done.error().detail, .refused = true};

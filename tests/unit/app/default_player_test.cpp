@@ -10,6 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/player.h"
 #include "french_ui.h"
 
 namespace ajp::app::play {
@@ -175,4 +176,17 @@ TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_pla
   CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop"));
   CHECK_FALSE(default_handler_is_ajp("mpv.desktop\n"));
   CHECK_FALSE(default_handler_is_ajp(""));
+}
+
+TEST_CASE("Lecteur par défaut : la mise à jour et l'inscription ne lisent pas le même dossier",
+          "[app][default_player]") {
+  // Le dossier du lecteur garde update.toml (vérification, préparation et application au lancement) ;
+  // l'inscription part de son grand-parent. Avant, la vérification écrivait dans le grand-parent.
+  const ajp::app::play::PlayerPaths paths{
+      .home = "/maison", .data = "/donnees/ajp/ajp", .executable = "/opt/ajp/ajp"};
+  using namespace ajp::app::play;
+  const PlayerPlace place = ajp::app::play::place_of(paths);
+  CHECK(place.app_data == std::filesystem::path("/donnees/ajp/ajp"));
+  CHECK(place.data == std::filesystem::path("/donnees"));
+  CHECK(place.executable == std::filesystem::path("/opt/ajp/ajp"));
 }

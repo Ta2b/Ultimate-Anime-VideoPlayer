@@ -160,8 +160,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   for (const audio::AudioDevice& device : audio::playback_devices())
     audio_outputs.push_back(
         {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  const bool default_player_is_ajp =
-      is_default_player({.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data});
+  const bool default_player_is_ajp = is_default_player(place_of(h.paths));
   return SettingsChoices{
       .luts_dir = h.paths.engines.parent_path() / "luts",
       .models = model ? model->available : std::vector<std::string>{},
@@ -200,7 +199,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .engines_dir_free = format_size(free_bytes(h.catalog.layout.engines)),
       .default_player_is_ajp = default_player_is_ajp,
       .bench_text = bench_text,
-      .place = {.executable = h.paths.executable, .home = h.paths.home, .data = h.paths.data},
+      .place = place_of(h.paths),
       .span_prepare = {.note = i18n::tr("Open a video: the player prepares Performance mode on its frames.")},
       .fp8_reason = span_fp8_unavailable_reason(fp8_facts),
       .settings_dir = h.settings_path.parent_path()};
