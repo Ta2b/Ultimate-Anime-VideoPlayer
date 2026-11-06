@@ -1,35 +1,12 @@
-// Origine : https://github.com/Ta2b/mpv-AnimeJaNai-HDR, commit 33ff79d (vu à c6fee61),
-// BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/portable_config/user-shaders/anime-hdr-grade.hook,
-// copié sous cet en-tête. Seul ajout de ce dépôt : le garde-fou des couleurs saturées (`guard`,
-// réglages poussés) ; à guard = 0, le défaut, le shader calcule exactement comme l'original.
+// Les paramètres (PARAM) du grade HDR anime (anime-hdr-anime/, anime-hdr-look.hook, anime-hdr-black.hook), déclarés une
+// fois ici et lus par render::Grade (src/render/grade.cpp, kGradeParams) ; leurs valeurs viennent de
+// render::decide_grade (src/render/grade_params.cpp). Le grade part du shader de
+// https://github.com/Ta2b/mpv-AnimeJaNai-HDR (commit 33ff79d) ; seuls restent les paramètres que le grade
+// anime lit encore.
 //
-// AnimeJaNai HDR grade - un seul shader pour RTX TrueHDR et le HDR MPV (NVIDIA / AMD / Intel).
-//
-// Pose sur OUTPUT : l'image est deja encodee en PQ BT.2020 pour l'ecran.
-// Le controleur user-scripts/animejanai_hdr_auto.lua l'attache seulement
-// quand la sortie PQ est confirmee, et lui transmet les parametres ci-dessous.
-// Ajout de ce depot : sur une sortie SDR (sdr_out = 1), l'image est en BT.709 gamma sdr_gamma,
-// son blanc place a `peak` nits ; le meme traitement s'y applique dans le gamut BT.709, sans
-// marge au-dessus du blanc. A sdr_out = 0, le defaut, rien ne change.
-// Ajout de ce depot : le HDR adaptatif (adapt = 1, route native, tous GPU) module l'aspect TrueHDR
-// emule par la scene : APL lisse et part des grands aplats clairs freinent l'expansion vers le
-// pic (eblouissement, limiteur OLED), une scene de nuit adoucit le contraste des ombres. A
-// adapt = 0, le defaut, rien ne change.
-//
-// Traitement par pixel, en lumiere lineaire absolue (nits) :
-//   1. noirs : pied de courbe doux sous `shadow_knee`, le noir reste a 0 ;
-//   2. eclats : gain au-dessus du blanc papier, fort pour les zones plus
-//      lumineuses que leur voisinage (eclats, reflets, magie, neons), faible
-//      pour les grands aplats clairs (ciel, murs blancs) et jamais module
-//      sur la peau (pas de taches claires ni de scintillement sur les visages) ;
-//   3. epaule douce vers `peak`, sans ecretage dur ;
-//   4. vibrance perceptuelle ICtCp, tons chair exclus, couleurs deja saturees menagees ;
-//   5. limite douce au gamut de l'ecran (P3) et au pic.
-// Les canaux RGB sont multiplies ensemble aux etapes 1 a 3 : la teinte ne bouge pas.
-//
-// Stabilite : la carte de zone est lissee d'une image a l'autre (buffer persistant) et
-// remise a zero a chaque changement de plan. Limiteur OLED (ABL) : sur une scene tres
-// claire, l'ecran baisse de toute facon sa luminosite ; les gains y sont moderes.
+// L'image arrive sur OUTPUT déjà encodée en PQ BT.2020 pour l'écran. Sur une sortie SDR (sdr_out = 1), elle est
+// en BT.709 au gamma sdr_gamma, son blanc à `peak` nits ; sdr_tm = 1 la passe d'abord en PQ (anime-hdr-black
+// la ramène au SDR).
 
 //!PARAM peak
 //!DESC Pic de sortie (nits)
@@ -43,13 +20,6 @@
 //!TYPE float
 //!MINIMUM 50.0
 //!MAXIMUM 5000.0
-203.0
-
-//!PARAM in_max
-//!DESC Niveau maximal attendu en entree (nits) : papier pour le SDR converti par MPV, pic pour TrueHDR
-//!TYPE float
-//!MINIMUM 50.0
-//!MAXIMUM 10000.0
 203.0
 
 //!PARAM shadows
@@ -66,13 +36,6 @@
 //!MAXIMUM 200.0
 50.0
 
-//!PARAM area_gain
-//!DESC Gain des grands aplats lumineux au niveau du papier
-//!TYPE float
-//!MINIMUM 1.0
-//!MAXIMUM 4.0
-1.4
-
 //!PARAM spec_gain
 //!DESC Gain des eclats isoles au niveau du papier
 //!TYPE float
@@ -80,103 +43,12 @@
 //!MAXIMUM 20.0
 4.3
 
-//!PARAM vibrance
-//!DESC Vibrance perceptuelle (0 = neutre)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.4
-0.25
-
-//!PARAM abl
-//!DESC Moderation des eclats sur les scenes claires (limiteur OLED), 0 = aucune
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM abl_lo
-//!DESC Limiteur OLED : APL lisse (nits) ou la moderation commence
-//!TYPE float
-//!MINIMUM 20.0
-//!MAXIMUM 2000.0
-80.0
-
-//!PARAM abl_hi
-//!DESC Limiteur OLED : APL lisse (nits) ou la moderation est complete
-//!TYPE float
-//!MINIMUM 20.0
-//!MAXIMUM 2000.0
-250.0
-
-//!PARAM expand
-//!DESC Couleurs etendues : couleurs BT.709 saturees vers les primaires P3 (0 = aucune)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM gamut_p3
-//!DESC 1 = limiter au gamut Display P3 de l'ecran, 0 = conteneur BT.2020
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-1.0
-
-//!PARAM guard
-//!DESC Garde-fou des couleurs saturees : epaule douce du canal le plus fort vers le pic (0 = coupe nette)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM emulate
-//!DESC 1 = aspect RTX TrueHDR applique au SDR converti par MPV (sortie SDR : jusqu'a son blanc)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
 //!PARAM sdr_white
-//!DESC Aspect TrueHDR : niveau du blanc SDR a l'entree (nits)
+//!DESC Niveau du blanc SDR a l'entree (nits)
 //!TYPE float
 //!MINIMUM 50.0
 //!MAXIMUM 1000.0
 203.0
-
-//!PARAM em_base
-//!DESC Aspect TrueHDR : echelle des tons moyens (4 x gris moyen)
-//!TYPE float
-//!MINIMUM 40.0
-//!MAXIMUM 400.0
-200.0
-
-//!PARAM em_pow
-//!DESC Aspect TrueHDR : exposant de la montee vers le pic (6 au gris moyen 50)
-//!TYPE float
-//!MINIMUM 2.0
-//!MAXIMUM 16.0
-6.0
-
-//!PARAM em_lo
-//!DESC Aspect TrueHDR : exposant du contraste sous le pivot
-//!TYPE float
-//!MINIMUM 0.5
-//!MAXIMUM 2.0
-1.0
-
-//!PARAM em_hi
-//!DESC Aspect TrueHDR : exposant du contraste au-dessus du pivot
-//!TYPE float
-//!MINIMUM 0.5
-//!MAXIMUM 2.0
-1.0
-
-//!PARAM em_sat
-//!DESC Aspect TrueHDR : facteur de saturation
-//!TYPE float
-//!MINIMUM 0.5
-//!MAXIMUM 2.0
-1.0
 
 //!PARAM sdr_out
 //!DESC 1 = sortie SDR BT.709 (gamma sdr_gamma, blanc a peak nits), 0 = PQ BT.2020
@@ -200,18 +72,10 @@
 0.0
 
 //!PARAM adapt
-//!DESC 1 = HDR adaptatif : l'aspect TrueHDR emule suit la scene (APL, aplats clairs), 0 = courbe fixe
+//!DESC 1 = blanc de la source a sdr_white, aplats a la moitie du pic (route native) ; 0 = blanc papier
 //!TYPE float
 //!MINIMUM 0.0
 //!MAXIMUM 1.0
-0.0
-
-
-//!PARAM punch
-//!DESC Fin du grade : contraste en courbe de puissance autour du pivot (0 = identite, negatif = adouci)
-//!TYPE float
-//!MINIMUM -1.0
-//!MAXIMUM 4.0
 0.0
 
 //!PARAM chroma
@@ -227,237 +91,6 @@
 //!MINIMUM 10.0
 //!MAXIMUM 400.0
 80.0
-
-//!PARAM ad_on
-//!DESC 1 = grade adaptatif des routes emulees : noirs, vibrance et gris moyen suivent la scene (0 = curseurs fixes)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM ad_lo
-//!DESC Grade adaptatif : code PQ moyen lisse en dessous duquel la scene est sombre (les curseurs)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.2
-
-//!PARAM ad_hi
-//!DESC Grade adaptatif : code PQ moyen lisse au-dessus duquel la scene est claire (valeurs ad_*)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.45
-
-//!PARAM ad_shadows
-//!DESC Grade adaptatif : profondeur des noirs d'une scene claire
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 0.95
-0.80
-
-//!PARAM ad_vibrance
-//!DESC Grade adaptatif : vibrance d'une scene tres claire
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.4
-0.0
-
-//!PARAM ad_em_base
-//!DESC Grade adaptatif : base de la courbe TrueHDR emulee (4 x gris moyen) d'une scene claire
-//!TYPE float
-//!MINIMUM 10.0
-//!MAXIMUM 400.0
-120.0
-
-//!PARAM ad_em_pow
-//!DESC Grade adaptatif : exposant de la courbe TrueHDR emulee d'une scene claire
-//!TYPE float
-//!MINIMUM 1.0
-//!MAXIMUM 20.0
-6.0
-
-//!PARAM ad_sky_vibrance
-//!DESC Grade adaptatif : vibrance d'un ciel bleu sature ou d'un flash tres colore
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.4
-0.0
-
-//!PARAM gl_force
-//!DESC Grade adaptatif : poids de la scene sombre avec eclat tenu par la calibration (negatif = selon la scene)
-//!TYPE float
-//!MINIMUM -1.0
-//!MAXIMUM 1.0
--1.0
-
-//!PARAM ar_series_ref
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.30
-
-//!PARAM ar_ratio_min
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.7
-
-//!PARAM ar_ratio_max
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-1.8
-
-//!PARAM ar_bright_cap
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.95
-
-//!PARAM ar_blue_lo
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.05
-
-//!PARAM ar_blue_hi
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.13
-
-//!PARAM ar_blue_gate
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.5
-
-//!PARAM ar_chroma_lo
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.40
-
-//!PARAM ar_chroma_hi
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.60
-
-//!PARAM ar_series_lo
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.36
-
-//!PARAM ar_series_hi
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.50
-
-//!PARAM ar_glow_lo
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.002
-
-//!PARAM ar_glow_hi
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.02
-
-//!PARAM ar_scene_lo
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.12
-
-//!PARAM ar_scene_hi
-//!DESC Regle du grade adaptatif (render/adaptive_rules.h), repli du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 2.0
-0.30
-
-//!PARAM gl_shadows
-//!DESC Grade adaptatif : profondeur des noirs d'une scene sombre avec eclat
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 0.95
-0.20
-
-//!PARAM gl_vibrance
-//!DESC Grade adaptatif : vibrance d'une scene sombre avec eclat
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.4
-0.05
-
-//!PARAM gl_em_base
-//!DESC Grade adaptatif : base de la courbe TrueHDR emulee (4 x gris moyen) d'une scene sombre avec eclat
-//!TYPE float
-//!MINIMUM 10.0
-//!MAXIMUM 400.0
-160.0
-
-//!PARAM gl_em_pow
-//!DESC Grade adaptatif : exposant de la courbe TrueHDR emulee d'une scene sombre avec eclat
-//!TYPE float
-//!MINIMUM 1.0
-//!MAXIMUM 20.0
-6.0
-
-//!PARAM sh_on
-//!DESC Grade adaptatif : 1 = position du plan analyse par le lecteur (sh_*), 0 = mesure du shader
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM sh_t
-//!DESC Grade adaptatif : position du plan analyse, de la scene sombre (0) a la claire (1)
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM sh_glow
-//!DESC Grade adaptatif : poids de la scene sombre avec eclat du plan analyse
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM sh_sky
-//!DESC Grade adaptatif : vibrance du ciel bleu ou du flash du plan analyse
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM sh_series
-//!DESC Grade adaptatif : serie claire par nature, selon les plans analyses
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
 
 //!PARAM an_lift
 //!DESC HDR anime : releve fixe des surfaces (le meme dans tous les plans)
@@ -500,13 +133,6 @@
 //!MINIMUM -1.0
 //!MAXIMUM 10000.0
 -1.0
-
-//!PARAM fs_bright
-//!DESC Grade en une passe : part de la scene au-dessus de 70 % du blanc SDR, donnee par le lecteur
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
 
 //!PARAM black_lo
 //!DESC Seuil du vrai noir (nits) : en dessous, le pixel vaut 0

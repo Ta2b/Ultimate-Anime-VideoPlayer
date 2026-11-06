@@ -27,39 +27,6 @@ namespace ajp::render {
 
 using namespace gpu_test;
 
-// Un orange vif (Y ≈ 0,67 R) entre dans la zone des éclats : son canal R dépasse le pic bien avant
-// sa luminance.
-TEST_CASE("garde-fou : un orange saturé garde son dégradé au lieu d'un plateau au pic", "[render][gpu]") {
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> orange = ramp(900.0, 0.6, 0.03);
-  const std::vector<double> hard = graded(gpu, orange, strong(0.0));
-  const std::vector<double> soft = graded(gpu, orange, strong(1.0));
-  const auto at_peak = [](const std::vector<double>& v) {
-    return std::ranges::count_if(v, [](double n) { return n > 0.995 * kPeak; });
-  };
-  // Sans garde-fou, le haut de la rampe était écrêté au pic (canal R à 1000 nits) ; une couleur saturée sur
-  // un fond clair (la rampe entière l'est) suit désormais d'elle-même l'épaule douce du traitement local.
-  CHECK(at_peak(hard) == 0);
-  for (std::size_t x = kSide / 2; x < hard.size(); ++x) CHECK(hard[x] >= hard[x - 1] * 0.994);
-  // Avec : sous le pic, et toujours croissant (le dégradé reste).
-  CHECK(at_peak(soft) == 0);
-  // Croissant au pas près des textures intermédiaires de libplacebo (demi-flottants : ~0,4 % en PQ).
-  for (std::size_t x = kSide / 2; x < soft.size(); ++x) CHECK(soft[x] >= soft[x - 1] * 0.994);
-  CHECK(soft.back() > soft[kSide / 2] + 50.0);
-}
-
-TEST_CASE("garde-fou : le gris et le blanc ne bougent pas", "[render][gpu]") {
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> gray = ramp(900.0, 1.0, 1.0);
-  const std::vector<double> hard = graded(gpu, gray, strong(0.0));
-  const std::vector<double> soft = graded(gpu, gray, strong(1.0));
-  for (std::size_t x = 0; x < hard.size(); ++x) CHECK(std::abs(hard[x] - soft[x]) < 0.5);
-}
-
 TEST_CASE("look : quinze LUT s'enchaînent, la dernière compte comme la première", "[render][gpu][lut]") {
   Gpu gpu;
   require_device(gpu);
@@ -94,32 +61,6 @@ TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gp
     for (std::size_t x = 0; x < out.size(); ++x)
       for (std::size_t c = 0; c < 3; ++c)
         CHECK(std::abs(out[x][c] - source[(row + x) * 4 + c] / 65535.0) < 4e-3);
-  }
-}
-
-TEST_CASE("sortie SDR : le contraste maximal de RTX HDR n'écrase pas les sombres", "[render][gpu]") {
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  // Contraste 200, gris moyen 51 (les réglages de RTX HDR de Tatoub), le reste neutre.
-  GradeParams look = sdr_neutral();
-  look.emulate = 1.0;
-  look.sdr_white = 203.0;
-  look.em_base = 204.0;
-  look.em_pow = 6.0 * std::pow(50.0 / 51.0, 0.35);
-  look.em_lo = 1.38;
-  look.em_hi = 1.28;
-  look.em_sat = 1.0;
-  const std::vector<Rgb> out = graded_codes(gpu, sdr_ramp(1.0, 1.0, 1.0), look);
-  // La médiane d'une scène de nuit de Re:Zero : code 0,145, 2,9 nits. Avec le seul contraste sous
-  // le pivot, elle tombait à 1 nit ; l'aspect TrueHDR la garde au-dessus de 2 nits.
-  const auto code = [](std::size_t x) { return static_cast<double>(x + 1) / kSide; };
-  for (std::size_t x = 0; x < out.size(); ++x) {
-    const double in = code(x);
-    if (in < 0.1 || in > 0.3) continue;
-    const double nits_in = 203.0 * std::pow(in, 2.2);
-    const double nits_out = 203.0 * std::pow(out[x][1], 2.2);
-    CHECK(nits_out > 0.7 * nits_in);
   }
 }
 
@@ -179,10 +120,7 @@ TEST_CASE("look : une LUT d'HDR (PQ BT.2020) lit les codes PQ, l'identité ne bo
   GradeParams neutral;
   neutral.peak = kPeak;
   neutral.shadows = 0.0;
-  neutral.area_gain = 1.0;
   neutral.spec_gain = 1.0;
-  neutral.vibrance = 0.0;
-  neutral.gamut_p3 = 0.0;
   const std::vector<Rgb> base = graded_codes(gpu, source, neutral);
   const CubeLut lut = identity_lut(33);
   REQUIRE(gpu.grade->set_looks({&lut, nullptr, nullptr}));
@@ -252,10 +190,7 @@ TEST_CASE("métadonnées HDR : le grade compresse comme KWin, qui n'a plus qu'à
   GradeParams neutral;
   neutral.peak = kPeak;
   neutral.shadows = 0.0;
-  neutral.area_gain = 1.0;
   neutral.spec_gain = 1.0;
-  neutral.vibrance = 0.0;
-  neutral.gamut_p3 = 0.0;
   const std::vector<Rgb> base = graded_rgb(gpu, source, neutral);
   constexpr double kReference = 200.0;
   constexpr double kScreenPeak = 800.0;

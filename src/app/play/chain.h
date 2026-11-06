@@ -19,9 +19,7 @@
 #include <vector>
 
 #include "app/play/anime_shots.h"
-#include "app/play/chain_adaptive_log.h"
 #include "app/play/display_edid.h"
-#include "app/play/grade_learning.h"
 #include "app/play/input.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
@@ -56,19 +54,6 @@ struct ProfileState {
 // autre : le repli n'est jamais mémorisé à la place de la préférence.
 struct HdrIntent {
   bool hdr_native = false;
-};
-
-// Apprentissage du grade adaptatif (grade_learning.h) : la courbe vue au tour précédent, la correction en
-// cours (écrite quand les curseurs se sont posés) et le temps passé sans rien changer.
-struct LearnTrack {
-  std::filesystem::path log;  // adaptive-learning.tsv ; vide : aucun apprentissage
-  std::optional<GradeCurve> seen;
-  std::optional<LearnSample> pending;
-  SceneMix pending_mix;  // les poids appliqués à la scène de la correction
-  std::int64_t pending_us = 0;
-  std::int64_t still_us = 0;
-  int corrections = -1;  // -1 : fichier pas encore lu
-  int approvals = 0;
 };
 
 // Les LUT d'un look lues sur un fil de fond (1.11) : le résultat, posé sur l'écran au tour suivant.
@@ -120,27 +105,8 @@ struct Chain {
   std::optional<HdrIntent> hdr_wanted;  // présent seulement pendant un repli HDR
   std::filesystem::path luts_dir;       // les .cube de l'utilisateur (look_catalog.h)
   bool source_hdr = false;              // la vidéo est PQ ou HLG : le grade ne la retouche pas comme du SDR
-  // Grade adaptatif (render/grade_params.h : adaptive) : la luminance moyenne de la source, mesurée par le
-  // moteur, lissée ici ; adaptive_t en est la position entre « scène sombre » (0) et « scène claire » (1).
   gpu::KernelOps* kernels = nullptr;
-  double adaptive_luma = -1.0;   // lissée, 0 à 1 ; -1 : aucune mesure
-  double adaptive_t = 0.0;       // noirs et gris moyen : suivent la luminosité
-  double adaptive_blue = 0.0;    // « bleu » moyen lissé de la source
-  double adaptive_bs = 0.0;      // série claire par nature : 0 (sombre ou ordinaire) à 1
-  bool adaptive_cut = true;      // une coupe de scène (ou la première mesure) : le réglage peut changer
-  bool adaptive_forced = false;  // la calibration tenait une scène forcée au tour précédent
-  double series_luma = -1.0;     // luminosité moyenne de la série (épisode), lissée
-  double series_us = 0.0;
-  double adaptive_chroma = 0.0;     // chroma moyenne lissée
-  double adaptive_tv = 0.0;         // vibrance : suit la couleur (bleu saturé), pas la luminosité
-  double adaptive_glow = 0.0;       // scène sombre avec éclat : 0 à 1 (GradeSettings::adaptive_glow_*)
-  double adaptive_glow_seen = 0.0;  // sa mesure, lissée comme la luminance
-  std::int64_t adaptive_at_us = 0;
-  std::uint64_t adaptive_cuts = 0;         // coupes de scène vues par RIFE (LiveSettings::scene_cuts)
-  std::int64_t adaptive_cut_until_us = 0;  // la mesure suit l'image sans lissage jusque-là
-  AdaptiveLog adaptive_log;                // adaptive-log.tsv (chain_adaptive_log.h)
-  LearnTrack learn;
-  // Pré-analyse des plans (chain_shots.h) : le grade adaptatif lit le plan de l'image qui vient au lieu
+  // Pré-analyse des plans (chain_shots.h) : le grade lit la lumière du plan de l'image qui vient au lieu
   // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
   ShotWork* shots = nullptr;
   bool shot_cuts = false;  // --shot-cuts (8.7) : les plans donnent aussi les coupes de l'interpolation
@@ -149,8 +115,8 @@ struct Chain {
   bool anime_shots = false;
   AnimeGlide anime_glide;
   double anime_series_apl = 0.0;
-  double anime_e = 0.0;             // l'exposition envoyée au grade (GradeSettings::anime_exposure)
-  std::uint64_t adaptive_shot = 0;  // le plan dont le grade tient les valeurs ; 0 : la mesure en direct
+  double anime_e = 0.0;           // l'exposition envoyée au grade (GradeSettings::anime_exposure)
+  std::uint64_t shot_serial = 0;  // le plan analysé que le grade suit ; 0 : la mesure en direct
   // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle
   // tant qu'aucune analyse ne dit mieux (un saut ne la perd pas). scene_light_at_us : son dernier envoi.
   std::optional<render::SceneLight> scene_light;
@@ -169,26 +135,9 @@ PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
 // Au lancement : le profil actif sans grade (« Source ») l'a coupé ; play.toml garde saved_grade.
 void keep_profile_grade(Chain& to, bool saved_grade);
 
-// Les réglages avec, pour le grade adaptatif, noirs, couleurs et gris moyen glissés de la scène sombre (t =
-// 0, les curseurs) vers la scène claire (t = 1). t = 0 ou adaptatif coupé : les réglages tels quels.
-PlaySettings with_adaptive(const PlaySettings& s, double t, double tv, double bs = 0.0, double glow = 0.0);
-
-// Le poids (0 à 1) de la scène sombre avec éclat d'une mesure de plan : un pic net (p99,5 loin au-dessus
-// de la médiane) sur une petite part de points clairs, et un fond (la médiane) sombre pour les seuils
-// adaptive_lo et adaptive_hi du grade.
-double glow_weight(const gpu::KernelOps::SceneStats& stats, const render::GradeSettings& g);
-
-// Une fois par tour : lit le plan analysé de l'image qui vient (chain_shots.h) et, si la position du grade
-// adaptatif change de 2 % ou plus, pose le grade. Sans plan analysé, le shader suit la scène lui-même.
-void adaptive_tick(Chain& to, std::int64_t now_us);
-
-// Apprentissage, une fois par tour du grade adaptatif : une correction de la courbe posée depuis 3 s
-// s'écrit avec sa scène ; 30 s de lecture sans rien changer s'écrivent en approbation.
-void learn_tick(Chain& to, std::int64_t now_us);
-// « Apprendre de mes corrections » : les réglages ajustés (rien si l'ajustement refuse, l'OSD dit pourquoi).
-std::optional<PlaySettings> learned_settings(Chain& to, std::int64_t now_us);
-// « Oublier mes corrections » : le fichier effacé.
-void forget_learning(Chain& to, std::int64_t now_us);
+// Une fois par tour : pose le look lu sur un fil de fond, lit le plan analysé de l'image qui vient
+// (chain_shots.h), sinon la scène vue en direct, et envoie sa lumière au grade quand elle change.
+void grade_tick(Chain& to, std::int64_t now_us);
 
 // Charge les LUT du look (jusqu'à trois, enchaînées) dans le grade de l'écran. Rend les noms de celles qui
 // manquent ou ne se lisent pas (une ligne de journal chacune) ; elles sont alors sautées.
@@ -221,7 +170,7 @@ bool chain_differs(const PlaySettings& a, const PlaySettings& b);
 
 // Soins OLED, grade avec les seuils du vrai noir, et recalage de ces seuils sur la rampe mesurée.
 void apply_oled_care(Chain& to, const PlaySettings& s);
-// from_measured_frame : le grade adaptatif, posé à partir de l'image qui suit la dernière reçue du GPU.
+// from_measured_frame : le grade, posé à partir de l'image qui suit la dernière reçue du GPU.
 void set_grade(Chain& to, const PlaySettings& s, bool from_measured_frame = false);
 void refresh_black(Chain& to);
 // Une action de l'utilisateur (touche, barre, menu) sur la chaîne.

@@ -271,11 +271,8 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                   std::format("interpolation.rife : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
                               s.rife_factor_den, limits::kRifeFactor.hi));
   }
-  const std::array<std::expected<void, Refusal>, 8> checks{
+  const std::array<std::expected<void, Refusal>, 5> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
-      check("hdr.contrast", s.true_hdr_contrast, limits::kTrueHdrContrast),
-      check("hdr.saturation", s.true_hdr_saturation, limits::kTrueHdrSaturation),
-      check("hdr.middle_gray", s.true_hdr_gray, limits::kTrueHdrGray),
       check("audio.delay_ms", s.audio_delay_ms, limits::kAudioDelayMs),
       check("sync.video_latency_ms", s.video_latency_ms, limits::kVideoLatencyMs),
       check("audio.volume", s.volume, limits::kVolume),
@@ -354,9 +351,6 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
     s.rife_factor_den = options.rife_factor_den;
     s.rife_auto = false;  // un multiplicateur donné à la main coupe le mode auto, comme dans le menu
   }
-  if (options.was_given("--truehdr-contrast")) s.true_hdr_contrast = options.true_hdr_contrast;
-  if (options.was_given("--truehdr-saturation")) s.true_hdr_saturation = options.true_hdr_saturation;
-  if (options.was_given("--truehdr-gray")) s.true_hdr_gray = options.true_hdr_gray;
   if (options.was_given("--truehdr-peak")) s.true_hdr_peak = options.true_hdr_peak;
   if (options.was_given("--anime-contrast")) s.grade_values.anime_contrast = options.anime_contrast;
   if (options.was_given("--anime-saturation")) s.grade_values.anime_saturation = options.anime_saturation;
@@ -376,9 +370,6 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--work-height", &PlaySettings::work_height);
   keep("--rife", &PlaySettings::rife_factor);
   keep("--rife", &PlaySettings::rife_factor_den);
-  keep("--truehdr-contrast", &PlaySettings::true_hdr_contrast);
-  keep("--truehdr-saturation", &PlaySettings::true_hdr_saturation);
-  keep("--truehdr-gray", &PlaySettings::true_hdr_gray);
   keep("--truehdr-peak", &PlaySettings::true_hdr_peak);
   // Les peps de l'anime vivent dans grade_values : une option donnée à la main n'est pas enregistrée.
   const auto keep_grade = [&](std::string_view option, int render::GradeSettings::* member) {
@@ -400,9 +391,6 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
   out.work_height = s.work_height;
   out.rife_factor = s.rife_factor;
   out.rife_factor_den = s.rife_factor_den;
-  out.true_hdr_contrast = s.true_hdr_contrast;
-  out.true_hdr_saturation = s.true_hdr_saturation;
-  out.true_hdr_gray = s.true_hdr_gray;
   out.true_hdr_peak = s.true_hdr_peak;
   return out;
 }
@@ -430,11 +418,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
     s.rife_model = wanted.rife_model;
-  s.true_hdr_contrast = wanted.true_hdr_contrast;
-  s.true_hdr_saturation = wanted.true_hdr_saturation;
-  s.true_hdr_gray = wanted.true_hdr_gray;
   s.true_hdr_peak = wanted.true_hdr_peak;
-  s.display_grades = wanted.display_grades;  // les profils de grade calibrés : rien à recharger
   s.hdr_native = wanted.hdr_native;
   s.final_scaler = wanted.final_scaler;
   s.deband = wanted.deband;
@@ -455,7 +439,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade = wanted.grade;
   s.grade_values = wanted.grade_values;
   s.look = wanted.look;
-  s.adaptive_record = wanted.adaptive_record;
   s.look_mix = wanted.look_mix;
   s.look_layers = wanted.look_layers;
   s.look_contrast = wanted.look_contrast;
@@ -526,107 +509,6 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   }
   if (running == wanted) return {};
   return Change{.cost = ChangeCost::Live};
-}
-
-const PlaySettings::DisplayGrade* calibrated_grade(const PlaySettings& settings, std::string_view display) {
-  if (display.empty()) return nullptr;
-  for (const auto& grade : settings.display_grades)
-    if (grade.display == display && grade.active) return &grade;
-  return nullptr;
-}
-
-std::vector<std::string> grade_profiles(const PlaySettings& settings, std::string_view display) {
-  std::vector<std::string> names;
-  for (const auto& grade : settings.display_grades)
-    if (!display.empty() && grade.display == display) names.push_back(grade.name);
-  return names;
-}
-
-bool use_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name) {
-  bool found = false;
-  for (const auto& grade : settings.display_grades) found |= grade.display == display && grade.name == name;
-  if (display.empty() || !found) return false;
-  for (auto& grade : settings.display_grades)
-    if (grade.display == display) grade.active = grade.name == name;
-  settings = with_calibrated_grade(std::move(settings), display);
-  return true;
-}
-
-std::string next_grade_profile_name(const PlaySettings& settings, std::string_view display) {
-  const std::vector<std::string> names = grade_profiles(settings, display);
-  for (int n = static_cast<int>(names.size()) + 1;; ++n) {
-    std::string name = i18n::tr_format("Profile {}", n);
-    if (std::ranges::find(names, name) == names.end()) return name;
-  }
-}
-
-void forget_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name) {
-  const auto it = std::ranges::find_if(settings.display_grades,
-                                       [&](const auto& g) { return g.display == display && g.name == name; });
-  if (it == settings.display_grades.end()) return;
-  const bool was_active = it->active;
-  settings.display_grades.erase(it);
-  if (!was_active) return;
-  for (auto& grade : settings.display_grades) {
-    if (grade.display != display) continue;
-    grade.active = true;
-    return;
-  }
-}
-
-void keep_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name) {
-  if (display.empty() || name.empty()) return;
-  const render::GradeSettings& g = settings.grade_values;
-  PlaySettings::DisplayGrade kept{.display = std::string(display),
-                                  .name = std::string(name),
-                                  .active = true,
-                                  .gray = settings.true_hdr_gray,
-                                  .shadows = g.shadows,
-                                  .colors = g.vibrance_rtx,
-                                  .gray_bright = g.adaptive_gray,
-                                  .shadows_bright = g.adaptive_shadows,
-                                  .colors_cut = g.adaptive_vibrance_cut,
-                                  .gray_glow = g.adaptive_glow_gray,
-                                  .shadows_glow = g.adaptive_glow_shadows,
-                                  .colors_glow = g.adaptive_glow_vibrance};
-  for (auto& grade : settings.display_grades)
-    if (grade.display == display) grade.active = false;
-  for (auto& grade : settings.display_grades) {
-    if (grade.display == display && grade.name == name) {
-      grade = std::move(kept);
-      return;
-    }
-  }
-  settings.display_grades.push_back(std::move(kept));
-}
-
-PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display) {
-  const PlaySettings::DisplayGrade* grade = calibrated_grade(settings, display);
-  render::GradeSettings& g = settings.grade_values;
-  // Le grade adaptatif n'existe qu'avec un profil de calibration de l'écran : sans profil (le dernier vient
-  // d'être supprimé, ou l'écran n'a jamais été calibré), il se coupe. Une calibration en cours le
-  // garde : son profil n'est écrit qu'à la fin.
-  if (grade == nullptr && !render::grade_limits::calibrating(g.adaptive_force)) g.adaptive = false;
-  if (grade == nullptr || !settings.grade || !g.adaptive) return settings;
-  settings.true_hdr_gray = grade->gray;
-  g.shadows = grade->shadows;
-  g.vibrance_rtx = grade->colors;
-  g.adaptive_gray = grade->gray_bright;
-  g.adaptive_shadows = grade->shadows_bright;
-  g.adaptive_vibrance_cut = grade->colors_cut;
-  g.adaptive_glow_gray = grade->gray_glow;
-  g.adaptive_glow_shadows = grade->shadows_glow;
-  g.adaptive_glow_vibrance = grade->colors_glow;
-  return settings;
-}
-
-void keep_visible_shadows(PlaySettings& settings, std::string_view display) {
-  const render::GradeSettings& g = settings.grade_values;
-  if (display.empty() || !settings.grade || !g.adaptive ||
-      render::grade_limits::calibrating(g.adaptive_force))
-    return;
-  for (auto& grade : settings.display_grades)
-    if (grade.display == display && grade.active) grade.shadows = g.shadows;
 }
 
 }  // namespace ajp::app::play

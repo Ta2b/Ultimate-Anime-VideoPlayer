@@ -1,6 +1,4 @@
-// Ce que play.toml garde par écran, sous [hdr] (settings_toml.cpp) : le grade adaptatif calibré
-// (display_grades), sous la clé de l'écran (display_edid.h : display_key). Le pic, lui, vient du système
-// (system_peak.h) ou du réglage manuel.
+// La lecture lâche de play.toml (settings_toml.cpp : parse_settings_lenient).
 #pragma once
 
 #include <expected>
@@ -15,10 +13,6 @@
 #include <toml++-ajp/toml.hpp>
 
 namespace ajp::app::play {
-
-void read_display_tables(const toml::table& hdr, PlaySettings& s,
-                         std::vector<std::expected<void, Refusal>>& reads);
-void write_display_tables(const PlaySettings& s, toml::table& hdr);
 
 // La lecture lâche de play.toml (settings_toml.cpp) quand un refus ne nomme pas une clé du fichier : écarte
 // de root la première clé (sinon la première section) dont le retrait lève ce refus, et le note dans dropped

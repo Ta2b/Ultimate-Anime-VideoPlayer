@@ -74,7 +74,7 @@ TEST_CASE("la calibration garde SPAN seul quand RIFE ne tient pas, RIFE seul en 
 TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, RIFE 4.22 lite en auto Rapide",
           "[calibration-machine]") {
   PlaySettings base;
-  base.true_hdr_contrast = 150;
+  base.true_hdr_peak = 800;
   const PlaySettings s = candidate_settings({.span = true, .rife = true, .height = 540}, base);
   CHECK(s.preset == Preset::Custom);
   CHECK(s.upscale);
@@ -84,8 +84,8 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, RIFE 4.22 lite 
   CHECK(s.rife_auto);
   CHECK(s.auto_free);
   CHECK(s.rife_factor == 2);
-  CHECK(s.true_hdr_contrast == 150);  // le reste des réglages de l'utilisateur
-  CHECK(s.model.empty());             // SPAN par défaut (Performance Sharp) en FP16
+  CHECK(s.true_hdr_peak == 800);  // le reste des réglages de l'utilisateur
+  CHECK(s.model.empty());         // SPAN par défaut (Performance Sharp) en FP16
   CHECK(s.span_precision == PrecisionTier::Balanced);
   const PlaySettings fp8 = candidate_settings({.span = true, .rife = true, .height = 540}, base, true);
   CHECK(fp8.model == kCalibrationSpanFp8);

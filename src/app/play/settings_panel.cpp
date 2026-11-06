@@ -17,7 +17,6 @@
 #include "app/play/look_catalog.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_bench_results.h"
-#include "app/play/settings_calibration.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
@@ -34,8 +33,8 @@ using panel::kWarn;
 using panel::note;
 using panel::section;
 
-// Le mode HDR : HDR adaptatif (libplacebo, puis l'aspect TrueHDR émulé qui suit la scène), ou SDR.
-constexpr std::array<const char*, 2> kRoutes{"Adaptive HDR (any GPU)", "SDR"};  // clés i18n
+// Le mode HDR : HDR (libplacebo met le SDR en PQ, puis le grade anime guidé), ou SDR.
+constexpr std::array<const char*, 2> kRoutes{"HDR (any GPU)", "SDR"};  // clés i18n
 
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
   // Le choix de la méthode reste libre, même sur un écran SDR ; ce qui règle le HDR de l'écran (pic, gris
@@ -258,7 +257,6 @@ bool reset_page(PlaySettings& draft, std::vector<Input>& actions, const Profiles
   if (ImGui::Button(i18n::tr("Reset all settings"))) {
     PlaySettings fresh;
     fresh.engines_dir = draft.engines_dir;
-    fresh.display_grades = draft.display_grades;  // la calibration de l'écran, pas un réglage
     draft = fresh;
     actions.emplace_back(EditProfile{.edit = core::edit::ResetProfile{.slot = view.active}});
     reset_all = true;
@@ -297,17 +295,6 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 }
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
-const CalibrationShot* SettingsPanel::calibration() const {
-  return open_ && grade_wizard_ && grade_wizard_->step > 0 && grade_wizard_->showing ? &grade_wizard_->shot
-                                                                                     : nullptr;
-}
-
-void SettingsPanel::settle(std::vector<Input>& actions) {
-  if (!grade_wizard_) return;
-  if (!open_) grade_wizard_->step = 0;
-  settle_calibration(*grade_wizard_, actions);
-}
-
 bool SettingsPanel::busy() const {
   return open_ && (bench_running(bench_) || prepare_.pending != nullptr || (machine_ && machine_->running()));
 }
@@ -321,13 +308,6 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                                           float scale, std::vector<Input>& actions) {
   Result result;
   if (!open_) return result;
-  if (std::exchange(grade_queued_, false)) {
-    const auto hdr =
-        std::ranges::find_if(kPages, [](const SettingsPage& p) { return std::string_view(p.name) == "HDR"; });
-    page_ = static_cast<int>(hdr - kPages.begin());
-    if (!grade_wizard_) grade_wizard_ = std::make_unique<GradeWizard>();
-    grade_wizard_->autostart = true;
-  }
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
   if (running != seen_) {
     draft_ = live_part(draft_, running, choices.rife_loaded);
@@ -462,10 +442,6 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     panel::begin_page();
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
-      if (name != "HDR") {  // la calibration et sa scène forcée ne restent que sur leur page
-        if (grade_wizard_) grade_wizard_->step = 0;
-        draft_.grade_values.adaptive_force = -1.0;
-      }
       if (name == "Setup") {
         // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a demandé.
         if (!machine_) machine_ = std::make_unique<MachineNote>();
@@ -484,11 +460,6 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         fluidity_tab(draft_, choices);
       } else if (name == "HDR") {
         hdr_tab(draft_, choices);
-        if (!grade_wizard_) grade_wizard_ = std::make_unique<GradeWizard>();
-        // La calibration du grade d'avant ne s'ouvre plus d'ici (tri du 04/11) ; celle que l'assistant lance
-        // va à son terme.
-        if (grade_wizard_->step > 0 || grade_wizard_->autostart)
-          grade_calibration(draft_, choices, *grade_wizard_, scale, io.DisplaySize.x - pad - width, actions);
         if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
         grade_tab(draft_, choices, actions);

@@ -33,7 +33,7 @@ TEST_CASE("Un profil fixe la chaîne, le reste des réglages ne bouge pas", "[ap
   auto base = core::parse_profile(base_profiles_toml());
   REQUIRE(base);
   PlaySettings mine;
-  mine.true_hdr_contrast = 150;
+  mine.true_hdr_peak = 800;
   mine.subtitle_scale = 1.3F;
   std::vector<std::string> notes;
   const PlaySettings quality = apply_profile(*base->profiles[0], k1080p, mine, notes);
@@ -44,7 +44,7 @@ TEST_CASE("Un profil fixe la chaîne, le reste des réglages ne bouge pas", "[ap
   CHECK(quality.upscale);
   CHECK(quality.model == "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx");
   CHECK(quality.hdr_native);
-  CHECK(quality.true_hdr_contrast == 150);
+  CHECK(quality.true_hdr_peak == 800);
   CHECK(quality.subtitle_scale == 1.3F);
   CHECK(notes.empty());
 
@@ -80,7 +80,7 @@ TEST_CASE("Les réglages en cours se relisent comme un profil", "[app][profiles]
   CHECK(back.rife_factor == 4);
   CHECK(back.model == usual);
   CHECK(back.hdr_native);
-  CHECK(profile_summary(profile, k1080p) == "540p Catmull-Rom → RIFE ×4 → SPAN 1080p · HDR adaptatif");
+  CHECK(profile_summary(profile, k1080p) == "540p Catmull-Rom → RIFE ×4 → SPAN 1080p · HDR");
   // Un autre modèle est nommé dans le résumé.
   s.model = "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
   const core::Profile other{.name = "Net", .hdr = hdr_of(s), .rules = rules_of(s, usual)};

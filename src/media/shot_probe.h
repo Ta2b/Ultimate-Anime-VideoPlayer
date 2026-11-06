@@ -1,6 +1,6 @@
 // La pré-analyse des plans : un second décodage du fichier lu, vidéo seule, en tâche de fond et en avance
 // sur la lecture. Chaque image est mesurée sur une grille réduite (media/shot_cutter.h), la vidéo découpée
-// en plans, et les plans finis écrits dans une ShotTimeline que le grade adaptatif lit.
+// en plans, et les plans finis écrits dans une ShotTimeline que le grade lit.
 //
 // Décodage logiciel seul, comme les images fixes du SPAN FP8 (stills.h) : la lecture garde le GPU et son
 // décodeur. L'analyse va bien plus vite que la lecture (une H.264 1080p : environ 25 fois sur 4 cœurs) et se

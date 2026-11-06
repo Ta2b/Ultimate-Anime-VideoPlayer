@@ -1,11 +1,10 @@
 // Réglages et paramètres du grade HDR, sans GPU.
 //
-// GradeSettings porte les réglages du profil (table des paramètres du grade dans le plan) ;
-// decide_grade() en tire, pour une route, une source et un écran donnés, le mode du grade et
-// les valeurs des //!PARAM des hooks. C'est la fonction M.plan de hdr-grade.lua du lecteur actuel
-// (https://github.com/Ta2b/mpv-AnimeJaNai-HDR, commit 33ff79d,
-// BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/portable_config/hdr-tools/hdr-grade.lua,
-// lignes 58-160), reprise telle quelle ; tests/unit/render/grade_params_test.cpp fixe ses sorties.
+// GradeSettings porte les réglages du grade (play.toml, section grade) ; decide_grade() en tire, pour une
+// route, une source et un écran donnés, le mode du grade et les valeurs des //!PARAM des hooks
+// (anime-hdr-params.hook). Le calcul part de M.plan de hdr-grade.lua
+// (https://github.com/Ta2b/mpv-AnimeJaNai-HDR, commit 33ff79d) ; tests/unit/render/grade_params_test.cpp fixe
+// ses sorties.
 #pragma once
 
 #include <cstdint>
@@ -17,7 +16,6 @@
 #include "core/profile.h"
 #include "core/resolve.h"
 #include "core/types.h"
-#include "render/adaptive_rules.h"
 
 namespace ajp::render {
 
@@ -26,66 +24,16 @@ namespace grade_limits {
 inline constexpr core::Range<double> kPaperWhite{80.0, 400.0};
 inline constexpr core::Range<double> kShadows{0.0, 0.8};
 inline constexpr core::Range<double> kHighlights{0.0, 1.0};
-inline constexpr core::Range<double> kVibrance{0.0, 0.8};
-inline constexpr core::Range<double> kAdaptiveCut{0.0, 1.0};
-inline constexpr core::Range<double> kContrast{0.0, 200.0};
-inline constexpr core::Range<double> kSaturation{0.0, 200.0};
-inline constexpr double kSdkContrastMax = 200.0;
-// Le curseur de saturation (0 à 200 %) est plus fort au-dessus de 100 % : 200 % sur le curseur vaut 400 %
-// (retour de Tatoub). En dessous de 100 %, il ne change pas.
-inline constexpr double kSaturationBoost = 3.0;
-// La saturation réellement appliquée pour une position du curseur (0 à 400).
-constexpr double effective_saturation(double slider) {
-  return slider <= 100.0 ? slider : 100.0 + kSaturationBoost * (slider - 100.0);
-}
-// Le facteur sur la chroma de l'aspect TrueHDR (loi ajustée sur le SDK) pour une saturation appliquée.
-constexpr double truehdr_saturation_factor(double saturation) {
-  return 1.0 + 0.19 * (saturation - 100.0) / 100.0;
-}
-inline constexpr core::Range<double> kMiddleGray{10.0, 100.0};
-inline constexpr core::Range<double> kSubtitleWhite{80.0, 1000.0};
 inline constexpr core::Range<double> kBlackNits{0.0, 50.0};
 inline constexpr core::Range<double> kPeakNits{100.0, 10000.0};
-inline constexpr core::Range<double> kGuard{0.0, 1.0};
 // Vrai noir OLED : fin du pied, en pas de code de la source au-dessus du noir.
 inline constexpr core::Range<double> kBlackSteps{0.5, 8.0};
 inline constexpr core::Range<double> kAreaRtx{0.0, 1.0};
-inline constexpr core::Range<double> kExpand{0.0, 1.0};
-// Seuils du grade adaptatif : luminance moyenne de l'image source (0 à 100 % du blanc), lissée sur une à deux
-// secondes.
-inline constexpr core::Range<double> kAdaptiveLuma{1.0, 99.0};
-// Limiteur OLED : APL lissé (nits) où la modération des éclats commence, puis est complète.
-inline constexpr core::Range<double> kAblNits{20.0, 2000.0};
-// GradeSettings::adaptive_force : les bouts de la courbe que la calibration tient.
-inline constexpr double kForceGlow = 2.0;
-// La calibration en cours, sans scène forcée : chaque plan à sa vraie place
-// (app/play/settings_calibration.h).
-inline constexpr double kCalibratingLive = -2.0;
-constexpr bool calibrating(double force) {
-  return force >= 0.0 || force < -1.5;
-}
-constexpr bool forced_bright(double force) {
-  return force >= 0.5 && force < 1.5;
-}
-constexpr bool forced_glow(double force) {
-  return force >= 1.5;
-}
 // Pic du grade quand l'écran ne le dit pas (DisplayInfo par défaut).
 inline constexpr double kDefaultPeakNits = 1000.0;
-// Entrée de l'émulation TrueHDR : le blanc SDR placé à 203 nits.
+// Le blanc d'une source SDR sur la route native : 203 nits (BT.2408).
 inline constexpr double kSdrWhiteNits = 203.0;
 }  // namespace grade_limits
-
-// La position du grade adaptatif décidée par le lecteur pour le plan affiché (pré-analyse des plans,
-// app/play/chain_shots.h), à la place de celle que le shader mesure : t de la scène sombre (0) à la claire
-// (1), tv la vibrance du ciel bleu ou du flash, glow la scène sombre avec éclat, series la série claire.
-struct AdaptiveShot {
-  double t = 0.0;
-  double tv = 0.0;
-  double glow = 0.0;
-  double series = 0.0;
-  friend bool operator==(const AdaptiveShot&, const AdaptiveShot&) = default;
-};
 
 // La lumière de la scène que le lecteur connaît (analyse à l'ingestion, pré-analyse des plans) : sa
 // luminance moyenne au blanc SDR de 203 cd/m² et sa part de grands aplats clairs. Le grade en trois passes
@@ -99,43 +47,16 @@ struct SceneLight {
 };
 
 struct GradeSettings {
-  bool grade = true;              // grade activé par le profil
+  bool grade = true;              // grade activé
   bool grade_native_hdr = false;  // grade aussi une source déjà HDR
-  bool truehdr_look = true;       // route native : émule la courbe TrueHDR (mpv_truehdr_look)
-  double paper_white = 203.0;     // nits, blanc papier
+  // Route native : le blanc de la source à 203 nits et les aplats à la moitié du pic (le défaut) ; faux : le
+  // blanc au blanc papier (paper_white). La clé de play.toml garde son nom d'avant (truehdr_look).
+  bool truehdr_look = true;
+  double paper_white = 203.0;  // nits, blanc papier
   double shadows = 0.15;
-  double highlights = 0.50;      // route native sans émulation
-  double highlights_rtx = 0.25;  // TrueHDR, son émulation, HDR natif
-  double vibrance = 0.15;
-  double vibrance_rtx = 0.10;
-  double contrast = 100.0;  // TrueHDR et son émulation, comme rtx_contrast
-  double saturation = 100.0;
-  // Grade adaptatif : les curseurs (noirs, couleurs) et le gris moyen sont ceux d'une scène sombre
-  // ; ces valeurs, ceux d'une scène claire. On glisse de l'un à l'autre quand la luminance moyenne lissée de
-  // l'image source passe de adaptive_lo à adaptive_hi (% du blanc, mesurée par le moteur TensorRT : sans lui,
-  // aucun effet).
-  bool adaptive = false;
-  double adaptive_lo = 13.0;
-  double adaptive_hi = 54.0;
-  double adaptive_shadows = 0.80;
-  double adaptive_vibrance = 0.0;
-  // Part de la vibrance retirée à mesure que la scène devient claire (0 : aucune, 1 : toute) : les scènes
-  // claires et chaudes (rouges, oranges) sursaturent sinon.
-  double adaptive_vibrance_cut = 0.0;
-  double adaptive_gray = 30.0;
-  // Scène sombre avec un éclat (cercle magique, corne lumineuse, lampe dans la nuit) : le fond d'une scène
-  // sombre, avec un pic net sur une petite part de l'image. Elle se classe sur son fond, pas sur la moyenne
-  // que l'éclat tire vers le haut, et prend ses propres gris moyen, noirs et couleurs, pour tenir le halo.
-  double adaptive_glow_gray = 40.0;
-  double adaptive_glow_shadows = 0.20;
-  double adaptive_glow_vibrance = 0.05;
-  // Calibration du grade adaptatif : la scène tenue pour sombre (0), claire (1) ou sombre avec éclat
-  // (kForceGlow) quoi qu'elle soit, le temps de régler ce bout-là ; négatif : selon la scène. Jamais écrit
-  // dans play.toml.
-  double adaptive_force = -1.0;
-  // Routes du shader : la position du plan analysé ; vide, le shader suit sa propre mesure. Jamais écrit
-  // dans play.toml.
-  std::optional<AdaptiveShot> adaptive_shot;
+  // Éclats et grands aplats clairs : la montée au-dessus du blanc (spec_gain).
+  double highlights_rtx = 0.25;
+  double area_rtx = 0.0;
   // La lumière de la scène de l'image qui vient ; vide, inconnue. Jamais écrite dans play.toml.
   std::optional<SceneLight> scene_light;
   // La méthode « HDR anime » décidée par plan (méga plan A2, --anime-shots) : l'exposition des surfaces du
@@ -147,35 +68,20 @@ struct GradeSettings {
   int anime_contrast = 100;
   int anime_saturation = 100;
   int anime_highlights = 100;
-  double punch_base = 0.0;   // préréglage : contraste en plus, en sortie du grade (0 : aucun)
   double chroma_base = 0.0;  // préréglage : saturation en plus (0 : aucune)
-  double middle_gray = 50.0;
-  double subtitle_white = 200.0;  // nits, blanc des sous-titres en sortie HDR
-  bool oled = false;              // dalle OLED : limiteur des scènes claires (abl)
-  bool gamut_p3 = false;          // limite au gamut Display P3 de l'écran
-  double black_lo = 0.0;          // nits : vrai noir OLED sous ce seuil
-  double black_hi = 0.0;          // nits : fin du pied ; <= black_lo, la passe est sautée
-  // Ajouts de ce dépôt ; à 0, le grade est celui du lecteur actuel.
-  double guard = 0.0;     // garde-fou des couleurs saturées près du pic
-  double area_rtx = 0.0;  // TrueHDR et son émulation : gain des grands aplats clairs (0 : aucun)
-  // Couleurs étendues : les couleurs BT.709 saturées vont vers les primaires P3 (peau et gris
-  // épargnés), pour les dalles à large gamut comme le QD-OLED ; 0 : aucune.
-  double expand = 0.0;
-  bool true_black = false;  // vrai noir : passe black_lo / black_hi (OLED, ou forcé)
-  // Limiteur OLED : APL de début et de fin de la modération ; 80 et 250 nits dans le lecteur actuel
-  // (plein écran d'un QD-OLED en Peak 1000), tirés de la moyenne d'image de l'EDID sinon.
-  double abl_lo = 80.0;
-  double abl_hi = 250.0;
+  double black_lo = 0.0;     // nits : vrai noir OLED sous ce seuil
+  double black_hi = 0.0;     // nits : fin du pied ; <= black_lo, la passe est sautée
+  bool true_black = false;   // vrai noir : passe black_lo / black_hi (OLED, ou forcé)
   friend bool operator==(const GradeSettings&, const GradeSettings&) = default;
 };
 
-// FieldOutOfRange en nommant le champ (« grade.paper_white ») ; abl_hi doit dépasser abl_lo.
+// FieldOutOfRange en nommant le champ (« grade.paper_white »).
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& settings);
 
 // Ce qui est gradé, et comment.
 enum class GradeMode : std::uint8_t {
   Neutral,    // pas de grade : sortie non PQ, grade coupé, route Off ou source HDR non gradée
-  Native,     // SDR converti par libplacebo en PQ (route native), avec ou sans émulation TrueHDR
+  Native,     // SDR converti par libplacebo en PQ (route native, ou mode SDR sur une sortie HDR10)
   NativeHdr,  // source déjà HDR, gradée parce que grade_native_hdr le demande
   Sdr,        // sortie SDR : couleurs, noirs, contraste et saturation, sans marge au-dessus du blanc
 };
@@ -188,31 +94,16 @@ struct GradeContext {
   double peak_nits = grade_limits::kDefaultPeakNits;
 };
 
-// Les //!PARAM de anime-hdr-grade.hook et de anime-hdr-black.hook.
+// Les //!PARAM du grade (anime-hdr-params.hook).
 struct GradeParams {
   double peak = 1000.0;
   double paper = 203.0;
-  double in_max = 203.0;
   double shadows = 0.30;
   double shadow_knee = 50.0;
-  double area_gain = 1.4;
   double spec_gain = 4.3;
-  double vibrance = 0.25;
-  double abl = 0.0;
-  double guard = 0.0;
-  double expand = 0.0;
-  double abl_lo = 80.0;
-  double abl_hi = 250.0;
-  double gamut_p3 = 1.0;
-  double emulate = 0.0;
-  // HDR adaptatif (route native, tous GPU) : 1, l'aspect TrueHDR émulé suit la scène lissée.
+  // 1 : la source SDR est placée à sdr_white (route native, le défaut) ; 0 : son blanc au blanc papier.
   double adapt = 0.0;
   double sdr_white = 203.0;
-  double em_base = 200.0;
-  double em_pow = 6.0;
-  double em_lo = 1.0;
-  double em_hi = 1.0;
-  double em_sat = 1.0;
   double black_lo = 0.0;
   double black_hi = 0.0;
   // Sortie SDR : 1, l'image de la cible est en BT.709 au gamma sdr_gamma, son blanc à `peak` nits.
@@ -224,9 +115,7 @@ struct GradeParams {
   double sdr_tm = 0.0;
   double tm_white = 233.0;
   double tm_top = 1000.0;
-  // Fin du grade (toutes routes) : contraste en courbe de puissance autour de `pivot` (nits), saturation en
-  // facteur. 0 et 1 : identité exacte.
-  double punch = 0.0;
+  // Saturation en facteur (1 : identité) et pivot de la passe anime (nits).
   double chroma = 1.0;
   double pivot = 80.0;
   // Le look (LUT .cube, anime-hdr-look.hook) : intensité (0 : passe sautée), blanc de référence de la LUT en
@@ -249,52 +138,9 @@ struct GradeParams {
   double look_white = 203.0;
   double look_pq = 0.0;
   double look_clean = 0.0;  // 1 : la pile sur la couleur du voisinage, grain et paliers non étirés
-  // Grade adaptatif des routes émulées (shader, tous GPU) : 1 pour l'activer, seuils en code PQ de la
-  // luminance de la source (gamma 2,4, blanc à 203 nits, sur toutes les sorties), valeurs d'une scène claire
-  // ; celles d'une scène sombre sont shadows, vibrance, em_base et em_pow.
-  double ad_on = 0.0;
-  double ad_lo = 0.2;
-  double ad_hi = 0.45;
-  double ad_shadows = 0.80;
-  double ad_vibrance = 0.0;
-  double ad_em_base = 120.0;
-  double ad_em_pow = 6.0;
-  // Scène sombre avec éclat (GradeSettings::adaptive_glow_*) : son poids vient de la mesure de la scène,
-  // ou gl_force (0 à 1) pendant la calibration ; négatif : selon la scène.
-  double gl_force = -1.0;
-  // Les règles du grade adaptatif (adaptive_rules.h), passées au shader pour son repli : jamais réglées.
-  double ar_series_ref = adaptive_rules::kSeriesRef;
-  double ar_ratio_min = adaptive_rules::kRatioMin;
-  double ar_ratio_max = adaptive_rules::kRatioMax;
-  double ar_bright_cap = adaptive_rules::kBrightCap;
-  double ar_blue_lo = adaptive_rules::kBlueLo;
-  double ar_blue_hi = adaptive_rules::kBlueHi;
-  double ar_blue_gate = adaptive_rules::kBlueGate;
-  double ar_chroma_lo = adaptive_rules::kChromaLo;
-  double ar_chroma_hi = adaptive_rules::kChromaHi;
-  double ar_series_lo = adaptive_rules::kBrightSeriesLo;
-  double ar_series_hi = adaptive_rules::kBrightSeriesHi;
-  double ar_glow_lo = adaptive_rules::kGlowShareLo;
-  double ar_glow_hi = adaptive_rules::kGlowShareHi;
-  double ar_scene_lo = adaptive_rules::kGlowSceneLo;
-  double ar_scene_hi = adaptive_rules::kGlowSceneHi;
-  double ad_sky_vibrance = 0.0;  // ciel bleu saturé ou flash très coloré (GradeSettings::adaptive_vibrance)
-  double gl_shadows = 0.20;
-  double gl_vibrance = 0.05;
-  double gl_em_base = 160.0;
-  double gl_em_pow = 6.0;
-  // La position du plan analysé (GradeSettings::adaptive_shot) : sh_on = 1, le shader prend sh_t, sh_glow,
-  // sh_sky et sh_series au lieu de sa propre mesure.
-  double sh_on = 0.0;
-  double sh_t = 0.0;
-  double sh_glow = 0.0;
-  double sh_sky = 0.0;
-  double sh_series = 0.0;
-  // Le grade en trois passes (GradeBody::Fused) : la luminance moyenne de la scène à l'écran (nits ; < 0,
-  // inconnue) et sa part claire, données par le lecteur. Le grade d'avant les mesure lui-même.
+  // La luminance moyenne de la scène à l'écran (nits ; < 0 : inconnue), donnée par le lecteur.
   double fs_apl = -1.0;
-  double fs_bright = 0.0;
-  // Méthode « HDR anime » (GradeBody::Anime) : relèvement fixe des surfaces, le même dans tous les plans.
+  // Relèvement des surfaces (kAnimeLift, ajusté par plan : GradeSettings::anime_exposure).
   double an_lift = kAnimeLift;
   double an_punch = 0.0;   // --anime-contrast : contraste en plus (0 : aucun)
   double an_chroma = 1.0;  // --anime-saturation : facteur de saturation (1 : identité)
@@ -315,7 +161,7 @@ struct GradeDecision {
   GradeMode mode = GradeMode::Neutral;
   GradeParams params;  // significatifs hors Neutral
   // Où se place le blanc d'une source SDR dans une sortie PQ (hdr-reference-white de mpv) :
-  // 203 nits avec l'émulation TrueHDR, le blanc papier sinon.
+  // 203 nits sur la route native (truehdr_look), le blanc papier sinon.
   double source_white_nits = grade_limits::kSdrWhiteNits;
 };
 
@@ -344,15 +190,5 @@ struct BlackThresholds {
 // marche `steps` (interpolée) : le noir devient 0, la première marche reste visible, le pied
 // rejoint l'identité à `steps` pas. Rien si la rampe ne monte pas (sortie plate, mesure ratée).
 std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nits, double steps);
-
-// Plage du limiteur OLED tirée de la moyenne d'image maximale de l'écran (EDID, CTA-861) : la
-// modération commence à 30 % de cette moyenne et devient complète à 94 % (80 et 250 nits pour
-// 265 nits, les valeurs du lecteur actuel). Rien si la moyenne sort de la plage utile.
-struct AblRange {
-  double lo = 80.0;
-  double hi = 250.0;
-  friend bool operator==(const AblRange&, const AblRange&) = default;
-};
-std::optional<AblRange> abl_range(double frame_average_nits);
 
 }  // namespace ajp::render

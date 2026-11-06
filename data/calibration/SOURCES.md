@@ -1,9 +1,8 @@
-# Images d'exemple de la calibration du grade
+# Plans de test du grade (ancienne vidéo de calibration)
 
-Dix-huit plans fixes, réunis dans calibration.mkv pour la calibration du grade adaptatif (Paramètres > HDR).
-Le lecteur l'ouvre en pause, plan par plan, dans la même chaîne que les épisodes (src/app/play/calibration_images.cpp) :
-ce que la calibration montre est ce que la lecture rendra. Livrée dans calibration/ à côté du lecteur
-(tools/release/package-*.sh, package-windows.ps1).
+Dix-huit plans fixes, réunis dans calibration.mkv. Ils servaient à la calibration du grade adaptatif, retirée
+avec lui (le lecteur ne garde que le grade anime guidé). La vidéo n'est plus livrée avec le lecteur : elle reste
+ici comme extrait de test (tools/ring/banding.py, comparaisons du grade à l'œil).
 
 Chaque plan tient 6 s (dix-huit plans, 108 s, un chapitre par plan) : 1920x1080, 24 images par seconde, H.264 4:2:0
 (crf 8, tune stillimage), BT.709 plage limitée comme un épisode, une image clé au début de chaque plan. Les

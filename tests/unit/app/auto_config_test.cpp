@@ -98,13 +98,13 @@ TEST_CASE("un préréglage fixe la tranche quelle que soit la machine", "[auto_c
 TEST_CASE("l'application est idempotente et ne touche pas au reste", "[auto_config]") {
   PlaySettings base = with(Preset::Auto);
   base.volume = 0.3F;
-  base.true_hdr_contrast = 150;
+  base.true_hdr_peak = 800;
   base.language_presets = {{"jpn", "eng"}};
   const Machine machine{Tier::Fast, 1440, 144.0};
   const PlaySettings once = apply_preset(base, machine, k1080p24);
   CHECK(apply_preset(once, machine, k1080p24) == once);
   CHECK(once.volume == 0.3F);
-  CHECK(once.true_hdr_contrast == 150);
+  CHECK(once.true_hdr_peak == 800);
   CHECK(once.language_presets == base.language_presets);
 }
 

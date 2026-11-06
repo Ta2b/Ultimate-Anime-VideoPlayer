@@ -168,11 +168,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.live.set_reduction(reduction_of(wanted.downscale));
     controls.notify(i18n::tr_format("Downscale: {}", label(wanted.downscale)), now_us);
   }
-  // L'aspect TrueHDR émulé : contraste, saturation, gris moyen et pic.
-  const bool look_changed = wanted.true_hdr_contrast != r.true_hdr_contrast ||
-                            wanted.true_hdr_saturation != r.true_hdr_saturation ||
-                            wanted.true_hdr_gray != r.true_hdr_gray ||
-                            wanted.true_hdr_peak != r.true_hdr_peak;
+  // Le pic visé par le grade.
+  const bool look_changed = wanted.true_hdr_peak != r.true_hdr_peak;
   if (!same_look_files(wanted, r)) {
     start_looks(to, wanted);  // lues en fond, posées au tour suivant (tend_looks)
   }
@@ -429,10 +426,6 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               apply_live(to, apply.settings, now_us);
             }
           },
-          [&](const LearnGrade&) {
-            if (auto learned = learned_settings(to, now_us)) apply_live(to, *learned, now_us);
-          },
-          [&](const ForgetGradeLearning&) { forget_learning(to, now_us); },
           [&](const UseEngine& use) { ask_engines(to, use); },
           [&](const OpenEngineScreen& open) { ask_engines(to, open); },
           [&](const StartExport& start) {

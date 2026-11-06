@@ -228,49 +228,16 @@ inline std::vector<double> graded(Gpu& gpu, const std::vector<std::uint16_t>& so
   return red;
 }
 
-// Des éclats poussés fort, sans pied des noirs ni vibrance : seule l'épaule compte.
-inline GradeParams strong(double guard) {
-  GradeParams p;
-  p.peak = kPeak;
-  p.paper = 0.5 * kPeak;
-  p.in_max = kPeak;
-  p.shadows = 0.0;
-  // Même gain pour les aplats et les éclats : la carte d'isolement (blocs 8x8) ne joue pas.
-  p.area_gain = 3.0;
-  p.spec_gain = 3.0;
-  p.vibrance = 0.0;
-  p.gamut_p3 = 0.0;
-  p.guard = guard;
-  return p;
-}
-
-// Un grade neutre (gains à 1, ni pied ni vibrance), sauf les couleurs étendues.
-inline GradeParams expanded(double expand) {
-  GradeParams p;
-  p.peak = kPeak;
-  p.shadows = 0.0;
-  p.area_gain = 1.0;
-  p.spec_gain = 1.0;
-  p.vibrance = 0.0;
-  p.gamut_p3 = 0.0;
-  p.expand = expand;
-  return p;
-}
-
-// Une sortie SDR neutre : gains à 1, ni pied, ni vibrance, ni aspect TrueHDR.
+// Une sortie SDR neutre : gains à 1, sans pied des noirs.
 inline GradeParams sdr_neutral() {
   GradeParams p;
   p.sdr_out = 1.0;
   p.sdr_gamma = 2.2;
   p.peak = 203.0;
   p.paper = 203.0;
-  p.in_max = 203.0;
   p.shadows = 0.0;
   p.shadow_knee = 0.25 * 203.0;
-  p.area_gain = 1.0;
   p.spec_gain = 1.0;
-  p.vibrance = 0.0;
-  p.gamut_p3 = 0.0;
   return p;
 }
 
@@ -289,28 +256,6 @@ inline std::vector<std::uint16_t> uniform(double nits) {
     pixels[i + 3] = 65535;
   }
   return pixels;
-}
-
-// La route native avec l'aspect TrueHDR émulé, contraste 200 et gris moyen 51, sans autre retouche.
-inline GradeParams native_look(double adapt) {
-  GradeParams p;
-  p.peak = kPeak;
-  p.paper = 0.5 * kPeak;
-  p.in_max = kPeak;
-  p.shadows = 0.0;
-  p.area_gain = 1.0;
-  p.spec_gain = 1.0;
-  p.vibrance = 0.0;
-  p.gamut_p3 = 0.0;
-  p.emulate = 1.0;
-  p.adapt = adapt;
-  p.sdr_white = 203.0;
-  p.em_base = 204.0;
-  p.em_pow = 6.0 * std::pow(50.0 / 51.0, 0.35);
-  p.em_lo = 1.38;
-  p.em_hi = 1.28;
-  p.em_sat = 1.0;
-  return p;
 }
 
 }  // namespace ajp::render::gpu_test

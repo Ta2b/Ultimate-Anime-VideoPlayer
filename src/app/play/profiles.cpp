@@ -237,7 +237,7 @@ std::string profile_summary(const core::Profile& profile, const core::SourceInfo
     add(usual ? std::format("SPAN {}p", height) : std::format("SPAN {}p ({})", height, model_label(s.model)));
   }
   if (text.empty()) text = "source telle quelle";
-  if (s.hdr_native) text += s.grade ? " · HDR adaptatif" : " · HDR sans grade (expansion simple)";
+  if (s.hdr_native) text += s.grade ? " · HDR" : " · HDR sans grade (expansion simple)";
   return text;
 }
 

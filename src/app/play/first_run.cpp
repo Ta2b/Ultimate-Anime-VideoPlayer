@@ -482,23 +482,15 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                  wizard.hdr == HdrChoice::Auto, pick);
       if (pick) wizard.hdr = HdrChoice::Auto;
       pick = false;
-      radio_note(i18n::tr("Adaptive HDR"), i18n::tr("Any GPU: the HDR look is emulated per scene."),
-                 wizard.hdr == HdrChoice::Adaptive, pick);
-      if (pick) wizard.hdr = HdrChoice::Adaptive;
+      radio_note("HDR", i18n::tr("SDR anime converted to HDR, on any GPU."), wizard.hdr == HdrChoice::Hdr,
+                 pick);
+      if (pick) wizard.hdr = HdrChoice::Hdr;
       pick = false;
       radio_note("SDR", i18n::tr("No HDR conversion."), wizard.hdr == HdrChoice::Sdr, pick);
       if (pick) wizard.hdr = HdrChoice::Sdr;
       break;
     }
-    case WizardStep::Grade:
-      section(i18n::tr("HDR grade calibration"));
-      note(
-          i18n::tr("Right after the machine calibration, the player shows a few dark scenes, then a few "
-                   "bright scenes: you tune the adaptive grade for this display."));
-      note(
-          i18n::tr("An important step: the HDR picture follows it. Redo it or add other profiles later in "
-                   "HDR and color > HDR."));
-      if (wizard.hdr == HdrChoice::Sdr) note(i18n::tr("SDR chosen: no HDR grade to calibrate."));
+    case WizardStep::Grade:  // retiré
       break;
     case WizardStep::Languages:
       section(i18n::tr("Languages"));

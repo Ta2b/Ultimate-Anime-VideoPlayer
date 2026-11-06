@@ -79,12 +79,6 @@ TEST_CASE("Clé de composition : change avec les sous-titres, la taille, le grad
   CHECK(changed([](ComposeState& s) { s.transfer = 16; }));
   CHECK(changed([](ComposeState& s) { s.primaries = 7; }));
   CHECK(changed([](ComposeState& s) { s.max_luma = 1000.0F; }));
-
-  // La calibration n'est jamais gardée, même à clé égale.
-  ComposeState calibration = state;
-  calibration.calibrating = true;
-  const ComposeKey cal = compose_key(&frame, nullptr, 1920, 1080, 0, calibration);
-  CHECK_FALSE(reusable(cal, cal));
 }
 
 }  // namespace

@@ -16,7 +16,7 @@
 
 #include "app/play/auto_config.h"
 #include "app/play/settings.h"
-#include "app/play/settings_toml_display.h"
+#include "app/play/settings_toml_lenient.h"
 #include "core/log.h"
 #include "core/user_overlay.h"
 
@@ -275,8 +275,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.engine : « {} »", engine)));
   }
-  // Le mode HDR de l'application : HDR adaptatif ou SDR, et ses réglages. « rtx » (RTX HDR, retiré) se lit
-  // comme le HDR adaptatif ; les fichiers d'avant (section rtx_hdr) se lisent encore.
+  // Le mode HDR de l'application : HDR (« adaptive », nom d'avant gardé) ou SDR, et le pic visé. « rtx » (RTX
+  // HDR, retiré) se lit comme le HDR ; les fichiers d'avant (section rtx_hdr) se lisent encore. Les clés du
+  // HDR adaptatif retiré (contrast, saturation, middle_gray, display_grades) sont ignorées.
   if (const toml::table* hdr = section(root, "hdr")) {
     std::string engine(hdr_engine_key(s));
     reads.push_back(read(*hdr, "hdr", "engine", engine));
@@ -285,17 +286,10 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     } else {
       reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("hdr.engine : « {} »", engine)));
     }
-    reads.push_back(read(*hdr, "hdr", "contrast", s.true_hdr_contrast));
-    reads.push_back(read(*hdr, "hdr", "saturation", s.true_hdr_saturation));
-    reads.push_back(read(*hdr, "hdr", "middle_gray", s.true_hdr_gray));
     reads.push_back(read(*hdr, "hdr", "peak", s.true_hdr_peak));
-    read_display_tables(*hdr, s, reads);
   } else if (const toml::table* rtx = section(root, "rtx_hdr")) {
     bool rtx_enabled = false;
     reads.push_back(read(*rtx, "rtx_hdr", "enabled", rtx_enabled));
-    reads.push_back(read(*rtx, "rtx_hdr", "contrast", s.true_hdr_contrast));
-    reads.push_back(read(*rtx, "rtx_hdr", "saturation", s.true_hdr_saturation));
-    reads.push_back(read(*rtx, "rtx_hdr", "middle_gray", s.true_hdr_gray));
     reads.push_back(read(*rtx, "rtx_hdr", "peak", s.true_hdr_peak));
     reads.push_back(read(*rtx, "rtx_hdr", "native", s.hdr_native));
     s.hdr_native = s.hdr_native || rtx_enabled;
@@ -385,29 +379,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "enabled", s.grade));
     reads.push_back(read(*grade, "grade", "preset", preset));
     reads.push_back(read(*grade, "grade", "shadows", v.shadows));
-    reads.push_back(read(*grade, "grade", "highlights", v.highlights));
     reads.push_back(read(*grade, "grade", "highlights_rtx", v.highlights_rtx));
-    reads.push_back(read(*grade, "grade", "vibrance", v.vibrance));
-    reads.push_back(read(*grade, "grade", "vibrance_rtx", v.vibrance_rtx));
-    // La plage de la rc.3 allait à 1,2 ; la course est revenue à 0,8 (l'effet, lui, est plus fort).
-    if (v.vibrance <= 1.2) v.vibrance = std::min(v.vibrance, render::grade_limits::kVibrance.hi);
-    if (v.vibrance_rtx <= 1.2) v.vibrance_rtx = std::min(v.vibrance_rtx, render::grade_limits::kVibrance.hi);
     reads.push_back(read(*grade, "grade", "area_rtx", v.area_rtx));
-    reads.push_back(read(*grade, "grade", "guard", v.guard));
-    reads.push_back(read(*grade, "grade", "expand", v.expand));
-    reads.push_back(read(*grade, "grade", "gamut_p3", v.gamut_p3));
-    reads.push_back(read(*grade, "grade", "adaptive", v.adaptive));
-    reads.push_back(read(*grade, "grade", "adaptive_lo", v.adaptive_lo));
-    reads.push_back(read(*grade, "grade", "adaptive_hi", v.adaptive_hi));
-    reads.push_back(read(*grade, "grade", "adaptive_shadows", v.adaptive_shadows));
-    reads.push_back(read(*grade, "grade", "adaptive_vibrance", v.adaptive_vibrance));
-    reads.push_back(read(*grade, "grade", "adaptive_vibrance_cut", v.adaptive_vibrance_cut));
-    reads.push_back(read(*grade, "grade", "adaptive_gray", v.adaptive_gray));
-    reads.push_back(read(*grade, "grade", "adaptive_glow_gray", v.adaptive_glow_gray));
-    reads.push_back(read(*grade, "grade", "adaptive_glow_shadows", v.adaptive_glow_shadows));
-    reads.push_back(read(*grade, "grade", "adaptive_glow_vibrance", v.adaptive_glow_vibrance));
     reads.push_back(read(*grade, "grade", "look", s.look));
-    reads.push_back(read(*grade, "grade", "adaptive_record", s.adaptive_record));
     reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
     reads.push_back(read(*grade, "grade", "look_contrast", s.look_contrast));
     reads.push_back(read(*grade, "grade", "look_highlight", s.look_highlight));
@@ -431,10 +405,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     // Plus de préréglages : les valeurs du fichier font foi.
     // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
     const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
-    for (double* x : {&v.shadows, &v.highlights, &v.highlights_rtx, &v.vibrance, &v.vibrance_rtx, &v.area_rtx,
-                      &v.guard, &v.expand, &v.adaptive_lo, &v.adaptive_hi, &v.adaptive_shadows,
-                      &v.adaptive_vibrance, &v.adaptive_vibrance_cut, &v.adaptive_gray, &v.adaptive_glow_gray,
-                      &v.adaptive_glow_shadows, &v.adaptive_glow_vibrance, &s.look_mix, &s.oled_black_steps})
+    for (double* x : {&v.shadows, &v.highlights_rtx, &v.area_rtx, &s.look_mix, &s.oled_black_steps})
       hundredth(*x);
     for (auto& layer : s.look_layers) hundredth(layer.mix);
     s.grade_values = v;
@@ -452,12 +423,6 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
   for (const auto& done : reads) {
     if (!done) return std::unexpected(done.error());
   }
-  // Les rc.3 laissaient aller contraste et saturation à 400 : un play.toml écrit alors se relit au maximum.
-  constexpr int kRc3Max = 400;
-  if (s.true_hdr_contrast <= kRc3Max)
-    s.true_hdr_contrast = std::min(s.true_hdr_contrast, limits::kTrueHdrContrast.hi);
-  if (s.true_hdr_saturation <= kRc3Max)
-    s.true_hdr_saturation = std::min(s.true_hdr_saturation, limits::kTrueHdrSaturation.hi);
   return validate(s);
 }
 
@@ -493,12 +458,7 @@ std::string format_settings(const PlaySettings& s) {
   }
   root.insert("interpolation", std::move(interpolation));
   {
-    toml::table hdr{{"engine", std::string(hdr_engine_key(s))},
-                    {"contrast", s.true_hdr_contrast},
-                    {"saturation", s.true_hdr_saturation},
-                    {"middle_gray", s.true_hdr_gray},
-                    {"peak", s.true_hdr_peak}};
-    write_display_tables(s, hdr);
+    toml::table hdr{{"engine", std::string(hdr_engine_key(s))}, {"peak", s.true_hdr_peak}};
     root.insert("hdr", std::move(hdr));
   }
   // Le volume au centième : 0.85 et non 0.8500000238418579.
@@ -535,26 +495,9 @@ std::string format_settings(const PlaySettings& s) {
   const render::GradeSettings& g = s.grade_values;
   root.insert("grade", toml::table{{"enabled", s.grade},
                                    {"shadows", hundredth(g.shadows)},
-                                   {"highlights", hundredth(g.highlights)},
                                    {"highlights_rtx", hundredth(g.highlights_rtx)},
-                                   {"vibrance", hundredth(g.vibrance)},
-                                   {"vibrance_rtx", hundredth(g.vibrance_rtx)},
                                    {"area_rtx", hundredth(g.area_rtx)},
-                                   {"guard", hundredth(g.guard)},
-                                   {"expand", hundredth(g.expand)},
-                                   {"gamut_p3", g.gamut_p3},
-                                   {"adaptive", g.adaptive},
-                                   {"adaptive_lo", hundredth(g.adaptive_lo)},
-                                   {"adaptive_hi", hundredth(g.adaptive_hi)},
-                                   {"adaptive_shadows", hundredth(g.adaptive_shadows)},
-                                   {"adaptive_vibrance", hundredth(g.adaptive_vibrance)},
-                                   {"adaptive_vibrance_cut", hundredth(g.adaptive_vibrance_cut)},
-                                   {"adaptive_gray", hundredth(g.adaptive_gray)},
-                                   {"adaptive_glow_gray", hundredth(g.adaptive_glow_gray)},
-                                   {"adaptive_glow_shadows", hundredth(g.adaptive_glow_shadows)},
-                                   {"adaptive_glow_vibrance", hundredth(g.adaptive_glow_vibrance)},
                                    {"look", s.look},
-                                   {"adaptive_record", s.adaptive_record},
                                    {"look_mix", hundredth(s.look_mix)},
                                    {"look_contrast", s.look_contrast},
                                    {"look_highlight", s.look_highlight},

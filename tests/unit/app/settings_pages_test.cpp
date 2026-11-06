@@ -53,7 +53,7 @@ TEST_CASE("le résumé de l'assistant renvoie à des pages qui existent", "[sett
   i18n::set_language(i18n::Language::French);  // le résumé de l'assistant est encore en français
   Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = true}, 0);
   const auto lines = wizard_summary(wizard);
-  REQUIRE(lines.size() >= 5);
+  REQUIRE(lines.size() >= 4);
   for (const std::string& line : lines) {
     const std::size_t open = line.rfind('(');
     const std::size_t close = line.rfind(')');

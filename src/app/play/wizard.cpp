@@ -18,7 +18,7 @@ std::string_view title(WizardStep step) {
     case WizardStep::Hdr:
       return i18n::tr("HDR");
     case WizardStep::Grade:
-      return i18n::tr("HDR grade calibration");
+      return {};
     case WizardStep::Languages:
       return i18n::tr("Languages");
     case WizardStep::Updates:
@@ -35,8 +35,7 @@ std::vector<WizardStep> wizard_steps(const WizardFacts& facts) {
     const auto step = static_cast<WizardStep>(i);
     if (step == WizardStep::Engines && !facts.engine_choice) continue;
     if (step == WizardStep::Hdr && !facts.hdr_display) continue;
-    // La calibration du grade se propose après celle de la machine (HDR ou SDR), plus en écran à part.
-    if (step == WizardStep::Grade) continue;
+    if (step == WizardStep::Grade) continue;  // retiré
     steps.push_back(step);
   }
   return steps;
@@ -46,8 +45,8 @@ std::string_view label(HdrChoice choice) {
   switch (choice) {
     case HdrChoice::Auto:
       return i18n::tr("Automatic");
-    case HdrChoice::Adaptive:
-      return i18n::tr("Adaptive HDR");
+    case HdrChoice::Hdr:
+      return "HDR";
     case HdrChoice::Sdr:
       return "SDR";
   }
@@ -115,12 +114,6 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
       out.push_back(i18n::tr_format("HDR: {} (HDR and color > HDR)", label(wizard.hdr)));
     }
   }
-  if (has(WizardStep::Hdr))
-    out.push_back(
-        wants_grade_calibration(wizard)
-            ? i18n::tr("HDR grade calibration: right after the machine calibration if you pick HDR (HDR and "
-                       "color > HDR)")
-            : i18n::tr("HDR grade calibration: skipped (HDR and color > HDR)"));
   if (has(WizardStep::Languages))
     out.push_back(skipped(WizardStep::Languages) ? i18n::tr("Languages: skipped (General > Playback)")
                                                  : i18n::tr("Languages: chosen (General > Playback)"));
@@ -158,7 +151,7 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
     switch (wizard.hdr) {
       case HdrChoice::Auto:
         break;
-      case HdrChoice::Adaptive:
+      case HdrChoice::Hdr:
         settings.hdr_native = true;
         break;
       case HdrChoice::Sdr:
@@ -172,12 +165,6 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
 bool wants_machine_calibration(const Wizard& wizard) {
   return std::ranges::find(wizard.steps, WizardStep::Chain) != wizard.steps.end() &&
          std::ranges::find(wizard.skipped, WizardStep::Chain) == wizard.skipped.end();
-}
-
-bool wants_grade_calibration(const Wizard& wizard) {
-  return std::ranges::find(wizard.steps, WizardStep::Hdr) != wizard.steps.end() &&
-         std::ranges::find(wizard.skipped, WizardStep::Hdr) == wizard.skipped.end() &&
-         wizard.hdr != HdrChoice::Sdr;
 }
 
 }  // namespace ajp::app::play

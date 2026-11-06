@@ -35,7 +35,6 @@ struct ComposeKey {
   int transfer = 0;  // ceux de la cible (pl_color_transfer, pl_color_primaries)
   int primaries = 0;
   float max_luma = 0.0F;
-  bool calibrating = false;  // la calibration du grade : jamais gardée
   friend bool operator==(const ComposeKey&, const ComposeKey&) = default;
 };
 
@@ -71,7 +70,6 @@ struct ComposeState {
   int transfer = 0;
   int primaries = 0;
   float max_luma = 0.0F;
-  bool calibrating = false;
 };
 
 inline ComposeKey compose_key(const RingFrame* frame, const subs::SubtitleFrame* subtitles, int width,
@@ -100,13 +98,12 @@ inline ComposeKey compose_key(const RingFrame* frame, const subs::SubtitleFrame*
   key.transfer = state.transfer;
   key.primaries = state.primaries;
   key.max_luma = state.max_luma;
-  key.calibrating = state.calibrating;
   return key;
 }
 
 // La composition gardée sous `kept` sert encore pour `now`.
 inline bool reusable(const std::optional<ComposeKey>& kept, const ComposeKey& now) {
-  return kept.has_value() && !now.calibrating && *kept == now;
+  return kept.has_value() && *kept == now;
 }
 
 }  // namespace ajp::app::play

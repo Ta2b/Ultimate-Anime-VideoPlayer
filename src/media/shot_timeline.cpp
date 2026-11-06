@@ -83,18 +83,6 @@ std::optional<ShotAt> ShotTimeline::at(std::int64_t pts_us) const {
   return found;
 }
 
-std::optional<double> ShotTimeline::mean_luma() const {
-  const std::scoped_lock lock(mutex_);
-  double sum = 0.0, weight = 0.0;
-  for (const Shot& s : shots_) {
-    const auto d = static_cast<double>(s.end_us - s.start_us);
-    sum += d * 0.5 * static_cast<double>(s.first.mean + s.last.mean);
-    weight += d;
-  }
-  if (weight <= 0.0) return std::nullopt;
-  return sum / weight;
-}
-
 std::int64_t ShotTimeline::covered_us() const {
   const std::scoped_lock lock(mutex_);
   std::int64_t sum = 0;

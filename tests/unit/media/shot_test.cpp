@@ -123,7 +123,6 @@ TEST_CASE("plans : la chronologie rend le plan d'un instant, et interpole un fon
   CHECK(timeline.at(999'999)->serial != timeline.at(1'000'000)->serial);
   CHECK_FALSE(timeline.at(3'000'000));
   CHECK(timeline.analyzed_until(0) == 3'000'000);
-  CHECK(*timeline.mean_luma() == Approx((0.2 * 1.0 + 0.3 * 2.0) / 3.0));
   // Un plan coupé par un départ en cours de vidéo ne remplace pas un plan entier.
   Shot partial{.start_us = 500'000, .end_us = 900'000, .cut_before = false};
   timeline.add(partial);

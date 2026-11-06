@@ -22,7 +22,6 @@
 #include "app/play/auto_config.h"
 #include "app/play/backend_library.h"
 #include "app/play/build_progress.h"
-#include "app/play/calibration_images.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
@@ -289,7 +288,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   ShotWork shots{.cache_dir = paths.data / "plans"};
   if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
   bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
-  // PlayFile (la calibration du grade) : l'instant et la pause du fichier suivant, à la place de la reprise.
+  // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
   const HomeScreen home{.screen = **screen,
@@ -455,9 +454,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     bool start_paused = std::exchange(forced_paused, false);
     const bool forced = forced_start.has_value();
     forced_start.reset();
-    // settings.toml ([playback] resume_position) l'autorise, et --no-resume l'écarte pour une lecture ; la
-    // vidéo de la calibration du grade ne se reprend ni ne se retient.
-    if (file_options.resume && player.engines.resume_position && file != calibration_clip()) {
+    // settings.toml ([playback] resume_position) l'autorise, et --no-resume l'écarte pour une lecture.
+    if (file_options.resume && player.engines.resume_position) {
       player.resume_path = settings_path.parent_path() / "resume.tsv";
       if (start_us == 0 && !forced) {
         if (const auto at = resume_position(player.resume_path, file)) {

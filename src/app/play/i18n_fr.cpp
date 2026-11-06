@@ -121,7 +121,7 @@ std::span<const Entry> french_entries() {
     std::vector<Entry> merged;
     for (const auto part :
          {french_player(), french_settings(), french_image(), french_sound(), french_system(),
-          french_wizard(), french_messages(), french_stats(), french_visible(), french_calibration()})
+          french_wizard(), french_messages(), french_stats(), french_visible()})
       merged.insert(merged.end(), part.begin(), part.end());
     return merged;
   }();

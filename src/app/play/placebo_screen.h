@@ -117,7 +117,7 @@ class PlaceboScreen final : public Screen {
   // sortie SDR BT.709 (sRGB, gamma 2,2 ou 2,4) ; rien : sans grade.
   void set_grade(const render::GradeChoice& choice);
   // Le même, à partir de la première image présentée après after (pts et époque de la dernière image reçue
-  // du GPU) : le grade adaptatif change avec le plan de l'image que le GPU vient de traiter, et les images
+  // du GPU) : le grade change avec le plan de l'image que le GPU vient de traiter, et les images
   // déjà prêtes devant elle, encore de la scène d'avant, gardent l'ancien grade. Repli au bout de 250 ms
   // (pause, seek).
   void set_grade_after(const render::GradeChoice& choice, const RingFrame& after);

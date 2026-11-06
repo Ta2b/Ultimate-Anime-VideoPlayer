@@ -43,7 +43,7 @@ PlaySettings apply_profile(const core::Profile& profile, const core::SourceInfo&
 std::vector<core::Rule> rules_of(const PlaySettings& settings, std::string_view default_model);
 core::HdrMode hdr_of(const PlaySettings& settings);
 
-// « 720p Area → RIFE ×3 → SPAN ×2 · HDR adaptatif », pour le menu ; « source telle quelle » sans étape.
+// « 720p Area → RIFE ×3 → SPAN ×2 · HDR », pour le menu ; « source telle quelle » sans étape.
 std::string profile_summary(const core::Profile& profile, const core::SourceInfo& source);
 
 // La base et user.toml lus ensemble ; user.toml absent : la base seule. Refus : user.toml illisible

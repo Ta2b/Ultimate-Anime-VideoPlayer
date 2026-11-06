@@ -20,7 +20,6 @@
 #include "app/play/home_view.h"
 #include "app/play/input.h"
 #include "app/play/links.h"
-#include "app/play/output_choice.h"
 #include "app/play/settings_panel.h"
 #include "core/types.h"
 
@@ -74,9 +73,6 @@ class PlayerUi {
   const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view);
   // L'image de l'écran de bienvenue (first_run.h), recomposée à chaque appel.
   const ImDrawData* welcome(std::int64_t now_us, FirstRunView& view);
-  // L'image du choix HDR ou SDR d'après la calibration de la machine (output_choice.h) ; picked reçoit le
-  // bouton pressé.
-  const ImDrawData* output_choice(std::int64_t now_us, OutputPick& picked);
   // L'image de l'écran d'accueil (home_view.h) et du menu des paramètres s'il est ouvert ;
   // recomposée à chaque appel. Les réglages changés au menu vont dans actions.
   const ImDrawData* home(std::int64_t now_us, HomeView& view, std::vector<Input>& actions);
@@ -94,18 +90,13 @@ class PlayerUi {
   }
   void set_running(const PlaySettings& running);
   void set_profiles(ProfilesView profiles);
-  void set_black_status(std::string status);            // ligne du vrai noir dans l'onglet Grade
-  void set_adaptive_scene(const AdaptiveScene& scene);  // « Cette scène » du grade adaptatif
+  void set_black_status(std::string status);  // ligne du vrai noir dans l'onglet Grade
   void toggle_settings();
   void open_settings();
-  // La calibration du grade adaptatif, lancée à la prochaine ouverture des paramètres (l'assistant).
-  void queue_grade_calibration() { panel_.queue_grade_calibration(); }
   // Le nom de la vidéo, en haut de l'image pendant la lecture.
   void set_title(std::string title);
   void close_settings();
   bool settings_open() const { return panel_.is_open(); }
-  // L'image de la calibration du grade que le panneau montre (calibration_shot.h) ; nullptr : aucune.
-  const CalibrationShot* calibration() const { return panel_.calibration(); }
   // Rend les textures de l'interface à l'écran avant qu'il ne soit détruit.
   void release(PlaceboScreen& screen);
 

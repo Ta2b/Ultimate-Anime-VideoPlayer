@@ -486,7 +486,6 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                             .ui = ui.draw,
                             .ui_bottom = ui.draw != nullptr ? ui.bottom : 0,
                             .ui_top = ui.draw != nullptr ? ui.top : 0,
-                            .calibration = ui.calibration,
                             .redraws_expected = config_.steady_cadence || config_.vrr_floor_us > 0 ||
                                                 ui.draw != nullptr || !osd_.empty(),
                             .target_us = fresh_ ? target_host_us_ : 0};

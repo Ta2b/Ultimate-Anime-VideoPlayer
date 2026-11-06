@@ -19,7 +19,6 @@
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
-#include "app/play/calibration_shot.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "core/clock.h"
@@ -345,14 +344,6 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     s.grade->set_video_fps(s.video_rate.fps());
   }
 
-  // La calibration du grade : la vidéo (celle de calibration, dans la même chaîne) à gauche du panneau, sans
-  // sous-titres ni OSD ; l'interface reste dessus.
-  const bool calibrating = request.calibration != nullptr;
-  if (calibrating) {
-    const CalibrationShot& place = *request.calibration;
-    target.crop = {static_cast<float>(place.x0), static_cast<float>(place.y0), static_cast<float>(place.x1),
-                   static_cast<float>(place.y1)};
-  }
   const RingFrame* frame = request.frame;
   pl_frame image{};
   if (frame != nullptr) {
@@ -371,17 +362,16 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                           0.0F);
   }
 
-  auto overlays = s.overlays->build(
-      calibrating ? nullptr : request.subtitles, calibrating || request.osd.empty() ? nullptr : &request.osd,
-      *s.osd, out, request.ui != nullptr ? request.ui_bottom : 0, request.ui != nullptr ? request.ui_top : 0);
+  auto overlays = s.overlays->build(request.subtitles, request.osd.empty() ? nullptr : &request.osd, *s.osd,
+                                    out, request.ui != nullptr ? request.ui_bottom : 0,
+                                    request.ui != nullptr ? request.ui_top : 0);
   if (!overlays) return std::unexpected(std::move(overlays.error()));
   target.overlays = overlays->all.data();
   target.num_overlays = static_cast<int>(overlays->all.size());
 
-  // La composition gardée : seulement si d'autres présentations de la même image suivent, sans calibration
-  // (son cadre change avec le panneau).
+  // La composition gardée : seulement si d'autres présentations de la même image suivent.
   bool kept = false;
-  if (request.redraws_expected && !calibrating) {
+  if (request.redraws_expected) {
     const ComposeState state{.crop = {target.crop.x0, target.crop.y0, target.crop.x1, target.crop.y1},
                              .grade_serial = s.grade_serial,
                              .final_scaler = s.final_scaler,
@@ -389,8 +379,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                              .sar = s.sample_aspect,
                              .transfer = static_cast<int>(target.color.transfer),
                              .primaries = static_cast<int>(target.color.primaries),
-                             .max_luma = target.color.hdr.max_luma,
-                             .calibrating = false};
+                             .max_luma = target.color.hdr.max_luma};
     const ComposeKey key = compose_key(frame, request.subtitles, out.width, out.height,
                                        request.ui != nullptr ? request.ui_bottom : 0, state);
     auto done = s.compose_kept(frame != nullptr ? &image : nullptr, target, key, overlays->subtitles);

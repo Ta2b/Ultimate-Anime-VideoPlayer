@@ -179,24 +179,20 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
             "/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.22_lite.onnx"));
 }
 
-TEST_CASE("ajp play : les réglages du HDR adaptatif, refus nommés hors plage", "[app][options]") {
+TEST_CASE("ajp play : le pic du grade HDR, refus nommés hors plage", "[app][options]") {
   const auto off = parse({"a.mkv"});
   CHECK(off->true_hdr_peak == 0);  // la crête de l'écran
-  const auto on = parse({"a.mkv", "--truehdr-peak=766", "--truehdr-contrast=150", "--truehdr-saturation=120",
-                         "--truehdr-gray=40"});
+  const auto on = parse({"a.mkv", "--truehdr-peak=766"});
   REQUIRE(on);
   CHECK(on->true_hdr_peak == 766);
-  CHECK(on->true_hdr_contrast == 150);
-  CHECK(on->true_hdr_saturation == 120);
-  CHECK(on->true_hdr_gray == 40);
-  // RTX HDR est retiré : ses options ne sont plus connues.
+  // RTX HDR et l'émulation TrueHDR sont retirés : leurs options ne sont plus connues.
+  CHECK_FALSE(parse({"a.mkv", "--truehdr-contrast=150"}));
+  CHECK_FALSE(parse({"a.mkv", "--truehdr-gray=40"}));
   CHECK_FALSE(parse({"a.mkv", "--truehdr"}));
   CHECK_FALSE(parse({"a.mkv", "--truehdr-sdk=/opt/vfx"}));
   CHECK(parse({"a.mkv", "--truehdr-peak=0"})->true_hdr_peak == 0);
   CHECK(parse({"a.mkv", "--truehdr-peak=300"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--truehdr-peak=2001"}).error().code == RefusalCode::FieldOutOfRange);
-  CHECK(parse({"a.mkv", "--truehdr-gray=5"}).error().code == RefusalCode::FieldOutOfRange);
-  CHECK(parse({"a.mkv", "--truehdr-contrast=401"}).error().code == RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("ajp play : le peps de --hdr-anime en %, 100 par défaut, refus hors de 0 à 200", "[app][options]") {

@@ -27,9 +27,6 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.downscale = Downscale::CatmullRom;
   s.rife_factor = 4;
   s.hdr_native = true;
-  s.true_hdr_contrast = 120;
-  s.true_hdr_saturation = 90;
-  s.true_hdr_gray = 40;
   s.true_hdr_peak = 800;
   s.audio_delay_ms = -120;
   s.display_sync = false;
@@ -39,8 +36,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.stats.frames = true;
   s.stats.memory = true;
   s.grade_values.shadows = 0.55;
-  s.grade_values.guard = 0.25;
-  s.grade_values.gamut_p3 = true;
+  s.grade_values.area_rtx = 0.25;
   s.oled_black = OledBlack::On;
   s.final_scaler = FinalScaler::EwaLanczosSharp;
   s.deband = true;
@@ -56,7 +52,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.motion_precision = PrecisionTier::Quality;
   s.rife_auto = true;
   s.span_order = SpanOrder::Before;
-  s.grade_values.expand = 0.3;
+  s.grade_values.highlights_rtx = 0.7;
   s.language_presets = {{"eng", ""}, {"", "fre"}};
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
@@ -87,12 +83,14 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK_FALSE(interp_level(MotionEngine::Gmfss, ""));
 }
 
-TEST_CASE("Mode HDR : HDR adaptatif ou SDR, et les fichiers d'avant", "[app][settings]") {
+TEST_CASE("Mode HDR : HDR ou SDR, et les fichiers d'avant", "[app][settings]") {
   for (const std::string_view engine : {"adaptive", "sdr"}) {
-    const auto s = parse_settings(std::format("[hdr]\nengine = \"{}\"\ncontrast = 150\n", engine));
+    // contrast : une clé du HDR adaptatif retiré, ignorée.
+    const auto s =
+        parse_settings(std::format("[hdr]\nengine = \"{}\"\ncontrast = 150\npeak = 800\n", engine));
     REQUIRE(s);
     CHECK(hdr_engine_key(*s) == engine);
-    CHECK(s->true_hdr_contrast == 150);
+    CHECK(s->true_hdr_peak == 800);
     CHECK(*parse_settings(format_settings(*s)) == *s);
   }
   CHECK(format_settings(PlaySettings{}).find("[rtx_hdr]") == std::string::npos);
@@ -102,11 +100,10 @@ TEST_CASE("Mode HDR : HDR adaptatif ou SDR, et les fichiers d'avant", "[app][set
   REQUIRE(old_engine);
   CHECK(hdr_engine_key(*old_engine) == "adaptive");
   // Un play.toml d'avant : section rtx_hdr, enabled et native.
-  const auto rtx = parse_settings("[rtx_hdr]\nenabled = true\ncontrast = 200\nmiddle_gray = 51\n");
+  const auto rtx = parse_settings("[rtx_hdr]\nenabled = true\ncontrast = 200\npeak = 700\n");
   REQUIRE(rtx);
   CHECK(hdr_engine_key(*rtx) == "adaptive");
-  CHECK(rtx->true_hdr_contrast == 200);
-  CHECK(rtx->true_hdr_gray == 51);
+  CHECK(rtx->true_hdr_peak == 700);
   const auto native = parse_settings("[rtx_hdr]\nenabled = false\nnative = true\n");
   REQUIRE(native);
   CHECK(hdr_engine_key(*native) == "adaptive");
@@ -145,21 +142,21 @@ TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichie
   CHECK_FALSE(parse_settings("[interpolation]\nspan_order = \"milieu\"\n"));
 }
 
-TEST_CASE("Grade : plus de préréglages, l'ancienne clé est ignorée, gamut P3 reste celui du fichier",
-          "[app][settings]") {
+TEST_CASE("Grade : plus de préréglages, les clés retirées sont ignorées", "[app][settings]") {
   const PlaySettings defaults;
   CHECK(defaults.grade);
-  CHECK(defaults.grade_values.vibrance_rtx == 0.10);  // dans le doute, peu de couleur
-  CHECK(defaults.grade_values.adaptive_gray == 15.0);
-  const auto old = parse_settings("[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\n");
+  CHECK(defaults.grade_values.shadows == 0.50);
+  // preset, gamut_p3, vibrance, adaptive : des clés d'avant, lues sans effet.
+  const auto old = parse_settings(
+      "[grade]\npreset = \"naturel\"\nshadows = 0.7\ngamut_p3 = true\nvibrance = 0.4\nadaptive = true\n");
   REQUIRE(old);
   CHECK(old->grade_values.shadows == 0.7);  // le préréglage ne réécrit plus les valeurs
-  CHECK(old->grade_values.gamut_p3);
+  CHECK(*parse_settings(format_settings(*old)) == *old);
   CHECK(parse_settings("[grade]\npreset = \"criard\"\n"));
   CHECK_FALSE(parse_settings("[grade]\noled_black = \"peut-etre\"\n"));
   CHECK_FALSE(parse_settings("[grade]\noled_black_steps = 20.0\n"));
   CHECK(defaults.oled_black == OledBlack::Auto);
-  CHECK(parse_settings("[grade]\npreset = \"perso\"\nguard = 2.0\n").error().detail.find("guard") !=
+  CHECK(parse_settings("[grade]\npreset = \"perso\"\nshadows = 2.0\n").error().detail.find("shadows") !=
         std::string::npos);
 }
 
@@ -167,7 +164,7 @@ TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", 
   const auto s = parse_settings("[rtx_hdr]\nenabled = true\nfutur = 3\n[autre]\nx = 1\n");
   REQUIRE(s);
   CHECK(s->hdr_native);
-  CHECK(s->true_hdr_contrast == 100);
+  CHECK(s->true_hdr_peak == 0);
   CHECK(s->rife_factor == kDefaultRifeFactor);
   CHECK(s->downscale == Downscale::Hermite);
   const auto empty = parse_settings("");
@@ -176,10 +173,10 @@ TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", 
 }
 
 TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settings]") {
-  const auto out = parse_settings("[rtx_hdr]\ncontrast = 450\n");
+  const auto out = parse_settings("[audio]\ndelay_ms = 99999\n");
   REQUIRE_FALSE(out);
   CHECK(out.error().code == RefusalCode::FieldOutOfRange);
-  CHECK(out.error().detail.find("hdr.contrast") != std::string::npos);
+  CHECK(out.error().detail.find("audio.delay_ms") != std::string::npos);
   const auto peak = parse_settings("[rtx_hdr]\npeak = 300\n");
   REQUIRE_FALSE(peak);
   CHECK(peak.error().detail.find("hdr.peak") != std::string::npos);
@@ -237,25 +234,25 @@ TEST_CASE("Les options données remplacent play.toml pour cette lecture", "[app]
 TEST_CASE("Une option d'essai n'entre pas dans play.toml, un changement du menu oui", "[app][settings]") {
   PlaySettings file;
   file.rife_factor = 3;
-  file.true_hdr_contrast = 100;
-  const std::array<std::string_view, 3> args{"film.mkv", "--rife=4", "--truehdr-contrast=120"};
+  file.true_hdr_peak = 0;
+  const std::array<std::string_view, 3> args{"film.mkv", "--rife=4", "--truehdr-peak=900"};
   const auto options = parse_play_options(args);
   REQUIRE(options);
   const PlaySettings started = settings_for(file, *options);
   PlaySettings running = started;
-  running.true_hdr_saturation = 150;  // changé au menu
-  running.true_hdr_contrast = 140;    // donné en option puis changé au menu
+  running.volume = 0.4F;         // changé au menu
+  running.true_hdr_peak = 1000;  // donné en option puis changé au menu
   const PlaySettings saved = settings_to_save(running, file, started, *options);
   CHECK(saved.rife_factor == 3);  // --rife=4 n'était que pour cette lecture
-  CHECK(saved.true_hdr_contrast == 140);
-  CHECK(saved.true_hdr_saturation == 150);
+  CHECK(saved.true_hdr_peak == 1000);
+  CHECK(saved.volume == 0.4F);
 }
 
 TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'appliquer", "[app][settings]") {
   const PlaySettings running;
   CHECK(change_between(running, running, true).cost == ChangeCost::None);
   PlaySettings live = running;
-  live.true_hdr_contrast = 130;
+  live.true_hdr_peak = 900;
   live.downscale = Downscale::Mitchell;
   live.volume = 0.5F;
   live.stats.all = true;
@@ -314,13 +311,13 @@ TEST_CASE("La part directe d'un changement laisse ce qui demande une réouvertur
   const PlaySettings running;
   PlaySettings wanted = running;
   wanted.work_height = 1080;  // réouverture
-  wanted.true_hdr_contrast = 150;
+  wanted.true_hdr_peak = 900;
   wanted.downscale = Downscale::CatmullRom;
   wanted.stats.frames = true;
   wanted.rife_factor = 2;
   const PlaySettings live = live_part(running, wanted, true);
   CHECK(live.work_height == running.work_height);
-  CHECK(live.true_hdr_contrast == 150);
+  CHECK(live.true_hdr_peak == 900);
   CHECK(live.downscale == Downscale::CatmullRom);
   CHECK(live.stats.frames);
   CHECK(live.rife_factor == 2);
@@ -346,7 +343,7 @@ TEST_CASE("Écrire puis relire play.toml ; absent : les défauts", "[app][settin
   REQUIRE(back);
   CHECK(back->rife_factor == 2);
   PlaySettings bad;
-  bad.true_hdr_gray = 5;
+  bad.true_hdr_peak = 5;
   CHECK_FALSE(save_settings(path, bad));
   CHECK(load_settings(path)->rife_factor == 2);  // l'ancien fichier reste
   std::filesystem::remove_all(dir);
@@ -564,33 +561,20 @@ TEST_CASE("une valeur fautive n'invalide que sa clé", "[settings][lenient]") {
   CHECK_FALSE(parse_settings_lenient("[image\nbroken").has_value());  // un TOML illisible reste refusé
 }
 
-TEST_CASE("un refus qui ne nomme pas sa clé n'efface pas le reste, grade adaptatif compris",
-          "[settings][lenient]") {
+TEST_CASE("un refus qui ne nomme pas sa clé n'efface pas le reste, grade compris", "[settings][lenient]") {
   using namespace ajp::app::play;
   // « languages.audio » ne nomme pas audio_1 : avant, tout le fichier était mis de côté.
   const std::string text =
-      "version = 1\n[grade]\nenabled = true\nadaptive = true\nadaptive_gray = 31.0\nadaptive_shadows = "
-      "0.42\n[languages]\naudio_1 = \"pas une langue !\"\n";
+      "version = 1\n[grade]\nenabled = true\nshadows = 0.42\narea_rtx = 0.31\n[languages]\naudio_1 = \"pas "
+      "une "
+      "langue !\"\n";
   std::vector<std::string> dropped;
   const auto lenient = parse_settings_lenient(text, &dropped);
   if (!lenient) UNSCOPED_INFO(lenient.error().detail);
   REQUIRE(lenient.has_value());
-  CHECK(lenient->grade_values.adaptive);
-  CHECK(lenient->grade_values.adaptive_gray == 31.0);
-  CHECK(lenient->grade_values.adaptive_shadows == 0.42);
+  CHECK(lenient->grade_values.area_rtx == 0.31);
+  CHECK(lenient->grade_values.shadows == 0.42);
   CHECK(dropped.size() == 1);
-}
-
-TEST_CASE("un play.toml de la rc.3 (400 %, vibrance 1,2) se relit au maximum d'aujourd'hui",
-          "[app][settings]") {
-  const auto s = ajp::app::play::parse_settings(
-      "[hdr]\nengine = 'rtx'\ncontrast = 350\nsaturation = 400\n[grade]\npreset = 'perso'\nvibrance = "
-      "1.1\nvibrance_rtx = 1.2\n");
-  REQUIRE(s.has_value());
-  CHECK(s->true_hdr_contrast == 200);
-  CHECK(s->true_hdr_saturation == 200);
-  CHECK(s->grade_values.vibrance == 0.8);
-  CHECK(s->grade_values.vibrance_rtx == 0.8);
 }
 
 TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de chemin est refusé",
