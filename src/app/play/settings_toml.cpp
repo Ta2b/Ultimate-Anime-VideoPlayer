@@ -275,24 +275,12 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
       reads.emplace_back(
           refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.engine : « {} »", engine)));
   }
-  // Le mode HDR de l'application : HDR (« adaptive », nom d'avant gardé) ou SDR, et le pic visé. « rtx » (RTX
-  // HDR, retiré) se lit comme le HDR ; les fichiers d'avant (section rtx_hdr) se lisent encore. Les clés du
-  // HDR adaptatif retiré (contrast, saturation, middle_gray, display_grades) sont ignorées.
+  // Le pic visé par le grade HDR. Le mode HDR n'est plus un réglage (il suit le système) : hdr.engine et la
+  // section rtx_hdr d'avant (RTX HDR retiré, sauf son pic) sont ignorés, comme les clés du HDR adaptatif.
   if (const toml::table* hdr = section(root, "hdr")) {
-    std::string engine(hdr_engine_key(s));
-    reads.push_back(read(*hdr, "hdr", "engine", engine));
-    if (engine == "rtx" || engine == "adaptive" || engine == "sdr") {
-      s.hdr_native = engine != "sdr";
-    } else {
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("hdr.engine : « {} »", engine)));
-    }
     reads.push_back(read(*hdr, "hdr", "peak", s.true_hdr_peak));
   } else if (const toml::table* rtx = section(root, "rtx_hdr")) {
-    bool rtx_enabled = false;
-    reads.push_back(read(*rtx, "rtx_hdr", "enabled", rtx_enabled));
     reads.push_back(read(*rtx, "rtx_hdr", "peak", s.true_hdr_peak));
-    reads.push_back(read(*rtx, "rtx_hdr", "native", s.hdr_native));
-    s.hdr_native = s.hdr_native || rtx_enabled;
   }
   if (const toml::table* audio = section(root, "audio")) {
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
@@ -458,7 +446,7 @@ std::string format_settings(const PlaySettings& s) {
   }
   root.insert("interpolation", std::move(interpolation));
   {
-    toml::table hdr{{"engine", std::string(hdr_engine_key(s))}, {"peak", s.true_hdr_peak}};
+    toml::table hdr{{"peak", s.true_hdr_peak}};
     root.insert("hdr", std::move(hdr));
   }
   // Le volume au centième : 0.85 et non 0.8500000238418579.

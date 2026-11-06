@@ -40,10 +40,7 @@ double fps_of(const media::Rational& rate) {
   return rate.den > 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
 }
 
-PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings) {
-  if (to.hdr_wanted) {
-    settings.hdr_native = to.hdr_wanted->hdr_native;
-  }
+PlaySettings with_kept_choices(const Chain& to, PlaySettings settings) {
   if (to.kept_grade) settings.grade = *to.kept_grade;
   if (to.kept_rife) {
     settings.rife_factor = to.kept_rife->first;
@@ -341,16 +338,13 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const ToggleSettings&) { to.ui.toggle_settings(); },
           [&](const ApplySettings& apply) {
-            // Un repli HDR en cours n'est pas retenu : sauf si l'utilisateur a lui-même changé le mode
-            // HDR, play.toml garde le mode demandé (with_intended_hdr).
-            if (apply.settings.hdr_native != to.running.hdr_native) to.hdr_wanted.reset();
             // Le menu qui change un de ces réglages le choisit pour de bon ; sinon le raccourci reste de
             // séance.
             if (apply.settings.grade != to.running.grade) to.kept_grade.reset();
             if (apply.settings.rife_factor != to.running.rife_factor ||
                 apply.settings.rife_factor_den != to.running.rife_factor_den)
               to.kept_rife.reset();
-            const PlaySettings intended = with_intended_hdr(to, apply.settings);
+            const PlaySettings intended = with_kept_choices(to, apply.settings);
             if (apply.reopen) {
               log_channel("app")->info("paramètres : réouverture de la chaîne");
               to.reopen = intended;

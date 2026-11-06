@@ -32,6 +32,12 @@ std::optional<double> content_peak_nits(SDL_Window* window);
 // La crête « automatique » du grade : celle de l'écran bornée à 200-2000 nits (un écran HDR de 310 nits ne
 // reçoit pas une cible de 400) ; 1000 si inconnue.
 int auto_peak_nits(std::optional<double> detected);
+// Le HDR suit le système, sans réglage : la sortie est en HDR10 quand l'écran en reçoit (Windows ou le
+// compositeur l'a activé) et que sa crête atteint kMinHdrPeakNits. En dessous, un écran qui se dit HDR mais
+// n'a pas la lumière pour les éclats (300 nits) : l'image reste en SDR, gradée. HDR coupé dans le système sur
+// un écran HDR : SDR aussi. --sdr force le SDR.
+inline constexpr double kMinHdrPeakNits = 350.0;
+bool system_hdr(std::optional<double> peak_nits);
 // Ce que SDL (et, sous Windows, la configuration d'affichage) dit du HDR de l'écran de la fenêtre, pour le
 // journal : de quoi comprendre pourquoi un écran HDR est vu en SDR.
 std::string describe_hdr(SDL_Window* window);

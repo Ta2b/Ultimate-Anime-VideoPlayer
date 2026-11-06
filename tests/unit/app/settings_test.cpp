@@ -6,6 +6,8 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,6 +17,7 @@
 
 #include "app/play/chain.h"
 #include "app/play/free_engines.h"
+#include "app/play/host_facts.h"
 #include "app/play/live_settings.h"
 
 namespace ajp::app::play {
@@ -26,7 +29,6 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.work_height = 540;
   s.downscale = Downscale::CatmullRom;
   s.rife_factor = 4;
-  s.hdr_native = true;
   s.true_hdr_peak = 800;
   s.audio_delay_ms = -120;
   s.display_sync = false;
@@ -83,34 +85,40 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK_FALSE(interp_level(MotionEngine::Gmfss, ""));
 }
 
-TEST_CASE("Mode HDR : HDR ou SDR, et les fichiers d'avant", "[app][settings]") {
-  for (const std::string_view engine : {"adaptive", "sdr"}) {
-    // contrast : une clé du HDR adaptatif retiré, ignorée.
+TEST_CASE("Le HDR suit le système : un écran HDR trop sombre reste en SDR", "[app][settings]") {
+  CHECK_FALSE(system_hdr(std::nullopt));  // écran SDR, ou HDR coupé dans Windows
+  CHECK_FALSE(system_hdr(300.0));         // se dit HDR, n'en a pas la lumière
+  CHECK_FALSE(system_hdr(std::numeric_limits<double>::quiet_NaN()));
+  CHECK(system_hdr(kMinHdrPeakNits));
+  CHECK(system_hdr(1000.0));
+}
+
+TEST_CASE("Le mode HDR n'est plus un réglage : seul le pic se lit, les fichiers d'avant aussi",
+          "[app][settings]") {
+  // engine (HDR ou SDR) et contrast (HDR adaptatif retiré) sont ignorés : le HDR suit le système.
+  for (const std::string_view engine : {"adaptive", "sdr", "rtx", "maxine"}) {
     const auto s =
         parse_settings(std::format("[hdr]\nengine = \"{}\"\ncontrast = 150\npeak = 800\n", engine));
     REQUIRE(s);
-    CHECK(hdr_engine_key(*s) == engine);
+    CHECK_FALSE(s->hdr_native);
     CHECK(s->true_hdr_peak == 800);
     CHECK(*parse_settings(format_settings(*s)) == *s);
   }
-  CHECK(format_settings(PlaySettings{}).find("[rtx_hdr]") == std::string::npos);
-  CHECK_FALSE(parse_settings("[hdr]\nengine = \"maxine\"\n"));
-  // RTX HDR, retiré : « rtx » se lit comme le HDR adaptatif.
-  const auto old_engine = parse_settings("[hdr]\nengine = \"rtx\"\ndebanding = false\n");
-  REQUIRE(old_engine);
-  CHECK(hdr_engine_key(*old_engine) == "adaptive");
-  // Un play.toml d'avant : section rtx_hdr, enabled et native.
+  PlaySettings hdr_on;
+  hdr_on.hdr_native = true;
+  const std::string written = format_settings(hdr_on);
+  CHECK(written.find("[rtx_hdr]") == std::string::npos);
+  CHECK(written.find("engine = \"adaptive\"") == std::string::npos);
+  CHECK_FALSE(parse_settings(written)->hdr_native);  // jamais écrit dans play.toml
+  // Un play.toml d'avant : section rtx_hdr, seul son pic compte.
   const auto rtx = parse_settings("[rtx_hdr]\nenabled = true\ncontrast = 200\npeak = 700\n");
   REQUIRE(rtx);
-  CHECK(hdr_engine_key(*rtx) == "adaptive");
+  CHECK_FALSE(rtx->hdr_native);
   CHECK(rtx->true_hdr_peak == 700);
-  const auto native = parse_settings("[rtx_hdr]\nenabled = false\nnative = true\n");
-  REQUIRE(native);
-  CHECK(hdr_engine_key(*native) == "adaptive");
   // La nouvelle section l'emporte sur l'ancienne.
-  const auto both = parse_settings("[rtx_hdr]\nenabled = true\n[hdr]\nengine = \"adaptive\"\n");
+  const auto both = parse_settings("[rtx_hdr]\npeak = 700\n[hdr]\npeak = 900\n");
   REQUIRE(both);
-  CHECK(hdr_engine_key(*both) == "adaptive");
+  CHECK(both->true_hdr_peak == 900);
 }
 
 TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
@@ -163,7 +171,7 @@ TEST_CASE("Grade : plus de préréglages, les clés retirées sont ignorées", "
 TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", "[app][settings]") {
   const auto s = parse_settings("[rtx_hdr]\nenabled = true\nfutur = 3\n[autre]\nx = 1\n");
   REQUIRE(s);
-  CHECK(s->hdr_native);
+  CHECK_FALSE(s->hdr_native);
   CHECK(s->true_hdr_peak == 0);
   CHECK(s->rife_factor == kDefaultRifeFactor);
   CHECK(s->downscale == Downscale::Hermite);
@@ -256,7 +264,6 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   live.downscale = Downscale::Mitchell;
   live.volume = 0.5F;
   live.stats.all = true;
-  live.hdr_native = true;
   live.grade_values = render::GradeSettings{};
   CHECK(change_between(running, live, true).cost == ChangeCost::Live);
   CHECK(live_part(running, live, true) == live);

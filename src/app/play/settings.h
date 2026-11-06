@@ -230,8 +230,9 @@ struct PlaySettings {
   bool smooth_motion = false;
   // Le pic visé par le grade HDR, en nits (section hdr de play.toml) ; 0 : la crête que l'écran annonce.
   int true_hdr_peak = 0;
-  // HDR : le SDR passe en PQ par libplacebo, puis le grade anime guidé (route native). Faux : sortie SDR
-  // gradée.
+  // La sortie en cours : HDR (le SDR passe en PQ par libplacebo, puis le grade anime guidé) ou SDR gradée.
+  // Pas un réglage : décidée à chaque ouverture selon le système (host_facts.h, system_hdr), suivie si le
+  // HDR est allumé ou coupé pendant la lecture, jamais écrite dans play.toml.
   bool hdr_native = false;
   // Composition finale de libplacebo (toutes les routes) : filtre qui étire la chaîne vers la
   // fenêtre, et débandage des aplats et dégradés, sans effet sur l'export ; en direct.
@@ -302,10 +303,6 @@ struct PlaySettings {
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
-
-// Le mode HDR, clé hdr.engine de play.toml : « adaptive » (HDR, nom gardé pour les anciens fichiers) ou
-// « sdr » ; l'ancien « rtx » se lit comme « adaptive ».
-std::string_view hdr_engine_key(const PlaySettings& s);
 
 namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};

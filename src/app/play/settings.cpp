@@ -107,10 +107,6 @@ std::string rife_label(const std::string& file) {
   return out;
 }
 
-std::string_view hdr_engine_key(const PlaySettings& s) {
-  return s.hdr_native ? "adaptive" : "sdr";
-}
-
 std::string_view name(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
@@ -418,8 +414,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
     s.rife_model = wanted.rife_model;
-  s.true_hdr_peak = wanted.true_hdr_peak;
-  s.hdr_native = wanted.hdr_native;
+  s.true_hdr_peak = wanted.true_hdr_peak;  // hdr_native reste celui de la sortie (il suit le système)
   s.final_scaler = wanted.final_scaler;
   s.deband = wanted.deband;
   s.autoplay_next = wanted.autoplay_next;

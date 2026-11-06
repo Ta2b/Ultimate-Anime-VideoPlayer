@@ -19,8 +19,8 @@ enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran
   Engines,      // moteurs à installer
   Chain,        // la calibration de la machine (machine_calibration.h), faite après « Terminer »
-  Hdr,          // HDR / SDR
-  Grade,        // retiré (la calibration du grade adaptatif) : son rang reste pris, first_run_step le garde
+  Hdr,          // retiré (le HDR suit le système) : son rang reste pris, first_run_step le garde
+  Grade,        // retiré (la calibration du grade adaptatif), même raison
   Languages,    // audio et sous-titres préférés
   Updates,      // Me prévenir / Automatique / Jamais
   Summary,      // ce qui a été choisi, Terminer
@@ -32,15 +32,11 @@ std::string_view title(WizardStep step);  // « Bienvenue », « Moteur », « I
 // Ce que la machine permet : les écrans sans objet sont sautés.
 struct WizardFacts {
   bool engine_choice = true;     // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
-  bool hdr_display = false;      // l'écran reçoit du HDR (sinon pas d'écran HDR)
   bool updates_managed = false;  // paquet de distribution, Flatpak : mis à jour ailleurs (écran grisé, gardé)
 };
 
 // Les écrans de cette machine, dans l'ordre.
 std::vector<WizardStep> wizard_steps(const WizardFacts& facts);
-
-enum class HdrChoice : std::uint8_t { Auto, Hdr, Sdr };
-std::string_view label(HdrChoice choice);
 
 // L'état de l'assistant : l'écran courant, ce qui est choisi, ce qui est sauté.
 
@@ -48,7 +44,6 @@ struct Wizard {
   std::vector<WizardStep> steps;
   std::size_t at = 0;
   std::vector<WizardStep> skipped;
-  HdrChoice hdr = HdrChoice::Auto;
   std::string update_mode = "notify";
   std::string update_channel = "stable";
   // Première préférence de langue de l'audio (vide : selon le fichier) et des sous-titres (vide : aucun),

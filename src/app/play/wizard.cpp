@@ -16,7 +16,6 @@ std::string_view title(WizardStep step) {
     case WizardStep::Chain:
       return i18n::tr("Machine calibration");
     case WizardStep::Hdr:
-      return i18n::tr("HDR");
     case WizardStep::Grade:
       return {};
     case WizardStep::Languages:
@@ -34,23 +33,11 @@ std::vector<WizardStep> wizard_steps(const WizardFacts& facts) {
   for (int i = 1; i <= kWizardSteps; ++i) {
     const auto step = static_cast<WizardStep>(i);
     if (step == WizardStep::Engines && !facts.engine_choice) continue;
-    if (step == WizardStep::Hdr && !facts.hdr_display) continue;
-    if (step == WizardStep::Grade) continue;  // retiré
+    // Retirés : le HDR suit le système (host_facts.h, system_hdr), le grade adaptatif n'est plus.
+    if (step == WizardStep::Hdr || step == WizardStep::Grade) continue;
     steps.push_back(step);
   }
   return steps;
-}
-
-std::string_view label(HdrChoice choice) {
-  switch (choice) {
-    case HdrChoice::Auto:
-      return i18n::tr("Automatic");
-    case HdrChoice::Hdr:
-      return "HDR";
-    case HdrChoice::Sdr:
-      return "SDR";
-  }
-  return {};
 }
 
 Wizard begin_wizard(const WizardFacts& facts, int last_step_seen) {
@@ -107,13 +94,6 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
                       : i18n::tr("Machine calibration: after \"Finish\", the best settings this machine "
                                  "sustains (General > Setup)"));
   }
-  if (has(WizardStep::Hdr)) {
-    if (skipped(WizardStep::Hdr)) {
-      out.push_back(i18n::tr("HDR: skipped, automatic (HDR and color > HDR)"));
-    } else {
-      out.push_back(i18n::tr_format("HDR: {} (HDR and color > HDR)", label(wizard.hdr)));
-    }
-  }
   if (has(WizardStep::Languages))
     out.push_back(skipped(WizardStep::Languages) ? i18n::tr("Languages: skipped (General > Playback)")
                                                  : i18n::tr("Languages: chosen (General > Playback)"));
@@ -146,18 +126,6 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
     if (settings.language_presets.empty()) settings.language_presets.resize(1);
     settings.language_presets[0].audio = wizard.audio_language;
     settings.language_presets[0].subtitles = wizard.subtitle_language;
-  }
-  if (!skipped(WizardStep::Hdr)) {
-    switch (wizard.hdr) {
-      case HdrChoice::Auto:
-        break;
-      case HdrChoice::Hdr:
-        settings.hdr_native = true;
-        break;
-      case HdrChoice::Sdr:
-        settings.hdr_native = false;
-        break;
-    }
   }
   return settings;
 }

@@ -169,13 +169,9 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   view.revisit = revisit && !wizard_mode;
   if (wizard_mode) {
     const TierEstimate estimate = estimate_tier(gpu);
-    view.facts = WizardFacts{
-        .engine_choice = std::ranges::any_of(
-            view.engines,
-            [](const EngineRow& row) { return row.offer.id != core::EngineId::Vulkan && row.usable; }),
-        // Avant la première image, la sortie n'est pas encore choisie : l'écran HDR se lit dans le système,
-        // comme à l'accueil.
-        .hdr_display = !s.options.sdr && content_peak_nits(s.screen.window()).has_value()};
+    view.facts = WizardFacts{.engine_choice = std::ranges::any_of(view.engines, [](const EngineRow& row) {
+                               return row.offer.id != core::EngineId::Vulkan && row.usable;
+                             })};
     view.wizard =
         begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
     view.tier_line = i18n::tr_format("Estimated level: {}", tier_label(estimate.tier));
