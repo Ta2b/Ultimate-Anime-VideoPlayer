@@ -76,12 +76,22 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   if (plain && event.key.key == SDLK_PAGEDOWN) return StepChapter{.direction = -1};
   if (plain && event.key.key == SDLK_UP) return VolumeStep{.delta = kVolumeStep};
   if (plain && event.key.key == SDLK_DOWN) return VolumeStep{.delta = -kVolumeStep};
-  const auto key = key_of(event.key.key);
+  auto key = key_of(event.key.key);
+  bool shift = (mod & SDL_KMOD_SHIFT) != 0;
+  // « . » et « , » se lisent par le caractère tapé : en AZERTY, « . » est Maj + « ; », et SDL rend la
+  // touche sans Maj. Maj sert alors à produire le caractère, il ne compte plus dans l'accord.
+  if (shift && (!key || (*key != core::Key::Period && *key != core::Key::Comma))) {
+    const SDL_Keycode typed = SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_SHIFT, false);
+    if (typed == SDLK_PERIOD || typed == SDLK_COMMA) {
+      key = key_of(typed);
+      shift = false;
+    }
+  }
   if (!key) return std::nullopt;
   const core::Chord chord{.key = *key,
                           .ctrl = (mod & SDL_KMOD_CTRL) != 0,
                           .alt = (mod & SDL_KMOD_ALT) != 0,
-                          .shift = (mod & SDL_KMOD_SHIFT) != 0,
+                          .shift = shift,
                           .meta = (mod & SDL_KMOD_GUI) != 0};
   if (auto command = keys.command_for(chord)) return *command;
   return std::nullopt;
