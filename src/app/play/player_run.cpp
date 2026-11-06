@@ -227,8 +227,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   for (const audio::AudioDevice& device : audio::playback_devices())
     audio_outputs.push_back(
         {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  const bool default_player_is_ajp =
-      is_default_player({.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data});
+  const bool default_player_is_ajp = is_default_player(place_of(p.paths));
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   // Le mode Performance de SPAN : ce que le moteur annonce, et sinon pourquoi (moteur absent ou autre carte).
   const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
@@ -305,7 +304,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),
           .default_player_is_ajp = default_player_is_ajp,
           .bench_text = bench_text,
-          .place = {.executable = p.paths.executable, .home = p.paths.home, .data = p.paths.data},
+          .place = place_of(p.paths),
           .span_prepare = span_prepare,
           .fp8_reason = fp8_reason,
           .span_job = p.span_job.note,

@@ -29,8 +29,10 @@ struct PlayerPlace {
   std::filesystem::path executable;  // ajp ou ajp.exe, chemin absolu
   std::filesystem::path home;        // dossier de l'utilisateur (SDL_GetUserFolder)
   // Données de l'utilisateur, celles de SDL_GetPrefPath (user_data) : sous Linux $XDG_DATA_HOME,
-  // ~/.local/share sans la variable. Vide : <home>/.local/share.
+  // ~/.local/share sans la variable. Vide : <home>/.local/share. Sert à l'inscription seulement.
   std::filesystem::path data;
+  // Le dossier du lecteur lui-même (SDL_GetPrefPath) : update.toml et updates/ y vivent.
+  std::filesystem::path app_data;
 };
 
 inline constexpr std::string_view kAppName = "Ultimate Anime Video Player";

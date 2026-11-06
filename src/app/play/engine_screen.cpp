@@ -223,7 +223,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       log->warn("{}", written.error().detail);
     // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
     if (!engines.open_with_registered) {
-      const PlayerPlace place{.executable = s.paths.executable, .home = s.paths.home, .data = s.paths.data};
+      const PlayerPlace place = place_of(s.paths);
       if (auto registered = register_player(place)) {
         engines.open_with_registered = true;
         log->info("Ouvrir avec : {}", *registered);

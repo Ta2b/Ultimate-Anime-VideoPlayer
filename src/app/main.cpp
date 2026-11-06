@@ -322,7 +322,8 @@ int main(int argc, char** argv) {
   SDL_free(pref);
   const ajp::app::play::PlayerPlace place{.executable = base / std::string(kExecutable),
                                           .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
-                                          .data = ajp::app::play::user_data(data)};
+                                          .data = ajp::app::play::user_data(data),
+                                          .app_data = data};
   // La langue du système, avant tout réglage : les langues préférées par défaut la prennent.
   ajp::app::play::set_system_language(
       ajp::app::play::pick_menu_language(ajp::app::play::system_locales(place.home)));
@@ -435,7 +436,7 @@ int main(int argc, char** argv) {
   bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
-      .data = place.data,
+      .data = data,  // le dossier du lecteur, celui que lit l'application d'une mise à jour plus haut
       .executable = place.executable,
       .engines = data / "engines",
       .settings = settings_dir,
