@@ -4,10 +4,13 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
 extern "C" {
+#include <libswscale/swscale.h>
+
 #include <libavutil/buffer.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vulkan.h>
@@ -15,6 +18,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
+#include "media/av_util.h"
 #include "media/color.h"
 
 namespace ajp::media {
@@ -230,10 +234,57 @@ const AVFrame* av_frame_of(const FrameData& data) {
   return own == nullptr ? nullptr : &own->av();
 }
 
+namespace {
+
+struct SwsFree {
+  void operator()(SwsContext* context) const { sws_freeContext(context); }
+};
+
+// Une image hôte YUV que la chaîne ne lit pas (4:2:2, 4:4:4, 12 bits : H.264 High 4:4:4, VP9 profils 1
+// et 3, ProRes) devient du 4:2:0 de même profondeur ou moins : 8 bits en yuv420p, au-delà en
+// yuv420p10. Même matrice et même plage, seule la chroma est réduite. Rend nullptr si l'image n'est
+// pas de ce cas.
+std::expected<FramePtr, Refusal> to_chain_yuv(const AVFrame& frame, AVPixelFormat format) {
+  const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
+  if (desc == nullptr ||
+      (desc->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_HWACCEL | AV_PIX_FMT_FLAG_PAL)) != 0 ||
+      desc->nb_components < 3)
+    return FramePtr{};
+  const AVPixelFormat target = desc->comp[0].depth > 8 ? AV_PIX_FMT_YUV420P10LE : AV_PIX_FMT_YUV420P;
+  // Un seul thread source convertit : le contexte se garde d'une image à l'autre.
+  thread_local std::unique_ptr<SwsContext, SwsFree> context;
+  context.reset(sws_getCachedContext(context.release(), frame.width, frame.height, format, frame.width,
+                                     frame.height, target, SWS_BILINEAR, nullptr, nullptr, nullptr));
+  if (!context) return refuse(RefusalCode::FormatUnsupported, "conversion vers 4:2:0 : sws_getCachedContext");
+  FramePtr out(av_frame_alloc());
+  if (!out) return refuse(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : mémoire insuffisante");
+  out->format = target;
+  out->width = frame.width;
+  out->height = frame.height;
+  if (const int err = av_frame_get_buffer(out.get(), 0); err < 0)
+    return refuse_av(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : tampon", err);
+  if (const int err = av_frame_copy_props(out.get(), &frame); err < 0)
+    return refuse_av(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : propriétés", err);
+  out->chroma_location = AVCHROMA_LOC_LEFT;  // celle que swscale produit en 4:2:0
+  // Les formats yuvj (plage pleine) sortent en plage limitée : swscale la convertit.
+  if (std::string_view(desc->name).starts_with("yuvj")) out->color_range = AVCOL_RANGE_MPEG;
+  const int rows =
+      sws_scale(context.get(), frame.data, frame.linesize, 0, frame.height, out->data, out->linesize);
+  if (rows != frame.height) return refuse(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : sws_scale");
+  return out;
+}
+
+}  // namespace
+
 std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64_t pts_us,
                                                       std::int64_t duration_us, ReadyEvent ready) {
   const std::optional<FrameMemory> memory = memory_of(*frame);
   if (!memory) return refuse(RefusalCode::FormatUnsupported, "image d'un type d'appareil inconnu");
+  if (*memory == FrameMemory::Host && !map_pixel_format(static_cast<AVPixelFormat>(frame->format))) {
+    auto converted = to_chain_yuv(*frame, static_cast<AVPixelFormat>(frame->format));
+    if (!converted) return std::unexpected(converted.error());
+    if (*converted) frame = std::move(*converted);
+  }
   const AVPixelFormat sw_format = sw_format_of(*frame);
   auto format = map_pixel_format(sw_format);
   if (!format) return std::unexpected(format.error());
