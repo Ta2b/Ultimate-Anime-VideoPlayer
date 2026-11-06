@@ -51,9 +51,9 @@ TEST_CASE("l'arbre des réglages garde les pages que les autres écrans citent",
 TEST_CASE("le résumé de l'assistant renvoie à des pages qui existent", "[settings][pages][wizard]") {
   const auto pages = settings_pages();
   i18n::set_language(i18n::Language::French);  // le résumé de l'assistant est encore en français
-  Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = true}, 0);
+  Wizard wizard = begin_wizard({.engine_choice = true}, 0);
   const auto lines = wizard_summary(wizard);
-  REQUIRE(lines.size() >= 4);
+  REQUIRE(lines.size() >= 3);
   for (const std::string& line : lines) {
     const std::size_t open = line.rfind('(');
     const std::size_t close = line.rfind(')');

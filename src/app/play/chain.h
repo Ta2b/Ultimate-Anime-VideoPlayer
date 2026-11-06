@@ -37,12 +37,6 @@ namespace ajp::app::play {
 
 struct ShotWork;  // chain_shots.h
 
-// Le mode HDR que les réglages demandent, quand un repli de l'environnement (sortie SDR) en fait tourner un
-// autre : le repli n'est jamais mémorisé à la place de la préférence.
-struct HdrIntent {
-  bool hdr_native = false;
-};
-
 // Les LUT d'un look lues sur un fil de fond (1.11) : le résultat, posé sur l'écran au tour suivant.
 struct LoadedLooks {
   std::array<std::optional<render::CubeLut>, render::kLookSlots> luts;
@@ -88,9 +82,8 @@ struct Chain {
   // L'en-tête « chaîne » de l'OSD pour ces réglages, recalculé quand le facteur, la réduction ou le
   // moteur HDR changent à chaud ; vide : l'en-tête reste celui de l'ouverture.
   std::function<std::string(const PlaySettings&)> header_text;
-  std::optional<HdrIntent> hdr_wanted;  // présent seulement pendant un repli HDR
-  std::filesystem::path luts_dir;       // les .cube de l'utilisateur (look_catalog.h)
-  bool source_hdr = false;              // la vidéo est PQ ou HLG : le grade ne la retouche pas comme du SDR
+  std::filesystem::path luts_dir;  // les .cube de l'utilisateur (look_catalog.h)
+  bool source_hdr = false;         // la vidéo est PQ ou HLG : le grade ne la retouche pas comme du SDR
   gpu::KernelOps* kernels = nullptr;
   // Pré-analyse des plans (chain_shots.h) : le grade lit la lumière du plan de l'image qui vient au lieu
   // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
@@ -115,9 +108,9 @@ struct Chain {
   std::vector<LookLoad> look_loads;
 };
 
-// Les réglages avec, pendant un repli HDR, le mode que les réglages demandent à la place du mode de
-// repli : ce que play.toml retient.
-PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings);
+// Les réglages que play.toml retient : le grade et l'interpolation choisis au menu, pas ceux d'un raccourci
+// de séance (kept_grade, kept_rife).
+PlaySettings with_kept_choices(const Chain& to, PlaySettings settings);
 
 // Une fois par tour : pose le look lu sur un fil de fond, lit le plan analysé de l'image qui vient
 // (chain_shots.h), sinon la scène vue en direct, et envoie sa lumière au grade quand elle change.

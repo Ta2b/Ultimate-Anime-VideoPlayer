@@ -444,22 +444,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                    "laptop (the engines are built once)."));
       note(i18n::tr("Skipped: the Auto preset. Redo it later in General > Setup."));
       break;
-    case WizardStep::Hdr: {
-      section(i18n::tr("HDR"));
-      note(i18n::tr("Your display receives HDR."));
-      bool pick = false;
-      radio_note(i18n::tr("Automatic"), i18n::tr("The player chooses for the machine."),
-                 wizard.hdr == HdrChoice::Auto, pick);
-      if (pick) wizard.hdr = HdrChoice::Auto;
-      pick = false;
-      radio_note("HDR", i18n::tr("SDR anime converted to HDR, on any GPU."), wizard.hdr == HdrChoice::Hdr,
-                 pick);
-      if (pick) wizard.hdr = HdrChoice::Hdr;
-      pick = false;
-      radio_note("SDR", i18n::tr("No HDR conversion."), wizard.hdr == HdrChoice::Sdr, pick);
-      if (pick) wizard.hdr = HdrChoice::Sdr;
-      break;
-    }
+    case WizardStep::Hdr:    // retiré : le HDR suit le système
     case WizardStep::Grade:  // retiré
       break;
     case WizardStep::Languages:

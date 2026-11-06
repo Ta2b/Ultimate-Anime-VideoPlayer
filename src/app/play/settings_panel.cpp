@@ -33,23 +33,14 @@ using panel::kWarn;
 using panel::note;
 using panel::section;
 
-// Le mode HDR : HDR (libplacebo met le SDR en PQ, puis le grade anime guidé), ou SDR.
-constexpr std::array<const char*, 2> kRoutes{"HDR (any GPU)", "SDR"};  // clés i18n
-
 void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
-  // Le choix de la méthode reste libre, même sur un écran SDR ; ce qui règle le HDR de l'écran (pic, gris
-  // moyen) est grisé tant que l'écran n'en reçoit pas.
+  // Pas de choix : le HDR suit le système (host_facts.h, system_hdr). La page dit ce qui tourne ; le pic de
+  // l'écran, en avancé, est grisé tant que l'écran ne reçoit pas de HDR.
   section(i18n::tr("Output"));
-  const int route = d.hdr_native ? 0 : 1;
-  if (ImGui::BeginCombo(i18n::tr("HDR method"), i18n::tr(kRoutes[static_cast<std::size_t>(route)]))) {
-    for (int i = 0; i < static_cast<int>(kRoutes.size()); ++i) {
-      if (ImGui::Selectable(i18n::tr(kRoutes[static_cast<std::size_t>(i)]), i == route))
-        d.hdr_native = i == 0;
-    }
-    ImGui::EndCombo();
-  }
-  if (!choices.hdr_output)
-    note(i18n::tr("SDR display: HDR is unavailable. The Color page's grade imitates the HDR look."));
+  note(choices.hdr_output
+           ? i18n::tr("HDR: on. The player follows your system's HDR setting.")
+           : i18n::tr("SDR: HDR is off in your system, or the display is too dim for it. The Color page's "
+                      "grade still applies."));
   // Tri du 04/11 : la méthode HDR anime règle seule la luminosité ; reste le pic de l'écran, en avancé.
   if (panel::advanced()) {
     panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée

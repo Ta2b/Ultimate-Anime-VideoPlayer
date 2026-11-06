@@ -50,7 +50,6 @@ constexpr std::array kSettingsPages{
     Entry{"{} · {} · display {}p", "{} · {} · écran {}p"},
     Entry{" ; playback resumes at the same spot", " ; la lecture reprend au même endroit"},
     Entry{"AI image", "Image IA"},
-    Entry{"HDR (any GPU)", "HDR (tous GPU)"},
     Entry{"Adaptive HDR path: libplacebo in PQ with a scene-based TrueHDR look, then the grade.",
           "Voie HDR adaptatif : libplacebo en PQ, aspect TrueHDR selon la scène, puis l'étalonnage."},
     Entry{"Adaptive HDR settings", "Réglages du HDR adaptatif"},
@@ -154,9 +153,10 @@ constexpr std::array kSettingsPages{
     Entry{"GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
           "GMFSS passe en {} (GMFlow en {}, construit la première fois pour cette taille)"},
     Entry{"General", "Général"},
+    Entry{"HDR: on. The player follows your system's HDR setting.",
+          "HDR : actif. Le lecteur suit le réglage HDR de votre système."},
     Entry{"HDR", "HDR"},
     Entry{"HDR and color", "HDR et couleurs"},
-    Entry{"HDR method", "Méthode HDR"},
     Entry{"HDR output", "Sortie HDR"},
     Entry{"Hide the bar when paused (burn-in)", "Masquer la barre en pause (marquage)"},
     Entry{"LUT highlight intensity", "Intensité LUT éclats"},
@@ -201,8 +201,6 @@ constexpr std::array kSettingsPages{
     Entry{"SDR", "SDR"},
     Entry{"SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR).",
           "Écran SDR : une pile qui contient une LUT d'HDR est coupée (ces LUT sont faites pour le HDR)."},
-    Entry{"SDR display: HDR is unavailable. The Color page's grade imitates the HDR look.",
-          "Écran SDR : HDR indisponible. Le grade de la page Couleurs imite le rendu HDR."},
     Entry{"SDR mode: the grade imitates the HDR look in the display's HDR10 container.",
           "Mode SDR : l'étalonnage imite le rendu HDR dans le conteneur HDR10 de l'écran."},
     Entry{"SDR display: Highlights, Bright areas, Wide colors and Display P3 gamut have no effect and are "
@@ -216,6 +214,11 @@ constexpr std::array kSettingsPages{
     Entry{"SPAN switches to {} (built the first time for this size)",
           "SPAN passe en {} (construit la première fois pour cette taille)"},
     Entry{"Highlights", "Éclats"},
+    Entry{"SDR: HDR is off in your system, or the display is too dim for it. The Color page's grade still "
+          "applies.",
+          "SDR : le HDR est coupé dans votre système, ou l'écran n'a pas assez de lumière pour lui. Le grade "
+          "de "
+          "la page Couleurs s'applique toujours."},
     Entry{"Saturation", "Saturation"},
     Entry{"Scaler", "Filtre de mise à l'échelle"},
     Entry{"Scales all text, panels included. Live.",

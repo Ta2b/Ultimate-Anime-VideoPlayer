@@ -58,3 +58,19 @@ retenues à l'œil deviendront le défaut de la méthode.
 Sous la méthode HDR anime, le curseur « Noirs profonds » est le maximum, atteint en scène très claire
 (luminance moyenne ≥ 40 % du blanc SDR) ; l'effet descend en douceur jusqu'à 0 en scène très sombre (≤ 3 %),
 pour garder lisibles les détails des nuits. Sans mesure de la scène, le curseur s'applique tel quel.
+
+## Sortie HDR ou SDR : elle suit le système (11/2026)
+
+Demande de Tatoub : plus de bouton HDR. La « Méthode HDR » du menu, l'écran HDR de l'assistant et la clé
+`hdr.engine` de `play.toml` sont retirés (un ancien fichier se lit encore, la clé est ignorée). À chaque
+ouverture, `player_run.cpp` décide avec `system_hdr` (`src/app/play/host_facts.h`) :
+
+| Situation | Sortie |
+|---|---|
+| HDR actif dans Windows ou le compositeur, crête ≥ 350 nits (`kMinHdrPeakNits`) | HDR10, grade anime guidé |
+| Écran HDR, mais HDR coupé dans le système | SDR gradée |
+| Écran qui se dit HDR, crête < 350 nits (pas de lumière pour les éclats) | SDR gradée |
+| `--sdr` | SDR gradée |
+
+Pendant la lecture, l'état est relu toutes les 2 s : allumer ou couper le HDR du système bascule la sortie en
+direct, sans rouvrir la chaîne. Le pic visé (`hdr.peak`, avancé) reste un réglage.

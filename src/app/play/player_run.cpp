@@ -92,8 +92,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("interpolation {} : débranchée de la lecture, RIFE à sa place", label(settings.motion_engine));
     settings.motion_engine = MotionEngine::Rife;
   }
-  // Le mode HDR demandé, avant tout repli de l'environnement : c'est lui que play.toml garde.
-  const HdrIntent wanted_hdr{.hdr_native = settings.hdr_native};
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
@@ -119,16 +117,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   settings.stats.all = p.details;  // Tab pendant la préparation
 
   log->info("{}", describe_hdr(p.screen.window()));
-  const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
-  // Sortie HDR10 : l'écran en reçoit et --sdr ne l'a pas coupée. Un écran SDR n'a pas de HDR à offrir (le
-  // panneau le grise) : l'image reste en SDR, et le grade (contraste, saturation, préréglage) s'y applique.
-  const bool hdr_out = !p.options.sdr && content_peak_nits(p.screen.window()).has_value();
-  if (!hdr_out && settings.hdr_native) {
-    log->info("sortie SDR : pas de HDR, image SDR gradée");
-    settings.hdr_native = false;
-  }
-  // La méthode « SDR » met la swapchain en SDR, comme --sdr : sinon l'image SDR partait dans une sortie
-  // HDR10.
+  const std::optional<double> peak_seen = content_peak_nits(p.screen.window());
+  const int auto_peak = auto_peak_nits(peak_seen);
+  // Le HDR suit le système (system_hdr) : sortie HDR10 si l'écran en reçoit assez, sinon SDR gradée, la
+  // swapchain en SDR comme avec --sdr.
+  settings.hdr_native = !p.options.sdr && system_hdr(peak_seen);
+  if (!settings.hdr_native)
+    log->info("sortie SDR (HDR du système absent, coupé ou sous {} nits) : image SDR gradée",
+              kMinHdrPeakNits);
   p.screen.set_sdr_output(!settings.hdr_native);
   // La couleur de la source telle que le flux l'étiquette : l'écran en convertit gamut, courbe, HDR10, HLG.
   const std::optional<ColorInfo> source_color = media::track_color(video);
@@ -138,7 +134,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
 
   const std::string label_text = std::format("{}{}{}", c.motion_label(settings),
                                              // Le HDR, s'il tourne vraiment sur une sortie HDR10.
-                                             settings.hdr_native && hdr_out ? "HDR · " : "", c.span_label());
+                                             settings.hdr_native ? "HDR · " : "", c.span_label());
   log->info("{} : {}", options.file.string(), label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
@@ -315,29 +311,27 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .span_job = p.span_job.note,
           .settings_dir = p.settings_path.parent_path()});
   const std::filesystem::path settings_dir = p.settings_path.parent_path();  // isolé par --data-dir
-  Chain chain{
-      .session = session,
-      .screen = out,
-      .ui = p.ui,
-      .pipeline = **pipeline,
-      .live = *live,
-      .running = settings,
-      .rife_loaded = rife_loaded,
-      .auto_peak = auto_peak,
-      .file = p.options.file,
-      .display = p.display,
-      .header_text =
-          [&c, hdr_out](const PlaySettings& s) {
-            return std::format("{}{}{}", c.motion_label(s), s.hdr_native && hdr_out ? "HDR · " : "",
-                               c.span_label());
-          },
-      .hdr_wanted = settings.hdr_native != wanted_hdr.hdr_native ? std::optional(wanted_hdr) : std::nullopt,
-      .luts_dir = p.paths.engines.parent_path() / "luts",
-      .source_hdr = source_hdr,
-      .kernels = c.backend ? c.backend->kernels() : nullptr,
-      .shots = p.shots,
-      .shot_cuts = p.options.shot_cuts,
-      .anime_shots = p.options.anime_shots};
+  Chain chain{.session = session,
+              .screen = out,
+              .ui = p.ui,
+              .pipeline = **pipeline,
+              .live = *live,
+              .running = settings,
+              .rife_loaded = rife_loaded,
+              .auto_peak = auto_peak,
+              .file = p.options.file,
+              .display = p.display,
+              .header_text =
+                  [&c](const PlaySettings& s) {
+                    return std::format("{}{}{}", c.motion_label(s), s.hdr_native ? "HDR · " : "",
+                                       c.span_label());
+                  },
+              .luts_dir = p.paths.engines.parent_path() / "luts",
+              .source_hdr = source_hdr,
+              .kernels = c.backend ? c.backend->kernels() : nullptr,
+              .shots = p.shots,
+              .shot_cuts = p.options.shot_cuts,
+              .anime_shots = p.options.anime_shots};
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -373,7 +367,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });
   // Ce que play.toml garde.
   const auto saved_settings = [&] {
-    return settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options);
+    return settings_to_save(with_kept_choices(chain, chain.running), p.from_file, p.started, p.options);
   };
   // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
   std::int64_t kept_us = kNoPts;
@@ -393,6 +387,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{settings.audio_delay_ms} * 1000});
   std::int64_t saved_at = host_now_us();
   std::int64_t display_polled_at = saved_at;
+  std::int64_t hdr_polled_at = host_now_us();
   p.ui.controls().show_deferred(host_now_us());
   // Le mode auto : son plafond suit la fréquence de l'écran.
   bool vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
@@ -588,6 +583,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       // son état, sans quoi la cadence restait celle de l'écran d'avant.
       read_display_facts();
       if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
+      // Le HDR suit le système : allumé ou coupé pendant la lecture (Windows, KDE), la sortie suit en direct.
+      // Relu toutes les 2 s : sous Windows, la crête se lit dans DXGI et l'EDID.
+      if (!p.options.sdr && host_now_us() - hdr_polled_at >= 2'000'000) {
+        hdr_polled_at = host_now_us();
+        const std::optional<double> peak_now = content_peak_nits(out.window());
+        if (system_hdr(peak_now) != chain.running.hdr_native) {
+          PlaySettings switched = chain.running;
+          switched.hdr_native = !switched.hdr_native;
+          chain.auto_peak = auto_peak_nits(peak_now);
+          log->info("HDR du système {} : sortie {}", switched.hdr_native ? "allumé" : "coupé",
+                    switched.hdr_native ? "HDR10" : "SDR gradée");
+          apply(Input{ApplySettings{.settings = switched}}, chain, host_now_us());
+        }
+      }
       const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());
       const bool display_changed =
           display_id != known_display || (display_id != 0 && known_hz > 0.0 && known_hz != session_hz_seen);

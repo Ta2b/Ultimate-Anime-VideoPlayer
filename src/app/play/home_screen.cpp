@@ -184,7 +184,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
       .nvidia = vendor_from_pci(h.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-      .hdr_output = !h.options.sdr && content_peak_nits(h.screen.window()).has_value(),
+      .hdr_output = !h.options.sdr && system_hdr(content_peak_nits(h.screen.window())),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
       .chosen_engines = chosen_line(st.engines),

@@ -127,9 +127,9 @@ class PlaceboScreen final : public Screen {
   // Composition finale : filtre qui étire vers la fenêtre, débandage ; sans effet sur l'export.
   void set_finish(FinalScaler scaler, bool deband);
   bool hdr_output() const;  // la dernière présentation était en PQ
-  // Sortie SDR même sur un écran HDR (la méthode HDR « SDR ») : la swapchain change d'espace de couleur à
-  // la présentation suivante, sans réouverture. Faux : HDR10 si l'écran en reçoit et que --sdr ne l'a pas
-  // coupé.
+  // Sortie SDR même sur un écran HDR (HDR du système absent ou trop sombre, system_hdr) : la swapchain change
+  // d'espace de couleur à la présentation suivante, sans réouverture. Faux : HDR10 si l'écran en reçoit et
+  // que --sdr ne l'a pas coupé.
   void set_sdr_output(bool sdr);
   // Vrai noir OLED : ces niveaux (0 à 1, dans la couleur des images du ring : SDR, ou PQ après
   // TrueHDR) passent par libplacebo et le grade en cours sans le vrai noir ; rend leurs nits en

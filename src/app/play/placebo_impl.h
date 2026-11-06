@@ -181,7 +181,8 @@ struct PlaceboScreen::Impl {
   bool offscreen = false;
   bool hdr_wanted = true;   // ScreenOptions::hdr : la sortie hors écran en HDR10
   bool hdr_allowed = true;  // ScreenOptions::hdr (faux avec --sdr) : HDR10 demandable à la swapchain
-  bool sdr_forced = false;  // la méthode HDR « SDR » : swapchain en SDR même sur un écran HDR
+  bool sdr_forced =
+      false;  // sortie SDR (HDR absent du système, ou --sdr) : swapchain en SDR même sur un écran HDR
   OutputSize offscreen_size;
   std::array<pl_tex, 2> offscreen_tex{};
   std::size_t offscreen_index = 0;

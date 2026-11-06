@@ -239,6 +239,10 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
 #endif
 }
 
+bool system_hdr(std::optional<double> peak_nits) {
+  return peak_nits && std::isfinite(*peak_nits) && *peak_nits >= kMinHdrPeakNits;
+}
+
 int auto_peak_nits(std::optional<double> detected) {
   constexpr double kUnknown = 1000.0;
   constexpr double kLow = 200.0;
