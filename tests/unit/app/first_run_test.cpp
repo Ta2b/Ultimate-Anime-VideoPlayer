@@ -51,15 +51,12 @@ TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
   const FirstRunView view = first_run_view(kRtx, kHere, ProfilesView{});
   const EngineRow* vulkan = row_of(view, core::EngineId::Vulkan);
   const EngineRow* tensorrt = row_of(view, core::EngineId::TensorRt);
-  const EngineRow* amd = row_of(view, core::EngineId::MiGraphX);
   REQUIRE(vulkan != nullptr);
   REQUIRE(tensorrt != nullptr);
-  REQUIRE(amd != nullptr);
   CHECK(vulkan->chosen);
   CHECK(tensorrt->chosen);
   CHECK(std::ranges::contains(tensorrt->offer.badges, core::Badge::Recommended));
-  CHECK_FALSE(amd->chosen);
-  CHECK_FALSE(amd->usable);
+  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);  // débranché : AMD passe par Vulkan
   CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);  // Windows seulement
 }
 
@@ -150,12 +147,10 @@ TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
   const GpuFacts rx6500m{
       .name = "AMD Radeon RX 6500M (RADV NAVI24)", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
   const FirstRunView view = first_run_view(rx6500m, kHere, ProfilesView{});
-  const EngineRow* migraphx = row_of(view, core::EngineId::MiGraphX);
-  REQUIRE(migraphx != nullptr);
-  CHECK_FALSE(migraphx->chosen);
+  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
 }
 
-TEST_CASE("MIGraphX de Windows ML proposé à l'essai aux AMD RDNA 3 et après", "[app][first_run]") {
+TEST_CASE("MIGraphX de Windows ML reconnu sur les AMD RDNA 3 et après, mais débranché", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
   CHECK(winml_listed("AMD Radeon(TM) 860M Graphics"));
   CHECK(winml_listed("AMD Radeon 780M Graphics"));
@@ -167,6 +162,7 @@ TEST_CASE("MIGraphX de Windows ML proposé à l'essai aux AMD RDNA 3 et après",
   CHECK_FALSE(winml_listed("AMD Radeon(TM) 680M"));
   CHECK_FALSE(winml_listed("AMD Radeon RX 580 Series"));
 
+  // Reconnu (le code de MIGraphX reste), mais jamais proposé : débranché du lecteur, Vulkan à sa place.
   const GpuFacts apu{
       .name = "AMD Radeon(TM) 860M Graphics", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
   EnginesHere here{.os = core::Os::Windows};
@@ -174,15 +170,10 @@ TEST_CASE("MIGraphX de Windows ML proposé à l'essai aux AMD RDNA 3 et après",
                                           .bytes = 40U << 20U,
                                           .license = "https://www.nuget.org/packages/x/License"});
   const FirstRunView view = first_run_view(apu, here, ProfilesView{});
-  const EngineRow* migraphx = row_of(view, core::EngineId::MiGraphX);
-  REQUIRE(migraphx != nullptr);
-  CHECK(migraphx->offer.relevant);
-  CHECK(migraphx->offer.reason == core::Reason::CompareWithVulkan);
-  CHECK(migraphx->usable);
-  CHECK(migraphx->download);
-  CHECK_FALSE(migraphx->chosen);  // à l'essai, et sa licence attend l'accord
-  CHECK(migraphx->status == "à télécharger (40 Mo)");
+  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
   CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);
+  REQUIRE(row_of(view, core::EngineId::Vulkan) != nullptr);
+  CHECK(row_of(view, core::EngineId::Vulkan)->chosen);
 }
 
 TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][first_run]") {

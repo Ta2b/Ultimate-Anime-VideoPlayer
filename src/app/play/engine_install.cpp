@@ -157,6 +157,7 @@ std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catal
   std::vector<std::filesystem::path> out;
   for (const core::EngineId id :
        {core::EngineId::TensorRt, core::EngineId::MiGraphX, core::EngineId::OpenVino}) {
+    if (!core::engine_plugged(id)) continue;  // un ancien paquet installé ne s'ouvre plus
     const core::EnginePackage* package = package_for(catalog, id);
     if (package != nullptr && installed(catalog, *package))
       out.push_back(core::backend_library(catalog.layout, *package));

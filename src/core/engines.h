@@ -65,6 +65,14 @@ enum class Badge : std::uint8_t {
   LinuxOnly,
 };
 
+// Les moteurs que le lecteur propose, installe et ouvre. MIGraphX (ROCm, Windows ML) et OpenVINO restent
+// dans les sources et se construisent encore (AJP_WITH_MIGRAPHX, AJP_WITH_WINML, AJP_WITH_OPENVINO), mais
+// sont débranchés du lecteur : tout GPU qui n'est pas NVIDIA passe par Vulkan, le seul chemin mesuré fiable
+// et rapide sur AMD et Intel (docs/moteurs.md). DirectML n'a jamais eu de backend.
+constexpr bool engine_plugged(EngineId id) {
+  return id != EngineId::MiGraphX && id != EngineId::OpenVino && id != EngineId::DirectMl;
+}
+
 // Pourquoi une ligne est présélectionnée, proposée ou grisée.
 enum class Reason : std::uint8_t {
   AlwaysIncluded,

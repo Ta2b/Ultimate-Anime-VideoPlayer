@@ -239,6 +239,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     startup_notes.push_back(set_aside(engines_path, engines.error()));
     engines = core::Settings{};
   }
+  // Un moteur débranché depuis (MIGraphX, OpenVINO) sort des choix : Vulkan prend sa place.
+  for (const core::EngineId id : {core::EngineId::MiGraphX, core::EngineId::OpenVino}) {
+    if (!chosen(*engines, id)) continue;
+    log->info("moteurs : {} débranché de ce lecteur, Vulkan à sa place", engine_label(id));
+    *engines = without_engine(std::move(*engines), id);
+  }
   // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
   const EngineCatalog catalog = load_catalog(
       paths.engine_index, paths.engines.parent_path(),
