@@ -76,6 +76,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK_FALSE(offered(MotionEngine::Apple));
 #endif
   CHECK(offered(MotionEngine::Rife));
+  CHECK_FALSE(offered(MotionEngine::Gmfss));  // débranché de la lecture
+  CHECK_FALSE(offered(MotionEngine::GmfssUnion));
 }
 
 TEST_CASE("Mode HDR : HDR adaptatif ou SDR, et les fichiers d'avant", "[app][settings]") {

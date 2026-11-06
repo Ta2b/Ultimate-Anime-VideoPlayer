@@ -57,13 +57,16 @@ constexpr bool is_gmfss(MotionEngine engine) {
   return engine == MotionEngine::Gmfss || engine == MotionEngine::GmfssUnion;
 }
 // Proposé sur ce système : l'interpolation d'Apple sur un Mac seulement. play.toml garde le choix
-// partout ; ailleurs, la chaîne reprend RIFE.
+// partout ; ailleurs, la chaîne reprend RIFE. GMFSS (Fortuna et Union) est débranché de la lecture : trop
+// lourd pour la plupart des machines et fautif en direct. Le code reste, l'export s'en sert encore quand
+// play.toml le nomme (docs/interpolation.md) ; la lecture prend RIFE à sa place.
 #if defined(__APPLE__)
 inline constexpr bool kAppleOffered = true;
 #else
 inline constexpr bool kAppleOffered = false;
 #endif
 constexpr bool offered(MotionEngine engine) {
+  if (is_gmfss(engine)) return false;
   return kAppleOffered || engine != MotionEngine::Apple;
 }
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml

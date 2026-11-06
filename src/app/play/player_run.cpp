@@ -88,6 +88,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
+  if (is_gmfss(settings.motion_engine)) {  // débranché de la lecture (settings.h, offered)
+    log->info("interpolation {} : débranchée de la lecture, RIFE à sa place", label(settings.motion_engine));
+    settings.motion_engine = MotionEngine::Rife;
+  }
   // Le mode HDR demandé, avant tout repli de l'environnement : c'est lui que les profils gardent.
   const HdrIntent wanted_hdr{.hdr_native = settings.hdr_native};
   const PlayOptions options = options_for(p.options, settings);
