@@ -17,11 +17,6 @@ constexpr std::array kWizardTexts{
         "Après « Terminer », le lecteur essaie plusieurs réglages sur une séquence très éprouvante : "
         "résolution de l'image, agrandissement SPAN et fluidité RIFE. Il garde la meilleure combinaison que "
         "la machine tient, SPAN en priorité."},
-    Entry{"An important step: the HDR picture follows it. Redo it or add other profiles later in HDR and "
-          "color > HDR.",
-          "Une étape importante : l'image HDR en dépend. Refaites-la ou ajoutez d'autres profils plus tard "
-          "dans HDR et couleurs > HDR."},
-    Entry{"HDR grade calibration", "Calibration du grade HDR"},
     Entry{"Machine calibration", "Calibration de la machine"},
     Entry{"Only a progress bar is shown; it takes a few minutes, longer the first time on a laptop (the "
           "engines are built once).",
@@ -32,11 +27,8 @@ constexpr std::array kWizardTexts{
           "Juste après la calibration de la machine, le lecteur montre quelques scènes sombres, puis "
           "quelques scènes claires : vous réglez le grade adaptatif pour cet écran."},
     Entry{"SDR chosen: no HDR grade to calibrate.", "SDR choisi : pas de grade HDR à calibrer."},
-    Entry{"Skipped: the Auto preset. Redo it later in General > Setup.",
-          "Passée : le préréglage Auto. Refaites-la plus tard dans Général > Configuration."},
-    Entry{"HDR grade calibration: right after the machine calibration if you pick HDR (HDR and color > HDR)",
-          "Calibration du grade HDR : juste après celle de la machine si vous choisissez le HDR (HDR et "
-          "couleurs > HDR)"},
+    Entry{"Skipped: the Auto preset. Redo it later in Video > Post-processing.",
+          "Passée : le préréglage Auto. Refaites-la plus tard dans Vidéo > Post-traitement."},
     Entry{"HDR or SDR", "HDR ou SDR"},
     Entry{"The machine calibration is done", "La calibration de la machine est terminée"},
     Entry{"This display can receive HDR. In HDR, the player then opens the adaptive grade calibration: a few "
@@ -46,14 +38,12 @@ constexpr std::array kWizardTexts{
           "adaptatif : quelques scènes sombres, puis quelques claires, pour régler l'image sur cet écran. En "
           "SDR, il n'y a rien de plus à régler."},
     Entry{"HDR: calibrate the grade", "HDR : calibrer le grade"},
-    Entry{"Change it later in HDR and color > HDR.", "Modifiable plus tard dans HDR et couleurs > HDR."},
-    Entry{"HDR grade calibration: skipped (HDR and color > HDR)",
-          "Calibration du grade HDR : passée (HDR et couleurs > HDR)"},
-    Entry{"Machine calibration: after \"Finish\", the best settings this machine sustains (General > Setup)",
+    Entry{"Machine calibration: after \"Finish\", the best settings this machine sustains (Video > "
+          "Post-processing)",
           "Calibration de la machine : après « Terminer », les meilleurs réglages que la machine tient "
-          "(Général > Configuration)"},
-    Entry{"Machine calibration: skipped, Auto preset (General > Setup)",
-          "Calibration de la machine : passée, préréglage Auto (Général > Configuration)"},
+          "(Vidéo > Post-traitement)"},
+    Entry{"Machine calibration: skipped, Auto preset (Video > Post-processing)",
+          "Calibration de la machine : passée, préréglage Auto (Vidéo > Post-traitement)"},
     Entry{" · Tensor cores", " · cœurs Tensor"},
     Entry{" · matrix units (WMMA)", " · unités matricielles (WMMA)"},
     Entry{"Adaptive HDR", "HDR adaptatif"},
@@ -85,21 +75,24 @@ constexpr std::array kWizardTexts{
     Entry{"How do you listen?", "Comment écoutez-vous ?"},
     Entry{"I accept its licence", "J'accepte sa licence"},
     Entry{"Languages", "Langues"},
-    Entry{"Languages: chosen (General > Playback)", "Langues : choisies (Général > Lecture)"},
-    Entry{"Languages: skipped (General > Playback)", "Langues : sauté (Général > Lecture)"},
+    Entry{"Languages: chosen (Audio and playback > Playback)",
+          "Langues : choisies (Audio et lecture > Lecture)"},
+    Entry{"Languages: skipped (Audio and playback > Playback)",
+          "Langues : sauté (Audio et lecture > Lecture)"},
     Entry{"Loading the engine", "Chargement du moteur"},
     Entry{"Multichannel, direct surround.", "Multicanal, surround direct."},
     Entry{"Next", "Suivant"},
     Entry{"Not said yet", "Pas encore dit"},
-    Entry{"Once the engines are installed, \"Optimize for this machine\" (Settings > General > Setup) tunes "
+    Entry{"Once the engines are installed, \"Optimize for this machine\" (Settings > Video > "
+          "Post-processing) tunes "
           "this for your PC in about a minute.",
           "Une fois les moteurs installés, « Optimiser pour ma machine » (Paramètres > Général > "
           "Configuration) règle cela pour votre PC en une minute environ."},
     Entry{"Picture and smoothness", "Image et fluidité"},
-    Entry{"Picture and smoothness: skipped, Auto preset (General > Setup)",
-          "Image et fluidité : sauté, préréglage Auto (Général > Configuration)"},
-    Entry{"Picture and smoothness: {}, priority {} (General > Setup)",
-          "Image et fluidité : {}, priorité {} (Général > Configuration)"},
+    Entry{"Picture and smoothness: skipped, Auto preset (Video > Post-processing)",
+          "Image et fluidité : sauté, préréglage Auto (Vidéo > Post-traitement)"},
+    Entry{"Picture and smoothness: {}, priority {} (Video > Post-processing)",
+          "Image et fluidité : {}, priorité {} (Vidéo > Post-traitement)"},
     Entry{"Read the licence", "Lire la licence"},
     Entry{"Resume playback", "Continuer la lecture"},
     Entry{"Skip", "Passer"},

@@ -77,7 +77,7 @@ TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wiza
   wizard.skipped = {WizardStep::Languages};
   const auto lines = wizard_summary(wizard);
   REQUIRE(lines.size() == 3);  // Chain, Languages, Updates
-  CHECK(lines[0].contains("Général > Configuration"));
+  CHECK(lines[0].contains("Vidéo > Post-traitement"));
   CHECK(lines[1].contains("sauté"));
   CHECK(lines[2].contains("me prévenir"));
 }

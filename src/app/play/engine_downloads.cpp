@@ -127,8 +127,8 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     // l'écran des moteurs, licence acceptée, et c'est la même que celle du paquet de cette version.
     if (const auto previous = installed_package(catalog, package);
         previous && previous->license != package.license) {
-      log->warn("{}: module from a previous version, licence changed ({}): Export and engines > Engines",
-                label, package.license);
+      log->warn("{}: module from a previous version, licence changed ({}): General > Engines", label,
+                package.license);
       ui.controls().defer(i18n::tr_format("{}: new licence to accept (Engines)", label));
       continue;
     }

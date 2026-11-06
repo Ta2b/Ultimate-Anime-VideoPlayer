@@ -1,4 +1,4 @@
-// La calibration de la machine (l'assistant, puis Général > Configuration > « Résultats du bench ») : à la
+// La calibration de la machine (l'assistant, puis Vidéo > Post-traitement > « Résultats du bench ») : à la
 // place des préréglages, le lecteur essaie des chaînes sur un même extrait très dur pour l'interpolation
 // (media/bench_clip.h) et recommande la meilleure que la machine tient. L'utilisateur ne voit qu'une barre de
 // chargement.

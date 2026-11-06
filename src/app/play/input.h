@@ -64,7 +64,7 @@ struct PlayFile {
   bool paused = false;
 };
 struct OpenEngineScreen {
-  bool wizard = false;  // Général > Configuration > « Relancer l'assistant » : les huit écrans, pas seulement
+  bool wizard = false;  // Vidéo > Post-traitement > « Relancer l'assistant » : les huit écrans, pas seulement
                         // les moteurs
 };
 using EngineChange = std::variant<UseEngine, OpenEngineScreen>;

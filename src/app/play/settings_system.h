@@ -63,7 +63,7 @@ enum class BenchEvent : std::uint8_t {
   Undone,   // « Annuler ces réglages » : le brouillon est revenu à l'état d'avant
 };
 
-// Image IA > Agrandissement (réglages avancés) : « Refaire la préparation sur cette vidéo » (span_derive.h),
+// Vidéo > Post-traitement (réglages avancés) : « Refaire la préparation sur cette vidéo » (span_derive.h),
 // la tâche partagée avec la boucle du lecteur (span_auto.h) avec sa progression et son résultat.
 struct PrepareNote {
   std::string text;

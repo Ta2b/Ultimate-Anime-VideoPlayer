@@ -72,12 +72,11 @@ constexpr std::array kMessages{
     Entry{"Settings opened on {}: \"Set default\" at the top of the page, or one type at a time.",
           "Paramètres ouverts sur {} : « Définir par défaut » en haut de la page, ou un type à la fois."},
     Entry{"Step {} of {}: {}", "Étape {} sur {} : {}"},
-    Entry{"TensorRT is installed but the player uses {}: pick TensorRT in Settings > Export and engines > "
-          "Engines",
+    Entry{"TensorRT is installed but the player uses {}: pick TensorRT in Settings > General > Engines",
           "le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres "
-          "> Export et moteurs > Moteurs"},
-    Entry{"TensorRT is not installed: install it in Settings > Export and engines > Engines",
-          "moteur TensorRT non installé : installez-le dans Paramètres > Export et moteurs > Moteurs"},
+          "> Général > Moteurs"},
+    Entry{"TensorRT is not installed: install it in Settings > General > Engines",
+          "moteur TensorRT non installé : installez-le dans Paramètres > Général > Moteurs"},
     Entry{"Test {} could not start: {}", "L'essai {} n'a pas pu démarrer : {}"},
     Entry{"Test {} produced nothing: it ended without readable measurements{}{}",
           "L'essai {} n'a rien rendu : il s'est terminé sans mesures lisibles{}{}"},

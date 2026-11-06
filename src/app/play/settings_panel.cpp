@@ -112,8 +112,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<
   }
 }
 
-// Composition finale (Image IA > Agrandissement, réglages avancés) : le filtre vers la fenêtre et le
-// débandage.
+// Vidéo > Affichage : la composition finale, le filtre vers la fenêtre et le débandage.
 void composition_section(PlaySettings& d) {
   section(i18n::tr("Final scaling"));
   if (ImGui::BeginCombo(i18n::tr("Scaler"), std::string(label(d.final_scaler)).c_str())) {
@@ -130,7 +129,7 @@ void composition_section(PlaySettings& d) {
                "effect on export."));
 }
 
-// Noir absolu et soins OLED (HDR et couleurs > HDR, réglages avancés).
+// Noir absolu et soins OLED (Vidéo > Affichage, réglages avancés).
 void oled_sections(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("OLED black"));
   if (ImGui::BeginCombo(i18n::tr("True black"), std::string(label(d.oled_black)).c_str())) {
@@ -220,11 +219,44 @@ void stats_tab(PlaySettings& d) {
   ImGui::EndDisabled();
 }
 
-// Général > Configuration : les résultats du bench de la machine (un bouton Appliquer par chaîne essayée),
-// ce que le lecteur sait de la machine, et l'assistant à refaire.
-bool config_page(PlaySettings& d, const SettingsChoices& choices, MachineNote& bench,
-                 std::vector<Input>& actions) {
-  const bool applied = bench_results_section(d, choices, bench, actions);
+// Vidéo > Post-traitement : le niveau, d'Économe à Ultra, refait la chaîne (réduction, SPAN, interpolation)
+// pour cette machine, cet écran et cette vidéo (auto_config.h : apply_preset). Auto prend le niveau de la
+// machine ; un réglage fait à la main plus bas passe en Personnalisé, montré seulement quand il est en cours.
+void level_section(PlaySettings& d, const SettingsChoices& choices) {
+  section(i18n::tr("Level"));
+  const auto detected = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1));
+  // Le préréglage qui porte le niveau de la machine : le nom qu'Auto affiche entre parenthèses.
+  constexpr std::array<Preset, kTierCount> kByTier{Preset::Economy, Preset::Fast, Preset::Normal,
+                                                   Preset::Quality, Preset::Ultra};
+  const auto text = [&](Preset preset) {
+    if (preset != Preset::Auto) return std::string(label(preset));
+    return i18n::tr_format("Auto ({})", label(kByTier[static_cast<std::size_t>(detected)]));
+  };
+  if (ImGui::BeginCombo(i18n::tr("Processing level"), text(d.preset).c_str())) {
+    for (int i = 0; i < kPresetCount; ++i) {
+      const auto preset = static_cast<Preset>(i);
+      if (preset == Preset::Custom && d.preset != Preset::Custom) continue;
+      if (ImGui::Selectable(text(preset).c_str(), preset == d.preset) && preset != d.preset &&
+          preset != Preset::Custom) {
+        PlaySettings next = d;
+        next.preset = preset;
+        d = apply_preset(
+            next,
+            Machine{
+                .tier = detected, .display_height = choices.display_height, .display_hz = choices.display_hz},
+            core::SourceInfo{
+                .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
+      }
+    }
+    ImGui::EndCombo();
+  }
+  panel::tip(
+      i18n::tr("From Economy (light on the graphics card) to Ultra. Auto picks the level of this machine. "
+               "Changing a setting below switches to Custom."));
+}
+
+// Général > À propos : ce que le lecteur sait de la machine, l'assistant à refaire.
+void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("This machine"));
   ImGui::TextWrapped("%s",
                      choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
@@ -233,10 +265,9 @@ bool config_page(PlaySettings& d, const SettingsChoices& choices, MachineNote& b
   section(i18n::tr("Setup wizard"));
   if (ImGui::Button(i18n::tr("Run the wizard again"))) actions.emplace_back(OpenEngineScreen{.wizard = true});
   panel::tip(i18n::tr("Nothing changes until \"Finish\"."));
-  return applied;
 }
 
-// Général > Réinitialiser.
+// Général > À propos, en bas.
 // Vrai quand « Tout réinitialiser » est pressé : le panneau rouvre alors la vidéo avec les réglages par
 // défaut, sans attendre « Appliquer ».
 bool reset_page(PlaySettings& draft) {
@@ -256,20 +287,19 @@ bool reset_page(PlaySettings& draft) {
 
 }  // namespace
 
-// L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`.
-constexpr std::array<SettingsPage, 12> kPages{{
-    {"General", "Setup", false},
-    {"General", "Playback", false},     // langues préférées, sous-titres, épisode suivant
-    {"General", "Application", false},  // lecteur par défaut et mises à jour
+// L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`. Trois
+// catégories (tri de novembre 2026, demande de Tatoub) : Vidéo, Audio et lecture, Général.
+constexpr std::array<SettingsPage, 10> kPages{{
+    {"Video", "Post-processing", false},  // niveau, agrandissement, interpolation
+    {"Video", "Colors", false},           // sortie HDR ou SDR (elle suit le système), grade anime
+    {"Video", "Display", false},          // filtre final, débandage ; OLED en avancé
+    {"Audio and playback", "Sound", false},
+    {"Audio and playback", "Playback", false},  // langues préférées, sous-titres, épisode suivant
+    {"General", "Application", false},          // langue, mises à jour, lecteur par défaut
+    {"General", "Engines", false},              // le moteur et l'état de ses modules
+    {"General", "Export", false},
     {"General", "Statistics", false},
-    {"General", "Reset", false},
-    {"AI image", "Upscaling", false},
-    {"AI image", "Smoothness", false},
-    {"HDR and color", "HDR", false},
-    {"HDR and color", "Colors", false},
-    {"Audio", "Output", false},
-    {"Export and engines", "Export", false},
-    {"Export and engines", "Engines", false},
+    {"General", "About", false},  // la machine, l'assistant, tout réinitialiser
 }};
 
 std::span<const SettingsPage> settings_pages() {
@@ -428,40 +458,41 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     panel::begin_page();
     {
       const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
-      if (name == "Setup") {
-        // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a demandé.
-        if (!machine_) machine_ = std::make_unique<MachineNote>();
-        if (config_page(draft_, choices, *machine_, actions) && draft_ != running) result.reopen = draft_;
-      } else if (name == i18n::tr("Application")) {
-        language_section(draft_);
-        default_player_page(choices.place, system_, choices.default_player_is_ajp);
-        updates_page(draft_, choices.place, updates_);
-      } else if (name == "Upscaling") {
+      if (name == "Post-processing") {
+        level_section(draft_, choices);
         image_tab(draft_, choices);
+        fluidity_tab(draft_, choices);
         if (advanced_) {
           span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
-          composition_section(draft_);
+          // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a demandé.
+          if (!machine_) machine_ = std::make_unique<MachineNote>();
+          if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
+            result.reopen = draft_;
         }
-      } else if (name == "Smoothness") {
-        fluidity_tab(draft_, choices);
-      } else if (name == "HDR") {
-        hdr_tab(draft_, choices);
-        if (advanced_) oled_sections(draft_, choices);
       } else if (name == "Colors") {
+        hdr_tab(draft_, choices);
         grade_tab(draft_, choices, actions);
-      } else if (name == "Output") {
+      } else if (name == "Display") {
+        composition_section(draft_);
+        if (advanced_) oled_sections(draft_, choices);
+      } else if (name == "Sound") {
         delay_held = sound_tab(draft_, choices);
       } else if (name == "Playback") {
         languages_tab(draft_);
         subtitles_tab(draft_);
         episodes_section(draft_);
-      } else if (name == i18n::tr("Export")) {
-        export_tab(*export_, running, choices, actions);
+      } else if (name == "Application") {
+        language_section(draft_);
+        updates_page(draft_, choices.place, updates_);
+        default_player_page(choices.place, system_, choices.default_player_is_ajp);
       } else if (name == "Engines") {
         engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
+      } else if (name == "Export") {
+        export_tab(*export_, running, choices, actions);
       } else if (name == "Statistics") {
         stats_tab(draft_);
-      } else if (name == "Reset") {
+      } else if (name == "About") {
+        about_page(choices, actions);
         if (reset_page(draft_)) result.reopen = draft_;
       }
     }

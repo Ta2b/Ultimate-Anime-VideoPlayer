@@ -213,7 +213,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   if (start_paused) session.command(cmd::Pause{});
-  // La tranche de la machine pour Général > Configuration : la mesure de « Évaluer ma machine » si elle est
+  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Évaluer ma machine » si elle est
   // de cette carte et de ce pilote, sinon l'estimation.
   std::optional<BenchResult> measured;
   if (auto bench = load_bench(p.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);
