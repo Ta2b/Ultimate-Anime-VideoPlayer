@@ -32,10 +32,9 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir);
 
 // Les noms des LUT de la pile dans l'ordre des emplacements et leur intensité. Depuis le 04/11, la pile est
-// le look HDR anime seul (anime_look, les curseurs look_contrast et look_highlight) ; --no-looks : rien.
-// stack_slots : la pile de play.toml d'avant (look, look_layers), que le lecteur ne lit plus.
+// le look HDR anime seul (anime_look, les curseurs look_contrast et look_highlight). La pile de play.toml
+// d'avant (look, look_layers) n'est plus lue.
 std::vector<LookLayer> look_slots(const PlaySettings& s);
-std::vector<LookLayer> stack_slots(const PlaySettings& s);
 // Le look HDR anime : la LUT de base, 3/7 de 7 × (1 + contraste/100) LUT de contraste, 1,5 × (1 + éclats/100)
 // LUT d'éclats, « skin fix », puis les 4/7 restants du contraste ; une part fractionnaire est la dernière LUT
 // à intensité partielle. À 0 et 0 : la pile de Tatoub du 04/11. Composé en une LUT de 65 points, gardé.
@@ -48,13 +47,6 @@ std::string anime_look_key(int contrast, int highlight);
 std::vector<double> anime_look_mixes(double units);  // 2,5 → 1, 1, 0,5
 std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
                                                    const std::filesystem::path& luts_dir);
-// --clean-looks (audit F1) : la pile de LUT s'applique à la couleur du voisinage, le grain et les paliers
-// passent à leur contraste d'origine au lieu d'être étirés par la pente de la pile ; les bords francs
-// (traits, lumières) gardent la pile entière. Lu par grade_of (GradeParams::look_clean).
-void set_clean_looks(bool on);
-bool clean_looks();
-// --no-looks (essai du tri du 04/11) : aucune LUT, quelle que soit la pile. play.toml n'en sait rien.
-void set_no_looks(bool on);
 
 // Vrai si les deux réglages ont la même pile de fichiers (les intensités ne comptent pas).
 bool same_look_files(const PlaySettings& a, const PlaySettings& b);

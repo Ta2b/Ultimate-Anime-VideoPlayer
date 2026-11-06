@@ -168,23 +168,13 @@ struct PlayOptions {
   // ou --present=open : la présentation d'avant.
   PresentWanted present = PresentWanted::Wait;
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
-  // : le peps de --hdr-anime et --anime-guided, à régler à l'œil (render::GradeSettings::anime_contrast…).
-  // --no-looks : la lecture sans la pile de LUT ; --anime-pure : la méthode HDR anime sans les noirs profonds
-  // ni les éclats des réglages (leurs valeurs par défaut). Essais du tri des réglages (04/11).
-  bool no_looks = false;
+  // : le peps du grade HDR anime, à régler à l'œil (render::GradeSettings::anime_contrast…).
   // --bake-looks=FICHIER.cube : la pile de LUT de play.toml, intensités comprises, composée en une seule LUT
   // (render::compose_luts, 65 points : la même image que la pile) et écrite là ; le lecteur s'arrête.
   std::optional<std::filesystem::path> bake_looks;
-  bool anime_pure = false;
-  // La pile de LUT sur la couleur du voisinage (audit F1) ; le grain et les paliers gardent leur contraste
-  // d'origine, les bords francs la pile entière (look_catalog.h, set_clean_looks). --no-clean-looks la coupe.
-  bool clean_looks = true;  // par défaut depuis le 04/11 (choix de Tatoub)
   int anime_contrast = 100;
   int anime_saturation = 100;
   int anime_highlights = 100;
-  // --grade-deband : le grade fait précéder la source d'un débandage (placebo_screen.cpp) ; coupé par défaut.
-  bool grade_deband = false;
-  bool skin_mask = false;  // --skin-mask : le grade distingue la peau (coupé par défaut)
   // --no-vrr : traite l'écran comme à fréquence fixe même si le VRR est armé (essai du mode Rapide sur les
   // vsyncs).
   bool no_vrr = false;

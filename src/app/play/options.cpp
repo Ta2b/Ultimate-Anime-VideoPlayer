@@ -141,18 +141,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.shot_cuts = false;  // les coupes de l'interpolation mesurées par RIFE seul
     } else if (arg == "--anime-shots") {
       options.anime_shots = true;
-    } else if (arg == "--clean-looks") {
-      options.clean_looks = true;
-    } else if (arg == "--no-clean-looks") {
-      options.clean_looks = false;  // la pile appliquée pixel par pixel, comme avant le 04/11
     } else if (arg == "--no-anime-shots") {
       options.anime_shots = false;  // le relèvement fixe, la lumière de la scène mesurée en direct
-    } else if (arg == "--no-looks") {
-      options.no_looks = true;
-    } else if (arg == "--anime-pure") {
-      options.anime_pure = true;
-    } else if (arg == "--hdr-contract-v2") {
-      // Le contrat d'écran (pic et blanc lus chez le système) règle déjà la sortie par défaut : même rendu.
     } else if (arg == "--no-hdr-metadata" || arg == "--hdr-metadata=off") {
       options.kde_sdr_nits.reset();
       options.kde_sdr_auto = false;
@@ -174,10 +164,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.one_lane = true;
     } else if (arg == "--skip-held") {
       options.skip_held = true;
-    } else if (arg == "--grade-deband") {
-      options.grade_deband = true;
-    } else if (arg == "--skin-mask") {
-      options.skin_mask = true;
     } else if (arg == "--fast-steady") {
       options.fast_steady = true;
     } else if (arg == "--smooth-drawings") {
@@ -493,25 +479,17 @@ std::string play_usage() {
       "                         --no-probe-nvdec : décodage logiciel)\n"
       "  --no-shot-cuts         les coupes de l'interpolation mesurées par RIFE seul (défaut : les plans\n"
       "                         de la pré-analyse décident, RIFE quand ils ne couvrent pas la paire)\n"
-      "  --hdr-contract-v2      le rendu par défaut : le pic et le blanc de l'écran lus chez le système\n"
-      "                         règlent la compression du grade et les métadonnées\n"
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
       "                         coût propre de chaque moteur\n"
       "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
       "                         (en essai ; éteint par défaut)\n"
       "  --anime-shots    --hdr-anime décidée par plan (défaut) : surfaces ancrées à ±5 %, marge des éclats\n"
       "                   du plan, changées à l'image de coupe ; --no-anime-shots : le relèvement fixe\n"
-      "  --no-looks       essai : sans la pile de LUT\n"
-      "  --no-clean-looks la pile de LUT pixel par pixel (défaut : sans étirer le grain ni les\n"
-      "                   paliers, bords francs inchangés)\n"
       "  --bake-looks=FICHIER.cube  écrit la pile de LUT de play.toml (intensités comprises) en une seule "
       "LUT\n"
       "                   de 65 points, puis s'arrête\n"
-      "  --anime-pure     essai : --hdr-anime sans les noirs profonds ni les éclats des réglages\n"
       "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
       "                   peps de --hdr-anime : contraste, saturation, éclats, 0 à 200 % (100 : tel quel)\n"
-      "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
-      "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
       "  --fast-steady          essai : mode Rapide à pas constant, N images par source fixe dans un plan\n"
       "  --smooth-drawings      essai : un dessin tenu deux images se fond en un mouvement (RIFE mouvement)\n"
       "  --ring-watcher         un thread attend l'écriture de l'anneau et réveille l'affichage (défaut ;\n"

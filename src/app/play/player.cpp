@@ -179,8 +179,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     remember_chain(profiles, *saved);
     log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
   }
-  set_no_looks(options.no_looks);
-  set_clean_looks(options.clean_looks);  // audit F1 : grain et paliers non étirés par la pile
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -196,8 +194,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .kde_sdr_auto = options.kde_sdr_auto,
       .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
       .allow_software = options.software_gpu,
-      .grade_deband = options.grade_deband,
-      .skin_mask = options.skin_mask,
       .present = options.present,
       .shader_cache = paths.data / "shaders.cache",
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")

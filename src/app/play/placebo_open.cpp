@@ -557,9 +557,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->osd = std::move(*osd);
   impl->overlays = std::make_unique<Overlays>(gpu);
   impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
-  impl->grade_deband = options.grade_deband;
-  impl->skin_mask = options.skin_mask;
-  if (auto grade = render::Grade::create(gpu, impl->skin_mask)) {
+  if (auto grade = render::Grade::create(gpu)) {
     impl->grade.emplace(std::move(*grade));
   } else {
     impl->channel->warn("grade HDR indisponible : {}", grade.error().detail);

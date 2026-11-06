@@ -144,25 +144,9 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
   // HDR10), il est sauté.
   const bool graded_now = grade.has_value() && graded(target.color);
-  // Le grade étire la source (plus de nits, plus de couleur) : les paliers d'un dégradé 8 bits, invisibles en
-  // SDR, ressortent en bandes dans un halo ou un ciel, mais le débandage de libplacebo (échantillonnage
-  // aléatoire) fabriquait du bruit dans les aplats sombres que le grade étire (mesuré : écart-type 16x16 de
-  // 1,0 contre 0,0). Il n'est donc plus posé d'office (--grade-deband le rétablit) ; le débandage demandé à
-  // la main reste, sans grain sous le grade, et une source déjà débandée avant SPAN n'est pas retouchée.
-  static const pl_deband_params kGradeDeband = [] {
-    pl_deband_params p = pl_deband_default_params;
-    p.grain = 0.0F;
-    return p;
-  }();
-  // Le grain de libplacebo (4 codes) serait étiré par le grade, surtout dans les ombres et sur les peaux :
-  // sous le grade, même le débandage demandé à la main part sans grain.
-  // Mesuré : même sans grain, ce débandage fabrique du bruit dans les aplats sombres que le grade étire ;
-  // sous le grade il n'est donc posé (réglage manuel compris) que par --grade-deband.
-  if (graded_now) {
-    if (grade_deband && (deband || !source_debanded)) params.deband_params = &kGradeDeband;
-  } else if (deband) {
-    params.deband_params = &pl_deband_default_params;
-  }
+  // Sous le grade, le débandage de libplacebo (échantillonnage aléatoire) fabriquait du bruit dans les aplats
+  // sombres que le grade étire (mesuré : écart-type 16x16 de 1,0 contre 0,0) : il ne se pose que sans grade.
+  if (!graded_now && deband) params.deband_params = &pl_deband_default_params;
   if (graded_now) {
     const std::span<const pl_hook* const> hooks = grade->hooks();
     params.hooks = hooks.data();
@@ -372,7 +356,6 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   const RingFrame* frame = request.frame;
   pl_frame image{};
   if (frame != nullptr) {
-    s.source_debanded = frame->debanded;
     auto tex = s.ring.acquire(gpu, *frame);
     if (!tex) return std::unexpected(std::move(tex.error()));
     image.num_planes = 1;

@@ -60,8 +60,6 @@ struct ScreenOptions {
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
-  bool grade_deband = false;    // --grade-deband : débandage devant le grade (coupé par défaut)
-  bool skin_mask = false;       // --skin-mask : le masque peau du grade rend 0 (essai)
   // --present : le retour de présentation (chantier 6, present_level.h) ; open, celle d'aujourd'hui.
   PresentWanted present = PresentWanted::Open;
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,

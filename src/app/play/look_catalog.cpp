@@ -82,32 +82,6 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
   return lut;
 }
 
-namespace {
-
-std::atomic<bool> no_looks{false};
-std::atomic<bool> clean_looks_on{false};
-
-std::vector<LookLayer> stack_of(const PlaySettings& s) {
-  std::vector<LookLayer> slots{{s.look, s.look_mix}};
-  for (const LookLayer& layer : s.look_layers) slots.push_back(layer);
-  if (slots.size() > render::kLookSlots) slots.resize(render::kLookSlots);
-  return slots;
-}
-
-}  // namespace
-
-void set_clean_looks(bool on) {
-  clean_looks_on.store(on, std::memory_order_relaxed);
-}
-
-bool clean_looks() {
-  return clean_looks_on.load(std::memory_order_relaxed);
-}
-
-void set_no_looks(bool on) {
-  no_looks.store(on, std::memory_order_relaxed);
-}
-
 std::string anime_look_key(int contrast, int highlight) {
   return std::format("{}{}:{}", kAnimeLookPrefix, contrast, highlight);
 }
@@ -159,12 +133,7 @@ std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
 }
 
 std::vector<LookLayer> look_slots(const PlaySettings& s) {
-  if (no_looks.load(std::memory_order_relaxed)) return {};
   return {LookLayer{anime_look_key(s.look_contrast, s.look_highlight), 1.0}};
-}
-
-std::vector<LookLayer> stack_slots(const PlaySettings& s) {
-  return stack_of(s);
 }
 
 bool same_look_files(const PlaySettings& a, const PlaySettings& b) {
