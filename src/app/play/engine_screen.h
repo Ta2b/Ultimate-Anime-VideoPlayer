@@ -1,6 +1,6 @@
 // L'écran des moteurs (first_run.h) dans la fenêtre du lecteur : au premier lancement, avec
 // --first-run, ou rouvert pendant la lecture depuis l'onglet Moteurs ; puis les moteurs cochés
-// téléchargés, settings.toml écrit et le profil de démarrage gardé. Et la bibliothèque du
+// téléchargés, settings.toml écrit. Et la bibliothèque du
 // backend qui en découle, le moteur préféré des réseaux essayé en premier (engine_switch.h).
 #pragma once
 
@@ -36,13 +36,11 @@ struct EngineScreen {
       false;  // rouvert depuis les paramètres : l'assistant en entier, depuis le premier écran
 };
 
-// L'écran jusqu'à « Commencer », puis les téléchargements, settings.toml et user.toml. revisit :
-// rouvert pendant la lecture (« Annuler » n'y change rien, le profil actif reste, et le moteur des
-// réseaux choisi à l'onglet Moteurs aussi tant qu'aucun moteur n'est ajouté). false : l'utilisateur
-// a fermé la fenêtre.
-std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines,
-                                               ProfileState& profiles, bool revisit, std::size_t& next_key,
-                                               SnapshotPlan& snapshot);
+// L'écran jusqu'à « Commencer », puis les téléchargements et settings.toml. revisit : rouvert pendant la
+// lecture (« Annuler » n'y change rien, et le moteur des réseaux choisi à l'onglet Moteurs reste tant
+// qu'aucun moteur n'est ajouté). false : l'utilisateur a fermé la fenêtre.
+std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
+                                               std::size_t& next_key, SnapshotPlan& snapshot);
 
 // Les bibliothèques de backend du poste, par préférence : les téléchargées d'abord, puis celles
 // livrées ou de l'arbre de construction (présentes ou non).

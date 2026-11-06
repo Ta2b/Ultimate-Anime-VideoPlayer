@@ -111,15 +111,6 @@ enum class Action : std::uint8_t {
   SeekForward,
   StepForward,
   StepBackward,
-  Profile1,
-  Profile2,
-  Profile3,
-  Profile4,
-  Profile5,
-  Profile6,
-  Profile7,
-  Profile8,
-  Profile9,
   ProcessingOff,
   ToggleGrade,
   ToggleInterpolation,
@@ -130,7 +121,7 @@ inline constexpr std::size_t kActionCount = static_cast<std::size_t>(Action::Tog
 // Pas d'un seek par les flèches : exact, 5 s.
 inline constexpr std::int64_t kSeekStepUs = 5'000'000;
 
-// Nom de l'action dans [keys] : « pause », « seek_forward », « profile_3 »…
+// Nom de l'action dans [keys] : « pause », « seek_forward », « toggle_grade »…
 std::string_view action_name(Action action);
 std::optional<Action> parse_action(std::string_view name);
 
@@ -144,7 +135,7 @@ Command command_for(Action action);
 // Un raccourci au plus par action, une action au plus par raccourci.
 class KeyMap {
  public:
-  // Espace, flèches, « . » et « , », Ctrl+0 à Ctrl+9, Ctrl+G, Ctrl+I, Tab.
+  // Espace, flèches, « . » et « , », Ctrl+0, Ctrl+G, Ctrl+I, Tab.
   static KeyMap defaults();
 
   const std::optional<Chord>& chord(Action action) const;
@@ -162,10 +153,11 @@ class KeyMap {
   std::array<std::optional<Chord>, kActionCount> chords_{};
 };
 
-// Raccourcis par défaut, redéfinis par la section [keys] du texte TOML d'un profil :
+// Raccourcis par défaut, redéfinis par la section [keys] de user.toml :
 //   [keys]
 //   toggle_osd = "F1"
 //   pause = ""          # sans raccourci
+// Les actions profile_1 à profile_9 (les profils, retirés) sont ignorées.
 std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml);
 
 }  // namespace ajp::core

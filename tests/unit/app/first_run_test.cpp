@@ -47,8 +47,7 @@ TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 
 TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
   CHECK(gpu_line(kRtx) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor");
-  CHECK(start_profile_for(kRtx) == 1);
-  const FirstRunView view = first_run_view(kRtx, kHere, ProfilesView{});
+  const FirstRunView view = first_run_view(kRtx, kHere);
   const EngineRow* vulkan = row_of(view, core::EngineId::Vulkan);
   const EngineRow* tensorrt = row_of(view, core::EngineId::TensorRt);
   REQUIRE(vulkan != nullptr);
@@ -64,7 +63,7 @@ TEST_CASE("Sous Windows, TensorRT coché, sans offre DirectML", "[app][first_run
   ajp::app::play::FrenchUi french;
   EnginesHere here = kHere;
   here.os = core::Os::Windows;
-  const FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
+  const FirstRunView view = first_run_view(kRtx, here);
   const EngineRow* tensorrt = row_of(view, core::EngineId::TensorRt);
   REQUIRE(tensorrt != nullptr);
   CHECK(tensorrt->chosen);
@@ -74,8 +73,7 @@ TEST_CASE("Sous Windows, TensorRT coché, sans offre DirectML", "[app][first_run
 TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
   const GpuFacts m2{.name = "Apple M2", .vendor = GpuVendor::Apple, .vram_bytes = 16 * kGiB};
-  const FirstRunView view =
-      first_run_view(m2, EnginesHere{.os = core::Os::MacOs, .coreml = true}, ProfilesView{});
+  const FirstRunView view = first_run_view(m2, EnginesHere{.os = core::Os::MacOs, .coreml = true});
   const EngineRow* coreml = row_of(view, core::EngineId::Metal);
   REQUIRE(coreml != nullptr);
   CHECK(coreml->usable);
@@ -84,37 +82,11 @@ TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[
   CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
 
   // Un paquet sans le backend Core ML ne le coche pas.
-  const FirstRunView bare = first_run_view(m2, EnginesHere{.os = core::Os::MacOs}, ProfilesView{});
+  const FirstRunView bare = first_run_view(m2, EnginesHere{.os = core::Os::MacOs});
   const EngineRow* missing = row_of(bare, core::EngineId::Metal);
   REQUIRE(missing != nullptr);
   CHECK_FALSE(missing->chosen);
   CHECK(missing->status == "absent de ce paquet");
-}
-
-TEST_CASE("Profil conseillé selon le GPU", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
-  GpuFacts small = kRtx;
-  small.vram_bytes = 8 * kGiB;
-  CHECK(start_profile_for(small) == 7);
-  GpuFacts gtx = kRtx;
-  gtx.tensor_cores = false;
-  CHECK(start_profile_for(gtx) == 7);
-  gtx.vram_bytes = 2 * kGiB;
-  CHECK(start_profile_for(gtx) == 9);
-  const GpuFacts amd{.name = "AMD Radeon", .vendor = GpuVendor::Amd, .vram_bytes = 16 * kGiB};
-  CHECK(start_profile_for(amd) == 7);
-  const GpuFacts rx6500{.name = "AMD Radeon RX 6500 XT", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
-  CHECK(start_profile_for(rx6500) == 7);
-  const GpuFacts rx9070xt{
-      .name = "AMD Radeon RX 9070 XT", .vendor = GpuVendor::Amd, .vram_bytes = 16 * kGiB, .wmma = true};
-  CHECK(start_profile_for(rx9070xt) == 1);
-  const GpuFacts rtx4050m{.name = "NVIDIA GeForce RTX 4050 Laptop GPU",
-                          .vendor = GpuVendor::Nvidia,
-                          .vram_bytes = 6 * kGiB,
-                          .tensor_cores = true};
-  CHECK(start_profile_for(rtx4050m) == 7);
-  const GpuFacts uhd{.name = "Intel(R) UHD Graphics 770", .vendor = GpuVendor::Intel, .vram_bytes = 8 * kGiB};
-  CHECK(start_profile_for(uhd) == 9);
 }
 
 TEST_CASE("Unités matricielles AMD : RDNA3 et RDNA4 seulement", "[app][first_run]") {
@@ -146,7 +118,7 @@ TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
   CHECK_FALSE(rocm_listed("AMD Radeon(TM) 860M Graphics"));
   const GpuFacts rx6500m{
       .name = "AMD Radeon RX 6500M (RADV NAVI24)", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
-  const FirstRunView view = first_run_view(rx6500m, kHere, ProfilesView{});
+  const FirstRunView view = first_run_view(rx6500m, kHere);
   CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
 }
 
@@ -169,7 +141,7 @@ TEST_CASE("MIGraphX de Windows ML reconnu sur les AMD RDNA 3 et après, mais dé
   here.downloads.push_back(EngineDownload{.id = core::EngineId::MiGraphX,
                                           .bytes = 40U << 20U,
                                           .license = "https://www.nuget.org/packages/x/License"});
-  const FirstRunView view = first_run_view(apu, here, ProfilesView{});
+  const FirstRunView view = first_run_view(apu, here);
   CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
   CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);
   REQUIRE(row_of(view, core::EngineId::Vulkan) != nullptr);
@@ -178,7 +150,7 @@ TEST_CASE("MIGraphX de Windows ML reconnu sur les AMD RDNA 3 et après, mais dé
 
 TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
-  FirstRunView view = first_run_view(kRtx, kHere, ProfilesView{});
+  FirstRunView view = first_run_view(kRtx, kHere);
   const core::Settings all = settings_after(view, core::Settings{});
   CHECK(all.first_run_done);
   CHECK(core::validate_settings(all).has_value());
@@ -195,7 +167,7 @@ TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][firs
   CHECK(vulkan.chosen_engines == std::vector{core::EngineId::Vulkan});
 
   // --first-run ensuite : l'écran repart du choix enregistré, pas de la présélection.
-  const FirstRunView again = first_run_view(kRtx, kHere, ProfilesView{}, vulkan);
+  const FirstRunView again = first_run_view(kRtx, kHere, vulkan);
   const EngineRow* tensorrt = row_of(again, core::EngineId::TensorRt);
   REQUIRE(tensorrt != nullptr);
   CHECK_FALSE(tensorrt->chosen);
@@ -228,7 +200,7 @@ TEST_CASE("Sans moteur d'inférence, la chaîne garde l'image source et le dit",
   CHECK(notes.empty());
 
   notes.clear();
-  const core::Settings all = settings_after(first_run_view(kRtx, kHere, ProfilesView{}), core::Settings{});
+  const core::Settings all = settings_after(first_run_view(kRtx, kHere), core::Settings{});
   const PlaySettings kept = within_engines(s, all, notes);
   CHECK(kept.upscale);
   CHECK(kept.rife_factor == 3);
@@ -274,7 +246,7 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
   EnginesHere here{.os = core::Os::Linux};
   here.downloads.push_back(EngineDownload{
       .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
-  FirstRunView view = first_run_view(kRtx, here, ProfilesView{});
+  FirstRunView view = first_run_view(kRtx, here);
   EngineRow* tensorrt = nullptr;
   for (EngineRow& row : view.engines) {
     if (row.offer.id == core::EngineId::TensorRt) tensorrt = &row;

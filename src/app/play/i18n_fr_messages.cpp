@@ -92,10 +92,8 @@ constexpr std::array kMessages{
           "La recherche d'une image plus fine est remise à la prochaine optimisation : les moteurs viennent "
           "d'être construits."},
     Entry{"Updated to {}", "Mis à jour vers {}"},
-    Entry{"Upscaling, interpolation and HDR for anime: set the startup profile and settings here before "
-          "playback.",
-          "Upscale, interpolation et HDR pour les animes : réglez le profil de démarrage et les paramètres "
-          "ici avant la lecture."},
+    Entry{"Upscaling, interpolation and HDR for anime: adjust the settings here before playback.",
+          "Upscale, interpolation et HDR pour les animes : réglez les paramètres ici avant la lecture."},
     Entry{"Windows 11 24H2 required (build {} installed): update Windows through Windows Update",
           "Windows 11 24H2 requis (build {} installé) : mettre Windows à jour par Windows Update"},
     Entry{"Your PC holds: {}.", "Votre PC tient : {}."},

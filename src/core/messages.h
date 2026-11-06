@@ -58,9 +58,6 @@ struct SeekRelative {
 struct StepFrame {
   int direction = 1;  // +1 avant, -1 arrière
 };
-struct SelectProfile {
-  int slot = 1;  // 1 à 9
-};
 struct ProcessingOff {};
 struct ToggleGrade {};
 struct ToggleInterpolation {};
@@ -74,9 +71,8 @@ struct SetVolume {
 struct Quit {};
 }  // namespace cmd
 
-using Command =
-    std::variant<cmd::Play, cmd::Pause, cmd::TogglePause, cmd::Seek, cmd::SeekRelative, cmd::StepFrame,
-                 cmd::SelectProfile, cmd::ProcessingOff, cmd::ToggleGrade, cmd::ToggleInterpolation,
-                 cmd::ToggleOsd, cmd::SetAudioDelay, cmd::SetVolume, cmd::Quit>;
+using Command = std::variant<cmd::Play, cmd::Pause, cmd::TogglePause, cmd::Seek, cmd::SeekRelative,
+                             cmd::StepFrame, cmd::ProcessingOff, cmd::ToggleGrade, cmd::ToggleInterpolation,
+                             cmd::ToggleOsd, cmd::SetAudioDelay, cmd::SetVolume, cmd::Quit>;
 
 }  // namespace ajp

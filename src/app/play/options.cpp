@@ -483,10 +483,10 @@ std::string play_usage() {
       "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
       "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
       "  --mute                 son coupé pour cette lecture\n"
-      "  --data-dir=DOSSIER     réglages, profils et journal dans ce dossier (moteurs et modèles partagés)\n"
+      "  --data-dir=DOSSIER     réglages et journal dans ce dossier (moteurs et modèles partagés)\n"
       "  --bench-level=N        joue la chaîne du niveau 0 à 4 (ou auto) ; --bench-out=FICHIER y écrit les "
       "mesures\n"
-      "  --first-run            écran de bienvenue (moteurs, profil de démarrage), même déjà vu\n"
+      "  --first-run            écran de bienvenue (moteurs), même déjà vu\n"
       "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space ;\n"
       "                         export ou export=FICHIER.mkv (ou .mp4, .mov) lance l'export de\n"
       "                         la chaîne en cours\n"
@@ -500,7 +500,7 @@ std::string play_usage() {
       "  a piste audio suivante, j sous-titres suivants, n / Maj+n épisode suivant / précédent,\n"
       "  Page↑ / Page↓ chapitre suivant / précédent, o passer le générique, . et , image par image, b son "
       "fidèle,\n"
-      "  p paramètres, Tab statistiques, Ctrl+1 à 9 profils, Ctrl+0 sans traitement, Ctrl+G grade, Ctrl+I\n"
+      "  p paramètres, Tab statistiques, Ctrl+0 sans traitement, Ctrl+G grade, Ctrl+I\n"
       "  interpolation.\n",
       kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
 }

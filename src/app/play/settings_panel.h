@@ -32,17 +32,6 @@ struct EngineBadge {
   bool loaded = false;
 };
 
-// Les 9 profils tels que l'onglet Profils les montre.
-struct ProfileRow {
-  std::string name;
-  std::string summary;  // la chaîne pour la source en cours
-};
-struct ProfilesView {
-  std::array<std::optional<ProfileRow>, 9> rows;
-  int active = 1;
-  int start = 1;
-};
-
 // Ce que le panneau propose, fixé par le lecteur.
 struct SettingsChoices {
   std::filesystem::path luts_dir;   // les .cube de l'utilisateur (look_catalog.h)
@@ -80,7 +69,6 @@ struct SettingsChoices {
   std::int64_t position_us = 0;                 // où en est sa lecture (PlayerUi::frame)
   bool paused = false;                          // sa lecture est en pause
   std::string black_status;                     // seuils du vrai noir en cours
-  ProfilesView profiles;
   // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »

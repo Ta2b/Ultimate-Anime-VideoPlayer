@@ -18,7 +18,6 @@
 #include "core/engines.h"
 #include "core/keys.h"
 #include "core/messages.h"
-#include "core/user_overlay.h"
 
 namespace ajp::app::play {
 
@@ -47,10 +46,6 @@ struct StepEpisode {
 };
 // Passer le générique (opening ou ending) : « o ».
 struct SkipCredits {};
-// Modification d'un profil dans user.toml (nom, profil de démarrage, retour à la base).
-struct EditProfile {
-  core::UserEdit edit;
-};
 // Réglages du menu des paramètres : en direct, ou confirmés pour rouvrir la chaîne.
 struct ApplySettings {
   PlaySettings settings;
@@ -79,8 +74,7 @@ struct StartExport {
 };
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
                            SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
-                           ToggleSettings, ApplySettings, EditProfile, UseEngine, OpenEngineScreen,
-                           StartExport, PlayFile>;
+                           ToggleSettings, ApplySettings, UseEngine, OpenEngineScreen, StartExport, PlayFile>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

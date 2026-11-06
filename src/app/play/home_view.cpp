@@ -31,8 +31,8 @@ void draw_home(HomeView& view, float scale, bool settings_open) {
     ImGui::TextUnformatted("ajp");
     ImGui::PopFont();
     note(
-        i18n::tr("Upscaling, interpolation and HDR for anime: set the startup profile and settings here "
-                 "before playback."));
+        i18n::tr("Upscaling, interpolation and HDR for anime: adjust the settings here before "
+                 "playback."));
     ImGui::Spacing();
     const float tall = ImGui::GetFrameHeight() * 1.6F;
     ImGui::BeginDisabled(view.dialog_open);

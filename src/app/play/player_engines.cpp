@@ -16,7 +16,7 @@
 #include "app/play/gmfss_model.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
-#include "app/play/profiles.h"
+#include "app/play/user_keys.h"
 #include "core/log.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/gmfss.h"

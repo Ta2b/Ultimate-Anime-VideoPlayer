@@ -23,10 +23,6 @@ namespace {
 constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
 constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
 constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
-// 11 Go et plus : la chaîne 1440p ×3 et ses moteurs tiennent avec la marge du bureau.
-constexpr std::uint64_t kQualityVram = 11 * kGiB;
-// 4 Go annoncés (un peu moins une fois le pilote servi) : le profil 7, 540p ×2 et RIFE ×2.
-constexpr std::uint64_t kLightVram = 3 * kGiB + kGiB / 2;
 
 void note(const std::string& text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
@@ -101,21 +97,6 @@ void engine_row(EngineRow& row) {
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
   ImGui::PopID();
-}
-
-void profile_choice(ProfilesView& view) {
-  for (int slot = 1; slot <= 9; ++slot) {
-    const std::optional<ProfileRow>& row = view.rows[static_cast<std::size_t>(slot - 1)];
-    if (!row) continue;
-    ImGui::PushID(slot);
-    ImGui::AlignTextToFramePadding();
-    if (ImGui::RadioButton(std::format("{}  {}", slot, row->name).c_str(), view.start == slot))
-      view.start = slot;
-    ImGui::Indent(ImGui::GetFrameHeightWithSpacing());
-    note(row->summary);
-    ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
-    ImGui::PopID();
-  }
 }
 
 // Une ligne d'un moteur téléchargeable : installé ici (arbre de construction, ou extrait), à
@@ -293,19 +274,8 @@ std::string gpu_line(const GpuFacts& gpu) {
   return line;
 }
 
-int start_profile_for(const GpuFacts& gpu) {
-  if (gpu.vendor == GpuVendor::Nvidia && gpu.tensor_cores) return gpu.vram_bytes >= kQualityVram ? 1 : 7;
-  // Une RDNA3 ou RDNA4 de 12 Go et plus (RX 7900, RX 9070 XT) : matrices coopératives du moteur
-  // Vulkan ou MIGraphX, au niveau d'une RTX 4070 Ti.
-  if (gpu.vendor == GpuVendor::Amd && gpu.wmma && gpu.vram_bytes >= kQualityVram) return 1;
-  // Sans cœurs Tensor, le moteur Vulkan tient 540p ×2 sur une carte dédiée de 4 Go (RX 6500) ;
-  // un GPU Intel (intégré le plus souvent) ou plus petit reste sur la source.
-  return gpu.vendor != GpuVendor::Intel && gpu.vram_bytes >= kLightVram ? 7 : 9;
-}
-
-FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, ProfilesView profiles,
-                            const core::Settings& current) {
-  FirstRunView view{.gpu = gpu_line(gpu), .profiles = std::move(profiles)};
+FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const core::Settings& current) {
+  FirstRunView view{.gpu = gpu_line(gpu)};
   for (const core::EngineOffer& offer : core::recommend_engines(system_of(gpu, here.os))) {
     EngineRow row{.offer = offer};
     switch (offer.id) {
@@ -592,14 +562,9 @@ void draw_first_run(FirstRunView& view, float scale) {
     const float footer = ImGui::CalcTextSize(kFooter, nullptr, false, room.x).y +
                          ImGui::GetFrameHeight() * 1.4F + style.ItemSpacing.y * 4.0F;
     const float body = std::max(room.y - footer, ImGui::GetFrameHeight() * 4.0F);
-    ImGui::BeginChild("##moteurs", {(room.x - style.ItemSpacing.x) * 0.5F, body});
+    ImGui::BeginChild("##moteurs", {0.0F, body});
     section(i18n::tr("Engines"));
     for (EngineRow& row : view.engines) engine_row(row);
-    ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("##profils", {0.0F, body});
-    section(i18n::tr("Startup profile"));
-    profile_choice(view.profiles);
     ImGui::EndChild();
     ImGui::Separator();
     note(kFooter);

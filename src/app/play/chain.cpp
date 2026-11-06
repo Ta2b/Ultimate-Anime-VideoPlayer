@@ -40,40 +40,6 @@ double fps_of(const media::Rational& rate) {
   return rate.den > 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
 }
 
-ProfilesView view_of(const ProfileState& state) {
-  ProfilesView view{.active = state.active, .start = state.data.file.start_profile};
-  for (std::size_t i = 0; i < view.rows.size(); ++i) {
-    if (const auto& profile = state.data.file.profiles[i])
-      view.rows[i] = ProfileRow{.name = profile->name, .summary = profile_summary(*profile, state.source)};
-  }
-  return view;
-}
-
-// La chaîne en cours devient celle du profil actif, dans user.toml (rien n'y est écrit si elle
-// redevient celle de la base).
-void remember_chain(ProfileState& state, const PlaySettings& s) {
-  const std::array<core::UserEdit, 2> edits{
-      core::edit::ProfileRules{.slot = state.active, .rules = rules_of(s, state.default_model)},
-      core::edit::ProfileHdr{.slot = state.active, .mode = hdr_of(s)}};
-  auto edited = edit_profiles(state.user_path, state.data, edits, state.writer);
-  if (!edited) {
-    log_channel("app")->warn("user.toml : {}", edited.error().detail);
-    return;
-  }
-  state.data = std::move(*edited);
-}
-
-bool chain_differs(const PlaySettings& a, const PlaySettings& b) {
-  return a.upscale != b.upscale || a.model != b.model || a.work_height != b.work_height ||
-         a.downscale != b.downscale || factor_of(a) != factor_of(b) || a.hdr_native != b.hdr_native;
-}
-
-void keep_profile_grade(Chain& to, bool saved_grade) {
-  const int slot = std::clamp(to.profiles.active, 1, static_cast<int>(core::kProfileSlots));
-  const auto& profile = to.profiles.data.file.profiles[static_cast<std::size_t>(slot - 1)];
-  if (profile && !profile->grade && !to.kept_grade) to.kept_grade = saved_grade;
-}
-
 PlaySettings with_intended_hdr(const Chain& to, PlaySettings settings) {
   if (to.hdr_wanted) {
     settings.hdr_native = to.hdr_wanted->hdr_native;
@@ -225,31 +191,6 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   to.dirty = true;
 }
 
-// Profil slot : sa chaîne pour cette source, en direct si elle le permet, sinon par réouverture.
-void switch_profile(Chain& to, int slot, std::int64_t now_us) {
-  const auto& profile = to.profiles.data.file.profiles[static_cast<std::size_t>(std::clamp(slot, 1, 9) - 1)];
-  if (!profile) {
-    to.ui.controls().notify(i18n::tr_format("Profile {}: empty", slot), now_us);
-    return;
-  }
-  std::vector<std::string> notes;
-  // Un profil sans grade le coupe pour la séance (play.toml garde celui des réglages) ; le suivant le rend.
-  if (!profile->grade) keep_for_file(to, true, false);
-  PlaySettings wanted = apply_profile(*profile, to.profiles.source, to.running, notes);
-  if (profile->grade && to.kept_grade) wanted.grade = *std::exchange(to.kept_grade, std::nullopt);
-  for (const std::string& line : notes) log_channel("app")->warn("profil {} : {}", slot, line);
-  log_channel("app")->info("profil {} « {} »", slot, profile->name);
-  to.profiles.active = slot;
-  to.ui.set_profiles(view_of(to.profiles));
-  to.ui.controls().notify(i18n::tr_format("Profile {} · {}", slot, profile->name), now_us);
-  const Change change = change_between(to.running, wanted, to.rife_loaded);
-  if (change.cost == ChangeCost::Reopen) {
-    to.reopen = wanted;
-  } else if (change.cost == ChangeCost::Live) {
-    apply_live(to, wanted, now_us);
-  }
-}
-
 // Raccourcis Ctrl+G, Ctrl+I, Ctrl+0 : la chaîne voulue, en direct si elle le permet.
 void switch_chain(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   const Change change = change_between(to.running, wanted, to.rife_loaded);
@@ -287,10 +228,6 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
   std::visit(
       Overloaded{
           [&](const Command& command) {
-            if (const auto* select = std::get_if<cmd::SelectProfile>(&command)) {  // Ctrl+1 à 9, menu
-              switch_profile(to, select->slot, now_us);
-              return;
-            }
             if (std::holds_alternative<cmd::ToggleGrade>(command)) {
               PlaySettings wanted = to.running;
               wanted.grade = !wanted.grade;
@@ -404,9 +341,8 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const ToggleSettings&) { to.ui.toggle_settings(); },
           [&](const ApplySettings& apply) {
-            // Changer la chaîne au menu modifie le profil actif. Un repli HDR en cours n'est pas
-            // retenu : sauf si l'utilisateur a lui-même changé le mode HDR, le profil garde le mode
-            // demandé (with_intended_hdr).
+            // Un repli HDR en cours n'est pas retenu : sauf si l'utilisateur a lui-même changé le mode
+            // HDR, play.toml garde le mode demandé (with_intended_hdr).
             if (apply.settings.hdr_native != to.running.hdr_native) to.hdr_wanted.reset();
             // Le menu qui change un de ces réglages le choisit pour de bon ; sinon le raccourci reste de
             // séance.
@@ -415,10 +351,6 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
                 apply.settings.rife_factor_den != to.running.rife_factor_den)
               to.kept_rife.reset();
             const PlaySettings intended = with_intended_hdr(to, apply.settings);
-            if (chain_differs(with_intended_hdr(to, to.running), intended)) {
-              remember_chain(to.profiles, intended);
-              to.ui.set_profiles(view_of(to.profiles));
-            }
             if (apply.reopen) {
               log_channel("app")->info("paramètres : réouverture de la chaîne");
               to.reopen = intended;
@@ -433,20 +365,6 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             to.ui.close_settings();
             to.export_job = start.job;
             to.reopen = to.running;
-          },
-          [&](const EditProfile& edit) {
-            const std::array<core::UserEdit, 1> edits{edit.edit};
-            auto edited = edit_profiles(to.profiles.user_path, to.profiles.data, edits);
-            if (!edited) {
-              log_channel("app")->warn("user.toml : {}", edited.error().detail);
-              to.ui.controls().notify(i18n::tr("Profile change refused"), now_us);
-              return;
-            }
-            to.profiles.data = std::move(*edited);
-            to.ui.set_profiles(view_of(to.profiles));
-            // Revenir à la base change la chaîne du profil actif : elle s'applique.
-            if (std::holds_alternative<core::edit::ResetProfile>(edit.edit))
-              switch_profile(to, to.profiles.active, now_us);
           }},
       input);
 }
