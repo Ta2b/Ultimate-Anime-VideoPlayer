@@ -13,6 +13,22 @@ de calcul qui l'exécute (TensorRT, Vulkan, Core ML) est un autre choix : voir `
 | Apple (VideoToolbox) | `apple` | macOS seulement | non | `gpu/system_interpolator.h` |
 | GMFSS Fortuna, Union | `gmfss`, `gmfss_union` | **débranché** | oui | `src/app/play/gmfss_*`, `src/gpu/cuda/backend/gmfss_*` |
 
+## Ce que montre le menu
+
+Le menu ne nomme pas les modèles, il propose des niveaux (`kInterpLevels`, `settings.h`). Le nom du modèle ne
+s'affiche qu'en mode avancé, à côté du niveau.
+
+| Niveau | Moteur, modèle |
+|---|---|
+| Très rapide | DistilDRBA (garde lui-même les poses, une image de retard) |
+| Rapide | RIFE 4.22 lite (le défaut hors RTX) |
+| Équilibré | RIFE 4.25 (le défaut sur une RTX) |
+| Système (macOS) | interpolation d'Apple, sur un Mac seulement |
+
+Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « Arrêt » et « Auto » en lecture.
+Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
+`--rife=N` ou par `play.toml`, pour le diagnostic.
+
 ## GMFSS débranché de la lecture
 
 GMFSS donne les images intermédiaires les plus propres sur l'animation, mais coûte plusieurs fois RIFE. La

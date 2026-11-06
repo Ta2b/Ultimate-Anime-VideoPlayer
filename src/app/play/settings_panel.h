@@ -62,24 +62,20 @@ struct AdaptiveScene {
 };
 
 struct SettingsChoices {
-  std::filesystem::path luts_dir;      // les .cube de l'utilisateur (look_catalog.h)
-  std::vector<std::string> models;     // fichiers SPAN du dossier des modèles
-  std::string default_model;           // celui qu'un nom vide désigne
-  int source_width = 0;                // la vidéo lue (onglet Export)
-  int source_height = 0;               // la réduction n'a de sens que sous cette hauteur
-  double source_fps = 0.0;             // images par seconde de la source ; 0 : inconnues
-  media::Rational source_rate;         // la même, exacte (nom et fréquence de l'export)
-  double display_hz = 0.0;             // fréquence de l'écran ; 0 : inconnue
-  bool display_vrr = false;            // l'écran sait le VRR (vrr_capable)
-  bool display_vrr_armed = false;      // le système l'a armé en ce moment
-  bool window_fullscreen = false;      // KDE n'arme le VRR qu'en plein écran
-  bool rife_available = false;         // une interpolation possible : RIFE, GMFSS, DistilDRBA, Apple (Mac)
-  bool gmfss_available = false;        // graphes de GMFSS trouvés (gmfss_model.h)
-  bool gmfss_union_available = false;  // ceux de GMFSS Union
+  std::filesystem::path luts_dir;   // les .cube de l'utilisateur (look_catalog.h)
+  std::vector<std::string> models;  // fichiers SPAN du dossier des modèles
+  std::string default_model;        // celui qu'un nom vide désigne
+  int source_width = 0;             // la vidéo lue (onglet Export)
+  int source_height = 0;            // la réduction n'a de sens que sous cette hauteur
+  double source_fps = 0.0;          // images par seconde de la source ; 0 : inconnues
+  media::Rational source_rate;      // la même, exacte (nom et fréquence de l'export)
+  double display_hz = 0.0;          // fréquence de l'écran ; 0 : inconnue
+  bool display_vrr = false;         // l'écran sait le VRR (vrr_capable)
+  bool display_vrr_armed = false;   // le système l'a armé en ce moment
+  bool window_fullscreen = false;   // KDE n'arme le VRR qu'en plein écran
+  bool rife_available = false;      // une interpolation possible : RIFE, DistilDRBA, Apple (Mac)
   // Les crans de précision (precision.h) que le poste rend : Équilibre toujours ; Performance (FP8) et
-  // Qualité (FP32) selon les graphes installés. GMFSS : les paires _s05fp8 et _s05q de base et d'union.
-  TierSupport gmfss_tiers;
-  TierSupport gmfss_union_tiers;
+  // Qualité (FP32) selon les graphes installés.
   TierSupport span_tiers;                // pour le modèle SPAN en cours (span_int8.h)
   TierSupport rife_tiers;                // les graphes « _fp8 » et « _fp32 » du modèle RIFE en cours
   TierSupport drba_tiers;                // ceux de DistilDRBA

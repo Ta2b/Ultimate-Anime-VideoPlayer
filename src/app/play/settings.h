@@ -11,6 +11,7 @@
 // de l'application est fusionnée ; les clés gardent les mêmes noms et plages.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -72,11 +73,29 @@ constexpr bool offered(MotionEngine engine) {
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
 std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 
+// Les niveaux de l'interpolation que montre le menu (docs/interpolation.md) : un nom que tout le monde
+// comprend, le moteur et le modèle derrière, nommés seulement en mode avancé. System : l'interpolation
+// d'Apple, sur un Mac seulement.
+enum class InterpLevel : std::uint8_t { VeryFast, Fast, Balanced, System };
+struct InterpChoice {
+  InterpLevel level;
+  MotionEngine engine;
+  std::string_view rife_model;  // vide hors RIFE
+};
+inline constexpr std::array<InterpChoice, 4> kInterpLevels{{
+    {.level = InterpLevel::VeryFast, .engine = MotionEngine::DistilDrba, .rife_model = {}},
+    {.level = InterpLevel::Fast, .engine = MotionEngine::Rife, .rife_model = "rife_v4.22_lite.onnx"},
+    {.level = InterpLevel::Balanced, .engine = MotionEngine::Rife, .rife_model = "rife_v4.25.onnx"},
+    {.level = InterpLevel::System, .engine = MotionEngine::Apple, .rife_model = {}},
+}};
+// Le niveau d'un moteur et du modèle RIFE qu'il charge (le nom vide de play.toml déjà résolu) ; nullopt
+// pour un autre modèle RIFE ou un moteur débranché.
+std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model);
+
 // Les repères des listes (docs/ux-parametres.md, 3) : une pastille à côté du choix, le détail en infobulle.
 enum class Badge : std::uint8_t { Recommended, Fastest, Finest, Heaviest, Experimental };
 std::string_view badge_text(
     Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Le plus lent », « Expérimental »
-std::optional<Badge> badge_of(MotionEngine engine);
 std::optional<Badge> badge_of(Downscale filter);
 // « 720p » ; la hauteur d'image en français courant, jamais « lignes ».
 std::string resolution_text(int height);

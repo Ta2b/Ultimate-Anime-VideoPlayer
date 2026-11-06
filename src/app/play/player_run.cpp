@@ -281,19 +281,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                             : 0.0,
           .display_vrr = p.display && p.display->vrr.value_or(false),
           .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
-          .rife_available =
-              c.rife_model.has_value() || c.gmfss_found || c.drba_found || offered(MotionEngine::Apple),
-          // Seul TensorRT sait importer les graphes de GMFSS (MatMul, Softmax, LayerNorm) : le
-          // moteur Vulkan les refuserait, le menu ne les propose donc pas.
-          .gmfss_available = c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places).has_value(),
-          .gmfss_union_available =
-              c.backend_name == "tensorrt" && find_gmfss(c.gmfss_places, GmfssVariant::Union).has_value(),
-          .gmfss_tiers = c.backend_name == "tensorrt"
-                             ? gmfss_tiers(c.gmfss_places, GmfssVariant::Base, fp8_engine)
-                             : TierSupport{},
-          .gmfss_union_tiers = c.backend_name == "tensorrt"
-                                   ? gmfss_tiers(c.gmfss_places, GmfssVariant::Union, fp8_engine)
-                                   : TierSupport{},
+          .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
           .span_tiers = c.model
                             ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine,
                                          c.backend && c.backend->capabilities().span_fp8_cutlass)
