@@ -1,6 +1,7 @@
 #include "core/engines.h"
 
 #include <algorithm>
+#include <array>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -38,56 +39,33 @@ TEST_CASE("Moteurs : RTX 4070 Ti sous Windows", "[engines]") {
   CHECK(has(*trt, Badge::NvidiaOnly));
 
   CHECK_FALSE(find(offers, EngineId::Metal));
-  CHECK_FALSE(find(offers, EngineId::MiGraphX)->relevant);
+  CHECK_FALSE(find(offers, EngineId::MiGraphX));
+  CHECK_FALSE(find(offers, EngineId::OpenVino));
   CHECK_FALSE(find(offers, EngineId::DirectMl));
 }
 
-TEST_CASE("Moteurs : AMD récent sous Linux", "[engines]") {
-  SystemInfo system{
-      .os = Os::Linux,
-      .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 7900 XTX", .rocm_supported = true}}};
-  auto offers = recommend_engines(system);
-  CHECK(find(offers, EngineId::MiGraphX)->preselected);
-  CHECK(has(*find(offers, EngineId::MiGraphX), Badge::AmdOnly));
-  CHECK_FALSE(find(offers, EngineId::DirectMl));
-  CHECK(has(*find(offers, EngineId::Vulkan), Badge::Compatibility));
-}
-
-TEST_CASE("Moteurs : ancien AMD sous Windows, Vulkan recommandé et aucune offre DirectML", "[engines]") {
-  SystemInfo system{.os = Os::Windows, .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 580"}}};
-  auto offers = recommend_engines(system);
-  CHECK_FALSE(find(offers, EngineId::DirectMl));
-  CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
-}
-
-TEST_CASE("Moteurs : Radeon 860M sous Windows, MIGraphX de Windows ML à l'essai", "[engines]") {
-  SystemInfo system{
-      .os = Os::Windows,
-      .gpus = {
-          GpuInfo{.vendor = GpuVendor::Amd, .name = "AMD Radeon(TM) 860M Graphics", .winml_migraphx = true}}};
-  auto offers = recommend_engines(system);
-  const EngineOffer* migraphx = find(offers, EngineId::MiGraphX);
-  REQUIRE(migraphx);
-  CHECK(migraphx->relevant);
-  CHECK_FALSE(migraphx->preselected);
-  CHECK(migraphx->reason == Reason::CompareWithVulkan);
-  CHECK(migraphx->delivery == Delivery::Download);
-  CHECK(has(*migraphx, Badge::AmdOnly));
-  CHECK_FALSE(has(*migraphx, Badge::Recommended));
-  CHECK_FALSE(find(offers, EngineId::DirectMl));
-  // À l'essai seulement : Vulkan reste le moteur recommandé.
-  CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
-}
-
-TEST_CASE("Moteurs : ROCm ne compte que sous Linux, Windows ML que sous Windows", "[engines]") {
-  SystemInfo windows{.os = Os::Windows,
-                     .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 6800", .rocm_supported = true}}};
-  CHECK_FALSE(find(recommend_engines(windows), EngineId::MiGraphX)->relevant);
-  CHECK_FALSE(find(recommend_engines(windows), EngineId::DirectMl));
-  SystemInfo linux_apu{
-      .os = Os::Linux,
-      .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "AMD Radeon 860M", .winml_migraphx = true}}};
-  CHECK_FALSE(find(recommend_engines(linux_apu), EngineId::MiGraphX)->relevant);
+TEST_CASE("Moteurs : AMD et Intel passent par Vulkan, MIGraphX et OpenVINO débranchés", "[engines]") {
+  const std::array systems{
+      SystemInfo{.os = Os::Linux,
+                 .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 7900 XTX", .rocm_supported = true}}},
+      SystemInfo{
+          .os = Os::Windows,
+          .gpus = {GpuInfo{
+              .vendor = GpuVendor::Amd, .name = "AMD Radeon(TM) 860M Graphics", .winml_migraphx = true}}},
+      SystemInfo{.os = Os::Windows, .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 580"}}},
+      SystemInfo{.os = Os::Linux,
+                 .gpus = {GpuInfo{.vendor = GpuVendor::Intel, .name = "Arc A770", .openvino_gpu = true}}}};
+  for (const SystemInfo& system : systems) {
+    const auto offers = recommend_engines(system);
+    CHECK_FALSE(find(offers, EngineId::MiGraphX));
+    CHECK_FALSE(find(offers, EngineId::OpenVino));
+    CHECK_FALSE(find(offers, EngineId::DirectMl));
+    CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
+  }
+  CHECK_FALSE(engine_plugged(EngineId::MiGraphX));
+  CHECK_FALSE(engine_plugged(EngineId::OpenVino));
+  CHECK(engine_plugged(EngineId::TensorRt));
+  CHECK(engine_plugged(EngineId::Vulkan));
 }
 
 TEST_CASE("Moteurs : Mac, Metal inclus et recommandé", "[engines]") {

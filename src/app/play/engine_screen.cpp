@@ -293,7 +293,10 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
 std::vector<std::filesystem::path> backend_candidates(const EngineCatalog& catalog,
                                                       const PlayerPaths& paths) {
   std::vector<std::filesystem::path> out = installed_backends(catalog);
-  out.insert(out.end(), paths.backends.begin(), paths.backends.end());
+  for (const std::filesystem::path& backend : paths.backends) {
+    const std::optional<core::EngineId> id = engine_of_library(backend);
+    if (!id || core::engine_plugged(*id)) out.push_back(backend);  // MIGraphX, OpenVINO : débranchés
+  }
   return out;
 }
 

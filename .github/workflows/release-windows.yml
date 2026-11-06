@@ -62,22 +62,8 @@ jobs:
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@v1
       - uses: mozilla-actions/sccache-action@v0.0.9
-      # OpenVINO par sa roue PyPI, qui porte ses en-têtes, ses bibliothèques et sa configuration
-      # CMake, à la version de tools/release/versions.env (la même que sous Linux).
-      - name: OpenVINO
-        shell: pwsh
-        run: |
-          $line = Select-String -Path tools/release/versions.env -Pattern '^OPENVINO_VERSION=(\S+)'
-          if (-not $line) { throw "OPENVINO_VERSION absent de tools/release/versions.env" }
-          $version = $line.Matches[0].Groups[1].Value
-          python -m pip install -q "openvino==$version"
-          if ($LASTEXITCODE -ne 0) { throw "pip openvino $version" }
-          $dir = python -c "from openvino.utils import get_cmake_path; print(get_cmake_path())"
-          "OpenVINO_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      # Windows ML par son paquet NuGet, à la version et à l'empreinte de versions.env.
-      - name: Windows ML
-        shell: pwsh
-        run: pwsh tools/deps/windows-winml.ps1 "$env:RUNNER_TEMP/winml"
+      # OpenVINO et Windows ML (MIGraphX) ne sont plus construits pour la release : débranchés du lecteur, AMD et
+      # Intel passent par Vulkan (docs/moteurs.md). La CI (ci.yml) les construit encore pour que le code tienne.
       # Seulement sur l'entrée tensorrt (licences NVIDIA acceptées par le propriétaire du dépôt).
       - name: CUDA et TensorRT
         if: inputs.tensorrt
@@ -92,8 +78,6 @@ jobs:
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
-          $env:AJP_WITH_OPENVINO = "ON"
-          $env:AJP_WITH_WINML = "ON"
           if ("${{ inputs.tensorrt }}" -eq "true") { $env:AJP_WITH_CUDA = "ON" }
           if ("${{ inputs.tensorrt }}" -eq "true" -and "${{ inputs.span_fp8 }}" -eq "true") { $env:AJP_WITH_SPAN_FP8 = "ON" }
           $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
@@ -121,14 +105,11 @@ jobs:
           Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
       # arrête tout avant l'artefact et la release.
-      # CTest liste les tests de chaque exécutable, même ceux que le filtre écarte : celui du backend
-      # Vulkan, lié à openvino.dll de la roue, doit se charger (sinon 0xc0000135 avant tout test).
       - name: Tests sans GPU
         # Une étiquette avec un tiret (v0.6.0-pre.1) est une préversion : construite et publiée sans tests.
         if: ${{ !contains(github.ref_name, '-') }}
         shell: pwsh
         run: |
-          $env:PATH = (Join-Path (Split-Path $env:OpenVINO_DIR -Parent) "libs") + ";" + $env:PATH
           ctest --preset windows-release
           if ($LASTEXITCODE -ne 0) { throw "tests" }
       - uses: actions/cache/save@v4

@@ -39,23 +39,8 @@ std::vector<EngineOffer> recommend_engines(const SystemInfo& system) {
                                  .relevant = true,
                                  .preselected = true});
   } else {
+    // MIGraphX et OpenVINO ne sont pas proposés (engine_plugged) : AMD et Intel passent par Vulkan.
     offers.push_back(vendor_engine(EngineId::TensorRt, Badge::NvidiaOnly, rtx));
-    if (system.os == Os::Windows) {
-      // MIGraphX de Windows ML (sans ROCm), à l'essai sur les AMD RDNA 3 et après : proposé, jamais
-      // coché d'office, à comparer avec Vulkan.
-      const bool fits = gpu.vendor == GpuVendor::Amd && gpu.winml_migraphx;
-      offers.push_back(EngineOffer{.id = EngineId::MiGraphX,
-                                   .delivery = Delivery::Download,
-                                   .badges = {Badge::AmdOnly},
-                                   .reason = fits ? Reason::CompareWithVulkan : Reason::NoMatchingGpu,
-                                   .relevant = fits,
-                                   .preselected = false});
-    } else {
-      offers.push_back(vendor_engine(EngineId::MiGraphX, Badge::AmdOnly,
-                                     gpu.vendor == GpuVendor::Amd && gpu.rocm_supported));
-    }
-    offers.push_back(vendor_engine(EngineId::OpenVino, Badge::IntelOnly,
-                                   gpu.vendor == GpuVendor::Intel && gpu.openvino_gpu));
   }
 
   // Pas d'offre DirectML : aucun moteur DirectML n'existe dans cette version (les anciens AMD
