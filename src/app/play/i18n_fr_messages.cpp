@@ -8,6 +8,8 @@ namespace {
 // Messages : (clé anglaise, français).
 constexpr std::array kMessages{
     Entry{"\"{}\" stopped: {}", "« {} » s'est arrêtée : {}"},
+    Entry{"Playback stopped: {}.", "La lecture s'est arrêtée : {}."},
+    Entry{"Details in {}", "Détails dans {}"},
     Entry{"  {:<24} {:>5.1f} % lost, p95 delay {:>6.1f} ms, frame {:>6.1f} ms (p95 {:>6.1f}), compositing "
           "{:>5.1f} ms: {}\n",
           "  {:<24} {:>5.1f} % perdues, retard p95 {:>6.1f} ms, image {:>6.1f} ms (p95 {:>6.1f}), "

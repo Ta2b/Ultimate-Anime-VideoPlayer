@@ -720,6 +720,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                    .span_variant = span_variant});
   }
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
+  // Un étage arrêté sur un refus fatal : un échec, jamais une fin d'épisode (pas d'épisode suivant).
+  if (!failure && session.failure()) failure = *session.failure();
   // La source a changé de taille en cours de lecture : la chaîne se rouvre à la nouvelle taille, au même
   // endroit ; au-delà de 4 réouvertures par minute, c'est un refus.
   if (session.resize_asked() && !chain.reopen && !failure) {

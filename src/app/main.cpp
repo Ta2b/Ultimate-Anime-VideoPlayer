@@ -5,6 +5,7 @@
 // chantier app-shell ; ici, seulement la lecture.
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_messagebox.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -38,6 +39,7 @@ extern "C" {
 #include "app/play/player.h"
 #include "app/play/settings.h"
 #include "app/play/updater.h"
+#include "app/play/visible_error.h"
 #include "core/log.h"
 #include "core/thread_role.h"
 #include "core/update_manifest.h"
@@ -486,5 +488,17 @@ int main(int argc, char** argv) {
   if (played) return 0;
   // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.
   ajp::log_channel("app")->error("{} {}", ajp::name(played.error().code), played.error().detail);
+  // Lancé par un double-clic, personne ne lit stderr : la fenêtre ne se ferme pas sans un mot. Pas
+  // de boîte pendant un essai scripté (--keys, --snapshot, banc), qui doit finir seul, ni pour une
+  // annulation voulue.
+  if (options->keys.empty() && !options->snapshot && !options->bench_out &&
+      played.error().code != ajp::RefusalCode::Cancelled) {
+    namespace i18n = ajp::app::play::i18n;
+    std::string text =
+        i18n::tr_format("Playback stopped: {}.", ajp::app::play::visible_error(played.error()));
+    if (!log_file.empty())
+      text += "\n\n" + i18n::tr_format("Details in {}", ajp::prepare::utf8_path(log_file));
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+  }
   return 1;
 }

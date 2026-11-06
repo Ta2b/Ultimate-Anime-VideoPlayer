@@ -659,6 +659,22 @@ TEST_CASE("Un refus fatal d'un thread arrête la lecture et s'affiche", "[app][s
   CHECK(rig.session.refusals()[0] == "gpu : ThreadFailed boum");
 }
 
+TEST_CASE("Un refus fatal est un échec, pas une fin d'épisode ; un refus non fatal ne l'est pas",
+          "[app][session]") {
+  Rig rig;
+  rig.session.handle(StageRefusal{.stage = "audio", .refusal = {RefusalCode::AudioDecodeFailed, "paquet"}});
+  CHECK_FALSE(rig.session.failure().has_value());
+  CHECK_FALSE(rig.session.finished());
+  rig.session.handle(
+      StageRefusal{.stage = "source", .refusal = {RefusalCode::DecodeFailed, "lecture"}, .fatal = true});
+  rig.session.handle(
+      StageRefusal{.stage = "gpu", .refusal = {RefusalCode::ThreadFailed, "boum"}, .fatal = true});
+  CHECK(rig.session.finished());
+  REQUIRE(rig.session.failure().has_value());
+  CHECK(rig.session.failure()->code == RefusalCode::DecodeFailed);  // le premier, la cause
+  CHECK(rig.session.failure()->detail == "source : lecture");
+}
+
 TEST_CASE("Un changement de taille de la source arrête la session et demande la réouverture",
           "[app][session]") {
   ajp::app::play::FrenchUi french;
@@ -667,6 +683,7 @@ TEST_CASE("Un changement de taille de la source arrête la session et demande la
   rig.session.handle(StageRefusal{.stage = "gpu", .refusal = {RefusalCode::SourceResized, "1920x1080"}});
   CHECK(rig.session.resize_asked());
   CHECK(rig.session.finished());
+  CHECK_FALSE(rig.session.failure().has_value());  // une réouverture, pas un échec
 }
 
 TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]") {
