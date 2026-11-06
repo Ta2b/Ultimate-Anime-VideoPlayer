@@ -40,7 +40,7 @@ TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
   CHECK(ultra.rife_auto);
   const PlaySettings fast = applied(Preset::Auto, Tier::Fast, 1440, 144.0);
   CHECK(fast.motion_engine == MotionEngine::Rife);
-  CHECK(fast.rife_model == "rife_v4.22_lite.onnx");
+  CHECK(fast.rife_model == "rife_v4.25.onnx");  // Qualité et Ultra : RIFE 4.25
   CHECK(fast.work_height == 720);
   const PlaySettings normal = applied(Preset::Auto, Tier::Normal, 1440, 144.0);
   CHECK(normal.motion_engine == MotionEngine::Rife);

@@ -45,13 +45,20 @@ int step_of(int height) {
 
 // La plus grande résolution de travail que la tranche tient.
 constexpr std::array<int, kTierCount> kWorkCap{720, 540, 720, 720, 1080};
+// Pas de résolution par rapport à l'idéal de l'écran (la moitié de sa hauteur) : chaque niveau
+// travaille plus haut que le précédent (480p, 540p, 720p, 900p sur un écran 1080p). Qualité et Ultra
+// interpolent en plus avec RIFE 4.25 : les quatre niveaux donnent quatre chaînes différentes en
+// 1080p, 1440p et 4K, même quand le plafond de Qualité rejoint Normal.
+constexpr std::array<int, kTierCount> kWorkOffset{0, -1, 0, 1, 2};
 // Le plus grand multiplicateur ×k du mode auto.
 constexpr std::array<int, kTierCount> kFactorCap{0, 2, 3, 4, 4};
 
-// RIFE 4.22 lite, ou le modèle plus fin que la machine a exploré quand il tient aussi.
-void use_rife_lite(PlaySettings& out, const PlaySettings& settings, const Machine& machine) {
+// Le modèle du niveau (RIFE 4.22 lite, ou 4.25 pour Qualité et Ultra), ou en Auto le modèle plus fin
+// que la machine a exploré quand il tient aussi.
+void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& machine,
+              std::string_view model) {
   out.motion_engine = MotionEngine::Rife;
-  out.rife_model = "rife_v4.22_lite.onnx";
+  out.rife_model = model;
   if (settings.preset == Preset::Auto && !machine.explored_rife_model.empty())
     out.rife_model = machine.explored_rife_model;
 }
@@ -115,8 +122,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   // Résolution : SPAN double, la sortie vise l'écran. Écran 1080p : 540p ; 1440p : 720p ; 4K : 720p
   // (puis la mise à l'échelle finale), jamais plus que la tranche ne tient, jamais plus que la source.
   const int ideal = std::clamp(display_height / 2, kWorkHeights.front(), kWorkHeights.back());
-  int work = std::min(ideal, kWorkCap[at]);
-  int step = step_of(work);
+  int step = std::clamp(step_of(ideal) + kWorkOffset[at], 0, step_of(kWorkCap[at]));
+  int work = kWorkHeights[static_cast<std::size_t>(step)];
   if (settings.priority == Priority::Fluidity) step = std::max(0, step - 1);
   if (settings.priority == Priority::Image) step = std::min(step + 1, step_of(kWorkCap[at]) + 1);
   step = std::min(step, static_cast<int>(kWorkHeights.size()) - 1);
@@ -157,7 +164,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       break;
     case Tier::Light:
     case Tier::Normal:
-      use_rife_lite(out, settings, machine);
+      use_rife(out, settings, machine, "rife_v4.22_lite.onnx");
       break;
     case Tier::Fast:
     case Tier::Ultra:
@@ -166,7 +173,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       if (kDistilDrbaInAuto) {
         out.motion_engine = MotionEngine::DistilDrba;
       } else {
-        use_rife_lite(out, settings, machine);
+        use_rife(out, settings, machine, "rife_v4.25.onnx");
       }
       break;
   }
