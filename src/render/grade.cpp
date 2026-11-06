@@ -279,7 +279,6 @@ struct Grade::Impl {
   std::optional<std::array<double, kLookSlots>> composed_for;
   bool composed = false;  // la texture du look est la pile composée (sinon une identité)
   CubeLut stack;          // la pile composée lue par le hook quand composed
-  bool skin_mask = true;
 
   // La pile composée pour les intensités de `wanted`, refaite si elles changent ; le hook du look est
   // alors reconstruit, et ses paramètres sont à réécrire.
@@ -329,20 +328,13 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   composed = active;
 }
 
-std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, bool skin_mask) {
+std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
-  impl->skin_mask = skin_mask;
   // Les paramètres, la mise en PQ d'une sortie SDR, puis les trois passes (carte locale, zone, passe anime).
   std::string text(shaders::anime_hdr_params);
   text += kSdrToPq;
   text += shaders::anime_hdr_anime;
-  if (!skin_mask) {
-    // Le masque peau (damier sur le grain d'une peau pâle, mesuré à l'écran) est coupé sauf --skin-mask.
-    constexpr std::string_view kHead = "float skin_area(vec2 pos) {";
-    if (const auto at = text.find(kHead); at != std::string::npos)
-      text.insert(at + kHead.size(), "\n    return 0.0;\n}\nfloat skin_area_off(vec2 pos) {");
-  }
   auto grade = parse(gpu, text, "anime-hdr-anime", kGradeParams);
   if (!grade) return std::unexpected(grade.error());
   impl->grade = std::move(*grade);
@@ -428,10 +420,6 @@ std::optional<float> Grade::param(std::string_view name) const {
 
 const CubeLut* Grade::look_stack() const {
   return impl_->composed ? &impl_->stack : nullptr;
-}
-
-bool Grade::skin_mask() const {
-  return impl_->skin_mask;
 }
 
 const GradeParams& Grade::params() const {

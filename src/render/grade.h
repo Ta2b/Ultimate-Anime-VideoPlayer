@@ -22,7 +22,7 @@ class Grade {
  public:
   // VendorCallFailed : un hook ne se lit pas ; FieldMissing : un //!PARAM attendu manque.
   // Le grade HDR du lecteur, en trois passes sur OUTPUT (anime-hdr-anime), puis le look et le vrai noir.
-  static std::expected<Grade, Refusal> create(pl_gpu gpu, bool skin_mask = true);
+  static std::expected<Grade, Refusal> create(pl_gpu gpu);
 
   Grade(Grade&&) noexcept;
   Grade& operator=(Grade&&) noexcept;
@@ -58,8 +58,6 @@ class Grade {
   std::optional<float> param(std::string_view name) const;
   // La pile de LUT composée que lit le hook (look_mix à 1, 65 points), nullptr sans look actif.
   const CubeLut* look_stack() const;
-  // Faux : le masque peau est coupé (sans --skin-mask).
-  bool skin_mask() const;
   // La mire d'étalonnage, qui remplace l'image par des patchs en luminance absolue (PQ).
   const pl_hook* calibration() const;
 

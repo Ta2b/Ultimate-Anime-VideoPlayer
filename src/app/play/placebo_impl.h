@@ -158,8 +158,6 @@ struct PlaceboScreen::Impl {
   pl_swapchain swapchain = nullptr;
   pl_renderer renderer = nullptr;
   pl_cache shader_cache = nullptr;                  // ScreenOptions::shader_cache (placebo_open.cpp)
-  bool skin_mask = false;                           // ScreenOptions::skin_mask
-  bool grade_deband = false;                        // ScreenOptions::grade_deband
   PresentLevel present_level = PresentLevel::Open;  // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
   std::unique_ptr<PresentFeedback> feedback;
@@ -215,7 +213,6 @@ struct PlaceboScreen::Impl {
   void match_kwin();             // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
-  bool source_debanded = false;  // l'image présentée, débandée avant SPAN (RingFrame::debanded)
   // Augmenté à chaque changement de ce que le grade applique (app/play/compose_key.h) : paramètres, looks,
   // KWin, couleur de la source, nouvelle scène.
   std::uint64_t grade_serial = 0;

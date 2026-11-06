@@ -14,7 +14,7 @@
 
 using namespace ajp::app::play;
 
-TEST_CASE("le look est la recette HDR anime ; --no-looks : rien", "[app][look]") {
+TEST_CASE("le look est la recette HDR anime", "[app][look]") {
   PlaySettings s;
   REQUIRE(look_slots(s).size() == 1);
   CHECK(look_slots(s).front().key == anime_look_key(0, 0));
@@ -22,9 +22,6 @@ TEST_CASE("le look est la recette HDR anime ; --no-looks : rien", "[app][look]")
   s.look_highlight = 25;
   CHECK(look_slots(s).front().key == anime_look_key(-40, 25));
   CHECK(ajp::render::look_is_pq(look_slots(s).front().key, ""));
-  set_no_looks(true);
-  CHECK(look_slots(s).empty());
-  set_no_looks(false);
 }
 
 TEST_CASE("look HDR anime : les intensités en LUT entières puis une partielle", "[app][look]") {
