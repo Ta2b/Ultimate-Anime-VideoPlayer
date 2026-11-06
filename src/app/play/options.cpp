@@ -153,13 +153,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.anime_pure = true;
     } else if (arg == "--hdr-contract-v2") {
       // Le contrat d'écran (pic et blanc lus chez le système) règle déjà la sortie par défaut : même rendu.
-    } else if (arg == "--hdr-contract-v2-curve") {
-      options.hdr_contract_v2 = true;
-    } else if (arg == "--no-hdr-metadata") {
-      options.kde_sdr_nits.reset();
-      options.kde_sdr_auto = false;
-    } else if (arg == "--hdr-metadata=off") {
-      options.hdr_metadata_off = true;
+    } else if (arg == "--no-hdr-metadata" || arg == "--hdr-metadata=off") {
       options.kde_sdr_nits.reset();
       options.kde_sdr_auto = false;
     } else if (arg == "--hdr-metadata" || arg.starts_with("--hdr-metadata=")) {
@@ -184,10 +178,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.grade_deband = true;
     } else if (arg == "--skin-mask") {
       options.skin_mask = true;
-    } else if (arg == "--grade-ring" || arg == "--grade-ring=on") {
-      options.grade_ring = true;
-    } else if (arg == "--grade-ring=off") {
-      options.grade_ring = false;
     } else if (arg == "--fast-steady") {
       options.fast_steady = true;
     } else if (arg == "--smooth-drawings") {
@@ -505,8 +495,6 @@ std::string play_usage() {
       "                         de la pré-analyse décident, RIFE quand ils ne couvrent pas la paire)\n"
       "  --hdr-contract-v2      le rendu par défaut : le pic et le blanc de l'écran lus chez le système\n"
       "                         règlent la compression du grade et les métadonnées\n"
-      "  --hdr-contract-v2-curve  essai : courbe par plan du contrat v2, métadonnées exactes du\n"
-      "                         contrat, look ver9-couleur.cube (--hdr-metadata=off : rien d'annoncé)\n"
       "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
       "                         coût propre de chaque moteur\n"
       "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
@@ -524,8 +512,6 @@ std::string play_usage() {
       "                   peps de --hdr-anime : contraste, saturation, éclats, 0 à 200 % (100 : tel quel)\n"
       "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
-      "  --grade-ring[=off]     le grade fait par CUDA dans l'anneau, montré tel quel (par défaut) ; =off :\n"
-      "                         le grade en shader à l'écran\n"
       "  --fast-steady          essai : mode Rapide à pas constant, N images par source fixe dans un plan\n"
       "  --smooth-drawings      essai : un dessin tenu deux images se fond en un mouvement (RIFE mouvement)\n"
       "  --ring-watcher         un thread attend l'écriture de l'anneau et réveille l'affichage (défaut ;\n"

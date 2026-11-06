@@ -84,7 +84,6 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
 
 namespace {
 
-std::atomic<bool> contract_v2_looks{false};
 std::atomic<bool> no_looks{false};
 std::atomic<bool> clean_looks_on{false};
 
@@ -103,10 +102,6 @@ void set_clean_looks(bool on) {
 
 bool clean_looks() {
   return clean_looks_on.load(std::memory_order_relaxed);
-}
-
-void set_contract_v2_looks(bool on) {
-  contract_v2_looks.store(on, std::memory_order_relaxed);
 }
 
 void set_no_looks(bool on) {
@@ -165,18 +160,11 @@ std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
 
 std::vector<LookLayer> look_slots(const PlaySettings& s) {
   if (no_looks.load(std::memory_order_relaxed)) return {};
-  if (contract_v2_looks.load(std::memory_order_relaxed))
-    return {LookLayer{std::string(kContractV2Look), 1.0}};
   return {LookLayer{anime_look_key(s.look_contrast, s.look_highlight), 1.0}};
 }
 
 std::vector<LookLayer> stack_slots(const PlaySettings& s) {
-  std::vector<LookLayer> slots = stack_of(s);
-  if (contract_v2_looks.load(std::memory_order_relaxed)) {
-    static const std::vector<LookLayer> kDefault = stack_of(PlaySettings{});
-    if (slots == kDefault) return {LookLayer{std::string(kContractV2Look), 1.0}};
-  }
-  return slots;
+  return stack_of(s);
 }
 
 bool same_look_files(const PlaySettings& a, const PlaySettings& b) {

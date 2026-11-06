@@ -54,16 +54,10 @@ class Grade {
   // Dans l'ordre d'exécution : la passe du grade (ses trois passes dans un hook), le look, puis le vrai noir.
   std::span<const pl_hook* const> hooks() const;
   // La valeur posée d'un //!PARAM de la passe du grade (après set_params, set_video_fps, set_kwin_match),
-  // nullopt s'il n'y est pas : le grade de l'anneau (kernels/spec/grade.h) en reprend les valeurs.
+  // nullopt s'il n'y est pas.
   std::optional<float> param(std::string_view name) const;
   // La pile de LUT composée que lit le hook (look_mix à 1, 65 points), nullptr sans look actif.
   const CubeLut* look_stack() const;
-  // Ce que param et look_stack rendraient après set_params(params) et set_kwin_match(kwin), sans rien
-  // changer aux hooks : le grade de l'anneau poste une version d'avance, pour des images que l'écran n'a pas
-  // encore (la passe à l'écran garde les siens). look_stack_for : nullopt sans look actif.
-  std::optional<float> param_for(std::string_view name, const GradeParams& params,
-                                 std::optional<KwinMatch> kwin) const;
-  std::optional<CubeLut> look_stack_for(const GradeParams& params) const;
   // Faux : le masque peau est coupé (sans --skin-mask).
   bool skin_mask() const;
   // La mire d'étalonnage, qui remplace l'image par des patchs en luminance absolue (PQ).

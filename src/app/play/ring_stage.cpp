@@ -184,7 +184,6 @@ void RingStage::emit(const ThreadReport& report) {
                            .repeated = produced->repeated,
                            .uninterpolated = produced->uninterpolated || gap_,
                            .debanded = produced->debanded,
-                           .grade = produced->grade,
                            .epoch = frame.epoch,
                            .ready_value = ready,
                            .submitted_us = submitted};

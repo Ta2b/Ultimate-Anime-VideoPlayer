@@ -180,8 +180,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->info("chaîne de play.toml reprise dans le profil {}", profiles.active);
   }
   set_no_looks(options.no_looks);
-  set_clean_looks(options.clean_looks);            // audit F1 : grain et paliers non étirés par la pile
-  set_contract_v2_looks(options.hdr_contract_v2);  // 8.4 : ver9-couleur.cube à la place de la pile par défaut
+  set_clean_looks(options.clean_looks);  // audit F1 : grain et paliers non étirés par la pile
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -193,15 +192,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .offscreen_width = options.window_width,
       .offscreen_height = options.window_height,
       .hdr = !options.sdr,
-      .kde_sdr_nits = options.hdr_contract_v2 ? std::nullopt : options.kde_sdr_nits,
-      .kde_sdr_auto = options.kde_sdr_auto && !options.hdr_contract_v2,
-      .contract_v2 = options.hdr_contract_v2,
-      .metadata_off = options.hdr_metadata_off,
+      .kde_sdr_nits = options.kde_sdr_nits,
+      .kde_sdr_auto = options.kde_sdr_auto,
       .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
       .allow_software = options.software_gpu,
       .grade_deband = options.grade_deband,
       .skin_mask = options.skin_mask,
-      .grade_ring = options.grade_ring,
       .present = options.present,
       .shader_cache = paths.data / "shaders.cache",
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")

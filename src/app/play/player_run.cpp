@@ -144,7 +144,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                   settings.hdr_native && hdr_out ? "HDR adaptatif · " : "", c.span_label());
   log->info("{} : {}", options.file.string(), label_text);
   auto live = std::make_shared<LiveSettings>();
-  p.screen.set_ring_live(live);  // --grade-ring : l'écran y poste les versions du grade
   live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
@@ -358,8 +357,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .source_hdr = source_hdr,
       .kernels = c.backend ? c.backend->kernels() : nullptr,
       .adaptive_log = {.path = settings_dir / "adaptive-log.tsv"},
-      .learn =
-          LearnTrack{.log = settings_dir / "adaptive-learning.tsv", .contract_v2 = p.options.hdr_contract_v2},
+      .learn = LearnTrack{.log = settings_dir / "adaptive-learning.tsv"},
       .shots = p.shots,
       .shot_cuts = p.options.shot_cuts,
       .anime_shots = p.options.anime_shots};

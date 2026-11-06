@@ -1,9 +1,6 @@
 // Le look du contrat v2 (chantier 8.4) : ver9-couleur.cube remplace la pile par défaut, et ses gris restent
 // gris (la courbe est celle du grade, tools/look/split_hdr_lut.py).
-#include <cmath>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,7 +14,7 @@
 
 using namespace ajp::app::play;
 
-TEST_CASE("le look est la recette HDR anime ; v2 : ver9-couleur.cube ; --no-looks : rien", "[app][look]") {
+TEST_CASE("le look est la recette HDR anime ; --no-looks : rien", "[app][look]") {
   PlaySettings s;
   REQUIRE(look_slots(s).size() == 1);
   CHECK(look_slots(s).front().key == anime_look_key(0, 0));
@@ -25,9 +22,6 @@ TEST_CASE("le look est la recette HDR anime ; v2 : ver9-couleur.cube ; --no-look
   s.look_highlight = 25;
   CHECK(look_slots(s).front().key == anime_look_key(-40, 25));
   CHECK(ajp::render::look_is_pq(look_slots(s).front().key, ""));
-  set_contract_v2_looks(true);
-  CHECK(look_slots(s).front().key == kContractV2Look);
-  set_contract_v2_looks(false);
   set_no_looks(true);
   CHECK(look_slots(s).empty());
   set_no_looks(false);
@@ -65,22 +59,4 @@ TEST_CASE("look HDR anime à 0 et 0 : la pile de Tatoub du 04/11", "[app][look]"
   const ajp::render::CubeLut direct = ajp::render::compose_luts(pointers, mixes);
   REQUIRE(direct.rgb.size() == recipe->rgb.size());
   CHECK(direct.rgb == recipe->rgb);
-}
-
-TEST_CASE("métadonnées : la pile SDR ne change pas les gris de plus de 2 %", "[app][look]") {
-  std::ifstream file(std::string(AJP_APP_SOURCE_DIR) + "/../../data/luts-v2/ver9-couleur.cube");
-  REQUIRE(file);
-  const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-  const auto lut = ajp::render::parse_cube(text);
-  REQUIRE(lut);
-  const int n = lut->size;
-  for (int i = 1; i < n; ++i) {
-    const double in = static_cast<double>(i) / (n - 1);
-    const std::size_t at = 3 * static_cast<std::size_t>(i + n * i + n * n * i);
-    for (int c = 0; c < 3; ++c) {
-      // En lumière (gamma 2,4 du domaine SDR) : au plus 2 % d'écart sur chaque composante.
-      const double ratio = std::pow(lut->rgb[at + static_cast<std::size_t>(c)] / in, 2.4);
-      CHECK(std::abs(ratio - 1.0) <= 0.02);
-    }
-  }
 }

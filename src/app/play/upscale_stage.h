@@ -299,9 +299,6 @@ class UpscaleStage final : public RingStage {
   std::uint64_t spans_reused_ = 0;
   // SPAN (s'il est là) puis l'écriture dans le slot.
   std::expected<void, Refusal> finish(const gpu::Tensor& rgb, std::uint32_t slot, const gpu::RingWrite& sync);
-  // Le grade de l'image écrite à pts_us (RingWrite::grade) : la version que main a postée pour elle, confiée
-  // au backend à sa première image ; version 0 hors du grade de l'anneau.
-  std::expected<gpu::GradeSlot, Refusal> grade_slot(std::int64_t pts_us, std::uint32_t epoch);
   // L'écriture d'une image à la taille du ring.
   std::expected<void, Refusal> write_slot(const gpu::Tensor& image, std::uint32_t slot,
                                           const gpu::RingWrite& sync);
@@ -340,9 +337,6 @@ class UpscaleStage final : public RingStage {
   // deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
   bool deband_op_ = true;
   bool debanded_ = false;  // l'image en cours a été débandée
-  // Les versions du grade confiées au backend (KernelOps::set_grade), dans l'ordre où il les garde.
-  std::array<std::uint32_t, gpu::kGradeOrders> grades_sent_{};
-  std::size_t grade_sent_next_ = 0;
   bool wants_deband() const {
     return deband_op_ && setup_.engine != nullptr && !drba() && setup_.live && setup_.live->deband_source();
   }
@@ -549,8 +543,6 @@ class UpscaleStage final : public RingStage {
   std::uint64_t interpolated_ = 0;
   std::uint64_t cuts_ = 0;
   std::uint64_t cut_disagreements_ = 0;
-  std::int64_t graded_pts_ = kNoPts;  // la dernière image gradée dans l'anneau (début de plan, 8.7)
-  std::uint32_t graded_epoch_ = 0;    // 8.7 : la mesure de RIFE contre les plans de la pré-analyse
   std::uint64_t held_ = 0;
   bool drba_held_ =
       false;  // l'instant en cours de production est une copie d'un côté tenu (Output::repeated)

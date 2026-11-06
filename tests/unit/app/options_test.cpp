@@ -59,13 +59,6 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(ten);
   CHECK(ten->ring_rgb10a2);
   CHECK_FALSE(parse({"épisode.mkv", "--no-ring-rgb10a2"})->ring_rgb10a2);
-  CHECK(options->grade_ring);  // par défaut depuis le 04/11
-  const auto ring = parse({"épisode.mkv", "--grade-ring"});
-  REQUIRE(ring);
-  CHECK(ring->grade_ring);
-  const auto ring_off = parse({"épisode.mkv", "--grade-ring=off"});
-  REQUIRE(ring_off);
-  CHECK_FALSE(ring_off->grade_ring);
   CHECK_FALSE(options->fast_steady);
   const auto steady = parse({"épisode.mkv", "--fast-steady"});
   REQUIRE(steady);
@@ -109,16 +102,9 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   CHECK(parse({"épisode.mkv", "--clean-looks"})->clean_looks);
   CHECK(options->anime_shots);  // défaut ; --no-anime-shots le coupe seul (audit F3)
   CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
-  CHECK_FALSE(options->hdr_contract_v2);
   const auto same = parse({"épisode.mkv", "--hdr-contract-v2"});
   REQUIRE(same);  // le rendu par défaut, exactement
-  CHECK_FALSE(same->hdr_contract_v2);
   CHECK(same->kde_sdr_auto == options->kde_sdr_auto);
-  const auto v2 = parse({"épisode.mkv", "--hdr-contract-v2-curve", "--hdr-metadata=off"});
-  REQUIRE(v2);
-  CHECK(v2->hdr_contract_v2);
-  CHECK(v2->hdr_metadata_off);
-  CHECK_FALSE(v2->kde_sdr_nits);
   CHECK(options->present == PresentWanted::Wait);
   CHECK(parse({"épisode.mkv", "--no-present"})->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});

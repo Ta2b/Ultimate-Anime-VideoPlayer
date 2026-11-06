@@ -426,34 +426,6 @@ std::optional<float> Grade::param(std::string_view name) const {
   return std::nullopt;
 }
 
-std::optional<float> Grade::param_for(std::string_view name, const GradeParams& params,
-                                      std::optional<KwinMatch> kwin) const {
-  const pl_var_data* data = find_param(*impl_->grade.hook, name);
-  if (data == nullptr) return std::nullopt;
-  if (name == "kwin_on") return kwin ? 1.0F : 0.0F;
-  if (name == "kwin_ref")
-    return kwin ? static_cast<float>(std::clamp(kwin->reference, 50.0, 1000.0)) : data->f;
-  if (name == "kwin_peak") return kwin ? static_cast<float>(std::clamp(kwin->peak, 100.0, 10000.0)) : data->f;
-  for (const auto& [bound, field] : impl_->grade.params) {
-    if (bound == data) return static_cast<float>(params.*field);
-  }
-  return data->f;
-}
-
-std::optional<CubeLut> Grade::look_stack_for(const GradeParams& params) const {
-  std::array<double, kLookSlots> mixes{};
-  std::array<const CubeLut*, kLookSlots> luts{};
-  bool active = false;
-  for (std::size_t i = 0; i < kLookSlots; ++i) {
-    luts[i] = impl_->sources[i].has_value() ? &impl_->sources[i].value() : nullptr;
-    mixes[i] = luts[i] != nullptr ? params.*kLookMixes[i] : 0.0;
-    active = active || mixes[i] > 0.0;
-  }
-  if (!active) return std::nullopt;
-  if (impl_->composed && impl_->composed_for == mixes) return impl_->stack;
-  return compose_luts(luts, mixes);
-}
-
 const CubeLut* Grade::look_stack() const {
   return impl_->composed ? &impl_->stack : nullptr;
 }
