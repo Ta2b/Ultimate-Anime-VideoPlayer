@@ -151,12 +151,6 @@ struct PlayOptions {
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;
-  // --legacy-grade : le grade d'avant en neuf passes, qui mesure la scène lui-même (render::GradeBody),
-  // gardé une version pour comparer.
-  bool legacy_grade = false;
-  // --legacy-grade=split : le grade actuel, le look dans sa passe à part (render::GradeBody::FusedSplit),
-  // pour l'A/B du chantier 2a.
-  bool split_look = false;
   // --grade-ring : le grade exact fait dans l'anneau par le backend CUDA (chantier 2c,
   // docs/adr/0009-grade-dans-l-anneau.md), l'écran montrant les images gradées sans hooks ; --grade-ring=off
   // : le grade reste en shader à l'écran. Allumé par défaut depuis le 04/11 (à l'œil de Tatoub, supérieur au
@@ -187,12 +181,6 @@ struct PlayOptions {
   // timing ne rendent aucun retour sur NVIDIA 615 / KDE Wayland (séance du 04/11 : 0 revenue) ; --no-present
   // ou --present=open : la présentation d'avant.
   PresentWanted present = PresentWanted::Wait;
-  // --hdr-anime : la méthode « HDR anime » (render::GradeBody::Anime), essai ; le grade actuel reste le
-  // défaut.
-  bool hdr_anime = true;  // par défaut depuis le 04/11 ; --classic-grade : le grade d'avant (Fused)
-  // --anime-guided : essai (méga plan A3), --hdr-anime avec la carte locale guidée par le pixel (le halo ne
-  // déborde plus sur la surface voisine) ; implique --hdr-anime.
-  bool anime_guided = true;  // par défaut depuis le 04/11
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
   // : le peps de --hdr-anime et --anime-guided, à régler à l'œil (render::GradeSettings::anime_contrast…).
   // --no-looks : la lecture sans la pile de LUT ; --anime-pure : la méthode HDR anime sans les noirs profonds

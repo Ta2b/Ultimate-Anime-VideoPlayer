@@ -184,79 +184,6 @@ std::string look_source(std::size_t slots = kLookSlots) {
   return text;
 }
 
-// Le look lu dans la passe du grade (GradeBody::Fused) : ses //!PARAM absents de `grade_text`, et ses
-// fonctions jusqu'à ajl_look, pour un seul emplacement (la pile composée).
-struct FusedLook {
-  std::string params;
-  std::string funcs;
-};
-FusedLook fused_look(std::string_view grade_text) {
-  const std::string look = look_source(1);
-  const std::size_t hook_at = look.find("//!HOOK OUTPUT");
-  FusedLook out;
-  constexpr std::string_view kParam = "//!PARAM ";
-  std::size_t at = look.find(kParam);
-  while (at != std::string::npos && at < hook_at) {
-    const std::size_t next = look.find(kParam, at + 1);
-    const std::size_t end = next == std::string::npos ? hook_at : std::min(next, hook_at);
-    const std::string block = look.substr(at, end - at);
-    const std::string name = block.substr(kParam.size(), block.find('\n') - kParam.size());
-    if (grade_text.find(std::string(kParam) + name + "\n") == std::string_view::npos) out.params += block;
-    at = next;
-  }
-  const std::size_t body = look.find('\n', look.find("//!DESC", hook_at)) + 1;
-  out.funcs = look.substr(body, look.find("//@LOOK_END@") - body);
-  return out;
-}
-
-// Le corps fusionné avec ses fonctions (anime-hdr-funcs.glsl) à la place de la marque //@AJG_FUNCS@ ; `look`
-// : le look lu dans la même passe, après l'encodage (GradeBody::Fused), sinon sa passe à part.
-// Le texte de anime-hdr-black.hook entre `from` et la marque `end` : les fonctions du vrai noir ou de KWin.
-std::string black_funcs(std::string_view from, std::string_view end) {
-  const std::string_view text = shaders::anime_hdr_black;
-  const std::size_t at = text.find(from);
-  return std::string(text.substr(at, text.find(end) - at));
-}
-
-std::string with_funcs(std::string_view body, const FusedLook* look) {
-  std::string text(body);
-  const bool fused = look != nullptr;
-  // GradeBody::FusedSplit : ni le max local du vrai noir dans le grade, ni rien de ce qu'il lit.
-  if (!fused) {
-    constexpr std::string_view kBegin = "//@AJG_LOCALMAX_BEGIN@";
-    constexpr std::string_view kEnd = "//@AJG_LOCALMAX_END@";
-    const std::size_t from = text.find(kBegin);
-    const std::size_t to = text.find(kEnd);
-    if (from != std::string::npos && to != std::string::npos) text.erase(from, to + kEnd.size() - from);
-  }
-  const auto replace = [&text](std::string_view mark, std::string_view with) {
-    for (std::size_t at = text.find(mark); at != std::string::npos; at = text.find(mark, at + with.size()))
-      text.replace(at, mark.size(), with);
-  };
-  replace("//@AJG_FUNCS@", shaders::anime_hdr_funcs);
-  replace("//@AJG_LOOK_BINDS@", fused ? "//!BIND AJG_LUT" : "");
-  replace("//@AJG_LOOK_FUNCS@", fused ? look->funcs : std::string());
-  // La passe du grade lit aussi le max local du vrai noir.
-  replace("//@AJG_GRADE_BINDS@", fused ? "//!BIND AJG_LUT\n//!BIND AJG_LOCALMAX" : "");
-  replace("//@AJG_BLACK_FUNCS@", fused ? black_funcs("float ajb_pq_to_nits", "//@BLACK_END@") +
-                                             black_funcs("const mat3 AJK_TO_LMS", "//@KWIN_END@")
-                                       : std::string());
-  replace("//@AJG_LOOK@", fused ? "if (look_mix > 0.0) px.rgb = ajl_look(px.rgb);" : "");
-  replace("//@AJG_LOOK_E@", fused ? "if (look_mix > 0.0) e = ajl_look(e);" : "");
-  replace("//@AJG_BLACK@", fused ? "if (black_hi > black_lo) px.rgb = ajb_black(px.rgb, "
-                                   "AJG_LOCALMAX_tex(AJG_LOCALMAX_pos).x);\n    if (kwin_on > 0.5) px.rgb = "
-                                   "ajk_kwin(px.rgb);"
-                                 : "");
-  return text;
-}
-
-// Les //!PARAM du look lus dans la passe du grade fusionné (l'emplacement unique de la pile composée).
-constexpr std::array kFusedLookParams = {
-    ParamBinding{"look_mix", &GradeParams::look_mix},
-    ParamBinding{"look_white", &GradeParams::look_white},
-    ParamBinding{"look_pq", &GradeParams::look_pq},
-};
-
 constexpr std::array kBlackParams = {
     ParamBinding{"black_lo", &GradeParams::black_lo}, ParamBinding{"black_hi", &GradeParams::black_hi},
     ParamBinding{"sdr_out", &GradeParams::sdr_out},   ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
@@ -335,28 +262,10 @@ std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu,
 
 }  // namespace
 
-// Le hook du grade fusionné avec la texture du look (la pile composée, ou l'identité) derrière son texte.
-std::expected<ParsedHook, Refusal> parse_fused(pl_gpu gpu, const std::string& text, const CubeLut& lut) {
-  std::string full = text;
-  full += '\n';
-  full += lut_texture_block(lut, "AJG_LUT");
-  auto parsed = parse(gpu, full, "anime-hdr-fused", kGradeParams, kFusedLookParams);
-  if (!parsed) return parsed;
-  if (find_param(*parsed->hook, "look_size") == nullptr) {
-    pl_mpv_user_shader_destroy(&parsed->hook);
-    return std::unexpected(
-        Refusal{RefusalCode::FieldMissing, "//!PARAM look_size absent de anime-hdr-fused"});
-  }
-  return parsed;
-}
-
 struct Grade::Impl {
-  GradeBody body = GradeBody::Fused;
-  std::string grade_text;  // Fused : le texte du grade sans la texture du look, pour le refaire avec la pile
   float video_fps = 24.0F;
   std::optional<Grade::KwinMatch> kwin;  // set_kwin_match, réécrit dans un hook refait
   void put_kwin();
-  std::size_t hook_count = 3;
   ParsedHook grade;
   ParsedHook look;
   ParsedHook black;
@@ -409,21 +318,6 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   stack = active ? compose_luts(luts, mixes) : CubeLut{};
   std::array<const CubeLut*, kLookSlots> slots{};
   if (active) slots[0] = &stack;
-  if (body == GradeBody::Fused) {
-    // La pile se lit dans la passe du grade : son hook est refait avec la nouvelle texture.
-    auto rebuilt = parse_fused(gpu, grade_text, active ? stack : neutral_lut());
-    if (!rebuilt) {
-      composed = false;
-      return;
-    }
-    pl_mpv_user_shader_destroy(&grade.hook);
-    grade = std::move(*rebuilt);
-    hooks[0] = grade.hook;
-    if (pl_var_data* data = find_param(*grade.hook, "video_fps")) data->f = video_fps;
-    put_kwin();
-    composed = active;
-    return;
-  }
   auto rebuilt = parse_look(gpu, slots);
   if (!rebuilt) {  // la même texture se lisait déjà à set_looks : improbable ; l'image passe alors sans look
     composed = false;
@@ -435,49 +329,22 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   composed = active;
 }
 
-std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool skin_mask) {
+std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, bool skin_mask) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
-  impl->body = body;
   impl->skin_mask = skin_mask;
-  const bool legacy = body == GradeBody::Legacy;
+  // Les paramètres, la mise en PQ d'une sortie SDR, puis les trois passes (carte locale, zone, passe anime).
   std::string text(shaders::anime_hdr_params);
-  const bool anime = body == GradeBody::Anime || body == GradeBody::AnimeGuided;
-  if (anime) {
-    // Les deux premières passes (carte locale, zone) du grade en trois passes, puis la passe « anime ».
-    const std::string_view fused = shaders::anime_hdr_fused;
-    text += kSdrToPq;
-    text += fused.substr(0, fused.find("//@AJG_LOCALMAX_BEGIN@"));
-    text += shaders::anime_hdr_anime;
-    if (body == GradeBody::AnimeGuided) {
-      constexpr std::string_view kLocal = "float an_local(float y_pq, float plain) {";
-      if (const auto at = text.find(kLocal); at != std::string::npos)
-        text.insert(
-            at + kLocal.size(),
-            "\n    return an_local_guided(y_pq, plain);\n}\nfloat an_local_plain(float y_pq, float plain) {");
-    }
-  } else if (legacy) {
-    text += shaders::anime_hdr_grade;
-  } else if (body == GradeBody::Fused) {
-    const FusedLook look = fused_look(text);
-    text += look.params;
-    text += with_funcs(shaders::anime_hdr_fused, &look);
-  } else {
-    text += with_funcs(shaders::anime_hdr_fused, nullptr);
-  }
+  text += kSdrToPq;
+  text += shaders::anime_hdr_anime;
   if (!skin_mask) {
     // Le masque peau (damier sur le grain d'une peau pâle, mesuré à l'écran) est coupé sauf --skin-mask.
     constexpr std::string_view kHead = "float skin_area(vec2 pos) {";
     if (const auto at = text.find(kHead); at != std::string::npos)
       text.insert(at + kHead.size(), "\n    return 0.0;\n}\nfloat skin_area_off(vec2 pos) {");
   }
-  auto grade =
-      body == GradeBody::Fused
-          ? parse_fused(gpu, text, neutral_lut())
-          : parse(gpu, text, legacy ? "anime-hdr-grade" : (anime ? "anime-hdr-anime" : "anime-hdr-fused"),
-                  kGradeParams);
+  auto grade = parse(gpu, text, "anime-hdr-anime", kGradeParams);
   if (!grade) return std::unexpected(grade.error());
-  if (body == GradeBody::Fused) impl->grade_text = std::move(text);
   impl->grade = std::move(*grade);
   auto look = parse_look(gpu, {});
   if (!look) return std::unexpected(look.error());
@@ -488,14 +355,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu, GradeBody body, bool ski
   auto calibration = parse(gpu, shaders::anime_hdr_calibration, "anime-hdr-calibration.hook", {});
   if (!calibration) return std::unexpected(calibration.error());
   impl->calibration = calibration->hook;
-  // Fused : le look, le vrai noir et KWin sont dans la passe du grade, leurs passes à part ne sont plus
-  // posées.
-  if (body == GradeBody::Fused) {
-    impl->hooks = {impl->grade.hook, nullptr, nullptr};
-    impl->hook_count = 1;
-  } else {
-    impl->hooks = {impl->grade.hook, impl->look.hook, impl->black.hook};
-  }
+  impl->hooks = {impl->grade.hook, impl->look.hook, impl->black.hook};
   Grade out(std::move(impl));
   out.set_params(GradeParams{});
   return out;
@@ -530,7 +390,7 @@ void Grade::set_params(const GradeParams& params) {
   }
   // Le hook ne lit que la pile composée, en premier emplacement, à pleine intensité (les intensités y sont
   // déjà) ; les autres emplacements restent à 0, sautés.
-  const pl_hook& look_hook = impl_->body == GradeBody::Fused ? *impl_->grade.hook : *impl_->look.hook;
+  const pl_hook& look_hook = *impl_->look.hook;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
     const bool stack = i == 0 && impl_->composed;
     if (pl_var_data* size = find_param(look_hook, slot_name("look_size", i)))
@@ -574,7 +434,6 @@ std::optional<float> Grade::param_for(std::string_view name, const GradeParams& 
   if (name == "kwin_ref")
     return kwin ? static_cast<float>(std::clamp(kwin->reference, 50.0, 1000.0)) : data->f;
   if (name == "kwin_peak") return kwin ? static_cast<float>(std::clamp(kwin->peak, 100.0, 10000.0)) : data->f;
-  if (impl_->body == GradeBody::Fused && name == "look_mix") return look_stack_for(params) ? 1.0F : 0.0F;
   for (const auto& [bound, field] : impl_->grade.params) {
     if (bound == data) return static_cast<float>(params.*field);
   }
@@ -608,7 +467,7 @@ const GradeParams& Grade::params() const {
 }
 
 std::span<const pl_hook* const> Grade::hooks() const {
-  return std::span<const pl_hook* const>(impl_->hooks.data(), impl_->hook_count);
+  return std::span<const pl_hook* const>(impl_->hooks.data(), impl_->hooks.size());
 }
 
 const pl_hook* Grade::calibration() const {

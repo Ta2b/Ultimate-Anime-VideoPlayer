@@ -59,11 +59,6 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(ten);
   CHECK(ten->ring_rgb10a2);
   CHECK_FALSE(parse({"épisode.mkv", "--no-ring-rgb10a2"})->ring_rgb10a2);
-  CHECK_FALSE(options->split_look);
-  const auto split = parse({"épisode.mkv", "--legacy-grade=split"});
-  REQUIRE(split);
-  CHECK(split->split_look);
-  CHECK_FALSE(split->legacy_grade);
   CHECK(options->grade_ring);  // par défaut depuis le 04/11
   const auto ring = parse({"épisode.mkv", "--grade-ring"});
   REQUIRE(ring);
@@ -114,7 +109,6 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   CHECK(parse({"épisode.mkv", "--clean-looks"})->clean_looks);
   CHECK(options->anime_shots);  // défaut ; --no-anime-shots le coupe seul (audit F3)
   CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
-  CHECK(parse({"épisode.mkv", "--no-anime-shots"})->anime_guided == options->anime_guided);
   CHECK_FALSE(options->hdr_contract_v2);
   const auto same = parse({"épisode.mkv", "--hdr-contract-v2"});
   REQUIRE(same);  // le rendu par défaut, exactement

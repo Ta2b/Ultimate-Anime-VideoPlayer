@@ -18,22 +18,11 @@
 
 namespace ajp::render {
 
-// Le corps du grade : en trois passes, la scène donnée par le lecteur (GradeParams::fs_apl, fs_bright,
-// sh_*) ; ou celui d'avant en neuf passes, qui mesure la scène lui-même (--legacy-grade, une version).
-// Ou la méthode « HDR anime » (--hdr-anime) : surfaces ancrées, seuls les émetteurs montent, appliquée par un
-// gain lisse (anime-hdr-anime) ; elle réutilise les deux premières passes du grade en trois passes.
-// Fused : le grade en trois passes, le look lu dans la passe du grade ; FusedSplit : les mêmes passes, le
-// look dans sa passe à part (la chaîne d'avant 2.2, --legacy-grade=split) ; Legacy : neuf passes ; Anime :
-// --hdr-anime.
-// AnimeGuided : Anime, la carte locale lue par un sur-échantillonnage guidé par le pixel (méga plan A3,
-// --anime-guided).
-enum class GradeBody : std::uint8_t { Fused, Legacy, Anime, FusedSplit, AnimeGuided };
-
 class Grade {
  public:
   // VendorCallFailed : un hook ne se lit pas ; FieldMissing : un //!PARAM attendu manque.
-  static std::expected<Grade, Refusal> create(pl_gpu gpu, GradeBody body = GradeBody::Fused,
-                                              bool skin_mask = true);
+  // Le grade HDR du lecteur, en trois passes sur OUTPUT (anime-hdr-anime), puis le look et le vrai noir.
+  static std::expected<Grade, Refusal> create(pl_gpu gpu, bool skin_mask = true);
 
   Grade(Grade&&) noexcept;
   Grade& operator=(Grade&&) noexcept;
@@ -62,8 +51,7 @@ class Grade {
   // de LUT ; les intensités passent par set_params. Refus si libplacebo ne lit pas la texture.
   std::expected<void, Refusal> set_looks(const std::array<const CubeLut*, kLookSlots>& luts);
 
-  // Dans l'ordre d'exécution : les passes du grade (trois, ou neuf pour celui d'avant), le look, puis le vrai
-  // noir.
+  // Dans l'ordre d'exécution : la passe du grade (ses trois passes dans un hook), le look, puis le vrai noir.
   std::span<const pl_hook* const> hooks() const;
   // La valeur posée d'un //!PARAM de la passe du grade (après set_params, set_video_fps, set_kwin_match),
   // nullopt s'il n'y est pas : le grade de l'anneau (kernels/spec/grade.h) en reprend les valeurs.

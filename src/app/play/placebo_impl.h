@@ -160,12 +160,11 @@ struct PlaceboScreen::Impl {
   std::unique_ptr<VulkanShare> share;  // vk prêté à FFmpeg ; détruit avant lui
   pl_swapchain swapchain = nullptr;
   pl_renderer renderer = nullptr;
-  pl_cache shader_cache = nullptr;                          // ScreenOptions::shader_cache (placebo_open.cpp)
-  render::GradeBody grade_body = render::GradeBody::Fused;  // ScreenOptions::legacy_grade
-  bool skin_mask = false;                                   // ScreenOptions::skin_mask
-  bool grade_deband = false;                                // ScreenOptions::grade_deband
-  bool grade_ring = false;                                  // ScreenOptions::grade_ring
-  PresentLevel present_level = PresentLevel::Open;          // ScreenOptions::present (present_level.h)
+  pl_cache shader_cache = nullptr;                  // ScreenOptions::shader_cache (placebo_open.cpp)
+  bool skin_mask = false;                           // ScreenOptions::skin_mask
+  bool grade_deband = false;                        // ScreenOptions::grade_deband
+  bool grade_ring = false;                          // ScreenOptions::grade_ring
+  PresentLevel present_level = PresentLevel::Open;  // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
   std::unique_ptr<PresentFeedback> feedback;
   std::optional<render::DisplayContract> contract;  // 8.2 : le contrat d'écran relu, servi au contrat v2

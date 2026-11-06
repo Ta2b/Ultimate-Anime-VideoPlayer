@@ -4,7 +4,7 @@
 //!BIND AJG_AREAT
 //!DESC AnimeJaNai HDR anime - surfaces ancrees, seuls les emetteurs montent
 
-// Methode « HDR anime » (--hdr-anime), a cote du grade actuel : aucune decision pixel par pixel.
+// Le grade HDR du lecteur (methode « HDR anime ») : aucune decision pixel par pixel.
 //  - Surfaces : un relevement fixe an_lift (le meme dans tous les plans) : une peau, un mur, une chemise
 //    gardent leur niveau d'un plan a l'autre.
 //  - Emetteurs : une carte E douce (0 a 1) qui ne depend que de cartes floues (moyenne 8x8 et zone de ~2,5 %
@@ -53,10 +53,10 @@ float skin_like(vec3 c) {
            smoothstep(0.08, 0.12, sat) * (1.0 - smoothstep(0.60, 0.70, sat));
 }
 
-// Carte locale guidee (mega plan A3, --anime-guided) : la carte 1/8 relevee par un sur-echantillonnage
+// Carte locale guidee : la carte 1/8 relevee par un sur-echantillonnage
 // bilateral joint, guide par le pixel. Un pixel sombre au bord d'une lumiere lit les blocs sombres, un pixel
 // clair les blocs clairs : le halo ne deborde plus d'un demi-bloc sur la surface voisine.
-float an_local_guided(float y_pq, float plain) {
+float an_local(float y_pq, float plain) {
     vec2 t = AJG_LOCAL_pos * AJG_LOCAL_size - 0.5;
     vec2 base = floor(t);
     vec2 f = t - base;
@@ -75,11 +75,6 @@ float an_local_guided(float y_pq, float plain) {
     }
     return wsum > 0.0 ? acc / wsum : plain;
 }
-// La carte locale au pixel : bilineaire (defaut).
-float an_local(float y_pq, float plain) {
-    return plain;
-}
-
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
     if (sdr_out > 0.5) return px;
