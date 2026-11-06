@@ -255,6 +255,15 @@ void level_section(PlaySettings& d, const SettingsChoices& choices) {
                "Changing a setting below switches to Custom."));
 }
 
+// Vidéo > Post-traitement : la netteté après SPAN (render/sharpen.h), en direct.
+void sharpness_section(PlaySettings& d) {
+  section(i18n::tr("Sharpness"));
+  ImGui::SliderInt(i18n::tr("Sharpness"), &d.sharpness, limits::kSharpness.lo, limits::kSharpness.hi, "%d %%",
+                   ImGuiSliderFlags_AlwaysClamp);
+  panel::tip(
+      i18n::tr("Crisper line art after upscaling, without halos. 0: untouched. Live, no effect on export."));
+}
+
 // Général > À propos : ce que le lecteur sait de la machine, l'assistant à refaire.
 void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("This machine"));
@@ -461,6 +470,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       if (name == "Post-processing") {
         level_section(draft_, choices);
         image_tab(draft_, choices);
+        sharpness_section(draft_);
         fluidity_tab(draft_, choices);
         if (advanced_) {
           span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);

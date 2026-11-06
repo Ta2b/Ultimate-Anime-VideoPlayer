@@ -295,6 +295,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
   }
   if (const toml::table* picture = section(root, "picture")) {
     reads.push_back(read(*picture, "picture", "deband", s.deband));
+    reads.push_back(read(*picture, "picture", "sharpness", s.sharpness));
     std::string scaler(name(s.final_scaler));
     reads.push_back(read(*picture, "picture", "scaler", scaler));
     bool scaler_known = false;
@@ -467,7 +468,9 @@ std::string format_settings(const PlaySettings& s) {
                                          {"subtitles_2", second.subtitles}});
   }
   root.insert("sync", toml::table{{"display", s.display_sync}, {"video_latency_ms", s.video_latency_ms}});
-  root.insert("picture", toml::table{{"deband", s.deband}, {"scaler", std::string(name(s.final_scaler))}});
+  root.insert("picture", toml::table{{"deband", s.deband},
+                                     {"scaler", std::string(name(s.final_scaler))},
+                                     {"sharpness", s.sharpness}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("interface", toml::table{{"language", s.language}});
   root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});

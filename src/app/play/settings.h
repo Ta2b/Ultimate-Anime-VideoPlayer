@@ -238,6 +238,9 @@ struct PlaySettings {
   // fenêtre, et débandage des aplats et dégradés, sans effet sur l'export ; en direct.
   FinalScaler final_scaler = FinalScaler::Default;
   bool deband = false;
+  // Netteté après SPAN (render/sharpen.h), de 0 à 100 % ; 0 : l'image n'est pas touchée. En direct,
+  // [picture] sharpness de play.toml.
+  int sharpness = 0;
   // À la fin de la vidéo, lire la suivante du dossier (ordre naturel des noms) ; vaut au prochain
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
   // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto
@@ -311,6 +314,7 @@ inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
 inline constexpr std::size_t kLanguagePresets = 2;          // préréglages de langue
 inline constexpr core::Range<int> kTrueHdrPeak{400, 2000};  // ou 0 : automatique
+inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits
 
 // Le facteur d'interpolation des réglages.

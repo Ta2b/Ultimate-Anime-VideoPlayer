@@ -267,12 +267,13 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                   std::format("interpolation.rife : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
                               s.rife_factor_den, limits::kRifeFactor.hi));
   }
-  const std::array<std::expected<void, Refusal>, 5> checks{
+  const std::array<std::expected<void, Refusal>, 6> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
       check("audio.delay_ms", s.audio_delay_ms, limits::kAudioDelayMs),
       check("sync.video_latency_ms", s.video_latency_ms, limits::kVideoLatencyMs),
       check("audio.volume", s.volume, limits::kVolume),
       check("subtitles.scale", s.subtitle_scale, limits::kSubtitleScale),
+      check("picture.sharpness", s.sharpness, limits::kSharpness),
   };
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
@@ -417,6 +418,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.true_hdr_peak = wanted.true_hdr_peak;  // hdr_native reste celui de la sortie (il suit le système)
   s.final_scaler = wanted.final_scaler;
   s.deband = wanted.deband;
+  s.sharpness = wanted.sharpness;
   s.autoplay_next = wanted.autoplay_next;
   s.default_player_dismissed = wanted.default_player_dismissed;
   s.span_prepare_background = wanted.span_prepare_background;

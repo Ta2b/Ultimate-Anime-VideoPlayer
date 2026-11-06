@@ -151,6 +151,12 @@ constexpr std::array kSettingsPages{
     Entry{"GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
           "GMFSS passe en {} (GMFlow en {}, construit la première fois pour cette taille)"},
     Entry{"Smoothness", "Fluidité"},
+    Entry{"Sharpness", "Netteté"},
+    Entry{"Sharpness: {} %", "Netteté : {} %"},
+    Entry{"Crisper line art after upscaling, without halos. 0: untouched. Live, no effect on export.",
+          "Des traits plus nets après l'agrandissement, sans halo. 0 : image intacte. En direct, sans effet "
+          "sur "
+          "l'export."},
     Entry{"Video", "Vidéo"},
     Entry{"Post-processing", "Post-traitement"},
     Entry{"Display", "Affichage"},

@@ -33,6 +33,7 @@
 #include "core/gpu_device.h"
 #include "core/ring.h"
 #include "render/grade.h"
+#include "render/sharpen.h"
 #include "subs/subtitle_frame.h"
 
 namespace ajp::app::play {
@@ -214,6 +215,8 @@ struct PlaceboScreen::Impl {
   void match_kwin();             // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
+  int sharpness = 0;                       // posé par set_finish, 0 à 100 %
+  std::optional<render::Sharpen> sharpen;  // absent si le hook ne se lit pas (dit au journal)
   // Augmenté à chaque changement de ce que le grade applique (app/play/compose_key.h) : paramètres, looks,
   // KWin, couleur de la source, nouvelle scène.
   std::uint64_t grade_serial = 0;

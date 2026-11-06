@@ -193,7 +193,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (std::ranges::any_of(look_slots(settings), [](const LookLayer& l) { return !l.key.empty(); }))
     apply_looks(p.screen, settings, p.paths.engines.parent_path() / "luts");
   p.screen.set_grade(grade_of(settings, auto_peak, {}, {}, source_hdr));
-  p.screen.set_finish(settings.final_scaler, settings.deband);
+  p.screen.set_finish(settings.final_scaler, settings.deband, settings.sharpness);
   session_config.output = output_text(out, settings, source_hdr);
   session_config.display_period_us = display_period_us(out.window());
   const std::int64_t bench_period_us = session_config.display_period_us;

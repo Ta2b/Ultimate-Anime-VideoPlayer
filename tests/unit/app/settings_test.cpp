@@ -85,6 +85,18 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK_FALSE(interp_level(MotionEngine::Gmfss, ""));
 }
 
+TEST_CASE("La netteté se garde dans play.toml, bornée de 0 à 100 %, en direct", "[app][settings]") {
+  PlaySettings s;
+  s.sharpness = 40;
+  const auto back = parse_settings(format_settings(s));
+  REQUIRE(back);
+  CHECK(back->sharpness == 40);
+  CHECK_FALSE(parse_settings("[picture]\nsharpness = 150\n"));
+  CHECK(parse_settings("")->sharpness == 0);
+  const PlaySettings running;
+  CHECK(change_between(running, s, true).cost == ChangeCost::Live);
+}
+
 TEST_CASE("Le HDR suit le système : un écran HDR trop sombre reste en SDR", "[app][settings]") {
   CHECK_FALSE(system_hdr(std::nullopt));  // écran SDR, ou HDR coupé dans Windows
   CHECK_FALSE(system_hdr(300.0));         // se dit HDR, n'en a pas la lumière
