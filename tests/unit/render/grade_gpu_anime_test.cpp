@@ -1,4 +1,4 @@
-// La méthode « HDR anime » (GradeBody::Anime) sur le GPU : les surfaces gardent leur niveau d'un plan à
+// Le grade HDR (méthode « HDR anime ») sur le GPU : les surfaces gardent leur niveau d'un plan à
 // l'autre et leur grain, seuls les émetteurs montent. Mêmes conditions que grade_gpu_test.cpp.
 #include <algorithm>
 #include <array>
@@ -49,7 +49,7 @@ double luma(const Rgb& px) {
 }  // namespace
 
 TEST_CASE("HDR anime : une surface garde son niveau et son grain", "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   for (const double level : {60.0, 160.0, 190.0}) {
@@ -76,7 +76,7 @@ TEST_CASE("HDR anime : une surface garde son niveau et son grain", "[render][gpu
 }
 
 TEST_CASE("HDR anime : une lumière isolée monte, son entourage non", "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Un halo clair de 48 colonnes (195 nits) sur un fond sombre (3 nits).
@@ -92,7 +92,7 @@ TEST_CASE("HDR anime : une lumière isolée monte, son entourage non", "[render]
 
 TEST_CASE("HDR anime : une peau claire près d'un fond sombre n'est pas une lumière (audit F2)",
           "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Une bande de peau claire (255/232/214 en sRGB, ramenée en BT.2020 linéaire à un blanc de 203 nits) de
@@ -118,7 +118,7 @@ TEST_CASE("HDR anime : une peau claire près d'un fond sombre n'est pas une lumi
 }
 
 TEST_CASE("HDR anime : le curseur Éclats agit même sans l'ancien curseur des éclats", "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   // La configuration de Tatoub : highlights_rtx à 0, donc spec_gain = 1.
@@ -139,7 +139,7 @@ TEST_CASE("HDR anime : le curseur Éclats agit même sans l'ancien curseur des �
 }
 
 TEST_CASE("HDR anime : route adaptative (paper = demi-pic), la lumière monte aussi", "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Les valeurs de decide_grade pour l'aspect adaptatif : blanc papier à la moitié du pic, blanc SDR à 203.
@@ -161,39 +161,8 @@ TEST_CASE("HDR anime : route adaptative (paper = demi-pic), la lumière monte au
   CHECK(luma(wall[128]) == Catch::Approx(1.15 * 60.0).epsilon(0.03));
 }
 
-TEST_CASE("HDR anime guidée (A3) : le halo ne déborde plus sur le fond, la lumière monte autant",
-          "[render][gpu]") {
-  Gpu plain(GradeBody::Anime);
-  require_device(plain);
-  REQUIRE(plain.grade);
-  Gpu guided(GradeBody::AnimeGuided);
-  REQUIRE(guided.grade);
-  // Le halo de 48 colonnes (195 nits) sur le fond sombre (3 nits) ; ses bords tombent au milieu d'un bloc 8x8
-  // décalé (100 et 156) : le bilinéaire y mêle le bloc clair et le bloc sombre.
-  const auto source = columns([](int x) { return x >= 100 && x < 156 ? 195.0 : 3.0; });
-  const auto a = graded_rgb(plain, source, anime_params());
-  const auto b = graded_rgb(guided, source, anime_params());
-  // Le centre : la même montée.
-  CHECK(luma(b[128]) == Catch::Approx(luma(a[128])).epsilon(0.03));
-  // Le fond juste à côté du halo : au relèvement fixe avec la carte guidée, jamais plus haut que sans.
-  double worst_guided = 0.0;
-  double worst_plain = 0.0;
-  for (const int x : {94, 95, 96, 97, 98, 99, 156, 157, 158, 159, 160, 161}) {
-    worst_guided = std::max(worst_guided, luma(b[static_cast<std::size_t>(x)]));
-    worst_plain = std::max(worst_plain, luma(a[static_cast<std::size_t>(x)]));
-  }
-  INFO("fond au bord : guidé " << worst_guided << " nits, bilinéaire " << worst_plain << " nits");
-  CHECK(worst_guided <= worst_plain + 0.05);
-  CHECK(worst_guided == Catch::Approx(1.15 * 3.0).epsilon(0.10));
-  // Le bord clair du halo : monte au moins autant que sans la carte guidée.
-  for (const int x : {100, 101, 154, 155}) {
-    INFO("bord clair " << x);
-    CHECK(luma(b[static_cast<std::size_t>(x)]) >= 0.97 * luma(a[static_cast<std::size_t>(x)]));
-  }
-}
-
 TEST_CASE("HDR anime : sortie SDR inchangée", "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.9, 0.8);
@@ -206,7 +175,7 @@ TEST_CASE("HDR anime : sortie SDR inchangée", "[render][gpu]") {
 
 TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique sous le genou",
           "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Sans relèvement des surfaces ni éclat, l'aller-retour SDR → PQ → SDR rend l'image ; au-dessus du genou
@@ -229,7 +198,7 @@ TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique 
 }
 
 TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 100 %", "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Une surface sombre (30 nits) et une claire (150 nits) : le contraste écarte les deux autour du pivot.
@@ -257,7 +226,7 @@ TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 1
 }
 
 TEST_CASE("HDR anime : les noirs profonds suivent la scène, nuls en scène très sombre", "[render][gpu]") {
-  Gpu gpu(GradeBody::Anime);
+  Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   const auto dim = columns([](int) { return 2.0; });  // un gris sombre, sous le genou des noirs

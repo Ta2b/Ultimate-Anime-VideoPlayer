@@ -58,13 +58,11 @@ std::optional<double> sdr_gamma(const pl_color_space& color) {
 }
 
 // Le grade d'une cible : celui du PQ, ou celui du SDR à l'exposant de la cible.
-// La méthode « HDR anime » vers un écran SDR prend son rendu PQ ramené au SDR (GradeChoice::sdr_anime).
-std::optional<render::GradeParams> grade_for(const render::GradeChoice& choice, const pl_color_space& color,
-                                             render::GradeBody body) {
+// Vers un écran SDR, le rendu PQ ramené au SDR (GradeChoice::sdr_anime).
+std::optional<render::GradeParams> grade_for(const render::GradeChoice& choice, const pl_color_space& color) {
   if (color.transfer == PL_COLOR_TRC_PQ) return choice.pq;
   const std::optional<double> gamma = sdr_gamma(color);
-  const bool anime = body == render::GradeBody::Anime || body == render::GradeBody::AnimeGuided;
-  const std::optional<render::GradeParams>& sdr = anime && choice.sdr_anime ? choice.sdr_anime : choice.sdr;
+  const std::optional<render::GradeParams>& sdr = choice.sdr_anime ? choice.sdr_anime : choice.sdr;
   if (!gamma || !sdr) return std::nullopt;
   render::GradeParams params = *sdr;
   params.sdr_gamma = *gamma;
@@ -182,7 +180,7 @@ std::expected<void, Refusal> PlaceboScreen::set_looks(
 }
 
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
-  const std::optional<render::GradeParams> params = grade_for(grade_choice, target, grade_body);
+  const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
   if (grade && params) {
@@ -299,7 +297,7 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   const pl_gpu gpu = s.vk->gpu;
   if (s.ramp_renderer == nullptr) s.ramp_renderer = pl_renderer_create(s.log, gpu);
   if (!s.ramp_grade) {
-    auto grade = render::Grade::create(gpu, s.grade_body, s.skin_mask);
+    auto grade = render::Grade::create(gpu, s.skin_mask);
     if (!grade) return std::unexpected(std::move(grade.error()));
     s.ramp_grade.emplace(std::move(*grade));
   }
@@ -463,8 +461,8 @@ void PlaceboScreen::Impl::post_ring(const render::GradeChoice& choice, std::int6
   GradeVersion version{.epoch = epoch, .from_pts_us = from_pts == kNoPts ? 0 : from_pts};
   // Le grade en trois passes vers une sortie PQ seulement : les autres corps et le SDR restent à l'écran.
   std::optional<render::GradeParams> params;
-  if (grade && grade_body == render::GradeBody::Fused && target.transfer == PL_COLOR_TRC_PQ)
-    params = grade_for(choice, target, grade_body);
+  // Le grade de l'anneau ne porte que l'ancien grade classique : il reste éteint (retrait à suivre).
+  static_cast<void>(choice);
   const auto post_off = [&] {
     if (ring_posted && !ring_on) return;
     version.off = true;

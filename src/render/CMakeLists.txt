@@ -6,17 +6,11 @@ ajp_add_module(render
   DEPS ajp::core ajp::subs ajp::dep::placebo)
 
 # Les hooks mpv du grade sont embarqués dans la bibliothèque, octet pour octet. Le grade : ses paramètres
-# (anime-hdr-params.hook), puis l'un des deux corps, mis bout à bout par embed_shaders.cmake : le grade en
-# trois passes dont la scène vient du lecteur (anime-hdr-fused), ou celui d'avant en neuf passes
-# (anime-hdr-grade : analyse dans le shader), gardé une version derrière --legacy-grade.
-file(GLOB render_hook_parts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-grade/*.hook"
-     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-fused/*.hook"
-     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-anime/*.hook")
+# (anime-hdr-params.hook), puis ses trois passes (anime-hdr-anime : carte locale, zone, passe anime), mises
+# bout à bout par embed_shaders.cmake ; puis le look, le vrai noir et la mire.
+file(GLOB render_hook_parts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-anime/*.hook")
 set(render_hooks
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-params.hook"
-  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-funcs.glsl"
-  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-grade"
-  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-fused"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-anime"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-look.hook"
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/anime-hdr-black.hook"

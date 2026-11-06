@@ -6,17 +6,10 @@
 
 namespace ajp::render::shaders {
 
-// Les //!PARAM du grade, communs à ses deux corps (chacun se lit derrière eux).
+// Les //!PARAM du grade (la passe anime se lit derrière eux).
 extern const std::string_view anime_hdr_params;
-// Les fonctions du grade fusionné et ajg_grade (le grade d'un pixel), mises dans 3-grade.hook à la place de
-// //@AJG_FUNCS@ : un seul texte pour la passe du grade et les passes qui le reprennent.
-extern const std::string_view anime_hdr_funcs;
-// Le grade d'avant (analyse et grade, mis bout à bout) : neuf passes sur OUTPUT, en PQ BT.2020, la scène
-// mesurée par le shader. Gardé une version (--legacy-grade).
-extern const std::string_view anime_hdr_grade;
-// Le grade en trois passes (carte locale, zone floutée et lissée, grade) : la scène vient du lecteur.
-extern const std::string_view anime_hdr_fused;
-// La passe « HDR anime » (--hdr-anime) : se lit derrière les deux premières passes de anime_hdr_fused.
+// Les trois passes du grade : carte locale 1/8, zone ~2,5 % lissée, puis la passe « anime » (surfaces
+// ancrées, seuls les émetteurs montent, carte locale guidée par le pixel).
 extern const std::string_view anime_hdr_anime;
 // Le look : une LUT 3D .cube (cube_lut.h) mélangée à l'image après le grade, avant le vrai noir. Le bloc
 // //!TEXTURE AJG_LUT s'ajoute derrière ce texte à l'exécution.

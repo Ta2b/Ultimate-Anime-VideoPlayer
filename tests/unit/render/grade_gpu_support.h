@@ -60,7 +60,7 @@ struct Gpu {
   pl_renderer renderer = nullptr;
   std::optional<Grade> grade;
   bool layer_missing = false;  // demandée (mode on ou require) et absente
-  explicit Gpu(GradeBody body = GradeBody::Fused) {
+  Gpu() {
     pl_log_params log_params{};
     log_params.log_cb = on_placebo_log;
     log_params.log_level = PL_LOG_WARN;
@@ -82,7 +82,7 @@ struct Gpu {
     vk = pl_vulkan_create(log, &params);
     if (vk == nullptr) return;
     renderer = pl_renderer_create(log, vk->gpu);
-    if (auto created = Grade::create(vk->gpu, body)) grade.emplace(std::move(*created));
+    if (auto created = Grade::create(vk->gpu)) grade.emplace(std::move(*created));
   }
   Gpu(const Gpu&) = delete;
   Gpu& operator=(const Gpu&) = delete;

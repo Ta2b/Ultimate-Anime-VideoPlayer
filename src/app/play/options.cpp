@@ -184,19 +184,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.grade_deband = true;
     } else if (arg == "--skin-mask") {
       options.skin_mask = true;
-    } else if (arg == "--hdr-anime") {
-      options.hdr_anime = true;
-    } else if (arg == "--anime-guided") {
-      options.hdr_anime = true;
-      options.anime_guided = true;
-    } else if (arg == "--classic-grade") {
-      options.hdr_anime = options.anime_guided = options.anime_shots = false;
-    } else if (arg == "--legacy-grade") {
-      options.legacy_grade = true;
-      options.hdr_anime = options.anime_guided = options.anime_shots = false;
-    } else if (arg == "--legacy-grade=split") {
-      options.split_look = true;
-      options.hdr_anime = options.anime_guided = options.anime_shots = false;
     } else if (arg == "--grade-ring" || arg == "--grade-ring=on") {
       options.grade_ring = true;
     } else if (arg == "--grade-ring=off") {
@@ -524,11 +511,8 @@ std::string play_usage() {
       "                         coût propre de chaque moteur\n"
       "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
       "                         (en essai ; éteint par défaut)\n"
-      "  --hdr-anime      méthode HDR « anime » (surfaces ancrées, seuls les émetteurs montent), par défaut\n"
-      "                   avec --anime-guided et --anime-shots ; --classic-grade : le grade d'avant\n"
       "  --anime-shots    --hdr-anime décidée par plan (défaut) : surfaces ancrées à ±5 %, marge des éclats\n"
       "                   du plan, changées à l'image de coupe ; --no-anime-shots : le relèvement fixe\n"
-      "  --anime-guided   essai : --hdr-anime, carte des émetteurs guidée par le pixel (halo net)\n"
       "  --no-looks       essai : sans la pile de LUT\n"
       "  --no-clean-looks la pile de LUT pixel par pixel (défaut : sans étirer le grain ni les\n"
       "                   paliers, bords francs inchangés)\n"
@@ -540,8 +524,6 @@ std::string play_usage() {
       "                   peps de --hdr-anime : contraste, saturation, éclats, 0 à 200 % (100 : tel quel)\n"
       "  --skin-mask      le grade distingue la peau (coupé : il faisait un damier)\n"
       "  --grade-deband      débandage devant le grade (sinon aucun : il fabriquait du bruit)\n"
-      "  --legacy-grade         le grade HDR d'avant (neuf passes, scène mesurée par le shader), à comparer\n"
-      "  --legacy-grade=split   le grade actuel, le look dans sa passe à part (comparaison A/B)\n"
       "  --grade-ring[=off]     le grade fait par CUDA dans l'anneau, montré tel quel (par défaut) ; =off :\n"
       "                         le grade en shader à l'écran\n"
       "  --fast-steady          essai : mode Rapide à pas constant, N images par source fixe dans un plan\n"
