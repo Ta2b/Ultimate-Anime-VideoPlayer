@@ -164,6 +164,7 @@ constexpr std::array kSettingsPages{
     Entry{"Sound", "Son"},
     Entry{"About", "À propos"},
     Entry{"Auto ({})", "Auto ({})"},
+    Entry{"Auto (calibrated)", "Auto (calibré)"},
     Entry{"Processing level", "Niveau de traitement"},
     Entry{"From Economy (light on the graphics card) to Ultra. Auto picks the level of this machine. "
           "Changing a "

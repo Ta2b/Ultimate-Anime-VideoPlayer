@@ -201,6 +201,20 @@ std::expected<MachineCalibration, Refusal> load_calibration(const std::filesyste
   return parse_calibration(text.str());
 }
 
+std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir, std::string_view gpu,
+                                                int display_height) {
+  auto calibration = load_calibration(calibration_file(data_dir));
+  if (!calibration || calibration->gpu != gpu ||
+      (display_height > 0 && calibration->display_height != display_height))
+    return std::nullopt;
+  const ChainCandidate& chosen = calibration->chosen;
+  return CalibratedChain{
+      .span = chosen.span,
+      .rife = chosen.rife,
+      .height = chosen.height,
+      .span_model = calibration->span_fp8 && chosen.span ? std::string(kCalibrationSpanFp8) : std::string()};
+}
+
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
                                               const MachineCalibration& calibration) {
   return core::write_text_atomically(file, format_calibration(calibration));

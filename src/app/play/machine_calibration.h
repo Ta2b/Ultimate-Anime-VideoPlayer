@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "app/play/auto_bench_run.h"
+#include "app/play/auto_config.h"
 #include "app/play/settings.h"
 
 namespace ajp::app::play {
@@ -92,6 +93,10 @@ std::filesystem::path calibration_file(const std::filesystem::path& data_dir);
 std::string format_calibration(const MachineCalibration& calibration);
 std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view text);
 std::expected<MachineCalibration, Refusal> load_calibration(const std::filesystem::path& file);
+// La chaîne de calibration.toml (dossier data_dir) si elle a été mesurée sur cette carte et à cette
+// hauteur d'écran : les bornes de l'Auto calibré. std::nullopt sinon.
+std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir, std::string_view gpu,
+                                                int display_height);
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
                                               const MachineCalibration& calibration);
 

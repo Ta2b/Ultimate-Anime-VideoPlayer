@@ -31,6 +31,15 @@ std::string_view label(Priority priority);  // « Fluidité », « Équilibre »
 std::optional<Priority> priority_from_key(std::string_view text);
 
 // La machine : sa tranche détectée et l'écran. display_height et display_hz à 0 : inconnus (1080p, 60 Hz).
+// Ce que la calibration de l'assistant a mesuré sur cette carte et cet écran (calibration.toml) : en Auto,
+// la chaîne garde ces bornes et s'adapte encore à chaque vidéo (source, cadence, écran).
+struct CalibratedChain {
+  bool span = true;
+  bool rife = true;
+  int height = 0;          // la plus haute résolution de travail que SPAN tient
+  std::string span_model;  // vide : le modèle par défaut (FP16) ; sinon celui joué en FP8
+};
+
 struct Machine {
   Tier tier = Tier::Normal;
   int display_height = 0;
@@ -39,6 +48,7 @@ struct Machine {
   // chaîne du niveau telle quelle. Ne valent que pour le préréglage Auto.
   int explored_work_height = 0;
   std::string explored_rife_model;
+  std::optional<CalibratedChain> calibrated;  // Auto calibré : prime sur l'exploration et le niveau
 };
 
 // Le niveau de chaîne d'un préréglage : Auto prend la tranche de la machine ; Économe, Rapide, Normal,
