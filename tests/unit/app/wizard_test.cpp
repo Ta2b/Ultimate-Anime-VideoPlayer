@@ -8,7 +8,7 @@ using namespace ajp::app::play;
 
 TEST_CASE("l'assistant saute les écrans sans objet", "[wizard]") {
   ajp::app::play::FrenchUi french;
-  CHECK(wizard_steps({.engine_choice = true, .hdr_display = true}).size() == 7);  // le grade : après le bench
+  CHECK(wizard_steps({.engine_choice = true, .hdr_display = true}).size() == 7);  // sans le rang 5, retiré
   const auto plain = wizard_steps({.engine_choice = false, .hdr_display = false});
   REQUIRE(plain.size() == 5);
   CHECK(plain.front() == WizardStep::Welcome);
@@ -28,10 +28,10 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
   CHECK(current(wizard) == WizardStep::Engines);
   next(wizard);
   skip(wizard);                                     // la calibration de la machine passée
-  CHECK(current(wizard) == WizardStep::Languages);  // ni HDR ni grade : l'écran n'est pas HDR
+  CHECK(current(wizard) == WizardStep::Languages);  // pas de HDR : l'écran n'est pas HDR
   CHECK(progress_text(wizard) == "Étape 4 sur 6 : Langues");
   CHECK(wizard.skipped == std::vector<WizardStep>{WizardStep::Chain});
-  // Fermé après l'écran 5 (le grade) : on reprend à Langues.
+  // Fermé après le rang 5 (retiré) : on reprend à Langues.
   CHECK(current(begin_wizard(facts, 5)) == WizardStep::Languages);
   // Tout vu : le résumé.
   CHECK(current(begin_wizard(facts, 8)) == WizardStep::Summary);
@@ -44,7 +44,7 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   ajp::app::play::FrenchUi french;
   const WizardFacts facts{.engine_choice = true, .hdr_display = true};
   Wizard wizard = begin_wizard(facts, 0);
-  wizard.hdr = HdrChoice::Adaptive;
+  wizard.hdr = HdrChoice::Hdr;
   wizard.update_mode = "auto";
 
   const ajp::core::Settings written = wizard_settings(wizard, {});
@@ -56,7 +56,6 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   CHECK(play.update_mode == "auto");
   CHECK(play.hdr_native);
   CHECK(wants_machine_calibration(wizard));
-  CHECK(wants_grade_calibration(wizard));
 
   // Écrans passés : Me prévenir (défaut), HDR inchangé, préréglage Auto, pas de calibration.
   wizard.skipped = {WizardStep::Updates, WizardStep::Hdr, WizardStep::Chain};
@@ -68,10 +67,6 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   CHECK_FALSE(other.hdr_native);
   CHECK(other.preset == Preset::Auto);
   CHECK_FALSE(wants_machine_calibration(wizard));
-  CHECK_FALSE(wants_grade_calibration(wizard));  // HDR passé : pas de grade à calibrer
-  wizard.skipped.clear();
-  wizard.hdr = HdrChoice::Sdr;
-  CHECK_FALSE(wants_grade_calibration(wizard));
 }
 
 TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wizard]") {
@@ -79,7 +74,7 @@ TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wiza
   Wizard wizard = begin_wizard({.engine_choice = true, .hdr_display = false}, 0);
   wizard.skipped = {WizardStep::Languages};
   const auto lines = wizard_summary(wizard);
-  REQUIRE(lines.size() == 3);  // Chain, Languages, Updates (ni HDR ni grade)
+  REQUIRE(lines.size() == 3);  // Chain, Languages, Updates (pas de HDR)
   CHECK(lines[0].contains("Général > Configuration"));
   CHECK(lines[1].contains("sauté"));
   CHECK(lines[2].contains("me prévenir"));

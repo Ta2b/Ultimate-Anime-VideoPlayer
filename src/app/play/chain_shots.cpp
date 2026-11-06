@@ -13,9 +13,8 @@
 namespace ajp::app::play {
 namespace {
 
-constexpr std::int64_t kSeriesCoverUs = 60'000'000;  // une minute analysée : la moyenne de la série tient
-constexpr std::int64_t kSeekBehindUs = 2'000'000;    // la lecture revient derrière l'analyse : saut
-constexpr std::int64_t kSeekAheadUs = 5'000'000;     // ou la dépasse de loin
+constexpr std::int64_t kSeekBehindUs = 2'000'000;  // la lecture revient derrière l'analyse : saut
+constexpr std::int64_t kSeekAheadUs = 5'000'000;   // ou la dépasse de loin
 constexpr std::int64_t kSeekEveryUs = 1'000'000;
 
 // La vidéo, du cache si elle y est : sa chronologie entière, sans analyse, ou la part déjà faite, que
@@ -86,19 +85,18 @@ void ShotJob::retire() noexcept {
   timeline.reset();  // gardée une fois
 }
 
-void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings, bool plans,
+void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
                 std::int64_t start_us, bool source_hdr) {
   // Le grade d'une source HDR est neutre (grade_params.cpp) : sans grade natif HDR demandé, aucun plan à
   // lire.
-  if (!settings.grade || (!settings.grade_values.adaptive && !plans) || file.empty() ||
-      (source_hdr && !settings.hdr_native)) {
+  if (!settings.grade || file.empty() || (source_hdr && !settings.hdr_native)) {
     work.current.probe.reset();
     return;
   }
   const std::int64_t from = std::max<std::int64_t>(start_us, 0);
   if (work.current.file == file && work.current.timeline) {
     if (work.current.complete) return;
-    if (!work.current.probe) {  // arrêtée quand le grade adaptatif s'est coupé : elle reprend
+    if (!work.current.probe) {  // arrêtée quand le grade s'est coupé : elle reprend
       work.current.probe = media::ShotProbe::start(file, *work.current.timeline, from, work.probe);
     } else if (!work.current.probe->failure()) {
       work.current.probe->seek(from);
@@ -177,9 +175,8 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   tend_shots(*to.shots);
   const media::ShotTimeline& timeline = *job.timeline;
   const ControlsView view = to.session.view();
-  // Le grade adaptatif s'est allumé après l'ouverture (écran sans profil, où with_calibrated_grade le coupe,
-  // puis la calibration ou le panneau le rallume) : l'analyse arrêtée à l'ouverture reprend ici, sinon seul
-  // ce qu'elle avait vu en partant serait connu.
+  // Le grade s'est rallumé après l'ouverture (le panneau) : l'analyse arrêtée à l'ouverture reprend ici,
+  // sinon seul ce qu'elle avait vu en partant serait connu.
   if (!job.probe && !job.complete && view.position_us != kNoPts)
     job.probe = media::ShotProbe::start(job.file, *job.timeline, std::max<std::int64_t>(view.position_us, 0),
                                         to.shots->probe);
@@ -207,13 +204,6 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   const auto shot = timeline.at(newest->pts_us + to.shots_step_us);
   if (!shot) return live_scene(to, newest->pts_us + to.shots_step_us);
   return scene_of(shot->stats, shot->serial, shot->fade);
-}
-
-std::optional<double> shots_series_luma(const Chain& to) {
-  if (to.shots == nullptr || !to.shots->current.timeline) return std::nullopt;
-  const ShotJob& job = to.shots->current;
-  if (!job.complete && job.timeline->covered_us() < kSeriesCoverUs) return std::nullopt;
-  return job.timeline->mean_luma();
 }
 
 }  // namespace ajp::app::play

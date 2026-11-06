@@ -1,5 +1,5 @@
 // La chronologie des plans d'une vidéo : ce que la pré-analyse a trouvé (media/shot_probe.h), lu par le
-// grade adaptatif à l'horodatage de l'image. Écrite par le thread d'analyse, lue par le thread principal :
+// grade à l'horodatage de l'image. Écrite par le thread d'analyse, lue par le thread principal :
 // toutes les méthodes sont sûres entre threads.
 #pragma once
 
@@ -28,8 +28,6 @@ class ShotTimeline {
   void add(const Shot& found);
   // Le plan qui contient pts_us, s'il est déjà analysé.
   std::optional<ShotAt> at(std::int64_t pts_us) const;
-  // La luminance moyenne de la vidéo, pondérée par la durée des plans analysés ; vide sans plan.
-  std::optional<double> mean_luma() const;
   // Durée analysée, en microsecondes : la somme des plans.
   std::int64_t covered_us() const;
   // L'instant jusqu'où l'analyse va sans trou depuis pts_us (pts_us lui-même si rien n'y est).

@@ -67,9 +67,6 @@ struct DisplayFacts {
 DisplayFacts parse_edid(std::span<const std::uint8_t> edid);
 // « MAG 272U E16 · HDR10, pic 1037 nits, moyenne 265, noir 0,00064 nit · OLED : non (EDID) »
 std::string describe(const DisplayFacts& display);
-// La clé de l'écran pour ce qui se mesure sur lui (le pic calibré) : « CND-8CD7 », le fabricant et le
-// product id de l'EDID ; à défaut, son nom ; vide si l'EDID ne dit ni l'un ni l'autre.
-std::string display_key(const DisplayFacts& display);
 // L'écran branché (Linux : /sys/class/drm/*-*/status = connected ; Windows : présent) ; s'il y en a
 // plusieurs, celui dont le nom se retrouve dans wanted (nom de l'écran selon SDL). Rien si aucun
 // EDID ne se lit, et toujours rien sur macOS.

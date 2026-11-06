@@ -100,9 +100,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::optional<ColorInfo> early_color = media::track_color(video);
   const bool early_hdr =
       early_color && (early_color->transfer == Transfer::Pq || early_color->transfer == Transfer::Hlg);
-  // La méthode anime par plan et les coupes des plans lisent la pré-analyse même sans grade adaptatif.
-  const bool wants_plans = p.options.anime_shots || p.options.shot_cuts;
-  if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, wants_plans, start_us, early_hdr);
+  if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
   auto prepared = prepare_chain(p, settings);
   if (!prepared) return std::unexpected(std::move(prepared.error()));
   if (!*prepared) {  // q ou la fenêtre fermée pendant la préparation des moteurs
@@ -121,16 +119,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   settings.stats.all = p.details;  // Tab pendant la préparation
 
   log->info("{}", describe_hdr(p.screen.window()));
-  const std::string screen_key = p.display ? display_key(*p.display) : std::string();
-  settings = with_calibrated_grade(std::move(settings), screen_key);
-  if (!settings.grade_values.adaptive && p.shots != nullptr)
-    open_shots(*p.shots, p.options.file, settings, wants_plans, start_us, early_hdr);
   const int auto_peak = auto_peak_nits(content_peak_nits(p.screen.window()));
   // Sortie HDR10 : l'écran en reçoit et --sdr ne l'a pas coupée. Un écran SDR n'a pas de HDR à offrir (le
   // panneau le grise) : l'image reste en SDR, et le grade (contraste, saturation, préréglage) s'y applique.
   const bool hdr_out = !p.options.sdr && content_peak_nits(p.screen.window()).has_value();
   if (!hdr_out && settings.hdr_native) {
-    log->info("sortie SDR : pas de HDR adaptatif, image SDR gradée");
+    log->info("sortie SDR : pas de HDR, image SDR gradée");
     settings.hdr_native = false;
   }
   // La méthode « SDR » met la swapchain en SDR, comme --sdr : sinon l'image SDR partait dans une sortie
@@ -142,10 +136,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
   p.screen.set_source_color(source);
 
-  const std::string label_text =
-      std::format("{}{}{}", c.motion_label(settings),
-                  // Le HDR adaptatif, s'il tourne vraiment sur une sortie HDR10.
-                  settings.hdr_native && hdr_out ? "HDR adaptatif · " : "", c.span_label());
+  const std::string label_text = std::format("{}{}{}", c.motion_label(settings),
+                                             // Le HDR, s'il tourne vraiment sur une sortie HDR10.
+                                             settings.hdr_native && hdr_out ? "HDR · " : "", c.span_label());
   log->info("{} : {}", options.file.string(), label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
@@ -307,7 +300,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .engine_in_use = engine_of_library(p.library->path()),
           .engine_note = fallback_note(p.engines, p.library->path()),
           .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
-          .display_key = screen_key,
           .source_file = p.options.file,
           .machine_tier = static_cast<int>(machine_tier),
           .display_height = display_height(out.window()),
@@ -341,15 +333,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .display = p.display,
       .header_text =
           [&c, hdr_out](const PlaySettings& s) {
-            return std::format("{}{}{}", c.motion_label(s), s.hdr_native && hdr_out ? "HDR adaptatif · " : "",
+            return std::format("{}{}{}", c.motion_label(s), s.hdr_native && hdr_out ? "HDR · " : "",
                                c.span_label());
           },
       .hdr_wanted = settings.hdr_native != wanted_hdr.hdr_native ? std::optional(wanted_hdr) : std::nullopt,
       .luts_dir = p.paths.engines.parent_path() / "luts",
       .source_hdr = source_hdr,
       .kernels = c.backend ? c.backend->kernels() : nullptr,
-      .adaptive_log = {.path = settings_dir / "adaptive-log.tsv"},
-      .learn = LearnTrack{.log = settings_dir / "adaptive-learning.tsv"},
       .shots = p.shots,
       .shot_cuts = p.options.shot_cuts,
       .anime_shots = p.options.anime_shots};
@@ -390,12 +380,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.shots != nullptr) p.shots->writer = &writer;  // le cache des plans aussi
   const std::unique_ptr<ShotWork, void (*)(ShotWork*)> shots_writer(
       p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });
-  // Ce que play.toml garde ; « Noirs profonds » réglé ici entre dans le profil calibré en service.
+  // Ce que play.toml garde.
   const auto saved_settings = [&] {
-    PlaySettings saved =
-        settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options);
-    keep_visible_shadows(saved, screen_key);
-    return saved;
+    return settings_to_save(with_intended_hdr(chain, chain.running), p.from_file, p.started, p.options);
   };
   // La position retenue toutes les kResumeEveryUs, et à la fin : un arrêt brutal en perd peu.
   std::int64_t kept_us = kNoPts;
@@ -672,7 +659,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         }
       }
     }
-    adaptive_tick(chain, host_now_us());
+    grade_tick(chain, host_now_us());
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
     if (chain.black_dirty && host_now_us() - chain.black_at_us >= kBlackRefreshUs) refresh_black(chain);

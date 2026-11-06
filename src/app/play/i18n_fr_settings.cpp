@@ -50,7 +50,7 @@ constexpr std::array kSettingsPages{
     Entry{"{} · {} · display {}p", "{} · {} · écran {}p"},
     Entry{" ; playback resumes at the same spot", " ; la lecture reprend au même endroit"},
     Entry{"AI image", "Image IA"},
-    Entry{"Adaptive HDR (any GPU)", "HDR adaptatif (tous GPU)"},
+    Entry{"HDR (any GPU)", "HDR (tous GPU)"},
     Entry{"Adaptive HDR path: libplacebo in PQ with a scene-based TrueHDR look, then the grade.",
           "Voie HDR adaptatif : libplacebo en PQ, aspect TrueHDR selon la scène, puis l'étalonnage."},
     Entry{"Adaptive HDR settings", "Réglages du HDR adaptatif"},

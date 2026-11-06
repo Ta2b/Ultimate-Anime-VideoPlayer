@@ -151,25 +151,12 @@ inline constexpr int kAutoCapMin = 24;
 inline constexpr int kAutoCapMax = 480;
 
 // Les réglages par défaut du grade et du look : la configuration de Tatoub (30/10/2026), réglée à l'œil sur
-// ses épisodes. Les curseurs sont ceux d'une scène sombre ; le grade adaptatif les glisse vers les valeurs
-// d'une scène claire (noirs 0,80, couleurs 0, gris moyen 15; couleurs de base 0,10) selon la luminosité de la
-// scène. Le gamut P3 reste propre à l'écran.
+// ses épisodes.
 inline render::GradeSettings default_grade_values() {
   render::GradeSettings g;
   g.highlights_rtx = 1.0;
   g.area_rtx = 0.10;
-  g.vibrance_rtx = 0.10;  // dans le doute, peu de couleur : au-delà de 0,10 les scènes chaudes sursaturent
-  g.expand = 1.0;
   g.shadows = 0.50;  // Tatoub, 04/11 : le maximum des noirs profonds dynamiques
-  g.guard = 0.0;
-  g.adaptive = true;
-  g.adaptive_lo = 13.0;
-  g.adaptive_hi = 54.0;
-  g.adaptive_shadows = 0.80;
-  g.adaptive_vibrance = 0.0;
-  g.adaptive_vibrance_cut = 0.40;
-  g.adaptive_gray =
-      15.0;  // réglé sur l'écran de Tatoub (800 nits de pic) : les scènes claires restent sobres
   return g;
 }
 
@@ -244,33 +231,10 @@ struct PlaySettings {
   // images présentées, au-dessus de RIFE (×3 puis ×2 : 72 → 144 images par seconde). Posé au
   // lancement, avant l'instance Vulkan : vaut au prochain lancement.
   bool smooth_motion = false;
-  // Les réglages du mode HDR (section hdr de play.toml) : ceux de l'aspect TrueHDR émulé, que la sortie SDR
-  // gradée reprend aussi.
-  int true_hdr_contrast = 100;
-  int true_hdr_saturation = 100;
-  int true_hdr_gray = 50;
-  int true_hdr_peak = 0;  // 0 : la crête vue par le contenu sur l'écran
-  // Les profils de grade adaptatif calibrés sur un écran (Paramètres > HDR, « Calibrer le grade adaptatif »)
-  // : chacun a un nom et ses deux bouts, scène sombre et scène claire. Un seul par écran est en service ;
-  // grade adaptatif coché, il remplace ces réglages à l'ouverture ([hdr.display_grades] de play.toml).
-  struct DisplayGrade {
-    std::string display;  // display_edid.h : display_key
-    std::string name;     // le nom du profil, unique pour l'écran
-    bool active = false;  // le profil en service sur cet écran
-    int gray = 50;        // gris moyen, scène sombre (true_hdr_gray)
-    double shadows = 0.15;
-    double colors = 0.10;  // vibrance_rtx
-    double gray_bright = 30.0;
-    double shadows_bright = 0.80;
-    double colors_cut = 0.40;
-    double gray_glow = 40.0;  // scène sombre avec éclat (GradeSettings::adaptive_glow_*)
-    double shadows_glow = 0.20;
-    double colors_glow = 0.05;
-    friend bool operator==(const DisplayGrade&, const DisplayGrade&) = default;
-  };
-  std::vector<DisplayGrade> display_grades;
-  // HDR adaptatif : le SDR passe en PQ par libplacebo et le grade émule l'aspect TrueHDR en
-  // suivant la scène (route native, mêmes contraste, saturation, gris moyen et pic).
+  // Le pic visé par le grade HDR, en nits (section hdr de play.toml) ; 0 : la crête que l'écran annonce.
+  int true_hdr_peak = 0;
+  // HDR : le SDR passe en PQ par libplacebo, puis le grade anime guidé (route native). Faux : sortie SDR
+  // gradée.
   bool hdr_native = false;
   // Composition finale de libplacebo (toutes les routes) : filtre qui étire la chaîne vers la
   // fenêtre, et débandage des aplats et dégradés, sans effet sur l'export ; en direct.
@@ -318,9 +282,6 @@ struct PlaySettings {
   // look du lecteur (render/looks.h) ; sinon le nom d'un fichier du dossier luts des données. Intensité de 0
   // à 1.
   std::string look = "HDR pile unique 65 point.cube";
-  // Apprentissage du grade adaptatif : une ligne par seconde (statistiques de la scène et réglages courants)
-  // dans adaptive-log.tsv, à côté de play.toml, pendant que l'utilisateur règle à l'œil.
-  bool adaptive_record = true;
   double look_mix = 1.0;
   // Le look de la méthode HDR anime (04/11, idée de Tatoub) : la LUT de base et « skin fix », fixes, et deux
   // curseurs de -100 à 100 sur les LUT de contraste et d'éclats ; 0 : sa pile du 04/11 (contraste ×7, éclats
@@ -345,8 +306,8 @@ struct PlaySettings {
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
 
-// Le mode HDR, clé hdr.engine de play.toml : « adaptive » (HDR adaptatif) ou « sdr » ; l'ancien « rtx »
-// se lit comme « adaptive ».
+// Le mode HDR, clé hdr.engine de play.toml : « adaptive » (HDR, nom gardé pour les anciens fichiers) ou
+// « sdr » ; l'ancien « rtx » se lit comme « adaptive ».
 std::string_view hdr_engine_key(const PlaySettings& s);
 
 namespace limits {
@@ -354,10 +315,7 @@ inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
-inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
-inline constexpr core::Range<int> kTrueHdrContrast{0, 200};
-inline constexpr core::Range<int> kTrueHdrSaturation{0, 200};
-inline constexpr core::Range<int> kTrueHdrGray{10, 100};
+inline constexpr std::size_t kLanguagePresets = 2;          // préréglages de langue
 inline constexpr core::Range<int> kTrueHdrPeak{400, 2000};  // ou 0 : automatique
 }  // namespace limits
 
@@ -379,26 +337,6 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text);
 std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view toml_text,
                                                             std::vector<std::string>* dropped = nullptr);
 std::string format_settings(const PlaySettings& settings);
-// Le grade calibré de cet écran ; nullptr sans calibration.
-const PlaySettings::DisplayGrade* calibrated_grade(const PlaySettings& settings, std::string_view display);
-// Les noms des profils de grade calibrés de cet écran, dans l'ordre de création.
-std::vector<std::string> grade_profiles(const PlaySettings& settings, std::string_view display);
-// Met en service le profil name de cet écran (et applique ses valeurs, grade adaptatif coché) ; faux s'il
-// n'existe pas.
-bool use_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name);
-// Un nom libre pour un nouveau profil : « Profile 1 », « Profile 2 »… (traduit).
-std::string next_grade_profile_name(const PlaySettings& settings, std::string_view display);
-// Les réglages du grade pris sur les réglages en cours (scène sombre et claire), gardés pour cet écran sous
-// le profil name (remplacé s'il existe, sinon créé), mis en service.
-void keep_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name);
-// Retire le profil name de cet écran ; s'il était en service, le premier qui reste le remplace.
-void forget_calibrated_grade(PlaySettings& settings, std::string_view display, std::string_view name);
-// Grade adaptatif coché et un profil de cet écran en service : ses réglages remplacent ceux du grade ; sinon,
-// inchangés.
-PlaySettings with_calibrated_grade(PlaySettings settings, std::string_view display);
-// « Noirs profonds » réglé dans le menu pendant qu'un profil calibré est en service : le profil le prend,
-// sans quoi with_calibrated_grade le défait à l'ouverture suivante (le curseur visible a le dernier mot).
-void keep_visible_shadows(PlaySettings& settings, std::string_view display);
 
 // Fichier absent : les réglages par défaut.
 std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path);

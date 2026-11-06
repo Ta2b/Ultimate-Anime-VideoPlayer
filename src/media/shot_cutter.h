@@ -1,4 +1,4 @@
-// La découpe d'une vidéo en plans, à partir des mesures de chaque image : la pré-analyse du grade adaptatif
+// La découpe d'une vidéo en plans, à partir des mesures de chaque image : la pré-analyse du grade
 // (media/shot_probe.h). Pur calcul, sans FFmpeg ni thread : les mesures entrent dans l'ordre de présentation,
 // les plans finis sortent avec leurs valeurs fixes.
 //

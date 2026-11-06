@@ -202,30 +202,13 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
-      for (const std::string_view name : {"--model",
-                                          "--window",
-                                          "--start",
-                                          "--seconds",
-                                          "--fullscreen-after",
-                                          "--stats",
-                                          "--snapshot-at",
-                                          "--snapshot-frames",
-                                          "--snapshot",
-                                          "--keys",
-                                          "--work-height",
-                                          "--rife-model",
-                                          "--anime-contrast",
-                                          "--anime-saturation",
-                                          "--anime-highlights",
-                                          "--rife",
-                                          "--truehdr-peak",
-                                          "--truehdr-contrast",
-                                          "--truehdr-saturation",
-                                          "--truehdr-gray",
-                                          "--data-dir",
-                                          "--bake-looks",
-                                          "--bench-level",
-                                          "--bench-out"}) {
+      for (const std::string_view name : {"--model",          "--window",           "--start",
+                                          "--seconds",        "--fullscreen-after", "--stats",
+                                          "--snapshot-at",    "--snapshot-frames",  "--snapshot",
+                                          "--keys",           "--work-height",      "--rife-model",
+                                          "--anime-contrast", "--anime-saturation", "--anime-highlights",
+                                          "--rife",           "--truehdr-peak",     "--data-dir",
+                                          "--bake-looks",     "--bench-level",      "--bench-out"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -260,22 +243,15 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           options.snapshot_frames = *frames;
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
-        } else if (name.starts_with("--truehdr-")) {
+        } else if (name == "--truehdr-peak") {
+          // Les bornes de play.toml (limits::), 0 pour « celui de l'écran ».
           const auto setting = number<int>(text);
-          // Les bornes de play.toml (limits::), le pic à 0 pour « celui de l'écran ».
-          const bool peak = name == "--truehdr-peak";
-          const core::Range<int> range = peak                           ? limits::kTrueHdrPeak
-                                         : name == "--truehdr-gray"     ? limits::kTrueHdrGray
-                                         : name == "--truehdr-contrast" ? limits::kTrueHdrContrast
-                                                                        : limits::kTrueHdrSaturation;
-          if (!setting || !(range.contains(*setting) || (peak && *setting == 0))) {
+          const core::Range<int> range = limits::kTrueHdrPeak;
+          if (!setting || !(range.contains(*setting) || *setting == 0)) {
             return refuse(RefusalCode::FieldOutOfRange,
                           std::format("{} : « {} » hors de {} à {}", name, text, range.lo, range.hi));
           }
-          if (peak) options.true_hdr_peak = *setting;
-          if (name == "--truehdr-contrast") options.true_hdr_contrast = *setting;
-          if (name == "--truehdr-saturation") options.true_hdr_saturation = *setting;
-          if (name == "--truehdr-gray") options.true_hdr_gray = *setting;
+          options.true_hdr_peak = *setting;
         } else if (name == "--anime-contrast" || name == "--anime-saturation" ||
                    name == "--anime-highlights") {
           const auto percent = number<int>(text);
@@ -517,8 +493,7 @@ std::string play_usage() {
       "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
       "  --rife=N               interpolation ×N avant SPAN (1.5, 2 à 10 ; défaut {} ; 0 aucune)\n"
       "  --rife-model=FICHIER   modèle RIFE (défaut : {})\n"
-      "  --truehdr-peak=NITS    pic du HDR adaptatif (défaut : celui de l'écran, sinon 1000)\n"
-      "  --truehdr-contrast=N, --truehdr-saturation=N (0 à 200, 100), --truehdr-gray=N (10 à 100, 50)\n"
+      "  --truehdr-peak=NITS    pic visé par le grade HDR (défaut : celui de l'écran, sinon 1000)\n"
       "ajp --register           inscrit le lecteur auprès du système (« Ouvrir avec », lecteur par\n"
       "                         défaut) ; --unregister retire cette inscription\n"
       "Touches : espace pause, ← → seek 5 s, ↑ ↓ volume, m muet, f plein écran (Échap en sort), q quitter,\n"

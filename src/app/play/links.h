@@ -32,8 +32,6 @@ struct ImDrawData;
 
 namespace ajp::app::play {
 
-struct CalibrationShot;  // calibration_shot.h
-
 // La source a livré sa dernière image et son dernier paquet pour cette époque.
 struct StreamEnded {
   std::uint32_t epoch = 0;
@@ -130,9 +128,6 @@ struct ShowRequest {
   const ImDrawData* ui = nullptr;                  // interface (barre de lecture, menus), par-dessus tout
   int ui_bottom = 0;  // pixels pris en bas par l'interface : les sous-titres du bas passent au-dessus
   int ui_top = 0;     // pixels pris en haut par l'interface : l'OSD passe dessous
-  // L'image de la calibration du grade (calibration_shot.h) à la place de la vidéo, des sous-titres et de
-  // l'OSD ; nullptr : aucune.
-  const CalibrationShot* calibration = nullptr;
   // D'autres présentations de la même image suivront (cadence fixe, plancher du VRR, interface ou OSD
   // visibles) : l'écran garde l'image composée et la recopie tant qu'elle n'a pas changé
   // (app/play/compose_key.h) ; faux, il compose directement dans la cible.
@@ -147,9 +142,8 @@ struct ShowRequest {
 struct UiFrame {
   const ImDrawData* draw = nullptr;  // nullptr : rien à dessiner
   bool changed = false;
-  int bottom = 0;                                // pixels pris en bas de l'écran (barre visible), 0 sinon
-  int top = 0;                                   // pixels pris en haut (titre visible), 0 sinon
-  const CalibrationShot* calibration = nullptr;  // l'image de la calibration du grade ; nullptr : aucune
+  int bottom = 0;  // pixels pris en bas de l'écran (barre visible), 0 sinon
+  int top = 0;     // pixels pris en haut (titre visible), 0 sinon
 };
 
 class Screen {

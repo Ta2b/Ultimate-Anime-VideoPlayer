@@ -1,5 +1,5 @@
-// Parité de decide_grade() avec M.plan de hdr-grade.lua (lecteur actuel, commit 33ff79d) :
-// les valeurs attendues sont celles que le script calcule pour les mêmes réglages.
+// decide_grade() : les valeurs des //!PARAM du grade anime guidé (anime-hdr-params.hook) pour une route, une
+// source et un écran donnés.
 #include "render/grade_params.h"
 
 #include <cmath>
@@ -25,91 +25,30 @@ double resp(double x, double hi, double gain) {
   return gain * hi * std::pow(x / hi, 0.7);
 }
 
-// Des réglages poussés (les valeurs de l'ancien préréglage « Éclatant ») : éclats, aplats lumineux, couleurs,
-// couleurs étendues et noirs poussés, garde-fou des couleurs saturées, punch et chroma de base.
-GradeSettings pushed() {
-  GradeSettings s;
-  s.shadows = 0.50;
-  s.highlights = 0.95;
-  s.highlights_rtx = 0.90;
-  s.vibrance = 0.60;
-  s.vibrance_rtx = 0.60;
-  s.area_rtx = 0.50;
-  s.guard = 0.80;
-  s.expand = 0.70;
-  s.punch_base = 0.30;
-  s.chroma_base = 0.12;
-  return s;
-}
-
 }  // namespace
 
-TEST_CASE("route native SDR avec émulation TrueHDR : les réglages par défaut du lecteur actuel") {
-  const auto decision = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
-  REQUIRE(decision);
-  CHECK(decision->mode == GradeMode::Native);
-  CHECK(decision->source_white_nits == 203.0);
-  const GradeParams& p = decision->params;
-  CHECK(p.peak == 1000.0);
-  CHECK(p.paper == 500.0);  // 0,5 × pic avec l'émulation
-  CHECK(p.in_max == 1000.0);
-  CHECK(p.shadow_knee == Approx(203.0 * (0.25 + 0.30 * 0.15 / 0.8)));
-  CHECK(p.shadows == Approx(resp(0.15, 0.8, 1.2)));
-  CHECK(p.emulate == 1.0);
-  CHECK(p.em_base == 200.0);
-  CHECK(p.em_pow == Approx(6.0));
-  CHECK(p.em_lo == 1.0);
-  CHECK(p.em_hi == 1.0);
-  CHECK(p.em_sat == 1.0);
-  CHECK(p.area_gain == 1.0);
-  CHECK(p.spec_gain == Approx(1.0 + 1.2 * resp(0.25, 1.0, 1.0) + 1.6 * (resp(0.25, 1.0, 1.0) - 0.25)));
-  CHECK(p.vibrance == Approx(resp(0.10, 0.8, 1.6)));
-  CHECK(p.abl == 0.0);
-  CHECK(p.gamut_p3 == 0.0);
-  CHECK(p.adapt == 1.0);  // le HDR adaptatif : l'émulation suit la scène
-}
-
-TEST_CASE("route native SDR sans émulation : éclats jusqu'au pic depuis le blanc papier") {
+TEST_CASE("route native : blanc de la source à 203 nits, éclats depuis la moitié du pic") {
   GradeSettings settings;
-  settings.truehdr_look = false;
-  const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native));
+  settings.shadows = 0.5;
+  settings.highlights_rtx = 1.0;
+  settings.area_rtx = 0.1;
+  const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native, 800.0));
   REQUIRE(decision);
   CHECK(decision->mode == GradeMode::Native);
   CHECK(decision->source_white_nits == 203.0);
   const GradeParams& p = decision->params;
-  const double room = 1000.0 / 203.0;
-  CHECK(p.paper == 203.0);
-  CHECK(p.in_max == 203.0);
-  CHECK(p.emulate == 0.0);
-  CHECK(p.adapt == 0.0);
-  CHECK(p.area_gain == Approx(1.0 + 0.8 * resp(0.5, 1.0, 1.0)));
-  CHECK(p.spec_gain == Approx(1.0 + resp(0.5, 1.0, 1.0) * (room - 1.0)));
-  CHECK(p.vibrance == Approx(resp(0.15, 0.8, 1.6)));
+  CHECK(p.peak == 800.0);
+  CHECK(p.paper == 400.0);  // la moitié du pic
+  CHECK(p.adapt == 1.0);
+  CHECK(p.sdr_white == 203.0);
+  CHECK(p.shadows == Approx(resp(0.5, 0.8, 1.2)));
+  // h = 1 : 1 + 1,2 + 1,6 × 0,75 = 3,4.
+  CHECK(p.spec_gain == Approx(3.4));
+  CHECK(p.sdr_out == 0.0);
+  CHECK(p.black_hi == 0.0);  // sans vrai noir
 }
 
-TEST_CASE("route native SDR sans émulation : Éclats, Aplats et Couleurs de l'interface règlent la sortie") {
-  GradeSettings base;
-  base.truehdr_look = false;
-  const auto at = [&](GradeSettings s) { return decide_grade(s, pq_context(core::HdrMode::Native))->params; };
-  const GradeParams ref = at(base);
-  GradeSettings highlights = base;
-  highlights.highlights_rtx = 0.50;
-  CHECK(at(highlights).spec_gain > ref.spec_gain);
-  GradeSettings areas = base;
-  areas.area_rtx = 0.5;
-  CHECK(at(areas).area_gain > ref.area_gain);
-  GradeSettings colors = base;
-  colors.vibrance_rtx = 0.30;
-  CHECK(at(colors).vibrance > ref.vibrance);
-  // Les valeurs cachées d'avant ne règlent plus rien.
-  GradeSettings hidden = base;
-  hidden.highlights = 1.0;
-  hidden.vibrance = 0.6;
-  CHECK(at(hidden).spec_gain == Approx(ref.spec_gain));
-  CHECK(at(hidden).vibrance == Approx(ref.vibrance));
-}
-
-TEST_CASE("le blanc papier est plafonné à 0,75 × pic et arrondi") {
+TEST_CASE("blanc papier (truehdr_look coupé) : éclats jusqu'au pic, plafonné à 0,75 × pic") {
   GradeSettings settings;
   settings.truehdr_look = false;
   settings.paper_white = 400.0;
@@ -118,54 +57,17 @@ TEST_CASE("le blanc papier est plafonné à 0,75 × pic et arrondi") {
   REQUIRE(decision);
   CHECK(decision->params.paper == 301.0);  // floor(300,75 + 0,5)
   CHECK(decision->source_white_nits == 301.0);
-  CHECK(decision->params.area_gain == Approx(401.0 / 301.0));  // 1,5 borné par la marge pic / papier
-  CHECK(decision->params.spec_gain == Approx(401.0 / 301.0));
+  CHECK(decision->params.adapt == 0.0);
+  CHECK(decision->params.spec_gain == Approx(401.0 / 301.0));  // borné par la marge pic / papier
 }
 
-TEST_CASE("émulation : contraste, saturation et gris moyen aux bornes") {
+TEST_CASE("sortie SDR : noirs et vrai noir au blanc de l'écran, sans marge d'éclats") {
   GradeSettings settings;
-  settings.contrast = 200.0;
-  settings.saturation = 0.0;
-  settings.middle_gray = 10.0;
-  const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native, 400.0));
-  REQUIRE(decision);
-  const GradeParams& p = decision->params;
-  CHECK(p.em_base == 40.0);
-  CHECK(p.em_pow == Approx(6.0 * std::pow(5.0, 0.35)));
-  CHECK(p.em_lo == Approx(1.38));
-  CHECK(p.em_hi == Approx(1.28));
-  CHECK(p.em_sat == Approx(0.81));
-  settings.saturation = 200.0;  // 400 % appliqués
-  CHECK(decide_grade(settings, pq_context(core::HdrMode::Native, 400.0))->params.em_sat == Approx(1.57));
-  settings.saturation = 0.0;
-  settings.contrast = 0.0;
-  settings.middle_gray = 100.0;
-  const auto low = decide_grade(settings, pq_context(core::HdrMode::Native, 4000.0));
-  REQUIRE(low);
-  CHECK(low->params.em_base == 400.0);
-  CHECK(low->params.em_pow == Approx(6.0 * std::pow(0.5, 0.35)));
-  CHECK(low->params.em_lo == Approx(0.65));
-  CHECK(low->params.em_hi == Approx(0.74));
-}
-
-TEST_CASE("aspect TrueHDR émulé : les éclats montent à partir de la moitié du pic") {
-  GradeSettings settings;
-  settings.highlights_rtx = 1.0;
-  const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native, 800.0));
-  REQUIRE(decision);
-  CHECK(decision->mode == GradeMode::Native);
-  CHECK(decision->params.paper == 400.0);
-  CHECK(decision->params.in_max == 800.0);
-  CHECK(decision->params.adapt == 1.0);
-  CHECK(decision->params.spec_gain == Approx(3.4));
-}
-
-TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans marge d'éclats") {
-  GradeSettings settings = pushed();
-  settings.contrast = 150.0;
+  settings.shadows = 0.4;
   settings.true_black = true;
   settings.black_lo = 0.1;
   settings.black_hi = 0.5;
+  settings.chroma_base = 0.1;
   for (const core::HdrMode route : {core::HdrMode::Off, core::HdrMode::Native}) {
     auto context = pq_context(route);
     context.output_pq = false;
@@ -175,51 +77,24 @@ TEST_CASE("sortie SDR : couleurs, noirs et contraste au blanc de l'écran, sans 
     const GradeParams& p = decision->params;
     CHECK(p.sdr_out == 1.0);
     CHECK(p.peak == 203.0);
-    CHECK(p.in_max == p.peak);
-    CHECK(p.area_gain == 1.0);
     CHECK(p.spec_gain == 1.0);
-    CHECK(p.expand == 0.0);
-    CHECK(p.gamut_p3 == 0.0);
-    CHECK(p.abl == 0.0);
-    CHECK(p.vibrance == Approx(resp(settings.vibrance_rtx, 0.8, 1.6)));
-    CHECK(p.shadows == Approx(resp(settings.shadows, 0.8, 1.2)));
-    CHECK(p.guard == settings.guard);
-    CHECK(p.emulate == 1.0);  // l'aspect TrueHDR entier, ramené au blanc SDR
-    CHECK(p.em_lo > 1.0);
-    CHECK(p.em_base == 200.0);
+    CHECK(p.shadows == Approx(resp(0.4, 0.8, 1.2)));
+    CHECK(p.chroma == Approx(1.1));
+    CHECK(p.black_lo == 0.1);
     CHECK(p.black_hi == 0.5);
   }
   auto context = pq_context(core::HdrMode::Off);
   context.output_pq = false;
-  settings.truehdr_look = false;
-  CHECK(decide_grade(settings, context)->params.emulate == 0.0);
   context.source_hdr = true;
   CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
 }
 
-TEST_CASE("sortie SDR : le grade adaptatif ne touche que noirs et couleurs, pas la courbe des tons moyens") {
-  GradeSettings settings;
-  settings.adaptive = true;
-  settings.adaptive_gray = 15.0;  // scènes claires : « moins d'expansion » en HDR, « plus sombre » en SDR
-  settings.adaptive_glow_gray = 15.0;  // scènes sombres avec éclat
-  auto context = pq_context(core::HdrMode::Native);
-  context.output_pq = false;
-  const auto decision = decide_grade(settings, context);
-  REQUIRE(decision);
-  CHECK(decision->params.sdr_out == 1.0);
-  CHECK(decision->params.ad_em_base == Approx(decision->params.em_base));
-  CHECK(decision->params.gl_em_base == Approx(decision->params.em_base));
-  CHECK(decision->params.ad_em_pow == Approx(decision->params.em_pow));
-  CHECK(decision->params.gl_em_pow == Approx(decision->params.em_pow));
-}
-
-TEST_CASE("le mode SDR sur une sortie HDR10 est gradé comme la route native sans l'aspect TrueHDR") {
+TEST_CASE("le mode SDR sur une sortie HDR10 est gradé au blanc papier") {
   GradeSettings settings;
   const auto off = decide_grade(settings, pq_context(core::HdrMode::Off));
   REQUIRE(off);
   CHECK(off->mode == GradeMode::Native);
-  settings.truehdr_look = true;
-  CHECK(decide_grade(settings, pq_context(core::HdrMode::Off))->params.adapt == 0.0);  // pas l'adaptatif
+  CHECK(off->params.adapt == 0.0);
   // Une source HDR en mode SDR reste neutre.
   auto hdr_source = pq_context(core::HdrMode::Off);
   hdr_source.source_hdr = true;
@@ -244,59 +119,29 @@ TEST_CASE("une source HDR n'est gradée que si grade_native_hdr le demande") {
   const auto decision = decide_grade(settings, context);
   REQUIRE(decision);
   CHECK(decision->mode == GradeMode::NativeHdr);
-  CHECK(decision->params.emulate == 0.0);
-  CHECK(decision->params.in_max == 1000.0);
+  CHECK(decision->params.adapt == 0.0);
 }
 
-TEST_CASE("OLED : limiteur des scènes claires et seuils du vrai noir") {
+TEST_CASE("le peps de la passe anime et la lumière de la scène") {
   GradeSettings settings;
-  settings.black_lo = 0.05;
-  settings.black_hi = 0.4;
-  auto decision = decide_grade(settings, pq_context(core::HdrMode::Native));
+  settings.anime_contrast = 150;
+  settings.anime_saturation = 80;
+  settings.anime_highlights = 200;
+  settings.scene_light = SceneLight{.apl_nits = 40.0, .lit = 0.1};
+  settings.anime_exposure = 0.25;
+  const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native));
   REQUIRE(decision);
-  CHECK(decision->params.abl == 0.0);
-  CHECK(decision->params.black_hi == 0.0);  // pas de vrai noir : la dixième passe est sautée
-  settings.oled = true;
-  decision = decide_grade(settings, pq_context(core::HdrMode::Native));
-  REQUIRE(decision);
-  CHECK(decision->params.abl == Approx(0.6));
-  CHECK(decision->params.abl_lo == 80.0);
-  CHECK(decision->params.abl_hi == 250.0);
-  CHECK(decision->params.black_hi == 0.0);  // dalle OLED, vrai noir coupé : limiteur seul
-  settings.true_black = true;
-  decision = decide_grade(settings, pq_context(core::HdrMode::Native));
-  REQUIRE(decision);
-  CHECK(decision->params.black_lo == 0.05);
-  CHECK(decision->params.black_hi == 0.4);
-}
-
-TEST_CASE("OLED : la plage du limiteur suit la moyenne d'image de l'écran") {
-  // MSI MAG 272U E16 : 265 nits en plein écran, les 80 et 250 nits du lecteur actuel.
-  const auto qd_oled = abl_range(265.0);
-  REQUIRE(qd_oled);
-  CHECK(qd_oled->lo == Approx(79.5));
-  CHECK(qd_oled->hi == Approx(249.1));
-  CHECK(abl_range(600.0)->hi == Approx(564.0));
-  CHECK_FALSE(abl_range(10.0));
-  CHECK_FALSE(abl_range(std::numeric_limits<double>::quiet_NaN()));
-  GradeSettings settings;
-  settings.abl_lo = 250.0;
-  settings.abl_hi = 80.0;
-  const auto refused = check_grade_settings(settings);
-  REQUIRE_FALSE(refused);
-  CHECK(refused.error().detail.starts_with("grade.abl_hi"));
-}
-
-TEST_CASE("couleurs étendues : passées au hook, nulles par défaut, poussées par des réglages poussés") {
-  const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
-  const auto vivid = decide_grade(pushed(), pq_context(core::HdrMode::Native));
-  REQUIRE(natural);
-  REQUIRE(vivid);
-  CHECK(natural->params.expand == 0.0);
-  CHECK(vivid->params.expand == 0.7);
-  GradeSettings bad;
-  bad.expand = 1.2;
-  CHECK_FALSE(check_grade_settings(bad));
+  const GradeParams& p = decision->params;
+  CHECK(p.an_punch == Approx(0.5));
+  CHECK(p.an_chroma == Approx(0.8));
+  CHECK(p.an_spec == Approx(2.0));
+  CHECK(p.fs_apl == Approx(40.0));
+  CHECK(p.an_lift == Approx(kAnimeLift * std::exp2(0.25)));
+  // Sans lumière connue : la luminance moyenne reste inconnue, le relèvement fixe.
+  const auto plain = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
+  REQUIRE(plain);
+  CHECK(plain->params.fs_apl < 0.0);
+  CHECK(plain->params.an_lift == kAnimeLift);
 }
 
 TEST_CASE("un réglage hors plage est refusé en nommant le champ") {
@@ -310,7 +155,7 @@ TEST_CASE("un réglage hors plage est refusé en nommant le champ") {
   settings.shadows = std::numeric_limits<double>::quiet_NaN();
   CHECK_FALSE(check_grade_settings(settings));
   settings = GradeSettings{};
-  settings.subtitle_white = 1001.0;
+  settings.area_rtx = 1.5;
   CHECK_FALSE(check_grade_settings(settings));
   CHECK_FALSE(decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native, 99.0)));
 }
@@ -325,37 +170,15 @@ TEST_CASE("pic du grade : celui de l'écran s'il est connu, 1000 nits sinon") {
   CHECK_FALSE(grade_peak(display));
 }
 
-TEST_CASE("réglages poussés sur l'aspect TrueHDR : aplats et éclats montent, le garde-fou passe au hook") {
-  const auto natural = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
-  const auto vivid = decide_grade(pushed(), pq_context(core::HdrMode::Native));
-  REQUIRE(natural);
-  REQUIRE(vivid);
-  CHECK(natural->params.area_gain == 1.0);
-  CHECK(natural->params.guard == 0.0);
-  CHECK(vivid->params.area_gain == Approx(1.0 + 0.8 * resp(0.5, 1.0, 1.0)));
-  CHECK(vivid->params.spec_gain > natural->params.spec_gain);
-  CHECK(vivid->params.guard == 0.8);
-  CHECK(vivid->params.vibrance == Approx(resp(0.6, 0.8, 1.6)));
-  GradeSettings bad;
-  bad.guard = 1.5;
-  CHECK_FALSE(decide_grade(bad, pq_context(core::HdrMode::Native)));
-}
-
 TEST_CASE("un curseur float poussé à sa borne garde le grade") {
-  // 0,8f relu en double vaut 0,800000012 : au bout des curseurs Couleurs et Noirs profonds, le grade
-  // entier était refusé.
+  // 0,8f relu en double vaut 0,800000012 : au bout du curseur Noirs profonds, le grade entier était refusé.
   GradeSettings settings;
-  settings.vibrance_rtx = static_cast<double>(0.8F);
   settings.shadows = static_cast<double>(0.8F);
   CHECK(check_grade_settings(settings));
   CHECK(decide_grade(settings, pq_context(core::HdrMode::Native)));
   settings.shadows = 0.81;
   CHECK_FALSE(check_grade_settings(settings));
 }
-
-}  // namespace ajp::render
-
-namespace ajp::render {
 
 TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
   // Noir de la source relevé à 0,02 nit, puis une marche tous les 0,01 nit.
@@ -405,97 +228,3 @@ TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du p
 }
 
 }  // namespace ajp::render
-
-TEST_CASE("contraste et saturation au maximum : borne du curseur, punch des réglages poussés",
-          "[grade][punch]") {
-  using namespace ajp::render;
-  GradeSettings s = GradeSettings{};
-  const GradeContext context{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
-  auto at_rest = decide_grade(s, context);
-  REQUIRE(at_rest);
-  CHECK(at_rest->params.punch == 0.0);
-  CHECK(at_rest->params.chroma == 1.0);
-  s.contrast = 200.0;
-  s.saturation = 200.0;
-  auto at_max = decide_grade(s, context);
-  REQUIRE(at_max);
-  CHECK(at_max->params.punch == 0.0);  // le contraste passe par l'aspect émulé, pas par le punch
-  CHECK_FALSE(check_grade_settings([] {
-    GradeSettings g;
-    g.contrast = 201.0;
-    return g;
-  }()));
-  // Les réglages poussés ajoutent leur propre punch dès le départ.
-  auto vivid = decide_grade(pushed(), context);
-  CHECK(vivid->params.punch == Approx(0.30));
-  CHECK(vivid->params.chroma == Approx(1.12));
-}
-
-TEST_CASE("grade adaptatif (shader) : seuils en codes PQ, courbe émulée de la scène claire",
-          "[grade][adaptif]") {
-  using namespace ajp::render;
-  GradeSettings s;
-  s.adaptive = true;
-  s.adaptive_lo = 13.0;
-  s.adaptive_hi = 54.0;
-  s.adaptive_shadows = 0.6;
-  s.adaptive_gray = 30.0;
-  const GradeContext native{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
-  const auto on = decide_grade(s, native);
-  REQUIRE(on);
-  CHECK(on->params.ad_on == 1.0);
-  CHECK(on->params.ad_lo < on->params.ad_hi);
-  CHECK(on->params.ad_hi < 0.58);  // le blanc SDR (203 nits) est le code PQ 0,58
-  CHECK(on->params.ad_lo > 0.1);
-  CHECK(on->params.ad_em_base == Approx(120.0));      // 4 x gris moyen 30
-  CHECK(on->params.ad_em_base < on->params.em_base);  // gris moyen 50 : 200
-  CHECK(on->params.ad_em_pow > on->params.em_pow);
-  CHECK(on->params.ad_shadows > 0.6);
-  CHECK(on->params.ad_vibrance == Approx(on->params.vibrance * (1.0 - s.adaptive_vibrance_cut)));
-  // Coupé : aucune trace.
-  s.adaptive = false;
-  const auto off = decide_grade(s, native);
-  REQUIRE(off);
-  CHECK(off->params.ad_on == 0.0);
-}
-
-TEST_CASE("grade adaptatif : la calibration force la scène sombre ou claire dans le shader",
-          "[grade][adaptif]") {
-  using namespace ajp::render;
-  GradeSettings s;
-  s.adaptive = true;
-  const GradeContext native{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
-  s.adaptive_force = 1.0;  // claire : tout code PQ moyen (0 à 1) est au-dessus de ad_hi
-  const auto bright = decide_grade(s, native);
-  REQUIRE(bright);
-  CHECK(bright->params.ad_hi < 0.0);
-  CHECK(bright->params.ad_lo < bright->params.ad_hi);
-  s.adaptive_force = 0.0;  // sombre : tout code est sous ad_lo
-  const auto dark = decide_grade(s, native);
-  REQUIRE(dark);
-  CHECK(dark->params.ad_lo > 1.0);
-  CHECK(dark->params.ad_lo < dark->params.ad_hi);
-}
-
-TEST_CASE("grade adaptatif : le plan analysé passe sa position au shader, la calibration reste prioritaire",
-          "[grade][adaptif]") {
-  using namespace ajp::render;
-  GradeSettings s;
-  s.adaptive = true;
-  const GradeContext native{.route = ajp::core::HdrMode::Native, .output_pq = true, .peak_nits = 1000.0};
-  const auto live = decide_grade(s, native);
-  REQUIRE(live);
-  CHECK(live->params.sh_on == 0.0);
-  s.adaptive_shot = AdaptiveShot{.t = 0.75, .tv = 0.2, .glow = 0.1, .series = 1.5};
-  const auto shot = decide_grade(s, native);
-  REQUIRE(shot);
-  CHECK(shot->params.sh_on == 1.0);
-  CHECK(shot->params.sh_t == 0.75);
-  CHECK(shot->params.sh_sky == 0.2);
-  CHECK(shot->params.sh_glow == 0.1);
-  CHECK(shot->params.sh_series == 1.0);  // borné à [0, 1]
-  s.adaptive_force = 1.0;
-  const auto forced = decide_grade(s, native);
-  REQUIRE(forced);
-  CHECK(forced->params.sh_on == 0.0);
-}

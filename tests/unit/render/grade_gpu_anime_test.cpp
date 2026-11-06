@@ -38,7 +38,6 @@ GradeParams anime_params() {
   GradeParams p;
   p.peak = kPeak;
   p.shadows = 0.0;
-  p.vibrance = 0.0;
   return p;
 }
 
@@ -145,11 +144,9 @@ TEST_CASE("HDR anime : route adaptative (paper = demi-pic), la lumière monte au
   // Les valeurs de decide_grade pour l'aspect adaptatif : blanc papier à la moitié du pic, blanc SDR à 203.
   GradeParams p = anime_params();
   p.paper = 0.5 * kPeak;
-  p.in_max = kPeak;
   p.adapt = 1.0;
   p.sdr_white = 203.0;
   p.spec_gain = 3.0;
-  p.area_gain = 1.4;
   // Une lumière à 195 nits (presque le blanc SDR) sur un fond sombre.
   const auto line = graded_rgb(gpu, columns([](int x) { return x >= 104 && x < 152 ? 195.0 : 3.0; }), p);
   const double centre = luma(line[128]);

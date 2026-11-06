@@ -265,11 +265,6 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
   return out;
 }
 
-std::string display_key(const DisplayFacts& d) {
-  if (!d.manufacturer.empty() && d.product != 0) return std::format("{}-{:04X}", d.manufacturer, d.product);
-  return d.name;
-}
-
 std::string describe(const DisplayFacts& d) {
   std::string text = d.name.empty() ? std::string(i18n::tr("unnamed display")) : d.name;
   if (d.pq) text += i18n::tr(" · HDR10");

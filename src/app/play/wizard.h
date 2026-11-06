@@ -19,8 +19,8 @@ enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran
   Engines,      // moteurs à installer
   Chain,        // la calibration de la machine (machine_calibration.h), faite après « Terminer »
-  Hdr,          // HDR adaptatif / SDR
-  Grade,        // la calibration du grade HDR, ouverte après celle de la machine (écran HDR seulement)
+  Hdr,          // HDR / SDR
+  Grade,        // retiré (la calibration du grade adaptatif) : son rang reste pris, first_run_step le garde
   Languages,    // audio et sous-titres préférés
   Updates,      // Me prévenir / Automatique / Jamais
   Summary,      // ce qui a été choisi, Terminer
@@ -39,7 +39,7 @@ struct WizardFacts {
 // Les écrans de cette machine, dans l'ordre.
 std::vector<WizardStep> wizard_steps(const WizardFacts& facts);
 
-enum class HdrChoice : std::uint8_t { Auto, Adaptive, Sdr };
+enum class HdrChoice : std::uint8_t { Auto, Hdr, Sdr };
 std::string_view label(HdrChoice choice);
 
 // L'état de l'assistant : l'écran courant, ce qui est choisi, ce qui est sauté.
@@ -78,9 +78,7 @@ core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
 // Les réglages de lecture : HDR, langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
 // de la machine sautée : le préréglage Auto.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
-// « Terminer » lance-t-il la calibration de la machine (écran non sauté) ? Et celle du grade HDR (écran non
-// passé, et un HDR choisi) ? Elle se propose après celle de la machine : HDR, ou SDR.
+// « Terminer » lance-t-il la calibration de la machine (écran non sauté) ?
 bool wants_machine_calibration(const Wizard& wizard);
-bool wants_grade_calibration(const Wizard& wizard);
 
 }  // namespace ajp::app::play

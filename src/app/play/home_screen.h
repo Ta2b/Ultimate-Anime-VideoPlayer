@@ -48,8 +48,7 @@ struct HomeState {
   core::Settings& engines;  // settings.toml
   std::size_t& next_key;
   SnapshotPlan& snapshot;
-  std::optional<PlayFile>
-      start;  // la vidéo choisie par PlayFile (la calibration du grade) : instant et pause
+  std::optional<PlayFile> start;  // la vidéo choisie par PlayFile : instant et pause
 };
 
 // Le fichier d'un SDL_EVENT_DROP_FILE ; rien pour un autre événement, ni pour un dossier ou un fichier

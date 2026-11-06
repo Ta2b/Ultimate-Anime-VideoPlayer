@@ -5,8 +5,7 @@
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
 //                      [--snapshot=FICHIER.ppm] [--snapshot-at=S] [--keys=S:touche,…]
 //                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
-//                      [--truehdr-peak=NITS] [--truehdr-contrast=N] [--truehdr-saturation=N]
-//                      [--truehdr-gray=N]
+//                      [--truehdr-peak=NITS]
 //                      [--first-run] [--mute] [--data-dir=DOSSIER] [--bench-level=auto|0..4]
 //                      [--bench-out=FICHIER]
 //   ajp bench <fichier> [--seconds=S] [--report=FICHIER] [--windowed]
@@ -98,10 +97,6 @@ struct PlayOptions {
   int rife_factor = kDefaultRifeFactor;
   int rife_factor_den = 1;                          // 2 pour un facteur en moitié : ×rife_factor / 2
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
-  // L'aspect TrueHDR émulé du HDR adaptatif (et du grade SDR).
-  int true_hdr_contrast = 100;    // --truehdr-contrast=0..200
-  int true_hdr_saturation = 100;  // --truehdr-saturation=0..200
-  int true_hdr_gray = 50;         // --truehdr-gray=10..100 (gris moyen)
   int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
   bool help = false;      // --help
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.

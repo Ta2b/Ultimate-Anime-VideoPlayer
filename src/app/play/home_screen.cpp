@@ -191,7 +191,6 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .switchable = installed_switchable(h.catalog, h.paths),
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
       .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),
-      .display_key = display ? display_key(*display) : std::string(),
       .source_file = {},
       .machine_tier = static_cast<int>(effective_tier(machine, measured)),
       .display_height = display_height(h.screen.window()),
@@ -393,7 +392,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   if (dirty) save();
   if (!chosen) return std::nullopt;
   log->info("accueil : {}", prepare::utf8_path(*chosen));
-  if (!st.start) h.ui.close_settings();  // PlayFile : le panneau reste ouvert (la calibration continue)
+  if (!st.start) h.ui.close_settings();  // PlayFile : le panneau reste ouvert
   return chosen;
 }
 

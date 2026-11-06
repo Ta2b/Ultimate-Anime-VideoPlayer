@@ -482,8 +482,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   if (input_pending_) last_input_us_ = now_us;
   const bool tooltip_due = hover_waiting_ && now_us - last_input_us_ < kTooltipWindowUs;
   if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0 || tooltip_due))
-    return UiFrame{
-        .draw = draw_, .changed = false, .bottom = bottom_, .top = top_, .calibration = panel_.calibration()};
+    return UiFrame{.draw = draw_, .changed = false, .bottom = bottom_, .top = top_};
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
   home_ = false;
@@ -512,13 +511,6 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     look_.keep_visible = panel_.is_open();  // fermé par sa croix
     drawn = true;
   }
-  panel_.settle(actions);
-  // Le panneau fermé en pleine calibration du grade : la scène n'est plus forcée.
-  if (!panel_.is_open() && running_.grade_values.adaptive_force >= 0.0) {
-    PlaySettings released = running_;
-    released.grade_values.adaptive_force = -1.0;
-    actions.emplace_back(ApplySettings{.settings = released});
-  }
   hover_waiting_ = ImGui::IsAnyItemHovered();
   ImGui::Render();
   controls_.framed(now_us, view, drawn);
@@ -527,8 +519,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   const bool bar = controls_.shown(now_us, view.paused);
   bottom_ = bar ? static_cast<int>(std::ceil(controls_height(look_.scale))) : 0;
   top_ = bar ? static_cast<int>(std::ceil(title_height(look_.scale))) : 0;
-  return UiFrame{
-      .draw = draw_, .changed = true, .bottom = bottom_, .top = top_, .calibration = panel_.calibration()};
+  return UiFrame{.draw = draw_, .changed = true, .bottom = bottom_, .top = top_};
 }
 
 const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {
@@ -553,17 +544,6 @@ const ImDrawData* PlayerUi::welcome(std::int64_t now_us, FirstRunView& view) {
   return ImGui::GetDrawData();
 }
 
-const ImDrawData* PlayerUi::output_choice(std::int64_t now_us, OutputPick& picked) {
-  home_ = false;
-  begin_frame(now_us);
-  clicks_.clear();
-  picked = draw_output_choice(look_.scale);
-  ImGui::Render();
-  draw_ = nullptr;
-  controls_.framed(now_us, ControlsView{}, false);
-  return ImGui::GetDrawData();
-}
-
 const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vector<Input>& actions) {
   if (cursor_hidden_) {  // retour d'une lecture où la souris s'était effacée
     SDL_ShowCursor();
@@ -579,7 +559,6 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
   }
-  panel_.settle(actions);
   ImGui::Render();
   follow_text_input();
   draw_ = nullptr;  // la barre de lecture se recompose à son premier tour
@@ -597,19 +576,6 @@ void PlayerUi::set_black_status(std::string status) {
   if (choices_.black_status == status) return;
   choices_.black_status = std::move(status);
   input_pending_ = true;
-}
-
-void PlayerUi::set_adaptive_scene(const AdaptiveScene& scene) {
-  // Les poids glissent à chaque tour du grade : le panneau ne se redessine pour eux que s'il est ouvert, et
-  // qu'ils ont bougé d'un centième.
-  const AdaptiveScene& was = choices_.adaptive_scene;
-  const bool moved = scene.live != was.live || scene.corrections != was.corrections ||
-                     scene.approvals != was.approvals || std::abs(scene.t - was.t) >= 0.01 ||
-                     std::abs(scene.glow - was.glow) >= 0.01 || std::abs(scene.tv - was.tv) >= 0.01 ||
-                     std::abs(scene.x - was.x) >= 0.005;
-  if (!moved) return;
-  choices_.adaptive_scene = scene;
-  if (panel_.is_open()) input_pending_ = true;
 }
 
 void PlayerUi::set_profiles(ProfilesView profiles) {

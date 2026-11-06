@@ -155,28 +155,6 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   return candidate_settings((*shared->result)->chosen, std::move(base));
 }
 
-// Après la calibration de la machine, sur un écran HDR : HDR (la calibration du grade suit) ou SDR. Rien si
-// la fenêtre se ferme.
-std::optional<OutputPick> ask_output(PlaceboScreen& screen, PlayerUi& ui) {
-  const auto log = log_channel("app");
-  std::vector<Input> actions;
-  while (true) {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return std::nullopt;
-      (void)ui.handle(event, host_now_us(), actions);
-    }
-    actions.clear();
-    OutputPick picked = OutputPick::None;
-    if (auto shown = screen.show(ShowRequest{.ui = ui.output_choice(host_now_us(), picked)}); !shown)
-      log->warn("choix HDR ou SDR : {}", shown.error().detail);
-    if (picked != OutputPick::None) {
-      log->info("après la calibration : {}", picked == OutputPick::Hdr ? "HDR" : "SDR");
-      return picked;
-    }
-    (void)SDL_WaitEventTimeout(nullptr, kWelcomeFrameMs);
-  }
-}
 }  // namespace
 
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines,
@@ -250,15 +228,6 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       if (!calibrated) return false;
       chosen_play = std::move(*calibrated);
       calibrated_chain = chosen_play;
-    }
-    if (wants_grade_calibration(wizard)) {
-      const std::optional<OutputPick> picked = ask_output(s.screen, s.ui);
-      if (!picked) return false;
-      if (*picked == OutputPick::Hdr) {
-        s.ui.queue_grade_calibration();
-      } else {
-        chosen_play.hdr_native = false;
-      }
     }
     if (auto written = save_settings(play_path, chosen_play); !written)
       log->warn("{}", written.error().detail);

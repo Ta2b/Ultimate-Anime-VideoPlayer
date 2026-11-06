@@ -78,8 +78,8 @@ float an_local(float y_pq, float plain) {
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
     if (sdr_out > 0.5) return px;
-    // Le niveau du blanc de la source : le blanc SDR (203) pour l'aspect adaptatif (adapt), sinon le blanc papier
-    // (decide_grade pose paper = 0,5 x pic dans l'aspect adaptatif : ce n'est alors pas le blanc de la source).
+    // Le niveau du blanc de la source : le blanc SDR (203) pour la route native (adapt), sinon le blanc papier
+    // (decide_grade pose paper = 0,5 x pic sur la route native : ce n'est alors pas le blanc de la source).
     float white = adapt > 0.5 ? sdr_white : paper;
     vec3 lin = pq_to_nits(px.rgb);
     float y = max(dot(lin, LUMA), 1e-4);

@@ -1,6 +1,6 @@
 // La pré-analyse des plans dans la lecture (media/shot_probe.h) : lancée à l'ouverture d'une vidéo avec le
-// grade adaptatif, elle survit aux réouvertures de la chaîne et aux vidéos suivantes ; le grade adaptatif
-// (chain_hdr.cpp, adaptive_tick) y lit le plan de l'image qui vient. Une vidéo analysée entière va au cache
+// grade, elle survit aux réouvertures de la chaîne et aux vidéos suivantes ; le grade (chain_hdr.cpp,
+// grade_tick) y lit la lumière du plan de l'image qui vient. Une vidéo analysée entière va au cache
 // (media/shot_cache.h), seule la vidéo lue s'analyse.
 #pragma once
 
@@ -51,12 +51,9 @@ struct ShotWork {
 };
 
 // À l'ouverture d'une chaîne : reprend la vidéo du cache, ou lance l'analyse (depuis la part gardée) ; la
-// garde pour le même fichier ; rien sans grade adaptatif ni lecteur des plans (l'analyse en cours
-// s'arrête).
+// garde pour le même fichier ; rien sans grade (l'analyse en cours s'arrête).
 // Une source HDR (PQ, HLG) sans grade natif HDR n'en a pas besoin : rien ne part.
-// plans : la méthode « HDR anime » par plan (--anime-shots, défaut) ou les coupes des plans (--shot-cuts)
-// les lisent aussi, sans grade adaptatif.
-void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings, bool plans,
+void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
                 std::int64_t start_us, bool source_hdr = false);
 
 // Le cache : à appeler à chaque tour, ne fait rien la plupart du temps.
@@ -76,9 +73,5 @@ std::optional<ShotScene> next_live(Chain& to);
 // Les plans connus passés au planificateur du grade v2 de l'écran (8.6), et au livre des coupes sous
 // --shot-cuts (8.7), quand leur nombre change.
 void feed_plan_shots(Chain& to);
-
-// La luminance moyenne de la vidéo selon les plans analysés, une fois assez couverte (une minute, ou toute
-// la vidéo) ; vide sinon.
-std::optional<double> shots_series_luma(const Chain& to);
 
 }  // namespace ajp::app::play

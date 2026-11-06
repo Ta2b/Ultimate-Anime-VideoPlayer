@@ -22,10 +22,8 @@
 
 namespace ajp::app::play {
 
-struct ExportDraft;      // settings_export.h
-struct GradeWizard;      // settings_calibration.h
-struct MachineNote;      // settings_bench_results.h
-struct CalibrationShot;  // calibration_shot.h
+struct ExportDraft;  // settings_export.h
+struct MachineNote;  // settings_bench_results.h
 
 // Un moteur du cache, pour l'onglet Moteurs.
 struct EngineBadge {
@@ -46,21 +44,6 @@ struct ProfilesView {
 };
 
 // Ce que le panneau propose, fixé par le lecteur.
-// La scène à l'écran pour le grade adaptatif (chain_learning.cpp) : ses poids appliqués, pour « Cette scène
-// », et ce que l'apprentissage a retenu.
-struct AdaptiveScene {
-  bool live = false;  // grade adaptatif en marche, hors calibration
-  double t = 0.0;     // sombre (0) à claire (1)
-  double glow = 0.0;  // sombre avec éclat
-  double tv = 0.0;    // ciel bleu saturé, flash coloré
-  // Ce que l'apprentissage retient de la scène (grade_learning.h : LearnScene), pour la calibration.
-  double x = 0.0;
-  double glow_seen = 0.0;
-  int corrections = 0;
-  int approvals = 0;
-  friend bool operator==(const AdaptiveScene&, const AdaptiveScene&) = default;
-};
-
 struct SettingsChoices {
   std::filesystem::path luts_dir;   // les .cube de l'utilisateur (look_catalog.h)
   std::vector<std::string> models;  // fichiers SPAN du dossier des modèles
@@ -93,12 +76,10 @@ struct SettingsChoices {
   std::optional<core::EngineId> engine_in_use;  // celui de la bibliothèque chargée
   std::string engine_note;                      // le moteur préféré a refusé ce GPU : pourquoi
   std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)
-  std::string display_key;  // sa clé pour le grade calibré (display_edid.h : display_key) ; vide : inconnue
-  std::filesystem::path source_file;  // le fichier lu : l'export se propose à côté
-  std::int64_t position_us = 0;       // où en est sa lecture (PlayerUi::frame) : la calibration y revient
-  bool paused = false;                // sa lecture est en pause
-  std::string black_status;           // seuils du vrai noir en cours
-  AdaptiveScene adaptive_scene;       // grade adaptatif : la scène à l'écran
+  std::filesystem::path source_file;            // le fichier lu : l'export se propose à côté
+  std::int64_t position_us = 0;                 // où en est sa lecture (PlayerUi::frame)
+  bool paused = false;                          // sa lecture est en pause
+  std::string black_status;                     // seuils du vrai noir en cours
   ProfilesView profiles;
   // Général > Configuration (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
@@ -155,15 +136,6 @@ class SettingsPanel {
     engine_draft_.reset();
   }
   void close() { open_ = false; }
-  // L'assistant de premier démarrage : à la prochaine ouverture du panneau, la page HDR et la calibration
-  // du grade adaptatif lancée pour un nouveau profil.
-  void queue_grade_calibration() { grade_queued_ = true; }
-  // L'image d'exemple de la calibration du grade (HDR > « Calibrer le grade adaptatif ») tant que le panneau
-  // la montre ; nullptr : aucune.
-  const CalibrationShot* calibration() const;
-  // À chaque image, même panneau fermé : la calibration du grade finie ou quittée (panneau fermé, autre page)
-  // rouvre la vidéo d'avant.
-  void settle(std::vector<Input>& actions);
   bool is_open() const { return open_; }
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
   bool busy() const;
@@ -198,9 +170,7 @@ class SettingsPanel {
   UpdateNote updates_;                    // Général > Application : la vérification en cours ou son résultat
   BenchNote bench_;                       // « Évaluer ma machine » : l'essai en cours ou son rapport
   std::unique_ptr<MachineNote> machine_;  // Général > Configuration : les résultats du bench
-  PrepareNote prepare_;        // « Préparer le mode Performance » : la tâche en cours ou son résultat
-  bool grade_queued_ = false;  // queue_grade_calibration
-  std::unique_ptr<GradeWizard> grade_wizard_;  // la calibration du grade adaptatif (settings_calibration.h)
+  PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };
 
 }  // namespace ajp::app::play
