@@ -97,15 +97,23 @@ class SubtitleRenderer {
   SubtitleRenderer(Handle renderer, ass_library* library, RendererOptions options);
   std::expected<void, Refusal> refresh_fonts();
   void configure(const RenderTarget& target, bool use_margins);
+  std::expected<RenderOutcome, Refusal> render_at(const SubtitleTrack& track, const RenderRequest& request,
+                                                  AtlasPool& pool, bool use_margins);
+  static RenderTarget shrunk(RenderTarget target, int shrink);
+  static constexpr int kMaxShrink = 4;
   std::expected<RenderOutcome, Refusal> build(SubtitleFrame frame, AtlasPool& pool);
   std::unexpected<Refusal> refuse_content(Refusal refusal);
 
   Handle renderer_;
   ass_library* library_;  // la bibliothèque survit au moteur
   RendererOptions options_;
-  bool rendered_ = false;     // ass_render_frame appelé depuis la création du moteur
-  bool stale_fonts_ = false;  // à recréer avant le prochain rendu
-  std::optional<RenderTarget> target_;
+  bool rendered_ = false;               // ass_render_frame appelé depuis la création du moteur
+  bool stale_fonts_ = false;            // à recréer avant le prochain rendu
+  std::optional<RenderTarget> target_;  // configuré dans libass : la demande, réduite de shrink_
+  // Réduction du rendu (1, 2, 4) : un instant qui ne tient pas dans l'atlas (dessins plein écran en
+  // 4K) est rendu plus petit, puis étiré à l'affichage, plutôt que jeté. Revient à 1 quand l'écran
+  // se vide ou que la demande change.
+  int shrink_ = 1;
   bool use_margins_ = false;              // ass_set_use_margins de la dernière configuration
   std::vector<const ass_image*> pieces_;  // images visibles du dernier ass_render_frame
   // Dernier contenu bâti. in_sync_ : il correspond au dernier ass_render_frame,

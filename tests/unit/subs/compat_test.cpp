@@ -187,8 +187,7 @@ TEST_CASE("SubsWorker : les polices d'un script choisi après un premier rendu s
   ajp::subs::test::check_atlas(frames[1]);
 }
 
-TEST_CASE("Rendu : un contenu trop grand pour l'atlas est refusé une fois par apparition",
-          "[compat][render]") {
+TEST_CASE("Rendu : un contenu trop grand pour l'atlas est rendu plus petit, pas jeté", "[compat][render]") {
   // Un carré plein sur toute l'image, bordé : remplissage et bordure font chacun
   // 2050 × 2050, et deux tels rectangles ne tiennent pas dans 4096 × 4096.
   const std::string script =
@@ -208,15 +207,14 @@ TEST_CASE("Rendu : un contenu trop grand pour l'atlas est refusé une fois par a
   Scene scene(script);
   const ajp::subs::RenderTarget target{.width = 2050, .height = 2050};
 
-  auto first = scene.render(0.2, target);
-  REQUIRE_FALSE(first);
-  CHECK(first.error().code == RefusalCode::SubtitleAtlasFull);
-  // Même contenu : image vide, sans nouveau refus.
-  CHECK(scene.frame(0.6, target).atlas == nullptr);
-  CHECK(scene.frame(0.9, target).atlas == nullptr);
+  // Rendu à moitié taille, étiré à l'affichage : le dessin reste à l'écran.
+  const ajp::subs::SubtitleFrame first = scene.frame(0.2, target);
+  REQUIRE(first.atlas != nullptr);
+  CHECK(first.width == 1025);
+  CHECK(first.height == 1025);
+  CHECK(first.rects.size() >= 2);
   CHECK(scene.frame(1.5, target).atlas == nullptr);  // entre les deux événements
-
-  auto again = scene.render(2.5, target);  // nouvelle apparition : nouveau refus
-  REQUIRE_FALSE(again);
-  CHECK(again.error().code == RefusalCode::SubtitleAtlasFull);
+  const ajp::subs::SubtitleFrame again = scene.frame(2.5, target);
+  REQUIRE(again.atlas != nullptr);
+  CHECK(again.width == 1025);
 }
