@@ -49,6 +49,7 @@ class SourceLoop {
   std::uint32_t next_id_ = 1;   // 0 reste « aucune source »
   bool primed_ = false;         // gpu a accepté une image de l'époque à cette position
   bool idle_ = false;           // fin de flux ou échec
+  bool input_ended_ = false;    // fin du fichier, ou suite illisible, transmise au décodeur
   bool awaiting_seek_ = false;  // Flush reçu : rien ne part avant le Seek
   bool quit_ = false;
 };

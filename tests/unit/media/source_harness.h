@@ -103,6 +103,10 @@ class TestListener final : public SourceListener {
     if (!changed_.wait_for(lock, kTimeout, [&] { return !failures_.empty(); })) return std::nullopt;
     return failures_.front();
   }
+  std::vector<Refusal> failures() const {
+    std::scoped_lock lock(mutex_);
+    return failures_;
+  }
   std::size_t failure_count() const {
     std::scoped_lock lock(mutex_);
     return failures_.size();

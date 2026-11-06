@@ -1,10 +1,16 @@
 #include "media/source.h"
 
+#include <filesystem>
+#include <fstream>
 #include <string_view>
 #include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+
+extern "C" {
+#include <libavutil/error.h>
+}
 
 #include "clips.h"
 #include "source_harness.h"
@@ -21,8 +27,8 @@ namespace cmd = ajp::cmd;
 namespace {
 
 // threads 0 : automatique, jusqu'à kAutoDecoderThreads selon la machine.
-SourceMedia open_media(const ClipSpec& spec, int threads = 0) {
-  auto demuxer = Demuxer::open(require_clip(spec));
+SourceMedia open_media(const std::filesystem::path& path, int threads = 0) {
+  auto demuxer = Demuxer::open(path);
   REQUIRE(demuxer.has_value());
   auto media =
       open_source(std::move(*demuxer), 0, DecoderOptions{.attempts = {HwApi::Software}, .threads = threads});
@@ -40,8 +46,15 @@ struct Running {
   Running(const ClipSpec& spec, std::size_t capacity, int refuse_first = 0,
           std::vector<PacketRoute> routes = {}, int threads = 0,
           std::size_t reserve_bytes = kDefaultReserveBytes)
+      : Running(require_clip(spec), capacity, refuse_first, std::move(routes), threads, reserve_bytes) {}
+
+  Running(const std::filesystem::path& path, std::size_t capacity, int refuse_first = 0,
+          std::vector<PacketRoute> routes = {}, int threads = 0,
+          std::size_t reserve_bytes = kDefaultReserveBytes, ReadFault fault = {})
       : sink(capacity, refuse_first) {
-    auto started = SourceThread::start(open_media(spec, threads),
+    SourceMedia media = open_media(path, threads);
+    media.demuxer.fail_reads(fault);
+    auto started = SourceThread::start(std::move(media),
                                        {.frames = &sink,
                                         .listener = &listener,
                                         .packets = std::move(routes),
@@ -66,6 +79,41 @@ struct Running {
     }
   }
 };
+
+// Clip de 100 images (4 s), un point clé toutes les 10, assez long pour qu'un dégât au milieu
+// laisse des images lisibles de part et d'autre.
+ClipSpec long_clip() {
+  ClipSpec spec = seek_clip();
+  spec.name = "long.mkv";
+  spec.frames = 100;
+  spec.subtitles.clear();
+  return spec;
+}
+
+// Copie du clip, tronquée à `keep` de sa taille, ou abîmée par des octets 0xA5 entre `from` et `to`.
+std::filesystem::path damaged_copy(const std::string& name, double keep, double from = 0.0, double to = 0.0) {
+  const std::filesystem::path clean = require_clip(long_clip());
+  const std::filesystem::path damaged = clean.parent_path() / name;
+  std::filesystem::copy_file(clean, damaged, std::filesystem::copy_options::overwrite_existing);
+  const auto size = std::filesystem::file_size(damaged);
+  if (to > from) {
+    std::fstream file(damaged, std::ios::in | std::ios::out | std::ios::binary);
+    const auto begin = static_cast<std::streamoff>(static_cast<double>(size) * from);
+    const auto end = static_cast<std::streamoff>(static_cast<double>(size) * to);
+    file.seekp(begin);
+    const std::string garbage(static_cast<std::size_t>(end - begin), '\xA5');
+    file.write(garbage.data(), static_cast<std::streamsize>(garbage.size()));
+  }
+  std::filesystem::resize_file(damaged, static_cast<std::uintmax_t>(static_cast<double>(size) * keep));
+  return damaged;
+}
+
+// Toutes les images livrées jusqu'à la fin du flux.
+std::vector<std::int64_t> play_to_end(Running& source) {
+  std::vector<std::int64_t> pts;
+  while (auto frame = source.sink.pop(source.inbox, 2s)) pts.push_back(frame->pts_us);
+  return pts;
+}
 
 int luma_frame(const DecodedFrame& frame) {
   const auto plane = frame.data->host_plane(0);
@@ -278,7 +326,7 @@ TEST_CASE("SourceThread : des liens incomplets ou faux sont refusés", "[media][
   auto queue = PacketQueue::create({}, [] {});
   REQUIRE(queue.has_value());
   const auto refusal = [&](SourceLinks links) {
-    auto started = SourceThread::start(open_media(full_clip()), std::move(links), inbox);
+    auto started = SourceThread::start(open_media(require_clip(full_clip())), std::move(links), inbox);
     REQUIRE_FALSE(started);
     return started.error().code;
   };
@@ -301,4 +349,65 @@ TEST_CASE("SourceThread : des liens incomplets ou faux sont refusés", "[media][
   auto not_video = open_source(*Demuxer::open(require_clip(full_clip())), 1, {.attempts = {HwApi::Software}});
   REQUIRE_FALSE(not_video);
   CHECK(not_video.error().code == RefusalCode::TrackUnavailable);
+}
+
+TEST_CASE("SourceThread : un MKV tronqué à 50 % se lit jusqu'au bout lisible, puis fin de flux",
+          "[media][source]") {
+  Running source(damaged_copy("truncated.mkv", 0.5), 4);
+  const std::vector<std::int64_t> pts = play_to_end(source);
+  CHECK(source.listener.wait_end(0));
+  REQUIRE(pts.size() >= 40);  // environ la moitié des 100 images
+  CHECK(pts.size() < 100);
+  for (std::size_t n = 0; n < pts.size(); ++n) CHECK(pts[n] == static_cast<std::int64_t>(n) * kFrameUs);
+  for (const auto& failure : source.listener.failures()) CHECK(failure.recoverable);
+}
+
+TEST_CASE("SourceThread : un bloc abîmé au milieu n'arrête pas la lecture", "[media][source]") {
+  Running source(damaged_copy("corrupt.mkv", 1.0, 0.45, 0.50), 4);
+  const std::vector<std::int64_t> pts = play_to_end(source);
+  CHECK(source.listener.wait_end(0));
+  REQUIRE_FALSE(pts.empty());
+  CHECK(pts.front() == 0);
+  CHECK(pts.back() >= 90 * kFrameUs);  // les images d'après le dégât arrivent
+  for (const auto& failure : source.listener.failures()) CHECK(failure.recoverable);
+}
+
+TEST_CASE("SourceThread : une erreur de lecture passagère est retentée, rien n'est perdu",
+          "[media][source]") {
+  // Trois échecs d'entrée-sortie au milieu du fichier, comme un partage réseau qui hésite.
+  Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
+                 ReadFault{.after_packets = 60, .count = 3, .error = AVERROR(EIO)});
+  const std::vector<std::int64_t> pts = play_to_end(source);
+  CHECK(source.listener.wait_end(0));
+  REQUIRE(pts.size() == 100);
+  CHECK(pts.back() == 99 * kFrameUs);
+  CHECK(source.listener.failure_count() == 0);
+}
+
+TEST_CASE("SourceThread : une erreur de lecture qui dure finit le flux proprement, sans refus fatal",
+          "[media][source]") {
+  Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
+                 ReadFault{.after_packets = 60, .count = 1000, .error = AVERROR(EIO)});
+  const std::vector<std::int64_t> pts = play_to_end(source);
+  CHECK(source.listener.wait_end(0));
+  // Les images déjà lues sortent du décodeur avant la fin du flux.
+  REQUIRE(pts.size() >= 25);
+  CHECK(pts.size() < 100);
+  for (std::size_t n = 0; n < pts.size(); ++n) CHECK(pts[n] == static_cast<std::int64_t>(n) * kFrameUs);
+  const auto failures = source.listener.failures();
+  REQUIRE(failures.size() == 1);
+  CHECK(failures.front().code == RefusalCode::DecodeFailed);
+  CHECK(failures.front().recoverable);
+}
+
+TEST_CASE("SourceThread : après une fin sur erreur, un seek relit le fichier", "[media][source]") {
+  Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
+                 ReadFault{.after_packets = 60, .count = 70, .error = AVERROR_INVALIDDATA});
+  play_to_end(source);
+  CHECK(source.listener.wait_end(0));
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 1}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 0, .exact = true}}));
+  const std::vector<std::int64_t> pts = play_to_end(source);
+  CHECK(source.listener.wait_end(1));
+  REQUIRE(pts.size() == 100);  // les essais ratés sont épuisés : tout le fichier se lit
 }

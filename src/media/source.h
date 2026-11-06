@@ -10,8 +10,11 @@
 //   position affichée (changement de Plan) ; l'Inbox garde cet ordre.
 // - cmd::Seek : repositionne. Exact : point clé qui s'affiche à ou avant la
 //   cible, puis décodage et rejet jusqu'à l'image visible à la cible. Rapide :
-//   point clé le plus proche. Un Seek refusé est signalé et la lecture reprend
-//   où elle était.
+//   point clé le plus proche. Un Seek refusé est signalé (refus `recoverable`) et
+//   la lecture reprend où elle était.
+// - Erreur de lecture du fichier : retentée par le Demuxer ; si elle dure, refus
+//   `recoverable`, puis le décodeur rend ses dernières images et la fin du flux
+//   est signalée, comme à la fin du fichier. Tout autre refus arrête la source.
 // - cmd::Quit, ou l'arrêt du std::jthread : la boucle se termine.
 // - Credit : un consommateur a libéré une place ; le thread retente sa livraison.
 // Les autres commandes (pause, pas image, seek relatif) se traduisent dans app,
@@ -27,7 +30,7 @@
 //   Flush et au Seek. Le décodeur retient pourtant ses premières images (threads
 //   d'images, images B) et un seek exact décode et jette jusqu'à la cible : des
 //   centaines de paquets audio peuvent précéder la première image. Au-delà du
-//   plafond : refus PacketBacklog, et la source s'arrête jusqu'au Seek suivant.
+//   plafond : refus PacketBacklog, qui arrête la source et la lecture (refus non `recoverable`).
 // - Ensuite, une file pleine fait attendre son Credit : c'est ce qui cale la
 //   lecture du fichier sur l'horloge audio.
 // En retour, chaque consommateur retire ses paquets à son propre rythme, jamais

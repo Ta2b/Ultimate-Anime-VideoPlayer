@@ -61,8 +61,9 @@ void MainMail::end_of_stream(std::uint32_t epoch) {
 }
 
 void MainMail::failed(const Refusal& refusal) {
-  // Un seek refusé laisse la lecture où elle était ; tout autre refus arrête la source.
-  report("source", refusal, refusal.code != RefusalCode::SeekFailed);
+  // La source dit elle-même si elle continue (seek refusé, Flush ignoré, suite du fichier
+  // illisible traitée comme sa fin) ; tout autre refus l'arrête, et la lecture avec.
+  report("source", refusal, !refusal.recoverable);
 }
 
 ThreadReport MainMail::reporter(std::string stage) {

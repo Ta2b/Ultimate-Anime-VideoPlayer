@@ -79,8 +79,9 @@ void SourceLoop::handle(SourceInbox::Message message) {
 void SourceLoop::on_flush(const Flush& flush) {
   if (flush.epoch <= epoch_) {  // refusé et ignoré : la lecture continue
     links_.listener->failed(
-        Refusal{RefusalCode::FieldOutOfRange,
-                std::format("Flush : époque {} après {}, elle doit croître", flush.epoch, epoch_)});
+        Refusal{.code = RefusalCode::FieldOutOfRange,
+                .detail = std::format("Flush : époque {} après {}, elle doit croître", flush.epoch, epoch_),
+                .recoverable = true});
     return;
   }
   // Ce qui est tenu appartient à l'époque passée : rien d'ancien ne part après.
@@ -94,7 +95,9 @@ void SourceLoop::on_seek(const cmd::Seek& seek) {
   const SeekTarget where = seek.exact ? SeekTarget::PreviousKeyframe : SeekTarget::NearestKeyframe;
   const std::uint32_t file_seeks = media_.demuxer.file_seeks();
   if (auto moved = media_.demuxer.seek(seek.target_us, media_.video_track, where); !moved) {
-    links_.listener->failed(moved.error());
+    Refusal refused = moved.error();
+    refused.recoverable = true;  // la lecture reprend où elle était
+    links_.listener->failed(refused);
     // Refusé sans toucher au fichier (cible hors bornes) : la lecture reprend où elle était. Le
     // fichier a bougé (une lecture a échoué après le repositionnement) : le décodeur ne tient plus
     // sa position, on revient à la dernière image tenue plutôt que de livrer des images corrompues.
@@ -128,6 +131,7 @@ void SourceLoop::forget_position() {
   last_dropped_.reset();
   reserve_.clear();
   primed_ = false;
+  input_ended_ = false;
 }
 
 SourceLoop::Progress SourceLoop::advance() {
@@ -173,16 +177,21 @@ SourceLoop::Progress SourceLoop::decode() {
     links_.listener->end_of_stream(epoch_);
     return Progress::Idle;
   }
-  auto packet = media_.demuxer.read();
-  if (!packet) {
-    fail(packet.error());
-    return Progress::Idle;
-  }
-  if (!*packet) {
+  if (!input_ended_) {
+    auto packet = media_.demuxer.read();
+    if (!packet && !packet.error().recoverable) {
+      fail(packet.error());
+      return Progress::Idle;
+    }
+    if (packet && *packet) return route(std::move(**packet));
+    // Fin du fichier, ou suite illisible : le décodeur rend ses dernières images, puis fin de flux.
+    if (!packet) links_.listener->failed(packet.error());
+    input_ended_ = true;
     if (auto ended = media_.decoder.send_end(); !ended) fail(ended.error());
     return idle_ ? Progress::Idle : Progress::Moved;
   }
-  return route(std::move(**packet));
+  // Déjà signalée au décodeur : il finit de rendre ses images (receive() mène à drained()).
+  return Progress::Moved;
 }
 
 SourceLoop::Progress SourceLoop::route(Packet packet) {
