@@ -1,5 +1,7 @@
 # Écran du PC : ce qu'il annonce au lecteur
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Relevé du 19 octobre 2026 par le module `present` (branche `pc/present`), KDE Plasma sous
 Wayland, MSI MAG 272UP QD-OLED sur DP-1.
 

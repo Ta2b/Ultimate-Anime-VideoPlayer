@@ -1,5 +1,7 @@
 # Séance de sonde : protocole (chantier 8.1, repris en 8.12)
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Ce qu'on mesure : ce que l'écran affiche vraiment pour un contenu donné, avant de toucher au contrat d'écran
 (8.2) et aux métadonnées (8.4). Attendu aujourd'hui : 203 nits de contenu → environ 140 nits à la sonde.
 Résultats dans `docs/reports/sonde-<date>.md`.

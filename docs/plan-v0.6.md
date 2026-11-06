@@ -1,5 +1,7 @@
 # Plan de la v0.6
 
+> **Document historique** (état de la v0.6). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Les retours de Tatoub du 28 octobre (après la v0.5.0, publiée en pré-version) forment la **v0.6**, pas une v0.5.1. La version CMake passe à 0.6.0 **à la
 préparation de la release v0.6**, pas avant. Même règle qu'en v0.5 : une PR par étape, base main, clang-format avant chaque PR ; l'étiquette n'est posée
 que sur un accord clair de Tatoub dans le fil. Détail des décisions et journal : ce fichier ; l'historique de la 0.5 : `plan-v0.5.md`.

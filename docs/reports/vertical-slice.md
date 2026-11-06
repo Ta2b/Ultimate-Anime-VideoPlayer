@@ -1,5 +1,7 @@
 # Version jouable « ajp play » sur le PC Linux (pc/vertical-slice)
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 État au 19 octobre 2026, soir. RTX 4070 Ti, pilote 615.78.08, TensorRT 11.3.0.99, KDE Plasma
 Wayland, écran MSI MAG 272UP QD-OLED 165 Hz, VRR « Always ».
 

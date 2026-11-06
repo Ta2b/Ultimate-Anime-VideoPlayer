@@ -1,5 +1,7 @@
 # Clignotement des sous-titres dans « ajp play » (19 octobre 2026)
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Vu par Tatoub sur son écran, pendant les essais de la version jouable (pc/vertical-slice, fenêtre
 960x540, « Tensei Goblin dakedo Shitsumon Aru - 02 », 18:21–18:34 UTC). Aucun mpv ne tournait.
 

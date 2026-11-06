@@ -1,5 +1,7 @@
 # Mesures du mode Auto et des moteurs d'interpolation, RTX 4070 Ti (28 octobre 2026)
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Pour régler le contrôleur à coût mesuré (audit, H4). Machine : RTX 4070 Ti, écran MAG 272U E16 (QD-OLED, HDR10, **165 Hz, VRR actif**),
 plein écran, KDE Wayland ; bureau actif (Brave tient ~35 % du GPU). Binaire : branche `claude/project-thread-v15ttw` (PR #38), build CUDA
 RelWithDebInfo sm_89, TensorRT 11.3. Extrait : *Re:Zero 4e saison, épisode 18*, à 16:00 (`--start=960 --seconds=60`), 1080p 23,976 i/s,

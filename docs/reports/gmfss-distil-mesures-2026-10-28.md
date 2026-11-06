@@ -1,5 +1,7 @@
 # GMFSS Union et DistilDRBA : où va le temps (RTX 4070 Ti, TensorRT 11.3, 28 octobre 2026)
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Mesures au `trtexec` (graphes ONNX FP16 de `~/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/`, `--noDataTransfers`, sous le
 verrou GPU ; le bureau garde ~35 % du GPU, donc minimums et médianes). But : décider si les optimisations prévues au plan (« calculs
 indépendants du temps déplacés dans le graphe paire » pour GMFSS Union, « warps hors du graphe » pour DistilDRBA) valent une PR.

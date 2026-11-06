@@ -1,5 +1,7 @@
 # TrueHDR réel (Maxine VFX 1.3) — chantier vendor-hdr-real
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Date : 19 octobre 2026. Branche `pc/vendor-hdr-real` (base `origin/w1/integration` f8cbcc0),
 commit a8455e5, non poussée (le relecteur pousse).
 Machine : RTX 4070 Ti, pilote 615.78.08, SDK `/usr/local/VideoFX` = VFXSDK_linux 1.3.0.0 et

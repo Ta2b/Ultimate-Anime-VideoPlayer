@@ -1,8 +1,25 @@
-# À faire avant la 1.0 (suivi du 01/11)
+# À faire avant la 1.0
 
-Priorités de Tatoub, dans l'ordre : calibration HDR du grade adaptatif, correctif RTX HDR sous Linux (ABI 16, paquet TensorRT à reconstruire une fois, après les derniers changements du module).
+Suivi au 06/11/2026, après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-simple.md)).
 
-## Reporté, à ne pas oublier
-- **GMFSS Fortuna Union : artefacts** (fond vert saturé, formes en miroir, traînées), en FP16 comme en FP32, alors qu'Union est plus rapide que Fortuna Base. Seule différence avec Base : le RIFE intégré du graphe fusion (`tools/gmfss/gmfss_graph.py`, `Fusion.forward` : `ifnet(half0, half1, time)`, assemblage 9 canaux). À mesurer : sortie d'IFNet et valeur de `time` sur deux images, ou comparaison FP32 de l'export avec PyTorch. Pistes : parité des splats contre `t`, grille de warp figée à l'export (`export_gmfss.py`), `time` hors plage. Mesure GPU à lancer sur ordre de Tatoub. GMFSS est de toute façon trop lourd pour le PC portable.
-- Calibration HDR : plan dans `/mnt/project-files/calibration/plan-calibration-hdr.md` (curseur de nits, deux images de référence, profil par écran).
-- TensorRT Windows : à compiler une fois l'application terminée.
+## Avant une release
+
+- **Paquet TensorRT Linux 0.9.1** : le module a changé, son empreinte (`tools/release/trt-fingerprint.sh`) aussi ;
+  à reconstruire sur le poste NVIDIA Linux (`tools/release/trt-package.sh`). Aucune release sans demande de Tatoub.
+- **TensorRT Windows** : `release-windows.yml` avec `tensorrt=true`, puis `tensorrt=false` sur la même étiquette
+  (voir `docs/moteurs.md`).
+- **Banc Windows contre Linux** sur le même PC, mêmes réglages.
+
+## Code mort à retirer (sans effet sur l'image)
+
+- `src/render/curve.*` : les fonctions de courbe et de cuisson qui ne servaient qu'au HDR adaptatif.
+- `contract_metadata` et la branche `look_clean` du shader, si la mesure confirme qu'elles ne changent rien.
+- Les clés `grade.look` et `grade.look_mix` de `play.toml`, écrites mais plus lues par le grade anime.
+- `Priority` (Fluidité, Équilibre, Image) : absente du menu, encore lue dans `play.toml` par `apply_preset`.
+  À retirer ou à rattacher au niveau de traitement.
+
+## Reporté
+
+- **GMFSS Fortuna Union : artefacts** (fond vert saturé, formes en miroir, traînées), en FP16 comme en FP32. Seule
+  différence avec Base : le RIFE intégré du graphe fusion (`tools/gmfss/gmfss_graph.py`, `Fusion.forward`). GMFSS
+  est débranché de la lecture (`docs/interpolation.md`) ; mesure GPU à lancer sur ordre de Tatoub.

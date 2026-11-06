@@ -1,5 +1,7 @@
 # Audit fonctionnel de bout en bout (branche `audit-fonctions`)
 
+> **Document historique** (état de l'audit fonctionnel d'octobre). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 Objectif décidé par Tatoub (12:23) : une 1.0 stable, sans nouvelle fonction, qui marche parfaitement au moins
 sur NVIDIA Linux et Windows. Cet audit lance le lecteur pour de bon et regarde ce que chaque fonction active
 fait, au lieu de se fier aux tests unitaires.

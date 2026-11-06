@@ -1,5 +1,7 @@
 # Passe d'intégration de l'audit : notes
 
+> **Relevé daté** : une mesure ou une séance à sa date, gardée comme trace. Le code a pu changer depuis ; voir [`docs/README.md`](../README.md).
+
 Branche `claude/project-thread-ta5cur`, vers `cloud/vulkan`. Suite complète : 1180 tests, 0 échec, sous Vulkan logiciel (lavapipe). Seuls les tests qui exigent un vrai GPU, un SDK fabricant ou Windows/macOS sont ignorés (« Skipped »).
 
 ## Traité (sans test matériel)

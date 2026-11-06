@@ -1,5 +1,7 @@
 # Passation du PC de Tatoub (pc/vertical-slice)
 
+> **Document historique** (état de la passation du 19/10). Il ne décrit plus forcément le code : profils, HDR adaptatif, RTX HDR, méthode HDR à choisir et ancien arbre du menu ont été retirés depuis. Les documents à jour sont listés dans [`docs/README.md`](README.md).
+
 État de « ajp play », la tranche verticale jouable, au moment où le travail repart sur le cloud.
 Machine : CachyOS, RTX 4070 Ti (12 Go, Ada, compute 8.9), pilote 615.78.08, écran MSI
 « MAG 272U E16 » (QD-OLED 4K, HDR10), bureau KDE Wayland à 165 Hz, échelle 2. Rapports complets :

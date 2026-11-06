@@ -175,7 +175,7 @@ vers TensorRT n'y changerait rien, et rien de ce qui est dans le chemin chaud n'
 
 ## Dérivation native, dans le lecteur
 
-Réglages avancés > Image IA > Agrandissement : **« Préparer le mode Performance (SPAN FP8) »** (`src/app/play/span_derive.h`).
+Réglages avancés > Vidéo > Post-traitement : **« Préparer le mode Performance (SPAN FP8) »** (`src/app/play/span_derive.h`).
 Visible quand le moteur annonce `span_fp8_cutlass` (sm 8.9) et qu'une vidéo est ouverte ; sinon une note dit pourquoi.
 Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « Évaluer ma machine ». La case
 « Préparer en tâche de fond » (éteinte par défaut, `[span_prepare] background` de `play.toml`) lance la même tâche à la fin de
