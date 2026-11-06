@@ -229,7 +229,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       !(want_drba && c.drba_found) && !want_apple)
     return std::unexpected(
         choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error());
-  show_loading(p.screen, p.ui, "Chargement");
+  show_loading(p.screen, p.ui, i18n::tr("Loading"));
   const gpu::BackendInit init{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
   auto backend = BackendLibrary::create(p.library, init);

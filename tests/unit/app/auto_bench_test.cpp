@@ -218,7 +218,7 @@ TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
   const std::string report = format_bench_report(outcome);
   CHECK(report.contains("tient"));
   CHECK(report.contains("ne tient pas"));
-  CHECK(report.contains("Niveau gardé : Rapide"));
+  CHECK(report.contains("Niveau gardé : Qualité"));
 }
 
 TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[auto_bench]") {

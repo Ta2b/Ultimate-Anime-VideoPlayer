@@ -709,8 +709,9 @@ std::vector<std::string> Session::osd_lines() const {
     lines.push_back(std::format("{} / {}{}", format_position(position), format_position(config_.duration_us),
                                 paused_ ? i18n::tr(" · paused") : ""));
   }
-  // Les refus restent visibles, statistiques ou pas.
-  lines.insert(lines.end(), refusals_.begin(), refusals_.end());
+  // Les refus (nom d'étage, code interne, détail en français) sont pour les statistiques et le journal :
+  // incrustés sur l'image, un refus passager y restait jusqu'à la fin de l'épisode.
+  if (show.all) lines.insert(lines.end(), refusals_.begin(), refusals_.end());
   return lines;
 }
 

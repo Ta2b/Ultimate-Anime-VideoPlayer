@@ -135,7 +135,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   if (!artifact) return std::unexpected(std::move(artifact.error()));
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
-  show_loading(p.screen, p.ui, "Chargement des moteurs");
+  show_loading(p.screen, p.ui, i18n::tr("Loading the engines"));
   backend.use_lane(lane);
   auto loaded = backend.load(**artifact);
   backend.use_lane(gpu::Lane::Upscale);
