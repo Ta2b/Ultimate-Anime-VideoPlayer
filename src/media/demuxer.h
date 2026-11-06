@@ -27,6 +27,14 @@ enum class SeekTarget : std::uint8_t {
   NearestKeyframe,  // point clé le plus proche, avant ou après : seek rapide
 };
 
+// Pour les tests : à partir du paquet `after_packets`, les `count` lectures suivantes du fichier
+// échouent avec `error`, comme un disque ou un partage réseau qui hésite.
+struct ReadFault {
+  std::uint64_t after_packets = 0;
+  int count = 0;
+  int error = 0;
+};
+
 class Demuxer {
  public:
   static std::expected<Demuxer, Refusal> open(const std::filesystem::path& path);
@@ -49,8 +57,14 @@ class Demuxer {
   // retour possible ; le Demuxer ne sert plus qu'à être détruit.
   void interrupt();
 
-  // Paquet suivant dans l'ordre du fichier ; std::nullopt en fin de fichier.
+  // Paquet suivant dans l'ordre du fichier ; std::nullopt en fin de fichier. Une erreur de
+  // lecture est retentée ; si elle dure, le refus est `recoverable` : la suite du fichier est
+  // illisible, la lecture s'arrête là comme à la fin du fichier. Après interrupt(), le refus ne
+  // l'est pas.
   std::expected<std::optional<Packet>, Refusal> read();
+
+  // Pour les tests : fait échouer des lectures du fichier, voir ReadFault.
+  void fail_reads(ReadFault fault);
 
   // Place la lecture sur un point clé de la piste `reference` proche de target_us.
   // Une cible négative ou au-delà de la durée connue est refusée. Les paquets lus

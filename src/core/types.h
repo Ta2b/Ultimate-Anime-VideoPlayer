@@ -104,6 +104,9 @@ enum class RefusalCode : std::uint8_t {
 struct Refusal {
   RefusalCode code;
   std::string detail;  // où et pourquoi, par exemple « profiles.3.rules[1].steps[2].factor »
+  // Vrai quand l'étage qui refuse continue : la lecture n'a pas à s'arrêter. Faux par défaut, un
+  // refus arrête l'étage qui le signale.
+  bool recoverable = false;
 };
 
 constexpr std::string_view name(RefusalCode code) {

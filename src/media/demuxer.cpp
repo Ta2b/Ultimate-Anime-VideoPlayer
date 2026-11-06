@@ -10,6 +10,7 @@
 
 extern "C" {
 #include <libavutil/dict.h>
+#include <libavutil/time.h>
 }
 
 #include "media/av_util.h"
@@ -28,8 +29,12 @@ struct Demuxer::State {
   std::shared_ptr<spdlog::logger> log = make_logger();
   std::uint32_t file_seeks = 0;
   std::atomic<bool> interrupted{false};  // lu par le rappel d'interruption de FFmpeg
+  std::uint64_t packets_read = 0;        // paquets rendus par av_read_frame depuis l'ouverture
+  ReadFault fault;                       // pour les tests : lectures qui échouent exprès
 
-  std::expected<std::optional<Packet>, Refusal> read_file() const;
+  std::expected<std::optional<Packet>, Refusal> read_file();
+  int read_frame(AVPacket* packet);
+  bool wait_before_retry(int attempt) const;
   std::expected<std::optional<Packet>, Refusal> peek_keyframe(int reference);
   std::expected<void, Refusal> seek_stream(int reference, std::int64_t ts, int flags, std::string_view what);
   std::expected<std::int64_t, Refusal> seek_before(std::int64_t target_us, int reference);
@@ -43,6 +48,13 @@ namespace {
 constexpr int kMaxPeekPackets = 1024;
 // Reculs au plus pour trouver un point clé qui s'affiche à ou avant la cible.
 constexpr int kMaxRewinds = 8;
+// Une erreur d'entrée-sortie (disque, partage réseau qui hésite) est retentée avec une attente qui
+// double : 50, 100, 200, 400 puis 800 ms, 1,55 s en tout.
+constexpr int kIoRetries = 5;
+constexpr int kFirstRetryWaitMs = 50;
+// Des données abîmées : le conteneur avance à chaque essai et se recale en général sur le bloc
+// suivant, sans attente. Au-delà, le reste du fichier est tenu pour illisible.
+constexpr int kDataRetries = 64;
 
 // FFmpeg attend un chemin UTF-8, Windows compris : path::string() y rendrait la
 // page de code ANSI, ou lèverait une exception devant un nom en japonais.
@@ -225,13 +237,66 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::read() {
   return state_->read_file();
 }
 
-std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() const {
+void Demuxer::fail_reads(ReadFault fault) {
+  state_->fault = fault;
+}
+
+int Demuxer::State::read_frame(AVPacket* packet) {
+  if (fault.count > 0 && packets_read >= fault.after_packets) {
+    --fault.count;
+    return fault.error;
+  }
+  const int err = av_read_frame(format.get(), packet);
+  if (err >= 0) ++packets_read;
+  return err;
+}
+
+// Attend avant le nouvel essai `attempt` (à partir de 0), par tranches de 10 ms pour qu'une
+// fermeture n'attende pas. Rend faux si la lecture a été interrompue entre-temps.
+bool Demuxer::State::wait_before_retry(int attempt) const {
+  const int wait_ms = kFirstRetryWaitMs << attempt;
+  for (int waited = 0; waited < wait_ms; waited += 10) {
+    if (interrupted.load()) return false;
+    av_usleep(10'000);
+  }
+  return !interrupted.load();
+}
+
+// Une erreur de lecture n'arrête pas la vidéo : elle est retentée, puis, si elle dure, la lecture
+// s'arrête là comme à la fin du fichier, par un refus `recoverable` que la source traite comme
+// une fin de flux. Seule une interruption (fermeture) reste un refus qui arrête la source.
+std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() {
   AVFormatContext& ctx = *format;
   AVPacket* raw = scratch.get();
+  int io_errors = 0;
+  int data_errors = 0;
   while (true) {
-    if (const int err = av_read_frame(&ctx, raw); err < 0) {
+    if (const int err = read_frame(raw); err < 0) {
       if (err == AVERROR_EOF) return std::nullopt;
-      return refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet", err);
+      if (err == AVERROR_EXIT || interrupted.load())
+        return refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet interrompue", err);
+      const bool data = err == AVERROR_INVALIDDATA;
+      int& errors = data ? data_errors : io_errors;
+      const int limit = data ? kDataRetries : kIoRetries;
+      if (errors >= limit) {
+        auto refused = refuse_av(RefusalCode::DecodeFailed,
+                                 std::format("lecture d'un paquet, après {} essais", errors + 1), err);
+        refused.error().recoverable = true;
+        return refused;
+      }
+      // Un seul avertissement par série : un bloc abîmé peut coûter des dizaines d'essais.
+      if (errors == 0) log->warn("lecture d'un paquet : {}, nouvel essai", av_error_text(err));
+      if (!data) {
+        if (!wait_before_retry(errors))
+          return refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet interrompue", AVERROR_EXIT);
+        // Une erreur de l'AVIOContext reste collée : sans l'effacer, chaque essai la rendrait.
+        if (ctx.pb != nullptr) {
+          ctx.pb->error = 0;
+          ctx.pb->eof_reached = 0;
+        }
+      }
+      ++errors;
+      continue;
     }
     // Tous les conteneurs ne sautent pas eux-mêmes les flux écartés (MKV non).
     if (ctx.streams[raw->stream_index]->discard < AVDISCARD_ALL) break;
