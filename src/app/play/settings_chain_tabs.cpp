@@ -283,8 +283,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   }
   ImGui::EndDisabled();
   if (!choices.rife_available)
-    note(
-        i18n::tr("No interpolation model found: put a RIFE model or the GMFSS graphs in the models folder."));
+    note(i18n::tr("No interpolation model found: put a RIFE model in the models folder."));
   section(i18n::tr("Interpolation engine"));
   // Les moteurs se rangent sur une ligne tant qu'ils y tiennent (pastille comprise), sinon à la ligne.
   const float row_left = ImGui::GetCursorScreenPos().x;
@@ -292,7 +291,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   bool first_engine = true;
   for (int i = 0; i < kMotionEngineCount; ++i) {
     const auto engine = static_cast<MotionEngine>(i);
-    if (!offered(engine) && d.motion_engine != engine) continue;
+    if (!offered(engine)) continue;
     if (!first_engine) {
       const ImGuiStyle& style = ImGui::GetStyle();
       const std::string name(label(engine));

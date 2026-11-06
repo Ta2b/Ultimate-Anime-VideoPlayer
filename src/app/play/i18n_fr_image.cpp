@@ -76,9 +76,8 @@ constexpr std::array kImageTabs{
     Entry{"Multiplier", "Multiplicateur"},
     Entry{"No downscale: the source goes into SPAN as is.",
           "Pas de réduction : la source entre telle quelle dans SPAN."},
-    Entry{"No interpolation model found: put a RIFE model or the GMFSS graphs in the models folder.",
-          "Aucun modèle d'interpolation trouvé : placez un modèle RIFE ou les graphes GMFSS dans le dossier "
-          "des modèles."},
+    Entry{"No interpolation model found: put a RIFE model in the models folder.",
+          "Aucun modèle d'interpolation trouvé : placez un modèle RIFE dans le dossier des modèles."},
     Entry{"No steps: each frame is computed for the exact moment it is shown.",
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
