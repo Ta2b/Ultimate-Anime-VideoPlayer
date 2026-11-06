@@ -72,8 +72,9 @@ struct SettingsChoices {
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
-  int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
-  std::string gpu_name;    // la carte
+  int display_height = 0;   // hauteur de l'écran en pixels ; 0 : inconnue
+  bool calibrated = false;  // Auto suit la calibration de l'assistant (calibration.toml) sur cette carte
+  std::string gpu_name;     // la carte
   struct AudioOut {
     std::string name;
     int channels = 0;

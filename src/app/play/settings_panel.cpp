@@ -230,6 +230,7 @@ void level_section(PlaySettings& d, const SettingsChoices& choices) {
                                                    Preset::Quality, Preset::Ultra};
   const auto text = [&](Preset preset) {
     if (preset != Preset::Auto) return std::string(label(preset));
+    if (choices.calibrated) return std::string(i18n::tr("Auto (calibrated)"));
     return i18n::tr_format("Auto ({})", label(kByTier[static_cast<std::size_t>(detected)]));
   };
   if (ImGui::BeginCombo(i18n::tr("Processing level"), text(d.preset).c_str())) {

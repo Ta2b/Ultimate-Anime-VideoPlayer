@@ -152,8 +152,12 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     ui.controls().defer(i18n::tr("Machine calibration failed: Auto preset (see log)"));
     return base;
   }
-  // La chaîne mesurée telle quelle : SPAN FP8 compris quand la calibration l'a pris.
-  return candidate_settings((*shared->result)->chosen, std::move(base), (*shared->result)->span_fp8);
+  // Auto calibré : le lecteur relit les bornes mesurées (calibration.toml) et refait la chaîne pour chaque
+  // vidéo ; la chaîne mesurée, SPAN FP8 compris, reste écrite pour qui repasse en Personnalisé.
+  PlaySettings calibrated =
+      candidate_settings((*shared->result)->chosen, std::move(base), (*shared->result)->span_fp8);
+  calibrated.preset = Preset::Auto;
+  return calibrated;
 }
 
 }  // namespace

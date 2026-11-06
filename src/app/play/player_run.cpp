@@ -45,6 +45,7 @@
 #include "app/play/latest_writer.h"
 #include "app/play/look_catalog.h"
 #include "app/play/loop_wait.h"
+#include "app/play/machine_calibration.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -298,6 +299,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .source_file = p.options.file,
           .machine_tier = static_cast<int>(machine_tier),
           .display_height = display_height(out.window()),
+          .calibrated =
+              calibrated_chain(p.settings_path.parent_path(), machine.name, display_height(out.window()))
+                  .has_value(),
           .gpu_name = gpu_facts(p.screen).name,
           .audio_outputs = audio_outputs,
           .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),

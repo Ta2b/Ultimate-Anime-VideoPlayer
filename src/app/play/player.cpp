@@ -39,6 +39,7 @@
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/look_catalog.h"
+#include "app/play/machine_calibration.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -335,14 +336,17 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     const GpuFacts here = gpu_facts(**screen);
     const bool explored = measured_tier && !file_options.bench_level && measured_tier->gpu == here.name &&
                           measured_tier->driver == here.driver;
-    chosen =
-        apply_preset(chosen,
-                     Machine{.tier = tier,
-                             .display_height = display_height((*screen)->window()),
-                             .display_hz = display_refresh_hz((*screen)->window()),
-                             .explored_work_height = explored ? measured_tier->work_height : 0,
-                             .explored_rife_model = explored ? measured_tier->rife_model : std::string()},
-                     source);
+    chosen = apply_preset(chosen,
+                          Machine{.tier = tier,
+                                  .display_height = display_height((*screen)->window()),
+                                  .display_hz = display_refresh_hz((*screen)->window()),
+                                  .explored_work_height = explored ? measured_tier->work_height : 0,
+                                  .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
+                                  .calibrated = file_options.bench_level
+                                                    ? std::nullopt
+                                                    : calibrated_chain(settings_path.parent_path(), here.name,
+                                                                       display_height((*screen)->window()))},
+                          source);
     PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));

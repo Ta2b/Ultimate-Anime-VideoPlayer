@@ -112,8 +112,10 @@ std::optional<Tier> chain_level(Preset preset, Tier detected) {
 
 PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
                           const core::SourceInfo& source) {
-  const std::optional<Tier> level = chain_level(settings.preset, machine.tier);
+  std::optional<Tier> level = chain_level(settings.preset, machine.tier);
   if (!level) return settings;
+  // Une carte estimée Économe que la calibration a vue tenir SPAN suit la mesure, pas l'estimation.
+  if (settings.preset == Preset::Auto && machine.calibrated && *level == Tier::Economy) level = Tier::Light;
   const auto at = static_cast<std::size_t>(*level);
   PlaySettings out = settings;
   const int display_height = machine.display_height > 0 ? machine.display_height : 1080;
@@ -168,6 +170,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       break;
     case Tier::Fast:
     case Tier::Ultra:
+      if (settings.preset == Preset::Auto && machine.calibrated) break;  // la calibration a choisi
       // GMFSS Union sort du mode Auto (lourd, artefacts dans les gros mouvements) : il reste au choix manuel.
       // DistilDRBA y rentre quand sa porte de qualité est passée (kDistilDrbaInAuto).
       if (kDistilDrbaInAuto) {
@@ -176,6 +179,25 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
         use_rife(out, settings, machine, "rife_v4.25.onnx");
       }
       break;
+  }
+  // Auto calibré : la chaîne mesurée (SPAN, sa hauteur, son modèle ; RIFE lite en mode Rapide ou rien),
+  // adaptée à la source et à la cadence de cette vidéo comme le reste d'Auto.
+  if (settings.preset == Preset::Auto && machine.calibrated) {
+    const CalibratedChain& cal = *machine.calibrated;
+    out.upscale = cal.span;
+    if (cal.span && cal.height > 0)
+      out.work_height = source.height > 0
+                            ? std::min(cal.height, std::max(source.height, kWorkHeights.front()))
+                            : cal.height;
+    out.model = cal.span_model;
+    out.span_precision = cal.span_model.empty() ? PrecisionTier::Balanced : PrecisionTier::Performance;
+    out.motion_engine = MotionEngine::Rife;
+    out.rife_model = "rife_v4.22_lite.onnx";  // celui que la calibration a mesuré
+    out.auto_free = cal.rife;
+    if (!cal.rife) {
+      out.rife_auto = false;
+      out.rife_factor = 0;
+    }
   }
   return out;
 }
