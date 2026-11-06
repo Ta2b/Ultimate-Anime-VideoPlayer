@@ -173,6 +173,12 @@ void SubtitleRenderer::forget() {
   refused_ = false;
 }
 
+RenderTarget SubtitleRenderer::shrunk(RenderTarget target, int shrink) {
+  target.width = std::max(target.width / shrink, 1);
+  target.height = std::max(target.height / shrink, 1);
+  return target;
+}
+
 std::unexpected<Refusal> SubtitleRenderer::refuse_content(Refusal refusal) {
   in_sync_ = true;  // libass comparera l'image suivante à ce contenu refusé
   refused_ = true;
@@ -188,9 +194,23 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
   }
   // Comme mpv : une piste texte (SRT) peut descendre dans la bande noire du bas, une piste ASS
   // reste sur l'image, où ses auteurs l'ont placée.
-  if (const bool use_margins = track.kind() == TrackKind::Text;
-      target_ != request.target || use_margins != use_margins_) {
-    configure(request.target, use_margins);
+  const bool use_margins = track.kind() == TrackKind::Text;
+  if (!target_ || shrunk(request.target, shrink_) != *target_) shrink_ = 1;  // demande neuve
+  while (true) {
+    auto outcome = render_at(track, request, pool, use_margins);
+    if (outcome || outcome.error().code != RefusalCode::SubtitleAtlasFull || shrink_ >= kMaxShrink)
+      return outcome;
+    shrink_ *= 2;
+    refused_ = false;
+  }
+}
+
+std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const SubtitleTrack& track,
+                                                                  const RenderRequest& request,
+                                                                  AtlasPool& pool, bool use_margins) {
+  if (const RenderTarget target = shrunk(request.target, shrink_);
+      target_ != target || use_margins != use_margins_) {
+    configure(target, use_margins);
   }
   if (const bool vsfilter = vsfilter_converts(track.script_matrix(), request.target.video_matrix);
       vsfilter != vsfilter_) {
@@ -207,12 +227,15 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
     if (image->w > 0 && image->h > 0) pieces_.push_back(image);  // libass : taille nulle, rien à dessiner
   }
 
-  SubtitleFrame frame{.pts_us = request.pts_us,
-                      .epoch = request.epoch,
-                      .width = request.target.width,
-                      .height = request.target.height};
+  // Les rectangles sont placés pour la taille rendue : l'affichage les étire à la sienne.
+  SubtitleFrame frame{
+      .pts_us = request.pts_us, .epoch = request.epoch, .width = target_->width, .height = target_->height};
   if (pieces_.empty()) {
     forget();
+    if (shrink_ != 1) {  // l'instant lourd est passé : le prochain sous-titre en pleine taille
+      shrink_ = 1;
+      configure(request.target, use_margins);
+    }
     in_sync_ = true;  // libass compare l'image suivante à une liste vide, et nous aussi
     return frame;
   }
