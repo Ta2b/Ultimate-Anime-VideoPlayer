@@ -216,6 +216,13 @@ constexpr std::array kSettingsPages{
     Entry{"Resets the active profile (Ctrl+1 to Ctrl+9); other profiles are untouched.",
           "Remet le profil actif (Ctrl+1 à Ctrl+9) à zéro ; les autres profils ne bougent pas."},
     Entry{"Run the wizard again", "Relancer l'assistant"},
+    Entry{"Report a problem", "Signaler un problème"},
+    Entry{
+        "Copies the version, the graphics card and the end of the log, without your user name or the folders "
+        "of your videos, then opens the report page. Paste the log there.",
+        "Copie la version, la carte graphique et la fin du journal, sans votre nom d'utilisateur ni les "
+        "dossiers "
+        "de vos vidéos, puis ouvre la page de signalement. Collez-y le journal."},
     Entry{"SDR", "SDR"},
     Entry{"SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR).",
           "Écran SDR : une pile qui contient une LUT d'HDR est coupée (ces LUT sont faites pour le HDR)."},

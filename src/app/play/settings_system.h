@@ -103,4 +103,9 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 // Quand le lecteur est déjà celui des vidéos, un mot qui le dit. Rien ne le propose au démarrage.
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool already_default);
 
+// « Signaler un problème » (Général > À propos, P1.33) : la version, la carte et la fin de ajp.log,
+// déjà nettoyé à l'écriture (core/log_redact.h), copiées dans le presse-papiers ; puis la page de
+// nouvelle issue s'ouvre sur le modèle .github/ISSUE_TEMPLATE/bug.yml.
+void report_problem_section(const PlayerPlace& place, const std::string& gpu_name);
+
 }  // namespace ajp::app::play

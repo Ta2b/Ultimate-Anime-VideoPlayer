@@ -1,9 +1,12 @@
 #include "app/play/settings_system.h"
 
+#include <algorithm>
 #include <array>
 #include <ctime>
 #include <expected>
 #include <format>
+#include <fstream>
+#include <iterator>
 
 #include <SDL3/SDL_misc.h>
 #include <imgui.h>
@@ -463,6 +466,26 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   }
   return event;
 #endif
+}
+
+void report_problem_section(const PlayerPlace& place, const std::string& gpu_name) {
+  // Le corps d'une issue tient en 65 536 caractères : la fin du journal, là où est la panne.
+  constexpr std::streamoff kLogTail = 48 * 1024;
+  section(i18n::tr("Report a problem"));
+  if (ImGui::Button(i18n::tr("Report a problem"))) {
+    std::string report = std::format("ajp {} · {}\n\n", installed_version(), gpu_name);
+    std::ifstream log(place.app_data / "ajp.log", std::ios::binary | std::ios::ate);
+    if (log) {
+      const std::streamoff size = log.tellg();
+      log.seekg(std::max<std::streamoff>(0, size - kLogTail));
+      report.append(std::istreambuf_iterator<char>(log), std::istreambuf_iterator<char>());
+    }
+    ImGui::SetClipboardText(report.c_str());
+    SDL_OpenURL("https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/issues/new?template=bug.yml");
+  }
+  panel::tip(
+      i18n::tr("Copies the version, the graphics card and the end of the log, without your user name "
+               "or the folders of your videos, then opens the report page. Paste the log there."));
 }
 
 }  // namespace ajp::app::play
