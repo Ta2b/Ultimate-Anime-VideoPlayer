@@ -28,6 +28,11 @@ compilée dans `AJP_UPDATE_PUBKEY` (`src/app/CMakeLists.txt`).
    (`.../releases/download/preview/manifest.toml`), canal `preview`.
 4. Vérifier : lancer `ajp` d'une version plus ancienne, Paramètres > Général > Mises à jour > Vérifier maintenant.
 
+**Expiration.** Le manifeste porte `expires`, 120 jours après sa signature : au-delà, le lecteur le refuse
+(« le manifeste de mise à jour a expiré »), pour qu'un ancien manifeste signé ne se rejoue pas et ne gèle pas les
+mises à jour. Sans nouvelle release dans ces 120 jours, re-signer le manifeste de la dernière (même commande,
+mêmes archives) et remplacer `manifest.toml` et `manifest.toml.sig` dans la release.
+
 ## Changer ou perdre la clé
 
 - Une nouvelle paire : `openssl genpkey -algorithm ed25519 -out update-ed25519.pem`, puis

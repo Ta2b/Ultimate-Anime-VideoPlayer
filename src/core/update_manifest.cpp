@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <chrono>
+#include <optional>
 #include <vector>
 
 #include "core/toml_fields.h"
@@ -47,6 +49,23 @@ bool is_sha256(std::string_view text) {
          std::ranges::all_of(text, [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
 }
 
+// « 2027-02-27 » : un jour du calendrier ; rien si le texte ou la date est faux.
+std::optional<std::chrono::sys_days> parse_day(std::string_view text) {
+  int parts[3] = {};
+  if (text.size() != 10 || text[4] != '-' || text[7] != '-') return std::nullopt;
+  const std::string_view fields[3] = {text.substr(0, 4), text.substr(5, 2), text.substr(8, 2)};
+  for (std::size_t i = 0; i < 3; ++i) {
+    const auto [end, error] =
+        std::from_chars(fields[i].data(), fields[i].data() + fields[i].size(), parts[i]);
+    if (error != std::errc{} || end != fields[i].data() + fields[i].size()) return std::nullopt;
+  }
+  const std::chrono::year_month_day day{std::chrono::year{parts[0]},
+                                        std::chrono::month{static_cast<unsigned>(parts[1])},
+                                        std::chrono::day{static_cast<unsigned>(parts[2])}};
+  if (!day.ok()) return std::nullopt;
+  return std::chrono::sys_days{day};
+}
+
 std::expected<std::optional<UpdateArtifact>, Refusal> artifact(const toml::table& root,
                                                                std::string_view name) {
   const toml::table* table = root[name].as_table();
@@ -54,15 +73,18 @@ std::expected<std::optional<UpdateArtifact>, Refusal> artifact(const toml::table
   UpdateArtifact out;
   out.url = (*table)["url"].value_or(std::string());
   out.sha256 = (*table)["sha256"].value_or(std::string());
-  out.size = static_cast<std::uint64_t>((*table)["size"].value_or(std::int64_t{0}));
+  const std::int64_t size = (*table)["size"].value_or(std::int64_t{0});
   if (!out.url.starts_with("https://"))
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("manifeste [{}] : l'adresse doit être en https", name));
   if (!is_sha256(out.sha256))
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("manifeste [{}] : sha256 attendu (64 chiffres hexadécimaux)", name));
-  if (out.size == 0)
-    return refuse(RefusalCode::FieldOutOfRange, std::format("manifeste [{}] : taille manquante", name));
+  if (size <= 0 || size > kMaxUpdateBytes)
+    return refuse(
+        RefusalCode::FieldOutOfRange,
+        std::format("manifeste [{}] : taille {} hors de 1 à {} octets", name, size, kMaxUpdateBytes));
+  out.size = static_cast<std::uint64_t>(size);
   return std::optional<UpdateArtifact>(std::move(out));
 }
 
@@ -76,6 +98,10 @@ std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view to
   out.channel = (*root)["channel"].value_or(std::string("stable"));
   out.date = (*root)["date"].value_or(std::string());
   out.notes_url = (*root)["notes_url"].value_or(std::string());
+  const auto expires = parse_day((*root)["expires"].value_or(std::string()));
+  if (!expires)
+    return refuse(RefusalCode::FieldMissing, "manifeste : expires (AAAA-MM-JJ) absent ou illisible");
+  out.expires = *expires;
   if (!parse_version(out.version))
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("manifeste : version « {} » illisible", out.version));

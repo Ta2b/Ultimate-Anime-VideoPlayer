@@ -5,14 +5,16 @@
 //   version = "0.5.0"
 //   channel = "stable"          # ou "preview"
 //   date = "2026-10-30"
+//   expires = "2027-02-27"     # au-delà, le manifeste est refusé : un ancien ne se rejoue pas
 //   notes_url = "https://github.com/…/releases/tag/v0.5.0"
 //   [linux-x64]
 //   url = "https://…/ajp-linux-x64.tar.gz"
 //   sha256 = "…"                # 64 chiffres hexadécimaux
-//   size = 123456789
+//   size = 123456789           # octets, de 1 à kMaxUpdateBytes
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <optional>
@@ -24,6 +26,9 @@
 
 namespace ajp::core {
 
+// Plafond de la taille d'une archive : 4 Gio (le paquet Linux complet fait moins de 1 Gio).
+inline constexpr std::int64_t kMaxUpdateBytes = std::int64_t{4} << 30;
+
 struct UpdateArtifact {
   std::string url;
   std::string sha256;
@@ -34,6 +39,7 @@ struct UpdateManifest {
   std::string version;  // « 0.5.0 » ou « 0.5.0-preview.1 »
   std::string channel;  // « stable » ou « preview »
   std::string date;
+  std::chrono::sys_days expires{};  // jour UTC après lequel le manifeste ne vaut plus
   std::string notes_url;
   std::optional<UpdateArtifact> linux_x64;
   std::optional<UpdateArtifact> windows_x64;
@@ -42,7 +48,13 @@ struct UpdateManifest {
 
 // Refus pour un TOML mal formé, une version illisible, un canal inconnu, un sha256 qui n'est pas hexadécimal
 // sur 64 chiffres, une adresse qui n'est pas en https.
+// Aussi pour une taille hors de 1 à kMaxUpdateBytes et un expires absent ou illisible (AAAA-MM-JJ).
 std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view toml_text);
+// Le manifeste a passé son expiration (today en UTC) : un manifeste signé ancien, rejoué pour geler les mises
+// à jour, ne vaut plus.
+inline bool manifest_expired(const UpdateManifest& manifest, std::chrono::sys_days today) {
+  return today > manifest.expires;
+}
 
 // Le fichier pour ce système ; rien si la release n'en livre pas.
 const UpdateArtifact* artifact_for(const UpdateManifest& manifest, Os os);

@@ -9,11 +9,19 @@
 
 #include "core/charconv.h"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 namespace ajp::app::play {
 
 std::optional<std::filesystem::path> system_tool(std::string_view name) {
 #if defined(_WIN32)
-  const std::array<std::filesystem::path, 1> dirs{"C:/Windows/System32"};
+  // Le dossier système réel (Windows ailleurs que sur C:, ou dans un autre dossier), jamais un chemin en dur.
+  std::array<wchar_t, MAX_PATH> system{};
+  const UINT length = GetSystemDirectoryW(system.data(), static_cast<UINT>(system.size()));
+  if (length == 0 || length >= system.size()) return std::nullopt;
+  const std::array<std::filesystem::path, 1> dirs{std::filesystem::path(std::wstring(system.data(), length))};
   const std::string file = std::string(name) + ".exe";
 #else
   const std::array<std::filesystem::path, 4> dirs{"/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin"};

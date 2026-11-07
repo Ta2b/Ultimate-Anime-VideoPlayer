@@ -163,6 +163,8 @@ constexpr std::array kMessages{
     Entry{"the manifest is for channel \"{}\", not \"{}\"", "le manifeste est du canal « {} », pas « {} »"},
     Entry{"the manifest signature is wrong: update ignored",
           "la signature du manifeste est fausse : mise à jour ignorée"},
+    Entry{"the update manifest has expired: update ignored",
+          "le manifeste de mise à jour a expiré : mise à jour ignorée"},
     Entry{"the prepared archive is gone", "l'archive préparée a disparu"},
     Entry{"the server refused the download", "le serveur a refusé le téléchargement"},
     Entry{"the server refused the download (HTTP {})", "le serveur a refusé le téléchargement (HTTP {})"},
