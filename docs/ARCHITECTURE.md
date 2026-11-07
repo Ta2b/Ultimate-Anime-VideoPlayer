@@ -8,7 +8,7 @@ Un seul cœur possède le profil, la politique et l'ordonnancement. Il résout u
 Un dossier de `src/` = un module = une cible CMake `ajp::<nom>`, déclarée par
 `ajp_add_module` avec ses dépendances. Le graphe est acyclique : `app` dépend de
 tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
-`audio`, `present`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
+`audio`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
 `core_types`.
 
 | Module | Responsabilité | Thread |
@@ -24,9 +24,8 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 | `audio` | Décodage audio, sortie SDL3, horloge | audio |
 | `subs` | Rendu libass en atlas bornés | subs |
 | `render` | Composition libplacebo, grade, sous-titres, OSD | main |
-| `present` | Swapchain, cadence, détection de l'écran | main |
 | `export` | Encodage matériel, mux MKV avec les pistes de la source copiées (SDR seulement) | export |
-| `app` | Boucle SDL3, commandes, interface, threads | main |
+| `app` | Boucle SDL3, swapchain (libplacebo), commandes, interface, threads | main |
 | `kernels` | Spécification des noyaux, référence CPU FP32, demi-flottants | aucun |
 
 Chaque thread n'attend que sa boîte `Inbox`, bornée par type de message.
@@ -48,7 +47,6 @@ gpu_span_fp8 core_types
 gpu ─────── core, kernels
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
-present ─── core_types
 export ──── core_types · privé : FFmpeg, Vulkan, core_log
 app ─────── tout, dont core_log
 ```
@@ -117,7 +115,8 @@ images par un tampon épinglé sur une file de transfert (`host_upload.h`).
 
 ### Appareil de rendu (`core/gpu_device.h`)
 
-`present` crée l'appareil de rendu et le décrit par `GpuDevice` : API, identifiants
+`app` crée l'appareil de rendu (la swapchain est celle de libplacebo, `placebo_open.cpp`) et le décrit par
+`GpuDevice` : API, identifiants
 PCI (le fabricant s'en déduit par `vendor_from_pci`, jamais du nom), nom, UUID de
 16 octets, LUID sous Windows, version du pilote. Sous Vulkan, `VulkanDevice` porte
 ce que libplacebo et FFmpeg demandent pour partager un `VkDevice` : handles

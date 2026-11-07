@@ -27,7 +27,7 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 | `src/app/play` | le lecteur : boucle (`player.cpp`, `player_run.cpp`), chaîne en direct (`chain*.cpp`), menu (`settings_*.cpp`), réglages et `play.toml` (`settings.h`, `settings_toml.cpp`), assistant (`wizard.*`, `first_run.cpp`), traductions (`i18n_fr_*.cpp`) |
 | `src/render` | libplacebo, grade (`grade_params.*`), shaders `.hook` (`src/render/shaders/`), LUT (`looks.*`) |
 | `src/gpu` | backends chargés à l'exécution : `vulkan`, `cuda` (TensorRT), `coreml` ; `migraphx`, `openvino`, `winml` débranchés |
-| `src/media`, `src/audio`, `src/subs`, `src/present`, `src/export`, `src/prepare`, `src/kernels` | voir `docs/ARCHITECTURE.md` |
+| `src/media`, `src/audio`, `src/subs`, `src/export`, `src/prepare`, `src/kernels` | voir `docs/ARCHITECTURE.md` |
 | `tests/unit/<module>` | Catch2, un exécutable par module |
 | `tools/` | dépendances (`deps`), paquets (`release`), bancs, scripts de modèles |
 
