@@ -13,8 +13,6 @@
 namespace ajp::core {
 namespace {
 
-using fields::refuse;
-
 // --- SHA-256 : constantes de FIPS 180-4, section 4.2.2. ---
 
 // --- Index. ---

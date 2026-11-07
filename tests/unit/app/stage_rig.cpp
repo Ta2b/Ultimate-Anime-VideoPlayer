@@ -32,10 +32,6 @@ class FakeTensorBuffer final : public gpu::TensorBuffer {
   gpu::Tensor tensor_;
 };
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 }  // namespace
 
 void FakeBackend::score(SourceId left, SourceId right, double scene_score, std::uint32_t worst_block) {

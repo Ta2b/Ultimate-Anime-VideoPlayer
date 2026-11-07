@@ -32,10 +32,6 @@ namespace {
 
 constexpr std::int64_t kSettingsVersion = 1;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Le refus d'une clé du fichier (P2.11) : la clé, « audio.delay_ms », dans Refusal::key, que la lecture
 // tolérante écarte sans relire le texte ; le détail commence par elle.
 std::unexpected<Refusal> refuse_key(RefusalCode code, std::string key, std::string_view rest = {}) {

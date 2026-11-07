@@ -17,10 +17,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::string_view format_name(ProgramFormat format) {
   switch (format) {
     case ProgramFormat::OnnxExport:

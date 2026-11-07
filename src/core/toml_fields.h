@@ -23,10 +23,6 @@
 
 namespace ajp::core::fields {
 
-inline std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Texte TOML lu en table, ou refus `unreadable` qui nomme la ligne fautive.
 inline std::expected<toml::table, Refusal> parse(std::string_view text, RefusalCode unreadable,
                                                  std::string_view what) {

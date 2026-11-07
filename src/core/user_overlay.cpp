@@ -13,8 +13,6 @@
 namespace ajp::core {
 namespace {
 
-using fields::refuse;
-
 std::optional<std::int64_t> slot_of(const toml::node& node) {
   const toml::table* table = node.as_table();
   if (table == nullptr) return std::nullopt;

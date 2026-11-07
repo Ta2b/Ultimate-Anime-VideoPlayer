@@ -14,10 +14,6 @@
 namespace ajp::gpu::cuda {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Forme NCHW fixe d'un tenseur ; rien si le rang n'est pas 4 ou si une dimension est libre.
 std::optional<Shape> fixed_shape(const nvinfer1::Dims& dims) {
   if (dims.nbDims != 4) return std::nullopt;

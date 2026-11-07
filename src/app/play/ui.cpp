@@ -29,6 +29,7 @@
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "core/log.h"
+#include "core/text.h"
 #ifdef AJP_WITH_FREETYPE
 #include "imgui_freetype.h"
 #endif
@@ -65,8 +66,7 @@ std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) 
                                       FcCharSetHasChar(charset, 0x65E5) != FcFalse);
     std::string path(reinterpret_cast<const char*>(file));
     std::string ext = std::filesystem::path(path).extension().string();
-    std::ranges::transform(ext, ext.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    ext = core::ascii_lower(ext);
     if (covers && (ext == ".ttf" || ext == ".otf" || ext == ".ttc" || ext == ".otc"))
       found = FontFile{.path = std::move(path), .index = index};
   }

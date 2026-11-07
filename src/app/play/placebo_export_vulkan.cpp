@@ -28,10 +28,6 @@ extern "C" {
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Les formats des deux plans d'une image 4:2:0 semi-planaire, par son format.
 struct PlaneFormats {
   VkFormat luma;

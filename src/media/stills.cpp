@@ -21,10 +21,6 @@ using yuv::Layout;
 using yuv::layout_of;
 using yuv::sample;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::uint8_t to_byte(double v) {
   return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0, 1.0) * 255.0));
 }

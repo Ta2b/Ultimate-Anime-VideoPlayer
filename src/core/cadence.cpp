@@ -15,10 +15,6 @@
 namespace ajp::core {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // left + (right - left)·acc/num, arrondi au plus proche, sans débordement :
 // l'écart passe en non signé (right > left), puis se divise avant de se multiplier.
 std::int64_t between(std::int64_t left, std::int64_t right, std::int64_t acc, std::int64_t num) {

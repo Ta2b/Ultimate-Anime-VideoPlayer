@@ -17,10 +17,6 @@ extern "C" {
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 kernels::Matrix matrix_of(ColorMatrix matrix) {
   switch (matrix) {
     case ColorMatrix::Bt601:

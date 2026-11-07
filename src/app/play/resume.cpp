@@ -11,6 +11,7 @@
 #include <system_error>
 #include <vector>
 
+#include "core/text.h"
 #include "core/user_overlay.h"
 
 namespace ajp::app::play {
@@ -37,9 +38,7 @@ std::optional<Entry> identify(const std::filesystem::path& file) {
 // Deux chemins retenus désignent-ils le même fichier ? Sous Windows et macOS, sans égard à la casse.
 bool same_path(std::string_view a, std::string_view b) {
 #if defined(_WIN32) || defined(__APPLE__)
-  return std::ranges::equal(a, b, [](char x, char y) {
-    return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
-  });
+  return core::iequal(a, b);
 #else
   return a == b;
 #endif

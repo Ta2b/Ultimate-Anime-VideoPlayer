@@ -14,10 +14,6 @@ namespace ajp::gpu::vk {
 // Résultat d'une opération qui ne rend rien d'autre qu'un succès ou un refus.
 using Done = std::expected<void, Refusal>;
 
-inline std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{.code = code, .detail = std::move(detail)});
-}
-
 // Nom de l'énumérateur, « VK_ERROR_DEVICE_LOST » ; « VkResult(n) » s'il est inconnu.
 std::string result_name(VkResult result);
 

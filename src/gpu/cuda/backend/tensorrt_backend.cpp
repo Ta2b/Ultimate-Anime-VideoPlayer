@@ -65,10 +65,6 @@ class TrtLog final : public nvinfer1::ILogger {
 
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Le contexte primaire est partagé avec NVDEC (FFmpeg, AV_CUDA_USE_PRIMARY_CONTEXT), qui le
 // veut en attente bloquante (CU_CTX_SCHED_BLOCKING_SYNC) et refuse un contexte déjà actif avec
 // d'autres drapeaux. Le runtime l'active avec les siens (cudaInitDevice ignore ce drapeau) :

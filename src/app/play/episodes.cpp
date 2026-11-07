@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "app/play/default_player.h"
+#include "core/text.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -20,7 +21,7 @@ bool digit(char c) {
 }
 
 char folded(char c) {
-  return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return core::ascii_lower(c);
 }
 
 // Les mots d'un nom (lettres et chiffres), en majuscules.
@@ -29,7 +30,7 @@ std::vector<std::string> words_of(std::string_view name) {
   std::string word;
   for (const char c : name) {
     if (std::isalnum(static_cast<unsigned char>(c)) != 0) {
-      word.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+      word.push_back(core::ascii_upper(c));
     } else if (!word.empty()) {
       words.push_back(std::exchange(word, {}));
     }

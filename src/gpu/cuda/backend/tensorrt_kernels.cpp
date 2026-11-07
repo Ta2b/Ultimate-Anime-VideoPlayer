@@ -16,10 +16,6 @@
 namespace ajp::gpu::cuda {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::unexpected<Refusal> not_here(std::string_view kernel) {
   return refuse(RefusalCode::FormatUnsupported,
                 std::format("{} : pas encore dans le backend TensorRT de la tranche verticale", kernel));

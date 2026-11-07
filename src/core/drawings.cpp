@@ -22,10 +22,6 @@ namespace {
 static_assert(drawings::kMaxSpreadHold - 1 <= drawings::kSmoothPreload);
 static_assert(drawings::kSmoothPreload + 2 <= drawings::kWindow);
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::expected<void, Refusal> check(const PairMeasure& m) {
   if (!(m.worst_block_diff >= 0.0 && m.worst_block_diff <= drawings::kMaxDiff)) {
     return refuse(RefusalCode::FieldOutOfRange,

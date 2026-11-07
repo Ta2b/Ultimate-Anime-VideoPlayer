@@ -5,6 +5,8 @@
 #include <cctype>
 #include <string_view>
 
+#include "core/text.h"
+
 extern "C" {
 #include <libavcodec/codec_par.h>
 }
@@ -28,13 +30,6 @@ constexpr std::array<std::string_view, 10> kFontMimeTypes{
     "font/ttf",
 };
 constexpr std::array<std::string_view, 4> kFontExtensions{".ttf", ".ttc", ".otf", ".otc"};
-
-std::string lowercase(std::string_view text) {
-  std::string out(text);
-  std::ranges::transform(out, out.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return out;
-}
 
 }  // namespace
 
@@ -63,9 +58,9 @@ std::span<const std::byte> CodecParameters::extradata() const {
 bool is_font(const TrackInfo& track) {
   if (track.kind != TrackKind::Attachment || track.filename.empty()) return false;
   if (!track.parameters || track.parameters->extradata().empty()) return false;
-  const std::string mime = lowercase(track.mime_type);
+  const std::string mime = core::ascii_lower(track.mime_type);
   if (std::ranges::find(kFontMimeTypes, mime) != kFontMimeTypes.end()) return true;
-  const std::string name = lowercase(track.filename);
+  const std::string name = core::ascii_lower(track.filename);
   return std::ranges::any_of(kFontExtensions, [&](std::string_view ext) { return name.ends_with(ext); });
 }
 

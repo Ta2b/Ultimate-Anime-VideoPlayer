@@ -12,10 +12,6 @@ namespace {
 
 constexpr int kMaxSideLimit = 65536;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 int next_power_of_two(int value) {
   int power = 1;
   while (power < value) power *= 2;

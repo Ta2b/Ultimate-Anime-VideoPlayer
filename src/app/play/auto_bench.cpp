@@ -17,10 +17,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 constexpr std::int64_t kDefaultPeriodUs = 16'667;  // 60 Hz
 
 }  // namespace

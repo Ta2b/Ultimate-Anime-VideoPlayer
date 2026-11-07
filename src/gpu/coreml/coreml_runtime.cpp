@@ -64,10 +64,6 @@ std::optional<Units> units_from(std::string_view name) {
   return std::nullopt;
 }
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string text) {
-  return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
-}
-
 std::filesystem::path cache_of(const std::filesystem::path& artifact) {
   std::filesystem::path p = artifact;
   p += ".mlcache";

@@ -12,10 +12,6 @@ namespace {
 
 using Result = std::expected<void, Refusal>;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Lit une clé obligatoire ou facultative d'une table, avec son chemin pour le refus.
 template <class T>
 std::expected<std::optional<T>, Refusal> optional_field(const toml::table& table, std::string_view key,

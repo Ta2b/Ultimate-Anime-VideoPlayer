@@ -63,9 +63,6 @@ std::array<float, 3> sample_lut(const CubeLut& lut, const std::array<float, 3>& 
 // La LUT neutre (identité) de `size` points.
 CubeLut identity_lut(int size);
 
-// Un demi-flottant IEEE 754 (arrondi au plus proche), pour les textures rgba16hf.
-std::uint16_t to_half(float value);
-
 // Une LUT dont le nom ou le titre dit « pq », « hdr » ou « 2020 » attend du PQ BT.2020 (étalonnée pour l'HDR)
 // ; toute autre est lue comme une LUT SDR BT.709.
 bool look_is_pq(std::string_view name, std::string_view title);

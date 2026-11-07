@@ -12,23 +12,13 @@
 #include "app/play/visible_error.h"
 #include "core/log.h"
 #include "core/settings.h"
+#include "core/text.h"
 #include "media/bench_clip.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
 namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-std::string lowered(std::string_view text) {
-  std::string out(text);
-  std::ranges::transform(out, out.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return out;
-}
 
 // Ce qu'un essai a donné : sa lecture, ou pourquoi il n'en a pas donné.
 struct Trial {
@@ -55,7 +45,8 @@ void window_args(const BenchPlan& plan, std::vector<std::string>& args) {
 }  // namespace
 
 bool hide_is_reliable(std::string_view session_type, std::string_view current_desktop) {
-  return !(lowered(session_type) == "wayland" && lowered(current_desktop).contains("gnome"));
+  return !(core::ascii_lower(session_type) == "wayland" &&
+           core::ascii_lower(current_desktop).contains("gnome"));
 }
 
 bool hide_is_reliable_here() {

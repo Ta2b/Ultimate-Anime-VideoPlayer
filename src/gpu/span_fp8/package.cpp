@@ -16,10 +16,6 @@ constexpr std::size_t kAttentionWeights = std::size_t{kChannels} * kChannels;
 constexpr std::size_t kConcatWeights = std::size_t{kChannels} * kConcatChannels;
 constexpr std::size_t kPixelWeights = std::size_t{kPixelChannels} * 3 * 3 * kChannels;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 bool finite_half(std::uint16_t bits) {
   return (bits & 0x7C00U) != 0x7C00U;
 }

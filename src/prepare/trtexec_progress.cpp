@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include "core/text.h"
+
 namespace ajp::prepare {
 namespace {
 
@@ -23,18 +25,12 @@ constexpr std::array kMarkers = {
     Marker{"&&&& PASSED", 1.0F, "Terminé"},
 };
 
-std::string_view trim(std::string_view text) {
-  const auto first = text.find_first_not_of(" \t");
-  if (first == std::string_view::npos) return {};
-  return text.substr(first, text.find_last_not_of(" \t") - first + 1);
-}
-
 }  // namespace
 
 std::optional<BuildStage> TrtexecProgress::feed(std::string_view line) {
   if (line.find("&&&& FAILED") != std::string_view::npos) failed_ = true;
   if (line.find("&&&& PASSED") != std::string_view::npos) passed_ = true;
-  if (line.find("[E]") != std::string_view::npos) last_error_ = trim(line);
+  if (line.find("[E]") != std::string_view::npos) last_error_ = core::trim(line);
   for (const Marker& marker : kMarkers) {
     if (line.find(marker.text) == std::string_view::npos || marker.fraction <= fraction_) continue;
     fraction_ = marker.fraction;

@@ -31,10 +31,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Nits d'un code PQ (ST 2084).
 double pq_nits(double e) {
   const double p = std::pow(std::clamp(e, 0.0, 1.0), 1.0 / 78.84375);

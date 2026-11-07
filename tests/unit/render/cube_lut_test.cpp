@@ -71,15 +71,6 @@ TEST_CASE("refus nommés : taille, lignes, nombres, LUT 1D, taille de fichier", 
   CHECK_FALSE(parse_cube("DOMAIN_MIN 1 1 1\nDOMAIN_MAX 0 0 0\nLUT_3D_SIZE 17\n0 0 0\n"));
 }
 
-TEST_CASE("les demi-flottants arrondissent au plus proche", "[render][lut]") {
-  CHECK(to_half(0.0F) == 0x0000);
-  CHECK(to_half(1.0F) == 0x3c00);
-  CHECK(to_half(0.5F) == 0x3800);
-  CHECK(to_half(2.0F) == 0x4000);
-  CHECK(to_half(1.0F / 3.0F) == 0x3555);
-  CHECK(to_half(1.0e-9F) == 0x0000);
-}
-
 TEST_CASE("le bloc de texture annonce sa taille et porte 8 octets par point", "[render][lut]") {
   const CubeLut lut = identity_lut(17);
   const std::string block = lut_texture_block(lut, "AJG_LUT");

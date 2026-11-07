@@ -35,10 +35,6 @@
 namespace ajp::gpu::cuda {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Mémoire d'appareil et flux rendus quoi qu'il arrive.
 struct Scratch {
   void* input = nullptr;

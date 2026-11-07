@@ -19,16 +19,6 @@ std::string utf8(const std::filesystem::path& path) {
   return core::to_utf8(path);
 }
 
-std::string av_error_text(int error) {
-  std::array<char, AV_ERROR_MAX_STRING_SIZE> text{};
-  av_strerror(error, text.data(), text.size());
-  return text.data();
-}
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error) {
   return refuse(code, std::format("{} : {}", where, av_error_text(error)));
 }

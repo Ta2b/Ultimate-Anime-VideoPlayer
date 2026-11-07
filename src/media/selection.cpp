@@ -11,6 +11,7 @@
 #include <string_view>
 #include <tuple>
 
+#include "core/text.h"
 #include "media/language.h"
 #include "media/track_language.h"
 
@@ -35,7 +36,7 @@ bool is_full_dialogue(const TrackInfo& track) {
   bool found = false;
   for (const char c : track.title + ' ') {
     if (std::isalnum(static_cast<unsigned char>(c)) != 0) {
-      word += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      word += core::ascii_lower(c);
     } else {
       found = found || (!word.empty() && special());
       word.clear();

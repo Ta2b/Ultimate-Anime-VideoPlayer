@@ -21,16 +21,9 @@
 #include "core/dir_entries.h"
 #include "core/inflate.h"
 #include "core/log.h"
+#include "core/text.h"
 
 namespace ajp::app::play {
-namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-}  // namespace
-
 core::Os host_os() {
   return core::kHostOs;
 }
@@ -103,8 +96,7 @@ std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catal
 
 std::string cuda_arch_from_name(std::string_view gpu_name) {
   std::string name(gpu_name);
-  std::ranges::transform(name, name.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  name = core::ascii_lower(name);
   const auto has = [&](std::string_view part) { return name.find(part) != std::string::npos; };
   const auto series = [&](char digit) {  // « rtx 4050 » : la série à deux chiffres, ici 40
     const std::size_t at = name.find("rtx ");

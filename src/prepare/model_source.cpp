@@ -17,10 +17,6 @@
 namespace ajp::prepare {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 OnnxType onnx_type(gpu::TensorType type) {
   switch (type) {
     case gpu::TensorType::F32:

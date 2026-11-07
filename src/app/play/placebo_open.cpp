@@ -57,10 +57,6 @@ void fit_display_scale(spdlog::logger& log, SDL_Window* window, int width, int h
   log.info("fenêtre {} × {} : échelle du bureau {:.0f} %", size.width, size.height, scale / density * 100.0F);
 }
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Les espaces colorimétriques que la surface offre : dit, au journal, si un écran HDR peut recevoir du HDR10
 // (A2B10G10R10 + HDR10_ST2084) ou si le pilote ne propose que du sRGB.
 void log_surface_color_spaces(const pl_vulkan vk, VkSurfaceKHR surface) {

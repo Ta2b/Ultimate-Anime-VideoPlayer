@@ -15,6 +15,7 @@ extern "C" {
 #include <libavutil/frame.h>
 }
 
+#include "core/av_error.h"
 #include "core/types.h"
 #include "media/track.h"
 
@@ -44,11 +45,10 @@ using BufferPtr = std::unique_ptr<AVBufferRef, BufferUnref>;
 
 inline constexpr AVRational kMicroseconds{1, 1'000'000};
 
-// Texte de av_strerror pour un code AVERROR.
-std::string av_error_text(int error);
+// Texte de av_strerror pour un code AVERROR (core/av_error.h).
+using core::av_error_text;
 
 // Refus nommé : « où : texte FFmpeg ».
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail);
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error);
 
 // Horodatage d'un flux en microsecondes depuis le début du fichier ;

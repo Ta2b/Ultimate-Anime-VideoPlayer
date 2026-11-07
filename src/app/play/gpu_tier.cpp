@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "core/text.h"
 
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
@@ -23,9 +24,7 @@ std::unexpected<Refusal> refuse(std::string detail) {
 
 // Minuscules, sans « (tm) » ni « (r) » : « Intel(R) Arc(tm) A770 » devient « intel arc a770 ».
 std::string normalized(std::string_view name) {
-  std::string out;
-  out.reserve(name.size());
-  for (const char c : name) out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  std::string out = core::ascii_lower(name);
   for (const std::string_view mark : {"(tm)", "(r)"}) {
     for (std::size_t at = out.find(mark); at != std::string::npos; at = out.find(mark))
       out.erase(at, mark.size());

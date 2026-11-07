@@ -19,10 +19,6 @@
 namespace ajp::gpu::vk::net {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Le motif d'entrée dans le type du tenseur, ramené à [0, 1] comme une image.
 std::vector<std::byte> input_bytes(const ir::Tensor& tensor) {
   const std::uint64_t bytes = ir::storage_bytes(tensor);

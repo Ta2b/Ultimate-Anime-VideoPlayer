@@ -17,10 +17,6 @@ namespace {
 
 constexpr std::size_t kCountsBytes = sizeof(kernels::FrameCounts);
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 }  // namespace
 
 std::expected<std::uint64_t, Refusal> TensorRtBackend::frame_stats_start(const Tensor& rgb,

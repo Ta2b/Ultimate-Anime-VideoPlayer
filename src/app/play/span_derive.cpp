@@ -18,10 +18,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::filesystem::path partial_of(const std::filesystem::path& path) {
   std::filesystem::path out = path;
   out += ".part";

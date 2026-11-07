@@ -19,10 +19,6 @@
 namespace ajp::gpu::vk::net {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{.code = code, .detail = std::move(detail)});
-}
-
 // Chaque sortie du graphe vient d'un nœud : une entrée ou une constante rendue telle quelle
 // n'a pas de noyau.
 std::expected<void, Refusal> check_interface(const ir::Graph& graph) {

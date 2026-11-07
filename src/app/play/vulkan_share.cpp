@@ -15,18 +15,10 @@ extern "C" {
 #include <libavutil/hwcontext_vulkan.h>
 }
 
+#include "core/av_error.h"
+
 namespace ajp::app::play {
 namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-std::string av_text(int error) {
-  std::array<char, AV_ERROR_MAX_STRING_SIZE> text{};
-  av_strerror(error, text.data(), text.size());
-  return text.data();
-}
 
 // FFmpeg verrouille chaque file par ces fonctions, comme le backend Vulkan : libplacebo tient le
 // verrou, et user_opaque porte le pl_vulkan.
@@ -133,7 +125,8 @@ std::expected<std::unique_ptr<VulkanShare>, Refusal> VulkanShare::create(pl_vk_i
   }
   if (hw->nb_qf == 0) return refuse(RefusalCode::VendorCallFailed, "aucune file de libplacebo à partager");
   if (const int err = av_hwdevice_ctx_init(ref); err < 0)
-    return refuse(RefusalCode::VendorCallFailed, std::format("av_hwdevice_ctx_init : {}", av_text(err)));
+    return refuse(RefusalCode::VendorCallFailed,
+                  std::format("av_hwdevice_ctx_init : {}", core::av_error_text(err)));
   return share;
 }
 

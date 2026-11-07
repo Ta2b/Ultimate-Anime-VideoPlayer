@@ -14,8 +14,6 @@
 namespace ajp::core {
 namespace {
 
-using fields::refuse;
-
 constexpr std::array<std::string_view, kUsageCount> kUsageNames{"upscale", "interpolate"};
 
 // Les SDK de RTX HDR, retiré : un ancien settings.toml les nomme encore, ils sont oubliés à la lecture.

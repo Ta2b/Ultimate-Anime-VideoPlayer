@@ -4,6 +4,8 @@
 #include <optional>
 #include <span>
 
+#include "core/text.h"
+
 namespace ajp::subs {
 namespace {
 
@@ -19,18 +21,12 @@ bool is_digit(char c) {
   return c >= '0' && c <= '9';
 }
 
-std::string_view trim(std::string_view s) {
-  while (!s.empty() && is_space(s.front())) s.remove_prefix(1);
-  while (!s.empty() && is_space(s.back())) s.remove_suffix(1);
-  return s;
-}
-
 bool is_blank(std::string_view line) {
-  return trim(line).empty();
+  return core::trim(line).empty();
 }
 
 bool is_index(std::string_view line) {
-  line = trim(line);
+  line = core::trim(line);
   if (line.empty()) return false;
   for (const char c : line) {
     if (!is_digit(c)) return false;
@@ -92,12 +88,12 @@ struct Timing {
 
 // « début --> fin », suivi éventuellement de coordonnées, ignorées.
 std::optional<Timing> parse_timing(std::string_view line) {
-  line = trim(line);
+  line = core::trim(line);
   const auto start = take_timestamp(line);
   if (!start) return std::nullopt;
-  line = trim(line);
+  line = core::trim(line);
   if (!take(line, "-->")) return std::nullopt;
-  line = trim(line);
+  line = core::trim(line);
   const auto end = take_timestamp(line);
   if (!end || !(line.empty() || is_space(line.front()))) return std::nullopt;
   return Timing{*start, *end};
@@ -106,7 +102,7 @@ std::optional<Timing> parse_timing(std::string_view line) {
 // Une ligne qui se donne pour un horodatage : un chiffre en tête et une flèche.
 // Bien ou mal formée, elle ouvre une cue ; mal formée, elle est refusée.
 bool looks_like_timing(std::string_view line) {
-  line = trim(line);
+  line = core::trim(line);
   return !line.empty() && is_digit(line.front()) && line.find("-->") != std::string_view::npos;
 }
 

@@ -16,6 +16,7 @@
 #include "app/play/engine_switch.h"
 #include "app/play/panel_style.h"
 #include "core/engines.h"
+#include "core/text.h"
 
 namespace ajp::app::play {
 namespace {
@@ -162,19 +163,10 @@ std::vector<std::filesystem::path> backends_within(std::span<const std::filesyst
   return out;
 }
 
-namespace {
-
-std::string lower(std::string_view text) {
-  std::string out(text);
-  std::ranges::transform(out, out.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return out;
-}
-
-}  // namespace
+namespace {}  // namespace
 
 bool amd_matrix_cores(std::string_view gpu_name) {
-  const std::string name = lower(gpu_name);
+  const std::string name = core::ascii_lower(gpu_name);
   // RADV nomme la puce : NAVI3x pour RDNA3, GFX1200 et GFX1201 pour RDNA4 (Mesa ne leur donne
   // pas de nom de code).
   constexpr std::array kWmmaChips{"navi31", "navi32", "navi33", "gfx11", "gfx12"};

@@ -38,10 +38,6 @@ std::size_t align_up(std::size_t value, std::size_t alignment) {
   return (value + alignment - 1) / alignment * alignment;
 }
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Un plan de sortie : son format de texture, ses composantes (Y = 0, Cb = 1, Cr = 2) et son
 // sous-échantillonnage.
 struct PlaneFormat {

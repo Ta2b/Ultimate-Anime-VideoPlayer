@@ -11,10 +11,12 @@ extern "C" {
 #include <libavutil/mem.h>
 }
 
-#include "audio/av_error.h"
-#include "audio/refuse.h"
+#include "core/av_error.h"
+#include "core/types.h"
 
 namespace ajp::audio {
+
+using core::av_error_text;
 namespace {
 
 // Les horodatages traversent libavcodec en microsecondes.

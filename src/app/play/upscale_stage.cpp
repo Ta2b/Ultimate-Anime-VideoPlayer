@@ -22,10 +22,6 @@ namespace {
 
 constexpr std::uint64_t kDisagreementsLogged = 100;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 gpu::Shape planes(int channels, int width, int height) {
   return gpu::Shape{.dims = {1, channels, height, width}};
 }

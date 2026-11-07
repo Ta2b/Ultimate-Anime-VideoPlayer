@@ -29,6 +29,8 @@ jobs:
         run: tools/ci/check-no-getenv.sh
       - name: Aucun atoi ni sscanf
         run: tools/ci/check-no-atoi.sh
+      - name: Un seul exemplaire des utilitaires
+        run: tools/ci/check-utilities.sh
       - name: Shaders
         env:
           CXX: g++-13

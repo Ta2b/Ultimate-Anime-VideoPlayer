@@ -14,10 +14,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 template <class T>
 std::optional<T> number(std::string_view text) {
   T value{};
