@@ -570,6 +570,13 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
   text << file.rdbuf();
   std::vector<std::string> dropped;
   auto settings = parse_settings_lenient(text.str(), &dropped);
+  if (const toml::parse_result parsed = toml::parse(text.str()); parsed) {
+    // La version lue (P2.22) : une plus récente garde ses clés à la réécriture, et se dit au journal.
+    if (const auto version = parsed.table()["version"].value<std::int64_t>();
+        version && *version > kSettingsVersion)
+      log_channel("app")->warn("{} : version {} plus récente que {}, clés inconnues gardées", path.string(),
+                               *version, kSettingsVersion);
+  }
   for (const std::string& why : dropped)
     log_channel("app")->warn("{} : valeur écartée, défaut gardé ({})", path.string(), why);
   if (!settings)
@@ -579,7 +586,23 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
 
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
-  return core::write_text_atomically(path, format_settings(settings));
+  std::string text = format_settings(settings);
+  // Les clés d'une version plus récente restent (P2.22) : revenir à celle-ci ne les efface plus.
+  std::ifstream file(path, std::ios::binary);
+  if (file) {
+    std::ostringstream existing;
+    existing << file.rdbuf();
+    toml::parse_result old = toml::parse(existing.str());
+    toml::parse_result fresh = toml::parse(text);
+    if (old && fresh) {
+      toml::table merged = std::move(fresh).table();
+      keep_unknown_keys(merged, old.table(), settings_from_table);
+      std::ostringstream out;
+      out << "# Réglages de « ajp play », écrits par le menu des paramètres.\n" << merged << '\n';
+      text = out.str();
+    }
+  }
+  return core::write_text_atomically(path, text);
 }
 
 }  // namespace ajp::app::play

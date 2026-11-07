@@ -22,4 +22,9 @@ using TableReader = std::expected<PlaySettings, Refusal> (*)(const toml::table&)
 bool drop_offending(toml::table& root, const std::string& detail, std::vector<std::string>* dropped,
                     const TableReader& read);
 
+// P2.22 : les clés de existing que read ne lit pas (celles d'une version plus récente du lecteur) passent
+// dans fresh, la table que le lecteur va écrire. Une clé est gardée quand l'ôter de existing ne change rien à
+// ce que read en tire, et que fresh ne l'a pas déjà. Rien n'est gardé si existing ne se lit pas.
+void keep_unknown_keys(toml::table& fresh, const toml::table& existing, const TableReader& read);
+
 }  // namespace ajp::app::play

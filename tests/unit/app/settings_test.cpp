@@ -6,6 +6,8 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <string>
@@ -622,4 +624,27 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
       defaults;  // la pile de LUT de Tatoub, cuite en une seule LUT (bake_stack.py)
   CHECK(defaults.look == "HDR pile unique 65 point.cube");
   CHECK(defaults.look_layers.empty());
+}
+
+TEST_CASE("play.toml : une version plus récente garde ses clés à la réécriture (P2.22)", "[app][settings]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-future.toml";
+  {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << "version = 2\nfuture_option = 7\n[image]\nupscale = false\nfuture_filter = \"x\"\n[nouveau]\na = "
+           "1\n";
+  }
+  auto loaded = ajp::app::play::load_settings(path);
+  REQUIRE(loaded);
+  CHECK_FALSE(loaded->upscale);
+  loaded->upscale = true;
+  REQUIRE(ajp::app::play::save_settings(path, *loaded));
+  std::ifstream in(path, std::ios::binary);
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(text.find("future_option = 7") != std::string::npos);
+  CHECK(text.find("future_filter = 'x'") != std::string::npos);
+  CHECK(text.find("[nouveau]") != std::string::npos);
+  auto reread = ajp::app::play::load_settings(path);
+  REQUIRE(reread);
+  CHECK(*reread == *loaded);
+  std::filesystem::remove(path);
 }
