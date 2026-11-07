@@ -493,8 +493,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // Garder les poses : la paire précédente compte si elle précède vraiment celle-ci ; une paire
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
-  const bool held = facts.scores && !pair_cut(facts) && kernels::is_held(facts.scores->worst_block);
-  if (facts.scores && !pair_cut(facts) && !held) moving_.add(facts.scores->moving);
+  const bool held = held_pair(facts);  // la zone qui bouge des autres paires est comptée (P6.6, P6.18)
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
   // Dessin tenu : l'image agrandie de la précédente sert à celle-ci, sans passe de SPAN. Pas plus
   // de kMaxSpanReuse de suite, comptées depuis la dernière vraie passe : un fondu lent, tenu paire

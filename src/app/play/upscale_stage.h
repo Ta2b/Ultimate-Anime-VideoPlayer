@@ -436,7 +436,16 @@ class UpscaleStage final : public RingStage {
   std::uint64_t warm_runs_ = 0;  // passes du milieu reprises à chaud (P6.15)
   // La dernière passe est celle du milieu, sur ce moteur : la suivante peut la reprendre (P6.15).
   const gpu::Engine* warm_from_ = nullptr;
-  core::MovingTally moving_;      // la zone qui bouge des paires mesurées (P6.6, P6.18)
+  core::MovingTally moving_;  // la zone qui bouge des paires mesurées (P6.6, P6.18)
+  // Dessin tenu (ni coupe, ni mesure manquante) ; sinon la zone qui bouge de la paire entre au cumul.
+  bool held_pair(const PairFacts& facts) {
+    if (!facts.scores || pair_cut(facts)) return false;
+    if (kernels::is_held(facts.scores->worst_block)) return true;
+    moving_.add(facts.scores->moving);
+    return false;
+  }
+  // La paire précédente était calme et mesurée (P6.17, P6.15).
+  bool calm_pair() const { return motion_measured_ && !strong_motion_; }
   std::uint64_t skipped_ = 0;     // images source sautées avant calcul (passed)
   bool fences_mapped_ = false;    // les signaux de l'export écrits par le GPU (KernelOps::map_fences)
   std::uint64_t late_pairs_ = 0;  // paires dont des instants sont sautés pour rattraper l'horloge

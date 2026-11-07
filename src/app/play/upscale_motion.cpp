@@ -108,9 +108,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     } else {
       // RIFE au milieu ; s'il reste plus d'une image à faire, son mouvement maximal dit si cette
       // passe suffit (kernels/spec/warp.h, seuil mis à la hauteur de RIFE).
-      // P6.17 : la paire précédente calme et mesurée, le milieu peut prendre le RIFE léger.
-      if (auto ok = run_motion(0.5F, middle.flow, middle.mask, motion_measured_ && !strong_motion_); !ok)
-        return ok;
+      if (auto ok = run_motion(0.5F, middle.flow, middle.mask, calm_pair()); !ok) return ok;
       if (poses_) {
         single_run_ = true;
         motion_measured_ = false;

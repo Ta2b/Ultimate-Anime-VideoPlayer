@@ -82,19 +82,13 @@ constexpr std::array kImageTabs{
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
+    Entry{"Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest.",
+          "Performance : rapide. Balanced : plus fin. Sharp1 : plus net. ArtCNN : le plus léger."},
     Entry{
-        "Performance: fastest SPAN. Balanced: finer, slower. Sharp1: crisper edges. ArtCNN: much lighter, "
-        "for "
-        "small GPUs.",
-        "Performance : le SPAN le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets. "
-        "ArtCNN : bien plus léger, pour les petites cartes."},
-    Entry{
-        "Performance: fastest SPAN. Balanced: finer, slower. Sharp1: crisper edges. ArtCNN: much lighter, "
-        "for "
-        "small GPUs. FP8: prepared once on this PC at the next video, then faster.",
-        "Performance : le SPAN le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets. "
-        "ArtCNN : bien plus léger, pour les petites cartes. FP8 : préparé une fois sur ce PC à la prochaine "
-        "vidéo, puis plus rapide."},
+        "Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest. FP8: prepared once on this PC, "
+        "then faster.",
+        "Performance : rapide. Balanced : plus fin. Sharp1 : plus net. ArtCNN : le plus léger. FP8 : préparé "
+        "une fois sur ce PC, puis plus rapide."},
     Entry{"RIFE model", "Modèle RIFE"},
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},

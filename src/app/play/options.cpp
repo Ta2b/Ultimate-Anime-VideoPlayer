@@ -108,6 +108,37 @@ bool asks_debug(std::span<const std::string_view> args) {
   return false;
 }
 
+struct Flag {
+  std::string_view name;
+  bool PlayOptions::* field;
+  bool value;
+};
+
+// Les drapeaux d'essai sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
+constexpr std::array<Flag, 14> kFlags{{
+    {"--no-vrr", &PlayOptions::no_vrr, true},
+    {"--one-lane", &PlayOptions::one_lane, true},
+    {"--rife-warm", &PlayOptions::rife_warm, true},
+    {"--skip-held", &PlayOptions::skip_held, true},
+    {"--fast-steady", &PlayOptions::fast_steady, true},
+    {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
+    {"--ring-watcher", &PlayOptions::ring_watcher, true},
+    {"--no-ring-watcher", &PlayOptions::ring_watcher, false},
+    {"--precise-wait", &PlayOptions::precise_wait, true},
+    {"--no-precise-wait", &PlayOptions::precise_wait, false},
+    {"--audio-pll", &PlayOptions::audio_pll, true},
+    {"--no-audio-pll", &PlayOptions::audio_pll, false},
+    {"--vsync-index", &PlayOptions::vsync_index, true},
+    {"--no-vsync-index", &PlayOptions::vsync_index, false},
+}};
+
+bool set_flag(std::string_view arg, PlayOptions& options) {
+  const auto flag = std::ranges::find(kFlags, arg, &Flag::name);
+  if (flag == kFlags.end()) return false;
+  options.*(flag->field) = flag->value;
+  return true;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -184,34 +215,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
               std::format("--hdr-metadata: \"{}\" is not an SDR brightness from 50 to 1000 nits", text));
         options.kde_sdr_nits = static_cast<double>(*nits);
       }
-    } else if (arg == "--no-vrr") {
-      options.no_vrr = true;
-    } else if (arg == "--one-lane") {
-      options.one_lane = true;
-    } else if (arg == "--rife-warm") {
-      options.rife_warm = true;
-    } else if (arg == "--skip-held") {
-      options.skip_held = true;
-    } else if (arg == "--fast-steady") {
-      options.fast_steady = true;
-    } else if (arg == "--smooth-drawings") {
-      options.smooth_drawings = true;
-    } else if (arg == "--ring-watcher") {
-      options.ring_watcher = true;
-    } else if (arg == "--no-ring-watcher") {
-      options.ring_watcher = false;
-    } else if (arg == "--precise-wait") {
-      options.precise_wait = true;
-    } else if (arg == "--no-precise-wait") {
-      options.precise_wait = false;
-    } else if (arg == "--audio-pll") {
-      options.audio_pll = true;
-    } else if (arg == "--no-audio-pll") {
-      options.audio_pll = false;
-    } else if (arg == "--vsync-index") {
-      options.vsync_index = true;
-    } else if (arg == "--no-vsync-index") {
-      options.vsync_index = false;
+    } else if (set_flag(arg, options)) {
+      // un drapeau d'essai de kFlags
     } else if (arg.starts_with("--present=")) {
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
