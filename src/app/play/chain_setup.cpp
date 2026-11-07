@@ -192,8 +192,8 @@ void load_calm_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
   const std::filesystem::path& calm = *p.options.rife_calm_model;
   auto planes = rife_input_planes(calm);
   if (!planes || *planes != c.rife_planes || rife_padding_multiple(calm) != c.rife_align) {
-    log->warn("RIFE des paires calmes ignoré : {} n'a pas les plans ni le remplissage de {}",
-              core::to_utf8(calm.filename()), core::to_utf8(c.rife_model->filename()));
+    log->warn("RIFE des paires calmes ignoré : {} n'a pas les plans ni le remplissage du RIFE principal",
+              core::to_utf8(calm.filename()));
     return;
   }
   auto derived = motion_model(calm, models_dir);

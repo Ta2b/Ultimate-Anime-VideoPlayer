@@ -162,8 +162,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       only_files = true;
     } else if (arg == "--help") {
       options.help = true;
-    } else if (arg == "--debug") {
-      // lu avant la boucle (asks_debug)
+    } else if (arg == "--debug" || set_flag(arg, options)) {
+      // --debug est lu avant la boucle (asks_debug) ; set_flag pose un drapeau d'essai de kFlags
     } else if (arg == "--no-upscale") {
       options.upscale = false;
       options.given.emplace_back(arg);
@@ -215,8 +215,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
               std::format("--hdr-metadata: \"{}\" is not an SDR brightness from 50 to 1000 nits", text));
         options.kde_sdr_nits = static_cast<double>(*nits);
       }
-    } else if (set_flag(arg, options)) {
-      // un drapeau d'essai de kFlags
     } else if (arg.starts_with("--present=")) {
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
