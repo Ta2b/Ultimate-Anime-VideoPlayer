@@ -114,6 +114,8 @@ class RuntimeNet {
   // entrées ni aux sorties avant done ; ready et done viennent d'un autre fil, et les appels se
   // suivent dans l'ordre. Refus FeatureUnavailable (par défaut) avant de rien lancer :
   // l'appelant fait alors l'étape par run.
+  // Les rappels se passent par valeur : les implémentations les gardent jusqu'à la fin du travail.
+  // NOLINTBEGIN(performance-unnecessary-value-param)
   virtual std::expected<void, Refusal> run_deferred(
       std::span<const HostBinding> /*inputs*/, std::span<const HostBinding> /*outputs*/,
       std::function<std::expected<void, Refusal>()> /*ready*/,
@@ -121,6 +123,7 @@ class RuntimeNet {
     return std::unexpected(
         Refusal{RefusalCode::FeatureUnavailable, "exécution différée non prise en charge"});
   }
+  // NOLINTEND(performance-unnecessary-value-param)
 };
 
 class Runtime {

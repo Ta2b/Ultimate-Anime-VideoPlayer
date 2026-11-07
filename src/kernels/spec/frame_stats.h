@@ -19,6 +19,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
@@ -34,6 +35,7 @@ inline constexpr int kGridH = 72;
 inline constexpr int kLumaBins = 64;
 inline constexpr int kLinearBins = 128;
 inline constexpr int kZones = 4;
+inline constexpr std::size_t kZoneCells = static_cast<std::size_t>(kZones) * kZones;
 inline constexpr float kBarLuma = 0.03F;
 inline constexpr float kSdrWhiteNits = 203.0F;  // blanc papier SDR (BT.2408)
 inline constexpr float kHlgPeakNits = 1000.0F;
@@ -60,8 +62,8 @@ struct FrameCounts {
   std::array<std::uint32_t, frame_stats::kLumaBins> luma_hist{};
   std::array<std::uint32_t, frame_stats::kLinearBins> maxrgb_hist{};
   std::array<std::uint32_t, frame_stats::kLinearBins> i_hist{};
-  std::array<float, frame_stats::kZones * frame_stats::kZones> zone_sum{};
-  std::array<std::uint32_t, frame_stats::kZones * frame_stats::kZones> zone_count{};
+  std::array<float, frame_stats::kZoneCells> zone_sum{};
+  std::array<std::uint32_t, frame_stats::kZoneCells> zone_count{};
   std::uint32_t points = 0;
   std::uint32_t bright = 0;
   std::uint32_t highlights = 0;
@@ -73,13 +75,13 @@ struct FrameCounts {
   float maxrgb_sum = 0.0F;                       // maxRGB linéaire
   std::uint32_t x0 = 0, x1 = 0, y0 = 0, y1 = 0;  // cadre hors bandes, en points de la grille
 };
-static_assert(sizeof(FrameCounts) == 4 * (64 + 128 + 128 + 16 + 16 + 4 + 5 + 4));
+static_assert(sizeof(FrameCounts) == sizeof(std::uint32_t) * (64 + 128 + 128 + 16 + 16 + 4 + 5 + 4));
 
 // Les mesures d'une image, tirées de FrameCounts (frame_stats_of).
 struct FrameStats {
   // Échelle gamma.
   std::array<float, frame_stats::kLumaBins> luma_hist{};  // parts (somme 1)
-  std::array<float, frame_stats::kZones * frame_stats::kZones> zones{};
+  std::array<float, frame_stats::kZoneCells> zones{};
   float mean = 0.0F;
   float blue = 0.0F;
   float chroma = 0.0F;

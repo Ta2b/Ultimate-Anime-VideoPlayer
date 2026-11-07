@@ -107,6 +107,7 @@ class VulkanBackend final : public Backend {
   VkContext& context() { return *context_; }
   MemoryAllocator& memory() { return *memory_; }
   const DeviceProfile& profile() const { return profile_; }
+  // NOLINTNEXTLINE(bugprone-unchecked-optional-access) : posée par create, avant tout appel.
   BackendQueue& queue() { return *queue_; }
   // Chemin de l'artefact de ce modèle à cette forme, construit ou non.
   std::filesystem::path artifact_path(const ModelSpec& model, const ShapeSet& shapes) const;
