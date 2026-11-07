@@ -37,6 +37,7 @@ extern "C" {
 
 #include "app/play/auto_bench_run.h"
 #include "app/play/crash_dump.h"
+#include "app/play/data_dirs.h"
 #include "app/play/default_player.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
@@ -471,12 +472,16 @@ int run_player(int argc, char** argv) {
   // démarrer.
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
+  // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois.
+  const std::filesystem::path heavy = ajp::app::play::local_data(data);
+  ajp::app::play::move_heavy_data(
+      data, heavy, [](const std::string& line) { ajp::log_channel("app")->info("données : {}", line); });
   bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
       .data = data,  // le dossier du lecteur, celui que lit l'application d'une mise à jour plus haut
       .executable = place.executable,
-      .engines = data / "engines",
+      .engines = heavy / "engines",
       .settings = settings_dir,
       .engine_index = base / "engines.lock",
       .models = base / "models",

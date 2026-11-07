@@ -10,6 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/data_dirs.h"
 #include "app/play/player.h"
 #include "french_ui.h"
 
@@ -189,4 +190,31 @@ TEST_CASE("Lecteur par défaut : la mise à jour et l'inscription ne lisent pas 
   CHECK(place.app_data == std::filesystem::path("/donnees/ajp/ajp"));
   CHECK(place.data == std::filesystem::path("/donnees"));
   CHECK(place.executable == std::filesystem::path("/opt/ajp/ajp"));
+}
+
+TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier local, les réglages restent",
+          "[app]") {
+  namespace fs = std::filesystem;
+  using ajp::app::play::move_heavy_data;
+  const fs::path root = fs::temp_directory_path() / "ajp-local-data";
+  fs::remove_all(root);
+  const fs::path roaming = root / "Roaming" / "ajp" / "ajp";
+  const fs::path local = root / "Local" / "ajp" / "ajp";
+  fs::create_directories(roaming / "engines");
+  fs::create_directories(roaming / "backends" / "tensorrt");
+  std::ofstream(roaming / "engines" / "span.plan") << "plan";
+  std::ofstream(roaming / "play.toml") << "[playlist]";
+  fs::create_directories(local / "backends");  // déjà là : gardé tel quel, l'ancien n'écrase rien
+  std::vector<std::string> said;
+  CHECK(move_heavy_data(roaming, local, [&](const std::string& line) { said.push_back(line); }) == 1);
+  CHECK(fs::is_regular_file(local / "engines" / "span.plan"));
+  CHECK_FALSE(fs::exists(roaming / "engines"));
+  CHECK(fs::exists(roaming / "backends" / "tensorrt"));
+  CHECK(fs::is_regular_file(roaming / "play.toml"));
+  CHECK(said.size() == 1);
+  CHECK(move_heavy_data(roaming, roaming) == 0);
+#ifndef _WIN32
+  CHECK(ajp::app::play::local_data(roaming) == roaming);  // hors Windows, le même dossier
+#endif
+  fs::remove_all(root);
 }

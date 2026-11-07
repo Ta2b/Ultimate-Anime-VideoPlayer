@@ -203,7 +203,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
       .allow_software = options.software_gpu,
       .present = options.present,
-      .shader_cache = paths.data / "shaders.cache",
+      .shader_cache = paths.engines.parent_path() / "shaders.cache",
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
                                      : std::filesystem::path()});
   if (!screen) return std::unexpected(std::move(screen.error()));
@@ -304,7 +304,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
-  ShotWork shots{.cache_dir = paths.data / "plans"};
+  ShotWork shots{.cache_dir = paths.engines.parent_path() / "plans"};
   if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
