@@ -31,6 +31,9 @@ BREW_LOCK=(
 brew_libs=()
 for entry in "${BREW_LOCK[@]}"; do brew_libs+=("${entry%% *}"); done
 brew install --quiet "${BREW_TOOLS[@]}" "${brew_libs[@]}"
+# Une formule déjà dans l'image du runner n'est pas mise à jour par brew install (0.10.0 : harfbuzz 15.0.0 de
+# l'image contre 15.1.0 relevé) : la même que celle du dépôt Homebrew, celle du relevé.
+brew upgrade --quiet "${brew_libs[@]}"
 BREW="$(brew --prefix)"
 drift=0
 for entry in "${BREW_LOCK[@]}"; do
