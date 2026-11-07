@@ -165,7 +165,7 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
 
 namespace {
 
-std::optional<std::filesystem::path> kwin_config_path() {
+[[maybe_unused]] std::optional<std::filesystem::path> kwin_config_path() {  // Linux seulement
   const char* home = SDL_GetUserFolder(SDL_FOLDER_HOME);
   if (home == nullptr) return std::nullopt;
   return std::filesystem::path(home) / ".config" / "kwinoutputconfig.json";

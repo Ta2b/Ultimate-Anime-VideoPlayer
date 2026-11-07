@@ -311,7 +311,7 @@ bool bench_running(const BenchNote& bench) {
 
 namespace {
 
-ChainContext chain_of(const BenchContext& context) {
+[[maybe_unused]] ChainContext chain_of(const BenchContext& context) {  // hors macOS
   return ChainContext{.display_height = context.display_height,
                       .display_hz = context.display_hz,
                       .source_height = context.source_height,
@@ -321,9 +321,10 @@ ChainContext chain_of(const BenchContext& context) {
 // L'étape 4 : le mode Performance de SPAN. Rien à faire quand la carte ou le moteur ne le permettent pas (une
 // phrase le dit), quand il est déjà prêt, ou quand aucune vidéo n'est ouverte ; sinon le lecteur le prépare
 // sur la vidéo, ce qui prend une minute environ.
-std::expected<SpanFp8Verdict, Refusal> span_step(const BenchContext& context, Tier level,
-                                                 BenchProgress& shown, SpanDeriveProgress& span_progress,
-                                                 const std::stop_token& stop) {
+[[maybe_unused]] std::expected<SpanFp8Verdict, Refusal> span_step(const BenchContext& context, Tier level,
+                                                                  BenchProgress& shown,
+                                                                  SpanDeriveProgress& span_progress,
+                                                                  const std::stop_token& stop) {
   using State = SpanFp8Verdict::State;
   if (!context.fp8_reason.empty()) return SpanFp8Verdict{State::Unavailable, context.fp8_reason};
   if (context.span.ready) return SpanFp8Verdict{State::Ready, {}};

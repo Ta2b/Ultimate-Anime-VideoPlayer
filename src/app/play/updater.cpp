@@ -12,6 +12,10 @@
 #include <utility>
 #include <vector>
 
+#ifndef _WIN32
+#include <unistd.h>  // mkdtemp (macOS : pas dans <cstdlib>)
+#endif
+
 #include "app/play/ed25519.h"
 #include "app/play/engine_tools.h"
 #include "app/play/i18n.h"
