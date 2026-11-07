@@ -314,7 +314,8 @@ std::vector<DisplayFacts> connected_displays() {
     edid.resize(size);
     DisplayFacts facts = parse_edid(edid);
     facts.connector = std::format("monitor{}", i);
-    // La capacité, jamais le tearing (12.2) ; armé ou non, seul le retour de présentation le dit (6.10).
+    // La capacité, jamais le tearing (12.2) ; armé ou non : NVAPI (window_display) ou le retour de
+    // présentation.
     facts.vrr = facts.vrr_range.has_value();
     found.push_back(std::move(facts));
   }

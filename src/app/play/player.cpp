@@ -399,7 +399,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .details = settings.stats.all,
                   .next_key = next_key,
                   .engines = std::move(*engines),
-                  .display = read_display(display_name((*screen)->window()))};
+                  .display = window_display((*screen)->window())};
     player.shots = &shots;
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par

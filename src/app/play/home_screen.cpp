@@ -146,7 +146,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
                     cuda_arch_from_name(gpu_facts(h.screen).name) == "sm89" &&
                     tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
-  const std::optional<DisplayFacts> display = read_display(display_name(h.screen.window()));
+  const std::optional<DisplayFacts> display = window_display(h.screen.window());
   // Vidéo > Post-traitement sans vidéo ouverte : la carte, sa tranche (mesurée ou estimée), l'écran, les
   // sorties son, comme en lecture.
   std::optional<BenchResult> measured;
