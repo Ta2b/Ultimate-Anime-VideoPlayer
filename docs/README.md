@@ -20,7 +20,9 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`span-fp8-cutlass.md`](span-fp8-cutlass.md) | SPAN entier en FP8 (cran Performance, RTX 40) |
 | [`fp8-interpolation.md`](fp8-interpolation.md) | Le FP8 de RIFE et DistilDRBA ; celui de GMFSS retiré |
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
-| [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour |
+| [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |
+| [`parite-windows-linux.md`](parite-windows-linux.md) | Banc de parité Windows contre Linux sur le même PC |
+| [`test-utilisateurs.md`](test-utilisateurs.md) | Test avec cinq utilisateurs : tâches et grille |
 | [`a-faire-1-0.md`](a-faire-1-0.md) | Ce qui reste avant la 1.0 |
 
 ## Historiques (gardés comme trace, marqués en tête)
