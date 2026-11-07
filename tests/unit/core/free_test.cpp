@@ -245,14 +245,14 @@ TEST_CASE("free rate : après un seek ou une reprise, les pertes du remplissage 
 TEST_CASE("free fallback : le Rapide revient après un calme, plus long à chaque repli", "[free]") {
   FreeFallback fallback;
   CHECK_FALSE(fallback.active(0));
-  fallback.fell_back(10'000'000);
+  CHECK(fallback.fell_back(10'000'000));  // le premier repli s'annonce, les suivants non (P3.38)
   CHECK(fallback.active(10'000'000 + FreeFallback::kRetryUs - 1));
   CHECK_FALSE(fallback.active(10'000'000 + FreeFallback::kRetryUs));  // on réessaie le Rapide
-  fallback.fell_back(100'000'000);
-  CHECK(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs - 1));  // 2 min la seconde fois
+  CHECK_FALSE(fallback.fell_back(100'000'000));
+  CHECK(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs - 1));  // 6 min la seconde fois
   CHECK_FALSE(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs));
   for (int i = 0; i < 10; ++i) fallback.fell_back(1'000'000'000);
-  CHECK_FALSE(fallback.active(1'000'000'000 + FreeFallback::kRetryMaxUs));  // au plus 10 min
+  CHECK_FALSE(fallback.active(1'000'000'000 + FreeFallback::kRetryMaxUs));  // au plus 30 min
   fallback.fell_back(0);
   fallback.clear();  // un choix explicite du mode
   CHECK_FALSE(fallback.active(1));
