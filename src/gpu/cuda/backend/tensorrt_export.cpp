@@ -13,6 +13,7 @@
 #include <string>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/export_kernels.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "kernels/ref/resample.h"
@@ -89,7 +90,7 @@ void TensorRtBackend::release_yuv_tables(bool behind_lanes) {
     if (behind_lanes) {
       free_after_lanes(p);
     } else {
-      cudaFree(p);
+      cuda_warn(cudaFree(p), "cudaFree");
     }
   }
   yuv_ = YuvTables{};
@@ -226,7 +227,7 @@ bool TensorRtBackend::map_fences(std::span<std::byte> block) {
   void* device = nullptr;
   const auto give_up = [&] {
     static_cast<void>(clear_error());
-    cudaHostUnregister(block.data());
+    cuda_warn(cudaHostUnregister(block.data()), "cudaHostUnregister");
     return false;
   };
   if (cudaHostGetDevicePointer(&device, block.data(), 0) != cudaSuccess) return give_up();
@@ -254,8 +255,7 @@ void TensorRtBackend::unmap_fences(std::span<std::byte> block) {
       if (stream != nullptr) cudaStreamSynchronize(stream);
     }
   }
-  cudaHostUnregister(it->host);
-  static_cast<void>(clear_error());
+  cuda_warn(cudaHostUnregister(it->host), "cudaHostUnregister");
   mapped_fences_.erase(it);
 }
 

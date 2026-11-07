@@ -14,6 +14,7 @@
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/guarded_backend.h"
+#include "gpu/module_logs.h"
 #include "prepare/trtexec_command.h"
 
 namespace {
@@ -81,6 +82,8 @@ extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
     return nullptr;
   }
   try {
+    // Les canaux de la bibliothèque (prepare, tensorrt) vers le journal du lecteur, comme pour Vulkan.
+    ajp::gpu::route_module_logs(init->log);
     auto backend = ajp::gpu::cuda::TensorRtBackend::create(*init, trtexec_path());
     if (!backend) {
       tell(init, std::move(backend.error()));

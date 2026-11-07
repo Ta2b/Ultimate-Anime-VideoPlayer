@@ -16,6 +16,7 @@
 #endif
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
@@ -113,7 +114,7 @@ class CudaTensorBuffer final : public TensorBuffer {
                    std::weak_ptr<TensorRtBackend::TensorReleaser> releaser)
       : device_(device), memory_(memory), tensor_(tensor), releaser_(std::move(releaser)) {}
   ~CudaTensorBuffer() override {
-    cudaSetDevice(device_);
+    cuda_warn(cudaSetDevice(device_), "cudaSetDevice");
     if (const auto owner = releaser_.lock(); owner && owner->backend != nullptr) {
       owner->backend->free_after_lanes(memory_);
       return;
@@ -173,8 +174,8 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->uuid_ = uuid_of(backend->properties_);
   if (auto ok = share_primary_context(backend->device_); !ok) return std::unexpected(ok.error());
   if (auto ok = backend->bind(); !ok) return std::unexpected(ok.error());
-  cudaRuntimeGetVersion(&backend->runtime_version_);
-  cudaDriverGetVersion(&backend->driver_version_);
+  cuda_warn(cudaRuntimeGetVersion(&backend->runtime_version_), "cudaRuntimeGetVersion");
+  cuda_warn(cudaDriverGetVersion(&backend->driver_version_), "cudaDriverGetVersion");
   if (auto ok = backend->create_lanes(); !ok) return std::unexpected(ok.error());
   for (Held& held : backend->held_) {
     if (auto ok = cuda_check(cudaEventCreateWithFlags(&held.done, cudaEventDisableTiming), "cudaEventCreate");

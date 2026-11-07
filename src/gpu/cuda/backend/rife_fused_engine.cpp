@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 
 namespace ajp::gpu::cuda {
@@ -337,7 +338,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
     const cudaError_t launched = cudaGraphLaunch(graph.exec, stream);
     if (launched == cudaSuccess) return {};
     if (sticky(launched)) return std::unexpected(cuda_refusal(launched, "RIFE fusionné : cudaGraphLaunch"));
-    cudaGraphExecDestroy(graph.exec);
+    cuda_warn(cudaGraphExecDestroy(graph.exec), "cudaGraphExecDestroy");
     graph.exec = nullptr;
     if (++launch_failures_ >= kMaxLaunchFailures && !graphs_off_) {
       graphs_off_ = true;

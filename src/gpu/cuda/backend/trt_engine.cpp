@@ -9,6 +9,7 @@
 #include <system_error>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 
 namespace ajp::gpu::cuda {
 namespace {
@@ -92,8 +93,8 @@ std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
     // Pas de place pour les deux zones à la fois : l'ancienne part avant le nouvel essai. Les
     // moteurs la reposent (generation change) ; sans zone ils échoueront à l'exécution, sans
     // écrire dans de la mémoire libérée.
-    cudaDeviceSynchronize();
-    cudaFree(data_);
+    cuda_warn(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    cuda_warn(cudaFree(data_), "cudaFree");
     data_ = nullptr;
     bytes_ = 0;
     ++generation_;
@@ -105,8 +106,8 @@ std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
     if (release_) {
       release_(data_);
     } else {
-      cudaDeviceSynchronize();
-      cudaFree(data_);
+      cuda_warn(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+      cuda_warn(cudaFree(data_), "cudaFree");
     }
   }
   data_ = fresh;
@@ -264,7 +265,7 @@ std::expected<void, Refusal> TrtEngine::match_aux_priority(cudaStream_t stream) 
         return std::unexpected(cuda_refusal(lost, "cudaStreamCreateWithPriority (file auxiliaire)"));
       return {};  // gardée telle quelle
     }
-    cudaStreamDestroy(aux);
+    cuda_warn(cudaStreamDestroy(aux), "cudaStreamDestroy");
     aux = fresh;
   }
   aux_priority_ = priority;
@@ -314,7 +315,7 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
     const cudaError_t launched = cudaGraphLaunch(exec, stream);
     if (launched == cudaSuccess) return {};
     if (sticky(launched)) return std::unexpected(cuda_refusal(launched, "cudaGraphLaunch"));
-    cudaGraphExecDestroy(exec);
+    cuda_warn(cudaGraphExecDestroy(exec), "cudaGraphExecDestroy");
     exec = nullptr;
     book_.launch_failed(pick.index);
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
