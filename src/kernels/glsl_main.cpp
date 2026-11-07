@@ -2,6 +2,7 @@
 // Outil de construction ; il ne part dans aucun binaire livré.
 #include <cstddef>
 #include <cstdio>
+#include <exception>
 #include <format>
 #include <fstream>
 #include <ios>
@@ -10,7 +11,7 @@
 
 #include "kernels/glsl.h"
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) try {
   const std::span args(argv, static_cast<std::size_t>(argc));
   if (args.size() != 2) {
     std::fputs("usage : ajp_kernels_glsl <fichier.glsl>\n", stderr);
@@ -31,4 +32,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   return 0;
+} catch (const std::exception& error) {
+  std::fputs(std::format("ajp_kernels_glsl : {}\n", error.what()).c_str(), stderr);
+  return 1;
 }
