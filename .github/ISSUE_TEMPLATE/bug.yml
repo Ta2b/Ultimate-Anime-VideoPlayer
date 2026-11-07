@@ -15,7 +15,7 @@ body:
     id: version
     attributes:
       label: ajp version / Version
-      placeholder: "0.9.1 (menu General, Application page)"
+      placeholder: "0.10.0 (menu General, Application page)"
     validations:
       required: true
   - type: dropdown

@@ -1,7 +1,7 @@
 # Ultimate Anime VideoPlayer
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
-![Version 0.9.1](https://img.shields.io/badge/version-0.9.1-informational.svg)
+![Version 0.10.0](https://img.shields.io/badge/version-0.10.0-informational.svg)
 ![Linux · Windows · macOS](https://img.shields.io/badge/plateformes-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-lightgrey.svg)
 
 Un lecteur vidéo fait pour l'anime. Il agrandit l'image avec les modèles **AnimeJaNai**, ajoute des images

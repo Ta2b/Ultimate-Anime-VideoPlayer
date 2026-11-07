@@ -33,8 +33,8 @@ version unique) et les corrections ponctuelles. Restent les chantiers d'architec
   portent passent d'abord dans un en-tête à eux), MIGraphX, OpenVINO, WinML, GMFSS, `curve`, `look_mix*`.
   L'import `.ini` est retiré.
 - **P5.4** LUT et `calibration.mkv` hors de git (attend la licence des LUT, P7.7).
-- **P5.5** options fantômes et champs TOML morts ; **P5.13** utilitaires réécrits (dont les trois lecteurs
-  protobuf, ADR 0014) ; **P5.30** seuils en ligne ; **P5.31** duplications de l'application.
+- **P5.5** options fantômes et champs TOML morts ; **P5.13** utilitaires réécrits (refus, lecture de
+  fichier, minuscules…) ; **P5.30** seuils en ligne ; **P5.31** duplications de l'application.
 - **P5.8** clang-tidy sur Windows, macOS et TensorRT.
 - **P5.15** et **P5.16** : découper `run_chain`, `play`, `UpscaleStage::outputs`… (les 40 `NOLINTNEXTLINE` de
   complexité les nomment) et une interface `Interpolator` par moteur.
