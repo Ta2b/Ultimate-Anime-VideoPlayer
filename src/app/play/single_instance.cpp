@@ -220,7 +220,10 @@ InstanceClaim claim_instance(const std::filesystem::path& /*channel_dir*/, std::
       listener->start();
       return {.forwarded = false, .listener = std::move(listener)};
     }
-    if (GetLastError() != ERROR_ACCESS_DENIED) return {};
+    // Un canal déjà tenu : ERROR_ACCESS_DENIED (FILE_FLAG_FIRST_PIPE_INSTANCE), ou ERROR_PIPE_BUSY quand sa
+    // seule instance est prise (nMaxInstances = 1).
+    if (const DWORD error = GetLastError(); error != ERROR_ACCESS_DENIED && error != ERROR_PIPE_BUSY)
+      return {};
     if (send_files(name, instance_message(files))) return {.forwarded = true, .listener = nullptr};
     const auto log = log_channel("app");
     log->warn("instance : le lecteur ouvert ne répond pas, ce lancement démarre seul");

@@ -640,8 +640,11 @@ TEST_CASE("play.toml : une version plus récente garde ses clés à la réécrit
   CHECK_FALSE(loaded->upscale);
   loaded->upscale = true;
   REQUIRE(ajp::app::play::save_settings(path, *loaded));
-  std::ifstream in(path, std::ios::binary);
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string text;
+  {
+    std::ifstream in(path, std::ios::binary);  // refermé avant remove : Windows refuse un fichier ouvert
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
   CHECK(text.find("future_option = 7") != std::string::npos);
   CHECK(text.find("future_filter = 'x'") != std::string::npos);
   CHECK(text.find("[nouveau]") != std::string::npos);
