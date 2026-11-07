@@ -38,15 +38,18 @@ présentation, et n'expose pas la `VkSwapchainKHR` courante. Deux voies étaient
   - 6.5 : veilleur d'écriture.
 
 ## Mise en œuvre (6.2 à 6.10)
-Tout est derrière une option d'essai ; sans option, le lecteur se comporte comme avant.
+D'abord derrière des options d'essai, la boucle fermée est **active par défaut** depuis la fin du chantier 6
+(`options.h`) : `--present=wait`, le veilleur d'écriture, l'attente précise, la PLL audio et le choix par
+numéro de vblank. Chaque pièce se coupe seule (`--no-ring-watcher`, `--no-precise-wait`, `--no-audio-pll`,
+`--no-vsync-index`, `--present=open`), ce qui rend la présentation d'avant.
 
-| Option | Étape | Ce qu'elle fait |
+| Option (défaut) | Étape | Ce qu'elle fait |
 | --- | --- | --- |
-| `--present=auto\|timing\|wait\|wayland` | 6.2 à 6.4, 6.8, 6.10 | Retour de présentation au plus haut niveau offert (`present_level.h`). La grille des vblanks mesurée (`core::VblankClock`) remplace la fréquence annoncée pour la synchro audio et la grille du mode Rapide ; l'état VRR lu par present timing prime sur l'ioctl. |
-| `--ring-watcher` | 6.5 | Un thread attend l'écriture des slots et réveille main (`ring_watcher.h`). |
-| `--precise-wait` | 6.7 | Attente de l'image suivante à la microseconde (`loop_wait.h`). |
-| `--audio-pll` | 6.9 | Horloge audio filtrée par une PLL (`core/clock_pll.h`). |
-| `--vsync-index` | 6.6 | Image choisie par le numéro de son vblank, avec hystérésis ; date visée en VRR au niveau TimingAbsolute. Demande `--present`. |
+| `--present=auto\|timing\|wait\|wayland` (wait) | 6.2 à 6.4, 6.8, 6.10 | Retour de présentation au plus haut niveau offert (`present_level.h`). La grille des vblanks mesurée (`core::VblankClock`) remplace la fréquence annoncée pour la synchro audio et la grille du mode Rapide ; l'état VRR lu par present timing prime sur l'ioctl. |
+| `--ring-watcher` (oui) | 6.5 | Un thread attend l'écriture des slots et réveille main (`ring_watcher.h`). |
+| `--precise-wait` (oui) | 6.7 | Attente de l'image suivante à la microseconde (`loop_wait.h`). |
+| `--audio-pll` (oui) | 6.9 | Horloge audio filtrée par une PLL (`core/clock_pll.h`). |
+| `--vsync-index` (oui) | 6.6 | Image choisie par le numéro de son vblank, avec hystérésis ; date visée en VRR au niveau TimingAbsolute. Demande `--present`. |
 
 Les modules :
 - `core/present_ledger.h` : identifiants, appariement des retours (désordre, partiels), suspension sur file
@@ -60,3 +63,14 @@ Les modules :
 (`tools/bench/banc_resume.py` lit les deux formats). Au journal, à la fermeture : présentées, revenues,
 perdues, file pleine, fréquence mesurée, latence de sortie. Les critères de 6.11 (σ visé − affiché, réveils de
 main, p99 de l'attente, σ de `lag_us`) se mesurent sur le PC, en A/B contre `--present=open`.
+
+## Mesures (relecture de novembre 2026, P3.47)
+Ce qui fonde les défauts, tel que le code le note :
+- `wait` plutôt que `auto` ou `timing` : sur NVIDIA 615 et KDE Wayland, present timing n'a rendu aucun retour
+  (séance du 04/11, 0 image revenue) ; `present_wait2` répond, et le niveau descend seul quand l'appareil ne
+  l'offre pas ;
+- veilleur d'écriture et attente précise : main n'est plus réveillé toutes les 4 ms pour sonder l'anneau.
+
+Les chiffres de 6.11 (σ visé − affiché, réveils de main, p99 de l'attente, σ de `lag_us`) n'ont pas été
+consignés. Ils restent à relever sur le PC de référence, en A/B contre `--present=open --no-ring-watcher
+--no-precise-wait --no-audio-pll --no-vsync-index`, et à reporter ici avant la 1.0.
