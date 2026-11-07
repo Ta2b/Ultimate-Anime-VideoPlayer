@@ -6,9 +6,11 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <SDL3/SDL_video.h>
 
+#include "app/play/display_edid.h"
 #include "app/play/engine_install.h"
 #include "app/play/first_run.h"
 #include "app/play/options.h"
@@ -43,6 +45,13 @@ bool system_hdr(std::optional<double> peak_nits);
 std::string describe_hdr(SDL_Window* window);
 // Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
 std::string display_name(SDL_Window* window);
+// L'écran de la fenêtre selon son EDID, avec son VRR armé : DRM sous Linux, NVAPI sous Windows sur une carte
+// NVIDIA (window_vrr_armed). Rien si aucun EDID ne se lit.
+std::optional<DisplayFacts> window_display(SDL_Window* window);
+// Le VRR armé à cet instant sur l'écran de la fenêtre : le CRTC DRM du connecteur sous Linux ; sous Windows,
+// NvAPI_Disp_GetVRRInfo (G-SYNC ou G-SYNC Compatible engagé sur cet écran), relu au plus 4 fois par seconde.
+// Rien : le système ne le dit pas (carte AMD ou Intel sous Windows, macOS), le retour de présentation reste.
+std::optional<bool> window_vrr_armed(SDL_Window* window, std::string_view connector);
 GpuFacts gpu_facts(const PlaceboScreen& screen);
 // Le backend TensorRT est-il là : téléchargé (engines.lock) ou à côté du lecteur ?
 bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& paths);

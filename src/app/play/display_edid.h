@@ -39,8 +39,9 @@ struct DisplayFacts {
   // présentation sans vsync (DXGI_FEATURE_PRESENT_ALLOW_TEARING), que tout Windows 10 offre même sur un écran
   // 60 Hz fixe. Rien : inconnu.
   std::optional<bool> vrr;
-  // VRR armé maintenant par le compositeur (VRR_ENABLED du CRTC sous Linux). Rien : inconnu, et toujours
-  // inconnu sous Windows (le retour de présentation le dit, 6.10).
+  // VRR armé maintenant par le compositeur (VRR_ENABLED du CRTC sous Linux) ou le pilote (NVAPI sous Windows,
+  // rempli par window_display de host_facts.h). Rien : inconnu (AMD ou Intel sous Windows : le retour de
+  // présentation le dit, 6.10).
   std::optional<bool> vrr_armed;
   // Fréquence verticale minimale du descripteur de plage 0xFD de l'EDID (Hz), qu'il annonce ou non une
   // fréquence variable : le plancher du VRR quand vrr_range manque.

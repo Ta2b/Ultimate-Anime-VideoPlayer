@@ -631,7 +631,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       show_auto();
       // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque tour (un seul ioctl).
       if (p.display && !p.display->connector.empty()) {
-        if (const auto now = vrr_watch.observe(out.vrr_armed(), vrr_armed_now(p.display->connector))) {
+        if (const auto now =
+                vrr_watch.observe(out.vrr_armed(), window_vrr_armed(out.window(), p.display->connector))) {
           const bool armed = !p.options.no_vrr && p.display->vrr.value_or(false) && *now;
           log->info("VRR : {}", *now ? "armé" : "non armé");
           p.ui.set_display_vrr(p.display->vrr.value_or(false), *now,
@@ -648,7 +649,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (fullscreen != vrr_fullscreen || display_changed) {
         if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
         vrr_fullscreen = fullscreen;
-        if (const auto display = read_display(display_name(out.window()))) {
+        if (const auto display = window_display(out.window())) {
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
