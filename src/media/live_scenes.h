@@ -13,6 +13,7 @@
 #include <optional>
 
 #include "kernels/spec/frame_stats.h"
+#include "media/flash_guard.h"
 #include "media/shot_cutter.h"
 
 namespace ajp::media {
@@ -24,6 +25,7 @@ struct LiveScene {
   ShotStats stats;
   ShotLight light;           // moyenne des images de la scène
   std::uint64_t serial = 0;  // change à chaque coupe ou saut
+  bool flashing = false;     // flashs dangereux autour de cette image (flash_guard.h)
 };
 
 class LiveScenes {
@@ -47,6 +49,7 @@ class LiveScenes {
   float mean_ = 0.0F, blue_ = 0.0F, chroma_ = 0.0F;
   std::size_t frames_ = 0;
   std::uint64_t serial_ = 0;
+  FlashGuard flashes_;
 };
 
 }  // namespace ajp::media

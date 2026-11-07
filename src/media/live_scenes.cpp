@@ -17,6 +17,7 @@ void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats) {
     mean_ = blue_ = chroma_ = 0.0F;
   }
   if (jump) kept_.clear();
+  const bool flashing = flashes_.push(pts_us, stats.apl_nits);
   previous_ = frame;
   // Moyenne cumulée de la scène : chaque image y entre avec le poids 1 / (images vues).
   ++frames_;
@@ -37,7 +38,8 @@ void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats) {
     mix(light_.lum_hist.at(i), frame.light.lum_hist.at(i));
   ShotStats scene = stats_of(histogram_, mean_, blue_, chroma_);
   scene.apl_nits = light_.apl_nits;
-  kept_.push_back({.pts_us = pts_us, .scene = {.stats = scene, .light = light_, .serial = serial_}});
+  kept_.push_back({.pts_us = pts_us,
+                   .scene = {.stats = scene, .light = light_, .serial = serial_, .flashing = flashing}});
   while (kept_.size() > kLiveKept) kept_.pop_front();
 }
 
@@ -54,6 +56,7 @@ void LiveScenes::clear() {
   const std::scoped_lock lock(mutex_);
   kept_.clear();
   previous_.reset();
+  flashes_.reset();
   frames_ = 0;
   ++serial_;
 }

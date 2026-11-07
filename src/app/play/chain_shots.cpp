@@ -157,6 +157,12 @@ std::optional<ShotScene> next_live(Chain& to) {
   return pts ? live_scene(to, *pts) : std::nullopt;
 }
 
+bool next_flashing(Chain& to) {
+  const auto pts = next_pts(to);
+  const auto live = pts ? to.live.scenes().at(*pts) : std::nullopt;
+  return live && live->flashing;
+}
+
 void feed_plan_shots(Chain& to) {
   if (to.shots == nullptr || !to.shots->current.timeline || to.shots->current.file != to.file) return;
   const media::ShotTimeline& timeline = *to.shots->current.timeline;

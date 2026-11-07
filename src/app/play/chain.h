@@ -109,6 +109,7 @@ struct Chain {
   bool anime_shots = false;
   AnimeGlide anime_glide;
   double anime_series_apl = 0.0;
+  bool flash_limited = false;     // plafond des flashs dangereux tenu (next_flashing, P3.51)
   double anime_e = 0.0;           // l'exposition envoyée au grade (GradeSettings::anime_exposure)
   std::uint64_t shot_serial = 0;  // le plan analysé que le grade suit ; 0 : la mesure en direct
   // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle

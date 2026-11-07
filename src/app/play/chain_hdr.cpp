@@ -28,6 +28,8 @@
 namespace ajp::app::play {
 namespace {
 
+inline constexpr double kFlashPeakNits = 250.0;  // plafond des flashs dangereux (P3.51)
+
 // Le vrai noir OLED est voulu : forcé, ou « auto » sur un écran détecté OLED.
 bool black_wanted(const PlaySettings& s, const std::optional<DisplayFacts>& display) {
   switch (s.oled_black) {
@@ -250,7 +252,9 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   PlaySettings s = wanted;
   s.grade_values.scene_light = to.scene_light;
   s.grade_values.anime_exposure = to.anime_e;
-  const render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
+  render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
+  // Flashs dangereux (P3.51) : le grade HDR plafonne vers 250 nits, le plein champ d'un écran OLED.
+  if (to.flash_limited && choice.pq) choice.pq->peak = std::min(choice.pq->peak, kFlashPeakNits);
   to.live.set_deband_source(wanted.grade);
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
@@ -306,6 +310,13 @@ void grade_tick(Chain& to, std::int64_t now_us) {
   const std::optional<ShotScene> shot = next_shot(to, now_us);
   const bool new_shot = shot && shot->serial != to.shot_serial;
   to.shot_serial = shot ? shot->serial : 0;
+  if (const bool flashing = to.running.grade && next_flashing(to); flashing != to.flash_limited) {
+    to.flash_limited = flashing;
+    if (flashing)
+      log_channel("app")->info("flashs rapides : pic du grade plafonné à {:.0f} nits", kFlashPeakNits);
+    if (!flashing) log_channel("app")->info("flashs finis : pic du grade rendu");
+    set_grade(to, to.running, true);
+  }
   light_tick(to, shot ? shot : next_live(to), now_us, new_shot, shot.has_value());
 }
 
