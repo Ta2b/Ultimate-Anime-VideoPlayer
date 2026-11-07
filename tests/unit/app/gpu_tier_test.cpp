@@ -47,6 +47,11 @@ TEST_CASE("des cartes connues tombent dans la tranche attendue", "[gpu_tier]") {
   CHECK(of("Intel(R) UHD Graphics 630", GpuVendor::Intel, 1).tier == Tier::Economy);
   CHECK(of("Apple M3 Pro", GpuVendor::Apple, 18).tier == Tier::Fast);
   CHECK(of("Apple M2", GpuVendor::Apple, 8).tier == Tier::Normal);
+  // P3.14 : les portables une tranche sous la carte de bureau ; « RTX A » pris modèle par modèle.
+  CHECK(of("NVIDIA GeForce RTX 4090 Laptop GPU", GpuVendor::Nvidia, 16, true).tier == Tier::Fast);
+  CHECK(of("NVIDIA GeForce RTX 4070 Laptop GPU", GpuVendor::Nvidia, 8, true).tier == Tier::Normal);
+  CHECK(of("NVIDIA RTX A500 Laptop GPU", GpuVendor::Nvidia, 4, true).tier == Tier::Light);
+  CHECK(of("NVIDIA RTX A6000", GpuVendor::Nvidia, 48, true).tier == Tier::Fast);
 }
 
 TEST_CASE("les iGPU sont signalés", "[gpu_tier]") {

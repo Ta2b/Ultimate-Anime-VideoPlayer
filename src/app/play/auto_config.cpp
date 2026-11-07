@@ -147,7 +147,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   int cap = kFactorCap[at];
   if (cap > 0 && settings.priority == Priority::Fluidity) cap = std::min(cap + 1, 6);
   if (cap > 0 && settings.priority == Priority::Image) cap = std::max(2, cap - 1);
-  const int wanted = static_cast<int>(std::floor(display_hz / fps + 1e-6));
+  // Arrondi avec 1 % de tolérance (P3.14) : 59,94 Hz sur une source à 30 i/s vaut ×2, pas ×1.
+  const int wanted = static_cast<int>(std::floor((display_hz / fps) + 0.01));
   const int factor = std::min(cap, wanted);
   out.rife_auto = factor >= 2;
   out.rife_factor = factor >= 2 ? factor : 0;
