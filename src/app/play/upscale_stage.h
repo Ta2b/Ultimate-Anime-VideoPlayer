@@ -30,6 +30,7 @@
 #include "app/play/ring_stage.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
+#include "core/moving_area.h"
 #include "core/ring.h"
 #include "core/steady_grid.h"
 #include "gpu/backend.h"
@@ -429,6 +430,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu
   std::uint64_t rife_runs_ = 0;
   std::uint64_t calm_runs_ = 0;   // passes faites par rife_motion_calm (P6.17)
+  core::MovingTally moving_;      // la zone qui bouge des paires mesurées (P6.6, P6.18)
   std::uint64_t skipped_ = 0;     // images source sautées avant calcul (passed)
   bool fences_mapped_ = false;    // les signaux de l'export écrits par le GPU (KernelOps::map_fences)
   std::uint64_t late_pairs_ = 0;  // paires dont des instants sont sautés pour rattraper l'horloge

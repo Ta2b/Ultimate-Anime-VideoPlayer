@@ -50,6 +50,13 @@ UpscaleStage::~UpscaleStage() {
   }
   if (setup_.rife_motion_calm != nullptr)
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
+  if (moving_.pairs > 0) {
+    const auto pairs = static_cast<double>(moving_.pairs);
+    log_channel("gpu")->info(
+        "Zone qui bouge sur {} paires : blocs changés {:.0f} %, boîte {:.0f} %, boîte sous la moitié {} fois",
+        moving_.pairs, 100.0 * moving_.block_sum / pairs, 100.0 * moving_.box_sum / pairs,
+        moving_.small_boxes);
+  }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
   if (drba()) {
@@ -484,6 +491,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
   const bool held = facts.scores && !pair_cut(facts) && kernels::is_held(facts.scores->worst_block);
+  if (facts.scores && !pair_cut(facts) && !held) moving_.add(facts.scores->moving);
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
   // Dessin tenu : l'image agrandie de la précédente sert à celle-ci, sans passe de SPAN. Pas plus
   // de kMaxSpanReuse de suite, comptées depuis la dernière vraie passe : un fondu lent, tenu paire

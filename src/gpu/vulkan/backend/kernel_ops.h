@@ -197,6 +197,7 @@ class VulkanKernelOps final : public KernelOps {
     PairScores scores;
     std::uint32_t area = 0;  // pw × ph de RIFE
     std::uint32_t count = 0;
+    std::uint32_t blocks_x = 0;  // blocs 16 × 16 par ligne
     std::uint64_t order = 0;
   };
   struct RingView {
@@ -334,6 +335,8 @@ class VulkanKernelOps final : public KernelOps {
     std::uint64_t ticket = 0;
     std::uint64_t value = 0;
     std::uint32_t blocks = 0;
+    std::uint32_t width = 0;  // taille des images mesurées, pour l'écart de chaque bloc
+    std::uint32_t height = 0;
     double area = 0.0;  // aire remplie de RIFE
   };
   struct FlowRead {
