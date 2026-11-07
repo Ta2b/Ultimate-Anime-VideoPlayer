@@ -3,6 +3,7 @@
 #include "prepare/key_lock.h"
 
 #include <chrono>
+#include <format>
 #include <thread>
 #include <utility>
 
@@ -77,7 +78,9 @@ void close_lock(std::intptr_t handle) {
 }  // namespace
 
 std::expected<KeyLock, Refusal> KeyLock::acquire(const std::filesystem::path& lock_file,
-                                                 const std::stop_token& stop, LockWait wait) {
+                                                 const std::stop_token& stop, LockWait wait,
+                                                 std::chrono::milliseconds max_wait) {
+  const auto deadline = std::chrono::steady_clock::now() + max_wait;
   std::error_code error;
   KeyLock lock(open_lock(lock_file, error));
   if (lock.handle_ == kInvalid) return std::unexpected(io_refusal("ouverture du verrou", lock_file, error));
@@ -96,6 +99,14 @@ std::expected<KeyLock, Refusal> KeyLock::acquire(const std::filesystem::path& lo
     }
     if (wait == LockWait::TryOnly) {
       return std::unexpected(Refusal{RefusalCode::CacheBusy, "verrou tenu : " + utf8_path(lock_file)});
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return std::unexpected(Refusal{
+          RefusalCode::CacheBusy,
+          std::format("verrou tenu depuis plus de {} min par un autre processus : {} ; fermez les autres "
+                      "lecteurs ajp, puis rouvrez la vidéo",
+                      std::chrono::duration_cast<std::chrono::minutes>(max_wait).count(),
+                      utf8_path(lock_file))});
     }
     std::this_thread::sleep_for(kPollInterval);
   }

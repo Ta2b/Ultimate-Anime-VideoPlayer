@@ -2,6 +2,8 @@
 // src/model_identity.cpp:157-197.
 #include "prepare/cache.h"
 
+#include <fstream>
+#include <string>
 #include <system_error>
 #include <tuple>
 #include <utility>
@@ -26,17 +28,60 @@ struct StageGuard {
   ~StageGuard() { std::ignore = cleanup_stage(folder); }
 };
 
+// L'empreinte rangée à côté de l'entrée : vide si elle manque ou ne se lit pas.
+std::string stored_digest(const CacheEntry& entry) {
+  std::ifstream in(entry.digest_file());
+  std::string digest;
+  if (!(in >> digest) || !is_sha256_hex(digest)) return {};
+  return digest;
+}
+
+// Écrit l'empreinte par un temporaire renommé ; un échec la laisse absente, la reprise suivante la refait.
+void store_digest(const CacheEntry& entry, const std::string& digest) {
+  fs::path temporary = entry.digest_file();
+  temporary += ".part";
+  {
+    std::ofstream out(temporary, std::ios::trunc);
+    out << digest << '\n';
+    if (!out.flush()) return;
+  }
+  std::error_code error;
+  fs::rename(temporary, entry.digest_file(), error);
+  if (error) fs::remove(temporary, error);
+}
+
+// L'entrée publiée a-t-elle encore les octets de sa publication (P2.31) ? Une entrée d'avant l'empreinte
+// la reçoit ici.
+std::expected<bool, Refusal> intact(const CacheEntry& entry) {
+  auto digest = sha256_file_known(entry.destination);
+  if (!digest) return std::unexpected(digest.error());
+  const std::string stored = stored_digest(entry);
+  if (stored.empty()) {
+    store_digest(entry, *digest);
+    return true;
+  }
+  return stored == *digest;
+}
+
 // L'entrée publiée se reprend, sauf si ce sont exactement les octets refusés
 // (aji_trt.cpp:775-786) : un remplaçant publié par un autre processus se reprend.
 std::expected<bool, Refusal> reusable(const CacheEntry& entry) {
   if (!is_published(entry.destination)) return false;
+  auto whole = intact(entry);
+  if (!whole || !*whole) return whole;
   if (entry.rejected_sha256.empty()) return true;
-  auto digest = sha256_file(entry.destination);
+  auto digest = sha256_file_known(entry.destination);
   if (!digest) return std::unexpected(digest.error());
   return *digest != entry.rejected_sha256;
 }
 
 }  // namespace
+
+fs::path CacheEntry::digest_file() const {
+  fs::path digest = destination;
+  digest += ".sha256";
+  return digest;
+}
 
 fs::path CacheEntry::lock_file() const {
   fs::path lock = destination;
@@ -58,7 +103,9 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
   if (!entry.rejected_sha256.empty() && !is_sha256_hex(entry.rejected_sha256)) {
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "rejected_sha256 n'est pas un SHA-256"});
   }
-  if (entry.rejected_sha256.empty() && is_published(entry.destination)) return Production::Reused;
+  if (entry.rejected_sha256.empty() && is_published(entry.destination)) {
+    if (auto whole = intact(entry); whole && *whole) return Production::Reused;
+  }
   const fs::path parent = entry.destination.parent_path();
   std::error_code error;
   fs::create_directories(parent, error);
@@ -85,9 +132,12 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
     return std::unexpected(
         Refusal{RefusalCode::BuilderFailed, "sortie vide ou absente : " + utf8_path(output)});
   }
+  auto digest = sha256_file(output);
+  if (!digest) return std::unexpected(digest.error());
   if (auto published = publish_file(output, entry.destination); !published) {
     return std::unexpected(published.error());
   }
+  store_digest(entry, *digest);
   return Production::Produced;
 }
 

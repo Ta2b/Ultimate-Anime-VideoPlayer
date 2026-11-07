@@ -34,6 +34,8 @@ struct CacheEntry {
   std::string rejected_sha256;
 
   std::filesystem::path lock_file() const;  // « <destination>.key-lock », jamais supprimé
+  // « <destination>.sha256 » : l'empreinte écrite à la publication, revérifiée à chaque reprise (P2.31).
+  std::filesystem::path digest_file() const;
   std::string owner() const;
 };
 
@@ -43,7 +45,8 @@ inline constexpr std::string_view kStagePrefix = ".aji-build-";
 // Écrit l'entrée dans output, un fichier neuf du dossier de travail.
 using Producer = std::function<std::expected<void, Refusal>(const std::filesystem::path& output)>;
 
-// Une entrée publiée est toujours complète : elle se réutilise sans verrou. Sinon
+// Une entrée publiée est toujours complète : elle se réutilise sans verrou si son empreinte (digest_file)
+// est la sienne ; une entrée d'avant l'empreinte la reçoit à sa première reprise. Sinon
 // produce tourne sous le verrou de la clé ; un échec ne laisse aucun reste, et
 // une entrée refusée reste en place jusqu'à son remplacement réussi.
 std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const Producer& produce,

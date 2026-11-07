@@ -340,7 +340,10 @@ TEST_CASE("TrtexecBuilder : rebuild remplace le moteur refusé par load(), pas u
   auto progress = steps.progress();
   const auto first = builder.build(bench.model, kHd, progress);
   REQUIRE(first);
+  // Publié tronqué (son empreinte avec lui) : seul load() le refuse.
   test::write_file(first->path, "moteur tronqué par une coupure");
+  test::write_file(test::fs::path(first->path.string() + ".sha256"),
+                   sha256_hex("moteur tronqué par une coupure") + "\n");
   const std::string rejected = sha256_file(first->path).value();
 
   // Un autre lecteur a refusé d'autres octets : ceux en place se reprennent.
