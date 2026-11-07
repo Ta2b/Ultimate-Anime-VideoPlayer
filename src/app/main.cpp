@@ -41,6 +41,7 @@ extern "C" {
 #include "app/play/default_player.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
+#include "app/play/paths.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
@@ -449,8 +450,8 @@ int run_player(int argc, char** argv) {
                                   ajp::app::play::installed_version());
   }
   if (options->bake_looks) {
-    const auto baked =
-        ajp::app::play::bake_looks(settings_dir / "play.toml", data / "luts", *options->bake_looks);
+    const auto baked = ajp::app::play::bake_looks(ajp::app::play::paths::play_settings(settings_dir),
+                                                  data / "luts", *options->bake_looks);
     if (!baked) return fail(baked.error());
     return 0;
   }

@@ -12,6 +12,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/motion_model.h"
+#include "app/play/paths.h"
 #include "app/play/rife_fused_choice.h"
 #include "core/auto_rate.h"
 #include "core/clock.h"
@@ -241,7 +242,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   // (autre GPU, taille que les noyaux ne prennent pas, erreur CUDA, TensorRT qui la refuse) laisse la place à
   // la suivante, et la dernière au SPAN choisi, en FP16 sous TensorRT.
   if (c.model) {
-    const std::filesystem::path variants = p.paths.engines.parent_path() / "modeles";
+    const std::filesystem::path variants = paths::derived_models(p.paths);
     const gpu::BackendCaps caps = c.backend->capabilities();
     const PrecisionTier tier = settings.span_precision;
     // Un cran posé par un préréglage (Auto et les autres, auto_config.h) est strict : ni FP8 par Q/DQ, ni
@@ -408,7 +409,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   // RIFE fusionné (kernels/spec/rife_fused.h) : six petits moteurs et des noyaux de colle à la place du
   // moteur entier, quand le backend le sait, que le réglage le veut, que le cran est Équilibre (le modèle tel
   // que livré) et que le modèle se coupe ; tout échec garde le RIFE entier, tel qu'il est chargé plus bas.
-  const std::filesystem::path models_dir = p.paths.engines.parent_path() / "modeles";
+  const std::filesystem::path models_dir = paths::derived_models(p.paths);
   const std::string fused_declined =
       use_rife ? rife_fused_declined(settings, c.backend->capabilities().rife_fused, c.rife_planes)
                : i18n::tr("no RIFE");

@@ -15,6 +15,7 @@
 #include "app/play/engine_build.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/paths.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "kernels/spec/distil_drba.h"
@@ -244,8 +245,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
                           .height = g.padded_height};
   // Le graphe coupé d'abord : un refus de la découpe, de la construction ou du chargement garde l'entier.
   if (fused != nullptr) {
-    auto manifest = prepare::derive_drba_fused(found->path, p.paths.engines.parent_path() / "modeles",
-                                               g.padded_height, g.padded_width);
+    auto manifest = prepare::derive_drba_fused(found->path, paths::derived_models(p.paths), g.padded_height,
+                                               g.padded_width);
     if (!manifest) {
       fused->declined = manifest.error().detail;
     } else {
@@ -269,7 +270,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
   // l'image.
   std::filesystem::path source = found->path;
   if (motion != nullptr && *motion) {
-    auto derived = drba_motion_model(found->path, p.paths.engines.parent_path() / "modeles");
+    auto derived = drba_motion_model(found->path, paths::derived_models(p.paths));
     if (derived) {
       source = *derived;
     } else {
@@ -278,8 +279,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
                                derived.error().detail);
     }
   }
-  auto fixed =
-      static_distil_drba(source, g.padded_width, g.padded_height, p.paths.engines.parent_path() / "modeles");
+  auto fixed = static_distil_drba(source, g.padded_width, g.padded_height, paths::derived_models(p.paths));
   if (!fixed) return std::unexpected(std::move(fixed.error()));
   return prepare_engine(p, init, backend, *fixed, shape, label, gpu::Lane::Interpolate);
 }
@@ -292,7 +292,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
         Refusal{RefusalCode::FeatureUnavailable,
                 i18n::tr_format("Apple interpolation: Core ML backend only (here {})", backend_name)});
   }
-  auto model = apple_model(p.paths.engines.parent_path() / "modeles");
+  auto model = apple_model(paths::derived_models(p.paths));
   if (!model) return std::unexpected(std::move(model.error()));
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height);
   return prepare_engine(

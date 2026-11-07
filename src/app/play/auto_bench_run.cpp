@@ -9,6 +9,7 @@
 #include "app/play/bench_events.h"
 #include "app/play/engine_switch.h"
 #include "app/play/i18n.h"
+#include "app/play/paths.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
 #include "core/settings.h"
@@ -397,7 +398,7 @@ std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
   done.result.date =
       std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
   done.report = format_bench_report(*outcome);
-  if (const auto saved = save_bench(data_dir / "bench.toml", done.result); !saved)
+  if (const auto saved = save_bench(paths::bench(data_dir), done.result); !saved)
     done.report += i18n::tr("bench.toml: ") + saved.error().detail + "\n";
   for (const std::string& note : outcome->notes) done.report += note + "\n";
   done.outcome = std::move(*outcome);

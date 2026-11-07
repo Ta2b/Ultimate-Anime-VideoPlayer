@@ -9,6 +9,7 @@
 #include "app/play/engine_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
+#include "app/play/paths.h"
 #include "app/play/placebo_screen.h"
 #include "audio/devices.h"
 #include "core/gpu_device.h"
@@ -21,7 +22,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Évaluer ma machine » si elle est
   // de cette carte et de ce pilote, sinon l'estimation.
   std::optional<BenchResult> measured;
-  if (auto bench = load_bench(settings_dir / "bench.toml")) measured = std::move(*bench);
+  if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);
   choices.machine_tier = static_cast<int>(effective_tier(machine, measured));
   choices.bench_text = measured && measured->gpu == machine.name && measured->driver == machine.driver
@@ -34,9 +35,9 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   for (const audio::AudioDevice& device : audio::playback_devices())
     choices.audio_outputs.push_back(
         {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  choices.luts_dir = paths.engines.parent_path() / "luts";
+  choices.luts_dir = paths::luts(paths);
   choices.switchable = installed_switchable(catalog, paths);
-  choices.engines_dir_default = prepare::utf8_path(paths.engines.parent_path() / "backends");
+  choices.engines_dir_default = prepare::utf8_path(paths::backends_install(paths));
   choices.engines_dir_free = format_size(free_bytes(catalog.layout.engines));
   choices.place = place_of(paths);
   choices.default_player_is_ajp = is_default_player(choices.place);

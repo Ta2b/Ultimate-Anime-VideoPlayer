@@ -25,6 +25,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
+#include "app/play/paths.h"
 #include "app/play/pumped_task.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
@@ -225,7 +226,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     view.calibration_minutes = calibration_minutes(height > 0 ? height : 1080, tensorrt,
                                                    gpu.name.find("Laptop") != std::string::npos);
   }
-  const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
+  const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
   if (wizard_mode && !revisit && engines.first_run_step > 0 && !s.options.first_run && !s.restart_wizard) {
     if (auto play = load_settings(play_path)) resume_choices(view.wizard, *play);
@@ -352,7 +353,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
                             .options = p.options,
                             .paths = p.paths,
                             .catalog = p.catalog,
-                            .engines_path = p.settings_path.parent_path() / "settings.toml",
+                            .engines_path = paths::engine_settings(p.settings_path.parent_path()),
                             .restart_wizard = open != nullptr && open->wizard};
   const auto* use = std::get_if<UseEngine>(&request);
   if (use != nullptr) {

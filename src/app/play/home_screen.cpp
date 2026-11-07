@@ -37,6 +37,7 @@
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
+#include "app/play/paths.h"
 #include "app/play/scripted_input.h"
 #include "app/play/single_instance.h"
 #include "app/play/span_auto.h"
@@ -159,7 +160,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .display_hz = period > 0 ? 1e6 / static_cast<double>(period) : 0.0,
       .rife_available = rife.has_value() || drba || offered(MotionEngine::Apple),
       .span_tiers = model
-                        ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine,
+                        ? span_tiers(model->path, paths::derived_models(h.paths), fp8_engine,
                                      fp8_facts.capability)  // les noyaux CUTLASS se présument sur une RTX 40
                         : TierSupport{},
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
@@ -297,7 +298,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                             [&](const UseEngine& use) {
                               st.engines = using_engine(std::move(st.engines), use.id);
                               if (auto written = core::save_settings(
-                                      h.settings_path.parent_path() / "settings.toml", st.engines);
+                                      paths::engine_settings(h.settings_path.parent_path()), st.engines);
                                   !written)
                                 log->warn("{}", written.error().detail);
                               log->info("moteur des réseaux : {}", engine_label(use.id));
@@ -310,7 +311,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                                   .options = h.options,
                                   .paths = h.paths,
                                   .catalog = h.catalog,
-                                  .engines_path = h.settings_path.parent_path() / "settings.toml"};
+                                  .engines_path = paths::engine_settings(h.settings_path.parent_path())};
                               auto shown =
                                   run_engine_screen(screen, st.engines, true, st.next_key, st.snapshot);
                               if (!shown) {

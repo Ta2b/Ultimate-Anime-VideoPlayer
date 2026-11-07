@@ -16,6 +16,7 @@
 #include "app/play/auto_config.h"
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
+#include "app/play/paths.h"
 #include "app/play/span_auto.h"
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
@@ -95,7 +96,7 @@ void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
   const UpdatePaths paths{
       .data = place.app_data, .install = place.executable.parent_path(), .executable = place.executable};
-  const std::filesystem::path state_file = place.app_data / "update.toml";
+  const std::filesystem::path state_file = paths::update_state(place.app_data);
   if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = result.pending->get();
     if (!done) log_channel("app")->warn("maj : {} {}", name(done.error().code), done.error().detail);
@@ -419,7 +420,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   const bool measuring = state.pending != nullptr;
   ImGui::BeginDisabled(measuring || place.executable.empty());
   if (ImGui::Button(i18n::tr("Optimize for this machine"))) {
-    state.undo = capture_undo(context.data_dir / "bench.toml", draft);
+    state.undo = capture_undo(paths::bench(context.data_dir), draft);
     state.progress = std::make_shared<BenchProgress>();
     state.span_progress = std::make_shared<SpanDeriveProgress>();
     state.stop = std::make_shared<std::stop_source>();
@@ -472,8 +473,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
     ImGui::TextWrapped("%s", bench.text.c_str());
     if (state.undo.valid && state.result) {
       if (ImGui::Button(i18n::tr("Undo these settings"))) {
-        if (const auto restored = restore_bench_file(state.undo, context.data_dir / "bench.toml");
-            !restored) {
+        if (const auto restored = restore_bench_file(state.undo, paths::bench(context.data_dir)); !restored) {
           bench.text = visible_error(restored.error());
           bench.refused = true;
         } else {

@@ -48,6 +48,7 @@
 #include "app/play/loop_wait.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/model_choice.h"
+#include "app/play/paths.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
@@ -208,10 +209,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   {
     // Le dossier des LUT de l'utilisateur existe dès le premier lancement : il n'a qu'à y déposer ses .cube.
     std::error_code made;
-    std::filesystem::create_directories(p.paths.engines.parent_path() / "luts", made);
+    std::filesystem::create_directories(paths::luts(p.paths), made);
   }
   if (std::ranges::any_of(look_slots(settings), [](const LookLayer& l) { return !l.key.empty(); }))
-    apply_looks(p.screen, settings, p.paths.engines.parent_path() / "luts");
+    apply_looks(p.screen, settings, paths::luts(p.paths));
   p.screen.set_grade(grade_of(settings, auto_peak, {}, {}, source_hdr));
   p.screen.set_finish(settings.final_scaler, settings.deband, settings.sharpness);
   session_config.output = output_text(out, settings, source_hdr);
@@ -250,8 +251,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 p.library,
                 gpu::BackendInit{
                     .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
-                fp8_facts.capability, c.model->path, p.paths.engines.parent_path() / "modeles",
-                p.options.file, fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
+                fp8_facts.capability, c.model->path, paths::derived_models(p.paths), p.options.file,
+                fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
                 SpanFp8Context{.gpu_arch = c.backend ? c.backend->capabilities().gpu_arch : std::string(),
                                .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
                                .width = work.width,
@@ -273,7 +274,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .display_vrr = p.display && p.display->vrr.value_or(false),
       .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
       .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
-      .span_tiers = c.model ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine,
+      .span_tiers = c.model ? span_tiers(c.model->path, paths::derived_models(p.paths), fp8_engine,
                                          c.backend && c.backend->capabilities().span_fp8_cutlass)
                             : TierSupport{},
       .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
@@ -320,7 +321,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     return std::format("{}{}{}", c.motion_label(s), s.hdr_native ? "HDR · " : "",
                                        c.span_label());
                   },
-              .luts_dir = p.paths.engines.parent_path() / "luts",
+              .luts_dir = paths::luts(p.paths),
               .source_hdr = source_hdr,
               .kernels = c.backend ? c.backend->kernels() : nullptr,
               .shots = p.shots,
@@ -451,7 +452,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!p.settings_path.empty() && !p.options.file.empty()) {
     std::error_code size_error;
     const std::uintmax_t file_size = std::filesystem::file_size(p.options.file, size_error);
-    auto_memory_path = p.settings_path.parent_path() / "auto_memory.toml";
+    auto_memory_path = paths::auto_memory(p.settings_path.parent_path());
     auto_memory_key =
         core::auto_memory_key(prepare::utf8_path(p.options.file), size_error ? 0 : file_size,
                               std::string(c.motion_name()), settings.work_height, gpu_facts(p.screen).name);
