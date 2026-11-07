@@ -46,7 +46,6 @@ class BenchProgress {
     std::string note;  // un mot de plus (« première fois : la construction peut durer plusieurs minutes »)
   };
   void set(BenchStep step, std::string what, float within = 0.0F, std::string note = {});
-  void set_within(float within);
   void set_note(std::string note);
   View get() const;
 

@@ -89,9 +89,9 @@ inline constexpr std::array<InterpChoice, 4> kInterpLevels{{
 std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model);
 
 // Les repères des listes (docs/ux-parametres.md, 3) : une pastille à côté du choix, le détail en infobulle.
-enum class Badge : std::uint8_t { Recommended, Fastest, Finest, Heaviest, Experimental };
+enum class Badge : std::uint8_t { Recommended, Fastest, Finest, Experimental };
 std::string_view badge_text(
-    Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Le plus lent », « Expérimental »
+    Badge badge);  // « Recommandé », « Le plus rapide », « Le plus fin », « Expérimental »
 std::optional<Badge> badge_of(Downscale filter);
 // « 720p » ; la hauteur d'image en français courant, jamais « lignes ».
 std::string resolution_text(int height);
@@ -249,11 +249,6 @@ struct PlaySettings {
   // libplacebo (la carte dédiée d'abord). Vaut au prochain lancement.
   std::string gpu;
   bool autoplay_next = true;  // l'épisode suivant du dossier à la fin, comme le README le promet (P3.84)
-  bool default_player_dismissed =
-      false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
-  // Ancienne case « Préparer en tâche de fond » : sans effet depuis que le cran Performance de SPAN se
-  // prépare tout seul (span_auto.h). Lue et réécrite pour ne rien perdre d'un play.toml existant.
-  bool span_prepare_background = false;
   int audio_delay_ms = 0;
   // Décalage des sous-titres (P3.72), de séance : z et x, ou le menu ; jamais écrit dans play.toml.
   int subtitle_delay_ms = 0;

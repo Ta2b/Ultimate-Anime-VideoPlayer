@@ -231,8 +231,6 @@ std::string_view badge_text(Badge badge) {
       return i18n::tr("Fastest");
     case Badge::Finest:
       return i18n::tr("Finest");
-    case Badge::Heaviest:
-      return i18n::tr("Slowest");
     case Badge::Experimental:
       return i18n::tr("Experimental");
   }
@@ -409,8 +407,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.deband = wanted.deband;
   s.sharpness = wanted.sharpness;
   s.autoplay_next = wanted.autoplay_next;
-  s.default_player_dismissed = wanted.default_player_dismissed;
-  s.span_prepare_background = wanted.span_prepare_background;
   s.engines_dir = wanted.engines_dir;
   s.update_mode = wanted.update_mode;
   s.update_channel = wanted.update_channel;

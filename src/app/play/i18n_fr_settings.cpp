@@ -253,7 +253,6 @@ constexpr std::array kSettingsPages{
     Entry{"Settings", "Paramètres"},
     Entry{"Setup wizard", "Assistant"},
     Entry{"Size", "Taille"},
-    Entry{"Slowest", "Le plus lent"},
     Entry{"Statistics", "Statistiques"},
     Entry{"Steady frame rate (VRR flicker)", "Cadence fixe (scintillement VRR)"},
     Entry{"Steady frame rate keeps VRR at a constant refresh so dark scenes do not flicker on OLED.",

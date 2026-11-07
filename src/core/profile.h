@@ -5,7 +5,6 @@
 #include <array>
 #include <cstdint>
 #include <expected>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -102,7 +101,6 @@ inline constexpr double kMaxFactorProduct = 16.0;
 }  // namespace limits
 
 std::expected<ProfileFile, Refusal> parse_profile(std::string_view toml_text);
-std::expected<ProfileFile, Refusal> load_profile(const std::filesystem::path& path);
 
 // Texte TOML v5 de file, que parse_profile relit à l'identique. Chaque profil
 // écrit son nom et son mode HDR ; les bornes et le rythme par défaut sont omis.

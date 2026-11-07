@@ -57,11 +57,6 @@ void BenchProgress::set(BenchStep step, std::string what, float within, std::str
   note_ = std::move(note);
 }
 
-void BenchProgress::set_within(float within) {
-  const std::scoped_lock lock(mutex_);
-  within_ = within;
-}
-
 void BenchProgress::set_note(std::string note) {
   const std::scoped_lock lock(mutex_);
   note_ = std::move(note);

@@ -25,9 +25,4 @@ std::vector<AudioDevice> playback_devices();
 // L'appareil de ce nom ; celui du système si name est vide ou n'existe plus.
 std::optional<AudioDevice> resolve_device(const std::vector<AudioDevice>& devices, std::string_view name);
 
-// Home cinéma n'a de sens que pour un appareil qui reçoit plus de 2 canaux.
-inline bool multichannel(const AudioDevice& device) {
-  return device.channels > 2;
-}
-
 }  // namespace ajp::audio

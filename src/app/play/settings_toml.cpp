@@ -327,10 +327,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     choice("channel", s.update_channel, kUpdateChannelNames);
     choice("frequency", s.update_frequency, kUpdateFrequencyNames);
   }
-  if (const toml::table* span = section(root, "span_prepare"))
-    reads.push_back(read(*span, "span_prepare", "background", s.span_prepare_background));
-  if (const toml::table* player = section(root, "default_player"))
-    reads.push_back(read(*player, "default_player", "dismissed", s.default_player_dismissed));
+  // [span_prepare] background et [default_player] dismissed, d'avant 0.10, ne servaient à rien : ignorés.
   if (const toml::table* playlist = section(root, "playlist"))
     reads.push_back(read(*playlist, "playlist", "autoplay_next", s.autoplay_next));
   if (const toml::table* subtitles = section(root, "subtitles")) {
@@ -466,8 +463,6 @@ std::string format_settings(const PlaySettings& s) {
                                      {"sharpness", s.sharpness}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("interface", toml::table{{"language", s.language}});
-  root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});
-  root.insert("span_prepare", toml::table{{"background", s.span_prepare_background}});
   if (!s.engines_dir.empty() || !s.gpu.empty()) {
     toml::table engines;
     if (!s.engines_dir.empty()) engines.insert("install_dir", s.engines_dir);

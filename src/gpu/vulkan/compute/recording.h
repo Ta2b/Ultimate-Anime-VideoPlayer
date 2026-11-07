@@ -38,7 +38,6 @@ class Recording {
   // Attend la fin de la dernière exécution soumise avant de libérer quoi que ce soit.
   ~Recording();
 
-  VkCommandBuffer command_buffer() const { return command_buffer_; }
   const VkContext& context() const { return context_; }
   bool finished() const { return finished_; }
   std::uint32_t dispatches() const { return dispatches_; }

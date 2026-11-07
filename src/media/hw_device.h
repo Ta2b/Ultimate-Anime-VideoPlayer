@@ -27,7 +27,6 @@ class CudaDecodeStream {
   // Événement de fin de copie, à poser sur chaque image : pris au pool du flux, rendu par la
   // dernière copie de l'image.
   std::expected<ReadyEvent, Refusal> record() const;
-  std::size_t events_created() const { return CudaDriver::created(*events_); }
 
  private:
   CudaDecodeStream(std::shared_ptr<CudaDriver> driver, AVBufferRef& device, std::uintptr_t context,

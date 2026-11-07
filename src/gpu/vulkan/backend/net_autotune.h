@@ -113,7 +113,6 @@ class Autotuner {
   std::size_t pruned() const { return pruned_; }      // candidats écartés dès leur sondage
   // choix repris d'une autre version du pilote ou de la table, sortie revérifiée (comptés dans cached)
   std::size_t reverified() const { return reverified_; }
-  bool timestamps() const { return period_ns_ > 0.0; }
   // Une ligne par choix tranché par mesure (couche, variante, médiane et écart type), pour le journal.
   const std::vector<std::string>& decisions() const { return decisions_; }
 

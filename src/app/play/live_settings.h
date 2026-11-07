@@ -202,10 +202,6 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     return auto_.info(now_us);
   }
-  int auto_centi() const {
-    const std::scoped_lock lock(mutex_);
-    return auto_.centi();
-  }
   // Le facteur à appliquer maintenant : le palier auto, ou le facteur réglé.
   Factor factor_now() const {
     const std::scoped_lock lock(mutex_);

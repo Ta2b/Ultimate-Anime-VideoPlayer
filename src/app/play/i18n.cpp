@@ -39,10 +39,6 @@ Language language_from_code(std::string_view code) {
   return code == "fr" ? Language::French : Language::English;
 }
 
-std::string_view language_code(Language language) {
-  return language == Language::French ? "fr" : "en";
-}
-
 const char* tr(const char* key) {
   if (language() == Language::English) return key;
   const auto& table = french_table();

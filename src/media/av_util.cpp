@@ -73,9 +73,4 @@ std::int64_t duration_to_us(std::int64_t duration, AVRational time_base) {
   return av_rescale_q(duration, time_base, kMicroseconds);
 }
 
-BufferPtr ref_buffer(const AVBufferRef* ref) {
-  if (ref == nullptr) return nullptr;
-  return BufferPtr(av_buffer_ref(ref));
-}
-
 }  // namespace ajp::media

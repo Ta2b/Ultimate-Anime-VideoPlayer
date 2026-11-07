@@ -194,6 +194,11 @@ TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", 
   const auto empty = parse_settings("");
   REQUIRE(empty);
   CHECK(*empty == PlaySettings{});
+  // Les clés retirées en 0.10 (P5.5) se relisent sans refus et ne se réécrivent plus.
+  const auto old = parse_settings("[span_prepare]\nbackground = true\n[default_player]\ndismissed = true\n");
+  REQUIRE(old);
+  CHECK(*old == *parse_settings("[autre]\nx = 1\n"));
+  CHECK(format_settings(*old).find("dismissed") == std::string::npos);
 }
 
 TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settings]") {
