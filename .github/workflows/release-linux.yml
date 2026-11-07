@@ -5,9 +5,8 @@ name: Release Linux
 # tools/release/notes/<étiquette>.md si elle n'existe pas encore. Les builds Windows et macOS
 # partent de la même étiquette et se joignent à la même release. Une poussée sur la branche
 # release/linux construit le même paquet sans release : il reste en artefact de l'exécution.
-# Rien ne s'empaquette sans les règles (rules.yml). Les tests unitaires ne tournent plus ici : ils
-# se lancent sur le poste (tools/release/preflight/run.sh fait la même construction et les mêmes
-# tests dans un conteneur Ubuntu 24.04 local, avec toutes les erreurs d'un coup) et par ci.yml.
+# Rien ne s'empaquette sans les règles (rules.yml) ni, pour une étiquette, sans ci.yml vert sur son commit
+# (release-guard.yml). Les tests sans GPU tournent sur le build même du paquet, préversions comprises.
 # Versions et paquets : tools/release/versions.env.
 # À la main : le paquet de la branche choisie, joint à la release de l'étiquette donnée (un
 # correctif du lecteur dans une release déjà publiée), ou en artefact sans étiquette.
@@ -23,6 +22,7 @@ on:
 
 permissions:
   contents: write
+  actions: read  # release-guard.yml lit les exécutions de ci.yml
 
 # Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
 concurrency:
@@ -42,12 +42,17 @@ jobs:
   rules:
     uses: ./.github/workflows/rules.yml
 
+  guard:
+    uses: ./.github/workflows/release-guard.yml
+    with:
+      tag: ${{ (github.event_name == 'push' && github.ref_type == 'tag') && github.ref_name || inputs.tag || '' }}
+
   package:
     name: Lecteur Linux (x64)
-    needs: [rules]
+    needs: [rules, guard]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Paquets système
         run: |
           source tools/release/versions.env
@@ -57,7 +62,7 @@ jobs:
       # Restauration et sauvegarde séparées : les dépendances construites restent en cache même
       # quand une étape suivante échoue (quota d'artefacts atteint, paquet refusé…).
       - id: deps-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}-${{ github.run_id }}
@@ -65,7 +70,7 @@ jobs:
             deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
             deps-player-gcc-13-
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
@@ -98,6 +103,12 @@ jobs:
             fi
           fi
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
+      # Les tests sans GPU du build même du paquet (préréglage de test linux-release) : un échec arrête tout
+      # avant l'artefact et la release, préversions comprises.
+      - name: Tests sans GPU
+        env:
+          AJP_TEST_VULKAN_VALIDATION: "off"
+        run: ctest --preset linux-release
       # Le même lecteur en un seul fichier (tools/release/appimage.sh) : à rendre exécutable et à lancer.
       - name: AppImage
         run: |
@@ -107,7 +118,7 @@ jobs:
       - name: Artefact
         if: env.AJP_TAG == ''
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           retention-days: 3
           name: ajp-linux-x64
@@ -140,4 +151,6 @@ jobs:
           edit=(--prerelease="$pre"); [ "$pre" = true ] || edit+=(--latest)
           [ "$notes" = /dev/null ] || edit+=(--notes-file "$notes")
           gh release edit "$AJP_TAG" -R "$AJP_RELEASE_REPO" "${edit[@]}"
-          gh release upload "$AJP_TAG" -R "$AJP_RELEASE_REPO" --clobber "${assets[@]}"
+          # Une vraie release ne se réécrit pas : --clobber seulement pour une préversion (P1.16).
+          clobber=(); [ "$pre" = true ] && clobber=(--clobber)
+          gh release upload "$AJP_TAG" -R "$AJP_RELEASE_REPO" "${clobber[@]}" "${assets[@]}"

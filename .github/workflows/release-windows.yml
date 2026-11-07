@@ -23,10 +23,17 @@ on:
 
 permissions:
   contents: write
+  actions: read  # release-guard.yml lit les exécutions de ci.yml
 
 jobs:
+  guard:
+    uses: ./.github/workflows/release-guard.yml
+    with:
+      tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag || '' }}
+
   package:
     name: Lecteur Windows (x64)
+    needs: [guard]
     runs-on: windows-2025
     env:
       # Chemins courts : les sources de spirv-tools dépassent sinon les 260 caractères de MSVC.
@@ -39,11 +46,11 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       AJP_COMPILER_LAUNCHER: sccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Restauration et sauvegarde séparées : les ports déjà compilés restent en cache même quand
       # la construction échoue plus loin.
       - id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\vc
           key: vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
@@ -60,8 +67,8 @@ jobs:
           git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
           git -C $env:AJP_VCPKG checkout -q $baseline
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
-      - uses: ilammy/msvc-dev-cmd@v1
-      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       # OpenVINO et Windows ML (MIGraphX) ne sont plus construits pour la release : débranchés du lecteur, AMD et
       # Intel passent par Vulkan (docs/moteurs.md). La CI (ci.yml) les construit encore pour que le code tienne.
       # Seulement sur l'entrée tensorrt (licences NVIDIA acceptées par le propriétaire du dépôt).
@@ -75,17 +82,21 @@ jobs:
           # Les liens d'engines.lock visent la release de cette étiquette : sans elle, le script
           # prend v<version du projet>, une release qui n'existe pas.
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          # Les entrées passent par l'environnement, jamais dans le script (injection, P1.20).
+          IN_TENSORRT: ${{ inputs.tensorrt }}
+          IN_SPAN_FP8: ${{ inputs.span_fp8 }}
+          IN_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
-          if ("${{ inputs.tensorrt }}" -eq "true") { $env:AJP_WITH_CUDA = "ON" }
-          if ("${{ inputs.tensorrt }}" -eq "true" -and "${{ inputs.span_fp8 }}" -eq "true") { $env:AJP_WITH_SPAN_FP8 = "ON" }
-          $env:AJP_RELEASE_REPO = "${{ vars.AJP_RELEASE_REPO || github.repository }}"
+          if ($env:IN_TENSORRT -eq "true") { $env:AJP_WITH_CUDA = "ON" }
+          if ($env:IN_TENSORRT -eq "true" -and $env:IN_SPAN_FP8 -eq "true") { $env:AJP_WITH_SPAN_FP8 = "ON" }
+          $env:AJP_RELEASE_REPO = $env:IN_RELEASE_REPO
           if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
           # TensorRT se construit sur un poste Windows NVIDIA et se joint à la release AVANT l'étiquette avec son index
           # engines-nvidia.lock (tools/release/attach-nvidia-windows.ps1) : repris ici s'il existe.
           if ($env:TAG) {
-            $env:GH_TOKEN = "${{ secrets.AJP_RELEASE_TOKEN || github.token }}"
             gh release download $env:TAG -R $env:AJP_RELEASE_REPO -p engines-nvidia.lock -D $env:RUNNER_TEMP 2>$null
             if ($LASTEXITCODE -eq 0) { $env:AJP_ENGINES_LOCK = "$env:RUNNER_TEMP/engines-nvidia.lock" }
             else { Write-Host "::notice::pas d'engines-nvidia.lock dans la release $env:TAG : voulu, TensorRT se construit sur le poste NVIDIA" }
@@ -106,19 +117,18 @@ jobs:
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
       # arrête tout avant l'artefact et la release.
       - name: Tests sans GPU
-        # Une étiquette avec un tiret (v0.6.0-pre.1) est une préversion : construite et publiée sans tests.
-        if: ${{ !contains(github.ref_name, '-') }}
+        # Préversions comprises (P1.15).
         shell: pwsh
         run: |
           ctest --preset windows-release
           if ($LASTEXITCODE -ne 0) { throw "tests" }
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
         with:
           path: C:\vc
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         continue-on-error: true
         with:
           retention-days: 3
@@ -136,7 +146,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
           AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
-        run: pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "${{ inputs.tag }}" -Publish
+          TAG: ${{ inputs.tag }}  # par l'environnement, jamais dans le script (injection, P1.20)
+        run: pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "$env:TAG" -Publish
       - name: Joindre à la release
         # Jamais avec TensorRT : un paquet qui embarque des composants NVIDIA reste un artefact.
         if: (github.event_name == 'push' || inputs.tag != '') && !inputs.tensorrt
@@ -172,4 +183,6 @@ jobs:
           gh release edit $env:TAG -R $env:AJP_RELEASE_REPO @edit
           if ($LASTEXITCODE -ne 0) { throw "release $env:TAG : edit" }
           $assets = @(Get-ChildItem "$env:RUNNER_TEMP/package" -File | Where-Object { $_.Name -like "ajp-*" -or $_.Name -eq "SHA256SUMS-windows.txt" } | ForEach-Object { $_.FullName })
-          gh release upload $env:TAG -R $env:AJP_RELEASE_REPO @assets --clobber
+          # Une vraie release ne se réécrit pas : --clobber seulement pour une préversion (P1.16).
+          $clobber = @(if ($env:TAG -like "*-*") { "--clobber" })
+          gh release upload $env:TAG -R $env:AJP_RELEASE_REPO @assets @clobber

@@ -115,7 +115,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AJP_WARNINGS_AS_ERRORS": "OFF"
+        "AJP_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -207,8 +207,8 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AJP_BUILD_TESTS": "OFF",
-        "AJP_WARNINGS_AS_ERRORS": "OFF"
+        "AJP_BUILD_TESTS": "ON",
+        "AJP_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -222,7 +222,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AJP_WARNINGS_AS_ERRORS": "OFF",
+        "AJP_WARNINGS_AS_ERRORS": "ON",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
         "AJP_WITH_COREML": "ON",
@@ -431,6 +431,13 @@
       "execution": {
         "noTestsAction": "error"
       }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {"outputOnFailure": true},
+      "filter": {"include": {"name": "^(core|core_log|media|prepare|subs|app): "}},
+      "execution": {"noTestsAction": "error"}
     },
     {
       "name": "windows-release",

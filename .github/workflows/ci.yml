@@ -13,6 +13,10 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
+# Lecture seule : rien ici n'écrit dans le dépôt (P1.20).
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
@@ -48,7 +52,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Paquets système
         run: |
           source tools/release/versions.env
@@ -56,12 +60,12 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends $APT_BUILD $APT_COMPILERS ccache
       # Un script de dépendances modifié restaure le préfixe précédent : ses marqueurs signés ne
       # font rebâtir que les dépendances dont la version ou les options ont changé.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-core-${{ matrix.cc }}-${{ hashFiles('tools/deps/linux-from-source.sh') }}
           restore-keys: deps-core-${{ matrix.cc }}-
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-core-${{ matrix.name }}-${{ github.sha }}
@@ -96,7 +100,7 @@ jobs:
       CXX: g++-13
       AJP_TEST_VULKAN_VALIDATION: ${{ matrix.validation }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # clang-tidy ne regarde, sur une pull request, que les fichiers qu'elle change.
           fetch-depth: ${{ matrix.tidy && 0 || 1 }}
@@ -108,12 +112,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS ccache ${{ matrix.tidy && 'clang-20 clang-tidy-20' || '' }}
           pip install --user "meson==$MESON_VERSION"
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
           restore-keys: deps-player-gcc-13-
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-player-${{ matrix.name }}-${{ github.sha }}
@@ -156,9 +160,9 @@ jobs:
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
       AJP_VCPKG_TRIPLET: x64-windows-release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\vc
           key: vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
@@ -174,10 +178,10 @@ jobs:
           git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
           git -C $env:AJP_VCPKG checkout -q $baseline
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
       # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
-      - uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       # Le paquet NuGet de Windows ML : MIGraphX de Windows ML se construit avec /WX comme le reste.
       - name: Windows ML
         shell: pwsh
@@ -203,7 +207,7 @@ jobs:
         run: |
           ctest --preset windows-ci
           if ($LASTEXITCODE -ne 0) { throw "tests" }
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
         with:
           path: C:\vc

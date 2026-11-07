@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: read  # release-guard.yml lit les exécutions de ci.yml
 
 # Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
 concurrency:
@@ -27,15 +28,21 @@ env:
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
 
 jobs:
+  guard:
+    uses: ./.github/workflows/release-guard.yml
+    with:
+      tag: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || '' }}
+
   package:
     name: AJP.app (Apple Silicon)
+    needs: [guard]
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Restauration et sauvegarde séparées : les dépendances déjà construites (marquées .built-*)
       # restent en cache même quand la construction échoue plus loin.
       - id: deps-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-${{ github.run_id }}
@@ -43,7 +50,7 @@ jobs:
             deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-
             deps-macos-arm64-
       - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
@@ -56,11 +63,10 @@ jobs:
       # Les tests sans GPU du build même du paquet (préréglage de test macos-release) : un échec
       # arrête tout avant l'artefact et la release.
       - name: Tests sans GPU
-        # Une étiquette avec un tiret (v0.6.0-pre.1) est une préversion : construite et publiée sans tests.
-        if: ${{ !contains(github.ref_name, '-') }}
+        # Préversions comprises (P1.15).
         run: ctest --preset macos-release
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         continue-on-error: true
         with:
           retention-days: 3
@@ -92,6 +98,8 @@ jobs:
           edit=(--prerelease="$pre"); [ "$pre" = true ] || edit+=(--latest)
           [ "$notes" = /dev/null ] || edit+=(--notes-file "$notes")
           gh release edit "$TAG" -R "$AJP_RELEASE_REPO" "${edit[@]}"
+          # Une vraie release ne se réécrit pas : --clobber seulement pour une préversion (P1.16).
+          clobber=(); [ "$pre" = true ] && clobber=(--clobber)
           gh release upload "$TAG" -R "$AJP_RELEASE_REPO" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
             "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" "$RUNNER_TEMP/package/ajp-macos-arm64.dmg" \
-            "$RUNNER_TEMP/package/ajp-macos-arm64.dmg.sha256" --clobber
+            "$RUNNER_TEMP/package/ajp-macos-arm64.dmg.sha256" "${clobber[@]}"

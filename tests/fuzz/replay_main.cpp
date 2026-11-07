@@ -66,7 +66,8 @@ void say_current(int signal) {
   }
   while (d > 0 && n < text.size() - 1) text[n++] = digits[--d];
   text[n++] = '\n';
-  static_cast<void>(write(2, text.data(), n));
+  // gcc ne se tait pas devant un cast en void (warn_unused_result) : la valeur est lue, puis oubliée.
+  [[maybe_unused]] const auto written = write(2, text.data(), n);
   std::signal(signal, SIG_DFL);
   std::raise(signal);
 }

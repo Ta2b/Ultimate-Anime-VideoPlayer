@@ -1,0 +1,8 @@
+# Les actions des workflows sont épinglées par SHA (tools/ci/check-pinned-actions.sh) : Dependabot
+# propose chaque mois la nouvelle version, SHA et commentaire de version compris.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

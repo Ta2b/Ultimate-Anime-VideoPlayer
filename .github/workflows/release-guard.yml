@@ -1,0 +1,40 @@
+name: Garde de release
+
+# Appelé par les trois workflows de release avant toute construction (P1.15, P1.16). Une étiquette donnée :
+# le commit construit doit être celui de l'étiquette (pas une branche choisie à la main), et ci.yml doit être
+# vert sur ce commit. Une étiquette poussée en même temps que son commit sur main attend la fin de ci.yml :
+# relancer alors la release. Sans étiquette (artefact seulement), rien n'est vérifié.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  guard:
+    name: Étiquette et CI verte
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Commit de l'étiquette, ci.yml vert
+        if: inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          tagged="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" -q .sha)" \
+            || { echo "::error::étiquette $TAG introuvable dans $GITHUB_REPOSITORY"; exit 1; }
+          if [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::le commit construit ($GITHUB_SHA) n'est pas celui de l'étiquette $TAG ($tagged)"
+            exit 1
+          fi
+          green="$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success \
+            --json databaseId -q length)"
+          if [ "${green:-0}" -eq 0 ]; then
+            echo "::error::ci.yml n'est pas vert sur $GITHUB_SHA : pas de release"
+            exit 1
+          fi

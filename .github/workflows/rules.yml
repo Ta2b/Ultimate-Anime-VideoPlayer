@@ -11,12 +11,14 @@ jobs:
     name: Format et règles
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends clang-format-20 glslc spirv-tools
       - name: clang-format
         run: git ls-files -z -- '*.cpp' '*.h' '*.cu' '*.cuh' ':!third_party' | xargs -0 -r clang-format-20 --dry-run --Werror
       - name: Taille des fichiers
         run: tools/ci/check-file-size.sh
+      - name: Actions épinglées
+        run: tools/ci/check-pinned-actions.sh
       - name: Aucun getenv
         run: tools/ci/check-no-getenv.sh
       - name: Shaders
