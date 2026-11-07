@@ -15,21 +15,21 @@ class VrrWatch {
   std::optional<bool> observe(std::optional<bool> reading) {
     if (!reading) return std::nullopt;
     if (*reading == armed_) {
-      candidate_.reset();
+      pending_ = false;
       return std::nullopt;
     }
-    if (candidate_ != reading) {
-      candidate_ = reading;  // première lecture différente : on attend la confirmation
+    if (!pending_) {
+      pending_ = true;  // première lecture différente : on attend la confirmation
       return std::nullopt;
     }
     armed_ = *reading;
-    candidate_.reset();
+    pending_ = false;
     return armed_;
   }
 
   // Une lecture sûre (present timing, 6.10) : retenue tout de suite, sans confirmation ; rien, ignorée.
   std::optional<bool> observe_sure(std::optional<bool> reading) {
-    candidate_.reset();
+    pending_ = false;
     if (!reading || *reading == armed_) return std::nullopt;
     armed_ = *reading;
     return armed_;
@@ -43,8 +43,9 @@ class VrrWatch {
 
  private:
   bool armed_;
-  std::optional<bool> candidate_ =
-      std::nullopt;  // initialisé : sinon gcc 16 signale à tort un optional non initialisé
+  // Une lecture différente d'armed_ attend sa confirmation. Un booléen suffit : la seule valeur différente
+  // d'armed_ est !armed_. Un optional<bool> faisait signaler à gcc 13 une lecture non initialisée (Release).
+  bool pending_ = false;
 };
 
 }  // namespace ajp::app::play

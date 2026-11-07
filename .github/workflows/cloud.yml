@@ -15,6 +15,10 @@ on:
       - "CMakePresets.json"
       - "tools/deps/linux-from-source.sh"
 
+# Lecture seule : rien ici n'écrit dans le dépôt (P1.20).
+permissions:
+  contents: read
+
 concurrency:
   group: cloud-${{ github.ref }}
   cancel-in-progress: true
@@ -33,7 +37,7 @@ jobs:
       CXX: g++-13
       AJP_TEST_VULKAN_VALIDATION: require
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Paquets système
         run: |
           source tools/release/versions.env
@@ -41,7 +45,7 @@ jobs:
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS
           pip install --user "meson==$MESON_VERSION"
       # Le même cache que la tâche lavapipe de ci.yml.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
