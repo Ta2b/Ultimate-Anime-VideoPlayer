@@ -290,8 +290,11 @@ class UpscaleStage final : public RingStage {
   // tampon de spanned_).
   static constexpr int kMaxSpanReuse = 2;
   bool reuse_span_ = false;
-  bool copy_pair_ = false;          // RIFE avec poses après un dessin tenu : pas de passe, b seule est écrite
-  bool b_shown_ = false;            // DistilDRBA : b est écrite dans cette paire (côté b tenu)
+  bool copy_pair_ = false;  // RIFE avec poses après un dessin tenu : pas de passe, b seule est écrite
+  bool b_shown_ = false;    // DistilDRBA : b est écrite dans cette paire (côté b tenu)
+  // La sortie qui écrit b (b_shown_, copy_written_) : fate() se redemande quand la sortie attend un slot, et
+  // doit alors rendre Write de nouveau, pas Same.
+  std::uint32_t b_output_ = 0;
   bool held_same_ = false;          // source d'un dessin tenu, déjà à l'écran : Same
   bool shown_source_ = false;       // la dernière image écrite est une source
   bool copy_written_ = false;       // b est écrite dans cette paire

@@ -587,8 +587,10 @@ RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t outp
   if (late_fate_now_ && instant_late(frame, output)) return Fate::Late;
   if (!copy_pair_) return Fate::Write;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
-  if (poses_copy(true, true, instant.t) == PoseCopy::Before || copy_written_) return Fate::Same;
-  copy_written_ = true;  // le premier instant après 1/2 : b, à son pts ; les suivants sont déjà à l'écran
+  if (poses_copy(true, true, instant.t) == PoseCopy::Before) return Fate::Same;
+  if (copy_written_) return output == b_output_ ? Fate::Write : Fate::Same;
+  copy_written_ = true;
+  b_output_ = output;  // le premier instant après 1/2 : b, à son pts ; les suivants sont déjà à l'écran
   return Fate::Write;
 }
 
@@ -621,13 +623,14 @@ RingStage::Output UpscaleStage::held_b(Output made, const DecodedFrame& frame, s
 // dès ½ (côté b tenu), le premier instant écrit b, les suivants et la source sont déjà à l'écran.
 RingStage::Fate UpscaleStage::drba_fate(std::uint32_t output) {
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
-  if (instant.t >= 1.0F) return b_shown_ ? Fate::Same : Fate::Write;
+  if (instant.t >= 1.0F) return b_shown_ && output != b_output_ ? Fate::Same : Fate::Write;
   const kernels::DrbaCall call = kernels::drba_call(instant.t);
   if (call.on_b && !settle_after_scores()) return Fate::Write;  // l'erreur sort à produce
   if (!drba_side_held(call)) return Fate::Write;
   if (!call.on_b) return shown_source_ ? Fate::Same : Fate::Write;
-  if (b_shown_) return Fate::Same;
+  if (b_shown_) return output == b_output_ ? Fate::Write : Fate::Same;
   b_shown_ = true;
+  b_output_ = output;
   return Fate::Write;
 }
 
