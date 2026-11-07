@@ -1,7 +1,10 @@
 # Architecture
 
-Un seul cœur possède le profil, la politique et l'ordonnancement. Il résout un
-`Plan` immuable ; les autres modules exécutent ce `Plan` et rien d'autre.
+Le lecteur part des réglages de `play.toml` (`PlaySettings`, `src/app/play/settings.h`) : `app` en tire la
+chaîne (`chain_setup.cpp`), ouvre les moteurs et lance les threads ; les autres modules exécutent ce que la
+chaîne leur demande. `core` garde les briques partagées (cadence, choix des moteurs, raccourcis, fichiers). Le
+profil TOML v5, `resolve()` et son `Plan` immuable sont encore dans `core`, mais le lecteur ne les appelle plus
+(code mort, P5.1) : ne pas s'y fier pour comprendre la lecture.
 
 ## Modules
 
@@ -9,22 +12,22 @@ Un dossier de `src/` = un module = une cible CMake `ajp::<nom>`, déclarée par
 `ajp_add_module` avec ses dépendances. Le graphe est acyclique : `app` dépend de
 tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 `audio`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
-`core_types`.
+`core_types` (et `media` de `kernels`, dont il lit la règle SD et l'analyse d'image).
 
 | Module | Responsabilité | Thread |
 |---|---|---|
-| `core` | Profil TOML v5, `resolve()`, `Plan`, cadence, choix des moteurs, `Capabilities` | main, puis valeurs immuables |
+| `core` | Cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8 ; le profil v5 et `Plan`, inutilisés | main |
 | `core_types` | Contrats entre modules : `types.h`, `inbox.h`, `messages.h`, `frame.h`, `thread.h`, `gpu_device.h`, `ring.h` | aucun |
 | `core_log` | Canal de journal de chaque module, puits installés par `app` | aucun |
 | `media` | Démultiplexage, décodage matériel, horodatage | source |
-| `gpu` | Exécution du `Plan`, ring de sortie, backends chargés à l'exécution (`backend.h`, `kernel_ops.h`) | gpu |
-| `gpu_ir` | Représentation interne des réseaux ONNX, commune aux moteurs Vulkan et Metal | gpu, preparer |
-| `gpu_span_fp8` | Paquet de poids du SPAN entier en FP8 (noyaux CUTLASS du backend TensorRT, `docs/span-fp8-cutlass.md`) | gpu, preparer |
-| `prepare` | Construction des moteurs, reçus de qualification | preparer |
+| `gpu` | Ring de sortie, backends chargés à l'exécution (`backend.h`, `kernel_ops.h`) | thread du lecteur qui les appelle |
+| `gpu_ir` | Représentation interne des réseaux ONNX, commune aux moteurs Vulkan et Metal | celui de l'appelant |
+| `gpu_span_fp8` | Paquet de poids du SPAN entier en FP8 (noyaux CUTLASS du backend TensorRT, `docs/span-fp8-cutlass.md`) | celui de l'appelant |
+| `prepare` | Construction des moteurs TensorRT (`trtexec`), cache des moteurs, découpe des ONNX | thread « install » ou celui de l'appelant |
 | `audio` | Décodage audio, sortie SDL3, horloge | audio |
 | `subs` | Rendu libass en atlas bornés | subs |
 | `render` | Composition libplacebo, grade, sous-titres, OSD | main |
-| `export` | Encodage matériel, mux MKV avec les pistes de la source copiées (SDR seulement) | export |
+| `export` | Encodage matériel ou SVT-AV1, mux MKV, MP4 ou MOV avec les pistes choisies à la lecture (SDR seulement) | export |
 | `app` | Boucle SDL3, swapchain (libplacebo), commandes, interface, threads | main |
 | `kernels` | Spécification des noyaux, référence CPU FP32, demi-flottants | aucun |
 
@@ -39,15 +42,15 @@ core_types ───────────────────────
 core_log ── spdlog
 core ────── core_types · privé : toml++
 kernels ─── (feuille)
-media ───── core_types · privé : FFmpeg, Vulkan, core_log
 subs ────── core_types · privé : libass, core_log
 audio ───── core_types · privé : FFmpeg, SDL3, core_log
+media ───── core_types, kernels · privé : FFmpeg, Vulkan, core_log
 gpu_ir ──── core_types · privé : kernels, core_log
 gpu_span_fp8 core_types
 gpu ─────── core, kernels
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
-export ──── core_types · privé : FFmpeg, Vulkan, core_log
+export ──── core_types, kernels · privé : FFmpeg, Vulkan, core_log
 app ─────── tout, dont core_log
 ```
 
@@ -145,7 +148,7 @@ tampons Vulkan exportés vers CUDA (`media::CudaDriver::import_memory`), l'encod
 Vulkan Video reçoit ses propres images rendues dans leurs plans
 (`placebo_export_vulkan.cpp`), et tout autre encodeur lit ou charge des tampons hôte.
 
-### Backends (`gpu/backend.h`, ABI 3)
+### Backends (`gpu/backend.h`, ABI 29)
 
 Chaque backend est une bibliothèque chargée à l'exécution. La frontière passe des
 types C++ (`std::string`, `std::function`, `std::expected`) : le backend se
