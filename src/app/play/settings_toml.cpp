@@ -346,21 +346,20 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*engines, "engines", "gpu", s.gpu));
   }
   if (const toml::table* updates = section(root, "updates")) {
-    reads.push_back(read(*updates, "updates", "mode", s.update_mode));
-    reads.push_back(read(*updates, "updates", "channel", s.update_channel));
-    reads.push_back(read(*updates, "updates", "frequency", s.update_frequency));
-    const auto one_of = [](std::string_view value, std::initializer_list<std::string_view> allowed) {
-      return std::ranges::find(allowed, value) != allowed.end();
+    // Lus par leur nom (P5.29) ; un nom inconnu refuse la clé.
+    const auto choice = [&](std::string_view key, auto& value, const auto& names) {
+      std::string text(name(value));
+      reads.push_back(read(*updates, "updates", key, text));
+      using Choice = std::remove_reference_t<decltype(value)>;
+      if (const auto known = choice_named<Choice>(names, text))
+        value = *known;
+      else
+        reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, std::format("updates.{}", key),
+                                      std::format(" : « {} »", text)));
     };
-    if (!one_of(s.update_mode, {"notify", "auto", "never"}))
-      reads.emplace_back(
-          refuse_key(RefusalCode::FieldOutOfRange, "updates.mode", std::format(" : « {} »", s.update_mode)));
-    if (!one_of(s.update_channel, {"stable", "preview"}))
-      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "updates.channel",
-                                    std::format(" : « {} »", s.update_channel)));
-    if (!one_of(s.update_frequency, {"launch", "daily", "weekly"}))
-      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "updates.frequency",
-                                    std::format(" : « {} »", s.update_frequency)));
+    choice("mode", s.update_mode, kUpdateModeNames);
+    choice("channel", s.update_channel, kUpdateChannelNames);
+    choice("frequency", s.update_frequency, kUpdateFrequencyNames);
   }
   if (const toml::table* span = section(root, "span_prepare"))
     reads.push_back(read(*span, "span_prepare", "background", s.span_prepare_background));
@@ -516,9 +515,9 @@ std::string format_settings(const PlaySettings& s) {
     if (!s.gpu.empty()) engines.insert("gpu", s.gpu);
     root.insert("engines", std::move(engines));
   }
-  root.insert(
-      "updates",
-      toml::table{{"mode", s.update_mode}, {"channel", s.update_channel}, {"frequency", s.update_frequency}});
+  root.insert("updates", toml::table{{"mode", std::string(name(s.update_mode))},
+                                     {"channel", std::string(name(s.update_channel))},
+                                     {"frequency", std::string(name(s.update_frequency))}});
   root.insert("subtitles",
               toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});
   // Les réglages du grade au centième, comme le menu les montre.

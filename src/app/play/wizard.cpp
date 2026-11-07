@@ -97,8 +97,8 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
                       : i18n::tr("Languages: chosen (Audio and playback > Playback)"));
   if (has(WizardStep::Updates)) {
     std::string_view mode = i18n::tr("notify me");
-    if (wizard.update_mode == "auto") mode = i18n::tr("automatic");
-    if (wizard.update_mode == "never") mode = i18n::tr("never");
+    if (wizard.update_mode == UpdateMode::Auto) mode = i18n::tr("automatic");
+    if (wizard.update_mode == UpdateMode::Never) mode = i18n::tr("never");
     out.push_back(i18n::tr_format("Updates: {} (General > Application)", mode));
     if (wizard.make_default && !skipped(WizardStep::Updates))
       out.push_back(

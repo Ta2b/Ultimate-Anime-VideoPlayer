@@ -170,7 +170,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     saved = PlaySettings{};
   }
   if (!options.bench_out && !options.data_dir) {
-    if (saved->update_mode != "never") {
+    if (saved->update_mode != UpdateMode::Never) {
       auto started = start_thread(
           "updates", ThreadReport([](const Refusal& refused) {
             log_channel("app")->warn("mise à jour : {}", refused.detail);
@@ -185,12 +185,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                            .count();
               UpdateState state = load_update_state(update_file);
               if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
-                const auto message = run_update_check(update_paths, mode, channel, state, stop);
+                const auto message = run_update_check(update_paths, mode, name(channel), state, stop);
                 if (const auto kept = save_update_state(update_file, state); !kept)
                   log_channel("app")->warn("update.toml : {}", kept.error().detail);
                 log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
               }
-              if (frequency == "launch") return;
+              if (frequency == UpdateFrequency::Launch) return;
               std::unique_lock lock(mutex);
               wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
             }
@@ -462,7 +462,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // lancement.
       static bool announced = false;
       const UpdateState update = load_update_state(update_file);
-      if (!announced && saved->update_mode == "notify" && !update.latest_version.empty()) {
+      if (!announced && saved->update_mode == UpdateMode::Notify && !update.latest_version.empty()) {
         announced = true;
         player.notice = i18n::ui_tr_format("Update {} available (Settings > General > Application)",
                                            update.latest_version);

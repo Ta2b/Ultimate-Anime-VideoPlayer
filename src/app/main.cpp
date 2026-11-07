@@ -368,7 +368,7 @@ int run_player(int argc, char** argv) {
     const ajp::app::play::UpdatePaths update{.data = data, .install = base, .executable = place.executable};
     ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
     const auto saved = ajp::app::play::load_settings(data / "play.toml");
-    if (!state.staged_version.empty() && saved && saved->update_mode == "auto" &&
+    if (!state.staged_version.empty() && saved && saved->update_mode == ajp::app::play::UpdateMode::Auto &&
         ajp::core::compare_versions(state.staged_version, ajp::app::play::installed_version()).value_or(0) >
             0 &&
         ajp::app::play::update_managed_reason(update).empty()) {

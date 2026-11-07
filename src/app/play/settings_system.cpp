@@ -108,14 +108,14 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
 
   section(i18n::tr("Updates"));
   struct Mode {
-    const char* key;
+    UpdateMode key;
     const char* label;
     const char* detail;
   };
   constexpr std::array<Mode, 3> kModes{
-      {{"notify", "Notify me", "A notification; you start the update yourself."},
-       {"auto", "Automatic", "Downloaded, verified, installed at next launch."},
-       {"never", "Never", "No checks."}}};
+      {{UpdateMode::Notify, "Notify me", "A notification; you start the update yourself."},
+       {UpdateMode::Auto, "Automatic", "Downloaded, verified, installed at next launch."},
+       {UpdateMode::Never, "Never", "No checks."}}};
   ImGui::BeginDisabled(!managed.empty());
   for (const Mode& mode : kModes) {
     if (ImGui::RadioButton(i18n::tr(mode.label), d.update_mode == mode.key)) d.update_mode = mode.key;
@@ -129,19 +129,23 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   section(i18n::tr("Channel and frequency"));
   ImGui::BeginDisabled(!managed.empty());
   if (ImGui::BeginCombo(i18n::tr("Channel"),
-                        d.update_channel == "preview" ? i18n::tr("Previews") : "Stable")) {
-    if (ImGui::Selectable("Stable", d.update_channel == "stable")) d.update_channel = "stable";
-    if (ImGui::Selectable(i18n::tr("Previews"), d.update_channel == "preview")) d.update_channel = "preview";
+                        d.update_channel == UpdateChannel::Preview ? i18n::tr("Previews") : "Stable")) {
+    if (ImGui::Selectable("Stable", d.update_channel == UpdateChannel::Stable))
+      d.update_channel = UpdateChannel::Stable;
+    if (ImGui::Selectable(i18n::tr("Previews"), d.update_channel == UpdateChannel::Preview))
+      d.update_channel = UpdateChannel::Preview;
     ImGui::EndCombo();
   }
-  const char* frequency = d.update_frequency == "launch"   ? i18n::tr("At every launch")
-                          : d.update_frequency == "weekly" ? i18n::tr("Weekly")
-                                                           : i18n::tr("Daily");
+  const char* frequency = d.update_frequency == UpdateFrequency::Launch   ? i18n::tr("At every launch")
+                          : d.update_frequency == UpdateFrequency::Weekly ? i18n::tr("Weekly")
+                                                                          : i18n::tr("Daily");
   if (ImGui::BeginCombo(i18n::tr("Frequency"), frequency)) {
-    if (ImGui::Selectable(i18n::tr("At every launch"), d.update_frequency == "launch"))
-      d.update_frequency = "launch";
-    if (ImGui::Selectable(i18n::tr("Daily"), d.update_frequency == "daily")) d.update_frequency = "daily";
-    if (ImGui::Selectable(i18n::tr("Weekly"), d.update_frequency == "weekly")) d.update_frequency = "weekly";
+    if (ImGui::Selectable(i18n::tr("At every launch"), d.update_frequency == UpdateFrequency::Launch))
+      d.update_frequency = UpdateFrequency::Launch;
+    if (ImGui::Selectable(i18n::tr("Daily"), d.update_frequency == UpdateFrequency::Daily))
+      d.update_frequency = UpdateFrequency::Daily;
+    if (ImGui::Selectable(i18n::tr("Weekly"), d.update_frequency == UpdateFrequency::Weekly))
+      d.update_frequency = UpdateFrequency::Weekly;
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
@@ -174,8 +178,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
         [paths, state_file, mode = d.update_mode, channel = d.update_channel,
          stop = result.stop] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
-          auto message =
-              run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, stop->get_token());
+          auto message = run_update_check(paths, mode == UpdateMode::Never ? UpdateMode::Notify : mode,
+                                          name(channel), current, stop->get_token());
           if (const auto kept = save_update_state(state_file, current); !kept && message)
             return std::unexpected(kept.error());
           return message;
@@ -194,7 +198,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
            stop = result.stop] -> std::expected<std::string, Refusal> {
             UpdateState current = load_update_state(state_file);
             if (current.staged_version.empty()) {
-              auto checked = run_update_check(paths, "auto", channel, current, stop->get_token());
+              auto checked =
+                  run_update_check(paths, UpdateMode::Auto, name(channel), current, stop->get_token());
               if (const auto kept = save_update_state(state_file, current); !kept)
                 return std::unexpected(kept.error());
               if (!checked) return checked;

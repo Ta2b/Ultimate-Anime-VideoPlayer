@@ -25,6 +25,7 @@
 #include "app/play/options.h"
 #include "app/play/precision.h"
 #include "app/play/system_language.h"
+#include "app/play/update_choice.h"
 #include "core/profile.h"
 #include "core/types.h"
 #include "media/selection.h"
@@ -251,9 +252,9 @@ struct PlaySettings {
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
   // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto
   // », « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
-  std::string update_mode = "notify";
-  std::string update_channel = "stable";
-  std::string update_frequency = "daily";
+  UpdateMode update_mode = UpdateMode::Notify;
+  UpdateChannel update_channel = UpdateChannel::Stable;
+  UpdateFrequency update_frequency = UpdateFrequency::Daily;
   // Langue de l'interface : « en » (le défaut, sans détection) ou « fr » ; prise en direct (app/play/i18n.h).
   std::string language = "en";
   // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide

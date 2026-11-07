@@ -43,8 +43,8 @@ struct Wizard {
   std::vector<WizardStep> steps;
   std::size_t at = 0;
   std::vector<WizardStep> skipped;
-  std::string update_mode = "notify";
-  std::string update_channel = "stable";
+  UpdateMode update_mode = UpdateMode::Notify;
+  UpdateChannel update_channel = UpdateChannel::Stable;
   // Première préférence de langue de l'audio (vide : selon le fichier) et des sous-titres (vide : aucun),
   // celle par défaut d'abord : audio japonais, sous-titres dans la langue du système.
   std::string audio_language = default_language_presets().front().audio;

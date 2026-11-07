@@ -33,15 +33,15 @@ std::string read(const fs::path& file) {
 
 TEST_CASE("mises à jour : quand vérifier", "[updater]") {
   UpdateState state;
-  CHECK(update_due(state, "notify", "daily", 1000));        // jamais vérifié
-  CHECK_FALSE(update_due(state, "never", "launch", 1000));  // Jamais
+  CHECK(update_due(state, UpdateMode::Notify, UpdateFrequency::Daily, 1000));        // jamais vérifié
+  CHECK_FALSE(update_due(state, UpdateMode::Never, UpdateFrequency::Launch, 1000));  // Jamais
   state.last_check_unix = 1000;
-  CHECK_FALSE(update_due(state, "notify", "daily", 1000 + 3600));
-  CHECK(update_due(state, "notify", "daily", 1000 + 86400));
-  CHECK_FALSE(update_due(state, "auto", "weekly", 1000 + 3 * 86400));
-  CHECK(update_due(state, "auto", "weekly", 1000 + 7 * 86400));
-  CHECK(update_due(state, "auto", "launch", 1001));
-  CHECK(update_due(state, "auto", "daily", 500));  // l'horloge a reculé
+  CHECK_FALSE(update_due(state, UpdateMode::Notify, UpdateFrequency::Daily, 1000 + 3600));
+  CHECK(update_due(state, UpdateMode::Notify, UpdateFrequency::Daily, 1000 + 86400));
+  CHECK_FALSE(update_due(state, UpdateMode::Auto, UpdateFrequency::Weekly, 1000 + 3 * 86400));
+  CHECK(update_due(state, UpdateMode::Auto, UpdateFrequency::Weekly, 1000 + 7 * 86400));
+  CHECK(update_due(state, UpdateMode::Auto, UpdateFrequency::Launch, 1001));
+  CHECK(update_due(state, UpdateMode::Auto, UpdateFrequency::Daily, 500));  // l'horloge a reculé
 }
 
 TEST_CASE("mises à jour : l'état fait l'aller-retour", "[updater]") {

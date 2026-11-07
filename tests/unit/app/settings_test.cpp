@@ -464,6 +464,17 @@ TEST_CASE("TierSupport : Équilibre toujours, les autres selon les graphes", "[a
   CHECK(label(PrecisionTier::Balanced) == "Balance");
 }
 
+TEST_CASE("mises à jour : mode, canal et fréquence lus et écrits par leur nom (P5.29)", "[settings]") {
+  const auto read =
+      parse_settings("[updates]\nmode = \"auto\"\nchannel = \"preview\"\nfrequency = \"weekly\"\n");
+  REQUIRE(read);
+  CHECK(read->update_mode == UpdateMode::Auto);
+  CHECK(read->update_channel == UpdateChannel::Preview);
+  CHECK(read->update_frequency == UpdateFrequency::Weekly);
+  CHECK(parse_settings(format_settings(*read))->update_frequency == UpdateFrequency::Weekly);
+  CHECK_FALSE(parse_settings("[updates]\nfrequency = \"hourly\"\n"));
+}
+
 }  // namespace
 }  // namespace ajp::app::play
 

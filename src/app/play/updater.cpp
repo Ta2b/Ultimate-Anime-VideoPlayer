@@ -335,11 +335,11 @@ std::expected<void, Refusal> save_update_state(const fs::path& file, const Updat
   return core::write_text_atomically(file, format_update_state(state));
 }
 
-bool update_due(const UpdateState& state, std::string_view mode, std::string_view frequency,
-                std::int64_t now_unix) {
-  if (mode == "never") return false;
-  if (frequency == "launch") return true;
-  const std::int64_t interval = frequency == "weekly" ? std::int64_t{7} * 86400 : std::int64_t{86400};
+bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix) {
+  if (mode == UpdateMode::Never) return false;
+  if (frequency == UpdateFrequency::Launch) return true;
+  const std::int64_t interval =
+      frequency == UpdateFrequency::Weekly ? std::int64_t{7} * 86400 : std::int64_t{86400};
   return state.last_check_unix == 0 || now_unix - state.last_check_unix >= interval ||
          now_unix < state.last_check_unix;
 }
@@ -502,7 +502,7 @@ std::string update_managed_reason(const UpdatePaths& paths) {
   return {};
 }
 
-std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, std::string_view mode,
+std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, UpdateMode mode,
                                                      std::string_view channel, UpdateState& state,
                                                      const std::stop_token& stop) {
   state.last_check_unix =
@@ -524,7 +524,7 @@ std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, s
   }
   state.latest_version = checked->newer->version;
   state.notes_url = checked->newer->notes_url;
-  if (mode != "auto" || !update_managed_reason(paths).empty()) return checked->message;
+  if (mode != UpdateMode::Auto || !update_managed_reason(paths).empty()) return checked->message;
   if (checked->newer->version == state.skipped_version)
     return checked->message + i18n::tr(" (not installed automatically: it did not start properly here)");
   if (state.staged_version == checked->newer->version)

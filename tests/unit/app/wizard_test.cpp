@@ -40,11 +40,11 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
 TEST_CASE("Prêt : Optimiser maintenant ou Régler moi-même ; un écran sauté n'écrase rien", "[wizard]") {
   ajp::app::play::FrenchUi french;
   Wizard wizard = begin_wizard({.engine_choice = true}, 0);
-  wizard.update_mode = "auto";
+  wizard.update_mode = UpdateMode::Auto;
   wizard.interface_language = "fr";
   CHECK(wizard_settings(wizard, {}).first_run_step == kWizardSteps);
   const PlaySettings play = wizard_play_settings(wizard, PlaySettings{});
-  CHECK(play.update_mode == "auto");
+  CHECK(play.update_mode == UpdateMode::Auto);
   CHECK(play.language == "fr");
   CHECK(wants_machine_calibration(wizard));
   Wizard myself = wizard;
@@ -53,16 +53,16 @@ TEST_CASE("Prêt : Optimiser maintenant ou Régler moi-même ; un écran sauté 
   CHECK(wizard_play_settings(myself, PlaySettings{}).preset == Preset::Auto);
   CHECK(wizard_summary(myself).front().contains("passée"));
   wizard.skipped = {WizardStep::Updates};
-  CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == "notify");
+  CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == UpdateMode::Notify);
 }
 
 TEST_CASE("l'assistant repris en route retrouve ses choix (P3.3)", "[wizard]") {
   PlaySettings saved;
-  saved.update_mode = "never";
+  saved.update_mode = UpdateMode::Never;
   saved.language_presets = {{.audio = "fra", .subtitles = ""}};
   Wizard wizard = begin_wizard(WizardFacts{}, 3);
   resume_choices(wizard, saved);
-  CHECK(wizard.update_mode == "never");
+  CHECK(wizard.update_mode == UpdateMode::Never);
   CHECK(wizard.audio_language == "fra");
-  CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == "never");
+  CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == UpdateMode::Never);
 }

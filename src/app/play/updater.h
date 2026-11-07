@@ -25,6 +25,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/play/update_choice.h"
 #include "core/types.h"
 #include "core/update_manifest.h"
 
@@ -67,8 +68,7 @@ std::expected<void, Refusal> save_update_state(const std::filesystem::path& file
 
 // Faut-il vérifier maintenant ? frequency : « launch » (à chaque lancement), « daily », « weekly » ; mode «
 // never » : jamais.
-bool update_due(const UpdateState& state, std::string_view mode, std::string_view frequency,
-                std::int64_t now_unix);
+bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix);
 
 struct UpdatePaths {
   std::filesystem::path data;     // <données>
@@ -146,7 +146,7 @@ std::string update_managed_reason(const UpdatePaths& paths);
 
 // La vérification en arrière-plan (updater.h : étapes 1 et 2) : met à jour state (dernière vérification,
 // version vue, archive préparée si mode == « auto »). Rend le message. À lancer hors de la lecture.
-std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, std::string_view mode,
+std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, UpdateMode mode,
                                                      std::string_view channel, UpdateState& state,
                                                      const std::stop_token& stop);
 
