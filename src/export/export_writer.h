@@ -29,6 +29,7 @@
 #include "core/frame.h"
 #include "core/types.h"
 #include "export/encoder_choice.h"
+#include "export/owned_frame.h"
 
 struct AVBufferRef;
 struct AVFrame;
@@ -101,7 +102,7 @@ struct Picture {
   bool device = false;           // planes : adresses CUDA (upload() Cuda), pas de l'hôte
   // Ou une image de l'encodeur (vulkan_frames(), cuda_frames()), déjà rendue ou copiée sur le
   // GPU : l'écriture la prend et la libère ; planes, bytes et release ne comptent pas.
-  AVFrame* frame = nullptr;
+  OwnedFrame frame;
   std::function<void()> release;
 };
 

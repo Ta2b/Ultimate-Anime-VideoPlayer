@@ -312,7 +312,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
         }
         waiting.pop_front();
         static_cast<void>((*pipeline)->stages().slot_free(release_of(frame)));
-        held = exporter::Picture{.pts_us = frame.pts_us, .frame = *taken};
+        held = exporter::Picture{.pts_us = frame.pts_us, .frame = std::move(*taken)};
         last_pts = frame.pts_us;
         ++converted;
         moved = true;
@@ -381,7 +381,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   for (const RingFrame& frame : waiting)
     static_cast<void>((*pipeline)->stages().slot_free(sink ? release_of(frame) : p.screen.retire(frame)));
   waiting.clear();
-  if (held) av_frame_free(&held->frame);
+  held.reset();
   (*pipeline)->stages().quit();
   pipeline->reset();
   writer->reset();

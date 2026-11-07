@@ -112,7 +112,7 @@ class FrameExport {
   };
   // Une image de l'encodeur, rendue ou copiée, à lui confier avec son instant.
   struct Pending {
-    AVFrame* frame = nullptr;
+    exporter::OwnedFrame frame;
     std::int64_t pts_us = 0;
   };
   struct Cuda {
@@ -144,7 +144,7 @@ class FrameExport {
   // image copiée confiée.
   std::expected<bool, Refusal> deliver_cuda(Cuda& c, const std::function<bool(exporter::Picture&&)>& push);
   // Une image prise au pool, les plans du tampon copiés dedans, la copie finie.
-  std::expected<AVFrame*, Refusal> copy_to_pool(const Cuda& c, const Buffer& buffer);
+  std::expected<exporter::OwnedFrame, Refusal> copy_to_pool(const Cuda& c, const Buffer& buffer);
   // Les images de l'encodeur : une image d'essai prise au pool, ses plans enveloppés et rendables.
   // Refus FeatureUnavailable (format des plans, pas de rendu), VendorCallFailed.
   std::expected<void, Refusal> open_vulkan(pl_gpu gpu, AVBufferRef* frames);
