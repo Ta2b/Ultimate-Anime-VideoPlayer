@@ -192,17 +192,18 @@ double PlaceboScreen::Impl::sdr_reference() const {
   return render::kContentReferenceNits;
 #else
   if (kde_sdr_auto && contract && contract->from_compositor) return contract->reference_nits;
-  return kde_sdr_nits.value_or(kDefaultKdeSdrNits);
+  if (kde_sdr_nits) return *kde_sdr_nits;
+  // Sans KDE (GNOME, Hyprland, Sway…) : aucun blanc SDR connu, le PQ passe tel quel comme sous Windows
+  // (contenu = écran, k = 1), et la passe compresse vers le pic de l'écran.
+  return render::kContentReferenceNits;
 #endif
 }
 
-// La passe « kwin » et les métadonnées : demandées (--hdr-metadata=NITS), ou par défaut quand KDE donne sa
-// luminosité SDR, et toujours sous Windows (sauf --no-hdr-metadata).
+// La passe « kwin » (compression vers le pic de l'écran) et les métadonnées : partout où la sortie est en
+// PQ, sauf --no-hdr-metadata. Sans elle, la LUT demande environ 6 000 nits pour un blanc et tout compositeur
+// qui ne compresse pas lui-même (GNOME, Hyprland) écrête au-delà de 75 % du code.
 bool PlaceboScreen::Impl::kwin_metadata() const {
-#if defined(_WIN32)
-  if (kde_sdr_auto) return true;  // pas de compositeur qui compresse : le grade le fait toujours
-#endif
-  return kde_sdr_nits.has_value() || (kde_sdr_auto && contract && contract->from_compositor);
+  return kde_sdr_auto || kde_sdr_nits.has_value();
 }
 
 void PlaceboScreen::Impl::match_kwin() {
