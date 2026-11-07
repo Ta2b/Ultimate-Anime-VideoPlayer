@@ -115,6 +115,7 @@ réglages avancés.
 | `f` | plein écran (Échap en sort) |
 | `a` / `j` | piste audio / sous-titres suivants |
 | `z` / `x` | sous-titres 100 ms plus tôt / plus tard |
+| `Ctrl` + `-` / `Ctrl` + `+` | son 100 ms plus tôt / plus tard |
 | `n` / Maj+`n` | épisode suivant / précédent |
 | Page↑ / Page↓ | chapitre suivant / précédent |
 | `o` | passer le générique |

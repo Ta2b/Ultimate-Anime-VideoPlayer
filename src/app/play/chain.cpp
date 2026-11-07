@@ -160,8 +160,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                                        wanted.deband ? i18n::tr("on") : i18n::tr("off")),
                     now_us);
   }
-  if (wanted.audio_delay_ms != r.audio_delay_ms)
+  if (wanted.audio_delay_ms != r.audio_delay_ms) {
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
+    controls.notify(i18n::ui_tr_format("Audio delay: {} ms", wanted.audio_delay_ms), now_us);
+  }
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
   if (wanted.video_latency_ms != r.video_latency_ms)
     to.session.set_video_latency(std::int64_t{wanted.video_latency_ms} * 1000);
@@ -313,8 +315,13 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const SubtitleDelayStep& step) {
             PlaySettings wanted = to.running;
-            wanted.subtitle_delay_ms = std::clamp(wanted.subtitle_delay_ms + step.delta_ms,
-                                                  limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
+            if (step.audio) {
+              wanted.audio_delay_ms = std::clamp(wanted.audio_delay_ms + step.delta_ms,
+                                                 limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
+            } else {
+              wanted.subtitle_delay_ms = std::clamp(wanted.subtitle_delay_ms + step.delta_ms,
+                                                    limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
+            }
             apply_live(to, wanted, now_us);
           },
           [&](const VolumeStep& step) {

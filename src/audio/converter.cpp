@@ -9,6 +9,7 @@ extern "C" {
 
 #include <libavutil/channel_layout.h>
 #include <libavutil/frame.h>
+#include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
 }
 
@@ -126,6 +127,10 @@ std::expected<void, Refusal> PcmConverter::configure(const AVFrame& frame) {
   av_channel_layout_uninit(&in_layout);
   av_channel_layout_uninit(&out_layout);
   swr_.reset(swr);
+  // P3.79 : un downmix (5.1 vers stéréo) somme les canaux ; en flottant, libswresample ne normalise pas la
+  // matrice et la sortie dépasse 1, que SDL écrête. La matrice est bornée à 1.
+  if (error >= 0 && frame.ch_layout.nb_channels > output_.channels)
+    error = av_opt_set_double(swr, "rematrix_maxval", 1.0, 0);
   if (error >= 0) error = swr_init(swr_.get());
   if (error < 0) {
     swr_.reset();

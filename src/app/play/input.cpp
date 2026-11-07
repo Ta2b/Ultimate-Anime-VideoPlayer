@@ -97,6 +97,12 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   if (plain && event.key.key == SDLK_J) return CycleSubtitles{};
   if (plain && (event.key.key == SDLK_Z || event.key.key == SDLK_X))
     return SubtitleDelayStep{.delta_ms = event.key.key == SDLK_Z ? -100 : 100};
+  // P3.79 : le délai audio au clavier, Ctrl + « - » et Ctrl + « + » (100 ms), comme mpv.
+  const SDL_Keycode k = event.key.key;
+  if ((mod & SDL_KMOD_CTRL) != 0 && (k == SDLK_MINUS || k == SDLK_KP_MINUS))
+    return SubtitleDelayStep{.delta_ms = -100, .audio = true};
+  if ((mod & SDL_KMOD_CTRL) != 0 && (k == SDLK_EQUALS || k == SDLK_PLUS || k == SDLK_KP_PLUS))
+    return SubtitleDelayStep{.delta_ms = 100, .audio = true};
   if (plain && event.key.key == SDLK_A) return CycleAudio{};
   if (plain && event.key.key == SDLK_P) return ToggleSettings{};
   if (plain && event.key.key == SDLK_N) {

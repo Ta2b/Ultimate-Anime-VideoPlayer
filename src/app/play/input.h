@@ -46,9 +46,10 @@ struct Dropped {
   std::filesystem::path path;
   DropKind kind = DropKind::Other;
 };
-// Décalage des sous-titres (P3.72) : « z » −100 ms, « x » +100 ms, comme mpv.
+// Décalage des sous-titres (P3.72) : « z » −100 ms, « x » +100 ms, comme mpv ; du son avec audio (P3.79).
 struct SubtitleDelayStep {
   int delta_ms = 0;
+  bool audio = false;
 };
 struct ToggleSettings {};
 // Épisode suivant (+1) ou précédent (−1) du dossier (episodes.h) : « n » et Maj + « n ».

@@ -50,6 +50,7 @@ constexpr std::array kSoundPage{
     Entry{"Anime voices", "Voix d'anime"},
     Entry{"Another device uses the global profile.", "Un autre appareil reprend le profil global."},
     Entry{"Audio delay (ms)", "Délai audio (ms)"},
+    Entry{"Audio delay: {} ms", "Délai audio : {} ms"},
     Entry{"Back to Natural", "Revenir à Naturel"},
     Entry{"Bass boost", "Renfort des graves"},
     Entry{"Bass level (LFE)", "Niveau des basses (LFE)"},
