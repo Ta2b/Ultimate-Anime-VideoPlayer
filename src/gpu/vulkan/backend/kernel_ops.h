@@ -42,6 +42,41 @@
 
 namespace ajp::gpu::vk {
 
+// Le code de chaque opération, premier mot de son OpKey (P5.14) : deux opérations ne partagent jamais un
+// code, sinon leurs enregistrements se confondraient dans le cache.
+enum class OpCode : std::uint64_t {
+  Resample = 1,
+  RifeCrop = 2,
+  Warp = 3,
+  Ingest = 10,
+  RifePad = 20,
+  Measure = 30,
+  RifeInput = 40,
+  ScoresStart = 41,
+  FlowMaxStart = 42,
+  GmfssFrames = 43,
+  SoftSplatAll = 44,
+  Fill = 45,
+  RifeTime = 46,
+  RifePair = 47,
+  GmfssCompose = 48,
+  WriteRing = 50,
+  FrameStats = 51,
+};
+constexpr std::array kOpCodes{
+    OpCode::Resample,     OpCode::RifeCrop,  OpCode::Warp,        OpCode::Ingest,       OpCode::RifePad,
+    OpCode::Measure,      OpCode::RifeInput, OpCode::ScoresStart, OpCode::FlowMaxStart, OpCode::GmfssFrames,
+    OpCode::SoftSplatAll, OpCode::Fill,      OpCode::RifeTime,    OpCode::RifePair,     OpCode::GmfssCompose,
+    OpCode::WriteRing,    OpCode::FrameStats};
+static_assert(
+    [] {
+      for (std::size_t i = 0; i < kOpCodes.size(); ++i)
+        for (std::size_t j = i + 1; j < kOpCodes.size(); ++j)
+          if (kOpCodes[i] == kOpCodes[j]) return false;
+      return true;
+    }(),
+    "deux opérations Vulkan partagent un code");
+
 // Clé d'un enregistrement : quelques mots qui fixent tous ses paramètres, sans allocation.
 struct OpKey {
   // Assez pour les dix splats d'un instant de GMFSS déformé après SPAN : trois vues de six mots
@@ -49,6 +84,7 @@ struct OpKey {
   std::array<std::uint64_t, 256> words{};
   std::size_t size = 0;
 
+  OpKey& add(OpCode code) { return add(static_cast<std::uint64_t>(code)); }
   OpKey& add(std::uint64_t v) {
     if (size < words.size()) words[size] = v;
     ++size;

@@ -48,7 +48,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pad(const DecodedFrame& frame
       .buffer = p.buffer.view(), .format = *format, .width = p.width, .height = p.height, .layout = p.layout};
   const ColorSpec rife{.matrix = kernels::kRifeMatrix, .range = color->range, .siting = kernels::kRifeSiting};
   OpKey key;
-  key.add(20);
+  key.add(OpCode::RifePad);
   add_source(key, *src);
   key.add(detail::handle_bits(padded_yuv.buffer.buffer));
   detail::add_view(key, *dst);
@@ -133,7 +133,7 @@ std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, con
   const BufferView partials = scores_[*slot].partials.view();
   const BufferView blocks = scores_[*slot].blocks.view();
   OpKey key;
-  key.add(30);
+  key.add(OpCode::Measure);
   add_source(key, *sa);
   add_source(key, *sb);
   key.add(detail::handle_bits(partials.buffer)).add(detail::handle_bits(blocks.buffer));
