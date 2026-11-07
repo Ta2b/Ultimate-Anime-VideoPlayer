@@ -203,7 +203,11 @@ jobs:
         shell: pwsh
         run: |
           ctest --preset windows-ci
-          if ($LASTEXITCODE -ne 0) { throw "tests" }
+          if ($LASTEXITCODE -ne 0) {
+            # Les échecs seuls, relancés à la fin du journal : leur sortie se lit sans fouiller 4 000 lignes.
+            ctest --preset windows-ci --rerun-failed --output-on-failure -j1
+            throw "tests"
+          }
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
         with:

@@ -651,10 +651,15 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
   std::string text = format_settings(settings);
   // Les clés d'une version plus récente restent (P2.22) : revenir à celle-ci ne les efface plus.
-  std::ifstream file(path, std::ios::binary);
-  if (file) {
-    std::ostringstream existing;
-    existing << file.rdbuf();
+  std::ostringstream existing;
+  bool exists = false;
+  {
+    // Fermé avant l'écriture : sous Windows, un fichier ouvert ne se remplace pas (MoveFileEx refuse).
+    std::ifstream file(path, std::ios::binary);
+    exists = static_cast<bool>(file);
+    if (exists) existing << file.rdbuf();
+  }
+  if (exists) {
     toml::parse_result old = toml::parse(existing.str());
     toml::parse_result fresh = toml::parse(text);
     if (old && fresh) {

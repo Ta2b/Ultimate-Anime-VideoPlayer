@@ -13,13 +13,14 @@ constexpr std::array kWizardTexts{
     Entry{"Machine calibration failed: Auto preset (see log)",
           "La calibration de la machine a échoué : préréglage Auto (voir le journal)"},
     Entry{"Machine calibration", "Calibration de la machine"},
-    Entry{"\"Optimise now\" tests several settings on a very demanding sequence: picture resolution, SPAN "
-          "upscaling and RIFE smoothness, and keeps the best combination this machine sustains. Only a "
-          "progress bar is shown; it takes a few minutes, longer the first time (the engines are built once).",
-          "« Optimiser maintenant » essaie plusieurs réglages sur une séquence très éprouvante : résolution de "
-          "l'image, agrandissement SPAN et fluidité RIFE, et garde la meilleure combinaison que la machine "
-          "tient. Seule une barre de chargement s'affiche ; cela prend quelques minutes, plus la première fois "
-          "(les moteurs se construisent une fois)."},
+    Entry{
+        "\"Optimise now\" tests several settings on a very demanding sequence: picture resolution, SPAN "
+        "upscaling and RIFE smoothness, and keeps the best combination this machine sustains. Only a "
+        "progress bar is shown; it takes a few minutes, longer the first time (the engines are built once).",
+        "« Optimiser maintenant » essaie plusieurs réglages sur une séquence très éprouvante : résolution de "
+        "l'image, agrandissement SPAN et fluidité RIFE, et garde la meilleure combinaison que la machine "
+        "tient. Seule une barre de chargement s'affiche ; cela prend quelques minutes, plus la première fois "
+        "(les moteurs se construisent une fois)."},
     Entry{"\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
           "Post-processing.",
           "« Régler moi-même » : le préréglage Auto estimé pour cette carte, modifiable dans Vidéo > "

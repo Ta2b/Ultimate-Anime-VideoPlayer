@@ -41,7 +41,7 @@ void store_digest(const CacheEntry& entry, const std::string& digest) {
   fs::path temporary = entry.digest_file();
   temporary += ".part";
   {
-    std::ofstream out(temporary, std::ios::trunc);
+    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);  // « \n » seul, sous Windows aussi
     out << digest << '\n';
     if (!out.flush()) return;
   }
