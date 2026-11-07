@@ -357,7 +357,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "ajp : %s\n", applied->c_str());
         return relaunch(place.executable, argc, argv);
       }
-      std::fprintf(stderr, "ajp : mise à jour impossible : %s\n", applied.error().detail.c_str());
+      std::fprintf(stderr, "ajp: update failed: %s\n", applied.error().detail.c_str());
     }
     // La garde : une version appliquée qui ne mène aucune lecture à son terme revient à l'ancienne.
     const ajp::app::play::UpdateState before = state;

@@ -16,6 +16,7 @@
 #include "app/play/backend_library.h"
 #include "app/play/controls_draw.h"
 #include "app/play/i18n.h"
+#include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/thread.h"
@@ -140,7 +141,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
                         free_bytes(catalog.layout.engines), catalog.layout.engines);
         !fits) {
       log->warn("{} non mis à jour : {}", label, fits.error().detail);
-      ui.controls().defer(std::format("{} : {}", label, fits.error().detail));
+      ui.controls().defer(std::format("{}: {}", label, visible_error(fits.error())));
       continue;
     }
     log->info("{} : module d'une version précédente du lecteur, réinstallation", label);
