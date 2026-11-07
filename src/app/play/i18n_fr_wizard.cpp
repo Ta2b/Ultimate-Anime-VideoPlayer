@@ -8,6 +8,8 @@ namespace {
 // Assistant et écran des moteurs : (clé anglaise, français).
 constexpr std::array kWizardTexts{
     Entry{"Calibrating this machine", "Calibration de la machine"},
+    Entry{"New graphics card: optimise for this PC again (Video > Post-processing)",
+          "Nouvelle carte graphique : refaites l'optimisation pour ce PC (Vidéo > Post-traitement)"},
     Entry{"Machine calibration failed: Auto preset (see log)",
           "La calibration de la machine a échoué : préréglage Auto (voir le journal)"},
     Entry{

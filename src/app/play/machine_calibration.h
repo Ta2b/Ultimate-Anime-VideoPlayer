@@ -67,9 +67,9 @@ std::vector<int> calibration_heights(int display_height);
 
 // Le prochain essai après ceux déjà faits ; rien quand la recherche est finie.
 std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int display_height);
-// La chaîne recommandée : SPAN passe avant l'interpolation, donc le plus haut palier SPAN qui tient, avec
-// RIFE s'il tient aussi à ce palier (sinon SPAN seul) ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni
-// RIFE si rien ne tient. Les paliers plus bas avec RIFE restent au tableau, au choix de l'utilisateur.
+// La chaîne recommandée, la fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent
+// ensemble ; sinon le plus haut SPAN seul ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni RIFE si rien
+// ne tient. Les autres paliers restent au tableau, au choix de l'utilisateur.
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
 // Personnalisé, réduction Hermite, RIFE 4.22 lite en mode auto Rapide ; span_fp8 : SPAN Balanced Sharp en

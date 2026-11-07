@@ -451,6 +451,18 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                            update.latest_version);
       }
     }
+    {
+      // P3.11 : une calibration faite sur une autre carte ne sert plus ; la refaire est proposé une fois par
+      // lancement.
+      static bool told = false;
+      const auto calibration = load_calibration(calibration_file(settings_path.parent_path()));
+      if (!told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
+        told = true;
+        const i18n::Translated redo =
+            i18n::ui_tr("New graphics card: optimise for this PC again (Video > Post-processing)");
+        player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
+      }
+    }
     if (!set_aside_notes.empty()) {
       // Déjà traduites par set_aside() : montrées telles quelles.
       const i18n::Translated notes = i18n::Translated::data(set_aside_notes);

@@ -55,11 +55,10 @@ TEST_CASE("la calibration garde SPAN seul quand RIFE ne tient pas, RIFE seul en 
   auto tried = search(1440, [](const ChainCandidate& c) { return c.span && !c.rife && c.height <= 540; });
   CHECK(tried.size() == 4 + 3);
   CHECK(best_candidate(tried) == C{.span = true, .rife = false, .height = 540});
-  // SPAN haut sans RIFE passe avant SPAN bas avec RIFE : 720p seul est recommandé, 480p + RIFE reste au
-  // tableau.
+  // La fluidité d'abord (P3.11) : 480p + RIFE passe avant 720p seul, qui reste au tableau.
   tried = search(1440, [](const ChainCandidate& c) { return !c.rife || c.height <= 480; });
   CHECK(tried.back().chain == C{.span = true, .rife = true, .height = 480});
-  CHECK(best_candidate(tried) == C{.span = true, .rife = false, .height = 720});
+  CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 480});
   // SPAN nulle part : RIFE seul, sans SPAN + RIFE.
   tried = search(1080, [](const ChainCandidate& c) { return !c.span; });
   REQUIRE(tried.size() == 2);
