@@ -75,7 +75,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
       snapshot.maybe(screen, started);
       const auto seconds = [](double s) { return format_clock(static_cast<std::int64_t>(s * 1e6), 0); };
       const PrepareView view{
-          .label = i18n::tr_format("Preparing engine {}", engine.name),
+          .label = i18n::ui_tr_format("Preparing engine {}", engine.name),
           .fraction = progress.fraction(now),
           .details = {status.stage,
                       i18n::tr_format("elapsed {} · expected ~{}", seconds(progress.elapsed_seconds(now)),
@@ -112,7 +112,7 @@ gpu::BackendLog backend_log() {
   };
 }
 
-void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label) {
+void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label) {
   const PrepareView view{.label = std::move(label)};
   if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
     log_channel("app")->warn("préparation : {}", shown.error().detail);
@@ -135,7 +135,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   if (!artifact) return std::unexpected(std::move(artifact.error()));
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
-  show_loading(p.screen, p.ui, i18n::tr("Loading the engines"));
+  show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
   backend.use_lane(lane);
   auto loaded = backend.load(**artifact);
   backend.use_lane(gpu::Lane::Upscale);
@@ -175,7 +175,7 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
     }
     actions.clear();
     const auto [fraction, stage] = note.progress ? note.progress->get() : std::pair<float, std::string>{};
-    const PrepareView view{.label = i18n::tr_format("Preparing engine {}", "SPAN"),
+    const PrepareView view{.label = i18n::ui_tr_format("Preparing engine {}", "SPAN"),
                            .fraction = fraction,
                            .details = {stage, model.stem().string()},
                            .show_details = p.details};

@@ -20,6 +20,7 @@
 #include "app/play/drba_model.h"
 #include "app/play/engine_install.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/i18n.h"
 #include "app/play/model_choice.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
@@ -83,7 +84,7 @@ struct Player {
   std::optional<DisplayFacts> display;  // l'écran selon son EDID (OLED ou non)
   std::filesystem::path resume_path;    // mémoire de lecture (resume.h) ; vide : aucune
   bool resumed = false;                 // la lecture reprend là où elle s'était arrêtée : à annoncer
-  std::string notice;                   // à annoncer à la prochaine ouverture (moteur changé)
+  i18n::Translated notice;              // à annoncer à la prochaine ouverture (moteur changé)
   bool quit = false;                    // la dernière ouverture s'est fermée par q ou la fenêtre
   // Réglages d'une réouverture demandée : écrits dans play.toml une fois la chaîne ouverte, pas avant
   // (une chaîne qui ne s'ouvre pas ne doit pas devenir celle du prochain lancement).
@@ -101,7 +102,7 @@ gpu::BackendLog backend_log();
 
 // Une image de la superposition avant une étape bloquante (chargement d'un moteur) : la
 // fenêtre dit ce qu'elle attend au lieu de rester noire.
-void show_loading(PlaceboScreen& screen, PlayerUi& ui, std::string label);
+void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label);
 
 // Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
 // l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont

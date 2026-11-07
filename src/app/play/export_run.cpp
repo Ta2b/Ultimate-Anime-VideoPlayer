@@ -120,7 +120,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   const auto stopped = [&](const Refusal& refusal) {
     log->warn("export : {} {}", name(refusal.code), refusal.detail);
     return ExportOutcome{.end = ExportEnd::Failed,
-                         .notice = i18n::tr_format("Export stopped: {}", visible_error(refusal))};
+                         .notice = i18n::ui_tr_format("Export stopped: {}", visible_error(refusal))};
   };
   std::error_code unknown;
   if (job.output.empty() || std::filesystem::equivalent(job.output, p.options.file, unknown))
@@ -149,7 +149,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies de calcul le
   // permettent (export_depth.h).
   const ExportDepth depth = export_depth(c.one_lane ? 1 : c.backend->capabilities().lanes);
-  show_loading(p.screen, p.ui, i18n::tr("Opening the export"));
+  show_loading(p.screen, p.ui, i18n::ui_tr("Opening the export"));
 
   // Ordre de déclaration = ordre inverse de destruction : l'écriture, qui rend ses images aux
   // tampons de la conversion, part avant elle ; les moteurs (prepared) partent les derniers.
@@ -348,8 +348,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       const std::string left =
           fraction > 0.01F ? seconds_text(elapsed * (1.0 - fraction) / fraction) : std::string("…");
       const PrepareView view{
-          .label = cancel_armed_at ? i18n::tr("Press Esc again to cancel the export and delete the file")
-                                   : i18n::tr("Exporting · Esc to cancel"),
+          .label = cancel_armed_at ? i18n::ui_tr("Press Esc again to cancel the export and delete the file")
+                                   : i18n::ui_tr("Exporting · Esc to cancel"),
           .fraction = duration_us > 0 ? std::optional(fraction) : std::nullopt,
           .details = {i18n::tr_format("{} frames · {:.1f} fps · elapsed {} · left ~{}", converted,
                                       elapsed > 0.0 ? static_cast<double>(converted) / elapsed : 0.0,
@@ -368,7 +368,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
 
   std::string truncated;  // la source n'a pas pu être relue jusqu'au bout pour les pistes copiées
   if (!interrupted && !failure) {
-    show_loading(p.screen, p.ui, "Finalisation de l'export");
+    show_loading(p.screen, p.ui, i18n::ui_tr("Finishing the export"));
     if (auto finished = (*writer)->finish(); !finished)
       failure = std::move(finished.error());
     else
@@ -392,16 +392,18 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   if (interrupted == ExportEnd::Quit) return {.end = ExportEnd::Quit};
   if (interrupted == ExportEnd::Cancelled) {
     log->info("export annulé après {} images", converted);
-    return {.end = ExportEnd::Cancelled, .notice = i18n::tr("Export cancelled")};
+    return {.end = ExportEnd::Cancelled, .notice = i18n::ui_tr("Export cancelled")};
   }
   if (failure) return stopped(*failure);
   log->info("export terminé : {} images, {} octets, {:.1f} s", written.frames, written.bytes, elapsed);
-  std::string notice =
-      i18n::tr_format("Export done: {} ({} frames, {:.0f} MB, {})", prepare::utf8_path(job.output.filename()),
-                      written.frames, static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed));
+  i18n::Translated notice = i18n::ui_tr_format(
+      "Export done: {} ({} frames, {:.0f} MB, {})", prepare::utf8_path(job.output.filename()), written.frames,
+      static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed));
   if (!truncated.empty())
-    notice += i18n::tr_format(
-        " — warning: audio and subtitles stop early, the source could not be read again ({})", truncated);
+    notice =
+        notice +
+        i18n::ui_tr_format(
+            " — warning: audio and subtitles stop early, the source could not be read again ({})", truncated);
   return {.end = ExportEnd::Done, .notice = std::move(notice)};
 }
 

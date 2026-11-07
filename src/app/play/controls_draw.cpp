@@ -350,7 +350,7 @@ void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t 
   const float bar_y = height - pad - kRow * s - kBarZone * s * 0.5F;
   const float thick = 3.5F * s;
   list->AddRectFilled({x0, bar_y - thick * 0.5F}, {x1, bar_y + thick * 0.5F}, white(0.22F), thick * 0.5F);
-  std::string text = view.label;
+  std::string text = view.label.str();
   if (view.fraction) {
     const float f = std::clamp(*view.fraction, 0.0F, 1.0F);
     list->AddRectFilled({x0, bar_y - thick * 0.5F},

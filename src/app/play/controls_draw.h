@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "app/play/controls.h"
+#include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/tracks.h"
 
@@ -30,7 +31,7 @@ float title_height(float scale);
 // barre à la place de la barre de progression, un libellé court et le pourcentage ; les détails
 // (étape, temps, moteur) seulement avec les statistiques.
 struct PrepareView {
-  std::string label;                 // « Préparation du moteur SPAN »
+  i18n::Translated label;            // « Préparation du moteur SPAN »
   std::optional<float> fraction;     // rien : durée inconnue (chargement), barre sans pourcentage
   std::vector<std::string> details;  // affichés avec les statistiques (Tab)
   bool show_details = false;

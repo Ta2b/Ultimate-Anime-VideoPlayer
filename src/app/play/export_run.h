@@ -26,7 +26,7 @@ enum class ExportEnd : std::uint8_t {
 
 struct ExportOutcome {
   ExportEnd end = ExportEnd::Done;
-  std::string notice;  // à annoncer quand la lecture reprend
+  i18n::Translated notice;  // à annoncer quand la lecture reprend
 };
 
 ExportOutcome run_export(Player& p, const ExportJob& job);

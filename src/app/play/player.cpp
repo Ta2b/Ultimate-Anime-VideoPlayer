@@ -376,7 +376,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         *paths.relaunch = true;
         return {};
       }
-      show_loading(**screen, **ui, i18n::tr("Loading"));
+      show_loading(**screen, **ui, i18n::ui_tr("Loading"));
       const gpu::BackendInit probe{
           .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};
       auto opened = open_backend(catalog, paths, *engines, probe);
@@ -408,8 +408,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       const UpdateState update = load_update_state(update_file);
       if (!announced && saved->update_mode == "notify" && !update.latest_version.empty()) {
         announced = true;
-        player.notice =
-            i18n::tr_format("Update {} available (Settings > General > Application)", update.latest_version);
+        player.notice = i18n::ui_tr_format("Update {} available (Settings > General > Application)",
+                                           update.latest_version);
       }
     }
     if (player.display) {

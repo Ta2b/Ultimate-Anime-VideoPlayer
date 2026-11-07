@@ -134,19 +134,20 @@ cmd::Seek Controls::release(double fraction, std::int64_t duration_us) {
   return cmd::Seek{.target_us = time_at(fraction, duration_us), .exact = true};
 }
 
-void Controls::notify(std::string text, std::int64_t now_us) {
-  toast_ = std::move(text);
+void Controls::notify(const i18n::Translated& text, std::int64_t now_us) {
+  toast_ = text.str();
   toast_at_us_ = now_us;
 }
 
-void Controls::defer(const std::string& text) {
+void Controls::defer(const i18n::Translated& text) {
   if (!deferred_.empty()) deferred_ += "  ·  ";
-  deferred_ += text;
+  deferred_ += text.str();
 }
 
 void Controls::show_deferred(std::int64_t now_us) {
   if (deferred_.empty()) return;
-  notify(std::move(deferred_), now_us);
+  toast_ = std::move(deferred_);
+  toast_at_us_ = now_us;
   deferred_.clear();
 }
 

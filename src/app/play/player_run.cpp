@@ -60,6 +60,7 @@
 #include "app/play/ui.h"
 #include "app/play/upscale_stage.h"
 #include "app/play/user_keys.h"
+#include "app/play/visible_error.h"
 #include "app/play/vrr_watch.h"
 #include "audio/devices.h"
 #include "core/auto_memory.h"
@@ -356,12 +357,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   if (p.resumed) {
     p.ui.controls().notify(
-        i18n::tr_format("Resumed at {}", format_clock(start_us, session.view().duration_us)), host_now_us());
+        i18n::ui_tr_format("Resumed at {}", format_clock(start_us, session.view().duration_us)),
+        host_now_us());
     p.resumed = false;
   }
   if (!p.notice.empty()) {
     p.ui.controls().notify(p.notice, host_now_us());
-    p.notice.clear();
+    p.notice = {};
   }
   // play.toml, la position et la mémoire de l'Auto s'écrivent sur leur thread, sans attendre le disque.
   LatestWriter writer;
@@ -534,8 +536,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     if (centi != auto_notified && at - auto_changed_us >= 3'000'000) {
       if (auto_notified > 0)
-        p.ui.controls().notify(i18n::tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(centi),
-                                               auto_source_fps * centi / 100.0),
+        p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(centi),
+                                                  auto_source_fps * centi / 100.0),
                                at);
       auto_notified = centi;
     }
@@ -621,10 +623,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           log->warn("Mode Rapide : trop d'images perdues ({}) : retour au mode Stable",
                     free_status_text(chain.live.free_info(host_now_us())));
           free_fallback.fell_back(host_now_us());
-          p.ui.controls().notify(i18n::tr("Fast mode: too many frames lost, back to Stable"), host_now_us());
+          p.ui.controls().notify(i18n::ui_tr("Fast mode: too many frames lost, back to Stable"),
+                                 host_now_us());
           apply_auto();
         }
       }
+      if (const auto notice = session.take_notice())
+        p.ui.controls().notify(
+            i18n::ui_tr_format("Playback goes on after an error: {}", visible_error(*notice)), host_now_us());
       free_missing_seen = shown.missing;
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
