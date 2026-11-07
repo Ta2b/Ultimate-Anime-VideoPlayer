@@ -14,10 +14,6 @@ namespace {
 
 using Result = std::expected<void, Refusal>;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 template <class T>
 std::optional<T> number(std::string_view text) {
   T value{};
@@ -115,7 +111,7 @@ constexpr std::array<FlagSpec, 10> kFlags{{
        f.no_exact_reuse = true;
        return {};
      }},
-    {"dump-plan", "", "écrit chaque Plan résolu au journal",
+    {"dump-plan", "", "sans effet, accepté pour les anciens scripts",
      [](DebugFlags& f, std::string_view) -> Result {
        f.dump_plan = true;
        return {};
@@ -125,7 +121,7 @@ constexpr std::array<FlagSpec, 10> kFlags{{
        f.profile_dispatches = true;
        return {};
      }},
-    {"engine", "NOM", "impose ce moteur : vulkan, tensorrt, migraphx, openvino, directml, metal",
+    {"engine", "NOM", "impose ce moteur : vulkan, tensorrt, metal",
      [](DebugFlags& f, std::string_view v) -> Result {
        const auto engine = parse_engine(v);
        if (!engine) {

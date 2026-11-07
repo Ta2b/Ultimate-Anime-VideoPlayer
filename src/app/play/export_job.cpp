@@ -19,6 +19,7 @@
 #endif
 
 #include "app/play/i18n.h"
+#include "core/text.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -126,7 +127,7 @@ bool on_fat32(const std::filesystem::path& dir) {
 std::string export_label(exporter::Codec codec, exporter::Quality quality) {
   if (codec == exporter::Codec::Lossless) return std::string(exporter::label(codec));
   std::string level(exporter::label(quality));  // « Très haute » → « très haute »
-  level[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(level[0])));
+  level[0] = core::ascii_lower(level[0]);
   return i18n::tr_format("{} · quality {}", exporter::label(codec), level);
 }
 

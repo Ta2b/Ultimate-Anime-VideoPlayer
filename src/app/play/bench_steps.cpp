@@ -9,6 +9,7 @@
 
 #include "app/play/auto_config.h"
 #include "app/play/i18n.h"
+#include "core/text.h"
 
 namespace ajp::app::play {
 namespace {
@@ -16,19 +17,8 @@ namespace {
 // Le poids de chaque étape dans la barre globale : la préparation et les essais pèsent le plus.
 constexpr std::array<float, kBenchSteps> kWeights{0.25F, 0.35F, 0.25F, 0.15F};
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-std::string lower(std::string_view text) {
-  std::string out(text);
-  std::ranges::transform(out, out.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return out;
-}
-
 bool looks_like_error(std::string_view line) {
-  const std::string text = lower(line);
+  const std::string text = core::ascii_lower(line);
   // « échec » s'écrit en échappement : ce mot est lu dans le journal, pas affiché.
   for (const std::string_view word :
        {"[error]", "[critical]", "erreur", "refus", "\u00e9chec", "failed", "error"})
@@ -55,11 +45,6 @@ void BenchProgress::set(BenchStep step, std::string what, float within, std::str
   what_ = std::move(what);
   within_ = within;
   note_ = std::move(note);
-}
-
-void BenchProgress::set_within(float within) {
-  const std::scoped_lock lock(mutex_);
-  within_ = within;
 }
 
 void BenchProgress::set_note(std::string note) {
@@ -101,7 +86,7 @@ void ChildTail::add(std::string_view line) {
 std::string ChildTail::problem() const {
   // Une ligne que le journal a marquée [error] ou [critical] d'abord, puis une qui parle d'erreur.
   for (auto it = lines_.rbegin(); it != lines_.rend(); ++it) {
-    const std::string text = lower(*it);
+    const std::string text = core::ascii_lower(*it);
     if (text.contains("[error]") || text.contains("[critical]")) return strip_log_prefix(*it);
   }
   for (auto it = lines_.rbegin(); it != lines_.rend(); ++it)

@@ -1,10 +1,9 @@
-# Exporte les graphes ONNX de GMFSS Fortuna (base et union, flot à demi-échelle : paires performance et qualité) et de
-# DistilDRBA (flot entier et demi-flot) avec les scripts du dépôt, et les range en artefact. Avec
+# Exporte les graphes ONNX de DistilDRBA (flot entier et demi-flot) avec les scripts du dépôt, et les range en artefact. Avec
 # « publier », les joint aussi à la release models-interp-1 du dépôt de releases, d'où
 # tools/release/fetch-models.sh les prend pour les paquets.
 #
-# Les graphes sont comparés au réseau d'origine par les scripts eux-mêmes (coupe exacte de GMFSS,
-# deux tailles, FP16 sous 0,1) : un écart fait échouer l'étape.
+# Les graphes sont comparés au réseau d'origine par le script lui-même : un écart fait échouer l'étape.
+# GMFSS Fortuna n'est plus exporté : retiré du lecteur (0.10.0).
 name: Exporter les modèles d'interpolation
 
 on:
@@ -20,7 +19,6 @@ permissions:
 
 env:
   DISTIL_DRBA_COMMIT: db51bde
-  GMFSS_WHEEL: vsgmfss_fortuna==1.0.0
 
 jobs:
   export:
@@ -35,21 +33,6 @@ jobs:
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install onnx onnxruntime numpy
-      # Toujours le flot à demi-échelle : mesuré (RTX 4070 Ti, 1280x768), il vaut le flot entier ou le
-      # dépasse pour moitié moins de calcul, donc le flot entier n'est plus exporté. Deux paires :
-      # _s05 (GMFlow en FP16, mode performance, avec sa fusion) et _s05q (GMFlow en FP32, mode qualité,
-      # la paire seule : sa fusion est celle de _s05). Le contrôle de qualité de chaque export juge la
-      # moyenne et le p99,9 % de l'écart à l'original, pas le pire pixel d'une petite image.
-      - name: "GMFSS Fortuna (base et union, demi-flot : performance et qualité)"
-        run: |
-          pip download --no-deps "$GMFSS_WHEEL" -d "$RUNNER_TEMP/gmfss"
-          python -m zipfile -e "$RUNNER_TEMP"/gmfss/*.whl "$RUNNER_TEMP/gmfss/roue"
-          for model in base union; do
-            python -I tools/gmfss/export_gmfss.py "$RUNNER_TEMP/gmfss/roue/vsgmfss_fortuna" \
-              --out out --model "$model" --scale 0.5 --width 256 --height 256
-            python -I tools/gmfss/export_gmfss.py "$RUNNER_TEMP/gmfss/roue/vsgmfss_fortuna" \
-              --out out --model "$model" --scale 0.5 --width 256 --height 256 --precision flownet32
-          done
       - name: DistilDRBA v2 lite (flot entier et demi-flot)
         run: |
           git clone https://github.com/routineLife1/DistilDRBA "$RUNNER_TEMP/DistilDRBA"
@@ -74,6 +57,6 @@ jobs:
         run: |
           gh release view models-interp-1 -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
             || gh release create models-interp-1 -R "$AJP_RELEASE_REPO" \
-                 --title "Modèles d'interpolation (GMFSS Fortuna, DistilDRBA)" \
-                 --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. GMFSS Fortuna (vsgmfss_fortuna, HolyWu, MIT) et DistilDRBA (routineLife1, MIT)."
+                 --title "Modèles d'interpolation (DistilDRBA)" \
+                 --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. DistilDRBA (routineLife1, MIT)."
           gh release upload models-interp-1 out/* -R "$AJP_RELEASE_REPO" --clobber

@@ -1,7 +1,6 @@
 // Noyaux des extensions de la tranche verticale (gpu/kernel_ops.h) : entrée de RIFE depuis le
-// RGB, mesures d'une paire RGB, plus grand déplacement d'un mouvement, softmax splatting de
-// GMFSS. Mêmes calculs que les noyaux CUDA du backend TensorRT (rife_kernels.cu,
-// warp_kernels.cu, gmfss_kernels.cu).
+// RGB, mesures d'une paire RGB, plus grand déplacement d'un mouvement. Mêmes calculs que les noyaux
+// CUDA du backend TensorRT (rife_kernels.cu, warp_kernels.cu).
 #include <array>
 #include <bit>
 #include <cstdint>
@@ -22,10 +21,6 @@ using detail::bytes_of;
 using detail::groups_for;
 
 constexpr auto kHeldBlock = static_cast<std::uint32_t>(kernels::kHeldBlock);
-// Plans d'un groupe du splatting (axe z) : la géométrie d'un pixel se refait par groupe, les
-// atomiques d'un plan restent dans le même groupe.
-constexpr std::uint32_t kSplatGroup = 16;
-constexpr std::uint32_t kFillGroup = 64;  // local_size_x de tensor_fill.comp
 
 }  // namespace
 
@@ -61,180 +56,6 @@ Done KernelRunner::rife_frames(Recorder& recorder, const TensorView& a, const Te
   const std::array buffers{a.buffer, b.buffer, input.buffer};
   return detail::run(*pipelines_, recorder, "rife_frames", input.precision, {}, buffers, {}, bytes_of(push),
                      {groups_for(input.width), groups_for(input.height), 1});
-}
-
-VkDeviceSize KernelRunner::splat_sums_bytes(const TensorView& source) {
-  const VkDeviceSize bytes = VkDeviceSize{source.planes + 1U} * source.width * source.height * sizeof(float);
-  return (bytes + kSplatSumsAlign - 1) / kSplatSumsAlign * kSplatSumsAlign;
-}
-
-Done KernelRunner::soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
-                              const BufferView& sums, const TensorView& out) {
-  const SplatViews job{.source = source, .motion = motion, .s = s, .out = out};
-  return soft_splat_all(recorder, std::span(&job, 1), sums);
-}
-
-Done KernelRunner::soft_splat_all(Recorder& recorder, std::span<const SplatViews> jobs,
-                                  const BufferView& sums) {
-  const Features& enabled = context_->caps().enabled;
-  if (!enabled.float_atomic_add) {
-    return refuse(RefusalCode::FeatureUnavailable,
-                  std::format("splat : {} sans additions atomiques de float", context_->caps().device_name));
-  }
-  if (jobs.empty()) return refuse(RefusalCode::InputMismatch, "splat : aucun travail");
-  VkDeviceSize total = 0;
-  for (const SplatViews& job : jobs) {
-    if (!(job.s >= 0.0F && job.s <= 1.0F)) {
-      return refuse(RefusalCode::FieldOutOfRange, std::format("splat : instant {} hors de [0, 1]", job.s));
-    }
-    if (!(job.grid.scale > 0.0F)) {
-      return refuse(RefusalCode::FieldOutOfRange,
-                    std::format("splat : échelle du mouvement {}", job.grid.scale));
-    }
-    if (job.source.planes == 0) return refuse(RefusalCode::InputMismatch, "splat : source sans plan");
-    if (auto ok = check_tensor(job.source, job.source.planes, enabled, "splat : source"); !ok) return ok;
-    if (auto ok = check_tensor(job.motion, kernels::kGmfssMotionChannels, enabled, "splat : mouvement"); !ok)
-      return ok;
-    if (job.out.planes != job.source.planes && job.out.planes != job.source.planes + 1) {
-      return refuse(RefusalCode::InputMismatch,
-                    std::format("splat : sortie de {} plans pour {} plans de source", job.out.planes,
-                                job.source.planes));
-    }
-    if (auto ok = check_tensor(job.out, job.out.planes, enabled, "splat : sortie"); !ok) return ok;
-    if (auto ok = check_same_size(job.source.width, job.source.height, job.out.width, job.out.height,
-                                  "splat : source et sortie");
-        !ok) {
-      return ok;
-    }
-    if (job.source.precision != job.motion.precision || job.source.precision != job.out.precision) {
-      return refuse(RefusalCode::InputMismatch, "splat : tenseurs de précisions différentes");
-    }
-    total += splat_sums_bytes(job.source);
-  }
-  if (sums.size < total) {
-    return refuse(RefusalCode::InputMismatch,
-                  std::format("splat : {} o de sommes, {} attendus", sums.size, total));
-  }
-  // Une remise à zéro pour tous, puis les additions côte à côte (sommes distinctes), puis les
-  // normalisations de même : deux barrières pour le lot au lieu de deux par splat.
-  const BufferView all{.buffer = sums.buffer, .offset = sums.offset, .size = total};
-  if (auto ok = recorder.fill(all, 0); !ok) return ok;
-  std::vector<BufferView> views;
-  views.reserve(jobs.size());
-  VkDeviceSize offset = sums.offset;
-  for (const SplatViews& job : jobs) {
-    const VkDeviceSize bytes =
-        VkDeviceSize{job.source.planes + 1U} * job.source.width * job.source.height * sizeof(float);
-    views.push_back({.buffer = sums.buffer, .offset = offset, .size = bytes});
-    offset += splat_sums_bytes(job.source);
-  }
-  for (std::size_t j = 0; j < jobs.size(); ++j) {
-    const SplatViews& job = jobs[j];
-    // Même grille, sans décalage ni échelle : le mouvement du pixel, tel quel.
-    const bool direct = job.grid.scale == 1.0F && job.grid.x == 0.0F && job.grid.y == 0.0F &&
-                        job.motion.width == job.source.width && job.motion.height == job.source.height;
-    const detail::SplatPush push{job.source.width, job.source.height, job.source.planes, kSplatGroup,
-                                 job.motion.width, job.motion.height, job.grid.scale,    job.grid.x,
-                                 job.grid.y,       direct ? 1U : 0U};
-    auto s = recorder.parameter(std::bit_cast<std::uint32_t>(job.s));
-    if (!s) return std::unexpected(s.error());
-    const std::array scatter{job.source.buffer, job.motion.buffer, views[j], *s};
-    if (auto ok = detail::run(*pipelines_, recorder, "gmfss_splat", job.source.precision, {}, scatter, {},
-                              bytes_of(push),
-                              {groups_for(job.source.width), groups_for(job.source.height),
-                               groups_for(job.source.planes, kSplatGroup)},
-                              j == 0 ? DispatchOrder::AfterPrevious : DispatchOrder::BesidePrevious);
-        !ok) {
-      return ok;
-    }
-  }
-  for (std::size_t j = 0; j < jobs.size(); ++j) {
-    const SplatViews& job = jobs[j];
-    const detail::SplatNormalizePush normalize{job.source.width, job.source.height, job.source.planes,
-                                               job.out.planes > job.source.planes ? 1U : 0U};
-    const std::array buffers{views[j], job.out.buffer};
-    if (auto ok =
-            detail::run(*pipelines_, recorder, "gmfss_normalize", job.source.precision, {}, buffers, {},
-                        bytes_of(normalize), {groups_for(job.source.width), groups_for(job.source.height), 1},
-                        j == 0 ? DispatchOrder::AfterPrevious : DispatchOrder::BesidePrevious);
-        !ok) {
-      return ok;
-    }
-  }
-  return {};
-}
-
-Done KernelRunner::gmfss_compose(Recorder& recorder, const TensorView& high_a, const TensorView& high_b,
-                                 const TensorView& low_a, const TensorView& low_b, const TensorView& fusion,
-                                 const kernels::Window& window, float t, const TensorView& out) {
-  const Features& enabled = context_->caps().enabled;
-  if (!(t >= 0.0F && t <= 1.0F)) {
-    return refuse(RefusalCode::FieldOutOfRange, std::format("composition : instant {} hors de [0, 1]", t));
-  }
-  if (auto ok = check_tensor(high_a, 4, enabled, "composition : agrandie a"); !ok) return ok;
-  if (auto ok = check_tensor(high_b, 4, enabled, "composition : agrandie b"); !ok) return ok;
-  if (auto ok = check_tensor(low_a, 4, enabled, "composition : travail a"); !ok) return ok;
-  if (auto ok = check_tensor(low_b, 4, enabled, "composition : travail b"); !ok) return ok;
-  if (auto ok = check_tensor(fusion, 3, enabled, "composition : fusion"); !ok) return ok;
-  if (auto ok = check_tensor(out, 3, enabled, "composition : sortie"); !ok) return ok;
-  if (auto ok =
-          check_same_size(out.width, out.height, high_a.width, high_a.height, "composition : agrandie a");
-      !ok) {
-    return ok;
-  }
-  if (auto ok =
-          check_same_size(out.width, out.height, high_b.width, high_b.height, "composition : agrandie b");
-      !ok) {
-    return ok;
-  }
-  if (auto ok =
-          check_same_size(low_a.width, low_a.height, low_b.width, low_b.height, "composition : travail");
-      !ok) {
-    return ok;
-  }
-  if (out.width % low_a.width != 0 || out.height % low_a.height != 0 ||
-      out.width / low_a.width != out.height / low_a.height) {
-    return refuse(RefusalCode::InputMismatch,
-                  std::format("composition : sortie {}x{} pour un travail {}x{}, multiple entier attendu",
-                              out.width, out.height, low_a.width, low_a.height));
-  }
-  if (window.x < 0 || window.y < 0 || window.width != static_cast<int>(low_a.width) ||
-      window.height != static_cast<int>(low_a.height) ||
-      static_cast<std::uint32_t>(window.x) + low_a.width > fusion.width ||
-      static_cast<std::uint32_t>(window.y) + low_a.height > fusion.height) {
-    return refuse(RefusalCode::InputMismatch,
-                  std::format("composition : fenêtre {}x{} en ({}, {}) hors de la fusion {}x{}", window.width,
-                              window.height, window.x, window.y, fusion.width, fusion.height));
-  }
-  for (const TensorView* v : {&high_b, &low_a, &low_b, &fusion, &out}) {
-    if (v->precision != high_a.precision) {
-      return refuse(RefusalCode::InputMismatch, "composition : tenseurs de précisions différentes");
-    }
-  }
-  const detail::GmfssComposePush push{out.width,
-                                      out.height,
-                                      low_a.width,
-                                      low_a.height,
-                                      out.width / low_a.width,
-                                      fusion.width,
-                                      fusion.height,
-                                      static_cast<std::uint32_t>(window.x),
-                                      static_cast<std::uint32_t>(window.y)};
-  auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
-  if (!time) return std::unexpected(time.error());
-  const std::array buffers{high_a.buffer, high_b.buffer, low_a.buffer, low_b.buffer,
-                           fusion.buffer, out.buffer,    *time};
-  return detail::run(*pipelines_, recorder, "gmfss_compose", out.precision, {}, buffers, {}, bytes_of(push),
-                     {groups_for(out.width), groups_for(out.height), 1});
-}
-
-Done KernelRunner::fill(Recorder& recorder, const TensorView& tensor, float value) {
-  if (auto ok = check_tensor(tensor, tensor.planes, context_->caps().enabled, "remplissage"); !ok) return ok;
-  const std::uint32_t count = tensor.width * tensor.height * tensor.planes;
-  const detail::FillPush push{count, value};
-  const std::array buffers{tensor.buffer};
-  return detail::run(*pipelines_, recorder, "tensor_fill", tensor.precision, {}, buffers, {}, bytes_of(push),
-                     {groups_for(count, kFillGroup), 1, 1});
 }
 
 Done KernelRunner::rgb_pair_diff(Recorder& recorder, const TensorView& a, const TensorView& b,

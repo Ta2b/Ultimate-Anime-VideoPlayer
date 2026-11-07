@@ -6,23 +6,14 @@
 #include <string_view>
 #include <vector>
 
+#include "core/text.h"
 #include "subs/srt.h"
 
 namespace ajp::subs {
 namespace {
 
-char lower(char c) {
-  return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
-}
-
-std::string lowercase(std::string_view s) {
-  std::string out(s);
-  for (char& c : out) c = lower(c);
-  return out;
-}
-
 bool is_hex(char c) {
-  c = lower(c);
+  c = core::ascii_lower(c);
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
 }
 
@@ -46,7 +37,7 @@ constexpr std::array kNamedColors{
 
 // « #RRGGBB », « RRGGBB » ou un nom HTML de base, en couleur ASS « &HBBGGRR& ».
 std::optional<std::string> ass_color(std::string_view value) {
-  std::string rgb = lowercase(value);
+  std::string rgb = core::ascii_lower(value);
   for (const NamedColor& named : kNamedColors) {
     if (rgb == named.name) rgb = named.rrggbb;
   }
@@ -82,7 +73,7 @@ std::vector<Attribute> parse_attributes(std::string_view s) {
     while (!s.empty() && s.front() == ' ') s.remove_prefix(1);
     const std::size_t eq = s.find('=');
     if (s.empty() || eq == std::string_view::npos) return attributes;
-    Attribute attribute{.key = lowercase(s.substr(0, eq)), .value = {}};
+    Attribute attribute{.key = core::ascii_lower(s.substr(0, eq)), .value = {}};
     while (!attribute.key.empty() && attribute.key.back() == ' ') attribute.key.pop_back();
     s.remove_prefix(eq + 1);
     while (!s.empty() && s.front() == ' ') s.remove_prefix(1);
@@ -139,7 +130,7 @@ bool convert_tag(std::string_view tag, std::vector<FontTag>& fonts, std::string&
   const bool closing = tag.starts_with('/');
   if (closing) tag.remove_prefix(1);
   const std::size_t name_end = tag.find(' ');
-  const std::string name = lowercase(tag.substr(0, name_end));
+  const std::string name = core::ascii_lower(tag.substr(0, name_end));
   const std::string_view rest = name_end == std::string_view::npos ? "" : tag.substr(name_end);
 
   if ((name == "i" || name == "b" || name == "u" || name == "s") &&

@@ -15,11 +15,10 @@ ajp_add_module(core_os
   DEPS ajp::core_types
   PRIVATE_DEPS $<$<PLATFORM_ID:Windows>:avrt> ${CMAKE_DL_LIBS})
 
-# core : profil TOML v5, resolve(), Plan, choix des moteurs.
-# Seul propriétaire de la politique ; les autres modules exécutent le Plan.
+# core : réglages, cadence, choix des moteurs, raccourcis, écritures atomiques.
 ajp_add_module(core
-  SOURCES cadence.cpp capabilities.cpp debug_flags.cpp drawings.cpp engines.cpp
-          keys.cpp model_index.cpp sha256_blocks.cpp pacing.cpp plan.cpp profile.cpp resolve.cpp
+  SOURCES cadence.cpp debug_flags.cpp drawings.cpp engines.cpp
+          keys.cpp model_index.cpp sha256_blocks.cpp pacing.cpp profile.cpp
           auto_rate.cpp cost_model.cpp steady_rate.cpp steady_grid.cpp free_rate.cpp free_grid.cpp vsync_phase.cpp auto_memory.cpp vblank_clock.cpp present_ledger.cpp file_sync.cpp inflate.cpp settings.cpp update_manifest.cpp user_overlay.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::dep::toml ajp::dep::zlib)

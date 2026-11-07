@@ -2,8 +2,8 @@
 // modèle de référence (SPAN et RIFE en petit, le vrai SPAN d'AnimeJaNai s'il est installé) pour
 // une entrée déterministe, l'enregistre sous le dossier des références du build
 // (AJP_TEST_REFERENCE_DIR) et la relit ensuite. Chaque runtime des réseaux la retrouve à la
-// tolérance près : le moteur Vulkan sur l'appareil du système (lavapipe en CI), puis MIGraphX,
-// OpenVINO et Core ML quand ce build les a et que leur matériel est là ; sans lui, le cas le dit
+// tolérance près : le moteur Vulkan sur l'appareil du système (lavapipe en CI), puis Core ML
+// quand ce build l'a et que son matériel est là ; sans lui, le cas le dit
 // et se saute. C'est la seule vérification numérique de ces runtimes, qui ne tournent que sur
 // leur GPU.
 #include <algorithm>
@@ -29,18 +29,9 @@
 #include "net_rig.h"
 #include "test_models.h"
 
-#if defined(AJP_TEST_WITH_MIGRAPHX)
-#include "gpu/migraphx/migraphx_runtime.h"
-#endif
-#if defined(AJP_TEST_WITH_OPENVINO)
-#include "gpu/openvino/openvino_runtime.h"
-#endif
 #if defined(AJP_TEST_WITH_COREML)
 #include "gpu/coreml/coreml_runtime.h"
 #include "gpu/coreml/coreml_units.h"
-#endif
-#if defined(AJP_TEST_WITH_WINML)
-#include "gpu/winml/winml_runtime.h"
 #endif
 
 using namespace ajp;
@@ -214,17 +205,8 @@ struct Vendor {
 
 std::vector<Vendor> vendors() {
   std::vector<Vendor> out;
-#if defined(AJP_TEST_WITH_MIGRAPHX)
-  out.push_back({"migraphx", &migraphx_rt::make_runtime});
-#endif
-#if defined(AJP_TEST_WITH_OPENVINO)
-  out.push_back({"openvino", &openvino_rt::make_runtime});
-#endif
 #if defined(AJP_TEST_WITH_COREML)
   out.push_back({"coreml", &coreml_rt::make_runtime});
-#endif
-#if defined(AJP_TEST_WITH_WINML)
-  out.push_back({"winml", &winml_rt::make_runtime});
 #endif
   return out;
 }
@@ -254,8 +236,7 @@ TEST_CASE("Référence : le moteur Vulkan retrouve la sortie enregistrée de cha
 TEST_CASE("Référence : chaque runtime du fabricant retrouve la sortie enregistrée de chaque modèle",
           "[vk_backend][reference][vendor]") {
   const std::vector<Vendor> candidates = vendors();
-  if (candidates.empty())
-    SKIP("aucun runtime de fabricant dans ce build (MIGraphX, OpenVINO, Core ML, Windows ML)");
+  if (candidates.empty()) SKIP("aucun runtime de fabricant dans ce build (Core ML)");
   NetRig rig = make_net_rig();
   require_f16(rig);
   TempDir dir("reference-vendor");

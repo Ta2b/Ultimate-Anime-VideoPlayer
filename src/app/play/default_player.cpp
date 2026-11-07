@@ -34,10 +34,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Les conteneurs vidéo courants, tous lus par FFmpeg. AVI a deux noms dans shared-mime-info.
 constexpr std::array<std::string_view, 15> kMimeTypes{
     "video/x-matroska", "video/webm",    "video/mp4",  "video/x-m4v",     "video/quicktime",

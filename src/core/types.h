@@ -2,8 +2,10 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace ajp {
 
@@ -115,6 +117,11 @@ struct Refusal {
   // texte de detail (P2.11).
   std::string key;
 };
+
+// Le refus d'une fonction qui rend std::expected : un seul pour tous les modules (P5.13).
+inline std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
+  return std::unexpected(Refusal{.code = code, .detail = std::move(detail)});
+}
 
 constexpr std::string_view name(RefusalCode code) {
   switch (code) {

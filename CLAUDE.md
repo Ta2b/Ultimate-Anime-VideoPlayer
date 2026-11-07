@@ -16,17 +16,17 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 - **pas de profils** : `play.toml` garde la dernière chaîne, `user.toml` ne garde que `[keys]` ;
 - **menu en trois catégories** : Vidéo, Audio et lecture, Général (`kPages`, `src/app/play/settings_panel.cpp`) ;
 - **moteurs** : Vulkan pour tout GPU (le seul pour AMD et Intel), TensorRT sur NVIDIA RTX, Core ML sur Mac.
-  MIGraphX, OpenVINO et GMFSS sont dans les sources mais débranchés de la lecture : ne pas les rebrancher sans
-  une mesure face à Vulkan (`docs/moteurs.md`, `docs/interpolation.md`).
+  MIGraphX, OpenVINO et GMFSS sont retirés des sources : n'en remettre aucun sans une mesure face à Vulkan (ou
+  à RIFE pour GMFSS) (`docs/moteurs.md`, `docs/interpolation.md`).
 
 ## Où est quoi
 
 | Dossier | Contenu |
 |---|---|
-| `src/core` | cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8 (`utf8_path.h`) ; le profil v5 et `resolve()` ne servent plus à la lecture |
+| `src/core` | cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8 (`utf8_path.h`), écran et source (`display.h`) ; le profil v5 ne garde que ses types |
 | `src/app/play` | le lecteur : boucle (`player.cpp`, `player_run.cpp`), chaîne en direct (`chain*.cpp`), menu (`settings_*.cpp`), réglages et `play.toml` (`settings.h`, `settings_toml.cpp`), assistant (`wizard.*`, `first_run.cpp`), traductions (`i18n_fr_*.cpp`) |
-| `src/render` | libplacebo, grade (`grade_params.*`), shaders `.hook` (`src/render/shaders/`), LUT (`looks.*`) |
-| `src/gpu` | backends chargés à l'exécution : `vulkan`, `cuda` (TensorRT), `coreml` ; `migraphx`, `openvino`, `winml` débranchés |
+| `src/render` | libplacebo, grade (`grade_params.*`), shaders `.hook` (`src/render/shaders/`), LUT (`cube_lut.*`) |
+| `src/gpu` | backends chargés à l'exécution : `vulkan`, `cuda` (TensorRT), `coreml` |
 | `src/media`, `src/audio`, `src/subs`, `src/export`, `src/prepare`, `src/kernels` | voir `docs/ARCHITECTURE.md` |
 | `tests/unit/<module>` | Catch2, un exécutable par module |
 | `tools/` | dépendances (`deps`), paquets (`release`), bancs, scripts de modèles |
@@ -39,6 +39,9 @@ export AJP_DEPS_PREFIX=~/ajp-deps
 cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```
+
+Pour reconstruire plus vite en local : `-DAJP_PCH=ON` (en-têtes précompilés, environ un quart de moins sur un module
+qui journalise ; la CI les laisse éteints pour ccache et pour qu'une inclusion oubliée reste une erreur).
 
 `linux-prefix` est en Debug : ses temps ne valent rien. Un banc ou une mesure se fait sur le binaire livré,
 `linux-release` (Linux), `windows-release`, `macos-release`.

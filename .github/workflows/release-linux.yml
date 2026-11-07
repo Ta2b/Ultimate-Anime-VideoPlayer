@@ -75,8 +75,7 @@ jobs:
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
-      # OpenVINO et MIGraphX ne sont plus construits pour la release : débranchés du lecteur, AMD et Intel
-      # passent par Vulkan (docs/moteurs.md). La CI ne les construit plus (P1.18).
+      # AMD et Intel passent par Vulkan (docs/moteurs.md).
       # TensorRT se construit ailleurs (licence NVIDIA).
       - name: Place sur le disque
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL

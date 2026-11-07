@@ -6,10 +6,6 @@
 // Chaque sortie est agrandie par SPAN (×2) et écrite dans un slot du ring que render présente.
 // Sans moteur SPAN, la sortie passe à la taille de travail.
 //
-// GMFSS Fortuna (kernels/spec/gmfss.h) remplace RIFE, à la taille de travail : son graphe « paire »
-// une fois par paire, puis par image intermédiaire six softmax splats et son graphe « fusion ».
-// Déformé après SPAN, chaque image intermédiaire se compose des images agrandies splattées par son
-// flot, corrigées du résidu de la fusion : une passe de SPAN par image source au lieu d'une par sortie.
 // DistilDRBA (kernels/spec/distil_drba.h) aussi, à la taille de travail : une passe de son graphe
 // par image intermédiaire, sur trois images ; il lit l'image d'après la paire, une image de retard.
 //
@@ -28,7 +24,6 @@
 #include <vector>
 
 #include "app/play/free_engines.h"
-#include "app/play/gmfss_features.h"
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/rife_plan.h"
@@ -40,7 +35,6 @@
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/distil_drba.h"
-#include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
@@ -69,14 +63,6 @@ struct UpscaleSetup {
   gpu::Engine* rife_motion = nullptr;
   int rife_planes = 11;  // plans d'entrée de rife et rife_motion : 11 (v1) ou 7 (v2)
   int rife_align = 64;   // multiple de remplissage du modèle RIFE : 64, ou 128 pour 4.25 lite
-  // GMFSS à la place de RIFE : ses deux moteurs, aux plans remplis de rife_geometry(travail) ; les
-  // deux ou aucun.
-  gpu::Engine* gmfss_pair = nullptr;
-  gpu::Engine* gmfss_fusion = nullptr;
-  // GMFSS fusionné (prepare/gmfss_split.h) : gmfss_pair est alors le flot seul, et ce moteur calcule les
-  // caractéristiques d'une image (FeatureNet), gardées pour la paire suivante ; nullptr : la paire entière.
-  gpu::Engine* gmfss_features = nullptr;
-  int gmfss_align = 64;  // multiple des plans remplis de GMFSS : 128 pour le flot à l'échelle 0,5
   // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
   gpu::Engine* distil_drba = nullptr;
   int drba_align = 64;  // multiple des plans remplis de DistilDRBA : 128 au demi-flot
@@ -104,11 +90,9 @@ struct UpscaleSetup {
   // donne, et le warp déforme les images de travail avec ce mouvement mis à l'échelle.
   int rife_width = 0;
   int rife_height = 0;
-  // Variante mouvement de RIFE ou GMFSS avec SPAN : SPAN une fois par image source, le warp à la
-  // taille de sortie sur les images agrandies (kernels/spec/warp.h : a, b et la sortie à une taille,
-  // le mouvement mis à l'échelle ; kernels/spec/gmfss.h : les images agrandies splattées par le flot
-  // du niveau 1, corrigées du résidu de la fusion). Sans effet pour les autres estimateurs ou sans
-  // SPAN.
+  // Variante mouvement de RIFE (ou de DistilDRBA) avec SPAN : SPAN une fois par image source, le warp à
+  // la taille de sortie sur les images agrandies (kernels/spec/warp.h : a, b et la sortie à une taille, le
+  // mouvement mis à l'échelle). Sans effet pour les autres estimateurs ou sans SPAN.
   bool warp_after_span = false;
   // Rapide à pas constant (chantier 7.6) : chaque instant est comparé à l'horloge prédite juste avant son
   // calcul ; passé, il n'est ni calculé ni écrit (Fate::Late). Une source en retard garde son SPAN quand la
@@ -169,11 +153,7 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
-  bool interpolates() const {
-    return setup_.rife != nullptr || setup_.rife_motion != nullptr || gmfss() || drba();
-  }
-  bool gmfss() const { return setup_.gmfss_pair != nullptr; }
-  bool gmfss_fused() const { return setup_.gmfss_features != nullptr; }
+  bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr || drba(); }
   bool drba() const { return setup_.distil_drba != nullptr; }
   bool drba_motion() const { return drba() && setup_.drba_motion; }
   bool wants_next() const override { return drba() || smooth_possible(); }
@@ -254,21 +234,6 @@ class UpscaleStage final : public RingStage {
   bool rife_time_ = true;            // faux si le backend n'a pas rife_time
   bool rife_pair_op_ = true;         // faux si le backend n'a pas rife_pair
   std::array<bool, 2> rife_mesh_{};  // rife_ins_[i] tient le maillage, écrit par un rife_input
-  // GMFSS (upscale_gmfss.cpp) : ses tenseurs, rangés dans l'ordre de ses moteurs ; puis l'image
-  // intermédiaire output + 1 sur outputs_ dans middle(), ou, déformée après SPAN, de a et b (les
-  // images agrandies) dans out.
-  std::expected<void, Refusal> allocate_gmfss();
-  std::expected<void, Refusal> interpolate_gmfss(std::uint32_t output);
-  std::expected<void, Refusal> interpolate_gmfss_spanned(std::uint32_t output, const gpu::Tensor& a,
-                                                         const gpu::Tensor& b, const Target& out);
-  // Le graphe « paire » à la première image intermédiaire de la paire, puis les splats de l'instant
-  // (les six de la fusion, et extra) et le graphe « fusion » dans rife_out_.
-  // GMFSS fusionné : les caractéristiques de l'image du plan first_plane de « frames » dans la tranche slot,
-  // sauf si elles y sont déjà (la même image).
-  std::expected<void, Refusal> gmfss_features_of(std::size_t slot, std::int64_t first_plane,
-                                                 const GmfssFrameKey& key);
-  std::expected<void, Refusal> run_gmfss(std::uint32_t output,
-                                         std::span<const gpu::KernelOps::SplatJob> extra);
   // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement), plutôt
   // que l'image de RIFE elle-même.
   bool by_motion() const { return setup_.rife_motion != nullptr; }
@@ -278,7 +243,7 @@ class UpscaleStage final : public RingStage {
   }
   // Warp après SPAN : les images sources sont agrandies à l'ingestion, dans spanned_.
   bool warps_spanned() const {
-    return setup_.warp_after_span && (by_motion() || gmfss() || drba_motion()) && setup_.engine != nullptr;
+    return setup_.warp_after_span && (by_motion() || drba_motion()) && setup_.engine != nullptr;
   }
   // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
   // celui de la précédente).
@@ -310,7 +275,7 @@ class UpscaleStage final : public RingStage {
   UpscaleSetup setup_;
   // Voie du backend (gpu/lanes.h) des travaux qui suivent : ingestion et mesures sur Measure, SPAN
   // et écriture du ring sur Upscale (les écritures du ring signalent dans l'ordre sur une seule
-  // file), RIFE, GMFSS, DistilDRBA et warp sur Interpolate. Le backend ordonne les voies d'après
+  // file), RIFE, DistilDRBA et warp sur Interpolate. Le backend ordonne les voies d'après
   // les tenseurs lus et écrits.
   void use_lane(gpu::Lane lane) {
     lane_ = setup_.one_lane ? gpu::Lane::Upscale : lane;
@@ -353,9 +318,7 @@ class UpscaleStage final : public RingStage {
   core::SteadyGrid steady_grid_;  // Rapide à pas constant (--fast-steady) : N images par source
   core::FreeGrid free_grid_;      // mode Rapide : la grille des instants à la place de cadence_
   core::FreeInputs free_inputs(std::uint32_t epoch) const;
-  MotionEngine engine_kind() const {
-    return gmfss() ? MotionEngine::Gmfss : drba() ? MotionEngine::DistilDrba : MotionEngine::Rife;
-  }
+  MotionEngine engine_kind() const { return drba() ? MotionEngine::DistilDrba : MotionEngine::Rife; }
   Factor cadence_factor_;
   // Tampons passés d'une voie à l'autre (entrée de RIFE, image intermédiaire) : deux quand le
   // backend a plusieurs voies, l'un s'écrit pendant que l'autre est encore lu ; un sinon.
@@ -381,44 +344,6 @@ class UpscaleStage final : public RingStage {
   // Variante mouvement, mouvement fort : celui d'un autre instant que le milieu.
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
-  // GMFSS : l'entrée de la paire, chaque tenseur nommé de ses graphes (sorties de la paire,
-  // sources splattées), et les splats d'une image intermédiaire : six, huit avec un export de version 2
-  // des graphes, dont le niveau 1 se splatte en deux tranches (image, caractéristiques ; gmfss_model.h).
-  struct GmfssSplat {
-    int side = 0;
-    gpu::Tensor source;
-    gpu::Tensor motion;
-    gpu::Tensor warped;
-  };
-  struct GmfssBuffers {
-    std::unique_ptr<gpu::TensorBuffer> frames;  // 1 × 6 × ph × pw
-    std::vector<std::pair<std::string, std::unique_ptr<gpu::TensorBuffer>>> named;
-    std::vector<gpu::Tensor> pair_outputs;   // dans l'ordre de output_names() du moteur paire
-    std::vector<gpu::Tensor> fusion_inputs;  // dans l'ordre de input_names() du moteur fusion
-    std::vector<GmfssSplat> splats;
-    // GMFSS fusionné : les mêmes splats quand l'image a de la paire a ses caractéristiques dans la tranche 1
-    // (celle du côté b de la paire d'avant) et l'image b dans la tranche 0 ; splats sert l'autre parité.
-    std::vector<GmfssSplat> swapped_splats;
-    // Les caractéristiques de chaque image (tranche = indice du tampon d'image RGB qui la porte) : les
-    // sorties du moteur dans l'ordre de ses output_names(), et l'image dont elles sont (rien : pas valable).
-    std::array<std::vector<gpu::Tensor>, 2> feature_outputs;
-    GmfssFeatureSlots features_of;
-    GmfssFrameKey a;  // les images de la paire en cours (renseignées par produce)
-    GmfssFrameKey b;
-    std::vector<gpu::KernelOps::SplatJob> jobs;  // les splats de l'instant, un seul passage
-    std::optional<gpu::Tensor> time;             // union : l'instant de l'image intermédiaire, pour sa fusion
-    // Déformation après SPAN : le flot du niveau 1 de chaque côté, sa grille (spec MotionGrid) pour
-    // l'image de travail et pour l'image agrandie, la fenêtre de la fusion ; les images de travail
-    // splattées (1 × 4 × h × w, couverture comprise) et les agrandies (1 × 4 × 2h × 2w).
-    std::array<gpu::Tensor, 2> level1{};
-    kernels::MotionGrid work_grid;
-    kernels::MotionGrid spanned_grid;
-    kernels::Window window;
-    std::array<std::unique_ptr<gpu::TensorBuffer>, 2> low;
-    std::array<std::unique_ptr<gpu::TensorBuffer>, 2> high;
-  };
-  GmfssBuffers gmfss_;
-  std::uint64_t gmfss_pairs_ = 0;
   // DistilDRBA : l'image d'avant la paire et celle d'après, à la taille de travail, chacune
   // valable si rien ne la sépare de la paire (même époque, pas de coupe) ; les deux entrées du
   // graphe ; les mesures de (b, suivante), gardées pour la paire suivante.
@@ -508,15 +433,13 @@ class UpscaleStage final : public RingStage {
   std::uint64_t late_dropped_ = 0;
   std::uint64_t late_computed_ = 0;
   // Les images intermédiaires de la paire déjà calculées, et le rang de celle en cours : la première prépare
-  // la paire (mouvement, graphe GMFSS), même quand des instants de tête sont laissés en retard.
+  // la paire (mouvement), même quand des instants de tête sont laissés en retard.
   std::uint32_t middles_done_ = 0;
   std::uint32_t middle_rank_ = 0;
   bool first_middle() const { return middle_rank_ == 0; }
   // Smooth (upscale_smooth.cpp) : la paire en cours est la première d'une tenue fondue (b : smooth_b_id_,
   // l'image ingérée en avance), ou la seconde ; les mesures de la paire d'après, prises en avance.
-  bool smooth_possible() const {
-    return setup_.smooth_drawings && by_motion() && !gmfss() && !drba() && interpolates();
-  }
+  bool smooth_possible() const { return setup_.smooth_drawings && by_motion() && !drba() && interpolates(); }
   std::expected<void, Refusal> smooth_decide(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                              const PairFacts& facts, bool on_grid);
   // Warp après SPAN : SPAN de b (l'image en avance) dans le tampon libre, une fois par paire fondue.

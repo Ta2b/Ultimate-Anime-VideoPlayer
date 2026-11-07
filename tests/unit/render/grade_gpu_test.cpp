@@ -42,12 +42,12 @@ TEST_CASE("look : quinze LUT s'enchaînent, la dernière compte comme la premiè
   luts[14] = &inverted;
   REQUIRE(gpu.grade->set_looks(luts));
   GradeParams params = sdr_neutral();
-  params.look_mix4 = 1.0;
-  params.look_mix15 = 1.0;
+  params.look_mixes[3] = 1.0;
+  params.look_mixes[14] = 1.0;
   const std::vector<Rgb> twice = graded_codes(gpu, source, params);
   for (std::size_t x = 8; x < twice.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(twice[x][c] - base[x][c]) < 8e-3);
-  params.look_mix15 = 0.0;
+  params.look_mixes[14] = 0.0;
   const std::vector<Rgb> once = graded_codes(gpu, source, params);
   CHECK(once[32][0] > 0.55);
 }
@@ -61,7 +61,7 @@ TEST_CASE("look : la pile composée en tâche de fond rend la même image (P4.9)
   for (float& value : inverted.rgb) value = 1.0F - value;
   REQUIRE(gpu.grade->set_looks({&inverted, nullptr, nullptr}));
   GradeParams params = sdr_neutral();
-  params.look_mix = 1.0;
+  params.look_mixes[0] = 1.0;
   const std::vector<Rgb> direct = graded_codes(gpu, source, params);
   gpu.grade->set_background(true);
   REQUIRE(gpu.grade->set_looks({&inverted, nullptr, nullptr}));  // la pile est à refaire, sur le thread
@@ -121,7 +121,7 @@ TEST_CASE("look : identité et intensité nulle laissent l'image, une LUT invers
   const CubeLut neutral = identity_lut(17);
   REQUIRE(gpu.grade->set_looks({&neutral, nullptr, nullptr}));
   GradeParams params = sdr_neutral();
-  params.look_mix = 1.0;
+  params.look_mixes[0] = 1.0;
   params.look_white = 203.0;
   const std::vector<Rgb> same = graded_codes(gpu, source, params);
   for (std::size_t x = 8; x < same.size(); ++x)
@@ -132,7 +132,7 @@ TEST_CASE("look : identité et intensité nulle laissent l'image, une LUT invers
   const std::vector<Rgb> flipped = graded_codes(gpu, source, params);
   CHECK(flipped[32][0] > 0.55);   // sombre -> clair
   CHECK(flipped[240][0] < 0.35);  // clair -> sombre
-  params.look_mix = 0.0;
+  params.look_mixes[0] = 0.0;
   const std::vector<Rgb> skipped = graded_codes(gpu, source, params);
   for (std::size_t x = 0; x < skipped.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(skipped[x][c] == base[x][c]);  // octet pour octet
@@ -153,7 +153,7 @@ TEST_CASE("look : une LUT d'HDR (PQ BT.2020) lit les codes PQ, l'identité ne bo
   const CubeLut lut = identity_lut(33);
   REQUIRE(gpu.grade->set_looks({&lut, nullptr, nullptr}));
   GradeParams params = neutral;
-  params.look_mix = 1.0;
+  params.look_mixes[0] = 1.0;
   params.look_pq = 1.0;
   const std::vector<Rgb> out = graded_codes(gpu, source, params);
   for (std::size_t x = 4; x < out.size(); ++x)
@@ -175,20 +175,20 @@ TEST_CASE("look : deux LUT s'enchaînent dans l'ordre, deux inversions se compen
   for (float& value : inverted.rgb) value = 1.0F - value;
   REQUIRE(gpu.grade->set_looks({&inverted, &inverted, nullptr}));
   GradeParams params = sdr_neutral();
-  params.look_mix = 1.0;
-  params.look_mix2 = 1.0;
+  params.look_mixes[0] = 1.0;
+  params.look_mixes[1] = 1.0;
   const std::vector<Rgb> twice = graded_codes(gpu, source, params);
   for (std::size_t x = 8; x < twice.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c)
       CHECK(std::abs(twice[x][c] - base[x][c]) < 8e-3);  // inversion puis inversion
-  params.look_mix2 = 0.0;                                // la deuxième sautée : une seule inversion
+  params.look_mixes[1] = 0.0;                            // la deuxième sautée : une seule inversion
   const std::vector<Rgb> once = graded_codes(gpu, source, params);
   CHECK(once[32][0] > 0.55);
-  params.look_mix = 0.0;
-  params.look_mix2 = 1.0;  // seule la deuxième
+  params.look_mixes[0] = 0.0;
+  params.look_mixes[1] = 1.0;  // seule la deuxième
   const std::vector<Rgb> second_only = graded_codes(gpu, source, params);
   CHECK(second_only[32][0] > 0.55);
-  params.look_mix2 = 0.0;
+  params.look_mixes[1] = 0.0;
   const std::vector<Rgb> none = graded_codes(gpu, source, params);
   for (std::size_t x = 0; x < none.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(none[x][c] == base[x][c]);

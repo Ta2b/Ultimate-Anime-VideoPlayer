@@ -6,12 +6,11 @@
 #include <utility>
 #include <vector>
 
+#include "core/text.h"
 #include "core/toml_fields.h"
 
 namespace ajp::core {
 namespace {
-
-using fields::refuse;
 
 char lower(char c) {
   return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
@@ -19,12 +18,6 @@ char lower(char c) {
 
 bool same_text(std::string_view a, std::string_view b) {
   return std::ranges::equal(a, b, [](char x, char y) { return lower(x) == lower(y); });
-}
-
-std::string_view trim(std::string_view text) {
-  while (!text.empty() && text.front() == ' ') text.remove_prefix(1);
-  while (!text.empty() && text.back() == ' ') text.remove_suffix(1);
-  return text;
 }
 
 Key offset(Key first, int n) {

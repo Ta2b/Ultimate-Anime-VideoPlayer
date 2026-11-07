@@ -18,9 +18,9 @@
 #include <SDL3/SDL_log.h>
 
 #include "audio/devices.h"
-#include "audio/refuse.h"
 #include "audio/sink.h"
 #include "core/clock.h"
+#include "core/types.h"
 
 namespace ajp::audio {
 namespace {

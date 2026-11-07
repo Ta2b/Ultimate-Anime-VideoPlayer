@@ -95,7 +95,7 @@ GpuSpan::GpuSpan(std::string label) : label_(std::move(label)) {
 }
 
 GpuSpan::~GpuSpan() {
-  for (Pair& pair : pairs_) {
+  for (const Pair& pair : pairs_) {
     if (pair.start != nullptr) cudaEventDestroy(pair.start);
     if (pair.stop != nullptr) cudaEventDestroy(pair.stop);
   }

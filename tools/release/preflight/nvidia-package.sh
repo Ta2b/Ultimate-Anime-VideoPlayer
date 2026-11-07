@@ -26,7 +26,7 @@ RELEASE_REPO="${AJP_RELEASE_REPO:-Ta2b/ajp-releases}"
 CUDA="${CUDA_DIR:-/opt/cuda}"
 CCCL="${CCCL_DIR:-/usr/include/cccl}"
 IMAGE=ajp-preflight
-STAGE=rocm
+STAGE=deps
 
 [ -x "$TRT/bin/trtexec" ] || { echo "$TRT/bin/trtexec absent (AJP_TRT_ROOT)" >&2; exit 1; }
 [ -d "$CUDA" ] || { echo "$CUDA absent (CUDA_DIR)" >&2; exit 1; }
@@ -44,7 +44,7 @@ trap 'rm -rf "$CTX"' EXIT
 mkdir -p "$CTX/tools/deps" "$CTX/tools/release"
 cp "$REPO/tools/release/preflight/Dockerfile" "$CTX/"
 cp "$REPO/tools/deps/linux-from-source.sh" "$CTX/tools/deps/"
-cp "$REPO/tools/release/versions.env" "$REPO/tools/release/rocm-apt.sh" "$CTX/tools/release/"
+cp "$REPO/tools/release/versions.env" "$CTX/tools/release/"
 mkdir -p "$CTX/ports/libplacebo"
 cp "$REPO/ports/libplacebo/0001-ajp-present-timing.patch" "$CTX/ports/libplacebo/"
 docker build -q -t "$IMAGE:$STAGE" --target "$STAGE" "$CTX" >/dev/null

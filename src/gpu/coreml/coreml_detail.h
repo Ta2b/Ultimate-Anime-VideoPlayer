@@ -24,8 +24,6 @@
 
 namespace ajp::gpu::coreml_rt {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string text);
-
 // Le cadre des images de l'interpolation d'Apple (coreml_vt.h), à la place d'un réseau.
 struct VtFrames {
   int width = 0;

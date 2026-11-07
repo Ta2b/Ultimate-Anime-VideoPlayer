@@ -99,55 +99,6 @@ TEST_CASE("Unités matricielles AMD : RDNA3 et RDNA4 seulement", "[app][first_ru
   CHECK_FALSE(amd_matrix_cores("AMD Radeon RX 6500M (RADV NAVI24)"));
 }
 
-TEST_CASE("MIGraphX proposé aux seuls GPU que ROCm sert", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
-  CHECK(rocm_listed("AMD Radeon RX 9070 XT (RADV GFX1201)"));
-  CHECK(rocm_listed("AMD Radeon RX 7900 XTX (RADV NAVI31)"));
-  CHECK(rocm_listed("AMD Radeon RX 6800 XT"));
-  CHECK(rocm_listed("AMD Radeon RX 9070"));
-  CHECK_FALSE(rocm_listed("AMD Radeon RX 6500M (RADV NAVI24)"));
-  CHECK_FALSE(rocm_listed("AMD Radeon RX 6500M"));
-  CHECK_FALSE(rocm_listed("AMD Radeon RX 6800M"));
-  CHECK_FALSE(rocm_listed("AMD Radeon 680M (RADV REMBRANDT)"));
-  // Ryzen AI 9 HX et Ryzen AI Max, pas le Ryzen AI 7 350.
-  CHECK(rocm_listed("AMD Radeon 890M (RADV GFX1150)"));
-  CHECK(rocm_listed("AMD Radeon 8060S Graphics (RADV GFX1151)"));
-  CHECK(rocm_listed("AMD Radeon(TM) 890M Graphics"));
-  CHECK(rocm_listed("AMD Radeon(TM) 8050S Graphics"));
-  CHECK_FALSE(rocm_listed("AMD Radeon 860M (RADV GFX1152)"));
-  CHECK_FALSE(rocm_listed("AMD Radeon(TM) 860M Graphics"));
-  const GpuFacts rx6500m{
-      .name = "AMD Radeon RX 6500M (RADV NAVI24)", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
-  const FirstRunView view = first_run_view(rx6500m, kHere);
-  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
-}
-
-TEST_CASE("MIGraphX de Windows ML reconnu sur les AMD RDNA 3 et après, mais débranché", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
-  CHECK(winml_listed("AMD Radeon(TM) 860M Graphics"));
-  CHECK(winml_listed("AMD Radeon 780M Graphics"));
-  CHECK(winml_listed("AMD Radeon(TM) 8060S Graphics"));
-  CHECK(winml_listed("AMD Radeon RX 7600M XT"));
-  CHECK(winml_listed("AMD Radeon RX 9070 XT"));
-  CHECK(winml_listed("AMD Radeon PRO W7800"));
-  CHECK_FALSE(winml_listed("AMD Radeon RX 6800 XT"));
-  CHECK_FALSE(winml_listed("AMD Radeon(TM) 680M"));
-  CHECK_FALSE(winml_listed("AMD Radeon RX 580 Series"));
-
-  // Reconnu (le code de MIGraphX reste), mais jamais proposé : débranché du lecteur, Vulkan à sa place.
-  const GpuFacts apu{
-      .name = "AMD Radeon(TM) 860M Graphics", .vendor = GpuVendor::Amd, .vram_bytes = 4 * kGiB};
-  EnginesHere here{.os = core::Os::Windows};
-  here.downloads.push_back(EngineDownload{.id = core::EngineId::MiGraphX,
-                                          .bytes = 40U << 20U,
-                                          .license = "https://www.nuget.org/packages/x/License"});
-  const FirstRunView view = first_run_view(apu, here);
-  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
-  CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);
-  REQUIRE(row_of(view, core::EngineId::Vulkan) != nullptr);
-  CHECK(row_of(view, core::EngineId::Vulkan)->chosen);
-}
-
 TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
   FirstRunView view = first_run_view(kRtx, kHere);
@@ -223,17 +174,10 @@ TEST_CASE("TensorRT n'est essayé que s'il a été choisi", "[app][first_run]") 
   CHECK(backends_within(candidates, both).size() == 2);
 }
 
-TEST_CASE("MIGraphX et OpenVINO ne sont essayés que choisis", "[app][first_run]") {
+TEST_CASE("Core ML n'est essayé que choisi", "[app][first_run]") {
   ajp::app::play::FrenchUi french;
-  const std::array<std::filesystem::path, 3> candidates{
-      "base/ajp_backend_migraphx.so", "base/ajp_backend_openvino.so", "base/ajp_backend_vulkan.so"};
   core::Settings settings;
-  settings.chosen_engines = {core::EngineId::Vulkan, core::EngineId::OpenVino};
-  const auto kept = backends_within(candidates, settings);
-  REQUIRE(kept.size() == 2);
-  CHECK(kept.front().filename() == "ajp_backend_openvino.so");
-  CHECK(kept.back().filename() == "ajp_backend_vulkan.so");
-
+  settings.chosen_engines = {core::EngineId::Vulkan};
   // Core ML est le moteur Metal de l'écran (Mac).
   const std::array<std::filesystem::path, 2> mac{"base/ajp_backend_coreml.so", "base/ajp_backend_vulkan.so"};
   CHECK(backends_within(mac, settings).size() == 1);

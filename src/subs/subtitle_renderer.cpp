@@ -15,10 +15,6 @@
 namespace ajp::subs {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 bool side_in_range(int side) {
   return 1 <= side && side <= kMaxTargetSide;
 }

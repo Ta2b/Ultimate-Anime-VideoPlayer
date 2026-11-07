@@ -247,7 +247,7 @@ Done VkContext::create_device(const CreateOptions& options) {
   }
 
   // Le modèle mémoire Vulkan vient avec sa portée Device : activé seul, les atomiques de portée
-  // Device des noyaux (block_diff, flow_max, gmfss_splat) seraient hors contrat (VUID 06265).
+  // Device des noyaux (block_diff, flow_max) seraient hors contrat (VUID 06265).
   const bool matrix = options.cooperative_matrix && available.cooperative_matrix &&
                       available.vulkan_memory_model && available.vulkan_memory_model_device_scope &&
                       has_extension(present, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
@@ -257,7 +257,8 @@ Done VkContext::create_device(const CreateOptions& options) {
     extensions.push_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
     enabled_extensions.emplace_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
   }
-  // Les additions atomiques de float, quand l'appareil les a : softmax splatting de GMFSS.
+  // Les additions atomiques de float, quand l'appareil les a (plus aucun noyau ne s'en sert depuis
+  // le retrait de GMFSS ; gardées le temps d'une mesure sans elles sur un vrai GPU).
   const bool atomic =
       available.float_atomic_add && has_extension(present, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
   if (atomic && std::ranges::find(options.extensions, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME) ==

@@ -17,10 +17,6 @@
 namespace ajp::prepare {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 OnnxType onnx_type(gpu::TensorType type) {
   switch (type) {
     case gpu::TensorType::F32:
@@ -95,7 +91,7 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
   auto content = onnx_source_key(*graph, model.onnx_path.parent_path(), summary->external_locations);
   if (!content) return std::unexpected(content.error());
   auto input = std::ranges::find(summary->inputs, input_name, &OnnxInput::name);
-  // Un graphe aux entrées toutes statiques (GMFSS, ses tailles fixées par onnx_dims) n'a pas de
+  // Un graphe aux entrées toutes statiques (DistilDRBA, ses tailles fixées par onnx_dims) n'a pas de
   // profil : son entrée se lit sous un autre nom, la première.
   const bool all_static =
       !summary->inputs.empty() && std::ranges::all_of(summary->inputs, &OnnxInput::is_static);

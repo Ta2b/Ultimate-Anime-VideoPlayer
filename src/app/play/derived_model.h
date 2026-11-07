@@ -1,5 +1,5 @@
-// Un modèle dérivé d'un ONNX livré (variante mouvement de RIFE, graphes de GMFSS aux tailles
-// fixées) : écrit une fois dans le dossier de données du lecteur, jamais à côté du modèle ni dans
+// Un modèle dérivé d'un ONNX livré (variante mouvement de RIFE, DistilDRBA à la taille
+// fixée) : écrit une fois dans le dossier de données du lecteur, jamais à côté du modèle ni dans
 // le dépôt, sous un nom qui porte l'empreinte du modèle source.
 #pragma once
 

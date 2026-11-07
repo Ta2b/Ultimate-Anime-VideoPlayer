@@ -29,6 +29,7 @@
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "core/log.h"
+#include "core/text.h"
 #ifdef AJP_WITH_FREETYPE
 #include "imgui_freetype.h"
 #endif
@@ -38,6 +39,8 @@
 namespace ajp::app::play {
 namespace {
 
+// Une tâche du panneau (l'optimisation) fait avancer sa barre : une image tous les 100 ms, même en pause.
+constexpr std::int64_t kBusyFrameUs = 100'000;
 constexpr float kFontSize = 17.0F;        // pixels à l'échelle 1, multipliés par l'échelle de l'écran
 constexpr int kMaxFontBytes = 256 << 20;  // ImGui prend la taille en int
 
@@ -65,8 +68,7 @@ std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) 
                                       FcCharSetHasChar(charset, 0x65E5) != FcFalse);
     std::string path(reinterpret_cast<const char*>(file));
     std::string ext = std::filesystem::path(path).extension().string();
-    std::ranges::transform(ext, ext.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    ext = core::ascii_lower(ext);
     if (covers && (ext == ".ttf" || ext == ".otf" || ext == ".ttc" || ext == ".otc"))
       found = FontFile{.path = std::move(path), .index = index};
   }
@@ -328,6 +330,7 @@ std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* w
   if (ui->context_ == nullptr)
     return std::unexpected(Refusal{RefusalCode::LibraryUnavailable, "ImGui::CreateContext"});
   ImGuiIO& io = ImGui::GetIO();
+  io.UserData = &ui->panel_state_;
   io.IniFilename = nullptr;
   io.LogFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
@@ -469,8 +472,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   // ImGui place certains éléments (onglets, fenêtre qui s'ouvre) une image après les avoir reçus :
   // après une entrée, deux images de plus, même en pause sans autre événement.
-  // Une tâche du panneau (l'optimisation) fait avancer sa barre : une image tous les 100 ms, même en pause.
-  if (panel_.busy() && now_us - last_busy_frame_us_ >= 100'000) {
+  if (panel_.busy() && now_us - last_busy_frame_us_ >= kBusyFrameUs) {
     last_busy_frame_us_ = now_us;
     input_pending_ = true;
   }

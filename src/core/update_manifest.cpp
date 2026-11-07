@@ -7,12 +7,11 @@
 #include <optional>
 #include <vector>
 
+#include "core/text.h"
 #include "core/toml_fields.h"
 
 namespace ajp::core {
 namespace {
-
-using fields::refuse;
 
 struct Version {
   std::array<std::uint64_t, 3> parts{};
@@ -108,8 +107,7 @@ std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view to
       return refuse(RefusalCode::FieldOutOfRange, "manifeste : revoked_keys doit être une liste");
     for (const toml::node& key : *keys) {
       std::string hex = key.value_or(std::string());
-      std::ranges::transform(hex, hex.begin(),
-                             [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+      hex = ascii_lower(hex);
       if (!is_sha256(hex))  // même forme : 64 chiffres hexadécimaux
         return refuse(RefusalCode::FieldOutOfRange,
                       "manifeste : revoked_keys attend des clés de 64 chiffres");

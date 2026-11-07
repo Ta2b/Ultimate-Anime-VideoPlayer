@@ -54,20 +54,15 @@ enum class OpCode : std::uint64_t {
   RifeInput = 40,
   ScoresStart = 41,
   FlowMaxStart = 42,
-  GmfssFrames = 43,
-  SoftSplatAll = 44,
-  Fill = 45,
   RifeTime = 46,
   RifePair = 47,
-  GmfssCompose = 48,
   WriteRing = 50,
   FrameStats = 51,
 };
-constexpr std::array kOpCodes{
-    OpCode::Resample,     OpCode::RifeCrop,  OpCode::Warp,        OpCode::Ingest,       OpCode::RifePad,
-    OpCode::Measure,      OpCode::RifeInput, OpCode::ScoresStart, OpCode::FlowMaxStart, OpCode::GmfssFrames,
-    OpCode::SoftSplatAll, OpCode::Fill,      OpCode::RifeTime,    OpCode::RifePair,     OpCode::GmfssCompose,
-    OpCode::WriteRing,    OpCode::FrameStats};
+constexpr std::array kOpCodes{OpCode::Resample,     OpCode::RifeCrop, OpCode::Warp,      OpCode::Ingest,
+                              OpCode::RifePad,      OpCode::Measure,  OpCode::RifeInput, OpCode::ScoresStart,
+                              OpCode::FlowMaxStart, OpCode::RifeTime, OpCode::RifePair,  OpCode::WriteRing,
+                              OpCode::FrameStats};
 static_assert(
     [] {
       for (std::size_t i = 0; i < kOpCodes.size(); ++i)
@@ -79,8 +74,7 @@ static_assert(
 
 // Clé d'un enregistrement : quelques mots qui fixent tous ses paramètres, sans allocation.
 struct OpKey {
-  // Assez pour les dix splats d'un instant de GMFSS déformé après SPAN : trois vues de six mots
-  // chacun, l'instant, la grille du mouvement, puis le tampon des sommes et le code de l'opération.
+  // Assez pour les enregistrements les plus longs (l'ingestion réduite et ses vues), avec de la marge.
   std::array<std::uint64_t, 256> words{};
   std::size_t size = 0;
 
@@ -142,15 +136,6 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
-  std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
-  std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
-  std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
-                                          const Tensor& out) override;
-  std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> jobs) override;
-  std::expected<void, Refusal> gmfss_compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
-                                             const Tensor& low_b, const Tensor& fusion,
-                                             const kernels::Window& window, float t,
-                                             const Tensor& out) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
@@ -309,8 +294,7 @@ class VulkanKernelOps final : public KernelOps {
   BackendQueue& queue_;
   KernelRunner runner_;
   std::vector<Cached> recordings_;
-  RetiredRecordings retired_;               // sortis du cache, libérés à leur arrêt (après recordings_)
-  std::vector<std::uint32_t> splat_times_;  // les instants d'un soft_splat_all, réutilisés
+  RetiredRecordings retired_;  // sortis du cache, libérés à leur arrêt (après recordings_)
   std::uint64_t uses_ = 0;
   std::uint64_t destroyed_mark_ = 0;  // DestroyedLog::mark à la dernière purge
   std::vector<std::uint64_t> gone_;   // poignées détruites depuis, lues par forget_destroyed
@@ -372,9 +356,6 @@ class VulkanKernelOps final : public KernelOps {
   // Le tampon d'un emplacement, agrandi au besoin une fois finie l'exécution qui l'écrit encore.
   std::expected<Buffer*, Refusal> readback(std::optional<Buffer>& buffer, VkDeviceSize bytes,
                                            std::uint64_t busy_until);
-  // Sommes FP32 du softmax splatting, partagées par tous les splats (la file les ordonne) ;
-  // agrandies seulement après la fin de tout ce que la file a reçu.
-  std::optional<Buffer> splat_sums_;
   std::vector<TimelinePoint> waits_;  // réutilisés d'un appel à l'autre
   std::vector<TimelinePoint> signals_;
 };

@@ -16,7 +16,6 @@ ajp_add_unit_tests(vk_backend
     deferred_steps_test.cpp
     entry_test.cpp
     family_test.cpp
-    gmfss_ops_test.cpp
     host_import_test.cpp
     kernel_ops_test.cpp
     kernel_planes_test.cpp
@@ -42,7 +41,7 @@ ajp_add_unit_tests(vk_backend
   MAIN ajp_test_vulkan)
 
 # Sorties de référence par modèle (vendor_runtime_test.cpp) : enregistrées sous le dossier du
-# build, puis comparées à chaque runtime des réseaux que ce build a (MIGraphX, OpenVINO, Core ML)
+# build, puis comparées à chaque runtime des réseaux que ce build a (Core ML)
 # quand son matériel est là. AJP_SPAN_MODEL : le vrai SPAN d'AnimeJaNai installé sur le poste,
 # lu en place ; absent, seuls les modèles synthétiques servent.
 set(AJP_SPAN_MODEL "$ENV{HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
@@ -57,7 +56,7 @@ target_compile_definitions(ajp_vk_backend_tests PRIVATE
   AJP_TEST_REFERENCE_DIR="${CMAKE_CURRENT_BINARY_DIR}/reference"
   AJP_SPAN_MODEL="${AJP_SPAN_MODEL}")
 add_dependencies(ajp_vk_backend_tests ajp_backend_vulkan ajp_vk_backend_fake)
-foreach(vendor IN ITEMS migraphx openvino coreml winml)
+foreach(vendor IN ITEMS coreml)
   if(TARGET ajp_${vendor}_rt)
     string(TOUPPER "${vendor}" upper)
     target_link_libraries(ajp_vk_backend_tests PRIVATE ajp::${vendor}_rt)

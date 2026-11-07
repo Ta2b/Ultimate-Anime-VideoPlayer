@@ -19,6 +19,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "app/play/auto_bench.h"
+#include "app/play/auto_watch.h"
 #include "app/play/backend_library.h"
 #include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
@@ -36,10 +37,10 @@
 #include "app/play/episodes.h"
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
-#include "app/play/gmfss_model.h"
 #include "app/play/gpu_profile_out.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/home_screen.h"
+#include "app/play/host_choices.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
@@ -48,6 +49,7 @@
 #include "app/play/loop_wait.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/model_choice.h"
+#include "app/play/paths.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
@@ -82,6 +84,13 @@ namespace {
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus (P4.7 : 33 ms, l'interface à 30 i/s ; une image réveille).
 constexpr std::int32_t kPausedWaitMs = 33;
+// L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle) ; le
+// HDR et le pic du système toutes les 2 s, l'appel coûte plus et l'utilisateur ne bascule pas plus vite.
+constexpr std::int64_t kDisplayPollUs = 500'000;
+constexpr std::int64_t kHdrPollUs = 2'000'000;
+// Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
+constexpr std::int64_t kResizeWindowUs = 60'000'000;
+constexpr std::size_t kResizesRefused = 4;
 
 }  // namespace
 
@@ -192,10 +201,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   {
     // Le dossier des LUT de l'utilisateur existe dès le premier lancement : il n'a qu'à y déposer ses .cube.
     std::error_code made;
-    std::filesystem::create_directories(p.paths.engines.parent_path() / "luts", made);
+    std::filesystem::create_directories(paths::luts(p.paths), made);
   }
   if (std::ranges::any_of(look_slots(settings), [](const LookLayer& l) { return !l.key.empty(); }))
-    apply_looks(p.screen, settings, p.paths.engines.parent_path() / "luts");
+    apply_looks(p.screen, settings, paths::luts(p.paths));
   p.screen.set_grade(grade_of(settings, auto_peak, {}, {}, source_hdr));
   p.screen.set_finish(settings.final_scaler, settings.deband, settings.sharpness);
   session_config.output = output_text(out, settings, source_hdr);
@@ -218,21 +227,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   if (start_paused) session.command(cmd::Pause{});
-  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Évaluer ma machine » si elle est
-  // de cette carte et de ce pilote, sinon l'estimation.
-  std::optional<BenchResult> measured;
-  if (auto bench = load_bench(p.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);
-  const GpuFacts machine = gpu_facts(p.screen);
-  const Tier machine_tier = effective_tier(machine, measured);
-  const std::string bench_text =
-      measured && measured->gpu == machine.name && measured->driver == machine.driver
-          ? i18n::tr_format("Last optimization: {}", measured->date)
-          : std::string();
-  std::vector<SettingsChoices::AudioOut> audio_outputs;
-  for (const audio::AudioDevice& device : audio::playback_devices())
-    audio_outputs.push_back(
-        {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  const bool default_player_is_ajp = is_default_player(place_of(p.paths));
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   // Le mode Performance de SPAN : ce que le moteur annonce, et sinon pourquoi (moteur absent ou autre carte).
   const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
@@ -249,75 +243,61 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 p.library,
                 gpu::BackendInit{
                     .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
-                fp8_facts.capability, c.model->path, p.paths.engines.parent_path() / "modeles",
-                p.options.file, fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
+                fp8_facts.capability, c.model->path, paths::derived_models(p.paths), p.options.file,
+                fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
                 SpanFp8Context{.gpu_arch = c.backend ? c.backend->capabilities().gpu_arch : std::string(),
                                .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
                                .width = work.width,
                                .height = work.height},
                 settings.preset != Preset::Custom)
           : SpanPrepare{};
-  const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
+  const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
   p.ui.set_tracks((*pipeline)->tracks());
-  p.ui.set_settings(
-      settings,
-      SettingsChoices{
-          .luts_dir = p.paths.engines.parent_path() / "luts",
-          .models = c.model ? c.model->available : std::vector<std::string>{},
-          .default_model = c.model ? c.model->default_name : std::string(),
-          .source_width = video.width,
-          .source_height = video.height,
-          .source_fps = fps_of(video.frame_rate),
-          .source_rate = video.frame_rate,
-          .display_hz = display_period_us(out.window()) > 0
-                            ? 1e6 / static_cast<double>(display_period_us(out.window()))
-                            : 0.0,
-          .display_vrr = p.display && p.display->vrr.value_or(false),
-          .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
-          .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
-          .span_tiers = c.model
-                            ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine,
+  SettingsChoices choices{
+      .models = c.model ? c.model->available : std::vector<std::string>{},
+      .default_model = c.model ? c.model->default_name : std::string(),
+      .source_width = video.width,
+      .source_height = video.height,
+      .source_fps = fps_of(video.frame_rate),
+      .source_rate = video.frame_rate,
+      .display_hz = display_period_us(out.window()) > 0
+                        ? 1e6 / static_cast<double>(display_period_us(out.window()))
+                        : 0.0,
+      .display_vrr = p.display && p.display->vrr.value_or(false),
+      .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
+      .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
+      .span_tiers = c.model ? span_tiers(c.model->path, paths::derived_models(p.paths), fp8_engine,
                                          c.backend && c.backend->capabilities().span_fp8_cutlass)
                             : TierSupport{},
-          .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
-          .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
-          .distil_drba_available = c.drba_found,
-          .rife_loaded = rife_loaded,
-          .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
-          .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
-          .rife_folder = c.gmfss_places.front().string(),
-          .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .hdr_output = p.screen.hdr_output(),
-          .auto_peak = auto_peak,
-          .engines = engine_badges(p.paths.engines,
-                                   c.span_int8 ? c.span_int8->onnx
-                                   : c.model   ? c.model->path
-                                               : std::filesystem::path(),
-                                   work, c.rife || c.rife_motion ? c.rife_model : std::nullopt,
-                                   c.rife_motion ? c.geometry : c.image_geometry),
-          .chosen_engines = chosen_line(p.engines),
-          .switchable = installed_switchable(p.catalog, p.paths),
-          .engine_in_use = engine_of_library(p.library->path()),
-          .engine_note = fallback_note(p.engines, p.library->path()),
-          .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
-          .source_file = p.options.file,
-          .machine_tier = static_cast<int>(machine_tier),
-          .display_height = display_height(out.window()),
-          .calibrated =
-              calibrated_chain(p.settings_path.parent_path(), machine.name, display_height(out.window()))
-                  .has_value(),
-          .gpu_name = gpu_facts(p.screen).name,
-          .gpus = p.screen.device_names(),
-          .audio_outputs = audio_outputs,
-          .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),
-          .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),
-          .default_player_is_ajp = default_player_is_ajp,
-          .bench_text = bench_text,
-          .place = place_of(p.paths),
-          .span_prepare = span_prepare,
-          .fp8_reason = fp8_reason,
-          .span_job = p.span_job.note,
-          .settings_dir = p.settings_path.parent_path()});
+      .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
+      .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
+      .distil_drba_available = c.drba_found,
+      .rife_loaded = rife_loaded,
+      .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
+      .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
+      .rife_folder = c.model_places.front().string(),
+      .hdr_output = p.screen.hdr_output(),
+      .auto_peak = auto_peak,
+      .engines = engine_badges(p.paths.engines,
+                               c.span_int8 ? c.span_int8->onnx
+                               : c.model   ? c.model->path
+                                           : std::filesystem::path(),
+                               work, c.rife || c.rife_motion ? c.rife_model : std::nullopt,
+                               c.rife_motion ? c.geometry : c.image_geometry),
+      .chosen_engines = chosen_line(p.engines),
+      .engine_in_use = engine_of_library(p.library->path()),
+      .engine_note = fallback_note(p.engines, p.library->path()),
+      .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
+      .source_file = p.options.file,
+      .display_height = display_height(out.window()),
+      .calibrated = calibrated_chain(p.settings_path.parent_path(), gpu_facts(p.screen).name,
+                                     display_height(out.window()))
+                        .has_value(),
+      .span_prepare = span_prepare,
+      .fp8_reason = fp8_reason,
+      .span_job = p.span_job.note};
+  fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
+  p.ui.set_settings(settings, choices);
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
@@ -333,7 +313,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     return std::format("{}{}{}", c.motion_label(s), s.hdr_native ? "HDR · " : "",
                                        c.span_label());
                   },
-              .luts_dir = p.paths.engines.parent_path() / "luts",
+              .luts_dir = paths::luts(p.paths),
               .source_hdr = source_hdr,
               .kernels = c.backend ? c.backend->kernels() : nullptr,
               .shots = p.shots,
@@ -464,7 +444,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!p.settings_path.empty() && !p.options.file.empty()) {
     std::error_code size_error;
     const std::uintmax_t file_size = std::filesystem::file_size(p.options.file, size_error);
-    auto_memory_path = p.settings_path.parent_path() / "auto_memory.toml";
+    auto_memory_path = paths::auto_memory(p.settings_path.parent_path());
     auto_memory_key =
         core::auto_memory_key(prepare::utf8_path(p.options.file), size_error ? 0 : file_size,
                               std::string(c.motion_name()), settings.work_height, gpu_facts(p.screen).name);
@@ -475,8 +455,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
     }
   }
-  int auto_stored = 0;
-  // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
   bool vrr_fullscreen = true;  // relu au premier tour : VRR, compositeur (P3.45)
   VrrWatch vrr_watch(vrr_armed);
   // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
@@ -488,70 +466,46 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.display)
     log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
-  int auto_shown = 0;  // centièmes de multiplicateur ; 0 : le mode auto est coupé
-  int auto_notified = 0;
-  std::int64_t auto_changed_us = 0;
-  std::int64_t auto_floor_since_us = 0;
-  std::int64_t auto_floor_logged_us = 0;
+  AutoWatch auto_watch;  // le palier de l'Auto : journal, annonce, mémoire (auto_watch.h)
   std::int64_t auto_missing_seen = 0;
   std::int64_t free_dropped_seen = 0;
   std::int64_t free_missing_seen = 0;
-  std::int64_t free_logged_us = 0;
   const double auto_source_fps = fps_of(video.frame_rate);
   // Un changement de palier : une ligne de journal avec sa raison. Le message à l'écran n'est dit qu'une fois
   // le palier tenu 3 s (pas de clignotement), et le palier tenu 6 s est retenu pour la prochaine lecture.
   const auto show_auto = [&] {
     const Factor now = chain.live.factor_now();
     const bool free = chain.live.free_active();
-    const int centi = chain.running.rife_auto && !free && now.den >= 1 ? now.num * 100 / now.den : 0;
     const std::int64_t at = host_now_us();
-    if (free && at - free_logged_us >= 5'000'000) {  // mode Rapide : une ligne de journal toutes les 5 s
-      free_logged_us = at;
-      log->info("{}", free_status_text(chain.live.free_info(at)));
-    }
-    if (centi != auto_shown) {
-      if (centi > 0) {
-        log->info("auto : {}", auto_status_text(chain.live.auto_info(at), auto_source_fps));
-      }
-      auto_shown = centi;
-      auto_changed_us = at;
-      return;
-    }
-    if (centi <= 0) return;
+    const core::AutoInfo info = chain.live.auto_info(at);
+    const AutoActions todo = auto_watch.turn(
+        {.at_us = at,
+         .centi = chain.running.rife_auto && !free && now.den >= 1 ? now.num * 100 / now.den : 0,
+         .free = free,
+         .at_floor = info.step <= info.granularity && info.ceiling > info.granularity,
+         .can_store = !auto_memory_path.empty()});
+    if (todo.log_free) log->info("{}", free_status_text(chain.live.free_info(at)));
+    if (todo.log_change) log->info("auto : {}", auto_status_text(info, auto_source_fps));
     // Figé au plancher alors que l'écran permet plus : on le dit au journal (avec ce qui peut le tenir là),
     // la régulation tente d'elle-même un cran toutes les 8 s (core::AutoRate::kFloorEscapeUs).
-    {
-      const core::AutoInfo info = chain.live.auto_info(at);
-      if (info.step <= info.granularity && info.ceiling > info.granularity) {
-        if (auto_floor_since_us == 0) auto_floor_since_us = at;
-        if (at - auto_floor_since_us >= 8'000'000 && at - auto_floor_logged_us >= 30'000'000) {
-          auto_floor_logged_us = at;
-          log->warn(
-              "Auto : plafond figé à ×1 depuis {} s (dernier changement : {} ; plafond de l'écran ×{}, écran "
-              "{:.1f} Hz, "
-              "plafond choisi {}, palier prédit ×{}, limite apprise ×{})",
-              (at - auto_floor_since_us) / 1'000'000, core::auto_reason_text(info.reason),
-              auto_factor_text(info.ceiling * 100 / std::max(info.granularity, 1)), known_hz,
-              chain.running.auto_cap, auto_factor_text(info.predicted * 100 / std::max(info.granularity, 1)),
-              auto_factor_text(info.cap * 100 / std::max(info.granularity, 1)));
-        }
-      } else {
-        auto_floor_since_us = 0;
-      }
+    if (todo.floor_us) {
+      const int g = std::max(info.granularity, 1);
+      log->warn(
+          "Auto : plafond figé à ×1 depuis {} s (dernier changement : {} ; plafond de l'écran ×{}, écran "
+          "{:.1f} "
+          "Hz, plafond choisi {}, palier prédit ×{}, limite apprise ×{})",
+          *todo.floor_us / 1'000'000, core::auto_reason_text(info.reason),
+          auto_factor_text(info.ceiling * 100 / g), known_hz, chain.running.auto_cap,
+          auto_factor_text(info.predicted * 100 / g), auto_factor_text(info.cap * 100 / g));
     }
-    if (centi != auto_notified && at - auto_changed_us >= 3'000'000) {
-      if (auto_notified > 0)
-        p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(centi),
-                                                  auto_source_fps * centi / 100.0),
-                               at);
-      auto_notified = centi;
-    }
-    if (centi != auto_stored && at - auto_changed_us >= 6'000'000 && !auto_memory_path.empty()) {
-      writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi] {
+    if (todo.notify)
+      p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(*todo.notify),
+                                                auto_source_fps * *todo.notify / 100.0),
+                             at);
+    if (todo.store)
+      writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi = *todo.store] {
         return core::store_auto_step(store, key, centi);
       });
-      auto_stored = centi;  // même en cas d'échec : pas de réécriture à chaque tour
-    }
   };
   while (!session.finished() && !chain.reopen) {
     for (;
@@ -577,7 +531,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
     // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
-    if (host_now_us() - display_polled_at >= 500'000 || out.vrr_changed()) {  // 6.10 : sans attendre
+    if (host_now_us() - display_polled_at >= kDisplayPollUs || out.vrr_changed()) {  // 6.10 : sans attendre
       display_polled_at = host_now_us();
       // Le mode Performance de SPAN se prépare tout seul (span_auto.h), pris à la vidéo suivante (P3.24).
       if (!p.options.file.empty() && c.model &&
@@ -592,7 +546,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       read_display_facts();
       if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
       // Le HDR et le pic suivent le système et l'écran (Windows, KDE), relus toutes les 2 s.
-      if (!p.options.sdr && host_now_us() - hdr_polled_at >= 2'000'000) {
+      if (!p.options.sdr && host_now_us() - hdr_polled_at >= kHdrPollUs) {
         hdr_polled_at = host_now_us();
         const std::optional<double> peak_now = content_peak_nits(out.window());
         if (system_hdr(peak_now) != chain.running.hdr_native) {
@@ -685,8 +639,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : actions) apply(input, chain, host_now_us());
-    // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
-    if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
+    if (chain.dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) {
       writer.post("play.toml",
                   [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
       chain.dirty = false;
@@ -748,8 +701,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (session.resize_asked() && !chain.reopen && !failure) {
     std::deque<std::int64_t>& resizes = p.resizes;
     const std::int64_t now = host_now_us();
-    while (!resizes.empty() && now - resizes.front() > 60'000'000) resizes.pop_front();
-    if (resizes.size() >= 4) {
+    while (!resizes.empty() && now - resizes.front() > kResizeWindowUs) resizes.pop_front();
+    if (resizes.size() >= kResizesRefused) {
       failure = Refusal{RefusalCode::SourceResized, "la source change de taille trop souvent"};
     } else {
       resizes.push_back(now);

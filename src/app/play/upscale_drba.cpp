@@ -21,14 +21,6 @@
 #include "kernels/spec/rife.h"
 
 namespace ajp::app::play {
-namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-}  // namespace
-
 std::expected<void, Refusal> UpscaleStage::allocate_drba() {
   gpu::Backend& backend = *setup_.backend;
   // Variante mouvement : le mouvement s'estime à la taille de RIFE (D4 : 720p pour un travail plus grand),

@@ -62,8 +62,8 @@ class VulkanEngine final : public Engine {
   std::span<const std::string> input_names() const override { return net_->input_names(); }
   std::span<const std::string> output_names() const override { return net_->output_names(); }
   net::NetEngine& net() { return *net_; }
-  // Les vues des entrées puis des sorties d'un enqueue, à la taille du graphe (14 sorties pour la
-  // paire de GMFSS) : allouées une fois au chargement, pas à chaque image.
+  // Les vues des entrées puis des sorties d'un enqueue, à la taille du graphe (plusieurs pour
+  // DistilDRBA fusionné) : allouées une fois au chargement, pas à chaque image.
   std::span<BufferView> io_views() { return views_; }
 
  private:
@@ -107,6 +107,7 @@ class VulkanBackend final : public Backend {
   VkContext& context() { return *context_; }
   MemoryAllocator& memory() { return *memory_; }
   const DeviceProfile& profile() const { return profile_; }
+  // NOLINTNEXTLINE(bugprone-unchecked-optional-access) : posée par create, avant tout appel.
   BackendQueue& queue() { return *queue_; }
   // Chemin de l'artefact de ce modèle à cette forme, construit ou non.
   std::filesystem::path artifact_path(const ModelSpec& model, const ShapeSet& shapes) const;

@@ -92,7 +92,7 @@ struct RgbWindowPush {
   float fill;
 };
 
-// L'instant de rife_constants, warp_blend, gmfss_compose et gmfss_splat n'est pas dans leur push :
+// L'instant de rife_constants et warp_blend n'est pas dans leur push :
 // c'est un mot de paramètre (Recorder::parameter), lié après leurs tampons.
 struct RifeConstantsPush {
   std::uint32_t width;
@@ -155,38 +155,6 @@ struct FrameStatsPush {
   std::uint32_t transfer;  // kernels::FrameTransfer
 };
 
-struct SplatPush {
-  std::uint32_t width;
-  std::uint32_t height;
-  std::uint32_t channels;
-  std::uint32_t group;         // plans par groupe de l'axe z
-  std::uint32_t motion_width;  // le mouvement sur sa grille (spec MotionGrid)
-  std::uint32_t motion_height;
-  float motion_scale;
-  float motion_x;
-  float motion_y;
-  std::uint32_t direct;  // même grille : lu tel quel
-};
-
-struct SplatNormalizePush {
-  std::uint32_t width;
-  std::uint32_t height;
-  std::uint32_t channels;
-  std::uint32_t coverage;  // un plan de plus en sortie
-};
-
-struct GmfssComposePush {
-  std::uint32_t width;  // la sortie, scale × le travail
-  std::uint32_t height;
-  std::uint32_t low_width;
-  std::uint32_t low_height;
-  std::uint32_t scale;
-  std::uint32_t fusion_width;
-  std::uint32_t fusion_height;
-  std::uint32_t window_x;
-  std::uint32_t window_y;
-};
-
 // scene_diff, block_diff.
 struct PairPush {
   std::uint32_t a_offset;
@@ -201,13 +169,6 @@ static_assert(sizeof(ChromaPush) == 32 && sizeof(PlanesPush) == 32 && sizeof(Res
 static_assert(sizeof(YuvWindowPush) == 44 && sizeof(RgbWindowPush) == 28 && sizeof(RifeConstantsPush) == 12);
 static_assert(sizeof(RifeFramesPush) == 28 && sizeof(RgbPairPush) == 12 && sizeof(FlowMaxPush) == 24);
 static_assert(sizeof(WarpPush) == 40 && sizeof(TransferPush) == 32 && sizeof(PairPush) == 24);
-struct FillPush {
-  std::uint32_t count;
-  float value;
-};
-
-static_assert(sizeof(SplatPush) == 40 && sizeof(SplatNormalizePush) == 16 && sizeof(FillPush) == 8);
-static_assert(sizeof(GmfssComposePush) == 36);
 
 // Constantes 0 à 5 de yuv.glsl : format, matrice, plage, octets par échantillon, chroma
 // entrelacée, chroma 4:2:0, tirées de kernels::info.

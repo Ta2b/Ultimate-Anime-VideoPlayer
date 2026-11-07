@@ -6,13 +6,13 @@
 # threads source, gpu, audio et subs, horloge audio maîtresse).
 ajp_add_module(app
   SOURCES
-    play/apple_model.cpp play/auto_bench.cpp play/auto_bench_run.cpp play/machine_calibration.cpp play/settings_bench_results.cpp play/bench_steps.cpp play/span_auto.cpp play/auto_config.cpp play/backend_library.cpp play/bench_events.cpp play/pumped_task.cpp play/single_instance.cpp play/bridges.cpp play/build_progress.cpp play/chain.cpp play/chain_hdr.cpp play/chain_shots.cpp play/chain_setup.cpp play/chain_stats.cpp play/look_catalog.cpp play/model_choice.cpp play/chapters.cpp play/controls.cpp play/controls_draw.cpp play/controls_icons.cpp play/crash_dump.cpp play/default_player.cpp play/data_dirs.cpp play/derived_model.cpp play/span_derive.cpp play/span_int8.cpp play/display_edid.cpp play/drba_model.cpp play/engine_build.cpp play/episodes.cpp play/engine_downloads.cpp play/engine_install.cpp play/engine_screen.cpp play/engine_switch.cpp play/ed25519.cpp play/engine_tools.cpp play/updater.cpp play/export_job.cpp play/export_run.cpp play/export_sink.cpp play/first_run.cpp play/wizard.cpp play/gpu_tier.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu_tiers_data.cpp" play/home_screen.cpp play/i18n.cpp play/i18n_fr.cpp play/i18n_fr_settings.cpp play/i18n_fr_image.cpp play/i18n_fr_sound.cpp play/i18n_fr_system.cpp play/i18n_fr_wizard.cpp play/i18n_fr_messages.cpp play/i18n_fr_stats.cpp play/i18n_fr_visible.cpp play/home_view.cpp play/host_facts.cpp play/window_vrr.cpp play/system_peak.cpp play/system_language.cpp
-    play/external_subtitles.cpp play/frame_queue.cpp play/frame_stats.cpp play/gmfss_model.cpp play/gpu_telemetry.cpp play/input.cpp play/motion_model.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
+    play/apple_model.cpp play/auto_bench.cpp play/auto_bench_run.cpp play/machine_calibration.cpp play/settings_bench_results.cpp play/bench_steps.cpp play/span_auto.cpp play/auto_config.cpp play/auto_watch.cpp play/backend_library.cpp play/bench_events.cpp play/pumped_task.cpp play/single_instance.cpp play/bridges.cpp play/build_progress.cpp play/chain.cpp play/chain_hdr.cpp play/chain_shots.cpp play/chain_setup.cpp play/chain_stats.cpp play/look_catalog.cpp play/model_choice.cpp play/chapters.cpp play/controls.cpp play/controls_draw.cpp play/controls_icons.cpp play/crash_dump.cpp play/default_player.cpp play/data_dirs.cpp play/derived_model.cpp play/span_derive.cpp play/span_int8.cpp play/display_edid.cpp play/drba_model.cpp play/engine_build.cpp play/episodes.cpp play/engine_downloads.cpp play/engine_install.cpp play/engine_screen.cpp play/engine_switch.cpp play/ed25519.cpp play/engine_tools.cpp play/updater.cpp play/export_job.cpp play/export_run.cpp play/export_sink.cpp play/first_run.cpp play/wizard.cpp play/gpu_tier.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu_tiers_data.cpp" play/home_screen.cpp play/host_choices.cpp play/i18n.cpp play/i18n_fr.cpp play/i18n_fr_settings.cpp play/i18n_fr_image.cpp play/i18n_fr_sound.cpp play/i18n_fr_system.cpp play/i18n_fr_wizard.cpp play/i18n_fr_messages.cpp play/i18n_fr_stats.cpp play/i18n_fr_visible.cpp play/home_view.cpp play/host_facts.cpp play/window_vrr.cpp play/system_peak.cpp play/system_language.cpp
+    play/external_subtitles.cpp play/frame_queue.cpp play/frame_stats.cpp play/gpu_telemetry.cpp play/input.cpp play/motion_model.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
     play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/ring_watcher.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/latest_writer.cpp play/loop_wait.cpp
     play/anime_shots.cpp play/gpu_profile_out.cpp play/display_contract.cpp play/cut_book.cpp play/user_keys.cpp play/resume.cpp
-    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/gmfss_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/settings.cpp play/settings_toml.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/mapped_file.cpp
-    play/upscale_ahead.cpp play/upscale_drba.cpp play/upscale_gmfss.cpp play/upscale_late.cpp play/upscale_motion.cpp play/upscale_smooth.cpp play/upscale_stage.cpp play/vulkan_share.cpp play/wiring.cpp
+    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/settings.cpp play/settings_toml.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/mapped_file.cpp
+    play/upscale_ahead.cpp play/upscale_drba.cpp play/upscale_late.cpp play/upscale_motion.cpp play/upscale_smooth.cpp play/upscale_stage.cpp play/vulkan_share.cpp play/wiring.cpp
   DEPS ajp::core ajp::core_log ajp::core_os ajp::media ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::export
   PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::placebo ajp::dep::sdl3 ajp::dep::spdlog ajp::dep::vulkan
@@ -71,7 +71,7 @@ target_compile_definitions(ajp_app PRIVATE AJP_VERSION="${PROJECT_VERSION}" AJP_
                            AJP_UPDATE_PUBKEY="${AJP_UPDATE_PUBKEY}"
                            AJP_UPDATE_PUBKEY_BACKUP="${AJP_UPDATE_PUBKEY_BACKUP}")
 
-# ajp : l'exécutable. Les backends TensorRT, MIGraphX, OpenVINO, Core ML et Vulkan se cherchent à côté de lui, puis dans
+# ajp : l'exécutable. Les backends TensorRT, Core ML et Vulkan se cherchent à côté de lui, puis dans
 # l'arbre de construction quand ils y sont construits (TensorRT : AJP_WITH_CUDA).
 add_executable(ajp main.cpp)
 target_link_libraries(ajp PRIVATE ajp::app ajp::dep::ffmpeg ajp::dep::sdl3 ajp::dep::spdlog)
@@ -79,7 +79,7 @@ if(TARGET ajp_backend_tensorrt)
   target_compile_definitions(ajp PRIVATE AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>")
   add_dependencies(ajp ajp_backend_tensorrt)
 endif()
-foreach(runtime migraphx openvino coreml)
+foreach(runtime coreml)
   if(TARGET ajp_backend_${runtime})
     string(TOUPPER "${runtime}" upper)
     target_compile_definitions(ajp PRIVATE AJP_BACKEND_${upper}="$<TARGET_FILE:ajp_backend_${runtime}>")

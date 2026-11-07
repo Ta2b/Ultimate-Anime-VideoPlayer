@@ -22,10 +22,6 @@
 namespace ajp::gpu::cuda {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 bool rgb_tensor(const Tensor& tensor, int width, int height) {
   return tensor.type == TensorType::F16 && tensor.shape.dims[0] == 1 && tensor.shape.dims[1] == 3 &&
          tensor.shape.dims[2] == height && tensor.shape.dims[3] == width && tensor.handle != 0;

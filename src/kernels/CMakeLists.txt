@@ -11,7 +11,6 @@ ajp_add_module(kernels
     ref/frame_stats.cpp
     ref/half.cpp
     ref/resample.cpp
-    ref/gmfss.cpp
     ref/rife.cpp
     ref/rife_fused.cpp
     ref/transfer.cpp

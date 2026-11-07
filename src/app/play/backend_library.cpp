@@ -10,10 +10,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Le point d'entrée name, ou nullptr. F est un pointeur de fonction (gpu/backend.h).
 template <class F>
 F symbol(const DynamicLibrary& library, const char* name) {

@@ -231,8 +231,6 @@ std::string_view badge_text(Badge badge) {
       return i18n::tr("Fastest");
     case Badge::Finest:
       return i18n::tr("Finest");
-    case Badge::Heaviest:
-      return i18n::tr("Slowest");
     case Badge::Experimental:
       return i18n::tr("Experimental");
   }
@@ -319,22 +317,6 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                                      std::pair{"grade.anime_highlights", s.grade_values.anime_highlights}}) {
     if (auto in = check(field, value, core::Range<int>{0, 200}); !in) return std::unexpected(in.error());
   }
-  if (auto mix = check("grade.look_mix", s.look_mix, core::Range<double>{0.0, 1.0}); !mix)
-    return std::unexpected(mix.error());
-  if (s.look_layers.size() + 1 > render::kLookSlots)
-    return refuse_key(RefusalCode::FieldOutOfRange, "grade.looks",
-                      std::format(" : au plus {} LUT en tout", render::kLookSlots));
-  for (const LookLayer& layer : s.look_layers) {
-    if (auto mix = check("grade.looks_mix", layer.mix, core::Range<double>{0.0, 1.0}); !mix)
-      return std::unexpected(mix.error());
-  }
-  std::vector<const std::string*> names{&s.look};
-  for (const LookLayer& layer : s.look_layers) names.push_back(&layer.key);
-  for (const std::string* name : names) {
-    if (name->find('/') != std::string::npos || name->find('\\') != std::string::npos)
-      return refuse_key(RefusalCode::FieldOutOfRange, "grade.look",
-                        std::format(" : « {} » n'est pas un nom de fichier", *name));
-  }
   if (s.model.find('/') != std::string::npos || s.model.find('\\') != std::string::npos)
     return refuse_key(RefusalCode::FieldOutOfRange, "image.model",
                       std::format(" : « {} » n'est pas un nom de fichier", s.model));
@@ -415,7 +397,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.motion_engine = wanted.motion_engine;
     s.rife_model = wanted.rife_model;
     s.span_order = wanted.span_order;
-    s.gmfss_precision = wanted.gmfss_precision;
     s.motion_precision = wanted.motion_precision;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
@@ -426,8 +407,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.deband = wanted.deband;
   s.sharpness = wanted.sharpness;
   s.autoplay_next = wanted.autoplay_next;
-  s.default_player_dismissed = wanted.default_player_dismissed;
-  s.span_prepare_background = wanted.span_prepare_background;
   s.engines_dir = wanted.engines_dir;
   s.update_mode = wanted.update_mode;
   s.update_channel = wanted.update_channel;
@@ -442,9 +421,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.language_presets = wanted.language_presets;  // au prochain fichier
   s.grade = wanted.grade;
   s.grade_values = wanted.grade_values;
-  s.look = wanted.look;
-  s.look_mix = wanted.look_mix;
-  s.look_layers = wanted.look_layers;
   s.look_contrast = wanted.look_contrast;
   s.look_highlight = wanted.look_highlight;
   s.oled_black = wanted.oled_black;
@@ -477,10 +453,6 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(wanted.drba_fused
                             ? i18n::tr("fused DistilDRBA (four engines, built the first time for this size)")
                             : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
-  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) && running.gmfss_fused != wanted.gmfss_fused)
-    reopen.emplace_back(wanted.gmfss_fused
-                            ? i18n::tr("fused GMFSS (two engines, built the first time for this size)")
-                            : i18n::tr("whole GMFSS pair instead of fused GMFSS"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));
@@ -493,17 +465,11 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(i18n::tr_format("SPAN switches to {} (built the first time for this size)",
                                         precision_text(wanted.span_precision)));
   }
-  if (wanted.rife_factor >= 2 && !is_gmfss(wanted.motion_engine) &&
-      running.motion_engine == wanted.motion_engine && running.motion_precision != wanted.motion_precision) {
+  if (wanted.rife_factor >= 2 && running.motion_engine == wanted.motion_engine &&
+      running.motion_precision != wanted.motion_precision) {
     reopen.emplace_back(i18n::tr_format("{} switches to {} (built the first time for this size)",
                                         label(wanted.motion_engine),
                                         precision_text(wanted.motion_precision)));
-  }
-  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) &&
-      running.motion_engine == wanted.motion_engine && running.gmfss_precision != wanted.gmfss_precision) {
-    reopen.emplace_back(i18n::tr_format(
-        "GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
-        i18n::tr_view(label(wanted.gmfss_precision)), precision_text(wanted.gmfss_precision)));
   }
   if (!reopen.empty()) {
     std::string reason;

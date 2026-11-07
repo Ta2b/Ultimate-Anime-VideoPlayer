@@ -5,8 +5,6 @@
 //   le facteur du warp) ; la grille libre n'a aucune contrainte.
 // - DistilDRBA : drba_call(t) prend n'importe quel t de ]0, 1[ (fenêtre centrée sur a avant le milieu, sur b
 //   après) ; une passe du graphe par instant.
-// - GMFSS (entier ou fusionné, base ou union) : le graphe « paire » tourne une fois par paire, puis chaque
-//   instant est un splat à gmfss_side_time(côté, t) et un graphe « fusion » ; t est arbitraire.
 // - Au plus kMaxInstantsPerPair instants par paire pour tous : c'est la borne du ring
 // (RingStage::kMaxOutputs).
 // - Apple (flux optique du système) : instants fixés par le système, pas de tau arbitraire : Auto.
@@ -26,7 +24,7 @@ namespace ajp::app::play {
 constexpr std::uint32_t free_instants_limit(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
-    case MotionEngine::Gmfss:
+    case MotionEngine::Gmfss:  // ancien play.toml : RIFE à sa place
     case MotionEngine::GmfssUnion:
     case MotionEngine::DistilDrba:
       return static_cast<std::uint32_t>(core::kMaxInstantsPerPair);

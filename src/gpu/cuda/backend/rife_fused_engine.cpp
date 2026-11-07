@@ -15,10 +15,6 @@ namespace {
 
 constexpr std::string_view kKeyPrefix = "rife-fused:";
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Libère les tampons d'essai quoi qu'il arrive.
 struct Scratch {
   void* input = nullptr;

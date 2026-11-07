@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <format>
-#include <fstream>
 #include <sstream>
 
 #define TOML_EXCEPTIONS 0
@@ -12,10 +11,6 @@ namespace ajp::core {
 namespace {
 
 using Result = std::expected<void, Refusal>;
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
 
 // Lit une clé obligatoire ou facultative d'une table, avec son chemin pour le refus.
 template <class T>
@@ -350,14 +345,6 @@ std::expected<ProfileFile, Refusal> parse_profile(std::string_view toml_text) {
     return refuse(RefusalCode::FieldOutOfRange, "start_profile (profil absent)");
   }
   return file;
-}
-
-std::expected<ProfileFile, Refusal> load_profile(const std::filesystem::path& path) {
-  std::ifstream in(path, std::ios::binary);
-  if (!in) return refuse(RefusalCode::ProfileUnreadable, path.string());
-  std::ostringstream text;
-  text << in.rdbuf();
-  return parse_profile(text.str());
 }
 
 std::string format_profile(const ProfileFile& file) {

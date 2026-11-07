@@ -5,12 +5,13 @@
 #include <numeric>
 #include <string>
 
+#include "core/text.h"
+
 namespace ajp::exporter {
 
 std::optional<Container> container_of(const std::filesystem::path& output) {
   std::string extension = output.extension().string();
-  std::ranges::transform(extension, extension.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  extension = core::ascii_lower(extension);
   if (extension == ".mkv") return Container::Matroska;
   if (extension == ".mp4") return Container::Mp4;
   if (extension == ".mov") return Container::Mov;

@@ -14,6 +14,7 @@
 #include "app/play/span_int8.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/text.h"
 #include "core/thread.h"
 
 namespace ajp::app::play {
@@ -55,8 +56,7 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
   for (const PastBuild& past : past_builds(cache_dir)) {
     std::string file = past.onnx.filename().string();
     std::string lower_file = file;
-    std::ranges::transform(lower_file, lower_file.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    lower_file = core::ascii_lower(lower_file);
     const bool is_rife = lower_file.find("rife") != std::string::npos;
     SpanVariantKind variant_kind = SpanVariantKind::Int8;
     const std::optional<std::string> int8 = span_int8_source(file, &variant_kind);

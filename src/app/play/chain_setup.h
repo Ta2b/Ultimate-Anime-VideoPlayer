@@ -1,5 +1,5 @@
 // Les moteurs d'une ouverture de la chaîne, pour ces réglages : le backend, SPAN, et l'estimateur du
-// mouvement (RIFE ou sa variante mouvement, GMFSS Fortuna, DistilDRBA), construits ou lus du cache
+// mouvement (RIFE ou sa variante mouvement, DistilDRBA), construits ou lus du cache
 // puis chargés, la préparation à l'écran. La lecture (player.cpp) et l'export (export_run.h) les
 // ouvrent de la même façon, et l'étage gpu se décrit d'eux (upscale()).
 #pragma once
@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "app/play/backend_library.h"
-#include "app/play/gmfss_model.h"
 #include "app/play/live_settings.h"
 #include "app/play/model_choice.h"
 #include "app/play/options.h"
@@ -45,9 +44,9 @@ namespace ajp::app::play {
 std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared_vulkan,
                                            bool nvidia_gpu = false);
 
-// Où chercher les graphes de GMFSS : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
-std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
-                                              const std::optional<ModelChoice>& rife);
+// Où chercher le graphe de DistilDRBA : à côté du modèle RIFE choisi, puis dans les dossiers RIFE.
+std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
+                                                     const std::optional<ModelChoice>& rife);
 
 // Images décodées tenues au plus en même temps : par le thread source, par l'étage gpu
 // (RingStage::kMaxFrames en vol) et par le backend après ingest. Autant de surfaces NVDEC rendues
@@ -75,9 +74,7 @@ struct ChainEngines {
   // RIFE cherché même sans interpolation : le menu peut l'allumer.
   std::optional<ModelChoice> rife_choice;
   std::optional<std::filesystem::path> rife_model;
-  std::vector<std::filesystem::path> gmfss_places;  // dossiers des graphes de GMFSS et DistilDRBA
-  GmfssVariant gmfss_variant = GmfssVariant::Base;
-  bool gmfss_found = false;
+  std::vector<std::filesystem::path> model_places;  // dossiers du graphe de DistilDRBA
   bool drba_found = false;
   int drba_align = 64;                   // multiple des plans remplis de DistilDRBA : 128 au demi-flot
   WorkSize rife_size;                    // où RIFE mouvement estime (720p pour une sortie 4K), sinon work
@@ -89,7 +86,6 @@ struct ChainEngines {
   bool one_lane = false;                // --one-lane (UpscaleSetup::one_lane)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
-  GmfssEngines gmfss;
   std::unique_ptr<gpu::Engine> drba;
   std::unique_ptr<gpu::Engine> rife;  // RIFE image, ou l'interpolation d'Apple (apple)
   std::unique_ptr<gpu::Engine> rife_motion;
@@ -97,14 +93,12 @@ struct ChainEngines {
   bool drba_fused = false;   // drba est DistilDRBA fusionné (quatre moteurs et noyaux de colle)
   bool drba_motion = false;  // drba rend flot et masque (variante mouvement, warp après SPAN)
   WorkSize drba_size;        // où DistilDRBA estime : rife_size en variante mouvement, sinon work
-  bool gmfss_fused = false;  // gmfss.pair est le flot seul, gmfss.features les caractéristiques d'une image
   bool apple = false;
 
-  bool use_gmfss() const { return gmfss.pair != nullptr; }
   bool use_drba() const { return drba != nullptr; }
   bool use_apple() const { return apple && rife != nullptr; }
-  bool interpolates() const { return rife || rife_motion || use_gmfss() || use_drba(); }
-  // « GMFSS », « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
+  bool interpolates() const { return rife || rife_motion || use_drba(); }
+  // « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
   std::string_view motion_name() const;
   // « RIFE ×2 · rife_v4.25 · », ou rien sans interpolation.
   std::string motion_label(const PlaySettings& settings) const;

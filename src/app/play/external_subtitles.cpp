@@ -10,15 +10,10 @@
 
 #include "app/play/i18n.h"
 #include "app/play/tracks.h"
+#include "core/text.h"
 
 namespace ajp::app::play {
 namespace {
-
-std::string lower(std::string text) {
-  std::ranges::transform(text, text.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return text;
-}
 
 // Le premier jeton après le nom de la vidéo qui est une langue connue : sa balise (« fr », « eng ») et son
 // nom. Les jetons se séparent par un point, un tiret bas ou une espace (« 2_English », « Subs/fr »).
@@ -32,7 +27,7 @@ std::pair<std::string, std::string> language_of(std::string_view tags) {
       const std::string name = language_name(tag);
       if (!name.empty() && name != tag) return {tag, name};
       for (const Language& known : menu_languages()) {  // « English », « French » en toutes lettres
-        if (lower(std::string(known.name)) == tag)
+        if (core::ascii_lower(std::string(known.name)) == tag)
           return {std::string(known.code), language_name(known.code)};
       }
     }
@@ -42,7 +37,7 @@ std::pair<std::string, std::string> language_of(std::string_view tags) {
 }
 
 bool is_subtitle(const std::filesystem::path& path) {
-  const std::string extension = lower(path.extension().string());
+  const std::string extension = core::ascii_lower(path.extension().string());
   return extension == ".ass" || extension == ".ssa" || extension == ".srt";
 }
 
@@ -94,14 +89,14 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
   std::vector<ExternalSubtitle> found;
   const std::filesystem::path dir =
       video.has_parent_path() ? video.parent_path() : std::filesystem::path(".");
-  const std::string stem = lower(video.stem().string());
+  const std::string stem = core::ascii_lower(video.stem().string());
   if (stem.empty()) return found;
   // Le dossier de la vidéo, puis ses dossiers Subs/ (P3.80) : un fichier au nom de la vidéo, ou tout fichier
   // d'un sous-dossier Subs/<nom de la vidéo>/ (« Subs/Episode 01/2_English.srt »).
   std::vector<std::filesystem::path> dirs{dir};
   std::error_code error;
   for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
-    if (it->is_directory(error) && is_subs_dir(lower(it->path().filename().string())))
+    if (it->is_directory(error) && is_subs_dir(core::ascii_lower(it->path().filename().string())))
       dirs.push_back(it->path());
   }
   for (std::size_t d = 0; d < dirs.size(); ++d) {
@@ -109,14 +104,14 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
     for (std::filesystem::directory_iterator it(dirs[d], error), end; !error && it != end;
          it.increment(error)) {
       const std::filesystem::path& path = it->path();
-      const std::string name = lower(path.stem().string());
+      const std::string name = core::ascii_lower(path.stem().string());
       if (d > 0 && it->is_directory(error)) {
-        if (tags_after(lower(path.filename().string()), stem)) {
+        if (tags_after(core::ascii_lower(path.filename().string()), stem)) {
           std::error_code inner;
           for (std::filesystem::directory_iterator sub(path, inner), stop; !inner && sub != stop;
                sub.increment(inner)) {
             if (sub->is_regular_file(inner) && is_subtitle(sub->path()))
-              add(found, sub->path(), lower(sub->path().stem().string()));
+              add(found, sub->path(), core::ascii_lower(sub->path().stem().string()));
           }
         }
         continue;

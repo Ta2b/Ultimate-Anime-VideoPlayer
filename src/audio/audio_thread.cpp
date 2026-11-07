@@ -8,8 +8,8 @@
 #include <spdlog/spdlog.h>
 
 #include "audio/log.h"
-#include "audio/refuse.h"
 #include "core/thread_role.h"
+#include "core/types.h"
 
 namespace ajp::audio {
 namespace {

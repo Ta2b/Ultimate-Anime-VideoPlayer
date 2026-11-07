@@ -1,5 +1,5 @@
 // DistilDRBA (kernels/spec/distil_drba.h) : son graphe ONNX, exporté par
-// tools/drba/export_distil_drba.py et rangé dans un dossier des modèles RIFE (comme GMFSS), puis sa
+// tools/drba/export_distil_drba.py et rangé dans un dossier des modèles RIFE, puis sa
 // variante à la taille fixée pour la taille remplie de la lecture (derived_model.h).
 #pragma once
 

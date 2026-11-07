@@ -13,14 +13,6 @@
 #include "prepare/sha256.h"
 
 namespace ajp::gpu::cuda {
-namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-}  // namespace
-
 std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSpec& model,
                                                                    const ShapeSet& shapes,
                                                                    Progress& progress) {

@@ -9,8 +9,8 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Modules, threads, graphe des cibles, règles de dépendance |
 | [`adr/`](adr/README.md) | Décisions d'architecture, une page chacune |
-| [`moteurs.md`](moteurs.md) | Moteurs des réseaux : Vulkan, TensorRT, Core ML ; MIGraphX et OpenVINO débranchés ; livraison de TensorRT |
-| [`interpolation.md`](interpolation.md) | Moteurs du mouvement : RIFE, DistilDRBA ; GMFSS débranché de la lecture |
+| [`moteurs.md`](moteurs.md) | Moteurs des réseaux : Vulkan, TensorRT, Core ML ; MIGraphX et OpenVINO retirés ; livraison de TensorRT |
+| [`interpolation.md`](interpolation.md) | Moteurs du mouvement : RIFE, DistilDRBA ; GMFSS retiré |
 | [`auto-libre.md`](auto-libre.md) | Mode Auto de l'interpolation : Rapide et Stable |
 | [`hdr-anime.md`](hdr-anime.md) | Le grade HDR anime guidé ; la sortie HDR ou SDR qui suit le système |
 | [`luts.md`](luts.md) | Les LUT 3D du grade (le choix des looks n'est plus dans le menu) |
@@ -19,7 +19,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`amd-windows.md`](amd-windows.md) | AMD et Windows : le profil RDNA4 du moteur Vulkan, D3D11VA |
 | [`span-fp8-cutlass.md`](span-fp8-cutlass.md) | SPAN entier en FP8 (cran Performance, RTX 40) |
 | [`fp8-interpolation.md`](fp8-interpolation.md) | Le FP8 de RIFE et DistilDRBA ; celui de GMFSS retiré |
-| [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md), [`gmfss-fusionne.md`](gmfss-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
+| [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour |
 | [`a-faire-1-0.md`](a-faire-1-0.md) | Ce qui reste avant la 1.0 |
 
@@ -40,3 +40,5 @@ prendre pour l'état du code.
 | Profils (Ctrl+1 à 9, profil de démarrage) | PR #531 | `play.toml` garde la dernière chaîne ; `user.toml` ne garde que `[keys]` |
 | Méthode HDR (bouton, écran de l'assistant, `hdr.engine`) | PR #532 | `system_hdr` (`src/app/play/host_facts.h`) |
 | Ancien arbre en cinq catégories | PR #533 | Vidéo, Audio et lecture, Général ([ADR 0012](adr/0012-lecteur-simple.md)) |
+| MIGraphX, OpenVINO, Windows ML | 0.10.0 | Vulkan sur AMD et Intel |
+| GMFSS Fortuna (base, union, fusionné, FP8) | 0.10.0 | RIFE et DistilDRBA |

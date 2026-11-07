@@ -39,10 +39,6 @@ constexpr float kUiWhiteNits = 203.0F;
 // Images gardées pour le profil GPU du grade (une heure à 165 Hz tient en dessous).
 constexpr std::size_t kMaxGradeSamples = 1 << 20;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 }  // namespace
 
 PlaceboScreen::PlaceboScreen(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}

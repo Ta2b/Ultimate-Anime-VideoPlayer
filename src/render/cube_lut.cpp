@@ -2,24 +2,20 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <format>
 #include <limits>
+
+#include "core/text.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::render {
 namespace {
 
 Refusal refused(std::string detail) {
   return Refusal{RefusalCode::FileUnreadable, std::move(detail)};
-}
-
-std::string_view trimmed(std::string_view line) {
-  while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) line.remove_prefix(1);
-  while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
-    line.remove_suffix(1);
-  return line;
 }
 
 // Un flottant décimal (signe, chiffres, point, exposant), sans dépendre de la locale ni de
@@ -72,7 +68,7 @@ bool read_triple(std::string_view text, float (&out)[3]) {
   for (float& value : out) {
     if (!read_float(text, value)) return false;
   }
-  return trimmed(text).empty();
+  return core::trim(text).empty();
 }
 
 }  // namespace
@@ -88,13 +84,13 @@ std::expected<CubeLut, Refusal> parse_cube(std::string_view text) {
   std::size_t line_number = 0;
   while (!text.empty()) {
     const std::size_t end = text.find('\n');
-    std::string_view line = trimmed(text.substr(0, end));
+    std::string_view line = core::trim(text.substr(0, end));
     text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
     ++line_number;
     if (line.empty() || line.front() == '#') continue;
     if (!in_data) {
       if (line.starts_with("TITLE")) {
-        std::string_view title = trimmed(line.substr(5));
+        std::string_view title = core::trim(line.substr(5));
         if (title.size() >= 2 && title.front() == '"' && title.back() == '"')
           title = title.substr(1, title.size() - 2);
         lut.title = std::string(title);
@@ -104,7 +100,7 @@ std::expected<CubeLut, Refusal> parse_cube(std::string_view text) {
         return std::unexpected(refused("LUT 1D : seules les LUT 3D sont lues"));
       if (line.starts_with("LUT_3D_SIZE")) {
         int size = 0;
-        const std::string_view value = trimmed(line.substr(11));
+        const std::string_view value = core::trim(line.substr(11));
         const auto [ptr, error] = std::from_chars(value.data(), value.data() + value.size(), size);
         if (error != std::errc{} || ptr != value.data() + value.size())
           return std::unexpected(refused(std::format("ligne {} : LUT_3D_SIZE illisible", line_number)));
@@ -127,7 +123,7 @@ std::expected<CubeLut, Refusal> parse_cube(std::string_view text) {
         std::string_view range = line.substr(18);
         float lo = 0.0F;
         float hi = 0.0F;
-        if (!read_float(range, lo) || !read_float(range, hi) || !trimmed(range).empty() || !(hi > lo))
+        if (!read_float(range, lo) || !read_float(range, hi) || !core::trim(range).empty() || !(hi > lo))
           return std::unexpected(
               refused(std::format("ligne {} : LUT_3D_INPUT_RANGE illisible", line_number)));
         std::fill(std::begin(domain_min), std::end(domain_min), lo);
@@ -159,26 +155,6 @@ std::expected<CubeLut, Refusal> parse_cube(std::string_view text) {
     return std::unexpected(
         refused(std::format("{} lignes de données au lieu de {}", lut.rgb.size() / 3, expected)));
   return lut;
-}
-
-std::uint16_t to_half(float value) {
-  const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
-  const std::uint32_t sign = (bits >> 16U) & 0x8000U;
-  const std::int32_t exponent = static_cast<std::int32_t>((bits >> 23U) & 0xffU) - 127 + 15;
-  std::uint32_t mantissa = bits & 0x7fffffU;
-  if (exponent >= 31)
-    return static_cast<std::uint16_t>(sign | 0x7c00U);  // trop grand : infini (jamais pour [0, 1])
-  if (exponent <= 0) {
-    if (exponent < -10) return static_cast<std::uint16_t>(sign);  // trop petit : zéro
-    mantissa |= 0x800000U;
-    const std::uint32_t shift = static_cast<std::uint32_t>(14 - exponent);
-    std::uint32_t half = mantissa >> shift;
-    if ((mantissa >> (shift - 1U)) & 1U) ++half;  // arrondi au plus proche
-    return static_cast<std::uint16_t>(sign | half);
-  }
-  std::uint32_t half = (static_cast<std::uint32_t>(exponent) << 10U) | (mantissa >> 13U);
-  if (mantissa & 0x1000U) ++half;  // arrondi au plus proche (la retenue peut monter l'exposant : voulu)
-  return static_cast<std::uint16_t>(sign | half);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -261,7 +237,7 @@ std::string lut_texture_block(const CubeLut& lut, std::string_view name) {
   static constexpr char kHex[] = "0123456789abcdef";
   const std::size_t texels = lut.rgb.size() / 3;
   out.reserve(out.size() + texels * 16 + texels / 4 + 8);
-  const std::uint16_t one = to_half(1.0F);
+  const std::uint16_t one = kernels::ref::float_to_half(1.0F);
   const auto put = [&](std::uint16_t half) {  // petit-boutiste, comme la texture en mémoire
     const unsigned char bytes[2] = {static_cast<unsigned char>(half & 0xffU),
                                     static_cast<unsigned char>(half >> 8U)};
@@ -271,9 +247,9 @@ std::string lut_texture_block(const CubeLut& lut, std::string_view name) {
     }
   };
   for (std::size_t i = 0; i < texels; ++i) {
-    put(to_half(lut.rgb[3 * i]));
-    put(to_half(lut.rgb[3 * i + 1]));
-    put(to_half(lut.rgb[3 * i + 2]));
+    put(kernels::ref::float_to_half(lut.rgb[3 * i]));
+    put(kernels::ref::float_to_half(lut.rgb[3 * i + 1]));
+    put(kernels::ref::float_to_half(lut.rgb[3 * i + 2]));
     put(one);
     if (i % 4 == 3) out.push_back('\n');
   }
@@ -344,6 +320,17 @@ std::string write_cube(const CubeLut& lut) {
   for (std::size_t i = 0; i + 2 < lut.rgb.size(); i += 3)
     out += std::format("{:.6f} {:.6f} {:.6f}\n", lut.rgb[i], lut.rgb[i + 1], lut.rgb[i + 2]);
   return out;
+}
+
+bool look_is_pq(std::string_view name, std::string_view title) {
+  const auto has = [](std::string_view text, std::string_view word) {
+    std::string lowered(text);
+    lowered = core::ascii_lower(lowered);
+    return lowered.find(word) != std::string::npos;
+  };
+  for (const std::string_view text : {name, title})
+    if (has(text, "pq") || has(text, "hdr") || has(text, "2020")) return true;
+  return false;
 }
 
 }  // namespace ajp::render

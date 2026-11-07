@@ -17,14 +17,6 @@
 #include "media/yuv_sample.h"
 
 namespace ajp::media {
-namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-}  // namespace
-
 std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
   namespace fs = kernels::frame_stats;
   const std::optional<yuv::Layout> layout = yuv::layout_of(frame.format);

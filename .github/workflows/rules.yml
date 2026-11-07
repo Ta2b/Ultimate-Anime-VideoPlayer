@@ -29,6 +29,12 @@ jobs:
         run: tools/ci/check-no-getenv.sh
       - name: Aucun atoi ni sscanf
         run: tools/ci/check-no-atoi.sh
+      - name: Un seul exemplaire des utilitaires
+        run: tools/ci/check-utilities.sh
+      - name: Graphe des modules
+        run: tools/ci/check-module-graph.py
+      - name: Complexité des fonctions
+        run: pip install --user -q lizard==1.25.1 && tools/ci/check-complexity.py
       - name: Shaders
         env:
           CXX: g++-13

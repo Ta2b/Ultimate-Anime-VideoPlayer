@@ -2,8 +2,8 @@
 //
 // Provisoire pour la tranche verticale : l'enveloppe complète (profils de formes, journal
 // relié à spdlog, refus détaillés) est le chantier pc/tensorrt (src/gpu/cuda/trt). Celle-ci
-// ne connaît que ce que SPAN, RIFE et GMFSS demandent : 1 à kMaxInputs entrées et 1 à kMaxOutputs
-// sorties FP16 de formes fixes (GMFSS : le graphe « paire » a 14 sorties, « fusion » 8 entrées).
+// ne connaît que ce que SPAN, RIFE et DistilDRBA demandent : 1 à kMaxInputs entrées et 1 à kMaxOutputs
+// sorties FP16 de formes fixes (DistilDRBA fusionné : plusieurs).
 #pragma once
 
 #include <cstdint>
@@ -31,9 +31,9 @@ namespace ajp::gpu::cuda {
 
 // Mémoire d'activation partagée par les moteurs d'une voie du backend (gpu/lanes.h) : ils
 // s'exécutent l'un après l'autre sur sa file, une zone de la taille du plus gros suffit. Sans
-// elle, RIFE, SPAN et les graphes de GMFSS gardent chacun la leur : plusieurs centaines de Mo de
+// elle, RIFE, SPAN et DistilDRBA gardent chacun la leur : plusieurs centaines de Mo de
 // plus sur les 6 Go d'une RTX 4050 mobile. Deux voies de calcul, deux zones : SPAN tourne
-// pendant RIFE ou GMFSS sans écrire leur mémoire.
+// pendant RIFE ou DistilDRBA sans écrire leur mémoire.
 class SharedActivations {
  public:
   SharedActivations() = default;

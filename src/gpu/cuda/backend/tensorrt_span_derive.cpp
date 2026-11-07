@@ -35,10 +35,6 @@
 namespace ajp::gpu::cuda {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Mémoire d'appareil et flux rendus quoi qu'il arrive.
 struct Scratch {
   void* input = nullptr;
@@ -80,6 +76,7 @@ std::vector<float> to_unit(const std::vector<__half>& half) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const SpanFp8Request& request,
                                                                            Progress& progress) {
   if (!SpanFp8Net::supported_device(properties_.major, properties_.minor)) {

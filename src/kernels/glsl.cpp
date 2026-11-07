@@ -170,8 +170,6 @@ void add_rife_warp(Table& t) {
   t.integer("POSE_ITERATIONS", kPoseIterations, "Garder les poses (spec/poses.h)");
   t.real("POSE_EPSILON", kPoseEpsilon);
   t.real("POSE_TIME_LIMIT", kPoseTimeLimit);
-  t.real("GMFSS_NORMALIZE_EPSILON", kGmfssNormalizeEpsilon, "GMFSS : somme / (poids + epsilon)");
-  t.real("GMFSS_METRIC_LIMIT", kGmfssMetricLimit, "GMFSS : la métrique z est bornée à [-limite, limite]");
 }
 
 void add_transfer(Table& t) {

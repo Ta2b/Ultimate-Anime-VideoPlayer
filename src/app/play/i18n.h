@@ -18,7 +18,6 @@ char decimal_point();
 
 // Code de réglage (« en », « fr ») : un code inconnu donne l'anglais.
 Language language_from_code(std::string_view code);
-std::string_view language_code(Language language);
 
 // Le texte d'interface. La clé est le texte anglais (c'est lui qui s'affiche en anglais) ; le français vient
 // de la table i18n_fr_*.cpp. Une clé absente de la table s'affiche telle quelle ; un test refuse toute clé

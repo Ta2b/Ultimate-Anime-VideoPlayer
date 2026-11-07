@@ -11,8 +11,8 @@
 //      jusqu'au premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas
 //      ne se tient pas avec RIFE.
 // SPAN est le Balanced Sharp en FP8 quand la carte le prend (FP8 CUTLASS), sinon le Performance Sharp en
-// FP16. Sans palier SPAN qui tienne, RIFE seul (SPAN coupé) est le recours. GMFSS et DistilDRBA ne sont pas
-// essayés. Ici la recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants,
+// FP16. Sans palier SPAN qui tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas
+// essayé. Ici la recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants,
 // auto_bench_run.h) dans le .cpp.
 #pragma once
 

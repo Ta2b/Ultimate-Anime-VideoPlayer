@@ -19,10 +19,6 @@
 namespace ajp::gpu::vk::net {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{.code = code, .detail = std::move(detail)});
-}
-
 // Chaque sortie du graphe vient d'un nœud : une entrée ou une constante rendue telle quelle
 // n'a pas de noyau.
 std::expected<void, Refusal> check_interface(const ir::Graph& graph) {
@@ -44,7 +40,7 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
   if (!graph) return std::unexpected(graph.error());
   if (graph->inputs.empty())
     return refuse(RefusalCode::InputMismatch, std::format("{} : aucune entrée", request.model_id));
-  // Une entrée prend la forme demandée ; plusieurs (GMFSS, DistilDRBA) gardent celles du modèle,
+  // Une entrée prend la forme demandée ; plusieurs (DistilDRBA) gardent celles du modèle,
   // que le lecteur fige avant la construction (derived_model.h).
   std::vector<ir::InputShape> shapes;
   for (const ir::TensorId id : graph->inputs) {

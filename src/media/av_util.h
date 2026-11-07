@@ -15,6 +15,7 @@ extern "C" {
 #include <libavutil/frame.h>
 }
 
+#include "core/av_error.h"
 #include "core/types.h"
 #include "media/track.h"
 
@@ -44,11 +45,10 @@ using BufferPtr = std::unique_ptr<AVBufferRef, BufferUnref>;
 
 inline constexpr AVRational kMicroseconds{1, 1'000'000};
 
-// Texte de av_strerror pour un code AVERROR.
-std::string av_error_text(int error);
+// Texte de av_strerror pour un code AVERROR (core/av_error.h).
+using core::av_error_text;
 
 // Refus nommé : « où : texte FFmpeg ».
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail);
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error);
 
 // Horodatage d'un flux en microsecondes depuis le début du fichier ;
@@ -59,8 +59,5 @@ std::int64_t to_us(std::int64_t ts, AVRational time_base, std::int64_t start_us)
 std::int64_t from_us(std::int64_t us, AVRational time_base, std::int64_t start_us);
 // Durée d'un flux en microsecondes, 0 si inconnue ou négative.
 std::int64_t duration_to_us(std::int64_t duration, AVRational time_base);
-
-// Nouvelle référence sur un tampon, ou nullptr.
-BufferPtr ref_buffer(const AVBufferRef* ref);
 
 }  // namespace ajp::media

@@ -12,10 +12,6 @@
 namespace ajp::gpu::cuda {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 #ifdef _WIN32
 // Sous Windows, CUDA ne prend pas le HANDLE NT : celui du ring sert tel quel, fermé par le ring.
 constexpr HandleKind kKind = HandleKind::OpaqueWin32;

@@ -7,17 +7,24 @@
 // ses sorties.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <optional>
 #include <span>
 #include <string_view>
 
+#include "core/display.h"
 #include "core/profile.h"
-#include "core/resolve.h"
 #include "core/types.h"
+#include "render/cube_lut.h"
 
 namespace ajp::render {
+
+// L'exposition par plan de la méthode anime : 0,25 diaphragme par diaphragme d'APL du plan rapportée à la
+// médiane de la série, bornée à ±0,25 diaphragme (reprise de l'ancienne courbe par plan, étape 8.5).
+inline constexpr double kAnimeExposureSlope = 0.25;
+inline constexpr double kAnimeExposureMaxE = 0.25;
 
 // Plages des réglages, incluses ; une valeur hors plage est refusée, jamais corrigée.
 namespace grade_limits {
@@ -60,7 +67,7 @@ struct GradeSettings {
   // La lumière de la scène de l'image qui vient ; vide, inconnue. Jamais écrite dans play.toml.
   std::optional<SceneLight> scene_light;
   // La méthode « HDR anime » décidée par plan (méga plan A2, --anime-shots) : l'exposition des surfaces du
-  // plan, en diaphragmes (|E| ≤ 0,25, render/curve.h) ; 0 : le relèvement fixe. Jamais écrite dans play.toml.
+  // plan, en diaphragmes (|E| ≤ kAnimeExposureMaxE) ; 0 : le relèvement fixe. Jamais écrite dans play.toml.
   double anime_exposure = 0.0;
   // La médiane des luminances moyennes des plans connus (nits au blanc de 203 ; 0 : inconnue), pour les noirs
   // profonds (P3.52). Jamais écrite dans play.toml.
@@ -90,7 +97,7 @@ enum class GradeMode : std::uint8_t {
 };
 
 struct GradeContext {
-  core::HdrMode route = core::HdrMode::Off;  // celle du Plan
+  core::HdrMode route = core::HdrMode::Off;  // la route HDR jouée
   bool source_hdr = false;                   // source PQ ou HLG
   bool output_pq = false;                    // la cible est encodée en PQ ; sinon SDR BT.709
   bool enabled = true;                       // bascule A/B de l'utilisateur
@@ -123,21 +130,7 @@ struct GradeParams {
   double pivot = 80.0;
   // Le look (LUT .cube, anime-hdr-look.hook) : intensité (0 : passe sautée), blanc de référence de la LUT en
   // nits, 1 si la LUT attend du PQ BT.2020 plutôt que du SDR BT.709.
-  double look_mix = 0.0;
-  double look_mix2 = 0.0;  // les LUT suivantes, enchaînées après la première (kLookSlots en tout)
-  double look_mix3 = 0.0;
-  double look_mix4 = 0.0;
-  double look_mix5 = 0.0;
-  double look_mix6 = 0.0;
-  double look_mix7 = 0.0;
-  double look_mix8 = 0.0;
-  double look_mix9 = 0.0;
-  double look_mix10 = 0.0;
-  double look_mix11 = 0.0;
-  double look_mix12 = 0.0;
-  double look_mix13 = 0.0;
-  double look_mix14 = 0.0;
-  double look_mix15 = 0.0;
+  std::array<double, kLookSlots> look_mixes{};  // une intensité par LUT enchaînée, [0] la première
   double look_white = 203.0;
   double look_pq = 0.0;
   double look_clean = 0.0;  // 1 : la pile sur la couleur du voisinage, grain et paliers non étirés

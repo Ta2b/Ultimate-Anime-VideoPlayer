@@ -53,7 +53,6 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.motion_engine = MotionEngine::DistilDrba;
   s.rife_model = "rife_v4.22_lite.onnx";
   s.keep_poses = true;
-  s.gmfss_precision = PrecisionTier::Quality;
   s.span_precision = PrecisionTier::Performance;
   s.motion_precision = PrecisionTier::Quality;
   s.rife_auto = true;
@@ -142,8 +141,6 @@ TEST_CASE("Le mode HDR n'est plus un réglage : seul le pic se lit, les fichiers
 TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichiers d'avant",
           "[app][settings]") {
   CHECK(PlaySettings{}.span_order == SpanOrder::Auto);
-  CHECK(PlaySettings{}.gmfss_precision ==
-        PrecisionTier::Balanced);  // GMFSS reste en FP16 : son FP8 dégrade les gros mouvements
   CHECK(PlaySettings{}.span_precision == PrecisionTier::Balanced);
   CHECK(PlaySettings{}.autoplay_next);  // P3.84
   CHECK(PlaySettings{}.motion_precision == PrecisionTier::Balanced);
@@ -197,6 +194,11 @@ TEST_CASE("Une clé absente garde son défaut, une clé inconnue est ignorée", 
   const auto empty = parse_settings("");
   REQUIRE(empty);
   CHECK(*empty == PlaySettings{});
+  // Les clés retirées en 0.10 (P5.5) se relisent sans refus et ne se réécrivent plus.
+  const auto old = parse_settings("[span_prepare]\nbackground = true\n[default_player]\ndismissed = true\n");
+  REQUIRE(old);
+  CHECK(*old == *parse_settings("[autre]\nx = 1\n"));
+  CHECK(format_settings(*old).find("dismissed") == std::string::npos);
 }
 
 TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settings]") {
@@ -375,32 +377,6 @@ TEST_CASE("Écrire puis relire play.toml ; absent : les défauts", "[app][settin
   std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("GMFSS : changer de cran de précision recharge la chaîne, seulement pour GMFSS",
-          "[app][settings]") {
-  PlaySettings running;
-  running.rife_factor = 2;
-  running.motion_engine = MotionEngine::Gmfss;
-  running.gmfss_precision = PrecisionTier::Balanced;
-  PlaySettings wanted = running;
-  wanted.gmfss_precision = PrecisionTier::Quality;
-  const Change change = change_between(running, wanted, true);
-  CHECK(change.cost == ChangeCost::Reopen);
-  CHECK(change.reason.find("Quality") != std::string::npos);
-  CHECK(change.reason.find("FP32") != std::string::npos);
-  // Le nouveau cran Performance (FP8), et le sens inverse.
-  wanted.gmfss_precision = PrecisionTier::Performance;
-  const Change fast = change_between(running, wanted, true);
-  CHECK(fast.cost == ChangeCost::Reopen);
-  CHECK(fast.reason.find("FP8") != std::string::npos);
-  running.gmfss_precision = PrecisionTier::Quality;
-  wanted.gmfss_precision = PrecisionTier::Balanced;
-  CHECK(change_between(running, wanted, true).cost == ChangeCost::Reopen);
-  // Un autre moteur du mouvement ne recharge rien pour ce réglage.
-  running.motion_engine = MotionEngine::Rife;
-  wanted.motion_engine = MotionEngine::Rife;
-  CHECK(change_between(running, wanted, true).cost != ChangeCost::Reopen);
-}
-
 TEST_CASE("SPAN, RIFE et DistilDRBA : le cran de précision recharge la chaîne", "[app][settings]") {
   PlaySettings running;
   running.rife_factor = 2;
@@ -428,23 +404,21 @@ TEST_CASE("SPAN, RIFE et DistilDRBA : le cran de précision recharge la chaîne"
   CHECK(change_between(running, wanted, true).cost != ChangeCost::Reopen);
 }
 
-TEST_CASE("crans de précision : play.toml, y compris l'ancien gmfss_quality", "[app][settings]") {
+TEST_CASE("crans de précision : play.toml ; les clés de GMFSS d'avant se lisent, ignorées",
+          "[app][settings]") {
   PlaySettings s;
   s.span_precision = PrecisionTier::Performance;
   s.motion_precision = PrecisionTier::Quality;
-  s.gmfss_precision = PrecisionTier::Performance;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(back->span_precision == PrecisionTier::Performance);
   CHECK(back->motion_precision == PrecisionTier::Quality);
-  CHECK(back->gmfss_precision == PrecisionTier::Performance);
-  // Les fichiers d'avant : gmfss_quality vrai donne Qualité, faux laisse l'Équilibre (l'ancien Performance).
-  const auto quality = parse_settings("version = 1\n[interpolation]\ngmfss_quality = true\n");
-  REQUIRE(quality);
-  CHECK(quality->gmfss_precision == PrecisionTier::Quality);
-  const auto legacy_off = parse_settings("version = 1\n[interpolation]\ngmfss_quality = false\n");
-  REQUIRE(legacy_off);
-  CHECK(legacy_off->gmfss_precision == PrecisionTier::Balanced);
+  CHECK(format_settings(s).find("gmfss") == std::string::npos);
+  const auto legacy = parse_settings(
+      "version = 1\n[interpolation]\ngmfss_quality = true\ngmfss_fused = true\ngmfss_precision = "
+      "\"quality\"\n");
+  REQUIRE(legacy);
+  CHECK(legacy->motion_precision == PrecisionTier::Balanced);
   // Un cran inconnu est refusé, sans changer les autres réglages.
   CHECK_FALSE(parse_settings("version = 1\n[image]\nspan_precision = \"fp4\"\n"));
   CHECK_FALSE(parse_settings("version = 1\n[interpolation]\nmotion_precision = 3\n"));
@@ -614,32 +588,16 @@ TEST_CASE("un refus qui ne nomme pas sa clé n'efface pas le reste, grade compri
   CHECK(dropped.size() == 1);
 }
 
-TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de chemin est refusé",
+TEST_CASE("play.toml : les clés de l'ancienne pile de LUT se lisent et ne sont plus écrites",
           "[app][settings]") {
-  ajp::app::play::PlaySettings s;
-  s.look = "maison:shinkai";
-  s.look_mix = 0.65;
-  s.look_layers = {{"HDR_base.cube", 0.4}, {"maison:pastel", 0.25}, {"x.cube", 1.0}};
-  const auto back = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
-  REQUIRE(back.has_value());
-  CHECK(back->look == "maison:shinkai");
-  CHECK(back->look_mix == 0.65);
-  CHECK(back->look_layers == s.look_layers);
-  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlooks = ['a/b.cube']\n").has_value());
-  CHECK_FALSE(
-      ajp::app::play::parse_settings("[grade]\nlooks = ['a.cube']\nlooks_mix = [-0.1]\n").has_value());
-  CHECK_FALSE(ajp::app::play::parse_settings(
-                  "[grade]\nlooks = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p']\n")
-                  .has_value());
-  const auto no_mix = ajp::app::play::parse_settings("[grade]\nlooks = ['a.cube']\n");
-  REQUIRE(no_mix.has_value());
-  CHECK(no_mix->look_layers.at(0).mix == 1.0);
-  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook = '../x.cube'\n").has_value());
-  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
-  const ajp::app::play::PlaySettings
-      defaults;  // la pile de LUT de référence, cuite en une seule LUT (bake_stack.py)
-  CHECK(defaults.look == "HDR pile unique 65 point.cube");
-  CHECK(defaults.look_layers.empty());
+  const auto old = ajp::app::play::parse_settings(
+      "[grade]\nlook = '../x.cube'\nlook_mix = 1.5\nlooks = ['a/b.cube']\nlooks_mix = [-0.1]\nlook_contrast "
+      "= 20\n");
+  REQUIRE(old.has_value());
+  CHECK(old->look_contrast == 20);
+  const std::string written = ajp::app::play::format_settings(ajp::app::play::PlaySettings{});
+  CHECK(written.find("look_mix") == std::string::npos);
+  CHECK(written.find("looks") == std::string::npos);
 }
 
 TEST_CASE("play.toml : une version plus récente garde ses clés à la réécriture (P2.22)", "[app][settings]") {

@@ -18,27 +18,22 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
 - `Priority` (Fluidité, Équilibre, Image) : absente du menu, encore lue dans `play.toml` par `apply_preset`.
   À retirer ou à rattacher au niveau de traitement.
 
-## Reporté
-
-- **GMFSS Fortuna Union : artefacts** (fond vert saturé, formes en miroir, traînées), en FP16 comme en FP32. Seule
-  différence avec Base : le RIFE intégré du graphe fusion (`tools/gmfss/gmfss_graph.py`, `Fusion.forward`). GMFSS
-  est débranché de la lecture (`docs/interpolation.md`) ; mesure GPU à lancer sur ordre de Tatoub.
-
 ## Audit 0.9.1, phase 5 : ce qui reste
 
-La phase 5 du plan d'audit a livré une règle par contrôle de CI (complexité, `path::string()`, commentaires,
-version unique) et les corrections ponctuelles. Restent les chantiers d'architecture, chacun une PR à lui :
+La phase 5 a livré ses contrôles de CI (complexité avec `tools/ci/complexity-baseline.txt`, graphe des modules,
+utilitaires réécrits, `path::string()`, commentaires, version unique), le code mort, les options fantômes, les
+utilitaires communs (`core/text.h`, `core/av_error.h`, `ajp::refuse`), les seuils nommés, le module de chemins
+(`paths.h`), l'état du menu hors des `static`, les en-têtes précompilés (`AJP_PCH`), clang-tidy sur TensorRT et
+Core ML, et l'empreinte de la frontière des moteurs (`cmake/BoundaryHash.cmake`). Les journaux restent en français
+(P5.40). Restent, chacun une PR à lui :
 
-- **P5.1** code mort : `resolve()`, `Plan`, `pace_rule`, `Capabilities` (les types d'écran et de source qu'ils
-  portent passent d'abord dans un en-tête à eux), MIGraphX, OpenVINO, WinML, GMFSS, `curve`, `look_mix*`.
-  L'import `.ini` est retiré.
+- **P5.1** les additions atomiques de float du moteur Vulkan, sans noyau depuis GMFSS : à retirer après une mesure
+  sur un vrai GPU.
 - **P5.4** LUT et `calibration.mkv` hors de git (attend la licence des LUT, P7.7).
-- **P5.5** options fantômes et champs TOML morts ; **P5.13** utilitaires réécrits (refus, lecture de
-  fichier, minuscules…) ; **P5.30** seuils en ligne ; **P5.31** duplications de l'application.
-- **P5.8** clang-tidy sur Windows, macOS et TensorRT.
-- **P5.15** et **P5.16** : découper `run_chain`, `play`, `UpscaleStage::outputs`… (les 40 `NOLINTNEXTLINE` de
-  complexité les nomment) et une interface `Interpolator` par moteur.
-- **P5.19** ABI des moteurs stable par extensions ; **P5.24** cycle `gpu` ⇄ `prepare` ; **P5.25** en-têtes
-  précompilés ; **P5.26** graphe des dépendances vérifié en CI ; **P5.27** état global mutable ; **P5.32** un
-  module de chemins.
-- **P5.40** langue des journaux : attend la décision P7.5.
+- **P5.8** clang-tidy sur Windows.
+- **P5.15** suite du découpage : `run_chain` (la surveillance du mode Auto en est sortie, `auto_watch.h`), `play`,
+  `UpscaleStage::outputs` ; la base de complexité ne peut que diminuer.
+- **P5.16** une interface `Interpolator` par moteur : à faire avec un GPU sous la main, la chaîne d'interpolation
+  ne se vérifie pas sur lavapipe seul.
+- **P5.19** la moitié « extensions » : une interface de base stable et des extensions par identifiant. L'empreinte
+  refuse déjà un module bâti sur une autre frontière.

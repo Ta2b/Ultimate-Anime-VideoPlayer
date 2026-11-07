@@ -14,9 +14,8 @@
 #include <string_view>
 #include <vector>
 
+#include "core/display.h"
 #include "core/engines.h"
-#include "core/plan.h"
-#include "core/resolve.h"
 #include "core/types.h"
 
 namespace ajp::core {
@@ -29,7 +28,7 @@ struct DebugFlags {
   bool no_cuda_graphs = false;           // --no-cuda-graphs : chaque paire lancée sans graphe
   bool trace_pairs = false;              // --trace-pairs : temps et attentes de chaque paire au journal
   bool no_exact_reuse = false;           // --no-exact-reuse : recalcule chaque paire, sans cache
-  bool dump_plan = false;                // --dump-plan : écrit chaque Plan résolu au journal
+  bool dump_plan = false;                // --dump-plan : sans effet, accepté pour les anciens scripts
   bool profile_dispatches = false;       // --profile-dispatches : temps GPU par shader des réseaux Vulkan
   std::optional<EngineId> force_engine;  // --engine=tensorrt : ignore le moteur préféré
   std::optional<DisplayInfo> display;    // --display=2560x1440@165[:hdr] : remplace l'écran détecté

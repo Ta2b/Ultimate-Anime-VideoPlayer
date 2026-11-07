@@ -12,7 +12,7 @@ double CostModel::weight_of(const ImageCost& c, std::int64_t now_us) const {
 }
 
 void CostModel::add(int images, std::int64_t cost_us, std::int64_t now_us) {
-  if (cost_us <= 0 || cost_us > 5'000'000) return;
+  if (cost_us <= 0 || cost_us > kMaxCostUs) return;
   ImageCost& c = costs_[static_cast<std::size_t>(std::clamp(images, 1, kMaxImages))];
   double w = weight_of(c, now_us);
   const double value = static_cast<double>(cost_us);

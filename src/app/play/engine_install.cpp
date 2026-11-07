@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <format>
 #include <fstream>
-#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <mutex>
@@ -17,86 +16,14 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/engine_tools.h"
 #include "app/play/i18n.h"
 #include "core/dir_entries.h"
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-#include <SDL3/SDL_loadso.h>
-
-#include "app/play/engine_tools.h"
 #include "core/inflate.h"
 #include "core/log.h"
+#include "core/text.h"
 
 namespace ajp::app::play {
-namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
-bool any_exists(std::initializer_list<std::string_view> paths) {
-  std::error_code error;
-  for (const std::string_view p : paths) {
-    if (std::filesystem::exists(std::filesystem::path(p), error)) return true;
-  }
-  return false;
-}
-
-// AL6 : la version majeure du runtime HIP installé, lue par la bibliothèque elle-même (hipRuntimeGetVersion,
-// HIP_VERSION = majeure × 10⁷ + mineure × 10⁵ + correctif) : un nom de fichier ne dit rien d'un ROCm plus
-// récent que celui contre lequel le module est construit. Rien si aucune ne se charge.
-std::optional<int> hip_runtime_major() {
-  for (const char* path :
-       {"/opt/rocm/lib/libamdhip64.so", "/opt/rocm/lib/libamdhip64.so.7", "libamdhip64.so"}) {
-    SDL_SharedObject* lib = SDL_LoadObject(path);
-    if (lib == nullptr) continue;
-    using GetVersion = int (*)(int*);
-    const auto get = reinterpret_cast<GetVersion>(SDL_LoadFunction(lib, "hipRuntimeGetVersion"));
-    int version = 0;
-    std::optional<int> major;
-    if (get != nullptr && get(&version) == 0 && version > 0) major = version / 10000000;
-    SDL_UnloadObject(lib);
-    if (major) return major;
-  }
-  return std::nullopt;
-}
-
-// MIGraphX de Windows ML demande Windows 11 24H2 (build 26100) ; le pilote AMD, Windows ML le
-// vérifie lui-même (winml_library.h).
-constexpr unsigned long kWinmlBuild = 26100;
-
-#ifdef _WIN32
-// Le build de Windows par RtlGetVersion (GetVersionEx rend celui du manifeste) ; 0 s'il échappe.
-unsigned long windows_build() {
-  using GetVersion = LONG(WINAPI*)(OSVERSIONINFOW*);
-  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-  if (ntdll == nullptr) return 0;
-  const auto get =
-      reinterpret_cast<GetVersion>(reinterpret_cast<void*>(GetProcAddress(ntdll, "RtlGetVersion")));
-  OSVERSIONINFOW info{};
-  info.dwOSVersionInfoSize = sizeof(info);
-  if (get == nullptr || get(&info) != 0) return 0;
-  return info.dwBuildNumber;
-}
-#else
-unsigned long windows_build() {
-  return 0;
-}
-#endif
-
-std::optional<std::string> windows_prerequisite(core::EngineId engine) {
-  if (engine != core::EngineId::MiGraphX) return std::nullopt;  // les pilotes fournissent le reste
-  const unsigned long build = windows_build();
-  if (build == 0 || build >= kWinmlBuild) return std::nullopt;
-  return i18n::tr_format(
-      "Windows 11 24H2 required (build {} installed): update Windows through Windows Update", build);
-}
-
-}  // namespace
-
 core::Os host_os() {
   return core::kHostOs;
 }
@@ -160,51 +87,16 @@ std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
 
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog) {
   std::vector<std::filesystem::path> out;
-  for (const core::EngineId id :
-       {core::EngineId::TensorRt, core::EngineId::MiGraphX, core::EngineId::OpenVino}) {
-    if (!core::engine_plugged(id)) continue;  // un ancien paquet installé ne s'ouvre plus
-    const core::EnginePackage* package = package_for(catalog, id);
-    if (package != nullptr && installed(catalog, *package))
-      out.push_back(core::backend_library(catalog.layout, *package));
-  }
+  // Un ancien paquet MIGraphX ou OpenVINO installé ne s'ouvre plus : TensorRT seul.
+  const core::EnginePackage* package = package_for(catalog, core::EngineId::TensorRt);
+  if (package != nullptr && installed(catalog, *package))
+    out.push_back(core::backend_library(catalog.layout, *package));
   return out;
-}
-
-std::optional<std::string> missing_prerequisite(core::EngineId engine) {
-  if (host_os() == core::Os::Windows) return windows_prerequisite(engine);
-  if (host_os() != core::Os::Linux) return std::nullopt;
-  switch (engine) {
-    case core::EngineId::MiGraphX:
-      // Le module est lié au runtime HIP de ROCm 7 (libamdhip64.so.7) : un ROCm 6 ne le charge pas.
-      if (!any_exists({"/opt/rocm/lib/libmigraphx_c.so.3", "/opt/rocm/lib/libmigraphx_c.so"}))
-        return i18n::tr(
-            "ROCm missing: install \"migraphx\" from AMD's ROCm 7 repository (sudo apt install migraphx)");
-      // ROCm 7 ou plus récent (10.x depuis octobre 2026) : la version que dit le runtime ; à défaut, le
-      // fichier du runtime de ROCm 7.
-      if (const std::optional<int> major = hip_runtime_major()) {
-        if (*major >= 7) return std::nullopt;
-      } else if (any_exists({"/opt/rocm/lib/libamdhip64.so.7"})) {
-        return std::nullopt;
-      }
-      return i18n::tr(
-          "ROCm 7 required (ROCm 6 installed): switch to AMD's ROCm 7 repository, then sudo apt install "
-          "migraphx");
-    case core::EngineId::OpenVino:
-      if (any_exists({"/usr/lib/x86_64-linux-gnu/libze_intel_gpu.so.1",
-                      "/usr/lib/x86_64-linux-gnu/intel-opencl/libigdrcl.so",
-                      "/usr/lib64/libze_intel_gpu.so.1", "/usr/lib/libze_intel_gpu.so.1"})) {
-        return std::nullopt;
-      }
-      return i18n::tr("Intel compute driver missing (sudo apt install intel-opencl-icd libze-intel-gpu1)");
-    default:
-      return std::nullopt;
-  }
 }
 
 std::string cuda_arch_from_name(std::string_view gpu_name) {
   std::string name(gpu_name);
-  std::ranges::transform(name, name.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  name = core::ascii_lower(name);
   const auto has = [&](std::string_view part) { return name.find(part) != std::string::npos; };
   const auto series = [&](char digit) {  // « rtx 4050 » : la série à deux chiffres, ici 40
     const std::size_t at = name.find("rtx ");

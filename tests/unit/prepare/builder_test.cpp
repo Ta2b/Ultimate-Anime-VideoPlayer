@@ -256,7 +256,8 @@ TEST_CASE("TrtexecBuilder : ONNX statique, aucun profil de formes", "[prepare][b
 }
 
 TEST_CASE("TrtexecBuilder : graphe statique à plusieurs entrées nommées autrement", "[prepare][builder]") {
-  // Le graphe « fusion » de GMFSS, ses tailles fixées : half0, half1, warped…, aucun « input ».
+  // Un graphe aux tailles fixées (l'ancien graphe « fusion » de GMFSS) : half0, half1, warped…, aucun « input
+  // ».
   Steps steps;
   auto progress = steps.progress();
   const ShapeSet shapes = fixed(3, 96, 128);

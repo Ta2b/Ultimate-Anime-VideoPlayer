@@ -51,6 +51,14 @@ PlaySettings with_kept_choices(const Chain& to, PlaySettings settings) {
 
 namespace {
 
+// Ce qui recompose le grade : une seule liste pour la pose du grade et pour la recomposition en pause.
+bool grade_changed(const PlaySettings& a, const PlaySettings& b) {
+  return a.grade != b.grade || a.grade_values != b.grade_values || a.hdr_native != b.hdr_native ||
+         a.true_hdr_peak != b.true_hdr_peak || a.oled_black != b.oled_black ||
+         a.oled_black_steps != b.oled_black_steps || a.look_contrast != b.look_contrast ||
+         a.look_highlight != b.look_highlight;
+}
+
 // Un raccourci change la chaîne pour la séance : play.toml garde ce qu'il avait avant.
 void keep_for_file(Chain& to, bool grade, bool rife) {
   if (grade && !to.kept_grade) to.kept_grade = to.running.grade;
@@ -132,15 +140,11 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.live.set_reduction(reduction_of(wanted.downscale));
     controls.notify(i18n::ui_tr_format("Downscale: {}", label(wanted.downscale)), now_us);
   }
-  // Le pic visé par le grade.
-  const bool look_changed = wanted.true_hdr_peak != r.true_hdr_peak;
   if (!same_look_files(wanted, r)) {
     start_looks(to, wanted);  // lues en fond, posées au tour suivant (tend_looks)
   }
-  if (wanted.grade != r.grade || wanted.grade_values != r.grade_values || wanted.hdr_native != r.hdr_native ||
-      look_changed || wanted.oled_black != r.oled_black || wanted.oled_black_steps != r.oled_black_steps ||
-      wanted.look != r.look || wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers ||
-      wanted.look_contrast != r.look_contrast || wanted.look_highlight != r.look_highlight) {
+  const bool grade_moved = grade_changed(wanted, r);
+  if (grade_moved) {
     // SDR ou HDR en direct : la swapchain change d'espace de couleur à la présentation suivante.
     if (wanted.hdr_native != r.hdr_native) to.screen.set_sdr_output(!wanted.hdr_native);
     set_grade(to, wanted);
@@ -187,12 +191,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   // Grade et finition agissent sur l'image tenue : sans cette demande, en pause (ou entre deux
   // images neuves) rien ne la recomposait et le réglage n'apparaissait qu'au mouvement suivant.
-  if (wanted.grade != r.grade || wanted.grade_values != r.grade_values ||
-      wanted.final_scaler != r.final_scaler || wanted.deband != r.deband || wanted.sharpness != r.sharpness ||
-      wanted.hdr_native != r.hdr_native || look_changed || wanted.oled_black != r.oled_black ||
-      wanted.oled_black_steps != r.oled_black_steps || wanted.look != r.look ||
-      wanted.look_mix != r.look_mix || wanted.look_layers != r.look_layers ||
-      wanted.look_contrast != r.look_contrast || wanted.look_highlight != r.look_highlight)
+  if (grade_moved || wanted.final_scaler != r.final_scaler || wanted.deband != r.deband ||
+      wanted.sharpness != r.sharpness)
     to.session.request_present();
   r = wanted;
   r.volume = controls.volume();

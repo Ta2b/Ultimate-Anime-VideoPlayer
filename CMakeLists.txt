@@ -10,15 +10,15 @@ project(ajp
 # CMAKE_CUDA_ARCHITECTURES pendant enable_language(), donc un repli
 # « if(NOT DEFINED) » ne s'exécuterait jamais.
 option(AJP_WITH_CUDA "Construire le backend TensorRT et les noyaux CUDA" OFF)
-option(AJP_WITH_MIGRAPHX "Construire ajp_backend_migraphx (réseaux par MIGraphX, GPU AMD ; ROCm)" OFF)
-option(AJP_WITH_OPENVINO "Construire ajp_backend_openvino (réseaux par OpenVINO, GPU Intel)" OFF)
-option(AJP_WITH_WINML "Construire ajp_backend_migraphx de Windows (réseaux par MIGraphX de Windows ML, GPU AMD RDNA 3+)" OFF)
 option(AJP_WITH_COREML "Construire ajp_backend_coreml (réseaux par Core ML via ONNX Runtime, Mac Apple Silicon)" OFF)
 option(AJP_BUILD_TESTS "Construire les tests unitaires" ON)
 option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels et leurs tests" ON)
 # Avertissements en erreurs : ON dans les préréglages de développement et de CI (base, prefix), OFF
 # par défaut, pour qu'un compilateur plus récent (avertissements nouveaux) construise encore.
 option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" OFF)
+# En-têtes précompilés (P5.25) : la bibliothèque standard la plus lue, par module. Pour les constructions
+# locales ; la CI les laisse éteints, pour que ccache serve et qu'une inclusion oubliée reste une erreur.
+option(AJP_PCH "En-têtes précompilés de la bibliothèque standard dans chaque module" OFF)
 option(AJP_TRANSITIVE_RPATH "RPATH valable pour les dépendances indirectes (préfixe Linux)" OFF)
 
 if(AJP_WITH_CUDA)

@@ -71,15 +71,6 @@ TEST_CASE("refus nommés : taille, lignes, nombres, LUT 1D, taille de fichier", 
   CHECK_FALSE(parse_cube("DOMAIN_MIN 1 1 1\nDOMAIN_MAX 0 0 0\nLUT_3D_SIZE 17\n0 0 0\n"));
 }
 
-TEST_CASE("les demi-flottants arrondissent au plus proche", "[render][lut]") {
-  CHECK(to_half(0.0F) == 0x0000);
-  CHECK(to_half(1.0F) == 0x3c00);
-  CHECK(to_half(0.5F) == 0x3800);
-  CHECK(to_half(2.0F) == 0x4000);
-  CHECK(to_half(1.0F / 3.0F) == 0x3555);
-  CHECK(to_half(1.0e-9F) == 0x0000);
-}
-
 TEST_CASE("le bloc de texture annonce sa taille et porte 8 octets par point", "[render][lut]") {
   const CubeLut lut = identity_lut(17);
   const std::string block = lut_texture_block(lut, "AJG_LUT");
@@ -93,62 +84,7 @@ TEST_CASE("le bloc de texture annonce sa taille et porte 8 octets par point", "[
 
 }  // namespace ajp::render
 
-#include "render/looks.h"
-
 namespace ajp::render {
-
-TEST_CASE("les looks maison sont des LUT valides, bornées, qui gardent le noir et le blanc",
-          "[render][lut][looks]") {
-  REQUIRE(builtin_looks().size() == 5);
-  for (const BuiltinLook& look : builtin_looks()) {
-    const auto lut = builtin_look(look.key);
-    REQUIRE(lut);
-    CHECK(lut->size == 33);
-    for (const float v : lut->rgb) {
-      CHECK(v >= 0.0F);
-      CHECK(v <= 1.0F);
-    }
-    // Un look rend ses propres LUT lisibles : elles passent l'analyseur une fois écrites.
-    CHECK(lut->rgb.size() == 33U * 33U * 33U * 3U);
-    // Le gris du milieu reste un gris proche (pas de dérive de teinte énorme).
-    const std::size_t mid = (16U * 33U * 33U + 16U * 33U + 16U) * 3U;
-    CHECK(std::abs(lut->rgb[mid] - lut->rgb[mid + 1]) < 0.08F);
-  }
-  CHECK_FALSE(builtin_look("maison:inconnu"));
-}
-
-TEST_CASE("le look explosif (B6) pousse plus loin que le vif, contraste et couleurs",
-          "[render][lut][looks]") {
-  const auto vivid = builtin_look("maison:vif");
-  const auto loud = builtin_look("maison:explosif");
-  REQUIRE(vivid);
-  REQUIRE(loud);
-  const auto at = [](int r, int g, int b) {
-    return (static_cast<std::size_t>(b) * 33U * 33U + static_cast<std::size_t>(g) * 33U +
-            static_cast<std::size_t>(r)) *
-           3U;
-  };
-  // Un gris sombre plus sombre, un gris clair plus clair.
-  CHECK(loud->rgb[at(8, 8, 8)] < vivid->rgb[at(8, 8, 8)]);
-  CHECK(loud->rgb[at(24, 24, 24)] > vivid->rgb[at(24, 24, 24)]);
-  // Un bleu moyen plus saturé : moins de rouge dedans.
-  CHECK(loud->rgb[at(8, 10, 22)] <= vivid->rgb[at(8, 10, 22)]);
-  // Le noir et le blanc tiennent.
-  CHECK(loud->rgb[at(0, 0, 0)] == 0.0F);
-  CHECK(loud->rgb[at(32, 32, 32)] > 0.99F);
-}
-
-TEST_CASE("les looks maison changent l'image : le vif sature, le pastel relève les noirs",
-          "[render][lut][looks]") {
-  const auto vivid = builtin_look("maison:vif");
-  const auto pastel = builtin_look("maison:pastel");
-  REQUIRE(vivid);
-  REQUIRE(pastel);
-  const std::size_t red = (0U * 33U * 33U + 0U * 33U + 24U) * 3U;  // un rouge moyen
-  CHECK(vivid->rgb[red] > 0.75F);
-  CHECK(vivid->rgb[red + 1] < 0.02F);
-  CHECK(pastel->rgb[0] > 0.02F);  // le noir relevé
-}
 
 TEST_CASE("une LUT d'HDR se reconnaît à son nom ou à son titre", "[render][lut][looks]") {
   CHECK(look_is_pq("HDR_grading_LUT_ver9.1.cube", ""));

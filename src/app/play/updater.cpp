@@ -23,6 +23,7 @@
 #include "core/dir_entries.h"
 #include "core/log.h"
 #include "core/model_index.h"
+#include "core/text.h"
 #include "core/user_overlay.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
@@ -47,21 +48,11 @@ namespace {
 
 namespace fs = std::filesystem;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::string read_all(const fs::path& file) {
   std::ifstream in(file, std::ios::binary);
   std::ostringstream text;
   text << in.rdbuf();
   return text.str();
-}
-
-std::string trimmed(std::string text) {
-  while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
-  while (!text.empty() && (text.front() == '\n' || text.front() == ' ')) text.erase(text.begin());
-  return text;
 }
 
 // Un dossier neuf, à nous seuls, pour le manifeste : mkdtemp (0700, nom imprévisible) hors Windows ; sous
@@ -423,7 +414,7 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
   if (auto got = fetch(url + ".sig", dir / "manifest.toml.sig", 30, stop); !got)
     return std::unexpected(got.error());
   const std::string manifest_text = read_all(dir / "manifest.toml");
-  const std::string signature = trimmed(read_all(dir / "manifest.toml.sig"));
+  const std::string signature(core::trim(read_all(dir / "manifest.toml.sig")));
   const auto signer = std::ranges::find_if(
       keys, [&](const std::string& key) { return ed25519_verify_hex(key, manifest_text, signature); });
   if (signer == keys.end())

@@ -4,11 +4,9 @@
 #   ajp-linux-x64.tar.gz                  le lecteur, le backend Vulkan, leurs bibliothèques et
 #                                         engines.lock (l'index haché des paquets ci-dessous)
 #   ajp-engine-tensorrt-linux-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA)
-#   ajp-engine-migraphx-linux-x64.tar.gz  backend MIGraphX (AMD ; ROCm du système)
-#   ajp-engine-openvino-linux-x64.tar.gz  backend OpenVINO, son runtime et son greffon GPU (Intel)
 #
-# Une release peut réunir deux constructions : la CI (OpenVINO, MIGraphX) et un poste NVIDIA
-# (TensorRT). AJP_ENGINES_LOCK=<fichier ou lien de l'engines.lock de l'autre> reprend ses
+# Une release peut réunir deux constructions : la CI (le lecteur) et un poste NVIDIA ou le paquet
+# TensorRT de la CI (trt-package.yml). AJP_ENGINES_LOCK=<fichier ou lien de l'engines.lock de l'autre> reprend ses
 # moteurs non construits ici, dont les paquets restent ceux qu'elle a joints à la release. Le
 # poste NVIDIA joint les siens avant l'étiquette, son index renommé engines-nvidia.lock, que
 # release-linux.yml reprend.
@@ -16,8 +14,8 @@
 # L'écran de bienvenue propose les moteurs qui conviennent au GPU ; les cochés se téléchargent
 # depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
 #
-#   AJP_DEPS_PREFIX=<prefixe> [AJP_WITH_CUDA=ON [AJP_TENSORRT_ROOT=<racine>]] [AJP_WITH_MIGRAPHX=ON] \
-#     [AJP_WITH_OPENVINO=ON] [AJP_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
+#   AJP_DEPS_PREFIX=<prefixe> [AJP_WITH_CUDA=ON [AJP_TENSORRT_ROOT=<racine>]] \
+#     [AJP_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
 #
 # patchelf range chaque binaire sur $ORIGIN : rien ne dépend du préfixe de construction.
 set -euo pipefail
@@ -41,14 +39,12 @@ BASE_URL="https://github.com/${AJP_RELEASE_REPO:-Ta2b/Ultimate-Anime-VideoPlayer
 
 cmake --preset linux-release -S "$ROOT" \
   -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" \
-  ${AJP_TENSORRT_ROOT:+-DAJP_TENSORRT_ROOT="$AJP_TENSORRT_ROOT"} \
-  -DAJP_WITH_MIGRAPHX="${AJP_WITH_MIGRAPHX:-OFF}" \
-  -DAJP_WITH_OPENVINO="${AJP_WITH_OPENVINO:-OFF}"
+  ${AJP_TENSORRT_ROOT:+-DAJP_TENSORRT_ROOT="$AJP_TENSORRT_ROOT"}
 cmake --build --preset linux-release
 BUILD="$ROOT/build/linux-release"
 
 # Bibliothèques du système, jamais livrées : glibc, pilotes et serveurs d'affichage, chargeur
-# Vulkan, son, ROCm.
+# Vulkan, son.
 system_lib() {
   case "$(basename "$1")" in
     ld-linux*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*) return 0 ;;
@@ -65,9 +61,6 @@ system_lib() {
     libglib-2.0*|libgobject-2.0*|libgio-2.0*|libgmodule-2.0*|libpcre2*) return 0 ;;
     libfontconfig*|libfreetype*|libharfbuzz*|libgraphite2*|libpng16*|libbrotli*|libbz2*) return 0 ;;
   esac
-  # Celles du runtime HIP, que tout système ROCm installe avec lui.
-  case "$(basename "$1")" in libelf.so*|libnuma.so*) return 0 ;; esac
-  case "$1" in /opt/rocm*) return 0 ;; esac
   return 1
 }
 
@@ -206,33 +199,6 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
     engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
       "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
   fi
-fi
-
-MX_MODULE="$BUILD/src/gpu/migraphx/ajp_backend_migraphx.so"
-if [ -f "$MX_MODULE" ]; then
-  dir="$OUT/engine-migraphx"; rm -rf "$dir"; mkdir -p "$dir"
-  cp "$MX_MODULE" "$dir/"
-  copy_deps "$dir" "$MX_MODULE"
-  for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_migraphx.so" ] && rm "$f"; done
-  # ROCm reste celui du système, dans /opt/rocm/lib, que ld.so.conf ne liste pas toujours.
-  origin "$dir"
-  patchelf --set-rpath '$ORIGIN:/opt/rocm/lib' "$dir/ajp_backend_migraphx.so"
-  engine_package migraphx "$VERSION" "" "$dir" intact
-fi
-
-OV_MODULE="$BUILD/src/gpu/openvino/ajp_backend_openvino.so"
-if [ -f "$OV_MODULE" ]; then
-  dir="$OUT/engine-openvino"; rm -rf "$dir"; mkdir -p "$dir"
-  cp "$OV_MODULE" "$dir/"
-  copy_deps "$dir" "$OV_MODULE"
-  # Les greffons GPU et NPU (Core Ultra) et le lecteur ONNX, ouverts par libopenvino depuis son
-  # propre dossier, avec cache.json, les noyaux réglés que le greffon GPU choisit par appareil.
-  copy_beside "$dir" "$OV_MODULE" libopenvino 'libopenvino_intel_gpu_plugin.so' 'libopenvino_intel_npu_plugin.so' \
-    'libopenvino_onnx_frontend.so*' 'cache.json'
-  copy_deps "$dir" "$dir"/libopenvino_*
-  for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_openvino.so" ] && rm "$f"; done
-  check_portable "$dir" "$STAGE/lib"
-  engine_package openvino "$VERSION" "" "$dir"
 fi
 
 if [ -n "${AJP_ENGINES_LOCK:-}" ]; then

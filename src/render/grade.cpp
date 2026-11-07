@@ -19,11 +19,17 @@
 namespace ajp::render {
 namespace {
 
-// Un //!PARAM et le champ de GradeParams qui le règle.
+// Un //!PARAM et le champ de GradeParams qui le règle : un champ simple, ou l'intensité d'une LUT de la pile
+// (look_mixes[slot]).
 struct ParamBinding {
   std::string_view name;
-  double GradeParams::* field;
+  double GradeParams::* field = nullptr;
+  std::size_t slot = 0;
 };
+
+double value_of(const GradeParams& params, const ParamBinding& binding) {
+  return binding.field != nullptr ? params.*binding.field : params.look_mixes.at(binding.slot);
+}
 
 constexpr std::array kGradeParams = {
     ParamBinding{"peak", &GradeParams::peak},
@@ -49,26 +55,16 @@ constexpr std::array kGradeParams = {
 };
 
 constexpr std::array kLookParams = {
-    ParamBinding{"look_mix", &GradeParams::look_mix},
-    ParamBinding{"look_mix2", &GradeParams::look_mix2},
-    ParamBinding{"look_mix3", &GradeParams::look_mix3},
-    ParamBinding{"look_mix4", &GradeParams::look_mix4},
-    ParamBinding{"look_mix5", &GradeParams::look_mix5},
-    ParamBinding{"look_mix6", &GradeParams::look_mix6},
-    ParamBinding{"look_mix7", &GradeParams::look_mix7},
-    ParamBinding{"look_mix8", &GradeParams::look_mix8},
-    ParamBinding{"look_mix9", &GradeParams::look_mix9},
-    ParamBinding{"look_mix10", &GradeParams::look_mix10},
-    ParamBinding{"look_mix11", &GradeParams::look_mix11},
-    ParamBinding{"look_mix12", &GradeParams::look_mix12},
-    ParamBinding{"look_mix13", &GradeParams::look_mix13},
-    ParamBinding{"look_mix14", &GradeParams::look_mix14},
-    ParamBinding{"look_mix15", &GradeParams::look_mix15},
-    ParamBinding{"look_white", &GradeParams::look_white},
-    ParamBinding{"look_pq", &GradeParams::look_pq},
-    ParamBinding{"look_clean", &GradeParams::look_clean},
-    ParamBinding{"sdr_out", &GradeParams::sdr_out},
-    ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
+    ParamBinding{.name = "look_mix", .slot = 0},    ParamBinding{.name = "look_mix2", .slot = 1},
+    ParamBinding{.name = "look_mix3", .slot = 2},   ParamBinding{.name = "look_mix4", .slot = 3},
+    ParamBinding{.name = "look_mix5", .slot = 4},   ParamBinding{.name = "look_mix6", .slot = 5},
+    ParamBinding{.name = "look_mix7", .slot = 6},   ParamBinding{.name = "look_mix8", .slot = 7},
+    ParamBinding{.name = "look_mix9", .slot = 8},   ParamBinding{.name = "look_mix10", .slot = 9},
+    ParamBinding{.name = "look_mix11", .slot = 10}, ParamBinding{.name = "look_mix12", .slot = 11},
+    ParamBinding{.name = "look_mix13", .slot = 12}, ParamBinding{.name = "look_mix14", .slot = 13},
+    ParamBinding{.name = "look_mix15", .slot = 14}, ParamBinding{"look_white", &GradeParams::look_white},
+    ParamBinding{"look_pq", &GradeParams::look_pq}, ParamBinding{"look_clean", &GradeParams::look_clean},
+    ParamBinding{"sdr_out", &GradeParams::sdr_out}, ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
     ParamBinding{"peak", &GradeParams::peak},
 };
 
@@ -157,7 +153,7 @@ pl_var_data* find_param(const pl_hook& hook, std::string_view name) {
 
 struct ParsedHook {
   const pl_hook* hook = nullptr;
-  std::vector<std::pair<pl_var_data*, double GradeParams::*>> params;
+  std::vector<std::pair<pl_var_data*, ParamBinding>> params;
 };
 
 std::expected<ParsedHook, Refusal> parse(pl_gpu gpu, std::string_view text, std::string_view file,
@@ -178,7 +174,7 @@ std::expected<ParsedHook, Refusal> parse(pl_gpu gpu, std::string_view text, std:
       return std::unexpected(
           Refusal{RefusalCode::FieldMissing, std::format("//!PARAM {} absent de {}", binding.name, file)});
     }
-    out.params.emplace_back(data, binding.field);
+    out.params.emplace_back(data, binding);
   }
   return out;
 }
@@ -276,12 +272,6 @@ struct Grade::Impl {
   }
 };
 
-constexpr std::array<double GradeParams::*, kLookSlots> kLookMixes{
-    &GradeParams::look_mix,   &GradeParams::look_mix2,  &GradeParams::look_mix3,  &GradeParams::look_mix4,
-    &GradeParams::look_mix5,  &GradeParams::look_mix6,  &GradeParams::look_mix7,  &GradeParams::look_mix8,
-    &GradeParams::look_mix9,  &GradeParams::look_mix10, &GradeParams::look_mix11, &GradeParams::look_mix12,
-    &GradeParams::look_mix13, &GradeParams::look_mix14, &GradeParams::look_mix15};
-
 void Grade::Impl::run(const std::stop_token& stop) {
   while (true) {
     Job next;
@@ -313,7 +303,7 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   bool active = false;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
     luts[i] = sources[i].get();
-    mixes[i] = luts[i] != nullptr ? wanted.*kLookMixes[i] : 0.0;
+    mixes[i] = luts[i] != nullptr ? wanted.look_mixes[i] : 0.0;
     active = active || mixes[i] > 0.0;
   }
   if (background) {
@@ -398,7 +388,7 @@ void Grade::set_params(const GradeParams& params) {
 
 void Grade::Impl::write_params() {
   for (const ParsedHook* hook : {&grade, &look, &black}) {
-    for (const auto& [data, field] : hook->params) data->f = static_cast<float>(params.*field);
+    for (const auto& [data, binding] : hook->params) data->f = static_cast<float>(value_of(params, binding));
   }
   // Le hook ne lit que la pile composée, en premier emplacement, à pleine intensité (les intensités y sont
   // déjà) ; les autres emplacements restent à 0, sautés.

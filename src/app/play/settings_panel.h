@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -55,7 +56,7 @@ struct SettingsChoices {
   bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne
-  std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
+  std::string rife_folder;               // le dossier des modèles RIFE (et de DistilDRBA)
   bool nvidia = false;                   // GPU NVIDIA : Smooth Motion n'est offert qu'à lui
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                     // pic automatique de l'écran, en nits
@@ -96,9 +97,22 @@ struct SettingsChoices {
   std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
 };
 
-// Une page de l'arbre des réglages (settings_panel.cpp) : sa catégorie, son nom, et si elle n'est montrée
-// qu'avec la case « Réglages avancés ».
+// Une page de l'arbre des réglages (settings_panel.cpp) : ce qu'elle dessine, sa catégorie, son nom, et si
+// elle n'est montrée qu'avec la case « Réglages avancés ».
+enum class Page : std::uint8_t {
+  PostProcessing,
+  Colors,
+  Display,
+  Sound,
+  Playback,
+  Application,
+  Engines,
+  Export,
+  Statistics,
+  About
+};
 struct SettingsPage {
+  Page id;
   const char* category;
   const char* name;
   bool advanced;
@@ -108,6 +122,13 @@ std::span<const SettingsPage> settings_pages();
 
 // Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
 void language_choice(const char* label, const char* none_label, std::string& tag);
+
+// Le champ « Dossier d'installation » de l'onglet Moteurs : le texte en cours de saisie, repris du réglage à
+// chaque ouverture du menu (P5.27 : à SettingsPanel, plus un tampon statique).
+struct FolderField {
+  std::array<char, 512> text{};
+  bool read = false;
+};
 
 class SettingsPanel {
  public:
@@ -124,6 +145,7 @@ class SettingsPanel {
     undo_.clear();
     redo_.clear();
     engine_draft_.reset();
+    engines_folder_ = {};
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
@@ -154,6 +176,7 @@ class SettingsPanel {
   int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change
   bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé
   bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
+  FolderField engines_folder_;
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action

@@ -31,10 +31,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Nits d'un code PQ (ST 2084).
 double pq_nits(double e) {
   const double p = std::pow(std::clamp(e, 0.0, 1.0), 1.0 / 78.84375);
@@ -272,14 +268,8 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   // seuils écrasaient une seconde fois les huit premières marches. La pile composée, à pleine intensité.
   const render::CubeLut* stack = s.grade->look_stack();
   std::optional<render::CubeLut> looks = stack != nullptr ? std::optional(*stack) : std::nullopt;
-  for (double render::GradeParams::* mix :
-       {&render::GradeParams::look_mix2, &render::GradeParams::look_mix3, &render::GradeParams::look_mix4,
-        &render::GradeParams::look_mix5, &render::GradeParams::look_mix6, &render::GradeParams::look_mix7,
-        &render::GradeParams::look_mix8, &render::GradeParams::look_mix9, &render::GradeParams::look_mix10,
-        &render::GradeParams::look_mix11, &render::GradeParams::look_mix12, &render::GradeParams::look_mix13,
-        &render::GradeParams::look_mix14, &render::GradeParams::look_mix15})
-    params.*mix = 0.0;
-  params.look_mix = looks ? 1.0 : 0.0;
+  params.look_mixes.fill(0.0);
+  params.look_mixes[0] = looks ? 1.0 : 0.0;
   if (s.last_ramp && s.last_ramp->params == params && s.last_ramp->hdr == s.hdr_output &&
       std::ranges::equal(s.last_ramp->levels, levels) && s.last_ramp->looks == looks)
     return s.last_ramp->nits;

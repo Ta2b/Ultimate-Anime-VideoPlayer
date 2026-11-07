@@ -177,7 +177,7 @@ std::vector<std::uint8_t> read_file(const std::filesystem::path& path) {
   return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
-std::string trimmed(const std::filesystem::path& path) {
+std::string first_line(const std::filesystem::path& path) {
   std::ifstream file(path);
   std::string text;
   std::getline(file, text);
@@ -352,7 +352,7 @@ std::optional<bool> drm_vrr(const std::filesystem::path& dir) {
   const std::string name = dir.filename().string();
   const std::size_t dash = name.find('-');
   if (dash == std::string::npos) return std::nullopt;
-  const std::string connector_text = trimmed(dir / "connector_id");
+  const std::string connector_text = first_line(dir / "connector_id");
   if (connector_text.empty()) return std::nullopt;
   const std::uint32_t connector_id =
       static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
@@ -371,7 +371,7 @@ std::optional<bool> drm_vrr_armed(const std::filesystem::path& dir) {
   const std::string name = dir.filename().string();
   const std::size_t dash = name.find('-');
   if (dash == std::string::npos) return std::nullopt;
-  const std::string connector_text = trimmed(dir / "connector_id");
+  const std::string connector_text = first_line(dir / "connector_id");
   if (connector_text.empty()) return std::nullopt;
   const std::uint32_t connector_id =
       static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
@@ -401,7 +401,7 @@ std::vector<DisplayFacts> connected_displays() {
   std::error_code error;
   for (const auto& entry : core::dir_entries("/sys/class/drm", error)) {
     const std::filesystem::path& dir = entry.path();
-    if (trimmed(dir / "status") != "connected") continue;
+    if (first_line(dir / "status") != "connected") continue;
     const std::vector<std::uint8_t> edid = read_file(dir / "edid");
     if (edid.size() < kBlock) continue;
     DisplayFacts facts = parse_edid(edid);

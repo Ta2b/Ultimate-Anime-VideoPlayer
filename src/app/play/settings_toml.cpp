@@ -32,10 +32,6 @@ namespace {
 
 constexpr std::int64_t kSettingsVersion = 1;
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Le refus d'une clé du fichier (P2.11) : la clé, « audio.delay_ms », dans Refusal::key, que la lecture
 // tolérante écarte sans relire le texte ; le détail commence par elle.
 std::unexpected<Refusal> refuse_key(RefusalCode code, std::string key, std::string_view rest = {}) {
@@ -108,32 +104,6 @@ std::expected<void, Refusal> read_legacy_languages(const toml::table& table, std
     languages.push_back(*tag);
   }
   out = std::move(languages);
-  return {};
-}
-
-// grade.looks (noms) et grade.looks_mix (intensités) : les LUT de la pile après la première, dans l'ordre.
-// Une intensité manquante vaut 1 ; FieldType si un élément n'est pas du bon type.
-std::expected<void, Refusal> read_look_layers(const toml::table& grade, std::vector<LookLayer>& out) {
-  const toml::node* keys = grade.get("looks");
-  if (keys == nullptr) return {};
-  const toml::array* names = keys->as_array();
-  if (names == nullptr) return refuse_key(RefusalCode::FieldType, "grade.looks");
-  const toml::node* mixes_node = grade.get("looks_mix");
-  const toml::array* mixes = mixes_node != nullptr ? mixes_node->as_array() : nullptr;
-  if (mixes_node != nullptr && mixes == nullptr) return refuse_key(RefusalCode::FieldType, "grade.looks_mix");
-  std::vector<LookLayer> layers;
-  for (std::size_t i = 0; i < names->size(); ++i) {
-    const std::optional<std::string> key = names->at(i).value_exact<std::string>();
-    if (!key) return refuse_key(RefusalCode::FieldType, "grade.looks");
-    LookLayer layer{*key, 1.0};
-    if (mixes != nullptr && i < mixes->size()) {
-      const std::optional<double> mix = mixes->at(i).value<double>();
-      if (!mix) return refuse_key(RefusalCode::FieldType, "grade.looks_mix");
-      layer.mix = *mix;
-    }
-    layers.push_back(std::move(layer));
-  }
-  out = std::move(layers);
   return {};
 }
 
@@ -238,15 +208,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
     reads.push_back(read(*interpolation, "interpolation", "drba_fused", s.drba_fused));
-    reads.push_back(read(*interpolation, "interpolation", "gmfss_fused", s.gmfss_fused));
-    // gmfss_quality (faux : l'ancien Performance, devenu Équilibre ; vrai : Qualité), puis les crans.
-    bool legacy_quality = false;
-    reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", legacy_quality));
-    if (legacy_quality)
-      s.gmfss_precision = PrecisionTier::Quality;
-    else if (interpolation->contains("gmfss_quality"))
-      s.gmfss_precision = PrecisionTier::Balanced;  // faux : l'ancien Performance, FP16
-    reads.push_back(read_precision(*interpolation, "interpolation", "gmfss_precision", s.gmfss_precision));
+    // gmfss_fused, gmfss_quality et gmfss_precision : GMFSS retiré (0.10.0), clés ignorées.
     reads.push_back(read_precision(*interpolation, "interpolation", "motion_precision", s.motion_precision));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
     reads.push_back(read(*interpolation, "interpolation", "auto_cap", s.auto_cap));
@@ -286,7 +248,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
         engine_known = true;
       }
     }
-    // P5.2 : GMFSS est débranché de la lecture et de l'export ; un ancien play.toml qui le nomme se lit en
+    // P5.2 : GMFSS est retiré (0.10.0) ; un ancien play.toml qui le nomme se lit en
     // RIFE.
     if (is_gmfss(s.motion_engine)) s.motion_engine = MotionEngine::Rife;
     if (!engine_known)
@@ -361,10 +323,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     choice("channel", s.update_channel, kUpdateChannelNames);
     choice("frequency", s.update_frequency, kUpdateFrequencyNames);
   }
-  if (const toml::table* span = section(root, "span_prepare"))
-    reads.push_back(read(*span, "span_prepare", "background", s.span_prepare_background));
-  if (const toml::table* player = section(root, "default_player"))
-    reads.push_back(read(*player, "default_player", "dismissed", s.default_player_dismissed));
+  // [span_prepare] background et [default_player] dismissed, d'avant 0.10, ne servaient à rien : ignorés.
   if (const toml::table* playlist = section(root, "playlist"))
     reads.push_back(read(*playlist, "playlist", "autoplay_next", s.autoplay_next));
   if (const toml::table* subtitles = section(root, "subtitles")) {
@@ -397,14 +356,11 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*grade, "grade", "shadows", v.shadows));
     reads.push_back(read(*grade, "grade", "highlights_rtx", v.highlights_rtx));
     reads.push_back(read(*grade, "grade", "area_rtx", v.area_rtx));
-    reads.push_back(read(*grade, "grade", "look", s.look));
-    reads.push_back(read(*grade, "grade", "look_mix", s.look_mix));
     reads.push_back(read(*grade, "grade", "look_contrast", s.look_contrast));
     reads.push_back(read(*grade, "grade", "look_highlight", s.look_highlight));
     reads.push_back(read(*grade, "grade", "anime_contrast", v.anime_contrast));
     reads.push_back(read(*grade, "grade", "anime_saturation", v.anime_saturation));
     reads.push_back(read(*grade, "grade", "anime_highlights", v.anime_highlights));
-    reads.push_back(read_look_layers(*grade, s.look_layers));
     std::string oled(name(s.oled_black));
     reads.push_back(read(*grade, "grade", "oled_black", oled));
     reads.push_back(read(*grade, "grade", "oled_black_steps", s.oled_black_steps));
@@ -421,9 +377,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     // Plus de préréglages : les valeurs du fichier font foi.
     // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
     const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
-    for (double* x : {&v.shadows, &v.highlights_rtx, &v.area_rtx, &s.look_mix, &s.oled_black_steps})
-      hundredth(*x);
-    for (auto& layer : s.look_layers) hundredth(layer.mix);
+    for (double* x : {&v.shadows, &v.highlights_rtx, &v.area_rtx, &s.oled_black_steps}) hundredth(*x);
     s.grade_values = v;
   }
   if (const toml::table* stats = section(root, "stats")) {
@@ -461,8 +415,6 @@ std::string format_settings(const PlaySettings& s) {
       {"keep_poses", s.keep_poses},
       {"rife_fused", s.rife_fused},
       {"drba_fused", s.drba_fused},
-      {"gmfss_fused", s.gmfss_fused},
-      {"gmfss_precision", std::string(name(s.gmfss_precision))},
       {"motion_precision", std::string(name(s.motion_precision))},
       {"auto", s.rife_auto},
       {"auto_cap", s.auto_cap},
@@ -507,8 +459,6 @@ std::string format_settings(const PlaySettings& s) {
                                      {"sharpness", s.sharpness}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("interface", toml::table{{"language", s.language}});
-  root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});
-  root.insert("span_prepare", toml::table{{"background", s.span_prepare_background}});
   if (!s.engines_dir.empty() || !s.gpu.empty()) {
     toml::table engines;
     if (!s.engines_dir.empty()) engines.insert("install_dir", s.engines_dir);
@@ -527,8 +477,6 @@ std::string format_settings(const PlaySettings& s) {
                                    {"shadows", hundredth(g.shadows)},
                                    {"highlights_rtx", hundredth(g.highlights_rtx)},
                                    {"area_rtx", hundredth(g.area_rtx)},
-                                   {"look", s.look},
-                                   {"look_mix", hundredth(s.look_mix)},
                                    {"look_contrast", s.look_contrast},
                                    {"look_highlight", s.look_highlight},
                                    {"anime_contrast", g.anime_contrast},
@@ -536,17 +484,6 @@ std::string format_settings(const PlaySettings& s) {
                                    {"anime_highlights", g.anime_highlights},
                                    {"oled_black", std::string(name(s.oled_black))},
                                    {"oled_black_steps", hundredth(s.oled_black_steps)}});
-  if (!s.look_layers.empty()) {
-    toml::array names;
-    toml::array mixes;
-    for (const LookLayer& layer : s.look_layers) {
-      names.push_back(layer.key);
-      mixes.push_back(hundredth(layer.mix));
-    }
-    toml::table* grade_table = root.get_as<toml::table>("grade");
-    grade_table->insert("looks", std::move(names));
-    grade_table->insert("looks_mix", std::move(mixes));
-  }
   root.insert("oled", toml::table{{"care", s.oled_care}, {"steady_cadence", s.steady_cadence}});
   root.insert("stats", toml::table{{"all", s.stats.all},
                                    {"chain", s.stats.chain},

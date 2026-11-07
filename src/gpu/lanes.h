@@ -18,7 +18,7 @@
 namespace ajp::gpu {
 
 // Mesure : ingestion, mesures de la paire, relectures. Agrandissement : SPAN et l'écriture de son
-// slot. Interpolation : RIFE, GMFSS, DistilDRBA, warp et l'écriture des images intermédiaires.
+// slot. Interpolation : RIFE, DistilDRBA, warp et l'écriture des images intermédiaires.
 enum class Lane : std::uint8_t { Measure, Upscale, Interpolate };
 inline constexpr std::size_t kLanes = 3;
 

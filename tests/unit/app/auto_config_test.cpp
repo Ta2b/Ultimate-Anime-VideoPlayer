@@ -68,8 +68,7 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   const int balance = applied(Preset::Auto, Tier::Normal, 1440, 144.0).rife_factor;
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).rife_factor >=
         balance);
-  // GMFSS et SPAN restent à Équilibre : le FP8 de SPAN se choisit à la main (liste des modèles).
-  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 165.0).gmfss_precision == PrecisionTier::Balanced);
+  // SPAN reste à Équilibre : son FP8 se choisit à la main (liste des modèles).
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
   CHECK(applied(Preset::Fast, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
 }

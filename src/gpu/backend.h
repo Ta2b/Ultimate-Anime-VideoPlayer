@@ -75,7 +75,9 @@ namespace ajp::gpu {
 // 28 : KernelOps::gpu_profile (chantier 0.2) ; GradeOrder et GradeVersion gagnent la LUT de la courbe par
 // plan (8.6b).
 // 29 : le grade de l'anneau retiré (RingWrite::grade, GradeSlot, GradeOrder, grades_ring, set_grade).
-inline constexpr int kBackendAbi = 29;
+// 30 : GMFSS retiré (gmfss_frames, soft_splat, soft_splat_all, soft_splat_fill, gmfss_compose,
+// gmfss_compose_ring, fill ; BackendCaps::gmfss_fused).
+inline constexpr int kBackendAbi = 30;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -120,10 +122,6 @@ struct BackendCaps {
   // DistilDRBA coupé en quatre moteurs TensorRT et noyaux de colle (manifeste « .drbafused » à la place de
   // l'ONNX, kernels/spec/drba_fused.h).
   bool drba_fused = false;
-  // La paire de GMFSS coupée en deux moteurs (les caractéristiques d'une image, le flot ; ONNX dérivés par
-  // prepare/gmfss_split.h), enfilés avec des tenseurs à un décalage de plans dans leur tampon
-  // (kernels/spec/gmfss.h, GMFSS fusionné).
-  bool gmfss_fused = false;
   bool matrix_units = false;                // unités matricielles utilisées
   std::vector<PixelFormat> import_formats;  // formats acceptés par import()
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
@@ -334,8 +332,16 @@ inline constexpr std::uint64_t kStdLibrary = 0;
 // Empreinte de tout ce qui traverse la frontière. kBackendAbi date le contrat ; l'empreinte
 // trahit ce que kBackendAbi laisse passer : une bibliothèque construite contre d'autres
 // en-têtes sans changement de version, ou avec une autre bibliothèque standard.
+// AJP_BOUNDARY_HASH : le texte des en-têtes de la frontière (cmake/BoundaryHash.cmake), posé par ajp::gpu. Il
+// voit ce que les tailles ne voient pas : l'ordre des virtuelles, une signature changée.
+#ifndef AJP_BOUNDARY_HASH
+#error "AJP_BOUNDARY_HASH manque : lier ajp::gpu"
+#endif
+inline constexpr std::uint64_t kBoundaryHash = AJP_BOUNDARY_HASH;
+
 inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
     static_cast<std::uint64_t>(kBackendAbi),
+    kBoundaryHash,
     kStdLibrary,
     sizeof(void*),
     shape_fingerprint<std::string, std::vector<std::string>, std::filesystem::path, std::function<void()>,

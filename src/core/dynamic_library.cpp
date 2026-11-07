@@ -9,10 +9,6 @@
 namespace ajp {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 std::string utf8(const std::filesystem::path& path) {
   return library_path_text(path);
 }

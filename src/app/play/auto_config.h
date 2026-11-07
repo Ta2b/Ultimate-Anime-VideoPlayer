@@ -12,7 +12,7 @@
 
 #include "app/play/gpu_tier.h"
 #include "app/play/settings.h"
-#include "core/resolve.h"
+#include "core/display.h"
 
 namespace ajp::app::play {
 

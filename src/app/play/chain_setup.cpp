@@ -8,11 +8,11 @@
 #include "app/play/drba_fused_choice.h"
 #include "app/play/drba_model.h"
 #include "app/play/first_run.h"
-#include "app/play/gmfss_fused_choice.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/motion_model.h"
+#include "app/play/paths.h"
 #include "app/play/rife_fused_choice.h"
 #include "core/auto_rate.h"
 #include "core/clock.h"
@@ -27,8 +27,8 @@ constexpr int kRifeMotionHeight = 720;
 
 }  // namespace
 
-std::vector<std::filesystem::path> gmfss_dirs(const PlayerPaths& paths,
-                                              const std::optional<ModelChoice>& rife) {
+std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
+                                                     const std::optional<ModelChoice>& rife) {
   std::vector<std::filesystem::path> dirs;
   if (rife) dirs.push_back(rife->path.parent_path());
   for (const std::filesystem::path& candidate : default_rife_candidates(paths.home, paths.models)) {
@@ -71,13 +71,10 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
 }
 
 std::string_view ChainEngines::motion_name() const {
-  return use_gmfss() ? "GMFSS" : use_drba() ? "DistilDRBA" : use_apple() ? "Apple" : "RIFE";
+  return use_drba() ? "DistilDRBA" : use_apple() ? "Apple" : "RIFE";
 }
 
 std::string ChainEngines::motion_label(const PlaySettings& settings) const {
-  if (use_gmfss())
-    return std::format("GMFSS Fortuna{} {}{} · ", gmfss_variant == GmfssVariant::Union ? " Union" : "",
-                       factor_text(factor_of(settings)), gmfss_fused ? i18n::tr(" fused") : "");
   if (use_drba())
     return std::format("DistilDRBA {}{} · ", factor_text(factor_of(settings)),
                        drba_fused ? i18n::tr(" fused") : "");
@@ -107,10 +104,6 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .rife_motion = rife_motion.get(),
       .rife_planes = rife_planes,
       .rife_align = rife_align,
-      .gmfss_pair = gmfss.pair.get(),
-      .gmfss_fusion = gmfss.fusion.get(),
-      .gmfss_features = gmfss.features.get(),
-      .gmfss_align = gmfss.align,
       .distil_drba = drba.get(),
       .drba_align = drba_align,
       .drba_motion = drba_motion,
@@ -164,15 +157,14 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings) {
   auto chain = prepare_chain_once(p, settings);
   if (chain || (settings.span_precision == PrecisionTier::Balanced &&
-                settings.motion_precision == PrecisionTier::Balanced &&
-                settings.gmfss_precision == PrecisionTier::Balanced))
+                settings.motion_precision == PrecisionTier::Balanced))
     return chain;
   // Un graphe FP8 ou FP32 que le moteur refuse : la chaîne repart au cran Équilibre (FP16), celui de
   // toujours.
   log_channel("app")->warn("chaîne refusée aux crans de précision choisis ({}) : Équilibre (FP16)",
                            chain.error().detail);
   PlaySettings balanced = settings;
-  balanced.span_precision = balanced.motion_precision = balanced.gmfss_precision = PrecisionTier::Balanced;
+  balanced.span_precision = balanced.motion_precision = PrecisionTier::Balanced;
   return prepare_chain_once(p, balanced);
 }
 
@@ -222,16 +214,11 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
     c.rife_choice = std::move(*found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
-  c.gmfss_places = gmfss_dirs(p.paths, c.rife_choice);
-  c.gmfss_variant =
-      settings.motion_engine == MotionEngine::GmfssUnion ? GmfssVariant::Union : GmfssVariant::Base;
-  c.gmfss_found = find_gmfss(c.gmfss_places, c.gmfss_variant).has_value();
-  const bool want_gmfss = settings.rife_factor >= 2 && is_gmfss(settings.motion_engine);
-  c.drba_found = find_distil_drba(c.gmfss_places).has_value();
+  c.model_places = motion_model_dirs(p.paths, c.rife_choice);
+  c.drba_found = find_distil_drba(c.model_places).has_value();
   const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
   const bool want_apple = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Apple;
-  if (settings.rife_factor >= 2 && !c.rife_model && !(want_gmfss && c.gmfss_found) &&
-      !(want_drba && c.drba_found) && !want_apple)
+  if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple)
     return std::unexpected(
         choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error());
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
@@ -255,7 +242,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   // (autre GPU, taille que les noyaux ne prennent pas, erreur CUDA, TensorRT qui la refuse) laisse la place à
   // la suivante, et la dernière au SPAN choisi, en FP16 sous TensorRT.
   if (c.model) {
-    const std::filesystem::path variants = p.paths.engines.parent_path() / "modeles";
+    const std::filesystem::path variants = paths::derived_models(p.paths);
     const gpu::BackendCaps caps = c.backend->capabilities();
     const PrecisionTier tier = settings.span_precision;
     // Un cran posé par un préréglage (Auto et les autres, auto_config.h) est strict : ni FP8 par Q/DQ, ni
@@ -329,39 +316,6 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   c.rife_size = !p.options.rife_image && c.work.height > kRifeMotionHeight
                     ? work_size(video.width, video.height, kRifeMotionHeight)
                     : c.work;
-  // GMFSS Fortuna à la place de RIFE, à la taille de travail ; RIFE reprend si ses graphes manquent.
-  if (want_gmfss) {
-    // GMFSS fusionné (prepare/gmfss_split.h) : la paire en deux moteurs, les caractéristiques d'une image
-    // gardées pour la paire suivante, quand le backend le sait, que le réglage le veut et que le cran est
-    // Équilibre ; tout échec garde la paire entière.
-    GmfssFusedUse fused;
-    fused.declined = gmfss_fused_declined(settings, c.backend->capabilities().gmfss_fused);
-    if (settings.gmfss_fused && !fused.declined.empty())
-      log->info("GMFSS fusionné non utilisé : {}", fused.declined);
-    const bool try_fused = fused.declined.empty();
-    auto loaded =
-        prepare_gmfss(p, init, *c.backend, c.gmfss_places, c.gmfss_variant, c.work.width, c.work.height,
-                      settings.gmfss_precision == PrecisionTier::Performance ? PrecisionTier::Balanced
-                                                                             : settings.gmfss_precision,
-                      try_fused ? &fused : nullptr);
-    if (loaded && *loaded) {
-      c.gmfss_fused = fused.used;
-      if (fused.used)
-        log->info("GMFSS fusionné : caractéristiques et flot en deux moteurs");
-      else if (try_fused)
-        log->warn("GMFSS fusionné indisponible ({}) : paire entière", fused.declined);
-    }
-    if (!loaded) {
-      log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(
-          c.rife_model ? i18n::ui_tr("GMFSS unavailable: using RIFE") : i18n::ui_tr("GMFSS unavailable"),
-          host_now_us());
-    } else if (!*loaded) {
-      return std::nullopt;
-    } else {
-      c.gmfss = std::move(**loaded);
-    }
-  }
   // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque.
   if (want_drba) {
     // DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la
@@ -380,12 +334,12 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
     const bool smaller = motion && c.rife_size.height < c.work.height;
     const WorkSize at = smaller ? c.rife_size : c.work;
-    auto loaded = prepare_distil_drba(p, init, *c.backend, c.gmfss_places, at.width, at.height, c.drba_align,
+    auto loaded = prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
                                       settings.motion_precision, try_fused ? &fused : nullptr, &motion);
     if (smaller && loaded && *loaded && !motion) {
       fused = DrbaFusedUse{.declined = fused.declined};
       loaded =
-          prepare_distil_drba(p, init, *c.backend, c.gmfss_places, c.work.width, c.work.height, c.drba_align,
+          prepare_distil_drba(p, init, *c.backend, c.model_places, c.work.width, c.work.height, c.drba_align,
                               settings.motion_precision, try_fused ? &fused : nullptr, &motion);
     }
     c.drba_motion = loaded && *loaded && motion;
@@ -443,8 +397,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       c.rife_planes = kernels::kRifeV2InputChannels;
     }
   }
-  const bool use_rife =
-      settings.rife_factor >= 2 && c.rife_model && !c.use_gmfss() && !c.use_drba() && !c.use_apple();
+  const bool use_rife = settings.rife_factor >= 2 && c.rife_model && !c.use_drba() && !c.use_apple();
   c.rife_align = use_rife ? rife_padding_multiple(*c.rife_model) : kernels::kRifeAlign;
   c.geometry = kernels::rife_geometry(c.rife_size.width, c.rife_size.height, c.rife_align);
   c.image_geometry = kernels::rife_geometry(c.work.width, c.work.height, c.rife_align);
@@ -456,7 +409,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   // RIFE fusionné (kernels/spec/rife_fused.h) : six petits moteurs et des noyaux de colle à la place du
   // moteur entier, quand le backend le sait, que le réglage le veut, que le cran est Équilibre (le modèle tel
   // que livré) et que le modèle se coupe ; tout échec garde le RIFE entier, tel qu'il est chargé plus bas.
-  const std::filesystem::path models_dir = p.paths.engines.parent_path() / "modeles";
+  const std::filesystem::path models_dir = paths::derived_models(p.paths);
   const std::string fused_declined =
       use_rife ? rife_fused_declined(settings, c.backend->capabilities().rife_fused, c.rife_planes)
                : i18n::tr("no RIFE");

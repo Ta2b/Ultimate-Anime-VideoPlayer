@@ -43,12 +43,6 @@ struct GpuFacts {
 // la puce chez RADV (« (RADV GFX1201) »), le produit ailleurs (« RX 9070 XT »).
 bool amd_matrix_cores(std::string_view gpu_name);
 
-// ROCm (donc MIGraphX) ne sert officiellement que Navi 21, RDNA3, RDNA4 et les Instinct : une
-// RX 6500M (Navi 24) ou un iGPU Radeon ne doit pas se voir proposer son téléchargement.
-bool rocm_listed(std::string_view gpu_name);
-// MIGraphX de Windows ML sert les AMD RDNA 3 et après, cartes et APU (Radeon 740M à 780M, 840M à
-// 890M, 8040S à 8060S) : la Radeon 860M y est, pas une RX 6000.
-bool winml_listed(std::string_view gpu_name);
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
 // P3.6 : le pilote NVIDIA que demande le TensorRT livré (CUDA 13), et la version lue du pilote (majeure,
 // mineure) ; rien hors NVIDIA ou sans version lisible.
@@ -70,7 +64,6 @@ struct EngineDownload {
                                 // InstallSpace::peak) ; 0 : inconnue
   std::uint64_t available = 0;  // la place libre là où le moteur s'installe
   std::string license;          // à accepter avant le téléchargement, vide si aucune
-  std::string missing;          // prérequis du système absent (missing_prerequisite), vide sinon
 };
 
 // Ce qui est déjà sur ce poste.
@@ -78,8 +71,6 @@ struct EnginesHere {
   // Le système dont l'écran propose les moteurs : celui de l'hôte, ou celui qu'un test vérifie.
   core::Os os = core::kHostOs;
   bool tensorrt = false;  // backend ajp_backend_tensorrt trouvé
-  bool migraphx = false;  // ajp_backend_migraphx
-  bool openvino = false;  // ajp_backend_openvino
   bool coreml = false;    // ajp_backend_coreml (Mac : le moteur Metal de l'écran)
   std::vector<EngineDownload> downloads;
 };

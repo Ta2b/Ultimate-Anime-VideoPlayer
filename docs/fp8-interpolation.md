@@ -1,5 +1,8 @@
 # FP8 pour RIFE, DistilDRBA et GMFSS : ce qui marche, ce qui ne marche pas
 
+> **0.10.0 : GMFSS est retiré du lecteur.** Ce qui suit sur GMFSS est l'historique des mesures ; ses graphes FP8
+> ne sont plus téléchargés ni lus.
+
 > **Mise à jour du 30/10 (0.7.0-rc.1) : le FP8 de GMFSS est retiré.** Sur la 0.7.0-rc.1, Tatoub a vu « une très mauvaise image dans les gros
 > mouvements » avec la paire GMFSS en FP8 : les 46,9 dB mesurés l'étaient sur des paires de test qui ne couvraient pas assez de mouvement fort. Le
 > cran Performance n'est plus proposé pour GMFSS (menu) ni choisi par les préréglages ; GMFSS reste en FP16 (Équilibre) ou FP32 (Qualité). Les deux

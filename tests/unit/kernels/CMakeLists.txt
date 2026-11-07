@@ -5,7 +5,6 @@ ajp_add_unit_tests(kernels
     dither_test.cpp
     distil_drba_test.cpp
     glsl_test.cpp
-    gmfss_test.cpp
     drba_fused_test.cpp
     half_test.cpp
     parity_test.cpp

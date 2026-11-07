@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "app/play/i18n.h"
+#include "core/text.h"
 
 namespace ajp::app::play {
 
@@ -33,8 +34,7 @@ std::optional<std::size_t> chapter_step(std::span<const ChapterMark> chapters, s
 
 bool is_credits_chapter(const ChapterMark& chapter) {
   std::string title = chapter.title;
-  std::ranges::transform(title, title.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  title = core::ascii_lower(title);
   // Les mots du titre : lettres seules, « OP2 » donne « op ».
   std::vector<std::string_view> words;
   std::size_t at = 0;

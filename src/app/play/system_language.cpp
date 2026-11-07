@@ -11,6 +11,7 @@
 #include <SDL3/SDL_stdinc.h>
 
 #include "app/play/tracks.h"
+#include "core/text.h"
 #include "media/language.h"
 
 namespace ajp::app::play {
@@ -26,18 +27,12 @@ std::string read_text(const std::filesystem::path& file) {
   return text.str();
 }
 
-std::string_view trim(std::string_view s) {
-  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front())) != 0) s.remove_prefix(1);
-  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back())) != 0) s.remove_suffix(1);
-  return s;
-}
-
 // La valeur de key dans la section [group] d'un fichier de configuration KDE (format INI) ; vide sans elle.
 std::string ini_value(std::string_view text, std::string_view group, std::string_view key) {
   bool inside = false;
   while (!text.empty()) {
     const std::size_t end = text.find('\n');
-    const std::string_view line = trim(text.substr(0, end));
+    const std::string_view line = core::trim(text.substr(0, end));
     text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
     if (line.starts_with('[')) {
       inside = line == "[" + std::string(group) + "]";
@@ -46,9 +41,9 @@ std::string ini_value(std::string_view text, std::string_view group, std::string
     const std::size_t eq = line.find('=');
     if (!inside || eq == std::string_view::npos) continue;
     // « LANGUAGE[$e]=… » : KDE marque ainsi une valeur à développer ; la clé reste LANGUAGE.
-    std::string_view name = trim(line.substr(0, eq));
+    std::string_view name = core::trim(line.substr(0, eq));
     name = name.substr(0, name.find('['));
-    if (name == key) return std::string(trim(line.substr(eq + 1)));
+    if (name == key) return std::string(core::trim(line.substr(eq + 1)));
   }
   return {};
 }
@@ -58,7 +53,7 @@ std::vector<std::string> split_list(std::string_view list) {
   std::vector<std::string> out;
   while (!list.empty()) {
     const std::size_t colon = list.find(':');
-    const std::string_view one = trim(list.substr(0, colon));
+    const std::string_view one = core::trim(list.substr(0, colon));
     if (!one.empty()) out.emplace_back(one);
     list = colon == std::string_view::npos ? std::string_view{} : list.substr(colon + 1);
   }
@@ -68,8 +63,7 @@ std::vector<std::string> split_list(std::string_view list) {
 // La langue primaire d'une balise, en minuscules : « fr_FR.UTF-8@euro », « fr-CA » et « FR » donnent « fr ».
 std::string primary(std::string_view tag) {
   std::string out(tag.substr(0, tag.find_first_of("-_.@")));
-  std::ranges::transform(out, out.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  out = core::ascii_lower(out);
   return out;
 }
 

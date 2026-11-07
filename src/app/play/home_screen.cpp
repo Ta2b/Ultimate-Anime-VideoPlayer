@@ -32,11 +32,12 @@
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
-#include "app/play/gmfss_model.h"
+#include "app/play/host_choices.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
+#include "app/play/paths.h"
 #include "app/play/scripted_input.h"
 #include "app/play/single_instance.h"
 #include "app/play/span_auto.h"
@@ -131,7 +132,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   if (auto found = choose_rife_model(h.options, h.paths.home, running, rife_preference(gpu_facts(h.screen)),
                                      h.paths.models))
     rife = std::move(*found);
-  const std::vector<std::filesystem::path> places = gmfss_dirs(h.paths, rife);
+  const std::vector<std::filesystem::path> places = motion_model_dirs(h.paths, rife);
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
   // Sans moteur chargé, le FP8 se présume sur une RTX (le moteur TensorRT le calcule dès Ada) ; la chaîne
@@ -149,22 +150,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
                     tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = window_display(h.screen.window());
-  // Vidéo > Post-traitement sans vidéo ouverte : la carte, sa tranche (mesurée ou estimée), l'écran, les
-  // sorties son, comme en lecture.
-  std::optional<BenchResult> measured;
-  if (auto bench = load_bench(h.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);
-  const GpuFacts machine = gpu_facts(h.screen);
-  const std::string bench_text =
-      measured && measured->gpu == machine.name && measured->driver == machine.driver
-          ? i18n::tr_format("Last optimization: {}", measured->date)
-          : std::string();
-  std::vector<SettingsChoices::AudioOut> audio_outputs;
-  for (const audio::AudioDevice& device : audio::playback_devices())
-    audio_outputs.push_back(
-        {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  const bool default_player_is_ajp = is_default_player(place_of(h.paths));
-  return SettingsChoices{
-      .luts_dir = h.paths.engines.parent_path() / "luts",
+  SettingsChoices choices{
       .models = model ? model->available : std::vector<std::string>{},
       .default_model = model ? model->default_name : std::string(),
       .source_width = kHomeSource.width,
@@ -174,7 +160,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .display_hz = period > 0 ? 1e6 / static_cast<double>(period) : 0.0,
       .rife_available = rife.has_value() || drba || offered(MotionEngine::Apple),
       .span_tiers = model
-                        ? span_tiers(model->path, h.paths.engines.parent_path() / "modeles", fp8_engine,
+                        ? span_tiers(model->path, paths::derived_models(h.paths), fp8_engine,
                                      fp8_facts.capability)  // les noyaux CUTLASS se présument sur une RTX 40
                         : TierSupport{},
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
@@ -184,28 +170,19 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_models = rife ? rife->available : std::vector<std::string>{},
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
-      .nvidia = vendor_from_pci(h.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
       .hdr_output = !h.options.sdr && system_hdr(content_peak_nits(h.screen.window())),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
       .chosen_engines = chosen_line(st.engines),
-      .switchable = installed_switchable(h.catalog, h.paths),
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
       .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),
       .source_file = {},
-      .machine_tier = static_cast<int>(effective_tier(machine, measured)),
       .display_height = display_height(h.screen.window()),
-      .gpu_name = machine.name,
-      .gpus = h.screen.device_names(),
-      .audio_outputs = audio_outputs,
-      .engines_dir_default = prepare::utf8_path(h.paths.engines.parent_path() / "backends"),
-      .engines_dir_free = format_size(free_bytes(h.catalog.layout.engines)),
-      .default_player_is_ajp = default_player_is_ajp,
-      .bench_text = bench_text,
-      .place = place_of(h.paths),
       .span_prepare = {.note = i18n::tr("Open a video: the player prepares Performance mode on its frames.")},
-      .fp8_reason = span_fp8_unavailable_reason(fp8_facts),
-      .settings_dir = h.settings_path.parent_path()};
+      .fp8_reason = span_fp8_unavailable_reason(fp8_facts)};
+  // Vidéo > Post-traitement sans vidéo ouverte : la carte, sa tranche, les sorties son, comme en lecture.
+  fill_host_choices(choices, h.screen, h.paths, h.catalog, h.settings_path.parent_path());
+  return choices;
 }
 
 // Les réglages que la lecture prendra : play.toml, puis les options de la ligne de commande.
@@ -321,7 +298,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                             [&](const UseEngine& use) {
                               st.engines = using_engine(std::move(st.engines), use.id);
                               if (auto written = core::save_settings(
-                                      h.settings_path.parent_path() / "settings.toml", st.engines);
+                                      paths::engine_settings(h.settings_path.parent_path()), st.engines);
                                   !written)
                                 log->warn("{}", written.error().detail);
                               log->info("moteur des réseaux : {}", engine_label(use.id));
@@ -334,7 +311,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                                   .options = h.options,
                                   .paths = h.paths,
                                   .catalog = h.catalog,
-                                  .engines_path = h.settings_path.parent_path() / "settings.toml"};
+                                  .engines_path = paths::engine_settings(h.settings_path.parent_path())};
                               auto shown =
                                   run_engine_screen(screen, st.engines, true, st.next_key, st.snapshot);
                               if (!shown) {
@@ -353,7 +330,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                  input);
     }
     actions.clear();
-    if (dirty && host_now_us() - saved_at >= 1'000'000) save();
+    if (dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) save();
     st.snapshot.maybe(h.screen, opened);
     view.dialog_open = pick->open();
     const ImDrawData* draw = h.ui.home(host_now_us(), view, actions);

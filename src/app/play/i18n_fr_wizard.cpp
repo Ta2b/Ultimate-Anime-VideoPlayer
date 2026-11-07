@@ -154,9 +154,9 @@ constexpr std::array kWizardTexts{
     Entry{"not in this package", "absent de ce paquet"},
     Entry{"not published for this version yet", "pas encore publié pour cette version"},
     Entry{"notify me", "me prévenir"},
-    Entry{"to download ({}) · needs {} of space, {} free{}",
-          "à télécharger ({}) · demande {} d'espace, {} libres{}"},
-    Entry{"to download ({}){}", "à télécharger ({}){}"},
+    Entry{"to download ({}) · needs {} of space, {} free",
+          "à télécharger ({}) · demande {} d'espace, {} libres"},
+    Entry{"to download ({})", "à télécharger ({})"},
     Entry{"{} is chosen but does not open on this GPU (see log): {} replaces it.",
           "{} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace."},
 };

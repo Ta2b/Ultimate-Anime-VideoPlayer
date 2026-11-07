@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "core/text.h"
+
 namespace ajp::media {
 namespace {
 
@@ -56,14 +58,11 @@ constexpr std::array<LangPair, 204> kLanguages{{
 }};
 // clang-format on
 
-bool iequal(std::string_view a, std::string_view b) {
-  return std::ranges::equal(
-      a, b, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
-}
+using core::iequal;
 
 bool iless(std::string_view a, std::string_view b) {
   return std::ranges::lexicographical_compare(
-      a, b, [](unsigned char x, unsigned char y) { return std::tolower(x) < std::tolower(y); });
+      a, b, [](char x, char y) { return core::ascii_lower(x) < core::ascii_lower(y); });
 }
 
 std::vector<std::string_view> split_subtags(std::string_view tag) {

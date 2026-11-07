@@ -16,6 +16,7 @@
 #include "app/play/engine_switch.h"
 #include "app/play/panel_style.h"
 #include "core/engines.h"
+#include "core/text.h"
 
 namespace ajp::app::play {
 namespace {
@@ -105,16 +106,12 @@ void engine_row(EngineRow& row) {
 // Une ligne d'un moteur téléchargeable : installé ici (arbre de construction, ou extrait), à
 // télécharger, ou absent de l'index de cette version.
 void downloadable_row(EngineRow& row, const EnginesHere& here) {
-  const bool built = (row.offer.id == core::EngineId::TensorRt && here.tensorrt) ||
-                     (row.offer.id == core::EngineId::MiGraphX && here.migraphx) ||
-                     (row.offer.id == core::EngineId::OpenVino && here.openvino);
+  const bool built = row.offer.id == core::EngineId::TensorRt && here.tensorrt;
   const auto found = std::ranges::find(here.downloads, row.offer.id, &EngineDownload::id);
   const EngineDownload* download = found == here.downloads.end() ? nullptr : &*found;
-  const std::string missing =
-      download != nullptr && !download->missing.empty() ? std::format(" · {}", download->missing) : "";
   if (built || (download != nullptr && download->installed)) {
     row.usable = true;
-    row.status = i18n::tr("installed") + missing;
+    row.status = i18n::tr("installed");
   } else if (download != nullptr) {
     row.license = download->license;
     row.bytes = download->bytes;
@@ -125,14 +122,13 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     // reste.
     row.status =
         download->needed == 0
-            ? i18n::tr_format("to download ({}){}", format_size(download->bytes), missing)
-            : i18n::tr_format("to download ({}) · needs {} of space, {} free{}", format_size(download->bytes),
-                              format_size(download->needed), format_size(download->available), missing);
+            ? i18n::tr_format("to download ({})", format_size(download->bytes))
+            : i18n::tr_format("to download ({}) · needs {} of space, {} free", format_size(download->bytes),
+                              format_size(download->needed), format_size(download->available));
     if (!fits)
       row.status = i18n::tr_format("not enough disk space: {} needed ({} to download), {} left",
                                    format_size(download->needed), format_size(download->bytes),
-                                   format_size(download->available)) +
-                   missing;
+                                   format_size(download->available));
   } else {
     row.status = i18n::tr("not published for this version yet");
   }
@@ -167,19 +163,10 @@ std::vector<std::filesystem::path> backends_within(std::span<const std::filesyst
   return out;
 }
 
-namespace {
-
-std::string lower(std::string_view text) {
-  std::string out(text);
-  std::ranges::transform(out, out.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return out;
-}
-
-}  // namespace
+namespace {}  // namespace
 
 bool amd_matrix_cores(std::string_view gpu_name) {
-  const std::string name = lower(gpu_name);
+  const std::string name = core::ascii_lower(gpu_name);
   // RADV nomme la puce : NAVI3x pour RDNA3, GFX1200 et GFX1201 pour RDNA4 (Mesa ne leur donne
   // pas de nom de code).
   constexpr std::array kWmmaChips{"navi31", "navi32", "navi33", "gfx11", "gfx12"};
@@ -197,57 +184,12 @@ bool amd_matrix_cores(std::string_view gpu_name) {
   return false;
 }
 
-bool rocm_listed(std::string_view gpu_name) {
-  const std::string name = lower(gpu_name);
-  // RADV nomme la puce (« AMD Radeon RX 6500M (RADV NAVI24) ») : elle seule décide. RDNA4 y
-  // porte son nom GFX (« AMD Radeon RX 9070 XT (RADV GFX1201) »).
-  // Les Ryzen AI 9 HX et Ryzen AI Max (GFX1150, GFX1151) depuis ROCm 7.2.1 ; pas le Ryzen AI 7
-  // (Radeon 860M, GFX1152).
-  constexpr std::array kListedChips{"navi21",  "navi31",  "navi32",  "navi33",  "navi44",
-                                    "navi48",  "gfx1100", "gfx1101", "gfx1102", "gfx1150",
-                                    "gfx1151", "gfx1200", "gfx1201"};
-  if (name.contains("(radv ")) {
-    return std::ranges::any_of(kListedChips, [&](std::string_view chip) { return name.contains(chip); });
-  }
-  if (name.contains("instinct") || name.contains("pro w6800") || name.contains("pro w7")) return true;
-  constexpr std::array kListedApus{"880m", "890m", "8050s", "8060s"};
-  if (std::ranges::any_of(kListedApus, [&](std::string_view apu) { return name.contains(apu); })) return true;
-  // AMDVLK et Windows ne donnent que le produit : RX 6800 à 6950 de bureau (les « M » et « S »
-  // portables sont des Navi 22), toutes les RX 7000 et 9000 de bureau.
-  for (std::size_t at = name.find("rx "); at != std::string::npos; at = name.find("rx ", at + 1)) {
-    const std::string_view model = std::string_view(name).substr(at + 3);
-    if (model.size() < 4 || !std::isdigit(static_cast<unsigned char>(model[0]))) continue;
-    const bool mobile = model.size() > 4 && (model[4] == 'm' || model[4] == 's');
-    if (mobile) return false;
-    if (model.starts_with("68") || model.starts_with("69") || model.starts_with('7') ||
-        model.starts_with('9'))
-      return true;
-  }
-  return false;
-}
-
-bool winml_listed(std::string_view gpu_name) {
-  if (amd_matrix_cores(gpu_name)) return true;  // RX 7000, RX 9000, Radeon Pro W7000, R9700
-  const std::string name = lower(gpu_name);
-  // Les APU RDNA 3 (Phoenix, Hawk Point), RDNA 3.5 (Strix, Krackan, Strix Halo), que le pilote
-  // AMD nomme par leur produit.
-  constexpr std::array kRdna3Apus{"740m", "760m", "780m",  "820m",  "840m", "860m",
-                                  "880m", "890m", "8040s", "8050s", "8060s"};
-  return std::ranges::any_of(kRdna3Apus, [&](std::string_view apu) { return name.contains(apu); });
-}
-
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os) {
-  // OpenVINO refuse lui-même un GPU qu'il ne sert pas (repli sur Vulkan) : le fabricant suffit.
-  // MIGraphX aussi, mais après un téléchargement de ROCm : la liste officielle le filtre avant.
-  return core::SystemInfo{
-      .os = os,
-      .gpus = {core::GpuInfo{.vendor = gpu.vendor,
-                             .name = gpu.name,
-                             .vram_bytes = gpu.vram_bytes,
-                             .tensor_cores = gpu.tensor_cores,
-                             .rocm_supported = gpu.vendor == GpuVendor::Amd && rocm_listed(gpu.name),
-                             .winml_migraphx = gpu.vendor == GpuVendor::Amd && winml_listed(gpu.name),
-                             .openvino_gpu = gpu.vendor == GpuVendor::Intel}}};
+  return core::SystemInfo{.os = os,
+                          .gpus = {core::GpuInfo{.vendor = gpu.vendor,
+                                                 .name = gpu.name,
+                                                 .vram_bytes = gpu.vram_bytes,
+                                                 .tensor_cores = gpu.tensor_cores}}};
 }
 
 std::string rebar_text(const GpuFacts& gpu) {

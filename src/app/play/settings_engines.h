@@ -14,8 +14,9 @@ namespace ajp::app::play {
 
 // draft : le moteur coché et pas encore appliqué ; rien : celui en service. « Utiliser ce moteur »
 // pousse UseEngine dans actions, « Installer d'autres moteurs » OpenEngineScreen.
-// engines_dir : le réglage « Dossier d'installation des moteurs » (play.toml, engines.install_dir).
+// engines_dir : le réglage « Dossier d'installation des moteurs » (play.toml, engines.install_dir) ; folder,
+// son champ de saisie.
 void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
-                 std::vector<Input>& actions, std::string& engines_dir);
+                 std::vector<Input>& actions, std::string& engines_dir, FolderField& folder);
 
 }  // namespace ajp::app::play

@@ -32,7 +32,7 @@ std::unexpected<Refusal> contract_refusal(Refusal refusal) {
   return std::unexpected(std::move(refusal));
 }
 
-// Les caractéristiques splattées de GMFSS en ont jusqu'à 192 (kernels/spec/gmfss.h).
+// Le plus de plans qu'un tenseur des noyaux porte.
 constexpr std::int64_t kMaxTensorPlanes = 256;
 
 std::expected<TensorView, Refusal> tensor_view(const Tensor& t, std::uint32_t planes, std::string_view what) {

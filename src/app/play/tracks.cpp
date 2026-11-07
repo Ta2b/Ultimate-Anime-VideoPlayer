@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "core/text.h"
 #include "media/language.h"
 
 namespace ajp::app::play {
@@ -43,16 +44,9 @@ constexpr auto kMenuLanguages = [] {
   return menu;
 }();
 
-std::string lower(std::string_view text) {
-  std::string out(text);
-  std::ranges::transform(out, out.begin(),
-                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return out;
-}
-
 // La langue primaire en minuscules (« en-US » : « en »).
 std::string primary(std::string_view tag) {
-  return lower(tag.substr(0, tag.find_first_of("-_")));
+  return core::ascii_lower(tag.substr(0, tag.find_first_of("-_")));
 }
 
 }  // namespace
@@ -78,7 +72,8 @@ bool same_language(std::string_view a, std::string_view b) {
 std::string track_label(const media::TrackInfo& track) {
   const std::string language = language_name(track.language);
   std::string label = language;
-  const bool repeats = !language.empty() && lower(track.title).find(lower(language)) != std::string::npos;
+  const bool repeats = !language.empty() &&
+                       core::ascii_lower(track.title).find(core::ascii_lower(language)) != std::string::npos;
   if (!track.title.empty() && !repeats)
     label = label.empty() ? track.title : std::format("{} · {}", label, track.title);
   if (!track.title.empty() && repeats) label = track.title;

@@ -65,10 +65,6 @@ class TrtLog final : public nvinfer1::ILogger {
 
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 // Le contexte primaire est partagé avec NVDEC (FFmpeg, AV_CUDA_USE_PRIMARY_CONTEXT), qui le
 // veut en attente bloquante (CU_CTX_SCHED_BLOCKING_SYNC) et refuse un contexte déjà actif avec
 // d'autres drapeaux. Le runtime l'active avec les siens (cudaInitDevice ignore ce drapeau) :
@@ -246,7 +242,6 @@ TensorRtBackend::~TensorRtBackend() {
     if (read.host != nullptr) cudaFreeHost(read.host);
     if (read.done != nullptr) cudaEventDestroy(read.done);
   }
-  if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
   if (deband_out_ != nullptr) cudaFree(deband_out_);
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
@@ -286,7 +281,6 @@ BackendCaps TensorRtBackend::capabilities() const {
       .span_fp8_kernels = SpanFp8Net::kKernelsVersion,
       .rife_fused = true,
       .drba_fused = true,
-      .gmfss_fused = true,
       .matrix_units = true,
       .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,
@@ -397,7 +391,7 @@ void TensorRtBackend::free_after_lanes(void* memory) {
   cudaFree(memory);  // repli : la libération synchrone d'avant
 }
 
-void TensorRtBackend::tune_pool() {
+void TensorRtBackend::tune_pool() const {
   cudaMemPool_t pool = nullptr;
   if (cudaDeviceGetDefaultMemPool(&pool, device_) != cudaSuccess) {
     static_cast<void>(clear_error());
@@ -491,6 +485,7 @@ namespace ajp::gpu::cuda {
 
 std::vector<GpuStageSummary> TensorRtBackend::gpu_profile() {
   std::vector<GpuStageSummary> out;
+  out.reserve(stages_.size() + role_timing_.size());
   for (auto& [name, timing] : stages_) out.push_back(timing->profile());
   for (const auto& timing : role_timing_) {
     if (!timing) continue;

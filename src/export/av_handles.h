@@ -16,6 +16,7 @@ extern "C" {
 #include <libavutil/pixfmt.h>
 }
 
+#include "core/av_error.h"
 #include "core/frame.h"
 #include "core/types.h"
 #include "export/encoder_choice.h"
@@ -50,8 +51,7 @@ inline constexpr AVRational kMicroseconds{1, 1'000'000};
 // code ANSI, ou lèverait une exception devant un nom en japonais.
 std::string utf8(const std::filesystem::path& path);
 
-std::string av_error_text(int error);
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail);
+using core::av_error_text;  // core/av_error.h
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error);
 
 // Le format de pixels FFmpeg d'une disposition.

@@ -37,7 +37,6 @@
 #include "app/play/engine_switch.h"
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
-#include "app/play/gmfss_model.h"
 #include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
@@ -45,6 +44,7 @@
 #include "app/play/look_catalog.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/model_choice.h"
+#include "app/play/paths.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
@@ -69,10 +69,6 @@
 
 namespace ajp::app::play {
 namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
 
 // Un fichier de configuration que le lecteur n'a pas compris sera réécrit au prochain changement
 // de réglage : il est mis de côté d'abord (« nom.invalide-AAAAMMJJ-HHMMSS »), pour qu'aucun profil
@@ -156,11 +152,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // fréquence « au lancement » ne revérifie pas) ; pendant une lecture, elle attend la fin de la vidéo.
   std::atomic<bool> playing{false};
   std::jthread update_check;
-  const std::filesystem::path update_file = paths.data / "update.toml";
+  const std::filesystem::path update_file = paths::update_state(paths.data);
   const UpdatePaths update_paths{
       .data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable};
-  const std::filesystem::path settings_path =
-      (paths.settings.empty() ? paths.engines.parent_path() : paths.settings) / "play.toml";
+  const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
   if (saved) i18n::set_language(i18n::language_from_code(saved->language));
@@ -202,7 +197,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     }
   }
   // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.
-  load_user_keys(settings_path.parent_path() / "user.toml");
+  load_user_keys(paths::user_keys(settings_path.parent_path()));
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -220,7 +215,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .allow_software = options.software_gpu,
       .device_name = options.software_gpu ? std::string() : saved->gpu,
       .present = options.present,
-      .shader_cache = paths.engines.parent_path() / "shaders.cache",
+      .shader_cache = paths::shader_cache(paths),
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
                                      : std::filesystem::path()});
   if (!screen) return std::unexpected(std::move(screen.error()));
@@ -245,7 +240,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::size_t next_key = 0;
 
   // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.
-  const std::filesystem::path engines_path = settings_path.parent_path() / "settings.toml";
+  const std::filesystem::path engines_path = paths::engine_settings(settings_path.parent_path());
   std::vector<std::string> engines_skipped;  // les valeurs écartées une à une (P2.21)
   auto engines = core::load_settings(engines_path, &engines_skipped);
   for (const std::string& skipped : engines_skipped) log->warn("settings.toml : {} écarté", skipped);
@@ -321,11 +316,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
-  ShotWork shots{.cache_dir = paths.engines.parent_path() / "plans"};
+  ShotWork shots{.cache_dir = paths::shot_cache(paths)};
   if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
+  // Annoncés une fois par lancement, pas à chaque vidéo : la mise à jour vue, la calibration d'une autre
+  // carte.
+  bool update_announced = false;
+  bool calibration_told = false;
   const HomeScreen home{.screen = **screen,
                         .ui = **ui,
                         .options = options,
@@ -375,8 +374,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     PlaySettings chosen = *saved;
     // La tranche mesurée par « Évaluer ma machine » (bench.toml), si elle est de cette carte.
     std::optional<BenchResult> measured_tier;
-    if (auto bench = load_bench(settings_path.parent_path() / "bench.toml"))
-      measured_tier = std::move(*bench);
+    if (auto bench = load_bench(paths::bench(settings_path.parent_path()))) measured_tier = std::move(*bench);
     // Le préréglage (Auto, Rapide…) refait la chaîne pour cette carte, cet écran et cette vidéo ;
     // Personnalisé laisse les réglages tels quels.
     Tier tier = effective_tier(gpu_facts(**screen), measured_tier);
@@ -460,10 +458,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
       // lancement.
-      static bool announced = false;
       const UpdateState update = load_update_state(update_file);
-      if (!announced && saved->update_mode == UpdateMode::Notify && !update.latest_version.empty()) {
-        announced = true;
+      if (!update_announced && saved->update_mode == UpdateMode::Notify && !update.latest_version.empty()) {
+        update_announced = true;
         player.notice = i18n::ui_tr_format("Update {} available (Settings > General > Application)",
                                            update.latest_version);
       }
@@ -471,10 +468,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     {
       // P3.11 : une calibration faite sur une autre carte ne sert plus ; la refaire est proposé une fois par
       // lancement.
-      static bool told = false;
       const auto calibration = load_calibration(calibration_file(settings_path.parent_path()));
-      if (!told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
-        told = true;
+      if (!calibration_told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
+        calibration_told = true;
         const i18n::Translated redo =
             i18n::ui_tr("New graphics card: optimise for this PC again (Video > Post-processing)");
         player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
@@ -497,7 +493,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     forced_start.reset();
     // settings.toml ([playback] resume_position) l'autorise, et --no-resume l'écarte pour une lecture.
     if (file_options.resume && player.engines.resume_position) {
-      player.resume_path = settings_path.parent_path() / "resume.tsv";
+      player.resume_path = paths::resume(settings_path.parent_path());
       if (start_us == 0 && !forced) {
         if (const auto at = resume_position(player.resume_path, file)) {
           start_us = *at;

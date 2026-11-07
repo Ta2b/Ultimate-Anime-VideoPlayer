@@ -14,10 +14,6 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
-
 constexpr VkImageLayout kLayout = VK_IMAGE_LAYOUT_GENERAL;
 
 // Les poignées que le backend TensorRT importe dans CUDA : descripteurs sous Linux, HANDLE NT

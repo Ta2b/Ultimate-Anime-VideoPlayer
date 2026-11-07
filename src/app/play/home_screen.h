@@ -20,7 +20,7 @@
 #include "app/play/player_engines.h"
 #include "app/play/settings.h"
 #include "app/play/ui.h"
-#include "core/resolve.h"
+#include "core/display.h"
 #include "core/settings.h"
 #include "core/types.h"
 

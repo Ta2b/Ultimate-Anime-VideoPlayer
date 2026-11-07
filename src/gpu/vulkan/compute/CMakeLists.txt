@@ -45,9 +45,6 @@ set(tensor_shaders
   "${glsl}/drba_fused_pre.comp"
   "${glsl}/flow_max.comp"
   "${glsl}/frame_stats.comp"
-  "${glsl}/gmfss_compose.comp"
-  "${glsl}/gmfss_normalize.comp"
-  "${glsl}/gmfss_splat.comp"
   "${glsl}/ingest_combine.comp"
   "${glsl}/ingest_combine_planes.comp"
   "${glsl}/output_matrix.comp"
@@ -60,7 +57,6 @@ set(tensor_shaders
   "${glsl}/rife_fused_entry.comp"
   "${glsl}/rife_fused_finish.comp"
   "${glsl}/rife_fused_glue.comp"
-  "${glsl}/tensor_fill.comp"
   "${glsl}/rife_frames.comp"
   "${glsl}/transfer.comp"
   "${glsl}/warp_blend.comp")

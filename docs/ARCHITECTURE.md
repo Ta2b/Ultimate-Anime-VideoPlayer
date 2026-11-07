@@ -3,8 +3,7 @@
 Le lecteur part des réglages de `play.toml` (`PlaySettings`, `src/app/play/settings.h`) : `app` en tire la
 chaîne (`chain_setup.cpp`), ouvre les moteurs et lance les threads ; les autres modules exécutent ce que la
 chaîne leur demande. `core` garde les briques partagées (cadence, choix des moteurs, raccourcis, fichiers). Le
-profil TOML v5, `resolve()` et son `Plan` immuable sont encore dans `core`, mais le lecteur ne les appelle plus
-(code mort, P5.1) : ne pas s'y fier pour comprendre la lecture.
+profil TOML v5 y reste pour ses types (règles, modèles) ; `resolve()`, le `Plan` et `Capabilities` sont retirés.
 
 ## Modules
 
@@ -16,7 +15,7 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 
 | Module | Responsabilité | Thread |
 |---|---|---|
-| `core` | Cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8 ; le profil v5 et `Plan`, inutilisés | main |
+| `core` | Cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8, écran et source (`display.h`) ; les types du profil v5 | main |
 | `core_types` | Contrats entre modules : `types.h`, `inbox.h`, `messages.h`, `frame.h`, `thread.h`, `gpu_device.h`, `ring.h` | aucun |
 | `core_log` | Canal de journal de chaque module, puits installés par `app` | aucun |
 | `media` | Démultiplexage, décodage matériel, horodatage | source |
@@ -189,11 +188,6 @@ moteurs, `load()` un `DrbaFusedEngine` qui enchaîne les quatre contextes et les
 graphe CUDA, avec les deux entrées `pair01` et `pair12` du moteur entier ; le repli sur celui-ci se juge dans
 `prepare_distil_drba` (`player_engines.cpp`).
 
-GMFSS fusionné (`BackendCaps::gmfss_fused`, `docs/gmfss-fusionne.md`) n'a pas de moteur propre : `prepare/gmfss_split.h` coupe la
-paire en deux ONNX (les caractéristiques d'une image, le flot), deux moteurs ordinaires que l'étage gpu enfile avec des tenseurs
-décalés et dont il garde les caractéristiques d'une paire à la suivante (`gmfss_features.h`) ; repli sur la paire entière
-dans `prepare_gmfss` (`player_engines.cpp`).
-
 Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
 créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
 vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de
@@ -229,14 +223,14 @@ garde la médiane des neuf dernières (`app/play/frame_latency.h`, mesures hors 
 jeté par main une fois prêt, et n'est pas calculé. Sous surcharge, le GPU cesse
 ainsi de prendre du retard sur des images que personne ne verra.
 
-### Écran et cadence (`core/resolve.h`)
+### Écran et cadence (`core/display.h`, `core/pacing.h`)
 
 `DisplayInfo` décrit l'écran : taille, rafraîchissement (0 sans VRR : inconnu),
 HDR actif, VRR, crête, noir et blanc SDR en nits, espace de sortie (sRGB, PQ,
 scRGB), et la provenance de chaque champ (défaut, profil, système, `--display`).
-Quand l'écran est connu, `resolve()` passe la règle choisie par `pace_rule()` :
-une interpolation unique prend le facteur calé sur les vsyncs, et le `Plan` porte
-sa `CadenceChoice`, comprise dans son hachage.
+Sur un écran fixe, `lock_factor()` donne le facteur qui cale k vsyncs par image et
+`vsync_speed()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
+choisit k.
 
 ### Retour de présentation (`--present`, docs/adr/0011-presentation-en-boucle-fermee.md)
 
@@ -262,9 +256,7 @@ Threads du lecteur : main (SDL, interface, rendu), source (lecture et décodage)
 audio, sous-titres, prepare (la chaîne GPU), et, à `--ring-watcher`, `veilleur` (attend l'écriture des slots
 de l'anneau et réveille main, `ring_watcher.h`). Threads des backends, lancés au
 premier besoin : `envoi` (backend Vulkan : copie des images hôte vers les tampons
-d'envoi, attendue seulement quand le lot part) et `openvino` (une requête
-d'inférence à la fois, exécutée hors du thread prepare pendant que la file Vulkan
-avance, `run_deferred`). Chacun n'attend que sa boîte `Inbox`.
+d'envoi, attendue seulement quand le lot part). Chacun n'attend que sa boîte `Inbox`.
 
 ## Journal
 

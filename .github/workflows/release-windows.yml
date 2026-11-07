@@ -1,8 +1,7 @@
 name: Release Windows
 
-# Lancé à la main (ou par une étiquette v*) : le lecteur universel et son backend Vulkan, les
-# moteurs OpenVINO (GPU Intel et NPU) et MIGraphX de Windows ML (AMD RDNA 3 et après, à l'essai),
-# et TensorRT quand l'entrée tensorrt le demande : la CI télécharge alors le kit CUDA et TensorRT,
+# Lancé à la main (ou par une étiquette v*) : le lecteur universel et son backend Vulkan, et
+# TensorRT quand l'entrée tensorrt le demande : la CI télécharge alors le kit CUDA et TensorRT,
 # sous leurs licences NVIDIA, que le propriétaire du dépôt accepte en cochant l'entrée.
 on:
   workflow_dispatch:
@@ -69,8 +68,7 @@ jobs:
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-      # OpenVINO et Windows ML (MIGraphX) ne sont plus construits pour la release : débranchés du lecteur, AMD et
-      # Intel passent par Vulkan (docs/moteurs.md). La CI ne les construit plus (P1.18).
+      # AMD et Intel passent par Vulkan (docs/moteurs.md).
       # Seulement sur l'entrée tensorrt (licences NVIDIA acceptées par le propriétaire du dépôt).
       - name: CUDA et TensorRT
         if: inputs.tensorrt
