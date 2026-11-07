@@ -1,5 +1,8 @@
 #include "app/play/input.h"
 
+#include <utility>
+#include <variant>
+
 #include "app/play/controls.h"
 
 namespace ajp::app::play {
@@ -56,9 +59,35 @@ std::optional<core::Key> key_of(SDL_Keycode key) {
 }
 
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) {
+  // P3.43 : une touche de seek maintenue saute de point clé en point clé ; au relâchement, un seek exact
+  // à la position atteinte. Le thread de la fenêtre seul lit les touches.
+  static bool seek_repeated = false;
   if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
     return Command{cmd::Quit{}};
-  if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) return std::nullopt;
+  if (event.type == SDL_EVENT_KEY_UP && std::exchange(seek_repeated, false))
+    return Command{cmd::SeekRelative{.delta_us = 0, .exact = true}};
+  if (event.type != SDL_EVENT_KEY_DOWN) return std::nullopt;
+  if (event.key.repeat) {
+    const SDL_Keymod held = event.key.mod;
+    if ((held & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) == 0 &&
+        (event.key.key == SDLK_UP || event.key.key == SDLK_DOWN))
+      return VolumeStep{.delta = event.key.key == SDLK_UP ? kVolumeStep : -kVolumeStep};
+    const auto repeated = key_of(event.key.key);
+    if (!repeated) return std::nullopt;
+    auto command = keys.command_for(core::Chord{.key = *repeated,
+                                                .ctrl = (held & SDL_KMOD_CTRL) != 0,
+                                                .alt = (held & SDL_KMOD_ALT) != 0,
+                                                .shift = (held & SDL_KMOD_SHIFT) != 0,
+                                                .meta = (held & SDL_KMOD_GUI) != 0});
+    if (!command) return std::nullopt;
+    if (auto* seek = std::get_if<cmd::SeekRelative>(&*command)) {
+      seek->exact = false;
+      seek_repeated = true;
+      return *command;
+    }
+    if (std::holds_alternative<cmd::StepFrame>(*command)) return *command;
+    return std::nullopt;
+  }
   const SDL_Keymod mod = event.key.mod;
   const bool plain = (mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) == 0;
   if (plain && event.key.key == SDLK_Q) return Command{cmd::Quit{}};
