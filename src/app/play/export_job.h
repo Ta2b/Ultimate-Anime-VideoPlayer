@@ -49,7 +49,7 @@ ExportSize export_size(ExportSize chain, ExportSize source, int height);
 media::Rational export_rate(media::Rational source, Factor factor);
 
 // « Épisode 01 [ajp 3840x2160 47.952fps].mkv » à côté de la source ; « (2) », « (3) »… si le nom
-// est pris.
+// est pris ; un chemin vide si « (999) » l'est aussi. Le nom de la source est borné à 160 octets.
 std::filesystem::path default_export_path(const std::filesystem::path& source, ExportSize size,
                                           media::Rational rate);
 

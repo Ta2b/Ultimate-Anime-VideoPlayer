@@ -65,13 +65,23 @@ media::Rational export_rate(media::Rational source, Factor factor) {
 std::filesystem::path default_export_path(const std::filesystem::path& source, ExportSize size,
                                           media::Rational rate) {
   const std::string fps = rate_text(rate);
-  const std::string base = std::format("{} [ajp {}x{}{}]", prepare::utf8_path(source.stem()), size.width,
-                                       size.height, fps.empty() ? std::string() : std::format(" {}fps", fps));
+  // P3.96 : le nom de la source borné à 160 octets, coupé entre deux caractères UTF-8 : le nom complet tient
+  // sous NAME_MAX (255 octets) avec le suffixe, « (999) » et l'extension.
+  std::string stem = prepare::utf8_path(source.stem());
+  if (stem.size() > 160) {
+    std::size_t cut = 160;
+    while (cut > 0 && (static_cast<unsigned char>(stem[cut]) & 0xC0) == 0x80) --cut;
+    stem.resize(cut);
+  }
+  const std::string base = std::format("{} [ajp {}x{}{}]", stem, size.width, size.height,
+                                       fps.empty() ? std::string() : std::format(" {}fps", fps));
   const std::filesystem::path dir = source.parent_path();
   std::filesystem::path path = dir / prepare::path_from_utf8(base + ".mkv");
   std::error_code error;
   for (int n = 2; std::filesystem::exists(path, error) && n < 1000; ++n)
     path = dir / prepare::path_from_utf8(std::format("{} ({}).mkv", base, n));
+  // P3.95 : passé « (999) », aucun nom proposé plutôt qu'un fichier existant écrasé.
+  if (std::filesystem::exists(path, error)) return {};
   return path;
 }
 
