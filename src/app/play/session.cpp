@@ -251,6 +251,8 @@ void Session::on_refusal(const StageRefusal& refusal) {
   if (refusal.fatal && !resized_ && !failure_)
     failure_ = Refusal{refusal.refusal.code, std::format("{} : {}", refusal.stage, refusal.refusal.detail)};
   if (refusal.fatal || resized_) finished_ = true;
+  if (!refusal.fatal && refusal.refusal.recoverable && refusal.refusal.code != RefusalCode::FieldOutOfRange)
+    notice_ = refusal.refusal;
 }
 
 void Session::request_subtitles(const RingFrame& frame) {

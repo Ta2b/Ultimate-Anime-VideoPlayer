@@ -17,6 +17,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "app/play/controls.h"
@@ -176,6 +177,9 @@ class Session {
   // Le refus fatal d'un étage qui a fini la lecture (le premier) : une erreur, pas une fin de
   // fichier. std::nullopt après une fin normale, un arrêt demandé ou un changement de taille.
   const std::optional<Refusal>& failure() const { return failure_; }
+  // Le dernier refus passager qui touche la lecture (une lecture du fichier reprise, un seek refusé), à dire
+  // à l'écran par un message bref ; rendu une fois. Les refus internes restent au journal et à l'OSD.
+  std::optional<Refusal> take_notice() { return std::exchange(notice_, std::nullopt); }
   // Le délai entre la présentation d'une image et son affichage, tel que choisi pour la sélection des images.
   std::int64_t visible_delay_us() const { return display_delay_us(display_period()); }
   // Après un tour sans présentation, combien la boucle peut dormir : jusqu'à l'échéance de la prochaine
@@ -285,6 +289,7 @@ class Session {
   bool fullscreen_done_ = false;
   FrameStats stats_;
   std::vector<std::string> refusals_;  // derniers refus, pour l'OSD
+  std::optional<Refusal> notice_;      // voir take_notice()
 
   // La période attendue entre deux images neuves, 0 si inconnue ; et la mesure d'une image neuve,
   // à l'instant où elle paraît.

@@ -171,7 +171,7 @@ void tend_looks(Chain& to, std::int64_t now_us) {
   to.look_loads.clear();  // la dernière est finie ; les autres se joignent (leur lecture se termine)
   if (!looks) return;
   for (const std::string& failed : show_looks(to.screen, *looks))
-    to.ui.controls().notify(i18n::tr_format("Look unreadable: {}", failed), now_us);
+    to.ui.controls().notify(i18n::ui_tr_format("Look unreadable: {}", failed), now_us);
 }
 
 std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool source_hdr) {

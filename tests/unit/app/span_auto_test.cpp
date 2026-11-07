@@ -113,14 +113,14 @@ TEST_CASE("la boucle du lecteur annonce la progression puis rouvre la chaîne à
   SpanJob job;
   const SpanAutoTick first = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
   REQUIRE(first.notify);
-  CHECK(first.notify->starts_with("Préparation du mode Performance…"));
-  CHECK(first.notify->ends_with(" %"));
+  CHECK(first.notify->str().starts_with("Préparation du mode Performance…"));
+  CHECK(first.notify->str().ends_with(" %"));
   CHECK_FALSE(first.reopen);
   job.note->pending->wait();
   const SpanAutoTick done = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
   CHECK(done.reopen);
   REQUIRE(done.notify);
-  CHECK(done.notify->contains("prêt"));
+  CHECK(done.notify->str().contains("prêt"));
   // Une fois lu, rien de plus : pas de nouvelle tâche pour la même clé.
   const SpanAutoTick after = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
   CHECK_FALSE(after.reopen);
@@ -155,8 +155,8 @@ TEST_CASE("un refus des garde-fous est dit avec ses dB, la lecture reste en FP16
   const SpanAutoTick done = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
   CHECK_FALSE(done.reopen);
   REQUIRE(done.notify);
-  CHECK(done.notify->contains("lecture en FP16"));
-  CHECK_FALSE(done.notify->contains("PSNR"));  // le détail technique est au journal, pas à l'écran
+  CHECK(done.notify->str().contains("lecture en FP16"));
+  CHECK_FALSE(done.notify->str().contains("PSNR"));  // le détail technique est au journal, pas à l'écran
   tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
   CHECK(runs == 1);
 }

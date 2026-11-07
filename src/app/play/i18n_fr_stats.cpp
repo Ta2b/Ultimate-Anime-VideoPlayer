@@ -59,6 +59,9 @@ constexpr std::array kStatsTexts{
           "{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard"},
     Entry{"{}x{} at {} fps · {}", "{}x{} à {} i/s · {}"},
     Entry{"free", "libre"},
+    Entry{"{} not updated: {}", "{} non mis à jour : {}"},
+    Entry{"Finishing the export", "Finalisation de l'export"},
+    Entry{"Playback goes on after an error: {}", "La lecture continue après une erreur : {}"},
 };
 
 }  // namespace

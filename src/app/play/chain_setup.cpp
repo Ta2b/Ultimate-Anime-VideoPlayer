@@ -229,7 +229,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       !(want_drba && c.drba_found) && !want_apple)
     return std::unexpected(
         choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error());
-  show_loading(p.screen, p.ui, i18n::tr("Loading"));
+  show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
   auto backend = BackendLibrary::create(p.library, init);
@@ -349,7 +349,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(
-          c.rife_model ? i18n::tr("GMFSS unavailable: using RIFE") : i18n::tr("GMFSS unavailable"),
+          c.rife_model ? i18n::ui_tr("GMFSS unavailable: using RIFE") : i18n::ui_tr("GMFSS unavailable"),
           host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
@@ -397,9 +397,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     }
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(
-          c.rife_model ? i18n::tr("DistilDRBA unavailable: using RIFE") : i18n::tr("DistilDRBA unavailable"),
-          host_now_us());
+      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
+                                          : i18n::ui_tr("DistilDRBA unavailable"),
+                             host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -427,8 +427,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     auto loaded = prepare_apple(p, init, *c.backend, c.work.width, c.work.height);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? i18n::tr("Apple interpolation unavailable: using RIFE")
-                                          : i18n::tr("Apple interpolation unavailable"),
+      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
+                                          : i18n::ui_tr("Apple interpolation unavailable"),
                              host_now_us());
     } else if (!*loaded) {
       return std::nullopt;

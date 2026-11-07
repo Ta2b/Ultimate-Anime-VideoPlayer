@@ -54,14 +54,14 @@ void stop_and_wait(PrepareNote& note) {
   note.pending.reset();
 }
 
-std::string span_progress_text(float fraction) {
-  return i18n::tr_format("Preparing Performance mode… {} %",
-                         static_cast<int>(std::clamp(fraction, 0.0F, 1.0F) * 100.0F));
+i18n::Translated span_progress_text(float fraction) {
+  return i18n::ui_tr_format("Preparing Performance mode… {} %",
+                            static_cast<int>(std::clamp(fraction, 0.0F, 1.0F) * 100.0F));
 }
 
-std::string span_failure_text(std::string_view detail) {
+i18n::Translated span_failure_text(std::string_view detail) {
   static_cast<void>(detail);  // le détail est au journal (poll_prepare)
-  return i18n::tr("Performance mode unavailable, playing in FP16.");
+  return i18n::ui_tr("Performance mode unavailable, playing in FP16.");
 }
 
 bool should_start_span_auto(PrecisionTier precision, const SpanPrepare& prepare, bool job_running,
@@ -85,7 +85,7 @@ SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
     if (note.refused) {
       tick.notify = span_failure_text(note.text);
     } else {
-      tick.notify = i18n::tr("Performance mode ready: playback uses it now");
+      tick.notify = i18n::ui_tr("Performance mode ready: playback uses it now");
       tick.reopen = true;
     }
     return tick;

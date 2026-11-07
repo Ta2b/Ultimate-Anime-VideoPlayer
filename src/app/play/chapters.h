@@ -9,6 +9,8 @@
 #include <span>
 #include <string>
 
+#include "app/play/i18n.h"
+
 namespace ajp::app::play {
 
 struct ChapterMark {
@@ -42,6 +44,6 @@ std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> cha
 inline constexpr std::int64_t kSkipFallbackUs = 85'000'000;
 
 // « Chapitre 3/12 · Opening », ou « Chapitre 3/12 » sans titre.
-std::string chapter_label(std::span<const ChapterMark> chapters, std::size_t index);
+i18n::Translated chapter_label(std::span<const ChapterMark> chapters, std::size_t index);
 
 }  // namespace ajp::app::play

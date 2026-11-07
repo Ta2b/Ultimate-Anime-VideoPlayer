@@ -140,7 +140,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     {
       const std::scoped_lock lock(shared->mutex);
       if (shared->result) break;
-      view = PrepareView{.label = i18n::tr("Calibrating this machine"), .fraction = shared->fraction};
+      view = PrepareView{.label = i18n::ui_tr("Calibrating this machine"), .fraction = shared->fraction};
     }
     if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
       log->warn("calibration de la machine : {}", shown.error().detail);
@@ -149,7 +149,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   const std::scoped_lock lock(shared->mutex);
   if (!*shared->result) {
     log->warn("calibration de la machine : {} ; préréglage Auto", shared->result->error().detail);
-    ui.controls().defer(i18n::tr("Machine calibration failed: Auto preset (see log)"));
+    ui.controls().defer(i18n::ui_tr("Machine calibration failed: Auto preset (see log)"));
     return base;
   }
   // Auto calibré : le lecteur relit les bornes mesurées (calibration.toml) et refait la chaîne pour chaque
@@ -307,7 +307,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
     *p.paths.relaunch = true;
     return false;
   }
-  show_loading(p.screen, p.ui, i18n::tr("Loading the engine"));
+  show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engine"));
   const gpu::BackendInit probe{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
   // Le module en service remplacé par l'écran des moteurs (mise à jour) : le nouveau ne se chargerait pas
@@ -320,7 +320,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   auto library = open_backend(p.catalog, p.paths, p.engines, probe);
   if (!library) {
     log->warn("moteurs : {} ; {} reste en service", library.error().detail, p.library->path().string());
-    p.notice = i18n::tr("Engine unchanged: no other one opens (see log)");
+    p.notice = i18n::ui_tr("Engine unchanged: no other one opens (see log)");
     return true;
   }
   p.library = std::move(*library);
@@ -328,9 +328,10 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   const std::optional<core::EngineId> now = engine_of_library(p.library->path());
   const std::string name = now ? std::string(engine_label(*now)) : p.library->path().filename().string();
   if (use != nullptr && now != use->id) {
-    p.notice = i18n::tr_format("{} does not open on this GPU: {} stays active", engine_label(use->id), name);
+    p.notice =
+        i18n::ui_tr_format("{} does not open on this GPU: {} stays active", engine_label(use->id), name);
   } else {
-    p.notice = i18n::tr_format("Engine: {}", name);
+    p.notice = i18n::ui_tr_format("Engine: {}", name);
   }
   return true;
 }

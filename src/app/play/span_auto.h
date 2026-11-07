@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 
+#include "app/play/i18n.h"
 #include "app/play/precision.h"
 #include "app/play/settings_system.h"
 #include "app/play/span_derive.h"
@@ -50,9 +51,9 @@ void poll_prepare(PrepareNote& note);
 void stop_and_wait(PrepareNote& note);
 
 // « Préparation du mode Performance… 37 % ».
-std::string span_progress_text(float fraction);
+i18n::Translated span_progress_text(float fraction);
 // La phrase d'un échec : « Mode Performance impossible, lecture en FP16 : <détail> ».
-std::string span_failure_text(std::string_view detail);
+i18n::Translated span_failure_text(std::string_view detail);
 
 // Faut-il lancer la préparation automatique ? Le cran Performance est choisi, la préparation est offerte
 // (moteur capable, vidéo ouverte, modèle pris), rien n'est prêt, aucun reçu ne l'a déjà refusée, aucune tâche
@@ -62,8 +63,8 @@ bool should_start_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
 
 // Ce que la boucle du lecteur doit faire de la tâche à ce tour.
 struct SpanAutoTick {
-  std::optional<std::string> notify;  // à afficher à l'écran
-  bool reopen = false;                // le paquet est prêt : rouvrir la chaîne pour l'utiliser
+  std::optional<i18n::Translated> notify;  // à afficher à l'écran
+  bool reopen = false;                     // le paquet est prêt : rouvrir la chaîne pour l'utiliser
 };
 // quiet (cran posé par un préréglage, étape 3.6) : rien à l'écran et pas de réouverture, le paquet sert à
 // l'ouverture suivante ; le journal dit tout.

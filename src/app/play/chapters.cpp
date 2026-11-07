@@ -67,9 +67,10 @@ std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> cha
   return duration_us > 0 ? std::optional(duration_us) : std::nullopt;
 }
 
-std::string chapter_label(std::span<const ChapterMark> chapters, std::size_t index) {
-  std::string label = i18n::tr_format("Chapter {}/{}", index + 1, chapters.size());
-  if (index < chapters.size() && !chapters[index].title.empty()) label += " · " + chapters[index].title;
+i18n::Translated chapter_label(std::span<const ChapterMark> chapters, std::size_t index) {
+  i18n::Translated label = i18n::ui_tr_format("Chapter {}/{}", index + 1, chapters.size());
+  if (index < chapters.size() && !chapters[index].title.empty())
+    label = label + i18n::Translated::data(" · " + chapters[index].title);
   return label;
 }
 

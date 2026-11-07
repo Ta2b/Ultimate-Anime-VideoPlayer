@@ -37,7 +37,7 @@ using Job = std::function<std::expected<void, Refusal>(const InstallProgress&)>;
 
 // Une installation sur son thread, la fenêtre vivante ; rien si elle se ferme.
 std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, PlayerUi& ui,
-                                                        const std::string& label, Job job) {
+                                                        const i18n::Translated& label, Job job) {
   auto shared = std::make_shared<Shared>();
   // L'architecture du GPU (nvidia-smi, sinon le nom de la carte) : sans elle, les fichiers de toutes les
   // architectures étaient tirés (2 Go au lieu de 740 Mo pour TensorRT sm89).
@@ -98,8 +98,8 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
     } else {
       continue;
     }
-    auto outcome =
-        run_install(screen, ui, i18n::tr_format("Installing {}", engine_label(row.offer.id)), std::move(job));
+    auto outcome = run_install(screen, ui, i18n::ui_tr_format("Installing {}", engine_label(row.offer.id)),
+                               std::move(job));
     if (!outcome) return false;
     if (*outcome) {
       log->info("{} installé", engine_label(row.offer.id));
@@ -107,7 +107,7 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
     }
     log->warn("{} not installed: {}", engine_label(row.offer.id), outcome->error().detail);
     ui.controls().defer(
-        i18n::tr_format("{} not installed: {}", engine_label(row.offer.id), i18n::tr("Vulkan instead")));
+        i18n::ui_tr_format("{} not installed: {}", engine_label(row.offer.id), i18n::tr("Vulkan instead")));
     engines = without_engine(std::move(engines), row.offer.id);
   }
   return true;
@@ -130,7 +130,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
         previous && previous->license != package.license) {
       log->warn("{}: module from a previous version, licence changed ({}): General > Engines", label,
                 package.license);
-      ui.controls().defer(i18n::tr_format("{}: new licence to accept (Engines)", label));
+      ui.controls().defer(i18n::ui_tr_format("{}: new licence to accept (Engines)", label));
       continue;
     }
     // Pas de place : rien n'est tenté (ni boucle à chaque lancement), l'utilisateur est prévenu.
@@ -141,12 +141,12 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
                         free_bytes(catalog.layout.engines), catalog.layout.engines);
         !fits) {
       log->warn("{} non mis à jour : {}", label, fits.error().detail);
-      ui.controls().defer(std::format("{}: {}", label, visible_error(fits.error())));
+      ui.controls().defer(i18n::ui_tr_format("{} not updated: {}", label, visible_error(fits.error())));
       continue;
     }
     log->info("{} : module d'une version précédente du lecteur, réinstallation", label);
     auto outcome =
-        run_install(screen, ui, i18n::tr_format("Updating {}", label),
+        run_install(screen, ui, i18n::ui_tr_format("Updating {}", label),
                     [&catalog, package](const InstallProgress& progress) -> std::expected<void, Refusal> {
                       auto installed_library = install_package(catalog, package, progress);
                       if (!installed_library) return std::unexpected(installed_library.error());
@@ -158,7 +158,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
       updated = true;
     } else {
       log->warn("{} non mis à jour : {}", label, outcome->error().detail);
-      ui.controls().defer(i18n::tr_format("{} not updated: Vulkan instead", label));
+      ui.controls().defer(i18n::ui_tr_format("{} not updated: Vulkan instead", label));
     }
   }
   return true;

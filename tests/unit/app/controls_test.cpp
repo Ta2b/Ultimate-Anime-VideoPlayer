@@ -171,7 +171,7 @@ TEST_CASE("Clic sur l'image : pause après le délai, double clic plein écran s
 TEST_CASE("Message bref : visible puis effacé en fondu", "[app][controls]") {
   Controls controls;
   CHECK_FALSE(controls.toast(0));
-  controls.notify("Volume 80 %", kS);
+  controls.notify(i18n::Translated::data("Volume 80 %"), kS);
   REQUIRE(controls.toast(kS));
   CHECK(*controls.toast(kS) == "Volume 80 %");
   CHECK(controls.toast_opacity(kS) == 1.0F);

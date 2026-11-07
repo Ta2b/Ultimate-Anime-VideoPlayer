@@ -24,9 +24,9 @@ struct Overloaded : F... {
   using F::operator()...;
 };
 
-std::string volume_text(const Controls& controls) {
-  if (controls.muted()) return i18n::tr("Muted");
-  return i18n::tr_format("Volume {} %", std::lround(controls.volume() * 100.0F));
+i18n::Translated volume_text(const Controls& controls) {
+  if (controls.muted()) return i18n::ui_tr("Muted");
+  return i18n::ui_tr_format("Volume {} %", std::lround(controls.volume() * 100.0F));
 }
 
 std::string label_of(const std::vector<TrackEntry>& entries, int track) {
@@ -66,12 +66,13 @@ void switch_audio(Chain& to, int track, std::int64_t now_us) {
   });
   if (!switched) {
     log_channel("app")->warn("piste audio {} : {}", track, switched.error().detail);
-    to.ui.controls().notify(i18n::tr("Audio track refused"), now_us);
+    to.ui.controls().notify(i18n::ui_tr("Audio track refused"), now_us);
     return;
   }
   to.ui.set_tracks(to.pipeline.tracks());
   to.session.set_tracks(to.pipeline.describe());
-  to.ui.controls().notify(i18n::tr_format("Audio: {}", label_of(to.pipeline.tracks().audio, track)), now_us);
+  to.ui.controls().notify(i18n::ui_tr_format("Audio: {}", label_of(to.pipeline.tracks().audio, track)),
+                          now_us);
 }
 
 // Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets.
@@ -80,7 +81,7 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
   auto switched = to.pipeline.select_subtitles(track);
   if (!switched) {
     log_channel("app")->warn("sous-titres : {}", switched.error().detail);
-    to.ui.controls().notify(i18n::tr("Subtitle track refused"), now_us);
+    to.ui.controls().notify(i18n::ui_tr("Subtitle track refused"), now_us);
     return;
   }
   to.session.set_subtitles(track.has_value());
@@ -91,8 +92,8 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
   to.ui.set_tracks(to.pipeline.tracks());
   to.session.set_tracks(to.pipeline.describe());
   to.ui.controls().notify(
-      track ? i18n::tr_format("Subtitles: {}", label_of(to.pipeline.tracks().subtitles, *track))
-            : std::string(i18n::tr("Subtitles off")),
+      track ? i18n::ui_tr_format("Subtitles: {}", label_of(to.pipeline.tracks().subtitles, *track))
+            : i18n::ui_tr(("Subtitles off")),
       now_us);
 }
 
@@ -105,16 +106,16 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     log_channel("app")->info("interpolation en direct : {}", factor_text(factor_of(wanted)));
     to.live.set_rife_factor(factor_of(wanted));
     controls.notify(wanted.rife_factor >= 2
-                        ? i18n::tr_format("Interpolation {}", factor_text(factor_of(wanted)))
-                        : std::string(i18n::tr("Interpolation off")),
+                        ? i18n::ui_tr_format("Interpolation {}", factor_text(factor_of(wanted)))
+                        : i18n::ui_tr(("Interpolation off")),
                     now_us);
   }
   if (wanted.rife_auto != r.rife_auto) {
-    if (wanted.rife_auto) controls.notify(i18n::tr("Interpolation: Auto"), now_us);
+    if (wanted.rife_auto) controls.notify(i18n::ui_tr("Interpolation: Auto"), now_us);
   }
   if (wanted.auto_free != r.auto_free) {
     log_channel("app")->info("mode d'Auto en direct : {}", wanted.auto_free ? "rapide" : "stable");
-    controls.notify(wanted.auto_free ? i18n::tr("Auto: Fast") : i18n::tr("Auto: Stable"), now_us);
+    controls.notify(wanted.auto_free ? i18n::ui_tr("Auto: Fast") : i18n::ui_tr("Auto: Stable"), now_us);
   }
   if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||
                          wanted.hdr_native != r.hdr_native)) {
@@ -122,14 +123,13 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   if (wanted.keep_poses != r.keep_poses) {
     to.live.set_keep_poses(wanted.keep_poses);
-    controls.notify(wanted.keep_poses ? std::string(i18n::tr("Keep poses: on"))
-                                      : std::string(i18n::tr("Keep poses: off")),
+    controls.notify(wanted.keep_poses ? i18n::ui_tr(("Keep poses: on")) : i18n::ui_tr(("Keep poses: off")),
                     now_us);
   }
   if (wanted.downscale != r.downscale) {
     log_channel("app")->info("réduction en direct : {}", label(wanted.downscale));
     to.live.set_reduction(reduction_of(wanted.downscale));
-    controls.notify(i18n::tr_format("Downscale: {}", label(wanted.downscale)), now_us);
+    controls.notify(i18n::ui_tr_format("Downscale: {}", label(wanted.downscale)), now_us);
   }
   // Le pic visé par le grade.
   const bool look_changed = wanted.true_hdr_peak != r.true_hdr_peak;
@@ -146,16 +146,16 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.black_dirty = true;
     to.session.set_output(output_text(to.screen, wanted, to.source_hdr));
     if (wanted.grade != r.grade)
-      controls.notify(std::string(wanted.grade ? i18n::tr("Grade on") : i18n::tr("Grade off")), now_us);
+      controls.notify(wanted.grade ? i18n::ui_tr("Grade on") : i18n::ui_tr("Grade off"), now_us);
   }
   if (wanted.sharpness != r.sharpness) {
     to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
-    controls.notify(i18n::tr_format("Sharpness: {} %", wanted.sharpness), now_us);
+    controls.notify(i18n::ui_tr_format("Sharpness: {} %", wanted.sharpness), now_us);
   }
   if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
     to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
-    controls.notify(i18n::tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
-                                    wanted.deband ? i18n::tr("on") : i18n::tr("off")),
+    controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
+                                       wanted.deband ? i18n::tr("on") : i18n::tr("off")),
                     now_us);
   }
   if (wanted.audio_delay_ms != r.audio_delay_ms)
@@ -165,8 +165,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.session.set_video_latency(std::int64_t{wanted.video_latency_ms} * 1000);
   if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
   if (wanted.smooth_motion != r.smooth_motion) {
-    controls.notify(wanted.smooth_motion ? std::string(i18n::tr("Smooth Motion: on at next launch"))
-                                         : std::string(i18n::tr("Smooth Motion: off at next launch")),
+    controls.notify(wanted.smooth_motion ? i18n::ui_tr(("Smooth Motion: on at next launch"))
+                                         : i18n::ui_tr(("Smooth Motion: off at next launch")),
                     now_us);
   }
   if (wanted.oled_care != r.oled_care || wanted.steady_cadence != r.steady_cadence ||
@@ -174,7 +174,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     apply_oled_care(to, wanted);
   if (wanted.subtitle_scale != r.subtitle_scale) {
     to.session.set_subtitle_scale(wanted.subtitle_scale);
-    controls.notify(i18n::tr_format("Subtitle size: {} %", std::lround(wanted.subtitle_scale * 100.0F)),
+    controls.notify(i18n::ui_tr_format("Subtitle size: {} %", std::lround(wanted.subtitle_scale * 100.0F)),
                     now_us);
   }
   // Grade et finition agissent sur l'image tenue : sans cette demande, en pause (ou entre deux
@@ -271,7 +271,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               to.ui.set_running(to.running);
               to.dirty = true;
               controls.notify(
-                  to.running.stats.all ? i18n::tr("Statistics shown") : i18n::tr("Statistics hidden"),
+                  to.running.stats.all ? i18n::ui_tr("Statistics shown") : i18n::ui_tr("Statistics hidden"),
                   now_us);
             }
           },
@@ -300,8 +300,8 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const StepEpisode& step) {
             const auto neighbour = sibling_episode(to.file, step.direction);
             if (!neighbour) {
-              controls.notify(step.direction > 0 ? i18n::tr("No next episode in this folder")
-                                                 : i18n::tr("No previous episode in this folder"),
+              controls.notify(step.direction > 0 ? i18n::ui_tr("No next episode in this folder")
+                                                 : i18n::ui_tr("No previous episode in this folder"),
                               now_us);
               return;
             }
@@ -323,10 +323,10 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             std::int64_t target = 0;
             if (const auto credits = credits_skip_target(view.chapters, view.position_us, view.duration_us)) {
               target = *credits;
-              controls.notify(i18n::tr("Credits skipped"), now_us);
+              controls.notify(i18n::ui_tr("Credits skipped"), now_us);
             } else {
               target = view.position_us + kSkipFallbackUs;
-              controls.notify(i18n::tr("Skipped 85 s"), now_us);
+              controls.notify(i18n::ui_tr("Skipped 85 s"), now_us);
             }
             if (view.duration_us > 0) target = std::min(target, view.duration_us);
             session.command(Command{cmd::Seek{.target_us = target}});
