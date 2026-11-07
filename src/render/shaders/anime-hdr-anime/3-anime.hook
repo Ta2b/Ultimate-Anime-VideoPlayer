@@ -119,9 +119,11 @@ vec4 hook() {
     float gain = mix(an_lift, max(emit_out / lvl, floor_gain), emitter);
 
     vec3 c = lin * gain;
-    // Noirs profonds selon la scene : le curseur est le maximum, atteint en scene tres claire ; l'effet
-    // descend a 0 en scene tres sombre (les details des nuits restent lisibles). Scene inconnue : le curseur.
-    float deep = fs_apl >= 0.0 ? shadows * smoothstep(0.03, 0.40, key) : shadows;
+    // Noirs profonds selon la serie (P3.52) : le curseur est le maximum, atteint dans une serie tres claire ;
+    // l'effet descend a 0 dans une serie tres sombre. La cle de la serie ne bouge pas aux coupes : les memes
+    // cheveux sombres sortent au meme niveau d'un plan a l'autre. Serie inconnue : une cle moyenne (0,25).
+    float series = clamp((fs_series >= 0.0 ? fs_series : 0.25 * sdr_white) / sdr_white, 0.0, 1.0);
+    float deep = shadows * smoothstep(0.03, 0.40, series);
     c *= shadow_ratio(max(max(c.r, c.g), c.b), deep);
     // Peps (--anime-contrast, --anime-saturation) : contraste en puissance de la luminance autour du gris des
     // surfaces, puis saturation (ecart a la luminance, attenuee vers le pic, jamais de canal negatif).

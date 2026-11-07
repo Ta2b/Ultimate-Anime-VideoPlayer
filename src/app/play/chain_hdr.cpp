@@ -252,6 +252,7 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   PlaySettings s = wanted;
   s.grade_values.scene_light = to.scene_light;
   s.grade_values.anime_exposure = to.anime_e;
+  s.grade_values.series_apl_nits = to.anime_series_apl;
   render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
   // Flashs dangereux (P3.51) : le grade HDR plafonne vers 250 nits, le plein champ d'un écran OLED.
   if (to.flash_limited && choice.pq) choice.pq->peak = std::min(choice.pq->peak, kFlashPeakNits);

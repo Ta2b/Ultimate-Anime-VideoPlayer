@@ -62,6 +62,9 @@ struct GradeSettings {
   // La méthode « HDR anime » décidée par plan (méga plan A2, --anime-shots) : l'exposition des surfaces du
   // plan, en diaphragmes (|E| ≤ 0,25, render/curve.h) ; 0 : le relèvement fixe. Jamais écrite dans play.toml.
   double anime_exposure = 0.0;
+  // La médiane des luminances moyennes des plans connus (nits au blanc de 203 ; 0 : inconnue), pour les noirs
+  // profonds (P3.52). Jamais écrite dans play.toml.
+  double series_apl_nits = 0.0;
   // Le peps de la méthode « HDR anime » (--anime-contrast, --anime-saturation, --anime-highlights), en % ;
   // 100 : la méthode telle quelle. Écrit dans play.toml par le menu (settings_toml.cpp) ; une option donnée à
   // la main ne l'est pas (settings_to_save).
@@ -140,6 +143,9 @@ struct GradeParams {
   double look_clean = 0.0;  // 1 : la pile sur la couleur du voisinage, grain et paliers non étirés
   // La luminance moyenne de la scène à l'écran (nits ; < 0 : inconnue), donnée par le lecteur.
   double fs_apl = -1.0;
+  // La luminance moyenne de la série (la médiane des plans connus, nits ; < 0 : inconnue) : les noirs
+  // profonds.
+  double fs_series = -1.0;
   // Relèvement des surfaces (kAnimeLift, ajusté par plan : GradeSettings::anime_exposure).
   double an_lift = kAnimeLift;
   double an_punch = 0.0;   // --anime-contrast : contraste en plus (0 : aucun)

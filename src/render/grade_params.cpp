@@ -38,6 +38,7 @@ double shadow_knee_for(double shadows, double white) {
 
 // La scène du lecteur, à l'échelle de l'image du grade : le blanc SDR y vaut sdr_white.
 void apply_scene_light(const GradeSettings& s, GradeParams& p) {
+  if (s.series_apl_nits > 0.0) p.fs_series = s.series_apl_nits * p.sdr_white / grade_limits::kSdrWhiteNits;
   if (!s.scene_light) return;
   p.fs_apl = std::max(s.scene_light->apl_nits, 0.0) * p.sdr_white / grade_limits::kSdrWhiteNits;
   p.an_lift = kAnimeLift * std::exp2(std::clamp(s.anime_exposure, -kCurveMaxE, kCurveMaxE));

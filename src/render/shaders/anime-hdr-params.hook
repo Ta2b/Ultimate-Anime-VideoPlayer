@@ -134,6 +134,13 @@
 //!MAXIMUM 10000.0
 -1.0
 
+//!PARAM fs_series
+//!DESC Noirs profonds : luminance moyenne de la serie (nits a l'ecran), la mediane des plans connus ; < 0 inconnue
+//!TYPE float
+//!MINIMUM -1.0
+//!MAXIMUM 10000.0
+-1.0
+
 //!PARAM black_lo
 //!DESC Seuil du vrai noir (nits) : en dessous, le pixel vaut 0
 //!TYPE float

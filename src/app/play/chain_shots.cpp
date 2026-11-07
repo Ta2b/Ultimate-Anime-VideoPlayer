@@ -169,7 +169,7 @@ void feed_plan_shots(Chain& to) {
   if (timeline.size() == to.plan_shots_seen) return;
   to.plan_shots_seen = timeline.size();
   std::vector<media::Shot> shots = timeline.shots();
-  if (to.anime_shots) to.anime_series_apl = series_apl_of(shots);
+  to.anime_series_apl = series_apl_of(shots);  // aussi pour les noirs profonds (P3.52)
   if (to.shot_cuts) to.live.cuts().set_shots(shots);
 }
 
