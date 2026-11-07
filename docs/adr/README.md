@@ -15,3 +15,4 @@ sa page, avec le numéro de celle qui la remplace.
 | [0010](0010-rapide-a-pas-constant-par-plan.md) | Rapide à pas constant par plan, derrière `--fast-steady` | En cours (chantier 7, #400 à #403), mesures à faire |
 | [0011](0011-presentation-en-boucle-fermee.md) | Présentation en boucle fermée : un correctif de libplacebo, pas une swapchain maison | En cours (chantier 6) |
 | [0012](0012-lecteur-simple.md) | Un lecteur simple : un seul HDR qui suit le système, pas de profils, menu en trois catégories | Acceptée (#530 à #533) |
+| [0013](0013-ed25519-maison-garde.md) | La vérification Ed25519 maison est gardée, sous vecteurs RFC 8032 et Wycheproof | Acceptée |
