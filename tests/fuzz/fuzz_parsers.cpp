@@ -13,7 +13,6 @@
 
 #include "app/play/options.h"
 #include "core/inflate.h"
-#include "core/ini_import.h"
 #include "core/update_manifest.h"
 #include "fuzz_check.h"
 #include "fuzz_targets.h"
@@ -77,11 +76,6 @@ int ajp::fuzz::inflate(const std::uint8_t* data, std::size_t size) {
 
 int ajp::fuzz::manifest(const std::uint8_t* data, std::size_t size) {
   (void)ajp::core::parse_update_manifest(text_of(data, size));
-  return 0;
-}
-
-int ajp::fuzz::ini_import(const std::uint8_t* data, std::size_t size) {
-  (void)ajp::core::import_ini(text_of(data, size));
   return 0;
 }
 

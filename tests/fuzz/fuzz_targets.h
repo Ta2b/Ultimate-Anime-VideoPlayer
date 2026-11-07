@@ -15,12 +15,11 @@ int build_log(const std::uint8_t* data, std::size_t size);      // *.build.log d
 int resume(const std::uint8_t* data, std::size_t size);         // resume.tsv
 int osd_script(const std::uint8_t* data, std::size_t size);     // texte de l'OSD en ASS
 // fuzz_parsers.cpp
-int onnx(const std::uint8_t* data, std::size_t size);        // modèle ONNX (protobuf)
-int srt(const std::uint8_t* data, std::size_t size);         // SRT, encodage compris
-int cube(const std::uint8_t* data, std::size_t size);        // LUT .cube
-int inflate(const std::uint8_t* data, std::size_t size);     // deflate brut
-int manifest(const std::uint8_t* data, std::size_t size);    // manifeste de mise à jour
-int ini_import(const std::uint8_t* data, std::size_t size);  // .ini d'AnimeJaNai
-int options(const std::uint8_t* data, std::size_t size);     // ligne de commande
+int onnx(const std::uint8_t* data, std::size_t size);      // modèle ONNX (protobuf)
+int srt(const std::uint8_t* data, std::size_t size);       // SRT, encodage compris
+int cube(const std::uint8_t* data, std::size_t size);      // LUT .cube
+int inflate(const std::uint8_t* data, std::size_t size);   // deflate brut
+int manifest(const std::uint8_t* data, std::size_t size);  // manifeste de mise à jour
+int options(const std::uint8_t* data, std::size_t size);   // ligne de commande
 
 }  // namespace ajp::fuzz

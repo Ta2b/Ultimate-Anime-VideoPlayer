@@ -15,7 +15,7 @@ option(AJP_FUZZ_LIBFUZZER "Cibles libFuzzer en plus du rejeu (Clang : -fsanitize
 
 set(ajp_fuzz_targets settings play_settings edid build_log resume osd_script)
 # Les lecteurs de fichiers et de flux (P1.29) : une source pour toutes, fuzz_parsers.cpp.
-set(ajp_fuzz_parser_targets onnx srt cube inflate manifest ini_import options)
+set(ajp_fuzz_parser_targets onnx srt cube inflate manifest options)
 set(ajp_fuzz_sources)
 foreach(name IN LISTS ajp_fuzz_targets)
   list(APPEND ajp_fuzz_sources fuzz_${name}.cpp)

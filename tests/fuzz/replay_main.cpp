@@ -37,8 +37,7 @@ constexpr std::array kTargets{
     Named{"resume", &ajp::fuzz::resume},     Named{"osd_script", &ajp::fuzz::osd_script},
     Named{"onnx", &ajp::fuzz::onnx},         Named{"srt", &ajp::fuzz::srt},
     Named{"cube", &ajp::fuzz::cube},         Named{"inflate", &ajp::fuzz::inflate},
-    Named{"manifest", &ajp::fuzz::manifest}, Named{"ini_import", &ajp::fuzz::ini_import},
-    Named{"options", &ajp::fuzz::options},
+    Named{"manifest", &ajp::fuzz::manifest}, Named{"options", &ajp::fuzz::options},
 };
 
 using Bytes = std::vector<std::uint8_t>;
