@@ -208,10 +208,8 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
 std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const SubtitleTrack& track,
                                                                   const RenderRequest& request,
                                                                   AtlasPool& pool, bool use_margins) {
-  if (const RenderTarget target = shrunk(request.target, shrink_);
-      target_ != target || use_margins != use_margins_) {
-    configure(target, use_margins);
-  }
+  const RenderTarget target = shrunk(request.target, shrink_);
+  if (target_ != target || use_margins != use_margins_) configure(target, use_margins);
   if (const bool vsfilter = vsfilter_converts(track.script_matrix(), request.target.video_matrix);
       vsfilter != vsfilter_) {
     vsfilter_ = vsfilter;
@@ -229,7 +227,7 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
 
   // Les rectangles sont placés pour la taille rendue : l'affichage les étire à la sienne.
   SubtitleFrame frame{
-      .pts_us = request.pts_us, .epoch = request.epoch, .width = target_->width, .height = target_->height};
+      .pts_us = request.pts_us, .epoch = request.epoch, .width = target.width, .height = target.height};
   if (pieces_.empty()) {
     forget();
     if (shrink_ != 1) {  // l'instant lourd est passé : le prochain sous-titre en pleine taille
