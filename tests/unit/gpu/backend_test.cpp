@@ -10,6 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/tensor.h"
 #include "media/hw_api.h"
 
 using ajp::Refusal;
@@ -223,3 +224,10 @@ TEST_CASE("Backend : l'empreinte suit la taille, l'alignement et l'ordre des typ
   CHECK(shape_fingerprint<Small>() != shape_fingerprint<Aligned>());
   CHECK(shape_fingerprint<Small>() == shape_fingerprint<std::uint32_t>());  // même forme, même empreinte
 }
+
+// La borne commune des tenseurs (gpu/tensor.h, P2.28), la même pour Vulkan et TensorRT.
+static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::F16, {{1, 3, 1080, 1920}}) ==
+              2ULL * 3 * 1080 * 1920);
+static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::F32, {{1, 0, 8, 8}}) == 0);
+static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::U8, {{1, 1, 1 << 25, 1}}) == 0);
+static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::I8, {{1 << 16, 1 << 16, 2, 1}}) == 0);

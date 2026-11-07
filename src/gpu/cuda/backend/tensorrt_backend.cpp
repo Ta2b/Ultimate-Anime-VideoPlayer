@@ -372,13 +372,11 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_ten
   if (type != TensorType::F16 && type != TensorType::F32) {
     return refuse(RefusalCode::FormatUnsupported, "tenseur : F16 ou F32 seulement");
   }
-  std::size_t bytes = element_size(type);
-  for (const std::int64_t d : shape.dims) {
-    if (d <= 0 || static_cast<std::uint64_t>(d) > (std::uint64_t{1} << 40) / bytes) {
-      return refuse(RefusalCode::ShapeInvalid, "tenseur : dimension nulle, négative ou trop grande");
-    }
-    bytes *= static_cast<std::size_t>(d);
-  }
+  // La borne commune à Vulkan (gpu/tensor.h, P2.28).
+  const auto bytes = static_cast<std::size_t>(dense_tensor_bytes(type, shape));
+  if (bytes == 0)
+    return refuse(RefusalCode::ShapeInvalid,
+                  "tenseur : dimension hors de [1, 2^24] ou plus de 2^32 éléments");
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
   void* memory = nullptr;
   // Dans le pool, sur la file courante, puis cette file attendue : le tenseur est aussitôt valable pour

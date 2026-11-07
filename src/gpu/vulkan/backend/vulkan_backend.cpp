@@ -43,18 +43,15 @@ std::size_t element_bytes(TensorType type) {
 }
 
 std::expected<std::uint64_t, Refusal> tensor_bytes(TensorType type, const Shape& shape) {
-  const std::size_t element = element_bytes(type);
-  if (element == 0) return refuse_backend(RefusalCode::FormatUnsupported, "type de tenseur inconnu");
-  std::uint64_t count = 1;
-  for (const std::int64_t d : shape.dims) {
-    if (d <= 0 || d > std::int64_t{1} << 24) {
-      return refuse_backend(RefusalCode::ShapeInvalid, std::format("dimension {} hors de [1, 2^24]", d));
-    }
-    count *= static_cast<std::uint64_t>(d);
-    if (count > (std::uint64_t{1} << 32))
-      return refuse_backend(RefusalCode::ShapeInvalid, "plus de 2^32 éléments");
-  }
-  return count * element;
+  if (tensor_element_bytes(type) == 0)
+    return refuse_backend(RefusalCode::FormatUnsupported, "type de tenseur inconnu");
+  const std::uint64_t bytes = dense_tensor_bytes(type, shape);  // la borne commune (gpu/tensor.h)
+  if (bytes == 0)
+    return refuse_backend(
+        RefusalCode::ShapeInvalid,
+        std::format("forme {}×{}×{}×{} : dimension hors de [1, 2^24] ou plus de 2^32 éléments", shape.dims[0],
+                    shape.dims[1], shape.dims[2], shape.dims[3]));
+  return bytes;
 }
 
 std::string file_stem(std::string_view id) {
