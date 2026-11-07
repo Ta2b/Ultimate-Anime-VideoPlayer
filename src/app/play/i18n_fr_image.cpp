@@ -82,13 +82,13 @@ constexpr std::array kImageTabs{
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
-    Entry{"Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges.",
-          "Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets."},
+    Entry{"Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest.",
+          "Performance : rapide. Balanced : plus fin. Sharp1 : plus net. ArtCNN : le plus léger."},
     Entry{
-        "Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges. FP8: prepared once on this PC "
-        "at the next video, then faster.",
-        "Performance : le plus rapide. Balanced : plus fin, plus lent. Sharp1 : contours plus nets. FP8 : "
-        "préparé une fois sur ce PC à la prochaine vidéo, puis plus rapide."},
+        "Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest. FP8: prepared once on this PC, "
+        "then faster.",
+        "Performance : rapide. Balanced : plus fin. Sharp1 : plus net. ArtCNN : le plus léger. FP8 : préparé "
+        "une fois sur ce PC, puis plus rapide."},
     Entry{"RIFE model", "Modèle RIFE"},
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},

@@ -1,10 +1,10 @@
 # fichier	fonction	CCN	lignes : fonctions au-delà de CCN 25 ou 120 lignes, qui ne peuvent que baisser (check-complexity.py)
 src/app/main.cpp	run_player	68	257
 src/app/play/auto_bench_run.cpp	ajp::app::play::run_bench	35	104
-src/app/play/auto_config.cpp	ajp::app::play::apply_preset	34	91
+src/app/play/auto_config.cpp	ajp::app::play::apply_preset	33	89
 src/app/play/chain.cpp	ajp::app::play::apply	31	175
 src/app/play/chain.cpp	ajp::app::play::apply_live	39	92
-src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	122	306
+src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	122	305
 src/app/play/controls_draw.cpp	ajp::app::play::draw_controls	57	197
 src/app/play/data_dirs.cpp	ajp::app::play::purge_misplaced	26	39
 src/app/play/display_edid.cpp	ajp::app::play::parse_edid	32	56
@@ -15,7 +15,7 @@ src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
 src/app/play/home_screen.cpp	ajp::app::play::run_home	29	120
 src/app/play/input.cpp	ajp::app::play::input_of	61	75
 src/app/play/machine_calibration.cpp	ajp::app::play::calibrate_machine	37	109
-src/app/play/options.cpp	ajp::app::play::parse_play_options	106	215
+src/app/play/options.cpp	ajp::app::play::parse_play_options	95	194
 src/app/play/pipeline.cpp	ajp::app::play::Pipeline::open	61	211
 src/app/play/placebo_open.cpp	ajp::app::play::PlaceboScreen::open	51	225
 src/app/play/placebo_ring.cpp	ajp::app::play::PlaceboRing::create	28	112
@@ -28,7 +28,7 @@ src/app/play/session.cpp	ajp::app::play::Session::tick	48	98
 src/app/play/settings.cpp	ajp::app::play::change_between	34	47
 src/app/play/settings_bench_results.cpp	ajp::app::play::bench_results_section	28	95
 src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	90	224
-src/app/play/settings_chain_tabs.cpp	ajp::app::play::image_tab	36	96
+src/app/play/settings_chain_tabs.cpp	ajp::app::play::image_tab	36	95
 src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	147
 src/app/play/settings_panel.cpp	ajp::app::play::SettingsPanel::draw	60	260
 src/app/play/settings_system.cpp	ajp::app::play::bench_page	22	123
@@ -39,7 +39,7 @@ src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	31	96
 src/app/play/ui.cpp	ajp::app::play::PlayerUi::handle	26	77
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	41	104
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
-src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	174	265
+src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	172	265
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::produce	37	91
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::start	39	62
 src/core/auto_rate.cpp	ajp::core::AutoRate::try_rise	26	41

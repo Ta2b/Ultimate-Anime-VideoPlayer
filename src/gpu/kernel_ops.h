@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "core/frame.h"
+#include "core/moving_area.h"
 #include "core/ring.h"
 #include "core/types.h"
 #include "gpu/gpu_profile.h"
@@ -104,6 +105,8 @@ struct PairScores {
   double scene_score = 0.0;       // kernels::is_scene_cut(scene_score)
   std::uint32_t worst_block = 0;  // pire bloc 16 × 16, en 1/256 de niveau 8 bits
   bool identical = false;         // luma égale au bit : somme des écarts nulle
+  // Les blocs 16 × 16 qui changent et leur boîte (P6.6, P6.18) ; vide si le backend ne la relit pas.
+  core::MovingArea moving;
 };
 
 // Mesures lancées sans attente (scores_start, flow_max_start) et pas encore relues, par sorte.

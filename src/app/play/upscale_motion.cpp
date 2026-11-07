@@ -26,12 +26,19 @@ std::expected<void, Refusal> UpscaleStage::interpolate_image(float t) {
 }
 
 std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor& flow,
-                                                      const gpu::Tensor& mask) {
+                                                      const gpu::Tensor& mask, bool calm) {
   if (auto ok = fill_rife_input(t); !ok) return ok;
   const std::array inputs{rife_in()};
   std::array results{flow, mask};
   ++rife_runs_;
-  return setup_.backend->enqueue(*setup_.rife_motion, inputs, results);
+  const bool light = calm && setup_.rife_motion_calm != nullptr;
+  if (light) ++calm_runs_;
+  gpu::Engine& engine = light ? *setup_.rife_motion_calm : *setup_.rife_motion;
+  // P6.15 : la passe précédente était le milieu de la paire d'avant, sur ce moteur, et la paire est calme.
+  const bool mid = t == 0.5F;
+  if (setup_.rife_warm && mid && calm && warm_from_ == &engine && engine.next_warm()) ++warm_runs_;
+  warm_from_ = mid ? &engine : nullptr;
+  return setup_.backend->enqueue(engine, inputs, results);
 }
 
 gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
@@ -49,6 +56,7 @@ void UpscaleStage::forget_motion() {
   strong_motion_ = false;
   motion_measured_ = false;
   motion_.known = false;  // une mesure encore en vol ne vaut plus
+  warm_from_ = nullptr;   // ni les blocs grossiers d'une autre scène (P6.15)
 }
 
 std::expected<void, Refusal> UpscaleStage::settle_motion() {
@@ -100,7 +108,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     } else {
       // RIFE au milieu ; s'il reste plus d'une image à faire, son mouvement maximal dit si cette
       // passe suffit (kernels/spec/warp.h, seuil mis à la hauteur de RIFE).
-      if (auto ok = run_motion(0.5F, middle.flow, middle.mask); !ok) return ok;
+      if (auto ok = run_motion(0.5F, middle.flow, middle.mask, calm_pair()); !ok) return ok;
       if (poses_) {
         single_run_ = true;
         motion_measured_ = false;

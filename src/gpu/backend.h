@@ -77,7 +77,8 @@ namespace ajp::gpu {
 // 29 : le grade de l'anneau retiré (RingWrite::grade, GradeSlot, GradeOrder, grades_ring, set_grade).
 // 30 : GMFSS retiré (gmfss_frames, soft_splat, soft_splat_all, soft_splat_fill, gmfss_compose,
 // gmfss_compose_ring, fill ; BackendCaps::gmfss_fused).
-inline constexpr int kBackendAbi = 30;
+// 31 : Engine::next_warm (RIFE à chaud, P6.15) ; PairScores::moving (la zone qui bouge, P6.6 et P6.18).
+inline constexpr int kBackendAbi = 31;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -222,6 +223,9 @@ class Engine {
   // changé (rife_time) : un moteur qui garde le travail des images de l'appel précédent le saute (D6, une
   // fenêtre préparée une fois, un appel par instant). Sans effet sur les autres.
   virtual void next_times_only() {}
+  // P6.15 : l'appel suivant peut reprendre les blocs grossiers de RIFE de l'appel précédent (même moteur,
+  // paire voisine, même instant) au lieu de les recalculer. Vrai si le moteur le fera ; faux : calcul entier.
+  virtual bool next_warm() { return false; }
 };
 
 // Image d'un autre module (surface NVDEC copiée, VkImage du ring) à importer sans copie.

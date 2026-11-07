@@ -85,6 +85,13 @@ jobs:
           IN_SPAN_FP8: ${{ inputs.span_fp8 }}
           IN_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          # Signature Authenticode (P7.1) : vide tant que le compte Trusted Signing n'existe pas.
+          AJP_TS_ENDPOINT: ${{ vars.AJP_TS_ENDPOINT }}
+          AJP_TS_ACCOUNT: ${{ vars.AJP_TS_ACCOUNT }}
+          AJP_TS_PROFILE: ${{ vars.AJP_TS_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AJP_AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AJP_AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AJP_AZURE_CLIENT_SECRET }}
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
@@ -103,6 +110,14 @@ jobs:
       # L'installeur (Inno Setup, installation pour l'utilisateur seul) à côté du zip portable.
       - name: Installeur
         shell: pwsh
+        env:
+          # Signature Authenticode (P7.1) : vide tant que le compte Trusted Signing n'existe pas.
+          AJP_TS_ENDPOINT: ${{ vars.AJP_TS_ENDPOINT }}
+          AJP_TS_ACCOUNT: ${{ vars.AJP_TS_ACCOUNT }}
+          AJP_TS_PROFILE: ${{ vars.AJP_TS_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AJP_AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AJP_AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AJP_AZURE_CLIENT_SECRET }}
         run: |
           choco install innosetup -y --no-progress | Out-Null
           $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)\r?$').Groups[1].Value
@@ -110,6 +125,8 @@ jobs:
           $out = "$env:RUNNER_TEMP/package"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\ajp" "/DAppVer=$version" "/DOutput=$out" tools/release/windows/ajp.iss
           if ($LASTEXITCODE -ne 0) { throw "installeur" }
+          pwsh tools/release/windows/sign.ps1 "$out/ajp-windows-x64-setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw "signature de l'installeur" }
           $setup = Get-Item "$out/ajp-windows-x64-setup.exe"
           Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec

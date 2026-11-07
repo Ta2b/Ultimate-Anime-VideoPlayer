@@ -55,7 +55,38 @@ jobs:
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
-      - run: tools/release/package-macos.sh "$RUNNER_TEMP/package"
+      # Signature Developer ID et notarisation (P7.1), seulement si les secrets existent ; sinon ad hoc,
+      # comme avant. Le certificat (.p12) va dans un trousseau jetable, la clé d'API dans un fichier.
+      - name: Paquet
+        env:
+          MACOS_CERT_P12: ${{ secrets.AJP_MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.AJP_MACOS_CERT_PASSWORD }}
+          MACOS_IDENTITY: ${{ secrets.AJP_MACOS_IDENTITY }}
+          NOTARY_KEY_P8: ${{ secrets.AJP_NOTARY_KEY_P8 }}
+          AJP_NOTARY_KEY_ID: ${{ secrets.AJP_NOTARY_KEY_ID }}
+          AJP_NOTARY_ISSUER: ${{ secrets.AJP_NOTARY_ISSUER }}
+        run: |
+          if [ -n "$MACOS_CERT_P12" ] && [ -n "$MACOS_IDENTITY" ]; then
+            keychain="$RUNNER_TEMP/ajp-signature.keychain-db"
+            pass="$(openssl rand -hex 16)"
+            security create-keychain -p "$pass" "$keychain"
+            security set-keychain-settings -lut 3600 "$keychain"
+            security unlock-keychain -p "$pass" "$keychain"
+            printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+            rm -f "$RUNNER_TEMP/cert.p12"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$keychain" >/dev/null
+            security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+            export AJP_MACOS_IDENTITY="$MACOS_IDENTITY"
+            if [ -n "$NOTARY_KEY_P8" ]; then
+              printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+              export AJP_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
+            fi
+          else
+            echo "::notice::pas de certificat Developer ID : signature ad hoc (P7.1)"
+          fi
+          tools/release/package-macos.sh "$RUNNER_TEMP/package"
+          rm -f "$RUNNER_TEMP/notary.p8"
       # spirv-val ne voit pas ce que seul Metal refuse : chaque shader passe par SPIRV-Cross et le
       # compilateur Metal, comme MoltenVK le fera à la création du pipeline.
       - name: Shaders en Metal

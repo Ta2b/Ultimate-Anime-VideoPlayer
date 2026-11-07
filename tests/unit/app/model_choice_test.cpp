@@ -126,8 +126,9 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
 }
 
 }  // namespace
-TEST_CASE("Modèle SPAN : le menu n'a que le catalogue HD V3.1, un modèle hérité retombe sur le défaut",
-          "[app][model_choice]") {
+TEST_CASE(
+    "Modèle SPAN : le menu n'a que le catalogue (HD V3.1, ArtCNN), un modèle hérité retombe sur le défaut",
+    "[app][model_choice]") {
   const FakeHome fake("span");
   const std::filesystem::path onnx = fake.home / ".local/share/AnimeJaNai-HDR-linux/animejanai/onnx";
   std::filesystem::create_directories(onnx);
@@ -137,7 +138,8 @@ TEST_CASE("Modèle SPAN : le menu n'a que le catalogue HD V3.1, un modèle héri
   PlaySettings settings;
   const auto plain = choose_model(PlayOptions{}, fake.home, settings);
   REQUIRE(plain);
-  CHECK(plain->available.size() == 4);
+  CHECK(plain->available.size() == kSpanCatalogue.size());
+  CHECK(model_label(std::string(kLightSpanModel)) == "ArtCNN C4F32");
   CHECK(std::ranges::find(plain->available, legacy) == plain->available.end());
   settings.model = legacy;  // un ancien play.toml : le défaut, sans refus
   const auto fallback = choose_model(PlayOptions{}, fake.home, settings);

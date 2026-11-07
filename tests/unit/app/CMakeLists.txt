@@ -36,5 +36,5 @@ target_compile_definitions(ajp_app_tests PRIVATE AJP_MEDIA_CLIP_DIR="${CMAKE_CUR
 # ([.e2e]) : seul ce test le lance, hors des préréglages filtrés (Windows, macOS sans GPU).
 target_compile_definitions(ajp_app_tests PRIVATE AJP_PLAYER_EXE="$<TARGET_FILE:ajp>")
 add_dependencies(ajp_app_tests ajp)
-add_test(NAME "e2e: le lecteur joue un clip de 2 s" COMMAND ajp_app_tests "[e2e]")
-set_tests_properties("e2e: le lecteur joue un clip de 2 s" PROPERTIES TIMEOUT 180 RUN_SERIAL TRUE)
+add_test(NAME "e2e: lecture de bout en bout et scénarios de recette" COMMAND ajp_app_tests "[e2e]")
+set_tests_properties("e2e: lecture de bout en bout et scénarios de recette" PROPERTIES TIMEOUT 400 RUN_SERIAL TRUE)

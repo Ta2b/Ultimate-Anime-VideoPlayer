@@ -80,3 +80,49 @@ GitHub appelle « latest » la dernière release **qui n'est pas une pré-versio
    « latest » et le canal Stable fonctionne.
 
 Le canal du manifeste est vérifié par le lecteur : un manifeste `stable` servi à l'adresse `preview` (ou l'inverse) est refusé.
+
+## Signature des exécutables et des archives (P7.1)
+
+Les workflows de release savent signer ; rien ne change tant que les comptes n'existent pas (un avis
+« signature ad hoc » ou « non signés » dans le journal de la CI). Décision de Tatoub pour la 0.10 : aucun compte
+acheté pour l'instant ; les releases restent non signées sous Windows et macOS.
+
+### Linux : vérifier une archive, sans compte
+
+Le manifeste signé porte le SHA-256 et la taille de chaque archive : il sert de signature aux archives, sans
+outil de plus. Pour vérifier un téléchargement :
+
+```bash
+tools/release/verify-download.sh manifest.toml manifest.toml.sig ajp-linux-x64.tar.gz
+```
+
+Le script vérifie la signature Ed25519 du manifeste pour la clé publique des releases, puis l'empreinte de
+l'archive. Il ne demande qu'`openssl` et `sha256sum`.
+
+### Windows : Azure Trusted Signing (environ 10 $ par mois)
+
+`tools/release/windows/sign.ps1` signe `ajp.exe` et ses DLL avant le zip, puis l'installeur. Pour l'activer :
+
+1. Créer un compte Trusted Signing et un profil de certificat « Public Trust » (validation d'identité par
+   Microsoft, quelques jours).
+2. Créer une application Entra ID avec un secret, et lui donner le rôle « Trusted Signing Certificate Profile
+   Signer » sur le profil.
+3. Dans les réglages du dépôt :
+   - variables `AJP_TS_ENDPOINT` (`https://<région>.codesigning.azure.net`), `AJP_TS_ACCOUNT` et `AJP_TS_PROFILE` ;
+   - secrets `AJP_AZURE_TENANT_ID`, `AJP_AZURE_CLIENT_ID` et `AJP_AZURE_CLIENT_SECRET`.
+
+La signature est horodatée : elle reste valide après l'expiration du certificat.
+
+### macOS : Developer ID et notarisation (99 $ par an)
+
+`tools/release/package-macos.sh` signe avec le runtime durci, notarise l'app et l'image disque, puis y agrafe
+le ticket. Pour l'activer, avec un compte Apple Developer :
+
+1. Créer un certificat « Developer ID Application » et l'exporter en `.p12` avec un mot de passe.
+2. Créer une clé d'API App Store Connect (rôle Developer) et télécharger son fichier `.p8`.
+3. Créer ces secrets du dépôt :
+   - `AJP_MACOS_CERT_P12` (le `.p12` en base64) et `AJP_MACOS_CERT_PASSWORD` ;
+   - `AJP_MACOS_IDENTITY` (« Developer ID Application: Nom (ÉQUIPE) ») ;
+   - `AJP_NOTARY_KEY_P8` (le contenu du `.p8`), `AJP_NOTARY_KEY_ID` et `AJP_NOTARY_ISSUER`.
+
+Sans les trois derniers, l'app est signée mais pas notarisée : Gatekeeper demande encore une confirmation.

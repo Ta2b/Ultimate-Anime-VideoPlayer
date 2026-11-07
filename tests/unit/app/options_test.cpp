@@ -71,6 +71,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto smooth = parse({"épisode.mkv", "--smooth-drawings"});
   REQUIRE(smooth);
   CHECK(smooth->smooth_drawings);
+  CHECK_FALSE(options->rife_calm_model);
+  const auto calm = parse({"épisode.mkv", "--rife-calm-model=rife_v4.22_lite.onnx"});
+  REQUIRE(calm);
+  CHECK(calm->rife_calm_model == std::filesystem::path("rife_v4.22_lite.onnx"));
   CHECK(options->ring_watcher);
   const auto watcher = parse({"épisode.mkv", "--ring-watcher"});
   REQUIRE(watcher);

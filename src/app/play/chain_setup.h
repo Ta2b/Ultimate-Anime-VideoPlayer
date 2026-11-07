@@ -84,11 +84,13 @@ struct ChainEngines {
   int rife_planes = kernels::kRifeInputChannels;
   bool skip_held = false;               // --skip-held (UpscaleSetup::skip_held)
   bool one_lane = false;                // --one-lane (UpscaleSetup::one_lane)
+  bool rife_warm = false;               // --rife-warm (UpscaleSetup::rife_warm)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   std::unique_ptr<gpu::Engine> drba;
   std::unique_ptr<gpu::Engine> rife;  // RIFE image, ou l'interpolation d'Apple (apple)
   std::unique_ptr<gpu::Engine> rife_motion;
+  std::unique_ptr<gpu::Engine> rife_motion_calm;  // --rife-calm-model (P6.17), à la forme de rife_motion
   bool rife_fused = false;   // rife ou rife_motion est RIFE fusionné (six moteurs et noyaux de colle)
   bool drba_fused = false;   // drba est DistilDRBA fusionné (quatre moteurs et noyaux de colle)
   bool drba_motion = false;  // drba rend flot et masque (variante mouvement, warp après SPAN)

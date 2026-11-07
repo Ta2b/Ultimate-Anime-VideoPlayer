@@ -76,6 +76,13 @@ class RifeFusedEngine final : public Engine {
   std::span<const std::string> input_names() const override { return inputs_; }
   std::span<const std::string> output_names() const override { return outputs_; }
   bool motion() const { return motion_; }
+  // Les blocs de la réduction la plus forte (8 : deux pour 4.25, un pour 4.22 lite) sont repris de l'appel
+  // précédent, leurs sorties Y étant encore dans le tampon du moteur ; seulement après un appel complet ou
+  // chaud.
+  bool next_warm() override {
+    warm_next_ = warm_ready_ && warm_blocks_ > 0;
+    return warm_next_;
+  }
   int height() const { return height_; }
   int width() const { return width_; }
 
@@ -108,6 +115,9 @@ class RifeFusedEngine final : public Engine {
   int height_ = 0;
   int width_ = 0;
   bool motion_ = false;
+  int warm_blocks_ = 0;      // blocs repris à chaud (next_warm)
+  bool warm_ready_ = false;  // les Y de ces blocs sont ceux de l'appel précédent
+  bool warm_next_ = false;
   kernels::RifeFusedLayout layout_;
   std::optional<Buffer> scratch_;
   std::vector<std::string> inputs_{"input"};

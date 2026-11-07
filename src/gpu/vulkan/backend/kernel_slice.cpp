@@ -1,6 +1,7 @@
 // Extensions de la tranche verticale (gpu/kernel_ops.h) sur des tenseurs RGB déjà ingérés :
 // entrée de RIFE depuis deux images, puis les deux mesures relues par l'hôte (mesures de la paire,
 // plus grand déplacement), enfilées sans attente puis attendues seules, comme le backend TensorRT.
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -10,8 +11,10 @@
 #include <utility>
 #include <vector>
 
+#include "core/moving_area.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
+#include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
@@ -28,6 +31,23 @@ constexpr float kLumaLevels = 219.0F;
 
 std::unexpected<Refusal> refuse_slice(RefusalCode code, std::string text) {
   return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
+}
+
+// L'écart de chaque bloc comme rgb_pair_diff.comp le prend pour le pire (moyenne × pas × 256), puis la zone
+// qui bouge au seuil des dessins tenus (P6.6, P6.18).
+core::MovingArea moving_of(std::span<const float> sums, std::uint32_t width, std::uint32_t height) {
+  constexpr auto kBlock = static_cast<std::uint32_t>(kernels::kHeldBlock);
+  const std::uint32_t bx = (width + kBlock - 1) / kBlock;
+  if (bx == 0) return {};
+  std::vector<std::uint32_t> deviation(sums.size());
+  for (std::size_t i = 0; i < sums.size(); ++i) {
+    const auto x = static_cast<std::uint32_t>(i % bx) * kBlock;
+    const auto y = static_cast<std::uint32_t>(i / bx) * kBlock;
+    const float pixels =
+        static_cast<float>((std::min(x + kBlock, width) - x) * (std::min(y + kBlock, height) - y));
+    deviation[i] = static_cast<std::uint32_t>(sums[i] / pixels * kLumaLevels * 256.0F);
+  }
+  return core::moving_area(deviation, bx, core::moving_limit(kernels::kHeldThreshold));
 }
 
 }  // namespace
@@ -174,6 +194,8 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   slot.ticket = ticket;
   slot.value = queue_.ticket();
   slot.blocks = blocks;
+  slot.width = va->width;
+  slot.height = va->height;
   slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
   return ticket;
 }
@@ -195,7 +217,10 @@ std::expected<PairScores, Refusal> VulkanKernelOps::scores_take(std::uint64_t ti
   std::memcpy(&worst_block, slot.worst->mapped(), sizeof(worst_block));
   // Σ |ΔY| × (pas 8 bits / 255) : l'écart en codes rapporté à la crête, sur l'aire remplie de RIFE.
   const double scene = total * (kLumaLevels / 255.0) / slot.area;
-  return PairScores{.scene_score = scene, .worst_block = worst_block, .identical = total == 0.0};
+  return PairScores{.scene_score = scene,
+                    .worst_block = worst_block,
+                    .identical = total == 0.0,
+                    .moving = moving_of(partials, slot.width, slot.height)};
 }
 
 std::expected<float, Refusal> VulkanKernelOps::flow_max_now(const Motion& motion) {

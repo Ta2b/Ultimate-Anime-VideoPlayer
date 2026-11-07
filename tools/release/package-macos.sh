@@ -118,16 +118,43 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Signature ad hoc : Gatekeeper demande encore une ouverture par clic droit (pas de notarisation).
-codesign --force --deep --sign - "$APP"
+# Signature (P7.1). Sans identité, ad hoc : Gatekeeper demande une ouverture par clic droit.
+# AJP_MACOS_IDENTITY (« Developer ID Application: … », trousseau déjà importé) : signature Developer ID
+# avec le runtime durci et l'horodatage d'Apple. AJP_NOTARY_KEY, AJP_NOTARY_KEY_ID et AJP_NOTARY_ISSUER
+# (clé d'API App Store Connect, fichier .p8) : notarisation, puis le ticket agrafé à l'app et à l'image.
+if [[ -n "${AJP_MACOS_IDENTITY:-}" ]]; then
+  codesign --force --deep --options runtime --timestamp --sign "$AJP_MACOS_IDENTITY" "$APP"
+  codesign --verify --deep --strict "$APP"
+else
+  codesign --force --deep --sign - "$APP"
+fi
+notarize() {
+  [[ -n "${AJP_MACOS_IDENTITY:-}" && -n "${AJP_NOTARY_KEY:-}" ]] || return 0
+  xcrun notarytool submit "$1" --key "$AJP_NOTARY_KEY" --key-id "$AJP_NOTARY_KEY_ID" \
+    --issuer "$AJP_NOTARY_ISSUER" --wait
+}
+# L'app est notarisée par un zip de passage, puis agrafée : le zip livré porte le ticket.
+if [[ -n "${AJP_MACOS_IDENTITY:-}" && -n "${AJP_NOTARY_KEY:-}" ]]; then
+  (cd "$OUT" && rm -f notarize.zip && ditto -c -k --keepParent AJP.app notarize.zip)
+  notarize "$OUT/notarize.zip"
+  rm -f "$OUT/notarize.zip"
+  xcrun stapler staple "$APP"
+fi
 (cd "$OUT" && rm -f ajp-macos-arm64.zip && ditto -c -k --keepParent AJP.app ajp-macos-arm64.zip \
   && shasum -a 256 ajp-macos-arm64.zip > ajp-macos-arm64.zip.sha256)
-# Image disque : AJP.app et un raccourci vers Applications, à glisser (signature ad hoc, comme le zip).
+# Image disque : AJP.app et un raccourci vers Applications, à glisser (même signature que le zip).
 DMG_STAGE="$(mktemp -d)"
 cp -R "$APP" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
 (cd "$OUT" && rm -f ajp-macos-arm64.dmg \
-  && hdiutil create -volname "Ultimate Anime VideoPlayer" -srcfolder "$DMG_STAGE" -ov -format UDZO ajp-macos-arm64.dmg \
-  && shasum -a 256 ajp-macos-arm64.dmg > ajp-macos-arm64.dmg.sha256)
+  && hdiutil create -volname "Ultimate Anime VideoPlayer" -srcfolder "$DMG_STAGE" -ov -format UDZO ajp-macos-arm64.dmg)
 rm -rf "$DMG_STAGE"
+if [[ -n "${AJP_MACOS_IDENTITY:-}" ]]; then
+  codesign --force --timestamp --sign "$AJP_MACOS_IDENTITY" "$OUT/ajp-macos-arm64.dmg"
+  if [[ -n "${AJP_NOTARY_KEY:-}" ]]; then
+    notarize "$OUT/ajp-macos-arm64.dmg"
+    xcrun stapler staple "$OUT/ajp-macos-arm64.dmg"
+  fi
+fi
+(cd "$OUT" && shasum -a 256 ajp-macos-arm64.dmg > ajp-macos-arm64.dmg.sha256)
 echo "Paquet : $OUT/ajp-macos-arm64.zip et ajp-macos-arm64.dmg"

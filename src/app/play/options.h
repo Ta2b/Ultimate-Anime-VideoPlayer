@@ -97,6 +97,9 @@ struct PlayOptions {
   int rife_factor = kDefaultRifeFactor;
   int rife_factor_den = 1;                          // 2 pour un facteur en moitié : ×rife_factor / 2
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
+  // --rife-calm-model (essai, P6.17) : un RIFE plus léger (4.22 lite) pour la passe du milieu des paires
+  // calmes, RIFE mouvement seulement ; mêmes plans d'entrée et même remplissage que rife_model, sinon ignoré.
+  std::optional<std::filesystem::path> rife_calm_model;
   int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
   bool help = false;      // --help
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
@@ -136,6 +139,9 @@ struct PlayOptions {
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
+  // --rife-warm (essai, P6.15) : la passe du milieu d'une paire calme reprend les blocs grossiers de RIFE de
+  // la paire précédente (RIFE fusionné sous Vulkan) ; UpscaleSetup::rife_warm.
+  bool rife_warm = false;
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;

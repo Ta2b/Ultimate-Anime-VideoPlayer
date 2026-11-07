@@ -66,8 +66,8 @@ std::expected<void, Refusal> check_languages(std::string_view key,
 
 bool is_noise(std::string_view token) {
   // b5f48, SPANF3, unshuffle, fp16, 1x3xHxW, dyn-HW, op21, dynamo : la fabrique du modèle.
-  if (token.starts_with("SPAN") || token == "unshuffle" || token == "fp16" || token == "dynamo" ||
-      token.starts_with("dyn-") || token.starts_with("1x3x"))
+  if (token.starts_with("SPAN") || token == "unshuffle" || token == "fp16" || token == "rgb" ||
+      token == "dynamo" || token.starts_with("dyn-") || token.starts_with("1x3x"))
     return true;
   if (token.size() >= 3 && token.starts_with("op") && std::isdigit(static_cast<unsigned char>(token[2])))
     return true;

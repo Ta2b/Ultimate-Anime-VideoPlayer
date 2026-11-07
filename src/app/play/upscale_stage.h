@@ -30,6 +30,7 @@
 #include "app/play/ring_stage.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
+#include "core/moving_area.h"
 #include "core/ring.h"
 #include "core/steady_grid.h"
 #include "gpu/backend.h"
@@ -61,6 +62,9 @@ struct UpscaleSetup {
   // Variante mouvement de RIFE (motion_model.h) : flot et masque, warp à la sortie. Remplace rife ;
   // une passe au milieu de la paire la sert toute quand le mouvement est faible.
   gpu::Engine* rife_motion = nullptr;
+  // P6.17, essai : un RIFE mouvement plus léger, aux mêmes formes, pour la passe du milieu quand la paire
+  // précédente était calme ; nullptr : rife_motion partout.
+  gpu::Engine* rife_motion_calm = nullptr;
   int rife_planes = 11;  // plans d'entrée de rife et rife_motion : 11 (v1) ou 7 (v2)
   int rife_align = 64;   // multiple de remplissage du modèle RIFE : 64, ou 128 pour 4.25 lite
   // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
@@ -74,6 +78,9 @@ struct UpscaleSetup {
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
   // chaque moteur redevient son coût propre au lieu d'inclure celui des autres voies.
   bool one_lane = false;
+  // P6.15, essai : la passe du milieu d'une paire calme reprend les blocs grossiers de la passe du milieu de
+  // la paire précédente, sur le même moteur (gpu::Engine::next_warm).
+  bool rife_warm = false;
   // Réglages changés en cours de lecture (facteur RIFE, réduction, débandage) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -152,7 +159,9 @@ class UpscaleStage final : public RingStage {
   // RIFE image à l'instant t, recadrée dans middle().
   std::expected<void, Refusal> interpolate_image(float t);
   // La variante mouvement de RIFE à l'instant t, dans flow et mask.
-  std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask);
+  // calm : la passe peut prendre rife_motion_calm (P6.17).
+  std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask,
+                                          bool calm = false);
   bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr || drba(); }
   bool drba() const { return setup_.distil_drba != nullptr; }
   bool drba_motion() const { return drba() && setup_.drba_motion; }
@@ -423,6 +432,20 @@ class UpscaleStage final : public RingStage {
   std::uint64_t multi_pairs_ = 0;
   std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu
   std::uint64_t rife_runs_ = 0;
+  std::uint64_t calm_runs_ = 0;  // passes faites par rife_motion_calm (P6.17)
+  std::uint64_t warm_runs_ = 0;  // passes du milieu reprises à chaud (P6.15)
+  // La dernière passe est celle du milieu, sur ce moteur : la suivante peut la reprendre (P6.15).
+  const gpu::Engine* warm_from_ = nullptr;
+  core::MovingTally moving_;  // la zone qui bouge des paires mesurées (P6.6, P6.18)
+  // Dessin tenu (ni coupe, ni mesure manquante) ; sinon la zone qui bouge de la paire entre au cumul.
+  bool held_pair(const PairFacts& facts) {
+    if (!facts.scores || pair_cut(facts)) return false;
+    if (kernels::is_held(facts.scores->worst_block)) return true;
+    moving_.add(facts.scores->moving);
+    return false;
+  }
+  // La paire précédente était calme et mesurée (P6.17, P6.15).
+  bool calm_pair() const { return motion_measured_ && !strong_motion_; }
   std::uint64_t skipped_ = 0;     // images source sautées avant calcul (passed)
   bool fences_mapped_ = false;    // les signaux de l'export écrits par le GPU (KernelOps::map_fences)
   std::uint64_t late_pairs_ = 0;  // paires dont des instants sont sautés pour rattraper l'horloge

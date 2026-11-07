@@ -2,7 +2,9 @@
 // mesure d'une paire (coupe de scène, dessins tenus) relue sans attente par previous_scores.
 #include <cstring>
 #include <format>
+#include <span>
 
+#include "core/moving_area.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "kernels/spec/detect.h"
@@ -159,6 +161,8 @@ std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, con
   s.scores = {.left = a.id, .right = b.id};
   s.area = static_cast<std::uint32_t>(g.padded_width * g.padded_height);
   s.count = KernelRunner::scene_partial_count(w, h);
+  s.blocks_x = (w + static_cast<std::uint32_t>(kernels::kHeldBlock) - 1) /
+               static_cast<std::uint32_t>(kernels::kHeldBlock);
   s.order = ++score_order_;
   return {};
 }
@@ -184,6 +188,12 @@ std::optional<PairScores> VulkanKernelOps::previous_scores() {
   out.scene_score = sum / static_cast<double>(newest->area);
   out.worst_block = worst;
   out.identical = sum == 0.0;
+  // L'écart de chaque bloc suit le pire dans le même tampon (block_diff.comp) : la zone qui bouge sans autre
+  // mesure (P6.6, P6.18).
+  const auto* blocks = reinterpret_cast<const std::uint32_t*>(newest->blocks.mapped());
+  const std::size_t count = newest->blocks.size() / sizeof(std::uint32_t) - 1;
+  out.moving = core::moving_area(std::span(blocks + 1, count), newest->blocks_x,
+                                 core::moving_limit(kernels::kHeldThreshold));
   return out;
 }
 

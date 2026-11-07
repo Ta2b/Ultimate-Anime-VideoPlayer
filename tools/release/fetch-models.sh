@@ -3,6 +3,7 @@
 #
 #   <dest>/onnx/   SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), depuis le
 #                  dépôt mpv-AnimeJaNai-HDR à un commit fixé ; licence CC BY-NC-SA 4.0
+#                  ArtCNN C4F32 enveloppé en RGB (P6.7), rangé dans tools/upscale/models ; licence MIT
 #   <dest>/rife/   RIFE 4.25, 4.22, 4.22 lite, 4.26 et 4.26 heavy en fp16 (conversions de vs-mlrt), depuis la release
 #                  models-rife-fp16-1 d'animejanai-inference ; RIFE est sous licence MIT
 #                  DistilDRBA v2 lite en fp16, converti par tools/drba/export_distil_drba.py depuis
@@ -69,6 +70,13 @@ for entry in "${RIFE[@]}"; do
   check "$sha" "$DEST/rife/$name"
 done
 
+# ArtCNN C4F32 (P6.7), enveloppé en RGB par tools/upscale/wrap_luma_rgb.py depuis ArtCNN_C4F32.onnx
+# (Artoriuz/ArtCNN 0837e53, SHA-256 b1a11304…) : 190 Ko, rangé dans le dépôt, à côté de sa licence MIT.
+ARTCNN_SHA=0f14a4cc990c5a00544fd8b939c35e2607d19ae872c4c4f31bc6e6b2dd643c12
+ARTCNN="$(cd "$(dirname "${BASH_SOURCE[0]}")/../upscale/models" && pwd)/2x_ArtCNN_C4F32_rgb_fp16.onnx"
+cp "$ARTCNN" "$DEST/onnx/"
+check "$ARTCNN_SHA" "$DEST/onnx/2x_ArtCNN_C4F32_rgb_fp16.onnx"
+
 for entry in "${DRBA[@]}"; do
   read -r sha name <<<"$entry"
   curl -fsSL -o "$DEST/rife/$name" "$DRBA_URL/$name" || curl -fsSL -o "$DEST/rife/$name" "$DRBA_MIRROR/$name"
@@ -98,6 +106,8 @@ Modèles livrés avec le lecteur
 onnx/  AnimeJaNai HD V3.1 (SPAN), par the-database : Creative Commons BY-NC-SA 4.0
        (attribution, pas d'usage commercial, partage dans les mêmes conditions).
        https://github.com/the-database/mpv-upscale-2x_animejanai
+       ArtCNN C4F32 (João Chrisóstomo), enveloppé en RGB par ajp : licence MIT.
+       https://github.com/Artoriuz/ArtCNN
 rife/  RIFE 4.25, 4.22, 4.22 lite, 4.26 et 4.26 heavy (Practical-RIFE, hzwer), conversions ONNX de vs-mlrt passées en
        fp16 par animejanai-inference : licence MIT.
        https://github.com/hzwer/Practical-RIFE

@@ -17,6 +17,7 @@
 #include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/utf8_path.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -102,6 +103,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .skip_held = skip_held && clock != nullptr,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
+      .rife_motion_calm = rife_motion_calm.get(),
       .rife_planes = rife_planes,
       .rife_align = rife_align,
       .distil_drba = drba.get(),
@@ -109,6 +111,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .drba_motion = drba_motion,
       .rife_factor = factor_of(settings),
       .one_lane = one_lane,
+      .rife_warm = rife_warm,
       .live = std::move(live),
       .clock = clock,
       .source_width = width,
@@ -170,15 +173,57 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
 
 namespace {
 
+// Les options d'essai que la chaîne porte telles quelles.
+void take_trials(ChainEngines& c, const PlayOptions& o) {
+  c.one_lane = o.one_lane;
+  c.rife_warm = o.rife_warm;
+  c.skip_held = o.skip_held;
+  c.smooth_drawings = o.smooth_drawings;
+}
+
+// P6.17, essai (--rife-calm-model) : la variante mouvement d'un RIFE plus léger, à la forme de rife_motion,
+// pour la passe du milieu des paires calmes. Facultative : un modèle aux autres plans ou à un autre
+// remplissage, une dérivation ou une construction refusée la laissent de côté, la raison au journal (essai :
+// un refus n'arrête pas la lecture).
+void load_calm_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                    const std::filesystem::path& models_dir) {
+  if (!c.rife_motion || !p.options.rife_calm_model) return;
+  const auto log = log_channel("app");
+  const std::filesystem::path& calm = *p.options.rife_calm_model;
+  auto planes = rife_input_planes(calm);
+  if (!planes || *planes != c.rife_planes || rife_padding_multiple(calm) != c.rife_align) {
+    log->warn("RIFE des paires calmes ignoré : {} n'a pas les plans ni le remplissage du RIFE principal",
+              core::to_utf8(calm.filename()));
+    return;
+  }
+  auto derived = motion_model(calm, models_dir);
+  if (!derived) {
+    log->warn("RIFE des paires calmes ignoré : {}", derived.error().detail);
+    return;
+  }
+  const kernels::RifeGeometry& g = c.geometry;
+  auto loaded = prepare_engine(p, init, *c.backend, *derived,
+                               gpu::Shape{.dims = {1, c.rife_planes, g.padded_height, g.padded_width}},
+                               EngineLabel{.name = "RIFE calme",
+                                           .model = core::to_utf8(derived->stem()),
+                                           .width = g.padded_width,
+                                           .height = g.padded_height},
+                               gpu::Lane::Interpolate);
+  if (!loaded) {
+    log->warn("RIFE des paires calmes ignoré : {}", loaded.error().detail);
+  } else if (*loaded) {
+    c.rife_motion_calm = std::move(**loaded);
+    log->info("RIFE des paires calmes : {}", core::to_utf8(derived->stem()));
+  }
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
                                                                        const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
   ChainEngines c;
-  c.one_lane = p.options.one_lane;
-  c.skip_held = p.options.skip_held;
-  c.smooth_drawings = p.options.smooth_drawings;
+  take_trials(c, p.options);
   const bool span = span_runs(settings.upscale, settings.restore_lines, video.height, settings.work_height);
   if (settings.upscale && !span)
     log_channel("app")->info("restaurer les traits coupé : source {}p gardée telle quelle, sans SPAN",
@@ -454,6 +499,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       c.rife_motion = std::move(**loaded);
     }
   }
+  load_calm_rife(p, init, c, models_dir);
   if (use_rife && !c.rife_motion) {
     const kernels::RifeGeometry& g = c.image_geometry;
     if (try_fused(g, false, c.rife) == Fused::Closed) return std::nullopt;

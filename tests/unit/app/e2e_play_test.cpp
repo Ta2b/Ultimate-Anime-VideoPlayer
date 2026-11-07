@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <stop_token>
 #include <string>
@@ -86,7 +87,94 @@ Presented read_stats(const fs::path& path) {
   return out;
 }
 
+struct Run {
+  std::int64_t code = -1;
+  std::string output;  // sortie du lecteur, journal compris
+};
+
+// Le vrai lecteur sur un fichier, sous Vulkan logiciel, réglages dans dir/reglages.
+Run play(const fs::path& file, const fs::path& dir, std::vector<std::string> extra) {
+  std::vector<std::string> args = {"play",
+                                   ajp::prepare::utf8_path(file),
+                                   "--software-gpu",
+                                   "--mute",
+                                   "--no-upscale",
+                                   "--rife=0",
+                                   "--no-resume",
+                                   "--window=320x180",
+                                   "--data-dir=" + ajp::prepare::utf8_path(dir / "reglages")};
+  args.insert(args.end(), extra.begin(), extra.end());
+  Run run;
+  const auto exit = ajp::prepare::run_process(
+      {.program = fs::path(AJP_PLAYER_EXE), .args = std::move(args), .timeout = std::chrono::seconds(120)},
+      [&run](std::string_view line) {
+        run.output += line;
+        run.output += '\n';
+      },
+      std::stop_token{});
+  if (exit && exit->kind == ajp::prepare::ExitKind::Exited) run.code = exit->code;
+  return run;
+}
+
+fs::path fresh_dir(const std::string& name) {
+  const fs::path dir = fs::temp_directory_path() / name;
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  return dir;
+}
+
 }  // namespace
+
+// Recette, scénario 15 (P7.12) : un fichier coupé à mi-longueur se lit jusqu'où il va, puis le lecteur
+// s'arrête proprement ; un fichier illisible ne ferme pas la fenêtre en silence, l'accueil dit pourquoi.
+TEST_CASE("Bout en bout : fichier tronqué lu jusqu'à sa fin, fichier illisible refusé avec un message",
+          "[.e2e][app]") {
+  const auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{.name = "e2e-tronque-source.mkv",
+                                                                            .width = 320,
+                                                                            .height = 180,
+                                                                            .frames = 50,
+                                                                            .shot_frames = 50,
+                                                                            .shot_lumas = {200}});
+  REQUIRE(clip);
+  const fs::path dir = fresh_dir("ajp-e2e-recette");
+  const fs::path truncated = dir / "tronque.mkv";
+  {
+    std::ifstream in(*clip, std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::ofstream(truncated, std::ios::binary)
+        .write(bytes.data(), static_cast<std::streamsize>(bytes.size() / 2));
+  }
+  const fs::path stats = dir / "stats.tsv";
+  const Run cut = play(truncated, dir, {"--seconds=3", "--stats=" + ajp::prepare::utf8_path(stats)});
+  INFO(cut.output);
+  CHECK(cut.code == 0);
+  CHECK(read_stats(stats).fresh >= 5);
+
+  const fs::path garbage = dir / "abime.mkv";
+  std::ofstream(garbage, std::ios::binary) << std::string(4096, 'x');
+  // L'accueil attend : q le ferme après 1,5 s.
+  const Run bad = play(garbage, dir, {"--keys=1.5:q"});
+  INFO(bad.output);
+  CHECK(bad.code >= 0);  // sorti de lui-même, ni planté ni bloqué
+  CHECK(bad.output.find("format non reconnu") != std::string::npos);
+}
+
+// Recette, scénario 14 (P7.12) : une source de taille impaire (853×480, SD anamorphosée courante) se lit.
+TEST_CASE("Bout en bout : une source 853×480 se lit", "[.e2e][app]") {
+  const auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{.name = "e2e-853x480.mkv",
+                                                                            .width = 853,
+                                                                            .height = 480,
+                                                                            .frames = 25,
+                                                                            .shot_frames = 25,
+                                                                            .shot_lumas = {200}});
+  REQUIRE(clip);
+  const fs::path dir = fresh_dir("ajp-e2e-853");
+  const fs::path stats = dir / "stats.tsv";
+  const Run run = play(*clip, dir, {"--seconds=1", "--stats=" + ajp::prepare::utf8_path(stats)});
+  INFO(run.output);
+  CHECK(run.code == 0);
+  CHECK(read_stats(stats).fresh >= 3);
+}
 
 TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sautées comptées",
           "[.e2e][app]") {

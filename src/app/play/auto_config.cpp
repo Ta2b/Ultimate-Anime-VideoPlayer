@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "app/play/i18n.h"
+#include "app/play/model_choice.h"
 
 namespace ajp::app::play {
 namespace {
@@ -61,6 +62,16 @@ void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& ma
   out.rife_model = model;
   if (settings.preset == Preset::Auto && !machine.explored_rife_model.empty())
     out.rife_model = machine.explored_rife_model;
+}
+
+// SPAN de la tranche : rien en Économe (sauf le modèle léger s'il est admis, P6.7), SPAN Sharp (performance),
+// le modèle du lecteur, au-dessus ; le modèle léger, s'il est admis, dans les deux tranches du bas.
+void set_span(PlaySettings& out, Tier level, int work) {
+  const bool economy = level == Tier::Economy;
+  out.upscale = !economy || kLightSpanInAuto;
+  out.work_height = economy && !kLightSpanInAuto ? 0 : work;
+  out.model.clear();
+  if (kLightSpanInAuto && (economy || level == Tier::Light)) out.model = std::string(kLightSpanModel);
 }
 
 }  // namespace
@@ -137,10 +148,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
 
   // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle (P3.20 : une 4K reste
   // en 4K, 0 ne réduit rien).
-  out.upscale = *level != Tier::Economy;
-  out.work_height = *level == Tier::Economy ? 0 : work;
+  set_span(out, *level, work);
   out.downscale = Downscale::Hermite;  // net sur les traits, sans rebond, quatre points comme Mitchell
-  out.model.clear();                   // SPAN Sharp (performance), le modèle du lecteur
   out.span_order = SpanOrder::Auto;
 
   // Interpolation : multiplicateur en Auto ; une source déjà à la cadence de l'écran n'est pas interpolée.

@@ -87,13 +87,13 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 26> kTrialOptions{
+constexpr std::array<std::string_view, 28> kTrialOptions{
     "--rife-image",   "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",    "--no-hdr-metadata",
     "--probe-nvdec",  "--no-probe-nvdec",  "--shot-cuts",       "--no-shot-cuts",    "--one-lane",
     "--skip-held",    "--anime-shots",     "--no-anime-shots",  "--fast-steady",     "--smooth-drawings",
     "--ring-watcher", "--no-ring-watcher", "--precise-wait",    "--no-precise-wait", "--audio-pll",
     "--no-audio-pll", "--vsync-index",     "--no-vsync-index",  "--present",         "--no-present",
-    "--no-vrr"};
+    "--no-vrr",       "--rife-calm-model", "--rife-warm"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -106,6 +106,37 @@ bool asks_debug(std::span<const std::string_view> args) {
     if (arg == "--debug") return true;
   }
   return false;
+}
+
+struct Flag {
+  std::string_view name;
+  bool PlayOptions::* field;
+  bool value;
+};
+
+// Les drapeaux d'essai sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
+constexpr std::array<Flag, 14> kFlags{{
+    {"--no-vrr", &PlayOptions::no_vrr, true},
+    {"--one-lane", &PlayOptions::one_lane, true},
+    {"--rife-warm", &PlayOptions::rife_warm, true},
+    {"--skip-held", &PlayOptions::skip_held, true},
+    {"--fast-steady", &PlayOptions::fast_steady, true},
+    {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
+    {"--ring-watcher", &PlayOptions::ring_watcher, true},
+    {"--no-ring-watcher", &PlayOptions::ring_watcher, false},
+    {"--precise-wait", &PlayOptions::precise_wait, true},
+    {"--no-precise-wait", &PlayOptions::precise_wait, false},
+    {"--audio-pll", &PlayOptions::audio_pll, true},
+    {"--no-audio-pll", &PlayOptions::audio_pll, false},
+    {"--vsync-index", &PlayOptions::vsync_index, true},
+    {"--no-vsync-index", &PlayOptions::vsync_index, false},
+}};
+
+bool set_flag(std::string_view arg, PlayOptions& options) {
+  const auto flag = std::ranges::find(kFlags, arg, &Flag::name);
+  if (flag == kFlags.end()) return false;
+  options.*(flag->field) = flag->value;
+  return true;
 }
 
 }  // namespace
@@ -131,8 +162,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       only_files = true;
     } else if (arg == "--help") {
       options.help = true;
-    } else if (arg == "--debug") {
-      // lu avant la boucle (asks_debug)
+    } else if (arg == "--debug" || set_flag(arg, options)) {
+      // --debug est lu avant la boucle (asks_debug) ; set_flag pose un drapeau d'essai de kFlags
     } else if (arg == "--no-upscale") {
       options.upscale = false;
       options.given.emplace_back(arg);
@@ -184,32 +215,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
               std::format("--hdr-metadata: \"{}\" is not an SDR brightness from 50 to 1000 nits", text));
         options.kde_sdr_nits = static_cast<double>(*nits);
       }
-    } else if (arg == "--no-vrr") {
-      options.no_vrr = true;
-    } else if (arg == "--one-lane") {
-      options.one_lane = true;
-    } else if (arg == "--skip-held") {
-      options.skip_held = true;
-    } else if (arg == "--fast-steady") {
-      options.fast_steady = true;
-    } else if (arg == "--smooth-drawings") {
-      options.smooth_drawings = true;
-    } else if (arg == "--ring-watcher") {
-      options.ring_watcher = true;
-    } else if (arg == "--no-ring-watcher") {
-      options.ring_watcher = false;
-    } else if (arg == "--precise-wait") {
-      options.precise_wait = true;
-    } else if (arg == "--no-precise-wait") {
-      options.precise_wait = false;
-    } else if (arg == "--audio-pll") {
-      options.audio_pll = true;
-    } else if (arg == "--no-audio-pll") {
-      options.audio_pll = false;
-    } else if (arg == "--vsync-index") {
-      options.vsync_index = true;
-    } else if (arg == "--no-vsync-index") {
-      options.vsync_index = false;
     } else if (arg.starts_with("--present=")) {
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
@@ -234,7 +239,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
                                           "--keys",           "--work-height",      "--rife-model",
                                           "--anime-contrast", "--anime-saturation", "--anime-highlights",
                                           "--rife",           "--truehdr-peak",     "--data-dir",
-                                          "--bake-looks",     "--bench-level",      "--bench-out"}) {
+                                          "--bake-looks",     "--bench-level",      "--bench-out",
+                                          "--rife-calm-model"}) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
@@ -290,6 +296,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           if (name == "--anime-highlights") options.anime_highlights = *percent;
         } else if (name == "--rife-model") {
           options.rife_model = std::filesystem::path(text);
+        } else if (name == "--rife-calm-model") {
+          options.rife_calm_model = std::filesystem::path(text);
         } else if (name == "--rife") {
           const auto factor = parse_factor(text);
           if (!factor) {
@@ -523,6 +531,8 @@ std::string play_usage(bool debug) {
          "lift\n"
          "  --fast-steady          trial: Fast mode at a constant step, N frames per held source in a shot\n"
          "  --smooth-drawings      trial: a drawing held two frames blends into motion (motion RIFE)\n"
+         "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
+         "  --rife-warm            trial: calm pairs reuse the coarse RIFE blocks of the previous pair\n"
          "  --ring-watcher         a thread waits for ring writes and wakes the display (default;\n"
          "                         --no-ring-watcher: the display polls)\n"
          "  --precise-wait         waits for the next frame to the microsecond (default; --no-precise-wait:\n"
