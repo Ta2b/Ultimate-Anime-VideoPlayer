@@ -69,8 +69,10 @@ class StatsSource {
 struct SessionConfig {
   // Une image de sortie vue écrite par le GPU (host_now) : le mode auto en tire le coût de la paire.
   std::function<void(const RingFrame&, std::int64_t)> on_written;
-  std::int64_t start_us = 0;             // > 0 : seek exact à l'ouverture
-  std::int64_t duration_us = 0;          // 0 : inconnue ; borne les seeks relatifs
+  std::int64_t start_us = 0;     // > 0 : seek exact à l'ouverture
+  std::int64_t duration_us = 0;  // 0 : inconnue ; borne les seeks relatifs
+  // La fin de la piste audio quand elle finit avant la vidéo (P3.75) ; 0 : inconnue ou pas avant.
+  std::int64_t audio_end_us = 0;
   std::vector<ChapterMark> chapters;     // du fichier, dans l'ordre
   std::int64_t stop_after_us = 0;        // quitte après ce temps de lecture ; 0 jamais
   std::int64_t fullscreen_after_us = 0;  // bascule en plein écran après ce temps ; 0 jamais

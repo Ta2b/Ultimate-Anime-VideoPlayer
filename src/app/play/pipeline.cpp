@@ -338,6 +338,10 @@ SessionConfig Pipeline::session_config() const {
   const bool hd = video_track_.width >= 1280 || video_track_.height > 576;
   return SessionConfig{
       .duration_us = duration_us_,
+      .audio_end_us = audio_track_ && audio_track_->duration_us > 0 &&
+                              audio_track_->duration_us + 1'000'000 < duration_us_
+                          ? audio_track_->duration_us
+                          : 0,
       .chapters = chapters_,
       .subtitles = subtitle_track_.has_value(),
       .video_width = video_track_.width,

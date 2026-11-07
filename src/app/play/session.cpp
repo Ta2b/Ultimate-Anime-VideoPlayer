@@ -430,9 +430,12 @@ void Session::watch_clock(const ClockSnapshot& now, std::int64_t host_now) {
     clock_stalled_since_us_ = host_now;
     return;
   }
-  if (host_now - *clock_stalled_since_us_ < audio_stall_grace_us_) return;
+  // P3.75 : passé la fin connue de la piste audio, l'horloge hôte mène tout de suite et sans message : ce
+  // n'est pas une panne, la vidéo continue seule.
+  const bool audio_over = config_.audio_end_us > 0 && current_->pts_us >= config_.audio_end_us - 200'000;
+  if (host_now - *clock_stalled_since_us_ < (audio_over ? 0 : audio_stall_grace_us_)) return;
   clock_stalled_since_us_.reset();
-  if (!stages_.audio_lost(epoch_, current_->pts_us)) return;
+  if (!stages_.audio_lost(epoch_, current_->pts_us) || audio_over) return;
   audio_stall_grace_us_ = kAudioStallRepeatUs;  // l'audio a déjà manqué : la prochaine fois, plus vite
   on_refusal({.stage = "main",
               .refusal = {RefusalCode::DeviceUnavailable, i18n::tr("audio missing: the display clock leads")},
