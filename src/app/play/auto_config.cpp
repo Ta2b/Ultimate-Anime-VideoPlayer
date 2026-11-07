@@ -213,4 +213,8 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b) {
          a.rife_model != b.rife_model || a.motion_engine != b.motion_engine;
 }
 
+bool display_moves_chain(Preset preset, int opened_height, int now_height) {
+  return preset != Preset::Custom && opened_height > 0 && now_height > 0 && opened_height != now_height;
+}
+
 }  // namespace ajp::app::play

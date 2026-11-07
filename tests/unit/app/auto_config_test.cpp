@@ -189,3 +189,10 @@ TEST_CASE("DistilDRBA attend sa porte de qualité", "[auto_config]") {
   for (const Tier tier : {Tier::Light, Tier::Normal, Tier::Fast, Tier::Ultra})
     CHECK(applied(Preset::Auto, tier, 1440, 144.0).motion_engine == MotionEngine::Rife);
 }
+
+TEST_CASE("un autre écran rouvre la chaîne d'un préréglage (P3.21)", "[auto_config]") {
+  CHECK(display_moves_chain(Preset::Auto, 1080, 2160));
+  CHECK_FALSE(display_moves_chain(Preset::Auto, 1440, 1440));
+  CHECK_FALSE(display_moves_chain(Preset::Custom, 1080, 2160));
+  CHECK_FALSE(display_moves_chain(Preset::Auto, 0, 2160));
+}

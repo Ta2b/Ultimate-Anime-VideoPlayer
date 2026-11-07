@@ -406,6 +406,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   double known_hz = display_refresh_hz(out.window());
   std::int64_t known_period_us = display_period_us(out.window());
   SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
+  const int opened_height = display_height(out.window());
   double session_hz_seen = known_hz;
   ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
   const auto read_display_facts = [&] {
@@ -658,6 +659,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
       if (fullscreen != vrr_fullscreen || display_changed) {
         if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
+        if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
+            display_moves_chain(chain.running.preset, opened_height, display_height(out.window())))
+          actions.emplace_back(PlayFile{p.options.file, session.view().position_us, session.paused()});
         vrr_fullscreen = fullscreen;
         if (const auto display = window_display(out.window())) {
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);

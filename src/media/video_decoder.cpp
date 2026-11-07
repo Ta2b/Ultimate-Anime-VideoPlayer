@@ -63,6 +63,10 @@ struct VideoDecoder::State {
   bool end_pending = false;  // send_end à renvoyer après replay
   std::vector<Packet> sent;
   std::deque<Packet> replay;
+  // P3.22 : une bascule après la première image rouvre aussi en logiciel, sur les threads demandés, à partir
+  // du dernier paquet s'il est une image clé, sinon de la suivante (wait_key).
+  std::optional<Packet> last;
+  bool wait_key = false;
   std::shared_ptr<spdlog::logger> log = make_logger();
 
   // Données abîmées : l'image en cause est perdue, le décodage continue.
@@ -93,7 +97,7 @@ struct VideoDecoder::State {
       }
       self.fall_back("format matériel non proposé par get_format (profil, taille ou pilote)");
       if (!self.software_allowed) return AV_PIX_FMT_NONE;
-      self.reopen = !self.output && self.replayable;
+      self.reopen = self.output || self.replayable;
     }
     return avcodec_default_get_format(ctx, formats);
   }
@@ -105,6 +109,7 @@ struct VideoDecoder::State {
     if (keep) sent.push_back(packet);
     const int err = avcodec_send_packet(codec.get(), packet.av.get());
     if (keep && err == AVERROR(EAGAIN)) sent.pop_back();
+    if (output && err != AVERROR(EAGAIN)) last = packet;
     return err;
   }
 
@@ -129,7 +134,15 @@ struct VideoDecoder::State {
       return false;
     }
     direct = false;
-    replay.assign(sent.begin(), sent.end());
+    if (output) {
+      const bool key = last && (last->av->flags & AV_PKT_FLAG_KEY) != 0;
+      replay.clear();
+      if (key) replay.push_back(*last);
+      wait_key = !key;
+      if (wait_key) pending.reset();
+    } else {
+      replay.assign(sent.begin(), sent.end());
+    }
     sent.clear();
     if (pending) {
       replay.push_back(std::move(*pending));
@@ -342,6 +355,10 @@ std::expected<void, Refusal> VideoDecoder::send(const Packet& packet) {
   State& s = *state_;
   if (s.pending) return refuse(RefusalCode::DecodeFailed, "paquet précédent encore en attente");
   if (!packet.av) return refuse(RefusalCode::DecodeFailed, "paquet sans données");
+  if (s.wait_key) {  // P3.22 : rouvert en cours de flux, on repart d'une image clé
+    if ((packet.av->flags & AV_PKT_FLAG_KEY) == 0) return {};
+    s.wait_key = false;
+  }
   if (!s.replay.empty()) {  // derrière les paquets rejoués
     s.replay.push_back(packet);
     return {};
