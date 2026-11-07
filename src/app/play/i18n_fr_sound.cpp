@@ -51,6 +51,8 @@ constexpr std::array kSoundPage{
     Entry{"Another device uses the global profile.", "Un autre appareil reprend le profil global."},
     Entry{"Audio delay (ms)", "Délai audio (ms)"},
     Entry{"Audio delay: {} ms", "Délai audio : {} ms"},
+    Entry{"{:.0f} fps: many TVs and phones refuse or stutter above 60.",
+          "{:.0f} i/s : beaucoup de téléviseurs et de téléphones refusent ou saccadent au-delà de 60."},
     Entry{"Back to Natural", "Revenir à Naturel"},
     Entry{"Bass boost", "Renfort des graves"},
     Entry{"Bass level (LFE)", "Niveau des basses (LFE)"},

@@ -161,7 +161,14 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
                                     "rate, a bit smaller, fine in players."));
 
   section(i18n::tr("File"));
-  const media::Rational rate = export_rate(choices.source_rate, factor_of(job.chain));
+  const media::Rational rate = export_rate(choices.source_rate, factor_of(export_chain(job.chain)));
+  if (rate.den > 0 && rate.num > 60 * rate.den) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    ImGui::TextWrapped("%s", i18n::tr_format("{:.0f} fps: many TVs and phones refuse or stutter above 60.",
+                                             static_cast<double>(rate.num) / rate.den)
+                                 .c_str());
+    ImGui::PopStyleColor();
+  }
   const std::string named = std::format("{}x{} {}/{}", size.width, size.height, rate.num, rate.den);
   if (!draft.path_edited && named != draft.named_for && !choices.source_file.empty()) {
     copy_path(draft.path, prepare::utf8_path(default_export_path(choices.source_file, size, rate)));

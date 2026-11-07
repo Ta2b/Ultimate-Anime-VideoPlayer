@@ -40,6 +40,7 @@ TEST_CASE("Export : la chaîne sans HDR adaptatif, grade ni Smooth Motion", "[ap
   s.grade = true;
   s.smooth_motion = true;
   s.rife_factor = 4;
+  s.rife_auto = false;
   const PlaySettings out = export_chain(s);
   CHECK_FALSE(out.hdr_native);
   CHECK_FALSE(out.grade);
@@ -47,6 +48,8 @@ TEST_CASE("Export : la chaîne sans HDR adaptatif, grade ni Smooth Motion", "[ap
   CHECK(out.upscale == s.upscale);
   CHECK(out.rife_factor == 4);
   CHECK(out.work_height == s.work_height);
+  s.rife_auto = true;  // P3.87 : l'Auto de la lecture devient ×2
+  CHECK(factor_of(export_chain(s)) == ajp::app::play::Factor{.num = 2, .den = 1});
 }
 
 TEST_CASE("Export : la sortie de la chaîne est la taille de travail, doublée par SPAN", "[app][export]") {

@@ -28,7 +28,8 @@ struct ExportJob {
 };
 
 // La chaîne d'un export : celle des réglages sans HDR ni grade, sans Smooth Motion
-// (une couche de l'écran) : l'image de la chaîne telle quelle, comme la lecture la donne en SDR.
+// (une couche de l'écran) : l'image de la chaîne telle quelle, comme la lecture la donne en SDR. L'Auto
+// devient ×2, qui ne dépend pas de l'écran (P3.87).
 PlaySettings export_chain(const PlaySettings& s);
 
 struct ExportSize {
