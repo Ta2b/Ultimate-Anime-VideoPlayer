@@ -75,6 +75,8 @@ core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
 // Les réglages de lecture : HDR, langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
 // de la machine sautée : le préréglage Auto.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
+// P3.3 : l'assistant repris en route retrouve les choix enregistrés à chaque écran (mises à jour, langues).
+void resume_choices(Wizard& wizard, const PlaySettings& saved);
 // « Terminer » lance-t-il la calibration de la machine (écran non sauté) ?
 bool wants_machine_calibration(const Wizard& wizard);
 

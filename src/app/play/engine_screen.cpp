@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -46,14 +47,19 @@ constexpr std::size_t usage(core::Usage u) {
 
 // L'écran jusqu'à « Commencer » ou « Annuler » ; rien si l'utilisateur quitte. Les touches d'essai
 // (--keys) qui tombent pendant l'écran y sont pressées, comptées depuis son ouverture.
-std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& screen, PlayerUi& ui,
-                                                            FirstRunView view, const PlayOptions& options,
-                                                            std::size_t& next_key, SnapshotPlan& snapshot,
-                                                            int& furthest) {
+std::expected<std::optional<FirstRunView>, Refusal> welcome(
+    PlaceboScreen& screen, PlayerUi& ui, FirstRunView view, const PlayOptions& options, std::size_t& next_key,
+    SnapshotPlan& snapshot, int& furthest, const std::function<void(const Wizard&)>& on_step) {
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   std::vector<Input> actions;
+  std::size_t at = view.wizard.at;
   while (!view.done && !view.cancelled) {
+    // P3.3 : chaque « Suivant », « Passer » ou « Précédent » enregistre les choix faits jusque-là.
+    if (view.wizard.at != at) {
+      at = view.wizard.at;
+      if (on_step) on_step(view.wizard);
+    }
     for (; next_key < options.keys.size() && host_now_us() - started >= options.keys[next_key].first;
          ++next_key)
       press(options.keys[next_key].second, screen.window());
@@ -185,8 +191,24 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
   }
+  const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
+  // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
+  if (wizard_mode && !revisit && engines.first_run_step > 0 && !s.options.first_run && !s.restart_wizard) {
+    if (auto play = load_settings(play_path)) resume_choices(view.wizard, *play);
+  }
+  const auto on_step = [&](const Wizard& wizard) {
+    if (!wizard_mode || revisit) return;
+    PlaySettings saved;
+    if (auto play = load_settings(play_path)) saved = std::move(*play);
+    if (auto written = save_settings(play_path, wizard_play_settings(wizard, std::move(saved))); !written)
+      log->warn("{}", written.error().detail);
+    engines.first_run_step = std::max(engines.first_run_step, wizard.seen);
+    if (auto written = core::save_settings(s.engines_path, engines); !written)
+      log->warn("{}", written.error().detail);
+  };
   int furthest = engines.first_run_step;
-  auto chosen_view = welcome(s.screen, s.ui, std::move(view), s.options, next_key, snapshot, furthest);
+  auto chosen_view =
+      welcome(s.screen, s.ui, std::move(view), s.options, next_key, snapshot, furthest, on_step);
   if (!chosen_view) return std::unexpected(std::move(chosen_view.error()));
   if (!*chosen_view) {
     // Fermé en route : l'assistant reprendra après le dernier écran vu.
@@ -211,22 +233,10 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   if (wizard_mode) {
     const Wizard& wizard = (*chosen_view)->wizard;
     engines = wizard_settings(wizard, std::move(engines));
-    const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
     auto play = load_settings(play_path);
     PlaySettings chosen_play;
     if (play) chosen_play = std::move(*play);
     chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
-    if (wants_machine_calibration(wizard)) {
-      // Les essais relisent settings.toml (moteurs choisis, assistant vu) : il s'écrit avant eux.
-      if (auto written = core::save_settings(s.engines_path, engines); !written)
-        log->warn("{}", written.error().detail);
-      auto calibrated =
-          calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
-      if (!calibrated) return false;
-      chosen_play = std::move(*calibrated);
-    }
-    if (auto written = save_settings(play_path, chosen_play); !written)
-      log->warn("{}", written.error().detail);
     // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
     if (!engines.open_with_registered) {
       const PlayerPlace place = place_of(s.paths);
@@ -238,6 +248,19 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       }
     }
     for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
+    // P3.2 : play.toml, settings.toml et l'inscription s'écrivent avant la calibration ; la fenêtre fermée
+    // pendant qu'elle tourne ne perd plus les choix (seule la chaîne calibrée manque, Auto la remplace).
+    if (auto written = save_settings(play_path, chosen_play); !written)
+      log->warn("{}", written.error().detail);
+    if (auto written = core::save_settings(s.engines_path, engines); !written)
+      log->warn("{}", written.error().detail);
+    if (wants_machine_calibration(wizard)) {
+      auto calibrated =
+          calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
+      if (!calibrated) return false;
+      if (auto written = save_settings(play_path, *calibrated); !written)
+        log->warn("{}", written.error().detail);
+    }
   }
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);

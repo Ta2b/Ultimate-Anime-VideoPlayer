@@ -136,6 +136,15 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
   return settings;
 }
 
+void resume_choices(Wizard& wizard, const PlaySettings& saved) {
+  wizard.update_mode = saved.update_mode;
+  wizard.update_channel = saved.update_channel;
+  if (!saved.language_presets.empty()) {
+    wizard.audio_language = saved.language_presets[0].audio;
+    wizard.subtitle_language = saved.language_presets[0].subtitles;
+  }
+}
+
 bool wants_machine_calibration(const Wizard& wizard) {
   return std::ranges::find(wizard.steps, WizardStep::Chain) != wizard.steps.end() &&
          std::ranges::find(wizard.skipped, WizardStep::Chain) == wizard.skipped.end();

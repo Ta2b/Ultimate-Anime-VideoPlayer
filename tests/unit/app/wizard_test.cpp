@@ -86,3 +86,14 @@ TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wiza
   CHECK(lines[1].contains("sauté"));
   CHECK(lines[2].contains("me prévenir"));
 }
+
+TEST_CASE("l'assistant repris en route retrouve ses choix (P3.3)", "[wizard]") {
+  PlaySettings saved;
+  saved.update_mode = "never";
+  saved.language_presets = {{.audio = "fra", .subtitles = ""}};
+  Wizard wizard = begin_wizard(WizardFacts{}, 3);
+  resume_choices(wizard, saved);
+  CHECK(wizard.update_mode == "never");
+  CHECK(wizard.audio_language == "fra");
+  CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == "never");
+}
