@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
@@ -330,6 +331,14 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     if (!drawn) return std::unexpected(std::move(drawn.error()));
     target = *drawn;
   } else {
+    // Fenêtre réduite ou que le compositeur ne montre plus (Wayland « suspended », macOS) : rien n'est
+    // présenté (P2.19). En FIFO, la présentation y attendrait un rappel de rafraîchissement qui ne vient pas,
+    // et le thread de la fenêtre resterait bloqué. L'attente est rendue au premier événement, 50 ms au plus.
+    if ((SDL_GetWindowFlags(s.window) & (SDL_WINDOW_OCCLUDED | SDL_WINDOW_MINIMIZED)) != 0) {
+      constexpr Sint32 kHiddenWaitMs = 50;
+      (void)SDL_WaitEventTimeout(nullptr, kHiddenWaitMs);
+      return ScreenTiming{.presented = false};
+    }
     if (out != s.swapchain_size) {
       int w = out.width;
       int h = out.height;
