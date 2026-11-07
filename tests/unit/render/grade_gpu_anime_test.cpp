@@ -193,7 +193,8 @@ TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique 
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Sans relèvement des surfaces ni éclat, l'aller-retour SDR → PQ → SDR rend l'image ; au-dessus du genou
-  // (70 % du blanc des surfaces) la courbe compresse, sans jamais dépasser le blanc ni redescendre.
+  // (90 % du blanc des surfaces) la courbe compresse, sans jamais dépasser le blanc ni redescendre ; le blanc
+  // des surfaces sort à 95 % au moins (P3.60), pas en gris clair.
   GradeParams p = anime_params();
   p.an_lift = 1.0;
   p.spec_gain = 1.0;
@@ -204,11 +205,12 @@ TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique 
   for (std::size_t x = 0; x < out.size(); ++x) {
     const double in = (static_cast<double>(x) + 1.0) / kSide;
     INFO("x " << x);
-    if (std::pow(in, 2.2) < 0.65) CHECK(out[x][0] == Catch::Approx(in).margin(0.02));
+    if (std::pow(in, 2.2) < 0.85) CHECK(out[x][0] == Catch::Approx(in).margin(0.02));
     CHECK(out[x][0] <= 1.0);
     CHECK(out[x][0] >= last - 0.01);
     last = out[x][0];
   }
+  CHECK(out.back()[0] >= std::pow(0.95, 1.0 / 2.2) - 0.01);
 }
 
 TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 100 %", "[render][gpu]") {

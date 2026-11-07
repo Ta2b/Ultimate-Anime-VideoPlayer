@@ -211,14 +211,16 @@ vec4 hook() {
 //!DESC AnimeJaNai HDR anime - PQ vers SDR, courbe du plan
 
 // Le rendu HDR (grade anime et pile de LUT) ramene au SDR sans toucher aux couleurs : sur le maximum RGB
-// (la teinte reste), identite jusqu'a 70 % du blanc des surfaces (tm_white), puis un Reinhard etendu qui pose
-// la marge des eclats du plan (tm_top) au blanc SDR. Les couleurs hors du BT.709 vont vers leur luminance.
+// (la teinte reste), identite jusqu'a 90 % du blanc des surfaces (tm_white), puis un Reinhard etendu qui pose
+// la marge des eclats du plan (tm_top) au blanc SDR. P3.60 : le genou etait a 70 %, un blanc de surface
+// sortait a 85 % (gris clair) ; a 90 %, il sort a 95 %, et les eclats gardent les derniers 5 %. Les couleurs
+// hors du BT.709 vont vers leur luminance.
 const mat3 AJT_2020_TO_709 = mat3( 1.6604910, -0.1245505, -0.0181508,
                                   -0.5876411,  1.1328999, -0.1005789,
                                   -0.0728499, -0.0083494,  1.1187297);
 
 float ajt_curve(float x, float top) {
-    const float k = 0.70;
+    const float k = 0.90;
     if (x <= k) return x;
     float u = (x - k) / (1.0 - k);
     float ut = max((top - k) / (1.0 - k), 1.001);
