@@ -273,6 +273,8 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
 #endif
 }
 
+static_assert(limits::kTrueHdrPeak.lo == static_cast<int>(kMinHdrPeakNits));  // un seul seuil (P3.66)
+
 bool system_hdr(std::optional<double> peak_nits) {
   return peak_nits && std::isfinite(*peak_nits) && *peak_nits >= kMinHdrPeakNits;
 }

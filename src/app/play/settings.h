@@ -324,8 +324,10 @@ inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
-inline constexpr std::size_t kLanguagePresets = 2;          // préréglages de langue
-inline constexpr core::Range<int> kTrueHdrPeak{400, 2000};  // ou 0 : automatique
+inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
+// Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66) : un pic réglable fait
+// toujours une sortie HDR.
+inline constexpr core::Range<int> kTrueHdrPeak{350, 2000};  // ou 0 : automatique
 inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits
 
