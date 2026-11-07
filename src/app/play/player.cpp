@@ -278,10 +278,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   const bool from_home = !given;
   std::filesystem::path file = unreadable.empty() ? options.file : std::filesystem::path();
   std::string problem = unreadable;  // la vidéo choisie ne se lit pas : dit à l'accueil
+  std::string set_aside_notes;       // play.toml ou settings.toml mis de côté
   for (const std::string& note : startup_notes) {
     if (note.empty()) continue;
-    problem += problem.empty() ? note : " · " + note;
+    set_aside_notes += set_aside_notes.empty() ? note : " · " + note;
   }
+  // À l'accueil, sous ses boutons ; en lecture directe, sur l'image de la première vidéo (P2.23).
+  if (from_home && !set_aside_notes.empty())
+    problem += problem.empty() ? set_aside_notes : " · " + set_aside_notes;
+  if (from_home) set_aside_notes.clear();
   std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
@@ -432,6 +437,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         player.notice = i18n::ui_tr_format("Update {} available (Settings > General > Application)",
                                            update.latest_version);
       }
+    }
+    if (!set_aside_notes.empty()) {
+      // Déjà traduites par set_aside() : montrées telles quelles.
+      const i18n::Translated notes = i18n::Translated::data(set_aside_notes);
+      player.notice = player.notice.empty() ? notes : notes + i18n::Translated::data(" · ") + player.notice;
+      set_aside_notes.clear();
     }
     if (player.display) {
       log->info("écran {} : {}", player.display->connector, describe(*player.display));
