@@ -503,3 +503,14 @@ TEST_CASE("auto : à fréquence fixe, seuls les paliers calés sur l'écran (P3.
   rate.set_locked(locked_steps(60.0, 23.976, 2));
   CHECK(rate.step() == 2);  // ×2 ne cale pas à 60 Hz : ×1 en attendant de tenir ×2,5
 }
+
+TEST_CASE("auto : le plafond du niveau tient en lecture (P3.36)", "[auto_rate]") {
+  // 165 Hz VRR, 23,976 i/s : l'écran permettrait ×6,88 ; un niveau à ×3 s'arrête à ×3.
+  const ajp::core::AutoLimits vrr = ajp::core::auto_limits(165.0, 23.976, true, 3);
+  CHECK(vrr.ceiling == 3 * ajp::core::kFineGranularity);
+  CHECK(vrr.locked.empty());
+  // 60 Hz fixe, niveau à ×2 : ×2,5 reste permis, c'est le seul palier calé.
+  const ajp::core::AutoLimits fixed = ajp::core::auto_limits(60.0, 23.976, false, 2);
+  CHECK(fixed.ceiling == 5);
+  CHECK(fixed.locked == std::vector<int>{2, 5});
+}

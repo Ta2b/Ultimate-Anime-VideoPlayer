@@ -40,6 +40,16 @@ std::vector<int> locked_steps(double display_hz, double source_fps, int granular
   return out;
 }
 
+AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor) {
+  AutoLimits out;
+  out.granularity = vrr ? kFineGranularity : 2;
+  out.ceiling = auto_ceiling(display_hz, source_fps, out.granularity);
+  if (level_factor >= 2)
+    out.ceiling = std::min(out.ceiling, level_factor * out.granularity + (out.granularity == 2 ? 1 : 0));
+  if (!vrr) out.locked = locked_steps(display_hz, source_fps, out.granularity);
+  return out;
+}
+
 int AutoRate::snap_down(int step) const {
   if (locked_.empty()) return step;
   int best = granularity_;

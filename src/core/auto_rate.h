@@ -53,6 +53,16 @@ int auto_ceiling(double display_hz, double source_fps, int granularity = 1);
 // l'écran ou la cadence sont inconnus.
 std::vector<int> locked_steps(double display_hz, double source_fps, int granularity);
 
+// Les bornes du mode Stable pour un écran : au fps près en VRR armé (kFineGranularity) ; à fréquence fixe, en
+// demi-paliers et seulement les paliers calés (P3.33). Plafond : l'écran, et le niveau (P3.36, ×2, ×3, ×4 :
+// level_factor ; en demi-paliers, un de plus, ×2,5 à 60 Hz pour un niveau à ×2 ; < 2 : aucun).
+struct AutoLimits {
+  int ceiling = 1;
+  int granularity = 1;
+  std::vector<int> locked;  // vide : tous les paliers
+};
+AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor);
+
 // La fréquence que le plafond du mode auto prend pour l'écran : la plus basse du plafond choisi (cap > 0, en
 // i/s) et de l'écran ; écran inconnu (<= 0) : inchangé, l'interpolation reste à ×1.
 inline double auto_limit_hz(double display_hz, int cap) {
