@@ -290,3 +290,16 @@ TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est
   REQUIRE(refused.size() == 2);
   CHECK(refused[0].find("TensorRT") == std::string::npos);
 }
+
+TEST_CASE("Pilote NVIDIA lu avant le téléchargement de TensorRT (P3.6)", "[app][first_run]") {
+  GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = ajp::GpuVendor::Nvidia};
+  gpu.driver = std::to_string((575U << 22U) | (64U << 14U));
+  const auto old = nvidia_driver(gpu);
+  REQUIRE(old);
+  CHECK(old->first == 575);
+  CHECK(old->second == 64);
+  gpu.driver = std::to_string((580U << 22U) | (82U << 14U));
+  CHECK(nvidia_driver(gpu)->first >= kTensorRtDriverMajor);
+  gpu.vendor = ajp::GpuVendor::Amd;
+  CHECK_FALSE(nvidia_driver(gpu));
+}

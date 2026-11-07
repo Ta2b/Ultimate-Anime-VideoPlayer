@@ -11,9 +11,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "app/play/settings.h"
@@ -48,6 +50,10 @@ bool rocm_listed(std::string_view gpu_name);
 // 890M, 8040S à 8060S) : la Radeon 860M y est, pas une RX 6000.
 bool winml_listed(std::string_view gpu_name);
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
+// P3.6 : le pilote NVIDIA que demande le TensorRT livré (CUDA 13), et la version lue du pilote (majeure,
+// mineure) ; rien hors NVIDIA ou sans version lisible.
+inline constexpr int kTensorRtDriverMajor = 580;
+std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);
 

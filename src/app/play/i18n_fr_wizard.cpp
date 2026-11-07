@@ -103,6 +103,8 @@ constexpr std::array kWizardTexts{
           "{} : licence non acceptée, il ne s'installera pas"},
     Entry{"Engines: {} ({} to download)", "Moteurs : {} ({} à télécharger)"},
     Entry{"Engines: {}", "Moteurs : {}"},
+    Entry{"NVIDIA driver {} or newer required, you have {}.{:02}",
+          "pilote NVIDIA {} ou plus récent requis, vous avez le {}.{:02}"},
     Entry{"Resume playback", "Continuer la lecture"},
     Entry{"Skip", "Passer"},
     Entry{"Set it up myself", "Régler moi-même"},

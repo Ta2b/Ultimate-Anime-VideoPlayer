@@ -278,6 +278,18 @@ std::string gpu_line(const GpuFacts& gpu) {
   return line;
 }
 
+std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu) {
+  if (gpu.vendor != GpuVendor::Nvidia || gpu.driver.empty()) return std::nullopt;
+  std::uint64_t raw = 0;
+  for (const char c : gpu.driver) {
+    if (c < '0' || c > '9') return std::nullopt;
+    raw = (raw * 10) + static_cast<std::uint64_t>(c - '0');
+    if (raw > 0xffffffffULL) return std::nullopt;
+  }
+  // NVIDIA code driverVersion en 10.8.8.6 bits : 580.82 vaut (580 << 22) | (82 << 14).
+  return std::pair{static_cast<int>(raw >> 22U), static_cast<int>((raw >> 14U) & 0xffU)};
+}
+
 FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const core::Settings& current) {
   FirstRunView view{.gpu = gpu_line(gpu)};
   for (const core::EngineOffer& offer : core::recommend_engines(system_of(gpu, here.os))) {
@@ -291,6 +303,15 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
       case core::EngineId::MiGraphX:
       case core::EngineId::OpenVino:
         downloadable_row(row, here);
+        // P3.6 : le pilote se lit avant 650 Mo de téléchargement ; trop ancien, la case reste verrouillée.
+        if (offer.id == core::EngineId::TensorRt && row.download) {
+          if (const auto version = nvidia_driver(gpu); version && version->first < kTensorRtDriverMajor) {
+            row.usable = false;
+            row.download = false;
+            row.status = i18n::tr_format("NVIDIA driver {} or newer required, you have {}.{:02}",
+                                         kTensorRtDriverMajor, version->first, version->second);
+          }
+        }
         break;
       case core::EngineId::Metal:  // Core ML, dans AJP.app
         row.usable = here.coreml;
