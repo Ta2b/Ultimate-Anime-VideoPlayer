@@ -41,6 +41,18 @@ mêmes archives) et remplacer `manifest.toml` et `manifest.toml.sig` dans la rel
   une release manuelle.
 - Sauvegarder la clé privée (gestionnaire de mots de passe de Tatoub, disque chiffré) : sans elle, plus de mise à jour.
 
+### Clé de secours et révocation
+
+Le lecteur croit deux clés : l'active (`AJP_UPDATE_PUBKEY`) et celle de secours (`AJP_UPDATE_PUBKEY_BACKUP`, vide
+tant qu'elle n'est pas créée). Créer la paire de secours comme ci-dessus, compiler sa clé publique dans
+`AJP_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **ailleurs** que l'active (hors ligne). Le choix du support
+(YubiKey, HSM, KMS) est la décision P7.2 du plan.
+
+Si l'active est perdue ou volée : signer le manifeste suivant avec la clé de secours
+(`AJP_UPDATE_KEY=<secours>.pem tools/release/sign-manifest.sh …`) et y ajouter la ligne
+`revoked_keys = ["<clé publique active>"]`. Les lecteurs le croient, retiennent la révocation dans `update.toml`, et ne
+croient plus aucun manifeste signé par l'ancienne clé. La release suivante compile une nouvelle clé de secours.
+
 ## Canal « Préversions » et passage en release normale
 
 Le lecteur lit son manifeste à deux adresses (`src/app/play/updater.cpp`, `manifest_url`) :

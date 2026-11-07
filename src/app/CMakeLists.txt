@@ -63,9 +63,13 @@ endif()
 # (-DAJP_UPDATE_PUBKEY=<64 chiffres hexadécimaux> pour une autre clé). La clé privée correspondante vit hors du dépôt,
 # sur le PC de Tatoub (docs/signature-des-releases.md).
 set(AJP_UPDATE_PUBKEY "c50eeb3e63c327a087487cd3f485e66fbbf8ef2340a0b90d7ec99d4c2d3f0d58" CACHE STRING "Clé publique Ed25519 (hexadécimal) des mises à jour")
+# La clé de secours (P1.14) : un manifeste signé par elle est cru aussi, et peut révoquer l'active (revoked_keys).
+# Vide tant qu'elle n'est pas créée (docs/signature-des-releases.md).
+set(AJP_UPDATE_PUBKEY_BACKUP "" CACHE STRING "Clé publique Ed25519 de secours (hexadécimal) des mises à jour")
 set(AJP_RELEASE_REPO "Ta2b/ajp-releases" CACHE STRING "Dépôt GitHub des releases")
 target_compile_definitions(ajp_app PRIVATE AJP_VERSION="${PROJECT_VERSION}" AJP_RELEASE_REPO="${AJP_RELEASE_REPO}"
-                           AJP_UPDATE_PUBKEY="${AJP_UPDATE_PUBKEY}")
+                           AJP_UPDATE_PUBKEY="${AJP_UPDATE_PUBKEY}"
+                           AJP_UPDATE_PUBKEY_BACKUP="${AJP_UPDATE_PUBKEY_BACKUP}")
 
 # ajp : l'exécutable. Les backends TensorRT, MIGraphX, OpenVINO, Core ML et Vulkan se cherchent à côté de lui, puis dans
 # l'arbre de construction quand ils y sont construits (TensorRT : AJP_WITH_CUDA).

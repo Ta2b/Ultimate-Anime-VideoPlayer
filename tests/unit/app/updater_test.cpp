@@ -1,5 +1,6 @@
 #include "app/play/updater.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -217,7 +218,7 @@ TEST_CASE("mises à jour : signature fausse, rien d'autre n'est téléchargé", 
     return {};
   };
   const auto checked = check_for_update("stable", std::stop_token{}, fake,
-                                        "c438afee757ea9095f5e9d56380da968bfca8af4ff272c4773b51808bca6ce2d");
+                                        {"c438afee757ea9095f5e9d56380da968bfca8af4ff272c4773b51808bca6ce2d"});
   REQUIRE_FALSE(checked);
   CHECK(checked.error().code == ajp::RefusalCode::HashMismatch);
   REQUIRE(asked.size() == 2);  // le manifeste et sa signature, jamais une archive
@@ -259,8 +260,10 @@ TEST_CASE("mises à jour : vérifier, préparer, relancer, appliquer", "[updater
       .data = root / "data", .install = root / "install", .executable = root / "install" / "ajp"};
   write(paths.executable, "ancien");
 
+  // La clé de test vient en second, comme une clé de secours : le manifeste qu'elle signe est cru aussi.
   const auto checked = check_for_update("stable", std::stop_token{}, fake,
-                                        "e1a95bd8c0582a15d671a96fef74c36952d67ee243b4e5570ab44bd22015b18c");
+                                        {"c438afee757ea9095f5e9d56380da968bfca8af4ff272c4773b51808bca6ce2d",
+                                         "e1a95bd8c0582a15d671a96fef74c36952d67ee243b4e5570ab44bd22015b18c"});
   REQUIRE(checked);
   REQUIRE(checked->newer);
   const auto file = download_update(paths, *checked->newer, std::stop_token{}, fake);
@@ -277,3 +280,14 @@ TEST_CASE("mises à jour : vérifier, préparer, relancer, appliquer", "[updater
   fs::remove_all(root);
 }
 #endif
+
+TEST_CASE("mises à jour : une clé révoquée n'est plus crue", "[updater]") {
+  const std::vector<std::string> keys = update_public_keys({});
+  REQUIRE_FALSE(keys.empty());
+  const std::vector<std::string> left = update_public_keys({keys.front()});
+  CHECK(std::ranges::find(left, keys.front()) == left.end());
+  // Gardée dans update.toml d'un lancement à l'autre.
+  const auto state = parse_update_state(format_update_state(UpdateState{.revoked_keys = {keys.front()}}));
+  REQUIRE(state);
+  CHECK(state->revoked_keys == std::vector<std::string>{keys.front()});
+}
