@@ -7,10 +7,10 @@
 
 namespace ajp::subs {
 
-// UTF-8 tel quel (BOM retiré) ; UTF-16 reconnu à son BOM (little ou big endian) ; sinon, un texte
-// qui n'est pas de l'UTF-8 valide est lu comme du Windows-1252, l'encodage hérité le plus courant
-// des SRT d'Europe de l'Ouest. Les encodages asiatiques (Shift-JIS, GBK…) ne sont pas reconnus :
-// ils passent par le repli et donnent du texte illisible, sans refus.
-std::string to_utf8(std::string_view bytes);
+// UTF-8 tel quel (BOM retiré) ; UTF-16 reconnu à son BOM (little ou big endian). Sinon (P3.74), un
+// encodage hérité : celui que dit `hint` (la langue ou l'encodage du nom de fichier : « ja », « chs »,
+// « cp1251 »…), à défaut celui que suggère la forme des octets (Shift-JIS, GBK, Big5, CP1251), décodé par
+// le système ; le repli reste le Windows-1252 des SRT d'Europe de l'Ouest.
+std::string to_utf8(std::string_view bytes, std::string_view hint = {});
 
 }  // namespace ajp::subs

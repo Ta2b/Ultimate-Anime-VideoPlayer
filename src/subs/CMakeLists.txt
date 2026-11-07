@@ -6,3 +6,8 @@ ajp_add_module(subs
     subs_thread.cpp subs_worker.cpp subtitle_renderer.cpp subtitle_track.cpp text_encoding.cpp vsfilter_color.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::dep::ass ajp::core_log)
+# Les encodages hérités des sous-titres externes (P3.74) : iconv hors de Windows (dans la libc sous Linux).
+if(NOT WIN32)
+  find_package(Iconv REQUIRED)
+  target_link_libraries(ajp_subs PRIVATE Iconv::Iconv)
+endif()
