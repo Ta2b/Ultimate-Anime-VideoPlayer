@@ -5,7 +5,7 @@
 > LUT de contraste et d'éclats, `look_contrast`, `look_highlight`). Les clés `look` et `look_mix` de
 > `play.toml` sont encore écrites mais le grade anime ne les lit plus (commentaire de `look_contrast`,
 > `settings.h`) ; `look_layers` reste lisible à la main. La mécanique décrite plus bas (looks maison,
-> 55 LUT d'HDR, dossier `luts`) reste celle du code de `src/render/looks.*`.
+> dossier `luts`) reste celle du code de `src/render/looks.*`. Seules les quatre LUT du grade anime sont livrées.
 
 Un look est une LUT et son **intensité** (0 à 100 %), lus dans `play.toml` (`look`, `look_mix`, `look_layers`) ; le menu ne les règle plus. Le look passe après le grade
 (contraste, éclats, couleurs…) et avant le vrai noir OLED ; il agit sur toutes les routes (HDR,
@@ -34,7 +34,8 @@ couleurs d'une image d'anime n'atteignent presque jamais cette zone ; la correct
 ## Tes propres LUT
 Dépose des fichiers `.cube` dans le dossier `luts` des données du lecteur (Linux : `~/.local/share/ajp/ajp/luts`, à côté de `play.toml` ; le lecteur le crée à la première lecture).
 
-Le lecteur livre aussi les 55 LUT d'HDR de `data/luts/` dans un dossier `luts/` à côté de lui (Contents/Resources dans AJP.app), lu après celui de l'utilisateur : un fichier du même nom dans le dossier de l'utilisateur prend le pas.
+Le lecteur livre aussi les quatre LUT d'HDR du grade anime (`data/luts/` : la LUT de base, `HDR-contrast-Enhancement-L`,
+`Highlight-Enhancement-L`, `skin fix`) dans un dossier `luts/` à côté de lui (Contents/Resources dans AJP.app), lu après celui de l'utilisateur : un fichier du même nom dans le dossier de l'utilisateur prend le pas.
 Un nom de ces dossiers se donne dans `look_layers` ; le menu ne les liste plus.
 - Format : LUT 3D, `LUT_3D_SIZE` de 17 à 65, `DOMAIN_MIN`/`DOMAIN_MAX` et `LUT_3D_INPUT_RANGE` lus ; les LUT 1D sont
   refusées ; un fichier illisible est refusé avec une ligne de journal « look : … ».
@@ -71,18 +72,9 @@ par écran, apprentissage des corrections) est retiré : le grade anime guidé (
 luminosité plan par plan. Les clés `adaptive*`, `vibrance*`, `guard`, `expand`, `gamut_p3` de `[grade]` et
 `contrast`, `saturation`, `middle_gray`, `display_grades` de `[hdr]` sont ignorées à la lecture de `play.toml`.
 
-## La pile par défaut en une seule LUT (04/11/2026)
+## La pile par défaut en une seule LUT (retirée)
 
-La pile de LUT de référence (la LUT de base `HDR grading base ver.9.0`, puis `HDR-contrast-Enhancement-L` ×7,
-`Highlight-Enhancement-L` à 100 % et à 50 %, `skin fix` ; les emplacements à intensité 0 écartés) est cuite en une
-seule LUT, `HDR pile unique 65 point.cube` (65³ points, PQ BT.2020), qui devient le look par défaut ; la liste des
-LUT suivantes est vide par défaut (`look_layers` peut toujours en ajouter). Une pile choisie à la main dans un
-`play.toml` existant n'est pas touchée.
-
-    python3 -I tools/look/bake_stack.py --luts data/luts --out "data/luts/HDR pile unique 65 point.cube" \
-      --play-toml play.toml --check
-
-Le script refait la lecture du lecteur (interpolation trilinéaire, mélange `c + intensité × (lut(c) − c)`, entrées noires
-d'un gamut sans usage remplacées par leurs voisins). **Ce n'est pas identique à la pile d'origine** : l'échantillonnage
-à 65 points d'une pile très non linéaire donne, sur des images d'épisode, un écart moyen d'environ 1 code 10 bits (p99
-de 3 à 5 codes, maximum d'environ 11 sur les couleurs les plus saturées). `--check` en donne les chiffres.
+`HDR pile unique 65 point.cube`, la pile de référence cuite en une LUT par `tools/look/bake_stack.py`, n'est plus
+livrée : le grade anime recompose la pile à partir des quatre LUT selon ses deux curseurs
+(`anime_look`, `src/app/play/look_catalog.cpp`). Les 51 autres LUT du pack, que rien ne chargeait, sont retirées
+aussi ; un fichier déposé à la main dans le dossier `luts` reste lisible par `look_layers`.
