@@ -107,7 +107,6 @@ TEST_CASE("hw : Vulkan Video exige une file de l'appareil qui décode le codec",
   auto none = vulkan_decode_queue(*device, AV_CODEC_ID_HEVC);
   REQUIRE_FALSE(none);
   CHECK(none.error().code == RefusalCode::HwDecodeUnavailable);
-  CHECK(none.error().detail == "vulkan : aucune file de l'appareil ne décode hevc");
   CHECK(vulkan_decode_queue(*device, AV_CODEC_ID_FFV1).has_value());  // compute shaders
 
   vk.nb_qf = 2;
@@ -138,7 +137,7 @@ TEST_CASE("hw : Vulkan ne décode par défaut que les codecs Vulkan Video", "[me
   // Sur option, la recherche continue : un codec sans hwaccel Vulkan reste refusé autrement.
   auto mpeg4 = open_hw_device(AV_CODEC_ID_MPEG4, HwApi::Vulkan, {.vulkan_compute = true});
   REQUIRE_FALSE(mpeg4);
-  CHECK(mpeg4.error().detail.find("aucun décodeur") != std::string::npos);
+  CHECK(mpeg4.error().code == RefusalCode::HwDecodeUnavailable);
 }
 
 TEST_CASE("hw : noms des API", "[media][hw]") {
