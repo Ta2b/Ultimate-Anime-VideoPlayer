@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/ed25519.h"
+
 using namespace ajp::app::play;
 namespace fs = std::filesystem;
 
@@ -214,3 +216,57 @@ TEST_CASE("mises à jour : signature fausse, rien d'autre n'est téléchargé", 
   REQUIRE(asked.size() == 2);  // le manifeste et sa signature, jamais une archive
   CHECK(asked[1].ends_with("manifest.toml.sig"));
 }
+
+#if defined(__linux__)
+// De bout en bout, comme le lecteur : vérifier (manifeste signé par une clé de test), préparer (archive
+// téléchargée et vérifiée), relancer (l'état écrit puis relu), appliquer.
+TEST_CASE("mises à jour : vérifier, préparer, relancer, appliquer", "[updater]") {
+  const std::string manifest =
+      "version = \"99.0.0\"\nchannel = \"stable\"\ndate = \"2026-11-07\"\nexpires = \"2099-12-31\"\n"
+      "[linux-x64]\nurl = \"https://example.invalid/ajp-linux-x64.tar.gz\"\n"
+      "sha256 = \"6ec20ccae9a53cf2b47c765c124b7de6bdaed3b7f8a438381501cbde525b9638\"\nsize = 138\n";
+  // tar.gz de ajp-linux-x64/ajp (« nouveau »), écrit par tar --sort=name --mtime=2026-01-01 | gzip -n.
+  const auto archive = from_hex(
+      "1f8b0800000000000203edd13b0ec2301000d13d8a2f106127bbf6795c5080a280128c727c4c3a52d01909655eb39f76f2f5de"
+      "8d97a9"
+      "acdd1af5244df82a996db3dacf6d0f167a1b06d5f73ff83e2671263f5096479e9d9383ca1ffdebd5a87f54fdd23fedfba718c4"
+      "79fa37"
+      "37ddcaf39c8b00000000000000000000000000f83f2f45882f0700280000");
+  REQUIRE(archive);
+  const UpdateFetch fake = [&](std::string_view url, const fs::path& file, int,
+                               const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+    if (url.ends_with(".sig"))
+      write(file,
+            "722f81d4e2982752f0d8a6d65437ce8e86e1ab86e9b775285c9d650beae012a5e2c94162d4877cd76f9362f6fa7ffef8"
+            "d0434"
+            "25e45b5d334daee5fde78258106\n");
+    else if (url.ends_with(".tar.gz"))
+      write(file, std::string(archive->begin(), archive->end()));
+    else
+      write(file, manifest);
+    return {};
+  };
+  const fs::path root = fs::temp_directory_path() / "ajp-updater-e2e";
+  fs::remove_all(root);
+  const UpdatePaths paths{
+      .data = root / "data", .install = root / "install", .executable = root / "install" / "ajp"};
+  write(paths.executable, "ancien");
+
+  const auto checked = check_for_update("stable", std::stop_token{}, fake,
+                                        "e1a95bd8c0582a15d671a96fef74c36952d67ee243b4e5570ab44bd22015b18c");
+  REQUIRE(checked);
+  REQUIRE(checked->newer);
+  const auto file = download_update(paths, *checked->newer, std::stop_token{}, fake);
+  REQUIRE(file);
+  UpdateState prepared{.staged_version = "99.0.0", .staged_file = file->string()};
+  prepared.staged_sha256 = checked->newer->linux_x64->sha256;
+  prepared.staged_size = checked->newer->linux_x64->size;
+  auto relaunched = parse_update_state(format_update_state(prepared));  // le lecteur repart
+  REQUIRE(relaunched);
+  const auto applied = apply_staged_update(paths, *relaunched);
+  REQUIRE(applied);
+  CHECK(read(paths.executable) == "nouveau");
+  CHECK(relaunched->unconfirmed_version == "99.0.0");
+  fs::remove_all(root);
+}
+#endif
