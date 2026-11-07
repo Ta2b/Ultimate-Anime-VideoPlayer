@@ -158,16 +158,11 @@ TEST_CASE("Volume : bornes, pas réguliers, muet", "[app][controls]") {
   CHECK_FALSE(controls.muted());
 }
 
-TEST_CASE("Clic sur l'image : pause après le délai, double clic plein écran sans pause", "[app][controls]") {
-  Controls controls;
-  CHECK_FALSE(controls.click(0, 1));
-  CHECK_FALSE(controls.pending_click(kDoubleClickUs - 1));
-  CHECK(controls.pending_click(kDoubleClickUs) == Controls::VideoClick::TogglePause);
-  CHECK_FALSE(controls.pending_click(kDoubleClickUs + 1));  // une seule fois
-
-  CHECK_FALSE(controls.click(kS, 1));
-  CHECK(controls.click(kS + 200 * kMs, 2) == Controls::VideoClick::ToggleFullscreen);
-  CHECK_FALSE(controls.pending_click(kS + kDoubleClickUs * 2));  // le simple clic n'a pas eu lieu
+TEST_CASE("Clic sur l'image : pause tout de suite, le double clic l'annule et passe en plein écran (P3.77)",
+          "[app][controls]") {
+  CHECK(Controls::click(1) == Controls::VideoClick::TogglePause);
+  CHECK(Controls::click(2) == Controls::VideoClick::FullscreenUndoPause);
+  CHECK_FALSE(Controls::click(3));
 }
 
 TEST_CASE("Message bref : visible puis effacé en fondu", "[app][controls]") {

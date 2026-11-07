@@ -31,7 +31,6 @@ inline constexpr std::int64_t kUiFrameUs = 16'000;         // interface recompos
 inline constexpr std::int64_t kPositionStepUs = 100'000;   // la position affichée avance par pas de 0,1 s
 inline constexpr float kMaxVolume = 1.5F;                  // 150 % ; cmd::SetVolume accepte jusqu'à 2
 inline constexpr float kVolumeStep = 0.05F;
-inline constexpr std::int64_t kDoubleClickUs = 300'000;  // simple clic sur l'image : attend ce délai
 
 // Ce que la session montre, lu par le dessin à chaque image de l'interface.
 struct ControlsView {
@@ -80,11 +79,11 @@ class Controls {
   cmd::SetVolume toggle_mute();
   cmd::SetVolume volume_command() const { return {.gain = muted_ ? 0.0F : volume_}; }
 
-  // Clic sur l'image, hors de la barre : le double clic bascule le plein écran, le simple clic
-  // met en pause (ou reprend) après kDoubleClickUs sans second clic (pending_click le rend).
-  enum class VideoClick : std::uint8_t { TogglePause, ToggleFullscreen };
-  std::optional<VideoClick> click(std::int64_t now_us, int clicks);
-  std::optional<VideoClick> pending_click(std::int64_t now_us);
+  // Clic sur l'image, hors de la barre (P3.77) : le simple clic met en pause (ou reprend) tout de suite ; le
+  // second d'un double clic (au seuil du système, compté par SDL) bascule le plein écran et annule la pause
+  // du premier. Au-delà, rien.
+  enum class VideoClick : std::uint8_t { TogglePause, FullscreenUndoPause };
+  static std::optional<VideoClick> click(int clicks);
 
   // Barre de progression. Clic : la tête suit la souris (press) ; glissement : seeks au point
   // clé, au plus toutes les kDragSeekUs et seulement si la cible a changé ; au lâcher, un seek
@@ -128,7 +127,6 @@ class Controls {
   bool muted_ = false;
   bool dragging_ = false;
   double drag_fraction_ = 0.0;
-  std::optional<std::int64_t> click_at_;  // simple clic en attente d'un éventuel second
   std::optional<std::int64_t> drag_seek_at_;
   std::int64_t drag_target_us_ = -1;
   std::string toast_;

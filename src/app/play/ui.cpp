@@ -462,7 +462,6 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
 }
 
 UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vector<Input>& actions) {
-  if (controls_.pending_click(now_us)) actions.emplace_back(Command{cmd::TogglePause{}});
   const bool hide_cursor = controls_.cursor_hidden(now_us, view.paused);
   if (hide_cursor != cursor_hidden_) {
     if (hide_cursor) {
@@ -496,8 +495,9 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     if (captured) continue;
     if (click.button == ImGuiMouseButton_Right) {
       actions.emplace_back(Command{cmd::TogglePause{}});
-    } else if (controls_.click(click.at_us, click.count)) {
-      actions.emplace_back(ToggleFullscreen{});
+    } else if (const auto what = Controls::click(click.count)) {
+      actions.emplace_back(Command{cmd::TogglePause{}});  // le double clic rend l'état d'avant le premier
+      if (*what == Controls::VideoClick::FullscreenUndoPause) actions.emplace_back(ToggleFullscreen{});
     }
   }
   clicks_.clear();
