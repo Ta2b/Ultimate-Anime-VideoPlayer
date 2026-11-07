@@ -2,16 +2,21 @@
 # personnel : notre module (le kit CUDA compile sans carte) et trtexec, sorti de l'archive Linux de
 # TensorRT à l'empreinte épinglée (tools/deps/linux-tensorrt.sh --trtexec). Rien de NVIDIA d'autre
 # dans l'archive (package-linux.sh, lien direct). Le paquet part en artefact avec son empreinte, et
-# se compare à celui de la release « trt-<empreinte> » s'il existe. Il n'est publié nulle part : la
-# publication reste à tools/release/attach-nvidia-linux.sh, sur demande. Les tests sur GPU restent
-# au poste NVIDIA (P7.3).
+# se compare à celui de la release « trt-<empreinte> » s'il existe. Avec « publier », il est joint à
+# cette release (attach-nvidia-linux.sh --publish, secret AJP_RELEASE_TOKEN), que Release Linux lit pour
+# toutes les étiquettes de la même empreinte. Les tests sur GPU restent au poste NVIDIA (P7.3).
 name: Paquet TensorRT Linux
 
 on:
   workflow_dispatch:
+    inputs:
+      publier:
+        description: Joindre le paquet à la release trt-<empreinte> si elle ne l'a pas encore
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
@@ -45,10 +50,12 @@ jobs:
           AJP_WITH_CUDA: "ON"
           AJP_WITHOUT_MODELS: "1"
           AJP_PACKAGE_NVIDIA: "1"
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
           export LD_LIBRARY_PATH="$AJP_TENSORRT_ROOT/lib:${LD_LIBRARY_PATH:-}"
-          tools/release/package-linux.sh "$RUNNER_TEMP/out"
           fp="$(tools/release/trt-fingerprint.sh)"
+          # Les liens de l'index nomment la release fixe de l'empreinte, celle que lit Release Linux.
+          AJP_RELEASE_TAG="trt-$fp" tools/release/package-linux.sh "$RUNNER_TEMP/out"
           archive="$RUNNER_TEMP/out/ajp-engine-tensorrt-linux-x64.tar.gz"
           sha="$(sha256sum "$archive" | cut -d' ' -f1)"
           tar -tzf "$archive" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -58,15 +65,23 @@ jobs:
       - name: Comparaison avec la release trt-${{ env.FP }}
         env:
           GH_TOKEN: ${{ github.token }}
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || 'Ta2b/ajp-releases' }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
           if gh release download "trt-$FP" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP/rel" 2>/dev/null; then
             published="$(grep -A4 'id = "tensorrt"' "$RUNNER_TEMP/rel/engines-nvidia.lock" | sed -n 's/^sha256 = "\(.*\)"/\1/p' | head -1)"
             echo "publiée : $published ; CI : $SHA" | tee -a "$GITHUB_STEP_SUMMARY"
             [ "$published" = "$SHA" ] || echo "::warning::archive différente de la release trt-$FP (construction non reproductible, ou autre trtexec)"
+            echo "PUBLISHED=1" >>"$GITHUB_ENV"
           else
             echo "pas de release trt-$FP : rien à comparer" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Publication dans trt-${{ env.FP }}
+        if: inputs.publier && env.PUBLISHED != '1'
+        env:
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+        run: |
+          tools/release/attach-nvidia-linux.sh "$RUNNER_TEMP/out" "trt-$FP" --publish | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ajp-engine-tensorrt-linux-x64-${{ env.FP }}
