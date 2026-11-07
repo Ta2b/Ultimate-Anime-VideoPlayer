@@ -321,14 +321,14 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const SkipCredits&) {
             const ControlsView view = session.view();
-            std::int64_t target = 0;
-            if (const auto credits = credits_skip_target(view.chapters, view.position_us, view.duration_us)) {
-              target = *credits;
-              controls.notify(i18n::ui_tr("Credits skipped"), now_us);
-            } else {
-              target = view.position_us + kSkipFallbackUs;
-              controls.notify(i18n::ui_tr("Skipped 85 s"), now_us);
+            // P3.82 : seulement dans un chapitre de générique ; plus de saut de 85 s à l'aveugle.
+            const auto credits = credits_skip_target(view.chapters, view.position_us, view.duration_us);
+            if (!credits) {
+              controls.notify(i18n::ui_tr("No credits chapter here"), now_us);
+              return;
             }
+            std::int64_t target = *credits;
+            controls.notify(i18n::ui_tr("Credits skipped"), now_us);
             if (view.duration_us > 0) target = std::min(target, view.duration_us);
             session.command(Command{cmd::Seek{.target_us = target}});
             controls.activity(now_us);

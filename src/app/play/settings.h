@@ -263,7 +263,7 @@ struct PlaySettings {
   // La carte graphique de la lecture (P3.16, portables à deux cartes) : son nom Vulkan ; vide, le choix de
   // libplacebo (la carte dédiée d'abord). Vaut au prochain lancement.
   std::string gpu;
-  bool autoplay_next = false;
+  bool autoplay_next = true;  // l'épisode suivant du dossier à la fin, comme le README le promet (P3.84)
   bool default_player_dismissed =
       false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
   // Ancienne case « Préparer en tâche de fond » : sans effet depuis que le cran Performance de SPAN se

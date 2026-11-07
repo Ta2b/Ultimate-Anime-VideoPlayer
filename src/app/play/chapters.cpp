@@ -47,16 +47,22 @@ bool is_credits_chapter(const ChapterMark& chapter) {
   }
   // « Avant-générique », « Pre-credits », « Preview » : ce qui précède un générique n'en est pas un.
   constexpr std::string_view kBefore[] = {"avant", "pre", "preview", "recap"};
-  if (std::ranges::any_of(words, [&](std::string_view word) {
-        return std::ranges::find(kBefore, word) != std::end(kBefore);
-      }))
+  // Les titres japonais (P3.82) : アバン (avant-générique) et 予告 (aperçu) n'en sont pas ; オープニング,
+  // エンディング et スタッフ (générique des crédits) en sont.
+  constexpr std::string_view kBeforeJa[] = {"アバン", "予告"};
+  constexpr std::string_view kCreditsJa[] = {"オープニング", "エンディング", "スタッフ"};
+  const auto contains = [&](std::string_view part) { return title.contains(part); };
+  if (std::ranges::any_of(
+          words,
+          [&](std::string_view word) { return std::ranges::find(kBefore, word) != std::end(kBefore); }) ||
+      std::ranges::any_of(kBeforeJa, contains))
     return false;
   constexpr std::string_view kWords[] = {"op",    "ed",      "opening", "ending",   "intro",
                                          "outro", "credits", "credit",  "generique"};
   return std::ranges::any_of(
              words,
              [&](std::string_view word) { return std::ranges::find(kWords, word) != std::end(kWords); }) ||
-         title.contains("générique");
+         title.contains("générique") || std::ranges::any_of(kCreditsJa, contains);
 }
 
 std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> chapters,

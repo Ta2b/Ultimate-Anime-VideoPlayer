@@ -142,6 +142,7 @@ TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichie
   CHECK(PlaySettings{}.gmfss_precision ==
         PrecisionTier::Balanced);  // GMFSS reste en FP16 : son FP8 dégrade les gros mouvements
   CHECK(PlaySettings{}.span_precision == PrecisionTier::Balanced);
+  CHECK(PlaySettings{}.autoplay_next);  // P3.84
   CHECK(PlaySettings{}.motion_precision == PrecisionTier::Balanced);
   CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
   CHECK(warp_after_span(SpanOrder::Auto, 1440));
