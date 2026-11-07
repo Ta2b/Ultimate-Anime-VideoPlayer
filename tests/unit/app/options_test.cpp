@@ -3,6 +3,8 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <numeric>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -291,4 +293,32 @@ TEST_CASE("Mesures : médiane, écart type, format", "[app][stats]") {
 }
 
 }  // namespace
+}  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+// P2.35 : chaque option que l'aide cite, l'analyseur la connaît (seule ou avec une valeur).
+TEST_CASE("ajp play : l'aide ne cite aucune option inconnue de l'analyseur", "[app][options]") {
+  const std::string usage = play_usage();
+  std::vector<std::string> unknown;
+  for (std::size_t at = usage.find("--"); at != std::string::npos; at = usage.find("--", at + 2)) {
+    std::size_t end = at + 2;
+    while (end < usage.size() && ((usage[end] >= 'a' && usage[end] <= 'z') ||
+                                  (usage[end] >= '0' && usage[end] <= '9') || usage[end] == '-'))
+      ++end;
+    const std::string name = usage.substr(at, end - at);
+    if (name.size() <= 2) continue;
+    const auto known = [](const std::expected<PlayOptions, Refusal>& parsed) {
+      return parsed || !parsed.error().detail.starts_with("unknown option");
+    };
+    const std::string valued = name + "=1";
+    if (!known(parse_play_options(std::vector<std::string_view>{name, "video.mkv"})) &&
+        !known(parse_play_options(std::vector<std::string_view>{valued, "video.mkv"})))
+      unknown.push_back(name);
+  }
+  INFO(std::accumulate(unknown.begin(), unknown.end(), std::string(),
+                       [](std::string a, const std::string& b) { return std::move(a) + " " + b; }));
+  CHECK(unknown.empty());
+}
+
 }  // namespace ajp::app::play

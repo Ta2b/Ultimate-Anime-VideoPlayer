@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cstdio>
+#include <charconv>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -60,10 +60,15 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir) {
   if (key.starts_with(render::kBuiltinPrefix)) return render::builtin_look(key);
   if (key.starts_with(kAnimeLookPrefix)) {
+    // « contraste:hautes lumières », deux entiers lus par from_chars (P2.35).
     int contrast = 0;
     int highlight = 0;
-    if (std::sscanf(key.c_str() + kAnimeLookPrefix.size(), "%d:%d", &contrast, &highlight) != 2)
-      return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " illisible"});
+    const std::string_view values = std::string_view(key).substr(kAnimeLookPrefix.size());
+    const char* last = values.data() + values.size();
+    const auto first = std::from_chars(values.data(), last, contrast);
+    const bool read = first.ec == std::errc{} && first.ptr != last && *first.ptr == ':' &&
+                      std::from_chars(first.ptr + 1, last, highlight).ec == std::errc{};
+    if (!read) return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " illisible"});
     return anime_look(contrast, highlight, luts_dir);
   }
   if (key.empty() || key.find('/') != std::string::npos || key.find('\\') != std::string::npos)

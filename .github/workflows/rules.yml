@@ -1,6 +1,6 @@
 name: Règles
 
-# Les règles du dépôt, sans construction : format, taille des fichiers, aucun getenv, et chaque
+# Les règles du dépôt, sans construction : format, taille des fichiers, aucun getenv ni atoi, et chaque
 # shader GLSL compilé en SPIR-V. Appelées par ci.yml (chaque poussée) et par release-linux.yml
 # (avant tout paquet), pour que rien ne se livre sans les avoir passées.
 on:
@@ -21,6 +21,8 @@ jobs:
         run: tools/ci/check-pinned-actions.sh
       - name: Aucun getenv
         run: tools/ci/check-no-getenv.sh
+      - name: Aucun atoi ni sscanf
+        run: tools/ci/check-no-atoi.sh
       - name: Shaders
         env:
           CXX: g++-13

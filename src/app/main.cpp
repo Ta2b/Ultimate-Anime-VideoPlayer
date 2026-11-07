@@ -14,6 +14,7 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
+#include <charconv>
 #include <chrono>
 #include <tuple>
 #ifdef _WIN32
@@ -31,6 +32,7 @@ extern "C" {
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "app/play/auto_bench_run.h"
@@ -235,7 +237,14 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   bool silent = true;
   for (const std::string_view arg : args) {
     if (arg.starts_with("--display-height=")) {
-      display_height = std::atoi(std::string(arg.substr(17)).c_str());
+      // from_chars et une plage (P2.35) : « abc » ou « 99999 » ne donnent plus 0 ou une hauteur absurde.
+      const std::string_view text = arg.substr(17);
+      const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), display_height);
+      if (error != std::errc{} || end != text.data() + text.size() || display_height < 240 ||
+          display_height > 4320) {
+        std::fputs("ajp calibrate : --display-height=N, N de 240 à 4320\n", stderr);
+        return 2;
+      }
     } else if (arg == "--visible") {
       silent = false;
     } else {
