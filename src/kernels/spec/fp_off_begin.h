@@ -3,7 +3,9 @@
 // imposer -ffp-contract=off au reste du lecteur (P5.22). Se referme par fp_off_end.h. Pas de garde :
 // chaque en-tête de spec/ l'inclut une fois. MSVC ne contracte pas en /fp:precise.
 // NOLINTBEGIN(llvm-header-guard)
-#if defined(__clang__)
+#if defined(__CUDACC__)
+// nvcc : les ports CUDA suivent leurs propres réglages.
+#elif defined(__clang__)
 #pragma float_control(push)
 #pragma clang fp contract(off)
 #elif defined(__GNUC__)

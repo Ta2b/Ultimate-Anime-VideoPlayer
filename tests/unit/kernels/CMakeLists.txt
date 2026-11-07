@@ -19,7 +19,7 @@ ajp_add_unit_tests(kernels
     warp_test.cpp)
 
 # Les tests évaluent les formules constexpr de spec.h avec les arrondis de la référence :
-# ajp::kernels leur transmet -ffp-contract=off. Les ports FMA simulés appellent std::fma.
+# ajp_add_unit_tests leur donne -ffp-contract=off. Les ports FMA simulés appellent std::fma.
 
 # L'en-tête GLSL généré se compile avec glslc, trouvé quand le lecteur est construit.
 if(AJP_GLSLC)
