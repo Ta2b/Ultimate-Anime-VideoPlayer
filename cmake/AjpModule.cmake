@@ -35,6 +35,15 @@ function(ajp_add_module name)
     target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/src")
     target_link_libraries(${target} PUBLIC ${ARG_DEPS} PRIVATE ${ARG_PRIVATE_DEPS})
     ajp_set_warnings(${target})
+    if(AJP_PCH)
+      target_precompile_headers(${target} PRIVATE
+        <algorithm> <array> <cstdint> <expected> <filesystem> <format> <functional> <map> <memory>
+        <mutex> <optional> <span> <string> <string_view> <utility> <variant> <vector>)
+      # Un module qui journalise lit spdlog par core/log.h : son en-tête le plus lourd.
+      if("ajp::core_log" IN_LIST ARG_DEPS OR "ajp::core_log" IN_LIST ARG_PRIVATE_DEPS)
+        target_precompile_headers(${target} PRIVATE <spdlog/logger.h>)
+      endif()
+    endif()
   else()
     add_library(${target} INTERFACE)
     target_include_directories(${target} INTERFACE "${PROJECT_SOURCE_DIR}/src")

@@ -40,6 +40,9 @@ cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```
 
+Pour reconstruire plus vite en local : `-DAJP_PCH=ON` (en-têtes précompilés, environ un quart de moins sur un module
+qui journalise ; la CI les laisse éteints pour ccache et pour qu'une inclusion oubliée reste une erreur).
+
 `linux-prefix` est en Debug : ses temps ne valent rien. Un banc ou une mesure se fait sur le binaire livré,
 `linux-release` (Linux), `windows-release`, `macos-release`.
 

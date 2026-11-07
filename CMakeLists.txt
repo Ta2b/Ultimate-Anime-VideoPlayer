@@ -16,6 +16,9 @@ option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels 
 # Avertissements en erreurs : ON dans les préréglages de développement et de CI (base, prefix), OFF
 # par défaut, pour qu'un compilateur plus récent (avertissements nouveaux) construise encore.
 option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" OFF)
+# En-têtes précompilés (P5.25) : la bibliothèque standard la plus lue, par module. Pour les constructions
+# locales ; la CI les laisse éteints, pour que ccache serve et qu'une inclusion oubliée reste une erreur.
+option(AJP_PCH "En-têtes précompilés de la bibliothèque standard dans chaque module" OFF)
 option(AJP_TRANSITIVE_RPATH "RPATH valable pour les dépendances indirectes (préfixe Linux)" OFF)
 
 if(AJP_WITH_CUDA)
