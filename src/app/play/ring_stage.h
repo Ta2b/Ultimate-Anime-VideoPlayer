@@ -124,6 +124,7 @@ class RingStage : public VideoStage, public FrameSink {
   bool gap_ = false;                     // une sortie Same précède : la prochaine écrite porte uninterpolated
   std::vector<std::uint64_t> released_;  // dernière valeur rendue par slot (0 au premier tour)
   std::vector<bool> free_;
+  std::uint32_t next_slot_ = 0;  // le prochain slot essayé : les slots sont pris tour à tour
   std::uint32_t epoch_ = 0;
   bool failed_ = false;
   std::int64_t slot_wait_since_us_ = 0;  // l'image en tête attend un slot depuis cet instant ; 0 : non

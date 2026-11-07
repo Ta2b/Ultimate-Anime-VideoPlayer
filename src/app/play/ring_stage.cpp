@@ -162,9 +162,14 @@ void RingStage::emit(const ThreadReport& report) {
         ++front_done_;
         continue;
       }
-      std::uint32_t slot = 0;
-      while (slot < free_.size() && !free_[slot]) ++slot;
-      if (slot == free_.size()) {  // attend un SlotFree
+      // Tour à tour depuis le slot qui suit le dernier écrit : un slot rendu tôt n'est pas repris avant les
+      // autres, et l'ordre ne dépend plus de l'instant où main rend les siens.
+      const auto count = static_cast<std::uint32_t>(free_.size());
+      std::uint32_t slot = count;
+      for (std::uint32_t k = 0; k < count && slot == count; ++k) {
+        if (free_[(next_slot_ + k) % count]) slot = (next_slot_ + k) % count;
+      }
+      if (slot == count) {  // attend un SlotFree
         if (slot_wait_since_us_ == 0) slot_wait_since_us_ = host_now_us();
         return;
       }
@@ -189,6 +194,7 @@ void RingStage::emit(const ThreadReport& report) {
                            .submitted_us = submitted};
       gap_ = false;
       free_[slot] = false;
+      next_slot_ = (slot + 1) % count;
       released_[slot] = ready;  // le slot est écrit : sa prochaine attente part de ready + 1
       ++front_done_;
       if (!init_.ring->try_push(ring)) {
