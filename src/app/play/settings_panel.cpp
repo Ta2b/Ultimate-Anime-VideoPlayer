@@ -307,16 +307,17 @@ bool reset_page(PlaySettings& draft) {
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`. Trois
 // catégories (ADR 0012) : Vidéo, Audio et lecture, Général.
 constexpr std::array<SettingsPage, 10> kPages{{
-    {"Video", "Post-processing", false},  // niveau, agrandissement, interpolation
-    {"Video", "Colors", false},           // sortie HDR ou SDR (elle suit le système), grade anime
-    {"Video", "Display", false},          // filtre final, débandage ; OLED en avancé
-    {"Audio and playback", "Sound", false},
-    {"Audio and playback", "Playback", false},  // langues préférées, sous-titres, épisode suivant
-    {"General", "Application", false},          // langue, mises à jour, lecteur par défaut
-    {"General", "Engines", false},              // le moteur et l'état de ses modules
-    {"General", "Export", false},
-    {"General", "Statistics", false},
-    {"General", "About", false},  // la machine, l'assistant, tout réinitialiser
+    {Page::PostProcessing, "Video", "Post-processing", false},  // niveau, agrandissement, interpolation
+    {Page::Colors, "Video", "Colors", false},    // sortie HDR ou SDR (elle suit le système), grade anime
+    {Page::Display, "Video", "Display", false},  // filtre final, débandage ; OLED en avancé
+    {Page::Sound, "Audio and playback", "Sound", false},
+    {Page::Playback, "Audio and playback", "Playback",
+     false},                                               // langues préférées, sous-titres, épisode suivant
+    {Page::Application, "General", "Application", false},  // langue, mises à jour, lecteur par défaut
+    {Page::Engines, "General", "Engines", false},          // le moteur et l'état de ses modules
+    {Page::Export, "General", "Export", false},
+    {Page::Statistics, "General", "Statistics", false},
+    {Page::About, "General", "About", false},  // la machine, l'assistant, tout réinitialiser
 }};
 
 std::span<const SettingsPage> settings_pages() {
@@ -475,45 +476,66 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::BeginChild("##page", ImVec2(0, -footer));
     panel::begin_page();
     {
-      const std::string_view name = kPages[static_cast<std::size_t>(page_)].name;
-      if (name == "Post-processing") {
-        level_section(draft_, choices);
-        image_tab(draft_, choices);
-        sharpness_section(draft_);
-        fluidity_tab(draft_, choices);
-        if (advanced_) {
-          span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
-          // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a demandé.
-          if (!machine_) machine_ = std::make_unique<MachineNote>();
-          if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
-            result.reopen = draft_;
+      switch (kPages[static_cast<std::size_t>(page_)].id) {
+        case Page::PostProcessing: {
+          level_section(draft_, choices);
+          image_tab(draft_, choices);
+          sharpness_section(draft_);
+          fluidity_tab(draft_, choices);
+          if (advanced_) {
+            span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
+            // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
+            // demandé.
+            if (!machine_) machine_ = std::make_unique<MachineNote>();
+            if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
+              result.reopen = draft_;
+          }
+          break;
         }
-      } else if (name == "Colors") {
-        hdr_tab(draft_, choices);
-        grade_tab(draft_, choices, actions);
-      } else if (name == "Display") {
-        composition_section(draft_);
-        if (advanced_) oled_sections(draft_, choices);
-      } else if (name == "Sound") {
-        delay_held = sound_tab(draft_, choices);
-      } else if (name == "Playback") {
-        languages_tab(draft_);
-        subtitles_tab(draft_);
-        episodes_section(draft_);
-      } else if (name == "Application") {
-        language_section(draft_);
-        gpu_section(draft_, choices.gpus);
-        updates_page(draft_, choices.place, updates_);
-        default_player_page(choices.place, system_, choices.default_player_is_ajp);
-      } else if (name == "Engines") {
-        engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
-      } else if (name == "Export") {
-        export_tab(*export_, running, choices, actions);
-      } else if (name == "Statistics") {
-        stats_tab(draft_);
-      } else if (name == "About") {
-        about_page(choices, actions);
-        if (reset_page(draft_)) result.reopen = draft_;
+        case Page::Colors: {
+          hdr_tab(draft_, choices);
+          grade_tab(draft_, choices, actions);
+          break;
+        }
+        case Page::Display: {
+          composition_section(draft_);
+          if (advanced_) oled_sections(draft_, choices);
+          break;
+        }
+        case Page::Sound: {
+          delay_held = sound_tab(draft_, choices);
+          break;
+        }
+        case Page::Playback: {
+          languages_tab(draft_);
+          subtitles_tab(draft_);
+          episodes_section(draft_);
+          break;
+        }
+        case Page::Application: {
+          language_section(draft_);
+          gpu_section(draft_, choices.gpus);
+          updates_page(draft_, choices.place, updates_);
+          default_player_page(choices.place, system_, choices.default_player_is_ajp);
+          break;
+        }
+        case Page::Engines: {
+          engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
+          break;
+        }
+        case Page::Export: {
+          export_tab(*export_, running, choices, actions);
+          break;
+        }
+        case Page::Statistics: {
+          stats_tab(draft_);
+          break;
+        }
+        case Page::About: {
+          about_page(choices, actions);
+          if (reset_page(draft_)) result.reopen = draft_;
+          break;
+        }
       }
     }
     panel::end_page();

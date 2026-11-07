@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -96,9 +97,22 @@ struct SettingsChoices {
   std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
 };
 
-// Une page de l'arbre des réglages (settings_panel.cpp) : sa catégorie, son nom, et si elle n'est montrée
-// qu'avec la case « Réglages avancés ».
+// Une page de l'arbre des réglages (settings_panel.cpp) : ce qu'elle dessine, sa catégorie, son nom, et si
+// elle n'est montrée qu'avec la case « Réglages avancés ».
+enum class Page : std::uint8_t {
+  PostProcessing,
+  Colors,
+  Display,
+  Sound,
+  Playback,
+  Application,
+  Engines,
+  Export,
+  Statistics,
+  About
+};
 struct SettingsPage {
+  Page id;
   const char* category;
   const char* name;
   bool advanced;

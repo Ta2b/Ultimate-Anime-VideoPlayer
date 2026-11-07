@@ -39,6 +39,7 @@
 #include "app/play/gpu_profile_out.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/home_screen.h"
+#include "app/play/host_choices.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
@@ -217,21 +218,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   if (start_paused) session.command(cmd::Pause{});
-  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Évaluer ma machine » si elle est
-  // de cette carte et de ce pilote, sinon l'estimation.
-  std::optional<BenchResult> measured;
-  if (auto bench = load_bench(p.settings_path.parent_path() / "bench.toml")) measured = std::move(*bench);
-  const GpuFacts machine = gpu_facts(p.screen);
-  const Tier machine_tier = effective_tier(machine, measured);
-  const std::string bench_text =
-      measured && measured->gpu == machine.name && measured->driver == machine.driver
-          ? i18n::tr_format("Last optimization: {}", measured->date)
-          : std::string();
-  std::vector<SettingsChoices::AudioOut> audio_outputs;
-  for (const audio::AudioDevice& device : audio::playback_devices())
-    audio_outputs.push_back(
-        {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  const bool default_player_is_ajp = is_default_player(place_of(p.paths));
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   // Le mode Performance de SPAN : ce que le moteur annonce, et sinon pourquoi (moteur absent ou autre carte).
   const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
@@ -258,65 +244,51 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           : SpanPrepare{};
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
   p.ui.set_tracks((*pipeline)->tracks());
-  p.ui.set_settings(
-      settings,
-      SettingsChoices{
-          .luts_dir = p.paths.engines.parent_path() / "luts",
-          .models = c.model ? c.model->available : std::vector<std::string>{},
-          .default_model = c.model ? c.model->default_name : std::string(),
-          .source_width = video.width,
-          .source_height = video.height,
-          .source_fps = fps_of(video.frame_rate),
-          .source_rate = video.frame_rate,
-          .display_hz = display_period_us(out.window()) > 0
-                            ? 1e6 / static_cast<double>(display_period_us(out.window()))
-                            : 0.0,
-          .display_vrr = p.display && p.display->vrr.value_or(false),
-          .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
-          .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
-          .span_tiers = c.model
-                            ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine,
+  SettingsChoices choices{
+      .models = c.model ? c.model->available : std::vector<std::string>{},
+      .default_model = c.model ? c.model->default_name : std::string(),
+      .source_width = video.width,
+      .source_height = video.height,
+      .source_fps = fps_of(video.frame_rate),
+      .source_rate = video.frame_rate,
+      .display_hz = display_period_us(out.window()) > 0
+                        ? 1e6 / static_cast<double>(display_period_us(out.window()))
+                        : 0.0,
+      .display_vrr = p.display && p.display->vrr.value_or(false),
+      .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
+      .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
+      .span_tiers = c.model ? span_tiers(c.model->path, p.paths.engines.parent_path() / "modeles", fp8_engine,
                                          c.backend && c.backend->capabilities().span_fp8_cutlass)
                             : TierSupport{},
-          .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
-          .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
-          .distil_drba_available = c.drba_found,
-          .rife_loaded = rife_loaded,
-          .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
-          .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
-          .rife_folder = c.model_places.front().string(),
-          .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
-          .hdr_output = p.screen.hdr_output(),
-          .auto_peak = auto_peak,
-          .engines = engine_badges(p.paths.engines,
-                                   c.span_int8 ? c.span_int8->onnx
-                                   : c.model   ? c.model->path
-                                               : std::filesystem::path(),
-                                   work, c.rife || c.rife_motion ? c.rife_model : std::nullopt,
-                                   c.rife_motion ? c.geometry : c.image_geometry),
-          .chosen_engines = chosen_line(p.engines),
-          .switchable = installed_switchable(p.catalog, p.paths),
-          .engine_in_use = engine_of_library(p.library->path()),
-          .engine_note = fallback_note(p.engines, p.library->path()),
-          .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
-          .source_file = p.options.file,
-          .machine_tier = static_cast<int>(machine_tier),
-          .display_height = display_height(out.window()),
-          .calibrated =
-              calibrated_chain(p.settings_path.parent_path(), machine.name, display_height(out.window()))
-                  .has_value(),
-          .gpu_name = gpu_facts(p.screen).name,
-          .gpus = p.screen.device_names(),
-          .audio_outputs = audio_outputs,
-          .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),
-          .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),
-          .default_player_is_ajp = default_player_is_ajp,
-          .bench_text = bench_text,
-          .place = place_of(p.paths),
-          .span_prepare = span_prepare,
-          .fp8_reason = fp8_reason,
-          .span_job = p.span_job.note,
-          .settings_dir = p.settings_path.parent_path()});
+      .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
+      .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
+      .distil_drba_available = c.drba_found,
+      .rife_loaded = rife_loaded,
+      .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
+      .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
+      .rife_folder = c.model_places.front().string(),
+      .hdr_output = p.screen.hdr_output(),
+      .auto_peak = auto_peak,
+      .engines = engine_badges(p.paths.engines,
+                               c.span_int8 ? c.span_int8->onnx
+                               : c.model   ? c.model->path
+                                           : std::filesystem::path(),
+                               work, c.rife || c.rife_motion ? c.rife_model : std::nullopt,
+                               c.rife_motion ? c.geometry : c.image_geometry),
+      .chosen_engines = chosen_line(p.engines),
+      .engine_in_use = engine_of_library(p.library->path()),
+      .engine_note = fallback_note(p.engines, p.library->path()),
+      .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
+      .source_file = p.options.file,
+      .display_height = display_height(out.window()),
+      .calibrated = calibrated_chain(p.settings_path.parent_path(), gpu_facts(p.screen).name,
+                                     display_height(out.window()))
+                        .has_value(),
+      .span_prepare = span_prepare,
+      .fp8_reason = fp8_reason,
+      .span_job = p.span_job.note};
+  fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
+  p.ui.set_settings(settings, choices);
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
