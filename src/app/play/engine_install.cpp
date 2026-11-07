@@ -16,10 +16,9 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/engine_tools.h"
 #include "app/play/i18n.h"
 #include "core/dir_entries.h"
-
-#include "app/play/engine_tools.h"
 #include "core/inflate.h"
 #include "core/log.h"
 
