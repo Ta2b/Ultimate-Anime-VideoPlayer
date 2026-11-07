@@ -1,6 +1,7 @@
 #include "app/play/default_player.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -11,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/data_dirs.h"
+#include "app/play/episodes.h"
 #include "app/play/player.h"
 #include "french_ui.h"
 
@@ -217,4 +219,20 @@ TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier l
   CHECK(ajp::app::play::local_data(roaming) == roaming);  // hors Windows, le même dossier
 #endif
   fs::remove_all(root);
+}
+
+TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[episodes]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-growing";
+  std::filesystem::create_directories(dir);
+  const std::filesystem::path file = dir / "ep01.mkv";
+  {
+    std::ofstream(file, std::ios::binary) << "1234";
+  }
+  const ajp::app::play::GrowingFile opened = ajp::app::play::GrowingFile::of(file);
+  CHECK_FALSE(opened.grew(file, std::chrono::milliseconds(200)));  // écrit à l'instant, mais n'a pas grandi
+  {
+    std::ofstream(file, std::ios::binary | std::ios::app) << "5678";
+  }
+  CHECK(opened.grew(file));
+  std::filesystem::remove_all(dir);
 }

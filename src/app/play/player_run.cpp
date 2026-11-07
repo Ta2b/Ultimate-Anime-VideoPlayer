@@ -407,6 +407,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::int64_t known_period_us = display_period_us(out.window());
   SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
   const int opened_height = display_height(out.window());
+  const GrowingFile opened_file =
+      GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
   double session_hz_seen = known_hz;
   ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
   const auto read_display_facts = [&] {
@@ -578,8 +580,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
     if (host_now_us() - display_polled_at >= 500'000 || out.vrr_changed()) {  // 6.10 : sans attendre
       display_polled_at = host_now_us();
-      // Le mode Performance de SPAN se prépare tout seul au cran Performance (span_auto.h) : la lecture reste
-      // en FP16 pendant ce temps, puis la chaîne se rouvre pour prendre le paquet.
+      // Le mode Performance de SPAN se prépare tout seul (span_auto.h), pris à la vidéo suivante (P3.24).
       if (!p.options.file.empty() && c.model &&
           !p.options.bench_out) {  // le bench ne valide pas sur son clip
         const SpanAutoTick span =
@@ -683,7 +684,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : actions) apply(input, chain, host_now_us());
-    actions.clear();
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
       writer.post("play.toml",
@@ -755,6 +755,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       log->info("la source a changé de taille : réouverture de la chaîne");
       chain.reopen = chain.running;
     }
+  }
+  if (!chain.reopen && !failure && !session.quit_asked() && opened_file.grew(p.options.file)) {
+    log->info("le fichier grandit encore : relu au même endroit");
+    apply(Input{PlayFile{p.options.file, session.view().position_us, false}}, chain, host_now_us());
   }
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&

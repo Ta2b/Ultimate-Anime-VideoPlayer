@@ -4,6 +4,7 @@
 #include <cctype>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "app/play/default_player.h"
@@ -72,6 +73,27 @@ std::optional<std::filesystem::path> sibling_episode(const std::filesystem::path
   if (here == videos.end()) return std::nullopt;
   if (direction > 0) return here + 1 != videos.end() ? std::optional(*(here + 1)) : std::nullopt;
   return here != videos.begin() ? std::optional(*(here - 1)) : std::nullopt;
+}
+
+GrowingFile GrowingFile::of(const std::filesystem::path& file) {
+  std::error_code error;
+  const std::uintmax_t size = std::filesystem::file_size(file, error);
+  return GrowingFile{error ? 0 : size};
+}
+
+bool GrowingFile::grew(const std::filesystem::path& file, std::chrono::milliseconds wait) const {
+  if (size == 0) return false;
+  if (of(file).size > size) return true;
+  std::error_code error;
+  const auto written = std::filesystem::last_write_time(file, error);
+  if (error || std::filesystem::file_time_type::clock::now() - written > std::chrono::seconds(10))
+    return false;
+  const auto until = std::chrono::steady_clock::now() + wait;
+  while (std::chrono::steady_clock::now() < until) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (of(file).size > size) return true;
+  }
+  return false;
 }
 
 }  // namespace ajp::app::play
