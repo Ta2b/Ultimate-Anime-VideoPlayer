@@ -321,6 +321,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
+  // Annoncés une fois par lancement, pas à chaque vidéo : la mise à jour vue, la calibration d'une autre
+  // carte.
+  bool update_announced = false;
+  bool calibration_told = false;
   const HomeScreen home{.screen = **screen,
                         .ui = **ui,
                         .options = options,
@@ -455,10 +459,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
       // lancement.
-      static bool announced = false;
       const UpdateState update = load_update_state(update_file);
-      if (!announced && saved->update_mode == UpdateMode::Notify && !update.latest_version.empty()) {
-        announced = true;
+      if (!update_announced && saved->update_mode == UpdateMode::Notify && !update.latest_version.empty()) {
+        update_announced = true;
         player.notice = i18n::ui_tr_format("Update {} available (Settings > General > Application)",
                                            update.latest_version);
       }
@@ -466,10 +469,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     {
       // P3.11 : une calibration faite sur une autre carte ne sert plus ; la refaire est proposé une fois par
       // lancement.
-      static bool told = false;
       const auto calibration = load_calibration(calibration_file(settings_path.parent_path()));
-      if (!told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
-        told = true;
+      if (!calibration_told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
+        calibration_told = true;
         const i18n::Translated redo =
             i18n::ui_tr("New graphics card: optimise for this PC again (Video > Post-processing)");
         player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;

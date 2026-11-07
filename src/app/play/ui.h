@@ -21,6 +21,7 @@
 #include "app/play/input.h"
 #include "app/play/links.h"
 #include "app/play/mapped_file.h"
+#include "app/play/panel_state.h"
 #include "app/play/settings_panel.h"
 #include "core/types.h"
 
@@ -110,6 +111,7 @@ class PlayerUi {
   SDL_Window* window_;
   std::vector<FontFile> fonts_;  // lues par l'atlas d'ImGui tant que le contexte vit
   ImGuiContext* context_ = nullptr;
+  panel::State panel_state_;  // io.UserData du contexte (panel_style.h)
   Controls controls_;
   UiLook look_;
   SettingsPanel panel_;

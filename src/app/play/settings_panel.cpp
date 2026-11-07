@@ -520,7 +520,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
           break;
         }
         case Page::Engines: {
-          engines_tab(choices, engine_draft_, actions, draft_.engines_dir);
+          engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_);
           break;
         }
         case Page::Export: {

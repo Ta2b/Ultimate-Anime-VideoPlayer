@@ -330,6 +330,7 @@ std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* w
   if (ui->context_ == nullptr)
     return std::unexpected(Refusal{RefusalCode::LibraryUnavailable, "ImGui::CreateContext"});
   ImGuiIO& io = ImGui::GetIO();
+  io.UserData = &ui->panel_state_;
   io.IniFilename = nullptr;
   io.LogFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;

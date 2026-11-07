@@ -123,6 +123,13 @@ std::span<const SettingsPage> settings_pages();
 // Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
 void language_choice(const char* label, const char* none_label, std::string& tag);
 
+// Le champ « Dossier d'installation » de l'onglet Moteurs : le texte en cours de saisie, repris du réglage à
+// chaque ouverture du menu (P5.27 : à SettingsPanel, plus un tampon statique).
+struct FolderField {
+  std::array<char, 512> text{};
+  bool read = false;
+};
+
 class SettingsPanel {
  public:
   SettingsPanel();
@@ -138,6 +145,7 @@ class SettingsPanel {
     undo_.clear();
     redo_.clear();
     engine_draft_.reset();
+    engines_folder_ = {};
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
@@ -168,6 +176,7 @@ class SettingsPanel {
   int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change
   bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé
   bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
+  FolderField engines_folder_;
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action

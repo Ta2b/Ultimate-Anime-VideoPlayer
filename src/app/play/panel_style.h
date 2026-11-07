@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include "app/play/french_text.h"
+#include "app/play/panel_state.h"
 
 namespace ajp::app::play::panel {
 
@@ -19,10 +20,13 @@ inline constexpr ImVec4 kGood{0.45F, 0.82F, 0.52F, 1.0F};       // pastille Reco
 inline constexpr ImVec4 kFine{0.72F, 0.58F, 1.0F, 1.0F};        // pastille Le plus fin
 inline constexpr ImVec4 kExperimental{1.0F, 0.5F, 0.5F, 1.0F};  // pastille Expérimental
 
-// La case « Réglages avancés » : les réglages que presque personne ne touche ne s'affichent que cochée.
+// L'état de mise en page du menu (panel_state.h), porté par le contexte ImGui.
+inline State& state() {
+  return *static_cast<State*>(ImGui::GetIO().UserData);
+}
+
 inline bool& advanced() {
-  static bool shown = false;
-  return shown;
+  return state().advanced;
 }
 
 inline void note(const char* text) {
@@ -38,12 +42,10 @@ inline void note(const std::string& text) {
 // Dans une page des réglages (begin_page … end_page), chaque section est un encadré titré ; ailleurs, un
 // titre et un filet.
 inline bool& page_open() {
-  static bool open = false;
-  return open;
+  return state().page_open;
 }
 inline bool& group_open() {
-  static bool open = false;
-  return open;
+  return state().group_open;
 }
 inline void end_group() {
   if (group_open()) {

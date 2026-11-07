@@ -19,7 +19,7 @@ using panel::note;
 using panel::section;
 
 void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
-                 std::vector<Input>& actions, std::string& engines_dir) {
+                 std::vector<Input>& actions, std::string& engines_dir, FolderField& folder) {
   section(i18n::tr("Active engine"));
   const std::optional<core::EngineId> in_use = choices.engine_in_use;
   if (in_use) ImGui::TextUnformatted(std::string(engine_label(*in_use)).c_str());
@@ -72,21 +72,20 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
   // Un moteur téléchargé (TensorRT : 1,3 Go installés pour une RTX 4070 Ti) et ses téléchargements
   // s'installent ici ; l'espace libre se vérifie AVANT chaque téléchargement. Vide : le dossier des données
   // du lecteur.
-  static std::array<char, 512> folder{};
-  static bool folder_read = false;
-  if (!folder_read) {
-    std::snprintf(folder.data(), folder.size(), "%s", engines_dir.c_str());
-    folder_read = true;
+  if (!folder.read) {
+    std::snprintf(folder.text.data(), folder.text.size(), "%s", engines_dir.c_str());
+    folder.read = true;
   }
   const ImGuiStyle& style = ImGui::GetStyle();
   ImGui::SetNextItemWidth(
       -(ImGui::CalcTextSize(i18n::tr("Default")).x + 2.0F * style.FramePadding.x + style.ItemSpacing.x));
-  if (ImGui::InputTextWithHint("##moteurs", i18n::tr("Default folder"), folder.data(), folder.size()))
-    engines_dir = folder.data();
+  if (ImGui::InputTextWithHint("##moteurs", i18n::tr("Default folder"), folder.text.data(),
+                               folder.text.size()))
+    engines_dir = folder.text.data();
   ImGui::SameLine();
   if (ImGui::Button(i18n::tr("Default##moteurs"))) {
     engines_dir.clear();
-    folder[0] = '\0';
+    folder.text[0] = '\0';
   }
   note(i18n::tr_format("Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
                        choices.engines_dir_default, choices.engines_dir_free));
