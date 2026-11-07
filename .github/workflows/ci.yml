@@ -232,7 +232,7 @@ jobs:
         run: |
           source tools/release/versions.env
           sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache clang-tidy-20
           pip install --user "meson==$MESON_VERSION"
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -249,6 +249,11 @@ jobs:
         run: tools/deps/linux-tensorrt.sh "$RUNNER_TEMP/nvidia"
       - run: cmake --preset linux-prefix-cuda "-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"
       - run: cmake --build --preset linux-prefix-cuda
+      # P5.8 : le backend TensorRT, que la tâche clang-tidy de Linux ne compile pas (ses .cpp ; nvcc garde les .cu).
+      - name: clang-tidy sur le backend TensorRT
+        env:
+          AJP_TIDY_ONLY: ^src/gpu/cuda/
+        run: tools/ci/clang-tidy-src.sh build/linux-prefix-cuda
 
   # Core ML et le reste du lecteur macOS sur chaque pull request (P1.17), avec le cache de dépendances de
   # release-macos.yml : la construction et les tests sans GPU du préréglage macos-release.
@@ -277,3 +282,10 @@ jobs:
       - run: cmake --preset macos-release
       - run: cmake --build --preset macos-release
       - run: ctest --preset macos-release
+      # P5.8 : ce que seul macOS compile (Core ML et ses pixels), avec le clang-tidy de Homebrew.
+      - name: clang-tidy sur Core ML
+        env:
+          AJP_TIDY_ONLY: ^src/gpu/coreml/
+        run: |
+          brew install llvm@20
+          tools/ci/clang-tidy-src.sh build/macos-release "$(brew --prefix llvm@20)/bin/clang-tidy"
