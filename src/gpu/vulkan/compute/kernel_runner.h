@@ -18,7 +18,6 @@
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/weights.h"
 #include "kernels/spec/frame_stats.h"
-#include "kernels/spec/gmfss.h"
 #include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
@@ -66,7 +65,7 @@ class KernelRunner {
   // Le plan 6 seul, à l'instant t de ]0, 1[ : l'instant suivant d'une entrée déjà remplie, les
   // images et le maillage laissés tels quels.
   //
-  // L'instant de ces noyaux, de warp_blend, de soft_splat_all et de gmfss_compose est un mot de
+  // L'instant de ces noyaux et de warp_blend est un mot de
   // paramètre de l'enregistrement (Recorder::parameter), dans l'ordre de leurs appels : le
   // backend le réécrit pour rejouer l'enregistrement à un autre instant.
   Done rife_time(Recorder& recorder, const TensorView& input, float t);
@@ -80,39 +79,9 @@ class KernelRunner {
   // Extensions de la tranche verticale (gpu/kernel_ops.h), sur des tenseurs RGB déjà ingérés.
   //
   // Plans 0 à 5 de l'entrée de RIFE : a et b (w × h) dans la fenêtre de rife_geometry(w, h) de
-  // input (planes plans : 11 pour RIFE, dont les plans 6 à 10 restent à rife_constants ; 6 pour
-  // GMFSS), black autour.
+  // input (planes plans : 11 pour RIFE, dont les plans 6 à 10 restent à rife_constants), black autour.
   Done rife_frames(Recorder& recorder, const TensorView& a, const TensorView& b, const TensorView& input,
                    float black, std::uint32_t planes = kernels::kRifeInputChannels);
-  // Softmax splatting de GMFSS (ref soft_splat) : source (C plans w × h) poussée par motion (3 plans
-  // fx, fy, z de même taille) à l'instant s de [0, 1], additionnée dans sums (C + 1 plans float,
-  // remis à zéro à chaque exécution, le dernier pour les poids), puis normalisée dans out (C plans,
-  // précision de source). Refus FeatureUnavailable : appareil sans additions atomiques de float.
-  // Les splats d'un même instant en un passage : les sommes de tous (contiguës dans sums, chacune
-  // à son offset, arrondi à kSplatSumsAlign) remises à zéro ensemble, les additions de tous à côté
-  // les unes des autres sans barrière entre elles, puis les normalisations de même.
-  // Un travail peut lire son mouvement sur une autre grille (grid, spec MotionGrid : motion d'une
-  // autre taille que source) et sortir un plan de plus, la couverture.
-  struct SplatViews {
-    TensorView source;
-    TensorView motion;
-    float s = 0.5F;
-    TensorView out;
-    kernels::MotionGrid grid;
-  };
-  static constexpr VkDeviceSize kSplatSumsAlign = 256;
-  static VkDeviceSize splat_sums_bytes(const TensorView& source);  // d'un travail, arrondis
-  Done soft_splat_all(Recorder& recorder, std::span<const SplatViews> jobs, const BufferView& sums);
-  Done soft_splat(Recorder& recorder, const TensorView& source, const TensorView& motion, float s,
-                  const BufferView& sums, const TensorView& out);
-  // Composition après SPAN (spec gmfss_compose) : high_a, high_b (4 plans, taille de out), low_a,
-  // low_b (4 plans, taille de travail, out un multiple entier), fusion (3 plans) dont window est la
-  // fenêtre à la taille de travail ; out 3 plans ; t dans [0, 1] ; tous de même précision.
-  Done gmfss_compose(Recorder& recorder, const TensorView& high_a, const TensorView& high_b,
-                     const TensorView& low_a, const TensorView& low_b, const TensorView& fusion,
-                     const kernels::Window& window, float t, const TensorView& out);
-  // Chaque élément de tensor vaut value.
-  Done fill(Recorder& recorder, const TensorView& tensor, float value);
   // Écarts de luma BT.709 tirée du RGB par bloc 32 × 32 : sums reçoit la somme de chaque bloc
   // (block_count float), worst[0] le pire bloc en 1/256 de niveau (levels pas entre noir et
   // blanc), remis à zéro à chaque exécution.

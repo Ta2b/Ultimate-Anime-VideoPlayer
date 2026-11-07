@@ -45,7 +45,7 @@ Restent :
 | Pièce | Rôle aujourd'hui | Ce que le mode libre en fait |
 | --- | --- | --- |
 | `CadenceAccumulator` (`core/cadence.*`) | grille uniforme de `num/den` fois la cadence source ; instants entiers en 1/num de paire ; `retarget` pour un facteur qui bouge | **inchangé** ; le mode libre ne passe plus par lui |
-| `UpscaleStage::outputs()` | à l'arrivée de chaque source `d` : ingestion, grille de la paire (instants `t` et `pts`), saut des instants déjà en retard (`late`), mesures, RIFE/DRBA/GMFSS par instant | seule la source des instants change (`FreeGrid` à la place de `CadenceStep` de l'accumulateur) ; le reste de la chaîne lit `t` et `pts` comme avant |
+| `UpscaleStage::outputs()` | à l'arrivée de chaque source `d` : ingestion, grille de la paire (instants `t` et `pts`), saut des instants déjà en retard (`late`), mesures, RIFE/DRBA par instant | seule la source des instants change (`FreeGrid` à la place de `CadenceStep` de l'accumulateur) ; le reste de la chaîne lit `t` et `pts` comme avant |
 | `RingStage` | un nombre de sorties par source, un slot du ring par sortie ; bloque quand le ring est plein | **contre-pression naturelle** : on ne soumet pas plus vite que l'écran ne libère de slots |
 | `Session::choose` | à chaque tour, `queue.pick(horloge + latence d'affichage)` : l'image dont le pts est le plus proche ; les trop tardives sont jetées (`dropped`) ; présentation à la demande (VRR : quand une image neuve existe) | **inchangé** : des pts exacts à l'instant d'affichage sont ce qu'il attend |
 | `FrameLatency` + `ready_media_us` | latence médiane soumission → image écrite ; `ready = max(horloge + période, horloge(hôte + latence))` | donne « l'horloge prédite à la fin du calcul » |
@@ -123,7 +123,6 @@ changent pas. Seul Apple (flux optique du système, instants imposés) reste en 
 | --- | --- | --- | --- |
 | RIFE (entier, fusionné, mouvement) | oui (plan de l'entrée, ou facteur du warp) | 10 (ring) | vérifié |
 | DistilDRBA (fusionné ou entier) | oui : `drba_call(t)` accepte tout t de ]0, 1[ (fenêtre centrée sur a avant 0,5, sur b après), une passe du graphe par instant sur 3 images | 10 (ring) | lit l'image d'après la paire : la grille ne la touche pas |
-| GMFSS (entier ou fusionné, base ou union) | oui : `gmfss_side_time(côté, t)` pour les splats, graphe « fusion » par instant ; le graphe « paire » (ou flow + FeatureNet repris entre paires) tourne une fois par paire | 10 (ring) | gros coût fixe par paire : le temps de service par image est élevé avec peu d'instants |
 | Apple | non | 0 | Auto |
 
 ## 2. Intégration

@@ -123,7 +123,9 @@ TEST_CASE("KernelOps : les copies d'images hôte passent par le fil d'envoi", "[
     CHECK(ops.uploads_pending() == 0);
   }
   require_ok(backend->context().wait_on_host(backend->queue().last()));
-  require_ok(backend->kernels()->fill(rgb->tensor(), 0.0F));  // reclaim : l'image retenue est rendue
+  auto spare = rgb_tensor(*backend, 48, 32, TensorType::F32);
+  require_ok(backend->kernels()->resample(rgb->tensor(), k::Filter::Area,
+                                          spare->tensor()));  // reclaim : l'image retenue est rendue
   (void)download(*backend, *rgb, 48, 32);
   CHECK(held.expired());
 }
@@ -337,7 +339,7 @@ TEST_CASE("Voies : les dépendances d'une voie à l'autre se déduisent des tamp
   for (int round = 0; round < 3; ++round) {
     // Écrit sur une voie, lu sur une autre, réécrit sur une troisième pendant qu'on le lit.
     backend->use_lane(Lane::Upscale);
-    require_ok(ops.fill(half->tensor(), 0.5F));
+    require_ok(ops.resample(in->tensor(), k::Filter::Area, half->tensor()));
     backend->use_lane(Lane::Interpolate);
     require_ok(ops.resample(in->tensor(), k::Filter::Area, half->tensor()));
     backend->use_lane(Lane::Measure);

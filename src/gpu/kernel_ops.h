@@ -212,57 +212,6 @@ class KernelOps {
     return std::unexpected(
         Refusal{RefusalCode::FormatUnsupported, "warp_blend_poses : absent de ce backend"});
   }
-  // GMFSS Fortuna (kernels/spec/gmfss.h). Entrée du graphe « paire » depuis deux images RGB déjà
-  // ingérées, de même taille w × h : a puis b (kGmfssFramePlanes plans) dans rife_geometry(w, h),
-  // noir de studio autour, comme les plans 0 à 5 de rife_input.
-  virtual std::expected<void, Refusal> gmfss_frames(const Tensor& /*a*/, const Tensor& /*b*/,
-                                                    const Tensor& /*frames*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_frames : absent de ce backend"});
-  }
-  // Softmax splatting (ref::soft_splat) : source, C plans h × w, poussée à l'instant s de [0, 1]
-  // par motion (kGmfssMotionChannels plans fx, fy, z de même taille, donnés pour t = 1), additionnée
-  // en FP32 puis normalisée ; out a la forme et le type de source.
-  virtual std::expected<void, Refusal> soft_splat(const Tensor& /*source*/, const Tensor& /*motion*/,
-                                                  float /*s*/, const Tensor& /*out*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "soft_splat : absent de ce backend"});
-  }
-  // Les splats d'un même instant (les six de GMFSS : trois niveaux, deux côtés) en un seul
-  // passage : une remise à zéro des sommes pour tous, une addition pour tous, une normalisation
-  // pour tous, au lieu de trois lancements par splat qui s'attendent l'un l'autre. Chaque travail
-  // suit le contrat de soft_splat ; au premier refus, les sorties sont indéfinies. Par défaut, un
-  // soft_splat par travail, dans l'ordre.
-  // Un travail peut lire son mouvement sur une autre grille que sa source (grid, spec MotionGrid)
-  // et sortir un plan de plus que sa source, la couverture (spec) ; ces deux-là ne passent pas par
-  // soft_splat, un backend sans soft_splat_all les refuse.
-  struct SplatJob {
-    Tensor source;
-    Tensor motion;
-    float s = 0.5F;
-    Tensor out;
-    kernels::MotionGrid grid;
-  };
-  virtual std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> jobs) {
-    for (const SplatJob& job : jobs) {
-      if (job.grid.scale != 1.0F || job.grid.x != 0.0F || job.grid.y != 0.0F ||
-          job.out.shape.dims[1] != job.source.shape.dims[1]) {
-        return std::unexpected(Refusal{RefusalCode::FormatUnsupported,
-                                       "soft_splat_all : grille et couverture absentes de ce backend"});
-      }
-      if (auto ok = soft_splat(job.source, job.motion, job.s, job.out); !ok) return ok;
-    }
-    return {};
-  }
-  // Déformation après SPAN (spec gmfss_compose) : high_a et high_b les sources agrandies
-  // splattées (3 plans + couverture, taille de sortie), low_a et low_b les mêmes à la taille de
-  // travail, fusion la sortie du graphe « fusion » (3 plans, remplie) et window sa fenêtre (la
-  // taille de travail) ; out (3 plans, taille de sortie) reçoit H + F − L à l'instant t de ]0, 1[.
-  virtual std::expected<void, Refusal> gmfss_compose(const Tensor& /*high_a*/, const Tensor& /*high_b*/,
-                                                     const Tensor& /*low_a*/, const Tensor& /*low_b*/,
-                                                     const Tensor& /*fusion*/,
-                                                     const kernels::Window& /*window*/, float /*t*/,
-                                                     const Tensor& /*out*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_compose : absent de ce backend"});
-  }
   // Les mêmes, l'image écrite directement dans le slot (étude 1, P4) : le code RGBA16 que write_ring
   // écrirait de out, au bit près, sans le tenseur ni sa relecture. a, b et high_a ont la taille du
   // slot. BackendCaps::ring_targets dit que le backend les a ; sinon, refusés.
@@ -278,14 +227,6 @@ class KernelOps {
     return std::unexpected(
         Refusal{RefusalCode::FormatUnsupported, "warp_blend_poses_ring : absent de ce backend"});
   }
-  virtual std::expected<void, Refusal> gmfss_compose_ring(const Tensor& /*high_a*/, const Tensor& /*high_b*/,
-                                                          const Tensor& /*low_a*/, const Tensor& /*low_b*/,
-                                                          const Tensor& /*fusion*/,
-                                                          const kernels::Window& /*window*/, float /*t*/,
-                                                          const RingTarget& /*target*/) {
-    return std::unexpected(
-        Refusal{RefusalCode::FormatUnsupported, "gmfss_compose_ring : absent de ce backend"});
-  }
   // Le tenseur RGB, de la taille de la cible, en YUV dans la cible (ref rgb_to_yuv avec le tramage
   // et le siting de target) ; les codes à kernels::tolerance::kCode de la référence. Puis *done
   // reçoit done_value. BackendCaps::yuv_targets dit que le backend l'a ; sinon, refusé.
@@ -300,17 +241,6 @@ class KernelOps {
   }
   // Vrai si ingest() débande elle-même quand IngestSpec::deband est posé (même résultat que deband()).
   virtual bool debands_on_ingest() const { return false; }
-  // Chaque élément du tenseur prend value : l'instant t du graphe « fusion » de GMFSS Union.
-  virtual std::expected<void, Refusal> fill(const Tensor& /*tensor*/, float /*value*/) {
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "fill : absent de ce backend"});
-  }
-  // soft_splat_all(jobs) puis fill(time, t), que le backend peut fusionner (le remplissage part
-  // avec la normalisation des splats). Par défaut, les deux appels dans l'ordre.
-  virtual std::expected<void, Refusal> soft_splat_fill(std::span<const SplatJob> jobs, const Tensor& time,
-                                                       float t) {
-    if (auto ok = soft_splat_all(jobs); !ok) return ok;
-    return fill(time, t);
-  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {

@@ -320,7 +320,9 @@ TEST_CASE("KernelOps : les plans d'une image décodée se lisent en place", "[vk
     REQUIRE(signalled);
     CHECK(*signalled == data_a->value());
     // Fin de vie des images : elles ne sont plus retenues une fois la file passée.
-    require_ok(ops.fill(rgb_tensor(*backend, 8, 8, TensorType::F32)->tensor(), 0.0F));
+    auto spare = rgb_tensor(*backend, 8, 8, TensorType::F32);
+    require_ok(ops.resample(spare->tensor(), k::Filter::Area,
+                            rgb_tensor(*backend, 8, 8, TensorType::F32)->tensor()));
     require_ok(backend->context().wait_on_host(backend->queue().last()));
   }
   if (tested == 0) SKIP("aucun format multiplan échantillonnable sur cet appareil");
@@ -384,13 +386,14 @@ TEST_CASE("KernelOps : une image hôte s'envoie une fois pour toutes ses lecture
   // Une image relâchée puis une autre à la même adresse : le mémo ne la prend pas pour elle.
   const k::YuvImage d = synthetic_yuv(k::Format::Nv12, 48, 32, 64);
   require_ok(backend->context().wait_on_host(backend->queue().last()));
-  require_ok(ops.fill(rgb->tensor(), 0.0F));  // reclaim : les images retenues sont rendues
+  auto spare = rgb_tensor(*backend, 48, 32, TensorType::F32);
+  require_ok(ops.resample(rgb->tensor(), k::Filter::Area, spare->tensor()));  // reclaim : les images rendues
   const std::uint64_t before = ops.uploads_queued();
   for (int n = 0; n < 4; ++n) {
     const DecodedFrame frame_d = host_frame(d, color, 5);
     require_ok(ops.ingest(frame_d, {}, rgb->tensor()));
     require_ok(backend->context().wait_on_host(backend->queue().last()));
-    require_ok(ops.fill(padded->tensor(), 0.0F));
+    require_ok(ops.resample(rgb->tensor(), k::Filter::Area, spare->tensor()));
   }
   CHECK(ops.uploads_queued() == before + 4);
   const auto want_d = k::ref::yuv_to_rgb(d, {.matrix = k::Matrix::Bt709}, IngestSpec{}.chroma);

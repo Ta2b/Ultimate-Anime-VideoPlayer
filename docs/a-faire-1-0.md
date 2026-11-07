@@ -18,20 +18,15 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
 - `Priority` (Fluidité, Équilibre, Image) : absente du menu, encore lue dans `play.toml` par `apply_preset`.
   À retirer ou à rattacher au niveau de traitement.
 
-## Reporté
-
-- **GMFSS Fortuna Union : artefacts** (fond vert saturé, formes en miroir, traînées), en FP16 comme en FP32. Seule
-  différence avec Base : le RIFE intégré du graphe fusion (`tools/gmfss/gmfss_graph.py`, `Fusion.forward`). GMFSS
-  est débranché de la lecture (`docs/interpolation.md`) ; mesure GPU à lancer sur ordre de Tatoub.
-
 ## Audit 0.9.1, phase 5 : ce qui reste
 
 La phase 5 du plan d'audit a livré une règle par contrôle de CI (complexité, `path::string()`, commentaires,
 version unique) et les corrections ponctuelles. Restent les chantiers d'architecture, chacun une PR à lui :
 
-- **P5.1** code mort : GMFSS. L'import `.ini`, `resolve()`, le `Plan`, `pace_rule`, `Capabilities`, la pile de
-  LUT morte (`curve`, `looks`, `look_mix*`), MIGraphX, OpenVINO et WinML sont retirés (l'écran et la source sont
-  dans `core/display.h`).
+- **P5.1** code mort : les fonctions publiques sans appelant ; les additions atomiques de float du moteur Vulkan,
+  sans noyau depuis GMFSS (à retirer après une mesure sur un vrai GPU). L'import `.ini`, `resolve()`, le `Plan`,
+  `pace_rule`, `Capabilities`, la pile de LUT morte (`curve`, `looks`, `look_mix*`), MIGraphX, OpenVINO, WinML et
+  GMFSS sont retirés (l'écran et la source sont dans `core/display.h`).
 - **P5.4** LUT et `calibration.mkv` hors de git (attend la licence des LUT, P7.7).
 - **P5.5** options fantômes et champs TOML morts ; **P5.13** utilitaires réécrits (refus, lecture de
   fichier, minuscules…) ; **P5.30** seuils en ligne ; **P5.31** duplications de l'application.

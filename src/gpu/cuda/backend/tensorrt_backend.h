@@ -95,19 +95,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<PairScores, Refusal> scores_now(const Tensor& a, const Tensor& b) override;
   std::expected<std::uint64_t, Refusal> scores_start(const Tensor& a, const Tensor& b) override;
   std::expected<PairScores, Refusal> scores_take(std::uint64_t ticket) override;
-  // GMFSS Fortuna (tensorrt_gmfss.cpp) : entrée du graphe « paire » et softmax splatting.
-  std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
-  std::expected<void, Refusal> fill(const Tensor& tensor, float value) override;
   bool debands_on_ingest() const override { return true; }
-  std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
-                                          const Tensor& out) override;
-  std::expected<void, Refusal> soft_splat_all(std::span<const KernelOps::SplatJob> jobs) override;
-  std::expected<void, Refusal> soft_splat_fill(std::span<const KernelOps::SplatJob> jobs, const Tensor& time,
-                                               float t) override;
-  std::expected<void, Refusal> gmfss_compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
-                                             const Tensor& low_b, const Tensor& fusion,
-                                             const kernels::Window& window, float t,
-                                             const Tensor& out) override;
   std::optional<DeviceMemory> device_memory() override;
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
@@ -124,10 +112,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> warp_blend_poses_ring(const Tensor& a, const Tensor& b, const Motion& motion,
                                                      const Motion* previous, float t,
                                                      const RingTarget& ring) override;
-  std::expected<void, Refusal> gmfss_compose_ring(const Tensor& high_a, const Tensor& high_b,
-                                                  const Tensor& low_a, const Tensor& low_b,
-                                                  const Tensor& fusion, const kernels::Window& window,
-                                                  float t, const RingTarget& ring) override;
   // Export par puits CUDA (tensorrt_export.cpp) : RGB → NV12 ou P010 dans l'image de l'encodeur.
   std::expected<void, Refusal> write_yuv(const Tensor& rgb, const YuvTarget& target) override;
   // Étape 11.5 (tensorrt_export.cpp) : chaque voie interrogée par cudaStreamQuery ; les signaux de l'export
@@ -159,8 +143,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // rife_input, et rife_pair sans le maillage (tensorrt_rife.cpp).
   std::expected<void, Refusal> fill_rife(const Tensor& a, const Tensor& b, float t, const Tensor& input,
                                          bool mesh, const char* op);
-  // soft_splat_all, et time rempli à t avec la normalisation s'il n'est pas nul (tensorrt_gmfss.cpp).
-  std::expected<void, Refusal> splat(std::span<const KernelOps::SplatJob> jobs, const Tensor* time, float t);
   // Voies (tensorrt_lanes.cpp). Avant une opération de la voie courante qui lit reads et écrit
   // writes (des adresses : tenseurs, zone d'activation, moteur, sommes) : l'événement de
   // l'opération précédente de la voie posé, les attentes sur les autres voies enfilées. Rien
@@ -246,9 +228,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
                                     const Poses& poses, float t, const Target& target);
-  std::expected<void, Refusal> compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
-                                       const Tensor& low_b, const Tensor& fusion,
-                                       const kernels::Window& window, float t, const Target& target);
   // launch(surface) chronométré sous name : surface nulle (object 0) vers un tenseur ; vers un slot,
   // l'attente de wait_value avant et le signal après, comme write_ring.
   template <typename Launch>
@@ -266,7 +245,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
     if (!launched || imported == nullptr) return launched;
     return finish_slot(*imported, target.ring->sync);
   }
-  // Objet texture d'un tenseur FP16 lu par le filtre bilinéaire (warp, composition de GMFSS ;
+  // Objet texture d'un tenseur FP16 lu par le filtre bilinéaire (warp ;
   // tensorrt_textures.cpp), créé à sa première lecture et gardé ; 0 quand le tenseur n'y est pas
   // admissible (pitch, alignement, taille) : le noyau garde la lecture exacte.
   cudaTextureObject_t texture(const Tensor& tensor);
@@ -370,9 +349,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   std::uint64_t stats_tickets_ = 0;
-  // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
-  float* splat_sums_ = nullptr;
-  std::size_t splat_bytes_ = 0;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   std::size_t ingest_rows_size_ = 0;

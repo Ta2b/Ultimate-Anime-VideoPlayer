@@ -135,7 +135,7 @@ TEST_CASE("Backend : construction, chargement et enqueue d'un SPAN contre l'inte
   CHECK(again.cache_key == artifact.cache_key);
 }
 
-// Plus de huit entrées et sorties (la paire de GMFSS en a 15) : onze convolutions 1x1 d'une même
+// Plus de huit entrées et sorties (DistilDRBA fusionné en a plusieurs) : onze convolutions 1x1 d'une même
 // entrée, chacune une sortie, rejouées contre l'interpréteur.
 TEST_CASE("Backend : enqueue d'un graphe à onze sorties", "[vk_backend][backend]") {
   TempDir dir("wide");

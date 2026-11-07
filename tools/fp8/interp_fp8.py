@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Graphes FP8 (E4M3, nœuds Q/DQ) des réseaux d'interpolation : RIFE, DistilDRBA, GMFSS (docs/fp8-interpolation.md).
+"""Graphes FP8 (E4M3, nœuds Q/DQ) des réseaux d'interpolation : RIFE, DistilDRBA (docs/fp8-interpolation.md).
 
 Reproductible, sans PyTorch ni ModelOpt (ModelOpt exige torch ; ses réglages par défaut ne font pas mieux que ce
 placement pour TensorRT : Q/DQ devant chaque convolution retenue, échelles statiques calibrées sur de vraies images).
 
-  interp_fp8.py inputs  rife|drba|gmfss-pair|gmfss-fusion MODELE.onnx IMAGES_DIR SORTIE_DIR [--size HxW]
+  interp_fp8.py inputs  rife|drba MODELE.onnx IMAGES_DIR SORTIE_DIR [--size HxW]
         fabrique les jeux d'entrées (.npz) bien formés depuis des PNG 1280x720 (couples d'images consécutives) :
-        RIFE : 11 plans (a, b, t, grille X/Y, pas X/Y) ; DRBA : pair01 / pair12 à 7 plans ; GMFSS : 6 plans.
+        RIFE : 11 plans (a, b, t, grille X/Y, pas X/Y) ; DRBA : pair01 / pair12 à 7 plans.
   interp_fp8.py capture MODELE.onnx PIECE.onnx... --inputs SORTIE_DIR/*.npz --out DIR
         exécute le MODELE entier (ONNX Runtime CPU) et enregistre pour chaque morceau d'un réseau fusionné les
         tenseurs qui entrent dans le morceau (mêmes noms de tenseurs que dans le graphe d'origine).
   interp_fp8.py quantize SRC.onnx DST.onnx --inputs a.npz b.npz ... [--min-channels 32] [--acts all|single]
         [--calib max|p99.99] [--keep-first] [--keep-last]
         écrit le graphe FP8 : poids par tenseur en E4M3 + DQ, activations Q/DQ devant chaque convolution retenue
-  interp_fp8.py quality rife|drba|gmfss --ref FP16 --test FP8 --inputs *.npz
+  interp_fp8.py quality rife|drba --ref FP16 --test FP8 --inputs *.npz
         PSNR / SSIM de l'image finale contre le FP16 sur chaque cas ; sortie 3 si les gardes (PSNR moyen >= 42 dB,
-        pire cas >= 38 dB, SSIM moyen >= 0,985) ne sont pas tenues. GMFSS : --ref paire.onnx,fusion.onnx
+        pire cas >= 38 dB, SSIM moyen >= 0,985) ne sont pas tenues.
 
 Les convolutions de moins de --min-channels canaux d'entrée ou de sortie restent en FP16 (le FP8 n'aide pas sous
 64 canaux, microbancs du 28/10, et la première et la dernière convolution sont les plus sensibles)."""
@@ -96,8 +96,6 @@ def cmd_inputs(args):
         a, b = load_png(pa, h, w), load_png(pb, h, w)
         if args.kind == "rife":
             d = {"input": rife_input(a, b, 0.5)}
-        elif args.kind == "gmfss-pair":
-            d = {"frames": np.concatenate([a, b])[None].astype(np.float16)}
         elif args.kind == "drba":
             # pair01 / pair12 : deux images + un plan d'instant et deux plans de flot nul (7 plans, 1 × 7 × H × W)
             def pair(x, y):
@@ -112,7 +110,7 @@ def cmd_inputs(args):
                 continue
             d = {"pair01": pair(a, b), "pair12": pair(b, load_png(third, h, w))}
         else:
-            raise SystemExit("gmfss-fusion : utiliser capture depuis la paire")
+            raise SystemExit(f"genre inconnu : {args.kind}")
         np.savez(os.path.join(args.out, f"{name}.npz"), **d)
         print("écrit", name, {k: v.shape for k, v in d.items()})
 
@@ -323,38 +321,10 @@ def plain_session(path):
     return ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
 
 
-def gmfss_image(models, z, t=0.5):
-    import pathlib
-
-    import torch
-
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "gmfss"))
-    from gmfss_graph import fusion_names, soft_splat
-
-    pair, fusion = plain_session(models[0]), plain_session(models[1])
-    union = "time" in {i.name for i in fusion.get_inputs()}
-    names = [o.name for o in pair.get_outputs()]
-    named = {k: torch.from_numpy(v) for k, v in zip(names, pair.run(None, {"frames": z["frames"]}))}
-    warped = []
-    for side in (0, 1):
-        ts = t if side == 0 else 1.0 - t
-        for level in (1, 2, 3):
-            motion, source = named[f"motion{side}_{level}"], named[f"source{side}_{level}"]
-            if level == 1 and source.shape[1] == 64:
-                source = torch.cat([named[f"half{side}"], source], 1)
-            warped.append(soft_splat(source, motion[:, 0:2] * ts, motion[:, 2:3] * ts))
-    feed = dict(zip(fusion_names("union" if union else "base"),
-                    [named["half0"], named["half1"]] + ([torch.full((1, 1, 1, 1), t)] if union else []) + warped))
-    out = fusion.run(None, {k: v.numpy().astype(np.float16) for k, v in feed.items()})[0]
-    return np.clip(out[0].astype(np.float32), 0, 1)
-
-
 def run_images(kind, models, feed_file):
-    """L'image qu'un réseau (ou la paire de réseaux GMFSS) rend pour un jeu d'entrées (ONNX Runtime CPU : les
+    """L'image qu'un réseau rend pour un jeu d'entrées (ONNX Runtime CPU : les
     Q/DQ FP8 y sont émulés exactement, ce que TensorRT calcule à l'ordre d'accumulation près)."""
     z = np.load(feed_file)
-    if kind == "gmfss":
-        return gmfss_image(models, z)
     sess = plain_session(models[0])
     out = sess.run(None, {i.name: z[i.name] for i in sess.get_inputs()})[0]
     return np.clip(out[0].astype(np.float32), 0, 1)
@@ -382,39 +352,6 @@ def cmd_psnr(args):
         print(k, f"PSNR {psnr(A[k], B[k]):.2f} dB")
 
 
-def cmd_gmfss_fusion(args):
-    """Entrées du graphe « fusion » de GMFSS : la paire (ONNX Runtime CPU) puis les six splats à l'instant t,
-    comme le lecteur (tools/gmfss/gmfss_graph.py ; demande PyTorch CPU, seulement ici)."""
-    import os
-    import pathlib
-
-    import torch
-
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "gmfss"))
-    from gmfss_graph import fusion_names, soft_splat
-
-    os.makedirs(args.out, exist_ok=True)
-    sess = ort.InferenceSession(args.pair, providers=["CPUExecutionProvider"])
-    names = [o.name for o in sess.get_outputs()]
-    for npz in args.inputs:
-        frames = np.load(npz)["frames"]
-        named = {k: torch.from_numpy(v) for k, v in zip(names, sess.run(None, {"frames": frames}))}
-        warped = []
-        for side in (0, 1):  # les six splats à l'instant t, comme le lecteur (gmfss_side_time)
-            ts = args.t if side == 0 else 1.0 - args.t
-            for level in (1, 2, 3):
-                motion = named[f"motion{side}_{level}"]
-                source = named[f"source{side}_{level}"]
-                if level == 1 and source.shape[1] == 64:  # export v2 : l'image se joint aux caractéristiques
-                    source = torch.cat([named[f"half{side}"], source], 1)
-                warped.append(soft_splat(source, motion[:, 0:2] * ts, motion[:, 2:3] * ts))
-        feeds = dict(zip(fusion_names(args.model_type), [named["half0"], named["half1"]]
-                         + ([torch.full((1, 1, 1, 1), args.t)] if args.model_type == "union" else []) + warped))
-        np.savez(os.path.join(args.out, os.path.basename(npz)),
-                 **{k: v.numpy().astype(np.float16) for k, v in feeds.items()})
-        print("fusion", os.path.basename(npz))
-
-
 def cmd_shapes(args):
     m = onnx.load(args.model)
     init = {i.name for i in m.graph.initializer}
@@ -427,7 +364,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("inputs")
-    p.add_argument("kind", choices=("rife", "drba", "gmfss-pair"))
+    p.add_argument("kind", choices=("rife", "drba"))
     p.add_argument("model")
     p.add_argument("images")
     p.add_argument("out")
@@ -448,23 +385,16 @@ def main():
     p.add_argument("--calib", default="max")
     p.add_argument("--keep-first", action="store_true")
     p.add_argument("--keep-last", action="store_true")
-    p.add_argument("--skip", action="append", default=[], help="préfixe du nom de nœud à laisser en FP16 (répétable) ; GMFSS : /flownet/backbone/")
+    p.add_argument("--skip", action="append", default=[], help="préfixe du nom de nœud à laisser en FP16 (répétable)")
     p.add_argument("--conv-range", help="A:B[,C:D...] : seules les convolutions d'indice A à B-1 (ordre du graphe), pour écarter les couches sensibles")
     p.set_defaults(fn=cmd_quantize)
-    p = sub.add_parser("gmfss-fusion")
-    p.add_argument("pair")
-    p.add_argument("--inputs", nargs="+", required=True)
-    p.add_argument("--out", required=True)
-    p.add_argument("--t", type=float, default=0.5)
-    p.add_argument("--model-type", choices=("base", "union"), default="base")
-    p.set_defaults(fn=cmd_gmfss_fusion)
     p = sub.add_parser("shapes")
     p.add_argument("model")
     p.set_defaults(fn=cmd_shapes)
     p = sub.add_parser("quality")
-    p.add_argument("kind", choices=("rife", "drba", "gmfss"))
-    p.add_argument("--ref", required=True, help="FP16 ; GMFSS : paire,fusion")
-    p.add_argument("--test", required=True, help="FP8 ; GMFSS : paire,fusion")
+    p.add_argument("kind", choices=("rife", "drba"))
+    p.add_argument("--ref", required=True, help="FP16")
+    p.add_argument("--test", required=True, help="FP8")
     p.add_argument("--inputs", nargs="+", required=True)
     p.set_defaults(fn=cmd_quality)
     p = sub.add_parser("psnr")

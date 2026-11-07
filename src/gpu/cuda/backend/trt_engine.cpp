@@ -29,7 +29,7 @@ std::optional<Shape> fixed_shape(const nvinfer1::Dims& dims) {
   return shape;
 }
 
-// Un plan au-delà ne vient pas de nos modèles (GMFSS, le plus gros, pèse quelques centaines de Mo).
+// Un plan au-delà ne vient pas de nos modèles (le plus gros pèse quelques centaines de Mo).
 constexpr std::uintmax_t kMaxPlanBytes = std::uintmax_t{8} << 30U;
 
 struct Plan {
@@ -194,7 +194,7 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
     }
   }
   // Une entrée et une sortie (l'image), ou plusieurs (la variante mouvement de RIFE : flot, masque ;
-  // les deux graphes de GMFSS), dans l'ordre du graphe.
+  // DistilDRBA fusionné), dans l'ordre du graphe.
   if (engine->inputs_.empty() || engine->inputs_.size() > kMaxInputs || engine->outputs_.empty() ||
       engine->outputs_.size() > kMaxOutputs) {
     return refuse(RefusalCode::GraphInvalid,

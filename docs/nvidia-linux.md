@@ -69,57 +69,17 @@ atteint 1440p, et le graphe entier sinon ; l'un sert de repli à l'autre. Aucune
 l’environnement (règle du projet) : le seuil est dans `drba_half_flow`. **À mesurer** : PSNR/SSIM entre les deux
 sur un extrait en 2160p, et temps par paire (`--stats`).
 
-Les graphes GMFSS Fortuna (base, union, avec demi-flot) et le demi-flot de DRBA s'exportent par le
-workflow `Exporter les modèles d'interpolation` (Actions), qui peut les joindre à la release
-`models-interp-1` ; `tools/release/fetch-models.sh` les ajoute alors aux paquets.
+Le demi-flot de DRBA s'exporte par le workflow `Exporter les modèles d'interpolation` (Actions), qui peut le
+joindre à la release `models-interp-1` ; `tools/release/fetch-models.sh` l'ajoute alors aux paquets. GMFSS
+Fortuna est retiré du lecteur (0.10.0) : ses graphes ne sont plus exportés ni joints.
 
-**Version de l'export.** Chaque graphe GMFSS porte la métadonnée ONNX `ajp.gmfss.export` (entier,
-`EXPORT_VERSION` de `tools/gmfss/gmfss_graph.py`, `kGmfssExportVersion` de `gmfss_model.h`). Version 2 : la paire
-sort les 64 caractéristiques du niveau 1 (`feature{k}_1`) et l'image réduite (`half{k}`) séparées, sans le Concat
-3 + 64 canaux de la version 1 (`source{k}_1`) ; le lecteur splatte les deux dans les tranches de `warped{k}_1`
-(0,7 ms de moins par paire à 1280×768, résultat inchangé). Un graphe sans métadonnée (version 1) reste lu tel
-quel, avec une ligne au journal (« graphe GMFSS d'un export ancien »), sauf si la fenêtre locale de GMFlow y passe
-encore par un `GridSample` de 159 millions de valeurs (`/flownet*/GridSample_1`, exports d'avant la lecture par
-décalages entiers, 2 × 7,2 ms par paire à 1280×768) ou si l'export est plus récent que le lecteur : il est alors
-périmé, jamais utilisé, et le journal dit « graphe GMFSS périmé, ré-export ». Le lecteur ne lance pas l'export
-(Python et torch) ni ne télécharge : le remplacement se fait en ré-exportant ou en reprenant la release des modèles
-d'interpolation.
+## Crans de précision
 
-## GMFSS : performance ou qualité, toujours au flot à demi-échelle
-
-Mesuré sur la 4070 Ti (TensorRT 11.3, 1280×768, graphes « paire » et « fusion » ensemble) : le flot à
-demi-échelle (`_s05`) vaut le flot entier ou le dépasse, pour moitié moins de calcul. Le flot entier n'est
-donc plus exporté et le lecteur ne le prend plus qu'en repli, à toutes les hauteurs de travail.
-
-| Mode | Base | Union | Écart à l'original (pire pixel / moyenne / 99,9 %, sur 1) |
-|---|---|---|---|
-| Performance (GMFlow FP16, défaut) | 24,1 ms | 23,3 ms | base 0,0239 / 0,0004 / 0,0059 |
-| Qualité (GMFlow FP32, paire `_s05q`) | 30,9 ms | 33,1 ms | base 0,0056 / 0,0002 / 0,0013 |
-| Plein flot FP16 (ancien défaut) | 47,1 ms | 46,1 ms | base 0,0055 / 0,0003 / 0,0023 |
-
-Temps mesurés sur un GPU au calme, sans option de profil (graphe « paire » + graphe « fusion ») : paire
-7,8 ms (base) et 8,1 ms (union) en performance, 14,6 et 17,9 ms en qualité, 30,8 et 30,9 ms en plein
-flot ; fusion 16,3 ms (base) et 15,2 ms (union), la même dans les trois modes. Un premier relevé, fait
-pendant que d'autres tâches chargeaient le GPU, gonflait ces temps de 20 à 50 % : un graphe « paire »
-identique mesurait 14,0 ms au lieu de 7,8. Mesurer GMFSS demande un GPU libre. L'écart à l'original est
-mesuré sur GPU avec PyTorch, indépendant de ces temps.
-
-Le réglage est dans l'onglet d'interpolation (`gmfss_precision` de `play.toml`, section `interpolation` :
-`performance`, `balanced` ou `quality`). Les trois crans de précision sont Performance (FP8), Équilibre (FP16,
-l'ancien « Performance » de GMFSS) et Qualité (FP32) ; les fichiers d'avant qui portent `gmfss_quality = true`
-se lisent comme Qualité. Le cran Performance demande `gmfss_fortuna_{base,union}_s05fp8_pair.onnx` (GMFlow
-quantifié en FP8, nœuds Q/DQ) et une RTX 40 ou plus récente ; sans eux ou si TensorRT les refuse, l'Équilibre
-reste. Les mêmes crans existent pour SPAN (`image.span_precision`, variantes `-fp8-` et `-fp32-` écrites par
-`tools/span/quantize_span.py --precision`), RIFE et DistilDRBA (`interpolation.motion_precision`, graphes
-`_fp8.onnx` et `_fp32.onnx` à côté du modèle). Mesure à retenir : un SPAN Balanced aux Q/DQ posés à la main
-tourne 15 % plus lentement en FP8 (19,90 ms) qu'en FP16 (17,34 ms) sur une 4070 Ti ; le script de
-quantification refuse donc d'écrire une variante FP8 qui ne va pas au moins 5 % plus vite.
-
-Le mode qualité demande `gmfss_fortuna_{base,union}_s05q_pair.onnx` (export_gmfss.py `--scale 0.5 --precision
-flownet32`), sa fusion étant celle de `_s05`. Sans cette paire, le mode performance reste.
-Le contrôle de l'export juge la moyenne et le 99,9 % de l'écart à l'original, pas le pire pixel d'une petite
-image : à 256×256 il valait 0,097 sur un poste et 0,127 en CI même avec tout en FP32 (les sorties du graphe
-sont arrondies en FP16).
+SPAN (`image.span_precision`, variantes `-fp8-` et `-fp32-` écrites par `tools/span/quantize_span.py
+--precision`), RIFE et DistilDRBA (`interpolation.motion_precision`, graphes `_fp8.onnx` et `_fp32.onnx` à côté du
+modèle) ont trois crans : Performance (FP8), Équilibre (FP16) et Qualité (FP32). Mesure à retenir : un SPAN
+Balanced aux Q/DQ posés à la main tourne 15 % plus lentement en FP8 (19,90 ms) qu'en FP16 (17,34 ms) sur une
+4070 Ti ; le script de quantification refuse donc d'écrire une variante FP8 qui ne va pas au moins 5 % plus vite.
 
 ## Paquet TensorRT indépendant de l'étiquette (depuis la 0.6)
 

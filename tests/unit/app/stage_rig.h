@@ -217,26 +217,6 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
                                                 const gpu::Tensor& /*out*/) override {
     return note("warp_blend_poses");
   }
-  std::expected<void, Refusal> gmfss_frames(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
-                                            const gpu::Tensor& /*frames*/) override {
-    return note("gmfss_frames");
-  }
-  std::expected<void, Refusal> soft_splat(const gpu::Tensor& /*source*/, const gpu::Tensor& /*motion*/,
-                                          float /*s*/, const gpu::Tensor& /*out*/) override {
-    return note("soft_splat");
-  }
-  std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> /*jobs*/) override {
-    return note("soft_splat_all");
-  }
-  std::expected<void, Refusal> gmfss_compose(const gpu::Tensor& /*high_a*/, const gpu::Tensor& /*high_b*/,
-                                             const gpu::Tensor& /*low_a*/, const gpu::Tensor& /*low_b*/,
-                                             const gpu::Tensor& /*fusion*/, const kernels::Window& /*window*/,
-                                             float /*t*/, const gpu::Tensor& /*out*/) override {
-    return note("gmfss_compose");
-  }
-  std::expected<void, Refusal> fill(const gpu::Tensor& /*tensor*/, float /*value*/) override {
-    return note("fill");
-  }
   std::expected<void, Refusal> warp_blend_ring(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
                                                const gpu::Motion& /*motion*/, float /*t*/,
                                                const gpu::RingTarget& ring) override {
@@ -249,13 +229,6 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     return note_ring("warp_blend_poses_ring", ring);
   }
   std::expected<void, Refusal> write_yuv(const gpu::Tensor& rgb, const gpu::YuvTarget& target) override;
-  std::expected<void, Refusal> gmfss_compose_ring(const gpu::Tensor& /*high_a*/,
-                                                  const gpu::Tensor& /*high_b*/, const gpu::Tensor& /*low_a*/,
-                                                  const gpu::Tensor& /*low_b*/, const gpu::Tensor& /*fusion*/,
-                                                  const kernels::Window& /*window*/, float /*t*/,
-                                                  const gpu::RingTarget& ring) override {
-    return note_ring("gmfss_compose_ring", ring);
-  }
 
  private:
   using PairKey = std::pair<std::uint32_t, std::uint32_t>;

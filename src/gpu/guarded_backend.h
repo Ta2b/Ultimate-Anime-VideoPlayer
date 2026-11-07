@@ -119,24 +119,6 @@ class GuardedKernelOps final : public KernelOps {
     return guarded_detail::call("warp_blend_poses",
                                 [&] { return in_->warp_blend_poses(a, b, motion, previous, t, out); });
   }
-  std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override {
-    return guarded_detail::call("gmfss_frames", [&] { return in_->gmfss_frames(a, b, frames); });
-  }
-  std::expected<void, Refusal> soft_splat(const Tensor& source, const Tensor& motion, float s,
-                                          const Tensor& out) override {
-    return guarded_detail::call("soft_splat", [&] { return in_->soft_splat(source, motion, s, out); });
-  }
-  std::expected<void, Refusal> soft_splat_all(std::span<const SplatJob> jobs) override {
-    return guarded_detail::call("soft_splat_all", [&] { return in_->soft_splat_all(jobs); });
-  }
-  std::expected<void, Refusal> gmfss_compose(const Tensor& high_a, const Tensor& high_b, const Tensor& low_a,
-                                             const Tensor& low_b, const Tensor& fusion,
-                                             const kernels::Window& window, float t,
-                                             const Tensor& out) override {
-    return guarded_detail::call("gmfss_compose", [&] {
-      return in_->gmfss_compose(high_a, high_b, low_a, low_b, fusion, window, t, out);
-    });
-  }
   std::expected<void, Refusal> warp_blend_ring(const Tensor& a, const Tensor& b, const Motion& motion,
                                                float t, const RingTarget& target) override {
     return guarded_detail::call("warp_blend_ring",
@@ -149,14 +131,6 @@ class GuardedKernelOps final : public KernelOps {
       return in_->warp_blend_poses_ring(a, b, motion, previous, t, target);
     });
   }
-  std::expected<void, Refusal> gmfss_compose_ring(const Tensor& high_a, const Tensor& high_b,
-                                                  const Tensor& low_a, const Tensor& low_b,
-                                                  const Tensor& fusion, const kernels::Window& window,
-                                                  float t, const RingTarget& target) override {
-    return guarded_detail::call("gmfss_compose_ring", [&] {
-      return in_->gmfss_compose_ring(high_a, high_b, low_a, low_b, fusion, window, t, target);
-    });
-  }
   std::expected<void, Refusal> write_yuv(const Tensor& rgb, const YuvTarget& target) override {
     return guarded_detail::call("write_yuv", [&] { return in_->write_yuv(rgb, target); });
   }
@@ -165,13 +139,6 @@ class GuardedKernelOps final : public KernelOps {
   }
   bool debands_on_ingest() const override {
     return guarded_detail::call("debands_on_ingest", [&] { return in_->debands_on_ingest(); });
-  }
-  std::expected<void, Refusal> fill(const Tensor& tensor, float value) override {
-    return guarded_detail::call("fill", [&] { return in_->fill(tensor, value); });
-  }
-  std::expected<void, Refusal> soft_splat_fill(std::span<const SplatJob> jobs, const Tensor& time,
-                                               float t) override {
-    return guarded_detail::call("soft_splat_fill", [&] { return in_->soft_splat_fill(jobs, time, t); });
   }
   std::optional<DeviceMemory> device_memory() override {
     return guarded_detail::call("device_memory", [&] { return in_->device_memory(); });

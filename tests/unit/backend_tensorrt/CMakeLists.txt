@@ -19,18 +19,8 @@ set(AJP_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.ri
 # place par le test caché [.drba_fused] ; AJP_DRBA_IMAGE : une image d'anime en PPM pour ses trois images (sinon un dessin).
 set(AJP_DRBA_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test caché [.drba_fused])")
 set(AJP_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.drba_fused]")
-# AJP_GMFSS_MODEL_DIR : le dossier des modèles du lecteur (gmfss_fortuna_base_s05_pair.onnx, _s05_fusion.onnx), lus en place par
-# le test caché [.gmfss_fused] ; AJP_GMFSS_IMAGES : dix PPM P6 de 640x384 séparés par des virgules (cinq images consécutives de
-# la vidéo à deux instants) ; vides, le test se SKIP.
-set(AJP_GMFSS_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des GMFSS ONNX du lecteur (test caché [.gmfss_fused])")
-set(AJP_GMFSS_IMAGES "" CACHE STRING "Dix images PPM 640x384 séparées par des virgules (test caché [.gmfss_fused])")
-add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp gmfss_fused_test.cpp gmfss_test.cpp
+add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp
   rife_fused_test.cpp span_derive_test.cpp span_fp8_test.cpp)
-# Test caché [.gmfss_split] : la paire GMFSS d'avant (67 canaux), celle d'après (sans Concat) et la fusion, aux
-# tailles fixées (1280x768) ; vides, le test se SKIP.
-set(AJP_GMFSS_SPLIT_OLD_PAIR "" CACHE FILEPATH "Paire GMFSS d'avant la version 2 des graphes, 1280x768")
-set(AJP_GMFSS_SPLIT_NEW_PAIR "" CACHE FILEPATH "Paire GMFSS de la version 2 des graphes, 1280x768")
-set(AJP_GMFSS_SPLIT_FUSION "" CACHE FILEPATH "Fusion GMFSS, 1280x768")
 target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
   ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::kernels ajp::prepare ajp_backend_tensorrt_kernels ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
 target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
@@ -42,13 +32,8 @@ target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
   AJP_SPAN_FP8_IMAGE="${AJP_SPAN_FP8_IMAGE}"
   AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
   AJP_RIFE_IMAGE="${AJP_RIFE_IMAGE}"
-  AJP_GMFSS_SPLIT_OLD_PAIR="${AJP_GMFSS_SPLIT_OLD_PAIR}"
-  AJP_GMFSS_SPLIT_NEW_PAIR="${AJP_GMFSS_SPLIT_NEW_PAIR}"
-  AJP_GMFSS_SPLIT_FUSION="${AJP_GMFSS_SPLIT_FUSION}"
   AJP_DRBA_MODEL_DIR="${AJP_DRBA_MODEL_DIR}"
   AJP_DRBA_IMAGE="${AJP_DRBA_IMAGE}"
-  AJP_GMFSS_MODEL_DIR="${AJP_GMFSS_MODEL_DIR}"
-  AJP_GMFSS_IMAGES="${AJP_GMFSS_IMAGES}"
   AJP_SPAN_DERIVE_IMAGES="${AJP_SPAN_DERIVE_IMAGES}")
 add_dependencies(ajp_backend_tensorrt_tests ajp_backend_tensorrt)
 ajp_set_warnings(ajp_backend_tensorrt_tests)

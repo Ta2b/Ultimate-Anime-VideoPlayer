@@ -29,8 +29,8 @@ enum class Tiling : std::uint8_t { Linear, Optimal };
 struct MemoryLimits {
   VkDeviceSize block_size = VkDeviceSize{64} << 20U;  // une demande plus grande a son propre bloc
   VkDeviceSize budget = VkDeviceSize{2} << 30U;       // total des blocs réservés à l'appareil
-  // Octets des blocs propres (plus grands qu'un bloc) gardés vides en réserve : les tenseurs de
-  // GMFSS (94 Mio) et les sorties 4K reviennent aux mêmes tailles à chaque changement de chaîne,
+  // Octets des blocs propres (plus grands qu'un bloc) gardés vides en réserve : les tenseurs des
+  // réseaux et les sorties 4K reviennent aux mêmes tailles à chaque changement de chaîne,
   // et chaque vkAllocateMemory coûte des millisecondes. 0 : rendus aussitôt.
   VkDeviceSize large_spares = 0;
 };

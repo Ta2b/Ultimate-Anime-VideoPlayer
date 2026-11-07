@@ -1,6 +1,6 @@
 // Ensembles de descripteurs d'un enregistrement : un par dispatch, tirés de pools aux bornes de
 // sa création. Un pool plein en ouvre un autre, assez grand pour l'ensemble demandé : la taille
-// d'un enregistrement (dix splats d'un instant de GMFSS, un ingest réduit et ses vues) ne le fait
+// d'un enregistrement (un ingest réduit et ses vues) ne le fait
 // pas échouer. Au-delà de kMaxPools pools, la demande est refusée (GpuMemoryExhausted) avant
 // d'atteindre le pilote ; rien n'est jamais réécrit après l'enregistrement, qui peut être rejoué
 // tel quel.

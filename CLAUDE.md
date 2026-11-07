@@ -16,8 +16,8 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 - **pas de profils** : `play.toml` garde la dernière chaîne, `user.toml` ne garde que `[keys]` ;
 - **menu en trois catégories** : Vidéo, Audio et lecture, Général (`kPages`, `src/app/play/settings_panel.cpp`) ;
 - **moteurs** : Vulkan pour tout GPU (le seul pour AMD et Intel), TensorRT sur NVIDIA RTX, Core ML sur Mac.
-  MIGraphX et OpenVINO sont retirés des sources, GMFSS y est mais débranché de la lecture : ne rien rebrancher
-  sans une mesure face à Vulkan (`docs/moteurs.md`, `docs/interpolation.md`).
+  MIGraphX, OpenVINO et GMFSS sont retirés des sources : n'en remettre aucun sans une mesure face à Vulkan (ou
+  à RIFE pour GMFSS) (`docs/moteurs.md`, `docs/interpolation.md`).
 
 ## Où est quoi
 

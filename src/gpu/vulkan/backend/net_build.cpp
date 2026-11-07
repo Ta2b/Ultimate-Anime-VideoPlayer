@@ -44,7 +44,7 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
   if (!graph) return std::unexpected(graph.error());
   if (graph->inputs.empty())
     return refuse(RefusalCode::InputMismatch, std::format("{} : aucune entrée", request.model_id));
-  // Une entrée prend la forme demandée ; plusieurs (GMFSS, DistilDRBA) gardent celles du modèle,
+  // Une entrée prend la forme demandée ; plusieurs (DistilDRBA) gardent celles du modèle,
   // que le lecteur fige avant la construction (derived_model.h).
   std::vector<ir::InputShape> shapes;
   for (const ir::TensorId id : graph->inputs) {

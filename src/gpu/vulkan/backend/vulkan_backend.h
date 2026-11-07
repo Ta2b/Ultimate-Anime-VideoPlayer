@@ -62,8 +62,8 @@ class VulkanEngine final : public Engine {
   std::span<const std::string> input_names() const override { return net_->input_names(); }
   std::span<const std::string> output_names() const override { return net_->output_names(); }
   net::NetEngine& net() { return *net_; }
-  // Les vues des entrées puis des sorties d'un enqueue, à la taille du graphe (14 sorties pour la
-  // paire de GMFSS) : allouées une fois au chargement, pas à chaque image.
+  // Les vues des entrées puis des sorties d'un enqueue, à la taille du graphe (plusieurs pour
+  // DistilDRBA fusionné) : allouées une fois au chargement, pas à chaque image.
   std::span<BufferView> io_views() { return views_; }
 
  private:
