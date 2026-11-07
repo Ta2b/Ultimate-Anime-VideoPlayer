@@ -473,7 +473,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
 
 void report_problem_section(const PlayerPlace& place, const std::string& gpu_name) {
   // Le corps d'une issue tient en 65 536 caractères : la fin du journal, là où est la panne.
-  constexpr std::streamoff kLogTail = 48 * 1024;
+  constexpr std::streamoff kLogTail = std::streamoff{48} * 1024;
   section(i18n::tr("Report a problem"));
   if (ImGui::Button(i18n::tr("Report a problem"))) {
     std::string report = std::format("ajp {} · {}\n\n", installed_version(), gpu_name);

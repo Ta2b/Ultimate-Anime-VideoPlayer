@@ -164,11 +164,12 @@ PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
   --buildtype=release -Dvulkan=enabled -Dshaderc=enabled -Dlcms=enabled
   -Dopengl=disabled -Dd3d11=disabled -Ddemos=false -Dtests=false
   -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml")
-# Le registre Vulkan vient de vulkan-headers : une autre version rebâtit libplacebo.
+# Le registre Vulkan vient de vulkan-headers, la libvulkan liée de vulkan-loader : une autre version de l'un
+# ou de l'autre rebâtit libplacebo (une copie liée à celle de Homebrew ne se charge plus).
 # Le correctif de présentation (chantier 6.1), le même que sous Linux et le port vcpkg : le lecteur lit ses types
 # (pl_vulkan_present, placebo_feedback.h) ; sa somme entre dans la signature.
 placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
-signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(shasum -a 256 "$placebo_patch" | cut -c1-16)"
+signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) vulkan-loader $(ref_of vulkan-loader) $(shasum -a 256 "$placebo_patch" | cut -c1-16)"
 if ! done_marker libplacebo "$signature"; then
   git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
   # Appliqué une fois : déjà là (une construction interrompue), rien à refaire.

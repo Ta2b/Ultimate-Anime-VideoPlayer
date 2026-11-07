@@ -128,7 +128,7 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
 std::vector<std::string> show_looks(PlaceboScreen& screen, LoadedLooks& looks) {
   std::array<const render::CubeLut*, render::kLookSlots> luts{};
   for (std::size_t i = 0; i < render::kLookSlots; ++i)
-    if (looks.luts.at(i)) luts.at(i) = &looks.luts.at(i).value();
+    if (const std::optional<render::CubeLut>& lut = looks.luts.at(i); lut.has_value()) luts.at(i) = &*lut;
   std::vector<std::string> failed = std::move(looks.failed);
   if (auto set = screen.set_looks(luts); !set) {
     log_channel("app")->warn("look : {}", set.error().detail);
