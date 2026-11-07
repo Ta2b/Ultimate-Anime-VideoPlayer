@@ -399,7 +399,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.motion_engine = wanted.motion_engine;
     s.rife_model = wanted.rife_model;
     s.span_order = wanted.span_order;
-    s.gmfss_precision = wanted.gmfss_precision;
     s.motion_precision = wanted.motion_precision;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
@@ -458,10 +457,6 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(wanted.drba_fused
                             ? i18n::tr("fused DistilDRBA (four engines, built the first time for this size)")
                             : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
-  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) && running.gmfss_fused != wanted.gmfss_fused)
-    reopen.emplace_back(wanted.gmfss_fused
-                            ? i18n::tr("fused GMFSS (two engines, built the first time for this size)")
-                            : i18n::tr("whole GMFSS pair instead of fused GMFSS"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       running.rife_model != wanted.rife_model)
     reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));
@@ -474,17 +469,11 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(i18n::tr_format("SPAN switches to {} (built the first time for this size)",
                                         precision_text(wanted.span_precision)));
   }
-  if (wanted.rife_factor >= 2 && !is_gmfss(wanted.motion_engine) &&
-      running.motion_engine == wanted.motion_engine && running.motion_precision != wanted.motion_precision) {
+  if (wanted.rife_factor >= 2 && running.motion_engine == wanted.motion_engine &&
+      running.motion_precision != wanted.motion_precision) {
     reopen.emplace_back(i18n::tr_format("{} switches to {} (built the first time for this size)",
                                         label(wanted.motion_engine),
                                         precision_text(wanted.motion_precision)));
-  }
-  if (wanted.rife_factor >= 2 && is_gmfss(wanted.motion_engine) &&
-      running.motion_engine == wanted.motion_engine && running.gmfss_precision != wanted.gmfss_precision) {
-    reopen.emplace_back(i18n::tr_format(
-        "GMFSS switches to {} (GMFlow in {}, built the first time for this size)",
-        i18n::tr_view(label(wanted.gmfss_precision)), precision_text(wanted.gmfss_precision)));
   }
   if (!reopen.empty()) {
     std::string reason;

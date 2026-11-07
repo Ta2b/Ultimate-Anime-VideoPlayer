@@ -45,12 +45,6 @@ UpscaleStage::~UpscaleStage() {
         "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
         rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
-  if (gmfss()) log_channel("gpu")->info("GMFSS : {} paires", gmfss_pairs_);
-  if (gmfss_fused()) {
-    log_channel("gpu")->info(
-        "GMFSS fusionné : caractéristiques de {} images calculées, {} reprises de la paire d'avant",
-        gmfss_.features_of.computed(), gmfss_.features_of.reused());
-  }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
   if (drba()) {
@@ -109,16 +103,11 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : taille de travail {}x{} hors de la source {}x{}", setup.work_width,
                               setup.work_height, setup.source_width, setup.source_height));
   }
-  if ((setup.gmfss_pair == nullptr) != (setup.gmfss_fusion == nullptr))
-    return refuse(RefusalCode::FieldMissing, "étage gpu : GMFSS demande ses deux moteurs");
-  if (setup.gmfss_features != nullptr && setup.gmfss_pair == nullptr)
-    return refuse(RefusalCode::FieldMissing,
-                  "étage gpu : les caractéristiques de GMFSS sans ses deux moteurs");
   const int estimators = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
-                         (setup.gmfss_pair != nullptr ? 1 : 0) + (setup.distil_drba != nullptr ? 1 : 0);
+                         (setup.distil_drba != nullptr ? 1 : 0);
   if (estimators > 1) {
     return refuse(RefusalCode::FieldOutOfRange,
-                  "étage gpu : RIFE image, RIFE mouvement, GMFSS ou DistilDRBA, un seul des quatre");
+                  "étage gpu : RIFE image, RIFE mouvement ou DistilDRBA, un seul des trois");
   }
   if ((setup.rife != nullptr || setup.rife_motion != nullptr) &&
       !kernels::is_rife_input_planes(setup.rife_planes))
@@ -139,11 +128,10 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : RIFE en {}x{} hors du travail {}x{}", setup.rife_width,
                               setup.rife_height, setup.work_width, setup.work_height));
   }
-  if ((setup.rife != nullptr || setup.gmfss_pair != nullptr ||
-       (setup.distil_drba != nullptr && !setup.drba_motion)) &&
+  if ((setup.rife != nullptr || (setup.distil_drba != nullptr && !setup.drba_motion)) &&
       (setup.rife_width != setup.work_width || setup.rife_height != setup.work_height)) {
     return refuse(RefusalCode::ShapeInvalid,
-                  "étage gpu : RIFE image, GMFSS et DistilDRBA image à la taille de travail seulement");
+                  "étage gpu : RIFE image et DistilDRBA image à la taille de travail seulement");
   }
   if (setup.slots.empty() || setup.slots.size() > kMaxRingSlots) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("étage gpu : 1 à {} slots", kMaxRingSlots));
@@ -216,7 +204,6 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   if (looks_ahead()) {
     if (auto ok = allocate_ahead(); !ok) return ok;
   }
-  if (gmfss()) return allocate_gmfss();
   if (drba()) return allocate_drba();
   if (interpolates()) {
     const kernels::RifeGeometry g =
@@ -673,9 +660,6 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
               .left = previous_->id,
               .right = smooth_first_ ? smooth_b_id_ : frame.id,
               .debanded = debanded_};
-  gmfss_.a = GmfssFrameKey{.id = previous_->id,
-                           .epoch = previous_->epoch};  // GMFSS fusionné : les images de la paire
-  gmfss_.b = GmfssFrameKey{.id = frame.id, .epoch = frame.epoch};
   drba_held_ = false;
   shown_source_ = false;
   use_lane(gpu::Lane::Interpolate);
@@ -687,9 +671,8 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
       if (auto ok = span_smooth_b(); !ok) return std::unexpected(std::move(ok.error()));
     }
     const gpu::Tensor& b_spanned = smooth_first_ ? spanned_[span_ahead_buf_]->tensor() : spanned(current_);
-    if (auto ok = gmfss() ? interpolate_gmfss_spanned(output, spanned(current_ ^ 1U), spanned(current_), out)
-                  : drba_motion() ? interpolate_drba_motion(output, true, out)
-                                  : interpolate_by_motion(output, spanned(current_ ^ 1U), b_spanned, out);
+    if (auto ok = drba_motion() ? interpolate_drba_motion(output, true, out)
+                                : interpolate_by_motion(output, spanned(current_ ^ 1U), b_spanned, out);
         !ok) {
       return std::unexpected(std::move(ok.error()));
     }
@@ -712,9 +695,8 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     made.repeated = drba_held_;
     return held_b(made, frame, output);
   }
-  if (by_motion() || gmfss() || drba()) {
-    auto ok = gmfss()         ? interpolate_gmfss(output)
-              : drba_motion() ? interpolate_drba_motion(output, false, Target{.tensor = &middle()})
+  if (by_motion() || drba()) {
+    auto ok = drba_motion() ? interpolate_drba_motion(output, false, Target{.tensor = &middle()})
               : drba()
                   ? interpolate_drba(output)
                   : interpolate_by_motion(output, rgb_[current_ ^ 1U]->tensor(),

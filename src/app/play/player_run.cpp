@@ -36,7 +36,6 @@
 #include "app/play/episodes.h"
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
-#include "app/play/gmfss_model.h"
 #include "app/play/gpu_profile_out.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/home_screen.h"
@@ -257,7 +256,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .height = work.height},
                 settings.preset != Preset::Custom)
           : SpanPrepare{};
-  const std::optional<DrbaModel> drba_file = find_distil_drba(c.gmfss_places);
+  const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
   p.ui.set_tracks((*pipeline)->tracks());
   p.ui.set_settings(
       settings,
@@ -285,7 +284,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .rife_loaded = rife_loaded,
           .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
           .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
-          .rife_folder = c.gmfss_places.front().string(),
+          .rife_folder = c.model_places.front().string(),
           .nvidia = vendor_from_pci(p.screen.device_facts().pci_vendor) == GpuVendor::Nvidia,
           .hdr_output = p.screen.hdr_output(),
           .auto_peak = auto_peak,

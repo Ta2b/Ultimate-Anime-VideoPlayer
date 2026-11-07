@@ -32,7 +32,6 @@
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
-#include "app/play/gmfss_model.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
@@ -131,7 +130,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   if (auto found = choose_rife_model(h.options, h.paths.home, running, rife_preference(gpu_facts(h.screen)),
                                      h.paths.models))
     rife = std::move(*found);
-  const std::vector<std::filesystem::path> places = gmfss_dirs(h.paths, rife);
+  const std::vector<std::filesystem::path> places = motion_model_dirs(h.paths, rife);
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
   // Sans moteur chargé, le FP8 se présume sur une RTX (le moteur TensorRT le calcule dès Ada) ; la chaîne

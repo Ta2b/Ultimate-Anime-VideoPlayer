@@ -45,21 +45,18 @@ std::string_view label(Downscale filter);  // « Area », pour le menu
 std::string rife_label(const std::string& file);
 
 // Ce qui fait les images intermédiaires : RIFE (réseau, 4.25 ou 4.22 lite, avec ou sans garder les
-// poses), GMFSS Fortuna (kernels/spec/gmfss.h : le plus fin sur l'animation, plusieurs fois plus
-// lourd que RIFE ; 540 lignes de travail en ×2 tiennent sur une 4070 Ti), en base ou en union
-// (GMFSS mêlé à l'image de RIFE), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
+// poses), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
 // entraîné à imiter DRBA, les poses gardées par le réseau lui-même, une image de retard), ou
 // l'interpolation d'Apple (VTFrameRateConversion de VideoToolbox, macOS 15.4, sous le backend Core
-// ML : gpu/system_interpolator.h).
+// ML : gpu/system_interpolator.h). Gmfss et GmfssUnion ne restent que pour lire un ancien play.toml : GMFSS
+// Fortuna est retiré des sources (0.10.0), et la chaîne prend RIFE à sa place.
 enum class MotionEngine : std::uint8_t { Rife, Gmfss, GmfssUnion, DistilDrba, Apple };
 inline constexpr int kMotionEngineCount = 5;
 constexpr bool is_gmfss(MotionEngine engine) {
   return engine == MotionEngine::Gmfss || engine == MotionEngine::GmfssUnion;
 }
 // Proposé sur ce système : l'interpolation d'Apple sur un Mac seulement. play.toml garde le choix
-// partout ; ailleurs, la chaîne reprend RIFE. GMFSS (Fortuna et Union) est débranché de la lecture : trop
-// lourd pour la plupart des machines et fautif en direct. Le code reste, l'export s'en sert encore quand
-// play.toml le nomme (docs/interpolation.md) ; la lecture prend RIFE à sa place.
+// partout ; ailleurs, la chaîne reprend RIFE. GMFSS n'est jamais proposé.
 #if defined(__APPLE__)
 inline constexpr bool kAppleOffered = true;
 #else
@@ -99,7 +96,7 @@ std::optional<Badge> badge_of(Downscale filter);
 // « 720p » ; la hauteur d'image en français courant, jamais « lignes ».
 std::string resolution_text(int height);
 
-// Le warp de l'interpolation par rapport à SPAN (variante mouvement de RIFE ou GMFSS, avec SPAN).
+// Le warp de l'interpolation par rapport à SPAN (variante mouvement de RIFE ou de DistilDRBA, avec SPAN).
 // Avant : SPAN agrandit chaque sortie, intermédiaires compris (×3 : trois passes par image source),
 // et nettoie les défauts du warp. Après : SPAN agrandit chaque image source une fois, le warp
 // déforme les images agrandies à la taille de sortie. Auto : après dès que la sortie dépasse
@@ -210,25 +207,12 @@ struct PlaySettings {
   // lite dont la structure est reconnue, le moteur entier reprenant sinon, ou si un des quatre moteurs
   // échoue. Recharge la chaîne.
   bool drba_fused = true;
-  // GMFSS fusionné (prepare/gmfss_split.h) : la paire de GMFSS coupée en deux moteurs TensorRT, les
-  // caractéristiques d'une image (FeatureNet) et le flot ; les caractéristiques d'une image servent à deux
-  // paires de suite et ne sont calculées qu'une fois (un FeatureNet de moins par paire). Seulement sous
-  // TensorRT, au cran Équilibre et pour une paire dont la structure est reconnue (export version 2), la paire
-  // entière reprenant sinon, ou si un moteur échoue. Recharge la chaîne. Éteint par défaut : le gain mesuré
-  // (docs/gmfss-fusionne.md : un FeatureNet de moins par paire, −6 à −9 % du temps GMFSS d'une paire, −15 %
-  // pour la paire seule au banc) n'atteint pas le seuil de 15 % qui fait un défaut ; la qualité est la même
-  // (73 dB et plus contre la paire entière).
-  bool gmfss_fused = false;
   // Les crans de précision (precision.h). SPAN : Performance prend la variante FP8 du modèle, Qualité sa
   // variante FP32 (span_int8.h), Équilibre le FP16 tel que livré. Recharge la chaîne.
   PrecisionTier span_precision = PrecisionTier::Balanced;
   // RIFE et DistilDRBA : Performance charge le graphe « _fp8 » à côté du modèle (rife_v4.25_fp8.onnx),
   // Qualité le « _fp32 ». Recharge la chaîne.
   PrecisionTier motion_precision = PrecisionTier::Balanced;
-  // GMFSS : Équilibre, FP16 (le défaut) ; Qualité, GMFlow en FP32 (_s05q). Toujours au flot à demi-échelle.
-  // Performance (la paire en FP8, _s05fp8) n'est plus proposée ni choisie : l'image se dégrade dans les gros
-  // mouvements ; un play.toml qui la demande lit Équilibre. Recharge la chaîne.
-  PrecisionTier gmfss_precision = PrecisionTier::Balanced;
   // Le warp avant ou après SPAN (SpanOrder) ; Auto par défaut. Recharge la chaîne.
   SpanOrder span_order = SpanOrder::Auto;
   // Smooth Motion du pilote NVIDIA (RTX 40 et 50, pilote ≥ 580) : sa couche Vulkan double les

@@ -155,7 +155,6 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   out.rife_factor = factor >= 2 ? factor : 0;
   out.rife_factor_den = 1;
   out.keep_poses = true;  // mesuré A/B (4070 Ti, ×3) : tient mieux, qualité équivalente
-  out.gmfss_precision = PrecisionTier::Balanced;
   // SPAN en FP16 : le FP8 se choisit à la main dans la liste des modèles (« … · FP8 ») tant que sa qualité et
   // son gain sur le FP16 ne sont pas jugés à l'œil et mesurés ; les préréglages ne le posent plus.
   out.span_precision = PrecisionTier::Balanced;
@@ -173,7 +172,6 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
     case Tier::Fast:
     case Tier::Ultra:
       if (settings.preset == Preset::Auto && machine.calibrated) break;  // la calibration a choisi
-      // GMFSS Union sort du mode Auto (lourd, artefacts dans les gros mouvements) : il reste au choix manuel.
       // DistilDRBA y rentre quand sa porte de qualité est passée (kDistilDrbaInAuto).
       if (kDistilDrbaInAuto) {
         out.motion_engine = MotionEngine::DistilDrba;
@@ -208,9 +206,9 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b) {
   return a.upscale != b.upscale || a.work_height != b.work_height || a.downscale != b.downscale ||
          a.model != b.model || a.span_order != b.span_order || a.rife_auto != b.rife_auto ||
          a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||
-         a.keep_poses != b.keep_poses || a.gmfss_precision != b.gmfss_precision ||
-         a.span_precision != b.span_precision || a.motion_precision != b.motion_precision ||
-         a.rife_model != b.rife_model || a.motion_engine != b.motion_engine;
+         a.keep_poses != b.keep_poses || a.span_precision != b.span_precision ||
+         a.motion_precision != b.motion_precision || a.rife_model != b.rife_model ||
+         a.motion_engine != b.motion_engine;
 }
 
 bool display_moves_chain(Preset preset, int opened_height, int now_height) {

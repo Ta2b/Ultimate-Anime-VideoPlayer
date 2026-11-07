@@ -42,8 +42,6 @@ constexpr std::array kPlayer{
           "Mode Rapide : trop d'images perdues, retour au mode Stable"},
     Entry{"French", "Français"},
     Entry{"Fullscreen (f)", "Plein écran (f)"},
-    Entry{"GMFSS unavailable", "GMFSS indisponible"},
-    Entry{"GMFSS unavailable: using RIFE", "GMFSS indisponible : RIFE"},
     Entry{"German", "Allemand"},
     Entry{"Grade off", "Grade désactivé"},
     Entry{"Grade on", "Grade activé"},

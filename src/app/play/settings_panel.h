@@ -55,7 +55,7 @@ struct SettingsChoices {
   bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne
-  std::string rife_folder;               // le dossier des modèles RIFE (et des graphes de GMFSS)
+  std::string rife_folder;               // le dossier des modèles RIFE (et de DistilDRBA)
   bool nvidia = false;                   // GPU NVIDIA : Smooth Motion n'est offert qu'à lui
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                     // pic automatique de l'écran, en nits

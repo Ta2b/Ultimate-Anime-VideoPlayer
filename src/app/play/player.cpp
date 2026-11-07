@@ -37,7 +37,6 @@
 #include "app/play/engine_switch.h"
 #include "app/play/export_run.h"
 #include "app/play/first_run.h"
-#include "app/play/gmfss_model.h"
 #include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"

@@ -212,15 +212,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
     reads.push_back(read(*interpolation, "interpolation", "drba_fused", s.drba_fused));
-    reads.push_back(read(*interpolation, "interpolation", "gmfss_fused", s.gmfss_fused));
-    // gmfss_quality (faux : l'ancien Performance, devenu Équilibre ; vrai : Qualité), puis les crans.
-    bool legacy_quality = false;
-    reads.push_back(read(*interpolation, "interpolation", "gmfss_quality", legacy_quality));
-    if (legacy_quality)
-      s.gmfss_precision = PrecisionTier::Quality;
-    else if (interpolation->contains("gmfss_quality"))
-      s.gmfss_precision = PrecisionTier::Balanced;  // faux : l'ancien Performance, FP16
-    reads.push_back(read_precision(*interpolation, "interpolation", "gmfss_precision", s.gmfss_precision));
+    // gmfss_fused, gmfss_quality et gmfss_precision : GMFSS retiré (0.10.0), clés ignorées.
     reads.push_back(read_precision(*interpolation, "interpolation", "motion_precision", s.motion_precision));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
     reads.push_back(read(*interpolation, "interpolation", "auto_cap", s.auto_cap));
@@ -260,7 +252,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
         engine_known = true;
       }
     }
-    // P5.2 : GMFSS est débranché de la lecture et de l'export ; un ancien play.toml qui le nomme se lit en
+    // P5.2 : GMFSS est retiré (0.10.0) ; un ancien play.toml qui le nomme se lit en
     // RIFE.
     if (is_gmfss(s.motion_engine)) s.motion_engine = MotionEngine::Rife;
     if (!engine_known)
@@ -430,8 +422,6 @@ std::string format_settings(const PlaySettings& s) {
       {"keep_poses", s.keep_poses},
       {"rife_fused", s.rife_fused},
       {"drba_fused", s.drba_fused},
-      {"gmfss_fused", s.gmfss_fused},
-      {"gmfss_precision", std::string(name(s.gmfss_precision))},
       {"motion_precision", std::string(name(s.motion_precision))},
       {"auto", s.rife_auto},
       {"auto_cap", s.auto_cap},
