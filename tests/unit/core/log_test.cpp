@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -91,4 +92,19 @@ TEST_CASE("Journal nettoyé : le dossier personnel devient ~ sous ses deux sépa
   ajp::set_log_home("/");
   CHECK(ajp::redact_log_text("/usr/lib") == "/usr/lib");
   ajp::set_log_home("");
+}
+
+TEST_CASE("Journal : une exception sortie du corps est journalisée et vaut 1", "[log]") {
+  Capture capture;
+  ajp::install_log_sinks({capture.sink()}, spdlog::level::info);
+  const int code = ajp::run_logged([]() -> int {
+    ajp::log_channel("app")->info("avant");
+    throw std::runtime_error("forcée");
+  });
+  CHECK(code == 1);
+  const std::vector<std::string> lines = capture.lines();
+  REQUIRE(lines.size() == 2);
+  CHECK(lines[0] == "app : avant");
+  CHECK(lines[1] == "app : arrêt sur une exception non rattrapée : forcée");
+  CHECK(ajp::run_logged([] { return 7; }) == 7);
 }

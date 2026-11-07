@@ -107,6 +107,7 @@ int fail(const ajp::Refusal& refusal) {
 // Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou
 // démarre à sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
+  ajp::close_log();  // execv remplace le processus : la file du journal s'écrit avant
 #ifdef _WIN32
   // _spawnv ne met aucun argument entre guillemets : un chemin à espaces (« C:\Mes vidéos\a.mkv »)
   // arriverait coupé en deux. Chaque argument est cité à la façon de CommandLineToArgvW, et l'exécutable
@@ -271,9 +272,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
+int run_player(int argc, char** argv) {
   // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
   // partagent 8 files matérielles par défaut : des flux sans lien s'y alignent. 32 en donne une à chacun,
   // sous Linux comme sous Windows (où le CRT de MSVC reporte la variable dans l'environnement du processus,
@@ -510,4 +509,15 @@ int main(int argc, char** argv) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
   }
   return 1;
+}
+
+}  // namespace
+
+// Une exception qui sort du lecteur, ou un std::terminate, laisse sa cause dans ajp.log et vide la file
+// asynchrone du journal avant de s'arrêter (P2.1).
+int main(int argc, char** argv) {
+  ajp::install_terminate_flush();
+  const int code = ajp::run_logged([&] { return run_player(argc, argv); });
+  ajp::close_log();
+  return code;
 }

@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -46,5 +47,17 @@ void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level
 // quels. Le premier appel pose le répartiteur ; les suivants ne changent que son contenu, que les
 // canaux déjà créés suivent.
 void install_module_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level_enum level);
+
+// Exécute body et rend son code ; une exception qui en sort est journalisée (canal « app », niveau
+// critique) et vaut le code 1 (P2.1). Le journal n'est pas fermé : l'appelant finit par close_log().
+int run_logged(const std::function<int()>& body);
+
+// Vide et ferme le journal (spdlog::shutdown) : la file asynchrone s'écrit jusqu'à sa dernière ligne.
+// Rien ne journalise ensuite.
+void close_log();
+
+// std::set_terminate : la cause (l'exception en cours, s'il y en a une) est journalisée, le journal
+// fermé par close_log(), puis std::abort(). Un std::terminate ne perd plus les dernières lignes.
+void install_terminate_flush();
 
 }  // namespace ajp
