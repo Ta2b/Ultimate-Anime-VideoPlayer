@@ -20,6 +20,7 @@
 
 #include "app/play/auto_bench.h"
 #include "app/play/backend_library.h"
+#include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
@@ -734,6 +735,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   // Un étage arrêté sur un refus fatal : un échec, jamais une fin d'épisode (pas d'épisode suivant).
   if (!failure && session.failure()) failure = *session.failure();
+  if (failure && p.options.bench_out)
+    tell_bench_parent(
+        {.event = "refusal", .code = std::string(name(failure->code)), .detail = failure->detail});
   // La source a changé de taille en cours de lecture : la chaîne se rouvre à la nouvelle taille, au même
   // endroit ; au-delà de 4 réouvertures par minute, c'est un refus.
   if (session.resize_asked() && !chain.reopen && !failure) {

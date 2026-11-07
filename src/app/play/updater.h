@@ -83,12 +83,14 @@ struct CheckResult {
   std::vector<std::string> revoked_keys;  // révoquées par le manifeste vérifié, à retenir
 };
 
-// Le statut HTTP d'un message d'erreur de curl (« … returned error: 404 ») ; 0 : aucun.
-int curl_http_status(std::string_view message);
+// Le statut HTTP que curl écrit par --write-out kCurlStatusFormat (« ajp-http 404 »), jamais lu dans ses
+// messages d'erreur (P2.11) ; absent pour une autre ligne.
+inline constexpr std::string_view kCurlStatusFormat = "ajp-http %{http_code}\n";
+std::optional<int> curl_status_line(std::string_view line);
 
-// Le refus lisible d'un échec de curl (code de sortie, dernière ligne écrite) : « pas de connexion Internet
-// »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
-Refusal curl_failure(int code, std::string_view message);
+// Le refus lisible d'un échec de curl (code de sortie, statut HTTP, 0 sans réponse) : « pas de connexion
+// Internet »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
+Refusal curl_failure(int code, int http_status);
 
 // Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible. Un
 // canal sans manifeste publié (HTTP 404) n'est pas un refus : le lecteur est à jour.

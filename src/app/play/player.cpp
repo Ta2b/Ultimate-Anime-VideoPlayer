@@ -24,6 +24,7 @@
 #include "app/play/auto_bench.h"
 #include "app/play/auto_config.h"
 #include "app/play/backend_library.h"
+#include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
@@ -106,6 +107,7 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 
 std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
   const auto log = log_channel("app");
+  set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
   // Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
   std::optional<media::TrackInfo> given;

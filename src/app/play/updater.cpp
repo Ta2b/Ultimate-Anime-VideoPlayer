@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -93,12 +94,18 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
   const auto curl = system_tool("curl");
   if (!curl)
     return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found: cannot check for updates"));
-  prepare::ProcessSpec spec{.program = *curl,
-                            .args = {"-fsSL", "--proto", "=https", "--max-time", std::to_string(max_seconds),
-                                     "-o", prepare::utf8_path(file), std::string(url)},
-                            .timeout = std::chrono::seconds(max_seconds + 10)};
-  std::string last;
-  auto exit = prepare::run_process(spec, [&](std::string_view line) { last = line; }, stop);
+  prepare::ProcessSpec spec{
+      .program = *curl,
+      .args = {"-fsSL", "--proto", "=https", "--max-time", std::to_string(max_seconds), "--write-out",
+               std::string(kCurlStatusFormat), "-o", prepare::utf8_path(file), std::string(url)},
+      .timeout = std::chrono::seconds(max_seconds + 10)};
+  int status = 0;
+  auto exit = prepare::run_process(
+      spec,
+      [&](std::string_view line) {
+        if (const auto read = curl_status_line(line)) status = *read;
+      },
+      stop);
   if (!exit) return std::unexpected(exit.error());
   if (exit->kind == prepare::ExitKind::Cancelled)
     return refuse(RefusalCode::Cancelled, i18n::tr("download cancelled"));
@@ -106,7 +113,7 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
     return refuse(RefusalCode::DecodeFailed,
                   std::format("{} : {}", i18n::tr("download"), prepare::describe(*exit)));
   if (exit->code == 0) return {};
-  return std::unexpected(curl_failure(static_cast<int>(exit->code), last));
+  return std::unexpected(curl_failure(static_cast<int>(exit->code), status));
 }
 
 // Les fichiers (et liens) d'un dossier, en chemins relatifs. Une erreur du parcours est une erreur : une
@@ -337,24 +344,25 @@ bool update_due(const UpdateState& state, std::string_view mode, std::string_vie
          now_unix < state.last_check_unix;
 }
 
-int curl_http_status(std::string_view message) {
-  // « curl: (22) The requested URL returned error: 404 »
-  const std::size_t at = message.rfind("error: ");
-  if (at == std::string_view::npos) return 0;
+std::optional<int> curl_status_line(std::string_view line) {
+  constexpr std::string_view kTag = "ajp-http ";
+  if (!line.starts_with(kTag)) return std::nullopt;
+  line.remove_prefix(kTag.size());
   int status = 0;
-  for (std::size_t i = at + 7; i < message.size() && message[i] >= '0' && message[i] <= '9'; ++i)
-    status = status * 10 + (message[i] - '0');
-  return status >= 100 && status < 600 ? status : 0;
+  const auto [end, error] = std::from_chars(line.data(), line.data() + line.size(), status);
+  if (error != std::errc{} || end != line.data() + line.size() || status < 0 || status >= 600)
+    return std::nullopt;
+  return status;
 }
 
-Refusal curl_failure(int code, std::string_view message) {
+Refusal curl_failure(int code, int http_status) {
   const std::string what = i18n::tr("download");
   const auto failed = [&](RefusalCode refusal, std::string text) {
     return Refusal{refusal, std::format("{} : {}", what, text)};
   };
   switch (code) {
     case 22: {
-      const int status = curl_http_status(message);
+      const int status = http_status;
       if (status == 404)
         return failed(RefusalCode::TrackUnavailable, i18n::tr("file not found on the server"));
       if (status != 0)

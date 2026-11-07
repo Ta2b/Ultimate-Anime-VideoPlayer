@@ -5,6 +5,7 @@
 // Provisoire : le thread preparer (prepare/preparer.h), branché par gpu, en prendra la place.
 #pragma once
 
+#include <atomic>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -48,6 +49,7 @@ class EngineBuild {
   void run(const std::stop_token& stop, const EngineRequest& request);
 
   mutable std::mutex mutex_;
+  std::atomic<bool> told_build_{false};  // l'événement « build » du banc, dit une fois
   std::optional<std::expected<gpu::Artifact, Refusal>> result_;
   float fraction_ = 0.0F;
   std::string stage_ = "démarrage";

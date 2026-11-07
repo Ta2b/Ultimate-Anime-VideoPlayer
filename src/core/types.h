@@ -107,6 +107,9 @@ struct Refusal {
   // Vrai quand l'étage qui refuse continue : la lecture n'a pas à s'arrêter. Faux par défaut, un
   // refus arrête l'étage qui le signale.
   bool recoverable = false;
+  // La clé fautive d'un fichier de réglages, « audio.delay_ms » ; vide sinon. La reprise la lit, jamais le
+  // texte de detail (P2.11).
+  std::string key;
 };
 
 constexpr std::string_view name(RefusalCode code) {

@@ -19,7 +19,7 @@ namespace ajp::app::play {
 // ; faux si aucune. Une nouvelle version du lecteur ne remet pas tout le fichier aux défauts pour une valeur
 // qu'elle n'accepte plus.
 using TableReader = std::expected<PlaySettings, Refusal> (*)(const toml::table&);
-bool drop_offending(toml::table& root, const std::string& detail, std::vector<std::string>* dropped,
+bool drop_offending(toml::table& root, const Refusal& refusal, std::vector<std::string>* dropped,
                     const TableReader& read);
 
 // P2.22 : les clés de existing que read ne lit pas (celles d'une version plus récente du lecteur) passent

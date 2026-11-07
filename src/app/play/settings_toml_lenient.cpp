@@ -6,8 +6,14 @@
 namespace ajp::app::play {
 
 // Écarte de root la clé (sinon la section) dont le retrait fait accepter le fichier ; faux si aucune.
-bool drop_offending(toml::table& root, const std::string& detail, std::vector<std::string>* dropped,
+bool drop_offending(toml::table& root, const Refusal& refusal, std::vector<std::string>* dropped,
                     const TableReader& read) {
+  // Le même refus : même code et même clé ; sans clé (une règle entre deux valeurs), même détail.
+  const auto same = [&](const Refusal& other) {
+    return other.code == refusal.code && other.key == refusal.key &&
+           (!refusal.key.empty() || other.detail == refusal.detail);
+  };
+  const std::string& detail = refusal.detail;
   for (auto& [section_key, section_node] : root) {
     toml::table* table = section_node.as_table();
     if (table == nullptr) continue;
@@ -16,7 +22,7 @@ bool drop_offending(toml::table& root, const std::string& detail, std::vector<st
       const std::string name(key.str());
       toml::table trial = root;
       if (toml::table* in_trial = trial.get_as<toml::table>(where)) in_trial->erase(name);
-      if (auto tried = read(trial); !tried && tried.error().detail == detail) continue;
+      if (auto tried = read(trial); !tried && same(tried.error())) continue;
       if (dropped != nullptr) dropped->push_back(std::format("{}.{} ({})", where, name, detail));
       table->erase(name);
       return true;
@@ -27,7 +33,7 @@ bool drop_offending(toml::table& root, const std::string& detail, std::vector<st
     const std::string where(section_key.str());
     toml::table trial = root;
     trial.erase(where);
-    if (auto tried = read(trial); !tried && tried.error().detail == detail) continue;
+    if (auto tried = read(trial); !tried && same(tried.error())) continue;
     if (dropped != nullptr) dropped->push_back(std::format("[{}] ({})", where, detail));
     root.erase(where);
     return true;

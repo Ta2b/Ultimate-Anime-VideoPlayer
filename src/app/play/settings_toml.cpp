@@ -34,6 +34,14 @@ std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
   return std::unexpected(Refusal{code, std::move(detail)});
 }
 
+// Le refus d'une clé du fichier (P2.11) : la clé, « audio.delay_ms », dans Refusal::key, que la lecture
+// tolérante écarte sans relire le texte ; le détail commence par elle.
+std::unexpected<Refusal> refuse_key(RefusalCode code, std::string key, std::string_view rest = {}) {
+  std::string detail = key;
+  detail += rest;
+  return std::unexpected(Refusal{.code = code, .detail = std::move(detail), .key = std::move(key)});
+}
+
 // Lit table[key] s'il existe, du type de out (entier, booléen, réel, texte) ; FieldType sinon.
 template <class T>
 std::expected<void, Refusal> read(const toml::table& table, std::string_view section, std::string_view key,
@@ -66,7 +74,7 @@ std::expected<void, Refusal> read(const toml::table& table, std::string_view sec
       return {};
     }
   }
-  return refuse(RefusalCode::FieldType, std::format("{}.{}", section, key));
+  return refuse_key(RefusalCode::FieldType, std::format("{}.{}", section, key));
 }
 
 // Un cran de précision (precision.h) : sa clé, ou FieldOutOfRange pour un autre texte.
@@ -80,7 +88,8 @@ std::expected<void, Refusal> read_precision(const toml::table& table, std::strin
       return {};
     }
   }
-  return refuse(RefusalCode::FieldOutOfRange, std::format("{}.{} : « {} »", section, key, text));
+  return refuse_key(RefusalCode::FieldOutOfRange, std::format("{}.{}", section, key),
+                    std::format(" : « {} »", text));
 }
 
 // L'ancienne liste de langues : un tableau de balises (« ["fre", "eng"] ») ; FieldType sinon.
@@ -89,11 +98,11 @@ std::expected<void, Refusal> read_legacy_languages(const toml::table& table, std
   const toml::node* node = table.get("languages");
   if (node == nullptr) return {};
   const toml::array* list = node->as_array();
-  if (list == nullptr) return refuse(RefusalCode::FieldType, std::format("{}.languages", section));
+  if (list == nullptr) return refuse_key(RefusalCode::FieldType, std::format("{}.languages", section));
   std::vector<std::string> languages;
   for (const toml::node& item : *list) {
     const std::optional<std::string> tag = item.value_exact<std::string>();
-    if (!tag) return refuse(RefusalCode::FieldType, std::format("{}.languages", section));
+    if (!tag) return refuse_key(RefusalCode::FieldType, std::format("{}.languages", section));
     languages.push_back(*tag);
   }
   out = std::move(languages);
@@ -106,18 +115,18 @@ std::expected<void, Refusal> read_look_layers(const toml::table& grade, std::vec
   const toml::node* keys = grade.get("looks");
   if (keys == nullptr) return {};
   const toml::array* names = keys->as_array();
-  if (names == nullptr) return refuse(RefusalCode::FieldType, "grade.looks");
+  if (names == nullptr) return refuse_key(RefusalCode::FieldType, "grade.looks");
   const toml::node* mixes_node = grade.get("looks_mix");
   const toml::array* mixes = mixes_node != nullptr ? mixes_node->as_array() : nullptr;
-  if (mixes_node != nullptr && mixes == nullptr) return refuse(RefusalCode::FieldType, "grade.looks_mix");
+  if (mixes_node != nullptr && mixes == nullptr) return refuse_key(RefusalCode::FieldType, "grade.looks_mix");
   std::vector<LookLayer> layers;
   for (std::size_t i = 0; i < names->size(); ++i) {
     const std::optional<std::string> key = names->at(i).value_exact<std::string>();
-    if (!key) return refuse(RefusalCode::FieldType, "grade.looks");
+    if (!key) return refuse_key(RefusalCode::FieldType, "grade.looks");
     LookLayer layer{*key, 1.0};
     if (mixes != nullptr && i < mixes->size()) {
       const std::optional<double> mix = mixes->at(i).value<double>();
-      if (!mix) return refuse(RefusalCode::FieldType, "grade.looks_mix");
+      if (!mix) return refuse_key(RefusalCode::FieldType, "grade.looks_mix");
       layer.mix = *mix;
     }
     layers.push_back(std::move(layer));
@@ -138,15 +147,15 @@ std::expected<void, Refusal> read_factor(const toml::table& table, PlaySettings&
   if (auto real = node->value_exact<double>()) {
     const double halves = *real * 2.0;
     if (halves != std::floor(halves) || halves < 0.0 || halves > 1000.0) {
-      return refuse(RefusalCode::FieldOutOfRange,
-                    std::format("interpolation.rife : {} n'est pas une moitié", *real));
+      return refuse_key(RefusalCode::FieldOutOfRange, "interpolation.rife",
+                        std::format(" : {} n'est pas une moitié", *real));
     }
     const int count = static_cast<int>(halves);
     s.rife_factor = count % 2 == 0 ? count / 2 : count;
     s.rife_factor_den = count % 2 == 0 ? 1 : 2;
     return {};
   }
-  return refuse(RefusalCode::FieldType, "interpolation.rife");
+  return refuse_key(RefusalCode::FieldType, "interpolation.rife");
 }
 
 const toml::table* section(const toml::table& root, std::string_view name) {
@@ -189,13 +198,14 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     if (const auto found = preset_from_key(preset)) {
       s.preset = *found;
     } else {
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange, std::format("auto.preset : « {} »", preset)));
+      reads.emplace_back(
+          refuse_key(RefusalCode::FieldOutOfRange, "auto.preset", std::format(" : « {} »", preset)));
     }
     if (const auto found = priority_from_key(priority)) {
       s.priority = *found;
     } else {
       reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("auto.priority : « {} »", priority)));
+          refuse_key(RefusalCode::FieldOutOfRange, "auto.priority", std::format(" : « {} »", priority)));
     }
   }
   if (const toml::table* image = section(root, "image")) {
@@ -215,7 +225,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     }
     if (!known)
       reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("image.downscale : « {} »", downscale)));
+          refuse_key(RefusalCode::FieldOutOfRange, "image.downscale", std::format(" : « {} »", downscale)));
   }
   if (const toml::table* interpolation = section(root, "interpolation")) {
     reads.push_back(read_factor(*interpolation, s));
@@ -241,9 +251,8 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     if (auto_mode == "libre" || auto_mode == "recommande") {
       s.auto_free = auto_mode == "libre";
     } else {
-      reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange,
-                 std::format("interpolation.auto_mode : « {} » (recommande ou libre)", auto_mode)));
+      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interpolation.auto_mode",
+                                    std::format(" : « {} » (recommande ou libre)", auto_mode)));
     }
     // span_order ; les fichiers d'avant portent warp_after_span, qui ne compte que s'il est vrai (faux
     // était le défaut, écrit partout : il laisse Auto).
@@ -260,8 +269,8 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
       }
     }
     if (!order_known)
-      reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.span_order : « {} »", order)));
+      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interpolation.span_order",
+                                    std::format(" : « {} »", order)));
     std::string engine(name(s.motion_engine));
     reads.push_back(read(*interpolation, "interpolation", "engine", engine));
     // Le flux optique matériel des RTX a été retiré : RIFE le remplace, sans plainte.
@@ -275,7 +284,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     }
     if (!engine_known)
       reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("interpolation.engine : « {} »", engine)));
+          refuse_key(RefusalCode::FieldOutOfRange, "interpolation.engine", std::format(" : « {} »", engine)));
   }
   // Le pic visé par le grade HDR. Le mode HDR n'est plus un réglage (il suit le système) : hdr.engine et la
   // section rtx_hdr d'avant (RTX HDR retiré, sauf son pic) sont ignorés, comme les clés du HDR adaptatif.
@@ -317,13 +326,13 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     }
     if (!scaler_known)
       reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("picture.scaler : « {} »", scaler)));
+          refuse_key(RefusalCode::FieldOutOfRange, "picture.scaler", std::format(" : « {} »", scaler)));
   }
   if (const toml::table* interface = section(root, "interface")) {
     reads.push_back(read(*interface, "interface", "language", s.language));
     if (s.language != "en" && s.language != "fr")
-      reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("interface.language : « {} »", s.language)));
+      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interface.language",
+                                    std::format(" : « {} »", s.language)));
   }
   if (const toml::table* engines = section(root, "engines"))
     reads.push_back(read(*engines, "engines", "install_dir", s.engines_dir));
@@ -336,13 +345,13 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     };
     if (!one_of(s.update_mode, {"notify", "auto", "never"}))
       reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("updates.mode : « {} »", s.update_mode)));
+          refuse_key(RefusalCode::FieldOutOfRange, "updates.mode", std::format(" : « {} »", s.update_mode)));
     if (!one_of(s.update_channel, {"stable", "preview"}))
-      reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("updates.channel : « {} »", s.update_channel)));
+      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "updates.channel",
+                                    std::format(" : « {} »", s.update_channel)));
     if (!one_of(s.update_frequency, {"launch", "daily", "weekly"}))
-      reads.emplace_back(refuse(RefusalCode::FieldOutOfRange,
-                                std::format("updates.frequency : « {} »", s.update_frequency)));
+      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "updates.frequency",
+                                    std::format(" : « {} »", s.update_frequency)));
   }
   if (const toml::table* span = section(root, "span_prepare"))
     reads.push_back(read(*span, "span_prepare", "background", s.span_prepare_background));
@@ -400,7 +409,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     }
     if (!oled_known)
       reads.emplace_back(
-          refuse(RefusalCode::FieldOutOfRange, std::format("grade.oled_black : « {} »", oled)));
+          refuse_key(RefusalCode::FieldOutOfRange, "grade.oled_black", std::format(" : « {} »", oled)));
     // Plus de préréglages : les valeurs du fichier font foi.
     // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
     const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
@@ -551,25 +560,23 @@ std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view tom
   for (int attempt = 0; attempt <= kMaxDropped; ++attempt) {
     auto settings = settings_from_table(root);
     if (settings) return settings;
-    const std::string& detail = settings.error().detail;
-    const std::size_t dot = detail.find('.');
-    const std::size_t found = dot == std::string::npos ? dot : detail.find_first_of(" :", dot);
-    const std::size_t end = found == std::string::npos ? detail.size() : found;
+    const Refusal& refusal = settings.error();
+    const std::size_t dot = refusal.key.find('.');
     toml::table* table = nullptr;
     std::string key_name;
-    if (dot != std::string::npos && dot > 0 && end > dot + 1) {
-      toml::node* node = root.get(detail.substr(0, dot));
+    if (dot != std::string::npos && dot > 0 && dot + 1 < refusal.key.size()) {
+      toml::node* node = root.get(refusal.key.substr(0, dot));
       table = node != nullptr ? node->as_table() : nullptr;
-      key_name = detail.substr(dot + 1, end - dot - 1);
+      key_name = refusal.key.substr(dot + 1);
     }
     if (table != nullptr && table->erase(key_name)) {
-      if (dropped != nullptr) dropped->push_back(detail);
+      if (dropped != nullptr) dropped->push_back(refusal.detail);
       continue;
     }
     // Le refus ne nomme pas une clé du fichier (une règle entre deux valeurs, une liste) : la première clé
     // dont le retrait le lève est écartée, puis, à défaut, la première section. Une nouvelle version du
     // lecteur ne remet jamais tout le fichier aux défauts pour une valeur qu'elle n'accepte plus.
-    if (!drop_offending(root, detail, dropped, settings_from_table)) return settings;
+    if (!drop_offending(root, refusal, dropped, settings_from_table)) return settings;
   }
   return settings_from_table(root);
 }
@@ -593,7 +600,9 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
   for (const std::string& why : dropped)
     log_channel("app")->warn("{} : valeur écartée, défaut gardé ({})", path.string(), why);
   if (!settings)
-    return refuse(settings.error().code, std::format("{} : {}", path.string(), settings.error().detail));
+    return std::unexpected(Refusal{.code = settings.error().code,
+                                   .detail = std::format("{} : {}", path.string(), settings.error().detail),
+                                   .key = settings.error().key});
   return settings;
 }
 
