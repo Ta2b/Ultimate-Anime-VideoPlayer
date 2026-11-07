@@ -33,7 +33,20 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   std::unique_ptr<Pipeline> p(new Pipeline());
   auto demuxer = media::Demuxer::open(config.file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
-  media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), config.languages);
+  // P3.73 : les sous-titres à côté de la vidéo concourent avec ceux du conteneur, à leur langue lue dans le
+  // nom (« Épisode 01.fr.ass »).
+  std::vector<ExternalSubtitle> externals =
+      config.subtitles ? find_external_subtitles(config.file) : std::vector<ExternalSubtitle>{};
+  std::vector<media::TrackInfo> candidates(demuxer->tracks().begin(), demuxer->tracks().end());
+  for (std::size_t k = 0; k < externals.size(); ++k) {
+    const std::string extension = externals[k].path.extension().string();
+    candidates.push_back({.index = kExternalSubtitleBase + static_cast<int>(k),
+                          .kind = media::TrackKind::Subtitle,
+                          .codec = extension == ".srt" || extension == ".SRT" ? "subrip" : "ass",
+                          .language = externals[k].language,
+                          .title = externals[k].path.filename().string()});
+  }
+  media::TrackChoice choice = media::choose_tracks(candidates, config.languages);
   const auto kind_of = [&](int index) {
     const media::TrackInfo* track = demuxer->track(index);
     return track != nullptr ? std::optional(track->kind) : std::nullopt;
@@ -138,7 +151,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     }
     // Les fichiers à côté de la vidéo : après les pistes du conteneur, choisis d'office seulement
     // quand le conteneur n'en a aucune et qu'aucun choix n'a été fait.
-    p->external_ = find_external_subtitles(config.file);
+    p->external_ = std::move(externals);
     for (std::size_t k = 0; k < p->external_.size(); ++k) {
       const int index = kExternalSubtitleBase + static_cast<int>(k);
       p->menu_.subtitles.push_back({.index = index, .label = p->external_[k].label});

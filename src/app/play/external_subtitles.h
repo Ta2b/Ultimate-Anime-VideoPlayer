@@ -10,7 +10,8 @@ namespace ajp::app::play {
 
 struct ExternalSubtitle {
   std::filesystem::path path;
-  std::string label;  // « Externe · Français · Épisode 01.fr.srt »
+  std::string label;     // « Externe · Français · Épisode 01.fr.srt »
+  std::string language;  // la balise lue dans le nom (« fr », « eng ») ; vide sans langue connue (P3.73)
 };
 
 // Index de menu de la première piste externe : au-delà de tout flux de conteneur.

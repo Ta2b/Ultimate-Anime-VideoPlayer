@@ -5,6 +5,7 @@
 #include <format>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #include "app/play/i18n.h"
 #include "app/play/tracks.h"
@@ -18,8 +19,9 @@ std::string lower(std::string text) {
   return text;
 }
 
-// Les premiers jetons après le nom de la vidéo qui sont une langue connue : « fr », « eng ».
-std::string language_of(std::string_view tags) {
+// Le premier jeton après le nom de la vidéo qui est une langue connue : sa balise (« fr », « eng ») et son
+// nom.
+std::pair<std::string, std::string> language_of(std::string_view tags) {
   std::size_t at = 0;
   while (at < tags.size()) {
     std::size_t end = tags.find('.', at);
@@ -27,7 +29,7 @@ std::string language_of(std::string_view tags) {
     const std::string tag(tags.substr(at, end - at));
     if (!tag.empty()) {
       const std::string name = language_name(tag);
-      if (!name.empty() && name != tag) return name;
+      if (!name.empty() && name != tag) return {tag, name};
     }
     at = end + 1;
   }
@@ -53,11 +55,12 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
     const std::string_view rest = std::string_view(name).substr(stem.size());
     if (!rest.empty() && rest.front() != '.')
       continue;  // « Épisode 010.srt » n'est pas celui de « Épisode 01 »
-    const std::string language = language_of(rest);
+    const auto [tag, language] = language_of(rest);
     found.push_back({.path = path,
-                     .label = language.empty() ? i18n::tr_format("External · {}", path.filename().string())
-                                               : i18n::tr_format("External · {} · {}", language,
-                                                                 path.filename().string())});
+                     .label = language.empty()
+                                  ? i18n::tr_format("External · {}", path.filename().string())
+                                  : i18n::tr_format("External · {} · {}", language, path.filename().string()),
+                     .language = tag});
   }
   std::ranges::sort(found, {}, [](const ExternalSubtitle& s) { return s.path.filename().string(); });
   if (found.size() > kMaxExternalSubtitles) found.resize(kMaxExternalSubtitles);
