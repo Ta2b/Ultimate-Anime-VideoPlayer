@@ -38,8 +38,8 @@ struct PairFacts {
 // coupes des plans sous 0,08 étaient toutes des effets.
 inline constexpr double kPlanCutFloor = 0.09;
 
-// Vrai si la paire enjambe une coupe : les plans s'ils la couvrent (au-dessus du plancher), sinon la mesure
-// de RIFE.
+// Vrai si la paire enjambe une coupe : une coupe des plans au-dessus du plancher, ou la mesure de RIFE (l'une
+// ou l'autre, P3.31).
 bool pair_cut(const PairFacts& facts);
 
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.

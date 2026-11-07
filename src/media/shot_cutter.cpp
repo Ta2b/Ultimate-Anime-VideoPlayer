@@ -147,8 +147,10 @@ float frame_distance(const ShotFrame& a, const ShotFrame& b) {
   for (std::size_t i = 0; i < a.grid.size(); ++i) grid += std::abs(a.grid.at(i) - b.grid.at(i));
   grid /= static_cast<float>(a.grid.size());
   // L'histogramme dit que la lumière a changé ; la grille, qu'elle a changé de place (deux plans de même
-  // luminosité, cadrés autrement).
-  return std::max(std::min(0.5F * histogram, 1.0F), std::min(2.5F * grid, 1.0F));
+  // luminosité, cadrés autrement) ; la couleur (P3.31), un champ-contrechamp de même luminosité.
+  const float colour = std::abs(a.blue - b.blue) + std::abs(a.chroma - b.chroma);
+  return std::max(
+      {std::min(0.5F * histogram, 1.0F), std::min(2.5F * grid, 1.0F), std::min(3.0F * colour, 1.0F)});
 }
 
 std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {

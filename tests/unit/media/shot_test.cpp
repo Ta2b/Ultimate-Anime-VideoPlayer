@@ -92,6 +92,18 @@ TEST_CASE("plans : deux plans de même luminosité, cadrés autrement, sont coup
   REQUIRE(cut(frames).size() == 2);
 }
 
+TEST_CASE("plans : champ-contrechamp de même luminosité et cadrage, couleurs autres (P3.31)",
+          "[media][shots]") {
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 80; ++i) {
+    ShotFrame f = flat(i, 0.4F);
+    f.blue = i < 40 ? 0.02F : 0.15F;  // un fond rouge, puis un ciel bleu
+    f.chroma = i < 40 ? 0.30F : 0.25F;
+    frames.push_back(f);
+  }
+  REQUIRE(cut(frames).size() == 2);
+}
+
 TEST_CASE("plans : un éclair d'une image n'est pas une coupe", "[media][shots]") {
   std::vector<ShotFrame> frames;
   for (int i = 0; i < 60; ++i) frames.push_back(flat(i, i == 30 ? 0.95F : 0.15F));
