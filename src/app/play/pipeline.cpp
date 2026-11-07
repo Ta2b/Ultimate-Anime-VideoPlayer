@@ -12,6 +12,7 @@
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "core/log.h"
+#include "kernels/spec/color.h"
 #include "media/demuxer.h"
 #include "media/video_decoder.h"
 #include "prepare/utf8.h"
@@ -335,7 +336,7 @@ void Pipeline::pump() {
 SessionConfig Pipeline::session_config() const {
   // Matrice de la vidéo pour les couleurs VSFilter : celle que le flux annonce, sinon celle que mpv
   // devine à la taille. La plage vient du flux aussi : en plage pleine, VSFilter ne convertit pas.
-  const bool hd = video_track_.width >= 1280 || video_track_.height > 576;
+  const bool hd = !kernels::sd_size(video_track_.width, video_track_.height);
   return SessionConfig{
       .duration_us = duration_us_,
       .audio_end_us = audio_track_ && audio_track_->duration_us > 0 &&

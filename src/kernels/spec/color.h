@@ -258,12 +258,19 @@ constexpr std::uint16_t unorm16(float v) {
 }
 
 // Étiquettes de la source (vf_animejanai.c:337-366). std::nullopt : absente ou inconnue.
-// Matrice non étiquetée : BT.601 sous 720 lignes, BT.709 sinon (heuristique SD du fork).
-inline constexpr int kSdHeightLimit = 720;
+// Matrice non étiquetée : BT.601 pour une image SD, BT.709 sinon. SD : moins de 1280 colonnes et au plus
+// 576 lignes, la règle de mpv et de libplacebo. Seule règle du lecteur (P5.10) : media/color.cpp, l'export
+// (export/av_handles.cpp) et les couleurs des sous-titres (app/play/pipeline.cpp) la lisent ici.
+inline constexpr int kSdWidthLimit = 1280;  // exclue
+inline constexpr int kSdMaxHeight = 576;    // incluse
 
-constexpr Matrix effective_matrix(std::optional<Matrix> tagged, int height) {
+constexpr bool sd_size(int width, int height) {
+  return width < kSdWidthLimit && height <= kSdMaxHeight;
+}
+
+constexpr Matrix effective_matrix(std::optional<Matrix> tagged, int width, int height) {
   if (tagged) return *tagged;
-  return height < kSdHeightLimit ? Matrix::Bt601 : Matrix::Bt709;
+  return sd_size(width, height) ? Matrix::Bt601 : Matrix::Bt709;
 }
 
 // Plage non étiquetée : limitée.

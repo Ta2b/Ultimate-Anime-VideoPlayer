@@ -127,7 +127,8 @@ void add_color(Table& t) {
   }
   t.real("UNORM16_MAX", kUnorm16Max, "RGBA16 : uint(clamp(v, 0, 1) * 65535 + 0.5), NaN donne 0");
   t.unsigned_integer("OPAQUE_ALPHA16", kOpaqueAlpha16);
-  t.integer("SD_HEIGHT_LIMIT", kSdHeightLimit, "Matrice non étiquetée : BT.601 sous cette hauteur");
+  t.integer("SD_WIDTH_LIMIT", kSdWidthLimit, "Matrice non étiquetée : BT.601 sous cette largeur");
+  t.integer("SD_MAX_HEIGHT", kSdMaxHeight, "et jusqu'à cette hauteur");
 }
 
 void add_resample(Table& t) {
