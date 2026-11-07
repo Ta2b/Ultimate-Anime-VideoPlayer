@@ -7,6 +7,15 @@ namespace {
 
 // Image IA : (clé anglaise, français).
 constexpr std::array kImageTabs{
+    Entry{"Restore line art (reduce, then upscale)", "Restaurer les traits (réduire, puis agrandir)"},
+    Entry{
+        "A source sharper than the working resolution is reduced, then SPAN redraws its lines: cleaner lines "
+        "for a quarter of the work. Off: such a source keeps all its detail (grain, textures), without SPAN.",
+        "Une source plus nette que la résolution de travail est réduite, puis SPAN redessine ses traits : "
+        "des "
+        "traits plus propres pour quatre fois moins de calcul. Coupé : une telle source garde tout son "
+        "détail "
+        "(grain, textures), sans SPAN."},
     Entry{" (recommended)", " (recommandé)"},
     Entry{" · suggested for this card", " · conseillé pour cette carte"},
     Entry{"4K output: RIFE estimates motion on a lighter 720p copy.",

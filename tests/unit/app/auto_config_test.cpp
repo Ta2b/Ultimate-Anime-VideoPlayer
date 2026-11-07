@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/options.h"
+
 using namespace ajp;
 using namespace ajp::app::play;
 
@@ -88,6 +90,8 @@ TEST_CASE("le multiplicateur suit l'écran, une source rapide n'est pas interpol
 TEST_CASE("Économe ne réduit ni n'agrandit ni n'interpole", "[auto_config]") {
   const PlaySettings s = applied(Preset::Economy, Tier::Ultra, 2160, 165.0);
   CHECK_FALSE(s.upscale);
+  CHECK(s.work_height == 0);  // P3.20 : une source 4K reste en 4K
+  CHECK(work_size(3840, 2160, s.work_height) == WorkSize{3840, 2160});
   CHECK(s.rife_factor == 0);
   CHECK_FALSE(s.rife_auto);
 }

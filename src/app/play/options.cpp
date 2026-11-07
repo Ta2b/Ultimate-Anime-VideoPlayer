@@ -139,6 +139,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else if (arg == "--no-upscale") {
       options.upscale = false;
       options.given.emplace_back(arg);
+    } else if (arg == "--no-restore-lines") {  // l'essai B de « Restaurer les traits » (ajp compare)
+      options.given.emplace_back(arg);
     } else if (arg == "--fullscreen") {
       options.fullscreen = true;
     } else if (arg == "--hidden") {
@@ -332,6 +334,11 @@ bool PlayOptions::was_given(std::string_view name) const {
   return std::ranges::find(given, name) != given.end();
 }
 
+bool span_runs(bool upscale, bool restore_lines, int source_height, int work_height) {
+  if (!upscale) return false;
+  return restore_lines || work_height <= 0 || source_height <= work_height;
+}
+
 WorkSize work_size(int width, int height, int work_height) {
   if (work_height <= 0 || height <= work_height || width <= 0 || height <= 0) return {width, height};
   const auto scaled = static_cast<int>(std::lround(static_cast<double>(width) * work_height / height));
@@ -456,6 +463,7 @@ std::string play_usage(bool debug) {
       "ajp play [file] [options]   (without a file: home screen, Open a video)\n"
       "  --model=FILE.onnx      SPAN ×2 model (default: {})\n"
       "  --no-upscale           source picture as is\n"
+      "  --no-restore-lines     a source above the working resolution keeps its detail, no SPAN\n"
       "  --window=WxH           window size (default 1280x720)\n"
       "  --fullscreen           full screen from the start\n"
       "  --start=S              start position, in seconds (otherwise, where playback stopped)\n"

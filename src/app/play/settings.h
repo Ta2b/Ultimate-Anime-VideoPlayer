@@ -173,6 +173,10 @@ struct PlaySettings {
   Preset preset = Preset::Auto;
   Priority priority = Priority::Balance;
   bool upscale = true;
+  // « Restaurer les traits » (P3.19) : une source plus haute que work_height est réduite puis réagrandie par
+  // SPAN, qui corrige le flou des traits pour quatre fois moins de calcul. Coupé : une telle source garde
+  // tout son détail et SPAN ne la touche pas.
+  bool restore_lines = true;
   std::string model;  // fichier ONNX de SPAN (nom seul) ; vide : celui du lecteur actuel
   int work_height = 720;
   Downscale downscale = Downscale::Hermite;

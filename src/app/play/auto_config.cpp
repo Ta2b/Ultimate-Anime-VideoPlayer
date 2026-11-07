@@ -135,9 +135,10 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
                     machine.explored_work_height);  // l'exploration a trouvé que la machine tient plus haut
   if (source.height > 0) work = std::min(work, std::max(source.height, kWorkHeights.front()));
 
-  // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle.
+  // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle (P3.20 : une 4K reste
+  // en 4K, 0 ne réduit rien).
   out.upscale = *level != Tier::Economy;
-  out.work_height = *level == Tier::Economy ? kWorkHeights.back() : work;
+  out.work_height = *level == Tier::Economy ? 0 : work;
   out.downscale = Downscale::Hermite;  // net sur les traits, sans rebond, quatre points comme Mitchell
   out.model.clear();                   // SPAN Sharp (performance), le modèle du lecteur
   out.span_order = SpanOrder::Auto;

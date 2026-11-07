@@ -156,6 +156,11 @@ TEST_CASE("ajp play : taille de travail, 720 lignes par défaut comme le profil 
   CHECK(work_size(1920, 1080, 720) == WorkSize{1280, 720});
   CHECK(work_size(1280, 720, 720) == WorkSize{1280, 720});  // déjà à la taille : rien
   CHECK(work_size(854, 480, 720) == WorkSize{854, 480});    // plus petite : jamais agrandie
+  // « Restaurer les traits » coupé (P3.19) : une 1080p au-dessus de 720 n'est ni réduite ni agrandie.
+  CHECK(span_runs(true, true, 1080, 720));
+  CHECK_FALSE(span_runs(true, false, 1080, 720));
+  CHECK(span_runs(true, false, 480, 720));
+  CHECK_FALSE(span_runs(false, true, 480, 720));
   CHECK(work_size(1920, 1080, 0) == WorkSize{1920, 1080});  // 0 : jamais réduite
   CHECK(work_size(1920, 800, 720) == WorkSize{1728, 720});  // 2,40:1
   CHECK(work_size(1440, 1080, 720) == WorkSize{960, 720});  // 4:3

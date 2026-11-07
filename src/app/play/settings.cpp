@@ -345,6 +345,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   PlaySettings s = saved;
   if (options.mute) s.volume = 0.0F;
   if (options.was_given("--no-upscale")) s.upscale = false;
+  if (options.was_given("--no-restore-lines")) s.restore_lines = false;
   if (options.was_given("--model") && options.model) s.model = options.model->filename().string();
   if (options.was_given("--work-height")) s.work_height = options.work_height;
   if (options.was_given("--rife")) {
@@ -367,6 +368,7 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   };
   keep("--mute", &PlaySettings::volume);
   keep("--no-upscale", &PlaySettings::upscale);
+  keep("--no-restore-lines", &PlaySettings::restore_lines);
   keep("--model", &PlaySettings::model);
   keep("--work-height", &PlaySettings::work_height);
   keep("--rife", &PlaySettings::rife_factor);

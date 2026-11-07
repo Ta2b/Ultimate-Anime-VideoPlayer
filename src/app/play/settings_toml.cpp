@@ -213,6 +213,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
   if (const toml::table* image = section(root, "image")) {
     std::string downscale(name(s.downscale));
     reads.push_back(read(*image, "image", "upscale", s.upscale));
+    reads.push_back(read(*image, "image", "restore_lines", s.restore_lines));
     reads.push_back(read(*image, "image", "model", s.model));
     reads.push_back(read(*image, "image", "work_height", s.work_height));
     reads.push_back(read(*image, "image", "downscale", downscale));
@@ -446,6 +447,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("auto", toml::table{{"preset", std::string(key(s.preset))},
                                   {"priority", std::string(key(s.priority))}});
   root.insert("image", toml::table{{"upscale", s.upscale},
+                                   {"restore_lines", s.restore_lines},
                                    {"model", s.model},
                                    {"work_height", s.work_height},
                                    {"downscale", std::string(name(s.downscale))},

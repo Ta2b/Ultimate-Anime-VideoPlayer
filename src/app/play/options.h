@@ -204,6 +204,8 @@ struct WorkSize {
   friend bool operator==(const WorkSize&, const WorkSize&) = default;
 };
 WorkSize work_size(int width, int height, int work_height);
+// SPAN tourne-t-il sur cette source (P3.19) ? Pas sans « Restaurer les traits » quand il faudrait la réduire.
+bool span_runs(bool upscale, bool restore_lines, int source_height, int work_height);
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), ou une valeur
 // illisible ou hors plage (FieldOutOfRange), sont refusées ; sans fichier, l'écran d'accueil.

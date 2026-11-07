@@ -186,14 +186,18 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   c.one_lane = p.options.one_lane;
   c.skip_held = p.options.skip_held;
   c.smooth_drawings = p.options.smooth_drawings;
-  if (settings.upscale) {
+  const bool span = span_runs(settings.upscale, settings.restore_lines, video.height, settings.work_height);
+  if (settings.upscale && !span)
+    log_channel("app")->info("restaurer les traits coupé : source {}p gardée telle quelle, sans SPAN",
+                             video.height);
+  if (span) {
     auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
     if (!chosen) return std::unexpected(std::move(chosen.error()));
     c.model = std::move(*chosen);
   }
   c.factor = c.model ? kSpanFactor : 1;
   c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
-  c.work = work_size(video.width, video.height, settings.work_height);
+  c.work = work_size(video.width, video.height, settings.upscale && !span ? 0 : settings.work_height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)
