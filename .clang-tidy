@@ -22,7 +22,12 @@ WarningsAsErrors: '*'
 HeaderFilterRegex: 'src/.*'
 # Complexité (P5.17) : aucune fonction nouvelle au-delà de ces bornes ; les fonctions qui les dépassent
 # déjà portent un NOLINTNEXTLINE, à retirer quand elles sont découpées (P5.15), jamais à ajouter.
+# Un std::expected ignoré est une erreur (P5.7) : bugprone-unused-return-value le vérifie sur le type de
+# résultat, plus sûr qu'un [[nodiscard]] à poser sur 765 fonctions ; MSVC marque std::expected
+# [[nodiscard]] de lui-même. std::ignore = … dit qu'un résultat est volontairement laissé.
 CheckOptions:
+  - key: bugprone-unused-return-value.CheckedReturnTypes
+    value: '^::std::error_code$;^::std::error_condition$;^::std::errc$;^::std::expected$'
   - key: readability-function-cognitive-complexity.Threshold
     value: 60
   - key: readability-function-size.LineThreshold
