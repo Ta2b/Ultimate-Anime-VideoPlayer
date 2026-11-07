@@ -450,3 +450,17 @@ Profil 7 (1080p, RIFE ×2) au premier lancement, TensorRT.
   doit rester identique (les graphes CUDA sont recapturés quand la zone grandit).
 - **Secteur et batterie** : mesurer sur secteur ; sur batterie le GPU est bridé et le profil 9
   (source) peut être nécessaire.
+
+## Endurance de 8 h (P2.44, novembre)
+
+Un lecteur seul enchaîne 400 fois le même épisode (réglage « épisode suivant ») pendant 8 h ; la mémoire, la
+VRAM, les poignées et la taille du journal sont relevées chaque minute :
+
+```sh
+python3 tools/bench/endurance.py --video=episode.mkv --sortie=~/ajp-reports/endurance --heures=8 --ajp=ajp
+```
+
+Sous Windows, `py tools\bench\endurance.py ... --ajp=chemin\ajp.exe`. Le verdict de `rapport.md` échoue si,
+après la première heure, la mémoire monte de plus de 32 Mio par heure, la VRAM de plus de 64 Mio, les poignées
+de plus de 20, ou si le journal dépasse 97 Mio. Essayé 3 min sous lavapipe (16 épisodes, poignées stables) ;
+les 8 h restent à lancer sur le PC, avec le moteur ordinaire (sans `--no-upscale`).
