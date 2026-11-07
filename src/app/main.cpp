@@ -42,6 +42,7 @@ extern "C" {
 #include "app/play/options.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
+#include "app/play/single_instance.h"
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
@@ -348,6 +349,18 @@ int run_player(int argc, char** argv) {
     std::fprintf(stdout, "%s\n", done->c_str());
     return 0;
   }
+  // Un seul lecteur (P2.13) : un double-clic sur une vidéo l'ouvre dans la fenêtre déjà là. Pris avant la
+  // mise à jour, que deux lancements appliquaient ensemble ; rendu avant chaque relance.
+  std::shared_ptr<ajp::app::play::InstanceListener> instance;
+  if (!options->data_dir && !options->bench_out && !data.empty() && ajp::app::play::shares_instance(args)) {
+    std::vector<std::string> files;
+    std::error_code absolute;
+    if (!options->file.empty())
+      files.push_back(ajp::prepare::utf8_path(std::filesystem::absolute(options->file, absolute)));
+    auto claim = ajp::app::play::claim_instance(data, ajp::app::play::instance_key(data), files);
+    if (claim.forwarded) return 0;
+    instance = std::move(claim.listener);
+  }
   // Une mise à jour préparée (mode Automatique) s'applique ici, avant tout, puis le lecteur se relance.
   if (!options->data_dir && !options->bench_out) {
     const ajp::app::play::UpdatePaths update{.data = data, .install = base, .executable = place.executable};
@@ -366,6 +379,7 @@ int run_player(int argc, char** argv) {
         std::fprintf(stderr, "ajp : update.toml : %s\n", kept.error().detail.c_str());
       if (applied) {
         std::fprintf(stderr, "ajp : %s\n", applied->c_str());
+        instance.reset();
         return relaunch(place.executable, argc, argv);
       }
       std::fprintf(stderr, "ajp: update failed: %s\n", applied.error().detail.c_str());
@@ -380,6 +394,7 @@ int run_player(int argc, char** argv) {
     }
     if (restored) {
       std::fprintf(stderr, "ajp : %s\n", restored->c_str());
+      instance.reset();
       return relaunch(place.executable, argc, argv);
     }
   }
@@ -494,6 +509,7 @@ int run_player(int argc, char** argv) {
   std::error_code error;
   std::filesystem::create_directories(paths.engines, error);
   const auto played = ajp::app::play::play(*options, paths);
+  instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();
   if (!options->data_dir && !options->bench_out) {
     // Une sortie sans plantage referme le lancement ; une lecture menée à son terme confirme la version en

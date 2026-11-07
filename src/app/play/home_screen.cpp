@@ -19,6 +19,7 @@
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 
 #include "app/play/auto_bench.h"
@@ -37,6 +38,7 @@
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
 #include "app/play/scripted_input.h"
+#include "app/play/single_instance.h"
 #include "app/play/span_auto.h"
 #include "app/play/span_int8.h"
 #include "app/play/user_keys.h"
@@ -214,6 +216,17 @@ PlaySettings home_settings(const HomeScreen& h, const PlaySettings& base) {
 
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
   if (event.type != SDL_EVENT_DROP_FILE || event.drop.data == nullptr) return std::nullopt;
+  // Un fichier ouvert par un autre lancement (single_instance.h) : la fenêtre passe devant.
+  if (event.drop.source != nullptr && std::string_view(event.drop.source) == kForwardedDrop) {
+    int count = 0;
+    if (SDL_Window** windows = SDL_GetWindows(&count); windows != nullptr) {
+      if (count > 0) {
+        if ((SDL_GetWindowFlags(windows[0]) & SDL_WINDOW_MINIMIZED) != 0) SDL_RestoreWindow(windows[0]);
+        SDL_RaiseWindow(windows[0]);
+      }
+      SDL_free(static_cast<void*>(windows));
+    }
+  }
   std::filesystem::path path = prepare::path_from_utf8(event.drop.data);
   // Un dossier ou un fichier qui n'est pas une vidéo (sous-titres, image, texte) ne ferme pas la
   // lecture en cours : il ne se lirait pas, et la vidéo serait perdue pour rien.
