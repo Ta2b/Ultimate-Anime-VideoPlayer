@@ -30,7 +30,7 @@ add_custom_command(
 # Le registre et SHChangeNotify de l'inscription comme lecteur par défaut (default_player.cpp) :
 # advapi32 et shell32. Les minidumps de plantage (crash_dump.cpp) : dbghelp.
 if(WIN32)
-  target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 winmm user32 dbghelp)
+  target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 winmm user32 dbghelp winhttp)
 endif()
 # wp_presentation (placebo_wayland.cpp) : le code client du protocole, produit par wayland-scanner depuis
 # third_party/wayland-protocols/presentation-time.xml.

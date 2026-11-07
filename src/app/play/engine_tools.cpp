@@ -11,6 +11,7 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include <winhttp.h>
 #endif
 
 namespace ajp::app::play {
@@ -32,6 +33,58 @@ std::optional<std::filesystem::path> system_tool(std::string_view name) {
     if (std::filesystem::is_regular_file(dir / file, error)) return dir / file;
   }
   return std::nullopt;
+}
+
+std::optional<std::string> proxy_from_setting(std::string_view setting) {
+  // « hôte:port » pour tous, ou « http=h1:p;https=h2:p » par protocole.
+  if (setting.empty()) return std::nullopt;
+  if (setting.find('=') == std::string_view::npos) {
+    const std::size_t end = setting.find_first_of("; ");
+    return std::string(setting.substr(0, end));
+  }
+  for (std::string_view rest = setting; !rest.empty();) {
+    const std::size_t end = rest.find_first_of("; ");
+    const std::string_view item = rest.substr(0, end);
+    if (item.starts_with("https=")) return std::string(item.substr(6));
+    rest = end == std::string_view::npos ? std::string_view() : rest.substr(end + 1);
+  }
+  return std::nullopt;
+}
+
+namespace {
+
+std::optional<std::string> windows_proxy() {
+#if defined(_WIN32)
+  WINHTTP_CURRENT_USER_IE_PROXY_CONFIG config{};
+  if (WinHttpGetIEProxyConfigForCurrentUser(&config) == FALSE) return std::nullopt;
+  std::string text;
+  if (config.lpszProxy != nullptr) {
+    const int bytes = WideCharToMultiByte(CP_UTF8, 0, config.lpszProxy, -1, nullptr, 0, nullptr, nullptr);
+    if (bytes > 1) {
+      text.resize(static_cast<std::size_t>(bytes - 1));
+      WideCharToMultiByte(CP_UTF8, 0, config.lpszProxy, -1, text.data(), bytes, nullptr, nullptr);
+    }
+  }
+  for (LPWSTR owned : {config.lpszProxy, config.lpszProxyBypass, config.lpszAutoConfigUrl}) {
+    if (owned != nullptr) GlobalFree(owned);
+  }
+  return proxy_from_setting(text);
+#else
+  return std::nullopt;
+#endif
+}
+
+}  // namespace
+
+std::vector<std::string> curl_download_args() {
+  std::vector<std::string> args{
+      "--fail",        "--location", "--retry",      "5",  "--retry-delay",     "3", "--retry-all-errors",
+      "--speed-limit", "1024",       "--speed-time", "60", "--connect-timeout", "30"};
+  if (const auto proxy = windows_proxy()) {
+    args.emplace_back("--proxy");
+    args.push_back(*proxy);
+  }
+  return args;
 }
 
 std::optional<float> curl_percent(std::string_view line) {

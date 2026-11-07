@@ -341,26 +341,49 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   std::error_code error;
   std::filesystem::create_directories(scratch, error);
   const std::filesystem::path packed = scratch / (file.name + ".part");
-  std::filesystem::remove(packed, error);
+  const std::filesystem::path chunk = scratch / (file.name + ".morceau");
   const auto cleanup = [&] {
     std::error_code ignored;
     std::filesystem::remove(packed, ignored);
+    std::filesystem::remove(chunk, ignored);
   };
   if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + i18n::tr(": zero size"));
-  const std::uint64_t last = file.data_offset + file.packed_size - 1;
-  auto fetched = run_tool(
-      {.program = *curl,
-       .args = {"--fail", "--location", "--retry", "1", "--retry-delay", "2", "--progress-bar", "--range",
-                std::format("{}-{}", file.data_offset, last), "--output", packed.string(), file.url},
-       .timeout = std::chrono::hours(2)},
-      [&](std::string_view line) {
-        if (const auto f = curl_percent(line); f && progress.report) progress.report(*f * 0.85F, file.name);
-      },
-      progress.stop, i18n::tr_format("downloading {}", file.name));
-  if (!fetched) {
-    cleanup();
-    return std::unexpected(fetched.error());
+  // P3.7 : un .part laissé par un essai coupé se reprend par plage ; trop long, il repart de zéro.
+  std::uint64_t have = std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
+  if (error || have > file.packed_size) {
+    std::filesystem::remove(packed, error);
+    have = 0;
   }
+  const std::uint64_t last = file.data_offset + file.packed_size - 1;
+  // Trois reprises au plus après une coupure, chacune depuis ce qui est déjà là (curl réessaie aussi
+  // lui-même).
+  std::optional<Refusal> failure;
+  for (int attempt = 0; attempt < 4 && have < file.packed_size; ++attempt) {
+    std::filesystem::remove(chunk, error);
+    std::vector<std::string> args = curl_download_args();
+    args.insert(args.end(), {"--progress-bar", "--range", std::format("{}-{}", file.data_offset + have, last),
+                             "--output", chunk.string(), file.url});
+    const double done = static_cast<double>(have) / static_cast<double>(file.packed_size);
+    auto fetched = run_tool(
+        {.program = *curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
+        [&](std::string_view line) {
+          if (const auto f = curl_percent(line); f && progress.report)
+            progress.report(static_cast<float>(done + ((1.0 - done) * *f)) * 0.85F, file.name);
+        },
+        progress.stop, i18n::tr_format("downloading {}", file.name));
+    // Ce qui est arrivé, même coupé, s'ajoute au .part.
+    {
+      std::ifstream piece(chunk, std::ios::binary);
+      std::ofstream whole(packed, std::ios::binary | std::ios::app);
+      if (piece && whole) whole << piece.rdbuf();
+    }
+    std::filesystem::remove(chunk, error);
+    have = std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
+    if (fetched) break;
+    failure = fetched.error();
+    if (failure->code == RefusalCode::Cancelled) return std::unexpected(*failure);
+  }
+  if (have < file.packed_size && failure) return std::unexpected(*failure);
   const std::uintmax_t got = std::filesystem::file_size(packed, error);
   if (error || got != file.packed_size) {
     cleanup();
@@ -504,8 +527,13 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     overall(0.0, i18n::tr_format("downloading {} ({})", name, format_size(package.size)));
     auto fetched = run_tool(
         {.program = *curl,
-         .args = {"--fail", "--location", "--retry", "1", "--retry-delay", "2", "--continue-at", "-",
-                  "--progress-bar", "--output", part.string(), package.url},
+         .args =
+             [&] {
+               std::vector<std::string> args = curl_download_args();
+               args.insert(args.end(),
+                           {"--continue-at", "-", "--progress-bar", "--output", part.string(), package.url});
+               return args;
+             }(),
          .timeout = std::chrono::hours(4)},
         [&](std::string_view line) {
           if (const auto f = curl_percent(line))
