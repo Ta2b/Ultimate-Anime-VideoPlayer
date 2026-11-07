@@ -87,13 +87,13 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 27> kTrialOptions{
+constexpr std::array<std::string_view, 28> kTrialOptions{
     "--rife-image",   "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",    "--no-hdr-metadata",
     "--probe-nvdec",  "--no-probe-nvdec",  "--shot-cuts",       "--no-shot-cuts",    "--one-lane",
     "--skip-held",    "--anime-shots",     "--no-anime-shots",  "--fast-steady",     "--smooth-drawings",
     "--ring-watcher", "--no-ring-watcher", "--precise-wait",    "--no-precise-wait", "--audio-pll",
     "--no-audio-pll", "--vsync-index",     "--no-vsync-index",  "--present",         "--no-present",
-    "--no-vrr",       "--rife-calm-model"};
+    "--no-vrr",       "--rife-calm-model", "--rife-warm"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -188,6 +188,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.no_vrr = true;
     } else if (arg == "--one-lane") {
       options.one_lane = true;
+    } else if (arg == "--rife-warm") {
+      options.rife_warm = true;
     } else if (arg == "--skip-held") {
       options.skip_held = true;
     } else if (arg == "--fast-steady") {
@@ -527,6 +529,7 @@ std::string play_usage(bool debug) {
          "  --fast-steady          trial: Fast mode at a constant step, N frames per held source in a shot\n"
          "  --smooth-drawings      trial: a drawing held two frames blends into motion (motion RIFE)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
+         "  --rife-warm            trial: calm pairs reuse the coarse RIFE blocks of the previous pair\n"
          "  --ring-watcher         a thread waits for ring writes and wakes the display (default;\n"
          "                         --no-ring-watcher: the display polls)\n"
          "  --precise-wait         waits for the next frame to the microsecond (default; --no-precise-wait:\n"

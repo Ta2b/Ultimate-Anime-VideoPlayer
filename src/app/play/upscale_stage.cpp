@@ -50,6 +50,9 @@ UpscaleStage::~UpscaleStage() {
   }
   if (setup_.rife_motion_calm != nullptr)
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
+  if (setup_.rife_warm)
+    log_channel("gpu")->info("RIFE à chaud : {} passes sur {} sans les blocs grossiers", warm_runs_,
+                             rife_runs_);
   if (moving_.pairs > 0) {
     const auto pairs = static_cast<double>(moving_.pairs);
     log_channel("gpu")->info(

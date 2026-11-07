@@ -33,7 +33,12 @@ std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor
   ++rife_runs_;
   const bool light = calm && setup_.rife_motion_calm != nullptr;
   if (light) ++calm_runs_;
-  return setup_.backend->enqueue(light ? *setup_.rife_motion_calm : *setup_.rife_motion, inputs, results);
+  gpu::Engine& engine = light ? *setup_.rife_motion_calm : *setup_.rife_motion;
+  // P6.15 : la passe précédente était le milieu de la paire d'avant, sur ce moteur, et la paire est calme.
+  const bool mid = t == 0.5F;
+  if (setup_.rife_warm && mid && calm && warm_from_ == &engine && engine.next_warm()) ++warm_runs_;
+  warm_from_ = mid ? &engine : nullptr;
+  return setup_.backend->enqueue(engine, inputs, results);
 }
 
 gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
@@ -51,6 +56,7 @@ void UpscaleStage::forget_motion() {
   strong_motion_ = false;
   motion_measured_ = false;
   motion_.known = false;  // une mesure encore en vol ne vaut plus
+  warm_from_ = nullptr;   // ni les blocs grossiers d'une autre scène (P6.15)
 }
 
 std::expected<void, Refusal> UpscaleStage::settle_motion() {

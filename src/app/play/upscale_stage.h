@@ -78,6 +78,9 @@ struct UpscaleSetup {
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
   // chaque moteur redevient son coût propre au lieu d'inclure celui des autres voies.
   bool one_lane = false;
+  // P6.15, essai : la passe du milieu d'une paire calme reprend les blocs grossiers de la passe du milieu de
+  // la paire précédente, sur le même moteur (gpu::Engine::next_warm).
+  bool rife_warm = false;
   // Réglages changés en cours de lecture (facteur RIFE, réduction, débandage) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -429,7 +432,10 @@ class UpscaleStage final : public RingStage {
   std::uint64_t multi_pairs_ = 0;
   std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu
   std::uint64_t rife_runs_ = 0;
-  std::uint64_t calm_runs_ = 0;   // passes faites par rife_motion_calm (P6.17)
+  std::uint64_t calm_runs_ = 0;  // passes faites par rife_motion_calm (P6.17)
+  std::uint64_t warm_runs_ = 0;  // passes du milieu reprises à chaud (P6.15)
+  // La dernière passe est celle du milieu, sur ce moteur : la suivante peut la reprendre (P6.15).
+  const gpu::Engine* warm_from_ = nullptr;
   core::MovingTally moving_;      // la zone qui bouge des paires mesurées (P6.6, P6.18)
   std::uint64_t skipped_ = 0;     // images source sautées avant calcul (passed)
   bool fences_mapped_ = false;    // les signaux de l'export écrits par le GPU (KernelOps::map_fences)

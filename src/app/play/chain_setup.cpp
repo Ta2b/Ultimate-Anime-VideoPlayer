@@ -111,6 +111,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .drba_motion = drba_motion,
       .rife_factor = factor_of(settings),
       .one_lane = one_lane,
+      .rife_warm = rife_warm,
       .live = std::move(live),
       .clock = clock,
       .source_width = width,
@@ -213,6 +214,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   c.one_lane = p.options.one_lane;
+  c.rife_warm = p.options.rife_warm;
   c.skip_held = p.options.skip_held;
   c.smooth_drawings = p.options.smooth_drawings;
   const bool span = span_runs(settings.upscale, settings.restore_lines, video.height, settings.work_height);

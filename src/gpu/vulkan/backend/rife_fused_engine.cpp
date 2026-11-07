@@ -144,6 +144,10 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::create
   engine->height_ = h;
   engine->width_ = w;
   engine->motion_ = key.motion;
+  while (engine->warm_blocks_ + 1 < key.plan.blocks &&
+         key.plan.reduce[static_cast<std::size_t>(engine->warm_blocks_)] == key.plan.reduce[0]) {
+    ++engine->warm_blocks_;
+  }
   engine->layout_ = kernels::rife_fused_layout(key.plan, h, w);
   engine->outputs_ =
       key.motion ? std::vector<std::string>{"flow", "mask"} : std::vector<std::string>{"output"};
@@ -340,7 +344,9 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::
     return queue.submit(**recording);
   };
   if (auto ok = run_net(*pieces_[0], images, encode); !ok) return ok;
-  for (int k = 0; k < plan_.blocks; ++k) {
+  const int first_block = std::exchange(warm_next_, false) ? warm_blocks_ : 0;
+  warm_ready_ = false;  // repris si la chaîne va au bout
+  for (int k = first_block; k < plan_.blocks; ++k) {
     const auto i = static_cast<std::size_t>(k);
     if (auto ok = queue.submit(*(*glue)->steps[i]); !ok) return ok;  // entrée du bloc k
     const kernels::FusedDims x = kernels::rife_fused_x(plan_, k, height_, width_);
@@ -351,7 +357,9 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::
       return ok;
     }
   }
-  return queue.submit(*(*glue)->steps.back());
+  auto done = queue.submit(*(*glue)->steps.back());
+  warm_ready_ = done.has_value();
+  return done;
 }
 
 }  // namespace ajp::gpu::vk

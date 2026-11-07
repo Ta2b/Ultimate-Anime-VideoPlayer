@@ -222,6 +222,9 @@ class Engine {
   // changé (rife_time) : un moteur qui garde le travail des images de l'appel précédent le saute (D6, une
   // fenêtre préparée une fois, un appel par instant). Sans effet sur les autres.
   virtual void next_times_only() {}
+  // P6.15 : l'appel suivant peut reprendre les blocs grossiers de RIFE de l'appel précédent (même moteur,
+  // paire voisine, même instant) au lieu de les recalculer. Vrai si le moteur le fera ; faux : calcul entier.
+  virtual bool next_warm() { return false; }
 };
 
 // Image d'un autre module (surface NVDEC copiée, VkImage du ring) à importer sans copie.
