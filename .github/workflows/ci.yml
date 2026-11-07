@@ -131,7 +131,11 @@ jobs:
       - run: ccache -s
       - name: Tests (Vulkan logiciel sous Xvfb)
         if: matrix.tests
-        run: xvfb-run -a ctest --preset ${{ matrix.preset }} -j 3
+        run: xvfb-run -a ctest --preset ${{ matrix.preset }} -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
+      # Un test sauté ne compte plus pour réussi : leur nombre reste sous le plafond connu (P2.39).
+      - name: Tests sautés
+        if: matrix.tests
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" ${{ matrix.name }}
       # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
       # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.
       - name: clang-tidy sur src/
