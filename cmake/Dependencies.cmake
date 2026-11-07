@@ -25,6 +25,11 @@ target_compile_definitions(ajp_toml_headers INTERFACE TOML_HEADER_ONLY=1
                                                       "TOML_CONFIG_HEADER=\"${CMAKE_CURRENT_LIST_DIR}/../src/core/toml_config.h\"")
 ajp_alias_dep(toml ajp_toml_headers)
 
+# zlib : le deflate des roues et des zip que le lecteur télécharge (core/inflate.h). Celui du système
+# sous Linux et macOS, le port de vcpkg sous Windows.
+find_package(ZLIB REQUIRED)
+ajp_alias_dep(zlib ZLIB::ZLIB)
+
 find_package(spdlog CONFIG REQUIRED)
 ajp_alias_dep(spdlog spdlog::spdlog)
 target_compile_definitions(ajp_dep_spdlog INTERFACE SPDLOG_USE_STD_FORMAT)

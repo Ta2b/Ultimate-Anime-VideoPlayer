@@ -1,4 +1,4 @@
-// Décompression deflate brute (RFC 1951) en flux, sans zlib : le contenu d'un membre de roue ou de
+// Décompression deflate brute (RFC 1951) en flux, par zlib : le contenu d'un membre de roue ou de
 // zip que le lecteur télécharge par plages (engine_install.h). Une fenêtre de 32 Kio en mémoire,
 // jamais le fichier entier : libnvinfer pèse plus de 600 Mo décompressée.
 #pragma once
