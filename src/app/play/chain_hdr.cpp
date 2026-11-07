@@ -16,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_video.h>
+
 #include "app/play/chain.h"
 #include "app/play/chain_shots.h"
 #include "app/play/host_facts.h"
@@ -306,6 +308,15 @@ void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t n
 }  // namespace
 
 void grade_tick(Chain& to, std::int64_t now_us) {
+  // P4.2 : fenêtre réduite ou cachée, l'interpolation s'arrête (rien n'est vu) ; l'audio et SPAN continuent,
+  // la reprise est immédiate.
+  if (SDL_Window* window = to.screen.window()) {
+    const bool hidden = (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_OCCLUDED)) != 0;
+    if (hidden != to.live.hidden())
+      log_channel("app")->info("fenêtre {} : interpolation {}", hidden ? "cachée" : "revenue",
+                               hidden ? "suspendue" : "reprise");
+    to.live.set_hidden(hidden);
+  }
   tend_looks(to, now_us);  // un look changé : posé une fois lu (1.11)
   // La scène : le plan de la pré-analyse (chain_shots.h) s'il est connu, sinon la scène vue à l'ingestion.
   feed_plan_shots(to);

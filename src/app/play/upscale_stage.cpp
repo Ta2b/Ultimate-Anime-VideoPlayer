@@ -297,11 +297,13 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   Factor factor = interpolates() ? setup_.rife_factor : Factor{};
   if (interpolates() && setup_.live) factor = setup_.live->factor_now();
+  const bool hidden = setup_.live != nullptr && setup_.live->hidden();  // P4.2 : rien n'est vu
+  if (hidden) factor = Factor{};
   // La grille de sortie de la paire (core/cadence.h), refaite quand le facteur change : la paire
   // suivante repart alors de cette image.
   std::optional<core::CadenceStep> step;
   // mode Rapide : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
-  const bool free_mode = interpolates() && setup_.live && setup_.live->free_active();
+  const bool free_mode = interpolates() && setup_.live && setup_.live->free_active() && !hidden;
   const bool steady = free_mode && setup_.live->steady_active();
   // Mouvement fort anticipé : la mesure du milieu de la paire d'avant, relue avant la grille de celle-ci,
   // dit si elle sera lourde (RIFE à chaque instant) ; la grille libre planifie alors son écart en

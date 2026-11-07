@@ -357,6 +357,9 @@ class LiveSettings {
   std::uint64_t scene_cuts() const { return cuts_.load(std::memory_order_relaxed); }
   // Le grade tourne à l'écran (posé par main avec lui) : gpu débande alors les sources avant SPAN, une fois
   // par source à sa taille, au lieu que l'écran le fasse sur chaque image agrandie.
+  // P4.2 : la fenêtre ne se voit pas ; le fil du GPU n'interpole plus.
+  void set_hidden(bool hidden) { hidden_.store(hidden, std::memory_order_relaxed); }
+  bool hidden() const { return hidden_.load(std::memory_order_relaxed); }
   void set_deband_source(bool on) { deband_source_.store(on, std::memory_order_relaxed); }
   bool deband_source() const { return deband_source_.load(std::memory_order_relaxed); }
   // Retard des images de sortie, mesuré par main (Session), lu par gpu.
@@ -381,6 +384,7 @@ class LiveSettings {
   std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};
   std::atomic<bool> deband_source_{false};
+  std::atomic<bool> hidden_{false};
   mutable std::mutex mutex_;
   gpu::Reduction reduction_;
   std::atomic<std::uint64_t> pairs_{0};
