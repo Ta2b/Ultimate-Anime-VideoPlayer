@@ -587,7 +587,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                            prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file),
                            chain.running.preset != Preset::Custom);
         if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
-        if (span.reopen) chain.reopen = chain.running;
       }
       // L'écran change (éteint puis rallumé, autre sortie, nouveau mode) : on relit sa fréquence, son VRR et
       // son état, sans quoi la cadence restait celle de l'écran d'avant.

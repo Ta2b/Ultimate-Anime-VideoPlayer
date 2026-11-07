@@ -57,7 +57,7 @@ find_package(PkgConfig REQUIRED)
 
 # FFmpeg 9.0.2 (libavformat 63.1), LGPL partagée.
 pkg_check_modules(AJP_FFMPEG REQUIRED IMPORTED_TARGET
-  libavformat>=63.1 libavcodec>=63.1 libavutil>=61.1 libswresample>=7.1 libswscale>=10.1)
+  libavformat>=63.1 libavcodec>=63.1 libavfilter>=12.1 libavutil>=61.1 libswresample>=7.1 libswscale>=10.1)
 ajp_alias_dep(ffmpeg PkgConfig::AJP_FFMPEG)
 
 # libplacebo v7.360.1 (overlay ports/libplacebo).

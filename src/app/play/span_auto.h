@@ -63,8 +63,7 @@ bool should_start_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
 
 // Ce que la boucle du lecteur doit faire de la tâche à ce tour.
 struct SpanAutoTick {
-  std::optional<i18n::Translated> notify;  // à afficher à l'écran
-  bool reopen = false;                     // le paquet est prêt : rouvrir la chaîne pour l'utiliser
+  std::optional<i18n::Translated> notify;  // à afficher à l'écran (prêt : il sert à la vidéo suivante)
 };
 // quiet (cran posé par un préréglage, étape 3.6) : rien à l'écran et pas de réouverture, le paquet sert à
 // l'ouverture suivante ; le journal dit tout.

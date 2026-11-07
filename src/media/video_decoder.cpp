@@ -16,6 +16,7 @@ extern "C" {
 }
 
 #include "media/av_util.h"
+#include "media/deinterlace.h"
 #include "media/frame_data.h"
 #include "media/hw_device.h"
 #include "media/log.h"
@@ -67,6 +68,8 @@ struct VideoDecoder::State {
   // du dernier paquet s'il est une image clé, sinon de la suivante (wait_key).
   std::optional<Packet> last;
   bool wait_key = false;
+  Deinterlacer deinterlacer;  // P3.25 : les images logicielles entrelacées, par bwdif
+  bool deinterlace_flushed = false;
   std::shared_ptr<spdlog::logger> log = make_logger();
 
   // Données abîmées : l'image en cause est perdue, le décodage continue.
@@ -152,6 +155,23 @@ struct VideoDecoder::State {
     log->info("décodage logiciel rouvert sur {} threads, {} paquets rejoués", codec->thread_count,
               replay.size());
     return true;
+  }
+
+  // Horodatage et événement de fin de copie d'une image prête. Un trou d'horodatage se comble par l'image
+  // précédente plus sa durée. Sans image précédente (début, ou après un flush), il reste inconnu : kNoPts,
+  // jamais un 0 inventé.
+  std::expected<std::optional<DecodedFrame>, Refusal> finish(FramePtr frame) {
+    const std::int64_t pts =
+        frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
+    const std::int64_t duration = frame->duration > 0 ? frame->duration : nominal_duration_us;
+    next_pts_us = pts == kNoPts ? kNoPts : pts + duration;
+    ReadyEvent ready;
+    if (hw.stream && frame->hw_frames_ctx != nullptr) {
+      auto recorded = hw.stream->record();
+      if (!recorded) return std::unexpected(recorded.error());
+      ready = std::move(*recorded);
+    }
+    return to_decoded_frame(std::move(frame), pts, duration, std::move(ready));
   }
 
   // Les paquets à rejouer, puis la fin du flux ; arrêté par EAGAIN, repris au receive() suivant.
@@ -301,10 +321,13 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
       state->software_allowed && av.codec_id == AV_CODEC_ID_H264 &&
       (h264_profile == AV_PROFILE_H264_HIGH_10 || h264_profile == AV_PROFILE_H264_HIGH_422 ||
        h264_profile == AV_PROFILE_H264_HIGH_444_PREDICTIVE);
+  // P3.25 : une piste entrelacée se décode en logiciel, où bwdif la désentrelace avant SPAN.
+  const bool interlaced =
+      state->software_allowed && av.field_order != AV_FIELD_UNKNOWN && av.field_order != AV_FIELD_PROGRESSIVE;
   for (const HwApi attempt : options.attempts) {
-    if (hardware_hopeless && attempt != HwApi::Software) {
-      state->log->info("piste {} : {} sauté, aucun décodeur matériel pour ce profil H.264", track.index,
-                       name(attempt));
+    if ((hardware_hopeless || interlaced) && attempt != HwApi::Software) {
+      state->log->info("piste {} : {} sauté, {}", track.index, name(attempt),
+                       interlaced ? "piste entrelacée" : "aucun décodeur matériel pour ce profil H.264");
       continue;
     }
     auto opened = state->try_attempt(attempt, track, options);
@@ -407,6 +430,12 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
       return refuse_av(RefusalCode::DecodeFailed, "envoi d'un paquet en attente", err);
     }
   }
+  // Une image retenue par bwdif (la fin du flux, ou une image d'avance) sort avant d'en décoder une autre.
+  if (auto held = s.deinterlacer.pull(); !held) {
+    return std::unexpected(held.error());
+  } else if (*held) {
+    return s.finish(std::move(*held));
+  }
   FramePtr frame(av_frame_alloc());
   if (!frame) return refuse(RefusalCode::DecodeFailed, "image : mémoire insuffisante");
   // Avec des threads d'images, l'erreur d'une image abîmée sort ici, une fois par
@@ -420,6 +449,15 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   if (s.reopen && s.reopen_software()) return std::nullopt;
   if (err == AVERROR(EAGAIN)) return std::nullopt;
   if (err == AVERROR_EOF) {
+    if (s.deinterlacer.active() && !s.deinterlace_flushed) {
+      s.deinterlace_flushed = true;
+      if (auto flushed = s.deinterlacer.flush(); !flushed) return std::unexpected(flushed.error());
+      if (auto last_frame = s.deinterlacer.pull(); !last_frame) {
+        return std::unexpected(last_frame.error());
+      } else if (*last_frame) {
+        return s.finish(std::move(*last_frame));
+      }
+    }
     s.drained = true;
     return std::nullopt;
   }
@@ -431,13 +469,6 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
     s.sent.shrink_to_fit();
   }
 
-  // Un trou d'horodatage se comble par l'image précédente plus sa durée. Sans image
-  // précédente (début, ou après un flush), il reste inconnu : kNoPts, jamais un 0 inventé.
-  const std::int64_t pts =
-      frame->best_effort_timestamp == AV_NOPTS_VALUE ? s.next_pts_us : frame->best_effort_timestamp;
-  const std::int64_t duration = frame->duration > 0 ? frame->duration : s.nominal_duration_us;
-  s.next_pts_us = pts == kNoPts ? kNoPts : pts + duration;
-
   // Les images d'un appareil partagé restent sur le GPU : leur propriétaire les lit en place.
   if (s.download && !s.hw.shared && frame->hw_frames_ctx != nullptr) {
     FramePtr host(av_frame_alloc());
@@ -448,13 +479,17 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
       return refuse_av(RefusalCode::DecodeFailed, "propriétés de l'image copiée", props);
     frame = std::move(host);
   }
-  ReadyEvent ready;
-  if (s.hw.stream && frame->hw_frames_ctx != nullptr) {
-    auto recorded = s.hw.stream->record();
-    if (!recorded) return std::unexpected(recorded.error());
-    ready = std::move(*recorded);
+  // P3.25 : une image entrelacée en mémoire hôte passe par bwdif, avec une image de retard.
+  if (frame->hw_frames_ctx == nullptr &&
+      (s.deinterlacer.active() || (frame->flags & AV_FRAME_FLAG_INTERLACED) != 0)) {
+    if (!s.deinterlacer.active()) s.log->info("images entrelacées : désentrelacement bwdif");
+    if (auto pushed = s.deinterlacer.push(std::move(frame)); !pushed) return std::unexpected(pushed.error());
+    auto out = s.deinterlacer.pull();
+    if (!out) return std::unexpected(out.error());
+    if (!*out) return std::nullopt;
+    frame = std::move(*out);
   }
-  return to_decoded_frame(std::move(frame), pts, duration, std::move(ready));
+  return s.finish(std::move(frame));
 }
 
 void VideoDecoder::flush() {
@@ -467,6 +502,8 @@ void VideoDecoder::flush() {
   s.ended = false;
   s.drained = false;
   s.next_pts_us = kNoPts;
+  s.deinterlacer.reset();
+  s.deinterlace_flushed = false;
 }
 
 }  // namespace ajp::media

@@ -85,8 +85,8 @@ SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
     if (note.refused) {
       tick.notify = span_failure_text(note.text);
     } else {
-      tick.notify = i18n::ui_tr("Performance mode ready: playback uses it now");
-      tick.reopen = true;
+      // P3.24 : la lecture n'est pas coupée ; le paquet sert dès la vidéo suivante.
+      tick.notify = i18n::ui_tr("Performance mode ready: used from the next video");
     }
     return tick;
   }
