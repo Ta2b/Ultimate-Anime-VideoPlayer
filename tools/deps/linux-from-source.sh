@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Construit les dépendances du lecteur depuis leurs dépôts git, aux versions
-# fixées par vcpkg.json et ports/, dans un préfixe local.
+# Construit les dépendances du lecteur depuis leurs dépôts git, aux commits fixés
+# dans DEPS ci-dessous, dans un préfixe local.
 #
-# Sert quand vcpkg ne peut pas télécharger ses archives (réseau filtré, machine
-# de dev sans cache binaire). La CI et les versions livrées passent par vcpkg.
+# C'est la source des dépendances Linux de la CI et du paquet Linux, et celle des
+# postes de développement. vcpkg (vcpkg.json, ports/) ne sert qu'à Windows : les
+# versions des deux se suivent à la main.
 #
 #   tools/deps/linux-from-source.sh [--core] <prefixe> [dossier-de-travail]
 #   AJP_DEPS_PREFIX=<prefixe> cmake --preset linux-prefix
@@ -22,32 +23,31 @@ export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/lib/x86_64-linux-gnu/pkgco
 export LD_LIBRARY_PATH="$PREFIX/lib:$PREFIX/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
 export PATH="$PREFIX/bin:$PATH"
 
-# nom url référence
+# nom url référence commit (le SHA complet que la référence désignait, vérifié après le clonage)
 DEPS=(
-  "vulkan-headers https://github.com/KhronosGroup/Vulkan-Headers v1.4.363"
-  "tomlplusplus https://github.com/marzer/tomlplusplus v3.4.0"
-  "catch2 https://github.com/catchorg/Catch2 v3.16.0"
-  "spdlog https://github.com/gabime/spdlog v1.17.0"
-  "nanobench https://github.com/martinus/nanobench v4.6.0"
-  "imgui https://github.com/ocornut/imgui v1.92.9"
-  "nv-codec-headers https://github.com/FFmpeg/nv-codec-headers n13.0.19.0"
-  "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2"
-  "sdl3 https://github.com/libsdl-org/SDL release-3.4.18"
-  "libplacebo https://github.com/haasn/libplacebo v7.360.1"
-  "libass https://github.com/the-database/libass 896614fa"
+  "vulkan-headers https://github.com/KhronosGroup/Vulkan-Headers v1.4.363 6802bb4733b63ed5efd3adb308a6c885ef180ea1"
+  "tomlplusplus https://github.com/marzer/tomlplusplus v3.4.0 30172438cee64926dc41fdd9c11fb3ba5b2ba9de"
+  "catch2 https://github.com/catchorg/Catch2 v3.16.0 317ac1ed4c0bb6e6b91eafc817e05c488feffcb3"
+  "spdlog https://github.com/gabime/spdlog v1.17.0 79524ddd08a4ec981b7fea76afd08ee05f83755d"
+  "nanobench https://github.com/martinus/nanobench v4.6.0 b709728dba4df0356d467abfb0ba20781a8031c0"
+  "imgui https://github.com/ocornut/imgui v1.92.9 01380c579715e62fb9a8d6ec0502c4ea83bfde6e"
+  "nv-codec-headers https://github.com/FFmpeg/nv-codec-headers n13.0.19.0 e844e5b26f46bb77479f063029595293aa8f812d"
+  "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2 946fcce07b6dcd0331c8cc609192aeff5e1924f8"
+  "sdl3 https://github.com/libsdl-org/SDL release-3.4.18 829a65d769d935c4852f8159e964312c0957260a"
+  "libplacebo https://github.com/haasn/libplacebo v7.360.1 cee9b076f2c63104ccfd497fa79c39a867293ec4"
+  "libass https://github.com/the-database/libass 896614fa 896614fa263f9f64944f7b8650ff6806d5328c4d"
 )
 
-fetch() {  # nom url ref
+fetch() {  # nom url ref commit
   local dir="$WORK/$1"
-  if [[ -d "$dir/.git" ]]; then
-    # Déjà à cette référence : rien à faire. D'une autre (version changée) : recloné.
-    [[ "$(git -C "$dir" rev-parse -q --verify "$3^{commit}" || true)" == "$(git -C "$dir" rev-parse HEAD)" ]] && return
-    rm -rf "$dir"
-  fi
-  if git clone -q --depth 1 --branch "$3" "$2" "$dir" 2>/dev/null; then return; fi
-  # Une référence qui n'est ni tag ni branche : un commit.
-  git clone -q --filter=blob:none "$2" "$dir"
-  git -C "$dir" checkout -q "$3"
+  # Déjà à ce commit : rien à faire. Sinon (version changée), recloné. Le commit complet, pas
+  # l'étiquette, qu'un dépôt peut déplacer (P1.23) ; GitHub sert un commit par son SHA.
+  [[ -d "$dir/.git" && "$(git -C "$dir" rev-parse HEAD)" == "$4" ]] && return
+  rm -rf "${dir:?}"
+  git init -q "$dir"
+  git -C "$dir" fetch -q --depth 1 "$2" "$4"
+  git -C "$dir" checkout -q FETCH_HEAD
+  [[ "$(git -C "$dir" rev-parse HEAD)" == "$4" ]] || { echo "$1 : HEAD n'est pas $4" >&2; exit 1; }
 }
 
 # Une dépendance est à jour quand son marqueur porte sa signature : sa référence, ses options et
@@ -55,9 +55,9 @@ fetch() {  # nom url ref
 # dépendance seule ; le cache de la CI, restauré même d'une version plus ancienne du script,
 # garde les autres.
 ref_of() {  # nom : sa référence dans DEPS (bash 3 de macOS : pas de tableau associatif)
-  local entry name url ref
+  local entry name url ref commit
   for entry in "${DEPS[@]}"; do
-    read -r name url ref <<<"$entry"
+    read -r name url ref commit <<<"$entry"
     if [[ "$name" == "$1" ]]; then echo "$ref"; return; fi
   done
 }
@@ -78,10 +78,10 @@ cmake_dep() {  # nom [options...]
 
 CORE_DEPS=" tomlplusplus catch2 spdlog "
 for entry in "${DEPS[@]}"; do
-  read -r name url ref <<<"$entry"
+  read -r name url ref commit <<<"$entry"
   if (( CORE_ONLY )) && [[ "$CORE_DEPS" != *" $name "* ]]; then continue; fi
   echo "== $name $ref"
-  fetch "$name" "$url" "$ref"
+  fetch "$name" "$url" "$ref" "$commit"
 done
 
 cmake_dep tomlplusplus -DTOMLPLUSPLUS_BUILD_TESTS=OFF -DTOMLPLUSPLUS_BUILD_EXAMPLES=OFF
