@@ -77,7 +77,8 @@ namespace ajp::gpu {
 // 29 : le grade de l'anneau retiré (RingWrite::grade, GradeSlot, GradeOrder, grades_ring, set_grade).
 // 30 : GMFSS retiré (gmfss_frames, soft_splat, soft_splat_all, soft_splat_fill, gmfss_compose,
 // gmfss_compose_ring, fill ; BackendCaps::gmfss_fused).
-inline constexpr int kBackendAbi = 30;
+// 31 : Engine::next_warm (RIFE à chaud, P6.15) ; PairScores::moving (la zone qui bouge, P6.6 et P6.18).
+inline constexpr int kBackendAbi = 31;
 
 using DeviceUuid = ajp::DeviceUuid;
 
