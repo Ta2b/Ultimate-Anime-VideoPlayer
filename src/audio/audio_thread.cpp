@@ -2,6 +2,7 @@
 
 #include <exception>
 #include <format>
+#include <tuple>
 #include <variant>
 
 #include <spdlog/spdlog.h>
@@ -55,7 +56,8 @@ AudioThread::AudioThread(std::unique_ptr<AudioOutput> output, AudioThreadOptions
       }) {
   // Thread du périphérique : poser la mesure, rien d'autre. Si une mesure
   // attend déjà, celle-ci est de trop et se perd sans dommage.
-  output->on_demand([this](const DeviceReading& reading) { inbox_.try_push(DeviceReading{reading}); });
+  output->on_demand(
+      [this](const DeviceReading& reading) { std::ignore = inbox_.try_push(DeviceReading{reading}); });
   player_ = std::make_unique<AudioPlayer>(
       std::move(output), options.player,
       PlayerEvents{.packet_released = [this] { release_packet(); }, .refused = std::move(options.refused)});

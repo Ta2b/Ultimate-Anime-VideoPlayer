@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string_view>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -194,7 +195,7 @@ TEST_CASE("SourceThread : seek rapide sur le point clé le plus proche, sans rej
 
 TEST_CASE("SourceThread : paquets audio et sous-titres livrés par piste", "[media][source]") {
   SourceInbox* inbox = nullptr;
-  auto credit = [&inbox] { inbox->try_push(Credit{}); };
+  auto credit = [&inbox] { std::ignore = inbox->try_push(Credit{}); };
   auto audio = PacketQueue::create({.max_duration_us = 80'000}, credit);  // 4 paquets de 20 ms
   auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
   REQUIRE(audio.has_value());
@@ -237,7 +238,7 @@ TEST_CASE("SourceThread : paquets audio et sous-titres livrés par piste", "[med
 TEST_CASE("SourceThread : la première image passe sans qu'on retire l'audio, même à 16 threads",
           "[media][source]") {
   SourceInbox* inbox = nullptr;
-  auto credit = [&inbox] { inbox->try_push(Credit{}); };
+  auto credit = [&inbox] { std::ignore = inbox->try_push(Credit{}); };
   auto audio = PacketQueue::create({.max_duration_us = 160'000}, credit);  // 8 paquets
   auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
   REQUIRE(audio.has_value());

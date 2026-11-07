@@ -1,6 +1,9 @@
 #include "app/play/wiring.h"
 
+#include <tuple>
 #include <utility>
+
+#include "core/log.h"
 
 namespace ajp::app::play {
 
@@ -57,7 +60,8 @@ void HostClock::flush(std::uint32_t epoch) {
 void MainMail::end_of_stream(std::uint32_t epoch) {
   if (audio_ != nullptr) audio_->post(audio::EndOfStream{.epoch = epoch});
   if (video_ != nullptr) video_->post(StreamEnd{.epoch = epoch});
-  inbox_.try_push(StreamEnded{.epoch = epoch});
+  if (!inbox_.try_push(StreamEnded{.epoch = epoch}))
+    log_channel("app")->warn("end of stream {} lost, inbox full", epoch);
 }
 
 void MainMail::failed(const Refusal& refusal) {
@@ -73,7 +77,9 @@ ThreadReport MainMail::reporter(std::string stage) {
 }
 
 void MainMail::report(std::string stage, const Refusal& refusal, bool fatal) {
-  inbox_.try_push(StageRefusal{.stage = std::move(stage), .refusal = refusal, .fatal = fatal});
+  // Un refus fatal a son emplacement réservé (P2.25) : il arrête la lecture même derrière 64 refus.
+  if (!inbox_.try_push(StageRefusal{.stage = stage, .refusal = refusal, .fatal = fatal}, fatal))
+    log_channel("app")->warn("{}: refusal lost, inbox full: {}", stage, refusal.detail);
 }
 
 bool ThreadStages::flush(std::uint32_t epoch) {
@@ -168,10 +174,10 @@ bool ThreadStages::audio(const Command& command) {
 }
 
 void ThreadStages::quit() {
-  links_.source->try_push(Command{cmd::Quit{}});
+  std::ignore = links_.source->try_push(Command{cmd::Quit{}});  // boîte pleine : l'arrêt du jthread suffit
   links_.video->post(Command{cmd::Quit{}});
   if (links_.audio != nullptr) links_.audio->post(Command{cmd::Quit{}});
-  if (links_.subs) links_.subs->try_push(Command{cmd::Quit{}});
+  if (links_.subs) std::ignore = links_.subs->try_push(Command{cmd::Quit{}});
 }
 
 }  // namespace ajp::app::play

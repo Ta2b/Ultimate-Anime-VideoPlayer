@@ -5,11 +5,13 @@
 #include <format>
 #include <optional>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #include "app/play/i18n.h"
 #include "audio/devices.h"
 #include "audio/output.h"
+#include "core/log.h"
 #include "media/demuxer.h"
 #include "media/video_decoder.h"
 
@@ -95,7 +97,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       } else {
         audio::AudioThreadOptions options{
             .player = {.pll = config.audio_pll},
-            .credit = [inbox = &p->source_inbox_](Credit credit) { inbox->try_push(credit); },
+            .credit = [inbox = &p->source_inbox_](Credit credit) { std::ignore = inbox->try_push(credit); },
             .refused = [mail = &p->mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
         auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
         if (!thread) {
@@ -178,7 +180,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     if (choice.subtitle && std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
       chosen = choice.subtitle;
       if (auto select = p->subtitle_select(*chosen)) {
-        p->subs_inbox_->try_push(std::move(*select));
+        if (!p->subs_inbox_->try_push(std::move(*select)))  // P2.36 : un choix perdu se dit
+          log_channel("app")->warn("subtitles: track {} choice lost, inbox full", *chosen);
         p->subtitle_track_ = *p->track_info(*chosen);
       } else {
         chosen.reset();
@@ -196,11 +199,12 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   if (!media) return std::unexpected(std::move(media.error()));
   p->decoder_api_ = std::string(media::name(media->decoder.api()));
 
-  auto video = make_video(VideoStageInit{.track = &p->video_track_,
-                                         .ring = &p->mail_,
-                                         .credit = [inbox = &p->source_inbox_] { inbox->try_push(Credit{}); },
-                                         .report = p->mail_.reporter("gpu"),
-                                         .clock = p->clock_});
+  auto video = make_video(
+      VideoStageInit{.track = &p->video_track_,
+                     .ring = &p->mail_,
+                     .credit = [inbox = &p->source_inbox_] { std::ignore = inbox->try_push(Credit{}); },
+                     .report = p->mail_.reporter("gpu"),
+                     .clock = p->clock_});
   if (!video) return std::unexpected(std::move(video.error()));
   p->video_ = std::move(*video);
   p->mail_.attach_video(p->video_.get());
@@ -293,7 +297,8 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
 }
 
 void Pipeline::pump() {
-  if (subs_bridge_ && subs_bridge_->take_refused()) source_inbox_.try_push(Credit{});
+  if (subs_bridge_ && subs_bridge_->take_refused())
+    std::ignore = source_inbox_.try_push(Credit{});  // crédits bornés au ring : jamais de trop
 }
 
 SessionConfig Pipeline::session_config() const {

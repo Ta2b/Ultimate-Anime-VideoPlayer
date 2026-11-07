@@ -29,6 +29,9 @@ TEST_CASE("Inbox : chaque type a sa propre borne", "[Inbox]") {
   CHECK_FALSE(inbox.try_push(Command{"seek"}));
   CHECK(inbox.pending<Frame>() == 2);
   CHECK(inbox.pending<Command>() == 1);
+  // Boîte pleine : l'emplacement réservé prend un seul message de plus (un refus fatal).
+  CHECK(inbox.try_push(Command{"fatal"}, /*reserved=*/true));
+  CHECK_FALSE(inbox.try_push(Command{"encore"}, /*reserved=*/true));
 }
 
 TEST_CASE("Inbox : wait rend les messages dans l'ordre d'arrivée et libère la borne", "[Inbox]") {

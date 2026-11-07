@@ -9,6 +9,7 @@
 #include <deque>
 #include <mutex>
 #include <optional>
+#include <tuple>
 #include <vector>
 
 #include "core/frame.h"
@@ -49,7 +50,7 @@ class TestSink final : public FrameSink {
     DecodedFrame frame = std::move(queue_.front());
     queue_.pop_front();
     lock.unlock();
-    inbox.try_push(Credit{});
+    std::ignore = inbox.try_push(Credit{});
     return frame;
   }
 
