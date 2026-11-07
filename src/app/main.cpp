@@ -36,6 +36,7 @@ extern "C" {
 #include <vector>
 
 #include "app/play/auto_bench_run.h"
+#include "app/play/crash_dump.h"
 #include "app/play/default_player.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
@@ -399,6 +400,8 @@ int run_player(int argc, char** argv) {
   }
   const std::filesystem::path log_file =
       settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
+  // Sous Windows, un plantage laisse un minidump à côté du journal (P2.2).
+  if (!settings_dir.empty()) ajp::app::play::install_crash_dumps(settings_dir / "crashes");
   if (!log_file.empty()) {
     // Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal,
     // la relance n'efface plus celui qui en garde la trace.
