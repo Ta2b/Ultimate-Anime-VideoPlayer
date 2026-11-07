@@ -42,6 +42,9 @@ class FreeRate {
   static constexpr std::int64_t kCalmUs = 1'000'000;     // sans perte avant que la pression se relâche
   static constexpr std::int64_t kReleaseUs = 3'000'000;  // constante de temps du relâchement
   static constexpr std::int64_t kFallbackWindowUs = 5'000'000;
+  // La cadence affichée (FreeInfo::fps) : les images des 2 dernières secondes, assez court pour suivre un
+  // changement de plan, assez long pour ne pas sautiller.
+  static constexpr std::int64_t kInfoWindowUs = 2'000'000;
   static constexpr std::int64_t kSettleUs = 1'200'000;  // après seek ou reprise : mesures ignorées
   static constexpr std::int64_t kStartUs =
       5'000'000;  // après l'activation du mode (démarrage, moteurs qui chauffent)

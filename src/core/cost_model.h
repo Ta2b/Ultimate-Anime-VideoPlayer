@@ -20,6 +20,8 @@ class CostModel {
  public:
   static constexpr int kMaxImages = 9;  // kAutoMaxStep + 1
   static constexpr std::int64_t kHalfLifeUs = 6'000'000;
+  // Un coût au-delà de 5 s n'est pas une image mais une attente (pause, appareil suspendu) : ignoré.
+  static constexpr std::int64_t kMaxCostUs = 5'000'000;
 
   // Une paire terminée : `images` créées (source comprise), `cost_us` de service.
   void add(int images, std::int64_t cost_us, std::int64_t now_us);

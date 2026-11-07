@@ -21,6 +21,13 @@ namespace ajp::app::play {
 namespace {
 
 constexpr std::uint64_t kDisagreementsLogged = 100;
+// Un facteur de l'Auto hors de la liste des facteurs réglables : son dénominateur reste petit (la granularité
+// fine de l'Auto est core::kFineGranularity, 24), 64 borne l'accumulateur de cadence.
+constexpr std::int64_t kLiveFactorMaxDen = 64;
+// L'écart d'une paire mesurée qui donne une période : de 125 à 5 images par seconde. Hors de là (seek, pause,
+// image en double), la paire ne dit rien de la cadence.
+constexpr std::int64_t kPairGapMinUs = 8'000;
+constexpr std::int64_t kPairGapMaxUs = 200'000;
 
 gpu::Shape planes(int channels, int width, int height) {
   return gpu::Shape{.dims = {1, channels, height, width}};
@@ -306,7 +313,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     cadence_.reset();
     step = free_grid_.push(core::stamp_of(frame), free_inputs(frame.epoch));
   } else if (factor.num > factor.den &&
-             (valid_factor(factor) || (setup_.live != nullptr && factor.den <= 64 &&
+             (valid_factor(factor) || (setup_.live != nullptr && factor.den <= kLiveFactorMaxDen &&
                                        factor.num <= core::kAutoMaxStep * factor.den))) {
     if (!cadence_) {
       auto made = core::CadenceAccumulator::create({.num = factor.num, .den = factor.den});
@@ -438,7 +445,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
           {.now_us = at_us,
            .made_step = factor.num,
            .late = static_cast<int>(late),
-           .period_us = gap >= 8'000 && gap <= 200'000
+           .period_us = gap >= kPairGapMinUs && gap <= kPairGapMaxUs
                             ? static_cast<std::int64_t>(static_cast<double>(gap) / play_rate)
                             : 0});
     } else {

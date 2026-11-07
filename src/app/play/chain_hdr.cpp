@@ -263,6 +263,10 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
 
 namespace {
 
+// Au plus une lumière de scène tous les dixièmes de seconde hors coupe : le grade ne repompe pas à chaque
+// image.
+constexpr std::int64_t kSceneLightEveryUs = 100'000;
+
 // La lumière de la scène pour le grade en trois passes : envoyée quand elle change vraiment (3 % de
 // luminance moyenne, 2 points de part claire), au plus tous les dixièmes de seconde, sauf à une coupe.
 // Sous --anime-shots (méga plan A2), un plan de la pré-analyse fixe aussi l'exposition de la méthode « HDR
@@ -289,7 +293,7 @@ void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t n
     const render::SceneLight& was = *to.scene_light;
     const bool moved = std::abs(light.apl_nits - was.apl_nits) > std::max(0.03 * was.apl_nits, 0.25) ||
                        std::abs(light.lit - was.lit) > 0.02;
-    if (!moved || (!cut && now_us - to.scene_light_at_us < 100'000)) return;
+    if (!moved || (!cut && now_us - to.scene_light_at_us < kSceneLightEveryUs)) return;
   }
   to.scene_light = light;
   to.scene_light_at_us = now_us;

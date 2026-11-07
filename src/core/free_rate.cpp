@@ -97,8 +97,8 @@ FreeInfo FreeRate::info(std::int64_t now_us) const {
   FreeInfo out;
   int produced = 0;
   int lost = 0;
-  sum(now_us, 2'000'000, produced, lost);
-  out.fps = static_cast<double>(produced) * 1e6 / 2'000'000.0;
+  sum(now_us, kInfoWindowUs, produced, lost);
+  out.fps = static_cast<double>(produced) * 1e6 / static_cast<double>(kInfoWindowUs);
   out.service_us = static_cast<std::int64_t>(std::llround(service_us_));
   out.heavy_service_us = static_cast<std::int64_t>(std::llround(heavy_us_));
   out.step_us = step_us(now_us);

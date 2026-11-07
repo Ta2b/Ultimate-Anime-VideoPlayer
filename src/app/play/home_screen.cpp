@@ -329,7 +329,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                  input);
     }
     actions.clear();
-    if (dirty && host_now_us() - saved_at >= 1'000'000) save();
+    if (dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) save();
     st.snapshot.maybe(h.screen, opened);
     view.dialog_open = pick->open();
     const ImDrawData* draw = h.ui.home(host_now_us(), view, actions);

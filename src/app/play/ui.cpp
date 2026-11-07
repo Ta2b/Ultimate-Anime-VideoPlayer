@@ -39,6 +39,8 @@
 namespace ajp::app::play {
 namespace {
 
+// Une tâche du panneau (l'optimisation) fait avancer sa barre : une image tous les 100 ms, même en pause.
+constexpr std::int64_t kBusyFrameUs = 100'000;
 constexpr float kFontSize = 17.0F;        // pixels à l'échelle 1, multipliés par l'échelle de l'écran
 constexpr int kMaxFontBytes = 256 << 20;  // ImGui prend la taille en int
 
@@ -469,8 +471,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   // ImGui place certains éléments (onglets, fenêtre qui s'ouvre) une image après les avoir reçus :
   // après une entrée, deux images de plus, même en pause sans autre événement.
-  // Une tâche du panneau (l'optimisation) fait avancer sa barre : une image tous les 100 ms, même en pause.
-  if (panel_.busy() && now_us - last_busy_frame_us_ >= 100'000) {
+  if (panel_.busy() && now_us - last_busy_frame_us_ >= kBusyFrameUs) {
     last_busy_frame_us_ = now_us;
     input_pending_ = true;
   }

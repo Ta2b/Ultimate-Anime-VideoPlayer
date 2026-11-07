@@ -82,6 +82,22 @@ namespace {
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus (P4.7 : 33 ms, l'interface à 30 i/s ; une image réveille).
 constexpr std::int32_t kPausedWaitMs = 33;
+// L'Auto figé au plancher : dit au journal après une tentative de sortie (core::AutoRate::kFloorEscapeUs),
+// puis au plus toutes les 30 s pour ne pas noyer le journal.
+constexpr std::int64_t kFloorLogAfterUs = core::AutoRate::kFloorEscapeUs;
+constexpr std::int64_t kFloorLogEveryUs = 30'000'000;
+// L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle) ; le
+// HDR et le pic du système toutes les 2 s, l'appel coûte plus et l'utilisateur ne bascule pas plus vite.
+constexpr std::int64_t kDisplayPollUs = 500'000;
+constexpr std::int64_t kHdrPollUs = 2'000'000;
+// Le mode Rapide : une ligne de journal toutes les 5 s. L'Auto : un palier tenu 3 s s'annonce à l'écran, tenu
+// 6 s il s'écrit dans la mémoire de l'Auto (un palier qui oscille n'y entre pas).
+constexpr std::int64_t kFreeLogEveryUs = 5'000'000;
+constexpr std::int64_t kAutoNotifyAfterUs = 3'000'000;
+constexpr std::int64_t kAutoStoreAfterUs = 6'000'000;
+// Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
+constexpr std::int64_t kResizeWindowUs = 60'000'000;
+constexpr std::size_t kResizesRefused = 4;
 
 }  // namespace
 
@@ -476,7 +492,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const bool free = chain.live.free_active();
     const int centi = chain.running.rife_auto && !free && now.den >= 1 ? now.num * 100 / now.den : 0;
     const std::int64_t at = host_now_us();
-    if (free && at - free_logged_us >= 5'000'000) {  // mode Rapide : une ligne de journal toutes les 5 s
+    if (free && at - free_logged_us >= kFreeLogEveryUs) {
       free_logged_us = at;
       log->info("{}", free_status_text(chain.live.free_info(at)));
     }
@@ -495,7 +511,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const core::AutoInfo info = chain.live.auto_info(at);
       if (info.step <= info.granularity && info.ceiling > info.granularity) {
         if (auto_floor_since_us == 0) auto_floor_since_us = at;
-        if (at - auto_floor_since_us >= 8'000'000 && at - auto_floor_logged_us >= 30'000'000) {
+        if (at - auto_floor_since_us >= kFloorLogAfterUs && at - auto_floor_logged_us >= kFloorLogEveryUs) {
           auto_floor_logged_us = at;
           log->warn(
               "Auto : plafond figé à ×1 depuis {} s (dernier changement : {} ; plafond de l'écran ×{}, écran "
@@ -510,14 +526,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         auto_floor_since_us = 0;
       }
     }
-    if (centi != auto_notified && at - auto_changed_us >= 3'000'000) {
+    if (centi != auto_notified && at - auto_changed_us >= kAutoNotifyAfterUs) {
       if (auto_notified > 0)
         p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(centi),
                                                   auto_source_fps * centi / 100.0),
                                at);
       auto_notified = centi;
     }
-    if (centi != auto_stored && at - auto_changed_us >= 6'000'000 && !auto_memory_path.empty()) {
+    if (centi != auto_stored && at - auto_changed_us >= kAutoStoreAfterUs && !auto_memory_path.empty()) {
       writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi] {
         return core::store_auto_step(store, key, centi);
       });
@@ -548,7 +564,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
     // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
-    if (host_now_us() - display_polled_at >= 500'000 || out.vrr_changed()) {  // 6.10 : sans attendre
+    if (host_now_us() - display_polled_at >= kDisplayPollUs || out.vrr_changed()) {  // 6.10 : sans attendre
       display_polled_at = host_now_us();
       // Le mode Performance de SPAN se prépare tout seul (span_auto.h), pris à la vidéo suivante (P3.24).
       if (!p.options.file.empty() && c.model &&
@@ -563,7 +579,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       read_display_facts();
       if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
       // Le HDR et le pic suivent le système et l'écran (Windows, KDE), relus toutes les 2 s.
-      if (!p.options.sdr && host_now_us() - hdr_polled_at >= 2'000'000) {
+      if (!p.options.sdr && host_now_us() - hdr_polled_at >= kHdrPollUs) {
         hdr_polled_at = host_now_us();
         const std::optional<double> peak_now = content_peak_nits(out.window());
         if (system_hdr(peak_now) != chain.running.hdr_native) {
@@ -656,8 +672,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : actions) apply(input, chain, host_now_us());
-    // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
-    if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
+    if (chain.dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) {
       writer.post("play.toml",
                   [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
       chain.dirty = false;
@@ -719,8 +734,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (session.resize_asked() && !chain.reopen && !failure) {
     std::deque<std::int64_t>& resizes = p.resizes;
     const std::int64_t now = host_now_us();
-    while (!resizes.empty() && now - resizes.front() > 60'000'000) resizes.pop_front();
-    if (resizes.size() >= 4) {
+    while (!resizes.empty() && now - resizes.front() > kResizeWindowUs) resizes.pop_front();
+    if (resizes.size() >= kResizesRefused) {
       failure = Refusal{RefusalCode::SourceResized, "la source change de taille trop souvent"};
     } else {
       resizes.push_back(now);

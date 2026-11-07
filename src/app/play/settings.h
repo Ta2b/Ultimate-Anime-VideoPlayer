@@ -164,6 +164,9 @@ struct LookLayer {
   friend bool operator==(const LookLayer&, const LookLayer&) = default;
 };
 
+// play.toml se réécrit au plus une fois par seconde pendant qu'on règle (accueil et lecture).
+inline constexpr std::int64_t kSettingsSaveEveryUs = 1'000'000;
+
 struct PlaySettings {
   // Auto-configuration : Auto par défaut, y compris au premier double-clic sur une vidéo (l'assistant ne
   // s'ouvre pas) et après « Tout réinitialiser ». Un play.toml d'avant la section [auto] se lit en
