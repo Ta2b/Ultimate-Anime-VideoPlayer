@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <format>
 #include <fstream>
+#include <mutex>
+#include <optional>
 #include <stop_token>
 #include <system_error>
 #include <utility>
@@ -256,7 +258,20 @@ std::vector<RegistryValue> registry_shared_values() {
   return values;
 }
 
+namespace {
+// P4.11 : xdg-mime ne se lance qu'une fois par processus (et après une inscription ou un retrait), plus à
+// chaque ouverture de chaîne, « Appliquer » ou épisode.
+std::mutex g_default_mutex;
+std::optional<bool> g_default_known;
+
+void forget_default_player() {
+  const std::scoped_lock lock(g_default_mutex);
+  g_default_known.reset();
+}
+}  // namespace
+
 std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
+  forget_default_player();
 #if defined(_WIN32)
   if (auto written = write_registry(registry_values(prepare::utf8_path(place.executable))); !written)
     return std::unexpected(std::move(written.error()));
@@ -304,6 +319,7 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 }
 
 std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) {
+  forget_default_player();
 #if defined(_WIN32)
   if (auto erased = erase_registry(prepare::utf8_path(place.executable)); !erased)
     return std::unexpected(std::move(erased.error()));
@@ -370,8 +386,8 @@ bool default_handler_is_ajp(std::string_view query_output) {
   return query_output == kDesktopId;
 }
 
-bool is_default_player(const PlayerPlace& place) {
-  static_cast<void>(place);
+namespace {
+bool query_default_player() {
 #if defined(_WIN32) || defined(__APPLE__)
   return false;  // Windows ne le dit qu'au registre de l'utilisateur (UserChoice) : la case suffit
 #else
@@ -387,6 +403,14 @@ bool is_default_player(const PlayerPlace& place) {
   }
   return false;
 #endif
+}
+}  // namespace
+
+bool is_default_player(const PlayerPlace& place) {
+  static_cast<void>(place);
+  const std::scoped_lock lock(g_default_mutex);
+  if (!g_default_known) g_default_known = query_default_player();
+  return *g_default_known;
 }
 
 void leave_lone_console() {
