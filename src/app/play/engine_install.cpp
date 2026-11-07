@@ -332,6 +332,29 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
           format_size(available), where.string()));
 }
 
+bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
+                       const std::filesystem::path& engines_root, const std::stop_token& stop) {
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(engines_root, error)) {
+    const std::filesystem::path candidate = entry.path() / file.name;
+    if (candidate.parent_path() == dest.parent_path()) continue;
+    if (!std::filesystem::is_regular_file(candidate, error) ||
+        std::filesystem::file_size(candidate, error) != file.size)
+      continue;
+    if (!core::verify_file(candidate, file.size, file.sha256, stop)) continue;
+    std::filesystem::create_directories(dest.parent_path(), error);
+    std::filesystem::remove(dest, error);
+    error.clear();
+    std::filesystem::create_hard_link(candidate, dest, error);
+    if (error) {
+      error.clear();
+      std::filesystem::copy_file(candidate, dest, std::filesystem::copy_options::overwrite_existing, error);
+    }
+    if (!error) return true;
+  }
+  return false;
+}
+
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
                                                const std::filesystem::path& dest,
                                                const std::filesystem::path& scratch,
@@ -593,6 +616,14 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
               fraction >= 0.9F ? i18n::tr_format("decompressing {}", label)
                                : i18n::tr_format("downloading {}", label));
     };
+    // P3.8 : un fichier de même SHA-256 déjà installé (version précédente du module, autre moteur du même
+    // dossier) se reprend sans retélécharger ses centaines de Mo.
+    if (reuse_vendor_file(file, staging / file.name, target.parent_path(), progress.stop)) {
+      log_channel("app")->info("installation de {} : {} repris de l'installation précédente", name,
+                               file.name);  // i18n-ok : journal
+      done_bytes += static_cast<double>(file.packed_size);
+      continue;
+    }
     if (auto ok = fetch_vendor_file(file, staging / file.name, catalog.layout.downloads, local); !ok) {
       std::filesystem::remove_all(staging, error);
       return std::unexpected(ok.error());

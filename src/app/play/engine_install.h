@@ -113,6 +113,10 @@ std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePac
 // Un fichier de VendorFile : la plage de ses octets dans l'archive (curl --range), décompressée
 // vers `dest`, taille et SHA-256 vérifiés. Rien n'est laissé à `dest` sur échec. Refus : ceux de
 // install_package.
+// P3.8 : un fichier tiers de même nom, taille et SHA-256 dans un autre dossier de engines_root (une autre
+// version installée du moteur) est lié en dur à dest (copié si le lien échoue) ; vrai s'il a servi.
+bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
+                       const std::filesystem::path& engines_root, const std::stop_token& stop);
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
                                                const std::filesystem::path& dest,
                                                const std::filesystem::path& scratch,

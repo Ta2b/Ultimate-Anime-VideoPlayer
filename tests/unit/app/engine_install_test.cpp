@@ -539,3 +539,16 @@ TEST_CASE("Proxy manuel de Windows : celui de https, ou celui de tous (P3.7)", "
   CHECK_FALSE(ajp::app::play::proxy_from_setting("http=a:80"));
   CHECK_FALSE(ajp::app::play::proxy_from_setting(""));
 }
+
+TEST_CASE("Fichier tiers repris d'une version installée à SHA égal (P3.8)", "[app][install]") {
+  Fixture f("reprise-sha");
+  const fs::path root = f.root / "backends" / "tensorrt";
+  fs::create_directories(root / "1.0");
+  write_all(root / "1.0" / "libnvinfer.so", std::string(kPlain));
+  core::VendorFile file{.name = "libnvinfer.so", .size = kPlain.size(), .sha256 = core::sha256_hex(kPlain)};
+  const fs::path dest = root / "1.1.partiel" / "libnvinfer.so";
+  CHECK(ajp::app::play::reuse_vendor_file(file, dest, root, {}));
+  CHECK(read_all(dest) == kPlain);
+  file.sha256 = core::sha256_hex("autre");
+  CHECK_FALSE(ajp::app::play::reuse_vendor_file(file, root / "1.2.partiel" / "libnvinfer.so", root, {}));
+}
