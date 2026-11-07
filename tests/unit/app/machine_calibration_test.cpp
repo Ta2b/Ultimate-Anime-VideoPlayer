@@ -143,3 +143,16 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   CHECK_FALSE(calibrated_chain(dir, "RTX 4070 Ti", 1440));
   std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("la durée annoncée et la barre qui avance pendant une construction (P3.13)",
+          "[calibration-machine]") {
+  const int plain = calibration_minutes(1440, false, false);
+  CHECK(plain >= 3);
+  CHECK(plain <= 8);
+  CHECK(calibration_minutes(1440, true, false) > plain + 10);  // TensorRT construit ses moteurs
+  CHECK(calibration_minutes(1440, true, true) > calibration_minutes(1440, true, false));
+  CHECK(creeping_fraction(0.05F, 0.0) == 0.05F);
+  CHECK(creeping_fraction(0.05F, 300.0) > 0.1F);   // cinq minutes de construction : la barre a bougé
+  CHECK(creeping_fraction(0.05F, 1e6) <= 0.131F);  // sans rattraper l'essai suivant
+  CHECK(creeping_fraction(0.95F, 1e6) <= 0.97F);
+}

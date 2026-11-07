@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -53,6 +54,25 @@ bool on_battery() {
 }
 
 }  // namespace
+
+float creeping_fraction(float reported, double seconds_since_change) {
+  constexpr double kCreep = 0.08;
+  constexpr double kSeconds = 120.0;
+  const double extra = kCreep * (1.0 - std::exp(-std::max(seconds_since_change, 0.0) / kSeconds));
+  return std::min(0.97F, reported + static_cast<float>(extra));
+}
+
+int calibration_minutes(int display_height, bool builds_engines, bool laptop) {
+  const auto sizes = static_cast<double>(calibration_heights(display_height).size());
+  // Les essais : chaque palier de SPAN seul, deux ou trois de SPAN + RIFE, un rejeu sur deux ; chacun la
+  // durée de l'essai et une quinzaine de secondes d'ouverture.
+  const double trials = (sizes + 3.0) * 1.5;
+  double seconds = trials * (kBenchSeconds + 15.0);
+  // Une construction de TensorRT par taille, SPAN puis RIFE : 2,5 min sur une RTX 4070 Ti, le double sur un
+  // portable.
+  if (builds_engines) seconds += (sizes + 2.0) * (laptop ? 300.0 : 150.0);
+  return std::max(1, static_cast<int>(std::ceil(seconds / 60.0)));
+}
 
 bool needs_second_run(const CandidateTrial& trial) {
   if (!trial.holds) return true;

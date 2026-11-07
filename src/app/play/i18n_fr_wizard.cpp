@@ -35,6 +35,7 @@ constexpr std::array kWizardTexts{
     Entry{"Make it the default video player", "En faire le lecteur vidéo par défaut"},
     Entry{"AJP is added to \"Open with\" in any case.", "AJP s'ajoute à « Ouvrir avec » dans tous les cas."},
     Entry{"Optimise now", "Optimiser maintenant"},
+    Entry{"Estimated for this machine: about {} minutes.", "Estimé pour cette machine : environ {} minutes."},
     Entry{"Ready", "Prêt"},
     Entry{"Vulkan works on every GPU. Checked engines install at the end of the assistant, verified by hash; "
           "Vulkan takes over if one fails.",

@@ -88,6 +88,14 @@ struct MachineCalibration {
   bool on_battery = false;  // mesurée sur batterie (P3.12) : gardée au tableau, pas suivie par l'Auto
 };
 
+// La barre de la calibration (P3.13) : l'avancement dit par calibrate_machine, plus une avance lente pendant
+// un essai qui dure (une construction de moteur), au plus 8 points : elle ne reste plus figée des minutes.
+float creeping_fraction(float reported, double seconds_since_change);
+// La durée annoncée avant la calibration (P3.13), en minutes : les essais pour cet écran, rejeux compris,
+// et les constructions de TensorRT (une par taille essayée) quand ses moteurs ne sont pas encore construits,
+// plus longues sur un portable.
+int calibration_minutes(int display_height, bool builds_engines, bool laptop);
+
 // Un essai se rejoue une fois (P3.12) : quand il ne tient pas, ou qu'il tient de justesse.
 bool needs_second_run(const CandidateTrial& trial);
 

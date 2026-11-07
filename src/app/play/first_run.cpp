@@ -521,6 +521,8 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                    "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
                    "machine sustains. Only a progress bar is shown; it takes a few minutes, longer the first "
                    "time (the engines are built once)."));
+      if (view.calibration_minutes > 0)
+        note(i18n::tr_format("Estimated for this machine: about {} minutes.", view.calibration_minutes));
       note(
           i18n::tr("\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
                    "Post-processing."));

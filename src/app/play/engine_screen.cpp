@@ -113,6 +113,8 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   struct Shared {
     std::mutex mutex;
     float fraction = 0.0F;
+    std::int64_t changed_us = 0;  // quand fraction a bougé
+    BenchProgress progress;       // la note d'une construction de moteur (bench_steps.h)
     std::optional<std::expected<MachineCalibration, Refusal>> result;
   };
   auto shared = std::make_shared<Shared>();
@@ -124,6 +126,8 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                  .display_width = display_width(screen.window()),
                  .display_height = display_height(screen.window()),
                  .display_hdr = screen.hdr_output()};
+  plan.shown = &shared->progress;  // vit autant que shared, que le thread garde
+  shared->changed_us = host_now_us();
   const int height = plan.display_height;
   auto worker = start_thread("calibration", ThreadReport([shared](const Refusal& refusal) {
                                const std::scoped_lock lock(shared->mutex);
@@ -134,6 +138,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                                    calibrate_machine(plan, base, height, stop, [shared](float fraction) {
                                      const std::scoped_lock lock(shared->mutex);
                                      shared->fraction = fraction;
+                                     shared->changed_us = host_now_us();
                                    });
                                const std::scoped_lock lock(shared->mutex);
                                shared->result = std::move(done);
@@ -164,8 +169,14 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     {
       const std::scoped_lock lock(shared->mutex);
       if (shared->result) break;
-      view = PrepareView{.label = i18n::ui_tr("Calibrating this machine"),
-                         .fraction = shared->fraction,
+      // P3.13 : la barre avance aussi pendant un essai long (une construction), sans atteindre l'étape
+      // suivante.
+      const double waited = static_cast<double>(host_now_us() - shared->changed_us) / 1e6;
+      const std::string building = shared->progress.get().note;
+      view = PrepareView{.label = building.empty() ? i18n::ui_tr("Calibrating this machine")
+                                                   : i18n::ui_tr("Calibrating this machine") +
+                                                         i18n::Translated::data(" · " + building),
+                         .fraction = creeping_fraction(shared->fraction, waited),
                          .watch_now = &watch_now};
     }
     if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
@@ -207,6 +218,11 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
+    const bool tensorrt = std::ranges::any_of(view.engines, [](const EngineRow& row) {
+      return row.offer.id == core::EngineId::TensorRt && row.chosen && row.usable;
+    });
+    view.calibration_minutes = calibration_minutes(height > 0 ? height : 1080, tensorrt,
+                                                   gpu.name.find("Laptop") != std::string::npos);
   }
   const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
