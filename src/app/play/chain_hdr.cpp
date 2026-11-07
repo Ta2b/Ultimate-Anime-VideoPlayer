@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <condition_variable>
 #include <ctime>
 #include <filesystem>
 #include <format>
@@ -143,43 +144,83 @@ std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& 
   return show_looks(screen, looks);
 }
 
-void start_looks(Chain& to, const PlaySettings& s) {
-  auto job = std::make_shared<LookLoad::Job>();
-  // Un refus (thread refusé, exception du corps) finit la lecture sans résultat : rien ne l'attend plus.
-  ThreadReport report([job](const Refusal& refused) {
-    log_channel("app")->warn("looks : {}", refused.detail);
-    job->done = true;
-  });
-  auto thread =
-      start_thread("looks", report, [job, s, dir = to.luts_dir](const std::stop_token&, const ThreadReport&) {
-        LoadedLooks looks = load_looks(s, dir);
-        const std::scoped_lock lock(job->mutex);
-        job->result.emplace(std::move(looks));
-        job->done = true;
+struct LookLoader::State {
+  std::mutex mutex;
+  std::condition_variable_any wake;
+  std::optional<std::pair<PlaySettings, std::filesystem::path>> pending;  // sous mutex
+  std::optional<LoadedLooks> done;                                        // sous mutex
+  std::uint64_t asked = 0;                                                // sous mutex : demandes reçues
+  std::uint64_t finished = 0;  // sous mutex : la demande dont done est le résultat
+  bool busy = false;           // sous mutex : une lecture en cours
+};
+
+LookLoader::~LookLoader() {
+  if (!thread_.joinable()) return;
+  thread_.request_stop();
+  bool busy = false;
+  {
+    const std::scoped_lock lock(state_->mutex);
+    busy = state_->busy;
+  }
+  // Une lecture en cours finit seule (le fil garde l'état) : la fermeture de la chaîne ne l'attend pas.
+  if (busy) thread_.detach();
+}
+
+void LookLoader::request(const PlaySettings& s, const std::filesystem::path& luts_dir) {
+  if (!state_) state_ = std::make_shared<State>();
+  {
+    const std::scoped_lock lock(state_->mutex);
+    state_->pending.emplace(s, luts_dir);
+    ++state_->asked;
+  }
+  state_->wake.notify_one();
+  if (thread_.joinable()) return;
+  auto started = start_thread(
+      "looks",
+      ThreadReport([](const Refusal& refused) { log_channel("app")->warn("looks : {}", refused.detail); }),
+      [state = state_](const std::stop_token& stop, const ThreadReport&) {
+        std::unique_lock lock(state->mutex);
+        while (state->wake.wait(lock, stop, [&] { return state->pending.has_value(); })) {
+          auto [settings, dir] = std::move(*state->pending);
+          state->pending.reset();
+          const std::uint64_t asked = state->asked;
+          state->busy = true;
+          lock.unlock();
+          LoadedLooks looks = load_looks(settings, dir);
+          lock.lock();
+          state->busy = false;
+          state->done.emplace(std::move(looks));
+          state->finished = asked;
+        }
       });
-  if (!thread) {
-    log_channel("app")->warn("looks : {}", thread.error().detail);
+  if (started) {
+    thread_ = std::move(*started);
     return;
   }
-  to.look_loads.push_back(LookLoad{.job = std::move(job), .thread = std::move(*thread)});
+  // Sans fil : la lecture se fait ici, comme avant 1.11.
+  log_channel("app")->warn("looks : {}", started.error().detail);
+  const std::scoped_lock lock(state_->mutex);
+  auto [settings, dir] = std::move(*state_->pending);
+  state_->pending.reset();
+  state_->done.emplace(load_looks(settings, dir));
+  state_->finished = state_->asked;
+}
+
+std::optional<LoadedLooks> LookLoader::take() {
+  if (!state_) return std::nullopt;
+  const std::scoped_lock lock(state_->mutex);
+  if (!state_->done || state_->finished != state_->asked) return std::nullopt;  // une plus récente vient
+  std::optional<LoadedLooks> looks = std::move(state_->done);
+  state_->done.reset();
+  return looks;
+}
+
+void start_looks(Chain& to, const PlaySettings& s) {
+  to.looks.request(s, to.luts_dir);
 }
 
 void tend_looks(Chain& to, std::int64_t now_us) {
-  if (to.look_loads.empty()) return;
-  if (!to.look_loads.back().job->done) {
-    // Les lectures d'avant finies ne servent plus : leur fil se joint tout de suite.
-    for (std::size_t i = to.look_loads.size() - 1; i-- > 0;)
-      if (to.look_loads[i].job->done)
-        to.look_loads.erase(to.look_loads.begin() + static_cast<std::ptrdiff_t>(i));
-    return;
-  }
-  std::optional<LoadedLooks> looks;
-  {
-    LookLoad::Job& job = *to.look_loads.back().job;
-    const std::scoped_lock lock(job.mutex);
-    looks = std::move(job.result);
-  }
-  to.look_loads.clear();  // la dernière est finie ; les autres se joignent (leur lecture se termine)
+  std::optional<LoadedLooks> looks = to.looks.take();
   if (!looks) return;
   for (const std::string& failed : show_looks(to.screen, *looks))
     to.ui.controls().notify(i18n::ui_tr_format("Look unreadable: {}", failed), now_us);

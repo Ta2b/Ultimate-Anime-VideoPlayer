@@ -42,14 +42,28 @@ struct LoadedLooks {
   std::array<std::optional<render::CubeLut>, render::kLookSlots> luts;
   std::vector<std::string> failed;  // les clés illisibles
 };
-struct LookLoad {
-  struct Job {
-    std::mutex mutex;
-    std::optional<LoadedLooks> result;  // sous mutex
-    std::atomic<bool> done{false};
-  };
-  std::shared_ptr<Job> job;
-  std::jthread thread;
+// Un seul fil de lecture des LUT, qui ne garde que la dernière demande (P2.9) : cent allers-retours du
+// curseur ne lancent plus cent fils, et le thread d'affichage n'en joint jamais un qui lit encore (il est
+// détaché).
+class LookLoader {
+ public:
+  LookLoader() = default;
+  ~LookLoader();
+  LookLoader(const LookLoader&) = delete;
+  LookLoader& operator=(const LookLoader&) = delete;
+  LookLoader(LookLoader&&) = delete;
+  LookLoader& operator=(LookLoader&&) = delete;
+
+  // Remplace la demande pas encore commencée ; lance le fil à la première.
+  void request(const PlaySettings& s, const std::filesystem::path& luts_dir);
+  // Le résultat de la dernière demande, une fois ; rien tant qu'elle n'est pas lue.
+  std::optional<LoadedLooks> take();
+
+  struct State;  // partagé avec le fil, qui lui survit s'il est détaché
+
+ private:
+  std::shared_ptr<State> state_;
+  std::jthread thread_;
 };
 
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
@@ -104,8 +118,8 @@ struct Chain {
   std::int64_t shots_newest_pts = kNoPts;
   std::int64_t shots_step_us = 41'667;
   std::size_t plan_shots_seen = 0;  // feed_plan_shots : les plans déjà passés à l'écran
-  // Les lectures de LUT en cours (start_looks) ; seule la dernière sera posée. Jointes à la fin de la chaîne.
-  std::vector<LookLoad> look_loads;
+  // La lecture des LUT en cours (start_looks) ; seule la dernière demande sera posée.
+  LookLoader looks;
 };
 
 // Les réglages que play.toml retient : le grade et l'interpolation choisis au menu, pas ceux d'un raccourci

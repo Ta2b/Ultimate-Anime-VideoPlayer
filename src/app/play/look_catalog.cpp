@@ -6,6 +6,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <list>
 #include <map>
 #include <mutex>
 #include <system_error>
@@ -63,9 +64,8 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
     // « contraste:hautes lumières », deux entiers lus par from_chars (P2.35).
     int contrast = 0;
     int highlight = 0;
-    const std::string_view values = std::string_view(key).substr(kAnimeLookPrefix.size());
-    const char* last = values.data() + values.size();
-    const auto first = std::from_chars(values.data(), last, contrast);
+    const char* last = key.data() + key.size();
+    const auto first = std::from_chars(key.data() + kAnimeLookPrefix.size(), last, contrast);
     const bool read = first.ec == std::errc{} && first.ptr != last && *first.ptr == ':' &&
                       std::from_chars(first.ptr + 1, last, highlight).ec == std::errc{};
     if (!read) return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " illisible"});
@@ -111,10 +111,23 @@ std::vector<double> anime_look_mixes(double units) {
 
 std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
                                                    const std::filesystem::path& luts_dir) {
-  static std::mutex lock;
-  static std::map<std::pair<int, int>, render::CubeLut> made;
+  // Les quatre derniers looks faits (P2.9) : un 65³ pèse 3 Mo, chaque valeur du curseur en faisait un de
+  // plus, gardé jusqu'à la fin du processus.
+  constexpr std::size_t kKeptLooks = 4;
+  // Jamais détruits : un fil de lecture détaché (LookLoader) peut encore s'en servir à la sortie du
+  // processus.
+  static std::mutex& lock = *new std::mutex;  // NOLINT(cppcoreguidelines-owning-memory)
+  static auto& made =                         // le plus récent devant
+      *new std::list<
+          std::pair<std::pair<int, int>, render::CubeLut>>;  // NOLINT(cppcoreguidelines-owning-memory)
   const std::scoped_lock held(lock);
-  if (const auto found = made.find({contrast, highlight}); found != made.end()) return found->second;
+  const std::pair<int, int> key{contrast, highlight};
+  if (const auto found =
+          std::ranges::find(made, key, &std::pair<std::pair<int, int>, render::CubeLut>::first);
+      found != made.end()) {
+    made.splice(made.begin(), made, found);
+    return made.front().second;
+  }
   std::map<std::string_view, render::CubeLut> files;
   for (const std::string_view name :
        {kAnimeLookBase, kAnimeLookContrast, kAnimeLookHighlight, kAnimeLookSkin}) {
@@ -142,7 +155,8 @@ std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
   out.title = "HDR anime";
   log_channel("app")->info("look HDR anime : contrast {}, highlight {} ({} LUT)", contrast, highlight,
                            luts.size());
-  made.emplace(std::pair{contrast, highlight}, out);
+  made.emplace_front(key, out);
+  if (made.size() > kKeptLooks) made.pop_back();
   return out;
 }
 
