@@ -48,7 +48,8 @@ struct Nvapi {
 // échoue.
 const Nvapi* nvapi() {
   static const Nvapi* loaded = []() -> const Nvapi* {
-    HMODULE module = LoadLibraryW(L"nvapi64.dll");
+    // System32 seulement : une DLL du même nom ailleurs n'est jamais chargée.
+    HMODULE module = LoadLibraryExW(L"nvapi64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (module == nullptr) return nullptr;
     const auto query = reinterpret_cast<QueryInterface>(
         reinterpret_cast<void*>(GetProcAddress(module, "nvapi_QueryInterface")));
