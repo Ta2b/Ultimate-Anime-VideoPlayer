@@ -258,7 +258,8 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   std::array<const CubeLut*, kLookSlots> luts{};
   bool active = false;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
-    luts[i] = sources[i].has_value() ? &sources[i].value() : nullptr;
+    const std::optional<CubeLut>& source = sources[i];
+    luts[i] = source ? &*source : nullptr;
     mixes[i] = luts[i] != nullptr ? wanted.*kLookMixes[i] : 0.0;
     active = active || mixes[i] > 0.0;
   }

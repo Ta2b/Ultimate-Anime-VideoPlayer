@@ -165,9 +165,9 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::create
 DrbaFusedEngine::~DrbaFusedEngine() = default;
 
 BufferView DrbaFusedEngine::scratch(std::size_t offset, std::int64_t elements) const {
-  return {.buffer = scratch_.value().handle(),
-          .offset = offset,
-          .size = static_cast<VkDeviceSize>(elements) * kHalf};
+  if (!scratch_) return {};  // posé par create(), toujours là
+  return {
+      .buffer = scratch_->handle(), .offset = offset, .size = static_cast<VkDeviceSize>(elements) * kHalf};
 }
 
 std::expected<DrbaFusedEngine::Glue*, Refusal> DrbaFusedEngine::glue_for(std::span<const BufferView, 4> io,

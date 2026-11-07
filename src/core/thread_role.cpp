@@ -20,8 +20,9 @@
 namespace ajp {
 
 namespace {
-std::atomic<PriorityRaiser> g_raiser{
-    nullptr};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) : posé une fois au démarrage
+// Posé une fois au démarrage.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+std::atomic<PriorityRaiser> g_raiser{nullptr};
 
 bool raise_if_set() noexcept {
   const PriorityRaiser raiser = g_raiser.load(std::memory_order_acquire);

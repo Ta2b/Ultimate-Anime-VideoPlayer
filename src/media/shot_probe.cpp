@@ -89,11 +89,11 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
 }
 
 ShotProbe::ShotProbe(std::filesystem::path file, ShotTimeline& timeline, ShotProbeOptions options)
-    : file_(std::move(file)), timeline_(timeline), options_(options) {}
+    : file_(std::move(file)), timeline_(timeline), options_(std::move(options)) {}
 
 std::unique_ptr<ShotProbe> ShotProbe::start(std::filesystem::path file, ShotTimeline& timeline,
                                             std::int64_t start_us, ShotProbeOptions options) {
-  std::unique_ptr<ShotProbe> probe(new ShotProbe(std::move(file), timeline, options));
+  std::unique_ptr<ShotProbe> probe(new ShotProbe(std::move(file), timeline, std::move(options)));
   probe->playhead_ = start_us;
   probe->frontier_ = start_us;
   ShotProbe* self = probe.get();

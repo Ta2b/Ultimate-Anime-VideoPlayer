@@ -268,7 +268,7 @@ bool Demuxer::State::wait_before_retry(int attempt) const {
 // s'arrête là comme à la fin du fichier, par un refus `recoverable` que la source traite comme
 // une fin de flux. Seule une interruption (fermeture) reste un refus qui arrête la source.
 std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() {
-  AVFormatContext& ctx = *format;
+  const AVFormatContext& ctx = *format;
   AVPacket* raw = scratch.get();
   int io_errors = 0;
   int data_errors = 0;
