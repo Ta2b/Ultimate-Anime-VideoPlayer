@@ -271,3 +271,22 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
   CHECK_FALSE(chosen(failed, core::EngineId::TensorRt));
   CHECK(failed.preferred[static_cast<std::size_t>(core::Usage::Upscale)] == core::EngineId::Vulkan);
 }
+
+TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est dite (P3.4)",
+          "[app][first_run]") {
+  EngineRow vulkan{.offer = {.id = ajp::core::EngineId::Vulkan}, .usable = true, .chosen = true};
+  EngineRow trt{.offer = {.id = ajp::core::EngineId::TensorRt},
+                .usable = true,
+                .chosen = true,
+                .download = true,
+                .license = "https://exemple/licence",
+                .license_accepted = true,
+                .bytes = 650'000'000};
+  const auto accepted = engines_summary({vulkan, trt});
+  REQUIRE(accepted.size() == 1);
+  CHECK(accepted[0].find("TensorRT") != std::string::npos);
+  trt.license_accepted = false;
+  const auto refused = engines_summary({vulkan, trt});
+  REQUIRE(refused.size() == 2);
+  CHECK(refused[0].find("TensorRT") == std::string::npos);
+}

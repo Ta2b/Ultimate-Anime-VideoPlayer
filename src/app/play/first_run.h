@@ -86,7 +86,12 @@ struct EngineRow {
   bool download = false;  // à télécharger si coché
   std::string license;    // licence à accepter (download seulement)
   bool license_accepted = false;
+  std::uint64_t bytes = 0;  // la taille à télécharger (download seulement)
 };
+
+// P3.4 : les lignes Moteurs du résumé de l'assistant : les moteurs retenus, avec la taille à télécharger, et
+// chaque moteur coché dont la licence n'est pas acceptée, qui ne s'installera pas.
+std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows);
 
 struct FirstRunView {
   std::string gpu;

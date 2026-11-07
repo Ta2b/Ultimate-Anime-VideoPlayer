@@ -22,6 +22,7 @@ namespace {
 
 constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
 constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
+constexpr ImVec4 kWarnColor{1.0F, 0.78F, 0.42F, 1.0F};
 constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
 
 void note(const std::string& text) {
@@ -93,6 +94,8 @@ void engine_row(EngineRow& row) {
     ImGui::Checkbox(i18n::tr("I accept its licence"), &row.license_accepted);
     ImGui::SameLine();
     ImGui::TextLinkOpenURL(i18n::tr("Read the licence"), row.license.c_str());
+    if (!row.license_accepted)
+      ImGui::TextColored(kWarnColor, "%s", i18n::tr("Not installed until its licence is accepted."));
   }
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
@@ -114,6 +117,7 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     row.status = i18n::tr("installed") + missing;
   } else if (download != nullptr) {
     row.license = download->license;
+    row.bytes = download->bytes;
     const bool fits = download->needed == 0 || download->available >= download->needed;
     row.usable = fits;
     row.download = fits;
@@ -403,6 +407,27 @@ std::string_view reason_label(core::Reason reason) {
   return "?";
 }
 
+std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
+  std::string kept;
+  std::uint64_t bytes = 0;
+  std::vector<std::string> refused;
+  for (const EngineRow& row : rows) {
+    if (!row.chosen || !row.usable) continue;
+    const std::string_view label = engine_label(row.offer.id);
+    if (row.download && !row.license.empty() && !row.license_accepted) {
+      refused.push_back(i18n::tr_format("{}: licence not accepted, it will not be installed", label));
+      continue;
+    }
+    kept += (kept.empty() ? "" : ", ") + std::string(label);
+    if (row.download) bytes += row.bytes;
+  }
+  std::vector<std::string> out;
+  out.push_back(bytes > 0 ? i18n::tr_format("Engines: {} ({} to download)", kept, format_size(bytes))
+                          : i18n::tr_format("Engines: {}", kept));
+  out.insert(out.end(), refused.begin(), refused.end());
+  return out;
+}
+
 namespace {
 
 void radio_note(const char* label, const char* detail, bool selected, bool& pick, bool enabled = true) {
@@ -469,6 +494,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
     }
     case WizardStep::Summary:
       section(i18n::tr("Summary"));
+      for (const std::string& line : engines_summary(view.engines)) ImGui::BulletText("%s", line.c_str());
       for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
       note(i18n::tr("Everything can be changed later in Settings (p). To redo this: ajp --first-run."));
       break;
