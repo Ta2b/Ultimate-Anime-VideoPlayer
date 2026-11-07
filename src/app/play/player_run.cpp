@@ -314,7 +314,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .fp8_reason = fp8_reason,
           .span_job = p.span_job.note,
           .settings_dir = p.settings_path.parent_path()});
-  const std::filesystem::path settings_dir = p.settings_path.parent_path();  // isolé par --data-dir
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,

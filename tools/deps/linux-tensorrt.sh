@@ -7,14 +7,17 @@
 #
 # Le kit vient des archives redist de NVIDIA, chacune vérifiée par l'empreinte de son manifeste,
 # fusionnées en un seul dossier ; TensorRT, de la roue tensorrt-cu13-libs de pypi.nvidia.com
-# (bibliothèques, empreinte épinglée) et des en-têtes de NVIDIA/TensorRT au commit épinglé. Pas de
-# trtexec : les tests qui en ont besoin ne tournent que sur un poste NVIDIA.
+# (bibliothèques, empreinte épinglée) et des en-têtes de NVIDIA/TensorRT au commit épinglé. Avec
+# --trtexec, trtexec en plus, sorti de l'archive Linux de TensorRT (empreinte épinglée, lue en flux
+# sans être gardée sur le disque) : le paquet TensorRT le porte à côté du module (P1.19).
 # Sous GitHub Actions, CUDACXX, CUDAToolkit_ROOT et AJP_TENSORRT_ROOT passent aux étapes suivantes.
 #
-#   tools/deps/linux-tensorrt.sh ~/ajp-nvidia
+#   tools/deps/linux-tensorrt.sh [--trtexec] ~/ajp-nvidia
 set -euo pipefail
 
-dir="${1:?usage : linux-tensorrt.sh <dossier>}"
+with_trtexec=0
+if [ "${1:-}" = "--trtexec" ]; then with_trtexec=1; shift; fi
+dir="${1:?usage : linux-tensorrt.sh [--trtexec] <dossier>}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=/dev/null
 source "$root/tools/release/versions.env"
@@ -100,6 +103,30 @@ git -C "$headers" checkout -q FETCH_HEAD
 cp -r "$headers/include/." "$trt_root/include/"
 grep -q "TRT_MINOR_ENTERPRISE $(echo "$TENSORRT_LIBS_VERSION" | cut -d. -f2)\b" "$trt_root/include/NvInferVersion.h" ||
   { echo "en-têtes et bibliothèques de TensorRT de versions différentes" >&2; exit 1; }
+
+if (( with_trtexec )); then
+  : "${TENSORRT_LINUX_URL:?}" "${TENSORRT_LINUX_SHA256:?}"
+  # L'archive fait près de 4 Go : lue en flux, seul bin/trtexec en sort ; son empreinte est celle du
+  # flux entier, comparée avant de garder trtexec.
+  mkdir -p "$trt_root/bin" "$downloads/trtexec"
+  rm -f "${downloads:?}/trt.fifo" && mkfifo "$downloads/trt.fifo"
+  sha256sum <"$downloads/trt.fifo" | cut -d' ' -f1 >"$downloads/trt.sha" &
+  hasher=$!
+  curl -fsSL "$TENSORRT_LINUX_URL" | tee "$downloads/trt.fifo" | zstd -dc |
+    tar -x -C "$downloads/trtexec" --wildcards '*/bin/trtexec'
+  wait "$hasher"
+  got="$(cat "$downloads/trt.sha")"
+  rm -f "${downloads:?}/trt.fifo" "${downloads:?}/trt.sha"
+  found="$(find "$downloads/trtexec" -path '*/bin/trtexec' -type f | head -1)"
+  if [ "$got" != "$TENSORRT_LINUX_SHA256" ] || [ -z "$found" ]; then
+    rm -rf "${downloads:?}/trtexec"
+    echo "archive TensorRT Linux : empreinte $got, attendue $TENSORRT_LINUX_SHA256 (ou trtexec absent)" >&2
+    exit 1
+  fi
+  install -m 755 "$found" "$trt_root/bin/trtexec"
+  rm -rf "${downloads:?}/trtexec"
+  echo "  trtexec"
+fi
 
 if [ -n "${GITHUB_ENV:-}" ]; then
   {

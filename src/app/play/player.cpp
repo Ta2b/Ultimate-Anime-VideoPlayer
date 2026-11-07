@@ -545,7 +545,7 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
   std::array<double, render::kLookSlots> mixes{};
   for (std::size_t i = 0; i < render::kLookSlots && i < slots.size(); ++i) {
     if (!looks.luts.at(i)) continue;
-    luts.at(i) = &*looks.luts.at(i);
+    luts.at(i) = &looks.luts.at(i).value();
     mixes.at(i) = slots[i].mix;
     log_channel("app")->info("--bake-looks : {} à {:.0f} %", slots[i].key, 100.0 * slots[i].mix);
   }

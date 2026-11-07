@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <expected>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -50,7 +51,7 @@ void keep_if_done(const ShotWork& work, ShotJob& job) {
   if (work.writer != nullptr) {
     work.writer->post("shots:" + job.key, save);
   } else {
-    static_cast<void>(save());
+    std::ignore = save();
   }
 }
 

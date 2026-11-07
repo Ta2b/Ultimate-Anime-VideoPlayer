@@ -394,7 +394,7 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
                   i18n::tr("this package has no signing key: updates cannot be verified"));
   const auto made = private_temp_dir();
   if (!made) return std::unexpected(made.error());
-  const fs::path dir = *made;
+  const fs::path& dir = *made;
   struct Cleanup {
     fs::path dir;
     ~Cleanup() {

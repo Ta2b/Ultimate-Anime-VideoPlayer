@@ -15,6 +15,7 @@ extern "C" {
 }
 
 #include <chrono>
+#include <tuple>
 #ifdef _WIN32
 #include <process.h>
 #else
@@ -490,8 +491,7 @@ int main(int argc, char** argv) {
     const bool closed = ajp::app::play::close_launch(state);
     const bool confirmed =
         played && ajp::app::play::confirm_version(state, ajp::app::play::installed_version());
-    if (closed || confirmed)
-      static_cast<void>(ajp::app::play::save_update_state(data / "update.toml", state));
+    if (closed || confirmed) std::ignore = ajp::app::play::save_update_state(data / "update.toml", state);
   }
   if (played && engines_updated) return relaunch(place.executable, argc, argv);
   if (played) return 0;
