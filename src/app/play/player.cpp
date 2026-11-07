@@ -49,6 +49,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/player_run.h"
+#include "app/play/pumped_task.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
@@ -94,13 +95,21 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
-std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file) {
+std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path& file) {
   auto demuxer = media::Demuxer::open(file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   const media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), {});
   if (!choice.video)
     return refuse(RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", file.string()));
   return *demuxer->track(*choice.video);
+}
+
+// Hors du thread de la fenêtre, borné (P2.15) : une vidéo sur un partage réseau qui ne répond plus laisse la
+// fenêtre vivante et rend la main avec une raison.
+constexpr auto kProbeLimit = std::chrono::seconds(20);
+std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file, bool window_open) {
+  return run_pumped_for<media::TrackInfo>("probe", kProbeLimit, window_open,
+                                          [file] { return probe_once(file); });
 }
 
 }  // namespace
@@ -113,7 +122,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::optional<media::TrackInfo> given;
   std::string unreadable;  // le fichier donné ne se lit pas : dit à l'accueil, qui s'ouvre à sa place
   if (!options.file.empty()) {
-    auto video = probe_video(options.file);
+    auto video = probe_video(options.file, false);
     if (video) {
       given = std::move(*video);
     } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
@@ -321,7 +330,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       video = std::move(*given);
       given.reset();
     } else {
-      auto probed = probe_video(file);
+      auto probed = probe_video(file, true);
       if (!probed) {
         log->warn("{}", probed.error().detail);
         problem = i18n::tr_format("\"{}\" cannot be read: {}", file.filename().string(),
