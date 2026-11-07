@@ -166,6 +166,11 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSp
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange,
                                    "TensorRT " + config_.runtime.token() + " : trtexec 11 ou plus attendu"});
   }
+  if (config_.trtexec.empty()) {
+    return std::unexpected(Refusal{RefusalCode::FieldMissing,
+                                   "trtexec absent du dossier du moteur, ou d'empreinte inattendue : "
+                                   "réinstallez le moteur TensorRT"});
+  }
   auto source = read_model(model, config_.input_name);
   if (!source) return std::unexpected(source.error());
   auto plan = plan_build(config_, model, *source, shapes);

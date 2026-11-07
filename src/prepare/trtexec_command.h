@@ -76,6 +76,12 @@ std::filesystem::path layer_info_for(const std::filesystem::path& engine);
 // defaultAvgTiming), ce que l'étude croyait à 1.
 std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings);
 
+// Le trtexec que le moteur lance (P1.21) : celui posé à côté du module, pris seulement si son SHA-256
+// est celui relevé à la construction du module ; sinon `fallback`, le trtexec du poste de
+// développement, vide dans un build Release. Vide : aucun trtexec, le moteur ne construit rien.
+std::filesystem::path pick_trtexec(const std::filesystem::path& beside, std::string_view expected_sha256,
+                                   const std::filesystem::path& fallback);
+
 // Ce que dit un rapport des couches de trtexec (JSON de IEngineInspector) : couches, dont les
 // reformatages (LayerType « Reformat ») ; le détail, couches FP32 hors îlots comprises, est dans
 // tools/trt/layer_report.py. Lu sans analyseur JSON : seules les clés LayerType comptent.

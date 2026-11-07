@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "prepare/sha256.h"
 #include "prepare/trtexec_progress.h"
 #include "support.h"
 
@@ -153,4 +154,15 @@ TEST_CASE("TrtexecProgress : dernière erreur et échec", "[prepare][trtexec]") 
   progress.feed("&&&& FAILED TensorRT.trtexec");
   CHECK(progress.failed());
   CHECK(progress.last_error() == "[10/18/2026] [E] Error[4]: seconde");
+}
+
+TEST_CASE("trtexec : celui du paquet seulement s'il a l'empreinte relevée à la construction", "[trtexec]") {
+  const test::TempDir dir;
+  const auto beside = dir.path() / "trtexec";
+  test::write_file(beside, "trtexec");
+  const std::string good = sha256_hex("trtexec");
+  CHECK(pick_trtexec(beside, good, {}) == beside);
+  CHECK(pick_trtexec(beside, std::string(64, '0'), {}).empty());
+  CHECK(pick_trtexec(beside, "", "/opt/trtexec") == "/opt/trtexec");
+  CHECK(pick_trtexec(dir.path() / "absent", good, {}).empty());
 }
