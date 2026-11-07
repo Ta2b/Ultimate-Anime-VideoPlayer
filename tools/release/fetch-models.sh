@@ -40,7 +40,8 @@ RIFE=(
   "fd6b06538898c9a94d20f0fe55febceadbcde5ad64952240733b7275ef4c9d59 rife_v4.26.onnx"
   "ae45000d804282764554820a665588352ff08025d0b5761023aad52425766928 rife_v4.26_heavy.onnx"
 )
-DRBA_URL="https://github.com/Ta2b/ajp-releases/releases/download/models-drba-1"
+RELEASE_REPO="${AJP_RELEASE_REPO:-Ta2b/ajp-releases}"  # P5.39 : le dépôt des releases, paramétrable
+DRBA_URL="https://github.com/$RELEASE_REPO/releases/download/models-drba-1"
 # Le même fichier, tant que la release models-drba-1 n'existe pas (le SHA-256 vérifie les deux).
 DRBA_MIRROR="https://raw.githubusercontent.com/Ta2b/Ultimate-Anime-VideoPlayer/305b4cd5de2d516d2e55bb5a12b299828374ca39"
 DRBA=(
@@ -80,7 +81,7 @@ done
 # SHA256SUMS liste est pris : les paires GMFSS FP8 (gmfss_fortuna_{base,union}_s05fp8_pair.onnx, le cran Performance
 # de GMFSS, par défaut) y sont ajoutées par tools/release/publier-modeles-fp8.sh ; les graphes FP8 de DistilDRBA,
 # facultatifs (plus lents que le fusionné), sont dans SHA256SUMS.facultatif et ne sont jamais téléchargés ici.
-INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/Ta2b/ajp-releases/releases/download/models-interp-1}"
+INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/$RELEASE_REPO/releases/download/models-interp-1}"
 if curl -fsSL -o "$CACHE/interp-SHA256SUMS" "$INTERP_URL/SHA256SUMS" 2>/dev/null; then
   while read -r sha name; do
     [ -n "${name:-}" ] || continue
