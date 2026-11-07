@@ -9,18 +9,17 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "core/display.h"
 #include "core/engines.h"
 #include "core/frame.h"
 #include "core/gpu_device.h"
 #include "core/inbox.h"
 #include "core/messages.h"
-#include "core/plan.h"
-#include "core/resolve.h"
 #include "core/ring.h"
 
 using namespace ajp;
 
-static_assert(std::is_same_v<core::RingFormat, RingFormat>, "un seul RingFormat, celui du ring");
+static_assert(std::is_same_v<ajp::RingFormat, RingFormat>, "un seul RingFormat, celui du ring");
 static_assert(std::is_same_v<core::GpuVendor, GpuVendor>, "un seul GpuVendor, celui de l'appareil");
 static_assert(sizeof(DeviceUuid) == 16 && sizeof(DeviceLuid) == 8);
 
@@ -126,18 +125,16 @@ TEST_CASE("FrameData : sans redéfinition, l'accès Vulkan est refusé", "[contr
 
 TEST_CASE("DisplayInfo : valeurs par défaut sûres et marquées comme telles", "[contracts]") {
   const core::DisplayInfo display;
-  CHECK(display.refresh_hz == 0.0);  // inconnu : resolve() ne cale rien
+  CHECK(display.refresh_hz == 0.0);  // inconnu : rien ne se cale
   CHECK_FALSE(display.hdr);
   CHECK(display.space == core::OutputSpace::Srgb);
   CHECK(display.sdr_white_nits == core::display_defaults::kSdrWhiteNits);
   CHECK(display.min_nits < display.peak_nits);
   CHECK(display.provenance == core::DisplayProvenance{});
   CHECK(display.provenance.peak == core::Provenance::Default);
-  CHECK(core::check_display(display));
 
   core::DisplayInfo measured = display;
   measured.peak_nits = 1015.0;
   measured.provenance.peak = core::Provenance::System;
   CHECK(measured.provenance != display.provenance);
-  CHECK(core::check_display(measured));
 }

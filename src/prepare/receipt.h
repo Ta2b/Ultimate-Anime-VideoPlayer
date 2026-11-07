@@ -57,7 +57,7 @@ struct BenchRecord {
 };
 
 struct Receipt {
-  std::uint64_t plan_hash = 0;  // core::Plan::hash
+  std::uint64_t plan_hash = 0;  // empreinte de la chaîne qualifiée
   std::string created_utc;      // « 2026-10-18T15:29:26Z », UTC à la seconde
   DriverRecord driver;
   std::vector<EngineRecord> engines;

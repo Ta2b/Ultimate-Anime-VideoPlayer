@@ -13,8 +13,8 @@
 #include <span>
 #include <string_view>
 
+#include "core/display.h"
 #include "core/profile.h"
-#include "core/resolve.h"
 #include "core/types.h"
 
 namespace ajp::render {
@@ -90,7 +90,7 @@ enum class GradeMode : std::uint8_t {
 };
 
 struct GradeContext {
-  core::HdrMode route = core::HdrMode::Off;  // celle du Plan
+  core::HdrMode route = core::HdrMode::Off;  // la route HDR jouée
   bool source_hdr = false;                   // source PQ ou HLG
   bool output_pq = false;                    // la cible est encodée en PQ ; sinon SDR BT.709
   bool enabled = true;                       // bascule A/B de l'utilisateur

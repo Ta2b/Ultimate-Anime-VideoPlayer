@@ -115,7 +115,7 @@ constexpr std::array<FlagSpec, 10> kFlags{{
        f.no_exact_reuse = true;
        return {};
      }},
-    {"dump-plan", "", "écrit chaque Plan résolu au journal",
+    {"dump-plan", "", "sans effet, accepté pour les anciens scripts",
      [](DebugFlags& f, std::string_view) -> Result {
        f.dump_plan = true;
        return {};

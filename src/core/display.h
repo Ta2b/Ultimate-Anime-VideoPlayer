@@ -1,23 +1,13 @@
-// resolve() : profil, capacités, source et écran deviennent un Plan immuable,
-// ou un refus nommé. Fonction pure, sans GPU ni état global.
+// La source et l'écran tels que le lecteur les voit : taille, cadence, HDR, luminance, et d'où
+// vient chaque valeur de l'écran.
 #pragma once
 
 #include <cstdint>
-#include <expected>
-#include <string>
-#include <string_view>
-#include <vector>
 
-#include "core/plan.h"
 #include "core/profile.h"
 #include "core/types.h"
 
 namespace ajp::core {
-
-// Ce que le système sait faire maintenant : modèles installés, routes HDR.
-struct Capabilities {
-  std::vector<ModelId> models;
-};
 
 struct SourceInfo {
   int width = 0;
@@ -64,8 +54,7 @@ struct DisplayProvenance {
 struct DisplayInfo {
   int width = 0;
   int height = 0;
-  // Fixe : le rafraîchissement ; VRR : le plafond du panneau ; 0 sans VRR : écran inconnu,
-  // et resolve() ne cale aucune cadence.
+  // Fixe : le rafraîchissement ; VRR : le plafond du panneau ; 0 sans VRR : écran inconnu.
   double refresh_hz = 0.0;
   bool hdr = false;  // HDR actif : la sortie part en HDR maintenant
   bool vrr = false;  // rafraîchissement variable actif
@@ -75,16 +64,5 @@ struct DisplayInfo {
   OutputSpace space = OutputSpace::Srgb;
   DisplayProvenance provenance;
 };
-
-// La luminance de l'écran tient dans ses bornes ; un NaN est refusé.
-std::expected<void, Refusal> check_display(const DisplayInfo& display);
-
-// Première règle dont les bornes, incluses, contiennent la source ; nullptr sinon.
-const Rule* match_rule(const Profile& profile, const SourceInfo& source);
-
-// Écran connu (VRR, ou rafraîchissement non nul) : la règle choisie passe par pace_rule(),
-// et le Plan porte sa cadence et son facteur d'interpolation retouché.
-std::expected<Plan, Refusal> resolve(const Profile& profile, const Capabilities& caps,
-                                     const SourceInfo& source, const DisplayInfo& display);
 
 }  // namespace ajp::core

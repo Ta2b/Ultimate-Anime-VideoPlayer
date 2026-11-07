@@ -29,9 +29,8 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
 La phase 5 du plan d'audit a livré une règle par contrôle de CI (complexité, `path::string()`, commentaires,
 version unique) et les corrections ponctuelles. Restent les chantiers d'architecture, chacun une PR à lui :
 
-- **P5.1** code mort : `resolve()`, `Plan`, `pace_rule`, `Capabilities` (les types d'écran et de source qu'ils
-  portent passent d'abord dans un en-tête à eux), MIGraphX, OpenVINO, WinML, GMFSS, `curve`, `look_mix*`.
-  L'import `.ini` est retiré.
+- **P5.1** code mort : MIGraphX, OpenVINO, WinML, GMFSS, `curve`, `look_mix*`. L'import `.ini`, `resolve()`,
+  le `Plan`, `pace_rule` et `Capabilities` sont retirés (l'écran et la source sont dans `core/display.h`).
 - **P5.4** LUT et `calibration.mkv` hors de git (attend la licence des LUT, P7.7).
 - **P5.5** options fantômes et champs TOML morts ; **P5.13** utilitaires réécrits (refus, lecture de
   fichier, minuscules…) ; **P5.30** seuils en ligne ; **P5.31** duplications de l'application.
