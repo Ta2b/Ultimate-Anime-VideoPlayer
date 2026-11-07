@@ -623,8 +623,11 @@ std::int64_t Session::display_period() const {
 // depth − 1 images déjà en file passent d'abord.
 std::int64_t Session::display_delay_us(std::int64_t period) const {
   if (config_.video_latency_us > 0) return config_.video_latency_us;
-  if (queue_fill_ > 0.5) return std::int64_t{std::max(config_.swapchain_depth - 1, 0)} * period + period / 2;
-  return stats_.render.median() + period / 2;
+  // P3.45 : en fenêtré, le compositeur garde l'image une trame de plus avant l'écran.
+  const std::int64_t compositor = composited_ ? period : 0;
+  if (queue_fill_ > 0.5)
+    return std::int64_t{std::max(config_.swapchain_depth - 1, 0)} * period + period / 2 + compositor;
+  return stats_.render.median() + period / 2 + compositor;
 }
 
 void Session::set_display(std::int64_t period_us, double hz) {

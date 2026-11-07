@@ -191,6 +191,8 @@ class Session {
   bool resize_asked() const { return resized_; }  // la source a changé de taille : rouvrir la chaîne
   bool quit_asked() const { return quit_; }       // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
+  // P3.45 : fenêtré, l'image passe par le compositeur, une trame de plus avant l'écran.
+  void set_composited(bool composited) { composited_ = composited; }
   std::uint32_t epoch() const { return epoch_; }
   // La dernière image reçue du GPU pour l'époque en cours (la plus avancée de la file) ; nullptr : aucune.
   const RingFrame* newest_frame() const { return newest_ && newest_->epoch == epoch_ ? &*newest_ : nullptr; }
@@ -224,6 +226,7 @@ class Session {
   std::uint32_t epoch_ = 0;
   bool prerolling_ = true;                        // l'époque n'a pas encore d'image montrée
   std::optional<std::int64_t> preroll_since_us_;  // la première image de l'époque attend ses sous-titres
+  bool composited_ = false;                       // P3.45 : fenêtré, une trame du compositeur avant l'écran
   bool stepped_ = false;  // P3.42 : une image avancée en pause, à montrer au prochain tour
   bool paused_ = false;   // pause demandée par l'utilisateur
   bool stream_ended_ = false;

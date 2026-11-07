@@ -473,7 +473,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   int auto_stored = 0;
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
-  bool vrr_fullscreen = false;
+  bool vrr_fullscreen = true;  // relu au premier tour : VRR, compositeur (P3.45)
   VrrWatch vrr_watch(vrr_armed);
   // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
   const auto apply_floor = [&] {
@@ -660,6 +660,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
             display_moves_chain(chain.running.preset, opened_height, display_height(out.window())))
           actions.emplace_back(PlayFile{p.options.file, session.view().position_us, session.paused()});
         vrr_fullscreen = fullscreen;
+        session.set_composited(!fullscreen);
         if (const auto display = window_display(out.window())) {
           if (display_changed) p.display = display;  // P3.40 : l'écran courant, son connecteur et son EDID
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
