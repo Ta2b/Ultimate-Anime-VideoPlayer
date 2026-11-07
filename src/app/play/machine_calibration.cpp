@@ -10,6 +10,7 @@
 
 #include <SDL3/SDL_power.h>
 
+#include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "core/log.h"
 #include "core/user_overlay.h"
@@ -47,11 +48,6 @@ std::optional<int> next_height(const std::vector<CandidateTrial>& tried, ChainCa
 }
 
 constexpr ChainCandidate kRifeOnly{.span = false, .rife = true, .height = 0};
-
-// Un portable débranché (P3.12) : la carte y est bridée, la mesure ne vaut pas pour le secteur.
-bool on_battery() {
-  return SDL_GetPowerInfo(nullptr, nullptr) == SDL_POWERSTATE_ON_BATTERY;
-}
 
 }  // namespace
 

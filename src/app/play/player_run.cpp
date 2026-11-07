@@ -429,7 +429,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     const bool free_wanted = free_requested(chain.running, free_fallback.active(host_now_us()));
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
-    const double limit_hz = core::auto_limit_hz(known_hz, chain.running.auto_cap);
+    const double limit_hz =
+        core::auto_limit_hz(known_hz, power_auto_cap(chain.running.auto_cap, on_battery()));
     // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
     std::string why;
     if (on && free_wanted) {

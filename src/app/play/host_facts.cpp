@@ -8,6 +8,7 @@
 #include <system_error>
 #include <vector>
 
+#include <SDL3/SDL_power.h>
 #include <SDL3/SDL_properties.h>
 
 #include "app/play/display_edid.h"
@@ -375,6 +376,10 @@ GpuFacts gpu_facts(const PlaceboScreen& screen) {
       .host_visible_vram_bytes = facts.host_visible_vram_bytes,
       .tensor_cores = vendor == GpuVendor::Nvidia && facts.cooperative_matrix,
       .wmma = vendor == GpuVendor::Amd && facts.cooperative_matrix && amd_matrix_cores(facts.name)};
+}
+
+bool on_battery() {
+  return SDL_GetPowerInfo(nullptr, nullptr) == SDL_POWERSTATE_ON_BATTERY;
 }
 
 }  // namespace ajp::app::play
