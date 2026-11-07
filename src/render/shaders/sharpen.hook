@@ -26,7 +26,10 @@ vec4 hook() {
   // La marge vers 0 et vers 1, relative au plus clair du voisinage : faible sur un trait contrasté.
   vec3 room = sqrt(clamp(min(lo, 1.0 - hi) / max(hi, vec3(1e-4)), 0.0, 1.0));
   vec3 detail = c.rgb - 0.25 * (n + s + e + w);
-  vec3 sharp = c.rgb + 2.0 * sharpness * room * detail;
+  // P3.67 : sur un faible contraste local (le grain d'un aplat sombre, ou un aplat clair), le détail n'est
+  // que du bruit : la netteté s'éteint sous 1 % d'écart dans le voisinage, entière au-delà de 4 %.
+  vec3 contrast = smoothstep(vec3(0.01), vec3(0.04), hi - lo);
+  vec3 sharp = c.rgb + 2.0 * sharpness * room * contrast * detail;
   // Un dépassement borné à une fraction de l'écart local : pas de liseré clair ou sombre.
   vec3 pad = 0.1 * (hi - lo);
   return vec4(clamp(sharp, lo - pad, hi + pad), c.a);
