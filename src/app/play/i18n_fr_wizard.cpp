@@ -108,6 +108,7 @@ constexpr std::array kWizardTexts{
     Entry{"Resume playback", "Continuer la lecture"},
     Entry{"Skip", "Passer"},
     Entry{"Set it up myself", "Régler moi-même"},
+    Entry{"Cancel and watch", "Annuler et regarder"},
     Entry{"Skip: Speakers, faithful sound. Change it later in Audio > Output.",
           "Passer : Enceintes, rendu fidèle. À changer ensuite dans Audio > Sortie."},
     Entry{"Speakers: faithful sound, careful mix.", "Enceintes : rendu fidèle, mixage soigné."},

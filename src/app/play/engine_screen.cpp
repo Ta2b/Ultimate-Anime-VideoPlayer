@@ -135,6 +135,8 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     log->warn("calibration de la machine : {}", worker.error().detail);
     return base;
   }
+  bool watch_now = false;
+  std::vector<Input> ignored;
   while (true) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -142,12 +144,22 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
         worker->request_stop();
         return std::nullopt;
       }
+      (void)ui.handle(event, host_now_us(), ignored);  // le bouton « Annuler et regarder »
+    }
+    ignored.clear();
+    // P3.10 : la calibration abandonnée garde les choix de l'assistant et le préréglage Auto.
+    if (watch_now) {
+      worker->request_stop();
+      log->info("calibration de la machine annulée : préréglage Auto");
+      return base;
     }
     PrepareView view;
     {
       const std::scoped_lock lock(shared->mutex);
       if (shared->result) break;
-      view = PrepareView{.label = i18n::ui_tr("Calibrating this machine"), .fraction = shared->fraction};
+      view = PrepareView{.label = i18n::ui_tr("Calibrating this machine"),
+                         .fraction = shared->fraction,
+                         .watch_now = &watch_now};
     }
     if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
       log->warn("calibration de la machine : {}", shown.error().detail);

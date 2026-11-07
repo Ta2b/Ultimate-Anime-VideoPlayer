@@ -35,6 +35,8 @@ struct PrepareView {
   std::optional<float> fraction;     // rien : durée inconnue (chargement), barre sans pourcentage
   std::vector<std::string> details;  // affichés avec les statistiques (Tab)
   bool show_details = false;
+  // Non nul : le bouton « Annuler et regarder », qui le met à vrai (P3.10).
+  bool* watch_now = nullptr;
 };
 void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t now_us);
 

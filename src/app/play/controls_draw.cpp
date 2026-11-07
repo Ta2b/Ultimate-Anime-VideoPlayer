@@ -376,6 +376,22 @@ void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t 
       y += line;
     }
   }
+  // P3.10 : « Annuler et regarder » à droite de la ligne du texte : la vidéo part sans ce moteur.
+  if (view.watch_now != nullptr) {
+    const char* label = i18n::tr("Cancel and watch");
+    const ImVec2 button = ImGui::CalcTextSize(label);
+    const ImVec2 frame{button.x + (ImGui::GetStyle().FramePadding.x * 2.0F),
+                       button.y + (ImGui::GetStyle().FramePadding.y * 2.0F)};
+    ImGui::SetNextWindowPos({x1 - frame.x, cy - (frame.y * 0.5F)});
+    ImGui::SetNextWindowBgAlpha(0.0F);
+    constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                        ImGuiWindowFlags_NoSavedSettings |
+                                        ImGuiWindowFlags_NoFocusOnAppearing;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0.0F, 0.0F});
+    if (ImGui::Begin("##regarder", nullptr, kFlags) && ImGui::Button(label)) *view.watch_now = true;
+    ImGui::End();
+    ImGui::PopStyleVar();
+  }
 }
 
 }  // namespace ajp::app::play

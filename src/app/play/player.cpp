@@ -306,7 +306,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
   ShotWork shots{.cache_dir = paths.data / "plans"};
   if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
-  bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
@@ -484,6 +483,18 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       playing.store(true);
       auto outcome = run_chain(player, settings, start_us, start_paused);
       playing.store(false);
+      // P3.10 : « Annuler et regarder » pendant une construction : la même vidéo, sans agrandissement ni
+      // interpolation, le temps d'une lecture ; play.toml n'en garde rien.
+      if (!outcome && outcome.error().key == kWatchNowKey && (settings.upscale || settings.rife_factor > 0)) {
+        settings.upscale = false;
+        settings.rife_factor = 0;
+        settings.rife_auto = false;
+        file_options.given.emplace_back("--no-upscale");
+        file_options.given.emplace_back("--rife");
+        file_options.rife_factor = 0;
+        player.notice = i18n::ui_tr("Engine build cancelled: playing without upscaling or smoothing");
+        continue;
+      }
       if (!outcome) {
         result = std::unexpected(std::move(outcome.error()));
         break;
@@ -532,12 +543,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (!result) {
       // Un fichier glissé qui ne s'ouvre pas ramène à l'accueil avec la raison : la lecture en cours n'est
       // pas une raison de quitter.
-      if ((!from_home && !replaced) || player.quit) return result;
+      // P3.10 : ouvert par double-clic, l'échec ne ferme plus la fenêtre sans un mot ; seuls les lancements
+      // pilotés (essais, banc, captures) gardent le code de sortie.
+      if (scripted || player.quit) return result;
       log->error("{}", result.error().detail);
       failed = i18n::tr_format("\"{}\" stopped: {}", file.filename().string(), visible_error(result.error()));
       log->error("{}", failed);
     }
-    replaced = false;
     // Ce que la lecture a changé suit dans la vidéo suivante ou l'accueil.
     library = std::move(player.library);
     snapshot = std::move(player.snapshot);
@@ -552,7 +564,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       file.clear();
     } else if (next_file) {
       file = std::move(*next_file);  // vide (PlayFile) : l'accueil
-      replaced = !file.empty();
     } else if (from_home && !player.quit) {
       file.clear();  // fin de la vidéo : retour à l'accueil
     } else {
