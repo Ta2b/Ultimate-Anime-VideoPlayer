@@ -85,8 +85,9 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = result.pending->get();
     if (!done) log_channel("app")->warn("maj : {} {}", name(done.error().code), done.error().detail);
-    result =
-        done ? UpdateNote{.text = *done} : UpdateNote{.text = visible_error(done.error()), .refused = true};
+    result.pending.reset();
+    result.text = done ? *done : visible_error(done.error());
+    result.refused = !done;
   }
   const UpdateState state = load_update_state(state_file);
   const std::string managed = update_managed_reason(paths);
@@ -156,10 +157,11 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (ImGui::Button(i18n::tr("Check now"))) {
     result.pending = start_task<std::string>(
         "settings",
-        [paths, state_file, mode = d.update_mode,
-         channel = d.update_channel] -> std::expected<std::string, Refusal> {
+        [paths, state_file, mode = d.update_mode, channel = d.update_channel,
+         stop = result.stop] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
-          auto message = run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, {});
+          auto message =
+              run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, stop->get_token());
           if (const auto kept = save_update_state(state_file, current); !kept && message)
             return std::unexpected(kept.error());
           return message;
@@ -173,10 +175,12 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     ImGui::SameLine();
     if (ImGui::Button(i18n::tr("Install now"))) {
       result.pending = start_task<std::string>(
-          "settings", [paths, state_file, channel = d.update_channel] -> std::expected<std::string, Refusal> {
+          "settings",
+          [paths, state_file, channel = d.update_channel,
+           stop = result.stop] -> std::expected<std::string, Refusal> {
             UpdateState current = load_update_state(state_file);
             if (current.staged_version.empty()) {
-              auto checked = run_update_check(paths, "auto", channel, current, {});
+              auto checked = run_update_check(paths, "auto", channel, current, stop->get_token());
               if (const auto kept = save_update_state(state_file, current); !kept)
                 return std::unexpected(kept.error());
               if (!checked) return checked;

@@ -90,10 +90,19 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
                       const BenchContext& context, BenchNote& bench, PlaySettings& draft);
 
 // Général > Application : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
+// Le panneau qui se ferme arrête la vérification ou le téléchargement en cours (P2.6) : le futur attendu par
+// le destructeur rend la main au lieu de tenir la fermeture jusqu'à 30 minutes.
 struct UpdateNote {
   std::string text;
   bool refused = false;
-  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
+  std::shared_ptr<std::stop_source> stop = std::make_shared<std::stop_source>();
+  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;  // détruit avant stop
+  UpdateNote() = default;
+  ~UpdateNote() { stop->request_stop(); }
+  UpdateNote(const UpdateNote&) = delete;
+  UpdateNote& operator=(const UpdateNote&) = delete;
+  UpdateNote(UpdateNote&&) = delete;
+  UpdateNote& operator=(UpdateNote&&) = delete;
 };
 // La langue de l'interface : anglais ou français, prise en direct.
 void language_section(PlaySettings& d);
