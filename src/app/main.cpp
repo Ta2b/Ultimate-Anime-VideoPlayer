@@ -327,7 +327,7 @@ int run_player(int argc, char** argv) {
     return fail(options.error());
   }
   if (options->help) {
-    std::fputs(ajp::app::play::play_usage().c_str(), stdout);
+    std::fputs(ajp::app::play::play_usage(options->debug).c_str(), stdout);
     return 0;
   }
   const auto base = sdl_path(SDL_GetBasePath());

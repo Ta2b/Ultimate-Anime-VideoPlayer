@@ -90,13 +90,38 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
   return args[++i];
 }
 
+// Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
+constexpr std::array<std::string_view, 26> kTrialOptions{
+    "--rife-image",   "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",    "--no-hdr-metadata",
+    "--probe-nvdec",  "--no-probe-nvdec",  "--shot-cuts",       "--no-shot-cuts",    "--one-lane",
+    "--skip-held",    "--anime-shots",     "--no-anime-shots",  "--fast-steady",     "--smooth-drawings",
+    "--ring-watcher", "--no-ring-watcher", "--precise-wait",    "--no-precise-wait", "--audio-pll",
+    "--no-audio-pll", "--vsync-index",     "--no-vsync-index",  "--present",         "--no-present",
+    "--no-vrr"};
+
+bool is_trial(std::string_view arg) {
+  const std::string_view name = arg.substr(0, arg.find('='));
+  return std::ranges::find(kTrialOptions, name) != kTrialOptions.end();
+}
+
+bool asks_debug(std::span<const std::string_view> args) {
+  for (const std::string_view arg : args) {
+    if (arg == "--") return false;
+    if (arg == "--debug") return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::string_view> args) {
   PlayOptions options;
+  options.debug = asks_debug(args);
   bool only_files = false;
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string_view arg = args[i];
+    if (!only_files && !options.debug && is_trial(arg))
+      return refuse(RefusalCode::OptionUnknown, std::format("{}: trial option, give --debug too", arg));
     if (only_files || !arg.starts_with("--")) {
       if (!options.file.empty()) {
         return refuse(RefusalCode::OptionUnknown,
@@ -109,6 +134,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       only_files = true;
     } else if (arg == "--help") {
       options.help = true;
+    } else if (arg == "--debug") {
+      // lu avant la boucle (asks_debug)
     } else if (arg == "--no-upscale") {
       options.upscale = false;
       options.given.emplace_back(arg);
@@ -424,8 +451,8 @@ std::string bench_usage() {
          "The result is kept in bench.toml (card, driver, level, date) and replaces the card's estimate.\n";
 }
 
-std::string play_usage() {
-  return std::format(
+std::string play_usage(bool debug) {
+  const std::string usage = std::format(
       "ajp play [file] [options]   (without a file: home screen, Open a video)\n"
       "  --model=FILE.onnx      SPAN ×2 model (default: {})\n"
       "  --no-upscale           source picture as is\n"
@@ -440,44 +467,12 @@ std::string play_usage() {
       "                         or of an engine build if it lasts that long; on an HDR10\n"
       "                         output, only a .pq.ppm name keeps the graded picture\n"
       "  --snapshot-frames=N    N presentations in a row (FILE-001.ppm…), for flicker\n"
-      "  --rife-image           image RIFE at every instant (without the motion variant)\n"
       "  --sdr                  SDR output even on an HDR screen (SDR grade tests)\n"
-      "  --ring-rgb10a2         RGB10A2 ring under TensorRT (half the memory, default);\n"
-      "                         --no-ring-rgb10a2: RGBA16\n"
-      "  --hdr-metadata[=NITS]  HDR10 output with its metadata, KWin's compression done by the\n"
-      "                         grade (NITS: KDE's SDR brightness, read from KDE without a value);\n"
-      "                         default under KDE and Windows; --no-hdr-metadata: compression\n"
-      "                         left to KWin (Windows: clipping at the screen's peak)\n"
-      "  --probe-nvdec          shot pre-analysis decoded by NVDEC at 256x144 (default;\n"
-      "                         --no-probe-nvdec: software decoding)\n"
-      "  --no-shot-cuts         interpolation cuts measured by RIFE alone (default: the pre-analysis\n"
-      "                         shots decide, RIFE when they do not cover the pair)\n"
-      "  --one-lane             a single compute queue: slower, but the GPU profile gives each\n"
-      "                         engine's own cost\n"
-      "  --skip-held            playback: an instant identical to the shown frame is neither computed nor\n"
-      "                         written (trial; off by default)\n"
-      "  --anime-shots          the anime HDR grade decided per shot (default): surfaces anchored at ±5%, "
-      "highlight\n"
-      "                         headroom of the shot, changed at the cut frame; --no-anime-shots: fixed "
-      "lift\n"
       "  --bake-looks=FILE.cube writes play.toml's LUT stack (strengths included) as a single\n"
       "                         65-point LUT, then stops\n"
       "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
       "                         the anime grade's punch: contrast, saturation, highlights, 0 to 200% (100: "
       "as is)\n"
-      "  --fast-steady          trial: Fast mode at a constant step, N frames per held source in a shot\n"
-      "  --smooth-drawings      trial: a drawing held two frames blends into motion (motion RIFE)\n"
-      "  --ring-watcher         a thread waits for ring writes and wakes the display (default;\n"
-      "                         --no-ring-watcher: the display polls)\n"
-      "  --precise-wait         waits for the next frame to the microsecond (default; --no-precise-wait:\n"
-      "                         to the millisecond)\n"
-      "  --audio-pll            audio clock filtered by a phase-locked loop (default;\n"
-      "                         --no-audio-pll: the raw clock)\n"
-      "  --vsync-index          frame chosen by its measured vblank number, with hysteresis (default;\n"
-      "                         --no-vsync-index: the clock)\n"
-      "  --present=LEVEL        presentation feedback wait (default), auto, timing, wayland or open;\n"
-      "                         --no-present: open, the former presentation\n"
-      "  --no-vrr               fixed refresh screen even if VRR is armed (Fast mode trial)\n"
       "  --software-gpu         accepts a software Vulkan (lavapipe), for tests without a GPU\n"
       "  --mute                 sound off for this playback\n"
       "  --data-dir=FOLDER      settings and log in this folder (engines and models shared)\n"
@@ -498,6 +493,42 @@ std::string play_usage() {
       "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, b faithful\n"
       "  sound, p settings, Tab statistics, Ctrl+0 no processing, Ctrl+G grade, Ctrl+I interpolation.\n",
       kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
+  if (!debug) return usage + "Trial options: ajp --debug --help\n";
+  return usage +
+         "Trial options, with --debug:\n"
+         "  --rife-image           image RIFE at every instant (without the motion variant)\n"
+         "  --ring-rgb10a2         RGB10A2 ring under TensorRT (half the memory, default);\n"
+         "                         --no-ring-rgb10a2: RGBA16\n"
+         "  --hdr-metadata[=NITS]  HDR10 output with its metadata, KWin's compression done by the\n"
+         "                         grade (NITS: KDE's SDR brightness, read from KDE without a value);\n"
+         "                         default under KDE and Windows; --no-hdr-metadata: compression\n"
+         "                         left to KWin (Windows: clipping at the screen's peak)\n"
+         "  --probe-nvdec          shot pre-analysis decoded by NVDEC at 256x144 (default;\n"
+         "                         --no-probe-nvdec: software decoding)\n"
+         "  --no-shot-cuts         interpolation cuts measured by RIFE alone (default: the pre-analysis\n"
+         "                         shots decide, RIFE when they do not cover the pair)\n"
+         "  --one-lane             a single compute queue: slower, but the GPU profile gives each\n"
+         "                         engine's own cost\n"
+         "  --skip-held            playback: an instant identical to the shown frame is neither computed "
+         "nor\n"
+         "                         written (trial; off by default)\n"
+         "  --anime-shots          the anime HDR grade decided per shot (default): surfaces anchored at ±5%, "
+         "highlight\n"
+         "                         headroom of the shot, changed at the cut frame; --no-anime-shots: fixed "
+         "lift\n"
+         "  --fast-steady          trial: Fast mode at a constant step, N frames per held source in a shot\n"
+         "  --smooth-drawings      trial: a drawing held two frames blends into motion (motion RIFE)\n"
+         "  --ring-watcher         a thread waits for ring writes and wakes the display (default;\n"
+         "                         --no-ring-watcher: the display polls)\n"
+         "  --precise-wait         waits for the next frame to the microsecond (default; --no-precise-wait:\n"
+         "                         to the millisecond)\n"
+         "  --audio-pll            audio clock filtered by a phase-locked loop (default;\n"
+         "                         --no-audio-pll: the raw clock)\n"
+         "  --vsync-index          frame chosen by its measured vblank number, with hysteresis (default;\n"
+         "                         --no-vsync-index: the clock)\n"
+         "  --present=LEVEL        presentation feedback wait (default), auto, timing, wayland or open;\n"
+         "                         --no-present: open, the former presentation\n"
+         "  --no-vrr               fixed refresh screen even if VRR is armed (Fast mode trial)\n";
 }
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,

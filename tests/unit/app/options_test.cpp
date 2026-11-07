@@ -17,7 +17,9 @@
 namespace ajp::app::play {
 namespace {
 
+// Avec --debug : les options d'essai y sont acceptées (P2.35).
 std::expected<PlayOptions, Refusal> parse(std::vector<std::string_view> args) {
+  args.insert(args.begin(), "--debug");
   return parse_play_options(args);
 }
 
@@ -299,7 +301,7 @@ namespace ajp::app::play {
 
 // P2.35 : chaque option que l'aide cite, l'analyseur la connaît (seule ou avec une valeur).
 TEST_CASE("ajp play : l'aide ne cite aucune option inconnue de l'analyseur", "[app][options]") {
-  const std::string usage = play_usage();
+  const std::string usage = play_usage(true);
   std::vector<std::string> unknown;
   for (std::size_t at = usage.find("--"); at != std::string::npos; at = usage.find("--", at + 2)) {
     std::size_t end = at + 2;
@@ -319,6 +321,11 @@ TEST_CASE("ajp play : l'aide ne cite aucune option inconnue de l'analyseur", "[a
   INFO(std::accumulate(unknown.begin(), unknown.end(), std::string(),
                        [](std::string a, const std::string& b) { return std::move(a) + " " + b; }));
   CHECK(unknown.empty());
+  // Sans --debug, une option d'essai est refusée, et l'aide simple ne la cite pas.
+  const auto refused = parse_play_options(std::vector<std::string_view>{"video.mkv", "--one-lane"});
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::OptionUnknown);
+  CHECK(play_usage().find("--one-lane") == std::string::npos);
 }
 
 }  // namespace ajp::app::play

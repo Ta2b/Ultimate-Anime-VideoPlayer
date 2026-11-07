@@ -99,6 +99,7 @@ struct PlayOptions {
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
   int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
   bool help = false;      // --help
+  bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
   bool rife_image = false;
   // --software-gpu : accepte un appareil Vulkan logiciel (lavapipe), pour les essais sans GPU.
@@ -208,7 +209,8 @@ WorkSize work_size(int width, int height, int work_height);
 // illisible ou hors plage (FieldOutOfRange), sont refusées ; sans fichier, l'écran d'accueil.
 std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::string_view> args);
 
-std::string play_usage();
+// debug : avec les options d'essai (--debug --help).
+std::string play_usage(bool debug = false);
 
 // « ajp bench <fichier> » : évalue la machine (auto_bench_run.h) en jouant ce fichier à chaque niveau.
 struct BenchOptions {

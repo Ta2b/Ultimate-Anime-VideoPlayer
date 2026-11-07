@@ -97,6 +97,7 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
                                 std::format("--data-dir={}", prepare::utf8_path(data_dir)),
                                 std::format("--bench-out={}", prepare::utf8_path(out_file))};
   window_args(plan, args);
+  args.emplace_back("--debug");  // les variantes comparées sont souvent des options d'essai (P2.35)
   args.insert(args.end(), variant.args.begin(), variant.args.end());
   return args;
 }
