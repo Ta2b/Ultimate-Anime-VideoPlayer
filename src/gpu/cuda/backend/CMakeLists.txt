@@ -71,7 +71,25 @@ set(ajp_trtexec_sha256 "")
 set(ajp_trtexec_path "")
 if(AJP_TRTEXEC AND EXISTS "${AJP_TRTEXEC}")
   set(ajp_trtexec_path "${AJP_TRTEXEC}")
-  file(SHA256 "${AJP_TRTEXEC}" ajp_trtexec_sha256)
+  set(ajp_trtexec_packaged "${AJP_TRTEXEC}")
+  # Sous Linux, le paquet range trtexec sur $ORIGIN (ses bibliothèques de NVIDIA sont à côté de lui) : la copie
+  # rangée est faite ici, une fois, et c'est son SHA-256 qui entre dans le module ; package-linux.sh livre cette
+  # copie telle quelle (AJP_TRTEXEC_PACKAGED). Patcher après coup changeait l'empreinte (0.10.0).
+  find_program(AJP_PATCHELF patchelf)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND AJP_PATCHELF)
+    set(ajp_trtexec_packaged "${CMAKE_BINARY_DIR}/trtexec-paquet/trtexec")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/trtexec-paquet")
+    file(COPY_FILE "${AJP_TRTEXEC}" "${ajp_trtexec_packaged}")
+    execute_process(COMMAND "${AJP_PATCHELF}" --set-rpath "$ORIGIN" "${ajp_trtexec_packaged}"
+                    RESULT_VARIABLE ajp_patchelf_result)
+    if(NOT ajp_patchelf_result EQUAL 0)
+      message(FATAL_ERROR "patchelf n'a pas rangé ${ajp_trtexec_packaged} sur $ORIGIN")
+    endif()
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(WARNING "patchelf manquant : le trtexec livré ne trouvera pas ses bibliothèques à côté de lui")
+  endif()
+  set(AJP_TRTEXEC_PACKAGED "${ajp_trtexec_packaged}" CACHE INTERNAL "trtexec livré, celui dont le module garde l'empreinte")
+  file(SHA256 "${ajp_trtexec_packaged}" ajp_trtexec_sha256)
 endif()
 target_compile_definitions(ajp_backend_tensorrt PRIVATE AJP_TRTEXEC_SHA256="${ajp_trtexec_sha256}"
   AJP_TRTEXEC_PATH="${ajp_trtexec_path}" $<$<CONFIG:Release>:AJP_TRTEXEC_NO_FALLBACK>)

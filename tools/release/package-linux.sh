@@ -118,6 +118,9 @@ origin() {  # rpath $ORIGIN (et $ORIGIN/$2) sur chaque fichier ELF du dossier $1
   local f
   for f in "$1"/*; do
     file -b "$f" | grep -q ELF || continue
+    # trtexec est déjà rangé par la configuration, et le module garde son empreinte : un octet changé et le
+    # moteur le refuse (« trtexec absent du dossier du moteur, ou d'empreinte inattendue », 0.10.0).
+    [ "$(basename "$f")" = trtexec ] && continue
     patchelf --set-rpath "\$ORIGIN${2:+:\$ORIGIN/$2}" "$f"
   done
 }
@@ -175,8 +178,14 @@ fi
 if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   dir="$OUT/engine-tensorrt"; rm -rf "$dir"; mkdir -p "$dir"
   cp "$TRT_MODULE" "$dir/"
-  TRTEXEC="$(sed -n 's/^AJP_TRTEXEC:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
+  TRTEXEC="$(sed -n 's/^AJP_TRTEXEC_PACKAGED:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
   [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] && cp "$TRTEXEC" "$dir/trtexec"
+  # Le module ne lance que le trtexec dont il garde l'empreinte : un paquet où elle manque ne construirait rien.
+  if [ -f "$dir/trtexec" ] && ! strings "$dir/ajp_backend_tensorrt.so" |
+      grep -qx "$(sha256sum "$dir/trtexec" | cut -d' ' -f1)"; then
+    echo "trtexec : son SHA-256 n'est pas celui que le module attend (reconfigurer la construction)" >&2
+    exit 1
+  fi
   copy_deps "$dir" "$dir"/*
   TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
   VENDOR="$ROOT/tools/release/nvidia-vendor/tensorrt-linux-x64.lock"
