@@ -300,3 +300,12 @@ TEST_CASE("Rendu : en bandes noires, l'ASS reste sur l'image, le SRT descend dan
   REQUIRE_FALSE(in_band.empty());
   CHECK(in_band.y1 > 420);
 }
+
+TEST_CASE("Rendu : une fenêtre réduite à 0×0 est refusée, sans calcul de placement", "[render]") {
+  Bench bench(ajp::subs::test::reference_script());
+  const RenderRequest request{.pts_us = 2'500'000,
+                              .target = {.width = 0, .height = 0, .video_width = 1920, .video_height = 1080}};
+  const auto outcome = bench.renderer.render(bench.track, request, bench.pool);
+  REQUIRE_FALSE(outcome);
+  CHECK(outcome.error().code == ajp::RefusalCode::FieldOutOfRange);
+}

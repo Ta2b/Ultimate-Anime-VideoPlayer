@@ -261,8 +261,9 @@ void Session::request_subtitles(const RingFrame& frame) {
     subtitle_waiting_ = frame;
     return;
   }
-  subtitle_pts_ = frame.pts_us;
   const OutputSize size = screen_.size();
+  if (size.width <= 0 || size.height <= 0) return;  // fenêtre réduite (P2.18) : rien à placer, rien de refusé
+  subtitle_pts_ = frame.pts_us;
   const subs::RenderRequest request{.pts_us = frame.pts_us,
                                     .epoch = frame.epoch,
                                     .target = {.width = size.width,

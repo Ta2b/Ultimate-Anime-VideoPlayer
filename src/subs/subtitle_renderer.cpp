@@ -64,8 +64,11 @@ VideoRect fit(const RenderTarget& target) {
   const double shown_width = target.video_width * pixel_aspect(target);
   const double scale = std::min(static_cast<double>(target.width) / shown_width,
                                 static_cast<double>(target.height) / target.video_height);
-  return {.width = std::clamp(static_cast<int>(std::lround(shown_width * scale)), 1, target.width),
-          .height = std::clamp(static_cast<int>(std::lround(target.video_height * scale)), 1, target.height)};
+  // Bornes jamais inversées (P2.18) : validate() refuse déjà une sortie nulle, fit() ne la suppose pas.
+  return {
+      .width = std::clamp(static_cast<int>(std::lround(shown_width * scale)), 1, std::max(target.width, 1)),
+      .height = std::clamp(static_cast<int>(std::lround(target.video_height * scale)), 1,
+                           std::max(target.height, 1))};
 }
 
 std::size_t to_size(int value) {

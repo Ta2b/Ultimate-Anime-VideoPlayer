@@ -74,6 +74,7 @@ std::expected<std::unique_ptr<OsdText>, Refusal> OsdText::create() {
 
 std::expected<const subs::SubtitleFrame*, Refusal> OsdText::render(std::span<const std::string> lines,
                                                                    OutputSize size) {
+  if (size.width <= 0 || size.height <= 0) return nullptr;  // fenêtre réduite (P2.18)
   const bool same = size == size_ && std::ranges::equal(lines, lines_);
   if (!same) {
     auto track = subs::SubtitleTrack::from_ass(library_, osd_script(lines, size));
