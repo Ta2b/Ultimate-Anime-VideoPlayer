@@ -322,7 +322,10 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   auto data =
       net::build_network(*request, profile_, tuner ? &*tuner : nullptr, progress.report, progress.stop);
   if (!data) return std::unexpected(data.error());
-  if (tuner) gate(model, *data);
+  if (tuner) {
+    for (const std::string& line : tuner->decisions()) log(BackendLogLevel::Debug, model.id + " : " + line);
+    if (auto ok = gate(model, *data); !ok) return std::unexpected(ok.error());
+  }
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   log(BackendLogLevel::Info,
@@ -336,31 +339,34 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   return artifact;
 }
 
-void VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data) {
+std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data) {
+  // Les noyaux de référence partout, quand les choix de l'autotuner ne peuvent pas être vérifiés.
+  const auto to_reference = [&](std::string_view why) -> std::expected<void, Refusal> {
+    auto reference = net::reference_choices(data.graph, profile_.target);
+    if (!reference) return std::unexpected(reference.error());
+    auto program = net::lower(data.graph, *reference, profile_.target);
+    if (!program) return std::unexpected(program.error());
+    log(BackendLogLevel::Warn, std::format("{} : {}, noyaux de référence partout", model.id, why));
+    data.choices = std::move(*reference);
+    data.dispatches = std::move(program->dispatches);
+    data.shaders = net::shader_hashes(data.dispatches);
+    return {};
+  };
   auto gated = net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target);
-  if (!gated) {
-    // La porte n'a pas pu jouer le réseau (mémoire, pilote) : les choix de chaque couche, vérifiés un à un,
-    // restent.
-    log(BackendLogLevel::Warn,
-        std::format("{} : porte de bout en bout non jouée ({})", model.id, gated.error().detail));
-    return;
-  }
+  if (!gated) return to_reference(std::format("porte de bout en bout non jouée ({})", gated.error().detail));
   if (gated->fallback.empty()) {
     log(BackendLogLevel::Info,
         std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
-    return;
+    return {};
   }
   auto program = net::lower(data.graph, gated->choices, profile_.target);
-  if (!program) {
-    log(BackendLogLevel::Warn,
-        std::format("{} : repli de la porte refusé ({})", model.id, program.error().detail));
-    return;
-  }
+  if (!program) return to_reference(std::format("repli de la porte refusé ({})", program.error().detail));
   log(BackendLogLevel::Warn,
       std::format("{} : sortie du réseau trop loin de la référence, {}", model.id, gated->fallback));
   data.choices = std::move(gated->choices);
   data.dispatches = std::move(program->dispatches);
   data.shaders = net::shader_hashes(data.dispatches);
+  return {};
 }
 
 std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifact& artifact) {

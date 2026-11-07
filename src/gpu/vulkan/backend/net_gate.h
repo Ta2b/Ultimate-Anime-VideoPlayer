@@ -1,10 +1,11 @@
-// La porte de bout en bout de l'autotuner (V9) : chaque couche choisie concorde avec le noyau direct à
-// 3 % près (net_autotune.h), mais des écarts permis s'additionnent d'une couche à l'autre. Le réseau
-// entier, aux choix de l'autotuner, est donc rejoué une fois contre le même réseau aux noyaux de
-// référence (le direct de chaque couche) sur les mêmes entrées. Trop loin (écart quadratique au-delà de
-// kNetworkDrift de l'énergie de la référence, ou une valeur non finie) : les sommes en float16 cèdent
-// d'abord leur place aux sommes en float, puis, si l'écart reste, tout le réseau reprend les noyaux de
-// référence.
+// La porte de bout en bout de l'autotuner (V9) : chaque couche choisie concorde avec le noyau direct à sa
+// tolérance (1 % en sommes float, 3 % à précision réduite, net_autotune.cpp), mais des écarts permis
+// s'additionnent d'une couche à l'autre. Le réseau entier, aux choix de l'autotuner, est donc rejoué une fois
+// contre le même réseau aux noyaux de référence (le direct de chaque couche) sur les mêmes entrées. Trop loin
+// (écart quadratique au-delà de kNetworkDrift de l'énergie de la référence, kNetworkDriftLow si une couche
+// est à précision réduite, ou une valeur non finie) : les couches à précision réduite cèdent d'abord leur
+// place (sommes en float pour coopmat_acc16, noyau de référence sinon), puis, si l'écart passe encore
+// kNetworkDrift, tout le réseau reprend les noyaux de référence (P2.45 : 1 % de bout en bout, 10 % avant).
 #pragma once
 
 #include <expected>
@@ -21,7 +22,8 @@
 
 namespace ajp::gpu::vk::net {
 
-inline constexpr double kNetworkDrift = 0.10;
+inline constexpr double kNetworkDrift = 0.01;
+inline constexpr double kNetworkDriftLow = 0.02;
 
 // Le noyau de référence de chaque nœud : la variante « direct » quand le nœud la propose, sinon la
 // première de ses candidates. Refus : ceux de candidates().

@@ -62,9 +62,16 @@ inline constexpr std::uint32_t kPatternPeriodF16 = 32749;  // 65 498 octets
 inline constexpr std::uint32_t kPatternPeriodF32 = 16381;  // 65 524 octets
 float tuning_input(ir::DataType type, std::uint64_t index);
 
+// Les variantes à précision réduite (P2.45) : sommes en float16 (coopmat_acc16, *_f16p) ou produits en FP8.
+// Leur sortie a droit à un écart plus large que celle des sommes en float, par couche comme de bout en bout.
+inline bool low_precision(const KernelChoice& c) {
+  return c.variant == "coopmat_acc16" || c.variant == "direct_f16p" || c.variant == "winograd_f16p" ||
+         c.variant == "coopmat_fp8";
+}
+
 struct TunerOptions {
   std::uint32_t warmup = 2;   // passes non comptées
-  std::uint32_t passes = 5;   // passes mesurées : la médiane compte
+  std::uint32_t passes = 9;   // passes mesurées : la médiane compte
   std::uint32_t repeats = 3;  // dispatchs enchaînés par passe
   // Après un sondage de chaque candidat (une passe), seuls ceux à moins de ce facteur du plus
   // rapide sont mesurés en entier.
@@ -107,6 +114,8 @@ class Autotuner {
   // choix repris d'une autre version du pilote ou de la table, sortie revérifiée (comptés dans cached)
   std::size_t reverified() const { return reverified_; }
   bool timestamps() const { return period_ns_ > 0.0; }
+  // Une ligne par choix tranché par mesure (couche, variante, médiane et écart type), pour le journal.
+  const std::vector<std::string>& decisions() const { return decisions_; }
 
  private:
   std::expected<Measured, Refusal> measure_with(const ir::Graph& graph, std::size_t node,
@@ -128,6 +137,9 @@ class Autotuner {
   TunerOptions options_;
   std::span<const PresetTable> presets_;
   double period_ns_ = 0.0;  // 0 : pas de requêtes d'horodatage, mesure hôte
+  // Relevés d'estampilles qui n'avancent pas : chacun se remesure ; au troisième, la mesure passe à l'hôte.
+  std::uint32_t bad_stamps_ = 0;
+  std::vector<std::string> decisions_;
   struct Remembered {
     KernelChoice choice;
     std::string driver;  // DeviceProfile::driver_build sous lequel sa sortie a été vérifiée

@@ -158,6 +158,7 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
     CHECK(one.median_us > 0.0);
     best = require_value(tuner.choose(graph, 0, options, "test"));
     CHECK(tuner.measured() == 1);
+    CHECK(tuner.decisions().size() == 1);  // le choix tranché est journalisé (P2.45)
     CHECK(std::ranges::find(options, best) != options.end());
     (void)require_value(tuner.choose(graph, 0, options, "test"));
     CHECK(tuner.cached() == 1);

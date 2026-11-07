@@ -95,8 +95,12 @@ std::vector<float> as_floats(std::span<const std::byte> bytes, ir::DataType type
 
 // La sortie d'un candidat concorde-t-elle avec celle de la référence ? Écart permis : 3 % de la
 // plus grande valeur de la référence plus 2 % de la valeur (sommes en float16 de direct_f16p).
-bool agrees(const std::vector<float>& out, const std::vector<float>& ref) {
+// La sortie d'une variante contre la référence, à la tolérance de sa précision (P2.45) : sommes en float à 1
+// % du pic plus 1 % de la valeur, précision réduite (low_precision) à 3 % plus 2 %.
+bool agrees(const std::vector<float>& out, const std::vector<float>& ref, bool low) {
   if (out.size() != ref.size()) return false;
+  const float of_peak = low ? 0.03F : 0.01F;
+  const float of_value = low ? 0.02F : 0.01F;
   float peak = 0.0F;
   for (const float v : ref) {
     if (std::isfinite(v)) peak = std::max(peak, std::abs(v));
@@ -104,13 +108,16 @@ bool agrees(const std::vector<float>& out, const std::vector<float>& ref) {
   for (std::size_t i = 0; i < out.size(); ++i) {
     if (std::isnan(out[i]) != std::isnan(ref[i])) return false;
     if (std::isnan(ref[i])) continue;
-    if (!(std::abs(out[i] - ref[i]) <= (0.03F * peak) + (0.02F * std::abs(ref[i])) + 1e-3F)) return false;
+    if (!(std::abs(out[i] - ref[i]) <= (of_peak * peak) + (of_value * std::abs(ref[i])) + 1e-3F))
+      return false;
   }
   return true;
 }
 
 // Écart de vitesse sous lequel la précision départage deux variantes.
 constexpr double kPrecisionTie = 1.05;
+// Écart type relatif au-delà duquel une mesure se reprend.
+constexpr double kNoisy = 0.10;
 
 std::string tuning_text(const KernelChoice& c) {
   std::string out;
@@ -298,7 +305,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     if (!reference) {
       reference = std::move(m->output);
       direct_reference = c.variant == "direct";
-    } else if (!agrees(m->output, *reference)) {
+    } else if (!agrees(m->output, *reference, low_precision(c))) {
       ++rejected_;
       last_error =
           Refusal{RefusalCode::InputMismatch,
@@ -321,6 +328,8 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   }
   if (probes.size() == 1) {  // un seul candidat concordant : rien à départager
     ++measured_;
+    decisions_.push_back(std::format("nœud {} ({}) : {} {}, seul concordant", node, graph.nodes[node].name,
+                                     probes.front().choice.variant, tuning_text(probes.front().choice)));
     cache_[key] = {.choice = probes.front().choice, .driver = profile_.driver_build};
     return probes.front().choice;
   }
@@ -339,16 +348,30 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     }
     measured.push_back(std::move(*m));
   }
-  // À vitesse proche (moins de 5 %), la variante aux sommes en float l'emporte sur celle aux sommes
-  // en float16 : la précision ne coûte alors rien, et un écart de bruit ne tranche pas.
-  const auto fp16_sums = [](const Measured& m) {
-    return m.choice.variant == "coopmat_acc16" || m.choice.variant == "direct_f16p";
-  };
+  // Des mesures bruitées (écart type au-delà de 10 % de la médiane du plus rapide) se reprennent une fois,
+  // avec deux fois plus de passes.
+  if (!measured.empty()) {
+    const Measured& quick = std::ranges::min(measured, {}, &Measured::median_us);
+    if (quick.spread_us > kNoisy * quick.median_us) {
+      const TunerOptions longer{
+          .warmup = options_.warmup, .passes = options_.passes * 2, .repeats = options_.repeats};
+      for (Measured& m : measured) {
+        if (stop.stop_requested())
+          return std::unexpected(Refusal{RefusalCode::Cancelled, "autotuner arrêté"});
+        if (auto again = measure_with(graph, node, m.choice, longer)) m = std::move(*again);
+      }
+    }
+  }
+  // À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide), la variante aux sommes en float
+  // l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de bruit ne
+  // tranche pas.
+  const auto fp16_sums = [](const Measured& m) { return low_precision(m.choice); };
   std::optional<Measured> best;
   if (!measured.empty()) {
-    const double quickest = std::ranges::min(measured, {}, &Measured::median_us).median_us;
+    const Measured& quick = std::ranges::min(measured, {}, &Measured::median_us);
+    const double tie = std::max(kPrecisionTie * quick.median_us, quick.median_us + (2.0 * quick.spread_us));
     for (Measured& m : measured) {
-      if (m.median_us > kPrecisionTie * quickest) continue;
+      if (m.median_us > tie) continue;
       if (!best || fp16_sums(*best) > fp16_sums(m) ||
           (fp16_sums(*best) == fp16_sums(m) && m.median_us < best->median_us))
         best = std::move(m);
@@ -358,6 +381,9 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     return std::unexpected(last_error.value_or(Refusal{RefusalCode::InputMismatch, "aucun candidat mesuré"}));
   }
   ++measured_;
+  decisions_.push_back(std::format("nœud {} ({}) : {} {}, {:.1f} ± {:.1f} µs parmi {} mesurés", node,
+                                   graph.nodes[node].name, best->choice.variant, tuning_text(best->choice),
+                                   best->median_us, best->spread_us, measured.size()));
   cache_[key] = {.choice = best->choice, .driver = profile_.driver_build};
   return best->choice;
 }
@@ -373,7 +399,7 @@ std::expected<bool, Refusal> Autotuner::agrees_with_direct(const ir::Graph& grap
   if (!reference) return std::unexpected(reference.error());
   auto mine = measure_with(graph, node, choice, once);
   if (!mine) return std::unexpected(mine.error());
-  return agrees(mine->output, reference->output);
+  return agrees(mine->output, reference->output, low_precision(choice));
 }
 
 std::expected<const Buffer*, Refusal> Autotuner::pattern(ir::DataType type) {
@@ -587,10 +613,11 @@ std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph,
         !ok) {
       return std::unexpected(ok.error());
     }
-    // Des estampilles qui n'avancent pas d'une passe à l'autre ne mesurent rien : la mesure passe
-    // à l'hôte, pour ce choix et les suivants.
+    // Des estampilles qui n'avancent pas d'une passe à l'autre ne mesurent rien : la mesure se reprend ; au
+    // troisième relevé raté de la séance seulement, elle passe à l'hôte pour ce choix et les suivants (un
+    // raté isolé ne change plus l'horloge de toutes les mesures, P2.45).
     if (std::ranges::adjacent_find(ticks, std::greater_equal<>()) != ticks.end()) {
-      period_ns_ = 0.0;
+      if (++bad_stamps_ >= 3) period_ns_ = 0.0;
       return measure_with(graph, node, choice, options);
     }
     for (std::uint32_t pass = options.warmup; pass < passes; ++pass) {
