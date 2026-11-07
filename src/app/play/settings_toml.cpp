@@ -6,6 +6,8 @@
 #include <format>
 #include <fstream>
 #include <initializer_list>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -581,6 +583,36 @@ std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view tom
   return settings_from_table(root);
 }
 
+namespace {
+
+// Ce que ce processus a lu ou écrit en dernier pour chaque fichier, mis en forme (P2.14) : la base de la
+// fusion à la réécriture, quand un autre lancement a réécrit le fichier entre-temps.
+struct SeenSettings {
+  std::mutex mutex;
+  std::map<std::filesystem::path, toml::table> tables;
+};
+
+SeenSettings& seen() {
+  static SeenSettings instance;
+  return instance;
+}
+
+void remember(const std::filesystem::path& path, toml::table table) {
+  SeenSettings& s = seen();
+  const std::scoped_lock lock(s.mutex);
+  s.tables.insert_or_assign(path, std::move(table));
+}
+
+std::optional<toml::table> remembered(const std::filesystem::path& path) {
+  SeenSettings& s = seen();
+  const std::scoped_lock lock(s.mutex);
+  const auto found = s.tables.find(path);
+  if (found == s.tables.end()) return std::nullopt;
+  return found->second;
+}
+
+}  // namespace
+
 std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path) {
   std::error_code error;
   if (!std::filesystem::exists(path, error)) return PlaySettings{};
@@ -603,6 +635,8 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
     return std::unexpected(Refusal{.code = settings.error().code,
                                    .detail = std::format("{} : {}", path.string(), settings.error().detail),
                                    .key = settings.error().key});
+  if (toml::parse_result seen_now = toml::parse(format_settings(*settings)); seen_now)
+    remember(path, std::move(seen_now).table());
   return settings;
 }
 
@@ -617,13 +651,23 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
     toml::parse_result old = toml::parse(existing.str());
     toml::parse_result fresh = toml::parse(text);
     if (old && fresh) {
-      toml::table merged = std::move(fresh).table();
+      toml::table merged = fresh.table();
+      // Réécrit entre-temps par un autre lancement (P2.14) : ses clés restent, seules les nôtres changent.
+      const auto before = remembered(path);
+      if (const auto on_disk = parse_settings_lenient(existing.str(), nullptr); before && on_disk) {
+        if (toml::parse_result disk = toml::parse(format_settings(*on_disk)); disk) {
+          merged = std::move(disk).table();
+          apply_own_changes(merged, *before, fresh.table());
+        }
+      }
       keep_unknown_keys(merged, old.table(), settings_from_table);
       std::ostringstream out;
       out << "# Réglages de « ajp play », écrits par le menu des paramètres.\n" << merged << '\n';
       text = out.str();
     }
   }
+  if (toml::parse_result ours = toml::parse(format_settings(settings)); ours)
+    remember(path, std::move(ours).table());
   return core::write_text_atomically(path, text);
 }
 

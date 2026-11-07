@@ -668,3 +668,26 @@ TEST_CASE("Délai audio mémorisé par appareil, relu de play.toml (P2.7)", "[ap
   CHECK(*reread == s);
   std::filesystem::remove(path);
 }
+
+TEST_CASE("play.toml : deux lancements, chacun ne réécrit que les clés qu'il a changées (P2.14)",
+          "[app][settings]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-two.toml";
+  std::filesystem::remove(path);
+  REQUIRE(ajp::app::play::save_settings(path, ajp::app::play::PlaySettings{}));
+  auto ours = ajp::app::play::load_settings(path);
+  REQUIRE(ours);
+  // L'autre lancement réécrit le fichier : le volume change.
+  ajp::app::play::PlaySettings theirs = *ours;
+  theirs.volume = 0.25F;
+  {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << ajp::app::play::format_settings(theirs);
+  }
+  ours->audio_delay_ms = 120;
+  REQUIRE(ajp::app::play::save_settings(path, *ours));
+  const auto merged = ajp::app::play::load_settings(path);
+  REQUIRE(merged);
+  CHECK(merged->audio_delay_ms == 120);
+  CHECK(merged->volume == Catch::Approx(0.25F));
+  std::filesystem::remove(path);
+}
