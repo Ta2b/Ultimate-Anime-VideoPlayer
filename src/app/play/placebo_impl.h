@@ -209,6 +209,7 @@ struct PlaceboScreen::Impl {
   std::optional<double> kde_sdr_nits;
   bool kde_sdr_auto = false;
   double hinted_max_nits = 0.0;
+  double hinted_max_fall = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)

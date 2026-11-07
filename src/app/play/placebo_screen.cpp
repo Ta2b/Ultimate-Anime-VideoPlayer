@@ -89,6 +89,7 @@ void PlaceboScreen::set_sdr_output(bool sdr) {
   if (s.swapchain == nullptr) return;
   // Les métadonnées annoncées repartent de zéro : au retour en HDR, match_kwin les repose.
   s.hinted_max_nits = 0.0;
+  s.hinted_max_fall = 0.0;
   pl_swapchain_colorspace_hint(s.swapchain, s.hdr_wanted ? &pl_color_space_hdr10 : nullptr);
   s.composed_key.reset();
 }

@@ -227,17 +227,25 @@ void PlaceboScreen::Impl::match_kwin() {
   kwin_applied = match;
   grade->set_kwin_match(match);
   const double max_nits = on ? hint.max_content_nits : 0.0;
-  if (max_nits == hinted_max_nits) return;
+  // MaxFALL (P3.59) : celui du contrat d'écran quand il le connaît (le plein écran du limiteur), sinon le
+  // niveau des surfaces blanches du grade (blanc × relèvement fixe, pas celui du plan : l'annonce ne bouge
+  // pas à chaque coupe), la moyenne d'une image toute blanche.
+  const double contract_fall = contract ? render::contract_metadata(*contract).max_fall : 0.0;
+  const double surfaces = grade->params().sdr_white * render::kAnimeLift;
+  const double max_fall = on ? std::min(max_nits, contract_fall > 0.0 ? contract_fall : surfaces) : 0.0;
+  if (max_nits == hinted_max_nits && max_fall == hinted_max_fall) return;
   hinted_max_nits = max_nits;
+  hinted_max_fall = max_fall;
   pl_color_space space = pl_color_space_hdr10;
   if (on) {
     space.hdr.max_luma = static_cast<float>(max_nits);
     space.hdr.min_luma = 0.0001F;
     space.hdr.max_cll = static_cast<float>(max_nits);
+    space.hdr.max_fall = static_cast<float>(max_fall);
   }
   pl_swapchain_colorspace_hint(swapchain, &space);
-  channel->info("--hdr-metadata : maximum annoncé {:.0f} nits (pic {:.0f}, blanc SDR de référence {:.0f})",
-                max_nits, peak, reference);
+  channel->info("--hdr-metadata : maximum annoncé {:.0f} nits, MaxFALL {:.0f} (pic {:.0f}, blanc SDR {:.0f})",
+                max_nits, max_fall, peak, reference);
 }
 
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
