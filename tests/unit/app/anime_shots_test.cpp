@@ -8,7 +8,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "render/curve.h"
+#include "render/grade_params.h"
 
 namespace ajp::app::play {
 namespace {
@@ -36,7 +36,7 @@ TEST_CASE("anime par plan : l'exposition suit la règle de la courbe par plan, b
   CHECK(anime_exposure(0.0, 40.0) == 0.0);
   CHECK(anime_exposure(40.0, 40.0) == Approx(0.0));
   // Audit F3 : les surfaces restent ancrées, ±5 % au plus d'un plan à l'autre (|E| ≤ 0,07).
-  CHECK(anime_exposure(36.0, 40.0) == Approx(-render::kCurveSlope * std::log2(0.9)));
+  CHECK(anime_exposure(36.0, 40.0) == Approx(-render::kAnimeExposureSlope * std::log2(0.9)));
   CHECK(anime_exposure(20.0, 40.0) == Approx(kAnimeSurfaceMaxE));
   CHECK(anime_exposure(160.0, 40.0) == Approx(-kAnimeSurfaceMaxE));
   CHECK(std::exp2(kAnimeSurfaceMaxE) <= 1.05 + 1e-9);
@@ -78,7 +78,7 @@ TEST_CASE("anime par plan : l'exposition relève les surfaces du grade, rien san
   s.anime_exposure = -3.0;  // borné
   const auto low = render::decide_grade(s, pq_context());
   REQUIRE(low.has_value());
-  CHECK(low->params.an_lift == Approx(render::kAnimeLift * std::exp2(-render::kCurveMaxE)));
+  CHECK(low->params.an_lift == Approx(render::kAnimeLift * std::exp2(-render::kAnimeExposureMaxE)));
 }
 
 TEST_CASE("anime : le peps en % devient contraste, saturation et part des éclats du grade", "[app][anime]") {

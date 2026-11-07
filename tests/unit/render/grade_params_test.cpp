@@ -206,13 +206,13 @@ TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du p
   p.black_lo = 0.1;
   p.black_hi = 2.0;
   p.sdr_out = 1.0;
-  p.fs_apl = 10.0;   // scène sombre : toute la marge
-  p.look_mix = 1.0;  // la pile d'HDR
-  p.look_mix11 = 0.5;
+  p.fs_apl = 10.0;        // scène sombre : toute la marge
+  p.look_mixes[0] = 1.0;  // la pile d'HDR
+  p.look_mixes[10] = 0.5;
   p.look_pq = 1.0;
   sdr_tonemap(p);
-  CHECK(p.look_mix == 0.0);
-  CHECK(p.look_mix11 == 0.0);
+  CHECK(p.look_mixes[0] == 0.0);
+  CHECK(p.look_mixes[10] == 0.0);
   CHECK(p.look_pq == 0.0);
   CHECK(p.sdr_tm == 1.0);
   CHECK(p.sdr_out == 0.0);

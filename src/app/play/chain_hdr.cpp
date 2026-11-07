@@ -26,7 +26,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/thread.h"
-#include "render/looks.h"
+#include "render/cube_lut.h"
 
 namespace ajp::app::play {
 namespace {
@@ -80,24 +80,15 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
       render::GradeParams params = decision->params;
       // Une LUT sans nom est sautée (intensité 0) ; une seule LUT d'HDR met toute la chaîne en codes PQ.
       const std::vector<LookLayer> slots = look_slots(s);
-      constexpr std::array<double render::GradeParams::*, render::kLookSlots> kMixes{
-          &render::GradeParams::look_mix,   &render::GradeParams::look_mix2,
-          &render::GradeParams::look_mix3,  &render::GradeParams::look_mix4,
-          &render::GradeParams::look_mix5,  &render::GradeParams::look_mix6,
-          &render::GradeParams::look_mix7,  &render::GradeParams::look_mix8,
-          &render::GradeParams::look_mix9,  &render::GradeParams::look_mix10,
-          &render::GradeParams::look_mix11, &render::GradeParams::look_mix12,
-          &render::GradeParams::look_mix13, &render::GradeParams::look_mix14,
-          &render::GradeParams::look_mix15};
       bool any_pq = false;
       for (std::size_t i = 0; i < slots.size(); ++i) {
-        params.*kMixes[i] = slots[i].key.empty() ? 0.0 : slots[i].mix;
+        params.look_mixes[i] = slots[i].key.empty() ? 0.0 : slots[i].mix;
         any_pq = any_pq || (!slots[i].key.empty() && render::look_is_pq(slots[i].key, ""));
       }
       // Une pile qui contient une LUT d'HDR est étalonnée pour des codes PQ : sur une sortie SDR elle
       // donnerait des couleurs fausses, elle est coupée en entier.
       if (!pq && any_pq) {
-        for (std::size_t i = 0; i < slots.size(); ++i) params.*kMixes[i] = 0.0;
+        for (std::size_t i = 0; i < slots.size(); ++i) params.look_mixes[i] = 0.0;
       }
       params.look_pq = pq && any_pq ? 1.0 : 0.0;
       params.look_clean = 1.0;  // audit F1 : grain et paliers non étirés par la pile

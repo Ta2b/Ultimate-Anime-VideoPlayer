@@ -614,32 +614,16 @@ TEST_CASE("un refus qui ne nomme pas sa clé n'efface pas le reste, grade compri
   CHECK(dropped.size() == 1);
 }
 
-TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de chemin est refusé",
+TEST_CASE("play.toml : les clés de l'ancienne pile de LUT se lisent et ne sont plus écrites",
           "[app][settings]") {
-  ajp::app::play::PlaySettings s;
-  s.look = "maison:shinkai";
-  s.look_mix = 0.65;
-  s.look_layers = {{"HDR_base.cube", 0.4}, {"maison:pastel", 0.25}, {"x.cube", 1.0}};
-  const auto back = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
-  REQUIRE(back.has_value());
-  CHECK(back->look == "maison:shinkai");
-  CHECK(back->look_mix == 0.65);
-  CHECK(back->look_layers == s.look_layers);
-  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlooks = ['a/b.cube']\n").has_value());
-  CHECK_FALSE(
-      ajp::app::play::parse_settings("[grade]\nlooks = ['a.cube']\nlooks_mix = [-0.1]\n").has_value());
-  CHECK_FALSE(ajp::app::play::parse_settings(
-                  "[grade]\nlooks = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p']\n")
-                  .has_value());
-  const auto no_mix = ajp::app::play::parse_settings("[grade]\nlooks = ['a.cube']\n");
-  REQUIRE(no_mix.has_value());
-  CHECK(no_mix->look_layers.at(0).mix == 1.0);
-  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook = '../x.cube'\n").has_value());
-  CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
-  const ajp::app::play::PlaySettings
-      defaults;  // la pile de LUT de référence, cuite en une seule LUT (bake_stack.py)
-  CHECK(defaults.look == "HDR pile unique 65 point.cube");
-  CHECK(defaults.look_layers.empty());
+  const auto old = ajp::app::play::parse_settings(
+      "[grade]\nlook = '../x.cube'\nlook_mix = 1.5\nlooks = ['a/b.cube']\nlooks_mix = [-0.1]\nlook_contrast "
+      "= 20\n");
+  REQUIRE(old.has_value());
+  CHECK(old->look_contrast == 20);
+  const std::string written = ajp::app::play::format_settings(ajp::app::play::PlaySettings{});
+  CHECK(written.find("look_mix") == std::string::npos);
+  CHECK(written.find("looks") == std::string::npos);
 }
 
 TEST_CASE("play.toml : une version plus récente garde ses clés à la réécriture (P2.22)", "[app][settings]") {

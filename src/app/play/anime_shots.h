@@ -2,9 +2,10 @@
 // exposition des surfaces (an_lift) et sa marge des éclats (la luminance moyenne de la scène, fs_apl) sont
 // fixées par la pré-analyse, une fois par plan, et changent à l'image de coupe (audit F3 : un glissé après
 // la coupe se voyait, un changement à la coupe est masqué par elle). La règle de l'exposition est celle de
-// la courbe par plan (render/curve.h, 8.5) : 0,25 diaphragme par diaphragme d'APL du plan rapportée à la
-// médiane de la série, mais bornée à |E| ≤ kAnimeSurfaceMaxE : la peau et les surfaces restent ancrées
-// (±5 % d'un plan à l'autre, ≈ 3 ΔE) ; la marge des éclats suit, elle, la lumière de chaque plan.
+// l'ancienne courbe par plan (8.5, render::kAnimeExposureSlope) : 0,25 diaphragme par diaphragme d'APL du
+// plan rapportée à la médiane de la série, mais bornée à |E| ≤ kAnimeSurfaceMaxE : la peau et les surfaces
+// restent ancrées (±5 % d'un plan à l'autre, ≈ 3 ΔE) ; la marge des éclats suit, elle, la lumière de chaque
+// plan.
 #pragma once
 
 #include <cstdint>

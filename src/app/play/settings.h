@@ -294,21 +294,12 @@ struct PlaySettings {
   // Grade HDR sur la sortie PQ (render/grade_params.h), sur les deux routes ; en direct.
   bool grade = true;
   render::GradeSettings grade_values = default_grade_values();
-  // Le look : une LUT 3D .cube (render/cube_lut.h) mélangée après le grade. Vide : aucun. « maison:... » : un
-  // look du lecteur (render/looks.h) ; sinon le nom d'un fichier du dossier luts des données. Intensité de 0
-  // à 1.
-  std::string look = "HDR pile unique 65 point.cube";
-  double look_mix = 1.0;
   // Le look de la méthode HDR anime (ADR 0012) : la LUT de base et « skin fix », fixes, et deux
   // curseurs de -100 à 100 sur les LUT de contraste et d'éclats ; 0 : la pile de référence (contraste ×7,
-  // éclats ×1,5), le défaut. -100 : la LUT retirée ; 100 : son intensité doublée. La pile ci-dessus n'est
-  // plus lue.
+  // éclats ×1,5), le défaut. -100 : la LUT retirée ; 100 : son intensité doublée. Les clés look, look_mix,
+  // looks et looks_mix d'un ancien play.toml ne sont plus lues.
   int look_contrast = 0;
   int look_highlight = 0;
-  // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
-  // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1. Vide par
-  // défaut : la pile de référence est cuite en une seule LUT (tools/look/bake_stack.py, data/luts/).
-  std::vector<LookLayer> look_layers{};
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;

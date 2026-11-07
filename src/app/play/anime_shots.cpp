@@ -4,13 +4,13 @@
 #include <cmath>
 #include <iterator>
 
-#include "render/curve.h"
+#include "render/grade_params.h"
 
 namespace ajp::app::play {
 
 double anime_exposure(double shot_apl_nits, double series_apl_nits) {
   if (!(shot_apl_nits > 0.0) || !(series_apl_nits > 0.0)) return 0.0;
-  const double e = -render::kCurveSlope * std::log2(shot_apl_nits / series_apl_nits);
+  const double e = -render::kAnimeExposureSlope * std::log2(shot_apl_nits / series_apl_nits);
   return std::clamp(e, -kAnimeSurfaceMaxE, kAnimeSurfaceMaxE);
 }
 

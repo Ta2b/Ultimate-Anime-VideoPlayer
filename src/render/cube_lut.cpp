@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <format>
@@ -344,6 +345,18 @@ std::string write_cube(const CubeLut& lut) {
   for (std::size_t i = 0; i + 2 < lut.rgb.size(); i += 3)
     out += std::format("{:.6f} {:.6f} {:.6f}\n", lut.rgb[i], lut.rgb[i + 1], lut.rgb[i + 2]);
   return out;
+}
+
+bool look_is_pq(std::string_view name, std::string_view title) {
+  const auto has = [](std::string_view text, std::string_view word) {
+    std::string lowered(text);
+    std::ranges::transform(lowered, lowered.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lowered.find(word) != std::string::npos;
+  };
+  for (const std::string_view text : {name, title})
+    if (has(text, "pq") || has(text, "hdr") || has(text, "2020")) return true;
+  return false;
 }
 
 }  // namespace ajp::render

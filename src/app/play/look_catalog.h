@@ -1,5 +1,5 @@
-// Les looks proposés au menu Couleurs : ceux du lecteur (render/looks.h) et les .cube que l'utilisateur
-// dépose dans le dossier « luts » de ses données.
+// Les LUT du grade HDR anime : lues dans le dossier « luts » de l'utilisateur, sinon dans celui livré avec le
+// lecteur, puis composées selon les curseurs de contraste et d'éclats (docs/luts.md).
 #pragma once
 
 #include <expected>
@@ -14,19 +14,10 @@
 
 namespace ajp::app::play {
 
-struct LookEntry {
-  std::string key;    // ce que play.toml garde : « maison:vif » ou le nom du fichier
-  std::string label;  // ce que le menu montre
-};
-
-// Les looks du lecteur d'abord, puis les .cube du dossier (triés par nom) ; un dossier absent n'est pas une
-// erreur.
 // Le dossier des LUT livrées avec le lecteur (luts/ à côté de ses modèles), lu après celui de l'utilisateur.
 std::filesystem::path shipped_luts_dir();
 
-std::vector<LookEntry> list_looks(const std::filesystem::path& luts_dir);
-
-// La LUT d'une clé (look du lecteur ou fichier du dossier). Refus nommé si le fichier manque ou ne se lit
+// La LUT d'une clé (look anime composé, ou fichier du dossier). Refus nommé si le fichier manque ou ne se lit
 // pas.
 std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir);

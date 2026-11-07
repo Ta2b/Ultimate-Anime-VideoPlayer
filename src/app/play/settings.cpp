@@ -319,22 +319,6 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                                      std::pair{"grade.anime_highlights", s.grade_values.anime_highlights}}) {
     if (auto in = check(field, value, core::Range<int>{0, 200}); !in) return std::unexpected(in.error());
   }
-  if (auto mix = check("grade.look_mix", s.look_mix, core::Range<double>{0.0, 1.0}); !mix)
-    return std::unexpected(mix.error());
-  if (s.look_layers.size() + 1 > render::kLookSlots)
-    return refuse_key(RefusalCode::FieldOutOfRange, "grade.looks",
-                      std::format(" : au plus {} LUT en tout", render::kLookSlots));
-  for (const LookLayer& layer : s.look_layers) {
-    if (auto mix = check("grade.looks_mix", layer.mix, core::Range<double>{0.0, 1.0}); !mix)
-      return std::unexpected(mix.error());
-  }
-  std::vector<const std::string*> names{&s.look};
-  for (const LookLayer& layer : s.look_layers) names.push_back(&layer.key);
-  for (const std::string* name : names) {
-    if (name->find('/') != std::string::npos || name->find('\\') != std::string::npos)
-      return refuse_key(RefusalCode::FieldOutOfRange, "grade.look",
-                        std::format(" : « {} » n'est pas un nom de fichier", *name));
-  }
   if (s.model.find('/') != std::string::npos || s.model.find('\\') != std::string::npos)
     return refuse_key(RefusalCode::FieldOutOfRange, "image.model",
                       std::format(" : « {} » n'est pas un nom de fichier", s.model));
@@ -442,9 +426,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.language_presets = wanted.language_presets;  // au prochain fichier
   s.grade = wanted.grade;
   s.grade_values = wanted.grade_values;
-  s.look = wanted.look;
-  s.look_mix = wanted.look_mix;
-  s.look_layers = wanted.look_layers;
   s.look_contrast = wanted.look_contrast;
   s.look_highlight = wanted.look_highlight;
   s.oled_black = wanted.oled_black;

@@ -24,7 +24,7 @@
 #include "app/play/text_fit.h"
 #include "app/play/tracks.h"
 #include "core/engines.h"
-#include "render/looks.h"
+#include "render/cube_lut.h"
 
 namespace ajp::app::play {
 namespace {

@@ -10,7 +10,6 @@
 #include "app/play/look_catalog.h"
 #include "app/play/settings.h"
 #include "render/cube_lut.h"
-#include "render/looks.h"
 
 using namespace ajp::app::play;
 
