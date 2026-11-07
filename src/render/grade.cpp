@@ -287,7 +287,7 @@ void Grade::Impl::run(const std::stop_token& stop) {
     Job next;
     {
       std::unique_lock lock(job_mutex);
-      if (!job_ready.wait(lock, stop, [this] { return job.has_value(); })) return;
+      if (!job_ready.wait(lock, stop, [this] { return job.has_value(); }) || !job) return;
       next = std::move(*job);
       job.reset();
     }

@@ -129,7 +129,8 @@ std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) 
   return out;
 #else
   iconv_t cd = iconv_open("UTF-8", legacy.name);
-  if (cd == reinterpret_cast<iconv_t>(-1)) return std::nullopt;
+  // L'échec d'iconv_open : (iconv_t)-1.
+  if (cd == reinterpret_cast<iconv_t>(-1)) return std::nullopt;  // NOLINT(performance-no-int-to-ptr)
   std::string in(bytes);
   std::string out(bytes.size() * 3 + 4, '\0');
   char* src = in.data();
