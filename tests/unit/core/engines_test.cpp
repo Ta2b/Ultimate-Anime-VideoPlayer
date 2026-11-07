@@ -60,6 +60,7 @@ TEST_CASE("Moteurs : AMD et Intel passent par Vulkan, MIGraphX et OpenVINO débr
     CHECK_FALSE(find(offers, EngineId::MiGraphX));
     CHECK_FALSE(find(offers, EngineId::OpenVino));
     CHECK_FALSE(find(offers, EngineId::DirectMl));
+    CHECK_FALSE(find(offers, EngineId::TensorRt));  // P3.5 : ni case ni écran Moteurs hors RTX
     CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
   }
   CHECK_FALSE(engine_plugged(EngineId::MiGraphX));
