@@ -661,6 +661,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           actions.emplace_back(PlayFile{p.options.file, session.view().position_us, session.paused()});
         vrr_fullscreen = fullscreen;
         if (const auto display = window_display(out.window())) {
+          if (display_changed) p.display = display;  // P3.40 : l'écran courant, son connecteur et son EDID
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
