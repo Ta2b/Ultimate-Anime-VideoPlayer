@@ -5,6 +5,7 @@
 #include <expected>
 #include <format>
 
+#include <SDL3/SDL_misc.h>
 #include <imgui.h>
 
 #include "app/play/auto_bench.h"
@@ -130,6 +131,10 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (!state.latest_version.empty())
     note(i18n::tr_format("Available: {}{}", state.latest_version,
                          state.staged_version.empty() ? "" : i18n::tr(" (ready)")));
+  // Les notes de la version proposée (notes_url du manifeste signé, en https).
+  if (!state.latest_version.empty() && state.notes_url.starts_with("https://") &&
+      ImGui::SmallButton(i18n::tr("Release notes")))
+    SDL_OpenURL(state.notes_url.c_str());
   if (state.last_check_unix > 0) {
     const std::time_t at = static_cast<std::time_t>(state.last_check_unix);
     std::tm local{};
@@ -158,6 +163,34 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
         }));
     result.text.clear();
     result.refused = false;
+  }
+  // « Me prévenir » ou non : la version vue s'installe d'un clic (téléchargée, vérifiée, appliquée), puis le
+  // lecteur demande à être relancé, comme le retour arrière.
+  if (!state.latest_version.empty() && managed.empty()) {
+    ImGui::SameLine();
+    if (ImGui::Button(i18n::tr("Install now"))) {
+      result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
+          std::launch::async,
+          [paths, state_file, channel = d.update_channel] -> std::expected<std::string, Refusal> {
+            UpdateState current = load_update_state(state_file);
+            if (current.staged_version.empty()) {
+              auto checked = run_update_check(paths, "auto", channel, current, {});
+              if (const auto kept = save_update_state(state_file, current); !kept)
+                return std::unexpected(kept.error());
+              if (!checked) return checked;
+              if (current.staged_version.empty()) return checked;  // rien de plus récent à installer
+            }
+            auto applied = apply_staged_update(paths, current);
+            if (!applied)
+              current.staged_version.clear();  // une archive qui ne s'applique pas ne se réessaie pas
+            if (const auto kept = save_update_state(state_file, current); !kept)
+              return std::unexpected(kept.error());
+            if (!applied) return applied;
+            return *applied + i18n::tr(": restart the player");
+          }));
+      result.text.clear();
+      result.refused = false;
+    }
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(state.previous_version.empty());
