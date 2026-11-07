@@ -148,6 +148,9 @@ if ($env:AJP_ENGINES_LOCK) {
 }
 Copy-Item $Lock (Join-Path $Out "engines.lock") -Force
 
+# Signature Authenticode du lecteur et de ses DLL avant l'archive (P7.1 ; sans effet sans certificat).
+pwsh (Join-Path $PSScriptRoot "windows/sign.ps1") $Stage
+if ($LASTEXITCODE -ne 0) { throw "signature" }
 Compress-Archive -Path $Stage -DestinationPath (Join-Path $Out "ajp-windows-x64.zip") -Force
 Get-ChildItem $Out -File | Where-Object { $_.Name -like "ajp-*" -and $_.Extension -ne ".txt" } | ForEach-Object {
   "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
