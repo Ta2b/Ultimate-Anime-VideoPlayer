@@ -5,11 +5,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <new>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/guarded_backend.h"
 #include "gpu/tensor.h"
 #include "media/hw_api.h"
 
@@ -231,3 +234,40 @@ static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::F16, {{1, 3, 10
 static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::F32, {{1, 0, 8, 8}}) == 0);
 static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::U8, {{1, 1, 1 << 25, 1}}) == 0);
 static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::I8, {{1 << 16, 1 << 16, 2, 1}}) == 0);
+
+// Une exception levée dans un backend devient un refus avant de quitter la bibliothèque (P2.4).
+TEST_CASE("GuardedBackend : une exception du backend devient un refus", "[backend]") {
+  class Thrower final : public Backend {
+   public:
+    BackendCaps capabilities() const override { throw std::runtime_error("caps"); }
+    DeviceMatch match(const DeviceUuid&) const override { throw std::runtime_error("match"); }
+    std::expected<Artifact, Refusal> build(const ModelSpec&, const ShapeSet&, Progress&) override {
+      throw std::runtime_error("build");
+    }
+    std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact&) override { throw std::bad_alloc(); }
+    std::expected<Tensor, Refusal> import(const ExternalImage&) override { throw 7; }
+    std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType, const Shape&) override {
+      throw std::runtime_error("alloc");
+    }
+    KernelOps* kernels() override { return nullptr; }
+    std::expected<void, Refusal> enqueue(Engine&, std::span<const Tensor>, std::span<Tensor>) override {
+      throw std::runtime_error("enqueue");
+    }
+    std::expected<Fence, Refusal> signal() override { throw std::runtime_error("signal"); }
+    std::expected<void, Refusal> wait(const Fence&) override { throw std::runtime_error("wait"); }
+    void use_lane(Lane) override { throw std::runtime_error("lane"); }
+  };
+  GuardedBackend guarded(std::make_unique<Thrower>());
+  CHECK(guarded.capabilities().name.empty());
+  CHECK(guarded.match(DeviceUuid{}) == DeviceMatch::Unknown);
+  CHECK(guarded.kernels() == nullptr);
+  guarded.use_lane(Lane{});
+  const auto signalled = guarded.signal();
+  REQUIRE_FALSE(signalled);
+  CHECK(signalled.error().code == RefusalCode::VendorCallFailed);
+  CHECK(signalled.error().detail == "signal : signal");
+  const auto imported = guarded.import(ExternalImage{});
+  REQUIRE_FALSE(imported);
+  CHECK(imported.error().detail == "import : exception inconnue");
+  CHECK_FALSE(guarded.load(Artifact{}));
+}

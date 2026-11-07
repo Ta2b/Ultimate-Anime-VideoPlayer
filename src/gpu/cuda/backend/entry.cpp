@@ -13,6 +13,7 @@
 #include "core/thread.h"
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
+#include "gpu/guarded_backend.h"
 #include "prepare/trtexec_command.h"
 
 namespace {
@@ -85,7 +86,7 @@ extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
       tell(init, std::move(backend.error()));
       return nullptr;
     }
-    return backend->release();
+    return new ajp::gpu::GuardedBackend(std::move(*backend));  // NOLINT(cppcoreguidelines-owning-memory)
   } catch (...) {
     tell(init, ajp::refusal_from_exception(ajp::RefusalCode::LibraryUnavailable, "backend tensorrt"));
     return nullptr;

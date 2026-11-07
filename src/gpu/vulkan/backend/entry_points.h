@@ -1,8 +1,9 @@
 // Points d'entrée extern "C" d'une bibliothèque de backend bâtie sur VulkanBackend
 // (gpu/backend.h) : ajp_backend_vulkan, et ajp_backend_migraphx, ajp_backend_openvino dont les
-// réseaux passent par un autre runtime. Aucune exception ne traverse la frontière : une exception
-// interne devient un refus nommé. Les canaux de la bibliothèque (core/log.h) vont au rappel
-// BackendInit::log ; avec plusieurs backends créés, le dernier rappel reçoit tout.
+// réseaux passent par un autre runtime. Aucune exception ne traverse la frontière : le backend rendu est
+// enveloppé par GuardedBackend (gpu/guarded_backend.h), une exception interne devient un refus nommé. Les
+// canaux de la bibliothèque (core/log.h) vont au rappel BackendInit::log ; avec plusieurs backends créés, le
+// dernier rappel reçoit tout.
 //
 // Inclus par un seul fichier de chaque bibliothèque, qui écrit :
 //   AJP_VULKAN_BACKEND_ENTRY_POINTS("Vulkan", options_function)
@@ -18,6 +19,7 @@
 
 #include "core/log.h"
 #include "gpu/backend.h"
+#include "gpu/guarded_backend.h"
 #include "gpu/vulkan/backend/vulkan_backend.h"
 
 namespace ajp::gpu::vk::entry {
@@ -66,7 +68,7 @@ Backend* create(int abi, const BackendInit* init, std::string_view label, MakeOp
       tell(init, backend.error());
       return nullptr;
     }
-    return backend->release();
+    return new GuardedBackend(std::move(*backend));  // NOLINT(cppcoreguidelines-owning-memory)
   } catch (const std::exception& e) {
     tell(init, {RefusalCode::LibraryUnavailable, std::format("backend {} : exception {}", label, e.what())});
   } catch (...) {
