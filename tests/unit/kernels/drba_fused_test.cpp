@@ -25,7 +25,8 @@ TEST_CASE("Les découpages de DistilDRBA v2 lite sont valides, d'autres non", "[
   CHECK(drba_fused_reduce(kHalfFlow, 2) == 8);
 }
 
-TEST_CASE("Une taille remplie est prise quand chaque sortie de bloc est entière", "[kernels][drba_fused]") {
+TEST_CASE("DRBA fusionné : une taille remplie est prise quand chaque sortie de bloc est entière",
+          "[kernels][drba_fused]") {
   CHECK(drba_fused_size_valid(kNormal, 1088, 1920));
   CHECK(drba_fused_size_valid(kNormal, 576, 960));
   CHECK(drba_fused_size_valid(kNormal, 32, 32));
@@ -64,7 +65,8 @@ TEST_CASE("Les formes des entrées et sorties de blocs sont celles du graphe à 
   CHECK(drba_fused_y(kHalfFlow, 2, 2176, 3840).width == 240);
 }
 
-TEST_CASE("La disposition des tampons : alignée, sans recouvrement, dans l'ordre", "[kernels][drba_fused]") {
+TEST_CASE("DRBA fusionné : la disposition des tampons, alignée, sans recouvrement, dans l'ordre",
+          "[kernels][drba_fused]") {
   const DrbaFusedLayout layout = drba_fused_layout(kNormal, 1088, 1920);
   std::size_t end = 0;
   for (int k = 0; k < kDrbaFusedBlocks; ++k) {
