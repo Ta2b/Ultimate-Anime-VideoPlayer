@@ -468,27 +468,25 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       if (!view.display_line.empty()) note(view.display_line);
       note(i18n::tr(
           "The player picks the settings for this machine; everything is in Settings (p) afterwards."));
+      {
+        // La langue de l'interface (P3.18), détectée au lancement, confirmée ici ; prise en direct.
+        const bool french = i18n::language() == i18n::Language::French;
+        if (ImGui::BeginCombo(i18n::tr("Interface language"), french ? "Français" : "English")) {  // i18n-ok
+          if (ImGui::Selectable("English", !french)) wizard.interface_language = "en";             // i18n-ok
+          if (ImGui::Selectable("Français", french)) wizard.interface_language = "fr";             // i18n-ok
+          ImGui::EndCombo();
+        }
+        if (!wizard.interface_language.empty())
+          i18n::set_language(i18n::language_from_code(wizard.interface_language));
+      }
       break;
     case WizardStep::Engines:
       section(i18n::tr("Engines"));
       for (EngineRow& row : view.engines) engine_row(row);
       note(
-          i18n::tr("Vulkan works on every GPU. Checked engines install after \"Finish\", verified by hash; "
+          i18n::tr("Vulkan works on every GPU. Checked engines install at the end of the assistant, verified "
+                   "by hash; "
                    "Vulkan takes over if one fails."));
-      break;
-    case WizardStep::Chain:
-      section(i18n::tr("Machine calibration"));
-      note(
-          i18n::tr("After \"Finish\", the player tests several settings on a very demanding sequence: "
-                   "picture resolution, SPAN upscaling and RIFE smoothness. It keeps the best combination "
-                   "this machine sustains, SPAN first."));
-      note(
-          i18n::tr("Only a progress bar is shown; it takes a few minutes, longer the first time on a "
-                   "laptop (the engines are built once)."));
-      note(i18n::tr("Skipped: the Auto preset. Redo it later in Video > Post-processing."));
-      break;
-    case WizardStep::Hdr:    // retiré : le HDR suit le système
-    case WizardStep::Grade:  // retiré
       break;
     case WizardStep::Languages:
       section(i18n::tr("Languages"));
@@ -508,12 +506,24 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       pick = false;
       radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == "never", pick);
       if (pick) wizard.update_mode = "never";
+      section(i18n::tr("Default player"));
+      ImGui::Checkbox(i18n::tr("Make it the default video player"), &wizard.make_default);
+      note(i18n::tr("AJP is added to \"Open with\" in any case."));
       break;
     }
     case WizardStep::Summary:
-      section(i18n::tr("Summary"));
+      section(i18n::tr("Ready"));
       for (const std::string& line : engines_summary(view.engines)) ImGui::BulletText("%s", line.c_str());
       for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
+      section(i18n::tr("Machine calibration"));
+      note(
+          i18n::tr("\"Optimise now\" tests several settings on a very demanding sequence: picture "
+                   "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
+                   "machine sustains. Only a progress bar is shown; it takes a few minutes, longer the first "
+                   "time (the engines are built once)."));
+      note(
+          i18n::tr("\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
+                   "Post-processing."));
       note(i18n::tr("Everything can be changed later in Settings (p). To redo this: ajp --first-run."));
       break;
   }
@@ -552,13 +562,16 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
     if (is_last(wizard)) {
-      if (ImGui::Button(i18n::tr("Finish"), {0.0F, tall})) view.done = true;
+      if (ImGui::Button(i18n::tr("Optimise now"), {0.0F, tall})) {
+        wizard.calibrate = true;
+        view.done = true;
+      }
     } else if (ImGui::Button(i18n::tr("Next"), {0.0F, tall})) {
       next(wizard);
     }
     ImGui::PopStyleColor(2);
-    // Le bouton secondaire du résumé : sans calibration, le niveau Auto estimé pour cette carte (P3.1).
-    if (is_last(wizard) && wants_machine_calibration(wizard)) {
+    // Le bouton secondaire de Prêt : sans calibration, le niveau Auto estimé pour cette carte (P3.1).
+    if (is_last(wizard)) {
       ImGui::SameLine();
       if (ImGui::Button(i18n::tr("Set it up myself"), {0.0F, tall})) {
         set_up_myself(wizard);

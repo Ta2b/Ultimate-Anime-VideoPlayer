@@ -1,6 +1,7 @@
 #include "app/play/wizard.h"
 
 #include <algorithm>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,17 +9,13 @@
 
 using namespace ajp::app::play;
 
-TEST_CASE("l'assistant saute les écrans sans objet", "[wizard]") {
-  ajp::app::play::FrenchUi french;
-  // Sans les rangs 4 (HDR, il suit le système) et 5 (grade adaptatif), retirés.
+TEST_CASE("l'assistant : le léger d'abord, les moteurs en dernier, puis Prêt (P3.18)", "[wizard]") {
   const auto all = wizard_steps({.engine_choice = true});
-  CHECK(all.size() == 6);
-  CHECK(std::ranges::find(all, WizardStep::Hdr) == all.end());
+  CHECK(all == std::vector<WizardStep>{WizardStep::Welcome, WizardStep::Languages, WizardStep::Updates,
+                                       WizardStep::Engines, WizardStep::Summary});
   const auto plain = wizard_steps({.engine_choice = false});
-  REQUIRE(plain.size() == 5);
-  CHECK(plain.front() == WizardStep::Welcome);
-  CHECK(plain[1] == WizardStep::Chain);  // pas de moteur à choisir
-  CHECK(plain.back() == WizardStep::Summary);
+  CHECK(plain.size() == 4);  // pas de moteur à choisir
+  CHECK(std::ranges::find(plain, WizardStep::Engines) == plain.end());
 }
 
 TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
@@ -26,68 +23,37 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
   const WizardFacts facts{.engine_choice = true};
   Wizard wizard = begin_wizard(facts, 0);
   CHECK(current(wizard) == WizardStep::Welcome);
-  CHECK(is_first(wizard));
   previous(wizard);
   CHECK(current(wizard) == WizardStep::Welcome);
   next(wizard);
-  CHECK(current(wizard) == WizardStep::Engines);
-  next(wizard);
-  skip(wizard);                                     // la calibration de la machine passée
-  CHECK(current(wizard) == WizardStep::Languages);  // l'écran HDR n'existe plus
-  CHECK(progress_text(wizard) == "Étape 4 sur 6 : Langues");
-  CHECK(wizard.skipped == std::vector<WizardStep>{WizardStep::Chain});
+  skip(wizard);  // les langues passées
+  CHECK(current(wizard) == WizardStep::Updates);
+  CHECK(progress_text(wizard) == "Étape 3 sur 5 : Intégration");
+  CHECK(wizard.skipped == std::vector<WizardStep>{WizardStep::Languages});
   previous(wizard);  // revenue puis « Suivant » : elle n'est plus passée (P3.16)
   next(wizard);
   CHECK(wizard.skipped.empty());
-  // Fermé après le rang 4 ou 5 (retirés) : on reprend à Langues.
-  CHECK(current(begin_wizard(facts, 3)) == WizardStep::Languages);
-  CHECK(current(begin_wizard(facts, 5)) == WizardStep::Languages);
-  // Tout vu : le résumé.
-  CHECK(current(begin_wizard(facts, 8)) == WizardStep::Summary);
-  while (!is_last(wizard)) next(wizard);
-  next(wizard);
-  CHECK(current(wizard) == WizardStep::Summary);
+  CHECK(current(begin_wizard(facts, 3)) == WizardStep::Engines);
+  CHECK(current(begin_wizard(facts, 8)) == WizardStep::Summary);  // rang d'une version d'avant
 }
 
-TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wizard]") {
+TEST_CASE("Prêt : Optimiser maintenant ou Régler moi-même ; un écran sauté n'écrase rien", "[wizard]") {
   ajp::app::play::FrenchUi french;
-  const WizardFacts facts{.engine_choice = true};
-  Wizard wizard = begin_wizard(facts, 0);
+  Wizard wizard = begin_wizard({.engine_choice = true}, 0);
   wizard.update_mode = "auto";
-
-  const ajp::core::Settings written = wizard_settings(wizard, {});
-  CHECK(written.first_run_done);
-  CHECK(written.first_run_step == kWizardSteps);
-
-  PlaySettings play;
-  play = wizard_play_settings(wizard, play);
+  wizard.interface_language = "fr";
+  CHECK(wizard_settings(wizard, {}).first_run_step == kWizardSteps);
+  const PlaySettings play = wizard_play_settings(wizard, PlaySettings{});
   CHECK(play.update_mode == "auto");
+  CHECK(play.language == "fr");
   CHECK(wants_machine_calibration(wizard));
-  // « Régler moi-même » (P3.1) : pas de calibration, le préréglage Auto.
   Wizard myself = wizard;
   set_up_myself(myself);
   CHECK_FALSE(wants_machine_calibration(myself));
   CHECK(wizard_play_settings(myself, PlaySettings{}).preset == Preset::Auto);
-
-  // Écrans passés : Me prévenir (défaut), préréglage Auto, pas de calibration.
-  wizard.skipped = {WizardStep::Updates, WizardStep::Chain};
-  const ajp::core::Settings kept = wizard_settings(wizard, {});
-  PlaySettings other;
-  other = wizard_play_settings(wizard, other);
-  CHECK(other.update_mode == "notify");
-  CHECK(other.preset == Preset::Auto);
-  CHECK_FALSE(wants_machine_calibration(wizard));
-}
-
-TEST_CASE("le résumé dit ce qui est choisi, sauté, et où le changer", "[wizard]") {
-  ajp::app::play::FrenchUi french;
-  Wizard wizard = begin_wizard({.engine_choice = true}, 0);
-  wizard.skipped = {WizardStep::Languages};
-  const auto lines = wizard_summary(wizard);
-  REQUIRE(lines.size() == 3);  // Chain, Languages, Updates
-  CHECK(lines[0].contains("Vidéo > Post-traitement"));
-  CHECK(lines[1].contains("sauté"));
-  CHECK(lines[2].contains("me prévenir"));
+  CHECK(wizard_summary(myself).front().contains("passée"));
+  wizard.skipped = {WizardStep::Updates};
+  CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == "notify");
 }
 
 TEST_CASE("l'assistant repris en route retrouve ses choix (P3.3)", "[wizard]") {

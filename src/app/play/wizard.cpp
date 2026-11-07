@@ -11,19 +11,14 @@ std::string_view title(WizardStep step) {
   switch (step) {
     case WizardStep::Welcome:
       return i18n::tr("Welcome");
-    case WizardStep::Engines:
-      return i18n::tr("Engine");
-    case WizardStep::Chain:
-      return i18n::tr("Machine calibration");
-    case WizardStep::Hdr:
-    case WizardStep::Grade:
-      return {};
     case WizardStep::Languages:
       return i18n::tr("Languages");
     case WizardStep::Updates:
-      return i18n::tr("Updates");
+      return i18n::tr("Integration");
+    case WizardStep::Engines:
+      return i18n::tr("Engine");
     case WizardStep::Summary:
-      return i18n::tr("Summary");
+      return i18n::tr("Ready");
   }
   return {};
 }
@@ -33,8 +28,6 @@ std::vector<WizardStep> wizard_steps(const WizardFacts& facts) {
   for (int i = 1; i <= kWizardSteps; ++i) {
     const auto step = static_cast<WizardStep>(i);
     if (step == WizardStep::Engines && !facts.engine_choice) continue;
-    // Retirés : le HDR suit le système (host_facts.h, system_hdr), le grade adaptatif n'est plus.
-    if (step == WizardStep::Hdr || step == WizardStep::Grade) continue;
     steps.push_back(step);
   }
   return steps;
@@ -79,8 +72,7 @@ void skip(Wizard& wizard) {
 }
 
 void set_up_myself(Wizard& wizard) {
-  if (std::ranges::find(wizard.skipped, WizardStep::Chain) == wizard.skipped.end())
-    wizard.skipped.push_back(WizardStep::Chain);
+  wizard.calibrate = false;
 }
 
 std::string progress_text(const Wizard& wizard) {
@@ -95,12 +87,10 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
     return std::ranges::find(wizard.steps, step) != wizard.steps.end();
   };
   std::vector<std::string> out;
-  if (has(WizardStep::Chain)) {
-    out.push_back(skipped(WizardStep::Chain)
-                      ? i18n::tr("Machine calibration: skipped, Auto preset (Video > Post-processing)")
-                      : i18n::tr("Machine calibration: after \"Finish\", the best settings this machine "
-                                 "sustains (Video > Post-processing)"));
-  }
+  out.push_back(wizard.calibrate
+                    ? i18n::tr("Machine calibration: with \"Optimise now\", the best settings this "
+                               "machine sustains (Video > Post-processing)")
+                    : i18n::tr("Machine calibration: skipped, Auto preset (Video > Post-processing)"));
   if (has(WizardStep::Languages))
     out.push_back(skipped(WizardStep::Languages)
                       ? i18n::tr("Languages: skipped (Audio and playback > Playback)")
@@ -110,6 +100,9 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
     if (wizard.update_mode == "auto") mode = i18n::tr("automatic");
     if (wizard.update_mode == "never") mode = i18n::tr("never");
     out.push_back(i18n::tr_format("Updates: {} (General > Application)", mode));
+    if (wizard.make_default && !skipped(WizardStep::Updates))
+      out.push_back(
+          i18n::tr("Default video player: asked at the end of the assistant (General > Application)"));
   }
   return out;
 }
@@ -124,8 +117,9 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
   const auto skipped = [&](WizardStep step) {
     return std::ranges::find(wizard.skipped, step) != wizard.skipped.end();
   };
-  // La calibration de la machine pose ensuite le préréglage Personnalisé et sa chaîne ; sautée, Auto.
-  if (skipped(WizardStep::Chain)) settings.preset = Preset::Auto;
+  // La calibration de la machine pose ensuite sa chaîne ; sans elle, le préréglage Auto estimé.
+  if (!wizard.calibrate) settings.preset = Preset::Auto;
+  if (!wizard.interface_language.empty()) settings.language = wizard.interface_language;
   if (!skipped(WizardStep::Updates)) {
     settings.update_mode = wizard.update_mode;
     settings.update_channel = wizard.update_channel;
@@ -139,6 +133,7 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
 }
 
 void resume_choices(Wizard& wizard, const PlaySettings& saved) {
+  wizard.interface_language = saved.language;
   wizard.update_mode = saved.update_mode;
   wizard.update_channel = saved.update_channel;
   if (!saved.language_presets.empty()) {
@@ -148,8 +143,7 @@ void resume_choices(Wizard& wizard, const PlaySettings& saved) {
 }
 
 bool wants_machine_calibration(const Wizard& wizard) {
-  return std::ranges::find(wizard.steps, WizardStep::Chain) != wizard.steps.end() &&
-         std::ranges::find(wizard.skipped, WizardStep::Chain) == wizard.skipped.end();
+  return wizard.calibrate;
 }
 
 }  // namespace ajp::app::play

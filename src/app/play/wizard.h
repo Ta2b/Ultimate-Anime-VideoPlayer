@@ -1,7 +1,7 @@
-// L'assistant de premier démarrage (docs/ux-parametres.md, 4.8) : huit écrans guidés, tous sautables, dont
-// certains n'ont pas lieu selon la machine. Ici la logique, sans dessin : quels écrans, dans quel ordre, ce
-// qui a été choisi ou sauté, le résumé final et ce qui s'applique à « Terminer ». Le dessin est dans
-// first_run.cpp.
+// L'assistant de premier démarrage (docs/ux-parametres.md, 4.8) : cinq écrans guidés au plus, l'écran des
+// moteurs n'ayant lieu que si un moteur autre que Vulkan est possible (P3.18). Ici la logique, sans dessin :
+// quels écrans, dans quel ordre, ce qui a été choisi ou sauté, le résumé final et ce qui s'applique à «
+// Terminer ». Le dessin est dans first_run.cpp.
 #pragma once
 
 #include <cstdint>
@@ -14,18 +14,17 @@
 
 namespace ajp::app::play {
 
-// Dans l'ordre de l'assistant ; la valeur est celle de first_run_step (1 à 8).
+// Dans l'ordre de l'assistant (P3.18) : les choix légers d'abord, le lourd (moteurs) en dernier, puis Prêt
+// avec « Optimiser maintenant » ou « Régler moi-même ». La valeur est celle de first_run_step (1 à 5) ; une
+// valeur plus haute d'une version d'avant (1 à 8) reprend au dernier écran.
 enum class WizardStep : std::uint8_t {
-  Welcome = 1,  // carte, tranche, écran
-  Engines,      // moteurs à installer
-  Chain,        // la calibration de la machine (machine_calibration.h), faite après « Terminer »
-  Hdr,          // retiré (le HDR suit le système) : son rang reste pris, first_run_step le garde
-  Grade,        // retiré (la calibration du grade adaptatif), même raison
+  Welcome = 1,  // carte, tranche, écran, langue de l'interface
   Languages,    // audio et sous-titres préférés
-  Updates,      // Me prévenir / Automatique / Jamais
-  Summary,      // ce qui a été choisi, Terminer
+  Updates,      // intégration : mises à jour (Me prévenir / Automatique / Jamais), lecteur par défaut
+  Engines,      // moteurs à installer (TensorRT sur RTX, Core ML sur Mac)
+  Summary,      // Prêt : ce qui a été choisi, la calibration proposée
 };
-inline constexpr int kWizardSteps = 8;
+inline constexpr int kWizardSteps = 5;
 
 std::string_view title(WizardStep step);  // « Bienvenue », « Moteur », « Image et fluidité »…
 
@@ -50,7 +49,10 @@ struct Wizard {
   // celle par défaut d'abord : audio japonais, sous-titres dans la langue du système.
   std::string audio_language = default_language_presets().front().audio;
   std::string subtitle_language = default_language_presets().front().subtitles;
-  int seen = 0;  // le plus loin atteint (rang de WizardStep), pour reprendre en route
+  std::string interface_language;  // « en » ou « fr » ; vide : celle détectée, inchangée
+  bool make_default = false;       // lecteur par défaut des vidéos, demandé à « Terminer »
+  bool calibrate = true;           // « Optimiser maintenant » ; « Régler moi-même » l'éteint
+  int seen = 0;                    // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
 
 // Reprend à l'écran noté dans first_run_step (le suivant du dernier vu), sans dépasser le résumé.
@@ -64,7 +66,7 @@ void previous(Wizard& wizard);  // Précédent
 void skip(Wizard& wizard);      // Passer : l'écran est noté sauté, on avance
 // « Régler moi-même » (P3.1) : la calibration sautée, le préréglage Auto estimé comme point de départ.
 void set_up_myself(Wizard& wizard);
-// « Étape 3 sur 8 » : le rang parmi les écrans de cette machine.
+// « Étape 3 sur 5 » : le rang parmi les écrans de cette machine.
 std::string progress_text(const Wizard& wizard);
 
 // Le résumé final : une ligne par choix fait ou sauté, avec où le changer.
@@ -77,7 +79,7 @@ core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
 // P3.3 : l'assistant repris en route retrouve les choix enregistrés à chaque écran (mises à jour, langues).
 void resume_choices(Wizard& wizard, const PlaySettings& saved);
-// « Terminer » lance-t-il la calibration de la machine (écran non sauté) ?
+// « Optimiser maintenant » : la calibration de la machine après l'assistant.
 bool wants_machine_calibration(const Wizard& wizard);
 
 }  // namespace ajp::app::play

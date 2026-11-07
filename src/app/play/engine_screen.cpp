@@ -264,6 +264,13 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
         log->warn("Ouvrir avec : {}", registered.error().detail);
       }
     }
+    // Lecteur par défaut demandé à l'écran Intégration (P3.18).
+    if (wizard.make_default) {
+      if (auto made = choose_as_default(place_of(s.paths)))
+        log->info("lecteur par défaut : {}", *made);
+      else
+        log->warn("lecteur par défaut : {}", made.error().detail);
+    }
     for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
     // P3.2 : play.toml, settings.toml et l'inscription s'écrivent avant la calibration ; la fenêtre fermée
     // pendant qu'elle tourne ne perd plus les choix (seule la chaîne calibrée manque, Auto la remplace).
