@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace ajp::gpu::vk {
@@ -44,14 +45,17 @@ enum class DriverKind : std::uint8_t {
 };
 DriverKind driver_kind(std::string_view driver_name);
 
-// Unités matricielles autorisées : NVIDIA Turing à Blackwell sous le pilote propriétaire
-// (qualifié sur une RTX 4070 Ti), AMD RDNA3 et RDNA4 sous RADV ou le pilote AMD, en wave32 et
-// vérifiées couche par couche par l'autotuner. Intel Xe2 : à qualifier avant d'entrer ici.
+// Unités matricielles (P2.46) : décidées sur les tuiles que le pilote annonce
+// (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, device_profile.cpp) et sur la sortie de chaque couche,
+// vérifiée par l'autotuner ; une seule liste d'exclusion écarte les appareils et pilotes connus pour les
+// annoncer à tort (AMD avant RDNA3, Intel sans XMX, processeur, NVIDIA hors pilote propriétaire...).
+// matrix_units_excluded en donne la raison. Intel Arc et Xe2 ne sont pas exclus, mais leur tuile 8×16×16
+// n'entre pas encore dans net_conv_coopmat.glsl, qui ne tuile qu'en 16×16×16.
+std::optional<std::string_view> matrix_units_excluded(GpuFamily family, DriverKind driver);
 bool matrix_units_allowed(GpuFamily family, DriverKind driver);
 
-// Hors liste mais proposées quand même, vérifiées et chronométrées par l'autotuner sans être le
-// choix par défaut : un GPU NVIDIA hors des plages PCI connues (nouvelle puce, nouveau modèle)
-// sous le pilote propriétaire, qui n'annonce les tuiles qu'avec des Tensor Cores.
+// Permises sur une famille inconnue (puce hors des plages PCI) : proposées et vérifiées par l'autotuner,
+// jamais en tête des candidats.
 bool matrix_units_unlisted(GpuFamily family, DriverKind driver);
 
 }  // namespace ajp::gpu::vk

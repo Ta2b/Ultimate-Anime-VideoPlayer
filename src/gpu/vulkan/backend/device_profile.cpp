@@ -97,13 +97,13 @@ DeviceProfile profile_device(const VkContext& context) {
   profile.matrix_hardware = tiles.f32_sums;
   profile.matrix_shapes = tiles.shapes;
   profile.matrix_allowed = matrix_units_allowed(profile.family, profile.driver);
-  profile.matrix_unlisted = !profile.matrix_allowed && matrix_units_unlisted(profile.family, profile.driver);
-  const bool offered = profile.matrix_hardware && (profile.matrix_allowed || profile.matrix_unlisted);
+  profile.matrix_unlisted = matrix_units_unlisted(profile.family, profile.driver);
+  const bool offered = profile.matrix_hardware && profile.matrix_allowed;
   const bool sized = f.subgroup_size_control && f.compute_full_subgroups;
   profile.target = net::Target{.f16_storage = f.storage_buffer_16bit,
                                .f16_math = f.storage_buffer_16bit && f.shader_float16,
                                .matrix_units = offered,
-                               .matrix_first = profile.matrix_hardware && profile.matrix_allowed,
+                               .matrix_first = offered && !profile.matrix_unlisted,
                                .matrix_f16_acc = offered && tiles.f16_sums,
                                .matrix_f8 = offered && tiles.f8_e4m3 && f.float8_matrix,
                                .subgroup_size = caps.subgroup_size,
