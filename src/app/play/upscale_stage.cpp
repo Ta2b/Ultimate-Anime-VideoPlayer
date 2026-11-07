@@ -249,6 +249,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
       continue;
     }
     if (!*taken) break;
+    useful_area_ = ((*taken)->right - (*taken)->left) * ((*taken)->bottom - (*taken)->top);
     setup_.live->scenes().push(stats_pending_.front().pts_us, **taken);
     stats_pending_.erase(stats_pending_.begin());
   }
@@ -373,7 +374,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts
                                 ? frame.pts_us - previous_->pts_us
-                                : 0};
+                                : 0,
+                  .useful_area = useful_area_};
   if (!facts.same_epoch) forget_motion();  // début ou saut : le mouvement d'avant ne dit plus rien
   std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
   // DistilDRBA mesure aussi une paire « source seule » (facteur 1) : sans cela, la paire suivante n'aurait

@@ -1,11 +1,14 @@
 #include "app/play/rife_plan.h"
 
+#include <algorithm>
+
 #include "kernels/spec/detect.h"
 
 namespace ajp::app::play {
 
 bool pair_cut(const PairFacts& facts) {
-  const bool measured = facts.scores && kernels::is_scene_cut(facts.scores->scene_score);
+  const bool measured = facts.scores && kernels::is_scene_cut(facts.scores->scene_score /
+                                                              std::clamp(facts.useful_area, 0.25, 1.0));
   if (facts.known_cut && *facts.known_cut) {
     // Une coupe des plans sur deux images presque identiques est un effet (éclair, fumée) : pas de coupe.
     return !facts.scores || facts.scores->scene_score >= kPlanCutFloor;

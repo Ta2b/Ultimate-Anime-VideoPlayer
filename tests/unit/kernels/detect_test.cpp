@@ -50,19 +50,19 @@ TEST_CASE("coupe de scène : somme calculée à la main", "[detect][parity]") {
 }
 
 TEST_CASE("coupe de scène : le score divise par l'aire remplie de RIFE", "[detect]") {
-  // 1280 × 720 rempli en 1280 × 768 : un écart uniforme de 40 niveaux (0,157 en moyenne) donne
-  // 0,157 × 720 / 768 = 0,147, sous le seuil ; 42 niveaux donnent 0,154, au-dessus.
+  // 1280 × 720 rempli en 1280 × 768 : un écart uniforme de 32 niveaux (0,125 en moyenne) donne
+  // 0,125 × 720 / 768 = 0,118, sous le seuil ; 34 niveaux donnent 0,125, au-dessus.
   const RifeGeometry g = rife_geometry(1280, 720);
   const PlaneU16 a(1280, 720, 16);
-  const auto score40 = ref::scene_score(a, PlaneU16(1280, 720, 56), Format::Nv12, g);
-  const auto score42 = ref::scene_score(a, PlaneU16(1280, 720, 58), Format::Nv12, g);
-  REQUIRE(score40);
-  REQUIRE(score42);
-  CHECK_THAT(*score40, WithinRel(40.0 / 255.0 * 720.0 / 768.0, tolerance::kSceneScoreRelative));
-  CHECK_FALSE(is_scene_cut(*score40));
-  CHECK(is_scene_cut(*score42));
+  const auto score32 = ref::scene_score(a, PlaneU16(1280, 720, 48), Format::Nv12, g);
+  const auto score34 = ref::scene_score(a, PlaneU16(1280, 720, 50), Format::Nv12, g);
+  REQUIRE(score32);
+  REQUIRE(score34);
+  CHECK_THAT(*score32, WithinRel(32.0 / 255.0 * 720.0 / 768.0, tolerance::kSceneScoreRelative));
+  CHECK_FALSE(is_scene_cut(*score32));
+  CHECK(is_scene_cut(*score34));
   CHECK_FALSE(is_scene_cut(kSceneCutThreshold));  // strictement au-dessus
-  CHECK(is_scene_cut(0.1500001));
+  CHECK(is_scene_cut(0.1200001));
   const PlaneU16 small(640, 360, 0);
   CHECK(ref::scene_score(small, small, Format::Nv12, g).error().code == ErrorCode::SizeMismatch);
 }

@@ -81,3 +81,15 @@ TEST_CASE("RIFE : une coupe si les plans ou la mesure la voient (P3.31)", "[app]
 }
 
 }  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("RIFE : le score de coupe est rapporté à la zone hors bandes noires (P3.32)", "[app][rife]") {
+  PairFacts scope = moving(4);
+  scope.scores->scene_score = 0.10;  // une coupe en 2,39:1 : diluée par les bandes (×0,74)
+  CHECK_FALSE(pair_cut(scope));
+  scope.useful_area = 0.74;
+  CHECK(pair_cut(scope));
+}
+
+}  // namespace ajp::app::play

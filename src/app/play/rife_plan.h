@@ -2,7 +2,7 @@
 // autre moteur d'interpolation) y tourne. Les instants de sortie viennent de core/cadence.h.
 //
 // RIFE ne tourne pas sur une paire qui ne bouge pas ou qui coupe :
-//   - coupe de scène (kernels/spec/detect.h, score > 0,150) : mélanger deux plans ferait un
+//   - coupe de scène (kernels/spec/detect.h, score > 0,120) : mélanger deux plans ferait un
 //     fantôme ;
 //   - dessin tenu (pire bloc 32 × 32 sous 0,70 niveau) : interpoler une image avec elle-même
 //     redonne la même image, au prix de RIFE ;
@@ -31,6 +31,9 @@ struct PairFacts {
   std::optional<gpu::PairScores> scores;  // mesures de la paire ; absentes : pas mesurée
   // La coupe selon les plans de la pré-analyse (cut_book.h, --shot-cuts) ; rien : la mesure décide.
   std::optional<bool> known_cut;
+  // P3.32 : la part de l'image hors bandes noires (analyse du grade) ; le score de RIFE, mesuré sur toute
+  // l'image, y est rapporté. 1 : pas de bandes connues.
+  double useful_area = 1.0;
 };
 
 // Une coupe des plans n'est gardée que si la mesure de RIFE dépasse ce plancher. Relevé sur 30 désaccords

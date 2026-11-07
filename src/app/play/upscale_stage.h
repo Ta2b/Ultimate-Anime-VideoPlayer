@@ -222,6 +222,7 @@ class UpscaleStage final : public RingStage {
   // L'analyse des images sources pour le grade (frame_stats_start), relue sans attente vers
   // LiveSettings::scenes ; faux si le backend ne la sait pas.
   bool frame_stats_ = true;
+  double useful_area_ = 1.0;  // P3.32 : la part hors bandes noires de la dernière image analysée
   struct PendingStats {
     std::uint64_t ticket = 0;
     std::int64_t pts_us = 0;

@@ -19,8 +19,9 @@ namespace ajp::kernels {
 //   d = |a − b| × (1 / crête), a et b en float, crête = max_code du format (255 en 8 bits,
 //   65472 en P010, 65535 en 16 bits, 1023 en 10 bits poids faible) ;
 //   score = Σ d / (pw × ph) : l'aire remplie de RIFE, que la mesure à 720p a fixée ;
-//   coupe si score > 0,150, strictement.
-inline constexpr double kSceneCutThreshold = 0.150;
+//   coupe si score > 0,120, strictement. 0,150 manquait des coupes franches (0,123 à 0,145, rife_plan.h) ;
+//   la lecture rapporte en plus le score à la zone hors bandes noires (P3.32).
+inline constexpr double kSceneCutThreshold = 0.120;
 
 constexpr float scene_norm(Format f) {
   return 1.0F / static_cast<float>(max_code(f));
