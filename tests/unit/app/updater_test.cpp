@@ -165,11 +165,18 @@ TEST_CASE("mises à jour : archive revérifiée, lecteur exigé, garde qui remet
   CHECK_FALSE(apply_staged_update(paths, empty_archive));
   CHECK(read(install / "ajp") == "ancien");
 
-  // Appliquée, puis trois lancements sans lecture menée à son terme : le quatrième remet l'ancienne.
+  // Appliquée, puis des lancements sans lecture menée à son terme.
   UpdateState state{.staged_version = "0.6.0", .staged_file = archive.string()};
   REQUIRE(apply_staged_update(paths, state));
   CHECK(state.unconfirmed_version == "0.6.0");
   write(install / "lib.so.old", "reste");
+  // Des fermetures voulues (launch_open retiré à la sortie) ne comptent pas.
+  for (int launch = 1; launch <= 2 * kMaxUnconfirmedLaunches; ++launch) {
+    CHECK_FALSE(guard_new_version(paths, state, "0.6.0"));
+    CHECK(close_launch(state));
+  }
+  CHECK(state.unconfirmed_launches == 0);
+  // Puis des lancements qui plantent (jamais refermés) : après trois, l'ancienne revient.
   for (int launch = 1; launch <= kMaxUnconfirmedLaunches; ++launch)
     CHECK_FALSE(guard_new_version(paths, state, "0.6.0"));
   CHECK_FALSE(fs::exists(install / "lib.so.old"));

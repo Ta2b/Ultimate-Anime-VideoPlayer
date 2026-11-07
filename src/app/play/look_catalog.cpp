@@ -13,6 +13,7 @@
 #include <SDL3/SDL_filesystem.h>
 
 #include "app/play/i18n.h"
+#include "core/dir_entries.h"
 #include "core/log.h"
 #include "render/looks.h"
 
@@ -31,7 +32,7 @@ namespace {
 void collect_cubes(const std::filesystem::path& dir, std::vector<std::string>& files) {
   std::error_code error;
   if (dir.empty() || !std::filesystem::is_directory(dir, error)) return;
-  for (const auto& item : std::filesystem::directory_iterator(dir, error)) {
+  for (const auto& item : core::dir_entries(dir, error)) {
     std::string extension = item.path().extension().string();
     std::ranges::transform(extension, extension.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

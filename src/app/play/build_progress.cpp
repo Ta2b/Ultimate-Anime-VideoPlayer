@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "core/charconv.h"
+#include "core/dir_entries.h"
 
 namespace ajp::app::play {
 namespace {
@@ -132,7 +133,7 @@ std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
   std::vector<PastBuild> builds;
   std::error_code error;
   std::size_t read = 0;
-  for (const auto& entry : std::filesystem::directory_iterator(cache_dir, error)) {
+  for (const auto& entry : core::dir_entries(cache_dir, error)) {
     if (read >= kMaxLogs) break;
     const std::filesystem::path& path = entry.path();
     if (!path.string().ends_with(".build.log") || !entry.is_regular_file(error)) continue;

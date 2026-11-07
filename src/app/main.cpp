@@ -478,10 +478,14 @@ int main(int argc, char** argv) {
   std::filesystem::create_directories(paths.engines, error);
   const auto played = ajp::app::play::play(*options, paths);
   SDL_Quit();
-  if (played && !options->data_dir && !options->bench_out) {
-    // Une lecture menée à son terme : la version en cours est confirmée (updater.h, étape 4).
+  if (!options->data_dir && !options->bench_out) {
+    // Une sortie sans plantage referme le lancement ; une lecture menée à son terme confirme la version en
+    // cours (updater.h, étape 4).
     ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
-    if (ajp::app::play::confirm_version(state, ajp::app::play::installed_version()))
+    const bool closed = ajp::app::play::close_launch(state);
+    const bool confirmed =
+        played && ajp::app::play::confirm_version(state, ajp::app::play::installed_version());
+    if (closed || confirmed)
       static_cast<void>(ajp::app::play::save_update_state(data / "update.toml", state));
   }
   if (played && engines_updated) return relaunch(place.executable, argc, argv);

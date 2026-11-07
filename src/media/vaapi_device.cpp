@@ -7,6 +7,7 @@
 #include <system_error>
 #include <vector>
 
+#include "core/dir_entries.h"
 #include "media/hw_device.h"
 
 extern "C" {
@@ -36,7 +37,7 @@ std::string read_line(const std::filesystem::path& file) {
 std::vector<RenderNode> render_nodes() {
   std::vector<RenderNode> nodes;
   std::error_code ec;
-  for (const auto& entry : std::filesystem::directory_iterator("/sys/class/drm", ec)) {
+  for (const auto& entry : core::dir_entries("/sys/class/drm", ec)) {
     const std::string name = entry.path().filename().string();
     if (!name.starts_with("renderD")) continue;
     const std::filesystem::path device = std::filesystem::canonical(entry.path() / "device", ec);

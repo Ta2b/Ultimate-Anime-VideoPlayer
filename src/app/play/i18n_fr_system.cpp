@@ -84,6 +84,9 @@ constexpr std::array kSystemPages{
     Entry{"Installed engines", "Moteurs installés"},
     Entry{"Installed version: {}", "Version installée : {}"},
     Entry{"Last check: {}", "Dernière vérification : {}"},
+    Entry{"Version {} was set aside: it did not start properly.",
+          "La version {} a été mise de côté : elle ne démarrait pas correctement."},
+    Entry{"Offer it again", "La proposer de nouveau"},
     Entry{"The last update failed (details in the log).",
           "La dernière mise à jour a échoué (détails dans le journal)."},
     Entry{"MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use "

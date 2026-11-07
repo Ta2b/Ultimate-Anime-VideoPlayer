@@ -12,6 +12,7 @@
 
 #include "app/play/i18n.h"
 #include "core/charconv.h"
+#include "core/dir_entries.h"
 #include "core/dynamic_library.h"
 
 #if defined(_WIN32)
@@ -192,7 +193,7 @@ std::uint64_t read_number(const std::filesystem::path& path, int base = 10) {
 // cartes identiques : la première (l'UUID Vulkan ne se retrouve pas dans sysfs).
 std::filesystem::path find_amd_card(std::uint32_t pci_device) {
   std::error_code error;
-  for (const auto& entry : std::filesystem::directory_iterator("/sys/class/drm", error)) {
+  for (const auto& entry : core::dir_entries("/sys/class/drm", error)) {
     const std::string name = entry.path().filename().string();
     if (!name.starts_with("card") || name.find('-') != std::string::npos) continue;
     const std::filesystem::path device = entry.path() / "device";
@@ -245,7 +246,7 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
     auto impl = std::make_unique<Impl>();
     impl->amd_card = card;
     std::error_code error;
-    for (const auto& entry : std::filesystem::directory_iterator(card / "hwmon", error)) {
+    for (const auto& entry : core::dir_entries(card / "hwmon", error)) {
       impl->amd_hwmon = entry.path();
       break;
     }

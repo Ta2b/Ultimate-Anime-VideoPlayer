@@ -9,11 +9,13 @@
 #include <random>
 #include <sstream>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include "app/play/ed25519.h"
 #include "app/play/engine_tools.h"
 #include "app/play/i18n.h"
+#include "core/dir_entries.h"
 #include "core/log.h"
 #include "core/model_index.h"
 #include "core/user_overlay.h"
@@ -224,7 +226,7 @@ fs::path archive_root(const fs::path& extracted) {
   std::error_code error;
   fs::path only;
   int count = 0;
-  for (const fs::directory_entry& entry : fs::directory_iterator(extracted, error)) {
+  for (const fs::directory_entry& entry : core::dir_entries(extracted, error)) {
     only = entry.path();
     ++count;
   }
@@ -267,6 +269,7 @@ std::string format_update_state(const UpdateState& state) {
   root.insert("unconfirmed_version", state.unconfirmed_version);
   root.insert("unconfirmed_launches", static_cast<std::int64_t>(state.unconfirmed_launches));
   root.insert("skipped_version", state.skipped_version);
+  root.insert("launch_open", state.launch_open);
   std::ostringstream out;
   out << root << '\n';
   return out.str();
@@ -292,6 +295,7 @@ std::expected<UpdateState, Refusal> parse_update_state(std::string_view text) {
   state.unconfirmed_launches = static_cast<int>(
       std::clamp<std::int64_t>(root["unconfirmed_launches"].value_or(std::int64_t{0}), 0, 1000));
   state.skipped_version = root["skipped_version"].value_or(std::string());
+  state.launch_open = root["launch_open"].value_or(false);
   return state;
 }
 
@@ -598,11 +602,13 @@ std::optional<std::string> guard_new_version(const UpdatePaths& paths, UpdateSta
                                              std::string_view running_version) {
   std::error_code error;
   // Les « .old » d'une application (fichiers en service renommés, Windows) : plus en service à présent.
+  // Parcours à error_code (increment) : un dossier qui disparaît pendant le parcours ne lève pas au
+  // lancement.
   if (!paths.install.empty() && fs::is_directory(paths.install, error)) {
     std::vector<fs::path> old;
-    for (const fs::directory_entry& entry : fs::recursive_directory_iterator(
-             paths.install, fs::directory_options::skip_permission_denied, error))
-      if (entry.path().extension() == ".old" && entry.is_regular_file(error)) old.push_back(entry.path());
+    fs::recursive_directory_iterator it(paths.install, fs::directory_options::skip_permission_denied, error);
+    for (; !error && it != fs::recursive_directory_iterator(); it.increment(error))
+      if (it->path().extension() == ".old" && it->is_regular_file(error)) old.push_back(it->path());
     for (const fs::path& file : old) fs::remove(file, error);
   }
   if (state.unconfirmed_version.empty()) return std::nullopt;
@@ -612,8 +618,10 @@ std::optional<std::string> guard_new_version(const UpdatePaths& paths, UpdateSta
     state.unconfirmed_launches = 0;
     return std::nullopt;
   }
-  ++state.unconfirmed_launches;
-  if (state.unconfirmed_launches <= kMaxUnconfirmedLaunches) return std::nullopt;
+  // Seul un lancement resté ouvert (le lecteur a planté ou a été tué) compte ; une fermeture voulue, non.
+  if (state.launch_open) ++state.unconfirmed_launches;
+  state.launch_open = true;
+  if (state.unconfirmed_launches < kMaxUnconfirmedLaunches) return std::nullopt;
   const std::string bad = state.unconfirmed_version;
   auto back = roll_back_update(paths, state);
   if (!back) {
@@ -625,6 +633,10 @@ std::optional<std::string> guard_new_version(const UpdatePaths& paths, UpdateSta
   state.skipped_version = bad;
   state.last_error = i18n::tr_format("version {} did not start properly: previous version restored", bad);
   return *back;
+}
+
+bool close_launch(UpdateState& state) {
+  return std::exchange(state.launch_open, false);
 }
 
 bool confirm_version(UpdateState& state, std::string_view running_version) {

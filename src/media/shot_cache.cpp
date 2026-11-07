@@ -10,6 +10,8 @@
 #include <system_error>
 #include <utility>
 
+#include "core/dir_entries.h"
+
 namespace ajp::media {
 namespace {
 
@@ -81,7 +83,7 @@ std::filesystem::path file_of(const std::filesystem::path& dir, const std::strin
 void trim(const std::filesystem::path& dir, std::size_t keep, const std::filesystem::path& written) {
   std::error_code ec;
   std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> files;
-  for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+  for (const auto& entry : core::dir_entries(dir, ec)) {
     if (entry.path().extension() != kExtension || entry.path() == written) continue;
     files.emplace_back(entry.last_write_time(ec), entry.path());
   }

@@ -9,8 +9,9 @@
 //      (taille, SHA-256) et doit contenir le lecteur, puis l'ancienne version est copiée dans
 //      <données>/updates/previous pour le retour arrière. Une mise à jour ratée laisse l'ancienne en place.
 //   4. Garde : la nouvelle version n'est confirmée qu'après une lecture menée à son terme ; après
-//      kMaxUnconfirmedLaunches lancements sans confirmation (elle plante au démarrage), l'ancienne revient
-//      d'elle-même.
+//      kMaxUnconfirmedLaunches lancements qui ne se sont pas refermés (elle plante ; une fermeture voulue ne
+//      compte pas, launch_open), l'ancienne revient d'elle-même, et la version est mise de côté jusqu'à ce
+//      qu'on la propose de nouveau (Paramètres > Général > Application).
 // Sans clé de signature compilée, rien n'est cru : la vérification dit pourquoi et ne fait rien d'autre.
 #pragma once
 
@@ -49,8 +50,9 @@ struct UpdateState {
   std::string staged_sha256;  // de l'archive préparée, revérifiée avant l'application
   std::uint64_t staged_size = 0;
   std::string unconfirmed_version;  // appliquée, pas encore confirmée par une lecture menée à son terme
-  int unconfirmed_launches = 0;     // ses lancements depuis
-  std::string skipped_version;      // retirée par la garde : signalée, plus jamais préparée d'elle-même
+  int unconfirmed_launches = 0;     // ses lancements qui ne sont pas allés au bout (plantage), depuis
+  std::string skipped_version;  // retirée par la garde : signalée, préparée de nouveau seulement sur demande
+  bool launch_open = false;     // lancée et pas encore refermée : posé au lancement, retiré à la sortie
   friend bool operator==(const UpdateState&, const UpdateState&) = default;
 };
 
@@ -123,6 +125,9 @@ std::optional<std::string> guard_new_version(const UpdatePaths& paths, UpdateSta
                                              std::string_view running_version);
 // Une lecture menée à son terme : la version en cours est bonne. Vrai si l'état a changé.
 bool confirm_version(UpdateState& state, std::string_view running_version);
+// À toute sortie du lecteur qui n'est pas un plantage (fermeture voulue, erreur dite) : le lancement est
+// refermé et ne compte pas pour la garde. Rend true si l'état a changé.
+bool close_launch(UpdateState& state);
 
 // Pourquoi ce lecteur ne se met pas à jour lui-même : « mis à jour par votre gestionnaire de paquets »
 // (Flatpak, dossier en lecture seule). Vide : il le peut.
