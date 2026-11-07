@@ -1,5 +1,7 @@
 #include "app/play/machine_calibration.h"
 
+#include <filesystem>
+
 #include <catch2/catch_test_macros.hpp>
 
 using namespace ajp::app::play;
@@ -124,5 +126,20 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   CHECK(read->gpu == "RTX 4070 Ti");
   CHECK(read->display_height == 1440);
   CHECK(read->span_fp8);
+  CHECK_FALSE(read->on_battery);
   CHECK_FALSE(parse_calibration("version = 1\n"));
+  // Rejoués dans les deux sens (P3.12) : l'échec, et le succès de justesse ; pas le succès net.
+  CHECK(needs_second_run(c.tried[0]));
+  CHECK_FALSE(needs_second_run(c.tried[1]));
+  CandidateTrial close = c.tried[1];
+  close.lost_percent = 1.6;
+  CHECK(needs_second_run(close));
+  // Mesurée sur batterie : relue, mais l'Auto ne la suit pas.
+  c.on_battery = true;
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-battery";
+  std::filesystem::create_directories(dir);
+  REQUIRE(save_calibration(calibration_file(dir), c));
+  CHECK(load_calibration(calibration_file(dir))->on_battery);
+  CHECK_FALSE(calibrated_chain(dir, "RTX 4070 Ti", 1440));
+  std::filesystem::remove_all(dir);
 }

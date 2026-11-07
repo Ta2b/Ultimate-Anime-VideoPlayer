@@ -84,6 +84,7 @@ struct Chain {
   std::optional<PlaySettings> reopen;              // demandé par le menu des paramètres
   std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
+  bool calibrate = false;                          // « Refaire le banc » : à faire avant de rouvrir
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
   std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause

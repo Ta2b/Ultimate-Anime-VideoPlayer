@@ -263,7 +263,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   SDL_free(pref);
   std::error_code error;
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
-                             .video = data / "bench-clip-v3.mkv",
+                             .video = data / "bench-clip-v4.mkv",
                              .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
                              .data = data,
                              .silent = silent,

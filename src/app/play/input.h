@@ -72,9 +72,13 @@ using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
 struct StartExport {
   ExportJob job;
 };
+// « Refaire le banc » pendant la lecture (P3.12) : la lecture se ferme et libère la mémoire vidéo, la
+// calibration mesure, puis la lecture reprend avec la chaîne trouvée.
+struct StartCalibration {};
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
                            SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
-                           ToggleSettings, ApplySettings, UseEngine, OpenEngineScreen, StartExport, PlayFile>;
+                           ToggleSettings, ApplySettings, UseEngine, OpenEngineScreen, StartExport, PlayFile,
+                           StartCalibration>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

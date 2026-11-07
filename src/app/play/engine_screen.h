@@ -42,6 +42,11 @@ struct EngineScreen {
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
                                                std::size_t& next_key, SnapshotPlan& snapshot);
 
+// La calibration de la machine sur cette fenêtre, une barre de chargement et « Annuler et regarder » : les
+// réglages calibrés, base (préréglage Auto) si elle échoue ou s'annule, rien si la fenêtre se ferme.
+std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
+                                                const std::filesystem::path& data_dir, PlaySettings base);
+
 // Les bibliothèques de backend du poste, par préférence : les téléchargées d'abord, puis celles
 // livrées ou de l'arbre de construction (présentes ou non).
 std::vector<std::filesystem::path> backend_candidates(const EngineCatalog& catalog, const PlayerPaths& paths);

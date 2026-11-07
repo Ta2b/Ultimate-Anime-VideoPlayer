@@ -769,6 +769,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     .paused = session.paused() && !chain.next_file,
                     .engines = chain.engines,
                     .export_job = chain.export_job,
+                    .calibrate = chain.calibrate,
                     .next_file = chain.next_file,
                     .next_start_us = chain.next_start_us,
                     .next_paused = chain.next_paused};

@@ -98,6 +98,8 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
 }
 
+}  // namespace
+
 // La calibration de la machine de l'assistant (machine_calibration.h) sur son thread : l'utilisateur ne voit
 // qu'une barre de chargement. Rien si la fenêtre se ferme ; une calibration qui échoue garde base (Auto).
 std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
@@ -116,7 +118,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   auto shared = std::make_shared<Shared>();
   std::error_code error;
   BenchPlan plan{.executable = paths.executable,
-                 .video = data_dir / "bench-clip-v3.mkv",
+                 .video = data_dir / "bench-clip-v4.mkv",
                  .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
                  .data = data_dir,
                  .display_width = display_width(screen.window()),
@@ -183,8 +185,6 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   calibrated.preset = Preset::Auto;
   return calibrated;
 }
-
-}  // namespace
 
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
                                                std::size_t& next_key, SnapshotPlan& snapshot) {

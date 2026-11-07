@@ -84,8 +84,12 @@ struct MachineCalibration {
   std::string gpu;
   std::string date;  // AAAA-MM-JJ
   int display_height = 0;
-  bool span_fp8 = false;  // les essais SPAN ont joué le Balanced Sharp en FP8
+  bool span_fp8 = false;    // les essais SPAN ont joué le Balanced Sharp en FP8
+  bool on_battery = false;  // mesurée sur batterie (P3.12) : gardée au tableau, pas suivie par l'Auto
 };
+
+// Un essai se rejoue une fois (P3.12) : quand il ne tient pas, ou qu'il tient de justesse.
+bool needs_second_run(const CandidateTrial& trial);
 
 // Le fichier des résultats (calibration.toml, à côté de play.toml), que calibrate_machine écrit quand
 // plan.data est donné.

@@ -533,6 +533,17 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         player.notice = exported.notice;
       }
       settings = (*outcome)->settings;
+      // « Refaire le banc » (P3.12) : la chaîne est fermée, sa mémoire vidéo libérée ; la calibration
+      // mesure la machine seule, puis la lecture reprend avec ce qu'elle a trouvé.
+      if ((*outcome)->calibrate) {
+        auto calibrated = calibrate_on_screen(player.screen, player.ui, player.paths,
+                                              player.settings_path.parent_path(), settings);
+        if (!calibrated) {
+          player.quit = true;
+          break;
+        }
+        settings = std::move(*calibrated);
+      }
       start_us = (*outcome)->position_us;
       start_paused = (*outcome)->paused;
       player.details = settings.stats.all;

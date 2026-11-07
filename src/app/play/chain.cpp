@@ -363,6 +363,12 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             to.ui.close_settings();
             to.export_job = start.job;
             to.reopen = to.running;
+          },
+          [&](const StartCalibration&) {
+            log_channel("app")->info("banc demandé : la lecture se ferme pendant la calibration");
+            to.ui.close_settings();
+            to.calibrate = true;
+            to.reopen = to.running;
           }},
       input);
 }

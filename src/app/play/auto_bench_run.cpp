@@ -213,10 +213,14 @@ std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const V
   Trial trial = play_one(plan, std::nullopt, &variant, index, stop, allowance,
                          i18n::tr_format("of the \"{}\" variant", variant.name));
   if (trial.cancelled) return refuse(RefusalCode::Cancelled, i18n::tr("evaluation cancelled"));
-  if (!trial.reading)
-    return refuse(
+  if (!trial.reading) {
+    Refusal refusal{
         RefusalCode::DecodeFailed,
-        trial.why.empty() ? i18n::tr_format("the \"{}\" variant produced nothing", variant.name) : trial.why);
+        trial.why.empty() ? i18n::tr_format("the \"{}\" variant produced nothing", variant.name) : trial.why};
+    if (trial.timed_out)
+      refusal.key = std::string(kTrialTimedOutKey);  // une construction trop longue (P3.12)
+    return std::unexpected(std::move(refusal));
+  }
   return std::move(*trial.reading);
 }
 
@@ -385,7 +389,7 @@ std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
   // (media/bench_clip.h).
   BenchPlan own = plan;
   if (own.video.empty()) {
-    own.video = data_dir / "bench-clip-v3.mkv";
+    own.video = data_dir / "bench-clip-v4.mkv";
     std::error_code error;
     if (!std::filesystem::is_regular_file(own.video, error)) {
       if (plan.shown != nullptr)

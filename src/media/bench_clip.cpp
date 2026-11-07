@@ -135,8 +135,10 @@ void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
 }
 
 std::expected<void, Refusal> write_clip_to(const std::filesystem::path& file, const BenchClipSpec& spec) {
-  const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
-  if (codec == nullptr) return refuse(RefusalCode::LibraryUnavailable, "encodeur MPEG-4 absent de FFmpeg");
+  // MPEG-2 (P3.12) : le seul encodeur propre à FFmpeg que les décodeurs matériels lisent (NVDEC, D3D11VA,
+  // VA-API) ; le MPEG-4 d'avant passait par le processeur, qui n'est pas le chemin de la lecture.
+  const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MPEG2VIDEO);
+  if (codec == nullptr) return refuse(RefusalCode::LibraryUnavailable, "encodeur MPEG-2 absent de FFmpeg");
   AVFormatContext* raw = nullptr;
   const std::string path = file.string();
   if (const int err = avformat_alloc_output_context2(&raw, nullptr, "matroska", path.c_str());

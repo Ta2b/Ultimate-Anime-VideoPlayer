@@ -36,7 +36,7 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
   const std::filesystem::path data = choices.settings_dir;
   std::error_code error;
   const BenchPlan plan{.executable = choices.place.executable,
-                       .video = data / "bench-clip-v3.mkv",
+                       .video = data / "bench-clip-v4.mkv",
                        .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
                        .data = data,
                        .display_width = choices.display_height * 16 / 9,
@@ -126,6 +126,8 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
                          r.date, r.display_height));
     note(r.span_fp8 ? i18n::tr("SPAN: Balanced Sharp in FP8.")
                     : i18n::tr("SPAN: Performance Sharp in FP16 (no FP8 on this card)."));
+    if (r.on_battery)
+      note(i18n::tr("Measured on battery: Auto keeps its estimate. Run the bench again plugged in."));
     constexpr ImGuiTableFlags kFlags =
         ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX;
     if (ImGui::BeginTable("##bench", 6, kFlags)) {
@@ -174,10 +176,15 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
                  "half the display: SPAN doubles it."));
   }
   if (ImGui::Button(bench.result ? i18n::tr("Run the bench again") : i18n::tr("Run the bench"))) {
-    start_bench(choices, d, bench);
-    actions.emplace_back(Command{cmd::Pause{}});
+    if (choices.source_file.empty()) {
+      start_bench(choices, d, bench);
+    } else {
+      // Pendant une lecture (P3.12) : elle se ferme d'abord, sa mémoire vidéo ne fausse plus la mesure.
+      actions.emplace_back(StartCalibration{});
+      bench.read = false;  // calibration.toml relu au retour
+    }
   }
-  panel::tip(i18n::tr("Playback pauses during the bench."));
+  panel::tip(i18n::tr("Playback closes during the bench, then resumes at the same spot."));
   return applied;
 }
 
