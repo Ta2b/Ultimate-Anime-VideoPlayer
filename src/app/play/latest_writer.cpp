@@ -12,6 +12,15 @@ void report(const std::expected<void, Refusal>& written) {
   if (!written) log_channel("app")->warn("{}", written.error().detail);
 }
 
+// Le job, dont une exception devient un refus : elle n'arrête ni le thread d'écriture ni l'affichage.
+std::expected<void, Refusal> guarded(const LatestWriter::Job& job) noexcept {
+  try {
+    return job();
+  } catch (...) {
+    return std::unexpected(refusal_from_exception(RefusalCode::ThreadFailed, "écriture"));
+  }
+}
+
 }  // namespace
 
 LatestWriter::LatestWriter() {
@@ -33,7 +42,7 @@ LatestWriter::~LatestWriter() {
 
 void LatestWriter::post(const std::string& key, Job job) {
   if (!thread_.joinable()) {
-    report(job());
+    report(guarded(job));
     return;
   }
   {
@@ -59,7 +68,7 @@ void LatestWriter::run(const std::stop_token& stop) {
     pending_.erase(next);
     ++running_;
     lock.unlock();
-    report(job());
+    report(guarded(job));  // ne lève pas (P2.5) : l'écriture finit toujours, flush() ne l'attend pas en vain
     lock.lock();
     --running_;
     if (pending_.empty() && running_ == 0) done_.notify_all();
