@@ -75,7 +75,8 @@ void switch_audio(Chain& to, int track, std::int64_t now_us) {
                           now_us);
 }
 
-// Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets.
+// Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets. Un fichier
+// externe est lu en entier : pas de seek, l'image ne saute pas (P3.80).
 void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) {
   if (to.pipeline.tracks().subtitle_selected == track) return;
   auto switched = to.pipeline.select_subtitles(track);
@@ -85,7 +86,7 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
     return;
   }
   to.session.set_subtitles(track.has_value());
-  if (track) {
+  if (track && *track < kExternalSubtitleBase) {
     const std::int64_t position = std::max<std::int64_t>(to.session.view().position_us, 0);
     to.session.command(cmd::Seek{.target_us = position, .exact = true});
   }
