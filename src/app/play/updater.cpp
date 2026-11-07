@@ -1,9 +1,12 @@
 #include "app/play/updater.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <random>
 #include <sstream>
 #include <system_error>
 #include <vector>
@@ -52,6 +55,29 @@ std::string trimmed(std::string text) {
   while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
   while (!text.empty() && (text.front() == '\n' || text.front() == ' ')) text.erase(text.begin());
   return text;
+}
+
+// Un dossier neuf, à nous seuls, pour le manifeste : mkdtemp (0700, nom imprévisible) hors Windows ; sous
+// Windows, le dossier temporaire est celui de l'utilisateur, et un nom tiré au hasard doit ne pas exister. Un
+// dossier préparé d'avance (lien symbolique que curl -o suivrait) n'est jamais repris.
+std::expected<fs::path, Refusal> private_temp_dir() {
+  std::error_code error;
+  const fs::path base = fs::temp_directory_path(error);
+  if (error)
+    return refuse(RefusalCode::FileUnwritable, std::format("dossier temporaire : {}", error.message()));
+#if defined(_WIN32)
+  std::random_device random;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const fs::path dir = base / std::format("ajp-update-{:08x}{:08x}", random(), random());
+    if (fs::create_directory(dir, error)) return dir;
+  }
+  return refuse(RefusalCode::FileUnwritable, "dossier temporaire : aucun nom libre");
+#else
+  std::string pattern = prepare::utf8_path(base / "ajp-update-XXXXXX");
+  if (mkdtemp(pattern.data()) == nullptr)
+    return refuse(RefusalCode::FileUnwritable, std::format("mkdtemp : {}", std::strerror(errno)));
+  return fs::path(pattern);
+#endif
 }
 
 // curl du système : https seulement, délai borné. Un fichier absent du serveur (HTTP 404) est refusé
@@ -260,11 +286,9 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
   if (key.empty())
     return refuse(RefusalCode::LibraryUnavailable,
                   i18n::tr("this package has no signing key: updates cannot be verified"));
-  std::error_code error;
-  const fs::path dir =
-      fs::temp_directory_path(error) /
-      std::format("ajp-update-{}", std::chrono::steady_clock::now().time_since_epoch().count());
-  fs::create_directories(dir, error);
+  const auto made = private_temp_dir();
+  if (!made) return std::unexpected(made.error());
+  const fs::path dir = *made;
   struct Cleanup {
     fs::path dir;
     ~Cleanup() {
@@ -290,6 +314,9 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
     return refuse(RefusalCode::HashMismatch, i18n::tr("the manifest signature is wrong: update ignored"));
   auto manifest = core::parse_update_manifest(manifest_text);
   if (!manifest) return std::unexpected(manifest.error());
+  if (core::manifest_expired(*manifest,
+                             std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())))
+    return refuse(RefusalCode::FieldOutOfRange, i18n::tr("the update manifest has expired: update ignored"));
   if (manifest->channel != channel)
     return refuse(
         RefusalCode::FieldOutOfRange,

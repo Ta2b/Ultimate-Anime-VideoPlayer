@@ -24,6 +24,8 @@ out="$dir/manifest.toml"
   echo "version = \"$version\""
   echo "channel = \"$channel\""
   echo "date = \"$(date -u +%F)\""
+  # Au-delà, le lecteur refuse le manifeste (un ancien ne se rejoue pas) : re-signer avant (signature-des-releases.md).
+  echo "expires = \"$(date -u -d '+120 days' +%F)\""
   [ -n "$notes" ] && echo "notes_url = \"$notes\""
   for entry in "linux-x64:ajp-linux-x64.tar.gz" "windows-x64:ajp-windows-x64.zip" "macos-arm64:ajp-macos-arm64.zip"; do
     section=${entry%%:*} file=${entry#*:}

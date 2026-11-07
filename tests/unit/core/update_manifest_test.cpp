@@ -9,6 +9,7 @@ namespace {
 constexpr const char* kManifest = R"(version = "0.5.0"
 channel = "stable"
 date = "2026-10-30"
+expires = "2027-02-27"
 notes_url = "https://github.com/Ta2b/ajp-releases/releases/tag/v0.5.0"
 [linux-x64]
 url = "https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0/ajp-linux-x64.tar.gz"
@@ -42,6 +43,17 @@ TEST_CASE("manifeste : refus nets", "[update]") {
   CHECK_FALSE(
       parse_update_manifest(with("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "xyz")));
   CHECK_FALSE(parse_update_manifest(with("size = 123456", "size = 0")));
+  CHECK_FALSE(parse_update_manifest(with("size = 123456", "size = -1")));  // pas 2^64 - 1
+  CHECK_FALSE(parse_update_manifest(with("expires = \"2027-02-27\"\n", "")));
+  CHECK_FALSE(parse_update_manifest(with("2027-02-27", "2027-02-30")));
+}
+
+TEST_CASE("manifeste : refusé après son expiration", "[update]") {
+  using namespace std::chrono;
+  const auto manifest = parse_update_manifest(kManifest);
+  REQUIRE(manifest);
+  CHECK_FALSE(manifest_expired(*manifest, sys_days{2027y / February / 27}));
+  CHECK(manifest_expired(*manifest, sys_days{2027y / February / 28}));
 }
 
 TEST_CASE("versions : ordre, préversions avant la finale", "[update]") {
