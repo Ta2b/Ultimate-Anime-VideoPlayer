@@ -218,7 +218,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
 
   // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.
   const std::filesystem::path engines_path = settings_path.parent_path() / "settings.toml";
-  auto engines = core::load_settings(engines_path);
+  std::vector<std::string> engines_skipped;  // les valeurs écartées une à une (P2.21)
+  auto engines = core::load_settings(engines_path, &engines_skipped);
+  for (const std::string& skipped : engines_skipped) log->warn("settings.toml : {} écarté", skipped);
   if (!engines) {
     log->warn("{} ; écran de bienvenue", engines.error().detail);
     startup_notes.push_back(set_aside(engines_path, engines.error()));

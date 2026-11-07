@@ -46,10 +46,13 @@ Settings full() {
   return settings;
 }
 
-RefusalCode refusal_of(const std::string& text) {
-  auto settings = parse_settings("version = 1\n" + text);
-  REQUIRE_FALSE(settings);
-  return settings.error().code;
+// Le fichier lu malgré la valeur fausse : les clés écartées, une seule ici.
+std::vector<std::string> skipped_of(const std::string& text) {
+  std::vector<std::string> skipped;
+  auto settings = parse_settings("version = 1\nfirst_run_step = 3\n" + text, &skipped);
+  REQUIRE(settings);
+  CHECK(settings->first_run_step == 3);  // le reste du fichier vaut
+  return skipped;
 }
 
 RefusalCode invalid(const Settings& settings) {
@@ -101,16 +104,19 @@ TEST_CASE("Réglages : écrire puis relire rend les mêmes valeurs", "[settings]
   CHECK(*reread == none);
 }
 
-TEST_CASE("Réglages : une valeur hors plage ou incohérente est refusée", "[settings]") {
-  CHECK(refusal_of("first_run_done = \"yes\"") == RefusalCode::FieldType);
-  CHECK(refusal_of("[engines]\nchosen = [\"cuda\"]") == RefusalCode::FieldOutOfRange);
-  CHECK(refusal_of("[engines]\ninstalled = \"vulkan\"") == RefusalCode::FieldType);
-  CHECK(refusal_of("[engines]\npreferred = { upscale = \"tensorrt\" }") == RefusalCode::FieldOutOfRange);
-  CHECK(refusal_of("[languages]\naudio = [\"english\"]") == RefusalCode::FieldOutOfRange);
-  CHECK(refusal_of("[languages]\naudio = [1]") == RefusalCode::FieldType);
-  CHECK(refusal_of("[playback]\naudio_delay_ms = 20000") == RefusalCode::FieldOutOfRange);
-  CHECK(refusal_of("[playback]\naudio_delay_ms = 1.5") == RefusalCode::FieldType);
-  CHECK(refusal_of("playback = 3") == RefusalCode::FieldType);
+TEST_CASE("Réglages : une valeur fausse est écartée seule, le fichier vaut (P2.21)", "[settings]") {
+  for (const char* text :
+       {"first_run_done = \"yes\"", "[engines]\nchosen = [\"cuda\"]", "[engines]\ninstalled = \"vulkan\"",
+        "[engines]\npreferred = { upscale = \"tensorrt\" }", "[languages]\naudio = [\"english\"]",
+        "[languages]\naudio = [1]", "[playback]\naudio_delay_ms = 20000", "[playback]\naudio_delay_ms = 1.5",
+        "playback = 3"}) {
+    INFO(text);
+    CHECK(skipped_of(text).size() == 1);
+  }
+  // Vulkan, livré avec le lecteur, revient de lui-même dans une liste qui l'oublie.
+  auto without_vulkan = parse_settings("version = 1\n[engines]\nchosen = [\"tensorrt\"]\n");
+  REQUIRE(without_vulkan);
+  CHECK(without_vulkan->chosen_engines == std::vector{EngineId::Vulkan, EngineId::TensorRt});
 
   auto missing = parse_settings("first_run_done = true\n");
   REQUIRE_FALSE(missing);
@@ -125,14 +131,6 @@ TEST_CASE("Réglages : une valeur hors plage ou incohérente est refusée", "[se
   Settings settings = full();
   settings.installed_engines.push_back(EngineId::Vulkan);
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
-  // Vulkan est livré avec le lecteur : il ne manque ni aux moteurs choisis ni aux installés.
-  for (const char* engines : {"chosen = [\"tensorrt\"]", "installed = []\npreferred = {}"}) {
-    auto without_vulkan = parse_settings(std::format("version = 1\n[engines]\n{}\n", engines));
-    INFO(engines);
-    REQUIRE_FALSE(without_vulkan);
-    CHECK(without_vulkan.error().code == RefusalCode::FieldOutOfRange);
-    CHECK(without_vulkan.error().detail.find("vulkan") != std::string::npos);
-  }
   settings = full();
   settings.preferred[static_cast<std::size_t>(Usage::Upscale)] = EngineId::MiGraphX;
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);

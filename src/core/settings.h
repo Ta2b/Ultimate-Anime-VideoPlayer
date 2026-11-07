@@ -65,9 +65,14 @@ std::string_view usage_name(Usage usage);  // « upscale », « interpolate »
 // préféré installé et propre à son usage.
 std::expected<void, Refusal> validate_settings(const Settings& settings);
 
-std::expected<Settings, Refusal> parse_settings(std::string_view toml_text);
-// Fichier absent : réglages par défaut. Fichier présent mais faux : refus, jamais de défaut silencieux.
-std::expected<Settings, Refusal> load_settings(const std::filesystem::path& path);
+// Lecture tolérante (P2.21) : une valeur fausse (type, moteur inconnu, hors plage, doublon) est écartée seule
+// et nommée dans skipped ; le reste vaut. Refus seulement pour le fichier entier : syntaxe TOML, version
+// absente ou plus récente.
+std::expected<Settings, Refusal> parse_settings(std::string_view toml_text,
+                                                std::vector<std::string>* skipped = nullptr);
+// Fichier absent : réglages par défaut. Fichier illisible : refus, jamais de défaut silencieux.
+std::expected<Settings, Refusal> load_settings(const std::filesystem::path& path,
+                                               std::vector<std::string>* skipped = nullptr);
 
 // Texte de settings, fusionné dans existing_toml dont les clés inconnues restent.
 std::expected<std::string, Refusal> format_settings(const Settings& settings,

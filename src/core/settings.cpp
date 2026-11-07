@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <format>
 #include <initializer_list>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "core/model_index.h"
@@ -61,94 +63,122 @@ std::expected<void, Refusal> check_languages(const std::vector<std::string>& tag
   return no_duplicate(tags, where);
 }
 
-std::expected<std::vector<std::string>, Refusal> strings(const toml::table& table, std::string_view key,
-                                                         std::string_view where) {
-  auto array = fields::array(table, key, where);
-  if (!array) return std::unexpected(array.error());
+// P2.21 : la lecture est tolérante, comme celle de play.toml. Une valeur fausse (type, nom inconnu, hors
+// plage) est écartée seule, et nommée dans skipped ; le reste du fichier vaut.
+struct Reader {
+  std::vector<std::string>* skipped;
+  void skip(std::string where) const {
+    if (skipped != nullptr) skipped->push_back(std::move(where));
+  }
+  // La valeur lue, ou rien (écartée et nommée) si elle est fausse.
+  template <class T>
+  std::optional<T> take(std::expected<T, Refusal> read) const {
+    if (read) return std::move(*read);
+    skip(std::move(read.error().detail));
+    return std::nullopt;
+  }
+};
+
+std::optional<std::vector<std::string>> strings(const toml::table& table, std::string_view key,
+                                                std::string_view where, const Reader& reader) {
+  auto array = reader.take(fields::array(table, key, where));
+  if (!array) return std::nullopt;
   std::vector<std::string> values;
   for (std::size_t i = 0; i < (*array)->size(); ++i) {
-    std::optional<std::string> value = (*array)->get(i)->value_exact<std::string>();
-    if (!value) return refuse(RefusalCode::FieldType, std::format("{}.{}[{}]", where, key, i));
-    values.push_back(std::move(*value));
+    if (std::optional<std::string> value = (*array)->get(i)->value_exact<std::string>())
+      values.push_back(std::move(*value));
+    else
+      reader.skip(std::format("{}.{}[{}]", where, key, i));
   }
   return values;
 }
 
-std::expected<EngineId, Refusal> engine(const std::string& name, const std::string& where) {
+std::optional<EngineId> engine(const std::string& name, const std::string& where, const Reader& reader) {
   const std::optional<EngineId> id = parse_engine(name);
-  if (!id) return refuse(RefusalCode::FieldOutOfRange, std::format("{} = « {} »", where, name));
-  return *id;
+  if (!id) reader.skip(std::format("{} = « {} »", where, name));
+  return id;
 }
 
-std::expected<std::vector<EngineId>, Refusal> engines(const toml::table& table, std::string_view key) {
-  auto names = strings(table, key, "engines");
-  if (!names) return std::unexpected(names.error());
+std::optional<std::vector<EngineId>> engines(const toml::table& table, std::string_view key,
+                                             const Reader& reader) {
+  auto names = strings(table, key, "engines", reader);
+  if (!names) return std::nullopt;
   std::vector<EngineId> ids;
   for (std::size_t i = 0; i < names->size(); ++i) {
     if (retired_engine((*names)[i])) continue;
-    auto id = engine((*names)[i], std::format("engines.{}[{}]", key, i));
-    if (!id) return std::unexpected(id.error());
-    ids.push_back(*id);
+    const auto id = engine((*names)[i], std::format("engines.{}[{}]", key, i), reader);
+    if (id && !std::ranges::contains(ids, *id)) ids.push_back(*id);
   }
   return ids;
 }
 
-std::expected<void, Refusal> read_engines(const toml::table& root, Settings& settings) {
-  auto table = fields::table(root, "engines", "settings");
-  if (!table) return std::unexpected(table.error());
+void read_engines(const toml::table& root, Settings& settings, const Reader& reader) {
+  auto table = reader.take(fields::table(root, "engines", "settings"));
+  if (!table) return;
   if ((*table)->contains("chosen")) {
-    auto chosen = engines(**table, "chosen");
-    if (!chosen) return std::unexpected(chosen.error());
-    settings.chosen_engines = std::move(*chosen);
+    if (auto chosen = engines(**table, "chosen", reader)) settings.chosen_engines = std::move(*chosen);
   }
   if ((*table)->contains("installed")) {
-    auto installed = engines(**table, "installed");
-    if (!installed) return std::unexpected(installed.error());
-    settings.installed_engines = std::move(*installed);
+    if (auto installed = engines(**table, "installed", reader))
+      settings.installed_engines = std::move(*installed);
   }
-  auto preferred = fields::table(**table, "preferred", "engines");
-  if (!preferred) return std::unexpected(preferred.error());
+  // Vulkan est livré partout et ne se désinstalle pas (engines.h, Delivery::Bundled).
+  for (std::vector<EngineId>* list : {&settings.chosen_engines, &settings.installed_engines})
+    if (!std::ranges::contains(*list, EngineId::Vulkan)) list->insert(list->begin(), EngineId::Vulkan);
+  auto preferred = reader.take(fields::table(**table, "preferred", "engines"));
+  if (!preferred) return;
   if ((*table)->contains("preferred")) settings.preferred = {};
   for (std::size_t i = 0; i < kUsageCount; ++i) {
-    auto name = fields::optional<std::string>(**preferred, kUsageNames[i], "engines.preferred");
-    if (!name) return std::unexpected(name.error());
-    if (!*name) continue;
-    auto id = engine(**name, std::format("engines.preferred.{}", kUsageNames[i]));
-    if (!id) return std::unexpected(id.error());
-    settings.preferred[i] = *id;
+    auto name = reader.take(fields::optional<std::string>(**preferred, kUsageNames[i], "engines.preferred"));
+    if (!name || !*name) continue;
+    const std::string where = std::format("engines.preferred.{}", kUsageNames[i]);
+    const auto id = engine(**name, where, reader);
+    if (!id) continue;
+    if (std::ranges::contains(settings.installed_engines, *id))
+      settings.preferred[i] = id;
+    else
+      reader.skip(where + " : moteur non installé");
   }
-  return {};
 }
 
-std::expected<void, Refusal> read_rest(const toml::table& root, Settings& settings) {
-  auto first_run = fields::optional<bool>(root, "first_run_done", "settings");
-  if (!first_run) return std::unexpected(first_run.error());
-  settings.first_run_done = first_run->value_or(false);
-  auto step = fields::optional<std::int64_t>(root, "first_run_step", "settings");
-  if (!step) return std::unexpected(step.error());
-  settings.first_run_step = static_cast<int>(std::clamp<std::int64_t>(step->value_or(0), 0, 8));
-  auto registered = fields::optional<bool>(root, "open_with_registered", "settings");
-  if (!registered) return std::unexpected(registered.error());
-  settings.open_with_registered = registered->value_or(false);
+std::vector<std::string> languages_of(std::vector<std::string> tags, std::string_view where,
+                                      const Reader& reader) {
+  std::vector<std::string> kept;
+  for (std::size_t i = 0; i < tags.size(); ++i) {
+    if (!language_tag(tags[i]) || std::ranges::contains(kept, tags[i]) ||
+        kept.size() >= limits::kMaxLanguages)
+      reader.skip(std::format("{}[{}] = « {} »", where, i, tags[i]));
+    else
+      kept.push_back(std::move(tags[i]));
+  }
+  return kept;
+}
 
-  auto languages = fields::table(root, "languages", "settings");
-  if (!languages) return std::unexpected(languages.error());
-  auto audio = strings(**languages, "audio", "languages");
-  if (!audio) return std::unexpected(audio.error());
-  settings.audio_languages = std::move(*audio);
-  auto subtitles = strings(**languages, "subtitles", "languages");
-  if (!subtitles) return std::unexpected(subtitles.error());
-  settings.subtitle_languages = std::move(*subtitles);
+void read_rest(const toml::table& root, Settings& settings, const Reader& reader) {
+  if (auto first_run = reader.take(fields::optional<bool>(root, "first_run_done", "settings")))
+    settings.first_run_done = first_run->value_or(false);
+  if (auto step = reader.take(fields::optional<std::int64_t>(root, "first_run_step", "settings")))
+    settings.first_run_step = static_cast<int>(std::clamp<std::int64_t>(step->value_or(0), 0, 8));
+  if (auto registered = reader.take(fields::optional<bool>(root, "open_with_registered", "settings")))
+    settings.open_with_registered = registered->value_or(false);
 
-  auto playback = fields::table(root, "playback", "settings");
-  if (!playback) return std::unexpected(playback.error());
-  auto resume = fields::optional<bool>(**playback, "resume_position", "playback");
-  if (!resume) return std::unexpected(resume.error());
-  settings.resume_position = resume->value_or(true);
-  auto delay = fields::optional<std::int64_t>(**playback, "audio_delay_ms", "playback");
-  if (!delay) return std::unexpected(delay.error());
-  settings.audio_delay_ms = delay->value_or(0);
-  return {};
+  if (auto languages = reader.take(fields::table(root, "languages", "settings"))) {
+    if (auto audio = strings(**languages, "audio", "languages", reader))
+      settings.audio_languages = languages_of(std::move(*audio), "languages.audio", reader);
+    if (auto subtitles = strings(**languages, "subtitles", "languages", reader))
+      settings.subtitle_languages = languages_of(std::move(*subtitles), "languages.subtitles", reader);
+  }
+
+  if (auto playback = reader.take(fields::table(root, "playback", "settings"))) {
+    if (auto resume = reader.take(fields::optional<bool>(**playback, "resume_position", "playback")))
+      settings.resume_position = resume->value_or(true);
+    if (auto delay = reader.take(fields::optional<std::int64_t>(**playback, "audio_delay_ms", "playback"))) {
+      if (limits::kAudioDelayMs.contains(delay->value_or(0)))
+        settings.audio_delay_ms = delay->value_or(0);
+      else
+        reader.skip("playback.audio_delay_ms");
+    }
+  }
 }
 
 toml::array names_of(const std::vector<EngineId>& engines) {
@@ -196,24 +226,27 @@ std::expected<void, Refusal> validate_settings(const Settings& settings) {
   return {};
 }
 
-std::expected<Settings, Refusal> parse_settings(std::string_view toml_text) {
+std::expected<Settings, Refusal> parse_settings(std::string_view toml_text,
+                                                std::vector<std::string>* skipped) {
   auto root = fields::parse(toml_text, RefusalCode::FileUnreadable, "settings.toml");
   if (!root) return std::unexpected(root.error());
   if (auto version = fields::check_version(*root, kSettingsVersion, "settings.toml"); !version) {
     return std::unexpected(version.error());
   }
   Settings settings;
-  if (auto r = read_engines(*root, settings); !r) return std::unexpected(r.error());
-  if (auto r = read_rest(*root, settings); !r) return std::unexpected(r.error());
-  if (auto r = validate_settings(settings); !r) return std::unexpected(r.error());
+  const Reader reader{.skipped = skipped};
+  read_engines(*root, settings, reader);
+  read_rest(*root, settings, reader);
+  if (auto r = validate_settings(settings); !r) return std::unexpected(r.error());  // ne devrait plus arriver
   return settings;
 }
 
-std::expected<Settings, Refusal> load_settings(const std::filesystem::path& path) {
+std::expected<Settings, Refusal> load_settings(const std::filesystem::path& path,
+                                               std::vector<std::string>* skipped) {
   auto text = read_text_file_if_present(path);
   if (!text) return std::unexpected(text.error());
   if (!*text) return Settings{};
-  return parse_settings(**text);
+  return parse_settings(**text, skipped);
 }
 
 std::expected<std::string, Refusal> format_settings(const Settings& settings,
