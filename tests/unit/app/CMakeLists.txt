@@ -20,6 +20,12 @@ if(TARGET ajp_backend_tensorrt)
 else()
   target_compile_definitions(ajp_app_tests PRIVATE AJP_BACKEND_TENSORRT="")
 endif()
+if(TARGET ajp_backend_vulkan)
+  target_compile_definitions(ajp_app_tests PRIVATE AJP_BACKEND_VULKAN="$<TARGET_FILE:ajp_backend_vulkan>")
+  add_dependencies(ajp_app_tests ajp_backend_vulkan)
+else()
+  target_compile_definitions(ajp_app_tests PRIVATE AJP_BACKEND_VULKAN="")
+endif()
 target_compile_definitions(ajp_app_tests PRIVATE
   AJP_SPAN_DERIVE_VIDEO="${AJP_SPAN_DERIVE_VIDEO}" AJP_SPAN_DERIVE_OUT="${AJP_SPAN_DERIVE_OUT}"
   AJP_SPAN_FP8_MODEL="${AJP_SPAN_FP8_MODEL}" AJP_SPAN_FP8_PYTHON_PACKAGE="${AJP_SPAN_FP8_PYTHON_PACKAGE}")

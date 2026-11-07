@@ -10,6 +10,8 @@
 #include <initializer_list>
 #include <iterator>
 #include <limits>
+#include <mutex>
+#include <optional>
 #include <string_view>
 #include <system_error>
 
@@ -222,7 +224,9 @@ std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_
   return "ptx";  // inconnue : jamais « toutes les architectures » (2 Go tirés, 3,3 Go écrits)
 }
 
-std::string detect_cuda_arch() {
+namespace {
+
+std::string run_nvidia_smi() {
   const auto smi = system_tool("nvidia-smi");
   if (!smi) return {};
   std::string arch;
@@ -244,6 +248,17 @@ std::string detect_cuda_arch() {
       },
       {}, "nvidia-smi");
   return done ? arch : std::string();
+}
+
+}  // namespace
+
+std::string detect_cuda_arch() {
+  // Une fois par processus (P2.12) : la carte ne change pas, et nvidia-smi prend jusqu'à deux secondes.
+  static std::mutex mutex;
+  static std::optional<std::string> known;
+  const std::scoped_lock lock(mutex);
+  if (!known) known = run_nvidia_smi();
+  return *known;
 }
 
 std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePackage& package,

@@ -2,10 +2,13 @@
 
 #include <array>
 #include <filesystem>
+#include <span>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/backend_library.h"
 #include "core/settings.h"
 
 using namespace ajp;
@@ -64,4 +67,19 @@ TEST_CASE("La bibliothèque du moteur préféré s'essaie en premier", "[app][en
 
   settings = using_engine(settings, core::EngineId::TensorRt);
   CHECK(preferred_first(candidates, settings) == candidates);
+}
+
+TEST_CASE("BackendLibrary : une bibliothèque gardée se rend sans rechargement jusqu'au choix",
+          "[app][engines]") {
+  const std::filesystem::path path(AJP_BACKEND_VULKAN);
+  if (path.empty() || !std::filesystem::is_regular_file(path)) SKIP("backend Vulkan non construit");
+  auto first = BackendLibrary::open(std::span(&path, 1));
+  REQUIRE(first);
+  const BackendLibrary* kept = first->get();
+  BackendLibrary::keep_open(std::move(*first));
+  auto again = BackendLibrary::open(std::span(&path, 1));
+  REQUIRE(again);
+  CHECK(again->get() == kept);
+  again->reset();
+  CHECK_FALSE(BackendLibrary::choose({}, {}));  // le choix relâche les bibliothèques gardées
 }

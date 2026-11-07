@@ -12,6 +12,7 @@
 
 #include "app/play/display_edid.h"
 #include "app/play/i18n.h"
+#include "app/play/pumped_task.h"
 #include "app/play/system_peak.h"
 
 #if defined(_WIN32)
@@ -296,7 +297,7 @@ EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& path
   EnginesHere here;
   // L'architecture du GPU ne se lit (nvidia-smi) que s'il y a des fichiers tiers à choisir.
   const std::string arch =
-      catalog.vendor_files.empty() ? std::string() : effective_cuda_arch(detect_cuda_arch(), gpu_name);
+      catalog.vendor_files.empty() ? std::string() : effective_cuda_arch(pumped_cuda_arch(), gpu_name);
   for (const core::EnginePackage& package : catalog.packages) {
     here.downloads.push_back(EngineDownload{
         .id = package.engine,

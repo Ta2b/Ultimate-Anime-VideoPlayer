@@ -94,7 +94,8 @@ struct InstallProgress {
   std::string cuda_arch;
 };
 
-// « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi ; vide s'il manque ou se tait.
+// « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi une fois par processus ; vide s'il manque ou se
+// tait. Depuis le thread de la fenêtre, par run_pumped (pumped_task.h) : le premier appel attend nvidia-smi.
 std::string detect_cuda_arch();
 // L'architecture déduite du nom de la carte (« NVIDIA GeForce RTX 4050 Laptop GPU » : sm89) ; vide si
 // inconnue.

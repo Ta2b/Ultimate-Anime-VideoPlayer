@@ -24,6 +24,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
+#include "app/play/pumped_task.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
 #include "app/play/user_keys.h"
@@ -268,7 +269,10 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
                                                                      const gpu::BackendInit& probe) {
   const std::vector<std::filesystem::path> candidates =
       preferred_first(backend_candidates(catalog, paths), engines);
-  auto library = BackendLibrary::choose(backends_within(candidates, engines), probe);
+  // Charger TensorRT et créer l'instance d'essai prend plusieurs secondes : sur un thread, la fenêtre
+  // pompée (P2.12).
+  auto library = run_pumped<std::shared_ptr<BackendLibrary>>(
+      "backend", [&] { return BackendLibrary::choose(backends_within(candidates, engines), probe); });
   // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
   if (library && !(*library)->passed_over().empty())
     log_channel("app")->warn("moteurs : refus avant {} :{}", (*library)->path().string(),

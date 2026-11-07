@@ -48,6 +48,10 @@ class BackendLibrary {
   static std::expected<std::shared_ptr<BackendLibrary>, Refusal> choose(
       std::span<const std::filesystem::path> candidates, const gpu::BackendInit& init);
 
+  // Garde library ouverte jusqu'au prochain choose (P2.12) : open du même fichier, inchangé, la rend au lieu
+  // de recharger TensorRT (plusieurs secondes sous Windows) entre la vérification de version et le choix.
+  static void keep_open(std::shared_ptr<BackendLibrary> library);
+
   // Une instance de plus, pour un seul thread. Refus : celui du backend.
   static std::expected<Instance, Refusal> create(const std::shared_ptr<BackendLibrary>& library,
                                                  const gpu::BackendInit& init);
