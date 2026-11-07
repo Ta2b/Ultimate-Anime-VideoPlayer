@@ -2,8 +2,10 @@
 
 #include <charconv>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <string>
 
 #include <SDL3/SDL_filesystem.h>
@@ -105,6 +107,22 @@ std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_v
   }
 }
 
+namespace {
+
+// Le pic se relit toutes les deux secondes (l'écran peut changer) : la ligne n'entre au journal que quand
+// elle change, plus 1 800 fois par heure (P2.43).
+[[maybe_unused]] void tell_peak(const std::string& line) {
+  static std::mutex mutex;
+  static std::string last;
+  const std::scoped_lock lock(mutex);
+  if (line == last) return;
+  last = line;
+  const auto log = log_channel("app");
+  log->info("{}", line);
+}
+
+}  // namespace
+
 std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connector,
                                        [[maybe_unused]] double headroom) {
 #if defined(_WIN32)
@@ -130,7 +148,7 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
     adapter->Release();
   }
   factory->Release();
-  if (best) log_channel("app")->info("pic du système (DXGI MaxLuminance) : {:.0f} nits", *best);
+  if (best) tell_peak(std::format("pic du système (DXGI MaxLuminance) : {:.0f} nits", *best));
   return best;
 #elif defined(__linux__)
   std::string_view port = connector;
@@ -144,17 +162,17 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
   const double reference = output->reference.value_or(render::kContentReferenceNits);
   if (output->peak_override) {
     const render::DisplayModel model{.panel_peak_nits = *output->peak_override, .reference_nits = reference};
-    log_channel("app")->info(
-        "pic du système (KDE, {}) : {:.0f} nits affichés, blanc {:.0f} : {:.0f} nits du contenu",
-        std::string(port), *output->peak_override, reference, model.content_peak_nits());
+    tell_peak(
+        std::format("pic du système (KDE, {}) : {:.0f} nits affichés, blanc {:.0f} : {:.0f} nits du contenu",
+                    port, *output->peak_override, reference, model.content_peak_nits()));
     return model.content_peak_nits();
   }
   if (output->reference && headroom > 1.0) {
     const render::DisplayModel model{.panel_peak_nits = headroom * reference, .reference_nits = reference};
-    log_channel("app")->info(
-        "pic du système (KDE, {}) : marge {:.2f} × blanc {:.0f} = {:.0f} nits affichés, {:.0f} nits du "
-        "contenu",
-        std::string(port), headroom, reference, model.panel_peak_nits, model.content_peak_nits());
+    tell_peak(
+        std::format("pic du système (KDE, {}) : marge {:.2f} × blanc {:.0f} = {:.0f} nits affichés, {:.0f} "
+                    "nits du contenu",
+                    port, headroom, reference, model.panel_peak_nits, model.content_peak_nits()));
     return model.content_peak_nits();
   }
   return std::nullopt;

@@ -6,7 +6,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_messagebox.h>
-#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -428,9 +428,13 @@ int run_player(int argc, char** argv) {
       to += std::format(".{}", i + 1);
       if (std::filesystem::exists(from, kept)) std::filesystem::rename(from, to, kept);
     }
+    // Borné pendant la séance (P2.43) : passé 32 Mo, ajp.log devient ajp.1.log (puis ajp.2.log), une soirée
+    // de lecture ne remplit plus le disque.
+    constexpr std::size_t kLogBytes = std::size_t{32} * 1024 * 1024;
+    constexpr std::size_t kLogParts = 2;
     try {
-      sinks.push_back(
-          ajp::redacting_sink(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true)));
+      sinks.push_back(ajp::redacting_sink(
+          std::make_shared<spdlog::sinks::rotating_file_sink_mt>(log_file.string(), kLogBytes, kLogParts)));
     } catch (const std::exception&) {
       sinks.resize(1);
     }
