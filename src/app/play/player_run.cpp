@@ -383,9 +383,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const ControlsView view = session.view();
     if (view.position_us == kNoPts || view.position_us == kept_us) return;
     kept_us = view.position_us;
-    writer.post("resume",
-                [store = p.resume_path, file = p.options.file, at = view.position_us,
-                 duration = view.duration_us] { return remember_position(store, file, at, duration); });
+    writer.post("resume", [store = p.resume_path, file = p.options.file, at = view.position_us,
+                           duration = view.duration_us > 0 || !session.finished() ? view.duration_us
+                                                                                  : view.position_us] {
+      return remember_position(store, file, at, duration);  // P3.83 : sans durée, la fin vue oublie
+    });
   };
   std::int64_t remembered_at = host_now_us();
   // Son : le volume de la barre et le délai des réglages valent dès la première image.

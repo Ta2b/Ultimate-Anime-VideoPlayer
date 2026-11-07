@@ -1,9 +1,11 @@
 #include "app/play/resume.h"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -30,6 +32,23 @@ std::optional<Entry> identify(const std::filesystem::path& file) {
   std::string path = absolute.string();
   if (path.find_first_of("\t\n\r") != std::string::npos) return std::nullopt;
   return Entry{.size = size, .path = std::move(path)};
+}
+
+// Deux chemins retenus désignent-ils le même fichier ? Sous Windows et macOS, sans égard à la casse.
+bool same_path(std::string_view a, std::string_view b) {
+#if defined(_WIN32) || defined(__APPLE__)
+  return std::ranges::equal(a, b, [](char x, char y) {
+    return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+  });
+#else
+  return a == b;
+#endif
+}
+
+// Le nom du fichier dans un chemin retenu (après le dernier séparateur).
+std::string_view file_name(std::string_view path) {
+  const std::size_t slash = path.find_last_of("/\\");
+  return slash == std::string_view::npos ? path : path.substr(slash + 1);
 }
 
 template <class T>
@@ -73,7 +92,14 @@ std::optional<std::int64_t> resume_position(const std::filesystem::path& store,
   const std::optional<Entry> wanted = identify(file);
   if (!wanted) return std::nullopt;
   const std::vector<Entry> entries = load(store);
-  const auto found = std::ranges::find(entries, wanted->path, &Entry::path);
+  auto found = std::ranges::find_if(entries, [&](const Entry& e) { return same_path(e.path, wanted->path); });
+  // Déplacée ou renommée de dossier : le même nom et la même taille (la plus récente).
+  if (found == entries.end()) {
+    const auto moved = std::ranges::find_if(entries.rbegin(), entries.rend(), [&](const Entry& e) {
+      return e.size == wanted->size && same_path(file_name(e.path), file_name(wanted->path));
+    });
+    if (moved != entries.rend()) found = std::prev(moved.base());
+  }
   if (found == entries.end() || found->size != wanted->size || found->position_us < kResumeMinUs)
     return std::nullopt;
   return found->position_us;
@@ -86,9 +112,12 @@ std::expected<void, Refusal> remember_position(const std::filesystem::path& stor
   if (!entry) return {};  // fichier disparu, ou chemin qu'une ligne ne sait pas porter
   std::vector<Entry> entries = load(store);
   const std::size_t before = entries.size();
-  std::erase_if(entries, [&](const Entry& e) { return e.path == entry->path; });
-  const bool near_end =
-      duration_us > 0 && (position_us >= duration_us - kResumeTailUs || position_us >= duration_us / 20 * 19);
+  std::erase_if(entries, [&](const Entry& e) {
+    return same_path(e.path, entry->path) ||
+           (e.size == entry->size && same_path(file_name(e.path), file_name(entry->path)));  // déplacée
+  });
+  const std::int64_t tail = std::clamp(duration_us / 10, kResumeTailMinUs, kResumeTailUs);
+  const bool near_end = duration_us > 0 && position_us >= duration_us - tail;
   if (!near_end && position_us >= kResumeMinUs) {
     entry->position_us = position_us;
     entries.push_back(std::move(*entry));

@@ -1,7 +1,8 @@
 // Mémoire de lecture : où chaque fichier s'est arrêté, pour reprendre au même endroit à la
 // prochaine ouverture. Un fichier texte (resume.tsv, à côté de play.toml), une ligne par vidéo :
 // position, taille du fichier et chemin absolu. Une vidéo remplacée (autre taille) repart du
-// début ; les plus anciennes au-delà de kResumeEntries sont oubliées.
+// début ; les plus anciennes au-delà de kResumeEntries sont oubliées. P3.83 : une vidéo déplacée se retrouve
+// à son nom et à sa taille ; sous Windows et macOS, le chemin se compare sans égard à la casse.
 #pragma once
 
 #include <cstddef>
@@ -15,10 +16,12 @@
 namespace ajp::app::play {
 
 inline constexpr std::size_t kResumeEntries = 500;
-// Pas de reprise si l'on s'est arrêté avant ce temps, ou à moins de kResumeTailUs (ou des
-// derniers 5 %) de la fin : l'épisode est vu, la prochaine ouverture repart du début.
+// Pas de reprise si l'on s'est arrêté avant ce temps, ou dans la fin : le dixième de la durée, entre
+// kResumeTailMinUs et kResumeTailUs (P3.83 : l'ending et l'aperçu d'un épisode, 2 min 30) ; l'épisode est vu,
+// la prochaine ouverture repart du début.
 inline constexpr std::int64_t kResumeMinUs = 30'000'000;
-inline constexpr std::int64_t kResumeTailUs = 30'000'000;
+inline constexpr std::int64_t kResumeTailMinUs = 30'000'000;
+inline constexpr std::int64_t kResumeTailUs = 150'000'000;
 // Pendant la lecture, la position est retenue à ce rythme (et à la fermeture).
 inline constexpr std::int64_t kResumeEveryUs = 15'000'000;
 
