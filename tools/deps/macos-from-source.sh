@@ -56,11 +56,11 @@ DEPS=(
   "catch2 https://github.com/catchorg/Catch2 v3.16.0 317ac1ed4c0bb6e6b91eafc817e05c488feffcb3"
   "spdlog https://github.com/gabime/spdlog v1.17.0 79524ddd08a4ec981b7fea76afd08ee05f83755d"
   "nanobench https://github.com/martinus/nanobench v4.6.0 b709728dba4df0356d467abfb0ba20781a8031c0"
-  "imgui https://github.com/ocornut/imgui v1.92.9 01380c579715e62fb9a8d6ec0502c4ea83bfde6e"
+  "imgui https://github.com/ocornut/imgui v1.93.0 c1aaac65e896a45f81f47a4d68f9959e0f86c859"
   "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2 946fcce07b6dcd0331c8cc609192aeff5e1924f8"
-  "sdl3 https://github.com/libsdl-org/SDL release-3.4.18 829a65d769d935c4852f8159e964312c0957260a"
+  "sdl3 https://github.com/libsdl-org/SDL release-3.4.20 f00dc919ca35b9756316e86c4777392de442f9b2"
   "libplacebo https://github.com/haasn/libplacebo v7.360.1 cee9b076f2c63104ccfd497fa79c39a867293ec4"
-  "libunibreak https://github.com/adah1972/libunibreak libunibreak_6_1 304585d8e2d63187507368d612c3d5fff1486368"
+  "libunibreak https://github.com/adah1972/libunibreak libunibreak_7_0 3ce4bfa3129ff3738046a44a6db533d2ce25af2b"
   "libass https://github.com/the-database/libass 896614fa 896614fa263f9f64944f7b8650ff6806d5328c4d"
 )
 

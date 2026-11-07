@@ -1,0 +1,51 @@
+# Le retard des dépendances, chaque lundi (P1.27) : tools/ci/deps_lag.py compare la baseline de
+# vcpkg.json au master de vcpkg et les références de tools/deps/linux-from-source.sh aux dernières
+# étiquettes. En retard : une pull request deps/vcpkg-baseline pose la nouvelle baseline et dit le
+# reste (les références de DEPS se changent à la main, avec leur commit). Une PR ouverte par
+# GITHUB_TOKEN ne lance pas ci.yml : la tâche le lance elle-même sur la branche (workflow_dispatch).
+# Il faut que « Allow GitHub Actions to create and approve pull requests » soit coché dans les
+# réglages du dépôt (Actions > General).
+name: Dépendances en retard
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Relevé et pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if python3 tools/ci/deps_lag.py --bump >"$RUNNER_TEMP/lag.md"; then
+            cat "$RUNNER_TEMP/lag.md"
+            exit 0
+          fi
+          cat "$RUNNER_TEMP/lag.md" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Rien à changer dans vcpkg.json : la tâche échoue, son résumé dit quoi mettre à jour à la main.
+          if git diff --quiet vcpkg.json; then exit 1; fi
+          branch=deps/vcpkg-baseline
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "vcpkg : baseline au master de vcpkg (relevé du $(date -u +%F))"
+          git push -f origin "$branch"
+          body="$(cat "$RUNNER_TEMP/lag.md")"
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" = 0 ]; then
+            gh pr create --head "$branch" --title "Dépendances en retard" --body "$body"
+          else
+            gh pr edit "$branch" --body "$body"
+          fi
+          gh workflow run ci.yml --ref "$branch"
