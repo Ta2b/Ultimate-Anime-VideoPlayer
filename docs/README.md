@@ -24,6 +24,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`parite-windows-linux.md`](parite-windows-linux.md) | Banc de parité Windows contre Linux sur le même PC |
 | [`test-utilisateurs.md`](test-utilisateurs.md) | Test avec cinq utilisateurs : tâches et grille |
 | [`a-faire-1-0.md`](a-faire-1-0.md) | Ce qui reste avant la 1.0 |
+| [`phase6-a-tester.md`](phase6-a-tester.md) | Pistes d'optimisation codées, à mesurer sur une vraie carte |
 
 ## Historiques (gardés comme trace, marqués en tête)
 
