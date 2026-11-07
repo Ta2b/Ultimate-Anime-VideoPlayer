@@ -20,6 +20,7 @@
 #include "app/play/home_view.h"
 #include "app/play/input.h"
 #include "app/play/links.h"
+#include "app/play/mapped_file.h"
 #include "app/play/settings_panel.h"
 #include "core/types.h"
 
@@ -35,7 +36,7 @@ class PlaceboScreen;
 struct FontFile {
   std::string path;
   int index = 0;
-  std::vector<unsigned char> data;
+  std::shared_ptr<const MappedFile> data;  // projeté (P4.19)
 };
 
 // Les polices de l'interface, cherchées (fontconfig) et lues sur un thread pendant que l'écran

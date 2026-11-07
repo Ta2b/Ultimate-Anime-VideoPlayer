@@ -79,14 +79,10 @@ std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) 
 #endif
 }
 
-// Le fichier entier dans font.data ; false s'il ne se lit pas.
+// Le fichier projeté dans font.data ; false s'il ne s'ouvre pas.
 bool read_font(const std::filesystem::path& path, FontFile& font) {
-  std::error_code error;
-  const std::uintmax_t size = std::filesystem::file_size(path, error);
-  if (error || size == 0 || size > static_cast<std::uintmax_t>(kMaxFontBytes)) return false;
-  std::ifstream file(path, std::ios::binary);
-  font.data.resize(static_cast<std::size_t>(size));
-  return file && file.read(reinterpret_cast<char*>(font.data.data()), static_cast<std::streamsize>(size));
+  font.data = MappedFile::open(path, static_cast<std::size_t>(kMaxFontBytes));
+  return font.data != nullptr;
 }
 
 #ifdef _WIN32
@@ -162,7 +158,7 @@ bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
   // seule la face compte.
   config.FontNo = static_cast<ImU32>(std::max(file.index, 0)) & 0xFFFFU;
   config.FontDataOwnedByAtlas = false;  // file.data vit dans PlayerUi
-  return fonts.AddFontFromMemoryTTF(file.data.data(), static_cast<int>(file.data.size()), kFontSize,
+  return fonts.AddFontFromMemoryTTF(file.data->data(), static_cast<int>(file.data->size()), kFontSize,
                                     &config) != nullptr;
 }
 
