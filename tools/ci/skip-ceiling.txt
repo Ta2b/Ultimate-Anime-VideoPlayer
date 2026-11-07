@@ -4,3 +4,4 @@
 lavapipe 12
 asan-ubsan 12
 tsan 12
+tsan-pr 0

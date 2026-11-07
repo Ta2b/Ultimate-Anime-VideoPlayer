@@ -401,6 +401,22 @@
       }
     },
     {
+      "name": "linux-prefix-tsan-pr",
+      "displayName": "Lecteur sous TSan, sur chaque pull request : séance, pipeline, étages, audio (P2.40)",
+      "configurePreset": "linux-prefix-tsan-player",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^audio: |[Ss]ession|[Pp]ipeline|[Ss]tage|[Éé]tage"
+        }
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1 ignore_noninstrumented_modules=1"
+      }
+    },
+    {
       "name": "core",
       "configurePreset": "core",
       "output": {

@@ -97,7 +97,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'push' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"}]' || github.event_name == 'pull_request' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"}]' || '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"asan-ubsan","preset":"linux-prefix-asan","tidy":false,"tests":true,"validation":"off"},{"name":"tsan","preset":"linux-prefix-tsan-player","tidy":false,"tests":true,"validation":"require"}]') }}
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"}]' || github.event_name == 'pull_request' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"tsan-pr","preset":"linux-prefix-tsan-player","test_preset":"linux-prefix-tsan-pr","tidy":false,"tests":true,"validation":"require"}]' || '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"asan-ubsan","preset":"linux-prefix-asan","tidy":false,"tests":true,"validation":"off"},{"name":"tsan","preset":"linux-prefix-tsan-player","tidy":false,"tests":true,"validation":"require"}]') }}
     env:
       CC: gcc-13
       CXX: g++-13
@@ -131,7 +131,7 @@ jobs:
       - run: ccache -s
       - name: Tests (Vulkan logiciel sous Xvfb)
         if: matrix.tests
-        run: xvfb-run -a ctest --preset ${{ matrix.preset }} -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
+        run: xvfb-run -a ctest --preset ${{ matrix.test_preset || matrix.preset }} -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
       # Un test sauté ne compte plus pour réussi : leur nombre reste sous le plafond connu (P2.39).
       - name: Tests sautés
         if: matrix.tests
