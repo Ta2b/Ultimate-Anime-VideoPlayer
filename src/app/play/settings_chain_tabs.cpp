@@ -115,9 +115,11 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   panel::tip(fp8_offered
-                 ? i18n::tr("Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges. FP8: "
-                            "prepared once on this PC at the next video, then faster.")
-                 : i18n::tr("Performance: fastest. Balanced: finer, slower. Sharp1: crisper edges."));
+                 ? i18n::tr("Performance: fastest SPAN. Balanced: finer, slower. Sharp1: crisper edges. "
+                            "ArtCNN: much lighter, for small GPUs. FP8: prepared once on this PC at "
+                            "the next video, then faster.")
+                 : i18n::tr("Performance: fastest SPAN. Balanced: finer, slower. Sharp1: crisper edges. "
+                            "ArtCNN: much lighter, for small GPUs."));
   if (choices.span_tiers.quality) {
     TierSupport tiers = choices.span_tiers;
     tiers.performance = false;  // le FP8 se choisit dans la liste des modèles

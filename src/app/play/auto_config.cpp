@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "app/play/i18n.h"
+#include "app/play/model_choice.h"
 
 namespace ajp::app::play {
 namespace {
@@ -137,10 +138,13 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
 
   // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle (P3.20 : une 4K reste
   // en 4K, 0 ne réduit rien).
-  out.upscale = *level != Tier::Economy;
-  out.work_height = *level == Tier::Economy ? 0 : work;
+  out.upscale = *level != Tier::Economy || kLightSpanInAuto;
+  out.work_height = *level == Tier::Economy && !kLightSpanInAuto ? 0 : work;
   out.downscale = Downscale::Hermite;  // net sur les traits, sans rebond, quatre points comme Mitchell
   out.model.clear();                   // SPAN Sharp (performance), le modèle du lecteur
+  // Le modèle léger, s'il est admis, dans les deux tranches du bas.
+  if (kLightSpanInAuto && (*level == Tier::Economy || *level == Tier::Light))
+    out.model = std::string(kLightSpanModel);
   out.span_order = SpanOrder::Auto;
 
   // Interpolation : multiplicateur en Auto ; une source déjà à la cadence de l'écran n'est pas interpolée.
