@@ -36,6 +36,7 @@ DEPS=(
   "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2 946fcce07b6dcd0331c8cc609192aeff5e1924f8"
   "sdl3 https://github.com/libsdl-org/SDL release-3.4.18 829a65d769d935c4852f8159e964312c0957260a"
   "libplacebo https://github.com/haasn/libplacebo v7.360.1 cee9b076f2c63104ccfd497fa79c39a867293ec4"
+  "libunibreak https://github.com/adah1972/libunibreak libunibreak_6_1 304585d8e2d63187507368d612c3d5fff1486368"
   "libass https://github.com/the-database/libass 896614fa 896614fa263f9f64944f7b8650ff6806d5328c4d"
 )
 
@@ -139,10 +140,20 @@ if ! done_marker libplacebo "$signature"; then
   mark libplacebo "$signature"
 fi
 
-if ! done_marker libass "$(ref_of libass)"; then
-  (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
+# La coupure des lignes selon Unicode (UAX #14), que libass prend à libunibreak.
+if ! done_marker libunibreak "$(ref_of libunibreak)"; then
+  (cd "$WORK/libunibreak" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
     && make -j "$JOBS" && make install)
-  mark libass "$(ref_of libass)"
+  mark libunibreak "$(ref_of libunibreak)"
+fi
+
+# Assembleur et libunibreak exigés (P1.24) : sans eux, configure passe outre avec un simple
+# avertissement, et le rendu des sous-titres perd ses routines SIMD ou la coupure Unicode.
+signature="$(ref_of libass) asm libunibreak $(ref_of libunibreak)"
+if ! done_marker libass "$signature"; then
+  (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
+    --enable-asm --enable-libunibreak && make -j "$JOBS" && make install)
+  mark libass "$signature"
 fi
 
 # ONNX Runtime (fournisseur CoreML) pour ajp_backend_coreml : la version publiée, vérifiée. Avant

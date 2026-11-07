@@ -26,6 +26,7 @@ Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).
 | wayland-protocols, `presentation-time.xml` | MIT, © 2013-2014 Collabora, Ltd. | 1.38, copié dans `third_party/wayland-protocols/` (licence dans le fichier) ; code client produit par wayland-scanner à la compilation (`--present=wayland`). https://gitlab.freedesktop.org/wayland/wayland-protocols |
 | wayland-client | MIT | bibliothèque du système, liée sous Linux quand elle est là |
 | FreeType (FTL), HarfBuzz, FriBidi (LGPL-2.1), Fontconfig, lcms2 | licences de leurs projets | via libplacebo et libass |
+| libunibreak | zlib | 6.1, via libass |
 
 ## Code repris
 

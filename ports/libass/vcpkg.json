@@ -8,6 +8,7 @@
     "freetype",
     "fribidi",
     "harfbuzz",
+    "libunibreak",
     { "name": "fontconfig", "platform": "!windows & !osx" },
     { "name": "vcpkg-tool-meson", "host": true }
   ]
