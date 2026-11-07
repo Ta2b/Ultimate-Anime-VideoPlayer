@@ -211,6 +211,7 @@ class Session {
   void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
   void measure_latency(std::int64_t host_now);  // les images écrites depuis le tour d'avant
   void choose(std::int64_t host_now);
+  bool step_from_queue();  // P3.42 : image suivante de la file, en pause, sans seek
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
   void watch_clock(const ClockSnapshot& now, std::int64_t host_now);
@@ -223,7 +224,8 @@ class Session {
   std::uint32_t epoch_ = 0;
   bool prerolling_ = true;                        // l'époque n'a pas encore d'image montrée
   std::optional<std::int64_t> preroll_since_us_;  // la première image de l'époque attend ses sous-titres
-  bool paused_ = false;                           // pause demandée par l'utilisateur
+  bool stepped_ = false;  // P3.42 : une image avancée en pause, à montrer au prochain tour
+  bool paused_ = false;   // pause demandée par l'utilisateur
   bool stream_ended_ = false;
   bool finished_ = false;
   std::optional<Refusal> failure_;

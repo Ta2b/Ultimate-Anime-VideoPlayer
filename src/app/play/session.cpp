@@ -102,7 +102,9 @@ void Session::command(const Command& command) {
                  [this](const cmd::StepFrame& step) {
                    // Image par image : en pause, un seek exact d'une image de la source. Le seek
                    // part de la position visée, donc des pressions rapprochées avancent d'autant.
+                   // P3.42 : vers l'avant, l'image suivante déjà dans la file, sans seek.
                    if (!paused_) this->command(cmd::Pause{});
+                   if (step.direction > 0 && step_from_queue()) return;
                    std::int64_t base = 0;
                    if (pending_seek_us_) {
                      base = *pending_seek_us_;
@@ -213,6 +215,26 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   preroll_since_us_.reset();
   stream_ended_ = false;
   pending_seek_us_ = target_us;
+}
+
+bool Session::step_from_queue() {
+  if (pending_seek_us_ || prerolling_ || !current_ || current_->pts_us == kNoPts) return false;
+  std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+  if (period <= 0) period = kAssumedFramePeriodUs;
+  // L'image une période source plus loin (les images interpolées d'entre deux sont passées) ; écrite.
+  const RingFrame* head = queue_.first_of(epoch_);
+  if (head == nullptr || head->pts_us == kNoPts || head->pts_us > current_->pts_us + period + period / 4)
+    return false;
+  late_.clear();
+  const std::optional<RingFrame> next = queue_.pick(current_->pts_us + period, period / 4, late_,
+                                                    [this](const RingFrame& f) { return screen_.ready(f); });
+  for (const RingFrame& frame : late_) retire(frame);
+  late_.clear();
+  if (!next) return false;
+  retire(*current_);
+  current_ = next;
+  stepped_ = true;  // montrée au prochain tour
+  return true;
 }
 
 void Session::on_frame(const RingFrame& frame) {
@@ -444,7 +466,7 @@ void Session::follow_subtitles(std::int64_t host_now) {
 }
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
-  fresh_ = false;
+  fresh_ = std::exchange(stepped_, false);
   last_tick_us_ = host_now;
   if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);
   measure_latency(host_now);

@@ -289,6 +289,21 @@ TEST_CASE("Image par image : pause, puis un seek exact d'une image de la source"
   CHECK(rig.stages.log.back() == "seek 1041667");
 }
 
+TEST_CASE("Image par image : vers l'avant, l'image suivante de la file sans seek (P3.42)", "[app][session]") {
+  ajp::app::play::FrenchUi french;
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  rig.session.handle(ring_frame(0, 1'000'000));
+  rig.tick();
+  rig.session.command(cmd::Pause{});
+  rig.session.handle(ring_frame(1, 1'020'833));  // une image interpolée, passée
+  rig.session.handle(ring_frame(2, 1'041'667));
+  rig.stages.log.clear();
+  rig.session.command(cmd::StepFrame{.direction = 1});
+  CHECK(rig.stages.log.empty());  // ni flush ni seek
+  rig.tick();
+  CHECK(rig.shown_pts() == 1'041'667);
+}
+
 TEST_CASE("Seek : un Flush refusé n'empêche pas le Seek, et le tout est rejoué jusqu'à passer",
           "[app][session]") {
   ajp::app::play::FrenchUi french;
