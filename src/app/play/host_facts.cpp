@@ -296,8 +296,9 @@ EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& path
                          const EngineCatalog& catalog, std::string_view gpu_name) {
   EnginesHere here;
   // L'architecture du GPU ne se lit (nvidia-smi) que s'il y a des fichiers tiers à choisir.
-  const std::string arch =
-      catalog.vendor_files.empty() ? std::string() : effective_cuda_arch(pumped_cuda_arch(), gpu_name);
+  const std::string arch = catalog.vendor_files.empty()
+                               ? std::string()
+                               : effective_cuda_arch(pumped_cuda_arch(gpu_name), gpu_name);
   for (const core::EnginePackage& package : catalog.packages) {
     here.downloads.push_back(EngineDownload{
         .id = package.engine,

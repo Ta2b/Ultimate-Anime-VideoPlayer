@@ -36,6 +36,9 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
   CHECK(current(wizard) == WizardStep::Languages);  // l'écran HDR n'existe plus
   CHECK(progress_text(wizard) == "Étape 4 sur 6 : Langues");
   CHECK(wizard.skipped == std::vector<WizardStep>{WizardStep::Chain});
+  previous(wizard);  // revenue puis « Suivant » : elle n'est plus passée (P3.16)
+  next(wizard);
+  CHECK(wizard.skipped.empty());
   // Fermé après le rang 4 ou 5 (retirés) : on reprend à Langues.
   CHECK(current(begin_wizard(facts, 3)) == WizardStep::Languages);
   CHECK(current(begin_wizard(facts, 5)) == WizardStep::Languages);

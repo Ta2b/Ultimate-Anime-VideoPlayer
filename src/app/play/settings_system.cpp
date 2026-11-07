@@ -78,6 +78,19 @@ void language_section(PlaySettings& d) {
   i18n::set_language(i18n::language_from_code(d.language));
 }
 
+void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
+  if (gpus.size() < 2) return;
+  section(i18n::tr("Graphics card"));
+  const char* shown = d.gpu.empty() ? i18n::tr("Automatic (dedicated card first)") : d.gpu.c_str();
+  if (ImGui::BeginCombo(i18n::tr("Card for playback"), shown)) {
+    if (ImGui::Selectable(i18n::tr("Automatic (dedicated card first)"), d.gpu.empty())) d.gpu.clear();
+    for (const std::string& name : gpus)
+      if (ImGui::Selectable(name.c_str(), d.gpu == name)) d.gpu = name;
+    ImGui::EndCombo();
+  }
+  note(i18n::tr("Applies at next launch."));
+}
+
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
   const UpdatePaths paths{
       .data = place.app_data, .install = place.executable.parent_path(), .executable = place.executable};

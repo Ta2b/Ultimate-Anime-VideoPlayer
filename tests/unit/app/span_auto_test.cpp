@@ -43,6 +43,8 @@ TEST_CASE("rien n'exclut à tort une RTX 4050 de portable : Ada, calcul 8.9", "[
   CHECK(cuda_arch_from_name("NVIDIA GeForce RTX 4060 Laptop GPU") == "sm89");
   CHECK(cuda_arch_from_name("NVIDIA GeForce RTX 4070 Ti") == "sm89");
   CHECK(cuda_arch_from_name("NVIDIA RTX 2000 Ada Generation Laptop GPU") != "sm120");
+  CHECK(cuda_arch_from_name("NVIDIA RTX 5000 Ada Generation") == "sm89");  // pas une RTX 50
+  CHECK(cuda_arch_from_name("Quadro RTX 4000") == "sm75");                 // Turing, pas une RTX 40
   CHECK(effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
   CHECK(effective_cuda_arch("sm89", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
 }

@@ -64,6 +64,8 @@ bool is_last(const Wizard& wizard) {
   return wizard.at + 1 == wizard.steps.size();
 }
 void next(Wizard& wizard) {
+  // « Suivant » sur un écran passé puis revu par « Précédent » : il ne compte plus comme passé (P3.16).
+  std::erase(wizard.skipped, current(wizard));
   wizard.seen = std::max(wizard.seen, static_cast<int>(current(wizard)));
   if (!is_last(wizard)) ++wizard.at;
 }
@@ -72,8 +74,8 @@ void previous(Wizard& wizard) {
 }
 void skip(Wizard& wizard) {
   const WizardStep step = current(wizard);
-  if (std::ranges::find(wizard.skipped, step) == wizard.skipped.end()) wizard.skipped.push_back(step);
   next(wizard);
+  if (std::ranges::find(wizard.skipped, step) == wizard.skipped.end()) wizard.skipped.push_back(step);
 }
 
 void set_up_myself(Wizard& wizard) {

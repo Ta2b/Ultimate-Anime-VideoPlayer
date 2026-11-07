@@ -202,6 +202,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .kde_sdr_auto = options.kde_sdr_auto,
       .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
       .allow_software = options.software_gpu,
+      .device_name = options.software_gpu ? std::string() : saved->gpu,
       .present = options.present,
       .shader_cache = paths.engines.parent_path() / "shaders.cache",
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")

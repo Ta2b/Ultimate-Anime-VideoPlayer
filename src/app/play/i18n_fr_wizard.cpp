@@ -145,8 +145,6 @@ constexpr std::array kWizardTexts{
     Entry{"not enough disk space: {} needed ({} to download), {} left",
           "espace disque insuffisant : il faut {} (dont {} à télécharger), il reste {}"},
     Entry{"not in this package", "absent de ce paquet"},
-    Entry{"not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md",
-          "non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md"},
     Entry{"not published for this version yet", "pas encore publié pour cette version"},
     Entry{"notify me", "me prévenir"},
     Entry{"to download ({}) · needs {} of space, {} free{}",

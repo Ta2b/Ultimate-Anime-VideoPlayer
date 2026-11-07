@@ -52,9 +52,13 @@ constexpr std::array kSystemPages{
     Entry{"Codec", "Codec"},
     Entry{"Constant frame rate", "Cadence fixe"},
     Entry{"Daily", "Chaque jour"},
+    Entry{"Applies at next launch.", "Vaut au prochain lancement."},
+    Entry{"Automatic (dedicated card first)", "Automatique (la carte dédiée d'abord)"},
+    Entry{"Card for playback", "Carte de la lecture"},
     Entry{"Default", "Par défaut"},
     Entry{"Default folder", "Dossier par défaut"},
     Entry{"Default player", "Lecteur par défaut"},
+    Entry{"Graphics card", "Carte graphique"},
     Entry{"Default##moteurs", "Par défaut##moteurs"},
     Entry{"Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
           "Par défaut : {}. Libre ici : {}. Vaut au prochain lancement ; les moteurs installés ne sont pas "

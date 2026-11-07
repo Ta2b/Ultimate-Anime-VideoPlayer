@@ -10,6 +10,7 @@
 #include <memory>
 #include <stop_token>
 #include <string>
+#include <vector>
 
 #include "app/play/default_player.h"
 #include "app/play/settings.h"
@@ -115,6 +116,9 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
 // « Signaler un problème » (Général > À propos, P1.33) : la version, la carte et la fin de ajp.log,
 // déjà nettoyé à l'écriture (core/log_redact.h), copiées dans le presse-papiers ; puis la page de
 // nouvelle issue s'ouvre sur le modèle .github/ISSUE_TEMPLATE/bug.yml.
+// La carte graphique de la lecture (P3.16) : Automatique ou l'une des cartes, au prochain lancement ; rien
+// avec une seule carte.
+void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus);
 void report_problem_section(const PlayerPlace& place, const std::string& gpu_name);
 
 }  // namespace ajp::app::play

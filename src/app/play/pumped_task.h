@@ -72,6 +72,6 @@ std::expected<T, Refusal> run_pumped_for(std::string_view name, std::chrono::mil
 }
 
 // detect_cuda_arch (engine_install.h) par run_pumped ; vide aussi si le thread est refusé.
-std::string pumped_cuda_arch();
+std::string pumped_cuda_arch(std::string_view gpu_name = {});
 
 }  // namespace ajp::app::play

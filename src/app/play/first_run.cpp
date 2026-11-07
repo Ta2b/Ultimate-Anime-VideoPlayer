@@ -134,10 +134,7 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
                                    format_size(download->available)) +
                    missing;
   } else {
-    row.status =
-        row.offer.id == core::EngineId::TensorRt && here.os == core::Os::Linux
-            ? i18n::tr("not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md")
-            : i18n::tr("not published for this version yet");
+    row.status = i18n::tr("not published for this version yet");
   }
 }
 

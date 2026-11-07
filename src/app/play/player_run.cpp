@@ -305,6 +305,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               calibrated_chain(p.settings_path.parent_path(), machine.name, display_height(out.window()))
                   .has_value(),
           .gpu_name = gpu_facts(p.screen).name,
+          .gpus = p.screen.device_names(),
           .audio_outputs = audio_outputs,
           .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),
           .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),

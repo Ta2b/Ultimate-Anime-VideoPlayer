@@ -196,6 +196,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .machine_tier = static_cast<int>(effective_tier(machine, measured)),
       .display_height = display_height(h.screen.window()),
       .gpu_name = machine.name,
+      .gpus = h.screen.device_names(),
       .audio_outputs = audio_outputs,
       .engines_dir_default = prepare::utf8_path(h.paths.engines.parent_path() / "backends"),
       .engines_dir_free = format_size(free_bytes(h.catalog.layout.engines)),

@@ -42,7 +42,8 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
   auto shared = std::make_shared<Shared>();
   // L'architecture du GPU (nvidia-smi, sinon le nom de la carte) : sans elle, les fichiers de toutes les
   // architectures étaient tirés (2 Go au lieu de 740 Mo pour TensorRT sm89).
-  const std::string arch = effective_cuda_arch(pumped_cuda_arch(), screen.device_facts().name);
+  const std::string arch =
+      effective_cuda_arch(pumped_cuda_arch(screen.device_facts().name), screen.device_facts().name);
   auto worker =
       start_thread("install", ThreadReport([shared](const Refusal& refusal) {
                      const std::scoped_lock lock(shared->mutex);
@@ -138,11 +139,12 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
       continue;
     }
     // Pas de place : rien n'est tenté (ni boucle à chaque lancement), l'utilisateur est prévenu.
-    if (const auto fits =
-            check_space(install_space(catalog, package,
-                                      effective_cuda_arch(pumped_cuda_arch(), screen.device_facts().name),
-                                      directory_bytes(core::engine_dir(catalog.layout, package))),
-                        free_bytes(catalog.layout.engines), catalog.layout.engines);
+    if (const auto fits = check_space(
+            install_space(
+                catalog, package,
+                effective_cuda_arch(pumped_cuda_arch(screen.device_facts().name), screen.device_facts().name),
+                directory_bytes(core::engine_dir(catalog.layout, package))),
+            free_bytes(catalog.layout.engines), catalog.layout.engines);
         !fits) {
       log->warn("{} non mis à jour : {}", label, fits.error().detail);
       ui.controls().defer(i18n::ui_tr_format("{} not updated: {}", label, visible_error(fits.error())));

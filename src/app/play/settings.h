@@ -256,6 +256,9 @@ struct PlaySettings {
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.
   std::string engines_dir;
+  // La carte graphique de la lecture (P3.16, portables à deux cartes) : son nom Vulkan ; vide, le choix de
+  // libplacebo (la carte dédiée d'abord). Vaut au prochain lancement.
+  std::string gpu;
   bool autoplay_next = false;
   bool default_player_dismissed =
       false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé

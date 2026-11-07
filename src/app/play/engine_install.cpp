@@ -14,6 +14,8 @@
 #include <optional>
 #include <string_view>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #include "app/play/i18n.h"
 #include "core/dir_entries.h"
@@ -211,7 +213,11 @@ std::string cuda_arch_from_name(std::string_view gpu_name) {
   };
   if (has("h100") || has("h200")) return "sm90";
   if (has("a100")) return "sm80";
-  if (has("blackwell") || series('5')) return "sm120";
+  if (has("blackwell")) return "sm120";
+  // Les cartes pro : « RTX 5000 Ada Generation » est une Ada, « Quadro RTX 4000 » une Turing (P3.16).
+  if (has(" ada")) return "sm89";
+  if (has("quadro rtx")) return "sm75";
+  if (series('5')) return "sm120";
   if (has("l40") || series('4')) return "sm89";
   if (series('3') || has("rtx a")) return "sm86";
   if (series('2') || has("gtx 16") || has("titan rtx")) return "sm75";
@@ -226,39 +232,46 @@ std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_
 
 namespace {
 
-std::string run_nvidia_smi() {
+// Chaque carte : son nom et son architecture (« NVIDIA GeForce RTX 4070, 8.9 » : sm89).
+std::vector<std::pair<std::string, std::string>> run_nvidia_smi() {
+  std::vector<std::pair<std::string, std::string>> cards;
   const auto smi = system_tool("nvidia-smi");
-  if (!smi) return {};
-  std::string arch;
+  if (!smi) return cards;
   auto done = run_tool(
       {.program = *smi,
-       .args = {"--query-gpu=compute_cap", "--format=csv,noheader"},
+       .args = {"--query-gpu=name,compute_cap", "--format=csv,noheader"},
        .timeout = std::chrono::seconds(10)},
       [&](std::string_view line) {
-        // « 8.9 » : la première carte, la carte de rendu.
-        if (!arch.empty()) return;
-        const std::size_t dot = line.find('.');
-        if (dot == std::string_view::npos || dot == 0 || dot + 1 >= line.size()) return;
+        const std::size_t comma = line.rfind(',');
+        if (comma == std::string_view::npos) return;
+        std::string_view cap = line.substr(comma + 1);
+        while (!cap.empty() && (cap.front() == ' ' || cap.back() == ' ' || cap.back() == '\r'))
+          cap = cap.front() == ' ' ? cap.substr(1) : cap.substr(0, cap.size() - 1);
+        const std::size_t dot = cap.find('.');
+        if (dot == std::string_view::npos || dot == 0 || dot + 1 >= cap.size()) return;
         const auto digit = [](char c) { return c >= '0' && c <= '9'; };
-        if (!digit(line[dot - 1]) || !digit(line[dot + 1])) return;
-        arch = std::format("sm{}{}", line[dot - 1], line[dot + 1]);
+        if (!digit(cap[dot - 1]) || !digit(cap[dot + 1])) return;
         // sm100 et plus : « 10.0 » donne sm100 ; la majeure a deux chiffres.
-        if (dot >= 2 && digit(line[dot - 2]))
-          arch = std::format("sm{}{}{}", line[dot - 2], line[dot - 1], line[dot + 1]);
+        std::string arch = std::format("sm{}{}", cap.substr(0, dot), cap[dot + 1]);
+        cards.emplace_back(std::string(line.substr(0, comma)), std::move(arch));
       },
       {}, "nvidia-smi");
-  return done ? arch : std::string();
+  if (!done) cards.clear();
+  return cards;
 }
 
 }  // namespace
 
-std::string detect_cuda_arch() {
+std::string detect_cuda_arch(std::string_view gpu_name) {
   // Une fois par processus (P2.12) : la carte ne change pas, et nvidia-smi prend jusqu'à deux secondes.
   static std::mutex mutex;
-  static std::optional<std::string> known;
+  static std::optional<std::vector<std::pair<std::string, std::string>>> known;
   const std::scoped_lock lock(mutex);
   if (!known) known = run_nvidia_smi();
-  return *known;
+  // La carte de rendu (P3.16) : sur une machine à deux cartes NVIDIA, la première n'est pas forcément elle.
+  for (const auto& [name, arch] : *known)
+    if (!gpu_name.empty() && name == gpu_name) return arch;
+  return known->empty() ? std::string() : known->front().second;
 }
 
 std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePackage& package,

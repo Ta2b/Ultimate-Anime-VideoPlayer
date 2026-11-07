@@ -495,6 +495,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         episodes_section(draft_);
       } else if (name == "Application") {
         language_section(draft_);
+        gpu_section(draft_, choices.gpus);
         updates_page(draft_, choices.place, updates_);
         default_player_page(choices.place, system_, choices.default_player_is_ajp);
       } else if (name == "Engines") {

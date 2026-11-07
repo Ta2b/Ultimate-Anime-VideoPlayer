@@ -103,6 +103,11 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
 std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
                                                 const std::filesystem::path& data_dir, PlaySettings base) {
   const auto log = log_channel("app");
+  // Tout retour sans calibration est le préréglage Auto, comme le message le dit (P3.16).
+  const auto as_auto = [](PlaySettings settings) {
+    settings.preset = Preset::Auto;
+    return settings;
+  };
   struct Shared {
     std::mutex mutex;
     float fraction = 0.0F;
@@ -133,7 +138,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                              });
   if (!worker) {
     log->warn("calibration de la machine : {}", worker.error().detail);
-    return base;
+    return as_auto(std::move(base));
   }
   bool watch_now = false;
   std::vector<Input> ignored;
@@ -151,7 +156,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     if (watch_now) {
       worker->request_stop();
       log->info("calibration de la machine annulée : préréglage Auto");
-      return base;
+      return as_auto(std::move(base));
     }
     PrepareView view;
     {
@@ -169,7 +174,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   if (!*shared->result) {
     log->warn("calibration de la machine : {} ; préréglage Auto", shared->result->error().detail);
     ui.controls().defer(i18n::ui_tr("Machine calibration failed: Auto preset (see log)"));
-    return base;
+    return as_auto(std::move(base));
   }
   // Auto calibré : le lecteur relit les bornes mesurées (calibration.toml) et refait la chaîne pour chaque
   // vidéo ; la chaîne mesurée, SPAN FP8 compris, reste écrite pour qui repasse en Personnalisé.

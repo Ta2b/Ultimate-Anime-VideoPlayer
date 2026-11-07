@@ -336,8 +336,10 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
       reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interface.language",
                                     std::format(" : « {} »", s.language)));
   }
-  if (const toml::table* engines = section(root, "engines"))
+  if (const toml::table* engines = section(root, "engines")) {
     reads.push_back(read(*engines, "engines", "install_dir", s.engines_dir));
+    reads.push_back(read(*engines, "engines", "gpu", s.gpu));
+  }
   if (const toml::table* updates = section(root, "updates")) {
     reads.push_back(read(*updates, "updates", "mode", s.update_mode));
     reads.push_back(read(*updates, "updates", "channel", s.update_channel));
@@ -501,7 +503,12 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("interface", toml::table{{"language", s.language}});
   root.insert("default_player", toml::table{{"dismissed", s.default_player_dismissed}});
   root.insert("span_prepare", toml::table{{"background", s.span_prepare_background}});
-  if (!s.engines_dir.empty()) root.insert("engines", toml::table{{"install_dir", s.engines_dir}});
+  if (!s.engines_dir.empty() || !s.gpu.empty()) {
+    toml::table engines;
+    if (!s.engines_dir.empty()) engines.insert("install_dir", s.engines_dir);
+    if (!s.gpu.empty()) engines.insert("gpu", s.gpu);
+    root.insert("engines", std::move(engines));
+  }
   root.insert(
       "updates",
       toml::table{{"mode", s.update_mode}, {"channel", s.update_channel}, {"frequency", s.update_frequency}});
