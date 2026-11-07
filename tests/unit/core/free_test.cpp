@@ -456,3 +456,20 @@ TEST_CASE("free vsync : dix minutes simulées, horloge qui dérive de ±0,1 %, s
     CHECK(worst < 1'000);  // jamais à plus d'1 ms de son vsync pendant dix minutes
   }
 }
+
+TEST_CASE("free grid vsync : la source tombée près d'un vsync s'y montre telle quelle (P3.37)",
+          "[free][vsync]") {
+  FreeGrid grid;
+  grid.push(stamp(1, 0), {});
+  const FreeInputs inputs{
+      .min_gap_us = kVsync, .step_us = 12'000, .vsync_period_us = kVsync, .vsync_origin_us = 0};
+  int sources = 0;
+  for (std::uint32_t k = 1; k <= 48; ++k) {
+    const CadenceStep step = grid.push(stamp(k + 1, k * kSourcePeriod), inputs);
+    for (const OutputInstant& at : step.instants()) {
+      CHECK(off_grid(*at.pts_us, 0, kVsync) == 0);  // toujours sur un vsync, source comprise
+      if (at.is_source()) ++sources;
+    }
+  }
+  CHECK(sources >= 12);  // une source sur deux au moins tombe à moins d'une demi-période d'un vsync
+}
