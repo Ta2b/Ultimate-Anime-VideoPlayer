@@ -1,0 +1,85 @@
+# Campagne de fuzz de la nuit (P1.29) : chaque cible de tests/fuzz liée à libFuzzer, avec ASan et
+# UBSan, et le code du lecteur instrumenté pour la couverture. 10 minutes par cible, quatre à la fois ;
+# une entrée qui casse une cible part en artefact (crash-*, à ajouter au corpus avec le correctif).
+# Le rejeu court du corpus, lui, tourne dans ctest à chaque PR.
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Durée par cible, en secondes
+        default: "600"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+  CCACHE_DIR: ${{ github.workspace }}-ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_MAXSIZE: 600M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  libfuzzer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache clang-20 libclang-rt-20-dev
+          pip install --user "meson==$MESON_VERSION"
+      # Les dépendances de ci.yml (gcc 13) : des bibliothèques C ou à l'ABI de libstdc++, que clang lie.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          restore-keys: deps-player-gcc-13-
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-fuzz-${{ github.sha }}
+          restore-keys: ccache-fuzz-
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+        env:
+          CC: gcc-13
+          CXX: g++-13
+      - name: Construction
+        env:
+          CC: clang-20
+          CXX: clang++-20
+        run: |
+          cmake --preset linux-prefix -B build/fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DAJP_FUZZ_LIBFUZZER=ON \
+            "-DCMAKE_CXX_FLAGS=-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer"
+          targets="$(sed -n 's/^set(ajp_fuzz_\(parser_\)\?targets \(.*\))$/\2/p' tests/fuzz/CMakeLists.txt | tr '\n' ' ')"
+          echo "TARGETS=$targets" >>"$GITHUB_ENV"
+          cmake --build build/fuzz --target $(printf 'ajp_fuzz_%s ' $targets)
+      - name: Campagne
+        env:
+          SECONDS_PER_TARGET: ${{ inputs.seconds || '600' }}
+        run: |
+          mkdir -p crashes
+          # Le corpus du dépôt est lu, les entrées nouvelles vont dans un dossier jetable.
+          printf '%s\n' $TARGETS | xargs -P 4 -I{} sh -c '
+            mkdir -p "work/{}" &&
+            build/fuzz/tests/fuzz/ajp_fuzz_{} "work/{}" "tests/fuzz/corpus/{}" \
+              -max_total_time="$SECONDS_PER_TARGET" -rss_limit_mb=4096 -artifact_prefix="crashes/{}-" \
+              -print_final_stats=1 >"work/{}.log" 2>&1 || { echo "::error::cible {} : voir son journal"; tail -40 "work/{}.log"; exit 1; }'
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-crashes
+          path: |
+            crashes/
+            work/*.log
