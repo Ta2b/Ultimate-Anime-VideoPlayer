@@ -3,9 +3,13 @@
 // puis bus PCI).
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -15,6 +19,7 @@
 
 #include "gpu/vulkan/compute/functions.h"
 #include "gpu/vulkan/compute/library.h"
+#include "gpu/vulkan/compute/pipeline.h"
 #include "gpu/vulkan/compute/sync.h"
 #include "rig.h"
 
@@ -283,4 +288,18 @@ TEST_CASE("adoption : appareil incomplet, version, timeline ou file refusés", "
   AdoptedDevice bad_queue = own->adopted();
   bad_queue.queue_index = own->family_queues;  // première file hors de la famille
   require_refusal(VkContext::adopt(bad_queue), RefusalCode::DeviceUnavailable);
+}
+
+TEST_CASE("Cache de pipelines : un fichier abîmé ou d'un autre appareil n'est pas rendu au pilote", "[vk]") {
+  // Un en-tête VkPipelineCacheHeaderVersionOne de 32 octets (appareil 0x10de:0x2782), puis des données.
+  std::vector<std::byte> driver(48, std::byte{7});
+  const std::array<std::uint32_t, 4> head{32, VK_PIPELINE_CACHE_HEADER_VERSION_ONE, 0x10de, 0x2782};
+  std::memcpy(driver.data(), head.data(), sizeof(head));
+  const std::vector<std::byte> file = ajp::gpu::vk::seal_pipeline_cache(driver);
+  CHECK(ajp::gpu::vk::open_pipeline_cache(file, 0x10de, 0x2782).size() == driver.size());
+  CHECK(ajp::gpu::vk::open_pipeline_cache(file, 0x1002, 0x2782).empty());
+  CHECK(ajp::gpu::vk::open_pipeline_cache(std::span(file).first(file.size() - 1), 0x10de, 0x2782).empty());
+  std::vector<std::byte> damaged = file;
+  damaged.at(40) = std::byte{8};
+  CHECK(ajp::gpu::vk::open_pipeline_cache(damaged, 0x10de, 0x2782).empty());
 }

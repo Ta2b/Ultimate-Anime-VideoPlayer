@@ -1,8 +1,10 @@
 #include "gpu/vulkan/backend/vulkan_backend.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <limits>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -151,7 +153,7 @@ VulkanBackend::~VulkanBackend() {
   kernels_.reset();                                           // attend la file, rend images et vues
   if (queue_ && context_) context_->settle(queue_->lasts());  // la dernière soumission de chaque voie
   if (pipelines_ && !pipeline_cache_file_.empty()) {
-    const std::vector<std::byte> bytes = pipelines_->serialize();
+    const std::vector<std::byte> bytes = seal_pipeline_cache(pipelines_->serialize());
     // Un cache perdu se refait.
     if (!bytes.empty() && !net::write_file(pipeline_cache_file_, bytes))
       log(BackendLogLevel::Warn, "cache de pipelines non écrit");
@@ -190,9 +192,21 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     pipeline_cache_file_ =
         cache_dir_ / "vulkan" / std::format("pipelines-{:04x}-{:04x}.bin", caps.vendor_id, caps.device_id);
   }
+  // Un fichier abîmé (tronqué, autre appareil, somme fausse) ne passe plus au pilote : cache vide, fichier
+  // effacé (P2.17). Certains pilotes refusaient de démarrer sur ces octets.
   std::vector<std::byte> saved;
   if (!pipeline_cache_file_.empty()) {
-    if (auto bytes = net::read_file(pipeline_cache_file_)) saved = std::move(*bytes);
+    if (auto bytes = net::read_file(pipeline_cache_file_)) {
+      const DeviceCaps& caps = context_->caps();
+      const std::span<const std::byte> driver = open_pipeline_cache(*bytes, caps.vendor_id, caps.device_id);
+      if (driver.empty()) {
+        log(BackendLogLevel::Warn, "cache de pipelines illisible : effacé");
+        std::error_code removed;
+        std::filesystem::remove(pipeline_cache_file_, removed);
+      } else {
+        saved.assign(driver.begin(), driver.end());
+      }
+    }
   }
   auto pipelines = PipelineCache::create(*context_, saved);
   if (!pipelines) return std::unexpected(pipelines.error());

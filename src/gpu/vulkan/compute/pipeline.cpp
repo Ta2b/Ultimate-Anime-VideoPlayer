@@ -1,6 +1,7 @@
 #include "gpu/vulkan/compute/pipeline.h"
 
 #include <bit>
+#include <cstring>
 #include <format>
 
 #include <spdlog/logger.h>
@@ -17,6 +18,50 @@ Pipeline::~Pipeline() {
   if (pipeline_ != VK_NULL_HANDLE) fn.vkDestroyPipeline(device, pipeline_, nullptr);
   if (layout_ != VK_NULL_HANDLE) fn.vkDestroyPipelineLayout(device, layout_, nullptr);
   if (set_layout_ != VK_NULL_HANDLE) fn.vkDestroyDescriptorSetLayout(device, set_layout_, nullptr);
+}
+
+namespace {
+
+constexpr std::size_t kSumBytes = sizeof(std::uint64_t);
+constexpr std::size_t kHeaderBytes = 16 + VK_UUID_SIZE;  // VkPipelineCacheHeaderVersionOne
+
+std::uint64_t fnv1a(std::span<const std::byte> bytes) {
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (const std::byte b : bytes) {
+    hash ^= std::to_integer<std::uint64_t>(b);
+    hash *= 1099511628211ULL;
+  }
+  return hash;
+}
+
+std::uint32_t word_at(std::span<const std::byte> bytes, std::size_t at) {
+  std::uint32_t word = 0;
+  std::memcpy(&word, bytes.data() + at, sizeof(word));
+  return word;
+}
+
+}  // namespace
+
+std::vector<std::byte> seal_pipeline_cache(std::vector<std::byte> driver) {
+  if (driver.empty()) return driver;
+  const std::uint64_t sum = fnv1a(driver);
+  const auto* raw = reinterpret_cast<const std::byte*>(&sum);  // NOLINT(*-reinterpret-cast)
+  driver.insert(driver.end(), raw, raw + kSumBytes);
+  return driver;
+}
+
+std::span<const std::byte> open_pipeline_cache(std::span<const std::byte> file, std::uint32_t vendor_id,
+                                               std::uint32_t device_id) {
+  if (file.size() < kHeaderBytes + kSumBytes) return {};
+  const std::span<const std::byte> driver = file.first(file.size() - kSumBytes);
+  std::uint64_t sum = 0;
+  std::memcpy(&sum, file.data() + driver.size(), kSumBytes);
+  if (sum != fnv1a(driver)) return {};
+  const std::uint32_t header_size = word_at(driver, 0);
+  if (header_size < kHeaderBytes || header_size > driver.size()) return {};
+  if (word_at(driver, 4) != VK_PIPELINE_CACHE_HEADER_VERSION_ONE) return {};
+  if (word_at(driver, 8) != vendor_id || word_at(driver, 12) != device_id) return {};
+  return driver;
 }
 
 std::expected<std::unique_ptr<PipelineCache>, Refusal> PipelineCache::create(
