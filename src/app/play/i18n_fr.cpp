@@ -88,6 +88,7 @@ constexpr std::array kPlayer{
     Entry{"Spanish", "Espagnol"},
     Entry{"Statistics hidden", "Statistiques masquées"},
     Entry{"Statistics shown", "Statistiques affichées"},
+    Entry{"Subtitle delay: {} ms", "Décalage des sous-titres : {} ms"},
     Entry{"Subtitle size: {} %", "Sous-titres : {} %"},
     Entry{"Subtitle track refused", "Piste de sous-titres refusée"},
     Entry{"Subtitles", "Sous-titres"},

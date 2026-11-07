@@ -173,6 +173,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.oled_care != r.oled_care || wanted.steady_cadence != r.steady_cadence ||
       wanted.oled_black != r.oled_black)
     apply_oled_care(to, wanted);
+  if (wanted.subtitle_delay_ms != r.subtitle_delay_ms) {
+    to.session.set_subtitle_delay(std::int64_t{wanted.subtitle_delay_ms} * 1000);
+    controls.notify(i18n::ui_tr_format("Subtitle delay: {} ms", wanted.subtitle_delay_ms), now_us);
+  }
   if (wanted.subtitle_scale != r.subtitle_scale) {
     to.session.set_subtitle_scale(wanted.subtitle_scale);
     controls.notify(i18n::ui_tr_format("Subtitle size: {} %", std::lround(wanted.subtitle_scale * 100.0F)),
@@ -287,6 +291,12 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const ToggleMute&) {
             session.command(Command{controls.toggle_mute()});
             volume_changed();
+          },
+          [&](const SubtitleDelayStep& step) {
+            PlaySettings wanted = to.running;
+            wanted.subtitle_delay_ms = std::clamp(wanted.subtitle_delay_ms + step.delta_ms,
+                                                  limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
+            apply_live(to, wanted, now_us);
           },
           [&](const VolumeStep& step) {
             session.command(Command{controls.step_volume(step.delta)});

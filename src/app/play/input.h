@@ -39,6 +39,10 @@ struct StepChapter {
   int direction = 1;
 };
 struct CycleSubtitles {};
+// Décalage des sous-titres (P3.72) : « z » −100 ms, « x » +100 ms, comme mpv.
+struct SubtitleDelayStep {
+  int delta_ms = 0;
+};
 struct ToggleSettings {};
 // Épisode suivant (+1) ou précédent (−1) du dossier (episodes.h) : « n » et Maj + « n ».
 struct StepEpisode {
@@ -76,9 +80,9 @@ struct StartExport {
 // calibration mesure, puis la lecture reprend avec la chaîne trouvée.
 struct StartCalibration {};
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
-                           SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
-                           ToggleSettings, ApplySettings, UseEngine, OpenEngineScreen, StartExport, PlayFile,
-                           StartCalibration>;
+                           SelectSubtitles, CycleAudio, CycleSubtitles, SubtitleDelayStep, StepChapter,
+                           StepEpisode, SkipCredits, ToggleSettings, ApplySettings, UseEngine,
+                           OpenEngineScreen, StartExport, PlayFile, StartCalibration>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

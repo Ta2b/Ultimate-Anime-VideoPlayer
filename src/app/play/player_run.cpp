@@ -206,6 +206,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.video_latency_us = std::int64_t{settings.video_latency_ms} * 1000;
   session_config.stats = settings.stats;
   session_config.subtitle_scale = settings.subtitle_scale;
+  session_config.subtitle_delay_us = std::int64_t{settings.subtitle_delay_ms} * 1000;
   session_config.extra = &chain_stats;
   session_config.latency = &live->latency();
   session_config.on_written = [live](const RingFrame& frame, std::int64_t done_us) {
@@ -400,9 +401,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                    p.display->vrr_armed.value_or(false);
   std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
-  // La fréquence de l'écran telle que SDL la donne, gardée quand SDL ne la donne plus : un écran éteint puis
-  // rallumé passe un moment sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la
-  // source.
+  // La fréquence de l'écran selon SDL, gardée quand SDL ne la donne plus : un écran rallumé passe un moment
+  // sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la source.
   double known_hz = display_refresh_hz(out.window());
   std::int64_t known_period_us = display_period_us(out.window());
   SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());

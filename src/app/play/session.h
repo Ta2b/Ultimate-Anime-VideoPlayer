@@ -80,6 +80,7 @@ struct SessionConfig {
   double video_sar = 1.0;                         // forme du pixel de la vidéo (largeur / hauteur), 1 : carré
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
   float subtitle_scale = 1.0F;                    // taille des sous-titres (subs::RenderTarget::font_scale)
+  std::int64_t subtitle_delay_us = 0;             // > 0 : les sous-titres plus tard (P3.72)
   std::vector<std::string> header;                // la chaîne : modèles, tailles, moteur
   std::vector<std::string> tracks;                // pistes vidéo, audio et sous-titres
   std::string output;                             // sortie de l'écran (HDR10 ou SDR)
@@ -151,6 +152,7 @@ class Session {
   void set_subtitles(bool on);
   // Taille des sous-titres : les demandes suivantes la portent, et l'image à l'écran est redemandée.
   void set_subtitle_scale(float scale);
+  void set_subtitle_delay(std::int64_t delay_us);
   // Mesures affichées, relues au tour suivant.
   void set_stats(const StatsSettings& stats);
   void set_steady_cadence(bool on) { config_.steady_cadence = on; }

@@ -195,6 +195,12 @@ void subtitles_tab(PlaySettings& d) {
   }
   if (ImGui::Button(i18n::tr("Reset size"))) d.subtitle_scale = 1.0F;
   panel::tip(i18n::tr("Scales all text, panels included. Live."));
+  section(i18n::tr("Subtitle delay"));
+  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, -5000, 5000, "%d", ImGuiSliderFlags_None);
+  d.subtitle_delay_ms =
+      std::clamp(d.subtitle_delay_ms, limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
+  if (ImGui::Button(i18n::tr("Reset delay"))) d.subtitle_delay_ms = 0;
+  panel::tip(i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. This session only."));
 }
 
 // L'épisode suivant : lu tout seul à la fin du fichier ouvert.

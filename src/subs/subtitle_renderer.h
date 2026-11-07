@@ -61,6 +61,8 @@ inline constexpr float kMaxFontScale = 4.0F;
 struct RenderRequest {
   std::int64_t pts_us = 0;
   std::uint32_t epoch = 0;
+  // Décalage des sous-titres (P3.72) : libass lit l'instant pts_us − delay_us ; > 0, ils viennent plus tard.
+  std::int64_t delay_us = 0;
   RenderTarget target;
 };
 

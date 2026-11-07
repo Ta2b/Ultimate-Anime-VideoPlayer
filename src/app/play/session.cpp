@@ -143,6 +143,12 @@ void Session::command(const Command& command) {
       command);
 }
 
+void Session::set_subtitle_delay(std::int64_t delay_us) {
+  if (delay_us == config_.subtitle_delay_us) return;
+  config_.subtitle_delay_us = delay_us;
+  if (current_) request_subtitles(*current_);  // comme la taille : l'image à l'écran redemande les siens
+}
+
 void Session::set_subtitle_scale(float scale) {
   if (scale == config_.subtitle_scale) return;
   config_.subtitle_scale = scale;
@@ -291,6 +297,7 @@ void Session::request_subtitles(const RingFrame& frame) {
   subtitle_pts_ = frame.pts_us;
   const subs::RenderRequest request{.pts_us = frame.pts_us,
                                     .epoch = frame.epoch,
+                                    .delay_us = config_.subtitle_delay_us,
                                     .target = {.width = size.width,
                                                .height = size.height,
                                                .video_width = config_.video_width,

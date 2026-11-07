@@ -438,6 +438,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;
   s.subtitle_scale = wanted.subtitle_scale;
+  s.subtitle_delay_ms = wanted.subtitle_delay_ms;
   s.language_presets = wanted.language_presets;  // au prochain fichier
   s.grade = wanted.grade;
   s.grade_values = wanted.grade_values;

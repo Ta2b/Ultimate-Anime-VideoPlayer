@@ -270,6 +270,8 @@ struct PlaySettings {
   // prépare tout seul (span_auto.h). Lue et réécrite pour ne rien perdre d'un play.toml existant.
   bool span_prepare_background = false;
   int audio_delay_ms = 0;
+  // Décalage des sous-titres (P3.72), de séance : z et x, ou le menu ; jamais écrit dans play.toml.
+  int subtitle_delay_ms = 0;
   // L'appareil de sortie audio (vide : celui du système, suivi quand il change).
   std::string audio_device;
   // Le délai de chaque autre appareil, repris quand on y revient (P2.7) : un casque Bluetooth garde le sien,
@@ -327,6 +329,7 @@ inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
 inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
 // Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66) : un pic réglable fait
 // toujours une sortie HDR.
+inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
 inline constexpr core::Range<int> kTrueHdrPeak{350, 2000};  // ou 0 : automatique
 inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits

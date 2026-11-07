@@ -147,6 +147,22 @@ TEST_CASE("Rendu : rien à dessiner hors des événements", "[render]") {
   CHECK(frame.rects.empty());
 }
 
+TEST_CASE("Rendu : le décalage lit l'instant pts − délai (P3.72)", "[render]") {
+  Bench bench(ajp::subs::test::reference_script());
+  bench.recycle();
+  // À 6 s, rien ; 2 s de retard lisent l'instant 4 s, qui a son événement.
+  const RenderRequest late{.pts_us = 6'000'000,
+                           .epoch = 0,
+                           .delay_us = 2'000'000,
+                           .target = {.width = kScriptWidth, .height = kScriptHeight}};
+  auto outcome = bench.renderer.render(bench.track, late, bench.pool);
+  REQUIRE(outcome);
+  REQUIRE(std::holds_alternative<SubtitleFrame>(*outcome));
+  const SubtitleFrame& frame = std::get<SubtitleFrame>(*outcome);
+  CHECK(frame.pts_us == 6'000'000);
+  CHECK_FALSE(frame.rects.empty());
+}
+
 TEST_CASE("Rendu : un contenu inchangé réutilise l'atlas sans nouveau téléversement", "[render]") {
   Bench bench(ajp::subs::test::reference_script());
   const SubtitleFrame first = bench.render(0.2);

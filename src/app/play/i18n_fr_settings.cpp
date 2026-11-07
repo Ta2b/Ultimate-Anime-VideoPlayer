@@ -261,6 +261,11 @@ constexpr std::array kSettingsPages{
           "La cadence fixe garde un rafraîchissement VRR constant : pas de scintillement des scènes sombres "
           "sur OLED."},
     Entry{"Subtitle language", "Langue des sous-titres"},
+    Entry{"Subtitle delay", "Décalage des sous-titres"},
+    Entry{"Delay (ms)", "Décalage (ms)"},
+    Entry{"Reset delay", "Décalage à 0"},
+    Entry{"Positive: subtitles later. Keys z and x: 100 ms. This session only.",
+          "Positif : les sous-titres plus tard. Touches z et x : 100 ms. Pour cette séance seulement."},
     Entry{"Subtitle size", "Taille des sous-titres"},
     Entry{
         "The first preference whose tracks exist is used when a file opens. Applies to the next file.",

@@ -222,7 +222,7 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
   }
   // P3.39 : rien à l'écran au dernier rendu, et aucun événement ne commence avant l'instant demandé.
   const ass_track* events = track.get();
-  const long long now_ms = to_ms(request.pts_us);
+  const long long now_ms = to_ms(request.pts_us - request.delay_us);
   if (events->n_events == quiet_events_ && now_ms >= quiet_from_ms_ && now_ms < quiet_until_ms_ && in_sync_)
     return SubtitleFrame{
         .pts_us = request.pts_us, .epoch = request.epoch, .width = target.width, .height = target.height};
@@ -232,8 +232,7 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
 
   int change = 2;
   pieces_.clear();
-  for (const ass_image* image =
-           ass_render_frame(renderer_.get(), track.get(), to_ms(request.pts_us), &change);
+  for (const ass_image* image = ass_render_frame(renderer_.get(), track.get(), now_ms, &change);
        image != nullptr; image = image->next) {
     if (image->w > 0 && image->h > 0) pieces_.push_back(image);  // libass : taille nulle, rien à dessiner
   }
