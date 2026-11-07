@@ -152,7 +152,7 @@ std::optional<BackendQueue::Step> BackendQueue::external_step() {
 }
 
 BackendQueue::Step BackendQueue::host_step() {
-  LaneState& state = lanes_[current_];
+  LaneState& state = lanes_[kMain];  // la timeline de signal_on_host et de wait_elsewhere
   const Step step{.wait = state.value, .signal = state.value + 1};
   ++state.value;
   return step;
@@ -160,7 +160,9 @@ BackendQueue::Step BackendQueue::host_step() {
 
 Done BackendQueue::wait_elsewhere(std::uint64_t value, std::chrono::nanoseconds timeout) const {
   if (value == 0) return {};
-  const VkSemaphore semaphore = lanes_[current_].timeline.handle();
+  // La timeline des runtimes, celle que signal_on_host signale (P2.26) : current_ appartient au fil qui
+  // soumet, le lire ici, depuis un autre fil, était une course.
+  const VkSemaphore semaphore = lanes_[kMain].timeline.handle();
   const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                  .semaphoreCount = 1,
                                  .pSemaphores = &semaphore,
