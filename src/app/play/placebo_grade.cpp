@@ -267,9 +267,27 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   render::GradeParams params = s.grade->params();
   params.black_lo = 0.0;  // le vrai noir se cale sur ce qui sort sans lui
   params.black_hi = 0.0;
+  // P3.61 : la rampe passe aussi par la pile de LUT, que le vrai noir suit à l'écran ; mesurée sans elle, ses
+  // seuils écrasaient une seconde fois les huit premières marches. La pile composée, à pleine intensité.
+  const render::CubeLut* stack = s.grade->look_stack();
+  std::optional<render::CubeLut> looks = stack != nullptr ? std::optional(*stack) : std::nullopt;
+  for (double render::GradeParams::* mix :
+       {&render::GradeParams::look_mix2, &render::GradeParams::look_mix3, &render::GradeParams::look_mix4,
+        &render::GradeParams::look_mix5, &render::GradeParams::look_mix6, &render::GradeParams::look_mix7,
+        &render::GradeParams::look_mix8, &render::GradeParams::look_mix9, &render::GradeParams::look_mix10,
+        &render::GradeParams::look_mix11, &render::GradeParams::look_mix12, &render::GradeParams::look_mix13,
+        &render::GradeParams::look_mix14, &render::GradeParams::look_mix15})
+    params.*mix = 0.0;
+  params.look_mix = looks ? 1.0 : 0.0;
   if (s.last_ramp && s.last_ramp->params == params && s.last_ramp->hdr == s.hdr_output &&
-      std::ranges::equal(s.last_ramp->levels, levels))
+      std::ranges::equal(s.last_ramp->levels, levels) && s.last_ramp->looks == looks)
     return s.last_ramp->nits;
+  if (s.ramp_looks != looks) {
+    std::array<const render::CubeLut*, render::kLookSlots> slots{};
+    slots[0] = looks ? &*looks : nullptr;
+    if (auto set = s.ramp_grade->set_looks(slots); !set) return std::unexpected(std::move(set.error()));
+    s.ramp_looks = looks;
+  }
   s.ramp_grade->set_params(params);
   // Une bande de 16 px par marche, 128 lignes : assez pour les cartes 1/8 et 1/32 du grade.
   constexpr int kBand = 16;
@@ -338,8 +356,11 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
     const double code = peak / 65535.0;
     nits.push_back(s.hdr_output ? pq_nits(code) : std::pow(code, params.sdr_gamma) * params.peak);
   }
-  s.last_ramp = Impl::RampMeasure{
-      .params = params, .levels = {levels.begin(), levels.end()}, .hdr = s.hdr_output, .nits = nits};
+  s.last_ramp = Impl::RampMeasure{.params = params,
+                                  .levels = {levels.begin(), levels.end()},
+                                  .hdr = s.hdr_output,
+                                  .nits = nits,
+                                  .looks = std::move(looks)};
   return nits;
 }
 
