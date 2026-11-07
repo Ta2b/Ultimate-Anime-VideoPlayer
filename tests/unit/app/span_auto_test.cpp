@@ -108,7 +108,8 @@ TEST_CASE("la préparation automatique part au cran Performance, une fois par mo
   CHECK_FALSE(should_start_span_auto(PrecisionTier::Performance, not_offered, false, "m|v", ""));
 }
 
-TEST_CASE("la boucle du lecteur annonce la progression, puis le paquet prêt pour la vidéo suivante (P3.24)", "[span_auto]") {
+TEST_CASE("la boucle du lecteur annonce la progression, puis le paquet prêt pour la vidéo suivante (P3.24)",
+          "[span_auto]") {
   ajp::app::play::FrenchUi french;
   int runs = 0;
   const SpanPrepare prepare = offered_with(runs);
