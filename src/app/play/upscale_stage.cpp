@@ -505,11 +505,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // est bit à bit celle qui est affichée, ni écrite ni présentée.
   held_same_ = setup_.skip_held && runs == false && outputs_ == 1 && reuse_span_ && shown_source_;
   const int written = copy_pair_ ? 1 : held_same_ ? 0 : static_cast<int>(outputs_);
-  if (auto_measured) setup_.live->auto_expect(frame.id.value, written, lead_us);
-  if (free_mode && facts.same_epoch) {
-    setup_.live->auto_expect(frame.id.value, written, lead_us, heavy_pair_);
-    if (written > 0) setup_.live->free_produced(written, host_now_us());
-  }
+  // Une seule entrée par paire (P2.10) : une seconde, au même identifiant, masquait le drapeau heavy.
+  const bool free_counted = free_mode && facts.same_epoch;
+  if (auto_measured || free_counted)
+    setup_.live->auto_expect(frame.id.value, written, lead_us, free_counted && heavy_pair_);
+  if (free_counted && written > 0) setup_.live->free_produced(written, host_now_us());
   if (intermediates_ > 0) mid_ ^= 1U;
   if (intermediates_ > 0 && !copy_pair_ && (setup_.rife != nullptr || by_motion())) {
     if (auto ok = prepare_rife_input(); !ok) return std::unexpected(std::move(ok.error()));
