@@ -5,6 +5,7 @@
 #include <system_error>
 #include <utility>
 
+#include "core/dir_entries.h"
 #include "core/log.h"
 
 namespace ajp::app::play {
@@ -16,7 +17,7 @@ ModelChoice choose_in(const std::filesystem::path& found, std::string_view prefi
                       const std::string& chosen_name, bool option_given) {
   ModelChoice choice{.path = found, .default_name = found.filename().string()};
   std::error_code error;
-  for (const auto& entry : std::filesystem::directory_iterator(found.parent_path(), error)) {
+  for (const auto& entry : core::dir_entries(found.parent_path(), error)) {
     const std::string name = entry.path().filename().string();
     if (name.starts_with(prefix) && name.ends_with(".onnx")) choice.available.push_back(name);
   }

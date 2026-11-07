@@ -188,6 +188,16 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   }
   if (!state.last_error.empty() && result.text.empty())
     note(i18n::tr("The last update failed (details in the log)."));
+  // Une version retirée par la garde (elle ne démarrait pas) : on peut la proposer de nouveau.
+  if (!state.skipped_version.empty() && !busy) {
+    note(i18n::tr_format("Version {} was set aside: it did not start properly.", state.skipped_version));
+    if (ImGui::Button(i18n::tr("Offer it again"))) {
+      UpdateState current = load_update_state(state_file);
+      current.skipped_version.clear();
+      if (const auto kept = save_update_state(state_file, current); !kept)
+        log_channel("app")->warn("update.toml : {}", kept.error().detail);
+    }
+  }
 }
 
 bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {

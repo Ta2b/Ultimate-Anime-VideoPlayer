@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "core/dir_entries.h"
 #include "gpu/ir/onnx_model.h"
 #include "gpu/vulkan/backend/net_build.h"
 #include "kernels/ref/half.h"
@@ -63,7 +64,7 @@ std::vector<std::filesystem::path> artifact_files(const std::filesystem::path& a
   std::vector<std::filesystem::path> files;
   const std::string stem = artifact.filename().string();
   std::error_code error;
-  for (const auto& entry : std::filesystem::directory_iterator(artifact.parent_path(), error)) {
+  for (const auto& entry : core::dir_entries(artifact.parent_path(), error)) {
     const std::string name = entry.path().filename().string();
     if (name == stem || name.starts_with(stem + ".")) files.push_back(entry.path());
   }

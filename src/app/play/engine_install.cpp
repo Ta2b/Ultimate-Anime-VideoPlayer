@@ -14,6 +14,7 @@
 #include <system_error>
 
 #include "app/play/i18n.h"
+#include "core/dir_entries.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -277,8 +278,7 @@ std::uint64_t free_bytes(const std::filesystem::path& where) {
 std::uint64_t directory_bytes(const std::filesystem::path& dir) {
   std::error_code error;
   std::uint64_t total = 0;
-  for (const std::filesystem::directory_entry& entry : std::filesystem::recursive_directory_iterator(
-           dir, std::filesystem::directory_options::skip_permission_denied, error)) {
+  for (const std::filesystem::directory_entry& entry : core::tree_entries(dir, error)) {
     std::error_code each;
     if (entry.is_regular_file(each)) total += static_cast<std::uint64_t>(entry.file_size(each));
   }

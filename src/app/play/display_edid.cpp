@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "app/play/i18n.h"
+#include "core/dir_entries.h"
 
 #if defined(__linux__)
 #include <bit>
@@ -398,7 +399,7 @@ std::optional<bool> drm_vrr_armed(const std::filesystem::path& dir) {
 std::vector<DisplayFacts> connected_displays() {
   std::vector<DisplayFacts> found;
   std::error_code error;
-  for (const auto& entry : std::filesystem::directory_iterator("/sys/class/drm", error)) {
+  for (const auto& entry : core::dir_entries("/sys/class/drm", error)) {
     const std::filesystem::path& dir = entry.path();
     if (trimmed(dir / "status") != "connected") continue;
     const std::vector<std::uint8_t> edid = read_file(dir / "edid");
