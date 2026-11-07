@@ -116,6 +116,23 @@ TEST_CASE("HDR anime : une peau claire près d'un fond sombre n'est pas une lumi
   }
 }
 
+TEST_CASE("HDR anime : un trait blanc cerné de noir n'est pas une étincelle (P3.53)", "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une colonne blanche de 2 px : cernée de deux traits noirs de 2 px, puis seule sur un ciel de nuit.
+  const auto inked = graded_rgb(gpu, columns([](int x) {
+                                  if (x == 128 || x == 129) return 195.0;
+                                  return x >= 126 && x < 132 ? 0.0 : 6.0;
+                                }),
+                                anime_params());
+  const auto star =
+      graded_rgb(gpu, columns([](int x) { return x == 128 || x == 129 ? 195.0 : 6.0; }), anime_params());
+  INFO("trait cerné " << luma(inked[128]) << " nits, étoile " << luma(star[128]) << " nits");
+  CHECK(luma(inked[128]) == Catch::Approx(1.15 * 195.0).epsilon(0.05));
+  CHECK(luma(star[128]) > 1.3 * 195.0);
+}
+
 TEST_CASE("HDR anime : le curseur Éclats agit même sans l'ancien curseur des éclats", "[render][gpu]") {
   Gpu gpu;
   require_device(gpu);

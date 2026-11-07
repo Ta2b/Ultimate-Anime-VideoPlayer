@@ -102,6 +102,16 @@ vec4 hook() {
     // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain), et il est proche du
     // blanc. La porte compare des codes PQ (y_pq) : y, en nits, la laissait ouverte des 1 nit.
     float spark = smoothstep(0.08, 0.20, y_pq - local_bilin) * smoothstep(pq_of(0.6 * white), pq_of(white), y_pq);
+    // P3.53 : la peau n'est pas plus une etincelle qu'une lumiere, et un blanc serre entre deux traits noirs
+    // (texte cerne, trait fin) non plus. Le noir d'un trait (sous 1 % du blanc) a 2 px de part et d'autre
+    // ferme la porte ; le ciel d'une nuit, plus clair, la laisse ouverte aux etoiles.
+    vec2 d2 = 2.0 * HOOKED_pt;
+    float lx = min(dot(pq_to_nits(HOOKED_tex(HOOKED_pos - vec2(d2.x, 0.0)).rgb), LUMA),
+                   dot(pq_to_nits(HOOKED_tex(HOOKED_pos + vec2(d2.x, 0.0)).rgb), LUMA));
+    float ly = min(dot(pq_to_nits(HOOKED_tex(HOOKED_pos - vec2(0.0, d2.y)).rgb), LUMA),
+                   dot(pq_to_nits(HOOKED_tex(HOOKED_pos + vec2(0.0, d2.y)).rgb), LUMA));
+    float inked = 1.0 - smoothstep(0.004 * white, 0.015 * white, min(lx, ly));
+    spark *= (1.0 - skin_like(lin)) * (1.0 - inked);
     float emitter = max(iso * gate, spark);
 
     // Marge des eclats : le pic en scene sombre, la moitie en scene tres claire (limiteur de l'OLED).
