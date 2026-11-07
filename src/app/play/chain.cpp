@@ -399,6 +399,14 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             log_channel("app")->info("export demandé : la lecture se ferme pendant l'export");
             to.ui.close_settings();
             to.export_job = start.job;
+            // P3.90 : les pistes et le délai audio de la lecture passent dans le fichier.
+            const TrackMenu& tracks = to.pipeline.tracks();
+            to.export_job->copies = {.audio = tracks.audio_selected.value_or(-1),
+                                     .subtitle = tracks.subtitle_selected.value_or(-1) < kExternalSubtitleBase
+                                                     ? tracks.subtitle_selected.value_or(-1)
+                                                     : -1,
+                                     .subtitles_off = !tracks.subtitle_selected,
+                                     .audio_delay_us = std::int64_t{to.running.audio_delay_ms} * 1000};
             to.reopen = to.running;
           },
           [&](const StartCalibration&) {

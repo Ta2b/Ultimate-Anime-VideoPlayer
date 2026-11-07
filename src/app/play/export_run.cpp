@@ -198,6 +198,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   auto writer = exporter::ExportWriter::open(
       exporter::WriterConfig{.source = p.options.file,
                              .source_video = video.index,
+                             .copies = job.copies,
                              .output = out_path,
                              .width = size.width,
                              .height = size.height,

@@ -25,7 +25,8 @@ class Muxer {
   // video_stream : le flux vidéo que le lecteur a choisi (SAR, couleur et langue viennent de lui) ;
   // -1 : le meilleur selon FFmpeg.
   static std::expected<Muxer, Refusal> open(const std::filesystem::path& source,
-                                            const std::filesystem::path& output, int video_stream = -1);
+                                            const std::filesystem::path& output, int video_stream = -1,
+                                            CopyChoice choice = {});
   Muxer(Muxer&& other) noexcept;
   Muxer& operator=(Muxer&&) = delete;
   Muxer(const Muxer&) = delete;
@@ -66,6 +67,7 @@ class Muxer {
   AVFormatContext* output_ = nullptr;
   std::vector<int> map_;  // flux de la source → flux de la sortie, -1 : non copié
   int source_video_ = -1;
+  CopyChoice choice_;
   AVRational encoder_time_base_{1, 1'000'000};
   std::int64_t start_us_ = 0;
   PacketPtr pending_;  // le prochain paquet copié, lu d'avance

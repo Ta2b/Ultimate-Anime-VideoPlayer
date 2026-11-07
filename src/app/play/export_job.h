@@ -8,6 +8,7 @@
 
 #include "app/play/options.h"
 #include "app/play/settings.h"
+#include "export/container.h"
 #include "export/encoder_choice.h"
 #include "media/track.h"
 
@@ -24,6 +25,7 @@ struct ExportJob {
   exporter::Quality quality = exporter::Quality::VeryHigh;
   bool constant_rate = true;     // WriterConfig::constant_rate
   std::filesystem::path output;  // .mkv
+  exporter::CopyChoice copies;   // les pistes choisies à la lecture (P3.90)
   friend bool operator==(const ExportJob&, const ExportJob&) = default;
 };
 

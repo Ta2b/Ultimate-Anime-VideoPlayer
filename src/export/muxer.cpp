@@ -103,8 +103,10 @@ void purge_stale_partials(const std::filesystem::path& dir) {
 }  // namespace
 
 std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
-                                          const std::filesystem::path& output, int video_stream) {
+                                          const std::filesystem::path& output, int video_stream,
+                                          CopyChoice choice) {
   Muxer m;
+  m.choice_ = choice;
   m.output_path_ = output;
   // Le fichier est écrit à côté, puis renommé : annuler ou échouer laisse intact un fichier qui
   // porterait déjà ce nom. Le format est donné par son nom, non par l'extension.
@@ -148,6 +150,7 @@ Muxer::Muxer(Muxer&& other) noexcept
       output_(std::exchange(other.output_, nullptr)),
       map_(std::move(other.map_)),
       source_video_(other.source_video_),
+      choice_(other.choice_),
       encoder_time_base_(other.encoder_time_base_),
       start_us_(other.start_us_),
       pending_(std::move(other.pending_)),
@@ -267,6 +270,14 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
     copy->codecpar->codec_tag = 0;
     copy->time_base = st.time_base;
     copy->disposition = st.disposition;
+    const int chosen = type == AVMEDIA_TYPE_AUDIO      ? choice_.audio
+                       : type == AVMEDIA_TYPE_SUBTITLE ? choice_.subtitle
+                                                       : -1;
+    const bool decided = chosen >= 0 || (type == AVMEDIA_TYPE_SUBTITLE && choice_.subtitles_off);
+    if (decided) {
+      copy->disposition &= ~AV_DISPOSITION_DEFAULT;
+      if (std::cmp_equal(chosen, i)) copy->disposition |= AV_DISPOSITION_DEFAULT;
+    }
     av_dict_copy(&copy->metadata, st.metadata, 0);
     av_dict_copy(&copy->metadata, extra, 0);
     av_dict_free(&extra);
@@ -345,6 +356,11 @@ std::expected<void, Refusal> Muxer::write_copies(std::int64_t until_us) {
     const auto index = static_cast<std::size_t>(pending_->stream_index);
     AVStream* to = output_->streams[map_[index]];
     av_packet_rescale_ts(pending_.get(), input_->streams[index]->time_base, to->time_base);
+    if (choice_.audio_delay_us != 0 && to->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      const std::int64_t shift = av_rescale_q(choice_.audio_delay_us, kMicroseconds, to->time_base);
+      if (pending_->pts != AV_NOPTS_VALUE) pending_->pts += shift;
+      if (pending_->dts != AV_NOPTS_VALUE) pending_->dts += shift;
+    }
     pending_->stream_index = to->index;
     pending_->pos = -1;
     if (const int err = av_interleaved_write_frame(output_, pending_.get()); err < 0)
