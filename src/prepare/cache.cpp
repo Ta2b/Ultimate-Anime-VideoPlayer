@@ -8,6 +8,7 @@
 #include <tuple>
 #include <utility>
 
+#include "core/file_sync.h"
 #include "prepare/cache_io.h"
 #include "prepare/key_lock.h"
 #include "prepare/sha256.h"
@@ -38,16 +39,8 @@ std::string stored_digest(const CacheEntry& entry) {
 
 // Écrit l'empreinte par un temporaire renommé ; un échec la laisse absente, la reprise suivante la refait.
 void store_digest(const CacheEntry& entry, const std::string& digest) {
-  fs::path temporary = entry.digest_file();
-  temporary += ".part";
-  {
-    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);  // « \n » seul, sous Windows aussi
-    out << digest << '\n';
-    if (!out.flush()) return;
-  }
-  std::error_code error;
-  fs::rename(temporary, entry.digest_file(), error);
-  if (error) fs::remove(temporary, error);
+  std::ignore =
+      core::write_text_atomically(entry.digest_file(), digest + '\n');  // « \n » seul, sous Windows aussi
 }
 
 // L'entrée publiée a-t-elle encore les octets de sa publication (P2.31) ? Une entrée d'avant l'empreinte

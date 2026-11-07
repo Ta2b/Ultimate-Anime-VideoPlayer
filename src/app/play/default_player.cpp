@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "core/file_sync.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
@@ -296,20 +297,8 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
   auto text = desktop_entry(launcher);
   if (!text) return std::unexpected(std::move(text.error()));
   const std::filesystem::path file = desktop_file(place);
-  std::error_code error;
-  std::filesystem::create_directories(file.parent_path(), error);
-  std::filesystem::path temp = file;
-  temp += ".tmp";
-  {
-    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-    out << *text;
-    if (!out.flush()) return refuse(RefusalCode::FileUnwritable, prepare::utf8_path(temp));
-  }
-  std::filesystem::rename(temp, file, error);
-  if (error) {
-    return refuse(RefusalCode::FileUnwritable,
-                  std::format("{} : {}", prepare::utf8_path(file), error.message()));
-  }
+  if (auto written = core::write_text_atomically(file, *text); !written)
+    return std::unexpected(written.error());
   refresh_desktop_database(file.parent_path());
   return i18n::tr_format(
       "AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in Settings > "

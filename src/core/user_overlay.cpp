@@ -1,14 +1,11 @@
 #include "core/user_overlay.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstdint>
 #include <format>
 #include <fstream>
-#include <functional>
 #include <sstream>
 #include <system_error>
-#include <thread>
 
 #include "core/file_sync.h"
 #include "core/toml_fields.h"
@@ -48,11 +45,6 @@ std::expected<LayerTexts, Refusal> read_layers(const std::filesystem::path& base
 
 // Suffixe du fichier temporaire, propre à cet appel et sans exception possible
 // (std::random_device peut en lever) : horloge et identité du fil d'exécution.
-std::string temp_suffix() {
-  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-  const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
-  return std::format("{:x}-{:x}", ticks, thread);
-}
 
 void merge_tables(toml::table& base, const toml::table& user) {
   for (const auto& [key, node] : user) {
@@ -289,35 +281,6 @@ std::expected<std::optional<std::string>, Refusal> read_text_file_if_present(
   auto text = read_text_file(path);
   if (!text) return std::unexpected(text.error());
   return std::optional<std::string>{std::move(*text)};
-}
-
-std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& path, std::string_view text) {
-  std::error_code error;
-  if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), error);
-  const std::filesystem::path temp =
-      path.parent_path() / std::format(".{}.{}.tmp", path.filename().string(), temp_suffix());
-  {
-    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-    out.write(text.data(), static_cast<std::streamsize>(text.size()));
-    out.close();  // la fermeture vide le tampon : son échec compte aussi
-    if (!out) {
-      std::filesystem::remove(temp, error);
-      return refuse(RefusalCode::FileUnwritable, temp.string());
-    }
-  }
-  // Sur le disque avant le renommage : une coupure juste après ne laisse pas un fichier vide.
-  if (const std::error_code synced = sync_file(temp)) {
-    std::filesystem::remove(temp, error);
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", temp.string(), synced.message()));
-  }
-  std::filesystem::rename(temp, path, error);
-  if (error) {
-    const std::string why = error.message();
-    std::filesystem::remove(temp, error);
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", path.string(), why));
-  }
-  sync_directory(path.has_parent_path() ? path.parent_path() : std::filesystem::path("."));
-  return {};
 }
 
 }  // namespace ajp::core

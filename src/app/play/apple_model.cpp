@@ -6,9 +6,9 @@
 #include <fstream>
 #include <iterator>
 #include <string>
-#include <system_error>
 #include <vector>
 
+#include "core/file_sync.h"
 #include "gpu/system_interpolator.h"
 #include "prepare/onnx_blend.h"
 
@@ -26,20 +26,7 @@ std::expected<std::filesystem::path, Refusal> apple_model(const std::filesystem:
       if (std::ranges::equal(found, wanted, same)) return target;
     }
   }
-  std::error_code error;
-  std::filesystem::create_directories(dir, error);
-  std::filesystem::path temp = target;
-  temp += ".tmp";
-  {
-    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-    out.write(reinterpret_cast<const char*>(wanted.data()), static_cast<std::streamsize>(wanted.size()));
-    if (!out.flush()) return std::unexpected(Refusal{RefusalCode::FileUnwritable, temp.string()});
-  }
-  std::filesystem::rename(temp, target, error);
-  if (error) {
-    return std::unexpected(
-        Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), error.message())});
-  }
+  if (auto written = core::write_atomic(target, wanted); !written) return std::unexpected(written.error());
   return target;
 }
 
