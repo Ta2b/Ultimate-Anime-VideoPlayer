@@ -19,6 +19,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "app/play/auto_bench.h"
+#include "app/play/auto_watch.h"
 #include "app/play/backend_library.h"
 #include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
@@ -83,19 +84,10 @@ namespace {
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus (P4.7 : 33 ms, l'interface à 30 i/s ; une image réveille).
 constexpr std::int32_t kPausedWaitMs = 33;
-// L'Auto figé au plancher : dit au journal après une tentative de sortie (core::AutoRate::kFloorEscapeUs),
-// puis au plus toutes les 30 s pour ne pas noyer le journal.
-constexpr std::int64_t kFloorLogAfterUs = core::AutoRate::kFloorEscapeUs;
-constexpr std::int64_t kFloorLogEveryUs = 30'000'000;
 // L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle) ; le
 // HDR et le pic du système toutes les 2 s, l'appel coûte plus et l'utilisateur ne bascule pas plus vite.
 constexpr std::int64_t kDisplayPollUs = 500'000;
 constexpr std::int64_t kHdrPollUs = 2'000'000;
-// Le mode Rapide : une ligne de journal toutes les 5 s. L'Auto : un palier tenu 3 s s'annonce à l'écran, tenu
-// 6 s il s'écrit dans la mémoire de l'Auto (un palier qui oscille n'y entre pas).
-constexpr std::int64_t kFreeLogEveryUs = 5'000'000;
-constexpr std::int64_t kAutoNotifyAfterUs = 3'000'000;
-constexpr std::int64_t kAutoStoreAfterUs = 6'000'000;
 // Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
 constexpr std::int64_t kResizeWindowUs = 60'000'000;
 constexpr std::size_t kResizesRefused = 4;
@@ -463,8 +455,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
     }
   }
-  int auto_stored = 0;
-  // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
   bool vrr_fullscreen = true;  // relu au premier tour : VRR, compositeur (P3.45)
   VrrWatch vrr_watch(vrr_armed);
   // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
@@ -476,70 +466,46 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.display)
     log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
-  int auto_shown = 0;  // centièmes de multiplicateur ; 0 : le mode auto est coupé
-  int auto_notified = 0;
-  std::int64_t auto_changed_us = 0;
-  std::int64_t auto_floor_since_us = 0;
-  std::int64_t auto_floor_logged_us = 0;
+  AutoWatch auto_watch;  // le palier de l'Auto : journal, annonce, mémoire (auto_watch.h)
   std::int64_t auto_missing_seen = 0;
   std::int64_t free_dropped_seen = 0;
   std::int64_t free_missing_seen = 0;
-  std::int64_t free_logged_us = 0;
   const double auto_source_fps = fps_of(video.frame_rate);
   // Un changement de palier : une ligne de journal avec sa raison. Le message à l'écran n'est dit qu'une fois
   // le palier tenu 3 s (pas de clignotement), et le palier tenu 6 s est retenu pour la prochaine lecture.
   const auto show_auto = [&] {
     const Factor now = chain.live.factor_now();
     const bool free = chain.live.free_active();
-    const int centi = chain.running.rife_auto && !free && now.den >= 1 ? now.num * 100 / now.den : 0;
     const std::int64_t at = host_now_us();
-    if (free && at - free_logged_us >= kFreeLogEveryUs) {
-      free_logged_us = at;
-      log->info("{}", free_status_text(chain.live.free_info(at)));
-    }
-    if (centi != auto_shown) {
-      if (centi > 0) {
-        log->info("auto : {}", auto_status_text(chain.live.auto_info(at), auto_source_fps));
-      }
-      auto_shown = centi;
-      auto_changed_us = at;
-      return;
-    }
-    if (centi <= 0) return;
+    const core::AutoInfo info = chain.live.auto_info(at);
+    const AutoActions todo = auto_watch.turn(
+        {.at_us = at,
+         .centi = chain.running.rife_auto && !free && now.den >= 1 ? now.num * 100 / now.den : 0,
+         .free = free,
+         .at_floor = info.step <= info.granularity && info.ceiling > info.granularity,
+         .can_store = !auto_memory_path.empty()});
+    if (todo.log_free) log->info("{}", free_status_text(chain.live.free_info(at)));
+    if (todo.log_change) log->info("auto : {}", auto_status_text(info, auto_source_fps));
     // Figé au plancher alors que l'écran permet plus : on le dit au journal (avec ce qui peut le tenir là),
     // la régulation tente d'elle-même un cran toutes les 8 s (core::AutoRate::kFloorEscapeUs).
-    {
-      const core::AutoInfo info = chain.live.auto_info(at);
-      if (info.step <= info.granularity && info.ceiling > info.granularity) {
-        if (auto_floor_since_us == 0) auto_floor_since_us = at;
-        if (at - auto_floor_since_us >= kFloorLogAfterUs && at - auto_floor_logged_us >= kFloorLogEveryUs) {
-          auto_floor_logged_us = at;
-          log->warn(
-              "Auto : plafond figé à ×1 depuis {} s (dernier changement : {} ; plafond de l'écran ×{}, écran "
-              "{:.1f} Hz, "
-              "plafond choisi {}, palier prédit ×{}, limite apprise ×{})",
-              (at - auto_floor_since_us) / 1'000'000, core::auto_reason_text(info.reason),
-              auto_factor_text(info.ceiling * 100 / std::max(info.granularity, 1)), known_hz,
-              chain.running.auto_cap, auto_factor_text(info.predicted * 100 / std::max(info.granularity, 1)),
-              auto_factor_text(info.cap * 100 / std::max(info.granularity, 1)));
-        }
-      } else {
-        auto_floor_since_us = 0;
-      }
+    if (todo.floor_us) {
+      const int g = std::max(info.granularity, 1);
+      log->warn(
+          "Auto : plafond figé à ×1 depuis {} s (dernier changement : {} ; plafond de l'écran ×{}, écran "
+          "{:.1f} "
+          "Hz, plafond choisi {}, palier prédit ×{}, limite apprise ×{})",
+          *todo.floor_us / 1'000'000, core::auto_reason_text(info.reason),
+          auto_factor_text(info.ceiling * 100 / g), known_hz, chain.running.auto_cap,
+          auto_factor_text(info.predicted * 100 / g), auto_factor_text(info.cap * 100 / g));
     }
-    if (centi != auto_notified && at - auto_changed_us >= kAutoNotifyAfterUs) {
-      if (auto_notified > 0)
-        p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(centi),
-                                                  auto_source_fps * centi / 100.0),
-                               at);
-      auto_notified = centi;
-    }
-    if (centi != auto_stored && at - auto_changed_us >= kAutoStoreAfterUs && !auto_memory_path.empty()) {
-      writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi] {
+    if (todo.notify)
+      p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(*todo.notify),
+                                                auto_source_fps * *todo.notify / 100.0),
+                             at);
+    if (todo.store)
+      writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi = *todo.store] {
         return core::store_auto_step(store, key, centi);
       });
-      auto_stored = centi;  // même en cas d'échec : pas de réécriture à chaque tour
-    }
   };
   while (!session.finished() && !chain.reopen) {
     for (;
