@@ -53,7 +53,7 @@ const char* codec_note(exporter::Codec codec) {
   return "";
 }
 
-void copy_path(std::array<char, 1024>& to, const std::string& text) {
+void copy_path(std::array<char, 4096>& to, const std::string& text) {
   copy_text(to, text);
 }
 
@@ -184,7 +184,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     draft.path_edited = false;
     draft.named_for.clear();
   }
-  const std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
+  // P3.92 : un nom seul, ou un chemin relatif, se lit depuis le dossier de la source.
+  std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
+  if (!output.empty() && output.is_relative()) output = choices.source_file.parent_path() / output;
   const std::string problem = path_problem(output, choices.source_file, job.codec);
   const exporter::Container container =
       exporter::container_of(output).value_or(exporter::Container::Matroska);
@@ -210,7 +212,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
                  "fonts. Use .mkv to keep everything. Esc cancels."));
   }
   ImGui::BeginDisabled(!problem.empty());
-  if (ImGui::Button(i18n::tr("Export"))) {
+  // Un fichier existant n'est remplacé que sur un bouton qui le dit (P3.92).
+  if (ImGui::Button(std::filesystem::exists(output, error) ? i18n::tr("Replace the file and export")
+                                                           : i18n::tr("Export"))) {
     ExportJob start = job;
     start.output = output;
     actions.emplace_back(StartExport{.job = std::move(start)});

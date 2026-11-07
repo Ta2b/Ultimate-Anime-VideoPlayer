@@ -144,6 +144,7 @@ constexpr std::array kSettingsPages{
     Entry{"Exact position", "Position exacte"},
     Entry{"Experimental", "Expérimental"},
     Entry{"Export", "Export"},
+    Entry{"Replace the file and export", "Remplacer le fichier et exporter"},
     Entry{"Fallback", "Sinon"},
     Entry{"Fast", "Rapide"},
     Entry{"Fastest", "Le plus rapide"},
