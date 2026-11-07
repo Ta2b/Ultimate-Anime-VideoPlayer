@@ -44,5 +44,5 @@ Le job lavapipe lance les cas `[e2e]` de `tests/unit/app/e2e_play_test.cpp` : la
 le scénario 14 pour une source 853×480, et le scénario 15 (fichier tronqué lu jusqu'à sa fin, fichier illisible
 refusé avec un message). Les tests unitaires couvrent l'ordre des épisodes du scénario 19 (`episodes_test`), la
 fenêtre unique du scénario 21 (`single_instance_test`) et la lecture de `[keys]` du scénario 25
-(`settings_test`). Les autres scénarios demandent un vrai GPU, un écran HDR ou VRR, ou un réseau : ils se
+(`keys_test`, `user_overlay_test`). Les autres scénarios demandent un vrai GPU, un écran HDR ou VRR, ou un réseau : ils se
 jouent sur les machines de Tatoub à la fin.
