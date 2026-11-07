@@ -76,6 +76,7 @@ std::vector<float> to_unit(const std::vector<__half>& half) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const SpanFp8Request& request,
                                                                            Progress& progress) {
   if (!SpanFp8Net::supported_device(properties_.major, properties_.minor)) {

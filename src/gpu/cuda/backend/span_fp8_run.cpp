@@ -56,6 +56,7 @@ bool number(const char* text, int& value) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 int main(int argc, char* const* argv) {
   if (argc < 6)
     return fail("usage : ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N]");

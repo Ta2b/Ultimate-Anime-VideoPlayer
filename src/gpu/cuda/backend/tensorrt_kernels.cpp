@@ -343,8 +343,8 @@ std::expected<void, Refusal> TensorRtBackend::resample(const Tensor& in, kernels
       sizeof(std::uint16_t);
   if (auto ok = bind(); !ok) return ok;
   if (auto ok = order({in.handle}, {out.handle}); !ok) return ok;
-  const CUresult copied = cuMemcpyDtoDAsync(static_cast<CUdeviceptr>(out.handle + out.offset),
-                                            static_cast<CUdeviceptr>(in.handle + in.offset), bytes, stream_);
+  const CUresult copied = cuMemcpyDtoDAsync(static_cast<CUdeviceptr>(out.handle) + out.offset,
+                                            static_cast<CUdeviceptr>(in.handle) + in.offset, bytes, stream_);
   if (copied != CUDA_SUCCESS)
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("cuMemcpyDtoDAsync : erreur {}", static_cast<int>(copied)));

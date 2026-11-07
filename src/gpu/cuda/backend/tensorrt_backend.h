@@ -278,7 +278,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::shared_ptr<TensorReleaser> releaser_ = std::make_shared<TensorReleaser>(TensorReleaser{this});
   // Pool par défaut réglé une fois : rien n'est rendu au système entre deux images, et pas de
   // réutilisation par dépendances internes (le flux d'une voie ne dépend jamais d'une autre par le pool).
-  void tune_pool();
+  void tune_pool() const;
   std::array<cudaStream_t, kLanes> streams_{};
   std::array<std::array<cudaEvent_t, kLaneMarks>, kLanes> lane_events_{};
   std::array<std::uint64_t, kLanes> unrecorded_{};  // rang dont l'événement reste à poser ; 0 : aucun

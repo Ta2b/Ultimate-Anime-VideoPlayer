@@ -54,4 +54,10 @@ for f in skipped:
     print(f"  ignoré : {f}")
 ' "$root" "$build/compile_commands.json" "$list" "$only"
 
-xargs -0 -r -n1 -P"$(getconf _NPROCESSORS_ONLN)" "$tidy" -p "$build" --quiet < "$list"
+# Un clang-tidy de Homebrew ne connaît pas le SDK de Xcode : sans lui, <cstddef> manque et chaque
+# déclaration est lue de travers (fonctions prises pour des variables).
+extra=()
+if [[ "$(uname -s)" == Darwin ]]; then
+  extra=(--extra-arg="-isysroot$(xcrun --show-sdk-path)")
+fi
+xargs -0 -r -n1 -P"$(getconf _NPROCESSORS_ONLN)" "$tidy" -p "$build" --quiet ${extra[@]+"${extra[@]}"} < "$list"

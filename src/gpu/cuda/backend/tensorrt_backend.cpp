@@ -391,7 +391,7 @@ void TensorRtBackend::free_after_lanes(void* memory) {
   cudaFree(memory);  // repli : la libération synchrone d'avant
 }
 
-void TensorRtBackend::tune_pool() {
+void TensorRtBackend::tune_pool() const {
   cudaMemPool_t pool = nullptr;
   if (cudaDeviceGetDefaultMemPool(&pool, device_) != cudaSuccess) {
     static_cast<void>(clear_error());
@@ -485,6 +485,7 @@ namespace ajp::gpu::cuda {
 
 std::vector<GpuStageSummary> TensorRtBackend::gpu_profile() {
   std::vector<GpuStageSummary> out;
+  out.reserve(stages_.size() + role_timing_.size());
   for (auto& [name, timing] : stages_) out.push_back(timing->profile());
   for (const auto& timing : role_timing_) {
     if (!timing) continue;
