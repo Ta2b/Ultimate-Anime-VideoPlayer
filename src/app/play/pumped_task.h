@@ -66,8 +66,9 @@ std::expected<T, Refusal> run_pumped_for(std::string_view name, std::chrono::mil
     if (pump) pump_window_events();
     std::this_thread::sleep_for(kSlice);
   }
-  return std::unexpected(
-      Refusal{RefusalCode::IoFailed, std::format("{} : pas de réponse en {} s", name, limit.count() / 1000)});
+  const auto seconds = limit.count() / 1000;
+  std::string detail = std::format("{} : pas de réponse en {} s", name, seconds);  // i18n-ok : journal
+  return std::unexpected(Refusal{RefusalCode::IoFailed, std::move(detail)});
 }
 
 // detect_cuda_arch (engine_install.h) par run_pumped ; vide aussi si le thread est refusé.
