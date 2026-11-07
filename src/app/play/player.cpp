@@ -99,9 +99,24 @@ std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path&
   auto demuxer = media::Demuxer::open(file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   const media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), {});
-  if (!choice.video)
-    return refuse(RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", file.string()));
-  return *demuxer->track(*choice.video);
+  if (!choice.video) {
+    // P3.28 : un fichier audio seul est dit tel quel, pas comme un fichier abîmé.
+    Refusal refusal{RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", file.string())};
+    if (choice.audio) refusal.key = kAudioOnlyKey;
+    return std::unexpected(std::move(refusal));
+  }
+  const media::TrackInfo& video = *demuxer->track(*choice.video);
+  // P3.26 : le profil 5 n'a pas de couche de base HDR10 ou SDR (IPTPQc2) ; les profils 7 et 8 se lisent par
+  // leur couche de base, sans les métadonnées dynamiques.
+  if (video.dolby_vision_profile == 5) {
+    Refusal refusal{RefusalCode::FormatUnsupported, std::format("{} : Dolby Vision profil 5", file.string())};
+    refusal.key = kDolbyVision5Key;
+    return std::unexpected(std::move(refusal));
+  }
+  if (video.dolby_vision_profile > 0)
+    log_channel("app")->info("Dolby Vision profil {} : lu par sa couche de base, sans RPU",
+                             video.dolby_vision_profile);
+  return video;
 }
 
 // Hors du thread de la fenêtre, borné (P2.15) : une vidéo sur un partage réseau qui ne répond plus laisse la

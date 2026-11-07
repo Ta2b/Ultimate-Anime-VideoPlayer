@@ -9,7 +9,9 @@
 #include <utility>
 
 extern "C" {
+#include <libavcodec/packet.h>
 #include <libavutil/dict.h>
+#include <libavutil/dovi_meta.h>
 #include <libavutil/time.h>
 }
 
@@ -133,6 +135,11 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
         break;
     }
     info.full_range = par.color_range == AVCOL_RANGE_JPEG;
+    if (const AVPacketSideData* dovi =
+            av_packet_side_data_get(par.coded_side_data, par.nb_coded_side_data, AV_PKT_DATA_DOVI_CONF);
+        dovi != nullptr && dovi->size >= sizeof(AVDOVIDecoderConfigurationRecord))
+      info.dolby_vision_profile =
+          reinterpret_cast<const AVDOVIDecoderConfigurationRecord*>(dovi->data)->dv_profile;
   } else if (kind == TrackKind::Audio) {
     info.sample_rate = par.sample_rate;
     info.channels = par.ch_layout.nb_channels;

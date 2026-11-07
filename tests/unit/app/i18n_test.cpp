@@ -13,6 +13,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/visible_error.h"
+#include "french_ui.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -195,3 +198,13 @@ TEST_CASE("i18n: aucun texte ImGui à la printf ne reçoit une chaîne non litt�
 }
 
 }  // namespace ajp::app::play
+
+TEST_CASE("Dolby Vision 5 et audio seul : dits en clair à l'ouverture (P3.26, P3.28)", "[i18n]") {
+  const ajp::app::play::FrenchUi french;
+  ajp::Refusal dolby{ajp::RefusalCode::FormatUnsupported, "x"};
+  dolby.key = std::string(ajp::app::play::kDolbyVision5Key);
+  CHECK(ajp::app::play::visible_error(dolby).contains("Dolby Vision profil 5"));
+  ajp::Refusal audio{ajp::RefusalCode::TrackUnavailable, "x"};
+  audio.key = std::string(ajp::app::play::kAudioOnlyKey);
+  CHECK(ajp::app::play::visible_error(audio).contains("que du son"));
+}

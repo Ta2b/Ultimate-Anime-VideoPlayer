@@ -62,6 +62,7 @@ struct TrackInfo {
   // Ce que le conteneur étiquette (codecpar) : rien si non renseigné, ou hors de ces trois valeurs.
   std::optional<ColorMatrix> color_matrix;
   bool full_range = false;
+  int dolby_vision_profile = 0;  // configuration Dolby Vision du conteneur (P3.26) ; 0 : sans
 
   int sample_rate = 0;  // audio
   int channels = 0;
