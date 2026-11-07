@@ -3,7 +3,7 @@
 # app/play pose sur OUTPUT.
 ajp_add_module(render
   SOURCES cube_lut.cpp emitters.cpp faces.cpp display_model.cpp grade.cpp grade_params.cpp sharpen.cpp "${CMAKE_CURRENT_BINARY_DIR}/render_shaders.cpp"
-  DEPS ajp::core ajp::subs ajp::dep::placebo
+  DEPS ajp::core ajp::dep::placebo
   PRIVATE_DEPS ajp::kernels)
 
 # Les hooks mpv du grade sont embarqués dans la bibliothèque, octet pour octet. Le grade : ses paramètres

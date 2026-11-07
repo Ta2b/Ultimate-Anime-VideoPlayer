@@ -31,6 +31,8 @@ jobs:
         run: tools/ci/check-no-atoi.sh
       - name: Un seul exemplaire des utilitaires
         run: tools/ci/check-utilities.sh
+      - name: Graphe des modules
+        run: tools/ci/check-module-graph.py
       - name: Shaders
         env:
           CXX: g++-13
