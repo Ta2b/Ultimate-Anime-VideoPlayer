@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <format>
+#include <limits>
 #include <span>
 
 #include <ass/ass.h>
@@ -174,6 +175,7 @@ void SubtitleRenderer::forget() {
   rects_.clear();
   in_sync_ = false;
   refused_ = false;
+  quiet_until_ms_ = -1;  // une autre piste : le calme d'avant ne dit rien d'elle
 }
 
 RenderTarget SubtitleRenderer::shrunk(RenderTarget target, int shrink) {
@@ -218,7 +220,15 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
     vsfilter_ = vsfilter;
     in_sync_ = false;  // mêmes couvertures, autres couleurs
   }
+  // P3.39 : rien à l'écran au dernier rendu, et aucun événement ne commence avant l'instant demandé.
+  const ass_track* events = track.get();
+  const long long now_ms = to_ms(request.pts_us);
+  if (events->n_events == quiet_events_ && now_ms >= quiet_from_ms_ && now_ms < quiet_until_ms_ && in_sync_)
+    return SubtitleFrame{
+        .pts_us = request.pts_us, .epoch = request.epoch, .width = target.width, .height = target.height};
+  quiet_until_ms_ = -1;
   rendered_ = true;
+  ++libass_calls_;
 
   int change = 2;
   pieces_.clear();
@@ -238,6 +248,20 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
       configure(request.target, use_margins);
     }
     in_sync_ = true;  // libass compare l'image suivante à une liste vide, et nous aussi
+    // Le calme dure jusqu'au début du prochain événement, si aucun n'est en cours (un fondu encore
+    // transparent l'est).
+    long long next = std::numeric_limits<long long>::max();
+    bool active = false;
+    for (int i = 0; i < events->n_events && !active; ++i) {
+      const ASS_Event& e = events->events[i];
+      if (e.Start <= now_ms && now_ms < e.Start + e.Duration) active = true;
+      if (e.Start > now_ms) next = std::min(next, e.Start);
+    }
+    if (!active) {
+      quiet_from_ms_ = now_ms;
+      quiet_until_ms_ = next;
+      quiet_events_ = events->n_events;
+    }
     return frame;
   }
   // change 0 : mêmes images ; 1 : mêmes couvertures, déplacées ; 2 : contenu neuf.

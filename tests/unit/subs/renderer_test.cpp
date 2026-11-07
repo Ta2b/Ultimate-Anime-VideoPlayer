@@ -309,3 +309,12 @@ TEST_CASE("Rendu : une fenêtre réduite à 0×0 est refusée, sans calcul de pl
   REQUIRE_FALSE(outcome);
   CHECK(outcome.error().code == ajp::RefusalCode::FieldOutOfRange);
 }
+
+TEST_CASE("Rendu : un écran sans événement n'appelle libass qu'une fois (P3.39)", "[render]") {
+  Bench bench(ajp::subs::test::reference_script());  // rien après 5 s
+  CHECK(bench.render(6.0).rects.empty());
+  const std::uint64_t calls = bench.renderer.libass_calls();
+  for (int i = 1; i <= 24; ++i) CHECK(bench.render(6.0 + i / 144.0).rects.empty());
+  CHECK(bench.renderer.libass_calls() == calls);
+  CHECK_FALSE(bench.render(0.5).rects.empty());  // un retour en arrière rend de nouveau
+}
