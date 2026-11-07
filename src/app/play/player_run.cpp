@@ -745,7 +745,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // La source a changé de taille en cours de lecture : la chaîne se rouvre à la nouvelle taille, au même
   // endroit ; au-delà de 4 réouvertures par minute, c'est un refus.
   if (session.resize_asked() && !chain.reopen && !failure) {
-    static std::deque<std::int64_t> resizes;
+    std::deque<std::int64_t>& resizes = p.resizes;
     const std::int64_t now = host_now_us();
     while (!resizes.empty() && now - resizes.front() > 60'000'000) resizes.pop_front();
     if (resizes.size() >= 4) {

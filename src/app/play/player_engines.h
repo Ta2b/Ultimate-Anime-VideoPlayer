@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -95,6 +96,9 @@ struct Player {
   // La pré-analyse des plans (chain_shots.h) : celle du lecteur, qui survit aux réouvertures de la chaîne
   // et aux vidéos suivantes.
   ShotWork* shots = nullptr;
+  // P3.30 : les réouvertures pour une source qui change de taille, de cette vidéo seulement (survivent aux
+  // réouvertures de sa chaîne, pas à la vidéo suivante).
+  std::deque<std::int64_t> resizes;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.
