@@ -4,22 +4,45 @@
 # le lecteur fixe la version (FFmpeg, SDL3, libplacebo, libass du fork…), construites depuis
 # leurs dépôts aux mêmes références que linux-from-source.sh.
 #
-#   tools/deps/macos-from-source.sh <prefixe> [dossier-de-travail]
+#   tools/deps/macos-from-source.sh [--locked] <prefixe> [dossier-de-travail]
 #   AJP_DEPS_PREFIX=<prefixe> cmake --preset macos-release
 set -euo pipefail
 
-PREFIX="$(cd "$(dirname "${1:?usage: $0 <prefixe> [dossier-de-travail]}")" && pwd)/$(basename "$1")"
+LOCKED=0
+if [[ "${1:-}" == "--locked" ]]; then LOCKED=1; shift; fi
+PREFIX="$(cd "$(dirname "${1:?usage: $0 [--locked] <prefixe> [dossier-de-travail]}")" && pwd)/$(basename "$1")"
 WORK="${2:-$PREFIX/../ajp-deps-src}"
 JOBS="$(sysctl -n hw.ncpu)"
 mkdir -p "$PREFIX" "$WORK"
 WORK="$(cd "$WORK" && pwd)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # le dépôt : ports/ et ses correctifs
 
-BREW_DEPS=(ninja meson pkgconf nasm autoconf automake libtool cmake
-  molten-vk vulkan-loader shaderc glslang spirv-tools dav1d little-cms2
-  freetype fribidi harfbuzz fontconfig)
-brew install --quiet "${BREW_DEPS[@]}"
+# Outils de construction, puis les bibliothèques que le paquet recopie (dylibbundler). Homebrew ne
+# sert qu'une version de chaque formule : celles du paquet sont relevées dans BREW_LOCK et
+# comparées après l'installation (P1.25). --locked (release-macos.yml) refuse un écart ; sans lui,
+# un écart s'affiche seulement, la CI reste verte jusqu'à la mise à jour du relevé. Homebrew vérifie
+# lui-même l'empreinte de chaque bouteille. MoltenVK et le chargeur Vulkan ne viennent plus de
+# Homebrew : version et empreinte fixées plus bas.
+BREW_TOOLS=(ninja meson pkgconf nasm autoconf automake libtool cmake)
+BREW_LOCK=(
+  "shaderc 2026.4" "glslang 16.6.0" "spirv-tools 1.4.363.0" "dav1d 1.5.4" "little-cms2 2.19.1"
+  "freetype 2.15.0" "fribidi 1.0.18" "harfbuzz 15.1.0" "fontconfig 2.18.3"
+)
+brew_libs=()
+for entry in "${BREW_LOCK[@]}"; do brew_libs+=("${entry%% *}"); done
+brew install --quiet "${BREW_TOOLS[@]}" "${brew_libs[@]}"
 BREW="$(brew --prefix)"
+drift=0
+for entry in "${BREW_LOCK[@]}"; do
+  read -r formula want <<<"$entry"
+  got="$(brew list --versions "$formula" | awk '{print $NF}')"
+  got="${got%_*}"  # « 2.15.0_1 » : la révision de la formule, même source
+  if [[ "$got" != "$want" ]]; then
+    echo "Homebrew : $formula $got, relevé $want (BREW_LOCK de $0)" >&2
+    drift=1
+  fi
+done
+if (( drift && LOCKED )); then exit 1; fi
 
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig:$BREW/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 export PATH="$PREFIX/bin:$PATH"
@@ -28,6 +51,7 @@ export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 # nom url référence commit : ceux de linux-from-source.sh, sans nv-codec-headers (pas de NVDEC).
 DEPS=(
   "vulkan-headers https://github.com/KhronosGroup/Vulkan-Headers v1.4.363 6802bb4733b63ed5efd3adb308a6c885ef180ea1"
+  "vulkan-loader https://github.com/KhronosGroup/Vulkan-Loader v1.4.363 9e9518d2cf00054a220ae1a40f4406804b420ef5"
   "tomlplusplus https://github.com/marzer/tomlplusplus v3.4.0 30172438cee64926dc41fdd9c11fb3ba5b2ba9de"
   "catch2 https://github.com/catchorg/Catch2 v3.16.0 317ac1ed4c0bb6e6b91eafc817e05c488feffcb3"
   "spdlog https://github.com/gabime/spdlog v1.17.0 79524ddd08a4ec981b7fea76afd08ee05f83755d"
@@ -91,6 +115,24 @@ cmake_dep tomlplusplus -DTOMLPLUSPLUS_BUILD_TESTS=OFF -DTOMLPLUSPLUS_BUILD_EXAMP
 cmake_dep catch2 -DCATCH_INSTALL_DOCS=OFF -DCATCH_INSTALL_EXTRAS=ON -DCMAKE_CXX_STANDARD=17
 cmake_dep spdlog -DSPDLOG_USE_STD_FORMAT=ON -DSPDLOG_BUILD_SHARED=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 cmake_dep vulkan-headers
+cmake_dep vulkan-loader -DBUILD_TESTS=OFF
+
+# MoltenVK : l'archive publiée par Khronos, vérifiée. Son manifeste d'ICD va dans share/vulkan/icd.d,
+# où le chargeur du préfixe le trouve ; le paquet écrit le sien.
+MOLTENVK_VERSION=1.4.2
+MOLTENVK_SHA256=f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
+if ! done_marker moltenvk "$MOLTENVK_VERSION $MOLTENVK_SHA256"; then
+  curl -fsSL -o "$WORK/MoltenVK-macos.tar" \
+    "https://github.com/KhronosGroup/MoltenVK/releases/download/v$MOLTENVK_VERSION/MoltenVK-macos.tar"
+  echo "$MOLTENVK_SHA256  $WORK/MoltenVK-macos.tar" | shasum -a 256 -c -
+  rm -rf "$WORK/MoltenVK"
+  tar -xf "$WORK/MoltenVK-macos.tar" -C "$WORK"
+  install -d "$PREFIX/lib" "$PREFIX/share/vulkan/icd.d"
+  install -m 755 "$WORK/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" "$PREFIX/lib/"
+  sed 's|"library_path": *"[^"]*"|"library_path": "../../../lib/libMoltenVK.dylib"|' \
+    "$WORK/MoltenVK/MoltenVK/dynamic/dylib/macOS/MoltenVK_icd.json" >"$PREFIX/share/vulkan/icd.d/MoltenVK_icd.json"
+  mark moltenvk "$MOLTENVK_VERSION $MOLTENVK_SHA256"
+fi
 cmake_dep sdl3 -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
 
 if ! done_marker nanobench "$(ref_of nanobench)"; then
