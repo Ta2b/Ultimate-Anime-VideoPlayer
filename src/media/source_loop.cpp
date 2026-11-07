@@ -44,9 +44,10 @@ void SourceLoop::run(const std::stop_token& stop) {
   const std::stop_callback interrupt(stop, [this] { media_.demuxer.interrupt(); });
   while (!stop.stop_requested() && !quit_) {
     // Le courrier d'abord, sans bloquer : ce thread est le seul à vider la boîte.
-    while (has_mail() && !quit_) {
-      auto message = inbox_.wait(stop);
-      if (!message) return;
+    // P4.13 : un verrou par message (try_pop), plus trois par paquet pour compter.
+    while (!quit_) {
+      auto message = inbox_.try_pop();
+      if (!message) break;
       handle(*message);
     }
     if (quit_ || advance() == Progress::Moved) continue;
@@ -54,10 +55,6 @@ void SourceLoop::run(const std::stop_token& stop) {
     if (!message) return;
     handle(*message);
   }
-}
-
-bool SourceLoop::has_mail() const {
-  return inbox_.pending<Credit>() + inbox_.pending<Command>() + inbox_.pending<Flush>() > 0;
 }
 
 void SourceLoop::handle(SourceInbox::Message message) {

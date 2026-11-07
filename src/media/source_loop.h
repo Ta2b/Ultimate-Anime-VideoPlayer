@@ -24,7 +24,6 @@ class SourceLoop {
     Idle,     // fin de flux, échec ou Flush : on attend un Seek
   };
 
-  bool has_mail() const;
   void handle(SourceInbox::Message message);
   void on_flush(const Flush& flush);
   void on_seek(const cmd::Seek& seek);
