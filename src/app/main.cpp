@@ -41,6 +41,7 @@ extern "C" {
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
+#include "core/log_redact.h"
 #include "core/thread_role.h"
 #include "core/update_manifest.h"
 #include "prepare/utf8.h"
@@ -375,7 +376,10 @@ int main(int argc, char** argv) {
   // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
   // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
-  std::vector<spdlog::sink_ptr> sinks{std::make_shared<spdlog::sinks::stderr_color_sink_mt>()};
+  // Chaque ligne y entre nettoyée (P1.32) : le dossier personnel devient « ~ ».
+  ajp::set_log_home(ajp::prepare::utf8_path(place.home));
+  std::vector<spdlog::sink_ptr> sinks{
+      ajp::redacting_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>())};
   // --data-dir : réglages, profils et journal ailleurs (les essais du benchmark) ; moteurs et modèles
   // restent.
   std::filesystem::path settings_dir = data;
@@ -398,7 +402,8 @@ int main(int argc, char** argv) {
       if (std::filesystem::exists(from, kept)) std::filesystem::rename(from, to, kept);
     }
     try {
-      sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true));
+      sinks.push_back(
+          ajp::redacting_sink(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true)));
     } catch (const std::exception&) {
       sinks.resize(1);
     }

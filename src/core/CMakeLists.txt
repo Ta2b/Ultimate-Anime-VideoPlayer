@@ -5,7 +5,7 @@ ajp_add_module(core_types)
 # core_log : le canal de journal de chaque module et l'installation des puits par app.
 # Seule dépendance : spdlog. Les modules la lient en privé.
 ajp_add_module(core_log
-  SOURCES log.cpp
+  SOURCES log.cpp log_redact.cpp
   DEPS ajp::dep::spdlog)
 
 # core_os : la place des threads face à la lecture (thread_role.h), MMCSS sous Windows ; bibliothèques

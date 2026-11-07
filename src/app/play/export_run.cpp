@@ -235,9 +235,9 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
 
   const std::int64_t duration_us = (*pipeline)->session_config().duration_us;
   const std::string chain_text = std::format("{}{}", c.motion_label(settings), c.span_label());
-  log->info("export : {} → {} ; {}x{} à {} i/s · {} ; {}", prepare::utf8_path(p.options.file),
-            prepare::utf8_path(job.output), size.width, size.height, rate_text(rate), (*writer)->encoder(),
-            chain_text);
+  log->info("export : {} → {} ; {}x{} à {} i/s · {} ; {}", prepare::utf8_path(p.options.file.filename()),
+            prepare::utf8_path(job.output.filename()), size.width, size.height, rate_text(rate),
+            (*writer)->encoder(), chain_text);
   log->info("export : profil {} : {} slots, {} tampons de conversion, file d'écriture de {}",
             depth.throughput ? "débit" : "mémoire", depth.ring_slots, depth.buffers, depth.queue);
 

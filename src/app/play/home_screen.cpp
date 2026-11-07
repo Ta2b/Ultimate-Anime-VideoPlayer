@@ -345,7 +345,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   }
   if (dirty) save();
   if (!chosen) return std::nullopt;
-  log->info("accueil : {}", prepare::utf8_path(*chosen));
+  log->info("accueil : {}", prepare::utf8_path(chosen->filename()));
   if (!st.start) h.ui.close_settings();  // PlayFile : le panneau reste ouvert
   return chosen;
 }

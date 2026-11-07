@@ -137,7 +137,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::string label_text = std::format("{}{}{}", c.motion_label(settings),
                                              // Le HDR, s'il tourne vraiment sur une sortie HDR10.
                                              settings.hdr_native ? "HDR · " : "", c.span_label());
-  log->info("{} : {}", options.file.string(), label_text);
+  log->info("{} : {}", prepare::utf8_path(options.file.filename()), label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
@@ -562,7 +562,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (auto dropped = dropped_file(event)) {  // une autre vidéo : la chaîne se ferme pour elle
-        log->info("fichier glissé : {}", prepare::utf8_path(*dropped));
+        log->info("fichier glissé : {}", prepare::utf8_path(dropped->filename()));
         chain.next_file = std::move(*dropped);
         chain.reopen = chain.running;
         continue;
@@ -751,7 +751,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&
       chain.running.autoplay_next && !p.options.file.empty()) {
     if (const auto next = sibling_episode(p.options.file, 1)) {
-      log->info("épisode suivant : {}", prepare::utf8_path(*next));
+      log->info("épisode suivant : {}", prepare::utf8_path(next->filename()));
       chain.next_file = *next;
       chain.reopen = chain.running;
     }

@@ -23,6 +23,7 @@ function Pinned([string]$Name) {
 }
 $Series = Pinned "CUDA_REDIST_SERIES"
 $TrtUrl = Pinned "TENSORRT_WINDOWS_URL"
+$TrtExpected = Pinned "TENSORRT_WINDOWS_SHA256"
 
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 $Dir = (Resolve-Path $Dir).Path
@@ -88,6 +89,9 @@ $TrtZip = Join-Path $Downloads (Split-Path $TrtUrl -Leaf)
 if (-not (Test-Path $TrtZip)) { Invoke-WebRequest -Uri $TrtUrl -OutFile $TrtZip -UseBasicParsing }
 $TrtSha = (Get-FileHash $TrtZip -Algorithm SHA256).Hash.ToLower()
 Write-Host "TensorRT : $(Split-Path $TrtUrl -Leaf), $((Get-Item $TrtZip).Length) octets, sha256 $TrtSha"
+# L'empreinte relevée dans versions.env, comparée (P1.26) : un zip changé ou abîmé est refusé, et effacé
+# pour que la relance le retélécharge.
+if ($TrtSha -ne $TrtExpected) { Remove-Item $TrtZip; throw "TensorRT : empreinte $TrtSha, attendue $TrtExpected" }
 $TrtUnpacked = Join-Path $Dir "tensorrt"
 Remove-Item -Recurse -Force $TrtUnpacked -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $TrtUnpacked | Out-Null

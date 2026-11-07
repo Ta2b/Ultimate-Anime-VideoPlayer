@@ -10,6 +10,8 @@
 #include <spdlog/sinks/null_sink.h>
 #include <spdlog/spdlog.h>
 
+#include "core/log_redact.h"
+
 namespace {
 
 // Un puits qui garde « canal : message » de chaque ligne reçue.
@@ -80,4 +82,13 @@ TEST_CASE("Journal : un seul canal par module, refait quand les puits changent",
   CHECK(again->level() == spdlog::level::warn);
   CHECK(ajp::log_channel("unique") == again);
   ajp::install_log_sinks({std::make_shared<spdlog::sinks::null_sink_mt>()}, spdlog::level::info);
+}
+
+TEST_CASE("Journal nettoyé : le dossier personnel devient ~ sous ses deux séparateurs", "[log]") {
+  ajp::set_log_home("C:\\Users\\tatoub\\");
+  CHECK(ajp::redact_log_text("ouvert C:\\Users\\tatoub\\Videos\\a.mkv et C:/Users/tatoub/x") ==
+        "ouvert ~\\Videos\\a.mkv et ~/x");
+  ajp::set_log_home("/");
+  CHECK(ajp::redact_log_text("/usr/lib") == "/usr/lib");
+  ajp::set_log_home("");
 }
