@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 
+#include "core/utf8_path.h"
 #include "gpu/vulkan/compute/refuse.h"
 
 #ifdef _WIN32
@@ -24,8 +25,7 @@ constexpr const char* kSystemLoader = "libvulkan.so.1";
 #endif
 
 std::string shown(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
+  return core::to_utf8(path);
 }
 
 }  // namespace

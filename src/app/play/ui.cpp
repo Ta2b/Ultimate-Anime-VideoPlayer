@@ -33,6 +33,7 @@
 #include "imgui_freetype.h"
 #endif
 #include "core/thread.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -101,8 +102,7 @@ std::optional<FontFile> first_font(const std::filesystem::path& dir,
                                    std::initializer_list<std::pair<const wchar_t*, int>> files) {
   for (const auto& [name, index] : files) {
     const std::filesystem::path path = dir / name;
-    const std::u8string utf8 = path.u8string();
-    FontFile font{.path = std::string(utf8.begin(), utf8.end()), .index = index};
+    FontFile font{.path = core::to_utf8(path), .index = index};
     if (read_font(path, font)) return font;
   }
   return std::nullopt;

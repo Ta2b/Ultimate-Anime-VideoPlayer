@@ -16,6 +16,7 @@ extern "C" {
 }
 
 #include "core/frame.h"
+#include "core/utf8_path.h"
 #include "media/av_util.h"
 #include "media/log.h"
 
@@ -62,8 +63,7 @@ constexpr int kDataRetries = 64;
 // FFmpeg attend un chemin UTF-8, Windows compris : path::string() y rendrait la
 // page de code ANSI, ou lèverait une exception devant un nom en japonais.
 std::string utf8_path(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {reinterpret_cast<const char*>(text.data()), text.size()};
+  return core::to_utf8(path);
 }
 
 std::string tag(const AVDictionary* metadata, const char* key) {

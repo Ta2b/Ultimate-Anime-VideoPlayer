@@ -4,6 +4,7 @@
 #include <format>
 #include <utility>
 
+#include "core/utf8_path.h"
 #include "kernels/spec/color.h"
 
 extern "C" {
@@ -15,8 +16,7 @@ extern "C" {
 namespace ajp::exporter {
 
 std::string utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {reinterpret_cast<const char*>(text.data()), text.size()};
+  return core::to_utf8(path);
 }
 
 std::string av_error_text(int error) {

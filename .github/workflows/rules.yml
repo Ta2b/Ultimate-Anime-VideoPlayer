@@ -19,6 +19,8 @@ jobs:
         run: tools/ci/check-file-size.sh
       - name: Une seule version
         run: tools/ci/check-version.sh
+      - name: Chemins en UTF-8
+        run: tools/ci/check-path-string.sh
       - name: Actions épinglées
         run: tools/ci/check-pinned-actions.sh
       - name: Aucun getenv
