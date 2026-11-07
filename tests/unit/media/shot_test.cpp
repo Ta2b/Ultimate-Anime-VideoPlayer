@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -198,6 +199,10 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   REQUIRE(save_shot_cache(dir, "aaaaaaaaaaaaaaaa", shots, true, 1));
   CHECK_FALSE(load_shot_cache(dir, key));
   CHECK(load_shot_cache(dir, "aaaaaaaaaaaaaaaa"));
+  // Une mesure NaN (fichier abîmé) refuse le cache entier.
+  shots.at(0).last.p50 = std::numeric_limits<float>::quiet_NaN();
+  REQUIRE(save_shot_cache(dir, "bbbbbbbbbbbbbbbb", shots, true));
+  CHECK_FALSE(load_shot_cache(dir, "bbbbbbbbbbbbbbbb"));
   std::filesystem::remove_all(dir);
 }
 

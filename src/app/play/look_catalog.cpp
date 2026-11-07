@@ -68,9 +68,17 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
   }
   if (key.empty() || key.find('/') != std::string::npos || key.find('\\') != std::string::npos)
     return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : nom de fichier invalide"});
-  std::ifstream file(luts_dir / key, std::ios::binary);
-  if (!file) file.open(shipped_luts_dir() / key, std::ios::binary);  // pas chez l'utilisateur : celui livré
+  std::filesystem::path path = luts_dir / key;
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {  // pas chez l'utilisateur : celui livré
+    path = shipped_luts_dir() / key;
+    file.open(path, std::ios::binary);
+  }
   if (!file) return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " introuvable"});
+  // La taille d'abord (P2.30) : un fichier énorme n'est pas lu en entier pour être refusé ensuite.
+  std::error_code sized;
+  if (const auto bytes = std::filesystem::file_size(path, sized); sized || bytes > render::kLutMaxBytes)
+    return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "look : " + key + " trop grand"});
   const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   auto lut = render::parse_cube(text);
   if (!lut) {

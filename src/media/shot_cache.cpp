@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 #include "core/dir_entries.h"
@@ -40,6 +42,8 @@ bool take(const std::string& in, std::size_t& at, T& value) {
   if (in.size() - at < sizeof(T)) return false;
   std::memcpy(&value, in.data() + at, sizeof(T));
   at += sizeof(T);
+  // Une mesure NaN ou infinie (fichier abîmé) refuse tout le cache (P2.30) : elle irait au grade sinon.
+  if constexpr (std::is_floating_point_v<T>) return std::isfinite(value);
   return true;
 }
 
