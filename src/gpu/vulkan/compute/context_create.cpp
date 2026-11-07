@@ -319,6 +319,7 @@ Done VkContext::create_device(const CreateOptions& options) {
       queue_family_ < families.size() ? std::clamp(families[queue_family_].queueCount, 1U, 3U) : 1U;
   for (std::uint32_t index = 1; index < queues; ++index) lane_indices_.push_back(index);
   if (options.alias_lanes && queues == 1) lane_indices_ = {0, 0};
+  settle_floor_ = options.settle_floor;
   const std::array<float, 3> priorities{1.0F, 1.0F, 1.0F};
   const VkDeviceQueueCreateInfo queue{.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                       .queueFamilyIndex = queue_family_,

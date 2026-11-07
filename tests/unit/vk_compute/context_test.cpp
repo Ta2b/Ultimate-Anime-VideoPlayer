@@ -3,6 +3,7 @@
 // puis bus PCI).
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -313,4 +314,16 @@ TEST_CASE("contexte : appareil perdu, soumissions refusées en DeviceLost (P2.8)
   CHECK_FALSE(ctx.observe(VK_ERROR_DEVICE_LOST, "vkQueueSubmit"));
   CHECK(ctx.lost());
   require_refusal(ctx.run_once([](VkCommandBuffer) {}), RefusalCode::DeviceLost);
+}
+
+TEST_CASE("contexte : GPU tenu pour bloqué, puis réarmé quand il a rattrapé (P2.16)",
+          "[vk_compute][context]") {
+  auto ctx = require_value(VkContext::create({.settle_floor = std::chrono::milliseconds(50)}));
+  CHECK(ctx->settle_timeout() >= std::chrono::milliseconds(50));
+  auto timeline = require_value(TimelineSemaphore::create(*ctx));
+  CHECK_FALSE(ctx->settle(timeline.at(1)));  // jamais signalée : la longue soumission
+  CHECK(ctx->stalled());
+  REQUIRE(timeline.signal(1));  // le GPU a fini depuis
+  CHECK(ctx->settle(timeline.at(1)));
+  CHECK_FALSE(ctx->stalled());
 }
