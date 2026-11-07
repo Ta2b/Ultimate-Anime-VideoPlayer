@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability / Faille de sécurité
+    url: https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/security/advisories/new
+    about: Report privately, never in a public issue (SECURITY.md).

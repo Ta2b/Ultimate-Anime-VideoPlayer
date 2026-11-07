@@ -18,9 +18,11 @@ on:
 permissions:
   contents: read
 
+# Une PR ne garde que sa dernière poussée ; sur main, chaque commit est testé jusqu'au bout (P1.35) :
+# la garde de release exige ci.yml vert sur le commit de l'étiquette.
 concurrency:
-  group: ci-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
