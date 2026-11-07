@@ -116,6 +116,18 @@ std::vector<std::int64_t> play_to_end(Running& source) {
   return pts;
 }
 
+// Les `count` premières images, chacune attendue jusqu'à kTimeout : une pause de la source (nouvel essai
+// après une erreur) sur une machine chargée ne coupe pas la lecture comme le délai court de play_to_end.
+std::vector<std::int64_t> play_count(Running& source, std::size_t count) {
+  std::vector<std::int64_t> pts;
+  while (pts.size() < count) {
+    auto frame = source.sink.pop(source.inbox);
+    if (!frame) break;
+    pts.push_back(frame->pts_us);
+  }
+  return pts;
+}
+
 int luma_frame(const DecodedFrame& frame) {
   const auto plane = frame.data->host_plane(0);
   return frame_of_flat_luma(static_cast<int>(plane[20 * frame.data->host_stride(0) + 30]));
@@ -378,7 +390,7 @@ TEST_CASE("SourceThread : une erreur de lecture passagère est retentée, rien n
   // Trois échecs d'entrée-sortie au milieu du fichier, comme un partage réseau qui hésite.
   Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
                  ReadFault{.after_packets = 60, .count = 3, .error = AVERROR(EIO)});
-  const std::vector<std::int64_t> pts = play_to_end(source);
+  const std::vector<std::int64_t> pts = play_count(source, 100);
   CHECK(source.listener.wait_end(0));
   REQUIRE(pts.size() == 100);
   CHECK(pts.back() == 99 * kFrameUs);
