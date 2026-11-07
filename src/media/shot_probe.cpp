@@ -153,6 +153,7 @@ void ShotProbe::fail(Refusal refusal) {
   finished_.store(true, std::memory_order_release);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   auto log = make_logger();
   auto demuxer = Demuxer::open(file_);

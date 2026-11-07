@@ -114,6 +114,7 @@ bool asks_debug(std::span<const std::string_view> args) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::string_view> args) {
   PlayOptions options;
   options.debug = asks_debug(args);

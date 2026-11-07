@@ -202,6 +202,7 @@ std::int64_t Muxer::bytes() const {
   return output_ != nullptr && output_->pb != nullptr ? avio_tell(output_->pb) : written_;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   const auto log = log_channel("export");
   encoder_time_base_ = encoder.time_base;

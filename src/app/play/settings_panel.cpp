@@ -337,6 +337,7 @@ SettingsPanel::~SettingsPanel() {
   bench_.stop();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;

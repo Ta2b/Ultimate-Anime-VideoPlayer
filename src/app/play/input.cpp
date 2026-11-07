@@ -58,6 +58,7 @@ std::optional<core::Key> key_of(SDL_Keycode key) {
   }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) {
   // P3.43 : une touche de seek maintenue saute de point clé en point clé ; au relâchement, un seek exact
   // à la position atteinte. Le thread de la fenêtre seul lit les touches.

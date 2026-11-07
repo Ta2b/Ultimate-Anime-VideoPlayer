@@ -197,6 +197,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   return calibrated;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
                                                std::size_t& next_key, SnapshotPlan& snapshot) {
   const auto log = log_channel("app");

@@ -234,6 +234,7 @@ std::expected<void, Refusal> Autotuner::save() const {
   return write_file(cache_file_, std::as_bytes(std::span(bytes)));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, std::size_t node,
                                                        std::span<const KernelChoice> candidates,
                                                        std::string_view scope, const std::stop_token& stop) {
@@ -433,6 +434,7 @@ std::expected<Measured, Refusal> Autotuner::measure(const ir::Graph& graph, std:
   return measure_with(graph, node, choice, options_);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph, std::size_t node,
                                                          const KernelChoice& choice,
                                                          const TunerOptions& options) {

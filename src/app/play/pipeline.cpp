@@ -29,6 +29,7 @@ std::string track_text(std::string_view kind, const media::TrackInfo& track) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
                                                                  const VideoStageFactory& make_video) {
   std::unique_ptr<Pipeline> p(new Pipeline());

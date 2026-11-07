@@ -363,6 +363,7 @@ PlaceboScreen::Impl::~Impl() {
                                          .count());
 }
 
+// NOLINTNEXTLINE(readability-function-size)
 std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const ScreenOptions& options) {
   auto impl = std::make_unique<Impl>();
   impl->channel = log_channel("app");

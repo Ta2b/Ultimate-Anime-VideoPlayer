@@ -242,6 +242,7 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
 }
 
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void apply(const Input& input, Chain& to, std::int64_t now_us) {
   Session& session = to.session;
   PlaceboScreen& screen = to.screen;

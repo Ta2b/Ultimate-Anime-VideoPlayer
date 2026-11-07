@@ -91,6 +91,7 @@ void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
   note(i18n::tr("Applies at next launch."));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
   const UpdatePaths paths{
       .data = place.app_data, .install = place.executable.parent_path(), .executable = place.executable};

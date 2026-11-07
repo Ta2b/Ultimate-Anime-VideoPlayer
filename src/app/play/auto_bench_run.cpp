@@ -276,6 +276,7 @@ std::string format_compare_report(const CompareOutcome& outcome) {
   return out;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std::stop_token& stop,
                                                const std::function<void(const std::string&)>& progress) {
   const auto say = [&](BenchStep step, const std::string& what, float within, const std::string& note = {}) {

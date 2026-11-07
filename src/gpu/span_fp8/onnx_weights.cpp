@@ -76,6 +76,7 @@ const ir::onnx::Attribute* attribute(const ir::onnx::Node& node, std::string_vie
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) {
   const ir::onnx::Graph& graph = model.graph;
   if (graph.inputs.size() != 1 || graph.outputs.size() != 1)

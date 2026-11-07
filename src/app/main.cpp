@@ -284,6 +284,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 int run_player(int argc, char** argv) {
   // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
   // partagent 8 files matérielles par défaut : des flux sans lien s'y alignent. 32 en donne une à chacun,

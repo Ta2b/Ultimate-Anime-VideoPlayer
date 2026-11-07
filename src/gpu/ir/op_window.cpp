@@ -229,6 +229,7 @@ Inferred infer_conv(const Node& node, std::span<const Operand> in) {
   return std::vector<OutputInfo>{{.type = in[kConvX].type, .dims = std::move(out)}};
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::span<const OutputInfo> outs) {
   auto attrs = attrs_of<ConvAttrs>(node);
   if (!attrs) return std::unexpected(attrs.error());

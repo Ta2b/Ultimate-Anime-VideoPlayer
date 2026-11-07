@@ -95,6 +95,7 @@ std::string block_name(int b, std::string_view tail) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model) {
   auto summary = scan_onnx(model);
   if (!summary) return std::unexpected(std::move(summary.error()));

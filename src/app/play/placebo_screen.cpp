@@ -328,6 +328,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::draw_overlays(const pl_frame& 
   return {};
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
   const pl_gpu gpu = s.vk->gpu;

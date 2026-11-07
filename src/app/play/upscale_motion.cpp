@@ -78,6 +78,7 @@ std::expected<void, Refusal> UpscaleStage::blend_poses(const gpu::Tensor& a, con
                              : ops.warp_blend_poses(a, b, motion, previous, t, *out.tensor);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
                                                                  const gpu::Tensor& b, const Target& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();

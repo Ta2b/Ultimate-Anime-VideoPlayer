@@ -14,10 +14,18 @@ Checks: >
   performance-*,
   -performance-enum-size,
   readability-container-size-empty,
+  readability-function-cognitive-complexity,
+  readability-function-size,
   readability-make-member-function-const,
   readability-redundant-*,
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'src/.*'
+# Complexité (P5.17) : aucune fonction nouvelle au-delà de ces bornes ; les fonctions qui les dépassent
+# déjà portent un NOLINTNEXTLINE, à retirer quand elles sont découpées (P5.15), jamais à ajouter.
 CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 60
+  - key: readability-function-size.LineThreshold
+    value: 200
   - key: misc-const-correctness.AnalyzeValues
     value: false

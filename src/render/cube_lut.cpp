@@ -77,6 +77,7 @@ bool read_triple(std::string_view text, float (&out)[3]) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<CubeLut, Refusal> parse_cube(std::string_view text) {
   if (text.size() > kLutMaxBytes) return std::unexpected(refused("LUT trop grosse"));
   CubeLut lut;
@@ -180,6 +181,7 @@ std::uint16_t to_half(float value) {
   return static_cast<std::uint16_t>(sign | half);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::size_t fill_unreachable(CubeLut& lut) {
   const auto n = static_cast<std::size_t>(lut.size);
   if (n < 2 || lut.rgb.size() != n * n * n * 3) return 0;

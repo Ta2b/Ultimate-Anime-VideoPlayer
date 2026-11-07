@@ -129,6 +129,7 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
   const auto log = log_channel("app");
   set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)

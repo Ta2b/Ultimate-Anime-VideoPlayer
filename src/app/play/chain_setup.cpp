@@ -178,6 +178,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
 
 namespace {
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
                                                                        const PlaySettings& settings) {
   const auto log = log_channel("app");

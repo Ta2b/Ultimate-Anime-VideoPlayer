@@ -134,6 +134,7 @@ float title_height(float scale) {
   return (kPad * 1.5F + kTitleSize) * scale;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& look, std::int64_t now_us,
                    std::vector<Input>& actions) {
   const ImGuiIO& io = ImGui::GetIO();

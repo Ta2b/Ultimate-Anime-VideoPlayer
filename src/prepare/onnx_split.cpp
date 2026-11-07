@@ -207,6 +207,7 @@ const OnnxAttribute* OnnxFullNode::attribute(std::string_view attribute_name) co
   return found == attributes.end() ? nullptr : &*found;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> model) {
   auto graph = graph_of(model);
   if (!graph) return std::unexpected(std::move(graph.error()));
@@ -270,6 +271,7 @@ std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> mod
   return out;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<std::vector<std::byte>, Refusal> extract_subgraph(std::span<const std::byte> model,
                                                                 std::span<const SplitTensor> inputs,
                                                                 std::span<const SplitTensor> outputs,

@@ -92,6 +92,7 @@ std::string downscale_text(const ChainCandidate& chain) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, MachineNote& bench,
                            std::vector<Input>& actions) {
   section(i18n::tr("Bench results"));

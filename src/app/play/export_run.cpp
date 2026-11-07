@@ -145,6 +145,7 @@ std::optional<Refusal> destination_problem(const std::filesystem::path& output,
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 ExportOutcome run_export(Player& p, const ExportJob& job) {
   const auto log = log_channel("app");
   const auto stopped = [&](const Refusal& refusal) {

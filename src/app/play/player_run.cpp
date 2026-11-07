@@ -85,6 +85,7 @@ constexpr std::int32_t kPausedWaitMs = 33;
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");

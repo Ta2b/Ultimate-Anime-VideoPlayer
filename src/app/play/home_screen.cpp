@@ -248,6 +248,7 @@ std::optional<Dropped> dropped(const SDL_Event& event) {
   return Dropped{.path = std::move(path), .kind = kind};
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const HomeScreen& h, HomeState& st,
                                                                       const std::string& problem) {
   const auto log = log_channel("app");

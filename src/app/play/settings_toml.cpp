@@ -185,6 +185,7 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
 
 namespace {
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root) {
   PlaySettings s;
   std::vector<std::string> legacy_audio;

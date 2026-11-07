@@ -266,6 +266,7 @@ std::expected<std::vector<std::byte>, Refusal> with_drba_motion_outputs(std::spa
   return with_outputs(model, outputs);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model) {
   auto summary = scan_onnx(model);
   if (!summary) return std::unexpected(std::move(summary.error()));

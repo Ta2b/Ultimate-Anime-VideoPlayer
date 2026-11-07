@@ -186,6 +186,7 @@ bool rewrite_phases(Graph& graph, std::size_t index, std::int64_t max_channels, 
   return true;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool rewrite(Graph& graph, std::size_t index, std::int64_t max_channels, bool phases) {
   const Node& node = graph.nodes[index];
   const auto* a = std::get_if<ConvTransposeAttrs>(&node.attrs);

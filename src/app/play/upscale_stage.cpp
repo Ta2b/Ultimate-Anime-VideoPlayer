@@ -163,6 +163,7 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
   return stage;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> UpscaleStage::allocate() {
   gpu::Backend& backend = *setup_.backend;
   const gpu::BackendCaps caps = backend.capabilities();
@@ -267,6 +268,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
   stats_pending_.push_back({.ticket = *ticket, .pts_us = frame.pts_us});
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& frame) {
   AJP_TRACE("upscale.outputs");
   if (frame.width != setup_.source_width || frame.height != setup_.source_height) {
@@ -629,6 +631,7 @@ RingStage::Fate UpscaleStage::drba_fate(std::uint32_t output) {
   return Fate::Write;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFrame& frame,
                                                                 std::uint32_t output, std::uint32_t slot,
                                                                 std::uint64_t wait_value,
