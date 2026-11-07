@@ -50,13 +50,17 @@ TEST_CASE("la calibration monte SPAN seul, puis descend SPAN + RIFE depuis son p
   CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 540});
 }
 
-TEST_CASE("la calibration garde SPAN seul quand RIFE ne tient pas, RIFE seul en recours",
+TEST_CASE("la calibration préfère RIFE seul à SPAN seul, SPAN seul quand RIFE ne tient pas",
           "[calibration-machine]") {
   using C = ChainCandidate;
-  // RIFE ne tient nulle part : SPAN + RIFE descend jusqu'au bout, SPAN seul est gardé.
+  // RIFE ne tient nulle part : SPAN + RIFE descend jusqu'au bout, RIFE seul est essayé, SPAN seul est gardé.
   auto tried = search(1440, [](const ChainCandidate& c) { return c.span && !c.rife && c.height <= 540; });
-  CHECK(tried.size() == 4 + 3);
+  CHECK(tried.size() == 4 + 3 + 1);
   CHECK(best_candidate(tried) == C{.span = true, .rife = false, .height = 540});
+  // SPAN + RIFE nulle part mais RIFE seul tient : la fluidité passe avant SPAN seul (P3.11).
+  tried = search(1440, [](const ChainCandidate& c) { return !(c.span && c.rife); });
+  CHECK(tried.back().chain == C{.span = false, .rife = true, .height = 0});
+  CHECK(best_candidate(tried) == C{.span = false, .rife = true, .height = 0});
   // La fluidité d'abord (P3.11) : 480p + RIFE passe avant 720p seul, qui reste au tableau.
   tried = search(1440, [](const ChainCandidate& c) { return !c.rife || c.height <= 480; });
   CHECK(tried.back().chain == C{.span = true, .rife = true, .height = 480});
