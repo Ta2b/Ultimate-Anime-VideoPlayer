@@ -7,7 +7,7 @@
 > `settings.h`) ; `look_layers` reste lisible à la main. La mécanique décrite plus bas (looks maison,
 > 55 LUT d'HDR, dossier `luts`) reste celle du code de `src/render/looks.*`.
 
-Le menu **Couleurs** propose un **Look (LUT)** et son **intensité** (0 à 100 %). Le look passe après le grade
+Un look est une LUT et son **intensité** (0 à 100 %), lus dans `play.toml` (`look`, `look_mix`, `look_layers`) ; le menu ne les règle plus. Le look passe après le grade
 (contraste, éclats, couleurs…) et avant le vrai noir OLED ; il agit sur toutes les routes (HDR,
 SDR, sortie SDR). Intensité à 0 : la passe est sautée, l'image est identique octet pour octet.
 
@@ -18,7 +18,7 @@ relevés, tons chauds), **Aplats nets** (`maison:aplats`, contraste fort, couleu
 LUT de 33 points.
 
 ## Empiler plusieurs LUT (comme les nœuds de Resolve)
-Le menu Couleurs empile les looks : le bouton **+** ajoute un emplacement à la fin (jusqu'à **quinze** en tout), le bouton **−** retire le dernier. Les emplacements s'appliquent **dans l'ordre** (1, puis 2, puis 3...) ; chacun a sa
+La table `look_layers` de `play.toml` empile les looks (jusqu'à **quinze** emplacements, écrits à la main ; le bouton **+** du menu a été retiré). Les emplacements s'appliquent **dans l'ordre** (1, puis 2, puis 3...) ; chacun a sa
 propre intensité de 0 à 100 % (0 : l'emplacement est sauté). Chaque LUT lit le résultat de la précédente. Si l'une
 des LUT est une LUT d'HDR (nom avec PQ, HDR ou 2020), toute la chaîne travaille sur les codes PQ BT.2020, comme une
 timeline HDR de Resolve ; sinon sur l'image SDR BT.709. Ordre habituel avec une LUT « de base » d'expansion SDR vers
@@ -35,7 +35,7 @@ couleurs d'une image d'anime n'atteignent presque jamais cette zone ; la correct
 Dépose des fichiers `.cube` dans le dossier `luts` des données du lecteur (Linux : `~/.local/share/ajp/ajp/luts`, à côté de `play.toml` ; le lecteur le crée à la première lecture).
 
 Le lecteur livre aussi les 55 LUT d'HDR de `data/luts/` dans un dossier `luts/` à côté de lui (Contents/Resources dans AJP.app), lu après celui de l'utilisateur : un fichier du même nom dans le dossier de l'utilisateur prend le pas.
-Ils apparaissent dans le menu (le menu relit le dossier à chaque ouverture de la liste).
+Un nom de ces dossiers se donne dans `look_layers` ; le menu ne les liste plus.
 - Format : LUT 3D, `LUT_3D_SIZE` de 17 à 65, `DOMAIN_MIN`/`DOMAIN_MAX` et `LUT_3D_INPUT_RANGE` lus ; les LUT 1D sont
   refusées ; un fichier illisible est refusé avec une ligne de journal « look : … ».
 - **LUT SDR (par défaut)** : faite pour une image BT.709 en gamma (blanc = 1), comme la plupart des LUT de Resolve.
@@ -73,10 +73,10 @@ luminosité plan par plan. Les clés `adaptive*`, `vibrance*`, `guard`, `expand`
 
 ## La pile par défaut en une seule LUT (04/11/2026)
 
-La pile de LUT de Tatoub (la LUT de base `HDR grading base ver.9.0`, puis `HDR-contrast-Enhancement-L` ×7,
+La pile de LUT de référence (la LUT de base `HDR grading base ver.9.0`, puis `HDR-contrast-Enhancement-L` ×7,
 `Highlight-Enhancement-L` à 100 % et à 50 %, `skin fix` ; les emplacements à intensité 0 écartés) est cuite en une
 seule LUT, `HDR pile unique 65 point.cube` (65³ points, PQ BT.2020), qui devient le look par défaut ; la liste des
-LUT suivantes est vide par défaut (le menu Couleurs peut toujours en ajouter). Une pile choisie à la main dans un
+LUT suivantes est vide par défaut (`look_layers` peut toujours en ajouter). Une pile choisie à la main dans un
 `play.toml` existant n'est pas touchée.
 
     python3 -I tools/look/bake_stack.py --luts data/luts --out "data/luts/HDR pile unique 65 point.cube" \
