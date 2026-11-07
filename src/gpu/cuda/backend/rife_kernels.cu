@@ -8,8 +8,8 @@ namespace ajp::gpu::cuda {
 namespace {
 
 constexpr int kBlock = 16;
-constexpr int kTile = 32;     // bloc des dessins tenus (kernels::kHeldBlock)
-constexpr int kTileRows = 8;  // fils par colonne du bloc : 32 × 8 fils, 4 lignes chacun
+constexpr int kTile = 16;      // bloc des dessins tenus (kernels::kHeldBlock)
+constexpr int kTileRows = 16;  // fils par colonne du bloc : 16 × 16 fils, une ligne chacun
 static_assert(kBlock * kBlock == kPixelThreads && kTile * kTileRows == kPixelThreads);
 constexpr float kRed = 0.2126F;
 constexpr float kGreen = 0.7152F;
@@ -79,7 +79,7 @@ __device__ float luma(const __half* red, std::size_t plane) {
          kBlue * __half2float(red[2 * plane]);
 }
 
-// Un bloc CUDA par bloc de 32 × 32 pixels, tronqué aux bords.
+// Un bloc CUDA par bloc de 16 × 16 pixels, tronqué aux bords.
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) pair_diff(PairDiffParams p) {
   const int x = static_cast<int>(blockIdx.x) * kTile + static_cast<int>(threadIdx.x);
   const int y0 = static_cast<int>(blockIdx.y) * kTile;

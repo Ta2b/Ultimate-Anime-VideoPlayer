@@ -26,7 +26,7 @@
 namespace ajp::core {
 
 namespace drawings {
-// Un dessin est tenu quand son pire bloc 32x32 diffère d'au plus 0,70 niveau 8 bits.
+// Un dessin est tenu quand son pire bloc 16x16 diffère d'au plus 0,70 niveau 8 bits.
 // 0,40 tombe dans le bruit de compression : la bande 0,40-0,70 n'en contient que.
 inline constexpr double kHeldThreshold = 0.70;
 inline constexpr double kMaxDiff = 255.0;
@@ -55,7 +55,7 @@ constexpr int preload(Pacing pacing) {
 
 // Mesure d'une source contre la précédente, faite par gpu sur la luma.
 struct PairMeasure {
-  double worst_block_diff = 0.0;  // différence absolue moyenne du pire bloc 32x32, niveaux 8 bits
+  double worst_block_diff = 0.0;  // différence absolue moyenne du pire bloc 16x16, niveaux 8 bits
   bool scene_cut = false;
   bool identical = false;  // égales au bit : exige une différence nulle et aucune coupe
 };

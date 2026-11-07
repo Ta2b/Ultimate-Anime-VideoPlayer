@@ -18,7 +18,7 @@ Result<double> scene_diff_sum(const PlaneU16& a, const PlaneU16& b, Format forma
 // l'aire remplie pw × ph. À comparer avec is_scene_cut.
 Result<double> scene_score(const PlaneU16& a, const PlaneU16& b, Format format, const RifeGeometry& geometry);
 
-// Pire écart moyen d'un bloc 32 × 32, en 1/256 de niveau 8 bits. À comparer avec is_held.
+// Pire écart moyen d'un bloc 16 × 16, en 1/256 de niveau 8 bits. À comparer avec is_held.
 Result<std::uint32_t> block_diff_max(const PlaneU16& a, const PlaneU16& b, Format format);
 
 }  // namespace ajp::kernels::ref

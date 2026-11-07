@@ -1,5 +1,5 @@
 // Décisions temporelles : coupe de scène (réduction par groupe, somme en double sur l'hôte,
-// kSceneScoreRelative) et dessins tenus (pire bloc 32 × 32, exact), contre kernels/ref/detect.
+// kSceneScoreRelative) et dessins tenus (pire bloc 16 × 16, exact), contre kernels/ref/detect.
 #include "kernels/ref/detect.h"
 
 #include <algorithm>

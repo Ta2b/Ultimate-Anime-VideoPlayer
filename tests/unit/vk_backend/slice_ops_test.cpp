@@ -350,14 +350,15 @@ TEST_CASE("KernelOps : mesures d'une paire RGB rendues tout de suite", "[vk_back
 
   const auto got = ops.scores_now(ta->tensor(), tb->tensor());
   REQUIRE(got);
-  // La définition de rife_kernels.cu, en double : luma BT.709 du RGB, blocs 32 × 32 tronqués.
+  // La définition de rife_kernels.cu, en double : luma BT.709 du RGB, blocs 16 × 16 tronqués.
+  constexpr int kBlock = 16;
   double total = 0.0;
   std::uint32_t worst = 0;
-  for (int by = 0; by < h; by += 32) {
-    for (int bx = 0; bx < w; bx += 32) {
+  for (int by = 0; by < h; by += kBlock) {
+    for (int bx = 0; bx < w; bx += kBlock) {
       double block = 0.0;
-      const int x1 = std::min(bx + 32, w);
-      const int y1 = std::min(by + 32, h);
+      const int x1 = std::min(bx + kBlock, w);
+      const int y1 = std::min(by + kBlock, h);
       for (int y = by; y < y1; ++y) {
         for (int x = bx; x < x1; ++x) {
           const auto luma = [&](const k::RgbImage& i) {

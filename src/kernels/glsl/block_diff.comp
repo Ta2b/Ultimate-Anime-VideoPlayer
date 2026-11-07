@@ -1,5 +1,5 @@
 #version 450
-// Dessins tenus : un groupe de travail par bloc 32 × 32 de la luma, tronqué aux bords.
+// Dessins tenus : un groupe de travail par bloc 16 × 16 de la luma, tronqué aux bords.
 // s = Σ |a − b| en entiers, réduite en mémoire partagée ; écart = tronque(s × held_scale / n) ;
 // chaque bloc écrit son écart, et le pire passe par un atomicMax entier sur worst[0], que
 // l'enregistrement remet à zéro avant chaque exécution.

@@ -30,11 +30,13 @@ constexpr bool is_scene_cut(double score) {
   return score > kSceneCutThreshold;
 }
 
-// Dessins tenus. Blocs 32 × 32 de la luma depuis (0, 0), tronqués aux bords :
+// Dessins tenus. Blocs 16 × 16 de la luma depuis (0, 0), tronqués aux bords :
 //   s = Σ |a − b| en entiers, n = pixels du bloc ;
 //   écart = tronque(s × (256 / unité) / n), en 1/256 de niveau 8 bits (unité = level_unit) ;
 //   pire = max des écarts ; tenu si pire × 100 ≤ seuil × 256, seuil en centièmes de niveau.
-inline constexpr int kHeldBlock = 32;
+// 16 et non 32 (P3.23) : en 32 × 32, un clignement lointain ou un chiffre qui change se diluait sous le
+// seuil.
+inline constexpr int kHeldBlock = 16;
 inline constexpr std::uint32_t kHeldThreshold = 70;   // 0,70 niveau 8 bits
 inline constexpr std::uint32_t kHeldNoiseFloor = 40;  // 0,40 : dans le bruit, jamais par défaut
 
