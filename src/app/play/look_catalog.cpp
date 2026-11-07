@@ -90,9 +90,12 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
     lut.error().detail = key + " : " + lut.error().detail;
     return std::unexpected(std::move(lut.error()));
   }
-  // Les entrees noires d'un gamut d'entree sans usage ne doivent pas assombrir le bord de la zone utile.
-  if (const std::size_t filled = render::fill_unreachable(*lut); filled > 0)
-    log_channel("app")->info("look : {} : {} entrees inutilisees remplacees", key, filled);
+  // Les entrees noires d'un gamut d'entree sans usage ne doivent pas assombrir le bord de la zone utile :
+  // cela vaut pour les LUT livrees, que l'on connait ; celle de l'utilisateur reste telle qu'il l'a faite
+  // (P3.69).
+  const bool shipped = path.parent_path() == shipped_luts_dir();
+  if (const std::size_t filled = shipped ? render::fill_unreachable(*lut) : 0; filled > 0)
+    log_channel("app")->warn("look : {} : {} entrees inutilisees remplacees", key, filled);
   return lut;
 }
 

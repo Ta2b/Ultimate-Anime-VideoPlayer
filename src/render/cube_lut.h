@@ -22,8 +22,12 @@ inline constexpr std::size_t kLutMaxBytes = 16U * 1024U * 1024U;  // un .cube de
 
 struct CubeLut {
   int size = 0;            // points par axe (17 à 65)
-  std::vector<float> rgb;  // size³ × 3, bornés à [domain_min, domain_max] puis ramenés à [0, 1]
-  std::string title;       // TITLE du fichier, vide si absent
+  std::vector<float> rgb;  // size³ × 3, les sorties telles que le fichier les donne (P3.69)
+  // Le domaine d'entrée (DOMAIN_MIN, DOMAIN_MAX, LUT_3D_INPUT_RANGE) : une entrée c lit la grille en
+  // (c − domain_min) / (domain_max − domain_min). Les sorties n'en dépendent pas.
+  std::array<float, 3> domain_min{0.0F, 0.0F, 0.0F};
+  std::array<float, 3> domain_max{1.0F, 1.0F, 1.0F};
+  std::string title;  // TITLE du fichier, vide si absent
   friend bool operator==(const CubeLut&, const CubeLut&) = default;
 };
 
