@@ -3,8 +3,9 @@ name: CI
 # Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
 # construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
 # demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
-# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). La
-# construction Windows, plus chère, tourne la nuit et à la demande. Versions et paquets : tools/release/versions.env.
+# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). Windows,
+# macOS (Core ML) et CUDA (TensorRT) tournent sur chaque pull request, la nuit et à la demande (P1.17).
+# Versions et paquets : tools/release/versions.env.
 on:
   push:
     branches: [main, "cloud/**", "release/**"]
@@ -82,8 +83,8 @@ jobs:
   # Les préréglages de test portent LSAN_OPTIONS, TSAN_OPTIONS et, sous ASan, le chargeur Vulkan
   # qui garde pilotes et couches chargés jusqu'à la sortie (tools/ci/lsan.supp dit pourquoi).
   # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh) : sa
-  # tâche, à part pour ne pas allonger celle des tests (15 min sur tout src/), construit aussi le backend OpenVINO (roue PyPI), que rien d'autre ne passait au
-  # crible avant la release. Elle tourne sur chaque pull request, comme les autres.
+  # tâche est à part pour ne pas allonger celle des tests (15 min sur tout src/). Elle tourne sur chaque
+  # pull request, comme les autres. OpenVINO, débranché du lecteur, n'est plus construit (P1.18).
   player:
     name: Lecteur Linux (${{ matrix.name }})
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -123,13 +124,7 @@ jobs:
           key: ccache-player-${{ matrix.name }}-${{ github.sha }}
           restore-keys: ccache-player-${{ matrix.name }}-
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - name: OpenVINO
-        if: matrix.tidy
-        run: |
-          source tools/release/versions.env
-          pip install --user "openvino==$OPENVINO_VERSION"
-          echo "OpenVINO_DIR=$(python3 -c 'from openvino.utils import get_cmake_path; print(get_cmake_path())')" >> "$GITHUB_ENV"
-      - run: cmake --preset ${{ matrix.preset }} ${{ matrix.tidy && '-DAJP_WITH_OPENVINO=ON' || '' }}
+      - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ccache -s
       - name: Tests (Vulkan logiciel sous Xvfb)
@@ -150,8 +145,8 @@ jobs:
   # même quand la construction échoue plus loin.
   windows:
     name: Windows (MSVC)
-    if: >-
-      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Chaque pull request, la nuit et à la demande (P1.17) : une rupture de MSVC se voit avant la fusion.
+    if: github.event_name != 'push'
     runs-on: windows-2025
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -182,10 +177,7 @@ jobs:
       # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
       # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-      # Le paquet NuGet de Windows ML : MIGraphX de Windows ML se construit avec /WX comme le reste.
-      - name: Windows ML
-        shell: pwsh
-        run: pwsh tools/deps/windows-winml.ps1 "$env:RUNNER_TEMP/winml"
+      # Windows ML (MIGraphX), débranché du lecteur, n'est plus construit (P1.18).
       - name: Configuration
         shell: pwsh
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
@@ -193,7 +185,6 @@ jobs:
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           cmake --preset windows-ci "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
             "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET" `
-            -DAJP_WITH_WINML=ON "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT" `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           if ($LASTEXITCODE -ne 0) { throw "configuration" }
@@ -212,3 +203,66 @@ jobs:
         with:
           path: C:\vc
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+  # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque pull request (P1.17) : le kit
+  # CUDA et TensorRT viennent de NVIDIA (tools/deps/linux-tensorrt.sh) et ne sortent pas de la tâche.
+  # Construction seule, pour sm_89 (linux-prefix-cuda) : les tests TensorRT demandent un GPU NVIDIA.
+  cuda:
+    name: Lecteur Linux (CUDA et TensorRT)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-13
+      CXX: g++-13
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # La roue de TensorRT fait près de 4 Go.
+      - name: Place sur le disque
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache
+          pip install --user "meson==$MESON_VERSION"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          restore-keys: deps-player-gcc-13-
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-player-cuda-${{ github.sha }}
+          restore-keys: ccache-player-cuda-
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - name: CUDA et TensorRT
+        run: tools/deps/linux-tensorrt.sh "$RUNNER_TEMP/nvidia"
+      - run: cmake --preset linux-prefix-cuda "-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"
+      - run: cmake --build --preset linux-prefix-cuda
+
+  # Core ML et le reste du lecteur macOS sur chaque pull request (P1.17), avec le cache de dépendances de
+  # release-macos.yml : la construction et les tests sans GPU du préréglage macos-release.
+  macos:
+    name: macOS (Core ML)
+    if: github.event_name != 'push'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: deps-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh') }}-
+            deps-macos-arm64-
+      - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: always()
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
+      - run: cmake --preset macos-release
+      - run: cmake --build --preset macos-release
+      - run: ctest --preset macos-release
