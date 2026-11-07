@@ -84,7 +84,8 @@ Le canal du manifeste est vérifié par le lecteur : un manifeste `stable` servi
 ## Signature des exécutables et des archives (P7.1)
 
 Les workflows de release savent signer ; rien ne change tant que les comptes n'existent pas (un avis
-« signature ad hoc » ou « non signés » dans le journal de la CI). L'achat des comptes est la décision de Tatoub.
+« signature ad hoc » ou « non signés » dans le journal de la CI). Décision de Tatoub pour la 0.10 : aucun compte
+acheté pour l'instant ; les releases restent non signées sous Windows et macOS.
 
 ### Linux : vérifier une archive, sans compte
 
