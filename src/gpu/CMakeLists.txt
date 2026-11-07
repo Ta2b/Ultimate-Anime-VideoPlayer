@@ -11,6 +11,13 @@ endif()
 
 ajp_add_module(gpu DEPS ajp::core ajp::core_log ajp::kernels)
 
+# L'empreinte des en-têtes de la frontière (cmake/BoundaryHash.cmake), recalculée quand l'un d'eux change.
+include(BoundaryHash)
+list(TRANSFORM AJP_BOUNDARY_HEADERS PREPEND "${PROJECT_SOURCE_DIR}/" OUTPUT_VARIABLE ajp_boundary_files)
+ajp_boundary_hash(ajp_boundary ${ajp_boundary_files})
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${ajp_boundary_files})
+target_compile_definitions(ajp_gpu INTERFACE AJP_BOUNDARY_HASH=0x${ajp_boundary}ULL)
+
 # Socle de calcul Vulkan (vk_compute), sous vulkan/compute.
 add_subdirectory(vulkan)
 # Les parties portables du backend Core ML, vérifiées partout : les images de l'interpolation

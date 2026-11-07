@@ -332,8 +332,16 @@ inline constexpr std::uint64_t kStdLibrary = 0;
 // Empreinte de tout ce qui traverse la frontière. kBackendAbi date le contrat ; l'empreinte
 // trahit ce que kBackendAbi laisse passer : une bibliothèque construite contre d'autres
 // en-têtes sans changement de version, ou avec une autre bibliothèque standard.
+// AJP_BOUNDARY_HASH : le texte des en-têtes de la frontière (cmake/BoundaryHash.cmake), posé par ajp::gpu. Il
+// voit ce que les tailles ne voient pas : l'ordre des virtuelles, une signature changée.
+#ifndef AJP_BOUNDARY_HASH
+#error "AJP_BOUNDARY_HASH manque : lier ajp::gpu"
+#endif
+inline constexpr std::uint64_t kBoundaryHash = AJP_BOUNDARY_HASH;
+
 inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
     static_cast<std::uint64_t>(kBackendAbi),
+    kBoundaryHash,
     kStdLibrary,
     sizeof(void*),
     shape_fingerprint<std::string, std::vector<std::string>, std::filesystem::path, std::function<void()>,
