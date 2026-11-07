@@ -361,7 +361,11 @@ Refusal curl_failure(int code, std::string_view message) {
 }
 
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop) {
-  const std::string_view key = update_public_key();
+  return check_for_update(channel, stop, fetch, update_public_key());
+}
+
+std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop,
+                                                     const UpdateFetch& fetch, std::string_view key) {
   if (key.empty())
     return refuse(RefusalCode::LibraryUnavailable,
                   i18n::tr("this package has no signing key: updates cannot be verified"));
@@ -414,6 +418,12 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
 std::expected<fs::path, Refusal> download_update(const UpdatePaths& paths,
                                                  const core::UpdateManifest& manifest,
                                                  const std::stop_token& stop) {
+  return download_update(paths, manifest, stop, fetch);
+}
+
+std::expected<fs::path, Refusal> download_update(const UpdatePaths& paths,
+                                                 const core::UpdateManifest& manifest,
+                                                 const std::stop_token& stop, const UpdateFetch& fetch) {
   const core::UpdateArtifact* artifact = core::artifact_for(manifest, core::kHostOs);
   if (artifact == nullptr)
     return refuse(RefusalCode::TrackUnavailable, i18n::tr("this release has no archive for this system"));
