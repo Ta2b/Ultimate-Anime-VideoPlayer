@@ -88,6 +88,8 @@ TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
   const fs::path data = root / "data";
   write(install / "ajp", "ancien");
   write(install / "lib" / "a.so", "lib ancienne");
+  write(install / "lib" / "old.so", "retirée de la 0.6.0");
+  write(install / ".ajp-files", "ajp\nlib/a.so\nlib/old.so\n");  // la liste de la version installée
   // L'archive de la release : un dossier racine.
   write(root / "src" / "ajp-linux-x64" / "ajp", "nouveau");
   write(root / "src" / "ajp-linux-x64" / "lib" / "a.so", "lib nouvelle");
@@ -105,6 +107,7 @@ TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
   CHECK(read(install / "ajp") == "nouveau");
   CHECK(read(install / "lib" / "a.so") == "lib nouvelle");
   CHECK(read(install / "lib" / "b.so") == "lib en plus");
+  CHECK_FALSE(fs::exists(install / "lib" / "old.so"));  // plus livrée : retirée
   CHECK(read(data / "updates" / "previous" / "ajp") == "ancien");
   CHECK(state.staged_version.empty());
   CHECK_FALSE(state.previous_version.empty());
@@ -113,7 +116,9 @@ TEST_CASE("mises à jour : appliquer puis revenir en arrière", "[updater]") {
   REQUIRE(back);
   CHECK(read(install / "ajp") == "ancien");
   CHECK(read(install / "lib" / "a.so") == "lib ancienne");
-  CHECK_FALSE(roll_back_update(paths, state));  // plus rien à remettre
+  CHECK(read(install / "lib" / "old.so") == "retirée de la 0.6.0");
+  CHECK_FALSE(fs::exists(install / "lib" / "b.so"));  // ajoutée par la 0.6.0 : partie avec elle
+  CHECK_FALSE(roll_back_update(paths, state));        // plus rien à remettre
 
   // Sans archive préparée, rien ne se passe.
   UpdateState empty;

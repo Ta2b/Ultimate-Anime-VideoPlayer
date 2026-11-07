@@ -103,41 +103,120 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
   return std::unexpected(curl_failure(static_cast<int>(exit->code), last));
 }
 
+// Les fichiers (et liens) d'un dossier, en chemins relatifs. Une erreur du parcours est une erreur : une
+// liste incomplète supprimerait ou garderait les mauvais fichiers.
+std::expected<std::vector<fs::path>, Refusal> tree_files(const fs::path& root) {
+  std::vector<fs::path> files;
+  std::error_code error;
+  fs::recursive_directory_iterator it(root, fs::directory_options::none, error);
+  const auto failed = [&](const fs::path& where) {
+    return refuse(RefusalCode::FileUnreadable,
+                  std::format("{} : {}", prepare::utf8_path(where), error.message()));
+  };
+  if (error) return failed(root);
+  for (; it != fs::recursive_directory_iterator(); it.increment(error)) {
+    if (error) return failed(root);
+    if (it->is_directory(error) && !it->is_symlink(error)) continue;
+    fs::path relative = fs::relative(it->path(), root, error);
+    if (error || relative.empty()) return failed(it->path());
+    files.push_back(std::move(relative));
+  }
+  if (error) return failed(root);
+  std::ranges::sort(files);
+  return files;
+}
+
+// Retire un fichier installé ; en service sous Windows, il est renommé en « .old » (guard_new_version le
+// purge).
+std::expected<void, Refusal> remove_installed(const fs::path& target) {
+  std::error_code error;
+  if (!fs::exists(target, error) && !fs::is_symlink(target, error)) return {};
+  fs::remove(target, error);
+  if (!error) return {};
+  error.clear();
+  fs::rename(target, fs::path(target.string() + ".old"), error);
+  if (error)
+    return refuse(RefusalCode::FileUnwritable,
+                  std::format("{} : {}", prepare::utf8_path(target), error.message()));
+  return {};
+}
+
 // Copie récursive qui remplace les fichiers même en service : le fichier est retiré (ou, sous Windows,
 // renommé en « .old ») avant d'être recréé, ce que l'ouverture en écriture d'un exécutable chargé refuserait.
 std::expected<void, Refusal> replace_tree(const fs::path& from, const fs::path& to) {
+  const auto files = tree_files(from);
+  if (!files) return std::unexpected(files.error());
   std::error_code error;
-  fs::create_directories(to, error);
-  for (const fs::directory_entry& entry :
-       fs::recursive_directory_iterator(from, fs::directory_options::skip_permission_denied, error)) {
-    const fs::path relative = fs::relative(entry.path(), from, error);
+  for (const fs::path& relative : *files) {
+    const fs::path source = from / relative;
     const fs::path target = to / relative;
-    if (entry.is_directory(error)) {
-      fs::create_directories(target, error);
-      continue;
-    }
     fs::create_directories(target.parent_path(), error);
-    if (fs::exists(target, error) || fs::is_symlink(target, error)) {
-      fs::remove(target, error);
-      if (error) {
-        error.clear();
-        fs::rename(target, fs::path(target.string() + ".old"), error);
-        if (error)
-          return refuse(RefusalCode::FileUnwritable,
-                        std::format("{} : {}", prepare::utf8_path(target), error.message()));
-      }
-    }
-    if (entry.is_symlink(error)) {
-      fs::copy_symlink(entry.path(), target, error);
+    if (error)
+      return refuse(RefusalCode::FileUnwritable,
+                    std::format("{} : {}", prepare::utf8_path(target.parent_path()), error.message()));
+    if (auto removed = remove_installed(target); !removed) return removed;
+    if (fs::is_symlink(source, error)) {
+      fs::copy_symlink(source, target, error);
     } else {
-      fs::copy_file(entry.path(), target, fs::copy_options::none, error);
-      if (!error) fs::permissions(target, fs::status(entry.path(), error).permissions(), error);
+      fs::copy_file(source, target, fs::copy_options::none, error);
+      if (!error) fs::permissions(target, fs::status(source, error).permissions(), error);
     }
     if (error)
       return refuse(RefusalCode::FileUnwritable,
                     std::format("{} : {}", prepare::utf8_path(target), error.message()));
   }
   return {};
+}
+
+// La liste des fichiers de la version installée, écrite à chaque mise à jour (une ligne par chemin relatif,
+// en UTF-8) : ce qu'une version livrait et que la suivante ne livre plus se retire. Avant la première mise à
+// jour qui l'écrit, il n'y en a pas, et rien n'est retiré.
+constexpr std::string_view kFileList = ".ajp-files";
+
+std::optional<std::vector<fs::path>> read_file_list(const fs::path& install) {
+  std::ifstream in(install / kFileList, std::ios::binary);
+  if (!in) return std::nullopt;
+  std::vector<fs::path> files;
+  for (std::string line; std::getline(in, line);) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    const fs::path relative = prepare::path_from_utf8(line);
+    // Jamais hors de l'installation : une liste abîmée ne fait pas retirer « ../ ».
+    if (!line.empty() && relative.is_relative() && !line.contains("..")) files.push_back(relative);
+  }
+  std::ranges::sort(files);
+  return files;
+}
+
+std::expected<void, Refusal> write_file_list(const fs::path& install, const std::vector<fs::path>& files) {
+  std::string text;
+  for (const fs::path& file : files)
+    if (file != fs::path(kFileList)) text += prepare::utf8_path(file) + "\n";
+  return core::write_text_atomically(install / kFileList, text);
+}
+
+// Retire de l'installation ce que la liste d'avant tenait et que la nouvelle version n'a pas.
+std::expected<void, Refusal> remove_dropped(const fs::path& install,
+                                            const std::optional<std::vector<fs::path>>& before,
+                                            const std::vector<fs::path>& now) {
+  if (!before) return {};
+  for (const fs::path& file : *before) {
+    if (file == fs::path(kFileList) || std::ranges::binary_search(now, file)) continue;
+    if (auto removed = remove_installed(install / file); !removed) return removed;
+    log_channel("app")->info("mise à jour : {} retiré, absent de la nouvelle version",  // i18n-ok : journal
+                             prepare::utf8_path(file));
+  }
+  return {};
+}
+
+// L'installation remise telle que previous la garde : ses fichiers copiés, ceux que la version remplacée
+// avait en plus retirés, et sa liste réécrite.
+std::expected<void, Refusal> restore_previous(const fs::path& previous, const fs::path& install,
+                                              const std::optional<std::vector<fs::path>>& current) {
+  const auto kept = tree_files(previous);
+  if (!kept) return std::unexpected(kept.error());
+  if (auto done = replace_tree(previous, install); !done) return done;
+  if (auto done = remove_dropped(install, current, *kept); !done) return done;
+  return write_file_list(install, *kept);
 }
 
 // La racine unique d'une archive extraite (« ajp-linux-x64/ »), ou le dossier lui-même.
@@ -451,15 +530,24 @@ std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths
         RefusalCode::FileUnreadable,
         i18n::tr_format("the archive does not contain {}", prepare::utf8_path(paths.executable.filename())));
   }
+  const auto delivered = tree_files(root);
+  if (!delivered) {
+    fs::remove_all(extract, error);
+    return std::unexpected(delivered.error());
+  }
+  const std::optional<std::vector<fs::path>> before = read_file_list(paths.install);
   fs::remove_all(previous, error);
   fs::create_directories(previous, error);
   if (auto saved = replace_tree(paths.install, previous); !saved) {
     fs::remove_all(extract, error);
     return std::unexpected(saved.error());
   }
-  if (auto done = replace_tree(root, paths.install); !done) {
-    // Une copie ratée à moitié : l'installation d'avant revient.
-    if (const auto restored = replace_tree(previous, paths.install); !restored)
+  auto done = replace_tree(root, paths.install);
+  if (done) done = remove_dropped(paths.install, before, *delivered);
+  if (done) done = write_file_list(paths.install, *delivered);
+  if (!done) {
+    // Une copie ratée à moitié : l'installation d'avant revient, sans les fichiers que la nouvelle a ajoutés.
+    if (const auto restored = restore_previous(previous, paths.install, *delivered); !restored)
       log_channel("app")->warn(
           "mise à jour : l'ancienne version n'a pas pu être remise : {}",  // i18n-ok : journal
           restored.error().detail);
@@ -484,7 +572,9 @@ std::expected<std::string, Refusal> roll_back_update(const UpdatePaths& paths, U
   std::error_code error;
   if (!fs::exists(previous, error))
     return refuse(RefusalCode::TrackUnavailable, i18n::tr("no previous version kept"));
-  if (auto done = replace_tree(previous, paths.install); !done) return std::unexpected(done.error());
+  // Ce que la version annulée a ajouté se retire avec elle.
+  if (auto done = restore_previous(previous, paths.install, read_file_list(paths.install)); !done)
+    return std::unexpected(done.error());
   const std::string back = state.previous_version;
   fs::remove_all(previous, error);
   state.previous_version.clear();
