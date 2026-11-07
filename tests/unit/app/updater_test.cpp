@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -196,3 +198,19 @@ TEST_CASE("un AppImage ne se met pas à jour lui-même : le lecteur renvoie vers
   CHECK_FALSE(ajp::app::play::update_managed_reason(paths).starts_with("AppImage"));
 }
 #endif
+
+TEST_CASE("mises à jour : signature fausse, rien d'autre n'est téléchargé", "[updater]") {
+  std::vector<std::string> asked;
+  const UpdateFetch fake = [&](std::string_view url, const fs::path& file, int,
+                               const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+    asked.emplace_back(url);
+    write(file, url.ends_with(".sig") ? std::string(128, '0') : std::string("version = \"9.0.0\"\n"));
+    return {};
+  };
+  const auto checked = check_for_update("stable", std::stop_token{}, fake,
+                                        "c438afee757ea9095f5e9d56380da968bfca8af4ff272c4773b51808bca6ce2d");
+  REQUIRE_FALSE(checked);
+  CHECK(checked.error().code == ajp::RefusalCode::HashMismatch);
+  REQUIRE(asked.size() == 2);  // le manifeste et sa signature, jamais une archive
+  CHECK(asked[1].ends_with("manifest.toml.sig"));
+}

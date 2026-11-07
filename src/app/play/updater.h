@@ -88,10 +88,22 @@ Refusal curl_failure(int code, std::string_view message);
 // canal sans manifeste publié (HTTP 404) n'est pas un refus : le lecteur est à jour.
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop);
 
+// Un téléchargement : l'adresse dans le fichier, en max_seconds au plus. Celui du lecteur est curl ; un test
+// donne le sien.
+using UpdateFetch = std::function<std::expected<void, Refusal>(
+    std::string_view url, const std::filesystem::path& file, int max_seconds, const std::stop_token& stop)>;
+// La même vérification, avec ce téléchargement et cette clé publique (hexadécimal).
+std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop,
+                                                     const UpdateFetch& fetch, std::string_view public_key);
+
 // Télécharge l'archive du manifeste sous <données>/updates, vérifie taille et SHA-256 ; rend son chemin.
 std::expected<std::filesystem::path, Refusal> download_update(const UpdatePaths& paths,
                                                               const core::UpdateManifest& manifest,
                                                               const std::stop_token& stop);
+std::expected<std::filesystem::path, Refusal> download_update(const UpdatePaths& paths,
+                                                              const core::UpdateManifest& manifest,
+                                                              const std::stop_token& stop,
+                                                              const UpdateFetch& fetch);
 
 // Applique l'archive préparée : copie l'installation actuelle dans previous, extrait l'archive sur
 // l'installation. Rend le message ; en cas d'échec l'installation d'avant est remise. L'état est mis à jour
