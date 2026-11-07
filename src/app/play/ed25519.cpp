@@ -277,11 +277,17 @@ bool canonical_s(const std::uint8_t* s) {
   return false;  // S == L
 }
 
-std::array<std::uint8_t, 64> sha512(std::initializer_list<std::span<const std::uint8_t>> parts) {
+// Rien si libavutil ne donne pas de contexte : la vérification échoue alors fermée (un condensat nul
+// réduirait la vérification à R == S·B, qu'on fabrique pour tout S).
+std::optional<std::array<std::uint8_t, 64>> sha512(
+    std::initializer_list<std::span<const std::uint8_t>> parts) {
   AVSHA512* context = av_sha512_alloc();
+  if (context == nullptr) return std::nullopt;
   std::array<std::uint8_t, 64> digest{};
-  if (context == nullptr) return digest;
-  av_sha512_init(context, 512);
+  if (av_sha512_init(context, 512) < 0) {
+    av_free(context);
+    return std::nullopt;
+  }
   for (const auto part : parts) av_sha512_update(context, part.data(), part.size());
   av_sha512_final(context, digest.data());
   av_free(context);
@@ -303,9 +309,10 @@ bool ed25519_verify(std::span<const std::uint8_t, 32> public_key, std::span<cons
   if (!canonical_s(signature.data() + 32)) return false;
   Point negated_a{};
   if (!unpack_negated(negated_a, public_key.data(), c)) return false;
-  std::array<std::uint8_t, 64> h = sha512({signature.first<32>(), public_key, message});
-  reduce_64(h.data());
-  Point p = scalarmult(negated_a, h.data(), c);          // h * (-A)
+  std::optional<std::array<std::uint8_t, 64>> h = sha512({signature.first<32>(), public_key, message});
+  if (!h) return false;
+  reduce_64(h->data());
+  Point p = scalarmult(negated_a, h->data(), c);         // h * (-A)
   const Point q = scalarbase(signature.data() + 32, c);  // S * B
   add(p, q, c);
   std::array<std::uint8_t, 32> computed{};

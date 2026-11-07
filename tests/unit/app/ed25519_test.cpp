@@ -4,6 +4,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "wycheproof_ed25519.h"
+
 using namespace ajp::app::play;
 
 namespace {
@@ -24,6 +26,17 @@ TEST_CASE("Ed25519 : RFC 8032, essai 1 (message vide)", "[ed25519]") {
   CHECK(ed25519_verify_hex("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", "",
                            "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc"
                            "61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"));
+}
+
+TEST_CASE("Ed25519 : RFC 8032, essais 2 et 3 (un et deux octets)", "[ed25519]") {
+  CHECK(
+      ed25519_verify_hex("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c", "\x72",
+                         "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458"
+                         "f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00"));
+  CHECK(
+      ed25519_verify_hex("fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025", "\xaf\x82",
+                         "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae6"
+                         "7f760984dc6594a7c15e9716ed28dc027beceea1ec40a"));
 }
 
 TEST_CASE("Ed25519 : message, clé ou signature altérés sont refusés", "[ed25519]") {
@@ -65,4 +78,17 @@ size = 1
                                  manifest + " ",
                                  "6b7a50430e1ea3b88492ce9ec890270cce724b0488fe38dbec7a32eba55c0e8d0d3399bca60"
                                  "8719c0dd0aca127011750395b3463ceda2b4978ce52d548913400"));
+}
+
+// Les 210 vecteurs de Wycheproof : points de petit ordre, S hors de [0, L), encodages non canoniques,
+// signatures tronquées ou allongées. Un vecteur « acceptable » permet les deux réponses.
+TEST_CASE("Ed25519 : vecteurs Wycheproof", "[ed25519]") {
+  for (const wycheproof::Vector& v : wycheproof::kEd25519) {
+    const auto message = from_hex(v.message);
+    REQUIRE(message);
+    const std::string text(message->begin(), message->end());
+    const bool verified = ed25519_verify_hex(v.key, text, v.signature);
+    INFO("tcId " << v.id);
+    if (v.result >= 0) CHECK(verified == (v.result == 1));
+  }
 }
