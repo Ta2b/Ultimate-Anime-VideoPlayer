@@ -99,6 +99,7 @@ constexpr std::array kWizardTexts{
     Entry{"Read the licence", "Lire la licence"},
     Entry{"Resume playback", "Continuer la lecture"},
     Entry{"Skip", "Passer"},
+    Entry{"Set it up myself", "Régler moi-même"},
     Entry{"Skip: Speakers, faithful sound. Change it later in Audio > Output.",
           "Passer : Enceintes, rendu fidèle. À changer ensuite dans Audio > Sortie."},
     Entry{"Speakers: faithful sound, careful mix.", "Enceintes : rendu fidèle, mixage soigné."},

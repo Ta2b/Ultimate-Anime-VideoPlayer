@@ -76,6 +76,11 @@ void skip(Wizard& wizard) {
   next(wizard);
 }
 
+void set_up_myself(Wizard& wizard) {
+  if (std::ranges::find(wizard.skipped, WizardStep::Chain) == wizard.skipped.end())
+    wizard.skipped.push_back(WizardStep::Chain);
+}
+
 std::string progress_text(const Wizard& wizard) {
   return i18n::tr_format("Step {} of {}: {}", wizard.at + 1, wizard.steps.size(), title(current(wizard)));
 }

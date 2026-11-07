@@ -254,9 +254,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                    .paths = paths,
                                    .catalog = catalog,
                                    .engines_path = engines_path};
-  // Une vidéo ouverte directement (double-clic, argument) se lit tout de suite : l'assistant ne
-  // la bloque pas, et il se présentera au prochain lancement depuis l'accueil.
-  if (options.first_run || (!engines->first_run_done && !given)) {
+  // L'assistant s'ouvre au premier lancement dans tous les cas, double-clic compris (P3.1) : la vidéo
+  // demandée attend, puis se lance à la fin. Seuls les lancements pilotés (essais, captures, banc, dossier de
+  // réglages à part) le sautent.
+  const bool scripted = options.stop_after_us > 0 || options.snapshot || !options.keys.empty() ||
+                        options.bench_out || options.data_dir;
+  if (options.first_run || (!engines->first_run_done && !scripted)) {
     auto shown = run_engine_screen(engine_screen, *engines, false, next_key, snapshot);
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};

@@ -60,6 +60,11 @@ TEST_CASE("Terminer écrit les choix et laisse intact ce qui est sauté", "[wiza
   play = wizard_play_settings(wizard, play);
   CHECK(play.update_mode == "auto");
   CHECK(wants_machine_calibration(wizard));
+  // « Régler moi-même » (P3.1) : pas de calibration, le préréglage Auto.
+  Wizard myself = wizard;
+  set_up_myself(myself);
+  CHECK_FALSE(wants_machine_calibration(myself));
+  CHECK(wizard_play_settings(myself, PlaySettings{}).preset == Preset::Auto);
 
   // Écrans passés : Me prévenir (défaut), préréglage Auto, pas de calibration.
   wizard.skipped = {WizardStep::Updates, WizardStep::Chain};

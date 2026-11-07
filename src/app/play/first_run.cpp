@@ -513,6 +513,14 @@ void draw_wizard(FirstRunView& view, float scale) {
       next(wizard);
     }
     ImGui::PopStyleColor(2);
+    // Le bouton secondaire du résumé : sans calibration, le niveau Auto estimé pour cette carte (P3.1).
+    if (is_last(wizard) && wants_machine_calibration(wizard)) {
+      ImGui::SameLine();
+      if (ImGui::Button(i18n::tr("Set it up myself"), {0.0F, tall})) {
+        set_up_myself(wizard);
+        view.done = true;
+      }
+    }
   }
   ImGui::End();
 }

@@ -62,6 +62,8 @@ bool is_last(const Wizard& wizard);
 void next(Wizard& wizard);      // Suivant
 void previous(Wizard& wizard);  // Précédent
 void skip(Wizard& wizard);      // Passer : l'écran est noté sauté, on avance
+// « Régler moi-même » (P3.1) : la calibration sautée, le préréglage Auto estimé comme point de départ.
+void set_up_myself(Wizard& wizard);
 // « Étape 3 sur 8 » : le rang parmi les écrans de cette machine.
 std::string progress_text(const Wizard& wizard);
 
