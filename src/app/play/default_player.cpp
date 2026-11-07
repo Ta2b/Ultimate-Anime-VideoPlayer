@@ -261,8 +261,8 @@ std::vector<RegistryValue> registry_shared_values() {
 namespace {
 // P4.11 : xdg-mime ne se lance qu'une fois par processus (et après une inscription ou un retrait), plus à
 // chaque ouverture de chaîne, « Appliquer » ou épisode.
-std::mutex g_default_mutex;
-std::optional<bool> g_default_known;
+std::mutex g_default_mutex;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::optional<bool> g_default_known;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 void forget_default_player() {
   const std::scoped_lock lock(g_default_mutex);

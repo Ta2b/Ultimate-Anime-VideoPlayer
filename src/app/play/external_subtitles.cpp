@@ -69,7 +69,7 @@ std::string loose(std::string_view name) {
 std::optional<std::string> tags_after(const std::string& name, const std::string& stem) {
   for (const auto& [n, v] : {std::pair{name, stem}, std::pair{loose(name), loose(stem)}}) {
     if (v.empty() || !n.starts_with(v)) continue;
-    const std::string rest = n.substr(v.size());
+    std::string rest = n.substr(v.size());
     if (rest.empty() || rest.front() == '.') return rest;  // « Épisode 010.srt » n'est pas « Épisode 01 »
   }
   return std::nullopt;

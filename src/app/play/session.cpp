@@ -230,17 +230,18 @@ bool Session::step_from_queue() {
   if (pending_seek_us_ || prerolling_ || !current_ || current_->pts_us == kNoPts) return false;
   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
   if (period <= 0) period = kAssumedFramePeriodUs;
+  const RingFrame shown = *current_;
   // L'image une période source plus loin (les images interpolées d'entre deux sont passées) ; écrite.
   const RingFrame* head = queue_.first_of(epoch_);
-  if (head == nullptr || head->pts_us == kNoPts || head->pts_us > current_->pts_us + period + period / 4)
+  if (head == nullptr || head->pts_us == kNoPts || head->pts_us > shown.pts_us + period + period / 4)
     return false;
   late_.clear();
-  const std::optional<RingFrame> next = queue_.pick(current_->pts_us + period, period / 4, late_,
+  const std::optional<RingFrame> next = queue_.pick(shown.pts_us + period, period / 4, late_,
                                                     [this](const RingFrame& f) { return screen_.ready(f); });
   for (const RingFrame& frame : late_) retire(frame);
   late_.clear();
   if (!next) return false;
-  retire(*current_);
+  retire(shown);
   current_ = next;
   stepped_ = true;  // montrée au prochain tour
   return true;
