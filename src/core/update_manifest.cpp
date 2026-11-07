@@ -102,6 +102,20 @@ std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view to
   if (!expires)
     return refuse(RefusalCode::FieldMissing, "manifeste : expires (AAAA-MM-JJ) absent ou illisible");
   out.expires = *expires;
+  if (const toml::node* revoked = root->get("revoked_keys")) {
+    const toml::array* keys = revoked->as_array();
+    if (keys == nullptr)
+      return refuse(RefusalCode::FieldOutOfRange, "manifeste : revoked_keys doit être une liste");
+    for (const toml::node& key : *keys) {
+      std::string hex = key.value_or(std::string());
+      std::ranges::transform(hex, hex.begin(),
+                             [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+      if (!is_sha256(hex))  // même forme : 64 chiffres hexadécimaux
+        return refuse(RefusalCode::FieldOutOfRange,
+                      "manifeste : revoked_keys attend des clés de 64 chiffres");
+      out.revoked_keys.push_back(std::move(hex));
+    }
+  }
   if (!parse_version(out.version))
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("manifeste : version « {} » illisible", out.version));

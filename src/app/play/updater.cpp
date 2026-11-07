@@ -245,6 +245,14 @@ std::string_view release_repo() {
 std::string_view update_public_key() {
   return AJP_UPDATE_PUBKEY;
 }
+
+std::vector<std::string> update_public_keys(const std::vector<std::string>& revoked) {
+  std::vector<std::string> keys;
+  for (const std::string_view key :
+       {std::string_view(AJP_UPDATE_PUBKEY), std::string_view(AJP_UPDATE_PUBKEY_BACKUP)})
+    if (!key.empty() && std::ranges::find(revoked, key) == revoked.end()) keys.emplace_back(key);
+  return keys;
+}
 std::string_view installed_version() {
   return AJP_VERSION;
 }
@@ -270,6 +278,9 @@ std::string format_update_state(const UpdateState& state) {
   root.insert("unconfirmed_launches", static_cast<std::int64_t>(state.unconfirmed_launches));
   root.insert("skipped_version", state.skipped_version);
   root.insert("launch_open", state.launch_open);
+  toml::array revoked;
+  for (const std::string& key : state.revoked_keys) revoked.push_back(key);
+  root.insert("revoked_keys", std::move(revoked));
   std::ostringstream out;
   out << root << '\n';
   return out.str();
@@ -296,6 +307,9 @@ std::expected<UpdateState, Refusal> parse_update_state(std::string_view text) {
       std::clamp<std::int64_t>(root["unconfirmed_launches"].value_or(std::int64_t{0}), 0, 1000));
   state.skipped_version = root["skipped_version"].value_or(std::string());
   state.launch_open = root["launch_open"].value_or(false);
+  if (const toml::array* revoked = root["revoked_keys"].as_array())
+    for (const toml::node& key : *revoked)
+      if (auto hex = key.value<std::string>()) state.revoked_keys.push_back(std::move(*hex));
   return state;
 }
 
@@ -365,12 +379,13 @@ Refusal curl_failure(int code, std::string_view message) {
 }
 
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop) {
-  return check_for_update(channel, stop, fetch, update_public_key());
+  return check_for_update(channel, stop, fetch, update_public_keys({}));
 }
 
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop,
-                                                     const UpdateFetch& fetch, std::string_view key) {
-  if (key.empty())
+                                                     const UpdateFetch& fetch,
+                                                     const std::vector<std::string>& keys) {
+  if (keys.empty())
     return refuse(RefusalCode::LibraryUnavailable,
                   i18n::tr("this package has no signing key: updates cannot be verified"));
   const auto made = private_temp_dir();
@@ -397,10 +412,14 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
     return std::unexpected(got.error());
   const std::string manifest_text = read_all(dir / "manifest.toml");
   const std::string signature = trimmed(read_all(dir / "manifest.toml.sig"));
-  if (!ed25519_verify_hex(key, manifest_text, signature))
+  const auto signer = std::ranges::find_if(
+      keys, [&](const std::string& key) { return ed25519_verify_hex(key, manifest_text, signature); });
+  if (signer == keys.end())
     return refuse(RefusalCode::HashMismatch, i18n::tr("the manifest signature is wrong: update ignored"));
   auto manifest = core::parse_update_manifest(manifest_text);
   if (!manifest) return std::unexpected(manifest.error());
+  if (std::ranges::find(manifest->revoked_keys, *signer) != manifest->revoked_keys.end())
+    return refuse(RefusalCode::HashMismatch, i18n::tr("the manifest signature is wrong: update ignored"));
   if (core::manifest_expired(*manifest,
                              std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())))
     return refuse(RefusalCode::FieldOutOfRange, i18n::tr("the update manifest has expired: update ignored"));
@@ -409,6 +428,7 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
         RefusalCode::FieldOutOfRange,
         i18n::tr_format("the manifest is for channel \"{}\", not \"{}\"", manifest->channel, channel));
   CheckResult result;
+  result.revoked_keys = manifest->revoked_keys;
   const auto order = core::compare_versions(manifest->version, installed_version());
   if (order && *order > 0 && core::artifact_for(*manifest, core::kHostOs) != nullptr) {
     result.message = i18n::tr_format("{} is available", manifest->version);
@@ -476,7 +496,11 @@ std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, s
   state.last_check_unix =
       std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
           .count();
-  auto checked = check_for_update(channel, stop);
+  auto checked = check_for_update(channel, stop, fetch, update_public_keys(state.revoked_keys));
+  if (checked)
+    for (std::string& key : checked->revoked_keys)
+      if (std::ranges::find(state.revoked_keys, key) == state.revoked_keys.end())
+        state.revoked_keys.push_back(std::move(key));
   if (!checked) {
     state.last_error = checked.error().detail;
     return std::unexpected(checked.error());

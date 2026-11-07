@@ -23,6 +23,7 @@
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/types.h"
 #include "core/update_manifest.h"
@@ -52,7 +53,9 @@ struct UpdateState {
   std::string unconfirmed_version;  // appliquée, pas encore confirmée par une lecture menée à son terme
   int unconfirmed_launches = 0;     // ses lancements qui ne sont pas allés au bout (plantage), depuis
   std::string skipped_version;  // retirée par la garde : signalée, préparée de nouveau seulement sur demande
-  bool launch_open = false;     // lancée et pas encore refermée : posé au lancement, retiré à la sortie
+  bool launch_open = false;
+  std::vector<std::string> revoked_keys;  // clés publiques qu'un manifeste vérifié a révoquées     // lancée
+                                          // et pas encore refermée : posé au lancement, retiré à la sortie
   friend bool operator==(const UpdateState&, const UpdateState&) = default;
 };
 
@@ -77,6 +80,7 @@ struct CheckResult {
   std::optional<core::UpdateManifest>
       newer;            // plus récent que le lecteur, de ce canal, avec une archive pour ce système
   std::string message;  // « à jour », « 0.7.0 disponible »…
+  std::vector<std::string> revoked_keys;  // révoquées par le manifeste vérifié, à retenir
 };
 
 // Le statut HTTP d'un message d'erreur de curl (« … returned error: 404 ») ; 0 : aucun.
@@ -94,9 +98,14 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
 // donne le sien.
 using UpdateFetch = std::function<std::expected<void, Refusal>(
     std::string_view url, const std::filesystem::path& file, int max_seconds, const std::stop_token& stop)>;
-// La même vérification, avec ce téléchargement et cette clé publique (hexadécimal).
+// Les clés publiques que le lecteur croit : l'active, puis celle de secours si elle est compilée, moins les
+// révoquées.
+std::vector<std::string> update_public_keys(const std::vector<std::string>& revoked);
+// La même vérification, avec ce téléchargement et ces clés publiques (hexadécimal) : le manifeste doit être
+// signé par l'une d'elles, et ne vaut plus si sa propre clé y est révoquée.
 std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop,
-                                                     const UpdateFetch& fetch, std::string_view public_key);
+                                                     const UpdateFetch& fetch,
+                                                     const std::vector<std::string>& keys);
 
 // Télécharge l'archive du manifeste sous <données>/updates, vérifie taille et SHA-256 ; rend son chemin.
 std::expected<std::filesystem::path, Refusal> download_update(const UpdatePaths& paths,

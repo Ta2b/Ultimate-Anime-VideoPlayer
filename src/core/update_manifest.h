@@ -7,6 +7,7 @@
 //   date = "2026-10-30"
 //   expires = "2027-02-27"     # au-delà, le manifeste est refusé : un ancien ne se rejoue pas
 //   notes_url = "https://github.com/…/releases/tag/v0.5.0"
+//   revoked_keys = ["…"]      # clés publiques (64 chiffres hexadécimaux) que le lecteur ne croit plus
 //   [linux-x64]
 //   url = "https://…/ajp-linux-x64.tar.gz"
 //   sha256 = "…"                # 64 chiffres hexadécimaux
@@ -20,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/engines.h"
 #include "core/types.h"
@@ -41,6 +43,7 @@ struct UpdateManifest {
   std::string date;
   std::chrono::sys_days expires{};  // jour UTC après lequel le manifeste ne vaut plus
   std::string notes_url;
+  std::vector<std::string> revoked_keys;  // clés publiques retirées, en hexadécimal minuscule
   std::optional<UpdateArtifact> linux_x64;
   std::optional<UpdateArtifact> windows_x64;
   std::optional<UpdateArtifact> macos_arm64;
