@@ -569,7 +569,8 @@ std::expected<std::unique_ptr<DirectModel>, Refusal> open_direct(const std::file
       config.computeUnits = compute_units(units);
       config.allowLowPrecisionAccumulationOnGPU = YES;
 #if AJP_COREML_HINTS
-      if (@available(macOS 14.4, *)) {
+      // specializationStrategy n'existe qu'à partir de macOS 15 (le SDK le refuse plus tôt, -Werror).
+      if (@available(macOS 15.0, *)) {
         MLOptimizationHints* hints = [[MLOptimizationHints alloc] init];
         hints.specializationStrategy = MLSpecializationStrategyFastPrediction;
         config.optimizationHints = hints;
