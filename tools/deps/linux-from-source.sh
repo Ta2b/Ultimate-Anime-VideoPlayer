@@ -124,7 +124,7 @@ fi
 FFMPEG_OPTS=(--prefix="$PREFIX" --enable-shared --disable-static
   --disable-programs --disable-doc --disable-debug --disable-bzlib
   --enable-ffnvcodec --enable-nvdec --enable-cuvid
-  --enable-vulkan --enable-vaapi --enable-libdav1d
+  --enable-vulkan --enable-vaapi --enable-libdav1d --enable-libsvtav1
   --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib")
 signature="$(ref_of ffmpeg) ${FFMPEG_OPTS[*]} nv-codec-headers $(ref_of nv-codec-headers)"
 if ! done_marker ffmpeg "$signature"; then

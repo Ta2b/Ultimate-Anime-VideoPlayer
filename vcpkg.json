@@ -32,7 +32,19 @@
             "swscale",
             "dav1d",
             "nvcodec",
-            "vulkan"
+            "vulkan",
+            {
+              "name": "amf",
+              "platform": "windows"
+            },
+            {
+              "name": "qsv",
+              "platform": "windows"
+            },
+            {
+              "name": "svt-av1",
+              "platform": "x64"
+            }
           ]
         },
         {
