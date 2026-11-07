@@ -48,6 +48,9 @@ ExportSize export_size(ExportSize chain, ExportSize source, int height);
 // plus sans elle), réduite. {0, 1} si celle de la source est inconnue.
 media::Rational export_rate(media::Rational source, Factor factor);
 
+// Le dossier est sur un FAT (FAT32, vfat, msdos) : un fichier n'y dépasse pas 4 Gio (P3.89).
+bool on_fat32(const std::filesystem::path& dir);
+
 // « Épisode 01 [ajp 3840x2160 47.952fps].mkv » à côté de la source ; « (2) », « (3) »… si le nom
 // est pris ; un chemin vide si « (999) » l'est aussi. Le nom de la source est borné à 160 octets.
 std::filesystem::path default_export_path(const std::filesystem::path& source, ExportSize size,

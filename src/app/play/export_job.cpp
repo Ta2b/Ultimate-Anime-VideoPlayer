@@ -5,7 +5,18 @@
 #include <cmath>
 #include <format>
 #include <numeric>
+#include <string_view>
 #include <system_error>
+
+#ifdef _WIN32
+#include <array>
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <sys/mount.h>
+#include <sys/param.h>
+#else
+#include <sys/vfs.h>
+#endif
 
 #include "app/play/i18n.h"
 #include "prepare/utf8.h"
@@ -83,6 +94,24 @@ std::filesystem::path default_export_path(const std::filesystem::path& source, E
   // P3.95 : passé « (999) », aucun nom proposé plutôt qu'un fichier existant écrasé.
   if (std::filesystem::exists(path, error)) return {};
   return path;
+}
+
+bool on_fat32(const std::filesystem::path& dir) {
+#ifdef _WIN32
+  std::array<wchar_t, MAX_PATH + 1> volume{};
+  std::array<wchar_t, MAX_PATH + 1> fs{};
+  if (GetVolumePathNameW(dir.c_str(), volume.data(), static_cast<DWORD>(volume.size())) == 0) return false;
+  if (GetVolumeInformationW(volume.data(), nullptr, 0, nullptr, nullptr, nullptr, fs.data(),
+                            static_cast<DWORD>(fs.size())) == 0)
+    return false;
+  return std::wstring_view(fs.data()).starts_with(L"FAT");
+#elif defined(__APPLE__)
+  struct statfs info{};
+  return statfs(dir.c_str(), &info) == 0 && std::string_view(info.f_fstypename) == "msdos";
+#else
+  struct statfs info{};
+  return statfs(dir.c_str(), &info) == 0 && info.f_type == 0x4d44;  // MSDOS_SUPER_MAGIC
+#endif
 }
 
 std::string export_label(exporter::Codec codec, exporter::Quality quality) {

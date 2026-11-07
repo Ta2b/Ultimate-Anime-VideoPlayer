@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <deque>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -28,6 +30,7 @@ extern "C" {
 #include "app/play/chain_setup.h"
 #include "app/play/controls.h"
 #include "app/play/export_depth.h"
+#include "app/play/export_job.h"
 #include "app/play/export_sink.h"
 #include "app/play/first_run.h"
 #include "app/play/live_settings.h"
@@ -113,6 +116,33 @@ std::optional<ExportEnd> poll_export_events(PlaceboScreen& screen, bool& details
   return end;
 }
 
+// P3.89 : la destination avant la préparation des moteurs : on y écrit, il y reste de la place (au moins
+// 512 Mio, et la taille de la source de préférence), et un FAT32 (4 Gio par fichier) est signalé.
+std::optional<Refusal> destination_problem(const std::filesystem::path& output,
+                                           const std::filesystem::path& source) {
+  const std::filesystem::path dir = output.parent_path().empty() ? "." : output.parent_path();
+  const std::filesystem::path probe = dir / ".ajp-write-probe";
+  std::error_code error;
+  {
+    std::ofstream file(probe, std::ios::binary);
+    if (!(file << 'x'))
+      return Refusal{RefusalCode::FileUnwritable, std::format("écriture refusée : {}", dir.string())};
+  }
+  std::filesystem::remove(probe, error);
+  const auto space = std::filesystem::space(dir, error);
+  const std::uintmax_t source_bytes = std::filesystem::file_size(source, error);
+  constexpr std::uintmax_t kMinFree = 512ULL << 20;
+  if (!error && space.available < kMinFree)
+    return Refusal{RefusalCode::FileUnwritable,
+                   std::format("{} Mio libres dans {}", space.available >> 20, dir.string())};
+  if (!error && space.available < source_bytes)
+    log_channel("app")->warn("export : {} Mio libres, la source en fait {}", space.available >> 20,
+                             source_bytes >> 20);
+  if (on_fat32(dir))
+    log_channel("app")->warn("export : FAT32, un fichier s'arrête à 4 Gio ({})", dir.string());
+  return std::nullopt;
+}
+
 }  // namespace
 
 ExportOutcome run_export(Player& p, const ExportJob& job) {
@@ -132,6 +162,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     return stopped(
         Refusal{RefusalCode::FileUnwritable, std::format("dossier introuvable : {}", parent.string())});
   }
+  if (auto problem = destination_problem(job.output, p.options.file)) return stopped(*problem);
   std::vector<std::string> unavailable;
   const PlaySettings settings = within_engines(export_chain(job.chain), p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
