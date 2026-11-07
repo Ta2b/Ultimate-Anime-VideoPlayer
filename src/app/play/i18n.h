@@ -12,6 +12,8 @@ enum class Language { English, French };
 
 Language language();
 void set_language(Language language);
+// Le séparateur décimal de la langue : « 2,5 » en français, « 2.5 » en anglais.
+char decimal_point();
 
 // Code de réglage (« en », « fr ») : un code inconnu donne l'anglais.
 Language language_from_code(std::string_view code);

@@ -78,8 +78,8 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
 
 std::string auto_factor_text(int centi) {
   if (centi % 100 == 0) return std::format("{}", centi / 100);
-  if (centi % 10 == 0) return std::format("{},{}", centi / 100, centi % 100 / 10);
-  return std::format("{},{:02}", centi / 100, centi % 100);
+  if (centi % 10 == 0) return std::format("{}{}{}", centi / 100, i18n::decimal_point(), centi % 100 / 10);
+  return std::format("{}{}{:02}", centi / 100, i18n::decimal_point(), centi % 100);
 }
 
 std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
@@ -127,8 +127,8 @@ std::optional<std::string> ChainStats::rife() const {
   const RifeCounts c = live_.counts();
   std::string line =
       i18n::tr_format("{} {}: {} pairs, {} interpolated, {} held drawings, {} cuts, {} late", engine_,
-                      live_.free_active() ? std::string("libre") : factor_text(live_.factor_now()), c.pairs,
-                      c.interpolated, c.held, c.cuts, c.late);
+                      live_.free_active() ? std::string(i18n::tr("free")) : factor_text(live_.factor_now()),
+                      c.pairs, c.interpolated, c.held, c.cuts, c.late);
   if (live_.auto_active()) line += " · " + auto_status_text(live_.auto_info(host_now_us()), source_fps_);
   if (live_.steady_active()) {
     line += " · " + steady_status_text(live_.steady_info());

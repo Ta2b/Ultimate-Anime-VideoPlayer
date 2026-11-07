@@ -58,6 +58,7 @@ constexpr std::array kStatsTexts{
     Entry{"{} {}: {} pairs, {} interpolated, {} held drawings, {} cuts, {} late",
           "{} {} : {} paires, {} interpolées, {} dessins tenus, {} coupes, {} en retard"},
     Entry{"{}x{} at {} fps · {}", "{}x{} à {} i/s · {}"},
+    Entry{"free", "libre"},
 };
 
 }  // namespace

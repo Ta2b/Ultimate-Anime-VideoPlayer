@@ -172,7 +172,7 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
     CHECK(opts->rife_factor_den == 2);
   }
   CHECK(parse({"a.mkv", "--rife=1.25"}).error().code == RefusalCode::FieldOutOfRange);
-  CHECK(factor_text({.num = 3, .den = 2}) == "×1,5");
+  CHECK(factor_text({.num = 3, .den = 2}) == "×1.5");  // en anglais, la langue par défaut
   CHECK(factor_text({.num = 3, .den = 1}) == "×3");
   CHECK(default_rife_candidates("/home/x").front() ==
         std::filesystem::path(

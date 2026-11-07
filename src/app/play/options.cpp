@@ -7,6 +7,7 @@
 #include <system_error>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "app/play/settings.h"
 #include "core/charconv.h"
 
@@ -32,8 +33,8 @@ std::expected<std::int64_t, Refusal> seconds(std::string_view option, std::strin
   if (!value || !std::isfinite(*value) || *value < 0.0 || *value > static_cast<double>(limits::kSeconds.hi) ||
       !limits::kSeconds.contains(static_cast<std::int64_t>(*value))) {
     return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("{} : « {} » n'est pas une durée en secondes "
-                              "entre {} et {}",
+                  std::format("{}: \"{}\" is not a duration in seconds "
+                              "between {} and {}",
                               option, text, limits::kSeconds.lo, limits::kSeconds.hi));
   }
   return std::llround(*value * 1e6);
@@ -45,7 +46,7 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
   const auto height = x == std::string_view::npos ? std::nullopt : number<int>(text.substr(x + 1));
   if (!width || !height || !limits::kWindowSide.contains(*width) || !limits::kWindowSide.contains(*height)) {
     return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("--window : « {} » n'est pas une taille LxH, côtés de {} à {}", text,
+                  std::format("--window: \"{}\" is not a WxH size, sides from {} to {}", text,
                               limits::kWindowSide.lo, limits::kWindowSide.hi));
   }
   options.window_width = *width;
@@ -61,7 +62,7 @@ std::expected<void, Refusal> keys(std::string_view text, PlayOptions& options) {
     text = comma == std::string_view::npos ? std::string_view{} : text.substr(comma + 1);
     const auto colon = item.find(':');
     if (colon == std::string_view::npos || colon + 1 == item.size()) {
-      return refuse(RefusalCode::FieldOutOfRange, std::format("--keys : « {} » n'est pas S:touche", item));
+      return refuse(RefusalCode::FieldOutOfRange, std::format("--keys: \"{}\" is not S:key", item));
     }
     auto at = seconds("--keys", item.substr(0, colon));
     if (!at) return std::unexpected(std::move(at.error()));
@@ -85,8 +86,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
   const std::string_view rest = arg.substr(name.size());
   if (rest.starts_with('=')) return rest.substr(1);
   if (!rest.empty()) return std::nullopt;  // « --modelX » n'est pas « --model »
-  if (i + 1 >= args.size())
-    return refuse(RefusalCode::FieldMissing, std::format("{} : valeur absente", name));
+  if (i + 1 >= args.size()) return refuse(RefusalCode::FieldMissing, std::format("{}: missing value", name));
   return args[++i];
 }
 
@@ -100,7 +100,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     if (only_files || !arg.starts_with("--")) {
       if (!options.file.empty()) {
         return refuse(RefusalCode::OptionUnknown,
-                      std::format("un seul fichier à la fois : « {} » en trop", arg));
+                      std::format("one file at a time: \"{}\" is one too many", arg));
       }
       options.file = std::filesystem::path(arg);
       continue;
@@ -155,7 +155,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
         if (!nits || *nits < 50 || *nits > 1000)
           return refuse(
               RefusalCode::FieldOutOfRange,
-              std::format("--hdr-metadata : « {} » n'est pas une luminosité SDR de 50 à 1000 nits", text));
+              std::format("--hdr-metadata: \"{}\" is not an SDR brightness from 50 to 1000 nits", text));
         options.kde_sdr_nits = static_cast<double>(*nits);
       }
     } else if (arg == "--no-vrr") {
@@ -188,7 +188,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
         return refuse(RefusalCode::FieldOutOfRange,
-                      std::format("{} : auto, timing, wait, wayland ou open", arg));
+                      std::format("{}: auto, timing, wait, wayland or open", arg));
       options.present = *wanted;
     } else if (arg == "--no-present") {
       options.present = PresentWanted::Open;
@@ -197,7 +197,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else if (arg == "--register" || arg == "--unregister") {
       const Registration wanted = arg == "--register" ? Registration::Register : Registration::Unregister;
       if (options.registration != Registration::None && options.registration != wanted)
-        return refuse(RefusalCode::OptionUnknown, "--register et --unregister ensemble");
+        return refuse(RefusalCode::OptionUnknown, "--register and --unregister together");
       options.registration = wanted;
     } else {
       std::expected<void, Refusal> applied;
@@ -229,7 +229,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           const auto level = text == "auto" ? std::optional<int>(-1) : number<int>(text);
           if (!level || *level < -1 || *level >= 5)
             return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("--bench-level : « {} » n'est ni auto ni 0 à 4", text));
+                          std::format("--bench-level: \"{}\" is neither auto nor 0 to 4", text));
           options.bench_level = level;
         } else if (name == "--stats") {
           options.stats = std::filesystem::path(text);
@@ -239,7 +239,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           const auto frames = number<int>(text);
           if (!frames || *frames < 1 || *frames > kMaxSnapshotFrames)
             return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("--snapshot-frames : « {} » hors de 1 à {}", text, kMaxSnapshotFrames));
+                          std::format("--snapshot-frames: \"{}\" outside 1 to {}", text, kMaxSnapshotFrames));
           options.snapshot_frames = *frames;
         } else if (name == "--snapshot") {
           options.snapshot = std::filesystem::path(text);
@@ -249,7 +249,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           const core::Range<int> range = limits::kTrueHdrPeak;
           if (!setting || !(range.contains(*setting) || *setting == 0)) {
             return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("{} : « {} » hors de {} à {}", name, text, range.lo, range.hi));
+                          std::format("{}: \"{}\" outside {} to {}", name, text, range.lo, range.hi));
           }
           options.true_hdr_peak = *setting;
         } else if (name == "--anime-contrast" || name == "--anime-saturation" ||
@@ -257,7 +257,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           const auto percent = number<int>(text);
           if (!percent || *percent < 0 || *percent > 200) {
             return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("{} : « {} » n'est pas un pourcentage entre 0 et 200", name, text));
+                          std::format("{}: \"{}\" is not a percentage between 0 and 200", name, text));
           }
           if (name == "--anime-contrast") options.anime_contrast = *percent;
           if (name == "--anime-saturation") options.anime_saturation = *percent;
@@ -267,10 +267,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
         } else if (name == "--rife") {
           const auto factor = parse_factor(text);
           if (!factor) {
-            return refuse(
-                RefusalCode::FieldOutOfRange,
-                std::format("--rife : « {} » n'est pas un facteur entre {} et {} (entier ou moitié)", text,
-                            limits::kRifeFactor.lo, limits::kRifeFactor.hi));
+            return refuse(RefusalCode::FieldOutOfRange,
+                          std::format("--rife: \"{}\" is not a factor between {} and {} (whole or half)",
+                                      text, limits::kRifeFactor.lo, limits::kRifeFactor.hi));
           }
           options.rife_factor = factor->num;
           options.rife_factor_den = factor->den;
@@ -278,8 +277,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           const auto lines = number<int>(text);
           if (!lines || !limits::kWorkHeight.contains(*lines)) {
             return refuse(RefusalCode::FieldOutOfRange,
-                          std::format("--work-height : « {} » n'est pas un nombre de lignes entre {} et {}",
-                                      text, limits::kWorkHeight.lo, limits::kWorkHeight.hi));
+                          std::format("--work-height: \"{}\" is not a line count between {} and {}", text,
+                                      limits::kWorkHeight.lo, limits::kWorkHeight.hi));
           }
           options.work_height = *lines;
         } else {
@@ -293,11 +292,11 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
         break;
       }
       if (!applied) return std::unexpected(std::move(applied.error()));
-      if (!known) return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
+      if (!known) return refuse(RefusalCode::OptionUnknown, std::format("unknown option: {}", arg));
     }
   }
   if (options.registration != Registration::None && !options.file.empty()) {
-    return refuse(RefusalCode::OptionUnknown, "--register et --unregister s'emploient sans fichier vidéo");
+    return refuse(RefusalCode::OptionUnknown, "--register and --unregister take no video file");
   }
   return options;  // sans fichier : l'écran d'accueil (home_screen.h)
 }
@@ -319,7 +318,7 @@ std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::st
     if (!arg.starts_with("--")) {
       if (!options.file.empty())
         return refuse(RefusalCode::OptionUnknown,
-                      std::format("un seul fichier à la fois : « {} » en trop", arg));
+                      std::format("one file at a time: \"{}\" is one too many", arg));
       options.file = std::filesystem::path(arg);
     } else if (arg == "--help") {
       options.help = true;
@@ -337,10 +336,10 @@ std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::st
       const auto value = number<int>(**length);
       if (!value || *value < 5 || *value > 120)
         return refuse(RefusalCode::FieldOutOfRange,
-                      std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", **length));
+                      std::format("--seconds: \"{}\" is not a duration from 5 to 120 s", **length));
       options.seconds = *value;
     } else {
-      return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
+      return refuse(RefusalCode::OptionUnknown, std::format("unknown option: {}", arg));
     }
   }
   return options;  // sans fichier : la séquence de test du lecteur (media/bench_clip.h)
@@ -362,7 +361,7 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
     if (!arg.starts_with("--")) {
       if (!options.file.empty())
         return refuse(RefusalCode::OptionUnknown,
-                      std::format("un seul fichier à la fois : « {} » en trop", arg));
+                      std::format("one file at a time: \"{}\" is one too many", arg));
       options.file = std::filesystem::path(arg);
       continue;
     }
@@ -391,117 +390,111 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
         const auto value_s = number<int>(text);
         if (!value_s || *value_s < 5 || *value_s > 120)
           return refuse(RefusalCode::FieldOutOfRange,
-                        std::format("--seconds : « {} » n'est pas une durée de 5 à 120 s", text));
+                        std::format("--seconds: \"{}\" is not a duration from 5 to 120 s", text));
         options.seconds = *value_s;
       }
       break;
     }
-    if (!known) return refuse(RefusalCode::OptionUnknown, std::format("option inconnue : {}", arg));
+    if (!known) return refuse(RefusalCode::OptionUnknown, std::format("unknown option: {}", arg));
   }
   if (!options.help && options.file.empty())
-    return refuse(RefusalCode::FieldMissing, "ajp compare : la vidéo à jouer manque");
+    return refuse(RefusalCode::FieldMissing, "ajp compare: the video to play is missing");
   return options;
 }
 
+// L'aide de la ligne de commande, en anglais comme l'interface par défaut : elle s'écrit avant que les
+// réglages (et la langue choisie) ne soient lus.
 std::string compare_usage() {
-  return "ajp compare <fichier> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   deux chaînes côte à côte, son "
-         "coupé\n"
-         "  --a, --b            options de « ajp play » de chaque variante, ex. --a=\"--rife=3\" "
+  return "ajp compare <file> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   two chains side by side, sound off\n"
+         "  --a, --b            \"ajp play\" options of each variant, e.g. --a=\"--rife=3\" "
          "--b=\"--rife=4\"\n"
-         "  --a-settings=FICHIER, --b-settings=FICHIER   play.toml de départ (poses DRBA, moteur "
-         "d'interpolation…)\n"
-         "  --seconds=S         durée d'un essai (5 à 120, défaut 12) ; A, B, B, A : le pire des deux "
-         "passages\n"
-         "  --report=FICHIER    le rapport, en plus de la sortie standard ; --windowed : dans une fenêtre\n";
+         "  --a-settings=FILE, --b-settings=FILE   starting play.toml (DRBA poses, interpolation engine…)\n"
+         "  --seconds=S         length of one run (5 to 120, default 12); A, B, B, A: the worse of two "
+         "passes\n"
+         "  --report=FILE       the report, besides standard output; --windowed: in a window\n";
 }
 
 std::string bench_usage() {
-  return "ajp bench [fichier] [options]   évalue la machine à chaque niveau, son coupé, fenêtre cachée ; "
-         "sans fichier, "
-         "la séquence de test du lecteur\n"
-         "  --seconds=S      durée d'un essai (5 à 120, défaut 12)\n"
-         "  --report=FICHIER le rapport, en plus de la sortie standard\n"
-         "  --windowed       joue dans une fenêtre au lieu du plein écran\n"
-         "  --visible        montre la fenêtre des essais (cachée par défaut)\n"
-         "Le résultat est gardé dans bench.toml (carte, pilote, niveau, date) et remplace l'estimation de la "
-         "carte.\n";
+  return "ajp bench [file] [options]   rates the machine at each level, sound off, hidden window; without a "
+         "file, the player's test sequence\n"
+         "  --seconds=S      length of one run (5 to 120, default 12)\n"
+         "  --report=FILE    the report, besides standard output\n"
+         "  --windowed       plays in a window instead of full screen\n"
+         "  --visible        shows the runs' window (hidden by default)\n"
+         "The result is kept in bench.toml (card, driver, level, date) and replaces the card's estimate.\n";
 }
 
 std::string play_usage() {
   return std::format(
-      "ajp play [fichier] [options]   (sans fichier : écran d'accueil, Ouvrir une vidéo)\n"
-      "  --model=FICHIER.onnx   modèle SPAN ×2 (défaut : {})\n"
-      "  --no-upscale           image source telle quelle\n"
-      "  --window=LxH           taille de la fenêtre (défaut 1280x720)\n"
-      "  --fullscreen           plein écran dès l'ouverture\n"
-      "  --start=S              position de départ, en secondes (sinon, là où on s'était arrêté)\n"
-      "  --no-resume            ni reprise ni mémoire de la position pour cette lecture\n"
-      "  --seconds=S            quitte après S secondes de lecture\n"
-      "  --fullscreen-after=S   passe en plein écran après S secondes\n"
-      "  --stats=FICHIER        temps de chaque image présentée\n"
-      "  --snapshot=FICHIER     la fenêtre en PPM, après --snapshot-at=S secondes (3) de lecture,\n"
-      "                         ou de construction d'un moteur si elle dure jusque-là ; sur une\n"
-      "                         sortie HDR10, seul un nom en .pq.ppm garde l'image gradée\n"
-      "  --snapshot-frames=N    N présentations de suite (FICHIER-001.ppm…), pour le scintillement\n"
-      "  --rife-image           RIFE image à chaque instant (sans la variante mouvement)\n"
-      "  --sdr                  sortie SDR même sur un écran HDR (essais du grade SDR)\n"
-      "  --ring-rgb10a2         anneau en RGB10A2 sous TensorRT (moitié moins de mémoire, défaut) ;\n"
-      "                         --no-ring-rgb10a2 : RGBA16\n"
-      "  --hdr-metadata[=NITS]  sortie HDR10 avec ses métadonnées, la compression de KWin faite par le\n"
-      "                         grade (NITS : la luminosité SDR de KDE, lue dans KDE sans valeur) ;\n"
-      "                         défaut sous KDE et Windows ; --no-hdr-metadata : la compression\n"
-      "                         laissée à KWin (Windows : écrêtage au pic de l'écran)\n"
-      "  --probe-nvdec          la pré-analyse des plans décodée par NVDEC en 256x144 (défaut ;\n"
-      "                         --no-probe-nvdec : décodage logiciel)\n"
-      "  --no-shot-cuts         les coupes de l'interpolation mesurées par RIFE seul (défaut : les plans\n"
-      "                         de la pré-analyse décident, RIFE quand ils ne couvrent pas la paire)\n"
-      "  --one-lane             une seule file de calcul : plus lent, mais le profil GPU donne le\n"
-      "                         coût propre de chaque moteur\n"
-      "  --skip-held            lecture : un instant identique à l'image affichée n'est ni calculé ni écrit\n"
-      "                         (en essai ; éteint par défaut)\n"
-      "  --anime-shots    --hdr-anime décidée par plan (défaut) : surfaces ancrées à ±5 %, marge des éclats\n"
-      "                   du plan, changées à l'image de coupe ; --no-anime-shots : le relèvement fixe\n"
-      "  --bake-looks=FICHIER.cube  écrit la pile de LUT de play.toml (intensités comprises) en une seule "
-      "LUT\n"
-      "                   de 65 points, puis s'arrête\n"
+      "ajp play [file] [options]   (without a file: home screen, Open a video)\n"
+      "  --model=FILE.onnx      SPAN ×2 model (default: {})\n"
+      "  --no-upscale           source picture as is\n"
+      "  --window=WxH           window size (default 1280x720)\n"
+      "  --fullscreen           full screen from the start\n"
+      "  --start=S              start position, in seconds (otherwise, where playback stopped)\n"
+      "  --no-resume            neither resume nor remember the position for this playback\n"
+      "  --seconds=S            quits after S seconds of playback\n"
+      "  --fullscreen-after=S   goes full screen after S seconds\n"
+      "  --stats=FILE           timing of each presented frame\n"
+      "  --snapshot=FILE        the window as PPM, after --snapshot-at=S seconds (3) of playback,\n"
+      "                         or of an engine build if it lasts that long; on an HDR10\n"
+      "                         output, only a .pq.ppm name keeps the graded picture\n"
+      "  --snapshot-frames=N    N presentations in a row (FILE-001.ppm…), for flicker\n"
+      "  --rife-image           image RIFE at every instant (without the motion variant)\n"
+      "  --sdr                  SDR output even on an HDR screen (SDR grade tests)\n"
+      "  --ring-rgb10a2         RGB10A2 ring under TensorRT (half the memory, default);\n"
+      "                         --no-ring-rgb10a2: RGBA16\n"
+      "  --hdr-metadata[=NITS]  HDR10 output with its metadata, KWin's compression done by the\n"
+      "                         grade (NITS: KDE's SDR brightness, read from KDE without a value);\n"
+      "                         default under KDE and Windows; --no-hdr-metadata: compression\n"
+      "                         left to KWin (Windows: clipping at the screen's peak)\n"
+      "  --probe-nvdec          shot pre-analysis decoded by NVDEC at 256x144 (default;\n"
+      "                         --no-probe-nvdec: software decoding)\n"
+      "  --no-shot-cuts         interpolation cuts measured by RIFE alone (default: the pre-analysis\n"
+      "                         shots decide, RIFE when they do not cover the pair)\n"
+      "  --one-lane             a single compute queue: slower, but the GPU profile gives each\n"
+      "                         engine's own cost\n"
+      "  --skip-held            playback: an instant identical to the shown frame is neither computed nor\n"
+      "                         written (trial; off by default)\n"
+      "  --anime-shots          --hdr-anime decided per shot (default): surfaces anchored at ±5%, highlight\n"
+      "                         headroom of the shot, changed at the cut frame; --no-anime-shots: fixed "
+      "lift\n"
+      "  --bake-looks=FILE.cube writes play.toml's LUT stack (strengths included) as a single\n"
+      "                         65-point LUT, then stops\n"
       "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
-      "                   peps de --hdr-anime : contraste, saturation, éclats, 0 à 200 % (100 : tel quel)\n"
-      "  --fast-steady          essai : mode Rapide à pas constant, N images par source fixe dans un plan\n"
-      "  --smooth-drawings      essai : un dessin tenu deux images se fond en un mouvement (RIFE mouvement)\n"
-      "  --ring-watcher         un thread attend l'écriture de l'anneau et réveille l'affichage (défaut ;\n"
-      "                         --no-ring-watcher : l'affichage sonde)\n"
-      "  --precise-wait         l'attente de l'image suivante à la microseconde (défaut ; --no-precise-wait "
-      ":\n"
-      "                         à la milliseconde)\n"
-      "  --audio-pll            l'horloge audio filtrée par une boucle à verrouillage de phase (défaut ;\n"
-      "                         --no-audio-pll : l'horloge brute)\n"
-      "  --vsync-index          l'image choisie par le numéro de son vblank mesuré, avec hystérésis (défaut "
-      ";\n"
-      "                         --no-vsync-index : l'horloge)\n"
-      "  --present=NIVEAU       retour de présentation wait (défaut), auto, timing, wayland ou open ;\n"
-      "                         --no-present : open, la présentation d'avant\n"
-      "  --no-vrr               écran à fréquence fixe même si le VRR est armé (essai du mode Rapide)\n"
-      "  --software-gpu         accepte un Vulkan logiciel (lavapipe), pour les essais sans GPU\n"
-      "  --mute                 son coupé pour cette lecture\n"
-      "  --data-dir=DOSSIER     réglages et journal dans ce dossier (moteurs et modèles partagés)\n"
-      "  --bench-level=N        joue la chaîne du niveau 0 à 4 (ou auto) ; --bench-out=FICHIER y écrit les "
-      "mesures\n"
-      "  --first-run            écran de bienvenue (moteurs), même déjà vu\n"
-      "  --keys=S:touche,…      touches pressées d'office (essais), ex. 3:Right,5:Space ;\n"
-      "                         export ou export=FICHIER.mkv (ou .mp4, .mov) lance l'export de\n"
-      "                         la chaîne en cours\n"
-      "  --work-height=N        réduit la source à N lignes avant SPAN (défaut 720 ; 0 jamais)\n"
-      "  --rife=N               interpolation ×N avant SPAN (1.5, 2 à 10 ; défaut {} ; 0 aucune)\n"
-      "  --rife-model=FICHIER   modèle RIFE (défaut : {})\n"
-      "  --truehdr-peak=NITS    pic visé par le grade HDR (défaut : celui de l'écran, sinon 1000)\n"
-      "ajp --register           inscrit le lecteur auprès du système (« Ouvrir avec », lecteur par\n"
-      "                         défaut) ; --unregister retire cette inscription\n"
-      "Touches : espace pause, ← → seek 5 s, ↑ ↓ volume, m muet, f plein écran (Échap en sort), q quitter,\n"
-      "  a piste audio suivante, j sous-titres suivants, n / Maj+n épisode suivant / précédent,\n"
-      "  Page↑ / Page↓ chapitre suivant / précédent, o passer le générique, . et , image par image, b son "
-      "fidèle,\n"
-      "  p paramètres, Tab statistiques, Ctrl+0 sans traitement, Ctrl+G grade, Ctrl+I\n"
-      "  interpolation.\n",
+      "                         --hdr-anime punch: contrast, saturation, highlights, 0 to 200% (100: as is)\n"
+      "  --fast-steady          trial: Fast mode at a constant step, N frames per held source in a shot\n"
+      "  --smooth-drawings      trial: a drawing held two frames blends into motion (motion RIFE)\n"
+      "  --ring-watcher         a thread waits for ring writes and wakes the display (default;\n"
+      "                         --no-ring-watcher: the display polls)\n"
+      "  --precise-wait         waits for the next frame to the microsecond (default; --no-precise-wait:\n"
+      "                         to the millisecond)\n"
+      "  --audio-pll            audio clock filtered by a phase-locked loop (default;\n"
+      "                         --no-audio-pll: the raw clock)\n"
+      "  --vsync-index          frame chosen by its measured vblank number, with hysteresis (default;\n"
+      "                         --no-vsync-index: the clock)\n"
+      "  --present=LEVEL        presentation feedback wait (default), auto, timing, wayland or open;\n"
+      "                         --no-present: open, the former presentation\n"
+      "  --no-vrr               fixed refresh screen even if VRR is armed (Fast mode trial)\n"
+      "  --software-gpu         accepts a software Vulkan (lavapipe), for tests without a GPU\n"
+      "  --mute                 sound off for this playback\n"
+      "  --data-dir=FOLDER      settings and log in this folder (engines and models shared)\n"
+      "  --bench-level=N        plays the chain of level 0 to 4 (or auto); --bench-out=FILE writes the\n"
+      "                         measurements there\n"
+      "  --first-run            welcome screen (engines), even if already seen\n"
+      "  --keys=S:key,…         keys pressed automatically (tests), e.g. 3:Right,5:Space;\n"
+      "                         export or export=FILE.mkv (or .mp4, .mov) starts exporting\n"
+      "                         the current chain\n"
+      "  --work-height=N        shrinks the source to N lines before SPAN (default 720; 0 never)\n"
+      "  --rife=N               ×N interpolation before SPAN (1.5, 2 to 10; default {}; 0 none)\n"
+      "  --rife-model=FILE      RIFE model (default: {})\n"
+      "  --truehdr-peak=NITS    peak aimed at by the HDR grade (default: the screen's, else 1000)\n"
+      "ajp --register           registers the player with the system (\"Open with\", default\n"
+      "                         player); --unregister removes this registration\n"
+      "Keys: space pause, ← → seek 5 s, ↑ ↓ volume, m mute, f full screen (Esc leaves it), q quit,\n"
+      "  a next audio track, j next subtitles, n / Shift+n next / previous episode,\n"
+      "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, b faithful\n"
+      "  sound, p settings, Tab statistics, Ctrl+0 no processing, Ctrl+G grade, Ctrl+I interpolation.\n",
       kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
 }
 
@@ -541,7 +534,7 @@ std::optional<Factor> parse_factor(std::string_view text) {
 }
 
 std::string factor_text(Factor factor) {
-  if (factor.den == 2) return std::format("×{},5", factor.num / 2);
+  if (factor.den == 2) return std::format("×{}{}5", factor.num / 2, i18n::decimal_point());
   return std::format("×{}", factor.num);
 }
 
@@ -573,26 +566,26 @@ std::expected<std::filesystem::path, Refusal> find_file(const std::optional<std:
   std::error_code error;
   if (given) {
     if (std::filesystem::is_regular_file(*given, error)) return *given;
-    return refuse(RefusalCode::ModelUnreadable, std::format("{} : {} introuvable", option, given->string()));
+    return refuse(RefusalCode::ModelUnreadable, std::format("{}: {} not found", option, given->string()));
   }
   std::string tried;
   for (const auto& path : candidates) {
     if (std::filesystem::is_regular_file(path, error)) return path;
     tried += std::format("\n  {}", path.string());
   }
-  return refuse(RefusalCode::ModelUnreadable, std::format("{} par défaut introuvable :{}", what, tried));
+  return refuse(RefusalCode::ModelUnreadable, std::format("default {} not found:{}", what, tried));
 }
 
 }  // namespace
 
 std::expected<std::filesystem::path, Refusal> find_model(const PlayOptions& options,
                                                          std::span<const std::filesystem::path> candidates) {
-  return find_file(options.model, "--model", "modèle AnimeJaNai", candidates);
+  return find_file(options.model, "--model", "AnimeJaNai model", candidates);
 }
 
 std::expected<std::filesystem::path, Refusal> find_rife_model(
     const PlayOptions& options, std::span<const std::filesystem::path> candidates) {
-  return find_file(options.rife_model, "--rife-model", "modèle RIFE", candidates);
+  return find_file(options.rife_model, "--rife-model", "RIFE model", candidates);
 }
 
 }  // namespace ajp::app::play

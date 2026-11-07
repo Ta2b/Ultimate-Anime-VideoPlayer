@@ -100,8 +100,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
   // Les fichiers dont les littéraux français restent : textes de développeur (options de ligne de commande,
   // erreurs internes de chargement, fichier .desktop, journaux), jamais affichés tels quels dans l'interface
   // (voir visible_error.h).
-  const std::set<std::string> developer{"options.cpp",
-                                        "settings_toml.cpp",
+  const std::set<std::string> developer{"settings_toml.cpp",
                                         "settings.cpp",
                                         "auto_bench.cpp",
                                         "backend_library.cpp",

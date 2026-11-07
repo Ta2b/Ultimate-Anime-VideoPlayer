@@ -33,7 +33,9 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
 #else
   if (last.pending && last.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = last.pending->get();
-    last = done ? SystemNote{.text = *done} : SystemNote{.text = done.error().detail, .refused = true};
+    if (!done) log_channel("app")->warn("inscription : {} {}", name(done.error().code), done.error().detail);
+    last =
+        done ? SystemNote{.text = *done} : SystemNote{.text = visible_error(done.error()), .refused = true};
   }
   const bool busy = last.pending != nullptr;
   const auto start = [&](std::expected<std::string, Refusal> (*action)(const PlayerPlace&)) {
@@ -78,7 +80,9 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   const std::filesystem::path state_file = place.app_data / "update.toml";
   if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = result.pending->get();
-    result = done ? UpdateNote{.text = *done} : UpdateNote{.text = done.error().detail, .refused = true};
+    if (!done) log_channel("app")->warn("maj : {} {}", name(done.error().code), done.error().detail);
+    result =
+        done ? UpdateNote{.text = *done} : UpdateNote{.text = visible_error(done.error()), .refused = true};
   }
   const UpdateState state = load_update_state(state_file);
   const std::string managed = update_managed_reason(paths);
@@ -182,7 +186,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   } else if (!result.text.empty()) {
     note(result.text);
   }
-  if (!state.last_error.empty() && result.text.empty()) note(i18n::tr("Last error: ") + state.last_error);
+  if (!state.last_error.empty() && result.text.empty())
+    note(i18n::tr("The last update failed (details in the log)."));
 }
 
 bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {

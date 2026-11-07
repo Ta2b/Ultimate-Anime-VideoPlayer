@@ -8,6 +8,7 @@
 
 #include "app/play/engine_switch.h"
 #include "app/play/i18n.h"
+#include "app/play/visible_error.h"
 #include "core/log.h"
 #include "core/settings.h"
 #include "media/bench_clip.h"
@@ -160,7 +161,8 @@ Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Va
       },
       stop);
   if (!exit) {
-    trial.why = i18n::tr_format("Test {} could not start: {}", what, exit.error().detail);
+    log_channel("app")->warn("essai {} : {} {}", what, name(exit.error().code), exit.error().detail);
+    trial.why = i18n::tr_format("Test {} could not start: {}", what, visible_error(exit.error()));
   } else {
     trial.elapsed = exit->elapsed;
     if (exit->kind == prepare::ExitKind::Cancelled) {

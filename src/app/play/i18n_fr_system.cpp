@@ -84,7 +84,8 @@ constexpr std::array kSystemPages{
     Entry{"Installed engines", "Moteurs installés"},
     Entry{"Installed version: {}", "Version installée : {}"},
     Entry{"Last check: {}", "Dernière vérification : {}"},
-    Entry{"Last error: ", "Dernière erreur : "},
+    Entry{"The last update failed (details in the log).",
+          "La dernière mise à jour a échoué (détails dans le journal)."},
     Entry{"MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use "
           ".mkv to keep everything. Esc cancels.",
           "MP4 et MOV gardent les instants exacts, les chapitres et l'audio compatible, mais ni sous-titres "

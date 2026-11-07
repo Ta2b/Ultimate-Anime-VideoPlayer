@@ -12,6 +12,8 @@
 
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
+#include "app/play/visible_error.h"
+#include "core/log.h"
 #include "media/bench_clip.h"
 
 namespace ajp::app::play {
@@ -104,7 +106,8 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     if (done) {
       bench.result = std::move(*done);
     } else if (done.error().code != RefusalCode::Cancelled) {
-      bench.problem = done.error().detail;
+      log_channel("app")->warn("banc : {} {}", name(done.error().code), done.error().detail);
+      bench.problem = visible_error(done.error());
     }
   }
   if (bench.running()) {

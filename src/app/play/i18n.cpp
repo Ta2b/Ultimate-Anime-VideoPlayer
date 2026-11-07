@@ -27,6 +27,10 @@ Language language() {
   return current_language().load(std::memory_order_relaxed);
 }
 
+char decimal_point() {
+  return language() == Language::French ? ',' : '.';
+}
+
 void set_language(Language language) {
   current_language().store(language, std::memory_order_relaxed);
 }
