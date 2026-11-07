@@ -558,6 +558,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         press(name, out.window());
     }
     const bool snapshot_now = p.snapshot.maybe(out, p.began_us);
+    // Remis à faux avant de vider la file (P2.24) : un message arrivé pendant ce tour repousse son réveil, au
+    // lieu de trouver pending vrai et de laisser l'attente suivante aller à son terme (jusqu'à 4 ms).
+    wake.pending.store(false, std::memory_order_release);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (auto dropped = dropped_file(event)) {  // une autre vidéo : la chaîne se ferme pour elle
@@ -702,7 +705,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const std::int64_t wait_us =
           session.view().paused ? std::int64_t{kPausedWaitMs} * 1000 : session.idle_wait_us(host_now_us());
       wait_loop(wait_us, p.options.precise_wait);  // --precise-wait : à la microseconde (6.7)
-      wake.pending.store(false, std::memory_order_relaxed);
     }
   }
   if (chain.dirty) {
