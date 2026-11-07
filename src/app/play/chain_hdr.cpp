@@ -18,6 +18,7 @@
 
 #include "app/play/chain.h"
 #include "app/play/chain_shots.h"
+#include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "core/clock.h"
@@ -319,6 +320,20 @@ void grade_tick(Chain& to, std::int64_t now_us) {
     set_grade(to, to.running, true);
   }
   light_tick(to, shot ? shot : next_live(to), now_us, new_shot, shot.has_value());
+}
+
+void follow_display(Chain& to, std::optional<double> peak_nits) {
+  const int peak = auto_peak_nits(peak_nits);
+  std::string connector = to.display ? to.display->connector : std::string();
+  // Le premier écran vu est celui de l'ouverture : il ne compte pas comme un changement.
+  const bool moved = !to.display_seen.empty() && connector != to.display_seen;
+  to.display_seen = connector;
+  if (!moved && peak == to.auto_peak) return;
+  log_channel("app")->info("écran suivi : {}, pic {} nits", connector.empty() ? "?" : connector, peak);
+  to.auto_peak = peak;
+  apply_oled_care(to, to.running);
+  to.black_dirty = moved || to.black_dirty;
+  set_grade(to, to.running);
 }
 
 void refresh_black(Chain& to) {

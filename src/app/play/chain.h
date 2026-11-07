@@ -93,6 +93,7 @@ struct Chain {
   // Vrai noir OLED : les seuils en cours, et le recalage demandé (au plus 5 fois par seconde).
   std::optional<render::BlackThresholds> black;
   bool black_dirty = true;
+  std::string display_seen;  // le connecteur de l'écran que la chaîne suit (follow_display, P3.58)
   std::int64_t black_at_us = 0;
   // L'en-tête « chaîne » de l'OSD pour ces réglages, recalculé quand le facteur, la réduction ou le
   // moteur HDR changent à chaud ; vide : l'en-tête reste celui de l'ouverture.
@@ -160,6 +161,9 @@ void apply_oled_care(Chain& to, const PlaySettings& s);
 // from_measured_frame : le grade, posé à partir de l'image qui suit la dernière reçue du GPU.
 void set_grade(Chain& to, const PlaySettings& s, bool from_measured_frame = false);
 void refresh_black(Chain& to);
+// L'écran a changé, ou son pic (P3.58) : le pic automatique, les soins OLED et le vrai noir suivent l'écran
+// courant (Chain::display) et le pic relu, sans rouvrir la chaîne.
+void follow_display(Chain& to, std::optional<double> peak_nits);
 // Une action de l'utilisateur (touche, barre, menu) sur la chaîne.
 void apply(const Input& input, Chain& to, std::int64_t now_us);
 

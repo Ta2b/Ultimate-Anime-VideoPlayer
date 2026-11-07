@@ -586,12 +586,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                            chain.running.preset != Preset::Custom);
         if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
       }
-      // L'écran change (éteint puis rallumé, autre sortie, nouveau mode) : on relit sa fréquence, son VRR et
-      // son état, sans quoi la cadence restait celle de l'écran d'avant.
+      // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence, son VRR et son état sont relus.
       read_display_facts();
       if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
-      // Le HDR suit le système : allumé ou coupé pendant la lecture (Windows, KDE), la sortie suit en direct.
-      // Relu toutes les 2 s : sous Windows, la crête se lit dans DXGI et l'EDID.
+      // Le HDR et le pic suivent le système et l'écran (Windows, KDE), relus toutes les 2 s.
       if (!p.options.sdr && host_now_us() - hdr_polled_at >= 2'000'000) {
         hdr_polled_at = host_now_us();
         const std::optional<double> peak_now = content_peak_nits(out.window());
@@ -602,6 +600,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           log->info("HDR du système {} : sortie {}", switched.hdr_native ? "allumé" : "coupé",
                     switched.hdr_native ? "HDR10" : "SDR gradée");
           apply(Input{ApplySettings{.settings = switched}}, chain, host_now_us());
+        } else {
+          follow_display(chain, peak_now);  // P3.58
         }
       }
       const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());

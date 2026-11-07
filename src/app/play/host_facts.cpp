@@ -150,10 +150,36 @@ int display_height(SDL_Window* window) {
 #if defined(_WIN32)
 namespace {
 
-// Le niveau de blanc SDR réglé dans Windows (« luminosité du contenu SDR »), en nits, pour le
-// premier écran en HDR ; 203 si Windows ne le dit pas. SDL exprime la marge HDR relativement à ce
-// blanc : la crête réelle est la marge × ce niveau.
-double windows_sdr_white_nits() {
+// L'écran de la fenêtre (P3.57) : son moniteur et son nom GDI (« \\.\DISPLAY2 »), pour ne lire que son
+// chemin dans la configuration d'affichage, pas le premier ni le plus lumineux.
+struct WindowMonitor {
+  HMONITOR handle = nullptr;
+  MONITORINFOEXW info{};
+};
+std::optional<WindowMonitor> window_monitor(SDL_Window* window) {
+  auto* hwnd = static_cast<HWND>(
+      SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+  if (hwnd == nullptr) return std::nullopt;
+  WindowMonitor monitor{.handle = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)};
+  monitor.info.cbSize = sizeof(monitor.info);
+  if (GetMonitorInfoW(monitor.handle, &monitor.info) == 0) return std::nullopt;
+  return monitor;
+}
+
+// Ce chemin mène-t-il à l'écran de ce nom GDI ? Sans nom, tout chemin convient.
+bool path_on(const DISPLAYCONFIG_PATH_INFO& path, const wchar_t* device) {
+  if (device == nullptr) return true;
+  DISPLAYCONFIG_SOURCE_DEVICE_NAME source{};
+  source.header = {DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, sizeof(source), path.sourceInfo.adapterId,
+                   path.sourceInfo.id};
+  return DisplayConfigGetDeviceInfo(&source.header) == ERROR_SUCCESS &&
+         std::wcscmp(source.viewGdiDeviceName, device) == 0;
+}
+
+// Le niveau de blanc SDR réglé dans Windows (« luminosité du contenu SDR »), en nits, pour l'écran de ce nom
+// GDI ; 203 si Windows ne le dit pas. SDL exprime la marge HDR relativement à ce blanc : la crête réelle est
+// la marge × ce niveau.
+double windows_sdr_white_nits(const wchar_t* device) {
   constexpr double kDefault = 203.0;
   UINT32 paths = 0;
   UINT32 modes = 0;
@@ -164,6 +190,7 @@ double windows_sdr_white_nits() {
                          nullptr) != ERROR_SUCCESS)
     return kDefault;
   for (UINT32 i = 0; i < paths; ++i) {
+    if (!path_on(path_info[i], device)) continue;
     DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO color{};
     color.header = {DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, sizeof(color),
                     path_info[i].targetInfo.adapterId, path_info[i].targetInfo.id};
@@ -178,9 +205,9 @@ double windows_sdr_white_nits() {
   return kDefault;
 }
 
-// Windows a-t-il le HDR actif (« Utiliser le HDR ») sur un écran actif ? SDL ne le voit pas toujours avec
-// Vulkan : il rend une marge de 1,00 sur un écran que Windows dit en HDR.
-bool windows_hdr_active() {
+// Windows a-t-il le HDR actif (« Utiliser le HDR ») sur l'écran de ce nom GDI ? SDL ne le voit pas toujours
+// avec Vulkan : il rend une marge de 1,00 sur un écran que Windows dit en HDR.
+bool windows_hdr_active(const wchar_t* device) {
   UINT32 paths = 0;
   UINT32 modes = 0;
   if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &paths, &modes) != ERROR_SUCCESS) return false;
@@ -190,6 +217,7 @@ bool windows_hdr_active() {
                          nullptr) != ERROR_SUCCESS)
     return false;
   for (UINT32 i = 0; i < paths; ++i) {
+    if (!path_on(path_info[i], device)) continue;
     DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO color{};
     color.header = {DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, sizeof(color),
                     path_info[i].targetInfo.adapterId, path_info[i].targetInfo.id};
@@ -210,14 +238,19 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   const bool sdl_hdr =
       SDL_GetBooleanProperty(props, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false) && headroom > 1.0F;
 #if defined(_WIN32)
+  const std::optional<WindowMonitor> monitor = window_monitor(window);
+  const wchar_t* device = monitor ? monitor->info.szDevice : nullptr;
   if (sdl_hdr) {
-    // Le pic que Windows a calibré (application « Étalonnage HDR ») : MaxLuminance de la sortie DXGI.
+    // Le pic que Windows a calibré (application « Étalonnage HDR ») : MaxLuminance de la sortie DXGI de
+    // l'écran de la fenêtre.
     if (const auto display = read_display(display_name(window)))
-      if (const auto calibrated = system_peak_nits(display->connector, headroom)) return calibrated;
+      if (const auto calibrated =
+              system_peak_nits(display->connector, headroom, monitor ? monitor->handle : nullptr))
+        return calibrated;
     // La marge de SDL dépend du curseur « luminosité du contenu SDR » de Windows (écran à 800 nits, blanc SDR
     // à 400 : marge 2) : la crête que l'EDID annonce la borne par le bas, sans quoi le gris moyen (plafonné à
     // la moitié de la crête) n'a plus d'effet.
-    double peak = static_cast<double>(headroom) * windows_sdr_white_nits();
+    double peak = static_cast<double>(headroom) * windows_sdr_white_nits(device);
     if (const auto display = read_display(display_name(window)); display && display->peak_nits)
       peak = std::max(peak, *display->peak_nits);
     return peak;
@@ -226,7 +259,7 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   // est celle que l'EDID de l'écran annonce, sinon 600 nits (un écran HDR10 courant, prudent : trop haut
   // éclaire trop) ; « Pic auto » du panneau HDR la reprend.
   constexpr double kUnknownPeakNits = 600.0;
-  if (!windows_hdr_active()) return std::nullopt;
+  if (!windows_hdr_active(device)) return std::nullopt;
   if (const auto display = read_display(display_name(window)); display && display->peak_nits)
     return *display->peak_nits;
   return kUnknownPeakNits;

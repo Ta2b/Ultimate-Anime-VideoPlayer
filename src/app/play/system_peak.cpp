@@ -124,12 +124,14 @@ namespace {
 }  // namespace
 
 std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connector,
-                                       [[maybe_unused]] double headroom) {
+                                       [[maybe_unused]] double headroom,
+                                       [[maybe_unused]] const void* monitor) {
 #if defined(_WIN32)
   IDXGIFactory1* factory = nullptr;
   if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))))
     return std::nullopt;
   std::optional<double> best;
+  double full_frame = 0.0;
   IDXGIAdapter1* adapter = nullptr;
   for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
     IDXGIOutput* output = nullptr;
@@ -139,8 +141,11 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
         DXGI_OUTPUT_DESC1 desc{};
         if (SUCCEEDED(output6->GetDesc1(&desc)) &&
             desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 && desc.MaxLuminance > 0.0F &&
-            (!best || desc.MaxLuminance > *best))
+            (monitor == nullptr || desc.Monitor == static_cast<HMONITOR>(const_cast<void*>(monitor))) &&
+            (!best || desc.MaxLuminance > *best)) {
           best = static_cast<double>(desc.MaxLuminance);
+          full_frame = static_cast<double>(desc.MaxFullFrameLuminance);
+        }
         output6->Release();
       }
       output->Release();
@@ -148,7 +153,9 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
     adapter->Release();
   }
   factory->Release();
-  if (best) tell_peak(std::format("pic du système (DXGI MaxLuminance) : {:.0f} nits", *best));
+  if (best)
+    tell_peak(std::format("pic du système (DXGI MaxLuminance) : {:.0f} nits, plein champ {:.0f} nits", *best,
+                          full_frame));
   return best;
 #elif defined(__linux__)
   std::string_view port = connector;
