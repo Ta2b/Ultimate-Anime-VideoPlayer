@@ -26,12 +26,14 @@ std::expected<void, Refusal> UpscaleStage::interpolate_image(float t) {
 }
 
 std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor& flow,
-                                                      const gpu::Tensor& mask) {
+                                                      const gpu::Tensor& mask, bool calm) {
   if (auto ok = fill_rife_input(t); !ok) return ok;
   const std::array inputs{rife_in()};
   std::array results{flow, mask};
   ++rife_runs_;
-  return setup_.backend->enqueue(*setup_.rife_motion, inputs, results);
+  const bool light = calm && setup_.rife_motion_calm != nullptr;
+  if (light) ++calm_runs_;
+  return setup_.backend->enqueue(light ? *setup_.rife_motion_calm : *setup_.rife_motion, inputs, results);
 }
 
 gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
@@ -100,7 +102,9 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     } else {
       // RIFE au milieu ; s'il reste plus d'une image à faire, son mouvement maximal dit si cette
       // passe suffit (kernels/spec/warp.h, seuil mis à la hauteur de RIFE).
-      if (auto ok = run_motion(0.5F, middle.flow, middle.mask); !ok) return ok;
+      // P6.17 : la paire précédente calme et mesurée, le milieu peut prendre le RIFE léger.
+      if (auto ok = run_motion(0.5F, middle.flow, middle.mask, motion_measured_ && !strong_motion_); !ok)
+        return ok;
       if (poses_) {
         single_run_ = true;
         motion_measured_ = false;

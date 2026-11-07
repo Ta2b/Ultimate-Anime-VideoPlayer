@@ -97,6 +97,9 @@ struct PlayOptions {
   int rife_factor = kDefaultRifeFactor;
   int rife_factor_den = 1;                          // 2 pour un facteur en moitié : ×rife_factor / 2
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
+  // --rife-calm-model (essai, P6.17) : un RIFE plus léger (4.22 lite) pour la passe du milieu des paires
+  // calmes, RIFE mouvement seulement ; mêmes plans d'entrée et même remplissage que rife_model, sinon ignoré.
+  std::optional<std::filesystem::path> rife_calm_model;
   int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
   bool help = false;      // --help
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées

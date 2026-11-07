@@ -17,6 +17,7 @@
 #include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/utf8_path.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -102,6 +103,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .skip_held = skip_held && clock != nullptr,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
+      .rife_motion_calm = rife_motion_calm.get(),
       .rife_planes = rife_planes,
       .rife_align = rife_align,
       .distil_drba = drba.get(),
@@ -169,6 +171,40 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
 }
 
 namespace {
+
+// P6.17, essai (--rife-calm-model) : la variante mouvement d'un RIFE plus léger, à la forme de rife_motion,
+// pour la passe du milieu des paires calmes. Facultative : un modèle aux autres plans ou à un autre
+// remplissage, une dérivation ou une construction refusée la laissent de côté, la raison au journal.
+std::expected<void, Refusal> load_calm_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                            const std::filesystem::path& models_dir) {
+  const auto log = log_channel("app");
+  const std::filesystem::path& calm = *p.options.rife_calm_model;
+  auto planes = rife_input_planes(calm);
+  if (!planes || *planes != c.rife_planes || rife_padding_multiple(calm) != c.rife_align) {
+    log->warn("RIFE des paires calmes ignoré : {} n'a pas les plans ni le remplissage de {}",
+              core::to_utf8(calm.filename()), core::to_utf8(c.rife_model->filename()));
+    return {};
+  }
+  auto derived = motion_model(calm, models_dir);
+  if (!derived) {
+    log->warn("RIFE des paires calmes ignoré : {}", derived.error().detail);
+    return {};
+  }
+  const kernels::RifeGeometry& g = c.geometry;
+  auto loaded = prepare_engine(p, init, *c.backend, *derived,
+                               gpu::Shape{.dims = {1, c.rife_planes, g.padded_height, g.padded_width}},
+                               EngineLabel{.name = "RIFE calme",
+                                           .model = derived->stem().string(),
+                                           .width = g.padded_width,
+                                           .height = g.padded_height},
+                               gpu::Lane::Interpolate);
+  if (!loaded) return std::unexpected(std::move(loaded.error()));
+  if (*loaded) {
+    c.rife_motion_calm = std::move(**loaded);
+    log->info("RIFE des paires calmes : {}", derived->stem().string());
+  }
+  return {};
+}
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
@@ -453,6 +489,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       if (!*loaded) return std::nullopt;
       c.rife_motion = std::move(**loaded);
     }
+  }
+  if (c.rife_motion && p.options.rife_calm_model) {
+    if (auto ok = load_calm_rife(p, init, c, models_dir); !ok) return std::unexpected(std::move(ok.error()));
   }
   if (use_rife && !c.rife_motion) {
     const kernels::RifeGeometry& g = c.image_geometry;

@@ -48,6 +48,8 @@ UpscaleStage::~UpscaleStage() {
         "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
         rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
+  if (setup_.rife_motion_calm != nullptr)
+    log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
   if (drba()) {
