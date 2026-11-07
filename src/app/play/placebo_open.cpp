@@ -566,6 +566,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
   if (auto grade = render::Grade::create(gpu)) {
     impl->grade.emplace(std::move(*grade));
+    impl->grade->set_background(true);  // P4.9 : la pile de LUT se compose hors du thread qui rend
   } else {
     impl->channel->warn("grade HDR indisponible : {}", grade.error().detail);
   }

@@ -51,6 +51,14 @@ class Grade {
   // de LUT ; les intensités passent par set_params. Refus si libplacebo ne lit pas la texture.
   std::expected<void, Refusal> set_looks(const std::array<const CubeLut*, kLookSlots>& luts);
 
+  // P4.9 : la pile de LUT se compose et son hook se lit sur un thread (65³ points, 4,4 Mo de texte) ; le
+  // lecteur l'active, adopt() pose le résultat prêt sur le thread qui rend. Coupé (le défaut, les tests et
+  // la mesure de rampe) : set_params compose sur place.
+  void set_background(bool on);
+  // Le hook du look composé en tâche de fond, s'il est prêt : vrai quand il remplace l'ancien (les hooks
+  // ont changé).
+  bool adopt();
+
   // Dans l'ordre d'exécution : la passe du grade (ses trois passes dans un hook), le look, puis le vrai noir.
   std::span<const pl_hook* const> hooks() const;
   // La valeur posée d'un //!PARAM de la passe du grade (après set_params, set_video_fps, set_kwin_match),

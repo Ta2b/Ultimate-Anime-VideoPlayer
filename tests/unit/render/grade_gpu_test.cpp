@@ -5,11 +5,13 @@
 // erreurs, que libplacebo journalise en « vk … », sont notées et font échouer l'exécutable.
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -48,6 +50,32 @@ TEST_CASE("look : quinze LUT s'enchaînent, la dernière compte comme la premiè
   params.look_mix15 = 0.0;
   const std::vector<Rgb> once = graded_codes(gpu, source, params);
   CHECK(once[32][0] > 0.55);
+}
+
+TEST_CASE("look : la pile composée en tâche de fond rend la même image (P4.9)", "[render][gpu][lut]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.8, 0.6);
+  CubeLut inverted = identity_lut(17);
+  for (float& value : inverted.rgb) value = 1.0F - value;
+  REQUIRE(gpu.grade->set_looks({&inverted, nullptr, nullptr}));
+  GradeParams params = sdr_neutral();
+  params.look_mix = 1.0;
+  const std::vector<Rgb> direct = graded_codes(gpu, source, params);
+  gpu.grade->set_background(true);
+  REQUIRE(gpu.grade->set_looks({&inverted, nullptr, nullptr}));  // la pile est à refaire, sur le thread
+  gpu.grade->set_params(params);
+  bool adopted = false;
+  for (int i = 0; i < 500 && !adopted; ++i) {
+    adopted = gpu.grade->adopt();
+    if (!adopted) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  REQUIRE(adopted);
+  REQUIRE(gpu.grade->look_stack() != nullptr);
+  const std::vector<Rgb> later = graded_codes(gpu, source, params);
+  for (std::size_t x = 8; x < later.size(); ++x)
+    for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(later[x][c] - direct[x][c]) < 1e-4);
 }
 
 TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gpu]") {

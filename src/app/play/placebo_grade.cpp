@@ -173,6 +173,7 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
+  if (grade && grade->adopt()) ++grade_serial;  // une pile composée en tâche de fond (P4.9)
   if (grade && params) {
     if (*params != grade->params()) {
       grade->set_params(*params);
