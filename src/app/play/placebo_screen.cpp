@@ -135,11 +135,12 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   switch (final_scaler) {
     case FinalScaler::Default:
       break;
+    // Le même filtre en réduction (P3.68) : une chaîne plus grande que la fenêtre gardait celui par défaut.
     case FinalScaler::EwaLanczos:
-      params.upscaler = &pl_filter_ewa_lanczos;
+      params.upscaler = params.downscaler = &pl_filter_ewa_lanczos;
       break;
     case FinalScaler::EwaLanczosSharp:
-      params.upscaler = &pl_filter_ewa_lanczossharp;
+      params.upscaler = params.downscaler = &pl_filter_ewa_lanczossharp;
       break;
   }
   // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
