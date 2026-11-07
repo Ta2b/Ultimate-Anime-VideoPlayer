@@ -29,6 +29,10 @@ class Window {
   std::array<std::int64_t, kSize> values_{};
   std::size_t next_ = 0;
   std::size_t count_ = 0;
+  // P4.12 : la copie triée, refaite au premier percentile après un add() ; la médiane et les centiles d'un
+  // même tour la lisent sans trier de nouveau.
+  mutable std::array<std::int64_t, kSize> sorted_{};
+  mutable bool sorted_valid_ = false;
 };
 
 struct FrameStats {
