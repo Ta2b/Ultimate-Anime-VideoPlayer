@@ -132,19 +132,6 @@ class CudaTensorBuffer final : public TensorBuffer {
   std::weak_ptr<TensorRtBackend::TensorReleaser> releaser_;
 };
 
-std::size_t element_size(TensorType type) {
-  switch (type) {
-    case TensorType::F32:
-      return 4;
-    case TensorType::F16:
-      return 2;
-    case TensorType::U8:
-    case TensorType::I8:
-      return 1;
-  }
-  return 0;
-}
-
 }  // namespace
 
 std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create(

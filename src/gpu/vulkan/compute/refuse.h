@@ -22,7 +22,8 @@ inline std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 std::string result_name(VkResult result);
 
 // VK_SUCCESS passe. Une mémoire épuisée (hôte ou appareil, pool de descripteurs) devient
-// GpuMemoryExhausted ; l'appareil perdu, DeviceLost ; tout autre résultat, VulkanCallFailed. Le détail : « appel : résultat ».
+// GpuMemoryExhausted ; l'appareil perdu, DeviceLost ; tout autre résultat, VulkanCallFailed. Le détail : «
+// appel : résultat ».
 Done check(VkResult result, std::string_view call);
 
 }  // namespace ajp::gpu::vk
