@@ -113,7 +113,7 @@ std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& 
 }
 
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
-  // La fluidité d'abord (P3.11, choix de Tatoub) : le plus haut palier où SPAN et RIFE tiennent ensemble,
+  // La fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent ensemble,
   // même plus bas qu'un SPAN seul ; sinon RIFE seul s'il tient ; SPAN seul en dernier.
   // Un rang entier (palier, puis RIFE) plutôt qu'un std::optional comparé champ à champ : MSVC 14.51 en /O2
   // perdait le départage par RIFE à palier égal (test de la calibration, release Windows 0.9.0).

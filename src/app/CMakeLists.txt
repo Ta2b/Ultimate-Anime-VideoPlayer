@@ -61,7 +61,7 @@ endif()
 
 # La version, le dépôt des releases et la clé publique des mises à jour (updater.h) ; la clé se donne à la configuration
 # (-DAJP_UPDATE_PUBKEY=<64 chiffres hexadécimaux> pour une autre clé). La clé privée correspondante vit hors du dépôt,
-# sur le PC de Tatoub (docs/signature-des-releases.md).
+# sur le poste de signature (docs/signature-des-releases.md).
 set(AJP_UPDATE_PUBKEY "c50eeb3e63c327a087487cd3f485e66fbbf8ef2340a0b90d7ec99d4c2d3f0d58" CACHE STRING "Clé publique Ed25519 (hexadécimal) des mises à jour")
 # La clé de secours (P1.14) : un manifeste signé par elle est cru aussi, et peut révoquer l'active (revoked_keys).
 # Vide tant qu'elle n'est pas créée (docs/signature-des-releases.md).

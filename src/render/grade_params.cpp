@@ -101,7 +101,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   const double paper = std::floor(std::min(s.paper_white, 0.75 * peak) + 0.5);
   const bool native_sdr = context.route == core::HdrMode::Native && !context.source_hdr;
   // Le mode SDR sur une sortie HDR10 : l'image SDR est gradée dans le conteneur PQ comme la route native au
-  // blanc papier (éclats limités), au lieu de rester sans grade (retour de Tatoub).
+  // blanc papier (éclats limités), au lieu de rester sans grade (retour d'essai).
   const bool plain_sdr = context.route == core::HdrMode::Off && !context.source_hdr;
   GradeDecision decision;
   decision.source_white_nits = native_sdr && s.truehdr_look ? grade_limits::kSdrWhiteNits : paper;

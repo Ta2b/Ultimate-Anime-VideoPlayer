@@ -5,7 +5,7 @@
 //
 // Les hauteurs de travail essayées s'arrêtent à la moitié de l'écran : SPAN double l'image, au-delà sa sortie
 // dépasserait l'écran (1080p : 540p au plus, 1440p : 720p, 4K : 1080p). Deux familles, dans l'ordre (choix de
-// Tatoub, 04/11) :
+// jugé à l'œil) :
 //   1. SPAN seul, du palier le plus léger au plus lourd, jusqu'au premier qui ne tient pas ;
 //   2. SPAN + RIFE 4.22 lite en mode auto Rapide, du plus haut palier que SPAN seul a tenu vers le bas,
 //      jusqu'au premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas

@@ -138,7 +138,7 @@ std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
     if (!lut) return std::unexpected(std::move(lut.error()));
     files.emplace(name, std::move(*lut));
   }
-  // L'ordre de la pile de Tatoub : base, 3/7 du contraste, éclats, skin fix, 4/7 du contraste.
+  // L'ordre de la pile par défaut : base, 3/7 du contraste, éclats, skin fix, 4/7 du contraste.
   const double c = 7.0 * (1.0 + std::clamp(contrast, -100, 100) / 100.0);
   const double h = 1.5 * (1.0 + std::clamp(highlight, -100, 100) / 100.0);
   std::vector<const render::CubeLut*> luts{&files.at(kAnimeLookBase)};

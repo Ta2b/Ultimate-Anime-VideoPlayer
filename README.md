@@ -156,6 +156,8 @@ tools/deps/linux-from-source.sh ~/ajp-deps
 export AJP_DEPS_PREFIX=~/ajp-deps
 cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
+# linux-prefix est en Debug : pour un banc ou une mesure, le binaire livré (Release)
+cmake --preset linux-release && cmake --build --preset linux-release
 
 # Windows et CI, avec vcpkg
 cmake --preset debug && cmake --build --preset debug && ctest --preset debug

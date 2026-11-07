@@ -40,6 +40,9 @@ cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```
 
+`linux-prefix` est en Debug : ses temps ne valent rien. Un banc ou une mesure se fait sur le binaire livré,
+`linux-release` (Linux), `windows-release`, `macos-release`.
+
 Sans GPU, Vulkan logiciel (lavapipe) suffit : `ajp --software-gpu`. Les tests GPU se lancent avec
 `AJP_TEST_VULKAN_VALIDATION=off` quand la couche de validation manque. CUDA ne se construit que sur un poste
 NVIDIA (`linux-prefix-cuda`).

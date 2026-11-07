@@ -37,7 +37,7 @@ struct PairFacts {
 };
 
 // Une coupe des plans n'est gardée que si la mesure de RIFE dépasse ce plancher. Relevé sur 30 désaccords
-// jugés à l'image (Re:Zero, 04/11) : les vraies coupes que RIFE manquait avaient 0,123 à 0,145, les fausses
+// jugés à l'image (Re:Zero) : les vraies coupes que RIFE manquait avaient 0,123 à 0,145, les fausses
 // coupes des plans sous 0,08 étaient toutes des effets.
 inline constexpr double kPlanCutFloor = 0.09;
 

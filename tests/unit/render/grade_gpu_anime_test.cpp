@@ -137,7 +137,7 @@ TEST_CASE("HDR anime : le curseur Éclats agit même sans l'ancien curseur des �
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
-  // La configuration de Tatoub : highlights_rtx à 0, donc spec_gain = 1.
+  // La configuration de référence : highlights_rtx à 0, donc spec_gain = 1.
   const auto halo = columns([](int x) { return x >= 104 && x < 152 ? 195.0 : 3.0; });
   const auto centre = [&](double an_spec) {
     GradeParams p = anime_params();

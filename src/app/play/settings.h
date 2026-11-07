@@ -148,13 +148,13 @@ inline constexpr int kPriorityCount = 3;
 inline constexpr int kAutoCapMin = 24;
 inline constexpr int kAutoCapMax = 480;
 
-// Les réglages par défaut du grade et du look : la configuration de Tatoub (30/10/2026), réglée à l'œil sur
+// Les réglages par défaut du grade et du look : la configuration de référence, réglée à l'œil sur
 // ses épisodes.
 inline render::GradeSettings default_grade_values() {
   render::GradeSettings g;
   g.highlights_rtx = 1.0;
   g.area_rtx = 0.10;
-  g.shadows = 0.50;  // Tatoub, 04/11 : le maximum des noirs profonds dynamiques
+  g.shadows = 0.50;  // le maximum des noirs profonds dynamiques
   return g;
 }
 
@@ -298,14 +298,15 @@ struct PlaySettings {
   // à 1.
   std::string look = "HDR pile unique 65 point.cube";
   double look_mix = 1.0;
-  // Le look de la méthode HDR anime (04/11, idée de Tatoub) : la LUT de base et « skin fix », fixes, et deux
-  // curseurs de -100 à 100 sur les LUT de contraste et d'éclats ; 0 : sa pile du 04/11 (contraste ×7, éclats
-  // ×1,5), le défaut. -100 : la LUT retirée ; 100 : son intensité doublée. La pile ci-dessus n'est plus lue.
+  // Le look de la méthode HDR anime (ADR 0012) : la LUT de base et « skin fix », fixes, et deux
+  // curseurs de -100 à 100 sur les LUT de contraste et d'éclats ; 0 : la pile de référence (contraste ×7,
+  // éclats ×1,5), le défaut. -100 : la LUT retirée ; 100 : son intensité doublée. La pile ci-dessus n'est
+  // plus lue.
   int look_contrast = 0;
   int look_highlight = 0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
   // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1. Vide par
-  // défaut : la pile de Tatoub est cuite en une seule LUT (tools/look/bake_stack.py, data/luts/).
+  // défaut : la pile de référence est cuite en une seule LUT (tools/look/bake_stack.py, data/luts/).
   std::vector<LookLayer> look_layers{};
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.

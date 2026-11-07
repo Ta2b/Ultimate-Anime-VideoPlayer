@@ -43,7 +43,7 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
                                                  const PlaySettings& settings,
                                                  const std::filesystem::path& bundled = {});
 // Les deux versions de RIFE que le menu propose, de la plus fine à la plus légère : 4.25 (7,1 ms par passe à
-// 720p sur une 4070 Ti) et 4.22 lite, plus légère (retours de Tatoub, v0.5.1 : « catalogue réduit à 4.22 lite
+// 720p sur une 4070 Ti) et 4.22 lite, plus légère (retours sur la v0.5.1 : « catalogue réduit à 4.22 lite
 // et 4.25 »). Les exports ONNX de vs-mlrt à 11 plans d'entrée, convertis en FP16 à îlots FP32
 // (tools/rife/convert_rife_fp16.py), sous ces noms. --rife-model lit encore tout autre fichier, pour les
 // essais.

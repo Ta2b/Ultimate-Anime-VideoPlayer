@@ -233,7 +233,7 @@ int run_bench_command(const std::vector<std::string_view>& args) {
 }
 
 // « ajp calibrate [--display-height=N] [--visible] » : le bench de la page « Résultats du bench », en ligne
-// de commande (essais sur le PC de Tatoub) ; écrit calibration.toml dans les données de l'utilisateur.
+// de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de l'utilisateur.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
   int display_height = 2160;

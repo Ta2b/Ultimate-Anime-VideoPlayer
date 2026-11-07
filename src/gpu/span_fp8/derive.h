@@ -19,15 +19,15 @@ inline constexpr float kE4m3Max = 448.0F;  // le plus grand E4M3 fini
 // Format du reçu et seuils : ceux de l'INT8 (app/play/span_int8.cpp), pas ceux, lâches, du FP8 par Q/DQ.
 inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7b
 // La version de la porte (judge_hardened) : un refus d'une porte plus ancienne se refait. 2 : les cas durs
-// synthétiques ne décident plus (séance du 04/11).
-inline constexpr int kGateVersion = 3;  // 3 : centiles réglés sur la RTX 4070 Ti (04/11)
+// synthétiques ne décident plus (séance de mesure).
+inline constexpr int kGateVersion = 3;                               // 3 : centiles réglés sur la RTX 4070 Ti
 inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";  // tools/span/derive_span_fp8.py
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
 // Étape 3.7a, porte durcie : 99,9e centile de l'erreur absolue (sur [0, 1]) des images de validation, le même
 // sur les pixels sombres. Réglés comme le plan le prévoyait, à 1,25 × ceux du b8f64 mesurés sur la RTX 4070
-// Ti (04/11 : 8,1/255 et 3,6/255 à 720p, PSNR 52,0 dB) ; les valeurs de départ (4/255 et 2/255) refusaient
+// Ti (8,1/255 et 3,6/255 à 720p, PSNR 52,0 dB) ; les valeurs de départ (4/255 et 2/255) refusaient
 // tout.
 inline constexpr double kErrorQuantile = 0.999;
 inline constexpr double kMaxErrorP999 = 10.0 / 255.0;
@@ -69,7 +69,7 @@ Verdict judge(std::span<const ImageScore> scores, double min_psnr_mean = kMinPsn
 
 // judge, puis la porte durcie (étape 3.7a) : pire 99,9e centile ≤ kMaxErrorP999 et, sur le sombre, ≤
 // kMaxDarkErrorP999, sur les images de validation. Les cas durs synthétiques sont relevés (hard_*) sans
-// décider : leurs seuils n'ont jamais été réglés sur une carte (séance du 04/11).
+// décider : leurs seuils n'ont jamais été réglés sur une carte (séance de mesure).
 Verdict judge_hardened(std::span<const ImageScore> scores, std::span<const ImageScore> hard);
 
 // Garder l'accumulateur f16 hors blocs (étape 3.5a) : sa variante passe la porte, la variante f32 aussi, et

@@ -31,13 +31,13 @@ std::vector<LookEntry> list_looks(const std::filesystem::path& luts_dir);
 std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir);
 
-// Les noms des LUT de la pile dans l'ordre des emplacements et leur intensité. Depuis le 04/11, la pile est
+// Les noms des LUT de la pile dans l'ordre des emplacements et leur intensité. Depuis la 0.9, la pile est
 // le look HDR anime seul (anime_look, les curseurs look_contrast et look_highlight). La pile de play.toml
 // d'avant (look, look_layers) n'est plus lue.
 std::vector<LookLayer> look_slots(const PlaySettings& s);
 // Le look HDR anime : la LUT de base, 3/7 de 7 × (1 + contraste/100) LUT de contraste, 1,5 × (1 + éclats/100)
 // LUT d'éclats, « skin fix », puis les 4/7 restants du contraste ; une part fractionnaire est la dernière LUT
-// à intensité partielle. À 0 et 0 : la pile de Tatoub du 04/11. Composé en une LUT de 65 points, gardé.
+// à intensité partielle. À 0 et 0 : la pile par défaut. Composé en une LUT de 65 points, gardé.
 inline constexpr std::string_view kAnimeLookPrefix = "hdr-anime:";
 inline constexpr std::string_view kAnimeLookBase = "HDR grading base ver.9.0 33 point.cube";
 inline constexpr std::string_view kAnimeLookContrast = "HDR-contrast-Enhancement-L.cube";

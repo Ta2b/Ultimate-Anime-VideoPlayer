@@ -21,6 +21,8 @@ jobs:
         run: tools/ci/check-version.sh
       - name: Chemins en UTF-8
         run: tools/ci/check-path-string.sh
+      - name: Commentaires sans nom ni date
+        run: tools/ci/check-comments.sh
       - name: Actions épinglées
         run: tools/ci/check-pinned-actions.sh
       - name: Aucun getenv

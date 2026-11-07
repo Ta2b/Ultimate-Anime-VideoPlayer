@@ -126,10 +126,10 @@ struct PlayOptions {
 #endif
   // Les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus que signaler les
   // désaccords) ; --no-shot-cuts les coupe.
-  bool shot_cuts = true;  // par défaut depuis le 04/11 (désaccords jugés à l'image)
+  bool shot_cuts = true;  // par défaut (désaccords jugés à l'image)
   // --anime-shots : essai (méga plan A2), la méthode « HDR anime » décide par plan : exposition des surfaces
   // et marge des éclats fixées par la pré-analyse, glissant aux coupes (anime_shots.h).
-  bool anime_shots = true;  // par défaut depuis le 04/11 (choix de Tatoub)
+  bool anime_shots = true;  // par défaut (jugé à l'image)
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
@@ -160,7 +160,7 @@ struct PlayOptions {
   bool vsync_index = true;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
   // wait (le défaut) : present_wait2, ou le meilleur niveau en dessous si l'appareil ne l'offre pas ; auto et
-  // timing ne rendent aucun retour sur NVIDIA 615 / KDE Wayland (séance du 04/11 : 0 revenue) ; --no-present
+  // timing ne rendent aucun retour sur NVIDIA 615 / KDE Wayland (mesuré : 0 revenue) ; --no-present
   // ou --present=open : la présentation d'avant.
   PresentWanted present = PresentWanted::Wait;
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
