@@ -441,7 +441,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|core_log|media|prepare|subs|app): "
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels): "
         }
       },
       "execution": {
@@ -452,7 +452,7 @@
       "name": "linux-release",
       "configurePreset": "linux-release",
       "output": {"outputOnFailure": true},
-      "filter": {"include": {"name": "^(core|core_log|media|prepare|subs|app): "}},
+      "filter": {"include": {"name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels): "}},
       "execution": {"noTestsAction": "error"}
     },
     {
@@ -463,7 +463,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|core_log|media|prepare|subs|app): "
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels): "
         }
       },
       "execution": {
@@ -478,7 +478,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|core_log|media|prepare|subs|app|coreml_rt): "
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels|coreml_rt): "
         }
       },
       "execution": {
