@@ -80,8 +80,8 @@ namespace {
 
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
 constexpr std::int64_t kBlackRefreshUs = 200'000;
-// En pause, l'attente d'un événement SDL au plus : le seuil de réactivité aux messages des threads.
-constexpr std::int32_t kPausedWaitMs = 10;
+// En pause, l'attente d'un événement SDL au plus (P4.7 : 33 ms, l'interface à 30 i/s ; une image réveille).
+constexpr std::int32_t kPausedWaitMs = 33;
 
 }  // namespace
 
