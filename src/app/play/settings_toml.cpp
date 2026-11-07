@@ -288,6 +288,14 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
     reads.push_back(read(*audio, "audio", "volume", s.volume));
     reads.push_back(read(*audio, "audio", "device", s.audio_device));
+    if (const toml::table* delays = (*audio)["delays"].as_table()) {
+      // Une entrée d'un autre type ou hors bornes est écartée seule.
+      for (const auto& [device, value] : *delays) {
+        const auto ms = value.value_exact<std::int64_t>();
+        if (ms && *ms >= limits::kAudioDelayMs.lo && *ms <= limits::kAudioDelayMs.hi)
+          s.audio_device_delays_ms[std::string(device.str())] = static_cast<int>(*ms);
+      }
+    }
     // listening, faithful, profile, anime, hrir… : le traitement du son retiré, ces clés sont ignorées.
     reads.push_back(read_legacy_languages(*audio, "audio", legacy_audio));
   }
@@ -457,6 +465,11 @@ std::string format_settings(const PlaySettings& s) {
     toml::table audio{{"delay_ms", s.audio_delay_ms},
                       {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
                       {"device", s.audio_device}};
+    toml::table delays;
+    for (const auto& [device, ms] : s.audio_device_delays_ms) {
+      if (device != s.audio_device) delays.insert(device, ms);
+    }
+    if (!delays.empty()) audio.insert("delays", std::move(delays));
     root.insert("audio", std::move(audio));
   }
   {

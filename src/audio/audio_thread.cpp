@@ -19,7 +19,7 @@ constexpr std::size_t kMaxPacketBound = 4096;
 // Paquets, pistes, fins de flux, commandes, Flush, mesures, choix du maître.
 // Une seule mesure attend : la suivante, refusée, n'apporterait rien de plus.
 AudioInbox::Bounds bounds(std::size_t max_packets) {
-  return {max_packets, 2, 2, 32, 4, 1, 2};
+  return {max_packets, 2, 2, 32, 4, 1, 2, 1};
 }
 
 }  // namespace
@@ -58,6 +58,8 @@ AudioThread::AudioThread(std::unique_ptr<AudioOutput> output, AudioThreadOptions
   // attend déjà, celle-ci est de trop et se perd sans dommage.
   output->on_demand(
       [this](const DeviceReading& reading) { std::ignore = inbox_.try_push(DeviceReading{reading}); });
+  // Thread de SDL : prévenir seulement. Un retrait déjà en attente suffit.
+  output->on_removed([this] { std::ignore = inbox_.try_push(DeviceRemoved{}); });
   player_ = std::make_unique<AudioPlayer>(
       std::move(output), options.player,
       PlayerEvents{.packet_released = [this] { release_packet(); }, .refused = std::move(options.refused)});

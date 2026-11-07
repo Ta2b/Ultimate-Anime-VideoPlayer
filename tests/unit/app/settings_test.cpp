@@ -21,6 +21,7 @@
 #include "app/play/free_engines.h"
 #include "app/play/host_facts.h"
 #include "app/play/live_settings.h"
+#include "app/play/settings_sound.h"
 
 namespace ajp::app::play {
 namespace {
@@ -646,5 +647,24 @@ TEST_CASE("play.toml : une version plus récente garde ses clés à la réécrit
   auto reread = ajp::app::play::load_settings(path);
   REQUIRE(reread);
   CHECK(*reread == *loaded);
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("Délai audio mémorisé par appareil, relu de play.toml (P2.7)", "[app][settings]") {
+  ajp::app::play::PlaySettings s;
+  s.audio_delay_ms = 20;  // la sortie du système
+  s.audio_device = "Casque Bluetooth";
+  ajp::app::play::switch_device_delay(s, "");
+  CHECK(s.audio_delay_ms == 0);
+  s.audio_delay_ms = 240;  // réglé pour le casque
+  s.audio_device.clear();
+  ajp::app::play::switch_device_delay(s, "Casque Bluetooth");
+  CHECK(s.audio_delay_ms == 20);
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-delays.toml";
+  REQUIRE(ajp::app::play::save_settings(path, s));
+  auto reread = ajp::app::play::load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->audio_device_delays_ms.at("Casque Bluetooth") == 240);
+  CHECK(*reread == s);
   std::filesystem::remove(path);
 }

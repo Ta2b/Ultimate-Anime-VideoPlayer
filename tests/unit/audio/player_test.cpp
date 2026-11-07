@@ -308,3 +308,22 @@ TEST_CASE("AudioPlayer : la PLL filtre la gigue des relevés du périphérique",
   CHECK(raw > 0.8);
   CHECK(filtered * 3.0 < raw);
 }
+
+TEST_CASE("AudioPlayer : casque débranché, le son reprend sur la sortie par défaut sans rien perdre (P2.7)",
+          "[audio][player]") {
+  Rig rig;
+  rig.feed(encode_sine({.seconds = 1.0}));
+  rig.player->handle(Command{cmd::Play{}});
+  const std::int64_t t = rig.now_us() + 100'000;
+  rig.player->handle(rig.fake->play(4'800, t));
+  const std::int64_t heard = rig.clock().media_us;
+
+  rig.player->handle(DeviceRemoved{});
+  CHECK(rig.fake->reopens() == 1);
+  CHECK_FALSE(rig.fake->paused());  // la lecture continue
+  REQUIRE(rig.refusals.size() == 1);
+  CHECK(rig.refusals[0].code == RefusalCode::AudioDeviceUnavailable);
+  // Ce qui n'avait pas été entendu repart : la position reprend où elle était.
+  rig.player->handle(rig.fake->play(4'800, t + 100'000));
+  CHECK(rig.clock().media_us == heard + frames_to_us(4'800, 48'000));
+}

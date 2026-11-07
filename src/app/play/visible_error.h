@@ -27,6 +27,8 @@ inline std::string visible_error(const Refusal& refusal) {
       return i18n::tr("not enough disk space");
     case RefusalCode::GpuMemoryExhausted:
       return i18n::tr("not enough GPU memory");
+    case RefusalCode::AudioDeviceUnavailable:
+      return i18n::tr("the audio output changed or is unavailable");
     case RefusalCode::DeviceLost:
       return i18n::tr("the graphics card stopped responding: restart the player");
     case RefusalCode::Cancelled:

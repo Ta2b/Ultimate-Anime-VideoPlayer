@@ -38,6 +38,9 @@ class logger;
 
 namespace ajp::audio {
 
+// Le périphérique ouvert a disparu (casque débranché, P2.7) : la sortie se rouvre sur le défaut du système.
+struct DeviceRemoved {};
+
 // Choix du maître : sans horloge, l'audio est maître ; sinon il suit celle-ci.
 struct SyncTo {
   std::shared_ptr<const MasterClock> master;
@@ -76,6 +79,7 @@ class AudioPlayer {
   void handle(const Flush& flush);
   void handle(const DeviceReading& reading);
   void handle(const SyncTo& sync);
+  void handle(const DeviceRemoved& removed);
 
   // État, pour les tests et l'OSD.
   const AudioOutput& output() const { return *output_; }

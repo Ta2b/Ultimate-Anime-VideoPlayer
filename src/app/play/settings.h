@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -264,6 +265,9 @@ struct PlaySettings {
   int audio_delay_ms = 0;
   // L'appareil de sortie audio (vide : celui du système, suivi quand il change).
   std::string audio_device;
+  // Le délai de chaque autre appareil, repris quand on y revient (P2.7) : un casque Bluetooth garde le sien,
+  // que SDL ne mesure pas. Clé vide : la sortie du système. Celui de audio_device est audio_delay_ms.
+  std::map<std::string, int> audio_device_delays_ms;
   // Synchro sur l'écran (SessionConfig::display_sync), en direct ; délai d'affichage de la vidéo
   // en ms, 0 : estimé (SessionConfig::video_latency_us).
   bool display_sync = true;

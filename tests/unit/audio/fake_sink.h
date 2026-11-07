@@ -42,6 +42,19 @@ class FakeSink final : public AudioSink {
   void on_demand(std::function<void(const DeviceReading&)> callback) override {
     demand_ = std::move(callback);
   }
+  void on_removed(std::function<void()> callback) override { removed_ = std::move(callback); }
+  // Comme une file neuve sur la sortie par défaut : vide, en pause.
+  std::expected<void, Refusal> reopen_default() override {
+    consumed_ = pushed_;
+    paused_ = true;
+    ++reopens_;
+    return {};
+  }
+  // Le casque débranché : SDL prévient depuis son thread.
+  void remove() const {
+    if (removed_) removed_();
+  }
+  int reopens() const { return reopens_; }
 
   // Le périphérique joue frames trames à vitesse nominale (rapport de fréquence
   // compris), puis mesure la file à l'instant host_us. En pause, il ne joue rien.
@@ -75,7 +88,9 @@ class FakeSink final : public AudioSink {
   float gain_ = 1.0F;
   double ratio_ = 1.0;
   int clears_ = 0;
+  int reopens_ = 0;
   std::function<void(const DeviceReading&)> demand_;
+  std::function<void()> removed_;
 };
 
 // Horloge maître réglée par le test, comme present la publierait.

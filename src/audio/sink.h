@@ -51,6 +51,14 @@ class AudioSink {
   // Appelé sur le thread du périphérique, chaque fois qu'il demande des trames,
   // avec la mesure exacte de cet instant. Ne doit pas bloquer.
   virtual void on_demand(std::function<void(const DeviceReading&)> callback) = 0;
+  // Appelé, depuis un thread de SDL, quand le périphérique ouvert disparaît (casque débranché, P2.7). Ne
+  // doit pas bloquer : le rappel ne fait que prévenir le thread audio.
+  virtual void on_removed(std::function<void()> callback) { static_cast<void>(callback); }
+  // Rouvre la file sur la sortie par défaut du système, file vide, en pause, gain et vitesse gardés ;
+  // pushed_frames() continue. À appeler après clear() ou take_back.
+  virtual std::expected<void, Refusal> reopen_default() {
+    return std::unexpected(Refusal{RefusalCode::AudioDeviceUnavailable, "sortie sans réouverture"});
+  }
 };
 
 // Ouvre le périphérique de sortie par défaut avec SDL3 (sous-système audio compris).

@@ -28,7 +28,8 @@
 
 namespace ajp::audio {
 
-using AudioInbox = Inbox<AudioPacket, AudioTrack, EndOfStream, Command, Flush, DeviceReading, SyncTo>;
+using AudioInbox =
+    Inbox<AudioPacket, AudioTrack, EndOfStream, Command, Flush, DeviceReading, SyncTo, DeviceRemoved>;
 
 struct AudioThreadOptions {
   std::size_t max_packets = 256;  // paquets en vol ; couvre l'entrelacement des fichiers courants

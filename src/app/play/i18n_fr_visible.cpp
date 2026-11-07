@@ -104,6 +104,7 @@ constexpr std::array kVisibleTexts{
     Entry{"start", "départ"},
     Entry{"subtitles", "sous-titres"},
     Entry{"subtitles: none", "sous-titres : aucun"},
+    Entry{"the audio output changed or is unavailable", "la sortie audio a changé ou n'est plus disponible"},
     Entry{"the file cannot be read (unknown format, damaged or missing)",
           "le fichier ne se lit pas (format inconnu, abîmé ou absent)"},
     Entry{"the graphics card stopped responding: restart the player",
