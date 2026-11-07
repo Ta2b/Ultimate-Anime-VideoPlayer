@@ -11,6 +11,7 @@
 
 #include <cstdint>
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 #include "kernels/spec/rife.h"
 
 namespace ajp::kernels {
@@ -50,3 +51,5 @@ constexpr bool is_held(std::uint32_t worst_block, std::uint32_t threshold = kHel
 }
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

@@ -10,6 +10,7 @@
 
 #include <cstdint>
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 #include "kernels/spec/resample.h"
 
 namespace ajp::kernels {
@@ -101,3 +102,5 @@ constexpr float rife_mesh_step(int n) {
 // fenêtre (left, top, width, height).
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

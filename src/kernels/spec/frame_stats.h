@@ -21,6 +21,8 @@
 #include <array>
 #include <cstdint>
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 enum class FrameTransfer : std::uint8_t { Sdr, Pq, Hlg };
@@ -95,3 +97,5 @@ struct FrameStats {
 };
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

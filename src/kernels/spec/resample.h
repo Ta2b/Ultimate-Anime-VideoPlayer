@@ -8,6 +8,7 @@
 #pragma once
 
 #include "kernels/spec/color.h"
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
 namespace ajp::kernels {
 
@@ -109,3 +110,5 @@ constexpr ChromaShift chroma_shift_down(Siting s) {
 inline constexpr Filter kChainChromaFilter = Filter::Spline36;
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

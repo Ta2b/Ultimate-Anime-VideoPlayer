@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include "kernels/spec/color.h"
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
 namespace ajp::kernels {
 
@@ -48,3 +49,5 @@ constexpr std::uint32_t pack_rgb10a2(std::uint32_t r, std::uint32_t g, std::uint
 }
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

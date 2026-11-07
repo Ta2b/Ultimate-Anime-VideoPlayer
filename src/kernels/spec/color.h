@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <optional>
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 enum class Format : std::uint8_t {
@@ -280,3 +282,5 @@ constexpr Siting effective_siting(std::optional<Siting> tagged) {
 inline constexpr Siting kOutputSiting = Siting::Left;
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep
