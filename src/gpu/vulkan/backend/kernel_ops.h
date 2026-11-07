@@ -119,6 +119,7 @@ class VulkanKernelOps final : public KernelOps {
                                           const RingWrite& sync) override;
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
   std::optional<PairScores> previous_scores() override;
+  std::expected<void, Refusal> health() override { return queue_.health(); }
 
   std::size_t recordings() const { return recordings_.size(); }
   std::size_t retained_frames() const { return retained_.size(); }

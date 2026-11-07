@@ -53,8 +53,10 @@ Done check(VkResult result, std::string_view call) {
   if (result == VK_SUCCESS) return {};
   const bool exhausted = result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY ||
                          result == VK_ERROR_OUT_OF_POOL_MEMORY || result == VK_ERROR_FRAGMENTED_POOL;
-  return refuse(exhausted ? RefusalCode::GpuMemoryExhausted : RefusalCode::VulkanCallFailed,
-                std::format("{} : {}", call, result_name(result)));
+  const RefusalCode code = exhausted                        ? RefusalCode::GpuMemoryExhausted
+                           : result == VK_ERROR_DEVICE_LOST ? RefusalCode::DeviceLost
+                                                            : RefusalCode::VulkanCallFailed;
+  return refuse(code, std::format("{} : {}", call, result_name(result)));
 }
 
 }  // namespace ajp::gpu::vk

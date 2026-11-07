@@ -168,8 +168,20 @@ Done BackendQueue::wait_elsewhere(std::uint64_t value, std::chrono::nanoseconds 
                                  .pSemaphores = &semaphore,
                                  .pValues = &value};
   const auto nanoseconds = static_cast<std::uint64_t>(timeout.count() < 0 ? 0 : timeout.count());
-  return check(context_->fn().vkWaitSemaphores(context_->device(), &wait, nanoseconds),
-               std::format("vkWaitSemaphores(valeur {}, autre fil)", value));
+  return context_->observe(context_->fn().vkWaitSemaphores(context_->device(), &wait, nanoseconds),
+                           std::format("vkWaitSemaphores(valeur {}, autre fil)", value));
+}
+
+Done BackendQueue::health() const {
+  if (context_->lost()) return refuse(RefusalCode::DeviceLost, "appareil Vulkan perdu, à relancer");
+  // Les sémaphores des voies ne changent pas après create : les lire depuis un autre fil est sûr.
+  for (const LaneState& lane : lanes_) {
+    if (auto reached = lane.timeline.value(); !reached) {
+      if (reached.error().code == RefusalCode::DeviceLost) context_->mark_lost();
+      return std::unexpected(reached.error());
+    }
+  }
+  return {};
 }
 
 }  // namespace ajp::gpu::vk

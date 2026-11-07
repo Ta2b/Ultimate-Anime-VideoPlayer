@@ -85,7 +85,7 @@ enum class RefusalCode : std::uint8_t {
 
   // core : threads et backends chargés à l'exécution
   ThreadFailed,    // une exception a interrompu le corps d'un thread, qui s'est arrêté
-  DeviceLost,      // contexte CUDA perdu (erreur collante) : relancer le lecteur
+  DeviceLost,      // contexte CUDA ou appareil Vulkan perdu : relancer le lecteur
   AbiMismatch,     // bibliothèque d'une autre version de l'interface (kBackendAbi)
   DeviceMismatch,  // le backend ne sait pas exploiter l'appareil de rendu (API, constructeur, UUID)
 

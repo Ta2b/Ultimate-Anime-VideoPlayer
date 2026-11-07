@@ -4,6 +4,7 @@
 // Un contexte appartient au thread qui l'utilise ; il ne se copie ni ne se déplace.
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -184,6 +185,15 @@ class VkContext {
       if (point.semaphore == semaphore) point = {};
   }
   bool stalled() const { return stalled_; }
+  // Appareil perdu (P2.8) : un appel a rendu VK_ERROR_DEVICE_LOST. Plus aucune soumission ne part, chacune
+  // est refusée en DeviceLost ; seul un nouveau contexte (relancer le lecteur) en sort. Sûr depuis tout fil.
+  bool lost() const { return lost_.load(std::memory_order_acquire); }
+  void mark_lost() const { lost_.store(true, std::memory_order_release); }
+  // Le refus de check(), l'appareil noté perdu au passage quand c'est le cas.
+  Done observe(VkResult result, std::string_view call) const {
+    if (result == VK_ERROR_DEVICE_LOST) mark_lost();
+    return check(result, call);
+  }
 
  private:
   VkContext() = default;
@@ -256,6 +266,7 @@ class VkContext {
   // mutable : un sémaphore détruit s'en retire (forget), settle ne l'attend plus.
   mutable std::vector<TimelinePoint> last_submitted_ = std::vector<TimelinePoint>(1);
   bool stalled_ = false;  // une fin de vie a attendu en vain : plus aucune n'attend
+  mutable std::atomic<bool> lost_{false};
   mutable DestroyedLog destroyed_;
   std::shared_ptr<spdlog::logger> log_;
 };

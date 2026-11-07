@@ -106,6 +106,8 @@ constexpr std::array kVisibleTexts{
     Entry{"subtitles: none", "sous-titres : aucun"},
     Entry{"the file cannot be read (unknown format, damaged or missing)",
           "le fichier ne se lit pas (format inconnu, abîmé ou absent)"},
+    Entry{"the graphics card stopped responding: restart the player",
+          "la carte graphique ne répond plus : relancez le lecteur"},
     Entry{"timing", "mesure du temps"},
     Entry{"too few usable frames in the video", "trop peu d'images exploitables dans la vidéo"},
     Entry{"unnamed display", "écran sans nom"},

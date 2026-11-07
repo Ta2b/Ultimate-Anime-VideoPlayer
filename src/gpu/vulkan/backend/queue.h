@@ -100,6 +100,9 @@ class BackendQueue {
   // attente).
   // En tickets : toutes les soumissions jusqu'à lui sont finies.
   std::expected<std::uint64_t, Refusal> completed();
+  // L'appareil répond-il encore (KernelOps::health, P2.8) ? La valeur de chaque timeline, lue sans attendre
+  // (vkGetSemaphoreCounterValue) ; DeviceLost si l'appareil est perdu. Sûr depuis un autre fil.
+  Done health() const;
 
  private:
   static constexpr std::size_t kMain = lane_index(Lane::Upscale);  // la timeline des runtimes

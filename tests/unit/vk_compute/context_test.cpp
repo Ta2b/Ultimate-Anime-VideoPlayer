@@ -303,3 +303,14 @@ TEST_CASE("Cache de pipelines : un fichier abîmé ou d'un autre appareil n'est 
   damaged.at(40) = std::byte{8};
   CHECK(ajp::gpu::vk::open_pipeline_cache(damaged, 0x10de, 0x2782).empty());
 }
+
+TEST_CASE("contexte : appareil perdu, soumissions refusées en DeviceLost (P2.8)", "[vk_compute][context]") {
+  CHECK(ajp::gpu::vk::check(VK_ERROR_DEVICE_LOST, "appel").error().code == RefusalCode::DeviceLost);
+  Rig rig = make_rig();
+  VkContext& ctx = *rig.context;
+  REQUIRE(ctx.run_once([](VkCommandBuffer) {}));
+  // Comme un vkQueueSubmit qui aurait rendu VK_ERROR_DEVICE_LOST.
+  CHECK_FALSE(ctx.observe(VK_ERROR_DEVICE_LOST, "vkQueueSubmit"));
+  CHECK(ctx.lost());
+  require_refusal(ctx.run_once([](VkCommandBuffer) {}), RefusalCode::DeviceLost);
+}

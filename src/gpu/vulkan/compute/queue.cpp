@@ -45,6 +45,7 @@ class OnceBuffer {
 Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos, std::size_t lane) {
   // Les files des voies en plus ne sont qu'à nous : seule la principale passe par le verrou.
   const bool main = lane == 0;
+  if (lost()) return refuse(RefusalCode::DeviceLost, "vkQueueSubmit : appareil perdu plus tôt, à relancer");
   if (main && lock_queue_) lock_queue_();
   const VkResult result =
       device_fn_.vkQueueSubmit(main ? queue_ : lane_queues_[lane - 1],
@@ -58,7 +59,7 @@ Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos, std::size_t la
     last_submitted_[lane] = {.semaphore = info.pSignalSemaphores[0],
                              .value = timeline->pSignalSemaphoreValues[0]};
   }
-  return check(result, "vkQueueSubmit");
+  return observe(result, "vkQueueSubmit");
 }
 
 bool VkContext::settle(std::optional<TimelinePoint> point) {
@@ -87,6 +88,7 @@ bool VkContext::settle(std::span<const TimelinePoint> points) {
   const VkResult result =
       device_fn_.vkWaitSemaphores(device_, &wait, static_cast<std::uint64_t>(timeout.count()));
   if (result == VK_SUCCESS) return true;
+  if (result == VK_ERROR_DEVICE_LOST) mark_lost();
   stalled_ = true;
   log().error(
       "fin de vie : le GPU n'a pas atteint la valeur {} en {} s ({}) ; ses ressources restent en place",
@@ -319,8 +321,8 @@ Done VkContext::wait_on_host(const TimelinePoint& point, std::chrono::nanosecond
                                  .pSemaphores = &point.semaphore,
                                  .pValues = &point.value};
   const auto nanoseconds = static_cast<std::uint64_t>(timeout.count() < 0 ? 0 : timeout.count());
-  return check(device_fn_.vkWaitSemaphores(device_, &wait, nanoseconds),
-               std::format("vkWaitSemaphores(valeur {})", point.value));
+  return observe(device_fn_.vkWaitSemaphores(device_, &wait, nanoseconds),
+                 std::format("vkWaitSemaphores(valeur {})", point.value));
 }
 
 Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {
