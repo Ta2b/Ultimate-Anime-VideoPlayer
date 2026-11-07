@@ -476,6 +476,9 @@ int run_player(int argc, char** argv) {
   const std::filesystem::path heavy = ajp::app::play::local_data(data);
   ajp::app::play::move_heavy_data(
       data, heavy, [](const std::string& line) { ajp::log_channel("app")->info("données : {}", line); });
+  ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), [](const std::string& line) {
+    ajp::log_channel("app")->info("données : {}", line);
+  });
   bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
   ajp::app::play::PlayerPaths paths{
       .home = place.home,

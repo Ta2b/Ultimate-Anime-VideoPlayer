@@ -221,6 +221,33 @@ TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier l
   fs::remove_all(root);
 }
 
+TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux des autres restent (P3.70)",
+          "[app]") {
+  namespace fs = std::filesystem;
+  const fs::path shared = fs::temp_directory_path() / "ajp-purge" / "AppData";
+  fs::remove_all(shared.parent_path());
+  fs::create_directories(shared / "plans");
+  fs::create_directories(shared / "updates" / "1.2.0");
+  std::ofstream(shared / "update.toml") << "last_check_unix = 12\n";
+  std::ofstream(shared / "shaders.cache") << "pl_cache....";
+  std::ofstream(shared / "plans" / "a.shots") << "x";
+  std::ofstream(shared / "engines-relaunched") << "";
+  CHECK(ajp::app::play::purge_misplaced(shared) == 6);
+  CHECK(fs::is_empty(shared));
+  // Ce que le lecteur ne reconnaît pas reste : un update.toml étranger, un cache d'un autre, un plans/
+  // habité.
+  fs::create_directories(shared / "plans");
+  fs::create_directories(shared / "updates" / "Other");
+  std::ofstream(shared / "update.toml") << "channel = 1\n";
+  std::ofstream(shared / "shaders.cache") << "other";
+  std::ofstream(shared / "plans" / "notes.txt") << "x";
+  CHECK(ajp::app::play::purge_misplaced(shared) == 0);
+  CHECK(fs::exists(shared / "update.toml"));
+  CHECK(fs::exists(shared / "plans" / "notes.txt"));
+  CHECK(fs::exists(shared / "updates" / "Other"));
+  fs::remove_all(shared.parent_path());
+}
+
 TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[episodes]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-growing";
   std::filesystem::create_directories(dir);
