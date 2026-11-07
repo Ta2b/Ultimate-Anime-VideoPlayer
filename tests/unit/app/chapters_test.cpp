@@ -53,9 +53,11 @@ TEST_CASE("chapitres : libellé avec ou sans titre", "[app][chapters]") {
 }
 
 TEST_CASE("chapitres : les génériques se reconnaissent à leur titre", "[app][chapters]") {
-  for (const char* title : {"Opening", "OP", "OP2", "ED 1", "Ending", "Intro", "Générique de fin", "Credits"})
+  for (const char* title : {"Opening", "OP", "OP2", "ED 1", "Ending", "Intro", "Générique de fin", "Credits",
+                            "オープニング", "エンディング「花」", "スタッフロール"})
     CHECK(is_credits_chapter({.start_us = 0, .title = title}));
-  for (const char* title : {"", "Avant-générique", "Partie A", "Preview", "Episode", "Cooperation"})
+  for (const char* title :
+       {"", "Avant-générique", "Partie A", "Preview", "Episode", "Cooperation", "アバン", "次回予告"})
     CHECK_FALSE(is_credits_chapter({.start_us = 0, .title = title}));
 }
 

@@ -1,6 +1,7 @@
 #include <memory>
 #include <stop_token>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -35,7 +36,7 @@ struct Harness {
   Harness() {
     auto created =
         SubsWorker::create({}, sink, [box = inbox](std::unique_ptr<ajp::subs::SubtitleAtlas> atlas) {
-          box->try_push(AtlasReturned{std::move(atlas)});
+          std::ignore = box->try_push(AtlasReturned{std::move(atlas)});
         });
     REQUIRE(created);
     worker = std::move(*created);

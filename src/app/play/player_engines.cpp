@@ -45,7 +45,14 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
   const std::int64_t started = host_now_us();
   BuildProgress progress(engine.expected_s, started);
   std::vector<Input> actions;
+  bool watch_now = false;
   while (true) {
+    if (watch_now) {
+      log_channel("app")->info("construction de {} annulée : la vidéo part sans ce moteur", engine.name);
+      return std::unexpected(Refusal{.code = RefusalCode::Cancelled,
+                                     .detail = i18n::tr("engine build cancelled"),
+                                     .key = std::string(kWatchNowKey)});
+    }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (ui.handle(event, host_now_us(), actions)) continue;
@@ -82,7 +89,8 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
                                       seconds(progress.expected_seconds())),
                       i18n::tr_format("{} · input {}x{} · {}", engine.model, engine.width, engine.height,
                                       engine.backend)},
-          .show_details = details};
+          .show_details = details,
+          .watch_now = &watch_now};
       auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
       if (!shown) return std::unexpected(std::move(shown.error()));
     }

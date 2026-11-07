@@ -1,7 +1,7 @@
 # Ultimate Anime VideoPlayer
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
-![Version 0.9.1](https://img.shields.io/badge/version-0.9.1-informational.svg)
+![Version 0.10.0](https://img.shields.io/badge/version-0.10.0-informational.svg)
 ![Linux · Windows · macOS](https://img.shields.io/badge/plateformes-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-lightgrey.svg)
 
 Un lecteur vidéo fait pour l'anime. Il agrandit l'image avec les modèles **AnimeJaNai**, ajoute des images
@@ -33,7 +33,9 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
 - **HDR anime** : l'anime SDR passe en HDR10 avec un grade guidé plan par plan. Les surfaces restent à leur place,
-  seuls les éclats (ciels, lumières, effets) montent. Sur un écran SDR, le même grade s'applique en SDR.
+  seuls les éclats (ciels, lumières, effets) montent. Sur un écran SDR, le même grade s'applique en SDR : les
+  surfaces gardent leur niveau jusqu'à 90 % du blanc, le blanc sort à 95 % et les éclats prennent les derniers
+  5 %.
 - **Netteté** réglable après l'agrandissement, sans halo.
 - **Export** : l'agrandissement et l'interpolation rejoués image par image vers un fichier MKV, MP4 ou MOV
   (sans le grade HDR, l'export reste en SDR).
@@ -112,6 +114,8 @@ réglages avancés.
 | `m` | muet |
 | `f` | plein écran (Échap en sort) |
 | `a` / `j` | piste audio / sous-titres suivants |
+| `z` / `x` | sous-titres 100 ms plus tôt / plus tard |
+| `Ctrl` + `-` / `Ctrl` + `+` | son 100 ms plus tôt / plus tard |
 | `n` / Maj+`n` | épisode suivant / précédent |
 | Page↑ / Page↓ | chapitre suivant / précédent |
 | `o` | passer le générique |
@@ -152,6 +156,8 @@ tools/deps/linux-from-source.sh ~/ajp-deps
 export AJP_DEPS_PREFIX=~/ajp-deps
 cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
+# linux-prefix est en Debug : pour un banc ou une mesure, le binaire livré (Release)
+cmake --preset linux-release && cmake --build --preset linux-release
 
 # Windows et CI, avec vcpkg
 cmake --preset debug && cmake --build --preset debug && ctest --preset debug

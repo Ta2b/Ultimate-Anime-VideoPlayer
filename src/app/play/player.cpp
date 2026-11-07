@@ -24,6 +24,7 @@
 #include "app/play/auto_bench.h"
 #include "app/play/auto_config.h"
 #include "app/play/backend_library.h"
+#include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
@@ -48,6 +49,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/player_run.h"
+#include "app/play/pumped_task.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
@@ -59,6 +61,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/settings.h"
+#include "core/thread.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
@@ -92,25 +95,50 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
-std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file) {
+std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path& file) {
   auto demuxer = media::Demuxer::open(file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   const media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), {});
-  if (!choice.video)
-    return refuse(RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", file.string()));
-  return *demuxer->track(*choice.video);
+  if (!choice.video) {
+    // P3.28 : un fichier audio seul est dit tel quel, pas comme un fichier abîmé.
+    Refusal refusal{RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", file.string())};
+    if (choice.audio) refusal.key = kAudioOnlyKey;
+    return std::unexpected(std::move(refusal));
+  }
+  const media::TrackInfo& video = *demuxer->track(*choice.video);
+  // P3.26 : le profil 5 n'a pas de couche de base HDR10 ou SDR (IPTPQc2) ; les profils 7 et 8 se lisent par
+  // leur couche de base, sans les métadonnées dynamiques.
+  if (video.dolby_vision_profile == 5) {
+    Refusal refusal{RefusalCode::FormatUnsupported, std::format("{} : Dolby Vision profil 5", file.string())};
+    refusal.key = kDolbyVision5Key;
+    return std::unexpected(std::move(refusal));
+  }
+  if (video.dolby_vision_profile > 0)
+    log_channel("app")->info("Dolby Vision profil {} : lu par sa couche de base, sans RPU",
+                             video.dolby_vision_profile);
+  return video;
+}
+
+// Hors du thread de la fenêtre, borné (P2.15) : une vidéo sur un partage réseau qui ne répond plus laisse la
+// fenêtre vivante et rend la main avec une raison.
+constexpr auto kProbeLimit = std::chrono::seconds(20);
+std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file, bool window_open) {
+  return run_pumped_for<media::TrackInfo>("probe", kProbeLimit, window_open,
+                                          [file] { return probe_once(file); });
 }
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
   const auto log = log_channel("app");
+  set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
   // Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
   std::optional<media::TrackInfo> given;
   std::string unreadable;  // le fichier donné ne se lit pas : dit à l'accueil, qui s'ouvre à sa place
   if (!options.file.empty()) {
-    auto video = probe_video(options.file);
+    auto video = probe_video(options.file, false);
     if (video) {
       given = std::move(*video);
     } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
@@ -142,27 +170,35 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     saved = PlaySettings{};
   }
   if (!options.bench_out && !options.data_dir) {
-    if (saved->update_mode != "never") {
-      update_check = std::jthread([=, &playing, mode = saved->update_mode, channel = saved->update_channel,
-                                   frequency = saved->update_frequency](const std::stop_token& stop) {
-        std::mutex mutex;
-        std::condition_variable_any wake;
-        for (bool first = true; !stop.stop_requested(); first = false) {
-          const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
-                                       std::chrono::system_clock::now().time_since_epoch())
-                                       .count();
-          UpdateState state = load_update_state(update_file);
-          if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
-            const auto message = run_update_check(update_paths, mode, channel, state, stop);
-            if (const auto kept = save_update_state(update_file, state); !kept)
-              log_channel("app")->warn("update.toml : {}", kept.error().detail);
-            log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
-          }
-          if (frequency == "launch") return;
-          std::unique_lock lock(mutex);
-          wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
-        }
-      });
+    if (saved->update_mode != UpdateMode::Never) {
+      auto started = start_thread(
+          "updates", ThreadReport([](const Refusal& refused) {
+            log_channel("app")->warn("mise à jour : {}", refused.detail);
+          }),
+          [=, &playing, mode = saved->update_mode, channel = saved->update_channel,
+           frequency = saved->update_frequency](const std::stop_token& stop, const ThreadReport&) {
+            std::mutex mutex;
+            std::condition_variable_any wake;
+            for (bool first = true; !stop.stop_requested(); first = false) {
+              const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                                           std::chrono::system_clock::now().time_since_epoch())
+                                           .count();
+              UpdateState state = load_update_state(update_file);
+              if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
+                const auto message = run_update_check(update_paths, mode, name(channel), state, stop);
+                if (const auto kept = save_update_state(update_file, state); !kept)
+                  log_channel("app")->warn("update.toml : {}", kept.error().detail);
+                log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
+              }
+              if (frequency == UpdateFrequency::Launch) return;
+              std::unique_lock lock(mutex);
+              wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
+            }
+          });
+      if (started)
+        update_check = std::move(*started);
+      else
+        log->warn("mise à jour : {}", started.error().detail);
     }
   }
   // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.
@@ -182,8 +218,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .kde_sdr_auto = options.kde_sdr_auto,
       .smooth_motion = saved->smooth_motion && saved->rife_factor >= 2,
       .allow_software = options.software_gpu,
+      .device_name = options.software_gpu ? std::string() : saved->gpu,
       .present = options.present,
-      .shader_cache = paths.data / "shaders.cache",
+      .shader_cache = paths.engines.parent_path() / "shaders.cache",
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
                                      : std::filesystem::path()});
   if (!screen) return std::unexpected(std::move(screen.error()));
@@ -209,7 +246,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
 
   // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.
   const std::filesystem::path engines_path = settings_path.parent_path() / "settings.toml";
-  auto engines = core::load_settings(engines_path);
+  std::vector<std::string> engines_skipped;  // les valeurs écartées une à une (P2.21)
+  auto engines = core::load_settings(engines_path, &engines_skipped);
+  for (const std::string& skipped : engines_skipped) log->warn("settings.toml : {} écarté", skipped);
   if (!engines) {
     log->warn("{} ; écran de bienvenue", engines.error().detail);
     startup_notes.push_back(set_aside(engines_path, engines.error()));
@@ -232,9 +271,12 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                    .paths = paths,
                                    .catalog = catalog,
                                    .engines_path = engines_path};
-  // Une vidéo ouverte directement (double-clic, argument) se lit tout de suite : l'assistant ne
-  // la bloque pas, et il se présentera au prochain lancement depuis l'accueil.
-  if (options.first_run || (!engines->first_run_done && !given)) {
+  // L'assistant s'ouvre au premier lancement dans tous les cas, double-clic compris (P3.1) : la vidéo
+  // demandée attend, puis se lance à la fin. Seuls les lancements pilotés (essais, captures, banc, dossier de
+  // réglages à part) le sautent.
+  const bool scripted = options.stop_after_us > 0 || options.snapshot || !options.keys.empty() ||
+                        options.bench_out || options.data_dir;
+  if (options.first_run || (!engines->first_run_done && !scripted)) {
     auto shown = run_engine_screen(engine_screen, *engines, false, next_key, snapshot);
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};
@@ -267,16 +309,20 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   const bool from_home = !given;
   std::filesystem::path file = unreadable.empty() ? options.file : std::filesystem::path();
   std::string problem = unreadable;  // la vidéo choisie ne se lit pas : dit à l'accueil
+  std::string set_aside_notes;       // play.toml ou settings.toml mis de côté
   for (const std::string& note : startup_notes) {
     if (note.empty()) continue;
-    problem += problem.empty() ? note : " · " + note;
+    set_aside_notes += set_aside_notes.empty() ? note : " · " + note;
   }
+  // À l'accueil, sous ses boutons ; en lecture directe, sur l'image de la première vidéo (P2.23).
+  if (from_home && !set_aside_notes.empty())
+    problem += problem.empty() ? set_aside_notes : " · " + set_aside_notes;
+  if (from_home) set_aside_notes.clear();
   std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
-  ShotWork shots{.cache_dir = paths.data / "plans"};
+  ShotWork shots{.cache_dir = paths.engines.parent_path() / "plans"};
   if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
-  bool replaced = false;  // le fichier vient d'être glissé sur la fenêtre (ou est l'épisode voisin)
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
@@ -303,7 +349,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       video = std::move(*given);
       given.reset();
     } else {
-      auto probed = probe_video(file);
+      auto probed = probe_video(file, true);
       if (!probed) {
         log->warn("{}", probed.error().detail);
         problem = i18n::tr_format("\"{}\" cannot be read: {}", file.filename().string(),
@@ -416,11 +462,29 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // lancement.
       static bool announced = false;
       const UpdateState update = load_update_state(update_file);
-      if (!announced && saved->update_mode == "notify" && !update.latest_version.empty()) {
+      if (!announced && saved->update_mode == UpdateMode::Notify && !update.latest_version.empty()) {
         announced = true;
         player.notice = i18n::ui_tr_format("Update {} available (Settings > General > Application)",
                                            update.latest_version);
       }
+    }
+    {
+      // P3.11 : une calibration faite sur une autre carte ne sert plus ; la refaire est proposé une fois par
+      // lancement.
+      static bool told = false;
+      const auto calibration = load_calibration(calibration_file(settings_path.parent_path()));
+      if (!told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
+        told = true;
+        const i18n::Translated redo =
+            i18n::ui_tr("New graphics card: optimise for this PC again (Video > Post-processing)");
+        player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
+      }
+    }
+    if (!set_aside_notes.empty()) {
+      // Déjà traduites par set_aside() : montrées telles quelles.
+      const i18n::Translated notes = i18n::Translated::data(set_aside_notes);
+      player.notice = player.notice.empty() ? notes : notes + i18n::Translated::data(" · ") + player.notice;
+      set_aside_notes.clear();
     }
     if (player.display) {
       log->info("écran {} : {}", player.display->connector, describe(*player.display));
@@ -448,6 +512,18 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       playing.store(true);
       auto outcome = run_chain(player, settings, start_us, start_paused);
       playing.store(false);
+      // P3.10 : « Annuler et regarder » pendant une construction : la même vidéo, sans agrandissement ni
+      // interpolation, le temps d'une lecture ; play.toml n'en garde rien.
+      if (!outcome && outcome.error().key == kWatchNowKey && (settings.upscale || settings.rife_factor > 0)) {
+        settings.upscale = false;
+        settings.rife_factor = 0;
+        settings.rife_auto = false;
+        file_options.given.emplace_back("--no-upscale");
+        file_options.given.emplace_back("--rife");
+        file_options.rife_factor = 0;
+        player.notice = i18n::ui_tr("Engine build cancelled: playing without upscaling or smoothing");
+        continue;
+      }
       if (!outcome) {
         result = std::unexpected(std::move(outcome.error()));
         break;
@@ -473,6 +549,17 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         player.notice = exported.notice;
       }
       settings = (*outcome)->settings;
+      // « Refaire le banc » (P3.12) : la chaîne est fermée, sa mémoire vidéo libérée ; la calibration
+      // mesure la machine seule, puis la lecture reprend avec ce qu'elle a trouvé.
+      if ((*outcome)->calibrate) {
+        auto calibrated = calibrate_on_screen(player.screen, player.ui, player.paths,
+                                              player.settings_path.parent_path(), settings);
+        if (!calibrated) {
+          player.quit = true;
+          break;
+        }
+        settings = std::move(*calibrated);
+      }
       start_us = (*outcome)->position_us;
       start_paused = (*outcome)->paused;
       player.details = settings.stats.all;
@@ -496,12 +583,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     if (!result) {
       // Un fichier glissé qui ne s'ouvre pas ramène à l'accueil avec la raison : la lecture en cours n'est
       // pas une raison de quitter.
-      if ((!from_home && !replaced) || player.quit) return result;
+      // P3.10 : ouvert par double-clic, l'échec ne ferme plus la fenêtre sans un mot ; seuls les lancements
+      // pilotés (essais, banc, captures) gardent le code de sortie.
+      if (scripted || player.quit) return result;
       log->error("{}", result.error().detail);
       failed = i18n::tr_format("\"{}\" stopped: {}", file.filename().string(), visible_error(result.error()));
       log->error("{}", failed);
     }
-    replaced = false;
     // Ce que la lecture a changé suit dans la vidéo suivante ou l'accueil.
     library = std::move(player.library);
     snapshot = std::move(player.snapshot);
@@ -516,7 +604,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       file.clear();
     } else if (next_file) {
       file = std::move(*next_file);  // vide (PlayFile) : l'accueil
-      replaced = !file.empty();
     } else if (from_home && !player.quit) {
       file.clear();  // fin de la vidéo : retour à l'accueil
     } else {
@@ -544,8 +631,9 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
   std::array<const render::CubeLut*, render::kLookSlots> luts{};
   std::array<double, render::kLookSlots> mixes{};
   for (std::size_t i = 0; i < render::kLookSlots && i < slots.size(); ++i) {
-    if (!looks.luts.at(i)) continue;
-    luts.at(i) = &*looks.luts.at(i);
+    const std::optional<render::CubeLut>& lut = looks.luts.at(i);
+    if (!lut.has_value()) continue;
+    luts.at(i) = &*lut;
     mixes.at(i) = slots[i].mix;
     log_channel("app")->info("--bake-looks : {} à {:.0f} %", slots[i].key, 100.0 * slots[i].mix);
   }

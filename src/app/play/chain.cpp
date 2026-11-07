@@ -75,7 +75,8 @@ void switch_audio(Chain& to, int track, std::int64_t now_us) {
                           now_us);
 }
 
-// Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets.
+// Sous-titres : subs prend la nouvelle piste, un seek à la position courante relit ses paquets. Un fichier
+// externe est lu en entier : pas de seek, l'image ne saute pas (P3.80).
 void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) {
   if (to.pipeline.tracks().subtitle_selected == track) return;
   auto switched = to.pipeline.select_subtitles(track);
@@ -85,7 +86,7 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
     return;
   }
   to.session.set_subtitles(track.has_value());
-  if (track) {
+  if (track && *track < kExternalSubtitleBase) {
     const std::int64_t position = std::max<std::int64_t>(to.session.view().position_us, 0);
     to.session.command(cmd::Seek{.target_us = position, .exact = true});
   }
@@ -154,12 +155,15 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
     to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
+    to.live.set_deband_source(wanted.deband);
     controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
                                        wanted.deband ? i18n::tr("on") : i18n::tr("off")),
                     now_us);
   }
-  if (wanted.audio_delay_ms != r.audio_delay_ms)
+  if (wanted.audio_delay_ms != r.audio_delay_ms) {
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
+    controls.notify(i18n::ui_tr_format("Audio delay: {} ms", wanted.audio_delay_ms), now_us);
+  }
   if (wanted.display_sync != r.display_sync) to.session.set_display_sync(wanted.display_sync);
   if (wanted.video_latency_ms != r.video_latency_ms)
     to.session.set_video_latency(std::int64_t{wanted.video_latency_ms} * 1000);
@@ -172,6 +176,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.oled_care != r.oled_care || wanted.steady_cadence != r.steady_cadence ||
       wanted.oled_black != r.oled_black)
     apply_oled_care(to, wanted);
+  if (wanted.subtitle_delay_ms != r.subtitle_delay_ms) {
+    to.session.set_subtitle_delay(std::int64_t{wanted.subtitle_delay_ms} * 1000);
+    controls.notify(i18n::ui_tr_format("Subtitle delay: {} ms", wanted.subtitle_delay_ms), now_us);
+  }
   if (wanted.subtitle_scale != r.subtitle_scale) {
     to.session.set_subtitle_scale(wanted.subtitle_scale);
     controls.notify(i18n::ui_tr_format("Subtitle size: {} %", std::lround(wanted.subtitle_scale * 100.0F)),
@@ -215,7 +223,26 @@ void ask_engines(Chain& to, EngineChange request) {
 
 }  // namespace
 
+void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
+  const std::string name = prepare::utf8_path(drop.path.filename());
+  if (drop.kind == DropKind::Video) {  // une autre vidéo : la chaîne se ferme pour elle
+    log_channel("app")->info("fichier glissé : {}", name);
+    to.next_file = drop.path;
+    to.reopen = to.running;
+    return;
+  }
+  if (drop.kind == DropKind::Subtitles) {
+    if (auto added = to.pipeline.add_subtitle_file(drop.path)) {
+      switch_subtitles(to, *added, now_us);
+      return;
+    }
+  }
+  log_channel("app")->info("fichier glissé refusé : {}", name);
+  to.ui.controls().notify(i18n::ui_tr_format("Not a video or subtitles: {}", name), now_us);
+}
+
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void apply(const Input& input, Chain& to, std::int64_t now_us) {
   Session& session = to.session;
   PlaceboScreen& screen = to.screen;
@@ -287,6 +314,17 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             session.command(Command{controls.toggle_mute()});
             volume_changed();
           },
+          [&](const SubtitleDelayStep& step) {
+            PlaySettings wanted = to.running;
+            if (step.audio) {
+              wanted.audio_delay_ms = std::clamp(wanted.audio_delay_ms + step.delta_ms,
+                                                 limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
+            } else {
+              wanted.subtitle_delay_ms = std::clamp(wanted.subtitle_delay_ms + step.delta_ms,
+                                                    limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
+            }
+            apply_live(to, wanted, now_us);
+          },
           [&](const VolumeStep& step) {
             session.command(Command{controls.step_volume(step.delta)});
             volume_changed();
@@ -320,14 +358,14 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const SkipCredits&) {
             const ControlsView view = session.view();
-            std::int64_t target = 0;
-            if (const auto credits = credits_skip_target(view.chapters, view.position_us, view.duration_us)) {
-              target = *credits;
-              controls.notify(i18n::ui_tr("Credits skipped"), now_us);
-            } else {
-              target = view.position_us + kSkipFallbackUs;
-              controls.notify(i18n::ui_tr("Skipped 85 s"), now_us);
+            // P3.82 : seulement dans un chapitre de générique ; plus de saut de 85 s à l'aveugle.
+            const auto credits = credits_skip_target(view.chapters, view.position_us, view.duration_us);
+            if (!credits) {
+              controls.notify(i18n::ui_tr("No credits chapter here"), now_us);
+              return;
             }
+            std::int64_t target = *credits;
+            controls.notify(i18n::ui_tr("Credits skipped"), now_us);
             if (view.duration_us > 0) target = std::min(target, view.duration_us);
             session.command(Command{cmd::Seek{.target_us = target}});
             controls.activity(now_us);
@@ -362,6 +400,20 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             log_channel("app")->info("export demandé : la lecture se ferme pendant l'export");
             to.ui.close_settings();
             to.export_job = start.job;
+            // P3.90 : les pistes et le délai audio de la lecture passent dans le fichier.
+            const TrackMenu& tracks = to.pipeline.tracks();
+            to.export_job->copies = {.audio = tracks.audio_selected.value_or(-1),
+                                     .subtitle = tracks.subtitle_selected.value_or(-1) < kExternalSubtitleBase
+                                                     ? tracks.subtitle_selected.value_or(-1)
+                                                     : -1,
+                                     .subtitles_off = !tracks.subtitle_selected,
+                                     .audio_delay_us = std::int64_t{to.running.audio_delay_ms} * 1000};
+            to.reopen = to.running;
+          },
+          [&](const StartCalibration&) {
+            log_channel("app")->info("banc demandé : la lecture se ferme pendant la calibration");
+            to.ui.close_settings();
+            to.calibrate = true;
             to.reopen = to.running;
           }},
       input);

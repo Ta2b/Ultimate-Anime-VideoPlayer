@@ -16,6 +16,7 @@ TEST_CASE("la séquence de l'évaluation s'écrit et se rouvre", "[media][bench_
   INFO((written ? std::string() : written.error().detail));
   REQUIRE(written.has_value());
   CHECK(std::filesystem::file_size(file) > 10'000);
+  CHECK_FALSE(std::filesystem::exists(std::filesystem::path(file) += ".partial"));  // écrit puis renommé
   {
     // Le demuxeur se referme avant la suppression : sous Windows, un fichier ouvert ne se supprime pas.
     auto demuxer = Demuxer::open(file);

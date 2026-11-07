@@ -91,8 +91,10 @@ constexpr unsigned kMemoryDedicated = 1;  // CUDA_EXTERNAL_MEMORY_DEDICATED
 
 #if defined(_WIN32)
 constexpr const char* kLibrary = "nvcuda.dll";
+// Le pilote est dans System32, et nulle part ailleurs : un nvcuda.dll posé à côté de la vidéo ou dans le
+// dossier courant n'est jamais chargé (P1.22).
 void* open_library() {
-  return reinterpret_cast<void*>(LoadLibraryA(kLibrary));
+  return reinterpret_cast<void*>(LoadLibraryExW(L"nvcuda.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32));
 }
 void* find_symbol(void* library, const char* name) {
   return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(library), name));

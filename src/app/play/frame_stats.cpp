@@ -12,17 +12,18 @@ void Window::add(std::int64_t us) {
   values_[next_] = us;
   next_ = (next_ + 1) % kSize;
   count_ = std::min(count_ + 1, kSize);
+  sorted_valid_ = false;
 }
 
 std::int64_t Window::percentile(int percent) const {
   if (count_ == 0) return 0;
-  std::array<std::int64_t, kSize> sorted = values_;
-  const auto begin = sorted.begin();
-  const auto end = begin + static_cast<std::ptrdiff_t>(count_);
-  const auto rank =
-      static_cast<std::ptrdiff_t>((count_ - 1) * static_cast<std::size_t>(std::clamp(percent, 0, 100)) / 100);
-  std::nth_element(begin, begin + rank, end);
-  return *(begin + rank);
+  if (!sorted_valid_) {
+    std::copy_n(values_.begin(), count_, sorted_.begin());
+    std::sort(sorted_.begin(), sorted_.begin() + static_cast<std::ptrdiff_t>(count_));
+    sorted_valid_ = true;
+  }
+  const std::size_t rank = (count_ - 1) * static_cast<std::size_t>(std::clamp(percent, 0, 100)) / 100;
+  return sorted_[rank];
 }
 
 std::int64_t Window::median() const {

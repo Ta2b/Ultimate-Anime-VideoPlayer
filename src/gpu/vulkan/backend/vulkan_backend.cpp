@@ -1,8 +1,10 @@
 #include "gpu/vulkan/backend/vulkan_backend.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <limits>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -41,18 +43,15 @@ std::size_t element_bytes(TensorType type) {
 }
 
 std::expected<std::uint64_t, Refusal> tensor_bytes(TensorType type, const Shape& shape) {
-  const std::size_t element = element_bytes(type);
-  if (element == 0) return refuse_backend(RefusalCode::FormatUnsupported, "type de tenseur inconnu");
-  std::uint64_t count = 1;
-  for (const std::int64_t d : shape.dims) {
-    if (d <= 0 || d > std::int64_t{1} << 24) {
-      return refuse_backend(RefusalCode::ShapeInvalid, std::format("dimension {} hors de [1, 2^24]", d));
-    }
-    count *= static_cast<std::uint64_t>(d);
-    if (count > (std::uint64_t{1} << 32))
-      return refuse_backend(RefusalCode::ShapeInvalid, "plus de 2^32 éléments");
-  }
-  return count * element;
+  if (tensor_element_bytes(type) == 0)
+    return refuse_backend(RefusalCode::FormatUnsupported, "type de tenseur inconnu");
+  const std::uint64_t bytes = dense_tensor_bytes(type, shape);  // la borne commune (gpu/tensor.h)
+  if (bytes == 0)
+    return refuse_backend(
+        RefusalCode::ShapeInvalid,
+        std::format("forme {}×{}×{}×{} : dimension hors de [1, 2^24] ou plus de 2^32 éléments", shape.dims[0],
+                    shape.dims[1], shape.dims[2], shape.dims[3]));
+  return bytes;
 }
 
 std::string file_stem(std::string_view id) {
@@ -151,7 +150,7 @@ VulkanBackend::~VulkanBackend() {
   kernels_.reset();                                           // attend la file, rend images et vues
   if (queue_ && context_) context_->settle(queue_->lasts());  // la dernière soumission de chaque voie
   if (pipelines_ && !pipeline_cache_file_.empty()) {
-    const std::vector<std::byte> bytes = pipelines_->serialize();
+    const std::vector<std::byte> bytes = seal_pipeline_cache(pipelines_->serialize());
     // Un cache perdu se refait.
     if (!bytes.empty() && !net::write_file(pipeline_cache_file_, bytes))
       log(BackendLogLevel::Warn, "cache de pipelines non écrit");
@@ -190,9 +189,21 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
     pipeline_cache_file_ =
         cache_dir_ / "vulkan" / std::format("pipelines-{:04x}-{:04x}.bin", caps.vendor_id, caps.device_id);
   }
+  // Un fichier abîmé (tronqué, autre appareil, somme fausse) ne passe plus au pilote : cache vide, fichier
+  // effacé (P2.17). Certains pilotes refusaient de démarrer sur ces octets.
   std::vector<std::byte> saved;
   if (!pipeline_cache_file_.empty()) {
-    if (auto bytes = net::read_file(pipeline_cache_file_)) saved = std::move(*bytes);
+    if (auto bytes = net::read_file(pipeline_cache_file_)) {
+      const DeviceCaps& caps = context_->caps();
+      const std::span<const std::byte> driver = open_pipeline_cache(*bytes, caps.vendor_id, caps.device_id);
+      if (driver.empty()) {
+        log(BackendLogLevel::Warn, "cache de pipelines illisible : effacé");
+        std::error_code removed;
+        std::filesystem::remove(pipeline_cache_file_, removed);
+      } else {
+        saved.assign(driver.begin(), driver.end());
+      }
+    }
   }
   auto pipelines = PipelineCache::create(*context_, saved);
   if (!pipelines) return std::unexpected(pipelines.error());
@@ -232,16 +243,17 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
                     imported_timeline_ ? ", ordonnés côté GPU" : ""));
   }
   log(BackendLogLevel::Info,
-      std::format("backend Vulkan : {}, famille {}, unités matricielles {}{}{}", context_->caps().device_name,
-                  name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
-                  !profile_.matrix_hardware ? ""
-                  : profile_.matrix_unlisted
-                      ? " (hors liste d'autorisation : vérifiées par l'autotuner, jamais par défaut)"
-                  : !profile_.matrix_allowed ? " (présentes, hors liste d'autorisation)"
-                                             : "",
-                  profile_.matrix_shapes.empty()
-                      ? ""
-                      : std::format(" ; tuiles du pilote : {}", profile_.matrix_shapes)));
+      std::format(
+          "backend Vulkan : {}, famille {}, unités matricielles {}{}{}", context_->caps().device_name,
+          name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
+          !profile_.matrix_hardware ? ""
+          : !profile_.matrix_allowed
+              ? std::format(" (présentes, exclues : {})",
+                            matrix_units_excluded(profile_.family, profile_.driver).value_or("?"))
+          : profile_.matrix_unlisted ? " (famille inconnue : vérifiées par l'autotuner, jamais par défaut)"
+                                     : "",
+          profile_.matrix_shapes.empty() ? ""
+                                         : std::format(" ; tuiles du pilote : {}", profile_.matrix_shapes)));
   return {};
 }
 
@@ -311,7 +323,10 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   auto data =
       net::build_network(*request, profile_, tuner ? &*tuner : nullptr, progress.report, progress.stop);
   if (!data) return std::unexpected(data.error());
-  if (tuner) gate(model, *data);
+  if (tuner) {
+    for (const std::string& line : tuner->decisions()) log(BackendLogLevel::Debug, model.id + " : " + line);
+    if (auto ok = gate(model, *data); !ok) return std::unexpected(ok.error());
+  }
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   log(BackendLogLevel::Info,
@@ -325,31 +340,34 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   return artifact;
 }
 
-void VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data) {
+std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data) {
+  // Les noyaux de référence partout, quand les choix de l'autotuner ne peuvent pas être vérifiés.
+  const auto to_reference = [&](std::string_view why) -> std::expected<void, Refusal> {
+    auto reference = net::reference_choices(data.graph, profile_.target);
+    if (!reference) return std::unexpected(reference.error());
+    auto program = net::lower(data.graph, *reference, profile_.target);
+    if (!program) return std::unexpected(program.error());
+    log(BackendLogLevel::Warn, std::format("{} : {}, noyaux de référence partout", model.id, why));
+    data.choices = std::move(*reference);
+    data.dispatches = std::move(program->dispatches);
+    data.shaders = net::shader_hashes(data.dispatches);
+    return {};
+  };
   auto gated = net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target);
-  if (!gated) {
-    // La porte n'a pas pu jouer le réseau (mémoire, pilote) : les choix de chaque couche, vérifiés un à un,
-    // restent.
-    log(BackendLogLevel::Warn,
-        std::format("{} : porte de bout en bout non jouée ({})", model.id, gated.error().detail));
-    return;
-  }
+  if (!gated) return to_reference(std::format("porte de bout en bout non jouée ({})", gated.error().detail));
   if (gated->fallback.empty()) {
     log(BackendLogLevel::Info,
         std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
-    return;
+    return {};
   }
   auto program = net::lower(data.graph, gated->choices, profile_.target);
-  if (!program) {
-    log(BackendLogLevel::Warn,
-        std::format("{} : repli de la porte refusé ({})", model.id, program.error().detail));
-    return;
-  }
+  if (!program) return to_reference(std::format("repli de la porte refusé ({})", program.error().detail));
   log(BackendLogLevel::Warn,
       std::format("{} : sortie du réseau trop loin de la référence, {}", model.id, gated->fallback));
   data.choices = std::move(gated->choices);
   data.dispatches = std::move(program->dispatches);
   data.shaders = net::shader_hashes(data.dispatches);
+  return {};
 }
 
 std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifact& artifact) {

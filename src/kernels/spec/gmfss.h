@@ -10,6 +10,8 @@
 // L'export : tools/gmfss/export_gmfss.py. Tests : tests/unit/kernels/gmfss_test.cpp.
 #pragma once
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 // Les images entrent comme celles de RIFE : RGB [0, 1] de la conversion de RIFE, remplies au
@@ -97,3 +99,5 @@ struct MotionGrid {
 //   out = clamp(H + F − L, 0, 1), par canal.
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

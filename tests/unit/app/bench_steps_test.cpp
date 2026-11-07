@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/auto_bench_run.h"
+#include "app/play/bench_events.h"
 #include "french_ui.h"
 
 using namespace ajp;
@@ -282,3 +283,19 @@ TEST_CASE("annuler arrête l'évaluation vite, sans attendre l'essai en cours", 
 }
 
 #endif
+
+TEST_CASE("Banc : l'enfant dit ses événements en JSON, le parent les relit champ par champ (P2.11)",
+          "[app][bench]") {
+  using ajp::app::play::ChildBenchEvent;
+  const ChildBenchEvent refusal{
+      .event = "refusal", .code = "DeviceLost", .detail = "« échec » \"cité\" \\ fin"};
+  const std::string line = ajp::app::play::bench_event_line(refusal);
+  CHECK(line.starts_with("ajp-bench {\"event\":\"refusal\""));
+  CHECK(ajp::app::play::parse_bench_event(line) == refusal);
+  CHECK(ajp::app::play::parse_bench_event("ajp-bench {\"event\":\"build\",\"futur\":\"x\"}") ==
+        ChildBenchEvent{.event = "build"});
+  // Une ligne du journal qui parle de construction ou d'échec n'est pas un événement.
+  CHECK_FALSE(ajp::app::play::parse_bench_event("[app] [info] construction de x.engine"));
+  CHECK_FALSE(ajp::app::play::parse_bench_event("ajp-bench {\"event\":\"build\""));
+  CHECK_FALSE(ajp::app::play::parse_bench_event("ajp-bench {}"));
+}

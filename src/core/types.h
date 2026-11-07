@@ -16,89 +16,93 @@ struct SourceId {
 
 // Toute erreur qui traverse une frontière de module est un refus nommé,
 // renvoyé par std::expected<T, Refusal> et affiché tel quel.
+// Les codes de refus, une ligne chacun : l'énumération et son nom (name) en viennent (P5.18).
+#define AJP_REFUSAL_CODES(X)                                                                                 \
+  X(ProfileUnreadable) /* fichier absent ou TOML invalide */                                                 \
+  X(ProfileVersion)    /* version différente de 5 */                                                         \
+  X(FieldMissing)      /* clé obligatoire absente */                                                         \
+  X(FieldType)         /* clé du mauvais type */                                                             \
+  X(FieldOutOfRange)   /* valeur hors de sa plage constexpr */                                               \
+  X(TooManySteps)      /* plus de 16 étapes dans une règle */                                                \
+  X(FactorProductTooLarge)                                                                                   \
+  X(StepOrder)        /* ordre d'étapes sans ordonnancement connu */                                         \
+  X(PacingForbidden)  /* Quality impose le rythme Source */                                                  \
+  X(ModelUnavailable) /* modèle absent des capacités */                                                      \
+  X(HdrUnavailable)   /* route HDR impossible sur ce système ou cet écran */                                 \
+  X(SourceUnknown)    /* source jamais reçue, ou sortie de la fenêtre gardée */                              \
+  X(LookaheadMissing) /* les sources suivantes nécessaires ne sont pas encore classées */                    \
+  X(SequenceOrder)  /* hors séquence : source avant le début, après la fin ou reprise, époque qui recule */  \
+  X(FileUnreadable) /* fichier hors profil absent, illisible ou TOML invalide */                             \
+  X(FileUnwritable) /* écriture ou renommage impossible */                                                   \
+  X(InsufficientSpace) /* pas assez de place libre pour installer un moteur (dit combien il faut et combien  \
+                          il reste) */                                                                       \
+  X(FormatVersion)     /* version inconnue de settings.toml, d'un index ou d'un INI */                       \
+  X(ImportUnsupported) /* réglage INI sans équivalent en v5 */                                               \
+  X(KeyUnknown)        /* nom de touche ou d'action inconnu */                                               \
+  X(KeyConflict)       /* deux actions sur le même raccourci */                                              \
+  X(OptionUnknown)     /* option de ligne de commande inconnue */                                            \
+  X(HashMismatch)      /* taille ou SHA-256 différents de l'index */                                         \
+  X(MediaUnreadable)   /* fichier absent ou conteneur illisible */                                           \
+  X(TrackUnavailable)  /* piste absente, ou d'un autre type que demandé */                                   \
+  X(HwDecodeUnavailable) /* une API de décodage matériel ne convient pas (codec, appareil, pilote) */        \
+  X(DecoderUnavailable)  /* aucun essai de décodage n'a abouti */                                            \
+  X(DecodeFailed)        /* erreur de lecture ou de décodage en cours de flux */                             \
+  X(FormatUnsupported) /* format de pixel ou couleur hors du vocabulaire de core/frame.h, ou refusé par un  \
+                          noyau */                                                                           \
+  X(SeekFailed)        /* cible hors du fichier ou seek refusé par le conteneur */                           \
+  X(AudioCodecUnavailable)  /* aucun décodeur FFmpeg pour ce flux audio */                                   \
+  X(AudioDecodeFailed)      /* paquet ou conversion audio refusés par FFmpeg */                              \
+  X(AudioDeviceUnavailable) /* périphérique ou file SDL3 impossibles à ouvrir */                             \
+  X(SubtitleUnreadable)     /* fichier de sous-titres absent, illisible ou trop gros */                      \
+  X(SubtitleFormat)         /* script ASS ou SRT mal formé, extension inconnue */                            \
+  X(SubtitleAtlasFull)      /* les images d'un instant dépassent l'atlas borné */                            \
+  X(SubtitleBacklog)        /* trop de demandes de rendu en attente d'un atlas */                            \
+  X(LibassFailed)           /* libass n'a pas créé sa bibliothèque, son moteur ou une piste */               \
+  X(ThreadUnavailable)      /* le système refuse de lancer un thread de plus */                              \
+  X(CacheIo)                /* lecture, écriture ou renommage impossible dans le cache des moteurs */        \
+  X(CacheBusy)              /* verrou de clé tenu par un autre constructeur */                               \
+  X(Cancelled)              /* construction annulée par sa demande ou par l'arrêt du thread */               \
+  X(BuilderFailed)          /* constructeur introuvable, sorti en erreur, ou moteur vide */                  \
+  X(BuilderCrashed)         /* constructeur tué par un signal ou un plantage */                              \
+  X(BuilderTimeout)         /* construction plus longue que son délai */                                     \
+  X(ModelUnreadable)        /* ONNX absent, tronqué ou malformé */                                           \
+  X(ModelMismatch)          /* hachage, précision ou forme différents de ModelSpec */                        \
+  X(ReceiptInvalid)         /* reçu de qualification illisible, incomplet ou au hachage faux */              \
+  /* Bibliothèques externes : chargement dynamique, appels, contrat d'entrée */                              \
+  X(SdkRejected)        /* SDK importé refusé : fichier absent ou vide, architecture, version, ABI */        \
+  X(LibraryUnavailable) /* bibliothèque ou symbole introuvable au chargement */                              \
+  X(VendorCallFailed)   /* un appel d'un SDK constructeur a renvoyé une erreur */                            \
+  X(InputMismatch)      /* image ou tampon hors du contrat d'entrée (taille, format, tramage) */             \
+  X(IoFailed)           /* lecture, copie ou écriture de fichier impossible */                               \
+  /* gpu/ir : lecture ONNX et IR de graphes */                                                               \
+  X(OnnxMalformed)    /* octets qui ne forment pas un ModelProto lisible */                                  \
+  X(OnnxExternalData) /* poids hors du fichier ONNX, refusés */                                              \
+  X(OnnxUnsupported)  /* type, opset ou construction ONNX hors du sous-ensemble lu */                        \
+  X(OperatorUnknown)  /* opérateur hors du jeu de l'IR ; le détail porte son nom */                          \
+  X(GraphInvalid)     /* tenseur absent, cycle, attribut ou entrée incohérents */                            \
+  X(ShapeInvalid) /* formes incompatibles, dimension impossible à déduire, ou taille refusée par un noyau */ \
+  X(SourceResized) /* la source change de taille en cours de lecture : le détail porte « LxH » ; la chaîne \
+                      se rouvre */                                                                           \
+  /* core : threads et backends chargés à l'exécution */                                                     \
+  X(ThreadFailed)   /* une exception a interrompu le corps d'un thread, qui s'est arrêté */                  \
+  X(DeviceLost)     /* contexte CUDA ou appareil Vulkan perdu : relancer le lecteur */                       \
+  X(AbiMismatch)    /* bibliothèque d'une autre version de l'interface (kBackendAbi) */                      \
+  X(DeviceMismatch) /* le backend ne sait pas exploiter l'appareil de rendu (API, constructeur, UUID) */     \
+  /* media : pistes annexes de la source */                                                                  \
+  X(PacketBacklog) /* paquets annexes non retirés : réserve de la source pleine avant la première image */   \
+  /* gpu/vulkan/compute : socle de calcul Vulkan */                                                          \
+  X(VulkanCallFailed)   /* un appel Vulkan a renvoyé une erreur ; le détail cite l'appel et son VkResult */  \
+  X(DeviceUnavailable)  /* aucun appareil, aucune file compute, ou UUID introuvable */                       \
+  X(FeatureUnavailable) /* version, extension, fonction, format ou limite absents de l'appareil */           \
+  X(GpuMemoryExhausted) /* mémoire de l'appareil, sous-allocateur ou pool de descripteurs à leur borne */    \
+  /* export : encodage et mux */                                                                             \
+  X(EncoderUnavailable) /* aucun encodeur du codec demandé ne s'ouvre (absent de FFmpeg, GPU, pilote) */     \
+  X(EncodeFailed)       /* l'encodeur ou le mux a refusé une image ou un paquet */
+
 enum class RefusalCode : std::uint8_t {
-  ProfileUnreadable,  // fichier absent ou TOML invalide
-  ProfileVersion,     // version différente de 5
-  FieldMissing,       // clé obligatoire absente
-  FieldType,          // clé du mauvais type
-  FieldOutOfRange,    // valeur hors de sa plage constexpr
-  TooManySteps,       // plus de 16 étapes dans une règle
-  FactorProductTooLarge,
-  StepOrder,          // ordre d'étapes sans ordonnancement connu
-  PacingForbidden,    // Quality impose le rythme Source
-  ModelUnavailable,   // modèle absent des capacités
-  HdrUnavailable,     // route HDR impossible sur ce système ou cet écran
-  SourceUnknown,      // source jamais reçue, ou sortie de la fenêtre gardée
-  LookaheadMissing,   // les sources suivantes nécessaires ne sont pas encore classées
-  SequenceOrder,      // hors séquence : source avant le début, après la fin ou reprise, époque qui recule
-  FileUnreadable,     // fichier hors profil absent, illisible ou TOML invalide
-  FileUnwritable,     // écriture ou renommage impossible
-  InsufficientSpace,  // pas assez de place libre pour installer un moteur (dit combien il faut et combien il
-                      // reste)
-  FormatVersion,      // version inconnue de settings.toml, d'un index ou d'un INI
-  ImportUnsupported,  // réglage INI sans équivalent en v5
-  KeyUnknown,         // nom de touche ou d'action inconnu
-  KeyConflict,        // deux actions sur le même raccourci
-  OptionUnknown,      // option de ligne de commande inconnue
-  HashMismatch,       // taille ou SHA-256 différents de l'index
-  MediaUnreadable,    // fichier absent ou conteneur illisible
-  TrackUnavailable,   // piste absente, ou d'un autre type que demandé
-  HwDecodeUnavailable,     // une API de décodage matériel ne convient pas (codec, appareil, pilote)
-  DecoderUnavailable,      // aucun essai de décodage n'a abouti
-  DecodeFailed,            // erreur de lecture ou de décodage en cours de flux
-  FormatUnsupported,       // format de pixel ou couleur hors du vocabulaire de core/frame.h, ou refusé par un
-                           // noyau
-  SeekFailed,              // cible hors du fichier ou seek refusé par le conteneur
-  AudioCodecUnavailable,   // aucun décodeur FFmpeg pour ce flux audio
-  AudioDecodeFailed,       // paquet ou conversion audio refusés par FFmpeg
-  AudioDeviceUnavailable,  // périphérique ou file SDL3 impossibles à ouvrir
-  SubtitleUnreadable,      // fichier de sous-titres absent, illisible ou trop gros
-  SubtitleFormat,          // script ASS ou SRT mal formé, extension inconnue
-  SubtitleAtlasFull,       // les images d'un instant dépassent l'atlas borné
-  SubtitleBacklog,         // trop de demandes de rendu en attente d'un atlas
-  LibassFailed,            // libass n'a pas créé sa bibliothèque, son moteur ou une piste
-  ThreadUnavailable,       // le système refuse de lancer un thread de plus
-  CacheIo,                 // lecture, écriture ou renommage impossible dans le cache des moteurs
-  CacheBusy,               // verrou de clé tenu par un autre constructeur
-  Cancelled,               // construction annulée par sa demande ou par l'arrêt du thread
-  BuilderFailed,           // constructeur introuvable, sorti en erreur, ou moteur vide
-  BuilderCrashed,          // constructeur tué par un signal ou un plantage
-  BuilderTimeout,          // construction plus longue que son délai
-  ModelUnreadable,         // ONNX absent, tronqué ou malformé
-  ModelMismatch,           // hachage, précision ou forme différents de ModelSpec
-  ReceiptInvalid,          // reçu de qualification illisible, incomplet ou au hachage faux
-  // Bibliothèques externes : chargement dynamique, appels, contrat d'entrée
-  SdkRejected,         // SDK importé refusé : fichier absent ou vide, architecture, version, ABI
-  LibraryUnavailable,  // bibliothèque ou symbole introuvable au chargement
-  VendorCallFailed,    // un appel d'un SDK constructeur a renvoyé une erreur
-  InputMismatch,       // image ou tampon hors du contrat d'entrée (taille, format, tramage)
-  IoFailed,            // lecture, copie ou écriture de fichier impossible
-  // gpu/ir : lecture ONNX et IR de graphes
-  OnnxMalformed,     // octets qui ne forment pas un ModelProto lisible
-  OnnxExternalData,  // poids hors du fichier ONNX, refusés
-  OnnxUnsupported,   // type, opset ou construction ONNX hors du sous-ensemble lu
-  OperatorUnknown,   // opérateur hors du jeu de l'IR ; le détail porte son nom
-  GraphInvalid,      // tenseur absent, cycle, attribut ou entrée incohérents
-  ShapeInvalid,      // formes incompatibles, dimension impossible à déduire, ou taille refusée par un noyau
-  SourceResized,  // la source change de taille en cours de lecture : le détail porte « LxH » ; la chaîne se
-                  // rouvre
-
-  // core : threads et backends chargés à l'exécution
-  ThreadFailed,    // une exception a interrompu le corps d'un thread, qui s'est arrêté
-  DeviceLost,      // contexte CUDA perdu (erreur collante) : relancer le lecteur
-  AbiMismatch,     // bibliothèque d'une autre version de l'interface (kBackendAbi)
-  DeviceMismatch,  // le backend ne sait pas exploiter l'appareil de rendu (API, constructeur, UUID)
-
-  // media : pistes annexes de la source
-  PacketBacklog,  // paquets annexes non retirés : réserve de la source pleine avant la première image
-  // gpu/vulkan/compute : socle de calcul Vulkan
-  VulkanCallFailed,    // un appel Vulkan a renvoyé une erreur ; le détail cite l'appel et son VkResult
-  DeviceUnavailable,   // aucun appareil, aucune file compute, ou UUID introuvable
-  FeatureUnavailable,  // version, extension, fonction, format ou limite absents de l'appareil
-  GpuMemoryExhausted,  // mémoire de l'appareil, sous-allocateur ou pool de descripteurs à leur borne
-  // export : encodage et mux
-  EncoderUnavailable,  // aucun encodeur du codec demandé ne s'ouvre (absent de FFmpeg, GPU, pilote)
-  EncodeFailed,        // l'encodeur ou le mux a refusé une image ou un paquet
+#define AJP_REFUSAL_ENUM(code) code,
+  AJP_REFUSAL_CODES(AJP_REFUSAL_ENUM)
+#undef AJP_REFUSAL_ENUM
 };
 
 struct Refusal {
@@ -107,152 +111,18 @@ struct Refusal {
   // Vrai quand l'étage qui refuse continue : la lecture n'a pas à s'arrêter. Faux par défaut, un
   // refus arrête l'étage qui le signale.
   bool recoverable = false;
+  // La clé fautive d'un fichier de réglages, « audio.delay_ms » ; vide sinon. La reprise la lit, jamais le
+  // texte de detail (P2.11).
+  std::string key;
 };
 
 constexpr std::string_view name(RefusalCode code) {
   switch (code) {
-    case RefusalCode::ProfileUnreadable:
-      return "ProfileUnreadable";
-    case RefusalCode::ProfileVersion:
-      return "ProfileVersion";
-    case RefusalCode::FieldMissing:
-      return "FieldMissing";
-    case RefusalCode::FieldType:
-      return "FieldType";
-    case RefusalCode::FieldOutOfRange:
-      return "FieldOutOfRange";
-    case RefusalCode::TooManySteps:
-      return "TooManySteps";
-    case RefusalCode::FactorProductTooLarge:
-      return "FactorProductTooLarge";
-    case RefusalCode::StepOrder:
-      return "StepOrder";
-    case RefusalCode::PacingForbidden:
-      return "PacingForbidden";
-    case RefusalCode::ModelUnavailable:
-      return "ModelUnavailable";
-    case RefusalCode::HdrUnavailable:
-      return "HdrUnavailable";
-    case RefusalCode::SourceUnknown:
-      return "SourceUnknown";
-    case RefusalCode::LookaheadMissing:
-      return "LookaheadMissing";
-    case RefusalCode::SequenceOrder:
-      return "SequenceOrder";
-    case RefusalCode::FileUnreadable:
-      return "FileUnreadable";
-    case RefusalCode::FileUnwritable:
-      return "FileUnwritable";
-    case RefusalCode::InsufficientSpace:
-      return "InsufficientSpace";
-    case RefusalCode::FormatVersion:
-      return "FormatVersion";
-    case RefusalCode::ImportUnsupported:
-      return "ImportUnsupported";
-    case RefusalCode::KeyUnknown:
-      return "KeyUnknown";
-    case RefusalCode::KeyConflict:
-      return "KeyConflict";
-    case RefusalCode::OptionUnknown:
-      return "OptionUnknown";
-    case RefusalCode::HashMismatch:
-      return "HashMismatch";
-    case RefusalCode::MediaUnreadable:
-      return "MediaUnreadable";
-    case RefusalCode::TrackUnavailable:
-      return "TrackUnavailable";
-    case RefusalCode::HwDecodeUnavailable:
-      return "HwDecodeUnavailable";
-    case RefusalCode::DecoderUnavailable:
-      return "DecoderUnavailable";
-    case RefusalCode::DecodeFailed:
-      return "DecodeFailed";
-    case RefusalCode::FormatUnsupported:
-      return "FormatUnsupported";
-    case RefusalCode::SeekFailed:
-      return "SeekFailed";
-    case RefusalCode::AudioCodecUnavailable:
-      return "AudioCodecUnavailable";
-    case RefusalCode::AudioDecodeFailed:
-      return "AudioDecodeFailed";
-    case RefusalCode::AudioDeviceUnavailable:
-      return "AudioDeviceUnavailable";
-    case RefusalCode::SubtitleUnreadable:
-      return "SubtitleUnreadable";
-    case RefusalCode::SubtitleFormat:
-      return "SubtitleFormat";
-    case RefusalCode::SubtitleAtlasFull:
-      return "SubtitleAtlasFull";
-    case RefusalCode::SubtitleBacklog:
-      return "SubtitleBacklog";
-    case RefusalCode::LibassFailed:
-      return "LibassFailed";
-    case RefusalCode::ThreadUnavailable:
-      return "ThreadUnavailable";
-    case RefusalCode::CacheIo:
-      return "CacheIo";
-    case RefusalCode::CacheBusy:
-      return "CacheBusy";
-    case RefusalCode::Cancelled:
-      return "Cancelled";
-    case RefusalCode::BuilderFailed:
-      return "BuilderFailed";
-    case RefusalCode::BuilderCrashed:
-      return "BuilderCrashed";
-    case RefusalCode::BuilderTimeout:
-      return "BuilderTimeout";
-    case RefusalCode::ModelUnreadable:
-      return "ModelUnreadable";
-    case RefusalCode::ModelMismatch:
-      return "ModelMismatch";
-    case RefusalCode::ReceiptInvalid:
-      return "ReceiptInvalid";
-    case RefusalCode::SdkRejected:
-      return "SdkRejected";
-    case RefusalCode::LibraryUnavailable:
-      return "LibraryUnavailable";
-    case RefusalCode::VendorCallFailed:
-      return "VendorCallFailed";
-    case RefusalCode::InputMismatch:
-      return "InputMismatch";
-    case RefusalCode::IoFailed:
-      return "IoFailed";
-    case RefusalCode::OnnxMalformed:
-      return "OnnxMalformed";
-    case RefusalCode::OnnxExternalData:
-      return "OnnxExternalData";
-    case RefusalCode::OnnxUnsupported:
-      return "OnnxUnsupported";
-    case RefusalCode::OperatorUnknown:
-      return "OperatorUnknown";
-    case RefusalCode::GraphInvalid:
-      return "GraphInvalid";
-    case RefusalCode::ShapeInvalid:
-      return "ShapeInvalid";
-    case RefusalCode::SourceResized:
-      return "SourceResized";
-    case RefusalCode::ThreadFailed:
-      return "ThreadFailed";
-    case RefusalCode::DeviceLost:
-      return "DeviceLost";
-    case RefusalCode::AbiMismatch:
-      return "AbiMismatch";
-    case RefusalCode::DeviceMismatch:
-      return "DeviceMismatch";
-    case RefusalCode::PacketBacklog:
-      return "PacketBacklog";
-    case RefusalCode::VulkanCallFailed:
-      return "VulkanCallFailed";
-    case RefusalCode::DeviceUnavailable:
-      return "DeviceUnavailable";
-    case RefusalCode::FeatureUnavailable:
-      return "FeatureUnavailable";
-    case RefusalCode::GpuMemoryExhausted:
-      return "GpuMemoryExhausted";
-    case RefusalCode::EncoderUnavailable:
-      return "EncoderUnavailable";
-    case RefusalCode::EncodeFailed:
-      return "EncodeFailed";
+#define AJP_REFUSAL_NAME(code) \
+  case RefusalCode::code:      \
+    return #code;
+    AJP_REFUSAL_CODES(AJP_REFUSAL_NAME)
+#undef AJP_REFUSAL_NAME
   }
   return "Unknown";
 }

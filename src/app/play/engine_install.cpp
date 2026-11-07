@@ -10,8 +10,12 @@
 #include <initializer_list>
 #include <iterator>
 #include <limits>
+#include <mutex>
+#include <optional>
 #include <string_view>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #include "app/play/i18n.h"
 #include "core/dir_entries.h"
@@ -209,7 +213,11 @@ std::string cuda_arch_from_name(std::string_view gpu_name) {
   };
   if (has("h100") || has("h200")) return "sm90";
   if (has("a100")) return "sm80";
-  if (has("blackwell") || series('5')) return "sm120";
+  if (has("blackwell")) return "sm120";
+  // Les cartes pro : « RTX 5000 Ada Generation » est une Ada, « Quadro RTX 4000 » une Turing (P3.16).
+  if (has(" ada")) return "sm89";
+  if (has("quadro rtx")) return "sm75";
+  if (series('5')) return "sm120";
   if (has("l40") || series('4')) return "sm89";
   if (series('3') || has("rtx a")) return "sm86";
   if (series('2') || has("gtx 16") || has("titan rtx")) return "sm75";
@@ -222,28 +230,48 @@ std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_
   return "ptx";  // inconnue : jamais « toutes les architectures » (2 Go tirés, 3,3 Go écrits)
 }
 
-std::string detect_cuda_arch() {
+namespace {
+
+// Chaque carte : son nom et son architecture (« NVIDIA GeForce RTX 4070, 8.9 » : sm89).
+std::vector<std::pair<std::string, std::string>> run_nvidia_smi() {
+  std::vector<std::pair<std::string, std::string>> cards;
   const auto smi = system_tool("nvidia-smi");
-  if (!smi) return {};
-  std::string arch;
+  if (!smi) return cards;
   auto done = run_tool(
       {.program = *smi,
-       .args = {"--query-gpu=compute_cap", "--format=csv,noheader"},
+       .args = {"--query-gpu=name,compute_cap", "--format=csv,noheader"},
        .timeout = std::chrono::seconds(10)},
       [&](std::string_view line) {
-        // « 8.9 » : la première carte, la carte de rendu.
-        if (!arch.empty()) return;
-        const std::size_t dot = line.find('.');
-        if (dot == std::string_view::npos || dot == 0 || dot + 1 >= line.size()) return;
+        const std::size_t comma = line.rfind(',');
+        if (comma == std::string_view::npos) return;
+        std::string_view cap = line.substr(comma + 1);
+        while (!cap.empty() && (cap.front() == ' ' || cap.back() == ' ' || cap.back() == '\r'))
+          cap = cap.front() == ' ' ? cap.substr(1) : cap.substr(0, cap.size() - 1);
+        const std::size_t dot = cap.find('.');
+        if (dot == std::string_view::npos || dot == 0 || dot + 1 >= cap.size()) return;
         const auto digit = [](char c) { return c >= '0' && c <= '9'; };
-        if (!digit(line[dot - 1]) || !digit(line[dot + 1])) return;
-        arch = std::format("sm{}{}", line[dot - 1], line[dot + 1]);
+        if (!digit(cap[dot - 1]) || !digit(cap[dot + 1])) return;
         // sm100 et plus : « 10.0 » donne sm100 ; la majeure a deux chiffres.
-        if (dot >= 2 && digit(line[dot - 2]))
-          arch = std::format("sm{}{}{}", line[dot - 2], line[dot - 1], line[dot + 1]);
+        std::string arch = std::format("sm{}{}", cap.substr(0, dot), cap[dot + 1]);
+        cards.emplace_back(std::string(line.substr(0, comma)), std::move(arch));
       },
       {}, "nvidia-smi");
-  return done ? arch : std::string();
+  if (!done) cards.clear();
+  return cards;
+}
+
+}  // namespace
+
+std::string detect_cuda_arch(std::string_view gpu_name) {
+  // Une fois par processus (P2.12) : la carte ne change pas, et nvidia-smi prend jusqu'à deux secondes.
+  static std::mutex mutex;
+  static std::optional<std::vector<std::pair<std::string, std::string>>> known;
+  const std::scoped_lock lock(mutex);
+  if (!known) known = run_nvidia_smi();
+  // La carte de rendu (P3.16) : sur une machine à deux cartes NVIDIA, la première n'est pas forcément elle.
+  for (const auto& [name, arch] : *known)
+    if (!gpu_name.empty() && name == gpu_name) return arch;
+  return known->empty() ? std::string() : known->front().second;
 }
 
 std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePackage& package,
@@ -317,6 +345,29 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
           format_size(available), where.string()));
 }
 
+bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
+                       const std::filesystem::path& engines_root, const std::stop_token& stop) {
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(engines_root, error)) {
+    const std::filesystem::path candidate = entry.path() / file.name;
+    if (candidate.parent_path() == dest.parent_path()) continue;
+    if (!std::filesystem::is_regular_file(candidate, error) ||
+        std::filesystem::file_size(candidate, error) != file.size)
+      continue;
+    if (!core::verify_file(candidate, file.size, file.sha256, stop)) continue;
+    std::filesystem::create_directories(dest.parent_path(), error);
+    std::filesystem::remove(dest, error);
+    error.clear();
+    std::filesystem::create_hard_link(candidate, dest, error);
+    if (error) {
+      error.clear();
+      std::filesystem::copy_file(candidate, dest, std::filesystem::copy_options::overwrite_existing, error);
+    }
+    if (!error) return true;
+  }
+  return false;
+}
+
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
                                                const std::filesystem::path& dest,
                                                const std::filesystem::path& scratch,
@@ -326,26 +377,49 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   std::error_code error;
   std::filesystem::create_directories(scratch, error);
   const std::filesystem::path packed = scratch / (file.name + ".part");
-  std::filesystem::remove(packed, error);
+  const std::filesystem::path chunk = scratch / (file.name + ".morceau");
   const auto cleanup = [&] {
     std::error_code ignored;
     std::filesystem::remove(packed, ignored);
+    std::filesystem::remove(chunk, ignored);
   };
   if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + i18n::tr(": zero size"));
-  const std::uint64_t last = file.data_offset + file.packed_size - 1;
-  auto fetched = run_tool(
-      {.program = *curl,
-       .args = {"--fail", "--location", "--retry", "1", "--retry-delay", "2", "--progress-bar", "--range",
-                std::format("{}-{}", file.data_offset, last), "--output", packed.string(), file.url},
-       .timeout = std::chrono::hours(2)},
-      [&](std::string_view line) {
-        if (const auto f = curl_percent(line); f && progress.report) progress.report(*f * 0.85F, file.name);
-      },
-      progress.stop, i18n::tr_format("downloading {}", file.name));
-  if (!fetched) {
-    cleanup();
-    return std::unexpected(fetched.error());
+  // P3.7 : un .part laissé par un essai coupé se reprend par plage ; trop long, il repart de zéro.
+  std::uint64_t have = std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
+  if (error || have > file.packed_size) {
+    std::filesystem::remove(packed, error);
+    have = 0;
   }
+  const std::uint64_t last = file.data_offset + file.packed_size - 1;
+  // Trois reprises au plus après une coupure, chacune depuis ce qui est déjà là (curl réessaie aussi
+  // lui-même).
+  std::optional<Refusal> failure;
+  for (int attempt = 0; attempt < 4 && have < file.packed_size; ++attempt) {
+    std::filesystem::remove(chunk, error);
+    std::vector<std::string> args = curl_download_args();
+    args.insert(args.end(), {"--progress-bar", "--range", std::format("{}-{}", file.data_offset + have, last),
+                             "--output", chunk.string(), file.url});
+    const double done = static_cast<double>(have) / static_cast<double>(file.packed_size);
+    auto fetched = run_tool(
+        {.program = *curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
+        [&](std::string_view line) {
+          if (const auto f = curl_percent(line); f && progress.report)
+            progress.report(static_cast<float>(done + ((1.0 - done) * *f)) * 0.85F, file.name);
+        },
+        progress.stop, i18n::tr_format("downloading {}", file.name));
+    // Ce qui est arrivé, même coupé, s'ajoute au .part.
+    {
+      std::ifstream piece(chunk, std::ios::binary);
+      std::ofstream whole(packed, std::ios::binary | std::ios::app);
+      if (piece && whole) whole << piece.rdbuf();
+    }
+    std::filesystem::remove(chunk, error);
+    have = std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
+    if (fetched) break;
+    failure = fetched.error();
+    if (failure->code == RefusalCode::Cancelled) return std::unexpected(*failure);
+  }
+  if (have < file.packed_size && failure) return std::unexpected(*failure);
   const std::uintmax_t got = std::filesystem::file_size(packed, error);
   if (error || got != file.packed_size) {
     cleanup();
@@ -489,8 +563,13 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     overall(0.0, i18n::tr_format("downloading {} ({})", name, format_size(package.size)));
     auto fetched = run_tool(
         {.program = *curl,
-         .args = {"--fail", "--location", "--retry", "1", "--retry-delay", "2", "--continue-at", "-",
-                  "--progress-bar", "--output", part.string(), package.url},
+         .args =
+             [&] {
+               std::vector<std::string> args = curl_download_args();
+               args.insert(args.end(),
+                           {"--continue-at", "-", "--progress-bar", "--output", part.string(), package.url});
+               return args;
+             }(),
          .timeout = std::chrono::hours(4)},
         [&](std::string_view line) {
           if (const auto f = curl_percent(line))
@@ -550,6 +629,14 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
               fraction >= 0.9F ? i18n::tr_format("decompressing {}", label)
                                : i18n::tr_format("downloading {}", label));
     };
+    // P3.8 : un fichier de même SHA-256 déjà installé (version précédente du module, autre moteur du même
+    // dossier) se reprend sans retélécharger ses centaines de Mo.
+    if (reuse_vendor_file(file, staging / file.name, target.parent_path(), progress.stop)) {
+      log_channel("app")->info("installation de {} : {} repris de l'installation précédente", name,
+                               file.name);  // i18n-ok : journal
+      done_bytes += static_cast<double>(file.packed_size);
+      continue;
+    }
     if (auto ok = fetch_vendor_file(file, staging / file.name, catalog.layout.downloads, local); !ok) {
       std::filesystem::remove_all(staging, error);
       return std::unexpected(ok.error());

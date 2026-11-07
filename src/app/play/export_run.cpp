@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <deque>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -28,6 +30,7 @@ extern "C" {
 #include "app/play/chain_setup.h"
 #include "app/play/controls.h"
 #include "app/play/export_depth.h"
+#include "app/play/export_job.h"
 #include "app/play/export_sink.h"
 #include "app/play/first_run.h"
 #include "app/play/live_settings.h"
@@ -113,8 +116,36 @@ std::optional<ExportEnd> poll_export_events(PlaceboScreen& screen, bool& details
   return end;
 }
 
+// P3.89 : la destination avant la préparation des moteurs : on y écrit, il y reste de la place (au moins
+// 512 Mio, et la taille de la source de préférence), et un FAT32 (4 Gio par fichier) est signalé.
+std::optional<Refusal> destination_problem(const std::filesystem::path& output,
+                                           const std::filesystem::path& source) {
+  const std::filesystem::path dir = output.parent_path().empty() ? "." : output.parent_path();
+  const std::filesystem::path probe = dir / ".ajp-write-probe";
+  std::error_code error;
+  {
+    std::ofstream file(probe, std::ios::binary);
+    if (!(file << 'x'))
+      return Refusal{RefusalCode::FileUnwritable, std::format("écriture refusée : {}", dir.string())};
+  }
+  std::filesystem::remove(probe, error);
+  const auto space = std::filesystem::space(dir, error);
+  const std::uintmax_t source_bytes = std::filesystem::file_size(source, error);
+  constexpr std::uintmax_t kMinFree = 512ULL << 20;
+  if (!error && space.available < kMinFree)
+    return Refusal{RefusalCode::FileUnwritable,
+                   std::format("{} Mio libres dans {}", space.available >> 20, dir.string())};
+  if (!error && space.available < source_bytes)
+    log_channel("app")->warn("export : {} Mio libres, la source en fait {}", space.available >> 20,
+                             source_bytes >> 20);
+  if (on_fat32(dir))
+    log_channel("app")->warn("export : FAT32, un fichier s'arrête à 4 Gio ({})", dir.string());
+  return std::nullopt;
+}
+
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 ExportOutcome run_export(Player& p, const ExportJob& job) {
   const auto log = log_channel("app");
   const auto stopped = [&](const Refusal& refusal) {
@@ -132,6 +163,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     return stopped(
         Refusal{RefusalCode::FileUnwritable, std::format("dossier introuvable : {}", parent.string())});
   }
+  if (auto problem = destination_problem(job.output, p.options.file)) return stopped(*problem);
   std::vector<std::string> unavailable;
   const PlaySettings settings = within_engines(export_chain(job.chain), p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
@@ -145,6 +177,16 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   const Factor factor = c.interpolates() ? factor_of(settings) : Factor{};
   media::Rational rate = export_rate(video.frame_rate, factor);
   if (rate.num <= 0) rate = export_rate({.num = 24'000, .den = 1'001}, factor);  // fréquence inconnue
+  // P3.91 : le nom proposé suit ce que les moteurs font vraiment (un moteur absent : ni ×2, ni 4K).
+  std::filesystem::path out_path = job.output;
+  const ExportSize planned_size = export_size(chain_output(job.chain, video.width, video.height),
+                                              {.width = video.width, .height = video.height}, job.height);
+  const media::Rational planned_rate = export_rate(video.frame_rate, factor_of(export_chain(job.chain)));
+  if (out_path == default_export_path(p.options.file, planned_size, planned_rate) &&
+      (planned_size.width != size.width || planned_rate.num * rate.den != rate.num * planned_rate.den)) {
+    out_path = default_export_path(p.options.file, size, rate);
+    log->info("export : renommé {} (ce que les moteurs font)", prepare::utf8_path(out_path.filename()));
+  }
   p.screen.set_source_color(ColorInfo{});  // les images du ring, comme à la lecture
   // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies de calcul le
   // permettent (export_depth.h).
@@ -157,7 +199,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   auto writer = exporter::ExportWriter::open(
       exporter::WriterConfig{.source = p.options.file,
                              .source_video = video.index,
-                             .output = job.output,
+                             .copies = job.copies,
+                             .output = out_path,
                              .width = size.width,
                              .height = size.height,
                              .fps_num = rate.num,
@@ -235,9 +278,9 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
 
   const std::int64_t duration_us = (*pipeline)->session_config().duration_us;
   const std::string chain_text = std::format("{}{}", c.motion_label(settings), c.span_label());
-  log->info("export : {} → {} ; {}x{} à {} i/s · {} ; {}", prepare::utf8_path(p.options.file),
-            prepare::utf8_path(job.output), size.width, size.height, rate_text(rate), (*writer)->encoder(),
-            chain_text);
+  log->info("export : {} → {} ; {}x{} à {} i/s · {} ; {}", prepare::utf8_path(p.options.file.filename()),
+            prepare::utf8_path(out_path.filename()), size.width, size.height, rate_text(rate),
+            (*writer)->encoder(), chain_text);
   log->info("export : profil {} : {} slots, {} tampons de conversion, file d'écriture de {}",
             depth.throughput ? "débit" : "mémoire", depth.ring_slots, depth.buffers, depth.queue);
 
@@ -312,7 +355,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
         }
         waiting.pop_front();
         static_cast<void>((*pipeline)->stages().slot_free(release_of(frame)));
-        held = exporter::Picture{.pts_us = frame.pts_us, .frame = *taken};
+        held = exporter::Picture{.pts_us = frame.pts_us, .frame = std::move(*taken)};
         last_pts = frame.pts_us;
         ++converted;
         moved = true;
@@ -357,7 +400,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                       i18n::tr_format("{}x{} at {} fps · {}", size.width, size.height, rate_text(rate),
                                       (*writer)->encoder()),
                       chain_text,
-                      std::format("{} · {:.0f} Mo", prepare::utf8_path(job.output),
+                      std::format("{} · {:.0f} Mo", prepare::utf8_path(out_path),
                                   static_cast<double>((*writer)->progress().bytes) / 1e6)},
           .show_details = details};
       if (auto shown = p.screen.show(ShowRequest{.ui = p.ui.preparation(now, view)}); !shown)
@@ -381,7 +424,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   for (const RingFrame& frame : waiting)
     static_cast<void>((*pipeline)->stages().slot_free(sink ? release_of(frame) : p.screen.retire(frame)));
   waiting.clear();
-  if (held) av_frame_free(&held->frame);
+  held.reset();
   (*pipeline)->stages().quit();
   pipeline->reset();
   writer->reset();
@@ -397,7 +440,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   if (failure) return stopped(*failure);
   log->info("export terminé : {} images, {} octets, {:.1f} s", written.frames, written.bytes, elapsed);
   i18n::Translated notice = i18n::ui_tr_format(
-      "Export done: {} ({} frames, {:.0f} MB, {})", prepare::utf8_path(job.output.filename()), written.frames,
+      "Export done: {} ({} frames, {:.0f} MB, {})", prepare::utf8_path(out_path.filename()), written.frames,
       static_cast<double>(written.bytes) / 1e6, seconds_text(elapsed));
   if (!truncated.empty())
     notice =

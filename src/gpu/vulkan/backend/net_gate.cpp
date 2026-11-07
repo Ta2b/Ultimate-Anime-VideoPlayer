@@ -83,10 +83,6 @@ std::expected<Outputs, Refusal> run_once(VkContext& context, MemoryAllocator& me
   return out;
 }
 
-bool is_matrix_acc16(const KernelChoice& c) {
-  return c.variant == "coopmat_acc16";
-}
-
 }  // namespace
 
 std::expected<std::vector<KernelChoice>, Refusal> reference_choices(const ir::Graph& graph,
@@ -149,24 +145,30 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   auto drift = network_drift(context, memory, pipelines, graph, gated.choices, *reference, target);
   if (!drift) return std::unexpected(drift.error());
   gated.drift = *drift;
-  if (*drift <= kNetworkDrift) return gated;
-  // Les sommes en float16 d'abord : la même tuile en sommes float, toujours proposée à côté.
-  if (std::ranges::any_of(gated.choices, is_matrix_acc16)) {
+  const bool low = std::ranges::any_of(gated.choices, low_precision);
+  if (*drift <= (low ? kNetworkDriftLow : kNetworkDrift)) return gated;
+  // La précision réduite d'abord : coopmat_acc16 reprend la même tuile en sommes float (toujours proposée à
+  // côté), les autres le noyau de référence de leur couche.
+  if (low) {
     std::vector<KernelChoice> wider = gated.choices;
-    for (KernelChoice& c : wider) {
-      if (is_matrix_acc16(c)) c.variant = "coopmat";
+    for (std::size_t k = 0; k < wider.size(); ++k) {
+      if (wider[k].variant == "coopmat_acc16") {
+        wider[k].variant = "coopmat";
+      } else if (low_precision(wider[k])) {
+        wider[k] = (*reference)[k];
+      }
     }
     // Un réglage que les sommes en float ne prennent pas (refus de l'abaissement) : la référence partout.
     auto again = network_drift(context, memory, pipelines, graph, wider, *reference, target);
     if (again && *again <= kNetworkDrift) {
       gated.choices = std::move(wider);
-      gated.fallback =
-          std::format("sommes en float à la place du float16 (écart {:.3f} puis {:.3f})", *drift, *again);
+      gated.fallback = std::format(
+          "précision pleine à la place de la précision réduite (écart {:.4f} puis {:.4f})", *drift, *again);
       return gated;
     }
   }
   gated.choices = std::move(*reference);
-  gated.fallback = std::format("noyaux de référence partout (écart {:.3f})", *drift);
+  gated.fallback = std::format("noyaux de référence partout (écart {:.4f})", *drift);
   return gated;
 }
 

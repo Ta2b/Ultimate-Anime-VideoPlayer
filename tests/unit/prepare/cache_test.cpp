@@ -53,6 +53,14 @@ TEST_CASE("KeyLock : exclusif entre deux ouvertures, rendu à la destruction", "
   CHECK(test::fs::exists(file));  // jamais supprimé
 }
 
+TEST_CASE("KeyLock : l'attente s'arrête au délai maximum (P2.31)", "[prepare][cache]") {
+  const test::TempDir dir;
+  const auto file = dir / "cle.key-lock";
+  auto first = KeyLock::acquire(file);
+  REQUIRE(first);
+  CHECK(test::refusal(KeyLock::acquire(file, {}, LockWait::Block, 60ms)) == RefusalCode::CacheBusy);
+}
+
 TEST_CASE("KeyLock : tenu par un autre processus", "[prepare][cache]") {
   const test::TempDir dir;
   const auto file = dir / "cle.key-lock";
@@ -246,4 +254,25 @@ TEST_CASE("io_message : conseil selon l'erreur", "[prepare][cache]") {
   const auto denied = io_message("écriture", "/cache/x", std::make_error_code(std::errc::permission_denied));
   CHECK(denied.find("droits d'écriture") != std::string::npos);
   CHECK(io_message("écriture", "/cache/x", {}).starts_with("écriture : /cache/x : "));
+}
+
+TEST_CASE("produce_once : une entrée abîmée depuis sa publication est refaite (P2.31)", "[prepare][cache]") {
+  const test::TempDir dir;
+  const CacheEntry entry{.destination = dir / "a.engine"};
+  int made = 0;
+  const auto produce = [&](const test::fs::path& output) {
+    ++made;
+    return write_output(output, "moteur");
+  };
+  REQUIRE(produce_once(entry, produce) == Production::Produced);
+  CHECK(test::read_file(entry.digest_file()) == sha256_hex("moteur") + "\n");
+  REQUIRE(produce_once(entry, produce) == Production::Reused);
+  test::write_file(entry.destination, "moteuR");  // même taille, autres octets
+  CHECK(produce_once(entry, produce) == Production::Produced);
+  CHECK(made == 2);
+  CHECK(test::read_file(entry.destination) == "moteur");
+  // Une entrée d'avant l'empreinte se reprend et la reçoit.
+  test::fs::remove(entry.digest_file());
+  CHECK(produce_once(entry, produce) == Production::Reused);
+  CHECK(test::fs::exists(entry.digest_file()));
 }

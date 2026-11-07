@@ -121,6 +121,13 @@ std::vector<PcmBlock> AudioOutput::take_back() {
   return back;
 }
 
+std::expected<std::vector<PcmBlock>, Refusal> AudioOutput::reopen_default() {
+  std::vector<PcmBlock> back = take_back();
+  if (auto reopened = sink_->reopen_default(); !reopened) return std::unexpected(reopened.error());
+  paused_ = true;  // la file neuve s'ouvre en pause
+  return back;
+}
+
 void AudioOutput::forget_consumed(std::int64_t consumed) {
   while (!unplayed_.empty() && unplayed_.front().start + unplayed_.front().block.frames() <= consumed) {
     unplayed_.pop_front();

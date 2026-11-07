@@ -147,8 +147,10 @@ float frame_distance(const ShotFrame& a, const ShotFrame& b) {
   for (std::size_t i = 0; i < a.grid.size(); ++i) grid += std::abs(a.grid.at(i) - b.grid.at(i));
   grid /= static_cast<float>(a.grid.size());
   // L'histogramme dit que la lumière a changé ; la grille, qu'elle a changé de place (deux plans de même
-  // luminosité, cadrés autrement).
-  return std::max(std::min(0.5F * histogram, 1.0F), std::min(2.5F * grid, 1.0F));
+  // luminosité, cadrés autrement) ; la couleur (P3.31), un champ-contrechamp de même luminosité.
+  const float colour = std::abs(a.blue - b.blue) + std::abs(a.chroma - b.chroma);
+  return std::max(
+      {std::min(0.5F * histogram, 1.0F), std::min(2.5F * grid, 1.0F), std::min(3.0F * colour, 1.0F)});
 }
 
 std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
@@ -156,7 +158,8 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
   if (pending_ && anchor_) {
     // L'image d'avant l'image en attente, éclairs écartés.
     const ShotFrame before = *anchor_;
-    const float jump = frame_distance(before, *pending_);
+    const ShotFrame held = *pending_;  // copie : close_shot() ne laisse pas suivre l'optional
+    const float jump = frame_distance(before, held);
     const float limit = std::min(std::max(kCutBase, kCutMotion * median(recent_)), kCutCap);
     bool cut = jump > limit;
     // Un éclair : l'image d'après ressemble à celle d'avant, l'image en attente reste dans le plan sans
@@ -164,12 +167,12 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
     const bool flash = cut && frame_distance(before, frame) < std::min(0.5F * jump, limit);
     if (flash) cut = false;
     if (cut) {
-      closed = close_shot(pending_->pts_us);
+      closed = close_shot(held.pts_us);
       frames_.clear();
     }
-    frames_.push_back(pending_.value());
+    frames_.push_back(held);
     if (!flash) {
-      anchor_ = pending_.value();
+      anchor_ = held;
       recent_.push_back(jump);
       if (recent_.size() > kRecent) recent_.erase(recent_.begin());
     }

@@ -3,6 +3,7 @@
 // qui suspend la livraison jusqu'au Seek ; époque des paquets après Flush.
 #include <chrono>
 #include <cstdint>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -151,7 +152,7 @@ TEST_CASE("Flush : un Seek refusé ensuite est signalé et la lecture reprend", 
 TEST_CASE("seek exact : paquets audio et sous-titres de la nouvelle époque, depuis le point clé",
           "[media][seek]") {
   SourceInbox* inbox = nullptr;
-  auto credit = [&inbox] { inbox->try_push(ajp::Credit{}); };
+  auto credit = [&inbox] { std::ignore = inbox->try_push(ajp::Credit{}); };
   auto audio = PacketQueue::create({.max_duration_us = 160'000}, credit);  // 8 paquets de 20 ms
   auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
   REQUIRE(audio.has_value());

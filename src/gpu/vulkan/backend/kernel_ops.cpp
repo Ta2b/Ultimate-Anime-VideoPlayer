@@ -150,7 +150,7 @@ std::expected<void, Refusal> VulkanKernelOps::resample(const Tensor& in, kernels
     return std::unexpected(Refusal{RefusalCode::ShapeInvalid, "rééchantillonnage : Area n'agrandit pas"});
   }
   OpKey key;
-  key.add(1);
+  key.add(OpCode::Resample);
   add_view(key, *src);
   add_view(key, *dst);
   key.add(static_cast<std::uint64_t>(filter));
@@ -172,7 +172,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_crop(const Tensor& padded, co
                             src->width, src->height, kernels::kRifeAlign, dst->width, dst->height)});
   }
   OpKey key;
-  key.add(2);
+  key.add(OpCode::RifeCrop);
   add_view(key, *src);
   add_view(key, *dst);
   auto rec = recording(key, [&](Recorder& r) { return runner_.rife_crop(r, *src, *dst); });
@@ -225,7 +225,7 @@ std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor
   const MotionView mv{.flow = *flow, .mask = *mask, .area = motion.area};
   const PoseView pv{.keep = poses.keep, .previous = before ? &*before : nullptr};
   OpKey key;
-  key.add(3);
+  key.add(OpCode::Warp);
   for (const TensorView* v : {&*va, &*vb, &*vo, &*flow, &*mask}) add_view(key, *v);
   key.add(static_cast<std::uint64_t>(motion.area.x)).add(static_cast<std::uint64_t>(motion.area.y));
   key.add(static_cast<std::uint64_t>(motion.area.width)).add(static_cast<std::uint64_t>(motion.area.height));

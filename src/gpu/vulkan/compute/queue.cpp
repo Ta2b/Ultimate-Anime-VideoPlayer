@@ -45,6 +45,7 @@ class OnceBuffer {
 Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos, std::size_t lane) {
   // Les files des voies en plus ne sont qu'à nous : seule la principale passe par le verrou.
   const bool main = lane == 0;
+  if (lost()) return refuse(RefusalCode::DeviceLost, "vkQueueSubmit : appareil perdu plus tôt, à relancer");
   if (main && lock_queue_) lock_queue_();
   const VkResult result =
       device_fn_.vkQueueSubmit(main ? queue_ : lane_queues_[lane - 1],
@@ -58,7 +59,7 @@ Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos, std::size_t la
     last_submitted_[lane] = {.semaphore = info.pSignalSemaphores[0],
                              .value = timeline->pSignalSemaphoreValues[0]};
   }
-  return check(result, "vkQueueSubmit");
+  return observe(result, "vkQueueSubmit");
 }
 
 bool VkContext::settle(std::optional<TimelinePoint> point) {
@@ -66,11 +67,25 @@ bool VkContext::settle(std::optional<TimelinePoint> point) {
   return point ? settle(std::span(&*point, 1)) : settle(std::span<const TimelinePoint>(last_submitted_));
 }
 
+std::chrono::nanoseconds VkContext::settle_timeout() const {
+  const auto longest = std::chrono::nanoseconds(longest_wait_ns_.load(std::memory_order_relaxed));
+  return std::clamp<std::chrono::nanoseconds>(
+      longest * kSettleFactor, settle_floor_,
+      std::max<std::chrono::nanoseconds>(settle_floor_, kSettleCeiling));
+}
+
+void VkContext::note_wait(std::chrono::steady_clock::time_point since) {
+  const std::int64_t took = (std::chrono::steady_clock::now() - since).count();
+  std::int64_t seen = longest_wait_ns_.load(std::memory_order_relaxed);
+  while (took > seen && !longest_wait_ns_.compare_exchange_weak(seen, took, std::memory_order_relaxed)) {
+  }
+}
+
 bool VkContext::settle(std::span<const TimelinePoint> points) {
   // Le lot part d'abord, même sous un GPU bloqué : il ne garde pas un enregistrement détruit, et un
   // travail encore en attente lirait la ressource après sa fin de vie.
   if (auto flushed = flush(); !flushed) log().error("fin de vie : {}", flushed.error().detail);
-  if (stalled_) return false;
+  const bool was_stalled = stalled();
   std::vector<VkSemaphore> semaphores;
   std::vector<std::uint64_t> values;
   for (const TimelinePoint& target : points) {
@@ -83,14 +98,29 @@ bool VkContext::settle(std::span<const TimelinePoint> points) {
                                  .semaphoreCount = static_cast<std::uint32_t>(semaphores.size()),
                                  .pSemaphores = semaphores.data(),
                                  .pValues = values.data()};
-  const auto timeout = std::chrono::duration_cast<std::chrono::nanoseconds>(kSettleTimeout);
+  // Un GPU déjà tenu pour bloqué n'est plus attendu : un simple constat, qui le réarme si ces points sont
+  // atteints (P2.16). Un appareil perdu ne se réarme pas.
+  const std::chrono::nanoseconds timeout = was_stalled ? std::chrono::nanoseconds::zero() : settle_timeout();
+  if (was_stalled && lost()) return false;
+  const auto since = std::chrono::steady_clock::now();
   const VkResult result =
       device_fn_.vkWaitSemaphores(device_, &wait, static_cast<std::uint64_t>(timeout.count()));
-  if (result == VK_SUCCESS) return true;
-  stalled_ = true;
+  if (result == VK_SUCCESS) {
+    if (was_stalled) {
+      stalled_.store(false, std::memory_order_release);
+      log().info("fin de vie : le GPU a rattrapé la valeur {}, les attentes reprennent", values.back());
+    } else {
+      note_wait(since);
+    }
+    return true;
+  }
+  if (result == VK_ERROR_DEVICE_LOST) mark_lost();
+  if (was_stalled) return false;
+  stalled_.store(true, std::memory_order_release);
   log().error(
-      "fin de vie : le GPU n'a pas atteint la valeur {} en {} s ({}) ; ses ressources restent en place",
-      values.back(), kSettleTimeout.count(), result == VK_TIMEOUT ? "délai dépassé" : "appareil perdu");
+      "fin de vie : le GPU n'a pas atteint la valeur {} en {} ms ({}) ; ses ressources restent en place",
+      values.back(), std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count(),
+      result == VK_TIMEOUT ? "délai dépassé" : "appareil perdu");
   return false;
 }
 
@@ -319,8 +349,11 @@ Done VkContext::wait_on_host(const TimelinePoint& point, std::chrono::nanosecond
                                  .pSemaphores = &point.semaphore,
                                  .pValues = &point.value};
   const auto nanoseconds = static_cast<std::uint64_t>(timeout.count() < 0 ? 0 : timeout.count());
-  return check(device_fn_.vkWaitSemaphores(device_, &wait, nanoseconds),
-               std::format("vkWaitSemaphores(valeur {})", point.value));
+  const auto since = std::chrono::steady_clock::now();
+  auto done = observe(device_fn_.vkWaitSemaphores(device_, &wait, nanoseconds),
+                      std::format("vkWaitSemaphores(valeur {})", point.value));
+  if (done) note_wait(since);
+  return done;
 }
 
 Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {

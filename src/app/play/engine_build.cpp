@@ -4,6 +4,7 @@
 #include <format>
 #include <utility>
 
+#include "app/play/bench_events.h"
 #include "core/thread.h"
 
 namespace ajp::app::play {
@@ -41,6 +42,9 @@ void EngineBuild::run(const std::stop_token& stop, const EngineRequest& request)
   }
   gpu::Progress progress{.report =
                              [this](float fraction, const std::string& stage) {
+                               // Une vraie construction avance entre 0 et 1 ; un moteur en cache rend 1 seul.
+                               if (fraction > 0.0F && fraction < 1.0F && !told_build_.exchange(true))
+                                 tell_bench_parent({.event = "build"});
                                const std::scoped_lock lock(mutex_);
                                fraction_ = fraction;
                                stage_ = stage;

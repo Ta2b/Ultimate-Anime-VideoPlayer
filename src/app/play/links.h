@@ -51,13 +51,9 @@ inline constexpr std::size_t kMaxRingSlots = 16;
 using MainInbox = Inbox<RingFrame, subs::SubtitleFrame, StreamEnded, StageRefusal>;
 inline constexpr MainInbox::Bounds kMainInboxBounds{kMaxRingSlots, subs::kMaxPendingRequests, 4, 64};
 
-// Message suivant sans attendre, ou rien. main est le seul consommateur de sa boîte : un
-// message compté par pending<>() y est encore quand wait() le prend.
+// Message suivant sans attendre, ou rien : un seul verrou (P4.13).
 inline std::optional<MainInbox::Message> try_take(MainInbox& inbox) {
-  const std::size_t pending = inbox.pending<RingFrame>() + inbox.pending<subs::SubtitleFrame>() +
-                              inbox.pending<StreamEnded>() + inbox.pending<StageRefusal>();
-  if (pending == 0) return std::nullopt;
-  return inbox.wait(std::stop_token{});
+  return inbox.try_pop();
 }
 
 // Les boîtes des autres threads. Chaque envoi peut échouer sur une borne pleine : false,

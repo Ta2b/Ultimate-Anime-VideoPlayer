@@ -37,6 +37,13 @@ Déjà relevé : NVIDIA Ada (RTX 4070 Ti, pilote 615.78.08), SPAN en 720p et RIF
 Deux lectures ont tranché 13 couches sur 29 différemment, à des temps voisins : une troisième lecture
 départagerait.
 
+Reste à relever (P2.46) : RDNA4 (RX 9070 XT, sous le pilote AMD puis RADV), RDNA3 et Intel Arc. Depuis
+novembre, les unités matricielles ne dépendent plus d'une liste de familles permises mais des tuiles que le
+pilote annonce, avec une liste d'exclusion (`matrix_units_excluded`, `family.h`) ; le journal d'ouverture du
+backend dit « exclues : raison » quand elle s'applique. Arc annonce des tuiles 8×16×16 que nos shaders ne
+tuilent pas encore : sa table ne gagnera rien avant ce travail. Les caches relevés avant `c7` (tolérance de
+P2.45) sont ignorés par le script : il faut une lecture neuve.
+
 ## Garder les poses (DRBA)
 
 - `ajp_backend_tensorrt_tests "warp et mélange"` : le warp à poses gardées doit suivre la
@@ -450,3 +457,17 @@ Profil 7 (1080p, RIFE ×2) au premier lancement, TensorRT.
   doit rester identique (les graphes CUDA sont recapturés quand la zone grandit).
 - **Secteur et batterie** : mesurer sur secteur ; sur batterie le GPU est bridé et le profil 9
   (source) peut être nécessaire.
+
+## Endurance de 8 h (P2.44, novembre)
+
+Un lecteur seul enchaîne 400 fois le même épisode (réglage « épisode suivant ») pendant 8 h ; la mémoire, la
+VRAM, les poignées et la taille du journal sont relevées chaque minute :
+
+```sh
+python3 tools/bench/endurance.py --video=episode.mkv --sortie=~/ajp-reports/endurance --heures=8 --ajp=ajp
+```
+
+Sous Windows, `py tools\bench\endurance.py ... --ajp=chemin\ajp.exe`. Le verdict de `rapport.md` échoue si,
+après la première heure, la mémoire monte de plus de 32 Mio par heure, la VRAM de plus de 64 Mio, les poignées
+de plus de 20, ou si le journal dépasse 97 Mio. Essayé 3 min sous lavapipe (16 épisodes, poignées stables) ;
+les 8 h restent à lancer sur le PC, avec le moteur ordinaire (sans `--no-upscale`).

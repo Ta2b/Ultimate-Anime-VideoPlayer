@@ -43,6 +43,8 @@ TEST_CASE("rien n'exclut à tort une RTX 4050 de portable : Ada, calcul 8.9", "[
   CHECK(cuda_arch_from_name("NVIDIA GeForce RTX 4060 Laptop GPU") == "sm89");
   CHECK(cuda_arch_from_name("NVIDIA GeForce RTX 4070 Ti") == "sm89");
   CHECK(cuda_arch_from_name("NVIDIA RTX 2000 Ada Generation Laptop GPU") != "sm120");
+  CHECK(cuda_arch_from_name("NVIDIA RTX 5000 Ada Generation") == "sm89");  // pas une RTX 50
+  CHECK(cuda_arch_from_name("Quadro RTX 4000") == "sm75");                 // Turing, pas une RTX 40
   CHECK(effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
   CHECK(effective_cuda_arch("sm89", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
 }
@@ -106,7 +108,8 @@ TEST_CASE("la préparation automatique part au cran Performance, une fois par mo
   CHECK_FALSE(should_start_span_auto(PrecisionTier::Performance, not_offered, false, "m|v", ""));
 }
 
-TEST_CASE("la boucle du lecteur annonce la progression puis rouvre la chaîne à la fin", "[span_auto]") {
+TEST_CASE("la boucle du lecteur annonce la progression, puis le paquet prêt pour la vidéo suivante (P3.24)",
+          "[span_auto]") {
   ajp::app::play::FrenchUi french;
   int runs = 0;
   const SpanPrepare prepare = offered_with(runs);
@@ -115,15 +118,12 @@ TEST_CASE("la boucle du lecteur annonce la progression puis rouvre la chaîne à
   REQUIRE(first.notify);
   CHECK(first.notify->str().starts_with("Préparation du mode Performance…"));
   CHECK(first.notify->str().ends_with(" %"));
-  CHECK_FALSE(first.reopen);
   job.note->pending->wait();
   const SpanAutoTick done = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
-  CHECK(done.reopen);
   REQUIRE(done.notify);
-  CHECK(done.notify->str().contains("prêt"));
+  CHECK(done.notify->str().contains("vidéo suivante"));
   // Une fois lu, rien de plus : pas de nouvelle tâche pour la même clé.
   const SpanAutoTick after = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
-  CHECK_FALSE(after.reopen);
   CHECK_FALSE(after.notify.has_value());
   CHECK(runs == 1);
 }
@@ -136,11 +136,9 @@ TEST_CASE("posé par un préréglage, le cran Performance se prépare en silence
   SpanJob job;
   const SpanAutoTick first = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v", true);
   CHECK_FALSE(first.notify.has_value());
-  CHECK_FALSE(first.reopen);
   job.note->pending->wait();
   const SpanAutoTick done = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v", true);
   CHECK_FALSE(done.notify.has_value());
-  CHECK_FALSE(done.reopen);  // le paquet sert à l'ouverture suivante
   CHECK(runs == 1);
 }
 
@@ -153,7 +151,6 @@ TEST_CASE("un refus des garde-fous est dit avec ses dB, la lecture reste en FP16
   tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
   job.note->pending->wait();
   const SpanAutoTick done = tick_span_auto(PrecisionTier::Performance, prepare, job, "m|v");
-  CHECK_FALSE(done.reopen);
   REQUIRE(done.notify);
   CHECK(done.notify->str().contains("lecture en FP16"));
   CHECK_FALSE(done.notify->str().contains("PSNR"));  // le détail technique est au journal, pas à l'écran

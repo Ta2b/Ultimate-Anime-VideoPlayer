@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
@@ -88,6 +89,7 @@ void PlaceboScreen::set_sdr_output(bool sdr) {
   if (s.swapchain == nullptr) return;
   // Les métadonnées annoncées repartent de zéro : au retour en HDR, match_kwin les repose.
   s.hinted_max_nits = 0.0;
+  s.hinted_max_fall = 0.0;
   pl_swapchain_colorspace_hint(s.swapchain, s.hdr_wanted ? &pl_color_space_hdr10 : nullptr);
   s.composed_key.reset();
 }
@@ -133,19 +135,27 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   switch (final_scaler) {
     case FinalScaler::Default:
       break;
+    // Le même filtre en réduction (P3.68) : une chaîne plus grande que la fenêtre gardait celui par défaut.
     case FinalScaler::EwaLanczos:
-      params.upscaler = &pl_filter_ewa_lanczos;
+      params.upscaler = params.downscaler = &pl_filter_ewa_lanczos;
       break;
     case FinalScaler::EwaLanczosSharp:
-      params.upscaler = &pl_filter_ewa_lanczossharp;
+      params.upscaler = params.downscaler = &pl_filter_ewa_lanczossharp;
       break;
   }
   // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
   // HDR10), il est sauté.
   const bool graded_now = grade.has_value() && graded(target.color);
-  // Sous le grade, le débandage de libplacebo (échantillonnage aléatoire) fabriquait du bruit dans les aplats
-  // sombres que le grade étire (mesuré : écart-type 16x16 de 1,0 contre 0,0) : il ne se pose que sans grade.
-  if (!graded_now && deband) params.deband_params = &pl_deband_default_params;
+  // La case Débandage décide sur tous les moteurs (P3.56) : une image déjà débandée avant SPAN (TensorRT) ne
+  // l'est pas deux fois ; sinon libplacebo débande ici. Sous le grade, son grain fabriquait du bruit dans les
+  // aplats sombres que le grade étire (écart-type 16x16 de 1,0 contre 0,0) : il y débande sans grain.
+  static const pl_deband_params kQuietDeband = [] {
+    pl_deband_params quiet = pl_deband_default_params;
+    quiet.grain = 0.0F;
+    return quiet;
+  }();
+  if (deband && !frame_debanded)
+    params.deband_params = graded_now ? &kQuietDeband : &pl_deband_default_params;
   // La netteté sur MAIN d'abord, puis les passes du grade sur OUTPUT.
   std::array<const pl_hook*, 16> hooks{};
   std::size_t count = 0;
@@ -318,6 +328,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::draw_overlays(const pl_frame& 
   return {};
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
   const pl_gpu gpu = s.vk->gpu;
@@ -330,6 +341,14 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     if (!drawn) return std::unexpected(std::move(drawn.error()));
     target = *drawn;
   } else {
+    // Fenêtre réduite ou que le compositeur ne montre plus (Wayland « suspended », macOS) : rien n'est
+    // présenté (P2.19). En FIFO, la présentation y attendrait un rappel de rafraîchissement qui ne vient pas,
+    // et le thread de la fenêtre resterait bloqué. L'attente est rendue au premier événement, 50 ms au plus.
+    if ((SDL_GetWindowFlags(s.window) & (SDL_WINDOW_OCCLUDED | SDL_WINDOW_MINIMIZED)) != 0) {
+      constexpr Sint32 kHiddenWaitMs = 50;
+      (void)SDL_WaitEventTimeout(nullptr, kHiddenWaitMs);
+      return ScreenTiming{.presented = false};
+    }
     if (out != s.swapchain_size) {
       int w = out.width;
       int h = out.height;
@@ -353,6 +372,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   }
 
   const RingFrame* frame = request.frame;
+  s.frame_debanded = frame != nullptr && frame->debanded;
   pl_frame image{};
   if (frame != nullptr) {
     auto tex = s.ring.acquire(gpu, *frame);

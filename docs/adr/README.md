@@ -16,3 +16,7 @@ sa page, avec le numéro de celle qui la remplace.
 | [0011](0011-presentation-en-boucle-fermee.md) | Présentation en boucle fermée : un correctif de libplacebo, pas une swapchain maison | En cours (chantier 6) |
 | [0012](0012-lecteur-simple.md) | Un lecteur simple : un seul HDR qui suit le système, pas de profils, menu en trois catégories | Acceptée (#530 à #533) |
 | [0013](0013-ed25519-maison-garde.md) | La vérification Ed25519 maison est gardée, sous vecteurs RFC 8032 et Wycheproof | Acceptée |
+| [0014](0014-briques-maison.md) | Les briques maison qui restent, une raison ou un remplacement par ligne | Acceptée |
+| [0015](0015-pistes-ecartees.md) | Pistes d'optimisation écartées : parcimonie 2:4, NvFRUC, assembleur, -march imposé, PGO | Acceptée |
+
+Les numéros 0005 et 0006 n'ont jamais été attribués : deux brouillons abandonnés avant d'être écrits (P5.38).

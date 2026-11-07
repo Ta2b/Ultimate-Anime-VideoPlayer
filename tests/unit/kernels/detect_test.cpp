@@ -50,37 +50,37 @@ TEST_CASE("coupe de scène : somme calculée à la main", "[detect][parity]") {
 }
 
 TEST_CASE("coupe de scène : le score divise par l'aire remplie de RIFE", "[detect]") {
-  // 1280 × 720 rempli en 1280 × 768 : un écart uniforme de 40 niveaux (0,157 en moyenne) donne
-  // 0,157 × 720 / 768 = 0,147, sous le seuil ; 42 niveaux donnent 0,154, au-dessus.
+  // 1280 × 720 rempli en 1280 × 768 : un écart uniforme de 32 niveaux (0,125 en moyenne) donne
+  // 0,125 × 720 / 768 = 0,118, sous le seuil ; 34 niveaux donnent 0,125, au-dessus.
   const RifeGeometry g = rife_geometry(1280, 720);
   const PlaneU16 a(1280, 720, 16);
-  const auto score40 = ref::scene_score(a, PlaneU16(1280, 720, 56), Format::Nv12, g);
-  const auto score42 = ref::scene_score(a, PlaneU16(1280, 720, 58), Format::Nv12, g);
-  REQUIRE(score40);
-  REQUIRE(score42);
-  CHECK_THAT(*score40, WithinRel(40.0 / 255.0 * 720.0 / 768.0, tolerance::kSceneScoreRelative));
-  CHECK_FALSE(is_scene_cut(*score40));
-  CHECK(is_scene_cut(*score42));
+  const auto score32 = ref::scene_score(a, PlaneU16(1280, 720, 48), Format::Nv12, g);
+  const auto score34 = ref::scene_score(a, PlaneU16(1280, 720, 50), Format::Nv12, g);
+  REQUIRE(score32);
+  REQUIRE(score34);
+  CHECK_THAT(*score32, WithinRel(32.0 / 255.0 * 720.0 / 768.0, tolerance::kSceneScoreRelative));
+  CHECK_FALSE(is_scene_cut(*score32));
+  CHECK(is_scene_cut(*score34));
   CHECK_FALSE(is_scene_cut(kSceneCutThreshold));  // strictement au-dessus
-  CHECK(is_scene_cut(0.1500001));
+  CHECK(is_scene_cut(0.1200001));
   const PlaneU16 small(640, 360, 0);
   CHECK(ref::scene_score(small, small, Format::Nv12, g).error().code == ErrorCode::SizeMismatch);
 }
 
-TEST_CASE("dessins tenus : pire bloc 32 × 32 calculé à la main", "[detect][parity]") {
+TEST_CASE("dessins tenus : pire bloc 16 × 16 calculé à la main", "[detect][parity]") {
   PlaneU16 a(64, 64, 80);
   PlaneU16 b = a;
-  // Bloc (1, 0) : 700 pixels sur 1024 à un niveau → 700 × 256 / 1024 = 175 (0,68 niveau).
-  touch_block(b, 1, 0, 700, 1);
-  // Bloc (0, 1) : 100 pixels à 3 niveaux → 300 × 256 / 1024 = 75.
-  touch_block(b, 0, 1, 100, 3);
+  // Bloc (1, 0) : 175 pixels sur 256 à un niveau → 175 × 256 / 256 = 175 (0,68 niveau).
+  touch_block(b, 1, 0, 175, 1);
+  // Bloc (0, 1) : 25 pixels à 3 niveaux → 75 × 256 / 256 = 75.
+  touch_block(b, 0, 1, 25, 3);
   const auto worst = ref::block_diff_max(a, b, Format::Nv12);
   REQUIRE(worst);
   CHECK(*worst == 175);
   CHECK(is_held(*worst));                         // 17500 ≤ 70 × 256 = 17920
   CHECK_FALSE(is_held(*worst, kHeldNoiseFloor));  // le seuil de 0,40 le prendrait pour un mouvement
-  // 720 pixels : 180, juste au-dessus de 0,70 niveau.
-  touch_block(b, 1, 1, 720, 1);
+  // 180 pixels : 180, juste au-dessus de 0,70 niveau.
+  touch_block(b, 1, 1, 180, 1);
   const auto moved = ref::block_diff_max(a, b, Format::Nv12);
   REQUIRE(moved);
   CHECK(*moved == 180);
@@ -115,10 +115,12 @@ TEST_CASE("dessins tenus : blocs tronqués au bord, division entière", "[detect
   CHECK(*corner == 8);
   PlaneU16 c(32, 32, 50);
   PlaneU16 d = c;
-  d.at(0, 0) = 51;  // 256 / 1024 = 0,25, tronqué à 0
-  const auto tiny = ref::block_diff_max(c, d, Format::Nv12);
+  const PlaneU16 e(19, 16, 50);
+  PlaneU16 f = e;
+  f.at(18, 0) = 51;  // bloc 3 × 16 : 256 / 48 = 5,33, tronqué à 5
+  const auto tiny = ref::block_diff_max(e, f, Format::Nv12);
   REQUIRE(tiny);
-  CHECK(*tiny == 0);
+  CHECK(*tiny == 5);
   CHECK(ref::block_diff_max(c, PlaneU16(32, 16), Format::Nv12).error().code == ErrorCode::SizeMismatch);
   CHECK(ref::block_diff_max(c, PlaneU16(32, 32, 300), Format::Nv12).error().code ==
         ErrorCode::SampleOutOfRange);
@@ -136,4 +138,16 @@ TEST_CASE("détection : une luma hors de son conteneur est refusée", "[detect]"
   PlaneU16 hollow = a;
   hollow.data.resize(10);
   CHECK(ref::block_diff_max(a, hollow, Format::P010).error().code == ErrorCode::SizeMismatch);
+}
+
+TEST_CASE("dessins tenus : un clignement lointain n'est pas un dessin tenu (P3.23)", "[detect]") {
+  // Un œil de 3 × 2 pixels qui se ferme (40 niveaux) : 240 / 1024 = 0,23 niveau en 32 × 32, tenu à tort ;
+  // 240 / 256 = 0,94 en 16 × 16, au-dessus du seuil.
+  const PlaneU16 a(1920, 1080, 120);
+  PlaneU16 b = a;
+  for (int y = 500; y < 502; ++y)
+    for (int x = 900; x < 903; ++x) b.at(x, y) = 160;
+  const auto worst = ref::block_diff_max(a, b, Format::Nv12);
+  REQUIRE(worst);
+  CHECK_FALSE(is_held(*worst));
 }

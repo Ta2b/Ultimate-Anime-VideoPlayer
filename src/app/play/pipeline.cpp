@@ -5,13 +5,17 @@
 #include <format>
 #include <optional>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #include "app/play/i18n.h"
 #include "audio/devices.h"
 #include "audio/output.h"
+#include "core/log.h"
+#include "kernels/spec/color.h"
 #include "media/demuxer.h"
 #include "media/video_decoder.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
 namespace {
@@ -25,12 +29,26 @@ std::string track_text(std::string_view kind, const media::TrackInfo& track) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
                                                                  const VideoStageFactory& make_video) {
   std::unique_ptr<Pipeline> p(new Pipeline());
   auto demuxer = media::Demuxer::open(config.file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
-  media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), config.languages);
+  // P3.73 : les sous-titres à côté de la vidéo concourent avec ceux du conteneur, à leur langue lue dans le
+  // nom (« Épisode 01.fr.ass »).
+  std::vector<ExternalSubtitle> externals =
+      config.subtitles ? find_external_subtitles(config.file) : std::vector<ExternalSubtitle>{};
+  std::vector<media::TrackInfo> candidates(demuxer->tracks().begin(), demuxer->tracks().end());
+  for (std::size_t k = 0; k < externals.size(); ++k) {
+    const std::string extension = externals[k].path.extension().string();
+    candidates.push_back({.index = kExternalSubtitleBase + static_cast<int>(k),
+                          .kind = media::TrackKind::Subtitle,
+                          .codec = extension == ".srt" || extension == ".SRT" ? "subrip" : "ass",
+                          .language = externals[k].language,
+                          .title = externals[k].path.filename().string()});
+  }
+  media::TrackChoice choice = media::choose_tracks(candidates, config.languages);
   const auto kind_of = [&](int index) {
     const media::TrackInfo* track = demuxer->track(index);
     return track != nullptr ? std::optional(track->kind) : std::nullopt;
@@ -95,7 +113,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       } else {
         audio::AudioThreadOptions options{
             .player = {.pll = config.audio_pll},
-            .credit = [inbox = &p->source_inbox_](Credit credit) { inbox->try_push(credit); },
+            .credit = [inbox = &p->source_inbox_](Credit credit) { std::ignore = inbox->try_push(credit); },
             .refused = [mail = &p->mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
         auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
         if (!thread) {
@@ -135,7 +153,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     }
     // Les fichiers à côté de la vidéo : après les pistes du conteneur, choisis d'office seulement
     // quand le conteneur n'en a aucune et qu'aucun choix n'a été fait.
-    p->external_ = find_external_subtitles(config.file);
+    p->external_ = std::move(externals);
     for (std::size_t k = 0; k < p->external_.size(); ++k) {
       const int index = kExternalSubtitleBase + static_cast<int>(k);
       p->menu_.subtitles.push_back({.index = index, .label = p->external_[k].label});
@@ -156,7 +174,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       choice.subtitle.reset();
     }
   }
-  if (!p->menu_.subtitles.empty()) {
+  // Le fil des sous-titres tourne même sans piste : un fichier glissé pendant la lecture s'y ajoute (P3.85).
+  if (config.subtitles) {
     p->subs_inbox_ = std::make_shared<subs::SubsInbox>(subs::kSubsInboxBounds);
     auto thread = subs::SubsThread::start(config.subs, p->mail_, p->subs_inbox_);
     if (!thread) return std::unexpected(std::move(thread.error()));
@@ -178,7 +197,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     if (choice.subtitle && std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
       chosen = choice.subtitle;
       if (auto select = p->subtitle_select(*chosen)) {
-        p->subs_inbox_->try_push(std::move(*select));
+        if (!p->subs_inbox_->try_push(std::move(*select)))  // P2.36 : un choix perdu se dit
+          log_channel("app")->warn("subtitles: track {} choice lost, inbox full", *chosen);
         p->subtitle_track_ = *p->track_info(*chosen);
       } else {
         chosen.reset();
@@ -196,11 +216,12 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   if (!media) return std::unexpected(std::move(media.error()));
   p->decoder_api_ = std::string(media::name(media->decoder.api()));
 
-  auto video = make_video(VideoStageInit{.track = &p->video_track_,
-                                         .ring = &p->mail_,
-                                         .credit = [inbox = &p->source_inbox_] { inbox->try_push(Credit{}); },
-                                         .report = p->mail_.reporter("gpu"),
-                                         .clock = p->clock_});
+  auto video = make_video(
+      VideoStageInit{.track = &p->video_track_,
+                     .ring = &p->mail_,
+                     .credit = [inbox = &p->source_inbox_] { std::ignore = inbox->try_push(Credit{}); },
+                     .report = p->mail_.reporter("gpu"),
+                     .clock = p->clock_});
   if (!video) return std::unexpected(std::move(video.error()));
   p->video_ = std::move(*video);
   p->mail_.attach_video(p->video_.get());
@@ -292,16 +313,37 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
   return {};
 }
 
+std::expected<int, Refusal> Pipeline::add_subtitle_file(const std::filesystem::path& file) {
+  if (!subs_inbox_)
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "pas de sous-titres pour cette lecture"});
+  if (external_.size() >= kMaxExternalSubtitles)
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "trop de sous-titres externes"});
+  const int index = kExternalSubtitleBase + static_cast<int>(external_.size());
+  external_.push_back(
+      {.path = file, .label = i18n::tr_format("External · {}", prepare::utf8_path(file.filename()))});
+  menu_.subtitles.push_back({.index = index, .label = external_.back().label});
+  tracks_.push_back({.index = index,
+                     .kind = media::TrackKind::Subtitle,
+                     .codec = "externe",
+                     .title = prepare::utf8_path(file.filename())});
+  return index;
+}
+
 void Pipeline::pump() {
-  if (subs_bridge_ && subs_bridge_->take_refused()) source_inbox_.try_push(Credit{});
+  if (subs_bridge_ && subs_bridge_->take_refused())
+    std::ignore = source_inbox_.try_push(Credit{});  // crédits bornés au ring : jamais de trop
 }
 
 SessionConfig Pipeline::session_config() const {
   // Matrice de la vidéo pour les couleurs VSFilter : celle que le flux annonce, sinon celle que mpv
   // devine à la taille. La plage vient du flux aussi : en plage pleine, VSFilter ne convertit pas.
-  const bool hd = video_track_.width >= 1280 || video_track_.height > 576;
+  const bool hd = !kernels::sd_size(video_track_.width, video_track_.height);
   return SessionConfig{
       .duration_us = duration_us_,
+      .audio_end_us = audio_track_ && audio_track_->duration_us > 0 &&
+                              audio_track_->duration_us + 1'000'000 < duration_us_
+                          ? audio_track_->duration_us
+                          : 0,
       .chapters = chapters_,
       .subtitles = subtitle_track_.has_value(),
       .video_width = video_track_.width,

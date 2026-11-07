@@ -31,7 +31,21 @@ struct Field {
   WireType wire = WireType::Varint;
   std::uint64_t scalar = 0;
   Bytes bytes;
+  Bytes raw;  // le champ entier, étiquette comprise : à recopier tel quel
 };
+
+// L'en-tête d'un champ au début de data : étiquette, puis valeur d'un Varint (scalar) ou longueur de
+// ce qui suit (payload : celle d'un Length, 8 ou 4 pour Fixed64 et Fixed32, 0 pour un Varint). size :
+// octets de l'en-tête. Sert aussi à parcourir un fichier sans le charger (prepare/onnx_metadata.cpp).
+// Le seul décodeur du format filaire du dépôt (P1.31).
+struct FieldHeader {
+  std::uint32_t number = 0;
+  WireType wire = WireType::Varint;
+  std::uint64_t scalar = 0;
+  std::uint64_t payload = 0;
+  std::size_t size = 0;
+};
+std::expected<FieldHeader, Refusal> field_header(Bytes data);
 
 class Reader {
  public:
@@ -41,9 +55,6 @@ class Reader {
   std::expected<std::optional<Field>, Refusal> next();
 
  private:
-  std::expected<std::uint64_t, Refusal> varint();
-  std::expected<Bytes, Refusal> take(std::size_t count);
-
   Bytes data_;
   std::size_t pos_ = 0;
 };

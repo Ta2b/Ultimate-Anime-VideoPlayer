@@ -431,7 +431,7 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
   detail::AccessGuard pending;
   if (src->access) pending.hold(frame.data.get(), src->access->state);
   OpKey key;
-  key.add(10);
+  key.add(OpCode::Ingest);
   add_source(key, *src);
   add_view(key, *dst);
   key.add(static_cast<std::uint64_t>(color->matrix)).add(static_cast<std::uint64_t>(color->range));

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -11,6 +12,10 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+
+#ifndef _WIN32
+#include <unistd.h>  // mkdtemp (macOS : pas dans <cstdlib>)
+#endif
 
 #include "app/play/ed25519.h"
 #include "app/play/engine_tools.h"
@@ -89,12 +94,18 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
   const auto curl = system_tool("curl");
   if (!curl)
     return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found: cannot check for updates"));
-  prepare::ProcessSpec spec{.program = *curl,
-                            .args = {"-fsSL", "--proto", "=https", "--max-time", std::to_string(max_seconds),
-                                     "-o", prepare::utf8_path(file), std::string(url)},
-                            .timeout = std::chrono::seconds(max_seconds + 10)};
-  std::string last;
-  auto exit = prepare::run_process(spec, [&](std::string_view line) { last = line; }, stop);
+  prepare::ProcessSpec spec{
+      .program = *curl,
+      .args = {"-fsSL", "--proto", "=https", "--max-time", std::to_string(max_seconds), "--write-out",
+               std::string(kCurlStatusFormat), "-o", prepare::utf8_path(file), std::string(url)},
+      .timeout = std::chrono::seconds(max_seconds + 10)};
+  int status = 0;
+  auto exit = prepare::run_process(
+      spec,
+      [&](std::string_view line) {
+        if (const auto read = curl_status_line(line)) status = *read;
+      },
+      stop);
   if (!exit) return std::unexpected(exit.error());
   if (exit->kind == prepare::ExitKind::Cancelled)
     return refuse(RefusalCode::Cancelled, i18n::tr("download cancelled"));
@@ -102,7 +113,7 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
     return refuse(RefusalCode::DecodeFailed,
                   std::format("{} : {}", i18n::tr("download"), prepare::describe(*exit)));
   if (exit->code == 0) return {};
-  return std::unexpected(curl_failure(static_cast<int>(exit->code), last));
+  return std::unexpected(curl_failure(static_cast<int>(exit->code), status));
 }
 
 // Les fichiers (et liens) d'un dossier, en chemins relatifs. Une erreur du parcours est une erreur : une
@@ -324,33 +335,34 @@ std::expected<void, Refusal> save_update_state(const fs::path& file, const Updat
   return core::write_text_atomically(file, format_update_state(state));
 }
 
-bool update_due(const UpdateState& state, std::string_view mode, std::string_view frequency,
-                std::int64_t now_unix) {
-  if (mode == "never") return false;
-  if (frequency == "launch") return true;
-  const std::int64_t interval = frequency == "weekly" ? std::int64_t{7} * 86400 : std::int64_t{86400};
+bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix) {
+  if (mode == UpdateMode::Never) return false;
+  if (frequency == UpdateFrequency::Launch) return true;
+  const std::int64_t interval =
+      frequency == UpdateFrequency::Weekly ? std::int64_t{7} * 86400 : std::int64_t{86400};
   return state.last_check_unix == 0 || now_unix - state.last_check_unix >= interval ||
          now_unix < state.last_check_unix;
 }
 
-int curl_http_status(std::string_view message) {
-  // « curl: (22) The requested URL returned error: 404 »
-  const std::size_t at = message.rfind("error: ");
-  if (at == std::string_view::npos) return 0;
+std::optional<int> curl_status_line(std::string_view line) {
+  constexpr std::string_view kTag = "ajp-http ";
+  if (!line.starts_with(kTag)) return std::nullopt;
+  line.remove_prefix(kTag.size());
   int status = 0;
-  for (std::size_t i = at + 7; i < message.size() && message[i] >= '0' && message[i] <= '9'; ++i)
-    status = status * 10 + (message[i] - '0');
-  return status >= 100 && status < 600 ? status : 0;
+  const auto [end, error] = std::from_chars(line.data(), line.data() + line.size(), status);
+  if (error != std::errc{} || end != line.data() + line.size() || status < 0 || status >= 600)
+    return std::nullopt;
+  return status;
 }
 
-Refusal curl_failure(int code, std::string_view message) {
+Refusal curl_failure(int code, int http_status) {
   const std::string what = i18n::tr("download");
   const auto failed = [&](RefusalCode refusal, std::string text) {
     return Refusal{refusal, std::format("{} : {}", what, text)};
   };
   switch (code) {
     case 22: {
-      const int status = curl_http_status(message);
+      const int status = http_status;
       if (status == 404)
         return failed(RefusalCode::TrackUnavailable, i18n::tr("file not found on the server"));
       if (status != 0)
@@ -390,7 +402,7 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
                   i18n::tr("this package has no signing key: updates cannot be verified"));
   const auto made = private_temp_dir();
   if (!made) return std::unexpected(made.error());
-  const fs::path dir = *made;
+  const fs::path& dir = *made;
   struct Cleanup {
     fs::path dir;
     ~Cleanup() {
@@ -490,7 +502,7 @@ std::string update_managed_reason(const UpdatePaths& paths) {
   return {};
 }
 
-std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, std::string_view mode,
+std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, UpdateMode mode,
                                                      std::string_view channel, UpdateState& state,
                                                      const std::stop_token& stop) {
   state.last_check_unix =
@@ -512,7 +524,7 @@ std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, s
   }
   state.latest_version = checked->newer->version;
   state.notes_url = checked->newer->notes_url;
-  if (mode != "auto" || !update_managed_reason(paths).empty()) return checked->message;
+  if (mode != UpdateMode::Auto || !update_managed_reason(paths).empty()) return checked->message;
   if (checked->newer->version == state.skipped_version)
     return checked->message + i18n::tr(" (not installed automatically: it did not start properly here)");
   if (state.staged_version == checked->newer->version)

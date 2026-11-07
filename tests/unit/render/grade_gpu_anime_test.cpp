@@ -116,11 +116,28 @@ TEST_CASE("HDR anime : une peau claire près d'un fond sombre n'est pas une lumi
   }
 }
 
+TEST_CASE("HDR anime : un trait blanc cerné de noir n'est pas une étincelle (P3.53)", "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une colonne blanche de 2 px : cernée de deux traits noirs de 2 px, puis seule sur un ciel de nuit.
+  const auto inked = graded_rgb(gpu, columns([](int x) {
+                                  if (x == 128 || x == 129) return 195.0;
+                                  return x >= 126 && x < 132 ? 0.0 : 6.0;
+                                }),
+                                anime_params());
+  const auto star =
+      graded_rgb(gpu, columns([](int x) { return x == 128 || x == 129 ? 195.0 : 6.0; }), anime_params());
+  INFO("trait cerné " << luma(inked[128]) << " nits, étoile " << luma(star[128]) << " nits");
+  CHECK(luma(inked[128]) == Catch::Approx(1.15 * 195.0).epsilon(0.05));
+  CHECK(luma(star[128]) > 1.3 * 195.0);
+}
+
 TEST_CASE("HDR anime : le curseur Éclats agit même sans l'ancien curseur des éclats", "[render][gpu]") {
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
-  // La configuration de Tatoub : highlights_rtx à 0, donc spec_gain = 1.
+  // La configuration de référence : highlights_rtx à 0, donc spec_gain = 1.
   const auto halo = columns([](int x) { return x >= 104 && x < 152 ? 195.0 : 3.0; });
   const auto centre = [&](double an_spec) {
     GradeParams p = anime_params();
@@ -176,7 +193,8 @@ TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique 
   require_device(gpu);
   REQUIRE(gpu.grade);
   // Sans relèvement des surfaces ni éclat, l'aller-retour SDR → PQ → SDR rend l'image ; au-dessus du genou
-  // (70 % du blanc des surfaces) la courbe compresse, sans jamais dépasser le blanc ni redescendre.
+  // (90 % du blanc des surfaces) la courbe compresse, sans jamais dépasser le blanc ni redescendre ; le blanc
+  // des surfaces sort à 95 % au moins (P3.60), pas en gris clair.
   GradeParams p = anime_params();
   p.an_lift = 1.0;
   p.spec_gain = 1.0;
@@ -187,11 +205,12 @@ TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique 
   for (std::size_t x = 0; x < out.size(); ++x) {
     const double in = (static_cast<double>(x) + 1.0) / kSide;
     INFO("x " << x);
-    if (std::pow(in, 2.2) < 0.65) CHECK(out[x][0] == Catch::Approx(in).margin(0.02));
+    if (std::pow(in, 2.2) < 0.85) CHECK(out[x][0] == Catch::Approx(in).margin(0.02));
     CHECK(out[x][0] <= 1.0);
     CHECK(out[x][0] >= last - 0.01);
     last = out[x][0];
   }
+  CHECK(out.back()[0] >= std::pow(0.95, 1.0 / 2.2) - 0.01);
 }
 
 TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 100 %", "[render][gpu]") {
@@ -222,22 +241,28 @@ TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 1
   CHECK(more[mid][2] >= 0.0);
 }
 
-TEST_CASE("HDR anime : les noirs profonds suivent la scène, nuls en scène très sombre", "[render][gpu]") {
+TEST_CASE("HDR anime : les noirs profonds suivent la série, pas le plan (P3.52)", "[render][gpu]") {
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   const auto dim = columns([](int) { return 2.0; });  // un gris sombre, sous le genou des noirs
   GradeParams night = anime_params();
   night.shadows = 1.0;
-  night.fs_apl = 1.0;  // scène très sombre
+  night.fs_series = 1.0;  // série très sombre
   GradeParams none = night;
   none.shadows = 0.0;
   GradeParams day = night;
-  day.fs_apl = 150.0;  // scène très claire
+  day.fs_series = 150.0;  // série très claire
+  GradeParams bright_shot = day;
+  bright_shot.fs_apl = 150.0;  // un plan clair puis un plan sombre de la même série
+  GradeParams dark_shot = day;
+  dark_shot.fs_apl = 5.0;
   const auto mid = static_cast<std::size_t>(kSide / 2);
   const double plain = luma(graded_rgb(gpu, dim, none)[mid]);
   CHECK(luma(graded_rgb(gpu, dim, night)[mid]) == Catch::Approx(plain).epsilon(0.01));
   CHECK(luma(graded_rgb(gpu, dim, day)[mid]) < 0.9 * plain);
+  CHECK(luma(graded_rgb(gpu, dim, bright_shot)[mid]) ==
+        Catch::Approx(luma(graded_rgb(gpu, dim, dark_shot)[mid])).epsilon(0.01));
 }
 
 }  // namespace ajp::render

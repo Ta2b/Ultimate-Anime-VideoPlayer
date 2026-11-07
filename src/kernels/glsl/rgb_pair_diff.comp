@@ -1,5 +1,5 @@
 #version 450
-// Mesures d'une paire RGB (gpu/kernel_ops.h, scores_now) : un groupe par bloc 32 × 32, tronqué
+// Mesures d'une paire RGB (gpu/kernel_ops.h, scores_now) : un groupe par bloc 16 × 16, tronqué
 // aux bords. Y = 0,2126 R + 0,7152 G + 0,0722 B (BT.709 sur le RGB), s = Σ |Ya − Yb| réduite en
 // mémoire partagée ; sums[bloc] reçoit s, et le pire bloc tronque(s / n × levels × 256) passe par
 // un atomicMax sur worst[0], remis à zéro par l'enregistrement avant chaque exécution.

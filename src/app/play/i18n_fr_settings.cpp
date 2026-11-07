@@ -22,7 +22,10 @@ constexpr std::array kSettingsPages{
         "la moitié de l'écran : SPAN la double."},
     Entry{"No bench yet: the settings are an estimate from the card.",
           "Pas encore de bench : les réglages sont estimés d'après la carte."},
-    Entry{"Playback pauses during the bench.", "La lecture se met en pause pendant le bench."},
+    Entry{"Measured on battery: Auto keeps its estimate. Run the bench again plugged in.",
+          "Mesuré sur batterie : Auto garde son estimation. Refaites le bench sur secteur."},
+    Entry{"Playback closes during the bench, then resumes at the same spot.",
+          "La lecture se ferme pendant le bench, puis reprend au même endroit."},
     Entry{"Result", "Résultat"},
     Entry{"Run the bench", "Lancer le bench"},
     Entry{"Run the bench again", "Refaire le bench"},
@@ -141,6 +144,7 @@ constexpr std::array kSettingsPages{
     Entry{"Exact position", "Position exacte"},
     Entry{"Experimental", "Expérimental"},
     Entry{"Export", "Export"},
+    Entry{"Replace the file and export", "Remplacer le fichier et exporter"},
     Entry{"Fallback", "Sinon"},
     Entry{"Fast", "Rapide"},
     Entry{"Fastest", "Le plus rapide"},
@@ -216,6 +220,13 @@ constexpr std::array kSettingsPages{
     Entry{"Resets the active profile (Ctrl+1 to Ctrl+9); other profiles are untouched.",
           "Remet le profil actif (Ctrl+1 à Ctrl+9) à zéro ; les autres profils ne bougent pas."},
     Entry{"Run the wizard again", "Relancer l'assistant"},
+    Entry{"Report a problem", "Signaler un problème"},
+    Entry{
+        "Copies the version, the graphics card and the end of the log, without your user name or the folders "
+        "of your videos, then opens the report page. Paste the log there.",
+        "Copie la version, la carte graphique et la fin du journal, sans votre nom d'utilisateur ni les "
+        "dossiers "
+        "de vos vidéos, puis ouvre la page de signalement. Collez-y le journal."},
     Entry{"SDR", "SDR"},
     Entry{"SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR).",
           "Écran SDR : une pile qui contient une LUT d'HDR est coupée (ces LUT sont faites pour le HDR)."},
@@ -251,6 +262,11 @@ constexpr std::array kSettingsPages{
           "La cadence fixe garde un rafraîchissement VRR constant : pas de scintillement des scènes sombres "
           "sur OLED."},
     Entry{"Subtitle language", "Langue des sous-titres"},
+    Entry{"Subtitle delay", "Décalage des sous-titres"},
+    Entry{"Delay (ms)", "Décalage (ms)"},
+    Entry{"Reset delay", "Décalage à 0"},
+    Entry{"Positive: subtitles later. Keys z and x: 100 ms. This session only.",
+          "Positif : les sous-titres plus tard. Touches z et x : 100 ms. Pour cette séance seulement."},
     Entry{"Subtitle size", "Taille des sous-titres"},
     Entry{
         "The first preference whose tracks exist is used when a file opens. Applies to the next file.",

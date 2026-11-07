@@ -1,12 +1,14 @@
-// Lecture et écriture minimales du format protobuf, champ par champ, pour modifier un modèle
-// ONNX sans dépendance onnx : on ne descend que dans les messages connus, le reste est recopié
-// octet pour octet. Interne à prepare/.
+// Lecture et écriture du format protobuf, champ par champ, pour modifier un modèle ONNX sans
+// dépendance onnx : on ne descend que dans les messages connus, le reste est recopié octet pour
+// octet. Interne à prepare/ ; la lecture est celle de gpu/ir/protobuf.h.
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
+
+#include "gpu/ir/protobuf.h"
 
 namespace ajp::prepare::protobuf {
 
@@ -21,66 +23,33 @@ struct RawField {
   Bytes raw;
 };
 
+// Le lecteur de gpu/ir/protobuf.h (le seul du dépôt, P1.31) sous la forme qu'attend prepare/ :
+// next() faux à la fin du message comme sur une erreur, que ok() distingue.
 class Fields {
  public:
-  explicit Fields(Bytes data) : data_(data) {}
+  explicit Fields(Bytes data) : reader_(data) {}
 
   bool next(RawField& field) {
-    if (!ok_ || pos_ >= data_.size()) return false;
-    const std::size_t start = pos_;
-    const std::uint64_t tag = varint();
-    if (!ok_ || (tag >> 3U) == 0 || (tag >> 3U) > 0x1FFFFFFFU) return fail();
-    field = RawField{.number = static_cast<std::uint32_t>(tag >> 3U)};
-    switch (tag & 7U) {
-      case 0:
-        field.scalar = varint();
-        break;
-      case 1:
-        if (!skip(8)) return false;
-        break;
-      case 5:
-        if (!skip(4)) return false;
-        break;
-      case 2: {
-        const std::uint64_t n = varint();
-        if (!ok_ || data_.size() - pos_ < n) return fail();
-        field.payload = data_.subspan(pos_, static_cast<std::size_t>(n));
-        field.delimited = true;
-        pos_ += static_cast<std::size_t>(n);
-        break;
-      }
-      default:
-        return fail();
-    }
     if (!ok_) return false;
-    field.raw = data_.subspan(start, pos_ - start);
+    auto read = reader_.next();
+    if (!read) {
+      ok_ = false;
+      return false;
+    }
+    if (!*read) return false;
+    const gpu::ir::proto::Field& got = **read;
+    const bool delimited = got.wire == gpu::ir::proto::WireType::Length;
+    field = RawField{.number = got.number,
+                     .delimited = delimited,
+                     .scalar = got.wire == gpu::ir::proto::WireType::Varint ? got.scalar : 0,
+                     .payload = delimited ? got.bytes : Bytes{},
+                     .raw = got.raw};
     return true;
   }
   bool ok() const { return ok_; }
 
  private:
-  std::uint64_t varint() {
-    std::uint64_t value = 0;
-    for (unsigned shift = 0; pos_ < data_.size() && shift < 64; shift += 7) {
-      const auto byte = std::to_integer<std::uint64_t>(data_[pos_++]);
-      value |= (byte & 0x7fU) << shift;
-      if ((byte & 0x80U) == 0) return value;
-    }
-    ok_ = false;
-    return 0;
-  }
-  bool skip(std::size_t n) {
-    if (data_.size() - pos_ < n) return fail();
-    pos_ += n;
-    return true;
-  }
-  bool fail() {
-    ok_ = false;
-    return false;
-  }
-
-  Bytes data_;
-  std::size_t pos_ = 0;
+  gpu::ir::proto::Reader reader_;
   bool ok_ = true;
 };
 

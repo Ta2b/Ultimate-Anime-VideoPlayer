@@ -363,6 +363,7 @@ PlaceboScreen::Impl::~Impl() {
                                          .count());
 }
 
+// NOLINTNEXTLINE(readability-function-size)
 std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const ScreenOptions& options) {
   auto impl = std::make_unique<Impl>();
   impl->channel = log_channel("app");
@@ -468,7 +469,14 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.num_opt_extensions = static_cast<int>(extensions.size());
   vk_params.extra_queues = kVideoQueueFlags | kBackendQueueFlags;
   vk_params.queue_count = static_cast<int>(kPlaceboQueues);  // la file d'après reste aux moteurs
+  if (!options.device_name.empty()) vk_params.device_name = options.device_name.c_str();
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
+  if (impl->vk == nullptr && vk_params.device_name != nullptr) {
+    // La carte choisie n'est plus là (eGPU débranché, pilote changé) : libplacebo choisit (P3.16).
+    impl->channel->warn("carte « {} » introuvable : choix automatique", options.device_name);
+    vk_params.device_name = nullptr;
+    impl->vk = pl_vulkan_create(impl->log, &vk_params);
+  }
   if (impl->vk == nullptr)
     return refuse(RefusalCode::DeviceMismatch, "pl_vulkan_create : aucun appareil ne convient");
   const pl_gpu gpu = impl->vk->gpu;
@@ -559,6 +567,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   impl->ui = std::make_unique<ImGuiLayer>(gpu, impl->log);
   if (auto grade = render::Grade::create(gpu)) {
     impl->grade.emplace(std::move(*grade));
+    impl->grade->set_background(true);  // P4.9 : la pile de LUT se compose hors du thread qui rend
   } else {
     impl->channel->warn("grade HDR indisponible : {}", grade.error().detail);
   }
@@ -579,6 +588,27 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   }
 #endif
   return std::unique_ptr<PlaceboScreen>(new PlaceboScreen(std::move(impl)));
+}
+
+std::vector<std::string> PlaceboScreen::device_names() const {
+  std::vector<std::string> names;
+  const pl_vulkan vk = impl_->vk;
+  const auto enumerate = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+      vk->get_proc_addr(vk->instance, "vkEnumeratePhysicalDevices"));
+  const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceProperties"));
+  if (enumerate == nullptr || properties_of == nullptr) return names;
+  std::uint32_t count = 0;
+  if (enumerate(vk->instance, &count, nullptr) != VK_SUCCESS) return names;
+  std::vector<VkPhysicalDevice> devices(count);
+  if (enumerate(vk->instance, &count, devices.data()) != VK_SUCCESS) return names;
+  for (VkPhysicalDevice device : devices) {
+    VkPhysicalDeviceProperties properties{};
+    properties_of(device, &properties);
+    if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) continue;  // lavapipe n'est pas une carte
+    names.emplace_back(properties.deviceName);
+  }
+  return names;
 }
 
 PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {

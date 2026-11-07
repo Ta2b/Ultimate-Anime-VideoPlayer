@@ -8,6 +8,7 @@
 
 #include "app/play/options.h"
 #include "app/play/settings.h"
+#include "export/container.h"
 #include "export/encoder_choice.h"
 #include "media/track.h"
 
@@ -24,11 +25,13 @@ struct ExportJob {
   exporter::Quality quality = exporter::Quality::VeryHigh;
   bool constant_rate = true;     // WriterConfig::constant_rate
   std::filesystem::path output;  // .mkv
+  exporter::CopyChoice copies;   // les pistes choisies à la lecture (P3.90)
   friend bool operator==(const ExportJob&, const ExportJob&) = default;
 };
 
 // La chaîne d'un export : celle des réglages sans HDR ni grade, sans Smooth Motion
-// (une couche de l'écran) : l'image de la chaîne telle quelle, comme la lecture la donne en SDR.
+// (une couche de l'écran) : l'image de la chaîne telle quelle, comme la lecture la donne en SDR. L'Auto
+// devient ×2, qui ne dépend pas de l'écran (P3.87).
 PlaySettings export_chain(const PlaySettings& s);
 
 struct ExportSize {
@@ -48,8 +51,11 @@ ExportSize export_size(ExportSize chain, ExportSize source, int height);
 // plus sans elle), réduite. {0, 1} si celle de la source est inconnue.
 media::Rational export_rate(media::Rational source, Factor factor);
 
+// Le dossier est sur un FAT (FAT32, vfat, msdos) : un fichier n'y dépasse pas 4 Gio (P3.89).
+bool on_fat32(const std::filesystem::path& dir);
+
 // « Épisode 01 [ajp 3840x2160 47.952fps].mkv » à côté de la source ; « (2) », « (3) »… si le nom
-// est pris.
+// est pris ; un chemin vide si « (999) » l'est aussi. Le nom de la source est borné à 160 octets.
 std::filesystem::path default_export_path(const std::filesystem::path& source, ExportSize size,
                                           media::Rational rate);
 

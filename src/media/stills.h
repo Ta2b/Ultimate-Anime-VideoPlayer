@@ -10,12 +10,16 @@
 #include <functional>
 #include <span>
 #include <stop_token>
+#include <string_view>
 #include <vector>
 
 #include "core/frame.h"
 #include "core/types.h"
 
 namespace ajp::media {
+
+// Refusal::key d'un refus pour source HDR : la préparation se fait sur une vidéo SDR (P2.11).
+inline constexpr std::string_view kHdrSourceKey = "source.hdr";
 
 // Une image découpée au centre de la source, RGB 8 bits planaire (R, G, B de height × width octets l'un après
 // l'autre, comme SpanStill de gpu/backend.h), avec de quoi juger si elle sert.

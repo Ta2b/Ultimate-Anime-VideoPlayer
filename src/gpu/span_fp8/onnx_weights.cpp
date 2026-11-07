@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -75,6 +76,7 @@ const ir::onnx::Attribute* attribute(const ir::onnx::Node& node, std::string_vie
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) {
   const ir::onnx::Graph& graph = model.graph;
   if (graph.inputs.size() != 1 || graph.outputs.size() != 1)
@@ -100,9 +102,9 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
     if (!tensor.name.starts_with("block_")) continue;
     int number = 0;
     const char* begin = tensor.name.c_str() + 6;
-    char* end = nullptr;
-    number = static_cast<int>(std::strtol(begin, &end, 10));
-    if (end != begin && *end == '.') blocks.insert(number);
+    const char* last = tensor.name.c_str() + tensor.name.size();
+    const auto [end, error] = std::from_chars(begin, last, number);
+    if (error == std::errc{} && end != last && *end == '.') blocks.insert(number);
   }
   const int block_count = static_cast<int>(blocks.size());
   if (blocks.empty() || block_count > kBlocks || *blocks.begin() != 1 || *blocks.rbegin() != block_count)

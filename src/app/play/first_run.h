@@ -11,9 +11,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "app/play/settings.h"
@@ -48,6 +50,10 @@ bool rocm_listed(std::string_view gpu_name);
 // 890M, 8040S à 8060S) : la Radeon 860M y est, pas une RX 6000.
 bool winml_listed(std::string_view gpu_name);
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
+// P3.6 : le pilote NVIDIA que demande le TensorRT livré (CUDA 13), et la version lue du pilote (majeure,
+// mineure) ; rien hors NVIDIA ou sans version lisible.
+inline constexpr int kTensorRtDriverMajor = 580;
+std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);
 
@@ -86,7 +92,12 @@ struct EngineRow {
   bool download = false;  // à télécharger si coché
   std::string license;    // licence à accepter (download seulement)
   bool license_accepted = false;
+  std::uint64_t bytes = 0;  // la taille à télécharger (download seulement)
 };
+
+// P3.4 : les lignes Moteurs du résumé de l'assistant : les moteurs retenus, avec la taille à télécharger, et
+// chaque moteur coché dont la licence n'est pas acceptée, qui ne s'installera pas.
+std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows);
 
 struct FirstRunView {
   std::string gpu;
@@ -97,8 +108,9 @@ struct FirstRunView {
   // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
   Wizard wizard;
   WizardFacts facts;
-  std::string tier_line;     // « Niveau estimé : Rapide »
-  std::string display_line;  // « Écran 3840×2160 · 165 Hz »
+  std::string tier_line;        // « Niveau estimé : Rapide »
+  std::string display_line;     // « Écran 3840×2160 · 165 Hz »
+  int calibration_minutes = 0;  // la durée annoncée de « Optimiser maintenant » (P3.13) ; 0 : inconnue
 };
 
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,

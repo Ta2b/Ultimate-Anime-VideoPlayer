@@ -2,10 +2,11 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cstdio>
+#include <charconv>
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <list>
 #include <map>
 #include <mutex>
 #include <system_error>
@@ -60,26 +61,41 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
                                                   const std::filesystem::path& luts_dir) {
   if (key.starts_with(render::kBuiltinPrefix)) return render::builtin_look(key);
   if (key.starts_with(kAnimeLookPrefix)) {
+    // « contraste:hautes lumières », deux entiers lus par from_chars (P2.35).
     int contrast = 0;
     int highlight = 0;
-    if (std::sscanf(key.c_str() + kAnimeLookPrefix.size(), "%d:%d", &contrast, &highlight) != 2)
-      return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " illisible"});
+    const char* last = key.data() + key.size();
+    const auto first = std::from_chars(key.data() + kAnimeLookPrefix.size(), last, contrast);
+    const bool read = first.ec == std::errc{} && first.ptr != last && *first.ptr == ':' &&
+                      std::from_chars(first.ptr + 1, last, highlight).ec == std::errc{};
+    if (!read) return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " illisible"});
     return anime_look(contrast, highlight, luts_dir);
   }
   if (key.empty() || key.find('/') != std::string::npos || key.find('\\') != std::string::npos)
     return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : nom de fichier invalide"});
-  std::ifstream file(luts_dir / key, std::ios::binary);
-  if (!file) file.open(shipped_luts_dir() / key, std::ios::binary);  // pas chez l'utilisateur : celui livré
+  std::filesystem::path path = luts_dir / key;
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {  // pas chez l'utilisateur : celui livré
+    path = shipped_luts_dir() / key;
+    file.open(path, std::ios::binary);
+  }
   if (!file) return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " introuvable"});
+  // La taille d'abord (P2.30) : un fichier énorme n'est pas lu en entier pour être refusé ensuite.
+  std::error_code sized;
+  if (const auto bytes = std::filesystem::file_size(path, sized); sized || bytes > render::kLutMaxBytes)
+    return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "look : " + key + " trop grand"});
   const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   auto lut = render::parse_cube(text);
   if (!lut) {
     lut.error().detail = key + " : " + lut.error().detail;
     return std::unexpected(std::move(lut.error()));
   }
-  // Les entrees noires d'un gamut d'entree sans usage ne doivent pas assombrir le bord de la zone utile.
-  if (const std::size_t filled = render::fill_unreachable(*lut); filled > 0)
-    log_channel("app")->info("look : {} : {} entrees inutilisees remplacees", key, filled);
+  // Les entrees noires d'un gamut d'entree sans usage ne doivent pas assombrir le bord de la zone utile :
+  // cela vaut pour les LUT livrees, que l'on connait ; celle de l'utilisateur reste telle qu'il l'a faite
+  // (P3.69).
+  const bool shipped = path.parent_path() == shipped_luts_dir();
+  if (const std::size_t filled = shipped ? render::fill_unreachable(*lut) : 0; filled > 0)
+    log_channel("app")->warn("look : {} : {} entrees inutilisees remplacees", key, filled);
   return lut;
 }
 
@@ -98,10 +114,23 @@ std::vector<double> anime_look_mixes(double units) {
 
 std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
                                                    const std::filesystem::path& luts_dir) {
-  static std::mutex lock;
-  static std::map<std::pair<int, int>, render::CubeLut> made;
+  // Les quatre derniers looks faits (P2.9) : un 65³ pèse 3 Mo, chaque valeur du curseur en faisait un de
+  // plus, gardé jusqu'à la fin du processus.
+  constexpr std::size_t kKeptLooks = 4;
+  // Jamais détruits : un fil de lecture détaché (LookLoader) peut encore s'en servir à la sortie du
+  // processus.
+  static std::mutex& lock = *new std::mutex;  // NOLINT(cppcoreguidelines-owning-memory)
+  static auto& made =                         // le plus récent devant
+      *new std::list<
+          std::pair<std::pair<int, int>, render::CubeLut>>;  // NOLINT(cppcoreguidelines-owning-memory)
   const std::scoped_lock held(lock);
-  if (const auto found = made.find({contrast, highlight}); found != made.end()) return found->second;
+  const std::pair<int, int> key{contrast, highlight};
+  if (const auto found =
+          std::ranges::find(made, key, &std::pair<std::pair<int, int>, render::CubeLut>::first);
+      found != made.end()) {
+    made.splice(made.begin(), made, found);
+    return made.front().second;
+  }
   std::map<std::string_view, render::CubeLut> files;
   for (const std::string_view name :
        {kAnimeLookBase, kAnimeLookContrast, kAnimeLookHighlight, kAnimeLookSkin}) {
@@ -109,7 +138,7 @@ std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
     if (!lut) return std::unexpected(std::move(lut.error()));
     files.emplace(name, std::move(*lut));
   }
-  // L'ordre de la pile de Tatoub : base, 3/7 du contraste, éclats, skin fix, 4/7 du contraste.
+  // L'ordre de la pile par défaut : base, 3/7 du contraste, éclats, skin fix, 4/7 du contraste.
   const double c = 7.0 * (1.0 + std::clamp(contrast, -100, 100) / 100.0);
   const double h = 1.5 * (1.0 + std::clamp(highlight, -100, 100) / 100.0);
   std::vector<const render::CubeLut*> luts{&files.at(kAnimeLookBase)};
@@ -129,7 +158,8 @@ std::expected<render::CubeLut, Refusal> anime_look(int contrast, int highlight,
   out.title = "HDR anime";
   log_channel("app")->info("look HDR anime : contrast {}, highlight {} ({} LUT)", contrast, highlight,
                            luts.size());
-  made.emplace(std::pair{contrast, highlight}, out);
+  made.emplace_front(key, out);
+  if (made.size() > kKeptLooks) made.pop_back();
   return out;
 }
 

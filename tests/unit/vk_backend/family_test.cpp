@@ -73,9 +73,12 @@ TEST_CASE("Familles : liste d'autorisation des unités matricielles", "[vk_backe
   CHECK_FALSE(matrix_units_allowed(GpuFamily::AmdBeforeRdna3, DriverKind::AmdProprietary));
   CHECK_FALSE(matrix_units_allowed(GpuFamily::AmdRdna4, DriverKind::Other));
   CHECK_FALSE(matrix_units_allowed(GpuFamily::Software, DriverKind::Other));
-  // Hors liste : une puce NVIDIA inconnue sous le pilote propriétaire, proposée sans être par défaut.
+  // P2.46 : Intel avec XMX permis (les tuiles annoncées décident), sans XMX exclu avec sa raison.
+  CHECK(matrix_units_allowed(GpuFamily::IntelXe2, DriverKind::IntelMesa));
+  CHECK(matrix_units_excluded(GpuFamily::IntelXeLp, DriverKind::IntelWindows).has_value());
+  // Famille inconnue : proposée sans être par défaut, vérifiée par l'autotuner.
   CHECK(matrix_units_unlisted(GpuFamily::Unknown, DriverKind::NvidiaProprietary));
-  CHECK_FALSE(matrix_units_unlisted(GpuFamily::Unknown, DriverKind::Other));
+  CHECK(matrix_units_unlisted(GpuFamily::Unknown, DriverKind::Other));
   CHECK_FALSE(matrix_units_unlisted(GpuFamily::AmdBeforeRdna3, DriverKind::AmdProprietary));
   CHECK_FALSE(matrix_units_unlisted(GpuFamily::Software, DriverKind::Other));
   // Tables livrées : une famille réelle chacune, une entrée par signature, des réglages lisibles.
@@ -116,7 +119,7 @@ TEST_CASE("Familles : variante matricielle choisie ou écartée selon l'appareil
   if (profile.family == GpuFamily::Software) CHECK_FALSE(profile.target.matrix_units);
   CHECK(any_matrix == profile.target.matrix_units);
   if (profile.target.matrix_first) CHECK(options.front().variant == "coopmat");
-  // Proposées sans être en tête (appareil hors liste), puis en tête (liste d'autorisation).
+  // Proposées sans être en tête (famille inconnue), puis en tête (famille connue).
   net::Target target = profile.target;
   target.matrix_units = true;
   if (target.subgroup_size == 0) target.subgroup_size = 32;
@@ -158,6 +161,7 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
     CHECK(one.median_us > 0.0);
     best = require_value(tuner.choose(graph, 0, options, "test"));
     CHECK(tuner.measured() == 1);
+    CHECK(tuner.decisions().size() == 1);  // le choix tranché est journalisé (P2.45)
     CHECK(std::ranges::find(options, best) != options.end());
     (void)require_value(tuner.choose(graph, 0, options, "test"));
     CHECK(tuner.cached() == 1);

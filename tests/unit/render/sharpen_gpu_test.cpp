@@ -94,6 +94,21 @@ TEST_CASE("netteté : rien à 0, un bord plus franc sans halo, les aplats intact
   // (demi-flottant : un pas de 0,0005 vers 0,6).
   CHECK(sharp[10] == Catch::Approx(plain[10]).margin(1e-3));
   CHECK(sharp[kSide - 10] == Catch::Approx(plain[kSide - 10]).margin(1e-3));
+
+  // P3.67 : le grain d'un aplat sombre (damier de ±0,3 % autour de 4 %) n'est pas renforcé.
+  std::vector<std::uint16_t> grain(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (int y = 0; y < kSide; ++y) {
+    for (int x = 0; x < kSide; ++x) {
+      const auto code = static_cast<std::uint16_t>(((x + y) % 2 == 0 ? 0.043 : 0.037) * 65535.0 + 0.5);
+      const std::size_t at = (static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4;
+      grain[at] = grain[at + 1] = grain[at + 2] = code;
+      grain[at + 3] = 65535;
+    }
+  }
+  const std::vector<double> grain_plain = rendered(gpu, grain, nullptr);
+  const std::vector<double> grain_sharp = rendered(gpu, grain, sharpen->hook());
+  CHECK(grain_sharp[100] == Catch::Approx(grain_plain[100]).margin(2e-4));
+  CHECK(grain_sharp[101] == Catch::Approx(grain_plain[101]).margin(2e-4));
 }
 
 }  // namespace

@@ -20,6 +20,7 @@
 #include <variant>
 #include <vector>
 
+#include "core/file_sync.h"  // IWYU pragma: export (write_text_atomically)
 #include "core/keys.h"
 #include "core/profile.h"
 #include "core/types.h"
@@ -90,9 +91,5 @@ std::expected<std::string, Refusal> read_text_file(const std::filesystem::path& 
 // existe sans se lire, ou si son existence ne peut pas être établie (droits).
 std::expected<std::optional<std::string>, Refusal> read_text_file_if_present(
     const std::filesystem::path& path);
-// Écrit dans un fichier temporaire du même dossier, l'écrit sur le disque, puis le renomme sur
-// path : un lecteur voit l'ancien fichier entier ou le nouveau entier, jamais un mélange, et une
-// coupure de courant ne laisse pas un fichier vide (core/file_sync.h).
-std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& path, std::string_view text);
 
 }  // namespace ajp::core

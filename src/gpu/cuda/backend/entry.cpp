@@ -9,11 +9,13 @@
 #include <filesystem>
 #include <format>
 #include <string>
-#include <system_error>
 
 #include "core/thread.h"
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
+#include "gpu/guarded_backend.h"
+#include "gpu/module_logs.h"
+#include "prepare/trtexec_command.h"
 
 namespace {
 
@@ -39,20 +41,22 @@ std::filesystem::path own_file() {
 #endif
 }
 
-// trtexec livré à côté de la bibliothèque ; à défaut, celui trouvé à la configuration
-// (AJP_TRTEXEC_PATH, poste de développement).
+// trtexec livré à côté de la bibliothèque, d'empreinte vérifiée ; à défaut, dans un build de
+// développement seulement, celui trouvé à la configuration (AJP_TRTEXEC_PATH).
 std::filesystem::path trtexec_path() {
 #ifdef _WIN32
   constexpr const char* kTrtexec = "trtexec.exe";
 #else
   constexpr const char* kTrtexec = "trtexec";
 #endif
-  if (const std::filesystem::path self = own_file(); !self.empty()) {
-    const auto beside = self.parent_path() / kTrtexec;
-    std::error_code error;
-    if (std::filesystem::is_regular_file(beside, error)) return beside;
-  }
-  return AJP_TRTEXEC_PATH;
+#ifdef AJP_TRTEXEC_NO_FALLBACK
+  const std::filesystem::path fallback;
+#else
+  const std::filesystem::path fallback = AJP_TRTEXEC_PATH;
+#endif
+  const std::filesystem::path self = own_file();
+  return ajp::prepare::pick_trtexec(self.empty() ? std::filesystem::path{} : self.parent_path() / kTrtexec,
+                                    AJP_TRTEXEC_SHA256, fallback);
 }
 
 void tell(const ajp::gpu::BackendInit* init, ajp::Refusal refusal) {
@@ -78,12 +82,14 @@ extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
     return nullptr;
   }
   try {
+    // Les canaux de la bibliothèque (prepare, tensorrt) vers le journal du lecteur, comme pour Vulkan.
+    ajp::gpu::route_module_logs(init->log);
     auto backend = ajp::gpu::cuda::TensorRtBackend::create(*init, trtexec_path());
     if (!backend) {
       tell(init, std::move(backend.error()));
       return nullptr;
     }
-    return backend->release();
+    return new ajp::gpu::GuardedBackend(std::move(*backend));  // NOLINT(cppcoreguidelines-owning-memory)
   } catch (...) {
     tell(init, ajp::refusal_from_exception(ajp::RefusalCode::LibraryUnavailable, "backend tensorrt"));
     return nullptr;

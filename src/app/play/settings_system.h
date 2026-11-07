@@ -10,6 +10,7 @@
 #include <memory>
 #include <stop_token>
 #include <string>
+#include <vector>
 
 #include "app/play/default_player.h"
 #include "app/play/settings.h"
@@ -90,10 +91,19 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
                       const BenchContext& context, BenchNote& bench, PlaySettings& draft);
 
 // Général > Application : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
+// Le panneau qui se ferme arrête la vérification ou le téléchargement en cours (P2.6) : le futur attendu par
+// le destructeur rend la main au lieu de tenir la fermeture jusqu'à 30 minutes.
 struct UpdateNote {
   std::string text;
   bool refused = false;
-  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
+  std::shared_ptr<std::stop_source> stop = std::make_shared<std::stop_source>();
+  std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;  // détruit avant stop
+  UpdateNote() = default;
+  ~UpdateNote() { stop->request_stop(); }
+  UpdateNote(const UpdateNote&) = delete;
+  UpdateNote& operator=(const UpdateNote&) = delete;
+  UpdateNote(UpdateNote&&) = delete;
+  UpdateNote& operator=(UpdateNote&&) = delete;
 };
 // La langue de l'interface : anglais ou français, prise en direct.
 void language_section(PlaySettings& d);
@@ -102,5 +112,13 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 // Le lecteur par défaut et « Ouvrir avec » (Général > Application).
 // Quand le lecteur est déjà celui des vidéos, un mot qui le dit. Rien ne le propose au démarrage.
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool already_default);
+
+// « Signaler un problème » (Général > À propos, P1.33) : la version, la carte et la fin de ajp.log,
+// déjà nettoyé à l'écriture (core/log_redact.h), copiées dans le presse-papiers ; puis la page de
+// nouvelle issue s'ouvre sur le modèle .github/ISSUE_TEMPLATE/bug.yml.
+// La carte graphique de la lecture (P3.16) : Automatique ou l'une des cartes, au prochain lancement ; rien
+// avec une seule carte.
+void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus);
+void report_problem_section(const PlayerPlace& place, const std::string& gpu_name);
 
 }  // namespace ajp::app::play

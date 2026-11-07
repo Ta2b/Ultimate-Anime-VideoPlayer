@@ -23,7 +23,17 @@ using panel::note;
 using panel::section;
 
 // Vrai pendant qu'on tient le curseur du délai audio.
+// Un autre appareil choisi : le délai du précédent est gardé pour lui, celui du nouveau repris (P2.7).
+void switch_device_delay(PlaySettings& d, const std::string& before) {
+  if (d.audio_device == before) return;
+  d.audio_device_delays_ms[before] = d.audio_delay_ms;
+  const auto known = d.audio_device_delays_ms.find(d.audio_device);
+  d.audio_delay_ms = known != d.audio_device_delays_ms.end() ? known->second : 0;
+  d.audio_device_delays_ms.erase(d.audio_device);
+}
+
 bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
+  const std::string device_before = d.audio_device;
   // Appareil : celui du système (suivi quand il change) ou un autre de la liste.
   section(i18n::tr("Device"));
   const SettingsChoices::AudioOut* chosen = nullptr;
@@ -52,6 +62,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
+  switch_device_delay(d, device_before);
   if (active != nullptr && active->channels > 0)
     note(i18n::tr_format("{} channels on this device.", active->channels));
   panel::tip(i18n::tr("Changing the device reopens the video at the same spot."));

@@ -156,7 +156,7 @@ Verdict judge_hardened(std::span<const ImageScore> scores, std::span<const Image
   }
   // Les cas durs synthétiques sont relevés (reçu, journal) mais ne décident pas : leurs seuils de départ
   // n'ont jamais été réglés sur une carte, et sur la RTX 4070 Ti ils refusent un b8f64 à 52 dB sur les vraies
-  // images (séance du 04/11). L'œil juge à leur place.
+  // images (séance de mesure). L'œil juge à leur place.
   verdict.hard_images = static_cast<int>(hard.size());
   if (!hard.empty()) verdict.hard_psnr_worst_db = hard.front().psnr_db;
   for (const ImageScore& score : hard) {

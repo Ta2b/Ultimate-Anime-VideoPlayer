@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <utility>
 
 namespace ajp::core {
 
@@ -98,16 +99,18 @@ class FreeRate {
 };
 
 // Le repli du Rapide vers Stable, pour la séance : il revient au Rapide après un calme, plus long à chaque
-// repli (1 min, 2, 4… au plus 10 min) ; un choix explicite du mode l'efface.
+// repli (3 min, 6, 12… au plus 30 min, P3.38) ; un choix explicite du mode l'efface.
 class FreeFallback {
  public:
-  static constexpr std::int64_t kRetryUs = 60'000'000;
-  static constexpr std::int64_t kRetryMaxUs = 600'000'000;
+  static constexpr std::int64_t kRetryUs = 180'000'000;
+  static constexpr std::int64_t kRetryMaxUs = 1'800'000'000;
 
-  void fell_back(std::int64_t now_us) {
+  // Vrai au premier repli seulement : le message ne se répète pas sur une carte limite (P3.38).
+  bool fell_back(std::int64_t now_us) {
     active_ = true;
     retry_at_us_ = now_us + delay_us_;
     delay_us_ = std::min(delay_us_ * 2, kRetryMaxUs);
+    return !std::exchange(told_, true);
   }
   // Vrai tant que le repli tient ; faux dès que l'heure de réessayer le Rapide est venue.
   bool active(std::int64_t now_us) {
@@ -118,6 +121,7 @@ class FreeFallback {
 
  private:
   bool active_ = false;
+  bool told_ = false;
   std::int64_t retry_at_us_ = 0;
   std::int64_t delay_us_ = kRetryUs;
 };

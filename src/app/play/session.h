@@ -49,9 +49,10 @@ class StatsSource {
  public:
   virtual ~StatsSource() = default;
   virtual std::optional<std::string> rife() const = 0;
-  virtual std::optional<std::string> memory() const = 0;
+  // Non const (P5.28) : la première lecture peut lancer le fil qui relève la mesure.
+  virtual std::optional<std::string> memory() = 0;
   // Horloges, puissance et chaleur de la carte (NVML) ; rien sans NVML ou sur une autre carte.
-  virtual std::optional<std::string> gpu() const { return std::nullopt; }
+  virtual std::optional<std::string> gpu() { return std::nullopt; }
   // Période nominale des images de sortie (la source, divisée par le facteur de RIFE) ; 0 :
   // inconnue. Sans elle, la session ne compte pas les images manquées.
   virtual std::int64_t output_period_us() const { return 0; }
@@ -69,8 +70,10 @@ class StatsSource {
 struct SessionConfig {
   // Une image de sortie vue écrite par le GPU (host_now) : le mode auto en tire le coût de la paire.
   std::function<void(const RingFrame&, std::int64_t)> on_written;
-  std::int64_t start_us = 0;             // > 0 : seek exact à l'ouverture
-  std::int64_t duration_us = 0;          // 0 : inconnue ; borne les seeks relatifs
+  std::int64_t start_us = 0;     // > 0 : seek exact à l'ouverture
+  std::int64_t duration_us = 0;  // 0 : inconnue ; borne les seeks relatifs
+  // La fin de la piste audio quand elle finit avant la vidéo (P3.75) ; 0 : inconnue ou pas avant.
+  std::int64_t audio_end_us = 0;
   std::vector<ChapterMark> chapters;     // du fichier, dans l'ordre
   std::int64_t stop_after_us = 0;        // quitte après ce temps de lecture ; 0 jamais
   std::int64_t fullscreen_after_us = 0;  // bascule en plein écran après ce temps ; 0 jamais
@@ -80,6 +83,7 @@ struct SessionConfig {
   double video_sar = 1.0;                         // forme du pixel de la vidéo (largeur / hauteur), 1 : carré
   std::optional<subs::VideoMatrix> video_matrix;  // couleurs VSFilter
   float subtitle_scale = 1.0F;                    // taille des sous-titres (subs::RenderTarget::font_scale)
+  std::int64_t subtitle_delay_us = 0;             // > 0 : les sous-titres plus tard (P3.72)
   std::vector<std::string> header;                // la chaîne : modèles, tailles, moteur
   std::vector<std::string> tracks;                // pistes vidéo, audio et sous-titres
   std::string output;                             // sortie de l'écran (HDR10 ou SDR)
@@ -104,7 +108,7 @@ struct SessionConfig {
   std::int64_t vrr_floor_us =
       0;                // VRR armé : plancher de l'écran (core/vrr_floor.h) ; 0 : pas de représentation
   StatsSettings stats;  // mesures affichées (Tab bascule toutes)
-  const StatsSource* extra = nullptr;  // vit plus longtemps que la session
+  StatsSource* extra = nullptr;  // vit plus longtemps que la session
   // Le retard des images, de leur soumission par gpu à leur écriture vue par main : la session le
   // mesure, gpu le lit. Vit plus longtemps que la session ; rien : pas de mesure.
   FrameLatency* latency = nullptr;
@@ -151,6 +155,7 @@ class Session {
   void set_subtitles(bool on);
   // Taille des sous-titres : les demandes suivantes la portent, et l'image à l'écran est redemandée.
   void set_subtitle_scale(float scale);
+  void set_subtitle_delay(std::int64_t delay_us);
   // Mesures affichées, relues au tour suivant.
   void set_stats(const StatsSettings& stats);
   void set_steady_cadence(bool on) { config_.steady_cadence = on; }
@@ -191,6 +196,8 @@ class Session {
   bool resize_asked() const { return resized_; }  // la source a changé de taille : rouvrir la chaîne
   bool quit_asked() const { return quit_; }       // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
+  // P3.45 : fenêtré, l'image passe par le compositeur, une trame de plus avant l'écran.
+  void set_composited(bool composited) { composited_ = composited; }
   std::uint32_t epoch() const { return epoch_; }
   // La dernière image reçue du GPU pour l'époque en cours (la plus avancée de la file) ; nullptr : aucune.
   const RingFrame* newest_frame() const { return newest_ && newest_->epoch == epoch_ ? &*newest_ : nullptr; }
@@ -211,6 +218,7 @@ class Session {
   void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
   void measure_latency(std::int64_t host_now);  // les images écrites depuis le tour d'avant
   void choose(std::int64_t host_now);
+  bool step_from_queue();  // P3.42 : image suivante de la file, en pause, sans seek
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
   void watch_clock(const ClockSnapshot& now, std::int64_t host_now);
@@ -223,7 +231,9 @@ class Session {
   std::uint32_t epoch_ = 0;
   bool prerolling_ = true;                        // l'époque n'a pas encore d'image montrée
   std::optional<std::int64_t> preroll_since_us_;  // la première image de l'époque attend ses sous-titres
-  bool paused_ = false;                           // pause demandée par l'utilisateur
+  bool composited_ = false;                       // P3.45 : fenêtré, une trame du compositeur avant l'écran
+  bool stepped_ = false;  // P3.42 : une image avancée en pause, à montrer au prochain tour
+  bool paused_ = false;   // pause demandée par l'utilisateur
   bool stream_ended_ = false;
   bool finished_ = false;
   std::optional<Refusal> failure_;

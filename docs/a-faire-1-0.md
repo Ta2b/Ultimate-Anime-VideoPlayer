@@ -1,6 +1,6 @@
 # À faire avant la 1.0
 
-Suivi au 06/11/2026, après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-simple.md)).
+Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-simple.md)).
 
 ## Avant une release
 
@@ -23,3 +23,22 @@ Suivi au 06/11/2026, après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/
 - **GMFSS Fortuna Union : artefacts** (fond vert saturé, formes en miroir, traînées), en FP16 comme en FP32. Seule
   différence avec Base : le RIFE intégré du graphe fusion (`tools/gmfss/gmfss_graph.py`, `Fusion.forward`). GMFSS
   est débranché de la lecture (`docs/interpolation.md`) ; mesure GPU à lancer sur ordre de Tatoub.
+
+## Audit 0.9.1, phase 5 : ce qui reste
+
+La phase 5 du plan d'audit a livré une règle par contrôle de CI (complexité, `path::string()`, commentaires,
+version unique) et les corrections ponctuelles. Restent les chantiers d'architecture, chacun une PR à lui :
+
+- **P5.1** code mort : `resolve()`, `Plan`, `pace_rule`, `Capabilities` (les types d'écran et de source qu'ils
+  portent passent d'abord dans un en-tête à eux), MIGraphX, OpenVINO, WinML, GMFSS, `curve`, `look_mix*`.
+  L'import `.ini` est retiré.
+- **P5.4** LUT et `calibration.mkv` hors de git (attend la licence des LUT, P7.7).
+- **P5.5** options fantômes et champs TOML morts ; **P5.13** utilitaires réécrits (refus, lecture de
+  fichier, minuscules…) ; **P5.30** seuils en ligne ; **P5.31** duplications de l'application.
+- **P5.8** clang-tidy sur Windows, macOS et TensorRT.
+- **P5.15** et **P5.16** : découper `run_chain`, `play`, `UpscaleStage::outputs`… (les 40 `NOLINTNEXTLINE` de
+  complexité les nomment) et une interface `Interpolator` par moteur.
+- **P5.19** ABI des moteurs stable par extensions ; **P5.24** cycle `gpu` ⇄ `prepare` ; **P5.25** en-têtes
+  précompilés ; **P5.26** graphe des dépendances vérifié en CI ; **P5.27** état global mutable ; **P5.32** un
+  module de chemins.
+- **P5.40** langue des journaux : attend la décision P7.5.

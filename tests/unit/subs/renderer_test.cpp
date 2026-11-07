@@ -147,6 +147,22 @@ TEST_CASE("Rendu : rien à dessiner hors des événements", "[render]") {
   CHECK(frame.rects.empty());
 }
 
+TEST_CASE("Rendu : le décalage lit l'instant pts − délai (P3.72)", "[render]") {
+  Bench bench(ajp::subs::test::reference_script());
+  bench.recycle();
+  // À 6 s, rien ; 2 s de retard lisent l'instant 4 s, qui a son événement.
+  const RenderRequest late{.pts_us = 6'000'000,
+                           .epoch = 0,
+                           .delay_us = 2'000'000,
+                           .target = {.width = kScriptWidth, .height = kScriptHeight}};
+  auto outcome = bench.renderer.render(bench.track, late, bench.pool);
+  REQUIRE(outcome);
+  REQUIRE(std::holds_alternative<SubtitleFrame>(*outcome));
+  const SubtitleFrame& frame = std::get<SubtitleFrame>(*outcome);
+  CHECK(frame.pts_us == 6'000'000);
+  CHECK_FALSE(frame.rects.empty());
+}
+
 TEST_CASE("Rendu : un contenu inchangé réutilise l'atlas sans nouveau téléversement", "[render]") {
   Bench bench(ajp::subs::test::reference_script());
   const SubtitleFrame first = bench.render(0.2);
@@ -299,4 +315,22 @@ TEST_CASE("Rendu : en bandes noires, l'ASS reste sur l'image, le SRT descend dan
   const Box in_band = draw(srt.render_on(0.5, target)).covered();
   REQUIRE_FALSE(in_band.empty());
   CHECK(in_band.y1 > 420);
+}
+
+TEST_CASE("Rendu : une fenêtre réduite à 0×0 est refusée, sans calcul de placement", "[render]") {
+  Bench bench(ajp::subs::test::reference_script());
+  const RenderRequest request{.pts_us = 2'500'000,
+                              .target = {.width = 0, .height = 0, .video_width = 1920, .video_height = 1080}};
+  const auto outcome = bench.renderer.render(bench.track, request, bench.pool);
+  REQUIRE_FALSE(outcome);
+  CHECK(outcome.error().code == ajp::RefusalCode::FieldOutOfRange);
+}
+
+TEST_CASE("Rendu : un écran sans événement n'appelle libass qu'une fois (P3.39)", "[render]") {
+  Bench bench(ajp::subs::test::reference_script());  // rien après 5 s
+  CHECK(bench.render(6.0).rects.empty());
+  const std::uint64_t calls = bench.renderer.libass_calls();
+  for (int i = 1; i <= 24; ++i) CHECK(bench.render(6.0 + i / 144.0).rects.empty());
+  CHECK(bench.renderer.libass_calls() == calls);
+  CHECK_FALSE(bench.render(0.5).rects.empty());  // un retour en arrière rend de nouveau
 }

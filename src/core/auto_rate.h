@@ -24,6 +24,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "core/cost_model.h"
 
@@ -46,6 +47,21 @@ int auto_granularity(int wanted);
 // liée au rafraîchissement). Les paliers se comptent alors en moitiés : 5 est ×2,5 ; le facteur est palier /
 // granularity.
 int auto_ceiling(double display_hz, double source_fps, int granularity = 1);
+
+// P3.33 : à fréquence fixe, les paliers (en 1 / granularity) dont chaque image tient un nombre entier de
+// rafraîchissements, à 1 % près (×2,5 de 23,976 à 60 Hz compris en demi-paliers) ; ×1 toujours. Vide si
+// l'écran ou la cadence sont inconnus.
+std::vector<int> locked_steps(double display_hz, double source_fps, int granularity);
+
+// Les bornes du mode Stable pour un écran : au fps près en VRR armé (kFineGranularity) ; à fréquence fixe, en
+// demi-paliers et seulement les paliers calés (P3.33). Plafond : l'écran, et le niveau (P3.36, ×2, ×3, ×4 :
+// level_factor ; en demi-paliers, un de plus, ×2,5 à 60 Hz pour un niveau à ×2 ; < 2 : aucun).
+struct AutoLimits {
+  int ceiling = 1;
+  int granularity = 1;
+  std::vector<int> locked;  // vide : tous les paliers
+};
+AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor);
 
 // La fréquence que le plafond du mode auto prend pour l'écran : la plus basse du plafond choisi (cap > 0, en
 // i/s) et de l'écran ; écran inconnu (<= 0) : inchangé, l'interpolation reste à ×1.
@@ -153,6 +169,8 @@ class AutoRate {
   // Plafond et granularité changés ensemble (le VRR s'arme ou se coupe) : le palier courant, le plafond
   // appris et les pénalités passent dans la nouvelle unité, sans dépasser le plafond.
   void set_ceiling(int ceiling, int granularity);
+  // P3.33 : les seuls paliers permis (locked_steps) ; vide, tous.
+  void set_locked(std::vector<int> steps);
 
   // Départ à un palier retenu (en centièmes de multiplicateur) : un cran en dessous, la montée rapide fait
   // le reste.
@@ -185,6 +203,8 @@ class AutoRate {
 
  private:
   void descend(AutoReason reason, std::int64_t now_us, int steps = 1);
+  int snap_down(int step) const;      // le palier permis le plus haut sous step
+  int snap_up(int step) const;        // le palier permis le plus bas au-dessus de step ; 0 : aucun
   int drop_for(int predicted) const;  // de combien descendre
   bool fine() const { return granularity_ >= kFineGranularity; }
   void changed(AutoReason reason, std::int64_t now_us);
@@ -198,6 +218,7 @@ class AutoRate {
   int granularity_;
   int ceiling_;
   int step_;
+  std::vector<int> locked_;
   int hint_ = 0;  // dernier palier tenu, retenu d'une lecture d'avant
   AutoReason reason_ = AutoReason::Start;
   std::uint32_t changes_ = 0;

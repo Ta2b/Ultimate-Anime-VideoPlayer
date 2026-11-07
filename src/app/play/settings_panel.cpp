@@ -41,7 +41,7 @@ void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
            ? i18n::tr("HDR: on. The player follows your system's HDR setting.")
            : i18n::tr("SDR: HDR is off in your system, or the display is too dim for it. The Color page's "
                       "grade still applies."));
-  // Tri du 04/11 : la méthode HDR anime règle seule la luminosité ; reste le pic de l'écran, en avancé.
+  // Tri de l'ADR 0012 : la méthode HDR anime règle seule la luminosité ; reste le pic de l'écran, en avancé.
   if (panel::advanced()) {
     panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée
     ImGui::BeginDisabled(!choices.hdr_output);
@@ -83,9 +83,9 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
 }
 
 void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<Input>& /*actions*/) {
-  // Tri du 04/11 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds, qui
-  // suivent la scène (le curseur est leur maximum, en scène très claire), et le look : la LUT de base et
-  // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de Tatoub du 04/11).
+  // Tri de l'ADR 0012 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds,
+  // qui suivent la scène (le curseur est leur maximum, en scène très claire), et le look : la LUT de base et
+  // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de référence).
   section(i18n::tr("Color grading"));
   render::GradeSettings& g = d.grade_values;
   ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, 0, 200, "%d %%",
@@ -195,6 +195,12 @@ void subtitles_tab(PlaySettings& d) {
   }
   if (ImGui::Button(i18n::tr("Reset size"))) d.subtitle_scale = 1.0F;
   panel::tip(i18n::tr("Scales all text, panels included. Live."));
+  section(i18n::tr("Subtitle delay"));
+  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, -5000, 5000, "%d", ImGuiSliderFlags_None);
+  d.subtitle_delay_ms =
+      std::clamp(d.subtitle_delay_ms, limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
+  if (ImGui::Button(i18n::tr("Reset delay"))) d.subtitle_delay_ms = 0;
+  panel::tip(i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. This session only."));
 }
 
 // L'épisode suivant : lu tout seul à la fin du fichier ouvert.
@@ -275,6 +281,7 @@ void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("Setup wizard"));
   if (ImGui::Button(i18n::tr("Run the wizard again"))) actions.emplace_back(OpenEngineScreen{.wizard = true});
   panel::tip(i18n::tr("Nothing changes until \"Finish\"."));
+  report_problem_section(choices.place, choices.gpu_name);
 }
 
 // Général > À propos, en bas.
@@ -298,7 +305,7 @@ bool reset_page(PlaySettings& draft) {
 }  // namespace
 
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`. Trois
-// catégories (tri de novembre 2026, demande de Tatoub) : Vidéo, Audio et lecture, Général.
+// catégories (ADR 0012) : Vidéo, Audio et lecture, Général.
 constexpr std::array<SettingsPage, 10> kPages{{
     {"Video", "Post-processing", false},  // niveau, agrandissement, interpolation
     {"Video", "Colors", false},           // sortie HDR ou SDR (elle suit le système), grade anime
@@ -330,6 +337,7 @@ SettingsPanel::~SettingsPanel() {
   bench_.stop();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
@@ -494,6 +502,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         episodes_section(draft_);
       } else if (name == "Application") {
         language_section(draft_);
+        gpu_section(draft_, choices.gpus);
         updates_page(draft_, choices.place, updates_);
         default_player_page(choices.place, system_, choices.default_player_is_ajp);
       } else if (name == "Engines") {

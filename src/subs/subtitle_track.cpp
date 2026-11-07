@@ -58,7 +58,11 @@ std::expected<std::string, Refusal> read_script(const std::filesystem::path& pat
     return refuse(RefusalCode::SubtitleUnreadable, std::format("{} : lecture", path.string()));
   }
   text.resize(static_cast<std::size_t>(file.gcount()));
-  return to_utf8(text);  // UTF-16 et Windows-1252 des fichiers externes
+  // L'indice d'encodage : le dernier suffixe du nom (« ep01.ja » donne « ja »).
+  const std::string stem = path.stem().string();
+  const std::size_t dot = stem.rfind('.');
+  return to_utf8(text,
+                 dot == std::string::npos ? std::string_view{} : std::string_view(stem).substr(dot + 1));
 }
 
 }  // namespace

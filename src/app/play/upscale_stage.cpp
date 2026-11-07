@@ -163,6 +163,7 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
   return stage;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> UpscaleStage::allocate() {
   gpu::Backend& backend = *setup_.backend;
   const gpu::BackendCaps caps = backend.capabilities();
@@ -249,6 +250,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
       continue;
     }
     if (!*taken) break;
+    useful_area_ = ((*taken)->right - (*taken)->left) * ((*taken)->bottom - (*taken)->top);
     setup_.live->scenes().push(stats_pending_.front().pts_us, **taken);
     stats_pending_.erase(stats_pending_.begin());
   }
@@ -266,6 +268,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
   stats_pending_.push_back({.ticket = *ticket, .pts_us = frame.pts_us});
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& frame) {
   AJP_TRACE("upscale.outputs");
   if (frame.width != setup_.source_width || frame.height != setup_.source_height) {
@@ -296,11 +299,13 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   Factor factor = interpolates() ? setup_.rife_factor : Factor{};
   if (interpolates() && setup_.live) factor = setup_.live->factor_now();
+  const bool hidden = setup_.live != nullptr && setup_.live->hidden();  // P4.2 : rien n'est vu
+  if (hidden) factor = Factor{};
   // La grille de sortie de la paire (core/cadence.h), refaite quand le facteur change : la paire
   // suivante repart alors de cette image.
   std::optional<core::CadenceStep> step;
   // mode Rapide : pas de facteur, la grille de la paire vient de l'horloge prédite et du temps de service.
-  const bool free_mode = interpolates() && setup_.live && setup_.live->free_active();
+  const bool free_mode = interpolates() && setup_.live && setup_.live->free_active() && !hidden;
   const bool steady = free_mode && setup_.live->steady_active();
   // Mouvement fort anticipé : la mesure du milieu de la paire d'avant, relue avant la grille de celle-ci,
   // dit si elle sera lourde (RIFE à chaque instant) ; la grille libre planifie alors son écart en
@@ -373,7 +378,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
                   .gap_us = previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts
                                 ? frame.pts_us - previous_->pts_us
-                                : 0};
+                                : 0,
+                  .useful_area = useful_area_};
   if (!facts.same_epoch) forget_motion();  // début ou saut : le mouvement d'avant ne dit plus rien
   std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
   // DistilDRBA mesure aussi une paire « source seule » (facteur 1) : sans cela, la paire suivante n'aurait
@@ -505,11 +511,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // est bit à bit celle qui est affichée, ni écrite ni présentée.
   held_same_ = setup_.skip_held && runs == false && outputs_ == 1 && reuse_span_ && shown_source_;
   const int written = copy_pair_ ? 1 : held_same_ ? 0 : static_cast<int>(outputs_);
-  if (auto_measured) setup_.live->auto_expect(frame.id.value, written, lead_us);
-  if (free_mode && facts.same_epoch) {
-    setup_.live->auto_expect(frame.id.value, written, lead_us, heavy_pair_);
-    if (written > 0) setup_.live->free_produced(written, host_now_us());
-  }
+  // Une seule entrée par paire (P2.10) : une seconde, au même identifiant, masquait le drapeau heavy.
+  const bool free_counted = free_mode && facts.same_epoch;
+  if (auto_measured || free_counted)
+    setup_.live->auto_expect(frame.id.value, written, lead_us, free_counted && heavy_pair_);
+  if (free_counted && written > 0) setup_.live->free_produced(written, host_now_us());
   if (intermediates_ > 0) mid_ ^= 1U;
   if (intermediates_ > 0 && !copy_pair_ && (setup_.rife != nullptr || by_motion())) {
     if (auto ok = prepare_rife_input(); !ok) return std::unexpected(std::move(ok.error()));
@@ -581,8 +587,10 @@ RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t outp
   if (late_fate_now_ && instant_late(frame, output)) return Fate::Late;
   if (!copy_pair_) return Fate::Write;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
-  if (poses_copy(true, true, instant.t) == PoseCopy::Before || copy_written_) return Fate::Same;
-  copy_written_ = true;  // le premier instant après 1/2 : b, à son pts ; les suivants sont déjà à l'écran
+  if (poses_copy(true, true, instant.t) == PoseCopy::Before) return Fate::Same;
+  if (copy_written_) return output == b_output_ ? Fate::Write : Fate::Same;
+  copy_written_ = true;
+  b_output_ = output;  // le premier instant après 1/2 : b, à son pts ; les suivants sont déjà à l'écran
   return Fate::Write;
 }
 
@@ -615,16 +623,18 @@ RingStage::Output UpscaleStage::held_b(Output made, const DecodedFrame& frame, s
 // dès ½ (côté b tenu), le premier instant écrit b, les suivants et la source sont déjà à l'écran.
 RingStage::Fate UpscaleStage::drba_fate(std::uint32_t output) {
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
-  if (instant.t >= 1.0F) return b_shown_ ? Fate::Same : Fate::Write;
+  if (instant.t >= 1.0F) return b_shown_ && output != b_output_ ? Fate::Same : Fate::Write;
   const kernels::DrbaCall call = kernels::drba_call(instant.t);
   if (call.on_b && !settle_after_scores()) return Fate::Write;  // l'erreur sort à produce
   if (!drba_side_held(call)) return Fate::Write;
   if (!call.on_b) return shown_source_ ? Fate::Same : Fate::Write;
-  if (b_shown_) return Fate::Same;
+  if (b_shown_) return output == b_output_ ? Fate::Write : Fate::Same;
   b_shown_ = true;
+  b_output_ = output;
   return Fate::Write;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFrame& frame,
                                                                 std::uint32_t output, std::uint32_t slot,
                                                                 std::uint64_t wait_value,

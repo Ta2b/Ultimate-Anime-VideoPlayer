@@ -5,6 +5,8 @@
 // contracte chaque a × b + c en FMA et range ses tenseurs en fp16.
 #pragma once
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels::tolerance {
 
 // Tenseur RGB fp16 d'un port contre la référence float, pour une valeur dans [0, 2] :
@@ -50,3 +52,5 @@ inline constexpr float kWarp = 2.0F / 1024.0F;
 inline constexpr float kWarpFiltered = 4.0F / 1024.0F;
 
 }  // namespace ajp::kernels::tolerance
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

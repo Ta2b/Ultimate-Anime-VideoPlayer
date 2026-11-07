@@ -22,6 +22,7 @@ namespace {
 
 constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
 constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
+constexpr ImVec4 kWarnColor{1.0F, 0.78F, 0.42F, 1.0F};
 constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
 
 void note(const std::string& text) {
@@ -93,6 +94,8 @@ void engine_row(EngineRow& row) {
     ImGui::Checkbox(i18n::tr("I accept its licence"), &row.license_accepted);
     ImGui::SameLine();
     ImGui::TextLinkOpenURL(i18n::tr("Read the licence"), row.license.c_str());
+    if (!row.license_accepted)
+      ImGui::TextColored(kWarnColor, "%s", i18n::tr("Not installed until its licence is accepted."));
   }
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
@@ -114,6 +117,7 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     row.status = i18n::tr("installed") + missing;
   } else if (download != nullptr) {
     row.license = download->license;
+    row.bytes = download->bytes;
     const bool fits = download->needed == 0 || download->available >= download->needed;
     row.usable = fits;
     row.download = fits;
@@ -130,10 +134,7 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
                                    format_size(download->available)) +
                    missing;
   } else {
-    row.status =
-        row.offer.id == core::EngineId::TensorRt && here.os == core::Os::Linux
-            ? i18n::tr("not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md")
-            : i18n::tr("not published for this version yet");
+    row.status = i18n::tr("not published for this version yet");
   }
 }
 
@@ -274,6 +275,18 @@ std::string gpu_line(const GpuFacts& gpu) {
   return line;
 }
 
+std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu) {
+  if (gpu.vendor != GpuVendor::Nvidia || gpu.driver.empty()) return std::nullopt;
+  std::uint64_t raw = 0;
+  for (const char c : gpu.driver) {
+    if (c < '0' || c > '9') return std::nullopt;
+    raw = (raw * 10) + static_cast<std::uint64_t>(c - '0');
+    if (raw > 0xffffffffULL) return std::nullopt;
+  }
+  // NVIDIA code driverVersion en 10.8.8.6 bits : 580.82 vaut (580 << 22) | (82 << 14).
+  return std::pair{static_cast<int>(raw >> 22U), static_cast<int>((raw >> 14U) & 0xffU)};
+}
+
 FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const core::Settings& current) {
   FirstRunView view{.gpu = gpu_line(gpu)};
   for (const core::EngineOffer& offer : core::recommend_engines(system_of(gpu, here.os))) {
@@ -287,6 +300,15 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
       case core::EngineId::MiGraphX:
       case core::EngineId::OpenVino:
         downloadable_row(row, here);
+        // P3.6 : le pilote se lit avant 650 Mo de téléchargement ; trop ancien, la case reste verrouillée.
+        if (offer.id == core::EngineId::TensorRt && row.download) {
+          if (const auto version = nvidia_driver(gpu); version && version->first < kTensorRtDriverMajor) {
+            row.usable = false;
+            row.download = false;
+            row.status = i18n::tr_format("NVIDIA driver {} or newer required, you have {}.{:02}",
+                                         kTensorRtDriverMajor, version->first, version->second);
+          }
+        }
         break;
       case core::EngineId::Metal:  // Core ML, dans AJP.app
         row.usable = here.coreml;
@@ -403,6 +425,27 @@ std::string_view reason_label(core::Reason reason) {
   return "?";
 }
 
+std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
+  std::string kept;
+  std::uint64_t bytes = 0;
+  std::vector<std::string> refused;
+  for (const EngineRow& row : rows) {
+    if (!row.chosen || !row.usable) continue;
+    const std::string_view label = engine_label(row.offer.id);
+    if (row.download && !row.license.empty() && !row.license_accepted) {
+      refused.push_back(i18n::tr_format("{}: licence not accepted, it will not be installed", label));
+      continue;
+    }
+    kept += (kept.empty() ? "" : ", ") + std::string(label);
+    if (row.download) bytes += row.bytes;
+  }
+  std::vector<std::string> out;
+  out.push_back(bytes > 0 ? i18n::tr_format("Engines: {} ({} to download)", kept, format_size(bytes))
+                          : i18n::tr_format("Engines: {}", kept));
+  out.insert(out.end(), refused.begin(), refused.end());
+  return out;
+}
+
 namespace {
 
 void radio_note(const char* label, const char* detail, bool selected, bool& pick, bool enabled = true) {
@@ -425,27 +468,25 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       if (!view.display_line.empty()) note(view.display_line);
       note(i18n::tr(
           "The player picks the settings for this machine; everything is in Settings (p) afterwards."));
+      {
+        // La langue de l'interface (P3.18), détectée au lancement, confirmée ici ; prise en direct.
+        const bool french = i18n::language() == i18n::Language::French;
+        if (ImGui::BeginCombo(i18n::tr("Interface language"), french ? "Français" : "English")) {  // i18n-ok
+          if (ImGui::Selectable("English", !french)) wizard.interface_language = "en";             // i18n-ok
+          if (ImGui::Selectable("Français", french)) wizard.interface_language = "fr";             // i18n-ok
+          ImGui::EndCombo();
+        }
+        if (!wizard.interface_language.empty())
+          i18n::set_language(i18n::language_from_code(wizard.interface_language));
+      }
       break;
     case WizardStep::Engines:
       section(i18n::tr("Engines"));
       for (EngineRow& row : view.engines) engine_row(row);
       note(
-          i18n::tr("Vulkan works on every GPU. Checked engines install after \"Finish\", verified by hash; "
+          i18n::tr("Vulkan works on every GPU. Checked engines install at the end of the assistant, verified "
+                   "by hash; "
                    "Vulkan takes over if one fails."));
-      break;
-    case WizardStep::Chain:
-      section(i18n::tr("Machine calibration"));
-      note(
-          i18n::tr("After \"Finish\", the player tests several settings on a very demanding sequence: "
-                   "picture resolution, SPAN upscaling and RIFE smoothness. It keeps the best combination "
-                   "this machine sustains, SPAN first."));
-      note(
-          i18n::tr("Only a progress bar is shown; it takes a few minutes, longer the first time on a "
-                   "laptop (the engines are built once)."));
-      note(i18n::tr("Skipped: the Auto preset. Redo it later in Video > Post-processing."));
-      break;
-    case WizardStep::Hdr:    // retiré : le HDR suit le système
-    case WizardStep::Grade:  // retiré
       break;
     case WizardStep::Languages:
       section(i18n::tr("Languages"));
@@ -456,20 +497,35 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       section(i18n::tr("Updates"));
       bool pick = false;
       radio_note(i18n::tr("Notify me"), i18n::tr("A notification; you start the update yourself."),
-                 wizard.update_mode == "notify", pick);
-      if (pick) wizard.update_mode = "notify";
+                 wizard.update_mode == UpdateMode::Notify, pick);
+      if (pick) wizard.update_mode = UpdateMode::Notify;
       pick = false;
       radio_note(i18n::tr("Automatic"), i18n::tr("Downloaded, installed at next launch."),
-                 wizard.update_mode == "auto", pick);
-      if (pick) wizard.update_mode = "auto";
+                 wizard.update_mode == UpdateMode::Auto, pick);
+      if (pick) wizard.update_mode = UpdateMode::Auto;
       pick = false;
-      radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == "never", pick);
-      if (pick) wizard.update_mode = "never";
+      radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == UpdateMode::Never, pick);
+      if (pick) wizard.update_mode = UpdateMode::Never;
+      section(i18n::tr("Default player"));
+      ImGui::Checkbox(i18n::tr("Make it the default video player"), &wizard.make_default);
+      note(i18n::tr("AJP is added to \"Open with\" in any case."));
       break;
     }
     case WizardStep::Summary:
-      section(i18n::tr("Summary"));
+      section(i18n::tr("Ready"));
+      for (const std::string& line : engines_summary(view.engines)) ImGui::BulletText("%s", line.c_str());
       for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
+      section(i18n::tr("Machine calibration"));
+      note(
+          i18n::tr("\"Optimise now\" tests several settings on a very demanding sequence: picture "
+                   "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
+                   "machine sustains. Only a progress bar is shown; it takes a few minutes, longer the first "
+                   "time (the engines are built once)."));
+      if (view.calibration_minutes > 0)
+        note(i18n::tr_format("Estimated for this machine: about {} minutes.", view.calibration_minutes));
+      note(
+          i18n::tr("\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
+                   "Post-processing."));
       note(i18n::tr("Everything can be changed later in Settings (p). To redo this: ajp --first-run."));
       break;
   }
@@ -508,11 +564,22 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
     if (is_last(wizard)) {
-      if (ImGui::Button(i18n::tr("Finish"), {0.0F, tall})) view.done = true;
+      if (ImGui::Button(i18n::tr("Optimise now"), {0.0F, tall})) {
+        wizard.calibrate = true;
+        view.done = true;
+      }
     } else if (ImGui::Button(i18n::tr("Next"), {0.0F, tall})) {
       next(wizard);
     }
     ImGui::PopStyleColor(2);
+    // Le bouton secondaire de Prêt : sans calibration, le niveau Auto estimé pour cette carte (P3.1).
+    if (is_last(wizard)) {
+      ImGui::SameLine();
+      if (ImGui::Button(i18n::tr("Set it up myself"), {0.0F, tall})) {
+        set_up_myself(wizard);
+        view.done = true;
+      }
+    }
   }
   ImGui::End();
 }

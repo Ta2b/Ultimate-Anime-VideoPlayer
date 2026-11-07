@@ -212,6 +212,19 @@ std::vector<EncoderCandidate> encoder_candidates(Codec codec, Quality quality, G
         break;
     }
   }
+  // P3.86 : sans encodeur matériel, l'AV1 a un dernier recours logiciel, SVT-AV1 (libre de redevances).
+  // Rien de tel en HEVC ni en H.264 : x265 et x264 sont sous GPL, OpenH264 compilé par nous n'a pas la
+  // licence de brevets de Cisco.
+  if (codec == Codec::Av1) {
+    constexpr std::array<int, kQualityCount> kSvtCrf{22, 27, 32};
+    constexpr std::array<std::string_view, kQualityCount> kSvtPreset{"6", "8", "10"};
+    EncoderCandidate svt{.name = "libsvtav1", .label = "SVT-AV1"};
+    svt.fallback = {{"crf", std::to_string(kSvtCrf[index(quality)])},
+                    {"preset", std::string(kSvtPreset[index(quality)])}};
+    svt.options = svt.fallback;
+    svt.options.push_back({"svtav1-params", "tune=0:enable-overlays=1"});
+    out.push_back(std::move(svt));
+  }
   if (codec == Codec::H264) {
     for (EncoderCandidate& c : out) c.ten_bit = false;
   }

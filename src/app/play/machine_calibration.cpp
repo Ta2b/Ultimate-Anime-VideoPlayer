@@ -2,11 +2,15 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <sstream>
 #include <system_error>
 
+#include <SDL3/SDL_power.h>
+
+#include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "core/log.h"
 #include "core/user_overlay.h"
@@ -47,6 +51,33 @@ constexpr ChainCandidate kRifeOnly{.span = false, .rife = true, .height = 0};
 
 }  // namespace
 
+float creeping_fraction(float reported, double seconds_since_change) {
+  constexpr double kCreep = 0.08;
+  constexpr double kSeconds = 120.0;
+  const double extra = kCreep * (1.0 - std::exp(-std::max(seconds_since_change, 0.0) / kSeconds));
+  return std::min(0.97F, reported + static_cast<float>(extra));
+}
+
+int calibration_minutes(int display_height, bool builds_engines, bool laptop) {
+  const auto sizes = static_cast<double>(calibration_heights(display_height).size());
+  // Les essais : chaque palier de SPAN seul, deux ou trois de SPAN + RIFE, un rejeu sur deux ; chacun la
+  // durée de l'essai et une quinzaine de secondes d'ouverture.
+  const double trials = (sizes + 3.0) * 1.5;
+  double seconds = trials * (kBenchSeconds + 15.0);
+  // Une construction de TensorRT par taille, SPAN puis RIFE : 2,5 min sur une RTX 4070 Ti, le double sur un
+  // portable.
+  if (builds_engines) seconds += (sizes + 2.0) * (laptop ? 300.0 : 150.0);
+  return std::max(1, static_cast<int>(std::ceil(seconds / 60.0)));
+}
+
+bool needs_second_run(const CandidateTrial& trial) {
+  if (!trial.holds) return true;
+  // De justesse : plus de la moitié des pertes permises, ou une cadence moyenne sous 97 % de la visée.
+  const bool lossy = trial.lost_percent > 50.0 * kMaxLossRate;
+  const bool slow = trial.target_fps > 0.0 && trial.fps > 0.0 && trial.fps < 0.97 * trial.target_fps;
+  return lossy || slow;
+}
+
 std::vector<int> calibration_heights(int display_height) {
   const int top = std::max(display_height / 2, kCalibrationHeights.front());
   std::vector<int> out;
@@ -74,30 +105,33 @@ std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& 
     bool held = false;
     if (const auto height = next_height(tried, ChainCandidate{.span = true, .rife = true}, below, held))
       return ChainCandidate{.span = true, .rife = true, .height = *height};
-    return std::nullopt;
+    if (held) return std::nullopt;
   }
-  // SPAN ne tient nulle part : RIFE seul (SPAN coupé), le recours.
+  // SPAN + RIFE ne tient nulle part, ou SPAN nulle part : RIFE seul (SPAN coupé), le recours de la fluidité.
   if (find(tried, kRifeOnly) == nullptr) return kRifeOnly;
   return std::nullopt;
 }
 
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
-  // SPAN passe avant l'interpolation (choix de Tatoub) : le plus haut palier SPAN qui tient, avec RIFE s'il
-  // tient aussi à ce palier ; un SPAN plus bas avec RIFE n'est qu'une ligne du tableau, au choix.
+  // La fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent ensemble,
+  // même plus bas qu'un SPAN seul ; sinon RIFE seul s'il tient ; SPAN seul en dernier.
   // Un rang entier (palier, puis RIFE) plutôt qu'un std::optional comparé champ à champ : MSVC 14.51 en /O2
   // perdait le départage par RIFE à palier égal (test de la calibration, release Windows 0.9.0).
+  const CandidateTrial* rife = find(tried, kRifeOnly);
+  const bool rife_holds = rife != nullptr && rife->holds;
   const CandidateTrial* best = nullptr;
   int best_rank = -1;
   for (const CandidateTrial& trial : tried) {
     if (!trial.holds || !trial.chain.span) continue;
-    const int rank = trial.chain.height * 2 + (trial.chain.rife ? 1 : 0);
+    if (!trial.chain.rife && rife_holds) continue;
+    const int rank = trial.chain.height + (trial.chain.rife ? 100'000 : 0);
     if (rank > best_rank) {
       best_rank = rank;
       best = &trial;
     }
   }
   if (best != nullptr) return best->chain;
-  if (const CandidateTrial* rife = find(tried, kRifeOnly); rife != nullptr && rife->holds) return kRifeOnly;
+  if (rife_holds) return kRifeOnly;
   return ChainCandidate{.span = false, .rife = false, .height = 0};
 }
 
@@ -130,6 +164,7 @@ std::string format_calibration(const MachineCalibration& c) {
   root.insert("date", c.date);
   root.insert("display_height", static_cast<std::int64_t>(c.display_height));
   root.insert("span_fp8", c.span_fp8);
+  root.insert("on_battery", c.on_battery);
   const auto chain_table = [](const ChainCandidate& chain) {
     toml::table t;
     t.insert("span", chain.span);
@@ -171,6 +206,7 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
   out.date = root["date"].value_or(std::string());
   out.display_height = static_cast<int>(root["display_height"].value_or(std::int64_t{0}));
   out.span_fp8 = root["span_fp8"].value_or(false);
+  out.on_battery = root["on_battery"].value_or(false);
   if (const toml::table* chosen = root["chosen"].as_table()) out.chosen = chain_of(*chosen);
   if (const toml::array* trials = root["trials"].as_array()) {
     for (const toml::node& node : *trials) {
@@ -204,7 +240,8 @@ std::expected<MachineCalibration, Refusal> load_calibration(const std::filesyste
 std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir, std::string_view gpu,
                                                 int display_height) {
   auto calibration = load_calibration(calibration_file(data_dir));
-  if (!calibration || calibration->gpu != gpu ||
+  // Mesurée sur batterie : l'Auto estimé vaut mieux que des bornes d'une carte bridée (P3.12).
+  if (!calibration || calibration->on_battery || calibration->gpu != gpu ||
       (display_height > 0 && calibration->display_height != display_height))
     return std::nullopt;
   const ChainCandidate& chosen = calibration->chosen;
@@ -242,6 +279,10 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   out.span_fp8 = true;
   bool fp8_known = false;
   std::optional<ChainCandidate> retried;  // la chaîne déjà rejouée une fois
+  std::optional<ChainCandidate> rebuilt;  // la chaîne rejouée avec le délai d'une construction
+  out.on_battery = on_battery();
+  if (out.on_battery)
+    log->warn("calibration de la machine : sur batterie, mesure sous-estimée (à refaire sur secteur)");
   while (const auto chain = next_candidate(out.tried, display_height)) {
     if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
     const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
@@ -250,10 +291,20 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
     const Variant variant{.name = describe(*chain), .settings = settings};
     // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps (le
     // FP16 aussi, après un essai FP8 que la carte n'a pas pris).
-    auto reading = play_variant(plan, variant, index, stop,
-                                out.tried.empty() ? plan.first_allowance : plan.build_allowance);
+    auto reading =
+        play_variant(plan, variant, index, stop,
+                     out.tried.empty() || rebuilt == *chain ? plan.first_allowance : plan.build_allowance);
     if (stop.stop_requested())
       return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
+    // Délai dépassé (P3.12) : un moteur long à construire (un portable) n'est pas une machine lente ; l'essai
+    // se refait une fois avec le délai d'une construction, le moteur fini reste en cache.
+    if (!reading && reading.error().key == kTrialTimedOutKey && rebuilt != *chain) {
+      log->info("calibration de la machine : {} a dépassé son délai, rejoué avec celui d'une construction",
+                describe(*chain));
+      rebuilt = *chain;
+      ++index;
+      continue;
+    }
     // Le FP8 se juge à partir de kFp8JudgeHeight : plus bas, la porte de qualité le refuse souvent (erreur
     // relative plus forte sur une petite image) et le lecteur y joue Balanced en FP16, bon marché à cette
     // taille ; ce refus ne dit rien de la carte.
@@ -291,11 +342,12 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
       if (reading->interval_mean_us > 0) trial.fps = 1e6 / static_cast<double>(reading->interval_mean_us);
       if (reading->interval_p99_us > 0) trial.low_fps = 1e6 / static_cast<double>(reading->interval_p99_us);
     }
-    // Un essai qui ne tient pas se rejoue une fois : le premier d'une taille construit son moteur à froid et
-    // perd quelques images au démarrage, que le second, moteur en cache, ne perd plus.
-    if (reading && !trial.holds && retried != *chain) {
-      log->info("calibration de la machine : {} ne tient pas ({:.1f} % perdues), rejoué une fois",
-                describe(*chain), trial.lost_percent);
+    // Rejoué dans les deux sens (P3.12) : un essai qui ne tient pas (le premier d'une taille construit son
+    // moteur à froid et perd quelques images au démarrage), et un essai qui tient de justesse (une mesure
+    // chanceuse) ; le second passage décide.
+    if (reading && needs_second_run(trial) && retried != *chain) {
+      log->info("calibration de la machine : {} {} ({:.1f} % perdues), rejoué une fois", describe(*chain),
+                trial.holds ? "tient de justesse" : "ne tient pas", trial.lost_percent);
       retried = *chain;
       ++index;
       continue;

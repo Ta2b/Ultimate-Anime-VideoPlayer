@@ -2,6 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/options.h"
+
 using namespace ajp;
 using namespace ajp::app::play;
 
@@ -80,11 +82,16 @@ TEST_CASE("le multiplicateur suit l'écran, une source rapide n'est pas interpol
   const PlaySettings rate = applied(Preset::Auto, Tier::Fast, 2160, 60.0, fps60);
   CHECK(rate.rife_factor == 0);
   CHECK_FALSE(rate.rife_auto);
+  // P3.14 : 59,94 Hz sur une source à 30 i/s fait ×2 (59,94 / 30 = 1,998, arrondi avec tolérance).
+  const core::SourceInfo fps30{.width = 1920, .height = 1080, .fps = 30.0};
+  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 59.94, fps30).rife_factor == 2);
 }
 
 TEST_CASE("Économe ne réduit ni n'agrandit ni n'interpole", "[auto_config]") {
   const PlaySettings s = applied(Preset::Economy, Tier::Ultra, 2160, 165.0);
   CHECK_FALSE(s.upscale);
+  CHECK(s.work_height == 0);  // P3.20 : une source 4K reste en 4K
+  CHECK(work_size(3840, 2160, s.work_height) == WorkSize{3840, 2160});
   CHECK(s.rife_factor == 0);
   CHECK_FALSE(s.rife_auto);
 }
@@ -181,4 +188,11 @@ TEST_CASE("DistilDRBA attend sa porte de qualité", "[auto_config]") {
   static_assert(!kDistilDrbaInAuto);
   for (const Tier tier : {Tier::Light, Tier::Normal, Tier::Fast, Tier::Ultra})
     CHECK(applied(Preset::Auto, tier, 1440, 144.0).motion_engine == MotionEngine::Rife);
+}
+
+TEST_CASE("un autre écran rouvre la chaîne d'un préréglage (P3.21)", "[auto_config]") {
+  CHECK(display_moves_chain(Preset::Auto, 1080, 2160));
+  CHECK_FALSE(display_moves_chain(Preset::Auto, 1440, 1440));
+  CHECK_FALSE(display_moves_chain(Preset::Custom, 1080, 2160));
+  CHECK_FALSE(display_moves_chain(Preset::Auto, 0, 2160));
 }

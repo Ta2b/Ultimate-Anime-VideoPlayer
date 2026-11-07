@@ -70,7 +70,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       # OpenVINO et Windows ML (MIGraphX) ne sont plus construits pour la release : débranchés du lecteur, AMD et
-      # Intel passent par Vulkan (docs/moteurs.md). La CI (ci.yml) les construit encore pour que le code tienne.
+      # Intel passent par Vulkan (docs/moteurs.md). La CI ne les construit plus (P1.18).
       # Seulement sur l'entrée tensorrt (licences NVIDIA acceptées par le propriétaire du dépôt).
       - name: CUDA et TensorRT
         if: inputs.tensorrt

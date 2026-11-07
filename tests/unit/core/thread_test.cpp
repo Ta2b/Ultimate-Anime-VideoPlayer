@@ -174,3 +174,12 @@ TEST_CASE("Priorité : le crochet relève la lecture et l'audio, pas le fond", "
   CHECK(ajp::set_thread_priority_raiser(nullptr) == false);
 }
 #endif
+
+TEST_CASE("start_task : l'exception du corps devient ThreadFailed", "[thread]") {
+  auto task = ajp::start_task<int>("essai", []() -> int { throw std::runtime_error("levée"); });
+  REQUIRE(task != nullptr);
+  const auto result = task->get();
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().code == ajp::RefusalCode::ThreadFailed);
+  CHECK(ajp::start_task<int>("essai", [] { return 3; })->get() == 3);
+}

@@ -8,27 +8,44 @@ namespace {
 // Assistant et écran des moteurs : (clé anglaise, français).
 constexpr std::array kWizardTexts{
     Entry{"Calibrating this machine", "Calibration de la machine"},
+    Entry{"New graphics card: optimise for this PC again (Video > Post-processing)",
+          "Nouvelle carte graphique : refaites l'optimisation pour ce PC (Vidéo > Post-traitement)"},
     Entry{"Machine calibration failed: Auto preset (see log)",
           "La calibration de la machine a échoué : préréglage Auto (voir le journal)"},
-    Entry{
-        "After \"Finish\", the player tests several settings on a very demanding sequence: picture "
-        "resolution, SPAN upscaling and RIFE smoothness. It keeps the best combination this machine "
-        "sustains, SPAN first.",
-        "Après « Terminer », le lecteur essaie plusieurs réglages sur une séquence très éprouvante : "
-        "résolution de l'image, agrandissement SPAN et fluidité RIFE. Il garde la meilleure combinaison que "
-        "la machine tient, SPAN en priorité."},
     Entry{"Machine calibration", "Calibration de la machine"},
-    Entry{"Only a progress bar is shown; it takes a few minutes, longer the first time on a laptop (the "
-          "engines are built once).",
-          "Seule une barre de chargement s'affiche ; cela prend quelques minutes, plus la première fois sur "
-          "un portable (les moteurs se construisent une fois)."},
+    Entry{
+        "\"Optimise now\" tests several settings on a very demanding sequence: picture resolution, SPAN "
+        "upscaling and RIFE smoothness, and keeps the best combination this machine sustains. Only a "
+        "progress bar is shown; it takes a few minutes, longer the first time (the engines are built once).",
+        "« Optimiser maintenant » essaie plusieurs réglages sur une séquence très éprouvante : résolution de "
+        "l'image, agrandissement SPAN et fluidité RIFE, et garde la meilleure combinaison que la machine "
+        "tient. Seule une barre de chargement s'affiche ; cela prend quelques minutes, plus la première fois "
+        "(les moteurs se construisent une fois)."},
+    Entry{"\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
+          "Post-processing.",
+          "« Régler moi-même » : le préréglage Auto estimé pour cette carte, modifiable dans Vidéo > "
+          "Post-traitement."},
+    Entry{"Machine calibration: with \"Optimise now\", the best settings this machine sustains (Video > "
+          "Post-processing)",
+          "Calibration de la machine : avec « Optimiser maintenant », les meilleurs réglages que la machine "
+          "tient (Vidéo > Post-traitement)"},
+    Entry{"Default video player: asked at the end of the assistant (General > Application)",
+          "Lecteur vidéo par défaut : demandé à la fin de l'assistant (Général > Application)"},
+    Entry{"Integration", "Intégration"},
+    Entry{"Make it the default video player", "En faire le lecteur vidéo par défaut"},
+    Entry{"AJP is added to \"Open with\" in any case.", "AJP s'ajoute à « Ouvrir avec » dans tous les cas."},
+    Entry{"Optimise now", "Optimiser maintenant"},
+    Entry{"Estimated for this machine: about {} minutes.", "Estimé pour cette machine : environ {} minutes."},
+    Entry{"Ready", "Prêt"},
+    Entry{"Vulkan works on every GPU. Checked engines install at the end of the assistant, verified by hash; "
+          "Vulkan takes over if one fails.",
+          "Vulkan sert tous les GPU. Les moteurs cochés s'installent à la fin de l'assistant, vérifiés par "
+          "empreinte ; Vulkan prend le relais si l'un échoue."},
     Entry{"Right after the machine calibration, the player shows a few dark scenes, then a few bright "
           "scenes: you tune the adaptive grade for this display.",
           "Juste après la calibration de la machine, le lecteur montre quelques scènes sombres, puis "
           "quelques scènes claires : vous réglez le grade adaptatif pour cet écran."},
     Entry{"SDR chosen: no HDR grade to calibrate.", "SDR choisi : pas de grade HDR à calibrer."},
-    Entry{"Skipped: the Auto preset. Redo it later in Video > Post-processing.",
-          "Passée : le préréglage Auto. Refaites-la plus tard dans Vidéo > Post-traitement."},
     Entry{"HDR or SDR", "HDR ou SDR"},
     Entry{"The machine calibration is done", "La calibration de la machine est terminée"},
     Entry{"This display can receive HDR. In HDR, the player then opens the adaptive grade calibration: a few "
@@ -38,10 +55,6 @@ constexpr std::array kWizardTexts{
           "adaptatif : quelques scènes sombres, puis quelques claires, pour régler l'image sur cet écran. En "
           "SDR, il n'y a rien de plus à régler."},
     Entry{"HDR: calibrate the grade", "HDR : calibrer le grade"},
-    Entry{"Machine calibration: after \"Finish\", the best settings this machine sustains (Video > "
-          "Post-processing)",
-          "Calibration de la machine : après « Terminer », les meilleurs réglages que la machine tient "
-          "(Vidéo > Post-traitement)"},
     Entry{"Machine calibration: skipped, Auto preset (Video > Post-processing)",
           "Calibration de la machine : passée, préréglage Auto (Vidéo > Post-traitement)"},
     Entry{" · Tensor cores", " · cœurs Tensor"},
@@ -97,8 +110,18 @@ constexpr std::array kWizardTexts{
     Entry{"Picture and smoothness: {}, priority {} (Video > Post-processing)",
           "Image et fluidité : {}, priorité {} (Vidéo > Post-traitement)"},
     Entry{"Read the licence", "Lire la licence"},
+    Entry{"Not installed until its licence is accepted.",
+          "Pas installé tant que sa licence n'est pas acceptée."},
+    Entry{"{}: licence not accepted, it will not be installed",
+          "{} : licence non acceptée, il ne s'installera pas"},
+    Entry{"Engines: {} ({} to download)", "Moteurs : {} ({} à télécharger)"},
+    Entry{"Engines: {}", "Moteurs : {}"},
+    Entry{"NVIDIA driver {} or newer required, you have {}.{:02}",
+          "pilote NVIDIA {} ou plus récent requis, vous avez le {}.{:02}"},
     Entry{"Resume playback", "Continuer la lecture"},
     Entry{"Skip", "Passer"},
+    Entry{"Set it up myself", "Régler moi-même"},
+    Entry{"Cancel and watch", "Annuler et regarder"},
     Entry{"Skip: Speakers, faithful sound. Change it later in Audio > Output.",
           "Passer : Enceintes, rendu fidèle. À changer ensuite dans Audio > Sortie."},
     Entry{"Speakers: faithful sound, careful mix.", "Enceintes : rendu fidèle, mixage soigné."},
@@ -114,10 +137,6 @@ constexpr std::array kWizardTexts{
           "Le format du son se détecte seul, pas le casque ou les enceintes : dites-le ici."},
     Entry{"Unknown GPU", "GPU inconnu"},
     Entry{"Updates: {} (General > Application)", "Mises à jour : {} (Général > Application)"},
-    Entry{"Vulkan works on every GPU. Checked engines install after \"Finish\", verified by hash; Vulkan "
-          "takes over if one fails.",
-          "Vulkan sert tous les GPU. Les moteurs cochés s'installent après « Terminer », vérifiés par "
-          "empreinte ; Vulkan prend le relais si l'un échoue."},
     Entry{"Vulkan works on every GPU. Checked engines install after \"{}\", verified by hash; Vulkan takes "
           "over if one fails.",
           "Vulkan sert tous les GPU. Les moteurs cochés s'installent après « {} », vérifiés par empreinte ; "
@@ -133,8 +152,6 @@ constexpr std::array kWizardTexts{
     Entry{"not enough disk space: {} needed ({} to download), {} left",
           "espace disque insuffisant : il faut {} (dont {} à télécharger), il reste {}"},
     Entry{"not in this package", "absent de ce paquet"},
-    Entry{"not published (NVIDIA licence): build it on this machine, see docs/nvidia-linux.md",
-          "non publié (licence NVIDIA) : à construire sur cette machine, voir docs/nvidia-linux.md"},
     Entry{"not published for this version yet", "pas encore publié pour cette version"},
     Entry{"notify me", "me prévenir"},
     Entry{"to download ({}) · needs {} of space, {} free{}",

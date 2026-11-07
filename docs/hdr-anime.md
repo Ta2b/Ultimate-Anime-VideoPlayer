@@ -7,7 +7,7 @@ commande ; sans son drapeau, rien ne change.
 | Étape | Drapeau | Ce qui change | État |
 | --- | --- | --- | --- |
 | A1 | `--hdr-anime` | La carte des émetteurs, portes tirées des gains réels de `decide_grade` | fait |
-| A2 | `--anime-shots` | Exposition des surfaces et marge des éclats fixées par plan (pré-analyse), glissées en 250 ms aux coupes (`app/play/anime_shots.h`) | codé, à mesurer |
+| A2 | `--anime-shots` | Exposition des surfaces et marge des éclats fixées par plan (pré-analyse), posées à l'image de coupe, sans glissé (un changement à la coupe ne se voit pas ; `app/play/anime_shots.h`) | codé, à mesurer |
 | A3 | `--anime-guided` | Carte locale lue par un sur-échantillonnage bilatéral joint guidé par le pixel : le halo ne déborde plus | codé, à mesurer |
 | A4 | aucun | Visages : décodage d'un détecteur, doublons, suivi, palette de peau, exclusion des émetteurs (`render/faces.h`) | partie sans réseau codée |
 | A6 | aucun | Réseau des émetteurs : étiquettes (port numpy de A5), jeu de données, entraînement et export ONNX (`tools/grade/emitters/`) | scripts écrits, entraînement plus tard |

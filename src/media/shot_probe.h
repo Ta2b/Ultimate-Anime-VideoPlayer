@@ -8,6 +8,7 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -71,6 +72,10 @@ class ShotProbe {
   std::atomic<std::int64_t> seek_to_{-1};
   std::atomic<std::int64_t> frontier_{0};
   std::atomic<bool> finished_{false};
+  // P2.37 : l'attente de la pré-analyse (fin atteinte, assez d'avance) se réveille au saut ou quand la
+  // lecture avance, au lieu de dormir 100 ms par tour.
+  std::mutex wake_mutex_;
+  std::condition_variable_any wake_;
   mutable std::mutex failure_mutex_;
   std::optional<Refusal> failure_;
   std::jthread thread_;

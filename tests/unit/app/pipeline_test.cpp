@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <thread>
 
 #include <SDL3/SDL_hints.h>
@@ -111,6 +113,27 @@ TEST_CASE("Lecture de bout en bout : images dans l'ordre, son maître, sous-titr
   // Le son mène : la dernière image paraît environ 2 s après la première.
   CHECK(stats.frame_interval.median() > 30'000);
   CHECK(stats.frame_interval.median() < 50'000);
+}
+
+TEST_CASE("Sous-titres externes : en concurrence avec le conteneur, à leur langue (P3.73)",
+          "[app][pipeline]") {
+  const std::filesystem::path video = clip();
+  const std::filesystem::path srt = video.parent_path() / "app-pipeline.eng.srt";
+  std::ofstream(srt) << "1\n00:00:00,000 --> 00:00:01,000\nHello\n";
+  SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+  REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+  {
+    // L'anglais voulu : le fichier .eng.srt passe devant la piste française du conteneur.
+    auto opened =
+        Pipeline::open(PipelineConfig{.file = video,
+                                      .decoder = {.attempts = {media::HwApi::Software}},
+                                      .languages = {.audio = {"jpn"}, .subtitles = {"eng"}}},
+                       [](VideoStageInit init) { return test::PassthroughStage::start(std::move(init), 4); });
+    REQUIRE(opened);
+    CHECK((*opened)->tracks().subtitle_selected == kExternalSubtitleBase);
+  }
+  SDL_QuitSubSystem(SDL_INIT_AUDIO);
+  std::filesystem::remove(srt);
 }
 
 TEST_CASE("Seek en cours de lecture : nouvelle époque, images de la cible", "[app][pipeline]") {

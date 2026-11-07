@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 
 project(ajp
-  VERSION 0.9.1
+  VERSION 0.10.0
   DESCRIPTION "Lecteur vidéo anime : upscaling, interpolation et HDR en temps réel"
   LANGUAGES CXX)
 
@@ -47,6 +47,15 @@ if(WIN32)
   add_compile_definitions(NOMINMAX)
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
+# P5.21 : un module de moteur n'exporte que ses quatre points d'entrée (AJP_BACKEND_EXPORT, gpu/backend.h) ;
+# le reste est caché, et le code position-indépendant n'est plus interposable (appels directs).
+if(NOT WIN32)
+  set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+  set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-semantic-interposition>)
+  endif()
+endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Les modules C++ sont interdits : pas de balayage, ni d'options .modmap dans
 # compile_commands.json (clang-tidy ne sait pas les lire).
@@ -91,7 +100,6 @@ if(AJP_BUILD_PLAYER)
   add_subdirectory(src/prepare)
   add_subdirectory(src/audio)
   add_subdirectory(src/render)
-  add_subdirectory(src/present)
   add_subdirectory(src/export)
   add_subdirectory(src/app)
 endif()

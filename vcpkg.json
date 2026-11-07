@@ -1,10 +1,11 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "ajp",
-  "version-semver": "0.5.0",
-  "builtin-baseline": "bf19794383e8fb95eba5aa553235bc8ec2271688",
+  "version-semver": "0.10.0",
+  "builtin-baseline": "65886d79ccce671dc24ffbf9a348836beacb7f6f",
   "dependencies": [
     "tomlplusplus",
+    "zlib",
     {
       "name": "spdlog",
       "default-features": false
@@ -25,12 +26,25 @@
           "default-features": false,
           "features": [
             "avcodec",
+            "avfilter",
             "avformat",
             "swresample",
             "swscale",
             "dav1d",
             "nvcodec",
-            "vulkan"
+            "vulkan",
+            {
+              "name": "amf",
+              "platform": "windows"
+            },
+            {
+              "name": "qsv",
+              "platform": "windows"
+            },
+            {
+              "name": "svt-av1",
+              "platform": "x64"
+            }
           ]
         },
         {

@@ -1,19 +1,17 @@
 #include "prepare/gmfss_split.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <format>
 #include <fstream>
-#include <functional>
 #include <map>
 #include <set>
 #include <string_view>
 #include <system_error>
-#include <thread>
 #include <tuple>
 #include <utility>
 
+#include "core/file_sync.h"
 #include "kernels/spec/gmfss.h"
 #include "prepare/model_source.h"
 #include "prepare/onnx_scan.h"
@@ -213,30 +211,7 @@ std::expected<GmfssPieces, Refusal> split_gmfss(std::span<const std::byte> pair,
 
 namespace {
 
-// Écrit les octets à côté de target puis les y renomme.
-std::expected<void, Refusal> write_atomic(const std::filesystem::path& target,
-                                          std::span<const std::byte> bytes) {
-  std::filesystem::path temp = target;
-  temp += std::format(
-      ".{:x}.tmp", std::hash<std::thread::id>{}(std::this_thread::get_id()) ^
-                       static_cast<std::size_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
-  std::error_code error;
-  {
-    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (!out.flush()) {
-      std::filesystem::remove(temp, error);
-      return std::unexpected(Refusal{RefusalCode::FileUnwritable, temp.string()});
-    }
-  }
-  std::filesystem::rename(temp, target, error);
-  if (error) {
-    std::filesystem::remove(temp, error);
-    return std::unexpected(
-        Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), error.message())});
-  }
-  return {};
-}
+using core::write_atomic;  // P5.11 : l'écriture atomique du projet, avec fsync
 
 bool exists_nonempty(const std::filesystem::path& file) {
   std::error_code error;

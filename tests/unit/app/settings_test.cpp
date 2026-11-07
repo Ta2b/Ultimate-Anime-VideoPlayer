@@ -6,6 +6,8 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <string>
@@ -16,9 +18,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain.h"
+#include "app/play/export_job.h"
 #include "app/play/free_engines.h"
 #include "app/play/host_facts.h"
 #include "app/play/live_settings.h"
+#include "app/play/settings_sound.h"
 
 namespace ajp::app::play {
 namespace {
@@ -59,10 +63,12 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
+  // P5.2 : GMFSS n'est plus écrit, et un ancien play.toml qui le nomme se lit en RIFE.
   s.motion_engine = MotionEngine::Gmfss;
-  CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::Gmfss);
-  s.motion_engine = MotionEngine::GmfssUnion;
-  CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::GmfssUnion);
+  CHECK(format_settings(s).find("gmfss\"") == std::string::npos);
+  CHECK(parse_settings("[interpolation]\nengine = \"gmfss\"\n")->motion_engine == MotionEngine::Rife);
+  CHECK(parse_settings("[interpolation]\nengine = \"gmfss_union\"\n")->motion_engine == MotionEngine::Rife);
+  CHECK(export_chain(s).motion_engine == MotionEngine::Rife);
   CHECK(is_gmfss(MotionEngine::GmfssUnion));
   CHECK_FALSE(is_gmfss(MotionEngine::Rife));
   // L'interpolation d'Apple se garde partout ; elle n'est proposée que sur un Mac.
@@ -139,6 +145,7 @@ TEST_CASE("Warp et SPAN : Auto passe après SPAN au-dessus de 1080p ; les fichie
   CHECK(PlaySettings{}.gmfss_precision ==
         PrecisionTier::Balanced);  // GMFSS reste en FP16 : son FP8 dégrade les gros mouvements
   CHECK(PlaySettings{}.span_precision == PrecisionTier::Balanced);
+  CHECK(PlaySettings{}.autoplay_next);  // P3.84
   CHECK(PlaySettings{}.motion_precision == PrecisionTier::Balanced);
   CHECK_FALSE(warp_after_span(SpanOrder::Auto, 1080));
   CHECK(warp_after_span(SpanOrder::Auto, 1440));
@@ -457,6 +464,17 @@ TEST_CASE("TierSupport : Équilibre toujours, les autres selon les graphes", "[a
   CHECK(label(PrecisionTier::Balanced) == "Balance");
 }
 
+TEST_CASE("mises à jour : mode, canal et fréquence lus et écrits par leur nom (P5.29)", "[settings]") {
+  const auto read =
+      parse_settings("[updates]\nmode = \"auto\"\nchannel = \"preview\"\nfrequency = \"weekly\"\n");
+  REQUIRE(read);
+  CHECK(read->update_mode == UpdateMode::Auto);
+  CHECK(read->update_channel == UpdateChannel::Preview);
+  CHECK(read->update_frequency == UpdateFrequency::Weekly);
+  CHECK(parse_settings(format_settings(*read))->update_frequency == UpdateFrequency::Weekly);
+  CHECK_FALSE(parse_settings("[updates]\nfrequency = \"hourly\"\n"));
+}
+
 }  // namespace
 }  // namespace ajp::app::play
 
@@ -619,7 +637,75 @@ TEST_CASE("le look (LUT) et son intensité se relisent à l'identique, un nom de
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook = '../x.cube'\n").has_value());
   CHECK_FALSE(ajp::app::play::parse_settings("[grade]\nlook_mix = 1.5\n").has_value());
   const ajp::app::play::PlaySettings
-      defaults;  // la pile de LUT de Tatoub, cuite en une seule LUT (bake_stack.py)
+      defaults;  // la pile de LUT de référence, cuite en une seule LUT (bake_stack.py)
   CHECK(defaults.look == "HDR pile unique 65 point.cube");
   CHECK(defaults.look_layers.empty());
+}
+
+TEST_CASE("play.toml : une version plus récente garde ses clés à la réécriture (P2.22)", "[app][settings]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-future.toml";
+  {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << "version = 2\nfuture_option = 7\n[image]\nupscale = false\nfuture_filter = \"x\"\n[nouveau]\na = "
+           "1\n";
+  }
+  auto loaded = ajp::app::play::load_settings(path);
+  REQUIRE(loaded);
+  CHECK_FALSE(loaded->upscale);
+  loaded->upscale = true;
+  REQUIRE(ajp::app::play::save_settings(path, *loaded));
+  std::string text;
+  {
+    std::ifstream in(path, std::ios::binary);  // refermé avant remove : Windows refuse un fichier ouvert
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  CHECK(text.find("future_option = 7") != std::string::npos);
+  CHECK(text.find("future_filter = 'x'") != std::string::npos);
+  CHECK(text.find("[nouveau]") != std::string::npos);
+  auto reread = ajp::app::play::load_settings(path);
+  REQUIRE(reread);
+  CHECK(*reread == *loaded);
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("Délai audio mémorisé par appareil, relu de play.toml (P2.7)", "[app][settings]") {
+  ajp::app::play::PlaySettings s;
+  s.audio_delay_ms = 20;  // la sortie du système
+  s.audio_device = "Casque Bluetooth";
+  ajp::app::play::switch_device_delay(s, "");
+  CHECK(s.audio_delay_ms == 0);
+  s.audio_delay_ms = 240;  // réglé pour le casque
+  s.audio_device.clear();
+  ajp::app::play::switch_device_delay(s, "Casque Bluetooth");
+  CHECK(s.audio_delay_ms == 20);
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-delays.toml";
+  REQUIRE(ajp::app::play::save_settings(path, s));
+  auto reread = ajp::app::play::load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->audio_device_delays_ms.at("Casque Bluetooth") == 240);
+  CHECK(*reread == s);
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("play.toml : deux lancements, chacun ne réécrit que les clés qu'il a changées (P2.14)",
+          "[app][settings]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-two.toml";
+  std::filesystem::remove(path);
+  REQUIRE(ajp::app::play::save_settings(path, ajp::app::play::PlaySettings{}));
+  auto ours = ajp::app::play::load_settings(path);
+  REQUIRE(ours);
+  // L'autre lancement réécrit le fichier : le volume change.
+  ajp::app::play::PlaySettings theirs = *ours;
+  theirs.volume = 0.25F;
+  {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << ajp::app::play::format_settings(theirs);
+  }
+  ours->audio_delay_ms = 120;
+  REQUIRE(ajp::app::play::save_settings(path, *ours));
+  const auto merged = ajp::app::play::load_settings(path);
+  REQUIRE(merged);
+  CHECK(merged->audio_delay_ms == 120);
+  CHECK(merged->volume == Catch::Approx(0.25F));
+  std::filesystem::remove(path);
 }

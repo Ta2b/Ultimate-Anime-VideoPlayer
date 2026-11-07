@@ -2,8 +2,10 @@
 
 #include <charconv>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <string>
 
 #include <SDL3/SDL_filesystem.h>
@@ -105,13 +107,31 @@ std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_v
   }
 }
 
+namespace {
+
+// Le pic se relit toutes les deux secondes (l'écran peut changer) : la ligne n'entre au journal que quand
+// elle change, plus 1 800 fois par heure (P2.43).
+[[maybe_unused]] void tell_peak(const std::string& line) {
+  static std::mutex mutex;
+  static std::string last;
+  const std::scoped_lock lock(mutex);
+  if (line == last) return;
+  last = line;
+  const auto log = log_channel("app");
+  log->info("{}", line);
+}
+
+}  // namespace
+
 std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connector,
-                                       [[maybe_unused]] double headroom) {
+                                       [[maybe_unused]] double headroom,
+                                       [[maybe_unused]] const void* monitor) {
 #if defined(_WIN32)
   IDXGIFactory1* factory = nullptr;
   if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))))
     return std::nullopt;
   std::optional<double> best;
+  double full_frame = 0.0;
   IDXGIAdapter1* adapter = nullptr;
   for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
     IDXGIOutput* output = nullptr;
@@ -121,8 +141,11 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
         DXGI_OUTPUT_DESC1 desc{};
         if (SUCCEEDED(output6->GetDesc1(&desc)) &&
             desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 && desc.MaxLuminance > 0.0F &&
-            (!best || desc.MaxLuminance > *best))
+            (monitor == nullptr || desc.Monitor == static_cast<HMONITOR>(const_cast<void*>(monitor))) &&
+            (!best || desc.MaxLuminance > *best)) {
           best = static_cast<double>(desc.MaxLuminance);
+          full_frame = static_cast<double>(desc.MaxFullFrameLuminance);
+        }
         output6->Release();
       }
       output->Release();
@@ -130,7 +153,9 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
     adapter->Release();
   }
   factory->Release();
-  if (best) log_channel("app")->info("pic du système (DXGI MaxLuminance) : {:.0f} nits", *best);
+  if (best)
+    tell_peak(std::format("pic du système (DXGI MaxLuminance) : {:.0f} nits, plein champ {:.0f} nits", *best,
+                          full_frame));
   return best;
 #elif defined(__linux__)
   std::string_view port = connector;
@@ -144,17 +169,17 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
   const double reference = output->reference.value_or(render::kContentReferenceNits);
   if (output->peak_override) {
     const render::DisplayModel model{.panel_peak_nits = *output->peak_override, .reference_nits = reference};
-    log_channel("app")->info(
-        "pic du système (KDE, {}) : {:.0f} nits affichés, blanc {:.0f} : {:.0f} nits du contenu",
-        std::string(port), *output->peak_override, reference, model.content_peak_nits());
+    tell_peak(
+        std::format("pic du système (KDE, {}) : {:.0f} nits affichés, blanc {:.0f} : {:.0f} nits du contenu",
+                    port, *output->peak_override, reference, model.content_peak_nits()));
     return model.content_peak_nits();
   }
   if (output->reference && headroom > 1.0) {
     const render::DisplayModel model{.panel_peak_nits = headroom * reference, .reference_nits = reference};
-    log_channel("app")->info(
-        "pic du système (KDE, {}) : marge {:.2f} × blanc {:.0f} = {:.0f} nits affichés, {:.0f} nits du "
-        "contenu",
-        std::string(port), headroom, reference, model.panel_peak_nits, model.content_peak_nits());
+    tell_peak(
+        std::format("pic du système (KDE, {}) : marge {:.2f} × blanc {:.0f} = {:.0f} nits affichés, {:.0f} "
+                    "nits du contenu",
+                    port, headroom, reference, model.panel_peak_nits, model.content_peak_nits()));
     return model.content_peak_nits();
   }
   return std::nullopt;
@@ -165,7 +190,7 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
 
 namespace {
 
-std::optional<std::filesystem::path> kwin_config_path() {
+[[maybe_unused]] std::optional<std::filesystem::path> kwin_config_path() {  // Linux seulement
   const char* home = SDL_GetUserFolder(SDL_FOLDER_HOME);
   if (home == nullptr) return std::nullopt;
   return std::filesystem::path(home) / ".config" / "kwinoutputconfig.json";

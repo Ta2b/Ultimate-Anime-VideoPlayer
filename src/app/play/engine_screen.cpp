@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
+#include "app/play/pumped_task.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
 #include "app/play/user_keys.h"
@@ -45,14 +47,19 @@ constexpr std::size_t usage(core::Usage u) {
 
 // L'écran jusqu'à « Commencer » ou « Annuler » ; rien si l'utilisateur quitte. Les touches d'essai
 // (--keys) qui tombent pendant l'écran y sont pressées, comptées depuis son ouverture.
-std::expected<std::optional<FirstRunView>, Refusal> welcome(PlaceboScreen& screen, PlayerUi& ui,
-                                                            FirstRunView view, const PlayOptions& options,
-                                                            std::size_t& next_key, SnapshotPlan& snapshot,
-                                                            int& furthest) {
+std::expected<std::optional<FirstRunView>, Refusal> welcome(
+    PlaceboScreen& screen, PlayerUi& ui, FirstRunView view, const PlayOptions& options, std::size_t& next_key,
+    SnapshotPlan& snapshot, int& furthest, const std::function<void(const Wizard&)>& on_step) {
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   std::vector<Input> actions;
+  std::size_t at = view.wizard.at;
   while (!view.done && !view.cancelled) {
+    // P3.3 : chaque « Suivant », « Passer » ou « Précédent » enregistre les choix faits jusque-là.
+    if (view.wizard.at != at) {
+      at = view.wizard.at;
+      if (on_step) on_step(view.wizard);
+    }
     for (; next_key < options.keys.size() && host_now_us() - started >= options.keys[next_key].first;
          ++next_key)
       press(options.keys[next_key].second, screen.window());
@@ -91,25 +98,36 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
 }
 
+}  // namespace
+
 // La calibration de la machine de l'assistant (machine_calibration.h) sur son thread : l'utilisateur ne voit
 // qu'une barre de chargement. Rien si la fenêtre se ferme ; une calibration qui échoue garde base (Auto).
 std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
                                                 const std::filesystem::path& data_dir, PlaySettings base) {
   const auto log = log_channel("app");
+  // Tout retour sans calibration est le préréglage Auto, comme le message le dit (P3.16).
+  const auto as_auto = [](PlaySettings settings) {
+    settings.preset = Preset::Auto;
+    return settings;
+  };
   struct Shared {
     std::mutex mutex;
     float fraction = 0.0F;
+    std::int64_t changed_us = 0;  // quand fraction a bougé
+    BenchProgress progress;       // la note d'une construction de moteur (bench_steps.h)
     std::optional<std::expected<MachineCalibration, Refusal>> result;
   };
   auto shared = std::make_shared<Shared>();
   std::error_code error;
   BenchPlan plan{.executable = paths.executable,
-                 .video = data_dir / "bench-clip-v3.mkv",
+                 .video = data_dir / "bench-clip-v4.mkv",
                  .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
                  .data = data_dir,
                  .display_width = display_width(screen.window()),
                  .display_height = display_height(screen.window()),
                  .display_hdr = screen.hdr_output()};
+  plan.shown = &shared->progress;  // vit autant que shared, que le thread garde
+  shared->changed_us = host_now_us();
   const int height = plan.display_height;
   auto worker = start_thread("calibration", ThreadReport([shared](const Refusal& refusal) {
                                const std::scoped_lock lock(shared->mutex);
@@ -120,14 +138,17 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                                    calibrate_machine(plan, base, height, stop, [shared](float fraction) {
                                      const std::scoped_lock lock(shared->mutex);
                                      shared->fraction = fraction;
+                                     shared->changed_us = host_now_us();
                                    });
                                const std::scoped_lock lock(shared->mutex);
                                shared->result = std::move(done);
                              });
   if (!worker) {
     log->warn("calibration de la machine : {}", worker.error().detail);
-    return base;
+    return as_auto(std::move(base));
   }
+  bool watch_now = false;
+  std::vector<Input> ignored;
   while (true) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -135,12 +156,28 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
         worker->request_stop();
         return std::nullopt;
       }
+      (void)ui.handle(event, host_now_us(), ignored);  // le bouton « Annuler et regarder »
+    }
+    ignored.clear();
+    // P3.10 : la calibration abandonnée garde les choix de l'assistant et le préréglage Auto.
+    if (watch_now) {
+      worker->request_stop();
+      log->info("calibration de la machine annulée : préréglage Auto");
+      return as_auto(std::move(base));
     }
     PrepareView view;
     {
       const std::scoped_lock lock(shared->mutex);
       if (shared->result) break;
-      view = PrepareView{.label = i18n::ui_tr("Calibrating this machine"), .fraction = shared->fraction};
+      // P3.13 : la barre avance aussi pendant un essai long (une construction), sans atteindre l'étape
+      // suivante.
+      const double waited = static_cast<double>(host_now_us() - shared->changed_us) / 1e6;
+      const std::string building = shared->progress.get().note;
+      view = PrepareView{.label = building.empty() ? i18n::ui_tr("Calibrating this machine")
+                                                   : i18n::ui_tr("Calibrating this machine") +
+                                                         i18n::Translated::data(" · " + building),
+                         .fraction = creeping_fraction(shared->fraction, waited),
+                         .watch_now = &watch_now};
     }
     if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
       log->warn("calibration de la machine : {}", shown.error().detail);
@@ -150,7 +187,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   if (!*shared->result) {
     log->warn("calibration de la machine : {} ; préréglage Auto", shared->result->error().detail);
     ui.controls().defer(i18n::ui_tr("Machine calibration failed: Auto preset (see log)"));
-    return base;
+    return as_auto(std::move(base));
   }
   // Auto calibré : le lecteur relit les bornes mesurées (calibration.toml) et refait la chaîne pour chaque
   // vidéo ; la chaîne mesurée, SPAN FP8 compris, reste écrite pour qui repasse en Personnalisé.
@@ -160,8 +197,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   return calibrated;
 }
 
-}  // namespace
-
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
                                                std::size_t& next_key, SnapshotPlan& snapshot) {
   const auto log = log_channel("app");
@@ -183,9 +219,30 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
+    const bool tensorrt = std::ranges::any_of(view.engines, [](const EngineRow& row) {
+      return row.offer.id == core::EngineId::TensorRt && row.chosen && row.usable;
+    });
+    view.calibration_minutes = calibration_minutes(height > 0 ? height : 1080, tensorrt,
+                                                   gpu.name.find("Laptop") != std::string::npos);
   }
+  const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
+  // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
+  if (wizard_mode && !revisit && engines.first_run_step > 0 && !s.options.first_run && !s.restart_wizard) {
+    if (auto play = load_settings(play_path)) resume_choices(view.wizard, *play);
+  }
+  const auto on_step = [&](const Wizard& wizard) {
+    if (!wizard_mode || revisit) return;
+    PlaySettings saved;
+    if (auto play = load_settings(play_path)) saved = std::move(*play);
+    if (auto written = save_settings(play_path, wizard_play_settings(wizard, std::move(saved))); !written)
+      log->warn("{}", written.error().detail);
+    engines.first_run_step = std::max(engines.first_run_step, wizard.seen);
+    if (auto written = core::save_settings(s.engines_path, engines); !written)
+      log->warn("{}", written.error().detail);
+  };
   int furthest = engines.first_run_step;
-  auto chosen_view = welcome(s.screen, s.ui, std::move(view), s.options, next_key, snapshot, furthest);
+  auto chosen_view =
+      welcome(s.screen, s.ui, std::move(view), s.options, next_key, snapshot, furthest, on_step);
   if (!chosen_view) return std::unexpected(std::move(chosen_view.error()));
   if (!*chosen_view) {
     // Fermé en route : l'assistant reprendra après le dernier écran vu.
@@ -210,22 +267,10 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   if (wizard_mode) {
     const Wizard& wizard = (*chosen_view)->wizard;
     engines = wizard_settings(wizard, std::move(engines));
-    const std::filesystem::path play_path = s.engines_path.parent_path() / "play.toml";
     auto play = load_settings(play_path);
     PlaySettings chosen_play;
     if (play) chosen_play = std::move(*play);
     chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
-    if (wants_machine_calibration(wizard)) {
-      // Les essais relisent settings.toml (moteurs choisis, assistant vu) : il s'écrit avant eux.
-      if (auto written = core::save_settings(s.engines_path, engines); !written)
-        log->warn("{}", written.error().detail);
-      auto calibrated =
-          calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
-      if (!calibrated) return false;
-      chosen_play = std::move(*calibrated);
-    }
-    if (auto written = save_settings(play_path, chosen_play); !written)
-      log->warn("{}", written.error().detail);
     // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
     if (!engines.open_with_registered) {
       const PlayerPlace place = place_of(s.paths);
@@ -236,7 +281,27 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
         log->warn("Ouvrir avec : {}", registered.error().detail);
       }
     }
+    // Lecteur par défaut demandé à l'écran Intégration (P3.18).
+    if (wizard.make_default) {
+      if (auto made = choose_as_default(place_of(s.paths)))
+        log->info("lecteur par défaut : {}", *made);
+      else
+        log->warn("lecteur par défaut : {}", made.error().detail);
+    }
     for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
+    // P3.2 : play.toml, settings.toml et l'inscription s'écrivent avant la calibration ; la fenêtre fermée
+    // pendant qu'elle tourne ne perd plus les choix (seule la chaîne calibrée manque, Auto la remplace).
+    if (auto written = save_settings(play_path, chosen_play); !written)
+      log->warn("{}", written.error().detail);
+    if (auto written = core::save_settings(s.engines_path, engines); !written)
+      log->warn("{}", written.error().detail);
+    if (wants_machine_calibration(wizard)) {
+      auto calibrated =
+          calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
+      if (!calibrated) return false;
+      if (auto written = save_settings(play_path, *calibrated); !written)
+        log->warn("{}", written.error().detail);
+    }
   }
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);
@@ -268,7 +333,10 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
                                                                      const gpu::BackendInit& probe) {
   const std::vector<std::filesystem::path> candidates =
       preferred_first(backend_candidates(catalog, paths), engines);
-  auto library = BackendLibrary::choose(backends_within(candidates, engines), probe);
+  // Charger TensorRT et créer l'instance d'essai prend plusieurs secondes : sur un thread, la fenêtre
+  // pompée (P2.12).
+  auto library = run_pumped<std::shared_ptr<BackendLibrary>>(
+      "backend", [&] { return BackendLibrary::choose(backends_within(candidates, engines), probe); });
   // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
   if (library && !(*library)->passed_over().empty())
     log_channel("app")->warn("moteurs : refus avant {} :{}", (*library)->path().string(),

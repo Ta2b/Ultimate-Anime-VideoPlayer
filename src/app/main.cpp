@@ -6,7 +6,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_messagebox.h>
-#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -14,7 +14,9 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
+#include <charconv>
 #include <chrono>
+#include <tuple>
 #ifdef _WIN32
 #include <process.h>
 #else
@@ -30,17 +32,22 @@ extern "C" {
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "app/play/auto_bench_run.h"
+#include "app/play/crash_dump.h"
+#include "app/play/data_dirs.h"
 #include "app/play/default_player.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
+#include "app/play/single_instance.h"
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
+#include "core/log_redact.h"
 #include "core/thread_role.h"
 #include "core/update_manifest.h"
 #include "prepare/utf8.h"
@@ -105,6 +112,7 @@ int fail(const ajp::Refusal& refusal) {
 // Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou
 // démarre à sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
+  ajp::close_log();  // execv remplace le processus : la file du journal s'écrit avant
 #ifdef _WIN32
   // _spawnv ne met aucun argument entre guillemets : un chemin à espaces (« C:\Mes vidéos\a.mkv »)
   // arriverait coupé en deux. Chaque argument est cité à la façon de CommandLineToArgvW, et l'exécutable
@@ -225,14 +233,21 @@ int run_bench_command(const std::vector<std::string_view>& args) {
 }
 
 // « ajp calibrate [--display-height=N] [--visible] » : le bench de la page « Résultats du bench », en ligne
-// de commande (essais sur le PC de Tatoub) ; écrit calibration.toml dans les données de l'utilisateur.
+// de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de l'utilisateur.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
   int display_height = 2160;
   bool silent = true;
   for (const std::string_view arg : args) {
     if (arg.starts_with("--display-height=")) {
-      display_height = std::atoi(std::string(arg.substr(17)).c_str());
+      // from_chars et une plage (P2.35) : « abc » ou « 99999 » ne donnent plus 0 ou une hauteur absurde.
+      const std::string_view text = arg.substr(17);
+      const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), display_height);
+      if (error != std::errc{} || end != text.data() + text.size() || display_height < 240 ||
+          display_height > 4320) {
+        std::fputs("ajp calibrate : --display-height=N, N de 240 à 4320\n", stderr);
+        return 2;
+      }
     } else if (arg == "--visible") {
       silent = false;
     } else {
@@ -248,7 +263,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   SDL_free(pref);
   std::error_code error;
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
-                             .video = data / "bench-clip-v3.mkv",
+                             .video = data / "bench-clip-v4.mkv",
                              .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
                              .data = data,
                              .silent = silent,
@@ -269,9 +284,8 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+int run_player(int argc, char** argv) {
   // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
   // partagent 8 files matérielles par défaut : des flux sans lien s'y alignent. 32 en donne une à chacun,
   // sous Linux comme sous Windows (où le CRT de MSVC reporte la variable dans l'environnement du processus,
@@ -315,7 +329,7 @@ int main(int argc, char** argv) {
     return fail(options.error());
   }
   if (options->help) {
-    std::fputs(ajp::app::play::play_usage().c_str(), stdout);
+    std::fputs(ajp::app::play::play_usage(options->debug).c_str(), stdout);
     return 0;
   }
   const auto base = sdl_path(SDL_GetBasePath());
@@ -337,12 +351,24 @@ int main(int argc, char** argv) {
     std::fprintf(stdout, "%s\n", done->c_str());
     return 0;
   }
+  // Un seul lecteur (P2.13) : un double-clic sur une vidéo l'ouvre dans la fenêtre déjà là. Pris avant la
+  // mise à jour, que deux lancements appliquaient ensemble ; rendu avant chaque relance.
+  std::shared_ptr<ajp::app::play::InstanceListener> instance;
+  if (!options->data_dir && !options->bench_out && !data.empty() && ajp::app::play::shares_instance(args)) {
+    std::vector<std::string> files;
+    std::error_code absolute;
+    if (!options->file.empty())
+      files.push_back(ajp::prepare::utf8_path(std::filesystem::absolute(options->file, absolute)));
+    auto claim = ajp::app::play::claim_instance(data, ajp::app::play::instance_key(data), files);
+    if (claim.forwarded) return 0;
+    instance = std::move(claim.listener);
+  }
   // Une mise à jour préparée (mode Automatique) s'applique ici, avant tout, puis le lecteur se relance.
   if (!options->data_dir && !options->bench_out) {
     const ajp::app::play::UpdatePaths update{.data = data, .install = base, .executable = place.executable};
     ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
     const auto saved = ajp::app::play::load_settings(data / "play.toml");
-    if (!state.staged_version.empty() && saved && saved->update_mode == "auto" &&
+    if (!state.staged_version.empty() && saved && saved->update_mode == ajp::app::play::UpdateMode::Auto &&
         ajp::core::compare_versions(state.staged_version, ajp::app::play::installed_version()).value_or(0) >
             0 &&
         ajp::app::play::update_managed_reason(update).empty()) {
@@ -355,6 +381,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "ajp : update.toml : %s\n", kept.error().detail.c_str());
       if (applied) {
         std::fprintf(stderr, "ajp : %s\n", applied->c_str());
+        instance.reset();
         return relaunch(place.executable, argc, argv);
       }
       std::fprintf(stderr, "ajp: update failed: %s\n", applied.error().detail.c_str());
@@ -369,13 +396,17 @@ int main(int argc, char** argv) {
     }
     if (restored) {
       std::fprintf(stderr, "ajp : %s\n", restored->c_str());
+      instance.reset();
       return relaunch(place.executable, argc, argv);
     }
   }
   // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
   // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
-  std::vector<spdlog::sink_ptr> sinks{std::make_shared<spdlog::sinks::stderr_color_sink_mt>()};
+  // Chaque ligne y entre nettoyée (P1.32) : le dossier personnel devient « ~ ».
+  ajp::set_log_home(ajp::prepare::utf8_path(place.home));
+  std::vector<spdlog::sink_ptr> sinks{
+      ajp::redacting_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>())};
   // --data-dir : réglages, profils et journal ailleurs (les essais du benchmark) ; moteurs et modèles
   // restent.
   std::filesystem::path settings_dir = data;
@@ -386,6 +417,8 @@ int main(int argc, char** argv) {
   }
   const std::filesystem::path log_file =
       settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
+  // Sous Windows, un plantage laisse un minidump à côté du journal (P2.2).
+  if (!settings_dir.empty()) ajp::app::play::install_crash_dumps(settings_dir / "crashes");
   if (!log_file.empty()) {
     // Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal,
     // la relance n'efface plus celui qui en garde la trace.
@@ -397,8 +430,13 @@ int main(int argc, char** argv) {
       to += std::format(".{}", i + 1);
       if (std::filesystem::exists(from, kept)) std::filesystem::rename(from, to, kept);
     }
+    // Borné pendant la séance (P2.43) : passé 32 Mo, ajp.log devient ajp.1.log (puis ajp.2.log), une soirée
+    // de lecture ne remplit plus le disque.
+    constexpr std::size_t kLogBytes = std::size_t{32} * 1024 * 1024;
+    constexpr std::size_t kLogParts = 2;
     try {
-      sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file.string(), true));
+      sinks.push_back(ajp::redacting_sink(
+          std::make_shared<spdlog::sinks::rotating_file_sink_mt>(log_file.string(), kLogBytes, kLogParts)));
     } catch (const std::exception&) {
       sinks.resize(1);
     }
@@ -435,12 +473,19 @@ int main(int argc, char** argv) {
   // démarrer.
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
+  // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois.
+  const std::filesystem::path heavy = ajp::app::play::local_data(data);
+  ajp::app::play::move_heavy_data(
+      data, heavy, [](const std::string& line) { ajp::log_channel("app")->info("données : {}", line); });
+  ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), [](const std::string& line) {
+    ajp::log_channel("app")->info("données : {}", line);
+  });
   bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
       .data = data,  // le dossier du lecteur, celui que lit l'application d'une mise à jour plus haut
       .executable = place.executable,
-      .engines = data / "engines",
+      .engines = heavy / "engines",
       .settings = settings_dir,
       .engine_index = base / "engines.lock",
       .models = base / "models",
@@ -477,6 +522,7 @@ int main(int argc, char** argv) {
   std::error_code error;
   std::filesystem::create_directories(paths.engines, error);
   const auto played = ajp::app::play::play(*options, paths);
+  instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();
   if (!options->data_dir && !options->bench_out) {
     // Une sortie sans plantage referme le lancement ; une lecture menée à son terme confirme la version en
@@ -485,8 +531,7 @@ int main(int argc, char** argv) {
     const bool closed = ajp::app::play::close_launch(state);
     const bool confirmed =
         played && ajp::app::play::confirm_version(state, ajp::app::play::installed_version());
-    if (closed || confirmed)
-      static_cast<void>(ajp::app::play::save_update_state(data / "update.toml", state));
+    if (closed || confirmed) std::ignore = ajp::app::play::save_update_state(data / "update.toml", state);
   }
   if (played && engines_updated) return relaunch(place.executable, argc, argv);
   if (played) return 0;
@@ -505,4 +550,15 @@ int main(int argc, char** argv) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
   }
   return 1;
+}
+
+}  // namespace
+
+// Une exception qui sort du lecteur, ou un std::terminate, laisse sa cause dans ajp.log et vide la file
+// asynchrone du journal avant de s'arrêter (P2.1).
+int main(int argc, char** argv) {
+  ajp::install_terminate_flush();
+  const int code = ajp::run_logged([&] { return run_player(argc, argv); });
+  ajp::close_log();
+  return code;
 }

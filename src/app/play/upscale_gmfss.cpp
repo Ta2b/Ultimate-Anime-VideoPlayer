@@ -37,6 +37,7 @@ gpu::Tensor channel_slice(const gpu::Tensor& whole, std::int64_t first, std::int
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   gpu::Backend& backend = *setup_.backend;
   const kernels::RifeGeometry g =

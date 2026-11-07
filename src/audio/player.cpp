@@ -133,6 +133,25 @@ void AudioPlayer::handle(const DeviceReading& reading) {
   pump();
 }
 
+// L'audio pas encore entendu revient en tête et repart sur la sortie par défaut, au même temps média : rien
+// n'est perdu ni sauté. Dit à l'OSD, puisque le son change d'appareil.
+void AudioPlayer::handle(const DeviceRemoved& /*removed*/) {
+  auto back = output_->reopen_default();
+  if (!back) {
+    report(back.error());
+    return;
+  }
+  ready_.insert(ready_.begin(), std::make_move_iterator(back->begin()), std::make_move_iterator(back->end()));
+  aligning_ = master_ != nullptr;
+  regulator_.restart();
+  last_follow_us_.reset();
+  restart_pll();
+  if (!paused_) output_->resume();
+  log_->warn("sortie audio retirée : le son passe sur la sortie par défaut du système");
+  report(Refusal{RefusalCode::AudioDeviceUnavailable, "sortie audio retirée, son sur la sortie par défaut"});
+  pump();
+}
+
 void AudioPlayer::handle(const SyncTo& sync) {
   master_ = sync.master;
   regulator_.reset();

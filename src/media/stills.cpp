@@ -176,8 +176,10 @@ std::expected<Still, Refusal> still_from_frame(const DecodedFrame& frame, const 
     return crop_still(reduce_still(*full, spec.reduce), spec);
   }
   if (is_hdr(frame.color))
-    return refuse(RefusalCode::FormatUnsupported,
-                  "vidéo HDR (ou à large gamut) : la préparation se fait sur une vidéo SDR");
+    return std::unexpected(
+        Refusal{.code = RefusalCode::FormatUnsupported,
+                .detail = "vidéo HDR (ou à large gamut) : la préparation se fait sur une vidéo SDR",
+                .key = std::string(kHdrSourceKey)});
   const std::optional<Layout> layout = layout_of(frame.format);
   if (!layout)
     return refuse(RefusalCode::FormatUnsupported, "format de pixel de la vidéo non pris pour la préparation");
@@ -285,8 +287,10 @@ std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem:
     }
   if (video == nullptr) return refuse(RefusalCode::TrackUnavailable, "aucune piste vidéo dans ce fichier");
   if (const auto color = track_color(*video); color && is_hdr(*color))
-    return refuse(RefusalCode::FormatUnsupported,
-                  "vidéo HDR : la préparation du mode Performance se fait sur une vidéo SDR");
+    return std::unexpected(
+        Refusal{.code = RefusalCode::FormatUnsupported,
+                .detail = "vidéo HDR : la préparation du mode Performance se fait sur une vidéo SDR",
+                .key = std::string(kHdrSourceKey)});
   const std::int64_t duration = demuxer->duration_us() > 0 ? demuxer->duration_us() : video->duration_us;
   if (duration <= 0) return refuse(RefusalCode::SeekFailed, "durée de la vidéo inconnue");
   const std::array<int, 1> keep{video->index};
@@ -326,7 +330,7 @@ std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem:
     if (!frame) continue;
     auto still = still_from_frame(*frame, spec);
     if (!still) {
-      hdr_seen = hdr_seen || still.error().detail.starts_with("vidéo HDR");
+      hdr_seen = hdr_seen || still.error().key == kHdrSourceKey;
       last_refusal = std::move(still.error());
       if (hdr_seen) break;  // une image HDR dit tout de la vidéo
       continue;

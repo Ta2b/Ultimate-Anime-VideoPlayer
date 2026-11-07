@@ -17,7 +17,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-// EDID du QD-OLED 4K de Tatoub (MSI MAG 272U E16, CND 0x8CD7) : bloc de base, CTA-861 (HDR
+// EDID du QD-OLED 4K de référence (MSI MAG 272U E16, CND 0x8CD7) : bloc de base, CTA-861 (HDR
 // statique : PQ, contenu max 1037 nits, moyenne 265, noir code 2), DisplayID 1.x (minutages
 // seulement, pas de bloc 0x21).
 constexpr std::array<std::uint8_t, 384> kQdOledEdid{
@@ -66,7 +66,7 @@ std::vector<std::uint8_t> oled_edid() {
 
 }  // namespace
 
-TEST_CASE("EDID du QD-OLED de Tatoub : modèle connu, OLED", "[app][display]") {
+TEST_CASE("EDID du QD-OLED de référence : modèle connu, OLED", "[app][display]") {
   ajp::app::play::FrenchUi french;
   const DisplayFacts d = parse_edid(kQdOledEdid);
   CHECK(d.vrr_min_hz == 100);  // descripteur 0xFD : 100 à 165 Hz

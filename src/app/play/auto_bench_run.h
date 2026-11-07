@@ -25,6 +25,9 @@ inline constexpr int kBenchSeconds = 10;  // durée d'un essai (docs/ux-parametr
 // La séquence du benchmark est en 1080p : l'exploration ne monte pas la hauteur de travail au-dessus.
 inline constexpr int kExplorationSourceHeight = 1080;
 
+// La clé du refus de play_variant quand l'essai a dépassé son délai (une construction de moteur, souvent).
+inline constexpr std::string_view kTrialTimedOutKey = "bench.timed-out";
+
 struct BenchPlan {
   std::filesystem::path executable;  // ajp lui-même
   std::filesystem::path video;       // la courte séquence jouée à chaque niveau

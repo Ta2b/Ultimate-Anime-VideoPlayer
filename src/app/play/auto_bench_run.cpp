@@ -6,6 +6,7 @@
 #include <fstream>
 #include <system_error>
 
+#include "app/play/bench_events.h"
 #include "app/play/engine_switch.h"
 #include "app/play/i18n.h"
 #include "app/play/visible_error.h"
@@ -37,11 +38,6 @@ struct Trial {
   std::chrono::milliseconds elapsed{};
   std::string why;  // une phrase pour l'utilisateur quand il n'y a pas de lecture
 };
-
-bool mentions_build(std::string_view line) {
-  const std::string text = lowered(line);
-  return text.contains("construction") || text.contains("construit") || text.contains("engine built");
-}
 
 // Les options de fenêtre d'un essai : silencieux, rendu hors écran à la taille de l'écran de l'utilisateur
 // (--hidden : aucune fenêtre ne se montre, placebo_offscreen.cpp) ; sinon en plein écran.
@@ -101,6 +97,7 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
                                 std::format("--data-dir={}", prepare::utf8_path(data_dir)),
                                 std::format("--bench-out={}", prepare::utf8_path(out_file))};
   window_args(plan, args);
+  args.emplace_back("--debug");  // les variantes comparées sont souvent des options d'essai (P2.35)
   args.insert(args.end(), variant.args.begin(), variant.args.end());
   return args;
 }
@@ -150,16 +147,21 @@ Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Va
                             .timeout = limit};
   const auto log = log_channel("app");
   ChildTail tail;
+  std::string refused;  // le refus que l'enfant a dit (bench_events.h), préféré à ses dernières lignes
   const auto exit = prepare::run_process(
       spec,
       [&](std::string_view line) {
         tail.add(line);
         log->info("essai : {}", line);
-        if (plan.shown != nullptr && mentions_build(line))
+        const auto event = parse_bench_event(line);
+        if (!event) return;
+        if (event->event == "refusal") refused = event->detail.empty() ? event->code : event->detail;
+        if (event->event == "build" && plan.shown != nullptr)
           plan.shown->set_note(
               i18n::tr("Building a compute engine: first time only, probably several minutes on a laptop."));
       },
       stop);
+  const std::string problem = refused.empty() ? tail.problem() : refused;
   if (!exit) {
     log_channel("app")->warn("essai {} : {} {}", what, name(exit.error().code), exit.error().detail);
     trial.why = i18n::tr_format("Test {} could not start: {}", what, visible_error(exit.error()));
@@ -169,14 +171,14 @@ Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Va
       trial.cancelled = true;
     } else if (exit->kind != prepare::ExitKind::Exited || exit->code != 0) {
       trial.timed_out = exit->kind == prepare::ExitKind::TimedOut;
-      trial.why = explain_trial(what, *exit, tail.problem(), limit);
+      trial.why = explain_trial(what, *exit, problem, limit);
       // Le code de sortie et les dernières lignes de l'enfant : de quoi conclure sans refaire l'essai.
       log->warn("essai {} : {} ; dernières lignes de l'enfant :\n{}", what, prepare::describe(*exit),
                 tail.text());
     } else if (auto read = load_reading(out)) {
       trial.reading = std::move(*read);
     } else {
-      trial.why = explain_no_reading(what, tail.problem());
+      trial.why = explain_no_reading(what, problem);
       log->warn("essai {} : {} ; dernières lignes de l'enfant :\n{}", what, read.error().detail, tail.text());
     }
   }
@@ -211,10 +213,14 @@ std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const V
   Trial trial = play_one(plan, std::nullopt, &variant, index, stop, allowance,
                          i18n::tr_format("of the \"{}\" variant", variant.name));
   if (trial.cancelled) return refuse(RefusalCode::Cancelled, i18n::tr("evaluation cancelled"));
-  if (!trial.reading)
-    return refuse(
+  if (!trial.reading) {
+    Refusal refusal{
         RefusalCode::DecodeFailed,
-        trial.why.empty() ? i18n::tr_format("the \"{}\" variant produced nothing", variant.name) : trial.why);
+        trial.why.empty() ? i18n::tr_format("the \"{}\" variant produced nothing", variant.name) : trial.why};
+    if (trial.timed_out)
+      refusal.key = std::string(kTrialTimedOutKey);  // une construction trop longue (P3.12)
+    return std::unexpected(std::move(refusal));
+  }
   return std::move(*trial.reading);
 }
 
@@ -270,6 +276,7 @@ std::string format_compare_report(const CompareOutcome& outcome) {
   return out;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std::stop_token& stop,
                                                const std::function<void(const std::string&)>& progress) {
   const auto say = [&](BenchStep step, const std::string& what, float within, const std::string& note = {}) {
@@ -383,7 +390,7 @@ std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
   // (media/bench_clip.h).
   BenchPlan own = plan;
   if (own.video.empty()) {
-    own.video = data_dir / "bench-clip-v3.mkv";
+    own.video = data_dir / "bench-clip-v4.mkv";
     std::error_code error;
     if (!std::filesystem::is_regular_file(own.video, error)) {
       if (plan.shown != nullptr)

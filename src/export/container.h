@@ -29,4 +29,14 @@ bool carries_attachments(Container container);      // les polices jointes : MKV
 // pour cet arrondi, la microseconde de l'encodeur.
 int video_timescale(int fps_num, int fps_den);
 
+// Les pistes copiées telles que la lecture les a laissées (P3.90) : la piste son et la piste de sous-titres
+// choisies deviennent celles par défaut, le délai audio décale les paquets son.
+struct CopyChoice {
+  int audio = -1;              // flux de la source ; -1 : les drapeaux de la source
+  int subtitle = -1;           // idem
+  bool subtitles_off = false;  // sous-titres coupés : aucune piste par défaut
+  std::int64_t audio_delay_us = 0;
+  friend bool operator==(const CopyChoice&, const CopyChoice&) = default;
+};
+
 }  // namespace ajp::exporter

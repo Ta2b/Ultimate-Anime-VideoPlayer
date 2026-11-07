@@ -39,6 +39,18 @@ struct StepChapter {
   int direction = 1;
 };
 struct CycleSubtitles {};
+// Un fichier glissé sur la fenêtre (P3.85) : une vidéo (video_extensions(), la seule table des extensions),
+// des sous-titres (.ass, .ssa, .srt) ou autre chose.
+enum class DropKind : std::uint8_t { Video, Subtitles, Other };
+struct Dropped {
+  std::filesystem::path path;
+  DropKind kind = DropKind::Other;
+};
+// Décalage des sous-titres (P3.72) : « z » −100 ms, « x » +100 ms, comme mpv ; du son avec audio (P3.79).
+struct SubtitleDelayStep {
+  int delta_ms = 0;
+  bool audio = false;
+};
 struct ToggleSettings {};
 // Épisode suivant (+1) ou précédent (−1) du dossier (episodes.h) : « n » et Maj + « n ».
 struct StepEpisode {
@@ -72,9 +84,13 @@ using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
 struct StartExport {
   ExportJob job;
 };
+// « Refaire le banc » pendant la lecture (P3.12) : la lecture se ferme et libère la mémoire vidéo, la
+// calibration mesure, puis la lecture reprend avec la chaîne trouvée.
+struct StartCalibration {};
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
-                           SelectSubtitles, CycleAudio, CycleSubtitles, StepChapter, StepEpisode, SkipCredits,
-                           ToggleSettings, ApplySettings, UseEngine, OpenEngineScreen, StartExport, PlayFile>;
+                           SelectSubtitles, CycleAudio, CycleSubtitles, SubtitleDelayStep, StepChapter,
+                           StepEpisode, SkipCredits, ToggleSettings, ApplySettings, UseEngine,
+                           OpenEngineScreen, StartExport, PlayFile, StartCalibration>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -95,6 +96,9 @@ struct Player {
   // La pré-analyse des plans (chain_shots.h) : celle du lecteur, qui survit aux réouvertures de la chaîne
   // et aux vidéos suivantes.
   ShotWork* shots = nullptr;
+  // P3.30 : les réouvertures pour une source qui change de taille, de cette vidéo seulement (survivent aux
+  // réouvertures de sa chaîne, pas à la vidéo suivante).
+  std::deque<std::int64_t> resizes;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.
@@ -107,6 +111,10 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label);
 // Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
 // l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont
 // posées, gpu/lanes.h) ; le backend revient ensuite sur Upscale.
+// P3.10 : la clé du refus d'une construction annulée par « Annuler et regarder » : la vidéo se rouvre sans
+// agrandissement ni interpolation.
+inline constexpr std::string_view kWatchNowKey = "engine.watch-now";
+
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane);

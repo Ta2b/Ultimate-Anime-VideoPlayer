@@ -1,0 +1,9 @@
+version = "0.5.0"
+channel = "stable"
+date = "2026-10-30"
+expires = "2027-02-27"
+notes_url = "https://github.com/Ta2b/ajp-releases/releases/tag/v0.5.0"
+[linux-x64]
+url = "https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0/ajp-linux-x64.tar.gz"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+size = 123456

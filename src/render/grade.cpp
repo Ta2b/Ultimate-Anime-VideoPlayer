@@ -2,10 +2,15 @@
 
 #include <algorithm>
 #include <array>
+#include <condition_variable>
 #include <format>
+#include <memory>
+#include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -36,6 +41,7 @@ constexpr std::array kGradeParams = {
     ParamBinding{"chroma", &GradeParams::chroma},
     ParamBinding{"pivot", &GradeParams::pivot},
     ParamBinding{"fs_apl", &GradeParams::fs_apl},
+    ParamBinding{"fs_series", &GradeParams::fs_series},
     ParamBinding{"an_lift", &GradeParams::an_lift},
     ParamBinding{"an_punch", &GradeParams::an_punch},
     ParamBinding{"an_chroma", &GradeParams::an_chroma},
@@ -225,7 +231,7 @@ struct Grade::Impl {
   pl_gpu gpu = nullptr;
   // Les LUT du look (copies : celles de set_looks ne vivent que le temps de l'appel), et l'intensité de
   // chacune pour laquelle la pile a été composée en une LUT (composed) ; rien de composé : jamais.
-  std::array<std::optional<CubeLut>, kLookSlots> sources;
+  std::array<std::shared_ptr<const CubeLut>, kLookSlots> sources;
   std::optional<std::array<double, kLookSlots>> composed_for;
   bool composed = false;  // la texture du look est la pile composée (sinon une identité)
   CubeLut stack;          // la pile composée lue par le hook quand composed
@@ -233,6 +239,27 @@ struct Grade::Impl {
   // La pile composée pour les intensités de `wanted`, refaite si elles changent ; le hook du look est
   // alors reconstruit, et ses paramètres sont à réécrire.
   void compose(const GradeParams& wanted);
+  void write_params();
+
+  // P4.9 : la composition en tâche de fond (set_background). Le thread ne garde que la dernière demande.
+  struct Job {
+    std::array<double, kLookSlots> mixes{};
+    std::array<std::shared_ptr<const CubeLut>, kLookSlots> luts;
+  };
+  struct Composed {
+    std::array<double, kLookSlots> mixes{};
+    bool active = false;
+    CubeLut stack;
+    std::expected<ParsedHook, Refusal> hook;
+  };
+  bool background = false;
+  std::optional<std::array<double, kLookSlots>> requested_for;
+  std::mutex job_mutex;
+  std::condition_variable_any job_ready;
+  std::optional<Job> job;
+  std::optional<Composed> done;
+  std::jthread worker;  // arrêté avant la destruction des hooks (~Impl)
+  void run(const std::stop_token& stop);
 
   Impl() = default;
   Impl(const Impl&) = delete;
@@ -240,6 +267,8 @@ struct Grade::Impl {
   Impl(Impl&&) = delete;
   Impl& operator=(Impl&&) = delete;
   ~Impl() {
+    worker = {};  // demande l'arrêt et attend le thread
+    if (done && done->hook) pl_mpv_user_shader_destroy(&done->hook->hook);
     pl_mpv_user_shader_destroy(&grade.hook);
     pl_mpv_user_shader_destroy(&look.hook);
     pl_mpv_user_shader_destroy(&black.hook);
@@ -253,14 +282,50 @@ constexpr std::array<double GradeParams::*, kLookSlots> kLookMixes{
     &GradeParams::look_mix9,  &GradeParams::look_mix10, &GradeParams::look_mix11, &GradeParams::look_mix12,
     &GradeParams::look_mix13, &GradeParams::look_mix14, &GradeParams::look_mix15};
 
+void Grade::Impl::run(const std::stop_token& stop) {
+  while (true) {
+    Job next;
+    {
+      std::unique_lock lock(job_mutex);
+      if (!job_ready.wait(lock, stop, [this] { return job.has_value(); }) || !job) return;
+      next = std::move(*job);
+      job.reset();
+    }
+    Composed out{.mixes = next.mixes};
+    std::array<const CubeLut*, kLookSlots> luts{};
+    for (std::size_t i = 0; i < kLookSlots; ++i) {
+      luts[i] = next.luts[i].get();
+      out.active = out.active || (luts[i] != nullptr && next.mixes[i] > 0.0);
+    }
+    if (out.active) out.stack = compose_luts(luts, next.mixes);
+    std::array<const CubeLut*, kLookSlots> slots{};
+    if (out.active) slots[0] = &out.stack;
+    out.hook = parse_look(gpu, slots);
+    const std::scoped_lock lock(job_mutex);
+    if (done && done->hook) pl_mpv_user_shader_destroy(&done->hook->hook);  // jamais adopté, dépassé
+    done = std::move(out);
+  }
+}
+
 void Grade::Impl::compose(const GradeParams& wanted) {
   std::array<double, kLookSlots> mixes{};
   std::array<const CubeLut*, kLookSlots> luts{};
   bool active = false;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
-    luts[i] = sources[i].has_value() ? &sources[i].value() : nullptr;
+    luts[i] = sources[i].get();
     mixes[i] = luts[i] != nullptr ? wanted.*kLookMixes[i] : 0.0;
     active = active || mixes[i] > 0.0;
+  }
+  if (background) {
+    if (requested_for ? *requested_for == mixes : composed_for == mixes) return;
+    requested_for = mixes;
+    {
+      const std::scoped_lock lock(job_mutex);
+      job = Job{.mixes = mixes, .luts = sources};
+    }
+    if (!worker.joinable()) worker = std::jthread([this](const std::stop_token& stop) { run(stop); });
+    job_ready.notify_one();
+    return;
   }
   if (composed_for == mixes) return;
   composed_for = mixes;
@@ -310,11 +375,12 @@ std::expected<void, Refusal> Grade::set_looks(const std::array<const CubeLut*, k
   pl_mpv_user_shader_destroy(&look->hook);  // la lecture seule importe : le hook posé lit la pile composée
   for (std::size_t i = 0; i < kLookSlots; ++i) {
     if (luts[i] != nullptr)
-      impl_->sources[i] = *luts[i];
+      impl_->sources[i] = std::make_shared<const CubeLut>(*luts[i]);
     else
       impl_->sources[i].reset();
   }
   impl_->composed_for.reset();
+  impl_->requested_for.reset();
   set_params(impl_->params);
   return {};
 }
@@ -327,18 +393,49 @@ Grade::~Grade() = default;
 void Grade::set_params(const GradeParams& params) {
   impl_->params = params;
   impl_->compose(params);
-  for (const ParsedHook* hook : {&impl_->grade, &impl_->look, &impl_->black}) {
+  impl_->write_params();
+}
+
+void Grade::Impl::write_params() {
+  for (const ParsedHook* hook : {&grade, &look, &black}) {
     for (const auto& [data, field] : hook->params) data->f = static_cast<float>(params.*field);
   }
   // Le hook ne lit que la pile composée, en premier emplacement, à pleine intensité (les intensités y sont
   // déjà) ; les autres emplacements restent à 0, sautés.
-  const pl_hook& look_hook = *impl_->look.hook;
+  const pl_hook& look_hook = *look.hook;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
-    const bool stack = i == 0 && impl_->composed;
+    const bool is_stack = i == 0 && composed;
     if (pl_var_data* size = find_param(look_hook, slot_name("look_size", i)))
-      size->f = static_cast<float>(stack ? kLutMaxSize : 2);
-    if (pl_var_data* mix = find_param(look_hook, slot_name("look_mix", i))) mix->f = stack ? 1.0F : 0.0F;
+      size->f = static_cast<float>(is_stack ? kLutMaxSize : 2);
+    if (pl_var_data* mix = find_param(look_hook, slot_name("look_mix", i))) mix->f = is_stack ? 1.0F : 0.0F;
   }
+}
+
+void Grade::set_background(bool on) {
+  impl_->background = on;
+}
+
+bool Grade::adopt() {
+  std::optional<Impl::Composed> ready;
+  {
+    const std::scoped_lock lock(impl_->job_mutex);
+    ready = std::exchange(impl_->done, std::nullopt);
+  }
+  if (!ready) return false;
+  Impl& s = *impl_;
+  if (s.requested_for == ready->mixes) s.requested_for.reset();
+  s.composed_for = ready->mixes;
+  if (!ready->hook) {  // la même texture se lisait déjà à set_looks : improbable ; l'image passe sans look
+    s.composed = false;
+  } else {
+    pl_mpv_user_shader_destroy(&s.look.hook);
+    s.look = std::move(*ready->hook);
+    s.hooks[1] = s.look.hook;
+    s.stack = std::move(ready->stack);
+    s.composed = ready->active;
+  }
+  s.write_params();
+  return true;
 }
 
 void Grade::set_video_fps(double fps) {

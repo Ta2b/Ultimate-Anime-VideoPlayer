@@ -60,6 +60,10 @@ class AudioOutput {
   // Vide la file et rend l'audio qu'elle n'avait pas encore consommé, à repousser.
   std::vector<PcmBlock> take_back();
   void on_demand(std::function<void(const DeviceReading&)> callback);
+  void on_removed(std::function<void()> callback) { sink_->on_removed(std::move(callback)); }
+  // Périphérique retiré (P2.7) : la file vidée rend ce qui n'était pas encore entendu, puis se rouvre sur la
+  // sortie par défaut du système, en pause.
+  std::expected<std::vector<PcmBlock>, Refusal> reopen_default();
 
  private:
   // Copie d'un bloc poussé, de l'indice start de la file.

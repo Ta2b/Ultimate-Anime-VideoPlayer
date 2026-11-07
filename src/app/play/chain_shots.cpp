@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <expected>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -50,7 +51,7 @@ void keep_if_done(const ShotWork& work, ShotJob& job) {
   if (work.writer != nullptr) {
     work.writer->post("shots:" + job.key, save);
   } else {
-    static_cast<void>(save());
+    std::ignore = save();
   }
 }
 
@@ -156,13 +157,19 @@ std::optional<ShotScene> next_live(Chain& to) {
   return pts ? live_scene(to, *pts) : std::nullopt;
 }
 
+bool next_flashing(Chain& to) {
+  const auto pts = next_pts(to);
+  const auto live = pts ? to.live.scenes().at(*pts) : std::nullopt;
+  return live && live->flashing;
+}
+
 void feed_plan_shots(Chain& to) {
   if (to.shots == nullptr || !to.shots->current.timeline || to.shots->current.file != to.file) return;
   const media::ShotTimeline& timeline = *to.shots->current.timeline;
   if (timeline.size() == to.plan_shots_seen) return;
   to.plan_shots_seen = timeline.size();
   std::vector<media::Shot> shots = timeline.shots();
-  if (to.anime_shots) to.anime_series_apl = series_apl_of(shots);
+  to.anime_series_apl = series_apl_of(shots);  // aussi pour les noirs profonds (P3.52)
   if (to.shot_cuts) to.live.cuts().set_shots(shots);
 }
 

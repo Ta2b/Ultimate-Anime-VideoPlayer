@@ -9,6 +9,8 @@
 // Tests : tests/unit/kernels/warp_test.cpp.
 #pragma once
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 // Rectangle de l'image dans un plan plus grand (la fenêtre des tenseurs remplis de RIFE).
@@ -83,3 +85,5 @@ constexpr float single_run_motion(int rife_height) {
 }
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

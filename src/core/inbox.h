@@ -31,15 +31,16 @@ class Inbox {
   Inbox(const Inbox&) = delete;
   Inbox& operator=(const Inbox&) = delete;
 
-  // false si la borne de M est atteinte ; le message n'est alors pas pris.
+  // false si la borne de M est atteinte ; le message n'est alors pas pris. reserved : un emplacement de plus
+  // que la borne, gardé au message qui ne doit pas se perdre (un refus fatal derrière 64 refus, P2.25).
   template <class M>
-  bool try_push(M&& message) {
+  [[nodiscard]] bool try_push(M&& message, bool reserved = false) {
     constexpr std::size_t kind = index_of<std::remove_cvref_t<M>>();
     Waker waker = nullptr;
     void* context = nullptr;
     {
       std::scoped_lock lock(mutex_);
-      if (counts_[kind] >= bounds_[kind]) return false;
+      if (counts_[kind] >= bounds_[kind] + (reserved ? 1U : 0U)) return false;
       ++counts_[kind];
       queue_.emplace_back(std::in_place_index<kind>, std::forward<M>(message));
       waker = waker_;

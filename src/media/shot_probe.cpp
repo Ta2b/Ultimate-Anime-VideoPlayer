@@ -89,11 +89,11 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
 }
 
 ShotProbe::ShotProbe(std::filesystem::path file, ShotTimeline& timeline, ShotProbeOptions options)
-    : file_(std::move(file)), timeline_(timeline), options_(options) {}
+    : file_(std::move(file)), timeline_(timeline), options_(std::move(options)) {}
 
 std::unique_ptr<ShotProbe> ShotProbe::start(std::filesystem::path file, ShotTimeline& timeline,
                                             std::int64_t start_us, ShotProbeOptions options) {
-  std::unique_ptr<ShotProbe> probe(new ShotProbe(std::move(file), timeline, options));
+  std::unique_ptr<ShotProbe> probe(new ShotProbe(std::move(file), timeline, std::move(options)));
   probe->playhead_ = start_us;
   probe->frontier_ = start_us;
   ShotProbe* self = probe.get();
@@ -119,11 +119,16 @@ ShotProbe::~ShotProbe() {
 
 void ShotProbe::set_playhead(std::int64_t us) {
   playhead_.store(us, std::memory_order_relaxed);
+  wake_.notify_one();  // sans verrou : un réveil manqué attend au plus le délai de l'attente
 }
 
 void ShotProbe::seek(std::int64_t at_us) {
-  playhead_.store(at_us, std::memory_order_relaxed);
-  seek_to_.store(at_us, std::memory_order_relaxed);
+  {
+    const std::scoped_lock lock(wake_mutex_);
+    playhead_.store(at_us, std::memory_order_relaxed);
+    seek_to_.store(at_us, std::memory_order_relaxed);
+  }
+  wake_.notify_one();
 }
 
 bool ShotProbe::finished() const {
@@ -148,6 +153,7 @@ void ShotProbe::fail(Refusal refusal) {
   finished_.store(true, std::memory_order_release);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   auto log = make_logger();
   auto demuxer = Demuxer::open(file_);
@@ -214,13 +220,14 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
         ended = false;
       }
     }
-    if (ended) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      continue;
-    }
-    // Assez d'avance : attendre que la lecture approche.
-    if (frontier_us() - playhead_.load(std::memory_order_relaxed) > options_.lead_us) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Fin atteinte, ou assez d'avance : attendre un saut, ou que la lecture approche.
+    const auto ahead = [this] {
+      return frontier_us() - playhead_.load(std::memory_order_relaxed) > options_.lead_us;
+    };
+    if (ended || ahead()) {
+      std::unique_lock lock(wake_mutex_);
+      wake_.wait_for(lock, stop, std::chrono::milliseconds(500),
+                     [&] { return seek_to_.load(std::memory_order_relaxed) >= 0 || (!ended && !ahead()); });
       continue;
     }
     // Une zone déjà analysée devant (après un retour en arrière) : sautée.

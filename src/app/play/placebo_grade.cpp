@@ -173,6 +173,7 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
+  if (grade && grade->adopt()) ++grade_serial;  // une pile composée en tâche de fond (P4.9)
   if (grade && params) {
     if (*params != grade->params()) {
       grade->set_params(*params);
@@ -227,17 +228,25 @@ void PlaceboScreen::Impl::match_kwin() {
   kwin_applied = match;
   grade->set_kwin_match(match);
   const double max_nits = on ? hint.max_content_nits : 0.0;
-  if (max_nits == hinted_max_nits) return;
+  // MaxFALL (P3.59) : celui du contrat d'écran quand il le connaît (le plein écran du limiteur), sinon le
+  // niveau des surfaces blanches du grade (blanc × relèvement fixe, pas celui du plan : l'annonce ne bouge
+  // pas à chaque coupe), la moyenne d'une image toute blanche.
+  const double contract_fall = contract ? render::contract_metadata(*contract).max_fall : 0.0;
+  const double surfaces = grade->params().sdr_white * render::kAnimeLift;
+  const double max_fall = on ? std::min(max_nits, contract_fall > 0.0 ? contract_fall : surfaces) : 0.0;
+  if (max_nits == hinted_max_nits && max_fall == hinted_max_fall) return;
   hinted_max_nits = max_nits;
+  hinted_max_fall = max_fall;
   pl_color_space space = pl_color_space_hdr10;
   if (on) {
     space.hdr.max_luma = static_cast<float>(max_nits);
     space.hdr.min_luma = 0.0001F;
     space.hdr.max_cll = static_cast<float>(max_nits);
+    space.hdr.max_fall = static_cast<float>(max_fall);
   }
   pl_swapchain_colorspace_hint(swapchain, &space);
-  channel->info("--hdr-metadata : maximum annoncé {:.0f} nits (pic {:.0f}, blanc SDR de référence {:.0f})",
-                max_nits, peak, reference);
+  channel->info("--hdr-metadata : maximum annoncé {:.0f} nits, MaxFALL {:.0f} (pic {:.0f}, blanc SDR {:.0f})",
+                max_nits, max_fall, peak, reference);
 }
 
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
@@ -259,9 +268,27 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   render::GradeParams params = s.grade->params();
   params.black_lo = 0.0;  // le vrai noir se cale sur ce qui sort sans lui
   params.black_hi = 0.0;
+  // P3.61 : la rampe passe aussi par la pile de LUT, que le vrai noir suit à l'écran ; mesurée sans elle, ses
+  // seuils écrasaient une seconde fois les huit premières marches. La pile composée, à pleine intensité.
+  const render::CubeLut* stack = s.grade->look_stack();
+  std::optional<render::CubeLut> looks = stack != nullptr ? std::optional(*stack) : std::nullopt;
+  for (double render::GradeParams::* mix :
+       {&render::GradeParams::look_mix2, &render::GradeParams::look_mix3, &render::GradeParams::look_mix4,
+        &render::GradeParams::look_mix5, &render::GradeParams::look_mix6, &render::GradeParams::look_mix7,
+        &render::GradeParams::look_mix8, &render::GradeParams::look_mix9, &render::GradeParams::look_mix10,
+        &render::GradeParams::look_mix11, &render::GradeParams::look_mix12, &render::GradeParams::look_mix13,
+        &render::GradeParams::look_mix14, &render::GradeParams::look_mix15})
+    params.*mix = 0.0;
+  params.look_mix = looks ? 1.0 : 0.0;
   if (s.last_ramp && s.last_ramp->params == params && s.last_ramp->hdr == s.hdr_output &&
-      std::ranges::equal(s.last_ramp->levels, levels))
+      std::ranges::equal(s.last_ramp->levels, levels) && s.last_ramp->looks == looks)
     return s.last_ramp->nits;
+  if (s.ramp_looks != looks) {
+    std::array<const render::CubeLut*, render::kLookSlots> slots{};
+    slots[0] = looks ? &*looks : nullptr;
+    if (auto set = s.ramp_grade->set_looks(slots); !set) return std::unexpected(std::move(set.error()));
+    s.ramp_looks = looks;
+  }
   s.ramp_grade->set_params(params);
   // Une bande de 16 px par marche, 128 lignes : assez pour les cartes 1/8 et 1/32 du grade.
   constexpr int kBand = 16;
@@ -330,8 +357,11 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
     const double code = peak / 65535.0;
     nits.push_back(s.hdr_output ? pq_nits(code) : std::pow(code, params.sdr_gamma) * params.peak);
   }
-  s.last_ramp = Impl::RampMeasure{
-      .params = params, .levels = {levels.begin(), levels.end()}, .hdr = s.hdr_output, .nits = nits};
+  s.last_ramp = Impl::RampMeasure{.params = params,
+                                  .levels = {levels.begin(), levels.end()},
+                                  .hdr = s.hdr_output,
+                                  .nits = nits,
+                                  .looks = std::move(looks)};
   return nits;
 }
 

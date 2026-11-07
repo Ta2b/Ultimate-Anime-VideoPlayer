@@ -20,6 +20,7 @@
 
 #include "app/play/auto_bench.h"
 #include "app/play/backend_library.h"
+#include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_setup.h"
@@ -79,11 +80,12 @@ namespace {
 
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
 constexpr std::int64_t kBlackRefreshUs = 200'000;
-// En pause, l'attente d'un événement SDL au plus : le seuil de réactivité aux messages des threads.
-constexpr std::int32_t kPausedWaitMs = 10;
+// En pause, l'attente d'un événement SDL au plus (P4.7 : 33 ms, l'interface à 30 i/s ; une image réveille).
+constexpr std::int32_t kPausedWaitMs = 33;
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
@@ -137,7 +139,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::string label_text = std::format("{}{}{}", c.motion_label(settings),
                                              // Le HDR, s'il tourne vraiment sur une sortie HDR10.
                                              settings.hdr_native ? "HDR · " : "", c.span_label());
-  log->info("{} : {}", options.file.string(), label_text);
+  log->info("{} : {}", prepare::utf8_path(options.file.filename()), label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
@@ -177,8 +179,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
   const std::uint64_t energy_start_mj =
       telemetry ? telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj : 0;
-  const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
-                               fps_of(video.frame_rate), telemetry.get());
+  ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
+                         fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   p.screen.set_sample_aspect(session_config.video_sar);
@@ -205,6 +207,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   session_config.video_latency_us = std::int64_t{settings.video_latency_ms} * 1000;
   session_config.stats = settings.stats;
   session_config.subtitle_scale = settings.subtitle_scale;
+  session_config.subtitle_delay_us = std::int64_t{settings.subtitle_delay_ms} * 1000;
   session_config.extra = &chain_stats;
   session_config.latency = &live->latency();
   session_config.on_written = [live](const RingFrame& frame, std::int64_t done_us) {
@@ -304,6 +307,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               calibrated_chain(p.settings_path.parent_path(), machine.name, display_height(out.window()))
                   .has_value(),
           .gpu_name = gpu_facts(p.screen).name,
+          .gpus = p.screen.device_names(),
           .audio_outputs = audio_outputs,
           .engines_dir_default = prepare::utf8_path(p.paths.engines.parent_path() / "backends"),
           .engines_dir_free = format_size(free_bytes(p.catalog.layout.engines)),
@@ -314,7 +318,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           .fp8_reason = fp8_reason,
           .span_job = p.span_job.note,
           .settings_dir = p.settings_path.parent_path()});
-  const std::filesystem::path settings_dir = p.settings_path.parent_path();  // isolé par --data-dir
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
@@ -381,9 +384,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const ControlsView view = session.view();
     if (view.position_us == kNoPts || view.position_us == kept_us) return;
     kept_us = view.position_us;
-    writer.post("resume",
-                [store = p.resume_path, file = p.options.file, at = view.position_us,
-                 duration = view.duration_us] { return remember_position(store, file, at, duration); });
+    writer.post("resume", [store = p.resume_path, file = p.options.file, at = view.position_us,
+                           duration = view.duration_us > 0 || !session.finished() ? view.duration_us
+                                                                                  : view.position_us] {
+      return remember_position(store, file, at, duration);  // P3.83 : sans durée, la fin vue oublie
+    });
   };
   std::int64_t remembered_at = host_now_us();
   // Son : le volume de la barre et le délai des réglages valent dès la première image.
@@ -399,12 +404,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                    p.display->vrr_armed.value_or(false);
   std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
-  // La fréquence de l'écran telle que SDL la donne, gardée quand SDL ne la donne plus : un écran éteint puis
-  // rallumé passe un moment sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la
-  // source.
+  // La fréquence de l'écran selon SDL, gardée quand SDL ne la donne plus : un écran rallumé passe un moment
+  // sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la source.
   double known_hz = display_refresh_hz(out.window());
   std::int64_t known_period_us = display_period_us(out.window());
   SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
+  const int opened_height = display_height(out.window());
+  const GrowingFile opened_file =
+      GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
   double session_hz_seen = known_hz;
   ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
   const auto read_display_facts = [&] {
@@ -423,10 +430,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     const bool free_wanted = free_requested(chain.running, free_fallback.active(host_now_us()));
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
-    // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
-    // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
-    const int granularity = vrr_armed ? core::kFineGranularity : 1;
-    const double limit_hz = core::auto_limit_hz(known_hz, chain.running.auto_cap);
+    const double limit_hz =
+        core::auto_limit_hz(known_hz, power_auto_cap(chain.running.auto_cap, on_battery()));
     // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
     std::string why;
     if (on && free_wanted) {
@@ -441,8 +446,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
       if (!why.empty()) log->info("Mode Rapide indisponible ({}) : mode Stable", why);
     }
-    chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
-                        granularity);
+    chain.live.set_auto(on && !free, core::auto_limits(limit_hz, fps_of(video.frame_rate), vrr_armed,
+                                                       chain.running.rife_factor));
     // Écart minimal : la période de l'écran ou du plafond, à 1 % près ; à fréquence fixe, sur les vsyncs.
     const std::int64_t refresh_us = known_period_us;
     const bool vsync = free && !vrr_armed;
@@ -472,7 +477,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   int auto_stored = 0;
   // Le palier du mode auto : un message à l'écran et une ligne de journal à chaque changement.
-  bool vrr_fullscreen = false;
+  bool vrr_fullscreen = true;  // relu au premier tour : VRR, compositeur (P3.45)
   VrrWatch vrr_watch(vrr_armed);
   // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
   const auto apply_floor = [&] {
@@ -559,12 +564,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         press(name, out.window());
     }
     const bool snapshot_now = p.snapshot.maybe(out, p.began_us);
+    // Remis à faux avant de vider la file (P2.24) : un message arrivé pendant ce tour repousse son réveil, au
+    // lieu de trouver pending vrai et de laisser l'attente suivante aller à son terme (jusqu'à 4 ms).
+    wake.pending.store(false, std::memory_order_release);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      if (auto dropped = dropped_file(event)) {  // une autre vidéo : la chaîne se ferme pour elle
-        log->info("fichier glissé : {}", prepare::utf8_path(*dropped));
-        chain.next_file = std::move(*dropped);
-        chain.reopen = chain.running;
+      if (auto drop = dropped(event)) {  // vidéo, sous-titres ou refus (P3.85)
+        take_drop(chain, *drop, host_now_us());
         continue;
       }
       if (p.ui.handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface
@@ -573,8 +579,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // L'écran de la fenêtre peut changer (déplacement, mode d'affichage) : on relit sa cadence.
     if (host_now_us() - display_polled_at >= 500'000 || out.vrr_changed()) {  // 6.10 : sans attendre
       display_polled_at = host_now_us();
-      // Le mode Performance de SPAN se prépare tout seul au cran Performance (span_auto.h) : la lecture reste
-      // en FP16 pendant ce temps, puis la chaîne se rouvre pour prendre le paquet.
+      // Le mode Performance de SPAN se prépare tout seul (span_auto.h), pris à la vidéo suivante (P3.24).
       if (!p.options.file.empty() && c.model &&
           !p.options.bench_out) {  // le bench ne valide pas sur son clip
         const SpanAutoTick span =
@@ -582,14 +587,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                            prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file),
                            chain.running.preset != Preset::Custom);
         if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
-        if (span.reopen) chain.reopen = chain.running;
       }
-      // L'écran change (éteint puis rallumé, autre sortie, nouveau mode) : on relit sa fréquence, son VRR et
-      // son état, sans quoi la cadence restait celle de l'écran d'avant.
+      // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence, son VRR et son état sont relus.
       read_display_facts();
       if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
-      // Le HDR suit le système : allumé ou coupé pendant la lecture (Windows, KDE), la sortie suit en direct.
-      // Relu toutes les 2 s : sous Windows, la crête se lit dans DXGI et l'EDID.
+      // Le HDR et le pic suivent le système et l'écran (Windows, KDE), relus toutes les 2 s.
       if (!p.options.sdr && host_now_us() - hdr_polled_at >= 2'000'000) {
         hdr_polled_at = host_now_us();
         const std::optional<double> peak_now = content_peak_nits(out.window());
@@ -600,6 +602,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           log->info("HDR du système {} : sortie {}", switched.hdr_native ? "allumé" : "coupé",
                     switched.hdr_native ? "HDR10" : "SDR gradée");
           apply(Input{ApplySettings{.settings = switched}}, chain, host_now_us());
+        } else {
+          follow_display(chain, peak_now);  // P3.58
         }
       }
       const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());
@@ -622,9 +626,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (chain.live.free_should_fall_back(host_now_us())) {
           log->warn("Mode Rapide : trop d'images perdues ({}) : retour au mode Stable",
                     free_status_text(chain.live.free_info(host_now_us())));
-          free_fallback.fell_back(host_now_us());
-          p.ui.controls().notify(i18n::ui_tr("Fast mode: too many frames lost, back to Stable"),
-                                 host_now_us());
+          if (free_fallback.fell_back(host_now_us()))
+            p.ui.controls().notify(i18n::ui_tr("Fast mode: too many frames lost, back to Stable"),
+                                   host_now_us());
           apply_auto();
         }
       }
@@ -654,8 +658,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
       if (fullscreen != vrr_fullscreen || display_changed) {
         if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
+        if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
+            display_moves_chain(chain.running.preset, opened_height, display_height(out.window())))
+          actions.emplace_back(PlayFile{p.options.file, session.view().position_us, session.paused()});
         vrr_fullscreen = fullscreen;
+        session.set_composited(!fullscreen);
         if (const auto display = window_display(out.window())) {
+          if (display_changed) p.display = display;  // P3.40 : l'écran courant, son connecteur et son EDID
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
@@ -676,7 +685,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : actions) apply(input, chain, host_now_us());
-    actions.clear();
     // play.toml réécrit au plus une fois par seconde pendant qu'on règle.
     if (chain.dirty && host_now_us() - saved_at >= 1'000'000) {
       writer.post("play.toml",
@@ -703,7 +711,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       const std::int64_t wait_us =
           session.view().paused ? std::int64_t{kPausedWaitMs} * 1000 : session.idle_wait_us(host_now_us());
       wait_loop(wait_us, p.options.precise_wait);  // --precise-wait : à la microseconde (6.7)
-      wake.pending.store(false, std::memory_order_relaxed);
     }
   }
   if (chain.dirty) {
@@ -733,10 +740,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   // Un étage arrêté sur un refus fatal : un échec, jamais une fin d'épisode (pas d'épisode suivant).
   if (!failure && session.failure()) failure = *session.failure();
+  if (failure && p.options.bench_out)
+    tell_bench_parent(
+        {.event = "refusal", .code = std::string(name(failure->code)), .detail = failure->detail});
   // La source a changé de taille en cours de lecture : la chaîne se rouvre à la nouvelle taille, au même
   // endroit ; au-delà de 4 réouvertures par minute, c'est un refus.
   if (session.resize_asked() && !chain.reopen && !failure) {
-    static std::deque<std::int64_t> resizes;
+    std::deque<std::int64_t>& resizes = p.resizes;
     const std::int64_t now = host_now_us();
     while (!resizes.empty() && now - resizes.front() > 60'000'000) resizes.pop_front();
     if (resizes.size() >= 4) {
@@ -747,11 +757,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       chain.reopen = chain.running;
     }
   }
+  if (!chain.reopen && !failure && !session.quit_asked() && opened_file.grew(p.options.file)) {
+    log->info("le fichier grandit encore : relu au même endroit");
+    apply(Input{PlayFile{p.options.file, session.view().position_us, false}}, chain, host_now_us());
+  }
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&
       chain.running.autoplay_next && !p.options.file.empty()) {
     if (const auto next = sibling_episode(p.options.file, 1)) {
-      log->info("épisode suivant : {}", prepare::utf8_path(*next));
+      log->info("épisode suivant : {}", prepare::utf8_path(next->filename()));
       chain.next_file = *next;
       chain.reopen = chain.running;
     }
@@ -763,6 +777,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     .paused = session.paused() && !chain.next_file,
                     .engines = chain.engines,
                     .export_job = chain.export_job,
+                    .calibrate = chain.calibrate,
                     .next_file = chain.next_file,
                     .next_start_us = chain.next_start_us,
                     .next_paused = chain.next_paused};

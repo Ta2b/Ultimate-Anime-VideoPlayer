@@ -74,6 +74,13 @@ class Pipeline {
   VkPipeline pipeline_ = VK_NULL_HANDLE;
 };
 
+// Le fichier du cache de pipelines (P2.17) : les octets du pilote suivis de leur somme FNV-1a sur 64 bits.
+std::vector<std::byte> seal_pipeline_cache(std::vector<std::byte> driver);
+// Les octets du pilote d'un fichier scellé, s'il est entier (somme juste) et que son en-tête
+// (VkPipelineCacheHeaderVersionOne) est celui de cet appareil ; vide sinon : le cache repart de rien.
+std::span<const std::byte> open_pipeline_cache(std::span<const std::byte> file, std::uint32_t vendor_id,
+                                               std::uint32_t device_id);
+
 class PipelineCache {
  public:
   // `initial` : les octets d'un cache enregistré par serialize() ; le pilote ignore ceux qui ne sont

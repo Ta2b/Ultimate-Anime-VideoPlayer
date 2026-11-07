@@ -216,6 +216,7 @@ bool winograd_eligible(const ir::Graph& graph, const ir::Node& node, const Targe
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& graph, std::size_t index,
                                                              const Target& target) {
   const ir::Node& node = graph.nodes[index];

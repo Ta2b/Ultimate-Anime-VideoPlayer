@@ -60,6 +60,8 @@ struct ScreenOptions {
   // NVPRESENT_ENABLE_SMOOTH_MOTION=1, posé avant la création de l'instance Vulkan.
   bool smooth_motion = false;
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
+  std::string
+      device_name;  // la carte demandée (play.toml, engines.gpu) ; absente ou vide : libplacebo choisit
   // --present : le retour de présentation (chantier 6, present_level.h) ; open, celle d'aujourd'hui.
   PresentWanted present = PresentWanted::Open;
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
@@ -99,6 +101,8 @@ class PlaceboScreen final : public Screen {
     bool cooperative_matrix = false;
   };
   DeviceFacts device_facts() const;
+  // Les noms de toutes les cartes Vulkan du système, pour le choix de la carte (portables à deux cartes).
+  std::vector<std::string> device_names() const;
   SDL_Window* window() const;
   // Ce que l'écran présente : sa sortie (sRGB ou PQ) et son type, pour l'OSD.
   std::string output_description() const;

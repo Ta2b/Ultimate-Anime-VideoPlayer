@@ -94,8 +94,10 @@ struct InstallProgress {
   std::string cuda_arch;
 };
 
-// « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi ; vide s'il manque ou se tait.
-std::string detect_cuda_arch();
+// « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi une fois par processus ; vide s'il manque ou se
+// tait. Depuis le thread de la fenêtre, par run_pumped (pumped_task.h) : le premier appel attend nvidia-smi.
+// gpu_name : la carte de rendu, choisie parmi celles de nvidia-smi ; la première si aucune ne porte ce nom.
+std::string detect_cuda_arch(std::string_view gpu_name = {});
 // L'architecture déduite du nom de la carte (« NVIDIA GeForce RTX 4050 Laptop GPU » : sm89) ; vide si
 // inconnue.
 std::string cuda_arch_from_name(std::string_view gpu_name);
@@ -112,6 +114,10 @@ std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePac
 // Un fichier de VendorFile : la plage de ses octets dans l'archive (curl --range), décompressée
 // vers `dest`, taille et SHA-256 vérifiés. Rien n'est laissé à `dest` sur échec. Refus : ceux de
 // install_package.
+// P3.8 : un fichier tiers de même nom, taille et SHA-256 dans un autre dossier de engines_root (une autre
+// version installée du moteur) est lié en dur à dest (copié si le lien échoue) ; vrai s'il a servi.
+bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
+                       const std::filesystem::path& engines_root, const std::stop_token& stop);
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
                                                const std::filesystem::path& dest,
                                                const std::filesystem::path& scratch,

@@ -3,6 +3,7 @@
 #include <format>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -88,7 +89,8 @@ std::expected<std::unique_ptr<ImportedSlot>, Refusal> ImportedSlot::import(const
         e != cudaSuccess) {
       static_cast<void>(cudaGetLastError());
       imported->mipmaps_ = nullptr;
-      cudaDestroyExternalMemory(imported->memory_);  // ferme aussi le descripteur pris à l'import
+      // Ferme aussi le descripteur pris à l'import.
+      cuda_warn(cudaDestroyExternalMemory(imported->memory_), "cudaDestroyExternalMemory");
       imported->memory_ = nullptr;
       return std::unexpected(cuda_refusal(e, "cudaExternalMemoryGetMappedMipmappedArray"));
     }

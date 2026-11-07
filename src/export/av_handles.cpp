@@ -4,6 +4,9 @@
 #include <format>
 #include <utility>
 
+#include "core/utf8_path.h"
+#include "kernels/spec/color.h"
+
 extern "C" {
 #include <libavutil/error.h>
 #include <libavutil/mastering_display_metadata.h>
@@ -13,8 +16,7 @@ extern "C" {
 namespace ajp::exporter {
 
 std::string utf8(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {reinterpret_cast<const char*>(text.data()), text.size()};
+  return core::to_utf8(path);
 }
 
 std::string av_error_text(int error) {
@@ -108,7 +110,7 @@ AvColor av_color(const ColorInfo& color) {
 
 ColorInfo color_of(const AVCodecParameters& video) {
   ColorInfo out;  // niveaux vidéo, BT.709, BT.1886, chroma à gauche
-  const bool sd = video.width < 1280 && video.height <= 576;
+  const bool sd = kernels::sd_size(video.width, video.height);
   switch (video.color_space) {
     case AVCOL_SPC_BT470BG:
     case AVCOL_SPC_SMPTE170M:
@@ -171,6 +173,9 @@ ColorInfo color_of(const AVCodecParameters& video) {
       break;
     case AVCHROMA_LOC_TOPLEFT:
       out.siting = ChromaSiting::TopLeft;
+      break;
+    case AVCHROMA_LOC_UNSPECIFIED:  // comme media/color.cpp (map_siting) : centré en plage pleine (P5.10)
+      if (video.color_range == AVCOL_RANGE_JPEG) out.siting = ChromaSiting::Center;
       break;
     default:
       break;

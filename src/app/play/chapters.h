@@ -40,9 +40,6 @@ bool is_credits_chapter(const ChapterMark& chapter);
 std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> chapters,
                                                 std::int64_t position_us, std::int64_t duration_us);
 
-// Le saut de repli hors d'un générique reconnu : la durée classique d'un opening d'anime.
-inline constexpr std::int64_t kSkipFallbackUs = 85'000'000;
-
 // « Chapitre 3/12 · Opening », ou « Chapitre 3/12 » sans titre.
 i18n::Translated chapter_label(std::span<const ChapterMark> chapters, std::size_t index);
 

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,6 +25,7 @@
 #include "app/play/options.h"
 #include "app/play/precision.h"
 #include "app/play/system_language.h"
+#include "app/play/update_choice.h"
 #include "core/profile.h"
 #include "core/types.h"
 #include "media/selection.h"
@@ -147,13 +149,13 @@ inline constexpr int kPriorityCount = 3;
 inline constexpr int kAutoCapMin = 24;
 inline constexpr int kAutoCapMax = 480;
 
-// Les réglages par défaut du grade et du look : la configuration de Tatoub (30/10/2026), réglée à l'œil sur
+// Les réglages par défaut du grade et du look : la configuration de référence, réglée à l'œil sur
 // ses épisodes.
 inline render::GradeSettings default_grade_values() {
   render::GradeSettings g;
   g.highlights_rtx = 1.0;
   g.area_rtx = 0.10;
-  g.shadows = 0.50;  // Tatoub, 04/11 : le maximum des noirs profonds dynamiques
+  g.shadows = 0.50;  // le maximum des noirs profonds dynamiques
   return g;
 }
 
@@ -172,6 +174,10 @@ struct PlaySettings {
   Preset preset = Preset::Auto;
   Priority priority = Priority::Balance;
   bool upscale = true;
+  // « Restaurer les traits » (P3.19) : une source plus haute que work_height est réduite puis réagrandie par
+  // SPAN, qui corrige le flou des traits pour quatre fois moins de calcul. Coupé : une telle source garde
+  // tout son détail et SPAN ne la touche pas.
+  bool restore_lines = true;
   std::string model;  // fichier ONNX de SPAN (nom seul) ; vide : celui du lecteur actuel
   int work_height = 720;
   Downscale downscale = Downscale::Hermite;
@@ -246,24 +252,32 @@ struct PlaySettings {
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
   // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto
   // », « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
-  std::string update_mode = "notify";
-  std::string update_channel = "stable";
-  std::string update_frequency = "daily";
+  UpdateMode update_mode = UpdateMode::Notify;
+  UpdateChannel update_channel = UpdateChannel::Stable;
+  UpdateFrequency update_frequency = UpdateFrequency::Daily;
   // Langue de l'interface : « en » (le défaut, sans détection) ou « fr » ; prise en direct (app/play/i18n.h).
   std::string language = "en";
   // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.
   std::string engines_dir;
-  bool autoplay_next = false;
+  // La carte graphique de la lecture (P3.16, portables à deux cartes) : son nom Vulkan ; vide, le choix de
+  // libplacebo (la carte dédiée d'abord). Vaut au prochain lancement.
+  std::string gpu;
+  bool autoplay_next = true;  // l'épisode suivant du dossier à la fin, comme le README le promet (P3.84)
   bool default_player_dismissed =
       false;  // « Ne plus me le demander » : le bouton quitte Général, reste en bas d'Avancé
   // Ancienne case « Préparer en tâche de fond » : sans effet depuis que le cran Performance de SPAN se
   // prépare tout seul (span_auto.h). Lue et réécrite pour ne rien perdre d'un play.toml existant.
   bool span_prepare_background = false;
   int audio_delay_ms = 0;
+  // Décalage des sous-titres (P3.72), de séance : z et x, ou le menu ; jamais écrit dans play.toml.
+  int subtitle_delay_ms = 0;
   // L'appareil de sortie audio (vide : celui du système, suivi quand il change).
   std::string audio_device;
+  // Le délai de chaque autre appareil, repris quand on y revient (P2.7) : un casque Bluetooth garde le sien,
+  // que SDL ne mesure pas. Clé vide : la sortie du système. Celui de audio_device est audio_delay_ms.
+  std::map<std::string, int> audio_device_delays_ms;
   // Synchro sur l'écran (SessionConfig::display_sync), en direct ; délai d'affichage de la vidéo
   // en ms, 0 : estimé (SessionConfig::video_latency_us).
   bool display_sync = true;
@@ -285,14 +299,15 @@ struct PlaySettings {
   // à 1.
   std::string look = "HDR pile unique 65 point.cube";
   double look_mix = 1.0;
-  // Le look de la méthode HDR anime (04/11, idée de Tatoub) : la LUT de base et « skin fix », fixes, et deux
-  // curseurs de -100 à 100 sur les LUT de contraste et d'éclats ; 0 : sa pile du 04/11 (contraste ×7, éclats
-  // ×1,5), le défaut. -100 : la LUT retirée ; 100 : son intensité doublée. La pile ci-dessus n'est plus lue.
+  // Le look de la méthode HDR anime (ADR 0012) : la LUT de base et « skin fix », fixes, et deux
+  // curseurs de -100 à 100 sur les LUT de contraste et d'éclats ; 0 : la pile de référence (contraste ×7,
+  // éclats ×1,5), le défaut. -100 : la LUT retirée ; 100 : son intensité doublée. La pile ci-dessus n'est
+  // plus lue.
   int look_contrast = 0;
   int look_highlight = 0;
   // Les LUT suivantes (le menu Couleurs en ajoute avec + et en retire avec −), enchaînées après la première
   // comme des nœuds de Resolve, chacune avec sa propre intensité ; au plus render::kLookSlots - 1. Vide par
-  // défaut : la pile de Tatoub est cuite en une seule LUT (tools/look/bake_stack.py, data/luts/).
+  // défaut : la pile de référence est cuite en une seule LUT (tools/look/bake_stack.py, data/luts/).
   std::vector<LookLayer> look_layers{};
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
@@ -313,8 +328,11 @@ inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
-inline constexpr std::size_t kLanguagePresets = 2;          // préréglages de langue
-inline constexpr core::Range<int> kTrueHdrPeak{400, 2000};  // ou 0 : automatique
+inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
+// Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66) : un pic réglable fait
+// toujours une sortie HDR.
+inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
+inline constexpr core::Range<int> kTrueHdrPeak{350, 2000};  // ou 0 : automatique
 inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits
 

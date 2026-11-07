@@ -265,7 +265,7 @@ TEST_CASE("Écriture : copiés dans les images de l'encodeur, les tampons revien
     pool->height = kHeight;
     REQUIRE(av_frame_get_buffer(pool, 0) == 0);
     buffers.free[*i].store(true);  // la copie faite, le tampon repart au rendu
-    push(**writer, Picture{.pts_us = std::int64_t{n} * kFrameUs, .frame = pool});
+    push(**writer, Picture{.pts_us = std::int64_t{n} * kFrameUs, .frame = ajp::exporter::OwnedFrame(pool)});
   }
   REQUIRE((*writer)->finish());
   CHECK(fake->seen() == kFrames);

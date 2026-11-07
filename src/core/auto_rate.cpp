@@ -28,6 +28,57 @@ int auto_ceiling(double display_hz, double source_fps, int granularity) {
   return best;
 }
 
+std::vector<int> locked_steps(double display_hz, double source_fps, int granularity) {
+  granularity = auto_granularity(granularity);
+  if (!(display_hz > 0.0) || !(source_fps >= 5.0) || source_fps > 240.0) return {};
+  std::vector<int> out{granularity};
+  for (int step = granularity + 1; step <= kAutoMaxStep * granularity; ++step) {
+    const double vsyncs = display_hz * granularity / (source_fps * step);
+    if (vsyncs < 0.99) break;
+    if (std::abs(vsyncs - std::round(vsyncs)) <= 0.01 * vsyncs) out.push_back(step);
+  }
+  return out;
+}
+
+AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor) {
+  AutoLimits out;
+  out.granularity = vrr ? kFineGranularity : 2;
+  out.ceiling = auto_ceiling(display_hz, source_fps, out.granularity);
+  if (level_factor >= 2)
+    out.ceiling = std::min(out.ceiling, level_factor * out.granularity + (out.granularity == 2 ? 1 : 0));
+  if (!vrr) out.locked = locked_steps(display_hz, source_fps, out.granularity);
+  return out;
+}
+
+int AutoRate::snap_down(int step) const {
+  if (locked_.empty()) return step;
+  int best = granularity_;
+  for (const int s : locked_)
+    if (s <= step) best = std::max(best, s);
+  return best;
+}
+
+int AutoRate::snap_up(int step) const {
+  if (locked_.empty()) return step;
+  for (const int s : locked_)
+    if (s >= step) return s;
+  return 0;
+}
+
+void AutoRate::set_locked(std::vector<int> steps) {
+  std::ranges::sort(steps);
+  if (steps == locked_) return;
+  locked_ = std::move(steps);
+  const int snapped = snap_down(step_);
+  if (snapped != step_) {
+    step_ = snapped;
+    reason_ = AutoReason::Ceiling;
+    ++changes_;
+    clean_ = 0;
+    probing_ = false;
+  }
+}
+
 std::string_view auto_reason_text(AutoReason reason) {
   switch (reason) {
     case AutoReason::Start:
@@ -82,7 +133,7 @@ void AutoRate::set_ceiling(int ceiling) {
   ceiling_ = std::clamp(ceiling, granularity_, kAutoMaxStep * granularity_);
   if (cap_ > ceiling_) cap_ = 0;
   if (step_ > ceiling_) {
-    step_ = ceiling_;
+    step_ = snap_down(ceiling_);
     reason_ = AutoReason::Ceiling;
     ++changes_;
     clean_ = 0;
@@ -92,7 +143,7 @@ void AutoRate::set_ceiling(int ceiling) {
 
 void AutoRate::seed(int remembered_centi, std::int64_t now_us) {
   hint_ = std::clamp(remembered_centi * granularity_ / 100, granularity_, ceiling_);
-  step_ = std::clamp(hint_ - (fine() ? std::max(2, hint_ * 8 / 100) : 1), granularity_, ceiling_);
+  step_ = snap_down(std::clamp(hint_ - (fine() ? std::max(2, hint_ * 8 / 100) : 1), granularity_, ceiling_));
   reason_ = AutoReason::Memory;
   last_change_us_ = now_us - kMinRiseGapUs;
   beat_us_ = now_us;
@@ -190,7 +241,7 @@ void AutoRate::descend(AutoReason reason, std::int64_t now_us, int steps) {
     cap_ = step_ - 1;
     cap_at_us_ = now_us;
   }
-  step_ = std::max(granularity_, step_ - std::max(steps, 1));
+  step_ = snap_down(std::max(granularity_, step_ - std::max(steps, 1)));
   probing_ = false;
   changed(reason, now_us);
 }
@@ -222,6 +273,11 @@ void AutoRate::try_rise(std::int64_t now_us) {
     if (!far && now_us - last_change_us_ < kSteadyGapUs) return;
     gain = far ? std::clamp(gain * 2 / 3, 1, std::max(1, step_ * 40 / 100))
                : std::clamp((gain + 1) / 2, 1, std::max(1, step_ * 12 / 100));
+  } else if (!locked_.empty()) {
+    // Le palier calé suivant, s'il tient sous la prédiction (ou à l'aveugle, après les paires propres).
+    const int next = snap_up(step_ + 1);
+    if (next == 0 || next > ceiling_ || (predicted > 0 && next > target) || target <= step_) return;
+    gain = next - step_;
   } else {
     gain = std::min(gain, 1);
   }
@@ -293,7 +349,8 @@ int AutoRate::tick(std::int64_t now_us, bool playing) {
   if (step_ <= granularity_ && ceiling_ > granularity_ && !mute_) {
     if (floor_since_us_ == 0) floor_since_us_ = now_us;
     if (now_us - floor_since_us_ >= kFloorEscapeUs && now_us - last_change_us_ >= kFloorEscapeUs) {
-      step_ = std::min(granularity_ + (fine() ? std::max(2, granularity_ * 8 / 100) : 1), ceiling_);
+      const int up = snap_up(granularity_ + (fine() ? std::max(2, granularity_ * 8 / 100) : 1));
+      step_ = up > 0 ? std::min(up, ceiling_) : step_;
       probing_ = true;
       probe_until_us_ = now_us + kProbeUs;
       changed(AutoReason::Rearm, now_us);

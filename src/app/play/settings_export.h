@@ -18,7 +18,7 @@ namespace ajp::app::play {
 struct ExportDraft {
   ExportJob job;
   bool chain_set = false;         // job.chain reprise de la lecture à la première ouverture de l'onglet
-  std::array<char, 1024> path{};  // le fichier, en UTF-8, en cours de saisie
+  std::array<char, 4096> path{};  // le fichier, en UTF-8, en cours de saisie (P3.92 : chemins longs)
   bool path_edited = false;       // tant qu'il ne l'est pas, le nom suit la taille et la fréquence
   std::string named_for;          // la taille et la fréquence du nom proposé
   std::filesystem::path source;   // la vidéo dont l'onglet a repris la chaîne et le nom

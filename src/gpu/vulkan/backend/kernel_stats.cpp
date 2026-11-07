@@ -29,7 +29,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::frame_stats_start(const T
   if (!counts_buffer) return std::unexpected(counts_buffer.error());
   const BufferView counts = (*counts_buffer)->view();
   OpKey key;
-  key.add(43);
+  key.add(OpCode::FrameStats);
   detail::add_view(key, *view);
   key.add(static_cast<std::uint64_t>(transfer)).add(detail::handle_bits(counts.buffer));
   auto rec = recording(key, [&](Recorder& r) { return runner_.frame_stats(r, *view, transfer, counts); });

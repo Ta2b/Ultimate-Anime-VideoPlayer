@@ -42,6 +42,10 @@ using namespace ajp::gpu::vk;
 
 namespace {
 
+// Refusal::key du faux runtime quand le descripteur exporté ne se mappe pas côté hôte : le saut se décide sur
+// lui, pas sur le texte (P2.39).
+constexpr std::string_view kNoHostMap = "test.mmap";
+
 // Ce que le runtime fait de la mémoire qu'on lui donne.
 enum class Seen {
   Shared,      // il mappe la mémoire exportée : il voit ce que la chaîne écrit, et réciproquement
@@ -114,7 +118,8 @@ class FakeRuntime final : public net::Runtime {
     const int fd = static_cast<int>(handle);
     void* mapped = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (mapped == MAP_FAILED)
-      return std::unexpected(Refusal{.code = RefusalCode::FeatureUnavailable, .detail = "mmap"});
+      return std::unexpected(
+          Refusal{.code = RefusalCode::FeatureUnavailable, .detail = "mmap", .key = std::string(kNoHostMap)});
     close(fd);  // le runtime prend le descripteur ; sa mémoire reste mappée
     auto* bytes_ptr = static_cast<std::byte*>(mapped);
     std::vector<std::byte> copy;
@@ -185,9 +190,9 @@ TEST_CASE("shared_tensor : le runtime voit la mémoire de la chaîne, la vérifi
       if (!shared) {
         // La vérification a refusé : le runtime ne voit pas ce que la chaîne écrit. Ce refus est la
         // protection voulue ; c'est l'appareil (lavapipe exporte une copie) qui ne permet pas le test.
-        if (shared.error().detail.find("mmap") != std::string::npos)
+        if (shared.error().key == kNoHostMap)
           SKIP("le descripteur exporté par le pilote ne se mappe pas côté hôte : " << shared.error().detail);
-        if (shared.error().detail.find("ne voit pas") != std::string::npos)
+        if (shared.error().code == RefusalCode::FeatureUnavailable)
           SKIP("l'appareil n'expose pas sa mémoire exportée au mappage, la vérification refuse : "
                << shared.error().detail);
         FAIL(vk::test::describe(shared.error()));
@@ -223,10 +228,9 @@ TEST_CASE("shared_tensor : un runtime qui ne voit qu'une copie est refusé", "[v
       auto views = std::make_shared<HostViews>();
       auto shared = shared_tensor(**context, **memory, runtime, TensorType::F16, kShape, kBytes, views, true);
       REQUIRE_FALSE(shared);
-      if (shared.error().detail.find("mmap") != std::string::npos)
+      if (shared.error().key == kNoHostMap)
         SKIP("le descripteur exporté par le pilote ne se mappe pas côté hôte : " << shared.error().detail);
       CHECK(shared.error().code == RefusalCode::FeatureUnavailable);
-      CHECK(shared.error().detail.find("ne voit pas") != std::string::npos);
       CHECK(views->views.empty());
     }
   }
@@ -241,7 +245,7 @@ TEST_CASE("shared_tensor : sans échange de mots, le tenseur reste non vérifié
   FakeRuntime runtime(net::MemoryHandle::OpaqueFd, Seen::NoExchange);
   auto views = std::make_shared<HostViews>();
   auto shared = shared_tensor(**context, **memory, runtime, TensorType::F16, kShape, kBytes, views, true);
-  if (!shared && shared.error().detail.find("mmap") != std::string::npos)
+  if (!shared && shared.error().key == kNoHostMap)
     SKIP("le descripteur exporté par le pilote ne se mappe pas côté hôte : " << shared.error().detail);
   if (!shared) FAIL(vk::test::describe(shared.error()));
   CHECK(views->views.contains((*shared)->tensor().handle));

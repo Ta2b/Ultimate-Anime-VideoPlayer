@@ -61,6 +61,8 @@ inline constexpr float kMaxFontScale = 4.0F;
 struct RenderRequest {
   std::int64_t pts_us = 0;
   std::uint32_t epoch = 0;
+  // Décalage des sous-titres (P3.72) : libass lit l'instant pts_us − delay_us ; > 0, ils viennent plus tard.
+  std::int64_t delay_us = 0;
   RenderTarget target;
 };
 
@@ -87,6 +89,9 @@ class SubtitleRenderer {
   // cherchée, introuvable ou remplacée comprise : si le moteur a déjà rendu,
   // il est recréé avant le rendu suivant.
   void fonts_changed();
+
+  // Appels à libass depuis la création (P3.39 : un écran sans événement n'en coûte aucun).
+  std::uint64_t libass_calls() const { return libass_calls_; }
 
  private:
   struct Free {
@@ -124,6 +129,12 @@ class SubtitleRenderer {
   bool refused_ = false;
   bool vsfilter_ = false;  // couleurs converties comme VSFilter, pour la piste et la cible courantes
   std::uint64_t generation_ = 0;
+  // P3.39 : après un rendu vide, aucun événement avant quiet_until_ms_ (piste de quiet_events_ événements) :
+  // les instants de [quiet_from_ms_, quiet_until_ms_) sont vides sans appeler libass.
+  long long quiet_from_ms_ = 0;
+  long long quiet_until_ms_ = -1;
+  int quiet_events_ = -1;
+  std::uint64_t libass_calls_ = 0;
 };
 
 }  // namespace ajp::subs

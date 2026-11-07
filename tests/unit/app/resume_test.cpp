@@ -57,11 +57,20 @@ TEST_CASE("reprise : oubliée près du début et vers la fin", "[app][resume]") 
   REQUIRE(remember_position(place.store, a, 10'000'000, kEpisode));  // à peine commencée
   CHECK_FALSE(resume_position(place.store, a));
   REQUIRE(remember_position(place.store, a, 7 * kMinute, kEpisode));
-  REQUIRE(remember_position(place.store, a, kEpisode - kMinute, kEpisode));  // dans les 5 % de la fin
+  REQUIRE(remember_position(place.store, a, kEpisode - 2 * kMinute, kEpisode));  // pendant l'ending (P3.83)
   CHECK_FALSE(resume_position(place.store, a));
   // Durée inconnue : seul le début compte.
   REQUIRE(remember_position(place.store, a, 50 * kMinute, 0));
   CHECK(resume_position(place.store, a) == 50 * kMinute);
+}
+
+TEST_CASE("reprise : une vidéo déplacée se retrouve à son nom et sa taille (P3.83)", "[app][resume]") {
+  const Place place("moved");
+  const auto a = place.video("a.mkv");
+  REQUIRE(remember_position(place.store, a, 7 * kMinute, kEpisode));
+  std::filesystem::create_directories(place.dir / "range");
+  std::filesystem::rename(a, place.dir / "range" / "a.mkv");
+  CHECK(resume_position(place.store, place.dir / "range" / "a.mkv") == 7 * kMinute);
 }
 
 TEST_CASE("reprise : une vidéo remplacée repart du début", "[app][resume]") {

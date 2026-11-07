@@ -35,12 +35,20 @@ TEST_CASE("un .cube d'identité se relit tel quel, R variant le plus vite", "[re
   CHECK(lut->rgb.size() == identity_lut(17).rgb.size());
 }
 
-TEST_CASE("DOMAIN_MIN et DOMAIN_MAX ramènent les valeurs à [0, 1]", "[render][lut]") {
+TEST_CASE("DOMAIN_MIN et DOMAIN_MAX bornent l'entrée, pas la sortie (P3.69)", "[render][lut]") {
+  // L'identité sur le domaine [0, 2] (la référence d'OpenColorIO : une entrée de 0,5 lit le quart de la
+  // grille et rend 0,5) ; les sorties restent celles du fichier.
   std::string text = "DOMAIN_MIN 0 0 0\nDOMAIN_MAX 2 2 2\nLUT_3D_SIZE 17\n";
-  for (int i = 0; i < 17 * 17 * 17; ++i) text += "1 1 1\n";
+  for (int b = 0; b < 17; ++b)
+    for (int g = 0; g < 17; ++g)
+      for (int r = 0; r < 17; ++r) text += std::format("{} {} {}\n", r / 8.0, g / 8.0, b / 8.0);
   const auto lut = parse_cube(text);
   REQUIRE(lut);
-  CHECK(lut->rgb.front() == Approx(0.5F));
+  CHECK(lut->rgb[3 * 16] == Approx(2.0F));  // la dernière valeur de R, non ramenée à 1
+  const std::array<float, 3> out = sample_lut(*lut, {0.5F, 0.25F, 1.5F});
+  CHECK(out[0] == Approx(0.5F));
+  CHECK(out[1] == Approx(0.25F));
+  CHECK(out[2] == Approx(1.5F));
 }
 
 TEST_CASE("refus nommés : taille, lignes, nombres, LUT 1D, taille de fichier", "[render][lut]") {

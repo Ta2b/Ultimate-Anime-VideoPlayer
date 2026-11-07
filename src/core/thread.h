@@ -14,6 +14,8 @@
 #include <expected>
 #include <format>
 #include <functional>
+#include <future>
+#include <memory>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -74,11 +76,12 @@ concept ThreadBody =
 // Un refus de démarrage détruit body sans l'avoir appelé.
 template <ThreadBody Body>
 std::expected<std::jthread, Refusal> start_thread(std::string_view name, ThreadReport report, Body body) {
-  if (!report) {
-    return std::unexpected(
-        Refusal{RefusalCode::FieldMissing, std::format("thread {} : rapporteur absent", name)});
-  }
+  // Tout ce qui alloue est dans le try (P2.33) : même le texte d'un refus ne fait pas lever start_thread.
   try {
+    if (!report) {
+      return std::unexpected(
+          Refusal{RefusalCode::FieldMissing, std::format("thread {} : rapporteur absent", name)});
+    }
     return std::jthread([where = std::format("thread {}", name), report = std::move(report),
                          body = std::move(body)](const std::stop_token& stop) mutable noexcept {
       try {
@@ -88,8 +91,38 @@ std::expected<std::jthread, Refusal> start_thread(std::string_view name, ThreadR
       }
     });
   } catch (...) {  // std::system_error de std::thread, ou mémoire insuffisante
-    return std::unexpected(
-        refusal_from_exception(RefusalCode::ThreadUnavailable, std::format("thread {}", name)));
+    try {
+      return std::unexpected(
+          refusal_from_exception(RefusalCode::ThreadUnavailable, std::format("thread {}", name)));
+    } catch (...) {
+      return std::unexpected(Refusal{RefusalCode::ThreadUnavailable, {}});
+    }
+  }
+}
+
+// std::async(std::launch::async, fn) sans exception (P2.3) : l'exception du corps devient un refus
+// ThreadFailed, un thread refusé par le système un futur déjà prêt sur ThreadUnavailable. Nul seulement
+// sans mémoire pour ce futur.
+template <class T, class Fn>
+std::shared_ptr<std::future<std::expected<T, Refusal>>> start_task(std::string_view name, Fn fn) noexcept {
+  using Result = std::expected<T, Refusal>;
+  try {
+    return std::make_shared<std::future<Result>>(
+        std::async(std::launch::async, [where = std::format("tâche {}", name), fn = std::move(fn)]() mutable {
+          try {
+            return Result(fn());
+          } catch (...) {
+            return Result(std::unexpected(refusal_from_exception(RefusalCode::ThreadFailed, where)));
+          }
+        }));
+  } catch (...) {
+    try {
+      std::promise<Result> refused;
+      refused.set_value(std::unexpected(refusal_from_exception(RefusalCode::ThreadUnavailable, name)));
+      return std::make_shared<std::future<Result>>(refused.get_future());
+    } catch (...) {
+      return nullptr;
+    }
   }
 }
 

@@ -1,5 +1,8 @@
 #include "gpu/vulkan/backend/family.h"
 
+#include <array>
+#include <optional>
+
 #include "core/gpu_device.h"
 
 namespace ajp::gpu::vk {
@@ -128,26 +131,54 @@ DriverKind driver_kind(std::string_view driver_name) {
   return DriverKind::Other;
 }
 
-bool matrix_units_allowed(GpuFamily family, DriverKind driver) {
-  switch (family) {
-    case GpuFamily::NvidiaTuring:
-    case GpuFamily::NvidiaAmpere:
-    case GpuFamily::NvidiaAda:
-    case GpuFamily::NvidiaBlackwell:
-      return driver == DriverKind::NvidiaProprietary;
-    // WMMA des RDNA3 et RDNA4, sous RADV comme sous le pilote AMD (llama.cpp fait de même ; le
-    // pilote AMD annonce aussi l'extension sur RDNA2, sans unité matricielle). L'autotuner
-    // compare chaque sortie à celle du noyau direct avant de la garder.
-    case GpuFamily::AmdRdna3:
-    case GpuFamily::AmdRdna4:
-      return driver == DriverKind::Radv || driver == DriverKind::AmdProprietary;
-    default:
-      return false;
+namespace {
+
+bool nvidia(GpuFamily f) {
+  return f == GpuFamily::NvidiaTuring || f == GpuFamily::NvidiaAmpere || f == GpuFamily::NvidiaAda ||
+         f == GpuFamily::NvidiaBlackwell;
+}
+
+bool amd(GpuFamily f) {
+  return f == GpuFamily::AmdBeforeRdna3 || f == GpuFamily::AmdRdna3 || f == GpuFamily::AmdRdna4;
+}
+
+// La liste d'exclusion (P2.46) : seuls les appareils et pilotes connus pour annoncer l'extension sans s'en
+// servir bien. Tout le reste se décide sur les tuiles annoncées (device_profile.cpp) et l'autotuner.
+struct MatrixExclusion {
+  bool (*matches)(GpuFamily, DriverKind);
+  std::string_view why;
+};
+constexpr std::array kMatrixExclusions{
+    MatrixExclusion{[](GpuFamily f, DriverKind) { return f == GpuFamily::Software; },
+                    "processeur : tuiles émulées"},
+    MatrixExclusion{[](GpuFamily f, DriverKind) { return f == GpuFamily::AmdBeforeRdna3; },
+                    "AMD avant RDNA3 : le pilote annonce l'extension sans unité matricielle"},
+    MatrixExclusion{
+        [](GpuFamily f, DriverKind) { return f == GpuFamily::IntelXeLp || f == GpuFamily::IntelXeLpg; },
+        "Intel Xe-LP et Xe-LPG : pas d'unités XMX"},
+    MatrixExclusion{[](GpuFamily f, DriverKind) { return f == GpuFamily::Apple; },
+                    "MoltenVK : Core ML est le moteur du Mac"},
+    MatrixExclusion{[](GpuFamily f, DriverKind d) { return nvidia(f) && d != DriverKind::NvidiaProprietary; },
+                    "NVIDIA hors pilote propriétaire (nouveau, NVK) : à qualifier"},
+    MatrixExclusion{[](GpuFamily f, DriverKind d) { return amd(f) && d == DriverKind::Other; },
+                    "AMD sous un pilote inconnu : à qualifier"},
+};
+
+}  // namespace
+
+std::optional<std::string_view> matrix_units_excluded(GpuFamily family, DriverKind driver) {
+  for (const MatrixExclusion& e : kMatrixExclusions) {
+    if (e.matches(family, driver)) return e.why;
   }
+  return std::nullopt;
+}
+
+bool matrix_units_allowed(GpuFamily family, DriverKind driver) {
+  return !matrix_units_excluded(family, driver);
 }
 
 bool matrix_units_unlisted(GpuFamily family, DriverKind driver) {
-  return family == GpuFamily::Unknown && driver == DriverKind::NvidiaProprietary;
+  return family == GpuFamily::Unknown && matrix_units_allowed(family, driver);
 }
 
 }  // namespace ajp::gpu::vk

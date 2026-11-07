@@ -32,7 +32,7 @@ TEST_CASE("look HDR anime : les intensités en LUT entières puis une partielle"
   CHECK(c.size() == 6);
 }
 
-TEST_CASE("look HDR anime à 0 et 0 : la pile de Tatoub du 04/11", "[app][look]") {
+TEST_CASE("look HDR anime à 0 et 0 : la pile de référence", "[app][look]") {
   const std::filesystem::path luts = std::string(AJP_APP_SOURCE_DIR) + "/../../data/luts";
   const auto recipe = anime_look(0, 0, luts);
   REQUIRE(recipe);

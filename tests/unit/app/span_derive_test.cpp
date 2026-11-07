@@ -24,6 +24,7 @@
 #include "app/play/span_int8.h"
 #include "french_ui.h"
 #include "gpu/span_fp8/package.h"
+#include "media/stills.h"
 #include "prepare/sha256.h"
 
 namespace ajp::app::play {
@@ -445,12 +446,14 @@ TEST_CASE("un échec technique n'écrit rien et laisse l'état d'avant", "[app][
   CHECK(memory.error().code == RefusalCode::GpuMemoryExhausted);
 
   const SpanStillsSource hdr = [](const std::stop_token&, const std::function<void(float)>&) {
-    return std::expected<std::vector<media::Still>, Refusal>(std::unexpected(
-        Refusal{RefusalCode::FormatUnsupported, "vidéo HDR : la préparation se fait sur une vidéo SDR"}));
+    return std::expected<std::vector<media::Still>, Refusal>(
+        std::unexpected(Refusal{.code = RefusalCode::FormatUnsupported,
+                                .detail = "vidéo HDR : la préparation se fait sur une vidéo SDR",
+                                .key = std::string(media::kHdrSourceKey)}));
   };
   const auto refused = derive_span_fp8(folder.plan(), hdr, good.deriver(), progress, std::stop_token{});
   REQUIRE_FALSE(refused);
-  CHECK(refused.error().detail.starts_with("vidéo HDR"));
+  CHECK(refused.error().key == media::kHdrSourceKey);
 
   std::stop_source stop;
   stop.request_stop();

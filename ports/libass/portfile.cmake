@@ -1,4 +1,8 @@
-# libass du fork the-database, commit 896614fa, celui du lecteur actuel.
+# libass du fork the-database, commit 896614fa : libass 0.17.5 et la suite de master (fusionnée en
+# 4ff1609), plus le rendu sur plusieurs fils (ass_set_render_thread_count, seule fonction du fork
+# que le lecteur appelle) et des modes de rendu différé pour GPU, inutilisés ici. Revenir au
+# libass officiel le jour où il rend sur plusieurs fils ; d'ici là, rebaser le fork sur chaque
+# version de libass. Assembleur (NASM sur x64) et libunibreak exigés, comme le port officiel.
 vcpkg_from_git(
   OUT_SOURCE_PATH SOURCE_PATH
   URL https://github.com/the-database/libass.git
@@ -19,9 +23,15 @@ else()
   set(font_options -Dfontconfig=enabled -Ddirectwrite=disabled -Dcoretext=disabled)
 endif()
 
+if(VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
+  vcpkg_find_acquire_program(NASM)
+  get_filename_component(nasm_dir "${NASM}" DIRECTORY)
+  vcpkg_add_to_path("${nasm_dir}")
+endif()
+
 vcpkg_configure_meson(
   SOURCE_PATH "${SOURCE_PATH}"
-  OPTIONS ${font_options} ${std_options} -Dasm=disabled -Dtest=disabled -Dcompare=disabled -Dprofile=disabled -Dfuzz=disabled -Dcheckasm=disabled -Dlibunibreak=disabled
+  OPTIONS ${font_options} ${std_options} -Dasm=enabled -Dtest=disabled -Dcompare=disabled -Dprofile=disabled -Dfuzz=disabled -Dcheckasm=disabled -Dlibunibreak=enabled
 )
 vcpkg_install_meson()
 vcpkg_fixup_pkgconfig()

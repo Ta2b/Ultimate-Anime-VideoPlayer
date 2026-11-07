@@ -5,6 +5,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "app/play/input.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -156,16 +158,11 @@ TEST_CASE("Volume : bornes, pas réguliers, muet", "[app][controls]") {
   CHECK_FALSE(controls.muted());
 }
 
-TEST_CASE("Clic sur l'image : pause après le délai, double clic plein écran sans pause", "[app][controls]") {
-  Controls controls;
-  CHECK_FALSE(controls.click(0, 1));
-  CHECK_FALSE(controls.pending_click(kDoubleClickUs - 1));
-  CHECK(controls.pending_click(kDoubleClickUs) == Controls::VideoClick::TogglePause);
-  CHECK_FALSE(controls.pending_click(kDoubleClickUs + 1));  // une seule fois
-
-  CHECK_FALSE(controls.click(kS, 1));
-  CHECK(controls.click(kS + 200 * kMs, 2) == Controls::VideoClick::ToggleFullscreen);
-  CHECK_FALSE(controls.pending_click(kS + kDoubleClickUs * 2));  // le simple clic n'a pas eu lieu
+TEST_CASE("Clic sur l'image : pause tout de suite, le double clic l'annule et passe en plein écran (P3.77)",
+          "[app][controls]") {
+  CHECK(Controls::click(1) == Controls::VideoClick::TogglePause);
+  CHECK(Controls::click(2) == Controls::VideoClick::FullscreenUndoPause);
+  CHECK_FALSE(Controls::click(3));
 }
 
 TEST_CASE("Message bref : visible puis effacé en fondu", "[app][controls]") {
@@ -221,3 +218,30 @@ TEST_CASE("Un menu ouvert au clavier, barre effacée, redessine l'interface", "[
 
 }  // namespace
 }  // namespace ajp::app::play
+
+TEST_CASE("flèche maintenue : seeks sur point clé, puis exact au relâchement (P3.43)", "[app][controls]") {
+  using namespace ajp::app::play;
+  const ajp::core::KeyMap keys = ajp::core::KeyMap::defaults();
+  SDL_Event down{};
+  down.type = SDL_EVENT_KEY_DOWN;
+  down.key.key = SDLK_RIGHT;
+  down.key.repeat = true;
+  const auto held = input_of(down, keys);
+  REQUIRE(held);
+  const auto* command = std::get_if<ajp::Command>(&*held);
+  REQUIRE(command != nullptr);
+  const auto* seek = std::get_if<ajp::cmd::SeekRelative>(command);
+  REQUIRE(seek != nullptr);
+  CHECK(seek->delta_us > 0);
+  CHECK_FALSE(seek->exact);
+  SDL_Event up{};
+  up.type = SDL_EVENT_KEY_UP;
+  up.key.key = SDLK_RIGHT;
+  const auto released = input_of(up, keys);
+  REQUIRE(released);
+  const auto* last = std::get_if<ajp::cmd::SeekRelative>(&std::get<ajp::Command>(*released));
+  REQUIRE(last != nullptr);
+  CHECK(last->delta_us == 0);
+  CHECK(last->exact);
+  CHECK_FALSE(input_of(up, keys));  // un relâchement sans répétition ne dit rien
+}

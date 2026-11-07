@@ -99,7 +99,7 @@ void read_vendor_vrr(std::span<const std::uint8_t> payload, VrrSources& vrr) {
     offer_range(vrr.freesync, payload[5], payload[6]);
   if (has_oui(payload, 0xD8, 0x5D, 0xC4) && payload.size() >= 10) {
     const int max_hz = static_cast<int>(((payload[8] & 0xC0U) << 2U) | payload[9]);
-    offer_range(vrr.hdmi, payload[8] & 0x3FU, max_hz);
+    offer_range(vrr.hdmi, static_cast<int>(payload[8] & 0x3FU), max_hz);
   }
 }
 

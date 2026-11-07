@@ -39,10 +39,10 @@ if [ -z "${AJP_WITHOUT_MODELS:-}" ]; then
   "$ROOT/tools/release/fetch-models.sh" "$APP/Contents/Resources/models"
 fi
 
-# Le chargeur Vulkan et MoltenVK, ouverts à l'exécution : copiés à la main. Le chargeur lit les
-# pilotes de Contents/Resources/vulkan/icd.d du paquet.
-cp "$BREW/lib/libvulkan.1.dylib" "$APP/Contents/Frameworks/"
-cp "$BREW/lib/libMoltenVK.dylib" "$APP/Contents/Frameworks/"
+# Le chargeur Vulkan et MoltenVK, ouverts à l'exécution : copiés à la main depuis le préfixe, aux
+# versions de macos-from-source.sh. Le chargeur lit les pilotes de Contents/Resources/vulkan/icd.d.
+cp -L "$AJP_DEPS_PREFIX/lib/libvulkan.1.dylib" "$APP/Contents/Frameworks/"
+cp "$AJP_DEPS_PREFIX/lib/libMoltenVK.dylib" "$APP/Contents/Frameworks/"
 cat > "$APP/Contents/Resources/vulkan/icd.d/MoltenVK_icd.json" <<'JSON'
 {
   "file_format_version": "1.0.0",

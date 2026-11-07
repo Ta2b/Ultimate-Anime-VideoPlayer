@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -46,6 +47,19 @@ TEST_CASE("Écritures : la dernière version de chaque fichier, faite avant la f
   CHECK(std::ranges::find(written, "a3") != written.end());
   CHECK(std::ranges::find(written, "b") != written.end());
   CHECK(std::ranges::find(written, "a1") == written.end());
+}
+
+TEST_CASE("Écritures : un job qui lève ne bloque ni flush ni les suivantes", "[app][writer]") {
+  LatestWriter writer;
+  writer.post("a", []() -> std::expected<void, Refusal> { throw std::runtime_error("disque"); });
+  writer.flush();
+  std::atomic<bool> done{false};
+  writer.post("b", [&]() -> std::expected<void, Refusal> {
+    done = true;
+    return {};
+  });
+  writer.flush();
+  CHECK(done.load());
 }
 
 }  // namespace ajp::app::play

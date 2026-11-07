@@ -42,7 +42,7 @@ TEST_CASE("l'arbre des réglages garde les pages que les autres écrans citent",
   // Les langues et les sous-titres, le lecteur par défaut et les mises à jour vivent ensemble.
   CHECK(has("Audio and playback", "Playback"));
   CHECK(has("General", "Application"));
-  CHECK(has("General", "Engines"));  // le moteur est un réglage général (demande de Tatoub)
+  CHECK(has("General", "Engines"));  // le moteur est un réglage général (ADR 0012)
   CHECK_FALSE(has("General", "Languages"));
   CHECK_FALSE(has("General", "Subtitles"));
   CHECK_FALSE(has("General", "Default player"));

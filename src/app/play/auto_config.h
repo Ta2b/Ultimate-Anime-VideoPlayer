@@ -64,4 +64,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
 // pendant qu'un préréglage est choisi bascule les réglages en Personnalisé.
 bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b);
 
+// P3.21 : la fenêtre passée sur un écran d'une autre hauteur rouvre la chaîne d'un préréglage (la hauteur de
+// travail suit l'écran courant) ; Personnalisé garde la sienne.
+bool display_moves_chain(Preset preset, int opened_height, int now_height);
+
 }  // namespace ajp::app::play

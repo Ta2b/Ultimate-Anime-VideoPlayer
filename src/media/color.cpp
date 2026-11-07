@@ -19,6 +19,7 @@ extern "C" {
 #include <libavutil/rational.h>
 }
 
+#include "kernels/spec/color.h"
 #include "media/av_util.h"
 #include "media/log.h"
 #include "media/track.h"
@@ -68,7 +69,7 @@ void approximated(std::atomic<std::uint64_t>& warned, int value, const char* kin
 
 std::expected<ColorMatrix, Refusal> map_matrix(AVColorSpace space, AVColorPrimaries primaries, int width,
                                                int height) {
-  const ColorMatrix guessed = width >= 1280 || height > 576 ? ColorMatrix::Bt709 : ColorMatrix::Bt601;
+  const ColorMatrix guessed = kernels::sd_size(width, height) ? ColorMatrix::Bt601 : ColorMatrix::Bt709;
   switch (space) {
     case AVCOL_SPC_BT709:
       return ColorMatrix::Bt709;
@@ -114,7 +115,7 @@ std::expected<Primaries, Refusal> map_primaries(AVColorPrimaries primaries, Colo
       return Primaries::DciP3;
     case AVCOL_PRI_UNSPECIFIED:
       if (matrix == ColorMatrix::Bt2020Ncl) return Primaries::Bt2020;
-      if (matrix != ColorMatrix::Bt601 || width >= 1280 || height > 576) return Primaries::Bt709;
+      if (matrix != ColorMatrix::Bt601 || !kernels::sd_size(width, height)) return Primaries::Bt709;
       if (height == 576) return Primaries::Bt601_625;
       if (height == 480 || height == 486) return Primaries::Bt601_525;
       return Primaries::Bt709;

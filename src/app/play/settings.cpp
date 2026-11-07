@@ -19,8 +19,12 @@
 namespace ajp::app::play {
 namespace {
 
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
+// Le refus d'une clé du fichier (P2.11) : la clé, « audio.delay_ms », dans Refusal::key, que la lecture
+// tolérante écarte sans relire le texte ; le détail commence par elle.
+std::unexpected<Refusal> refuse_key(RefusalCode code, std::string key, std::string_view rest = {}) {
+  std::string detail = key;
+  detail += rest;
+  return std::unexpected(Refusal{.code = code, .detail = std::move(detail), .key = std::move(key)});
 }
 
 struct DownscaleName {
@@ -42,8 +46,8 @@ constexpr std::array<DownscaleName, kDownscaleCount> kDownscales{{
 template <class T>
 std::expected<void, Refusal> check(std::string_view key, T value, core::Range<T> range) {
   if (range.contains(value)) return {};
-  return refuse(RefusalCode::FieldOutOfRange,
-                std::format("{} : {} hors de {} à {}", key, value, range.lo, range.hi));
+  return refuse_key(RefusalCode::FieldOutOfRange, std::string(key),
+                    std::format(" : {} hors de {} à {}", value, range.lo, range.hi));
 }
 
 // Des balises de langue : lettres et tirets (« fre », « en-US »).
@@ -54,8 +58,8 @@ std::expected<void, Refusal> check_languages(std::string_view key,
       return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '-';
     });
     if (!letters)
-      return refuse(RefusalCode::FieldOutOfRange,
-                    std::format("{} : « {} » n'est pas une balise de langue", key, tag));
+      return refuse_key(RefusalCode::FieldOutOfRange, std::string(key),
+                        std::format(" : « {} » n'est pas une balise de langue", tag));
   }
   return {};
 }
@@ -263,9 +267,9 @@ std::string resolution_text(int height) {
 
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   if (!valid_factor(factor_of(s))) {
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("interpolation.rife : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
-                              s.rife_factor_den, limits::kRifeFactor.hi));
+    return refuse_key(RefusalCode::FieldOutOfRange, "interpolation.rife",
+                      std::format(" : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
+                                  s.rife_factor_den, limits::kRifeFactor.hi));
   }
   const std::array<std::expected<void, Refusal>, 6> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
@@ -279,13 +283,13 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
     if (!checked) return std::unexpected(checked.error());
   }
   if (s.auto_cap != 0 && (s.auto_cap < kAutoCapMin || s.auto_cap > kAutoCapMax))
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("interpolation.auto_cap : {} hors de {} à {} (0 : l'écran)", s.auto_cap,
-                              kAutoCapMin, kAutoCapMax));
+    return refuse_key(
+        RefusalCode::FieldOutOfRange, "interpolation.auto_cap",
+        std::format(" : {} hors de {} à {} (0 : l'écran)", s.auto_cap, kAutoCapMin, kAutoCapMax));
   if (s.language_presets.size() > limits::kLanguagePresets)
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("languages.presets : {} préréglages, {} au plus", s.language_presets.size(),
-                              limits::kLanguagePresets));
+    return refuse_key(
+        RefusalCode::FieldOutOfRange, "languages.presets",
+        std::format(" : {} préréglages, {} au plus", s.language_presets.size(), limits::kLanguagePresets));
   for (const media::LanguagePreset& preset : s.language_presets) {
     if (auto ok = check_languages(
             "languages.audio", preset.audio.empty() ? std::vector<std::string>{} : std::vector{preset.audio});
@@ -318,8 +322,8 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   if (auto mix = check("grade.look_mix", s.look_mix, core::Range<double>{0.0, 1.0}); !mix)
     return std::unexpected(mix.error());
   if (s.look_layers.size() + 1 > render::kLookSlots)
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("grade.looks : au plus {} LUT en tout", render::kLookSlots));
+    return refuse_key(RefusalCode::FieldOutOfRange, "grade.looks",
+                      std::format(" : au plus {} LUT en tout", render::kLookSlots));
   for (const LookLayer& layer : s.look_layers) {
     if (auto mix = check("grade.looks_mix", layer.mix, core::Range<double>{0.0, 1.0}); !mix)
       return std::unexpected(mix.error());
@@ -328,12 +332,12 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   for (const LookLayer& layer : s.look_layers) names.push_back(&layer.key);
   for (const std::string* name : names) {
     if (name->find('/') != std::string::npos || name->find('\\') != std::string::npos)
-      return refuse(RefusalCode::FieldOutOfRange,
-                    std::format("grade.look : « {} » n'est pas un nom de fichier", *name));
+      return refuse_key(RefusalCode::FieldOutOfRange, "grade.look",
+                        std::format(" : « {} » n'est pas un nom de fichier", *name));
   }
   if (s.model.find('/') != std::string::npos || s.model.find('\\') != std::string::npos)
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("image.model : « {} » n'est pas un nom de fichier", s.model));
+    return refuse_key(RefusalCode::FieldOutOfRange, "image.model",
+                      std::format(" : « {} » n'est pas un nom de fichier", s.model));
   return s;
 }
 
@@ -341,6 +345,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   PlaySettings s = saved;
   if (options.mute) s.volume = 0.0F;
   if (options.was_given("--no-upscale")) s.upscale = false;
+  if (options.was_given("--no-restore-lines")) s.restore_lines = false;
   if (options.was_given("--model") && options.model) s.model = options.model->filename().string();
   if (options.was_given("--work-height")) s.work_height = options.work_height;
   if (options.was_given("--rife")) {
@@ -363,6 +368,7 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   };
   keep("--mute", &PlaySettings::volume);
   keep("--no-upscale", &PlaySettings::upscale);
+  keep("--no-restore-lines", &PlaySettings::restore_lines);
   keep("--model", &PlaySettings::model);
   keep("--work-height", &PlaySettings::work_height);
   keep("--rife", &PlaySettings::rife_factor);
@@ -432,6 +438,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;
   s.subtitle_scale = wanted.subtitle_scale;
+  s.subtitle_delay_ms = wanted.subtitle_delay_ms;
   s.language_presets = wanted.language_presets;  // au prochain fichier
   s.grade = wanted.grade;
   s.grade_values = wanted.grade_values;

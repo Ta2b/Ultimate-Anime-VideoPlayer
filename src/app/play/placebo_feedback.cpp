@@ -153,6 +153,7 @@ void PresentFeedback::submitted(VkResult result) {
 }
 
 void PresentFeedback::new_swapchain(VkSwapchainKHR swapchain, std::int64_t now_us) {
+  clock_.reset();  // P3.44 : d'un mode à l'autre (60 puis 144 Hz), les dates d'avant fausseraient la grille
   if (level_ == PresentLevel::Wayland) return;  // les retours du compositeur suivent la surface
   ledger_.forget();
   domain_.reset();

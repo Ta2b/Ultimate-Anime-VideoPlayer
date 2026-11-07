@@ -1,5 +1,13 @@
 #include "core/file_sync.h"
 
+#include <chrono>
+#include <format>
+#include <fstream>
+#include <functional>
+#include <ios>
+#include <string>
+#include <thread>
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -40,6 +48,53 @@ void sync_directory([[maybe_unused]] const std::filesystem::path& folder) {
   ::fsync(fd);
   ::close(fd);
 #endif
+}
+
+namespace {
+
+std::string temp_suffix() {
+  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+  const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+  return std::format("{:x}-{:x}", ticks, thread);
+}
+
+}  // namespace
+
+std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
+                                          std::span<const std::byte> bytes) {
+  std::error_code error;
+  if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), error);
+  std::filesystem::path name = ".";
+  name += path.filename();
+  name += "." + temp_suffix() + ".tmp";
+  const std::filesystem::path temp = path.parent_path() / name;
+  {
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    out.close();  // la fermeture vide le tampon : son échec compte aussi
+    if (!out) {
+      std::filesystem::remove(temp, error);
+      return std::unexpected(Refusal{RefusalCode::FileUnwritable, temp.string()});
+    }
+  }
+  // Sur le disque avant le renommage : une coupure juste après ne laisse pas un fichier vide.
+  if (const std::error_code synced = sync_file(temp)) {
+    std::filesystem::remove(temp, error);
+    return std::unexpected(
+        Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", temp.string(), synced.message())});
+  }
+  std::filesystem::rename(temp, path, error);
+  if (error) {
+    const std::string why = error.message();
+    std::filesystem::remove(temp, error);
+    return std::unexpected(Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", path.string(), why)});
+  }
+  sync_directory(path.has_parent_path() ? path.parent_path() : std::filesystem::path("."));
+  return {};
+}
+
+std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& path, std::string_view text) {
+  return write_atomic(path, std::as_bytes(std::span(text)));
 }
 
 }  // namespace ajp::core

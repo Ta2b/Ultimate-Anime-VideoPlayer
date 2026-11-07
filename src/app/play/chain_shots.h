@@ -70,6 +70,8 @@ struct ShotScene {
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us);
 // La scène de cette même image vue à l'ingestion seule (media/live_scenes.h), sans la pré-analyse.
 std::optional<ShotScene> next_live(Chain& to);
+// Des flashs dangereux autour de l'image qui vient, vus à l'ingestion (media/flash_guard.h, P3.51).
+bool next_flashing(Chain& to);
 // Les plans connus passés au planificateur du grade v2 de l'écran (8.6), et au livre des coupes sous
 // --shot-cuts (8.7), quand leur nombre change.
 void feed_plan_shots(Chain& to);

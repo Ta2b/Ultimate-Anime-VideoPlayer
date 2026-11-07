@@ -1,0 +1,5 @@
+--mute
+--no-upscale
+--keys=1:p
+--snapshot-at=3
+video.mkv

@@ -77,6 +77,7 @@ bool read_triple(std::string_view text, float (&out)[3]) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<CubeLut, Refusal> parse_cube(std::string_view text) {
   if (text.size() > kLutMaxBytes) return std::unexpected(refused("LUT trop grosse"));
   CubeLut lut;
@@ -144,10 +145,14 @@ std::expected<CubeLut, Refusal> parse_cube(std::string_view text) {
     if (lut.rgb.size() >= expected * 3)
       return std::unexpected(refused(std::format("plus de {} lignes de données", expected)));
     for (int c = 0; c < 3; ++c) {
-      const float span = domain_max[c] - domain_min[c];
-      if (!(span > 0.0F)) return std::unexpected(refused("DOMAIN_MAX doit dépasser DOMAIN_MIN"));
-      lut.rgb.push_back(std::clamp((rgb[c] - domain_min[c]) / span, 0.0F, 1.0F));
+      if (!(domain_max[c] > domain_min[c]))
+        return std::unexpected(refused("DOMAIN_MAX doit dépasser DOMAIN_MIN"));
+      lut.rgb.push_back(rgb[c]);  // le domaine vaut pour l'entrée, pas pour la sortie (P3.69)
     }
+  }
+  for (std::size_t c = 0; c < 3; ++c) {
+    lut.domain_min[c] = domain_min[c];
+    lut.domain_max[c] = domain_max[c];
   }
   if (lut.size == 0) return std::unexpected(refused("LUT_3D_SIZE absent"));
   if (lut.rgb.size() != expected * 3)
@@ -176,6 +181,7 @@ std::uint16_t to_half(float value) {
   return static_cast<std::uint16_t>(sign | half);
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::size_t fill_unreachable(CubeLut& lut) {
   const auto n = static_cast<std::size_t>(lut.size);
   if (n < 2 || lut.rgb.size() != n * n * n * 3) return 0;
@@ -280,7 +286,9 @@ std::array<float, 3> sample_lut(const CubeLut& lut, const std::array<float, 3>& 
   std::array<int, 3> lo{};
   std::array<float, 3> t{};
   for (std::size_t k = 0; k < 3; ++k) {
-    const float x = std::clamp(c[k], 0.0F, 1.0F) * static_cast<float>(n - 1);
+    const float span = lut.domain_max[k] - lut.domain_min[k];
+    const float in = span > 0.0F ? (c[k] - lut.domain_min[k]) / span : c[k];
+    const float x = std::clamp(in, 0.0F, 1.0F) * static_cast<float>(n - 1);
     lo[k] = std::min(static_cast<int>(x), n - 2);
     t[k] = x - static_cast<float>(lo[k]);
   }

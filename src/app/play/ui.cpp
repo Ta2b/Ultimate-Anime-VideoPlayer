@@ -33,6 +33,7 @@
 #include "imgui_freetype.h"
 #endif
 #include "core/thread.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -79,14 +80,10 @@ std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) 
 #endif
 }
 
-// Le fichier entier dans font.data ; false s'il ne se lit pas.
+// Le fichier projeté dans font.data ; false s'il ne s'ouvre pas.
 bool read_font(const std::filesystem::path& path, FontFile& font) {
-  std::error_code error;
-  const std::uintmax_t size = std::filesystem::file_size(path, error);
-  if (error || size == 0 || size > static_cast<std::uintmax_t>(kMaxFontBytes)) return false;
-  std::ifstream file(path, std::ios::binary);
-  font.data.resize(static_cast<std::size_t>(size));
-  return file && file.read(reinterpret_cast<char*>(font.data.data()), static_cast<std::streamsize>(size));
+  font.data = MappedFile::open(path, static_cast<std::size_t>(kMaxFontBytes));
+  return font.data != nullptr;
 }
 
 #ifdef _WIN32
@@ -105,8 +102,7 @@ std::optional<FontFile> first_font(const std::filesystem::path& dir,
                                    std::initializer_list<std::pair<const wchar_t*, int>> files) {
   for (const auto& [name, index] : files) {
     const std::filesystem::path path = dir / name;
-    const std::u8string utf8 = path.u8string();
-    FontFile font{.path = std::string(utf8.begin(), utf8.end()), .index = index};
+    FontFile font{.path = core::to_utf8(path), .index = index};
     if (read_font(path, font)) return font;
   }
   return std::nullopt;
@@ -162,7 +158,7 @@ bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
   // seule la face compte.
   config.FontNo = static_cast<ImU32>(std::max(file.index, 0)) & 0xFFFFU;
   config.FontDataOwnedByAtlas = false;  // file.data vit dans PlayerUi
-  return fonts.AddFontFromMemoryTTF(file.data.data(), static_cast<int>(file.data.size()), kFontSize,
+  return fonts.AddFontFromMemoryTTF(file.data->data(), static_cast<int>(file.data->size()), kFontSize,
                                     &config) != nullptr;
 }
 
@@ -462,7 +458,6 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
 }
 
 UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vector<Input>& actions) {
-  if (controls_.pending_click(now_us)) actions.emplace_back(Command{cmd::TogglePause{}});
   const bool hide_cursor = controls_.cursor_hidden(now_us, view.paused);
   if (hide_cursor != cursor_hidden_) {
     if (hide_cursor) {
@@ -496,8 +491,9 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     if (captured) continue;
     if (click.button == ImGuiMouseButton_Right) {
       actions.emplace_back(Command{cmd::TogglePause{}});
-    } else if (controls_.click(click.at_us, click.count)) {
-      actions.emplace_back(ToggleFullscreen{});
+    } else if (const auto what = Controls::click(click.count)) {
+      actions.emplace_back(Command{cmd::TogglePause{}});  // le double clic rend l'état d'avant le premier
+      if (*what == Controls::VideoClick::FullscreenUndoPause) actions.emplace_back(ToggleFullscreen{});
     }
   }
   clicks_.clear();

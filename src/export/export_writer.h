@@ -28,7 +28,9 @@
 
 #include "core/frame.h"
 #include "core/types.h"
+#include "export/container.h"
 #include "export/encoder_choice.h"
+#include "export/owned_frame.h"
 
 struct AVBufferRef;
 struct AVFrame;
@@ -44,6 +46,7 @@ inline constexpr std::size_t kDefaultQueueDepth = 4;
 struct WriterConfig {
   std::filesystem::path source;  // le fichier lu : ses autres pistes, chapitres et métadonnées
   int source_video = -1;         // le flux vidéo choisi par le lecteur (Muxer::open) ; -1 : le meilleur
+  CopyChoice copies;             // pistes par défaut et délai audio de la lecture (P3.90)
   std::filesystem::path output;  // .mkv, .mp4 ou .mov (export/container.h), remplacé s'il existe
   int width = 0;                 // taille encodée, paire
   int height = 0;
@@ -101,7 +104,7 @@ struct Picture {
   bool device = false;           // planes : adresses CUDA (upload() Cuda), pas de l'hôte
   // Ou une image de l'encodeur (vulkan_frames(), cuda_frames()), déjà rendue ou copiée sur le
   // GPU : l'écriture la prend et la libère ; planes, bytes et release ne comptent pas.
-  AVFrame* frame = nullptr;
+  OwnedFrame frame;
   std::function<void()> release;
 };
 

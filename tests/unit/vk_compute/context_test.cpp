@@ -3,9 +3,14 @@
 // puis bus PCI).
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -15,6 +20,7 @@
 
 #include "gpu/vulkan/compute/functions.h"
 #include "gpu/vulkan/compute/library.h"
+#include "gpu/vulkan/compute/pipeline.h"
 #include "gpu/vulkan/compute/sync.h"
 #include "rig.h"
 
@@ -283,4 +289,41 @@ TEST_CASE("adoption : appareil incomplet, version, timeline ou file refusés", "
   AdoptedDevice bad_queue = own->adopted();
   bad_queue.queue_index = own->family_queues;  // première file hors de la famille
   require_refusal(VkContext::adopt(bad_queue), RefusalCode::DeviceUnavailable);
+}
+
+TEST_CASE("Cache de pipelines : un fichier abîmé ou d'un autre appareil n'est pas rendu au pilote", "[vk]") {
+  // Un en-tête VkPipelineCacheHeaderVersionOne de 32 octets (appareil 0x10de:0x2782), puis des données.
+  std::vector<std::byte> driver(48, std::byte{7});
+  const std::array<std::uint32_t, 4> head{32, VK_PIPELINE_CACHE_HEADER_VERSION_ONE, 0x10de, 0x2782};
+  std::memcpy(driver.data(), head.data(), sizeof(head));
+  const std::vector<std::byte> file = ajp::gpu::vk::seal_pipeline_cache(driver);
+  CHECK(ajp::gpu::vk::open_pipeline_cache(file, 0x10de, 0x2782).size() == driver.size());
+  CHECK(ajp::gpu::vk::open_pipeline_cache(file, 0x1002, 0x2782).empty());
+  CHECK(ajp::gpu::vk::open_pipeline_cache(std::span(file).first(file.size() - 1), 0x10de, 0x2782).empty());
+  std::vector<std::byte> damaged = file;
+  damaged.at(40) = std::byte{8};
+  CHECK(ajp::gpu::vk::open_pipeline_cache(damaged, 0x10de, 0x2782).empty());
+}
+
+TEST_CASE("contexte : appareil perdu, soumissions refusées en DeviceLost (P2.8)", "[vk_compute][context]") {
+  CHECK(ajp::gpu::vk::check(VK_ERROR_DEVICE_LOST, "appel").error().code == RefusalCode::DeviceLost);
+  Rig rig = make_rig();
+  VkContext& ctx = *rig.context;
+  REQUIRE(ctx.run_once([](VkCommandBuffer) {}));
+  // Comme un vkQueueSubmit qui aurait rendu VK_ERROR_DEVICE_LOST.
+  CHECK_FALSE(ctx.observe(VK_ERROR_DEVICE_LOST, "vkQueueSubmit"));
+  CHECK(ctx.lost());
+  require_refusal(ctx.run_once([](VkCommandBuffer) {}), RefusalCode::DeviceLost);
+}
+
+TEST_CASE("contexte : GPU tenu pour bloqué, puis réarmé quand il a rattrapé (P2.16)",
+          "[vk_compute][context]") {
+  auto ctx = require_value(VkContext::create({.settle_floor = std::chrono::milliseconds(50)}));
+  CHECK(ctx->settle_timeout() >= std::chrono::milliseconds(50));
+  auto timeline = require_value(TimelineSemaphore::create(*ctx));
+  CHECK_FALSE(ctx->settle(timeline.at(1)));  // jamais signalée : la longue soumission
+  CHECK(ctx->stalled());
+  REQUIRE(timeline.signal(1));  // le GPU a fini depuis
+  CHECK(ctx->settle(timeline.at(1)));
+  CHECK_FALSE(ctx->stalled());
 }

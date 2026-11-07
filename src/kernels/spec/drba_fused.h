@@ -27,6 +27,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 inline constexpr int kDrbaFusedBlocks = 3;
@@ -109,3 +111,5 @@ constexpr DrbaFusedLayout drba_fused_layout(const DrbaFusedPlan& plan, int heigh
 }
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

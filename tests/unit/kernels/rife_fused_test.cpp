@@ -30,7 +30,8 @@ TEST_CASE("Les découpages de RIFE 4.25 et 4.22 lite sont valides, d'autres non"
   CHECK_FALSE(rife_fused_plan_valid(six));
 }
 
-TEST_CASE("Une taille remplie est prise quand chaque sortie de bloc est entière", "[kernels][rife_fused]") {
+TEST_CASE("RIFE fusionné : une taille remplie est prise quand chaque sortie de bloc est entière",
+          "[kernels][rife_fused]") {
   CHECK(rife_fused_size_valid(kV425, 768, 1280));
   CHECK(rife_fused_size_valid(kV425, 64, 64));
   CHECK(rife_fused_size_valid(kV422, 1088, 1920));
@@ -72,7 +73,8 @@ TEST_CASE("Les formes des entrées et sorties de blocs sont celles du graphe à 
   CHECK(rife_fused_y(kV422, 3, 768, 1280).height == 384);
 }
 
-TEST_CASE("La disposition des tampons : alignée, sans recouvrement, dans l'ordre", "[kernels][rife_fused]") {
+TEST_CASE("RIFE fusionné : la disposition des tampons, alignée, sans recouvrement, dans l'ordre",
+          "[kernels][rife_fused]") {
   const RifeFusedLayout layout = rife_fused_layout(kV425, 768, 1280);
   CHECK(layout.encode == 0);
   std::size_t end = fused_align(std::size_t{8} * 768 * 1280 * 2);

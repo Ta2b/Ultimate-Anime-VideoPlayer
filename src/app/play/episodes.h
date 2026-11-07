@@ -2,6 +2,8 @@
 // des noms (« ep2 » avant « ep10 »), comme les rangerait un explorateur de fichiers.
 #pragma once
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string_view>
@@ -16,5 +18,15 @@ int natural_compare(std::string_view a, std::string_view b);
 // ou rien au bout de la liste ou si le dossier ne se lit pas. N'entrent que les extensions
 // vidéo connues (default_player.h).
 std::optional<std::filesystem::path> sibling_episode(const std::filesystem::path& current, int direction);
+
+// P3.27 : un fichier encore en téléchargement. Sa fin lue n'est pas la fin de la vidéo : s'il a grandi depuis
+// l'ouverture, ou grandit pendant une courte attente (écrit dans les 10 dernières secondes), la lecture le
+// rouvre au même endroit, durée relue, au lieu d'enchaîner l'épisode suivant.
+struct GrowingFile {
+  std::uintmax_t size = 0;
+  static GrowingFile of(const std::filesystem::path& file);
+  bool grew(const std::filesystem::path& file,
+            std::chrono::milliseconds wait = std::chrono::milliseconds(3000)) const;
+};
 
 }  // namespace ajp::app::play

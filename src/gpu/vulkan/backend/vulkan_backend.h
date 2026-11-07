@@ -118,8 +118,9 @@ class VulkanBackend final : public Backend {
   // RIFE fusionné (vulkan_rife_fused.cpp) : un manifeste « .rifefused » construit chacun de ses morceaux
   // en artefact ; la clé de l'artefact les nomme tous.
   // V9 : le réseau construit avec l'autotuner rejoué contre ses noyaux de référence (net_gate.h) ; les
-  // choix repliés si sa sortie s'en éloigne trop.
-  void gate(const ModelSpec& model, net::ArtifactData& data);
+  // choix repliés si sa sortie s'en éloigne trop. Porte non jouée ou repli refusé : les noyaux de référence
+  // partout (P2.45) ; refus s'ils ne s'abaissent pas non plus, rien d'invérifié n'est écrit.
+  std::expected<void, Refusal> gate(const ModelSpec& model, net::ArtifactData& data);
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -88,6 +89,18 @@ TEST_CASE("plans : deux plans de même luminosité, cadrés autrement, sont coup
   std::vector<ShotFrame> frames;
   for (int i = 0; i < 40; ++i) frames.push_back(flat(i, 0.4F, 0));
   for (int i = 40; i < 80; ++i) frames.push_back(flat(i, 0.4F, 1));
+  REQUIRE(cut(frames).size() == 2);
+}
+
+TEST_CASE("plans : champ-contrechamp de même luminosité et cadrage, couleurs autres (P3.31)",
+          "[media][shots]") {
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 80; ++i) {
+    ShotFrame f = flat(i, 0.4F);
+    f.blue = i < 40 ? 0.02F : 0.15F;  // un fond rouge, puis un ciel bleu
+    f.chroma = i < 40 ? 0.30F : 0.25F;
+    frames.push_back(f);
+  }
   REQUIRE(cut(frames).size() == 2);
 }
 
@@ -198,6 +211,10 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   REQUIRE(save_shot_cache(dir, "aaaaaaaaaaaaaaaa", shots, true, 1));
   CHECK_FALSE(load_shot_cache(dir, key));
   CHECK(load_shot_cache(dir, "aaaaaaaaaaaaaaaa"));
+  // Une mesure NaN (fichier abîmé) refuse le cache entier.
+  shots.at(0).last.p50 = std::numeric_limits<float>::quiet_NaN();
+  REQUIRE(save_shot_cache(dir, "bbbbbbbbbbbbbbbb", shots, true));
+  CHECK_FALSE(load_shot_cache(dir, "bbbbbbbbbbbbbbbb"));
   std::filesystem::remove_all(dir);
 }
 

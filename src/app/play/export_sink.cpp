@@ -49,12 +49,11 @@ kernels::Siting siting_of(ChromaSiting siting) {
 }  // namespace
 
 FrameSource pool_frames(AVBufferRef* frames) {
-  return [frames]() -> std::expected<AVFrame*, Refusal> {
-    AVFrame* frame = av_frame_alloc();
-    if (frame == nullptr) return refuse(RefusalCode::GpuMemoryExhausted, "export : image de l'encodeur");
+  return [frames]() -> std::expected<exporter::OwnedFrame, Refusal> {
+    exporter::OwnedFrame frame(av_frame_alloc());
+    if (!frame) return refuse(RefusalCode::GpuMemoryExhausted, "export : image de l'encodeur");
     // Le pool de l'encodeur grandit à la demande (VideoEncoder l'alloue d'avance pour l'export).
-    if (const int err = av_hwframe_get_buffer(frames, frame, 0); err < 0) {
-      av_frame_free(&frame);
+    if (const int err = av_hwframe_get_buffer(frames, frame.get(), 0); err < 0) {
       return refuse(RefusalCode::GpuMemoryExhausted, std::format("export : av_hwframe_get_buffer : {}", err));
     }
     return frame;
@@ -105,8 +104,9 @@ std::expected<std::shared_ptr<ExportSink>, Refusal> ExportSink::open(ExportSinkS
   for (std::uint32_t i = 0; i < s.slots; ++i) {
     auto frame = s.frames();
     if (!frame) return std::unexpected(std::move(frame.error()));
-    sink->frames_.push_back(*frame);  // rendue par le destructeur, même refusée
-    if (auto ok = sink->check(**frame); !ok) return std::unexpected(std::move(ok.error()));
+    const AVFrame& made = **frame;
+    sink->frames_.push_back(std::move(*frame));  // rendue par le destructeur, même refusée
+    if (auto ok = sink->check(made); !ok) return std::unexpected(std::move(ok.error()));
     sink->descs_.push_back(
         RingSlotDesc{.index = i, .generation = s.generation, .width = s.width, .height = s.height});
   }
@@ -132,9 +132,10 @@ ExportSink::~ExportSink() {
     // Un rappel du backend peut encore venir : ses signaux et les images restent, perdus.
     log_channel("app")->warn("export : écritures YUV jamais signalées, leurs images ne sont pas rendues");
     [[maybe_unused]] const Fences* kept = fences_.release();
+    for (exporter::OwnedFrame& frame : frames_) [[maybe_unused]]
+      const AVFrame* lost = frame.release();
     return;
   }
-  for (AVFrame*& frame : frames_) av_frame_free(&frame);
 }
 
 std::expected<void, Refusal> ExportSink::check(const AVFrame& frame) const {
@@ -179,17 +180,14 @@ bool ExportSink::ready(const RingFrame& frame) const {
          fences_->done[frame.slot].load(std::memory_order_acquire) >= frame.ready_value;
 }
 
-std::expected<AVFrame*, Refusal> ExportSink::take(std::uint32_t slot) {
+std::expected<exporter::OwnedFrame, Refusal> ExportSink::take(std::uint32_t slot) {
   if (slot >= setup_.slots)
     return refuse(RefusalCode::FieldOutOfRange, std::format("export : slot {}", slot));
   auto fresh = setup_.frames();
   if (!fresh) return std::unexpected(std::move(fresh.error()));
-  if (auto ok = check(**fresh); !ok) {
-    av_frame_free(&*fresh);
-    return std::unexpected(std::move(ok.error()));
-  }
+  if (auto ok = check(**fresh); !ok) return std::unexpected(std::move(ok.error()));
   const std::scoped_lock lock(mutex_);
-  return std::exchange(frames_[slot], *fresh);
+  return std::exchange(frames_[slot], std::move(*fresh));
 }
 
 }  // namespace ajp::app::play

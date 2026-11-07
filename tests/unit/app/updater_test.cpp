@@ -33,15 +33,15 @@ std::string read(const fs::path& file) {
 
 TEST_CASE("mises à jour : quand vérifier", "[updater]") {
   UpdateState state;
-  CHECK(update_due(state, "notify", "daily", 1000));        // jamais vérifié
-  CHECK_FALSE(update_due(state, "never", "launch", 1000));  // Jamais
+  CHECK(update_due(state, UpdateMode::Notify, UpdateFrequency::Daily, 1000));        // jamais vérifié
+  CHECK_FALSE(update_due(state, UpdateMode::Never, UpdateFrequency::Launch, 1000));  // Jamais
   state.last_check_unix = 1000;
-  CHECK_FALSE(update_due(state, "notify", "daily", 1000 + 3600));
-  CHECK(update_due(state, "notify", "daily", 1000 + 86400));
-  CHECK_FALSE(update_due(state, "auto", "weekly", 1000 + 3 * 86400));
-  CHECK(update_due(state, "auto", "weekly", 1000 + 7 * 86400));
-  CHECK(update_due(state, "auto", "launch", 1001));
-  CHECK(update_due(state, "auto", "daily", 500));  // l'horloge a reculé
+  CHECK_FALSE(update_due(state, UpdateMode::Notify, UpdateFrequency::Daily, 1000 + 3600));
+  CHECK(update_due(state, UpdateMode::Notify, UpdateFrequency::Daily, 1000 + 86400));
+  CHECK_FALSE(update_due(state, UpdateMode::Auto, UpdateFrequency::Weekly, 1000 + 3 * 86400));
+  CHECK(update_due(state, UpdateMode::Auto, UpdateFrequency::Weekly, 1000 + 7 * 86400));
+  CHECK(update_due(state, UpdateMode::Auto, UpdateFrequency::Launch, 1001));
+  CHECK(update_due(state, UpdateMode::Auto, UpdateFrequency::Daily, 500));  // l'horloge a reculé
 }
 
 TEST_CASE("mises à jour : l'état fait l'aller-retour", "[updater]") {
@@ -69,20 +69,20 @@ TEST_CASE("mises à jour : manifeste attendu selon le canal", "[updater]") {
 }
 
 TEST_CASE("mises à jour : un échec de curl se lit, un manifeste absent n'est pas une panne", "[updater]") {
-  CHECK(curl_http_status("curl: (22) The requested URL returned error: 404") == 404);
-  CHECK(curl_http_status("curl: (6) Could not resolve host: github.com") == 0);
-  CHECK(curl_failure(22, "curl: (22) The requested URL returned error: 404").code ==
-        ajp::RefusalCode::TrackUnavailable);
-  const ajp::Refusal forbidden = curl_failure(22, "curl: (22) The requested URL returned error: 403");
+  CHECK(curl_status_line("ajp-http 404") == 404);
+  CHECK_FALSE(curl_status_line("curl: (22) The requested URL returned error: 404"));
+  CHECK_FALSE(curl_status_line("ajp-http 404x"));
+  CHECK(curl_failure(22, 404).code == ajp::RefusalCode::TrackUnavailable);
+  const ajp::Refusal forbidden = curl_failure(22, 403);
   CHECK(forbidden.code != ajp::RefusalCode::TrackUnavailable);
   CHECK(forbidden.detail.find("403") != std::string::npos);
   for (const int code : {6, 7, 28, 35, 60, 3}) {
-    const ajp::Refusal refusal = curl_failure(code, "curl: (x) détail");
+    const ajp::Refusal refusal = curl_failure(code, 0);
     CHECK(refusal.code != ajp::RefusalCode::TrackUnavailable);
     CHECK(refusal.detail.find("code 22") == std::string::npos);
     CHECK(!refusal.detail.empty());
   }
-  CHECK(curl_failure(3, "").detail.find("3") != std::string::npos);
+  CHECK(curl_failure(3, 0).detail.find("3") != std::string::npos);
 }
 
 #if !defined(_WIN32)

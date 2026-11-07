@@ -10,6 +10,8 @@
 // personnage animé en deux tient sa pose pendant que le fond glisse.
 #pragma once
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 // Le graphe, entrées dans l'ordre :
@@ -36,3 +38,5 @@ constexpr DrbaCall drba_call(float t) {
 }
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

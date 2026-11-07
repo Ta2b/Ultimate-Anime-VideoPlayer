@@ -5,7 +5,18 @@
 #include <cmath>
 #include <format>
 #include <numeric>
+#include <string_view>
 #include <system_error>
+
+#ifdef _WIN32
+#include <array>
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <sys/mount.h>
+#include <sys/param.h>
+#else
+#include <sys/vfs.h>
+#endif
 
 #include "app/play/i18n.h"
 #include "prepare/utf8.h"
@@ -34,6 +45,15 @@ PlaySettings export_chain(const PlaySettings& s) {
   out.hdr_native = false;
   out.grade = false;
   out.smooth_motion = false;
+  if (is_gmfss(out.motion_engine))
+    out.motion_engine = MotionEngine::Rife;  // P5.2 : débranché, comme à la lecture
+  // P3.87 : en Auto, la lecture prend ce que l'écran affiche (×6 à 144 Hz) ; l'export, lu sur un téléviseur
+  // ou un téléphone, prend ×2 quel que soit l'écran. Un multiplicateur choisi à la main reste.
+  if (out.rife_auto && out.rife_factor > 0) {
+    out.rife_auto = false;
+    out.rife_factor = 2;
+    out.rife_factor_den = 1;
+  }
   return out;
 }
 
@@ -65,14 +85,42 @@ media::Rational export_rate(media::Rational source, Factor factor) {
 std::filesystem::path default_export_path(const std::filesystem::path& source, ExportSize size,
                                           media::Rational rate) {
   const std::string fps = rate_text(rate);
-  const std::string base = std::format("{} [ajp {}x{}{}]", prepare::utf8_path(source.stem()), size.width,
-                                       size.height, fps.empty() ? std::string() : std::format(" {}fps", fps));
+  // P3.96 : le nom de la source borné à 160 octets, coupé entre deux caractères UTF-8 : le nom complet tient
+  // sous NAME_MAX (255 octets) avec le suffixe, « (999) » et l'extension.
+  std::string stem = prepare::utf8_path(source.stem());
+  if (stem.size() > 160) {
+    std::size_t cut = 160;
+    while (cut > 0 && (static_cast<unsigned char>(stem[cut]) & 0xC0) == 0x80) --cut;
+    stem.resize(cut);
+  }
+  const std::string base = std::format("{} [ajp {}x{}{}]", stem, size.width, size.height,
+                                       fps.empty() ? std::string() : std::format(" {}fps", fps));
   const std::filesystem::path dir = source.parent_path();
   std::filesystem::path path = dir / prepare::path_from_utf8(base + ".mkv");
   std::error_code error;
   for (int n = 2; std::filesystem::exists(path, error) && n < 1000; ++n)
     path = dir / prepare::path_from_utf8(std::format("{} ({}).mkv", base, n));
+  // P3.95 : passé « (999) », aucun nom proposé plutôt qu'un fichier existant écrasé.
+  if (std::filesystem::exists(path, error)) return {};
   return path;
+}
+
+bool on_fat32(const std::filesystem::path& dir) {
+#ifdef _WIN32
+  std::array<wchar_t, MAX_PATH + 1> volume{};
+  std::array<wchar_t, MAX_PATH + 1> fs{};
+  if (GetVolumePathNameW(dir.c_str(), volume.data(), static_cast<DWORD>(volume.size())) == 0) return false;
+  if (GetVolumeInformationW(volume.data(), nullptr, 0, nullptr, nullptr, nullptr, fs.data(),
+                            static_cast<DWORD>(fs.size())) == 0)
+    return false;
+  return std::wstring_view(fs.data()).starts_with(L"FAT");
+#elif defined(__APPLE__)
+  struct statfs info{};
+  return statfs(dir.c_str(), &info) == 0 && std::string_view(info.f_fstypename) == "msdos";
+#else
+  struct statfs info{};
+  return statfs(dir.c_str(), &info) == 0 && info.f_type == 0x4d44;  // MSDOS_SUPER_MAGIC
+#endif
 }
 
 std::string export_label(exporter::Codec codec, exporter::Quality quality) {

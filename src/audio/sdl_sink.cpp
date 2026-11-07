@@ -3,14 +3,17 @@
 // La position jouée se mesure sans course : SDL appelle on_device_request
 // verrou du flux tenu, juste avant de tirer des trames, et pushed_ ne change
 // que sous ce même verrou. Trames consommées = poussées - encore en file.
+#include <atomic>
 #include <climits>
 #include <cmath>
 #include <format>
+#include <mutex>
 #include <string>
 #include <string_view>
 
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_log.h>
 
@@ -48,6 +51,7 @@ class SdlSink final : public AudioSink {
   SdlSink& operator=(const SdlSink&) = delete;
   // Détruire le flux ferme le périphérique et attend la fin d'un rappel en cours.
   ~SdlSink() override {
+    if (watching_) SDL_RemoveEventWatch(&on_event, this);
     if (stream_ != nullptr) SDL_DestroyAudioStream(stream_);
   }
 
@@ -67,19 +71,46 @@ class SdlSink final : public AudioSink {
   double ratio() const override { return SDL_GetAudioStreamFrequencyRatio(stream_); }
   std::int64_t clear() override;
   void on_demand(std::function<void(const DeviceReading&)> callback) override;
+  void on_removed(std::function<void()> callback) override {
+    const std::scoped_lock lock(removed_mutex_);
+    removed_ = std::move(callback);
+  }
+  std::expected<void, Refusal> reopen_default() override;
 
   // Thread du périphérique, verrou du flux tenu par SDL.
   void notify_demand() const;
 
  private:
   std::int64_t consumed_locked() const;
+  std::expected<void, Refusal> open_stream(SDL_AudioDeviceID device_id);
+  // Thread de SDL qui pose l'événement : SDL_EVENT_AUDIO_DEVICE_REMOVED du périphérique logique ouvert.
+  static bool SDLCALL on_event(void* sink, SDL_Event* event);
 
   AudioSubsystem subsystem_;
   SDL_AudioStream* stream_ = nullptr;
   PcmFormat format_;
   std::int64_t pushed_ = 0;  // écrit sous le verrou du flux, par le thread audio seul
   std::function<void(const DeviceReading&)> demand_;
+  std::atomic<SDL_AudioDeviceID> device_{0};  // le périphérique logique du flux, lu par on_event
+  bool watching_ = false;
+  std::mutex removed_mutex_;
+  std::function<void()> removed_;
 };
+
+bool SDLCALL SdlSink::on_event(void* sink, SDL_Event* event) {
+  auto* self = static_cast<SdlSink*>(sink);
+  if (event->type == SDL_EVENT_AUDIO_DEVICE_REMOVED && event->adevice.recording == false &&
+      event->adevice.which == self->device_.load()) {
+    const std::scoped_lock lock(self->removed_mutex_);
+    if (self->removed_) {
+      try {
+        self->removed_();
+      } catch (...) {  // NOLINT(bugprone-empty-catch) : aucune exception ne remonte dans SDL
+      }
+    }
+  }
+  return true;  // l'événement suit son cours
+}
 
 void SDLCALL on_device_request(void* sink, SDL_AudioStream* /*stream*/, int /*additional*/, int /*total*/) {
   static_cast<const SdlSink*>(sink)->notify_demand();
@@ -101,12 +132,35 @@ std::expected<void, Refusal> SdlSink::open(const OutputRequest& request) {
   const auto format = checked({.sample_rate = request.sample_rate != 0 ? request.sample_rate : preferred.freq,
                                .channels = request.channels != 0 ? request.channels : preferred.channels});
   if (!format) return std::unexpected(format.error());
+  format_ = *format;
+  if (auto opened = open_stream(device_id); !opened) return opened;
+  watching_ = SDL_AddEventWatch(&on_event, this);
+  return {};
+}
+
+std::expected<void, Refusal> SdlSink::open_stream(SDL_AudioDeviceID device_id) {
   const SDL_AudioSpec spec{
-      .format = SDL_AUDIO_F32, .channels = format->channels, .freq = format->sample_rate};
+      .format = SDL_AUDIO_F32, .channels = format_.channels, .freq = format_.sample_rate};
   // Le périphérique s'ouvre en pause ; SDL convertit vers son format réel si besoin.
   stream_ = SDL_OpenAudioDeviceStream(device_id, &spec, nullptr, nullptr);
   if (stream_ == nullptr) return refuse_sdl("SDL_OpenAudioDeviceStream");
-  format_ = *format;
+  device_.store(SDL_GetAudioStreamDevice(stream_));
+  return {};
+}
+
+std::expected<void, Refusal> SdlSink::reopen_default() {
+  const float kept_gain = stream_ != nullptr ? gain() : 1.0F;
+  const double kept_ratio = stream_ != nullptr ? ratio() : 1.0;
+  if (stream_ != nullptr) {
+    SDL_SetAudioStreamGetCallback(stream_, nullptr, nullptr);  // attend la fin d'un rappel en cours
+    SDL_DestroyAudioStream(stream_);
+    stream_ = nullptr;
+  }
+  device_.store(0);
+  if (auto opened = open_stream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK); !opened) return opened;
+  set_gain(kept_gain);
+  set_ratio(kept_ratio);
+  if (demand_) SDL_SetAudioStreamGetCallback(stream_, &on_device_request, this);
   return {};
 }
 

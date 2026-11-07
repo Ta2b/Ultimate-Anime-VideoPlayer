@@ -255,10 +255,11 @@ TEST_CASE("couleur : RGBA16 UNORM, clamp puis arrondi", "[color]") {
 }
 
 TEST_CASE("couleur : étiquettes manquantes, règles du fork", "[color]") {
-  CHECK(effective_matrix(std::nullopt, 576) == Matrix::Bt601);
-  CHECK(effective_matrix(std::nullopt, 719) == Matrix::Bt601);
-  CHECK(effective_matrix(std::nullopt, 720) == Matrix::Bt709);
-  CHECK(effective_matrix(Matrix::Bt2020Ncl, 480) == Matrix::Bt2020Ncl);
+  CHECK(effective_matrix(std::nullopt, 720, 576) == Matrix::Bt601);
+  CHECK(effective_matrix(std::nullopt, 1280, 536) == Matrix::Bt709);  // P5.10 : la largeur compte
+  for (int h = 577; h <= 719; ++h) CHECK(effective_matrix(std::nullopt, 960, h) == Matrix::Bt709);
+  CHECK(effective_matrix(std::nullopt, 1920, 1080) == Matrix::Bt709);
+  CHECK(effective_matrix(Matrix::Bt2020Ncl, 720, 480) == Matrix::Bt2020Ncl);
   CHECK(effective_range(std::nullopt) == Range::Limited);
   CHECK(effective_range(Range::Full) == Range::Full);
   CHECK(effective_siting(std::nullopt) == Siting::Left);

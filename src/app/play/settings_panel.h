@@ -75,6 +75,7 @@ struct SettingsChoices {
   int display_height = 0;   // hauteur de l'écran en pixels ; 0 : inconnue
   bool calibrated = false;  // Auto suit la calibration de l'assistant (calibration.toml) sur cette carte
   std::string gpu_name;     // la carte
+  std::vector<std::string> gpus;  // toutes les cartes du système : le choix n'est montré qu'à partir de deux
   struct AudioOut {
     std::string name;
     int channels = 0;

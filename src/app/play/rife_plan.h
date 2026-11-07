@@ -2,7 +2,7 @@
 // autre moteur d'interpolation) y tourne. Les instants de sortie viennent de core/cadence.h.
 //
 // RIFE ne tourne pas sur une paire qui ne bouge pas ou qui coupe :
-//   - coupe de scène (kernels/spec/detect.h, score > 0,150) : mélanger deux plans ferait un
+//   - coupe de scène (kernels/spec/detect.h, score > 0,120) : mélanger deux plans ferait un
 //     fantôme ;
 //   - dessin tenu (pire bloc 32 × 32 sous 0,70 niveau) : interpoler une image avec elle-même
 //     redonne la même image, au prix de RIFE ;
@@ -31,15 +31,18 @@ struct PairFacts {
   std::optional<gpu::PairScores> scores;  // mesures de la paire ; absentes : pas mesurée
   // La coupe selon les plans de la pré-analyse (cut_book.h, --shot-cuts) ; rien : la mesure décide.
   std::optional<bool> known_cut;
+  // P3.32 : la part de l'image hors bandes noires (analyse du grade) ; le score de RIFE, mesuré sur toute
+  // l'image, y est rapporté. 1 : pas de bandes connues.
+  double useful_area = 1.0;
 };
 
 // Une coupe des plans n'est gardée que si la mesure de RIFE dépasse ce plancher. Relevé sur 30 désaccords
-// jugés à l'image (Re:Zero, 04/11) : les vraies coupes que RIFE manquait avaient 0,123 à 0,145, les fausses
+// jugés à l'image (Re:Zero) : les vraies coupes que RIFE manquait avaient 0,123 à 0,145, les fausses
 // coupes des plans sous 0,08 étaient toutes des effets.
 inline constexpr double kPlanCutFloor = 0.09;
 
-// Vrai si la paire enjambe une coupe : les plans s'ils la couvrent (au-dessus du plancher), sinon la mesure
-// de RIFE.
+// Vrai si la paire enjambe une coupe : une coupe des plans au-dessus du plancher, ou la mesure de RIFE (l'une
+// ou l'autre, P3.31).
 bool pair_cut(const PairFacts& facts);
 
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.

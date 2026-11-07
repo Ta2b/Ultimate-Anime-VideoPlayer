@@ -163,7 +163,7 @@ TEST_CASE("une vidéo HDR ou d'un format non pris est refusée avec une raison",
   pq.transfer = Transfer::Pq;
   const auto hdr = still_from_frame(yuv420p(pq), narrow());
   REQUIRE_FALSE(hdr);
-  CHECK(hdr.error().detail.starts_with("vidéo HDR"));
+  CHECK(hdr.error().key == kHdrSourceKey);
 
   DecodedFrame gray = yuv420p(ColorInfo{});
   gray.format = PixelFormat::Rgba16Unorm;

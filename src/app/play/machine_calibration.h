@@ -5,7 +5,7 @@
 //
 // Les hauteurs de travail essayées s'arrêtent à la moitié de l'écran : SPAN double l'image, au-delà sa sortie
 // dépasserait l'écran (1080p : 540p au plus, 1440p : 720p, 4K : 1080p). Deux familles, dans l'ordre (choix de
-// Tatoub, 04/11) :
+// jugé à l'œil) :
 //   1. SPAN seul, du palier le plus léger au plus lourd, jusqu'au premier qui ne tient pas ;
 //   2. SPAN + RIFE 4.22 lite en mode auto Rapide, du plus haut palier que SPAN seul a tenu vers le bas,
 //      jusqu'au premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas
@@ -67,9 +67,9 @@ std::vector<int> calibration_heights(int display_height);
 
 // Le prochain essai après ceux déjà faits ; rien quand la recherche est finie.
 std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int display_height);
-// La chaîne recommandée : SPAN passe avant l'interpolation, donc le plus haut palier SPAN qui tient, avec
-// RIFE s'il tient aussi à ce palier (sinon SPAN seul) ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni
-// RIFE si rien ne tient. Les paliers plus bas avec RIFE restent au tableau, au choix de l'utilisateur.
+// La chaîne recommandée, la fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent
+// ensemble ; sinon le plus haut SPAN seul ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni RIFE si rien
+// ne tient. Les autres paliers restent au tableau, au choix de l'utilisateur.
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
 // Personnalisé, réduction Hermite, RIFE 4.22 lite en mode auto Rapide ; span_fp8 : SPAN Balanced Sharp en
@@ -84,8 +84,20 @@ struct MachineCalibration {
   std::string gpu;
   std::string date;  // AAAA-MM-JJ
   int display_height = 0;
-  bool span_fp8 = false;  // les essais SPAN ont joué le Balanced Sharp en FP8
+  bool span_fp8 = false;    // les essais SPAN ont joué le Balanced Sharp en FP8
+  bool on_battery = false;  // mesurée sur batterie (P3.12) : gardée au tableau, pas suivie par l'Auto
 };
+
+// La barre de la calibration (P3.13) : l'avancement dit par calibrate_machine, plus une avance lente pendant
+// un essai qui dure (une construction de moteur), au plus 8 points : elle ne reste plus figée des minutes.
+float creeping_fraction(float reported, double seconds_since_change);
+// La durée annoncée avant la calibration (P3.13), en minutes : les essais pour cet écran, rejeux compris,
+// et les constructions de TensorRT (une par taille essayée) quand ses moteurs ne sont pas encore construits,
+// plus longues sur un portable.
+int calibration_minutes(int display_height, bool builds_engines, bool laptop);
+
+// Un essai se rejoue une fois (P3.12) : quand il ne tient pas, ou qu'il tient de justesse.
+bool needs_second_run(const CandidateTrial& trial);
 
 // Le fichier des résultats (calibration.toml, à côté de play.toml), que calibrate_machine écrit quand
 // plan.data est donné.

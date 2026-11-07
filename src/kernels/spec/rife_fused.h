@@ -21,6 +21,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 inline constexpr int kFusedMaxBlocks = 5;
@@ -115,3 +117,5 @@ constexpr RifeFusedLayout rife_fused_layout(const RifeFusedPlan& plan, int heigh
 }
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

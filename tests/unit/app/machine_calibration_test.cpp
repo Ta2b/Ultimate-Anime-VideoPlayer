@@ -1,5 +1,7 @@
 #include "app/play/machine_calibration.h"
 
+#include <filesystem>
+
 #include <catch2/catch_test_macros.hpp>
 
 using namespace ajp::app::play;
@@ -48,18 +50,21 @@ TEST_CASE("la calibration monte SPAN seul, puis descend SPAN + RIFE depuis son p
   CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 540});
 }
 
-TEST_CASE("la calibration garde SPAN seul quand RIFE ne tient pas, RIFE seul en recours",
+TEST_CASE("la calibration préfère RIFE seul à SPAN seul, SPAN seul quand RIFE ne tient pas",
           "[calibration-machine]") {
   using C = ChainCandidate;
-  // RIFE ne tient nulle part : SPAN + RIFE descend jusqu'au bout, SPAN seul est gardé.
+  // RIFE ne tient nulle part : SPAN + RIFE descend jusqu'au bout, RIFE seul est essayé, SPAN seul est gardé.
   auto tried = search(1440, [](const ChainCandidate& c) { return c.span && !c.rife && c.height <= 540; });
-  CHECK(tried.size() == 4 + 3);
+  CHECK(tried.size() == 4 + 3 + 1);
   CHECK(best_candidate(tried) == C{.span = true, .rife = false, .height = 540});
-  // SPAN haut sans RIFE passe avant SPAN bas avec RIFE : 720p seul est recommandé, 480p + RIFE reste au
-  // tableau.
+  // SPAN + RIFE nulle part mais RIFE seul tient : la fluidité passe avant SPAN seul (P3.11).
+  tried = search(1440, [](const ChainCandidate& c) { return !(c.span && c.rife); });
+  CHECK(tried.back().chain == C{.span = false, .rife = true, .height = 0});
+  CHECK(best_candidate(tried) == C{.span = false, .rife = true, .height = 0});
+  // La fluidité d'abord (P3.11) : 480p + RIFE passe avant 720p seul, qui reste au tableau.
   tried = search(1440, [](const ChainCandidate& c) { return !c.rife || c.height <= 480; });
   CHECK(tried.back().chain == C{.span = true, .rife = true, .height = 480});
-  CHECK(best_candidate(tried) == C{.span = true, .rife = false, .height = 720});
+  CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 480});
   // SPAN nulle part : RIFE seul, sans SPAN + RIFE.
   tried = search(1080, [](const ChainCandidate& c) { return !c.span; });
   REQUIRE(tried.size() == 2);
@@ -125,5 +130,33 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   CHECK(read->gpu == "RTX 4070 Ti");
   CHECK(read->display_height == 1440);
   CHECK(read->span_fp8);
+  CHECK_FALSE(read->on_battery);
   CHECK_FALSE(parse_calibration("version = 1\n"));
+  // Rejoués dans les deux sens (P3.12) : l'échec, et le succès de justesse ; pas le succès net.
+  CHECK(needs_second_run(c.tried[0]));
+  CHECK_FALSE(needs_second_run(c.tried[1]));
+  CandidateTrial close = c.tried[1];
+  close.lost_percent = 1.6;
+  CHECK(needs_second_run(close));
+  // Mesurée sur batterie : relue, mais l'Auto ne la suit pas.
+  c.on_battery = true;
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-battery";
+  std::filesystem::create_directories(dir);
+  REQUIRE(save_calibration(calibration_file(dir), c));
+  CHECK(load_calibration(calibration_file(dir))->on_battery);
+  CHECK_FALSE(calibrated_chain(dir, "RTX 4070 Ti", 1440));
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("la durée annoncée et la barre qui avance pendant une construction (P3.13)",
+          "[calibration-machine]") {
+  const int plain = calibration_minutes(1440, false, false);
+  CHECK(plain >= 3);
+  CHECK(plain <= 8);
+  CHECK(calibration_minutes(1440, true, false) > plain + 10);  // TensorRT construit ses moteurs
+  CHECK(calibration_minutes(1440, true, true) > calibration_minutes(1440, true, false));
+  CHECK(creeping_fraction(0.05F, 0.0) == 0.05F);
+  CHECK(creeping_fraction(0.05F, 300.0) > 0.1F);   // cinq minutes de construction : la barre a bougé
+  CHECK(creeping_fraction(0.05F, 1e6) <= 0.131F);  // sans rattraper l'essai suivant
+  CHECK(creeping_fraction(0.95F, 1e6) <= 0.97F);
 }

@@ -42,14 +42,28 @@ struct LoadedLooks {
   std::array<std::optional<render::CubeLut>, render::kLookSlots> luts;
   std::vector<std::string> failed;  // les clés illisibles
 };
-struct LookLoad {
-  struct Job {
-    std::mutex mutex;
-    std::optional<LoadedLooks> result;  // sous mutex
-    std::atomic<bool> done{false};
-  };
-  std::shared_ptr<Job> job;
-  std::jthread thread;
+// Un seul fil de lecture des LUT, qui ne garde que la dernière demande (P2.9) : cent allers-retours du
+// curseur ne lancent plus cent fils, et le thread d'affichage n'en joint jamais un qui lit encore (il est
+// détaché).
+class LookLoader {
+ public:
+  LookLoader() = default;
+  ~LookLoader();
+  LookLoader(const LookLoader&) = delete;
+  LookLoader& operator=(const LookLoader&) = delete;
+  LookLoader(LookLoader&&) = delete;
+  LookLoader& operator=(LookLoader&&) = delete;
+
+  // Remplace la demande pas encore commencée ; lance le fil à la première.
+  void request(const PlaySettings& s, const std::filesystem::path& luts_dir);
+  // Le résultat de la dernière demande, une fois ; rien tant qu'elle n'est pas lue.
+  std::optional<LoadedLooks> take();
+
+  struct State;  // partagé avec le fil, qui lui survit s'il est détaché
+
+ private:
+  std::shared_ptr<State> state_;
+  std::jthread thread_;
 };
 
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
@@ -70,6 +84,7 @@ struct Chain {
   std::optional<PlaySettings> reopen;              // demandé par le menu des paramètres
   std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
+  bool calibrate = false;                          // « Refaire le banc » : à faire avant de rouvrir
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
   std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
@@ -78,6 +93,7 @@ struct Chain {
   // Vrai noir OLED : les seuils en cours, et le recalage demandé (au plus 5 fois par seconde).
   std::optional<render::BlackThresholds> black;
   bool black_dirty = true;
+  std::string display_seen;  // le connecteur de l'écran que la chaîne suit (follow_display, P3.58)
   std::int64_t black_at_us = 0;
   // L'en-tête « chaîne » de l'OSD pour ces réglages, recalculé quand le facteur, la réduction ou le
   // moteur HDR changent à chaud ; vide : l'en-tête reste celui de l'ouverture.
@@ -94,6 +110,7 @@ struct Chain {
   bool anime_shots = false;
   AnimeGlide anime_glide;
   double anime_series_apl = 0.0;
+  bool flash_limited = false;     // plafond des flashs dangereux tenu (next_flashing, P3.51)
   double anime_e = 0.0;           // l'exposition envoyée au grade (GradeSettings::anime_exposure)
   std::uint64_t shot_serial = 0;  // le plan analysé que le grade suit ; 0 : la mesure en direct
   // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle
@@ -104,8 +121,8 @@ struct Chain {
   std::int64_t shots_newest_pts = kNoPts;
   std::int64_t shots_step_us = 41'667;
   std::size_t plan_shots_seen = 0;  // feed_plan_shots : les plans déjà passés à l'écran
-  // Les lectures de LUT en cours (start_looks) ; seule la dernière sera posée. Jointes à la fin de la chaîne.
-  std::vector<LookLoad> look_loads;
+  // La lecture des LUT en cours (start_looks) ; seule la dernière demande sera posée.
+  LookLoader looks;
 };
 
 // Les réglages que play.toml retient : le grade et l'interpolation choisis au menu, pas ceux d'un raccourci
@@ -144,6 +161,12 @@ void apply_oled_care(Chain& to, const PlaySettings& s);
 // from_measured_frame : le grade, posé à partir de l'image qui suit la dernière reçue du GPU.
 void set_grade(Chain& to, const PlaySettings& s, bool from_measured_frame = false);
 void refresh_black(Chain& to);
+// L'écran a changé, ou son pic (P3.58) : le pic automatique, les soins OLED et le vrai noir suivent l'écran
+// courant (Chain::display) et le pic relu, sans rouvrir la chaîne.
+void follow_display(Chain& to, std::optional<double> peak_nits);
+// Un fichier glissé pendant la lecture (P3.85) : une vidéo la remplace, des sous-titres s'ajoutent comme
+// piste externe et sont choisis, le reste est refusé avec un message.
+void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us);
 // Une action de l'utilisateur (touche, barre, menu) sur la chaîne.
 void apply(const Input& input, Chain& to, std::int64_t now_us);
 

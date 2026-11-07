@@ -154,6 +154,6 @@ Sans GPU NVIDIA ils se sautent (SKIP) ou n'existent pas dans la CI ; `[.]` et `[
   construction, caches de minutage).
 - Maxine VideoFX : source `/usr/local/VideoFX`, copie importée `~/.local/share/ajp/ajp/sdk/`.
 - TensorRT 11.3.0.99 et trtexec : `~/ajp-sdk/tensorrt`. Dépendances (FFmpeg, libplacebo 7.360, SDL3,
-  ImGui 1.92.9, libass…) : `~/ajp-deps`.
+  ImGui 1.93.0, libass…) : `~/ajp-deps`.
 - Épisodes d'essai : `~/Downloads/[Erai-raws] Tensei Goblin dakedo Shitsumon Aru - 02 [1080p …].mkv`,
   `~/Desktop/[Erai-raws] Re Zero kara Hajimeru Isekai Seikatsu 4th Season - 18 […].mkv`.

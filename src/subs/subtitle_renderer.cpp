@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <format>
+#include <limits>
 #include <span>
 
 #include <ass/ass.h>
@@ -64,8 +65,11 @@ VideoRect fit(const RenderTarget& target) {
   const double shown_width = target.video_width * pixel_aspect(target);
   const double scale = std::min(static_cast<double>(target.width) / shown_width,
                                 static_cast<double>(target.height) / target.video_height);
-  return {.width = std::clamp(static_cast<int>(std::lround(shown_width * scale)), 1, target.width),
-          .height = std::clamp(static_cast<int>(std::lround(target.video_height * scale)), 1, target.height)};
+  // Bornes jamais inversées (P2.18) : validate() refuse déjà une sortie nulle, fit() ne la suppose pas.
+  return {
+      .width = std::clamp(static_cast<int>(std::lround(shown_width * scale)), 1, std::max(target.width, 1)),
+      .height = std::clamp(static_cast<int>(std::lround(target.video_height * scale)), 1,
+                           std::max(target.height, 1))};
 }
 
 std::size_t to_size(int value) {
@@ -171,6 +175,7 @@ void SubtitleRenderer::forget() {
   rects_.clear();
   in_sync_ = false;
   refused_ = false;
+  quiet_until_ms_ = -1;  // une autre piste : le calme d'avant ne dit rien d'elle
 }
 
 RenderTarget SubtitleRenderer::shrunk(RenderTarget target, int shrink) {
@@ -215,12 +220,19 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
     vsfilter_ = vsfilter;
     in_sync_ = false;  // mêmes couvertures, autres couleurs
   }
+  // P3.39 : rien à l'écran au dernier rendu, et aucun événement ne commence avant l'instant demandé.
+  const ass_track* events = track.get();
+  const long long now_ms = to_ms(request.pts_us - request.delay_us);
+  if (events->n_events == quiet_events_ && now_ms >= quiet_from_ms_ && now_ms < quiet_until_ms_ && in_sync_)
+    return SubtitleFrame{
+        .pts_us = request.pts_us, .epoch = request.epoch, .width = target.width, .height = target.height};
+  quiet_until_ms_ = -1;
   rendered_ = true;
+  ++libass_calls_;
 
   int change = 2;
   pieces_.clear();
-  for (const ass_image* image =
-           ass_render_frame(renderer_.get(), track.get(), to_ms(request.pts_us), &change);
+  for (const ass_image* image = ass_render_frame(renderer_.get(), track.get(), now_ms, &change);
        image != nullptr; image = image->next) {
     if (image->w > 0 && image->h > 0) pieces_.push_back(image);  // libass : taille nulle, rien à dessiner
   }
@@ -235,6 +247,20 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
       configure(request.target, use_margins);
     }
     in_sync_ = true;  // libass compare l'image suivante à une liste vide, et nous aussi
+    // Le calme dure jusqu'au début du prochain événement, si aucun n'est en cours (un fondu encore
+    // transparent l'est).
+    long long next = std::numeric_limits<long long>::max();
+    bool active = false;
+    for (int i = 0; i < events->n_events && !active; ++i) {
+      const ASS_Event& e = events->events[i];
+      if (e.Start <= now_ms && now_ms < e.Start + e.Duration) active = true;
+      if (e.Start > now_ms) next = std::min(next, e.Start);
+    }
+    if (!active) {
+      quiet_from_ms_ = now_ms;
+      quiet_until_ms_ = next;
+      quiet_events_ = events->n_events;
+    }
     return frame;
   }
   // change 0 : mêmes images ; 1 : mêmes couvertures, déplacées ; 2 : contenu neuf.

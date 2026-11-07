@@ -1,6 +1,8 @@
 #include "core/log.h"
 
 #include <cstdint>
+#include <cstdlib>
+#include <exception>
 #include <map>
 #include <mutex>
 #include <string>
@@ -127,6 +129,51 @@ void install_module_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level
     routed.hub->set_sinks(std::move(sinks));
   }
   new_generation();  // hors du verrou du répartiteur : log_channel prend le cache, puis lui
+}
+
+namespace {
+
+// Le texte de l'exception en cours, ou rien hors d'un gestionnaire.
+std::string current_exception_text() {
+  const std::exception_ptr caught = std::current_exception();
+  if (caught == nullptr) return {};
+  try {
+    std::rethrow_exception(caught);
+  } catch (const std::exception& error) {
+    return error.what();
+  } catch (...) {
+    return "exception inconnue";
+  }
+}
+
+}  // namespace
+
+int run_logged(const std::function<int()>& body) {
+  try {
+    return body();
+  } catch (...) {
+    try {
+      log_channel("app")->critical("arrêt sur une exception non rattrapée : {}", current_exception_text());
+    } catch (...) {  // NOLINT(bugprone-empty-catch) : le journal lui-même a échoué, rien à dire de plus
+    }
+    return 1;
+  }
+}
+
+void close_log() {
+  spdlog::shutdown();
+}
+
+void install_terminate_flush() {
+  std::set_terminate([] {
+    try {
+      const std::string cause = current_exception_text();
+      log_channel("app")->critical("std::terminate{}{}", cause.empty() ? "" : " : ", cause);
+    } catch (...) {  // NOLINT(bugprone-empty-catch) : on s'arrête de toute façon
+    }
+    close_log();
+    std::abort();
+  });
 }
 
 }  // namespace ajp

@@ -76,7 +76,7 @@ std::expected<void, Refusal> bind_picture(AVFrame& frame, Picture& picture, cons
 }  // namespace
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const WriterConfig& config) {
-  auto muxer = Muxer::open(config.source, config.output, config.source_video);
+  auto muxer = Muxer::open(config.source, config.output, config.source_video, config.copies);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
   auto encoder = VideoEncoder::open(EncoderSetup{
@@ -99,7 +99,7 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(const W
 
 std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::open(
     const WriterConfig& config, std::unique_ptr<FrameEncoder> encoder) {
-  auto muxer = Muxer::open(config.source, config.output, config.source_video);
+  auto muxer = Muxer::open(config.source, config.output, config.source_video, config.copies);
   if (!muxer) return std::unexpected(std::move(muxer.error()));
   const ColorInfo color = config.color.value_or(muxer->source_color());
   return start(config, std::move(*muxer), color, std::move(encoder));
@@ -138,15 +138,18 @@ std::expected<std::unique_ptr<ExportWriter>, Refusal> ExportWriter::start(
   return writer;
 }
 
+void OwnedFrameFree::operator()(AVFrame* frame) const noexcept {
+  av_frame_free(&frame);
+}
+
 ExportWriter::~ExportWriter() {
   if (thread_.joinable()) {
     thread_.request_stop();
     wake_.notify_all();
     thread_.join();
   }
-  for (Picture& picture : queue_) {
+  for (const Picture& picture : queue_) {
     if (picture.release) picture.release();
-    av_frame_free(&picture.frame);
   }
   queue_.clear();
   state_.reset();  // l'encodeur rend ses dernières images ; un mux non fini supprime le fichier
@@ -248,8 +251,8 @@ void ExportWriter::run(const std::stop_token& stop) {
     av_frame_unref(frame.get());
     if (picture.frame != nullptr) {
       // Une image de l'encodeur, rendue sur le GPU : prise telle quelle, avec sa synchronisation.
-      av_frame_move_ref(frame.get(), picture.frame);
-      av_frame_free(&picture.frame);
+      av_frame_move_ref(frame.get(), picture.frame.get());
+      picture.frame.reset();
     } else if (auto bound = bind_picture(*frame, picture, s); !bound) {
       return fail(std::move(bound.error()));
     }

@@ -54,8 +54,8 @@ class ChainStats final : public StatsSource {
   // La mémoire vidéo et la ligne GPU de l'OSD : relues à 2 Hz par un fil à part (cudaMemGetInfo
   // prend le verrou du contexte CUDA, NVML dix appels : le fil d'affichage n'attend ni l'un ni
   // l'autre). Le fil naît au premier appel, donc seulement quand l'OSD les demande.
-  std::optional<std::string> memory() const override;
-  std::optional<std::string> gpu() const override;
+  std::optional<std::string> memory() override;
+  std::optional<std::string> gpu() override;
   std::int64_t output_period_us() const override;
   double output_fps() const override;
   bool uncapped() const override { return live_.free_active(); }
@@ -72,14 +72,14 @@ class ChainStats final : public StatsSource {
 
   std::optional<std::string> read_memory() const;
   std::optional<std::string> read_gpu() const;
-  void start_sampler() const;
+  void start_sampler();
 
-  mutable std::mutex sampled_mutex_;
-  mutable std::optional<std::string> memory_text_;
-  mutable std::optional<std::string> gpu_text_;
-  mutable std::once_flag sampler_started_;
+  std::mutex sampled_mutex_;
+  std::optional<std::string> memory_text_;
+  std::optional<std::string> gpu_text_;
+  std::once_flag sampler_started_;
   // En dernier : arrêté et joint avant que les membres qu'il lit ne partent.
-  mutable std::jthread sampler_;
+  std::jthread sampler_;
 };
 
 }  // namespace ajp::app::play

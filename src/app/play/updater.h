@@ -25,6 +25,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/play/update_choice.h"
 #include "core/types.h"
 #include "core/update_manifest.h"
 
@@ -67,8 +68,7 @@ std::expected<void, Refusal> save_update_state(const std::filesystem::path& file
 
 // Faut-il vérifier maintenant ? frequency : « launch » (à chaque lancement), « daily », « weekly » ; mode «
 // never » : jamais.
-bool update_due(const UpdateState& state, std::string_view mode, std::string_view frequency,
-                std::int64_t now_unix);
+bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix);
 
 struct UpdatePaths {
   std::filesystem::path data;     // <données>
@@ -83,12 +83,14 @@ struct CheckResult {
   std::vector<std::string> revoked_keys;  // révoquées par le manifeste vérifié, à retenir
 };
 
-// Le statut HTTP d'un message d'erreur de curl (« … returned error: 404 ») ; 0 : aucun.
-int curl_http_status(std::string_view message);
+// Le statut HTTP que curl écrit par --write-out kCurlStatusFormat (« ajp-http 404 »), jamais lu dans ses
+// messages d'erreur (P2.11) ; absent pour une autre ligne.
+inline constexpr std::string_view kCurlStatusFormat = "ajp-http %{http_code}\n";
+std::optional<int> curl_status_line(std::string_view line);
 
-// Le refus lisible d'un échec de curl (code de sortie, dernière ligne écrite) : « pas de connexion Internet
-// »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
-Refusal curl_failure(int code, std::string_view message);
+// Le refus lisible d'un échec de curl (code de sortie, statut HTTP, 0 sans réponse) : « pas de connexion
+// Internet »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
+Refusal curl_failure(int code, int http_status);
 
 // Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible. Un
 // canal sans manifeste publié (HTTP 404) n'est pas un refus : le lecteur est à jour.
@@ -144,7 +146,7 @@ std::string update_managed_reason(const UpdatePaths& paths);
 
 // La vérification en arrière-plan (updater.h : étapes 1 et 2) : met à jour state (dernière vérification,
 // version vue, archive préparée si mode == « auto »). Rend le message. À lancer hors de la lecture.
-std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, std::string_view mode,
+std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, UpdateMode mode,
                                                      std::string_view channel, UpdateState& state,
                                                      const std::stop_token& stop);
 

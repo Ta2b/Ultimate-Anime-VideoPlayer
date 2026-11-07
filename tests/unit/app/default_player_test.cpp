@@ -1,6 +1,7 @@
 #include "app/play/default_player.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -10,6 +11,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/data_dirs.h"
+#include "app/play/episodes.h"
 #include "app/play/player.h"
 #include "french_ui.h"
 
@@ -189,4 +192,74 @@ TEST_CASE("Lecteur par défaut : la mise à jour et l'inscription ne lisent pas 
   CHECK(place.app_data == std::filesystem::path("/donnees/ajp/ajp"));
   CHECK(place.data == std::filesystem::path("/donnees"));
   CHECK(place.executable == std::filesystem::path("/opt/ajp/ajp"));
+}
+
+TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier local, les réglages restent",
+          "[app]") {
+  namespace fs = std::filesystem;
+  using ajp::app::play::move_heavy_data;
+  const fs::path root = fs::temp_directory_path() / "ajp-local-data";
+  fs::remove_all(root);
+  const fs::path roaming = root / "Roaming" / "ajp" / "ajp";
+  const fs::path local = root / "Local" / "ajp" / "ajp";
+  fs::create_directories(roaming / "engines");
+  fs::create_directories(roaming / "backends" / "tensorrt");
+  std::ofstream(roaming / "engines" / "span.plan") << "plan";
+  std::ofstream(roaming / "play.toml") << "[playlist]";
+  fs::create_directories(local / "backends");  // déjà là : gardé tel quel, l'ancien n'écrase rien
+  std::vector<std::string> said;
+  CHECK(move_heavy_data(roaming, local, [&](const std::string& line) { said.push_back(line); }) == 1);
+  CHECK(fs::is_regular_file(local / "engines" / "span.plan"));
+  CHECK_FALSE(fs::exists(roaming / "engines"));
+  CHECK(fs::exists(roaming / "backends" / "tensorrt"));
+  CHECK(fs::is_regular_file(roaming / "play.toml"));
+  CHECK(said.size() == 1);
+  CHECK(move_heavy_data(roaming, roaming) == 0);
+#ifndef _WIN32
+  CHECK(ajp::app::play::local_data(roaming) == roaming);  // hors Windows, le même dossier
+#endif
+  fs::remove_all(root);
+}
+
+TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux des autres restent (P3.70)",
+          "[app]") {
+  namespace fs = std::filesystem;
+  const fs::path shared = fs::temp_directory_path() / "ajp-purge" / "AppData";
+  fs::remove_all(shared.parent_path());
+  fs::create_directories(shared / "plans");
+  fs::create_directories(shared / "updates" / "1.2.0");
+  std::ofstream(shared / "update.toml") << "last_check_unix = 12\n";
+  std::ofstream(shared / "shaders.cache") << "pl_cache....";
+  std::ofstream(shared / "plans" / "a.shots") << "x";
+  std::ofstream(shared / "engines-relaunched") << "";
+  CHECK(ajp::app::play::purge_misplaced(shared) == 6);
+  CHECK(fs::is_empty(shared));
+  // Ce que le lecteur ne reconnaît pas reste : un update.toml étranger, un cache d'un autre, un plans/
+  // habité.
+  fs::create_directories(shared / "plans");
+  fs::create_directories(shared / "updates" / "Other");
+  std::ofstream(shared / "update.toml") << "channel = 1\n";
+  std::ofstream(shared / "shaders.cache") << "other";
+  std::ofstream(shared / "plans" / "notes.txt") << "x";
+  CHECK(ajp::app::play::purge_misplaced(shared) == 0);
+  CHECK(fs::exists(shared / "update.toml"));
+  CHECK(fs::exists(shared / "plans" / "notes.txt"));
+  CHECK(fs::exists(shared / "updates" / "Other"));
+  fs::remove_all(shared.parent_path());
+}
+
+TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[episodes]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-growing";
+  std::filesystem::create_directories(dir);
+  const std::filesystem::path file = dir / "ep01.mkv";
+  {
+    std::ofstream(file, std::ios::binary) << "1234";
+  }
+  const ajp::app::play::GrowingFile opened = ajp::app::play::GrowingFile::of(file);
+  CHECK_FALSE(opened.grew(file, std::chrono::milliseconds(200)));  // écrit à l'instant, mais n'a pas grandi
+  {
+    std::ofstream(file, std::ios::binary | std::ios::app) << "5678";
+  }
+  CHECK(opened.grew(file));
+  std::filesystem::remove_all(dir);
 }

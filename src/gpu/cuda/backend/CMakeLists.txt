@@ -62,8 +62,19 @@ add_library(ajp_backend_tensorrt MODULE
   tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_warp.cpp trt_engine.cpp)
 target_include_directories(ajp_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(ajp_backend_tensorrt PRIVATE
-  ajp::gpu ajp::gpu_span_fp8 ajp::prepare ajp_backend_tensorrt_kernels ${ajp_span_fp8_net} ajp::dep::tensorrt CUDA::cuda_driver ${CMAKE_DL_LIBS})
-target_compile_definitions(ajp_backend_tensorrt PRIVATE AJP_TRTEXEC_PATH="${AJP_TRTEXEC}")
+  ajp::gpu ajp::gpu_span_fp8 ajp::prepare ajp::core_log ajp::dep::spdlog ajp_backend_tensorrt_kernels ${ajp_span_fp8_net}
+  ajp::dep::tensorrt CUDA::cuda_driver ${CMAKE_DL_LIBS})
+# Le trtexec du paquet est celui de la configuration : son SHA-256 entre dans le module, qui refuse
+# tout autre fichier posé à côté de lui (P1.21). Le repli sur le trtexec de la machine est réservé
+# aux builds de développement.
+set(ajp_trtexec_sha256 "")
+set(ajp_trtexec_path "")
+if(AJP_TRTEXEC AND EXISTS "${AJP_TRTEXEC}")
+  set(ajp_trtexec_path "${AJP_TRTEXEC}")
+  file(SHA256 "${AJP_TRTEXEC}" ajp_trtexec_sha256)
+endif()
+target_compile_definitions(ajp_backend_tensorrt PRIVATE AJP_TRTEXEC_SHA256="${ajp_trtexec_sha256}"
+  AJP_TRTEXEC_PATH="${ajp_trtexec_path}" $<$<CONFIG:Release>:AJP_TRTEXEC_NO_FALLBACK>)
 set_target_properties(ajp_backend_tensorrt PROPERTIES
   PREFIX "" CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

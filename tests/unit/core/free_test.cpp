@@ -245,14 +245,14 @@ TEST_CASE("free rate : après un seek ou une reprise, les pertes du remplissage 
 TEST_CASE("free fallback : le Rapide revient après un calme, plus long à chaque repli", "[free]") {
   FreeFallback fallback;
   CHECK_FALSE(fallback.active(0));
-  fallback.fell_back(10'000'000);
+  CHECK(fallback.fell_back(10'000'000));  // le premier repli s'annonce, les suivants non (P3.38)
   CHECK(fallback.active(10'000'000 + FreeFallback::kRetryUs - 1));
   CHECK_FALSE(fallback.active(10'000'000 + FreeFallback::kRetryUs));  // on réessaie le Rapide
-  fallback.fell_back(100'000'000);
-  CHECK(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs - 1));  // 2 min la seconde fois
+  CHECK_FALSE(fallback.fell_back(100'000'000));
+  CHECK(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs - 1));  // 6 min la seconde fois
   CHECK_FALSE(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs));
   for (int i = 0; i < 10; ++i) fallback.fell_back(1'000'000'000);
-  CHECK_FALSE(fallback.active(1'000'000'000 + FreeFallback::kRetryMaxUs));  // au plus 10 min
+  CHECK_FALSE(fallback.active(1'000'000'000 + FreeFallback::kRetryMaxUs));  // au plus 30 min
   fallback.fell_back(0);
   fallback.clear();  // un choix explicite du mode
   CHECK_FALSE(fallback.active(1));
@@ -455,4 +455,21 @@ TEST_CASE("free vsync : dix minutes simulées, horloge qui dérive de ±0,1 %, s
     CHECK(images > 20'000);
     CHECK(worst < 1'000);  // jamais à plus d'1 ms de son vsync pendant dix minutes
   }
+}
+
+TEST_CASE("free grid vsync : la source tombée près d'un vsync s'y montre telle quelle (P3.37)",
+          "[free][vsync]") {
+  FreeGrid grid;
+  grid.push(stamp(1, 0), {});
+  const FreeInputs inputs{
+      .min_gap_us = kVsync, .step_us = 12'000, .vsync_period_us = kVsync, .vsync_origin_us = 0};
+  int sources = 0;
+  for (std::uint32_t k = 1; k <= 48; ++k) {
+    const CadenceStep step = grid.push(stamp(k + 1, k * kSourcePeriod), inputs);
+    for (const OutputInstant& at : step.instants()) {
+      CHECK(off_grid(*at.pts_us, 0, kVsync) == 0);  // toujours sur un vsync, source comprise
+      if (at.is_source()) ++sources;
+    }
+  }
+  CHECK(sources >= 12);  // une source sur deux au moins tombe à moins d'une demi-période d'un vsync
 }

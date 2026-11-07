@@ -59,5 +59,11 @@ function(ajp_add_unit_tests module)
     target_link_libraries(${target} PRIVATE ajp::${module} ${ARG_DEPS} Catch2::Catch2WithMain)
   endif()
   ajp_set_warnings(${target})
+  # Les tests refont des calculs de kernels/ref avec ses arrondis : sans contraction en FMA, comme
+  # ajp_kernels (P5.22 : l'option n'est plus PUBLIC, le lecteur livré ne la reçoit plus ; clang contracte
+  # par défaut sur arm64). C++ seul : nvcc refuse l'option.
+  if(NOT MSVC)
+    target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)
+  endif()
   catch_discover_tests(${target} TEST_PREFIX "${module}: " DISCOVERY_MODE PRE_TEST)
 endfunction()

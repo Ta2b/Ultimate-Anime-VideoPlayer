@@ -30,6 +30,7 @@
 #include "core/ring.h"
 #include "core/types.h"
 #include "export/encoder_choice.h"
+#include "export/owned_frame.h"
 #include "kernels/spec/color.h"
 
 struct AVBufferRef;
@@ -38,7 +39,7 @@ struct AVFrame;
 namespace ajp::app::play {
 
 // Une image neuve de l'encodeur, ou le refus du pool.
-using FrameSource = std::function<std::expected<AVFrame*, Refusal>()>;
+using FrameSource = std::function<std::expected<exporter::OwnedFrame, Refusal>()>;
 
 // Les images du contexte d'images CUDA de l'encodeur (ExportWriter::cuda_frames(), emprunté).
 FrameSource pool_frames(AVBufferRef* frames);
@@ -92,7 +93,7 @@ class ExportSink final : public YuvSlots {
   // L'image finie du slot, à confier à l'écriture (Picture::frame, rendue par elle), une neuve
   // prise à sa place : le slot peut repartir à l'étage. Refus : ceux de frames, le slot gardant
   // son image.
-  std::expected<AVFrame*, Refusal> take(std::uint32_t slot);
+  std::expected<exporter::OwnedFrame, Refusal> take(std::uint32_t slot);
 
  private:
   static constexpr std::size_t kPage = 4096;
@@ -107,7 +108,7 @@ class ExportSink final : public YuvSlots {
   std::vector<RingSlotDesc> descs_;
   std::unique_ptr<Fences> fences_ = std::make_unique<Fences>();
   mutable std::mutex mutex_;
-  std::vector<AVFrame*> frames_;               // sous mutex_ : l'image de chaque slot
+  std::vector<exporter::OwnedFrame> frames_;   // sous mutex_ : l'image de chaque slot
   mutable std::vector<std::uint64_t> issued_;  // sous mutex_ : dernière valeur promise par slot
 };
 

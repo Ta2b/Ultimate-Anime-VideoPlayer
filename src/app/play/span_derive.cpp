@@ -168,6 +168,7 @@ std::string verdict_text(const gpu::span_fp8::Verdict& verdict) {
 
 std::vector<gpu::span_fp8::ImageScore> scores_of(const std::vector<gpu::SpanFp8ImageScore>& from) {
   std::vector<gpu::span_fp8::ImageScore> out;
+  out.reserve(from.size());
   for (const gpu::SpanFp8ImageScore& score : from)
     out.push_back({.psnr_db = score.psnr_db,
                    .ssim = score.ssim,
@@ -418,9 +419,7 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
   } else if (validate) {
     prepare.note = i18n::tr_format(
         "Not validated at {} yet: a validation pass (about ten seconds) is offered.", found.unvalidated_size);
-  } else if (found.stale) {
-    prepare.note = i18n::tr("Not prepared yet: playback stays on TensorRT FP16 at the Performance level.");
-  } else if (!found.note.empty()) {
+  } else if (!found.note.empty() && !found.stale) {
     prepare.refused = true;
     prepare.note = i18n::tr("Rejected: ") + found.note;
   } else {

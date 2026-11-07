@@ -95,19 +95,10 @@ cmd::SetVolume Controls::toggle_mute() {
   return volume_command();
 }
 
-std::optional<Controls::VideoClick> Controls::click(std::int64_t now_us, int clicks) {
-  if (clicks >= 2) {
-    click_at_.reset();  // le simple clic en attente n'a pas lieu
-    return VideoClick::ToggleFullscreen;
-  }
-  click_at_ = now_us;
+std::optional<Controls::VideoClick> Controls::click(int clicks) {
+  if (clicks == 1) return VideoClick::TogglePause;
+  if (clicks == 2) return VideoClick::FullscreenUndoPause;
   return std::nullopt;
-}
-
-std::optional<Controls::VideoClick> Controls::pending_click(std::int64_t now_us) {
-  if (!click_at_ || now_us - *click_at_ < kDoubleClickUs) return std::nullopt;
-  click_at_.reset();
-  return VideoClick::TogglePause;
 }
 
 void Controls::press(double fraction) {

@@ -4,6 +4,7 @@
 // Un contexte appartient au thread qui l'utilise ; il ne se copie ni ne se déplace.
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +35,13 @@ namespace ajp::gpu::vk {
 class Recording;
 
 // Un appareil à créer.
+// Délai d'une fin de vie (VkContext::settle) : au moins kSettleFloor, et kSettleFactor fois la plus longue
+// attente hôte réussie jusque-là, sans dépasser kSettleCeiling (P2.16) : un GPU lent n'est pas tenu pour
+// bloqué sur un délai fait pour un GPU rapide.
+inline constexpr std::chrono::milliseconds kSettleFloor{3000};
+inline constexpr std::chrono::milliseconds kSettleCeiling{30000};
+inline constexpr int kSettleFactor = 8;
+
 struct CreateOptions {
   // Chargeur : ce vkGetInstanceProcAddr s'il est donné, sinon la bibliothèque library, sinon
   // le chargeur du système.
@@ -53,6 +61,8 @@ struct CreateOptions {
   // Tests : sur un appareil à une file, les voies en plus reprennent la file principale (même
   // ordre d'exécution, mais toute la logique des voies est exercée).
   bool alias_lanes = false;
+  // Délai minimum d'une fin de vie (settle) ; il grandit avec la plus longue attente réussie (P2.16).
+  std::chrono::milliseconds settle_floor = kSettleFloor;
 };
 
 // Un appareil existant. Les champs reprennent ceux de pl_vulkan.
@@ -170,11 +180,12 @@ class VkContext {
   Done run_once(const std::function<void(VkCommandBuffer)>& record);
 
   // Fin de vie d'une ressource que le GPU lit peut-être encore (tenseur, enregistrement) :
-  // attend au plus kSettleTimeout que point soit atteint ; sans point, la dernière soumission de
+  // attend au plus settle_timeout() que point soit atteint ; sans point, la dernière soumission de
   // la file, dont le signal couvre tout ce qui l'a précédée. Faux si l'attente échoue ou dépasse
   // le délai : le GPU est tenu pour bloqué, les fins de vie suivantes n'attendent plus, et
-  // l'appelant laisse fuir sa ressource plutôt que de la rendre à un GPU qui la lit encore.
-  static constexpr std::chrono::seconds kSettleTimeout{3};
+  // l'appelant laisse fuir sa ressource plutôt que de la rendre à un GPU qui la lit encore. Le GPU
+  // bloqué est réarmé dès qu'une fin de vie trouve ses points atteints, sans attendre.
+  std::chrono::nanoseconds settle_timeout() const;
   bool settle(std::optional<TimelinePoint> point = std::nullopt);
   // Le même pour plusieurs points (la dernière soumission de chaque voie) : tous atteints.
   bool settle(std::span<const TimelinePoint> points);
@@ -183,7 +194,16 @@ class VkContext {
     for (TimelinePoint& point : last_submitted_)
       if (point.semaphore == semaphore) point = {};
   }
-  bool stalled() const { return stalled_; }
+  bool stalled() const { return stalled_.load(std::memory_order_acquire); }
+  // Appareil perdu (P2.8) : un appel a rendu VK_ERROR_DEVICE_LOST. Plus aucune soumission ne part, chacune
+  // est refusée en DeviceLost ; seul un nouveau contexte (relancer le lecteur) en sort. Sûr depuis tout fil.
+  bool lost() const { return lost_.load(std::memory_order_acquire); }
+  void mark_lost() const { lost_.store(true, std::memory_order_release); }
+  // Le refus de check(), l'appareil noté perdu au passage quand c'est le cas.
+  Done observe(VkResult result, std::string_view call) const {
+    if (result == VK_ERROR_DEVICE_LOST) mark_lost();
+    return check(result, call);
+  }
 
  private:
   VkContext() = default;
@@ -255,7 +275,11 @@ class VkContext {
   // Par voie : le premier signal de la dernière soumission.
   // mutable : un sémaphore détruit s'en retire (forget), settle ne l'attend plus.
   mutable std::vector<TimelinePoint> last_submitted_ = std::vector<TimelinePoint>(1);
-  bool stalled_ = false;  // une fin de vie a attendu en vain : plus aucune n'attend
+  std::atomic<bool> stalled_{false};  // une fin de vie a attendu en vain : plus aucune n'attend
+  std::chrono::milliseconds settle_floor_ = kSettleFloor;
+  std::atomic<std::int64_t> longest_wait_ns_{0};  // la plus longue attente hôte réussie
+  void note_wait(std::chrono::steady_clock::time_point since);
+  mutable std::atomic<bool> lost_{false};
   mutable DestroyedLog destroyed_;
   std::shared_ptr<spdlog::logger> log_;
 };

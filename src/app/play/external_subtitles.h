@@ -10,16 +10,18 @@ namespace ajp::app::play {
 
 struct ExternalSubtitle {
   std::filesystem::path path;
-  std::string label;  // « Externe · Français · Épisode 01.fr.srt »
+  std::string label;     // « Externe · Français · Épisode 01.fr.srt »
+  std::string language;  // la balise lue dans le nom (« fr », « eng ») ; vide sans langue connue (P3.73)
 };
 
 // Index de menu de la première piste externe : au-delà de tout flux de conteneur.
 inline constexpr int kExternalSubtitleBase = 100'000;
 inline constexpr std::size_t kMaxExternalSubtitles = 16;
 
-// .ass, .ssa et .srt du dossier de `video` dont le nom commence par celui de la vidéo, suivi de rien
-// ou d'un point (« .fr », « .eng.forced »). Triés par nom, au plus kMaxExternalSubtitles ; vide si le
-// dossier ne se lit pas.
+// .ass, .ssa et .srt du dossier de `video` (et de ses dossiers Subs/) dont le nom commence par celui de la
+// vidéo, au besoin sans les balises [ ] et ( ), suivi de rien ou d'un point (« .fr », « .eng.forced ») ; et
+// tout fichier d'un dossier Subs/<nom de la vidéo>/. Triés par nom, au plus kMaxExternalSubtitles ; vide si
+// le dossier ne se lit pas.
 std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::path& video);
 
 }  // namespace ajp::app::play

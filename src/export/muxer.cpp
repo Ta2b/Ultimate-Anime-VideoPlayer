@@ -1,6 +1,8 @@
 #include "export/muxer.h"
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
 #include <format>
 #include <limits>
 #include <optional>
@@ -81,16 +83,36 @@ bool carried(Container container, const AVCodecParameters& par, const AVOutputFo
   }
 }
 
+// P3.88 : les .partial d'un export interrompu (plantage, coupure) de plus d'un jour, dans le dossier de
+// destination. Seuls les noms que propose le lecteur (« [ajp … ».partial) sont retirés.
+void purge_stale_partials(const std::filesystem::path& dir) {
+  std::error_code error;
+  const auto now = std::filesystem::file_time_type::clock::now();
+  for (std::filesystem::directory_iterator it(dir.empty() ? "." : dir, error), end; !error && it != end;
+       it.increment(error)) {
+    const std::filesystem::path& path = it->path();
+    if (path.extension() != ".partial" || path.filename().string().find("[ajp ") == std::string::npos)
+      continue;
+    std::error_code ignored;
+    const auto written = std::filesystem::last_write_time(path, ignored);
+    if (!ignored && now - written > std::chrono::hours(24) && std::filesystem::remove(path, ignored))
+      log_channel("export")->info("export interrompu retiré : {}", utf8(path));
+  }
+}
+
 }  // namespace
 
 std::expected<Muxer, Refusal> Muxer::open(const std::filesystem::path& source,
-                                          const std::filesystem::path& output, int video_stream) {
+                                          const std::filesystem::path& output, int video_stream,
+                                          CopyChoice choice) {
   Muxer m;
+  m.choice_ = choice;
   m.output_path_ = output;
   // Le fichier est écrit à côté, puis renommé : annuler ou échouer laisse intact un fichier qui
   // porterait déjà ce nom. Le format est donné par son nom, non par l'extension.
   m.partial_path_ = output;
   m.partial_path_ += ".partial";
+  purge_stale_partials(output.parent_path());
   const std::optional<Container> container = container_of(output);
   if (!container)
     return refuse(RefusalCode::FileUnwritable, std::format("{} : ni .mkv, ni .mp4, ni .mov", utf8(output)));
@@ -128,6 +150,7 @@ Muxer::Muxer(Muxer&& other) noexcept
       output_(std::exchange(other.output_, nullptr)),
       map_(std::move(other.map_)),
       source_video_(other.source_video_),
+      choice_(other.choice_),
       encoder_time_base_(other.encoder_time_base_),
       start_us_(other.start_us_),
       pending_(std::move(other.pending_)),
@@ -179,6 +202,7 @@ std::int64_t Muxer::bytes() const {
   return output_ != nullptr && output_->pb != nullptr ? avio_tell(output_->pb) : written_;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
   const auto log = log_channel("export");
   encoder_time_base_ = encoder.time_base;
@@ -247,6 +271,14 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
     copy->codecpar->codec_tag = 0;
     copy->time_base = st.time_base;
     copy->disposition = st.disposition;
+    const int chosen = type == AVMEDIA_TYPE_AUDIO      ? choice_.audio
+                       : type == AVMEDIA_TYPE_SUBTITLE ? choice_.subtitle
+                                                       : -1;
+    const bool decided = chosen >= 0 || (type == AVMEDIA_TYPE_SUBTITLE && choice_.subtitles_off);
+    if (decided) {
+      copy->disposition &= ~AV_DISPOSITION_DEFAULT;
+      if (std::cmp_equal(chosen, i)) copy->disposition |= AV_DISPOSITION_DEFAULT;
+    }
     av_dict_copy(&copy->metadata, st.metadata, 0);
     av_dict_copy(&copy->metadata, extra, 0);
     av_dict_free(&extra);
@@ -281,6 +313,8 @@ std::expected<void, Refusal> Muxer::begin(const AVCodecContext& encoder) {
       container_ != Container::Matroska && timescale > 0) {
     av_dict_set_int(&options, "video_track_timescale", timescale, 0);
   }
+  // P3.93 : l'index (moov) en tête du MP4 et du MOV, pour une lecture en flux dès le début.
+  if (container_ != Container::Matroska) av_dict_set(&options, "movflags", "+faststart", 0);
   const int header = avformat_write_header(&out, &options);
   av_dict_free(&options);
   if (header < 0) return refuse_av(RefusalCode::EncodeFailed, "mux : en-tête", header);
@@ -323,6 +357,11 @@ std::expected<void, Refusal> Muxer::write_copies(std::int64_t until_us) {
     const auto index = static_cast<std::size_t>(pending_->stream_index);
     AVStream* to = output_->streams[map_[index]];
     av_packet_rescale_ts(pending_.get(), input_->streams[index]->time_base, to->time_base);
+    if (choice_.audio_delay_us != 0 && to->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      const std::int64_t shift = av_rescale_q(choice_.audio_delay_us, kMicroseconds, to->time_base);
+      if (pending_->pts != AV_NOPTS_VALUE) pending_->pts += shift;
+      if (pending_->dts != AV_NOPTS_VALUE) pending_->dts += shift;
+    }
     pending_->stream_index = to->index;
     pending_->pos = -1;
     if (const int err = av_interleaved_write_frame(output_, pending_.get()); err < 0)

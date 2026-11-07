@@ -63,11 +63,11 @@ TEST_CASE("RIFE : poses_copy, a tient jusqu'à 1/2 puis b paraît, seulement apr
 
 namespace ajp::app::play {
 
-TEST_CASE("RIFE : les plans de la pré-analyse décident quand ils couvrent la paire", "[app][rife]") {
+TEST_CASE("RIFE : une coupe si les plans ou la mesure la voient (P3.31)", "[app][rife]") {
   PairFacts measured_cut = moving(4);
   measured_cut.scores->scene_score = kernels::kSceneCutThreshold + 0.01;
-  measured_cut.known_cut = false;  // un éclair que RIFE prend pour une coupe : les plans disent non
-  CHECK(rife_runs(measured_cut));
+  measured_cut.known_cut = false;  // une coupe franche que la pré-analyse a manquée : RIFE la voit
+  CHECK_FALSE(rife_runs(measured_cut));
   PairFacts missed = moving(4);
   missed.known_cut = true;  // une coupe douce que RIFE ne voit pas
   missed.scores->scene_score = 0.13;
@@ -78,6 +78,18 @@ TEST_CASE("RIFE : les plans de la pré-analyse décident quand ils couvrent la p
   effect.scores->scene_score = kPlanCutFloor - 0.01;
   CHECK_FALSE(pair_cut(effect));
   CHECK(rife_runs(effect));
+}
+
+}  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("RIFE : le score de coupe est rapporté à la zone hors bandes noires (P3.32)", "[app][rife]") {
+  PairFacts scope = moving(4);
+  scope.scores->scene_score = 0.10;  // une coupe en 2,39:1 : diluée par les bandes (×0,74)
+  CHECK_FALSE(pair_cut(scope));
+  scope.useful_area = 0.74;
+  CHECK(pair_cut(scope));
 }
 
 }  // namespace ajp::app::play

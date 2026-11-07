@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -9,6 +10,8 @@
 #include <spdlog/sinks/callback_sink.h>
 #include <spdlog/sinks/null_sink.h>
 #include <spdlog/spdlog.h>
+
+#include "core/log_redact.h"
 
 namespace {
 
@@ -80,4 +83,28 @@ TEST_CASE("Journal : un seul canal par module, refait quand les puits changent",
   CHECK(again->level() == spdlog::level::warn);
   CHECK(ajp::log_channel("unique") == again);
   ajp::install_log_sinks({std::make_shared<spdlog::sinks::null_sink_mt>()}, spdlog::level::info);
+}
+
+TEST_CASE("Journal nettoyé : le dossier personnel devient ~ sous ses deux séparateurs", "[log]") {
+  ajp::set_log_home("C:\\Users\\tatoub\\");
+  CHECK(ajp::redact_log_text("ouvert C:\\Users\\tatoub\\Videos\\a.mkv et C:/Users/tatoub/x") ==
+        "ouvert ~\\Videos\\a.mkv et ~/x");
+  ajp::set_log_home("/");
+  CHECK(ajp::redact_log_text("/usr/lib") == "/usr/lib");
+  ajp::set_log_home("");
+}
+
+TEST_CASE("Journal : une exception sortie du corps est journalisée et vaut 1", "[log]") {
+  Capture capture;
+  ajp::install_log_sinks({capture.sink()}, spdlog::level::info);
+  const int code = ajp::run_logged([]() -> int {
+    ajp::log_channel("app")->info("avant");
+    throw std::runtime_error("forcée");
+  });
+  CHECK(code == 1);
+  const std::vector<std::string> lines = capture.lines();
+  REQUIRE(lines.size() == 2);
+  CHECK(lines[0] == "app : avant");
+  CHECK(lines[1] == "app : arrêt sur une exception non rattrapée : forcée");
+  CHECK(ajp::run_logged([] { return 7; }) == 7);
 }

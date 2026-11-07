@@ -4,51 +4,76 @@
 # le lecteur fixe la version (FFmpeg, SDL3, libplacebo, libass du fork…), construites depuis
 # leurs dépôts aux mêmes références que linux-from-source.sh.
 #
-#   tools/deps/macos-from-source.sh <prefixe> [dossier-de-travail]
+#   tools/deps/macos-from-source.sh [--locked] <prefixe> [dossier-de-travail]
 #   AJP_DEPS_PREFIX=<prefixe> cmake --preset macos-release
 set -euo pipefail
 
-PREFIX="$(cd "$(dirname "${1:?usage: $0 <prefixe> [dossier-de-travail]}")" && pwd)/$(basename "$1")"
+LOCKED=0
+if [[ "${1:-}" == "--locked" ]]; then LOCKED=1; shift; fi
+PREFIX="$(cd "$(dirname "${1:?usage: $0 [--locked] <prefixe> [dossier-de-travail]}")" && pwd)/$(basename "$1")"
 WORK="${2:-$PREFIX/../ajp-deps-src}"
 JOBS="$(sysctl -n hw.ncpu)"
 mkdir -p "$PREFIX" "$WORK"
 WORK="$(cd "$WORK" && pwd)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # le dépôt : ports/ et ses correctifs
 
-BREW_DEPS=(ninja meson pkgconf nasm autoconf automake libtool cmake
-  molten-vk vulkan-loader shaderc glslang spirv-tools dav1d little-cms2
-  freetype fribidi harfbuzz fontconfig)
-brew install --quiet "${BREW_DEPS[@]}"
+# Outils de construction, puis les bibliothèques que le paquet recopie (dylibbundler). Homebrew ne
+# sert qu'une version de chaque formule : celles du paquet sont relevées dans BREW_LOCK et
+# comparées après l'installation (P1.25). --locked (release-macos.yml) refuse un écart ; sans lui,
+# un écart s'affiche seulement, la CI reste verte jusqu'à la mise à jour du relevé. Homebrew vérifie
+# lui-même l'empreinte de chaque bouteille. MoltenVK et le chargeur Vulkan ne viennent plus de
+# Homebrew : version et empreinte fixées plus bas.
+BREW_TOOLS=(ninja meson pkgconf nasm autoconf automake libtool cmake)
+BREW_LOCK=(
+  "shaderc 2026.4" "glslang 16.6.0" "spirv-tools 1.4.363.0" "dav1d 1.5.4" "little-cms2 2.19.1"
+  "freetype 2.15.0" "fribidi 1.0.18" "harfbuzz 15.1.0" "fontconfig 2.18.3"
+)
+brew_libs=()
+for entry in "${BREW_LOCK[@]}"; do brew_libs+=("${entry%% *}"); done
+brew install --quiet "${BREW_TOOLS[@]}" "${brew_libs[@]}"
 BREW="$(brew --prefix)"
+drift=0
+for entry in "${BREW_LOCK[@]}"; do
+  read -r formula want <<<"$entry"
+  got="$(brew list --versions "$formula" | awk '{print $NF}')"
+  got="${got%_*}"  # « 2.15.0_1 » : la révision de la formule, même source
+  if [[ "$got" != "$want" ]]; then
+    echo "Homebrew : $formula $got, relevé $want (BREW_LOCK de $0)" >&2
+    drift=1
+  fi
+done
+if (( drift && LOCKED )); then exit 1; fi
 
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig:$BREW/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 export PATH="$PREFIX/bin:$PATH"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
-# nom url référence : celles de linux-from-source.sh, sans nv-codec-headers (pas de NVDEC).
+# nom url référence commit : ceux de linux-from-source.sh, sans nv-codec-headers (pas de NVDEC).
 DEPS=(
-  "vulkan-headers https://github.com/KhronosGroup/Vulkan-Headers v1.4.363"
-  "tomlplusplus https://github.com/marzer/tomlplusplus v3.4.0"
-  "catch2 https://github.com/catchorg/Catch2 v3.16.0"
-  "spdlog https://github.com/gabime/spdlog v1.17.0"
-  "nanobench https://github.com/martinus/nanobench v4.6.0"
-  "imgui https://github.com/ocornut/imgui v1.92.9"
-  "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2"
-  "sdl3 https://github.com/libsdl-org/SDL release-3.4.18"
-  "libplacebo https://github.com/haasn/libplacebo v7.360.1"
-  "libass https://github.com/the-database/libass 896614fa"
+  "vulkan-headers https://github.com/KhronosGroup/Vulkan-Headers v1.4.363 6802bb4733b63ed5efd3adb308a6c885ef180ea1"
+  "vulkan-loader https://github.com/KhronosGroup/Vulkan-Loader v1.4.363 9e9518d2cf00054a220ae1a40f4406804b420ef5"
+  "tomlplusplus https://github.com/marzer/tomlplusplus v3.4.0 30172438cee64926dc41fdd9c11fb3ba5b2ba9de"
+  "catch2 https://github.com/catchorg/Catch2 v3.16.0 317ac1ed4c0bb6e6b91eafc817e05c488feffcb3"
+  "spdlog https://github.com/gabime/spdlog v1.17.0 79524ddd08a4ec981b7fea76afd08ee05f83755d"
+  "nanobench https://github.com/martinus/nanobench v4.6.0 b709728dba4df0356d467abfb0ba20781a8031c0"
+  "imgui https://github.com/ocornut/imgui v1.93.0 c1aaac65e896a45f81f47a4d68f9959e0f86c859"
+  "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2 946fcce07b6dcd0331c8cc609192aeff5e1924f8"
+  "sdl3 https://github.com/libsdl-org/SDL release-3.4.20 f00dc919ca35b9756316e86c4777392de442f9b2"
+  "libplacebo https://github.com/haasn/libplacebo v7.360.1 cee9b076f2c63104ccfd497fa79c39a867293ec4"
+  "libunibreak https://github.com/adah1972/libunibreak libunibreak_7_0 3ce4bfa3129ff3738046a44a6db533d2ce25af2b"
+  "libass https://github.com/the-database/libass 896614fa 896614fa263f9f64944f7b8650ff6806d5328c4d"
 )
 
-fetch() {  # nom url ref
+fetch() {  # nom url ref commit
   local dir="$WORK/$1"
-  if [[ -d "$dir/.git" ]]; then
-    # Déjà à cette référence : rien à faire. D'une autre (version changée) : recloné.
-    [[ "$(git -C "$dir" rev-parse -q --verify "$3^{commit}" || true)" == "$(git -C "$dir" rev-parse HEAD)" ]] && return
-    rm -rf "$dir"
-  fi
-  if git clone -q --depth 1 --branch "$3" "$2" "$dir" 2>/dev/null; then return; fi
-  git clone -q --filter=blob:none "$2" "$dir"
-  git -C "$dir" checkout -q "$3"
+  # Déjà à ce commit : rien à faire. Sinon (version changée), recloné. Le commit complet, pas
+  # l'étiquette, qu'un dépôt peut déplacer (P1.23) ; GitHub sert un commit par son SHA.
+  [[ -d "$dir/.git" && "$(git -C "$dir" rev-parse HEAD)" == "$4" ]] && return
+  rm -rf "${dir:?}"
+  git init -q "$dir"
+  git -C "$dir" fetch -q --depth 1 "$2" "$4"
+  git -C "$dir" checkout -q FETCH_HEAD
+  [[ "$(git -C "$dir" rev-parse HEAD)" == "$4" ]] || { echo "$1 : HEAD n'est pas $4" >&2; exit 1; }
 }
 
 # Une dépendance est à jour quand son marqueur porte sa signature : sa référence, ses options et
@@ -56,9 +81,9 @@ fetch() {  # nom url ref
 # dépendance seule ; le cache de la CI, restauré même d'une version plus ancienne du script,
 # garde les autres.
 ref_of() {  # nom : sa référence dans DEPS (bash 3 de macOS : pas de tableau associatif)
-  local entry name url ref
+  local entry name url ref commit
   for entry in "${DEPS[@]}"; do
-    read -r name url ref <<<"$entry"
+    read -r name url ref commit <<<"$entry"
     if [[ "$name" == "$1" ]]; then echo "$ref"; return; fi
   done
 }
@@ -79,9 +104,9 @@ cmake_dep() {  # nom [options...]
 }
 
 for entry in "${DEPS[@]}"; do
-  read -r name url ref <<<"$entry"
+  read -r name url ref commit <<<"$entry"
   echo "== $name $ref"
-  fetch "$name" "$url" "$ref"
+  fetch "$name" "$url" "$ref" "$commit"
 done
 
 cmake_dep tomlplusplus -DTOMLPLUSPLUS_BUILD_TESTS=OFF -DTOMLPLUSPLUS_BUILD_EXAMPLES=OFF
@@ -90,6 +115,24 @@ cmake_dep tomlplusplus -DTOMLPLUSPLUS_BUILD_TESTS=OFF -DTOMLPLUSPLUS_BUILD_EXAMP
 cmake_dep catch2 -DCATCH_INSTALL_DOCS=OFF -DCATCH_INSTALL_EXTRAS=ON -DCMAKE_CXX_STANDARD=17
 cmake_dep spdlog -DSPDLOG_USE_STD_FORMAT=ON -DSPDLOG_BUILD_SHARED=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 cmake_dep vulkan-headers
+cmake_dep vulkan-loader -DBUILD_TESTS=OFF
+
+# MoltenVK : l'archive publiée par Khronos, vérifiée. Son manifeste d'ICD va dans share/vulkan/icd.d,
+# où le chargeur du préfixe le trouve ; le paquet écrit le sien.
+MOLTENVK_VERSION=1.4.2
+MOLTENVK_SHA256=f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
+if ! done_marker moltenvk "$MOLTENVK_VERSION $MOLTENVK_SHA256"; then
+  curl -fsSL -o "$WORK/MoltenVK-macos.tar" \
+    "https://github.com/KhronosGroup/MoltenVK/releases/download/v$MOLTENVK_VERSION/MoltenVK-macos.tar"
+  echo "$MOLTENVK_SHA256  $WORK/MoltenVK-macos.tar" | shasum -a 256 -c -
+  rm -rf "$WORK/MoltenVK"
+  tar -xf "$WORK/MoltenVK-macos.tar" -C "$WORK"
+  install -d "$PREFIX/lib" "$PREFIX/share/vulkan/icd.d"
+  install -m 755 "$WORK/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" "$PREFIX/lib/"
+  sed 's|"library_path": *"[^"]*"|"library_path": "../../../lib/libMoltenVK.dylib"|' \
+    "$WORK/MoltenVK/MoltenVK/dynamic/dylib/macOS/MoltenVK_icd.json" >"$PREFIX/share/vulkan/icd.d/MoltenVK_icd.json"
+  mark moltenvk "$MOLTENVK_VERSION $MOLTENVK_SHA256"
+fi
 cmake_dep sdl3 -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
 
 if ! done_marker nanobench "$(ref_of nanobench)"; then
@@ -121,11 +164,12 @@ PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
   --buildtype=release -Dvulkan=enabled -Dshaderc=enabled -Dlcms=enabled
   -Dopengl=disabled -Dd3d11=disabled -Ddemos=false -Dtests=false
   -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml")
-# Le registre Vulkan vient de vulkan-headers : une autre version rebâtit libplacebo.
+# Le registre Vulkan vient de vulkan-headers, la libvulkan liée de vulkan-loader : une autre version de l'un
+# ou de l'autre rebâtit libplacebo (une copie liée à celle de Homebrew ne se charge plus).
 # Le correctif de présentation (chantier 6.1), le même que sous Linux et le port vcpkg : le lecteur lit ses types
 # (pl_vulkan_present, placebo_feedback.h) ; sa somme entre dans la signature.
 placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
-signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(shasum -a 256 "$placebo_patch" | cut -c1-16)"
+signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) vulkan-loader $(ref_of vulkan-loader) $(shasum -a 256 "$placebo_patch" | cut -c1-16)"
 if ! done_marker libplacebo "$signature"; then
   git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
   # Appliqué une fois : déjà là (une construction interrompue), rien à refaire.
@@ -139,10 +183,20 @@ if ! done_marker libplacebo "$signature"; then
   mark libplacebo "$signature"
 fi
 
-if ! done_marker libass "$(ref_of libass)"; then
-  (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
+# La coupure des lignes selon Unicode (UAX #14), que libass prend à libunibreak.
+if ! done_marker libunibreak "$(ref_of libunibreak)"; then
+  (cd "$WORK/libunibreak" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
     && make -j "$JOBS" && make install)
-  mark libass "$(ref_of libass)"
+  mark libunibreak "$(ref_of libunibreak)"
+fi
+
+# Assembleur et libunibreak exigés (P1.24) : sans eux, configure passe outre avec un simple
+# avertissement, et le rendu des sous-titres perd ses routines SIMD ou la coupure Unicode.
+signature="$(ref_of libass) asm libunibreak $(ref_of libunibreak)"
+if ! done_marker libass "$signature"; then
+  (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
+    --enable-asm --enable-libunibreak && make -j "$JOBS" && make install)
+  mark libass "$signature"
 fi
 
 # ONNX Runtime (fournisseur CoreML) pour ajp_backend_coreml : la version publiée, vérifiée. Avant

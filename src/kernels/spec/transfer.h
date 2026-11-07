@@ -9,6 +9,8 @@
 #include <array>
 #include <cstddef>
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 // PQ : E' signal [0, 1] ↔ luminance affichée [0, 10000] cd/m².
@@ -133,3 +135,5 @@ inline constexpr Mat3 kBt709ToBt2020 = gamut_conversion(kBt709Gamut, kBt2020Gamu
 inline constexpr Mat3 kBt2020ToBt709 = gamut_conversion(kBt2020Gamut, kBt709Gamut);
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

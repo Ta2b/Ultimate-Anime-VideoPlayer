@@ -79,6 +79,10 @@ struct Gpu {
     params.instance = inst->instance;
     params.get_proc_addr = inst->get_proc_addr;
     params.allow_software = true;
+    // Une couche de validation plus ancienne que Vulkan 1.4 refuse VkPhysicalDeviceVulkan14Features dans
+    // vkCreateDevice (celle de la CI, en-tête 275) : sous elle, l'appareil reste en 1.3, ce que le grade
+    // suffit.
+    if (inst_params.debug) params.max_api_version = VK_API_VERSION_1_3;
     vk = pl_vulkan_create(log, &params);
     if (vk == nullptr) return;
     renderer = pl_renderer_create(log, vk->gpu);

@@ -38,6 +38,7 @@ double shadow_knee_for(double shadows, double white) {
 
 // La scène du lecteur, à l'échelle de l'image du grade : le blanc SDR y vaut sdr_white.
 void apply_scene_light(const GradeSettings& s, GradeParams& p) {
+  if (s.series_apl_nits > 0.0) p.fs_series = s.series_apl_nits * p.sdr_white / grade_limits::kSdrWhiteNits;
   if (!s.scene_light) return;
   p.fs_apl = std::max(s.scene_light->apl_nits, 0.0) * p.sdr_white / grade_limits::kSdrWhiteNits;
   p.an_lift = kAnimeLift * std::exp2(std::clamp(s.anime_exposure, -kCurveMaxE, kCurveMaxE));
@@ -100,7 +101,7 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   const double paper = std::floor(std::min(s.paper_white, 0.75 * peak) + 0.5);
   const bool native_sdr = context.route == core::HdrMode::Native && !context.source_hdr;
   // Le mode SDR sur une sortie HDR10 : l'image SDR est gradée dans le conteneur PQ comme la route native au
-  // blanc papier (éclats limités), au lieu de rester sans grade (retour de Tatoub).
+  // blanc papier (éclats limités), au lieu de rester sans grade (retour d'essai).
   const bool plain_sdr = context.route == core::HdrMode::Off && !context.source_hdr;
   GradeDecision decision;
   decision.source_white_nits = native_sdr && s.truehdr_look ? grade_limits::kSdrWhiteNits : paper;

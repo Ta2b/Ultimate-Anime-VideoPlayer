@@ -37,13 +37,12 @@ struct HostPool {
     for (AVBufferRef*& buffer : made) av_buffer_unref(&buffer);
   }
   FrameSource source() {
-    return [this]() -> std::expected<AVFrame*, Refusal> {
-      AVFrame* frame = av_frame_alloc();
+    return [this]() -> std::expected<ajp::exporter::OwnedFrame, Refusal> {
+      ajp::exporter::OwnedFrame frame(av_frame_alloc());
       frame->format = AV_PIX_FMT_NV12;
       frame->width = width;
       frame->height = height;
-      if (av_frame_get_buffer(frame, 0) < 0) {
-        av_frame_free(&frame);
+      if (av_frame_get_buffer(frame.get(), 0) < 0) {
         return std::unexpected(Refusal{RefusalCode::GpuMemoryExhausted, "pool factice"});
       }
       made.push_back(av_buffer_ref(frame->buf[0]));
@@ -124,7 +123,7 @@ TEST_CASE("Puits CUDA : une image par slot, prise finie, remplacée par une neuv
   CHECK(pool.held() == 5);
   CHECK((*sink)->target(2, 7).luma != target.luma);
   (*sink)->target(2, 7).done->store(7);
-  av_frame_free(&*taken);  // l'écriture l'a encodée
+  taken->reset();  // l'écriture l'a encodée
   CHECK(pool.held() == 4);
   sink->reset();  // toutes les écritures promises sont signalées : les images rentrent
   CHECK(pool.held() == 0);

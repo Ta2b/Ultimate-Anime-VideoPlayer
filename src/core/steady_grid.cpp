@@ -1,7 +1,8 @@
 #include "core/steady_grid.h"
 
 #include <format>
-#include <utility>
+#include <optional>
+#include <tuple>
 
 namespace ajp::core {
 namespace {
@@ -36,7 +37,13 @@ CadenceStep SteadyGrid::push(const SourceStamp& source, Ratio factor) {
   }
   started_ = true;
 
-  if (!usable(wanted)) {
+  // Une grille refusée (facteur que CadenceAccumulator n'accepte pas) vaut N = 1, comme un facteur
+  // inutilisable (P2.34) : *made n'est plus lu sans test.
+  std::optional<CadenceAccumulator> made;
+  if (usable(wanted) && !grid_) {
+    if (auto created = CadenceAccumulator::create(wanted)) made.emplace(*created);
+  }
+  if (!usable(wanted) || (!grid_ && !made)) {
     grid_.reset();
     factor_ = Ratio{1, 1};
     CadenceStep step = alone(source, event);
@@ -45,12 +52,11 @@ CadenceStep SteadyGrid::push(const SourceStamp& source, Ratio factor) {
   }
   if (!grid_) {
     // Au-dessus de 1 depuis N = 1 (ou au départ) : la grille repart de la source gauche, déjà émise.
-    auto made = CadenceAccumulator::create(wanted);
-    grid_.emplace(std::move(*made));
-    (void)grid_->flush(epoch_);
+    grid_.emplace(*made);
+    std::ignore = grid_->flush(epoch_);  // un refus laisse la grille telle quelle, comme avant
     if (left_ && event == GridEvent::Pair) (void)grid_->push(*left_);
   } else if (!(wanted == factor_)) {
-    (void)grid_->retarget(wanted);
+    std::ignore = grid_->retarget(wanted);  // un refus garde le pas précédent, comme avant
   }
   factor_ = wanted;
   left_ = source;
@@ -63,7 +69,7 @@ void SteadyGrid::resync() {
 
 void SteadyGrid::reset() {
   left_.reset();
-  if (grid_) (void)grid_->flush(epoch_);
+  if (grid_) std::ignore = grid_->flush(epoch_);
 }
 
 std::expected<void, Refusal> SteadyGrid::flush(std::uint32_t epoch) {

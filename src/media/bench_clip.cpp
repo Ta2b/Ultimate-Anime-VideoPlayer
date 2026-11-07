@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <format>
+#include <system_error>
 #include <vector>
 
 #include "media/av_util.h"
@@ -132,11 +134,11 @@ void draw_frame(AVFrame& frame, int width, int height, int index, int fps) {
   }
 }
 
-}  // namespace
-
-std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file, const BenchClipSpec& spec) {
-  const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MPEG4);
-  if (codec == nullptr) return refuse(RefusalCode::LibraryUnavailable, "encodeur MPEG-4 absent de FFmpeg");
+std::expected<void, Refusal> write_clip_to(const std::filesystem::path& file, const BenchClipSpec& spec) {
+  // MPEG-2 (P3.12) : le seul encodeur propre à FFmpeg que les décodeurs matériels lisent (NVDEC, D3D11VA,
+  // VA-API) ; le MPEG-4 d'avant passait par le processeur, qui n'est pas le chemin de la lecture.
+  const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MPEG2VIDEO);
+  if (codec == nullptr) return refuse(RefusalCode::LibraryUnavailable, "encodeur MPEG-2 absent de FFmpeg");
   AVFormatContext* raw = nullptr;
   const std::string path = file.string();
   if (const int err = avformat_alloc_output_context2(&raw, nullptr, "matroska", path.c_str());
@@ -213,6 +215,24 @@ std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
   if (const int err = av_write_trailer(out.get()); err < 0)
     return refuse_av(RefusalCode::FileUnwritable, "fin", err);
   return {};
+}
+
+}  // namespace
+
+// Écrit à côté puis renomme (P2.20) : un clip interrompu (arrêt, disque plein) ne reste jamais sous son nom,
+// où il servirait à toutes les calibrations suivantes.
+std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file, const BenchClipSpec& spec) {
+  std::filesystem::path partial = file;
+  partial += ".partial";
+  std::error_code error;
+  auto written = write_clip_to(partial, spec);
+  if (written && std::filesystem::file_size(partial, error) == 0 && !error)
+    written = refuse(RefusalCode::FileUnwritable, "clip de calibration vide");
+  if (written) std::filesystem::rename(partial, file, error);
+  if (written && error)
+    written = refuse(RefusalCode::FileUnwritable, std::format("{} : {}", file.string(), error.message()));
+  if (!written) std::filesystem::remove(partial, error);
+  return written;
 }
 
 }  // namespace ajp::media

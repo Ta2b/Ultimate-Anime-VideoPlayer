@@ -56,11 +56,12 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   CadenceStep out(GridEvent::Pair, left_->id, source.id);
   std::size_t emitted = 0;
   // Un instant à moins d'un quart de pas de la source droite lui est ramené : l'image est la source elle-même
-  // (aucune passe d'interpolation), décalée de quelques millisecondes au plus.
-  const std::int64_t snap = vsync > 0 ? 1 : step / 4;
+  // (aucune passe d'interpolation), décalée de quelques millisecondes au plus. Sur écran fixe (P3.37), le
+  // vsync à moins d'une demi-période avant la source la montre telle quelle, à l'heure du vsync.
+  const std::int64_t snap = vsync > 0 ? vsync / 2 : step / 4;
   while (emitted < limit && t <= d) {
     const bool on_source = d - t < snap;
-    const std::int64_t at = on_source ? d : t;
+    const std::int64_t at = on_source && vsync <= 0 ? d : t;
     out.add({.t = on_source ? Ratio{1, 1} : Ratio{at - g, gap}, .pts_us = at});
     last_emitted_ = at;
     ++emitted;

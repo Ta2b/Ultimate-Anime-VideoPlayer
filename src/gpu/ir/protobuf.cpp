@@ -56,64 +56,60 @@ std::unexpected<Refusal> malformed(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::OnnxMalformed, std::move(detail)});
 }
 
-std::expected<std::uint64_t, Refusal> Reader::varint() {
-  return read_varint(data_, pos_);
-}
-
-std::expected<Bytes, Refusal> Reader::take(std::size_t count) {
-  if (count > data_.size() - pos_) {
-    return malformed(std::format("{} octets demandés, {} restants", count, data_.size() - pos_));
+std::expected<FieldHeader, Refusal> field_header(Bytes data) {
+  std::size_t pos = 0;
+  auto tag = read_varint(data, pos);
+  if (!tag) return std::unexpected(tag.error());
+  const std::uint64_t number = *tag >> 3U;
+  if (number == 0 || number > kMaxFieldNumber) return malformed(std::format("numéro de champ {}", number));
+  FieldHeader header{.number = static_cast<std::uint32_t>(number)};
+  switch (*tag & 7U) {
+    case 0: {
+      header.wire = WireType::Varint;
+      auto value = read_varint(data, pos);
+      if (!value) return std::unexpected(value.error());
+      header.scalar = *value;
+      break;
+    }
+    case 1:
+      header.wire = WireType::Fixed64;
+      header.payload = 8;
+      break;
+    case 2: {
+      header.wire = WireType::Length;
+      auto length = read_varint(data, pos);
+      if (!length) return std::unexpected(length.error());
+      header.payload = *length;
+      break;
+    }
+    case 5:
+      header.wire = WireType::Fixed32;
+      header.payload = 4;
+      break;
+    default:
+      return malformed(std::format("champ {} : type filaire {} non pris en charge", number, *tag & 7U));
   }
-  Bytes out = data_.subspan(pos_, count);
-  pos_ += count;
-  return out;
+  header.size = pos;
+  return header;
 }
 
 std::expected<std::optional<Field>, Refusal> Reader::next() {
   if (pos_ == data_.size()) return std::optional<Field>{};
-  auto tag = varint();
-  if (!tag) return std::unexpected(tag.error());
-  const std::uint64_t number = *tag >> 3U;
-  if (number == 0 || number > kMaxFieldNumber) return malformed(std::format("numéro de champ {}", number));
-
-  Field field{.number = static_cast<std::uint32_t>(number)};
-  switch (*tag & 7U) {
-    case 0: {
-      field.wire = WireType::Varint;
-      auto value = varint();
-      if (!value) return std::unexpected(value.error());
-      field.scalar = *value;
-      break;
-    }
-    case 1: {
-      field.wire = WireType::Fixed64;
-      auto bytes = take(8);
-      if (!bytes) return std::unexpected(bytes.error());
-      field.scalar = read_le64(*bytes);
-      break;
-    }
-    case 2: {
-      field.wire = WireType::Length;
-      auto length = varint();
-      if (!length) return std::unexpected(length.error());
-      if (*length > data_.size() - pos_) {
-        return malformed(std::format("champ {} : longueur {} au-delà du message", number, *length));
-      }
-      auto bytes = take(static_cast<std::size_t>(*length));
-      if (!bytes) return std::unexpected(bytes.error());
-      field.bytes = *bytes;
-      break;
-    }
-    case 5: {
-      field.wire = WireType::Fixed32;
-      auto bytes = take(4);
-      if (!bytes) return std::unexpected(bytes.error());
-      field.scalar = read_le32(*bytes);
-      break;
-    }
-    default:
-      return malformed(std::format("champ {} : type filaire {} non pris en charge", number, *tag & 7U));
+  const std::size_t start = pos_;
+  auto header = field_header(data_.subspan(pos_));
+  if (!header) return std::unexpected(header.error());
+  pos_ += header->size;
+  if (header->payload > data_.size() - pos_) {
+    return malformed(
+        std::format("champ {} : longueur {} au-delà du message", header->number, header->payload));
   }
+  const Bytes payload = data_.subspan(pos_, static_cast<std::size_t>(header->payload));
+  pos_ += payload.size();
+  Field field{.number = header->number, .wire = header->wire, .scalar = header->scalar};
+  if (header->wire == WireType::Fixed64) field.scalar = read_le64(payload);
+  if (header->wire == WireType::Fixed32) field.scalar = read_le32(payload);
+  if (header->wire == WireType::Length) field.bytes = payload;
+  field.raw = data_.subspan(start, pos_ - start);
   return field;
 }
 

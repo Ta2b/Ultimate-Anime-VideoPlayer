@@ -23,11 +23,11 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 
 | Dossier | Contenu |
 |---|---|
-| `src/core` | profil TOML, `resolve()` vers un `Plan` immuable, cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`) |
+| `src/core` | cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8 (`utf8_path.h`) ; le profil v5 et `resolve()` ne servent plus à la lecture |
 | `src/app/play` | le lecteur : boucle (`player.cpp`, `player_run.cpp`), chaîne en direct (`chain*.cpp`), menu (`settings_*.cpp`), réglages et `play.toml` (`settings.h`, `settings_toml.cpp`), assistant (`wizard.*`, `first_run.cpp`), traductions (`i18n_fr_*.cpp`) |
 | `src/render` | libplacebo, grade (`grade_params.*`), shaders `.hook` (`src/render/shaders/`), LUT (`looks.*`) |
 | `src/gpu` | backends chargés à l'exécution : `vulkan`, `cuda` (TensorRT), `coreml` ; `migraphx`, `openvino`, `winml` débranchés |
-| `src/media`, `src/audio`, `src/subs`, `src/present`, `src/export`, `src/prepare`, `src/kernels` | voir `docs/ARCHITECTURE.md` |
+| `src/media`, `src/audio`, `src/subs`, `src/export`, `src/prepare`, `src/kernels` | voir `docs/ARCHITECTURE.md` |
 | `tests/unit/<module>` | Catch2, un exécutable par module |
 | `tools/` | dépendances (`deps`), paquets (`release`), bancs, scripts de modèles |
 
@@ -39,6 +39,9 @@ export AJP_DEPS_PREFIX=~/ajp-deps
 cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```
+
+`linux-prefix` est en Debug : ses temps ne valent rien. Un banc ou une mesure se fait sur le binaire livré,
+`linux-release` (Linux), `windows-release`, `macos-release`.
 
 Sans GPU, Vulkan logiciel (lavapipe) suffit : `ajp --software-gpu`. Les tests GPU se lancent avec
 `AJP_TEST_VULKAN_VALIDATION=off` quand la couche de validation manque. CUDA ne se construit que sur un poste
@@ -52,6 +55,7 @@ Voir l'interface sans écran : `xvfb-run ajp --software-gpu --mute --no-upscale 
 - `clang-format-20` sur tous les `.cpp` et `.h` (`--dry-run --Werror`) ;
 - un fichier vise moins de 500 lignes, la CI échoue au-delà de 800 ;
 - aucun `getenv` : une option vient du profil, des options ou de `DebugFlags` ;
+- les `path::string()` de `src/` ne peuvent que diminuer : un chemin passe par `core::to_utf8` (`src/core/utf8_path.h`) ;
 - les shaders se compilent ; la construction est en `-Werror`.
 
 ## Conventions et pièges

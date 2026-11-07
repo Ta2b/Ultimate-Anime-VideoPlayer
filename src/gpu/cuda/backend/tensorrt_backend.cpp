@@ -16,6 +16,7 @@
 #endif
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
@@ -113,7 +114,7 @@ class CudaTensorBuffer final : public TensorBuffer {
                    std::weak_ptr<TensorRtBackend::TensorReleaser> releaser)
       : device_(device), memory_(memory), tensor_(tensor), releaser_(std::move(releaser)) {}
   ~CudaTensorBuffer() override {
-    cudaSetDevice(device_);
+    cuda_warn(cudaSetDevice(device_), "cudaSetDevice");
     if (const auto owner = releaser_.lock(); owner && owner->backend != nullptr) {
       owner->backend->free_after_lanes(memory_);
       return;
@@ -130,19 +131,6 @@ class CudaTensorBuffer final : public TensorBuffer {
   Tensor tensor_;
   std::weak_ptr<TensorRtBackend::TensorReleaser> releaser_;
 };
-
-std::size_t element_size(TensorType type) {
-  switch (type) {
-    case TensorType::F32:
-      return 4;
-    case TensorType::F16:
-      return 2;
-    case TensorType::U8:
-    case TensorType::I8:
-      return 1;
-  }
-  return 0;
-}
 
 }  // namespace
 
@@ -173,8 +161,8 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->uuid_ = uuid_of(backend->properties_);
   if (auto ok = share_primary_context(backend->device_); !ok) return std::unexpected(ok.error());
   if (auto ok = backend->bind(); !ok) return std::unexpected(ok.error());
-  cudaRuntimeGetVersion(&backend->runtime_version_);
-  cudaDriverGetVersion(&backend->driver_version_);
+  cuda_warn(cudaRuntimeGetVersion(&backend->runtime_version_), "cudaRuntimeGetVersion");
+  cuda_warn(cudaDriverGetVersion(&backend->driver_version_), "cudaDriverGetVersion");
   if (auto ok = backend->create_lanes(); !ok) return std::unexpected(ok.error());
   for (Held& held : backend->held_) {
     if (auto ok = cuda_check(cudaEventCreateWithFlags(&held.done, cudaEventDisableTiming), "cudaEventCreate");
@@ -372,13 +360,11 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_ten
   if (type != TensorType::F16 && type != TensorType::F32) {
     return refuse(RefusalCode::FormatUnsupported, "tenseur : F16 ou F32 seulement");
   }
-  std::size_t bytes = element_size(type);
-  for (const std::int64_t d : shape.dims) {
-    if (d <= 0 || static_cast<std::uint64_t>(d) > (std::uint64_t{1} << 40) / bytes) {
-      return refuse(RefusalCode::ShapeInvalid, "tenseur : dimension nulle, négative ou trop grande");
-    }
-    bytes *= static_cast<std::size_t>(d);
-  }
+  // La borne commune à Vulkan (gpu/tensor.h, P2.28).
+  const auto bytes = static_cast<std::size_t>(dense_tensor_bytes(type, shape));
+  if (bytes == 0)
+    return refuse(RefusalCode::ShapeInvalid,
+                  "tenseur : dimension hors de [1, 2^24] ou plus de 2^32 éléments");
   if (auto ok = bind(); !ok) return std::unexpected(ok.error());
   void* memory = nullptr;
   // Dans le pool, sur la file courante, puis cette file attendue : le tenseur est aussitôt valable pour

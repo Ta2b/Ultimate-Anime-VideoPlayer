@@ -19,6 +19,7 @@
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 
 #include "app/play/auto_bench.h"
@@ -37,6 +38,7 @@
 #include "app/play/input.h"
 #include "app/play/model_choice.h"
 #include "app/play/scripted_input.h"
+#include "app/play/single_instance.h"
 #include "app/play/span_auto.h"
 #include "app/play/span_int8.h"
 #include "app/play/user_keys.h"
@@ -62,15 +64,15 @@ constexpr std::size_t usage(core::Usage u) {
   return static_cast<std::size_t>(u);
 }
 
-// Les filtres de la boîte « Ouvrir une vidéo » : SDL les lit jusqu'à la réponse, d'où le static.
-constexpr const char* kVideoPattern = "mkv;mp4;m4v;mov;avi;webm;ts;m2ts;mts;wmv;flv;ogv;mpg;mpeg";
-constexpr std::array<SDL_DialogFileFilter, 2> kVideoFiltersEn{{
-    {.name = "Videos", .pattern = kVideoPattern},
+// Les filtres de la boîte « Ouvrir une vidéo » : SDL les lit jusqu'à la réponse, d'où le static. Les
+// extensions sont celles de video_extensions() (P3.85).
+const std::array<SDL_DialogFileFilter, 2> kVideoFiltersEn{{
+    {.name = "Videos", .pattern = video_dialog_pattern()},
     {.name = "All files", .pattern = "*"},
 }};
-constexpr std::array<SDL_DialogFileFilter, 2> kVideoFiltersFr{{
-    {.name = "Vidéos", .pattern = kVideoPattern},   // i18n-ok : le filtre de la boîte suit la langue
-    {.name = "Tous les fichiers", .pattern = "*"},  // i18n-ok
+const std::array<SDL_DialogFileFilter, 2> kVideoFiltersFr{{
+    {.name = "Vidéos", .pattern = video_dialog_pattern()},  // i18n-ok : le filtre de la boîte suit la langue
+    {.name = "Tous les fichiers", .pattern = "*"},          // i18n-ok
 }};
 const std::array<SDL_DialogFileFilter, 2>& video_filters() {
   return i18n::language() == i18n::Language::French ? kVideoFiltersFr : kVideoFiltersEn;
@@ -194,6 +196,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .machine_tier = static_cast<int>(effective_tier(machine, measured)),
       .display_height = display_height(h.screen.window()),
       .gpu_name = machine.name,
+      .gpus = h.screen.device_names(),
       .audio_outputs = audio_outputs,
       .engines_dir_default = prepare::utf8_path(h.paths.engines.parent_path() / "backends"),
       .engines_dir_free = format_size(free_bytes(h.catalog.layout.engines)),
@@ -213,22 +216,39 @@ PlaySettings home_settings(const HomeScreen& h, const PlaySettings& base) {
 }  // namespace
 
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
+  auto drop = dropped(event);
+  if (!drop || drop->kind != DropKind::Video) return std::nullopt;
+  return std::move(drop->path);
+}
+
+std::optional<Dropped> dropped(const SDL_Event& event) {
   if (event.type != SDL_EVENT_DROP_FILE || event.drop.data == nullptr) return std::nullopt;
+  // Un fichier ouvert par un autre lancement (single_instance.h) : la fenêtre passe devant.
+  if (event.drop.source != nullptr && std::string_view(event.drop.source) == kForwardedDrop) {
+    int count = 0;
+    if (SDL_Window** windows = SDL_GetWindows(&count); windows != nullptr) {
+      if (count > 0) {
+        if ((SDL_GetWindowFlags(windows[0]) & SDL_WINDOW_MINIMIZED) != 0) SDL_RestoreWindow(windows[0]);
+        SDL_RaiseWindow(windows[0]);
+      }
+      SDL_free(static_cast<void*>(windows));
+    }
+  }
   std::filesystem::path path = prepare::path_from_utf8(event.drop.data);
-  // Un dossier ou un fichier qui n'est pas une vidéo (sous-titres, image, texte) ne ferme pas la
-  // lecture en cours : il ne se lirait pas, et la vidéo serait perdue pour rien.
+  // Un dossier ou un fichier qui n'est pas une vidéo (image, texte, PDF) ne ferme pas la lecture en cours :
+  // il ne se lirait pas, et la vidéo serait perdue pour rien.
   std::error_code error;
   if (!std::filesystem::is_regular_file(path, error) || error) return std::nullopt;
   std::string extension = prepare::utf8_path(path.extension());
   std::ranges::transform(extension, extension.begin(),
                          [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c); });
-  static constexpr std::string_view kNotVideo[] = {
-      ".srt", ".ass",  ".ssa", ".sub",  ".idx",  ".vtt", ".txt", ".nfo", ".jpg", ".jpeg", ".png",
-      ".gif", ".webp", ".bmp", ".toml", ".onnx", ".ttf", ".otf", ".zip", ".7z",  ".rar"};
-  if (std::ranges::find(kNotVideo, extension) != std::end(kNotVideo)) return std::nullopt;
-  return path;
+  DropKind kind = DropKind::Other;
+  if (std::ranges::find(video_extensions(), extension) != video_extensions().end()) kind = DropKind::Video;
+  if (extension == ".ass" || extension == ".ssa" || extension == ".srt") kind = DropKind::Subtitles;
+  return Dropped{.path = std::move(path), .kind = kind};
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const HomeScreen& h, HomeState& st,
                                                                       const std::string& problem) {
   const auto log = log_channel("app");
@@ -345,7 +365,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   }
   if (dirty) save();
   if (!chosen) return std::nullopt;
-  log->info("accueil : {}", prepare::utf8_path(*chosen));
+  log->info("accueil : {}", prepare::utf8_path(chosen->filename()));
   if (!st.start) h.ui.close_settings();  // PlayFile : le panneau reste ouvert
   return chosen;
 }

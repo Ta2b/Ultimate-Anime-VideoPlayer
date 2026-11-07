@@ -4,13 +4,15 @@
 #include <format>
 #include <utility>
 
+#include "gpu/cuda/backend/cuda_warn.h"
+
 namespace ajp::gpu::cuda {
 
 GpuTiming::GpuTiming(std::string label, Report report)
     : label_(std::move(label)), report_(std::move(report)) {
   for (std::size_t i = 0; i < kPairs; ++i) {
-    cudaEventCreate(&start_[i]);
-    cudaEventCreate(&stop_[i]);
+    cuda_warn(cudaEventCreate(&start_[i]), "cudaEventCreate");
+    cuda_warn(cudaEventCreate(&stop_[i]), "cudaEventCreate");
   }
   samples_.reserve(kReport);
 }
@@ -25,7 +27,7 @@ GpuTiming::~GpuTiming() {
 void GpuTiming::begin(cudaStream_t stream) {
   collect();
   if (begun_ != ended_ || begun_ - read_ >= kPairs) return;  // paire ouverte, ou toutes en vol : on saute
-  cudaEventRecord(start_[begun_ % kPairs], stream);
+  cuda_warn(cudaEventRecord(start_[begun_ % kPairs], stream), "cudaEventRecord");
   open_stream_ = stream;
   ++begun_;
 }
@@ -38,7 +40,7 @@ void GpuTiming::end(cudaStream_t stream) {
     --begun_;
     return;
   }
-  cudaEventRecord(stop_[ended_ % kPairs], stream);
+  cuda_warn(cudaEventRecord(stop_[ended_ % kPairs], stream), "cudaEventRecord");
   ++ended_;
 }
 
@@ -87,8 +89,8 @@ GpuStageSummary GpuTiming::profile() {
 
 GpuSpan::GpuSpan(std::string label) : label_(std::move(label)) {
   for (Pair& pair : pairs_) {
-    cudaEventCreate(&pair.start);
-    cudaEventCreate(&pair.stop);
+    cuda_warn(cudaEventCreate(&pair.start), "cudaEventCreate");
+    cuda_warn(cudaEventCreate(&pair.stop), "cudaEventCreate");
   }
 }
 

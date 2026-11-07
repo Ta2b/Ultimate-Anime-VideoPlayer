@@ -6,11 +6,14 @@
 #include <cstdlib>
 #include <format>
 #include <fstream>
+#include <mutex>
+#include <optional>
 #include <stop_token>
 #include <system_error>
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "core/file_sync.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
@@ -40,9 +43,10 @@ constexpr std::array<std::string_view, 15> kMimeTypes{
     "video/x-matroska", "video/webm",    "video/mp4",  "video/x-m4v",     "video/quicktime",
     "video/x-msvideo",  "video/vnd.avi", "video/mpeg", "video/mp2t",      "video/x-flv",
     "video/x-ms-wmv",   "video/ogg",     "video/3gpp", "video/x-ogm+ogg", "video/x-theora+ogg"};
-constexpr std::array<std::string_view, 14> kExtensions{".mkv", ".webm", ".mp4",  ".m4v", ".mov",
+// La seule table des extensions vidéo (P3.85) : inscription, épisodes, fichiers glissés, boîte « Ouvrir ».
+constexpr std::array<std::string_view, 15> kExtensions{".mkv", ".webm", ".mp4",  ".m4v", ".mov",
                                                        ".avi", ".mpg",  ".mpeg", ".ts",  ".m2ts",
-                                                       ".flv", ".wmv",  ".ogv",  ".3gp"};
+                                                       ".mts", ".flv",  ".wmv",  ".ogv", ".3gp"};
 
 constexpr std::string_view kClasses = "Software\\Classes\\";
 constexpr std::string_view kCapabilities = "Software\\AJP\\Capabilities";
@@ -163,6 +167,18 @@ std::span<const std::string_view> video_extensions() {
   return kExtensions;
 }
 
+const char* video_dialog_pattern() {
+  static const std::string pattern = [] {
+    std::string joined;
+    for (const std::string_view extension : kExtensions) {
+      if (!joined.empty()) joined += ';';
+      joined += extension.substr(1);
+    }
+    return joined;
+  }();
+  return pattern.c_str();
+}
+
 std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable) {
   const std::string path = prepare::utf8_path(executable);
   const bool control = std::ranges::any_of(path, [](char c) {
@@ -243,7 +259,20 @@ std::vector<RegistryValue> registry_shared_values() {
   return values;
 }
 
+namespace {
+// P4.11 : xdg-mime ne se lance qu'une fois par processus (et après une inscription ou un retrait), plus à
+// chaque ouverture de chaîne, « Appliquer » ou épisode.
+std::mutex g_default_mutex;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::optional<bool> g_default_known;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+void forget_default_player() {
+  const std::scoped_lock lock(g_default_mutex);
+  g_default_known.reset();
+}
+}  // namespace
+
 std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
+  forget_default_player();
 #if defined(_WIN32)
   if (auto written = write_registry(registry_values(prepare::utf8_path(place.executable))); !written)
     return std::unexpected(std::move(written.error()));
@@ -268,20 +297,8 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
   auto text = desktop_entry(launcher);
   if (!text) return std::unexpected(std::move(text.error()));
   const std::filesystem::path file = desktop_file(place);
-  std::error_code error;
-  std::filesystem::create_directories(file.parent_path(), error);
-  std::filesystem::path temp = file;
-  temp += ".tmp";
-  {
-    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-    out << *text;
-    if (!out.flush()) return refuse(RefusalCode::FileUnwritable, prepare::utf8_path(temp));
-  }
-  std::filesystem::rename(temp, file, error);
-  if (error) {
-    return refuse(RefusalCode::FileUnwritable,
-                  std::format("{} : {}", prepare::utf8_path(file), error.message()));
-  }
+  if (auto written = core::write_text_atomically(file, *text); !written)
+    return std::unexpected(written.error());
   refresh_desktop_database(file.parent_path());
   return i18n::tr_format(
       "AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in Settings > "
@@ -291,6 +308,7 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 }
 
 std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) {
+  forget_default_player();
 #if defined(_WIN32)
   if (auto erased = erase_registry(prepare::utf8_path(place.executable)); !erased)
     return std::unexpected(std::move(erased.error()));
@@ -357,8 +375,8 @@ bool default_handler_is_ajp(std::string_view query_output) {
   return query_output == kDesktopId;
 }
 
-bool is_default_player(const PlayerPlace& place) {
-  static_cast<void>(place);
+namespace {
+bool query_default_player() {
 #if defined(_WIN32) || defined(__APPLE__)
   return false;  // Windows ne le dit qu'au registre de l'utilisateur (UserChoice) : la case suffit
 #else
@@ -374,6 +392,14 @@ bool is_default_player(const PlayerPlace& place) {
   }
   return false;
 #endif
+}
+}  // namespace
+
+bool is_default_player(const PlayerPlace& place) {
+  static_cast<void>(place);
+  const std::scoped_lock lock(g_default_mutex);
+  if (!g_default_known) g_default_known = query_default_player();
+  return *g_default_known;
 }
 
 void leave_lone_console() {

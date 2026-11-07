@@ -3,6 +3,8 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <numeric>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -15,7 +17,9 @@
 namespace ajp::app::play {
 namespace {
 
+// Avec --debug : les options d'essai y sont acceptées (P2.35).
 std::expected<PlayOptions, Refusal> parse(std::vector<std::string_view> args) {
+  args.insert(args.begin(), "--debug");
   return parse_play_options(args);
 }
 
@@ -152,6 +156,11 @@ TEST_CASE("ajp play : taille de travail, 720 lignes par défaut comme le profil 
   CHECK(work_size(1920, 1080, 720) == WorkSize{1280, 720});
   CHECK(work_size(1280, 720, 720) == WorkSize{1280, 720});  // déjà à la taille : rien
   CHECK(work_size(854, 480, 720) == WorkSize{854, 480});    // plus petite : jamais agrandie
+  // « Restaurer les traits » coupé (P3.19) : une 1080p au-dessus de 720 n'est ni réduite ni agrandie.
+  CHECK(span_runs(true, true, 1080, 720));
+  CHECK_FALSE(span_runs(true, false, 1080, 720));
+  CHECK(span_runs(true, false, 480, 720));
+  CHECK_FALSE(span_runs(false, true, 480, 720));
   CHECK(work_size(1920, 1080, 0) == WorkSize{1920, 1080});  // 0 : jamais réduite
   CHECK(work_size(1920, 800, 720) == WorkSize{1728, 720});  // 2,40:1
   CHECK(work_size(1440, 1080, 720) == WorkSize{960, 720});  // 4:3
@@ -291,4 +300,37 @@ TEST_CASE("Mesures : médiane, écart type, format", "[app][stats]") {
 }
 
 }  // namespace
+}  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+// P2.35 : chaque option que l'aide cite, l'analyseur la connaît (seule ou avec une valeur).
+TEST_CASE("ajp play : l'aide ne cite aucune option inconnue de l'analyseur", "[app][options]") {
+  const std::string usage = play_usage(true);
+  std::vector<std::string> unknown;
+  for (std::size_t at = usage.find("--"); at != std::string::npos; at = usage.find("--", at + 2)) {
+    std::size_t end = at + 2;
+    while (end < usage.size() && ((usage[end] >= 'a' && usage[end] <= 'z') ||
+                                  (usage[end] >= '0' && usage[end] <= '9') || usage[end] == '-'))
+      ++end;
+    const std::string name = usage.substr(at, end - at);
+    if (name.size() <= 2) continue;
+    const auto known = [](const std::expected<PlayOptions, Refusal>& parsed) {
+      return parsed || !parsed.error().detail.starts_with("unknown option");
+    };
+    const std::string valued = name + "=1";
+    if (!known(parse_play_options(std::vector<std::string_view>{name, "video.mkv"})) &&
+        !known(parse_play_options(std::vector<std::string_view>{valued, "video.mkv"})))
+      unknown.push_back(name);
+  }
+  INFO(std::accumulate(unknown.begin(), unknown.end(), std::string(),
+                       [](std::string a, const std::string& b) { return std::move(a) + " " + b; }));
+  CHECK(unknown.empty());
+  // Sans --debug, une option d'essai est refusée, et l'aide simple ne la cite pas.
+  const auto refused = parse_play_options(std::vector<std::string_view>{"video.mkv", "--one-lane"});
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::OptionUnknown);
+  CHECK(play_usage().find("--one-lane") == std::string::npos);
+}
+
 }  // namespace ajp::app::play

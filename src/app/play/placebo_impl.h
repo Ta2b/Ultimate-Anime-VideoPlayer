@@ -209,13 +209,15 @@ struct PlaceboScreen::Impl {
   std::optional<double> kde_sdr_nits;
   bool kde_sdr_auto = false;
   double hinted_max_nits = 0.0;
+  double hinted_max_fall = 0.0;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
   void match_kwin();             // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
-  int sharpness = 0;                       // posé par set_finish, 0 à 100 %
+  bool frame_debanded = false;  // l'image montrée a été débandée avant SPAN (RingFrame::debanded, P3.56)
+  int sharpness = 0;            // posé par set_finish, 0 à 100 %
   std::optional<render::Sharpen> sharpen;  // absent si le hook ne se lit pas (dit au journal)
   // Augmenté à chaque changement de ce que le grade applique (app/play/compose_key.h) : paramètres, looks,
   // KWin, couleur de la source, nouvelle scène.
@@ -243,8 +245,10 @@ struct PlaceboScreen::Impl {
     std::vector<float> levels;
     bool hdr = false;
     std::vector<double> nits;
+    std::optional<render::CubeLut> looks;  // la pile de LUT mesurée avec la rampe (P3.61)
   };
   std::optional<RampMeasure> last_ramp;
+  std::optional<render::CubeLut> ramp_looks;  // la pile posée sur ramp_grade
   mutable std::uint64_t grade_frame_ns = 0;
   mutable std::uint64_t display_frame_ns = 0;  // toutes les passes de l'affichage, de la dernière composition
   mutable std::vector<std::uint32_t> grade_gpu_us;

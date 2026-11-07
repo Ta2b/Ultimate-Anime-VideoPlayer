@@ -115,6 +115,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "AJP_WARNINGS_AS_ERRORS": "ON"
       }
     },
@@ -207,6 +208,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "AJP_BUILD_TESTS": "ON",
         "AJP_WARNINGS_AS_ERRORS": "ON"
       }
@@ -222,6 +224,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "AJP_WARNINGS_AS_ERRORS": "ON",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
@@ -401,6 +404,22 @@
       }
     },
     {
+      "name": "linux-prefix-tsan-pr",
+      "displayName": "Lecteur sous TSan, sur chaque pull request : séance, pipeline, étages, audio (P2.40)",
+      "configurePreset": "linux-prefix-tsan-player",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^audio: |[Ss]ession|[Pp]ipeline|[Ss]tage|[Éé]tage"
+        }
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1 ignore_noninstrumented_modules=1"
+      }
+    },
+    {
       "name": "core",
       "configurePreset": "core",
       "output": {
@@ -425,7 +444,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|core_log|media|prepare|subs|app): "
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels): "
         }
       },
       "execution": {
@@ -436,7 +455,7 @@
       "name": "linux-release",
       "configurePreset": "linux-release",
       "output": {"outputOnFailure": true},
-      "filter": {"include": {"name": "^(core|core_log|media|prepare|subs|app): "}},
+      "filter": {"include": {"name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels): "}},
       "execution": {"noTestsAction": "error"}
     },
     {
@@ -447,7 +466,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|core_log|media|prepare|subs|app): "
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels): "
         }
       },
       "execution": {
@@ -462,7 +481,7 @@
       },
       "filter": {
         "include": {
-          "name": "^(core|core_log|media|prepare|subs|app|coreml_rt): "
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels|coreml_rt): "
         }
       },
       "execution": {

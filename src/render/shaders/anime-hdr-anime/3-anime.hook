@@ -102,6 +102,16 @@ vec4 hook() {
     // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain), et il est proche du
     // blanc. La porte compare des codes PQ (y_pq) : y, en nits, la laissait ouverte des 1 nit.
     float spark = smoothstep(0.08, 0.20, y_pq - local_bilin) * smoothstep(pq_of(0.6 * white), pq_of(white), y_pq);
+    // P3.53 : la peau n'est pas plus une etincelle qu'une lumiere, et un blanc serre entre deux traits noirs
+    // (texte cerne, trait fin) non plus. Le noir d'un trait (sous 1 % du blanc) a 2 px de part et d'autre
+    // ferme la porte ; le ciel d'une nuit, plus clair, la laisse ouverte aux etoiles.
+    vec2 d2 = 2.0 * HOOKED_pt;
+    float lx = min(dot(pq_to_nits(HOOKED_tex(HOOKED_pos - vec2(d2.x, 0.0)).rgb), LUMA),
+                   dot(pq_to_nits(HOOKED_tex(HOOKED_pos + vec2(d2.x, 0.0)).rgb), LUMA));
+    float ly = min(dot(pq_to_nits(HOOKED_tex(HOOKED_pos - vec2(0.0, d2.y)).rgb), LUMA),
+                   dot(pq_to_nits(HOOKED_tex(HOOKED_pos + vec2(0.0, d2.y)).rgb), LUMA));
+    float inked = 1.0 - smoothstep(0.004 * white, 0.015 * white, min(lx, ly));
+    spark *= (1.0 - skin_like(lin)) * (1.0 - inked);
     float emitter = max(iso * gate, spark);
 
     // Marge des eclats : le pic en scene sombre, la moitie en scene tres claire (limiteur de l'OLED).
@@ -119,9 +129,11 @@ vec4 hook() {
     float gain = mix(an_lift, max(emit_out / lvl, floor_gain), emitter);
 
     vec3 c = lin * gain;
-    // Noirs profonds selon la scene : le curseur est le maximum, atteint en scene tres claire ; l'effet
-    // descend a 0 en scene tres sombre (les details des nuits restent lisibles). Scene inconnue : le curseur.
-    float deep = fs_apl >= 0.0 ? shadows * smoothstep(0.03, 0.40, key) : shadows;
+    // Noirs profonds selon la serie (P3.52) : le curseur est le maximum, atteint dans une serie tres claire ;
+    // l'effet descend a 0 dans une serie tres sombre. La cle de la serie ne bouge pas aux coupes : les memes
+    // cheveux sombres sortent au meme niveau d'un plan a l'autre. Serie inconnue : une cle moyenne (0,25).
+    float series = clamp((fs_series >= 0.0 ? fs_series : 0.25 * sdr_white) / sdr_white, 0.0, 1.0);
+    float deep = shadows * smoothstep(0.03, 0.40, series);
     c *= shadow_ratio(max(max(c.r, c.g), c.b), deep);
     // Peps (--anime-contrast, --anime-saturation) : contraste en puissance de la luminance autour du gris des
     // surfaces, puis saturation (ecart a la luminance, attenuee vers le pic, jamais de canal negatif).

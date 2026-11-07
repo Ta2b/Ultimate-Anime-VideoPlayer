@@ -1,0 +1,7 @@
+# Plafond des tests sautés par tâche de ci.yml (check-skips.sh, P2.39). Sous lavapipe, sans carte NVIDIA ni
+# modèles : NVDEC (5), Vulkan Video (1), découpe des modèles du catalogue (3), runtimes du fabricant (1),
+# mémoire exportée que lavapipe ne mappe pas (2). Le relever demande une raison.
+lavapipe 12
+asan-ubsan 12
+tsan 12
+tsan-pr 0

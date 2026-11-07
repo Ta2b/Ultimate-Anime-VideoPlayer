@@ -76,10 +76,16 @@ std::string motion_description(const InterpChoice& choice) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Upscaling"));
   ImGui::Checkbox(i18n::tr("SPAN ×2 (AnimeJaNai)"), &d.upscale);
   ImGui::BeginDisabled(!d.upscale);
+  ImGui::Checkbox(i18n::tr("Restore line art (reduce, then upscale)"), &d.restore_lines);
+  panel::tip(i18n::tr(
+      "A source sharper than the working resolution is reduced, then SPAN redraws its lines: cleaner "
+      "lines for a quarter of the work. Off: such a source keeps all its detail (grain, textures), "
+      "without SPAN."));
   const std::string current = d.model.empty() ? choices.default_model : d.model;
   // Chaque modèle en FP16 et, sur une carte qui calcule le SPAN FP8 (RTX 40 et plus), en FP8 : le FP8 se
   // prépare à la prochaine ouverture d'une vidéo, sur l'écran de chargement, comme un moteur (chain_setup).
@@ -168,6 +174,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
   // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
   const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&

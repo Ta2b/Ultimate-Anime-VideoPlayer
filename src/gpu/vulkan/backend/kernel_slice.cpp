@@ -90,7 +90,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const 
   auto v = rife_views(a, b, t, input, "rife_input");
   if (!v) return std::unexpected(v.error());
   OpKey key;
-  key.add(40);
+  key.add(OpCode::RifeInput);
   for (const TensorView* view : {&v->a, &v->b, &v->input}) add_view(key, *view);
   const std::array time{std::bit_cast<std::uint32_t>(t)};
   auto rec = recording_with(key, time, [&](Recorder& r) -> Done {
@@ -106,7 +106,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pair(const Tensor& a, const T
   auto v = rife_views(a, b, t, input, "rife_pair");
   if (!v) return std::unexpected(v.error());
   OpKey key;
-  key.add(47);
+  key.add(OpCode::RifePair);
   for (const TensorView* view : {&v->a, &v->b, &v->input}) add_view(key, *view);
   const std::array time{std::bit_cast<std::uint32_t>(t)};
   // Les images, puis le plan de l'instant ; le maillage écrit par rife_input reste.
@@ -130,7 +130,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_time(const Tensor& input, flo
                         std::format("rife_time : {} plans, 11 (v1) ou 7 (v2) attendus", vi->planes));
   }
   OpKey key;
-  key.add(46);
+  key.add(OpCode::RifeTime);
   add_view(key, *vi);
   const std::array time{std::bit_cast<std::uint32_t>(t)};
   auto rec = recording_with(key, time, [&](Recorder& r) { return runner_.rife_time(r, *vi, t); });
@@ -148,7 +148,7 @@ std::expected<void, Refusal> VulkanKernelOps::gmfss_frames(const Tensor& a, cons
   auto vf = tensor_view(frames, planes, "gmfss_frames : entrée");
   if (!vf) return std::unexpected(vf.error());
   OpKey key;
-  key.add(43);
+  key.add(OpCode::GmfssFrames);
   for (const TensorView* v : {&*va, &*vb, &*vf}) add_view(key, *v);
   auto rec = recording(
       key, [&](Recorder& r) { return runner_.rife_frames(r, *va, *vb, *vf, kStudioBlack, planes); });
@@ -197,7 +197,7 @@ std::expected<void, Refusal> VulkanKernelOps::soft_splat_all(std::span<const Spl
   }
   const BufferView sums = splat_sums_->view();
   OpKey key;
-  key.add(44);
+  key.add(OpCode::SoftSplatAll);
   splat_times_.clear();
   for (const KernelRunner::SplatViews& v : views) {
     for (const TensorView* t : {&v.source, &v.motion, &v.out}) add_view(key, *t);
@@ -233,7 +233,7 @@ std::expected<void, Refusal> VulkanKernelOps::gmfss_compose(const Tensor& high_a
   auto vo = tensor_view(out, 3, "gmfss_compose : sortie");
   if (!vo) return std::unexpected(vo.error());
   OpKey key;
-  key.add(48);
+  key.add(OpCode::GmfssCompose);
   for (const TensorView* v : {&*va, &*vb, &*la, &*lb, &*vf, &*vo}) add_view(key, *v);
   key.add(static_cast<std::uint64_t>(static_cast<std::uint32_t>(window.x)) << 32 |
           static_cast<std::uint32_t>(window.y));
@@ -251,7 +251,7 @@ std::expected<void, Refusal> VulkanKernelOps::fill(const Tensor& tensor, float v
   auto view = tensor_view(tensor, 0, "fill");
   if (!view) return std::unexpected(view.error());
   OpKey key;
-  key.add(45);
+  key.add(OpCode::Fill);
   add_view(key, *view);
   key.add(std::bit_cast<std::uint32_t>(value));
   auto rec = recording(key, [&](Recorder& r) { return runner_.fill(r, *view, value); });
@@ -281,7 +281,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   const BufferView sums = (*sums_buffer)->view();
   const BufferView worst = (*worst_buffer)->view();
   OpKey key;
-  key.add(41);
+  key.add(OpCode::ScoresStart);
   for (const TensorView* v : {&*va, &*vb}) add_view(key, *v);
   key.add(detail::handle_bits(sums.buffer)).add(detail::handle_bits(worst.buffer));
   auto rec = recording(
@@ -335,7 +335,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::flow_max_start(const Moti
   const BufferView result = (*result_buffer)->view();
   const MotionView mv{.flow = *flow, .mask = *flow, .area = motion.area};
   OpKey key;
-  key.add(42);
+  key.add(OpCode::FlowMaxStart);
   add_view(key, *flow);
   key.add(static_cast<std::uint64_t>(motion.area.x)).add(static_cast<std::uint64_t>(motion.area.y));
   key.add(static_cast<std::uint64_t>(motion.area.width)).add(static_cast<std::uint64_t>(motion.area.height));

@@ -183,6 +183,15 @@ TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "
   stored.file.sha256 = core::sha256_hex(kPlain);
   require_done(fetch_vendor_file(stored.file, f.root / "sortie" / "stocke.so", f.root / "tmp", f.progress()));
   CHECK(read_all(f.root / "sortie" / "stocke.so") == kPlain);
+  // P3.7 : un .part laissé par une coupure se reprend par plage, sans repartir de zéro.
+  Wheel cut(f, kPlain, false);
+  cut.file.name = "reprise.so";
+  cut.file.size = kPlain.size();
+  cut.file.sha256 = core::sha256_hex(kPlain);
+  fs::create_directories(f.root / "tmp");
+  std::ofstream(f.root / "tmp" / "reprise.so.part", std::ios::binary) << kPlain.substr(0, 5);
+  require_done(fetch_vendor_file(cut.file, f.root / "sortie" / "reprise.so", f.root / "tmp", f.progress()));
+  CHECK(read_all(f.root / "sortie" / "reprise.so") == kPlain);
 
   // Un SHA-256 faux ne laisse rien à l'arrivée.
   core::VendorFile wrong = wheel.file;
@@ -522,4 +531,24 @@ TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toute
   CHECK(ajp::app::play::effective_cuda_arch("sm90", "RTX 4050") == "sm90");
   CHECK(ajp::app::play::effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
   CHECK(ajp::app::play::effective_cuda_arch("", "inconnue") == "ptx");
+}
+
+TEST_CASE("Proxy manuel de Windows : celui de https, ou celui de tous (P3.7)", "[app][install]") {
+  CHECK(ajp::app::play::proxy_from_setting("proxy.local:3128") == "proxy.local:3128");
+  CHECK(ajp::app::play::proxy_from_setting("http=a:80;https=b:443") == "b:443");
+  CHECK_FALSE(ajp::app::play::proxy_from_setting("http=a:80"));
+  CHECK_FALSE(ajp::app::play::proxy_from_setting(""));
+}
+
+TEST_CASE("Fichier tiers repris d'une version installée à SHA égal (P3.8)", "[app][install]") {
+  Fixture f("reprise-sha");
+  const fs::path root = f.root / "backends" / "tensorrt";
+  fs::create_directories(root / "1.0");
+  write_all(root / "1.0" / "libnvinfer.so", std::string(kPlain));
+  core::VendorFile file{.name = "libnvinfer.so", .size = kPlain.size(), .sha256 = core::sha256_hex(kPlain)};
+  const fs::path dest = root / "1.1.partiel" / "libnvinfer.so";
+  CHECK(ajp::app::play::reuse_vendor_file(file, dest, root, {}));
+  CHECK(read_all(dest) == kPlain);
+  file.sha256 = core::sha256_hex("autre");
+  CHECK_FALSE(ajp::app::play::reuse_vendor_file(file, root / "1.2.partiel" / "libnvinfer.so", root, {}));
 }

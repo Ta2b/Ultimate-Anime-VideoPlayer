@@ -74,14 +74,12 @@ std::expected<void, Refusal> FrameExport::open_vulkan(pl_gpu gpu, AVBufferRef* f
   if (ref == nullptr) return refuse(RefusalCode::GpuMemoryExhausted, "référence du contexte d'images");
   vulkan_ = VulkanFrames{.frames = ref};
   // Une image d'essai : ses plans doivent s'envelopper et se rendre ; elle retourne au pool.
-  AVFrame* probe = av_frame_alloc();
-  if (probe == nullptr) return refuse(RefusalCode::GpuMemoryExhausted, "image d'essai");
-  if (av_hwframe_get_buffer(ref, probe, 0) < 0) {
-    av_frame_free(&probe);
+  exporter::OwnedFrame probe(av_frame_alloc());
+  if (!probe) return refuse(RefusalCode::GpuMemoryExhausted, "image d'essai");
+  if (av_hwframe_get_buffer(ref, probe.get(), 0) < 0)
     return refuse(RefusalCode::VendorCallFailed, "av_hwframe_get_buffer");
-  }
   auto planes = wrap_planes(*vulkan_, gpu, *probe);
-  av_frame_free(&probe);
+  probe.reset();
   if (!planes) return std::unexpected(planes.error());
   return {};
 }
@@ -92,7 +90,7 @@ void FrameExport::close_vulkan(pl_gpu gpu) {
   for (VulkanFrames::Wrap& wrap : vulkan_->wraps) {
     for (pl_tex& tex : wrap.planes) pl_tex_destroy(gpu, &tex);
   }
-  for (Pending& pending : vulkan_->pending) av_frame_free(&pending.frame);
+  vulkan_->pending.clear();
   av_buffer_unref(&vulkan_->frames);
   vulkan_.reset();
 }
@@ -140,17 +138,12 @@ FrameExport::Converted FrameExport::convert_vulkan(VulkanFrames& v, const RingFr
   };
   if (v.pending.size() >= buffers_.size())
     return given_back(Refusal{RefusalCode::SequenceOrder, "export : aucune image libre"});
-  AVFrame* out = av_frame_alloc();
-  if (out == nullptr) return given_back(Refusal{RefusalCode::GpuMemoryExhausted, "export : image"});
-  if (av_hwframe_get_buffer(v.frames, out, 0) < 0) {
-    av_frame_free(&out);
+  exporter::OwnedFrame out(av_frame_alloc());
+  if (!out) return given_back(Refusal{RefusalCode::GpuMemoryExhausted, "export : image"});
+  if (av_hwframe_get_buffer(v.frames, out.get(), 0) < 0)
     return given_back(Refusal{RefusalCode::VendorCallFailed, "export : av_hwframe_get_buffer"});
-  }
   auto planes = wrap_planes(v, gpu, *out);
-  if (!planes) {
-    av_frame_free(&out);
-    return given_back(std::move(planes.error()));
-  }
+  if (!planes) return given_back(std::move(planes.error()));
   const FrameParts parts = parts_of(*v.frames, *out);
   AVVkFrame& image = *parts.image;
   if (parts.context->lock_frame != nullptr) parts.context->lock_frame(parts.frames, parts.image);
@@ -192,21 +185,22 @@ FrameExport::Converted FrameExport::convert_vulkan(VulkanFrames& v, const RingFr
   pl_gpu_flush(gpu);  // le signal part maintenant : l'encodeur n'attend pas la prochaine image
   if (!converted.failure && !held)
     converted.failure = Refusal{RefusalCode::VendorCallFailed, "export : pl_vulkan_hold_ex"};
-  if (converted.failure) {
-    av_frame_free(&out);
-    return converted;
-  }
-  v.pending.push_back({.frame = out, .pts_us = frame.pts_us});
+  if (converted.failure) return converted;
+  v.pending.push_back({.frame = std::move(out), .pts_us = frame.pts_us});
   return converted;
 }
 
 bool FrameExport::deliver_vulkan(VulkanFrames& v, const std::function<bool(exporter::Picture&&)>& push) {
   if (v.pending.empty()) return false;
-  const Pending& next = v.pending.front();
+  Pending& next = v.pending.front();
   exporter::Picture picture;
   picture.pts_us = next.pts_us;
-  picture.frame = next.frame;
-  if (!push(std::move(picture))) return false;
+  picture.frame = std::move(next.frame);
+  if (!push(std::move(picture))) {
+    // Refusée : try_push ne déplace qu'une image acceptée, celle-ci attend encore.
+    next.frame = std::move(picture.frame);  // NOLINT(bugprone-use-after-move)
+    return false;
+  }
   v.pending.pop_front();
   return true;
 }

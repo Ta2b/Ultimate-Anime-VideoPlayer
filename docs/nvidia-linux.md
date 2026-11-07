@@ -130,6 +130,12 @@ les définitions CMake, la recette des dépendances et de l'image, l'empaquetage
 `src/render`, la documentation ni les tests ; pas non plus le `CMakeLists.txt` racine, dont la VERSION change à chaque release) et
 vit dans la release fixe `trt-<empreinte>` du dépôt des releases.
 
+Depuis P1.19, la CI le construit aussi sur un runner jetable, sans carte : le workflow « Paquet TensorRT Linux »
+(`.github/workflows/trt-package.yml`, lancé à la main) compile le module avec le kit CUDA, prend trtexec dans l'archive
+Linux de TensorRT à l'empreinte épinglée (`tools/deps/linux-tensorrt.sh --trtexec`, `versions.env`), et rend l'archive en
+artefact avec son SHA-256, comparé à celui de `trt-<empreinte>` s'il existe. Il ne publie rien : joindre ce paquet à la
+release reste `tools/release/attach-nvidia-linux.sh`, sur décision. Les tests sur GPU restent au poste NVIDIA.
+
 ```
 tools/release/trt-package.sh --check   # dit si le paquet de l'empreinte courante existe (code 0) ou manque (code 3)
 tools/release/trt-package.sh           # le construit (préflight Docker) et le joint à trt-<empreinte>, une seule fois

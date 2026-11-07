@@ -156,9 +156,9 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::create
 RifeFusedEngine::~RifeFusedEngine() = default;
 
 BufferView RifeFusedEngine::scratch(std::size_t offset, std::int64_t elements) const {
-  return {.buffer = scratch_.value().handle(),
-          .offset = offset,
-          .size = static_cast<VkDeviceSize>(elements) * kHalf};
+  if (!scratch_) return {};  // posé par create(), toujours là
+  return {
+      .buffer = scratch_->handle(), .offset = offset, .size = static_cast<VkDeviceSize>(elements) * kHalf};
 }
 
 Done record_rife_fused_entry(PipelineCache& pipelines, Recorder& recorder, const kernels::RifeFusedPlan& plan,

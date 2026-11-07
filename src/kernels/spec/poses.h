@@ -13,6 +13,8 @@
 // Écrit pour ce dépôt. Tests : tests/unit/kernels/warp_test.cpp.
 #pragma once
 
+#include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+
 namespace ajp::kernels {
 
 // Pour le pixel de sortie (u, v) de la grille du mouvement (spec/warp.h), à l'instant t de la paire
@@ -42,3 +44,5 @@ constexpr float pose_time(float t, float r) {
 }
 
 }  // namespace ajp::kernels
+
+#include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

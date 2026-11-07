@@ -235,7 +235,6 @@ std::expected<void, Refusal> FrameExport::open_cuda(pl_gpu gpu, AVBufferRef* fra
 void FrameExport::close_cuda(pl_gpu gpu) {
   if (cuda_) {
     // Les copies sont toutes finies (deliver_cuda les attend) : les images repartent au pool.
-    for (Pending& pending : cuda_->pending) av_frame_free(&pending.frame);
     cuda_->pending.clear();
     if (cuda_->stream != 0) cuda_->driver->destroy_stream(cuda_->primary.context, cuda_->stream);
     av_buffer_unref(&cuda_->frames);
@@ -400,20 +399,18 @@ std::expected<bool, Refusal> FrameExport::deliver(const std::function<bool(expor
   return true;
 }
 
-std::expected<AVFrame*, Refusal> FrameExport::copy_to_pool(const Cuda& c, const Buffer& buffer) {
-  AVFrame* frame = av_frame_alloc();
-  if (frame == nullptr) return refuse(RefusalCode::GpuMemoryExhausted, "export : image de l'encodeur");
+std::expected<exporter::OwnedFrame, Refusal> FrameExport::copy_to_pool(const Cuda& c, const Buffer& buffer) {
+  exporter::OwnedFrame frame(av_frame_alloc());
+  if (!frame) return refuse(RefusalCode::GpuMemoryExhausted, "export : image de l'encodeur");
   // Le pool de l'encodeur est sans borne (VideoEncoder) : une image par appel, rendue au pool par
   // l'écriture après encodage.
-  if (const int err = av_hwframe_get_buffer(c.frames, frame, 0); err < 0) {
-    av_frame_free(&frame);
+  if (const int err = av_hwframe_get_buffer(c.frames, frame.get(), 0); err < 0) {
     return refuse(RefusalCode::GpuMemoryExhausted, std::format("export : av_hwframe_get_buffer : {}", err));
   }
   for (int p = 0; p < plane_count_; ++p) {
     const auto i = static_cast<std::size_t>(p);
     if (frame->data[p] == nullptr || frame->linesize[p] < 0 ||
         static_cast<std::size_t>(frame->linesize[p]) < row_bytes_[i]) {
-      av_frame_free(&frame);
       return refuse(RefusalCode::VendorCallFailed,
                     std::format("export : plan {} de l'image de l'encodeur", p));
     }
@@ -422,17 +419,12 @@ std::expected<AVFrame*, Refusal> FrameExport::copy_to_pool(const Cuda& c, const 
         c.driver->copy_2d(c.primary.context, c.stream, std::bit_cast<std::uintptr_t>(frame->data[p]),
                           static_cast<std::size_t>(frame->linesize[p]), buffer.memory.pointer + offsets_[i],
                           pitches_[i], row_bytes_[i], static_cast<std::size_t>(rows_[i]));
-    if (!copied) {
-      av_frame_free(&frame);
-      return std::unexpected(copied.error());
-    }
+    if (!copied) return std::unexpected(copied.error());
   }
   // Quelques mégaoctets d'appareil à appareil : attendre ici coûte moins qu'un événement par image,
   // et le tampon source repart libre au rendu dès le retour.
-  if (auto done = c.driver->synchronize(c.primary.context, c.stream); !done) {
-    av_frame_free(&frame);
+  if (auto done = c.driver->synchronize(c.primary.context, c.stream); !done)
     return std::unexpected(done.error());
-  }
   return frame;
 }
 
@@ -443,16 +435,20 @@ std::expected<bool, Refusal> FrameExport::deliver_cuda(Cuda& c,
     if (!ready(buffer)) break;
     auto copied = copy_to_pool(c, buffer);
     if (!copied) return std::unexpected(copied.error());
-    c.pending.push_back({.frame = *copied, .pts_us = buffer.pts_us});
+    c.pending.push_back({.frame = std::move(*copied), .pts_us = buffer.pts_us});
     buffer.in_flight = false;
     order_.pop_front();
   }
   if (c.pending.empty()) return false;
-  const Pending& next = c.pending.front();
+  Pending& next = c.pending.front();
   exporter::Picture picture;
   picture.pts_us = next.pts_us;
-  picture.frame = next.frame;
-  if (!push(std::move(picture))) return false;
+  picture.frame = std::move(next.frame);
+  if (!push(std::move(picture))) {
+    // Refusée : try_push ne déplace qu'une image acceptée, celle-ci attend encore.
+    next.frame = std::move(picture.frame);  // NOLINT(bugprone-use-after-move)
+    return false;
+  }
   c.pending.pop_front();
   return true;
 }

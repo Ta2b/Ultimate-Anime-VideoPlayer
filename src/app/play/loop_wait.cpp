@@ -31,7 +31,7 @@ void tighten_timer_slack() {
 
 void LoopWake::push(void* context) {
   auto* self = static_cast<LoopWake*>(context);
-  if (self->event == 0 || self->pending.exchange(true, std::memory_order_relaxed)) return;
+  if (self->event == 0 || self->pending.exchange(true, std::memory_order_acq_rel)) return;
   SDL_Event wake{};
   wake.type = self->event;
   (void)SDL_PushEvent(&wake);

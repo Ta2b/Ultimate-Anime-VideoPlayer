@@ -3,15 +3,16 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "core/utf8_path.h"
+
 namespace ajp::prepare {
 
 std::string utf8_path(const std::filesystem::path& path) {
-  const std::u8string text = path.u8string();
-  return {text.begin(), text.end()};
+  return core::to_utf8(path);
 }
 
 std::filesystem::path path_from_utf8(std::string_view text) {
-  return {std::u8string(text.begin(), text.end())};
+  return core::path_from_utf8(text);
 }
 
 bool is_utf8(std::string_view text) {

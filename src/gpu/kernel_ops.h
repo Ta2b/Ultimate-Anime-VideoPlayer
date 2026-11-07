@@ -102,7 +102,7 @@ struct PairScores {
   SourceId left;
   SourceId right;
   double scene_score = 0.0;       // kernels::is_scene_cut(scene_score)
-  std::uint32_t worst_block = 0;  // pire bloc 32 × 32, en 1/256 de niveau 8 bits
+  std::uint32_t worst_block = 0;  // pire bloc 16 × 16, en 1/256 de niveau 8 bits
   bool identical = false;         // luma égale au bit : somme des écarts nulle
 };
 

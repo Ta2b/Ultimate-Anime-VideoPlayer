@@ -26,8 +26,10 @@ using Rank = std::tuple<int, bool, bool, bool, int>;
 bool is_full_dialogue(const TrackInfo& track) {
   std::string word;
   const auto special = [&] {
-    static constexpr std::string_view kWords[] = {"sign",        "signs", "song", "songs",  "commentary",
-                                                  "commentaire", "sdh",   "cc",   "hearing"};
+    static constexpr std::string_view kWords[] = {
+        "sign", "signs", "song", "songs", "commentary", "commentaire", "sdh", "cc", "hearing",
+        // P3.80 : les mots français.
+        "panneau", "panneaux", "chanson", "chansons", "karaoke", "malentendants", "sourds"};
     return std::ranges::find(kWords, word) != std::end(kWords);
   };
   bool found = false;
@@ -39,6 +41,11 @@ bool is_full_dialogue(const TrackInfo& track) {
       word.clear();
     }
   }
+  // Les titres japonais (看板 panneaux, 歌詞 paroles, 解説 et コメ… commentaire) : l'UTF-8 n'est pas
+  // découpé en mots, on cherche la suite d'octets.
+  static constexpr std::string_view kJapanese[] = {"\xE7\x9C\x8B\xE6\x9D\xBF", "\xE6\xAD\x8C\xE8\xA9\x9E",
+                                                   "\xE8\xA7\xA3\xE8\xAA\xAC", "\xE3\x82\xB3\xE3\x83\xA1"};
+  for (const std::string_view w : kJapanese) found = found || track.title.find(w) != std::string::npos;
   return !found;
 }
 

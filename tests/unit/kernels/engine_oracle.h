@@ -336,12 +336,13 @@ inline std::vector<u16> run_post444(const std::vector<float>& src, int w, int h,
   return out;
 }
 
-// k_block_diff : bpp 1 pour NV12, 2 pour les conteneurs 16 bits.
+// k_block_diff : bpp 1 pour NV12, 2 pour les conteneurs 16 bits. Blocs de 16 et non 32 (P3.23).
 inline unsigned block_diff(const std::vector<u16>& ya, const std::vector<u16>& yb, int w, int h, int bpp) {
+  constexpr int kBlock = 16;
   unsigned dmax = 0;
-  for (int y0 = 0; y0 < h; y0 += 32)
-    for (int x0 = 0; x0 < w; x0 += 32) {
-      const int x1 = std::min(x0 + 32, w), y1 = std::min(y0 + 32, h);
+  for (int y0 = 0; y0 < h; y0 += kBlock)
+    for (int x0 = 0; x0 < w; x0 += kBlock) {
+      const int x1 = std::min(x0 + kBlock, w), y1 = std::min(y0 + kBlock, h);
       unsigned int sum = 0;
       for (int y = y0; y < y1; y++)
         for (int x = x0; x < x1; x++) {

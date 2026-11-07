@@ -1,9 +1,11 @@
 #include "app/play/backend_library.h"
 
 #include <format>
+#include <mutex>
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace ajp::app::play {
 namespace {
@@ -19,7 +21,34 @@ F symbol(const DynamicLibrary& library, const char* name) {
   return found ? *found : nullptr;
 }
 
+struct Kept {
+  std::mutex mutex;
+  std::vector<std::shared_ptr<BackendLibrary>> libraries;
+};
+
+Kept& kept() {
+  static Kept instance;
+  return instance;
+}
+
+// Les bibliothèques gardées se referment ici, hors du verrou, sauf celle que choose rend.
+void release_kept() {
+  std::vector<std::shared_ptr<BackendLibrary>> released;
+  {
+    Kept& k = kept();
+    const std::scoped_lock lock(k.mutex);
+    released.swap(k.libraries);
+  }
+}
+
 }  // namespace
+
+void BackendLibrary::keep_open(std::shared_ptr<BackendLibrary> library) {
+  if (library == nullptr) return;
+  Kept& k = kept();
+  const std::scoped_lock lock(k.mutex);
+  k.libraries.push_back(std::move(library));
+}
 
 std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     std::span<const std::filesystem::path> candidates) {
@@ -29,6 +58,12 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     if (!std::filesystem::is_regular_file(path, error)) {
       tried += std::format("\n  {} : absent", path.string());
       continue;
+    }
+    {
+      Kept& k = kept();
+      const std::scoped_lock lock(k.mutex);
+      for (const auto& held : k.libraries)
+        if (held->path_ == path && !held->replaced_on_disk()) return held;  // même chemin que open l'a reçu
     }
     std::shared_ptr<BackendLibrary> library(new BackendLibrary());
     // dlopen sous Linux et macOS, LoadLibraryExW sous Windows (dépendances cherchées à côté).
@@ -83,8 +118,10 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
       continue;
     }
     (*library)->passed_over_ = std::move(tried);
+    release_kept();
     return library;
   }
+  release_kept();
   return refuse(RefusalCode::LibraryUnavailable, std::format("aucun backend pour cet appareil :{}", tried));
 }
 

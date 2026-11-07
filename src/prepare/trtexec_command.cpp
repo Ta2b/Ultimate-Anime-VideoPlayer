@@ -9,6 +9,7 @@
 #include <ranges>
 
 #include "prepare/process.h"
+#include "prepare/sha256.h"
 
 namespace ajp::prepare {
 namespace {
@@ -156,6 +157,15 @@ LayerCounts layer_counts(std::string_view json) {
     if (json.substr(value).starts_with("\"Reformat\"")) ++counts.reformats;
   }
   return counts;
+}
+
+std::filesystem::path pick_trtexec(const std::filesystem::path& beside, std::string_view expected_sha256,
+                                   const std::filesystem::path& fallback) {
+  std::error_code error;
+  if (is_sha256_hex(expected_sha256) && std::filesystem::is_regular_file(beside, error)) {
+    if (const auto got = sha256_file(beside); got && *got == expected_sha256) return beside;
+  }
+  return fallback;
 }
 
 }  // namespace ajp::prepare

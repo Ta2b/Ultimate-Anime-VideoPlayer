@@ -53,7 +53,7 @@ const char* codec_note(exporter::Codec codec) {
   return "";
 }
 
-void copy_path(std::array<char, 1024>& to, const std::string& text) {
+void copy_path(std::array<char, 4096>& to, const std::string& text) {
   copy_text(to, text);
 }
 
@@ -161,7 +161,14 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
                                     "rate, a bit smaller, fine in players."));
 
   section(i18n::tr("File"));
-  const media::Rational rate = export_rate(choices.source_rate, factor_of(job.chain));
+  const media::Rational rate = export_rate(choices.source_rate, factor_of(export_chain(job.chain)));
+  if (rate.den > 0 && rate.num > 60 * rate.den) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    ImGui::TextWrapped("%s", i18n::tr_format("{:.0f} fps: many TVs and phones refuse or stutter above 60.",
+                                             static_cast<double>(rate.num) / rate.den)
+                                 .c_str());
+    ImGui::PopStyleColor();
+  }
   const std::string named = std::format("{}x{} {}/{}", size.width, size.height, rate.num, rate.den);
   if (!draft.path_edited && named != draft.named_for && !choices.source_file.empty()) {
     copy_path(draft.path, prepare::utf8_path(default_export_path(choices.source_file, size, rate)));
@@ -177,7 +184,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     draft.path_edited = false;
     draft.named_for.clear();
   }
-  const std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
+  // P3.92 : un nom seul, ou un chemin relatif, se lit depuis le dossier de la source.
+  std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
+  if (!output.empty() && output.is_relative()) output = choices.source_file.parent_path() / output;
   const std::string problem = path_problem(output, choices.source_file, job.codec);
   const exporter::Container container =
       exporter::container_of(output).value_or(exporter::Container::Matroska);
@@ -203,7 +212,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
                  "fonts. Use .mkv to keep everything. Esc cancels."));
   }
   ImGui::BeginDisabled(!problem.empty());
-  if (ImGui::Button(i18n::tr("Export"))) {
+  // Un fichier existant n'est remplacé que sur un bouton qui le dit (P3.92).
+  if (ImGui::Button(std::filesystem::exists(output, error) ? i18n::tr("Replace the file and export")
+                                                           : i18n::tr("Export"))) {
     ExportJob start = job;
     start.output = output;
     actions.emplace_back(StartExport{.job = std::move(start)});

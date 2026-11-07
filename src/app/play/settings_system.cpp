@@ -1,9 +1,12 @@
 #include "app/play/settings_system.h"
 
+#include <algorithm>
 #include <array>
 #include <ctime>
 #include <expected>
 #include <format>
+#include <fstream>
+#include <iterator>
 
 #include <SDL3/SDL_misc.h>
 #include <imgui.h>
@@ -17,6 +20,7 @@
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
+#include "core/thread.h"
 
 namespace ajp::app::play {
 
@@ -40,8 +44,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
   }
   const bool busy = last.pending != nullptr;
   const auto start = [&](std::expected<std::string, Refusal> (*action)(const PlayerPlace&)) {
-    last.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
-        std::async(std::launch::async, action, place));
+    last.pending = start_task<std::string>("registration", [action, place] { return action(place); });
     last.text.clear();
     last.refused = false;
   };
@@ -75,6 +78,20 @@ void language_section(PlaySettings& d) {
   i18n::set_language(i18n::language_from_code(d.language));
 }
 
+void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
+  if (gpus.size() < 2) return;
+  section(i18n::tr("Graphics card"));
+  const char* shown = d.gpu.empty() ? i18n::tr("Automatic (dedicated card first)") : d.gpu.c_str();
+  if (ImGui::BeginCombo(i18n::tr("Card for playback"), shown)) {
+    if (ImGui::Selectable(i18n::tr("Automatic (dedicated card first)"), d.gpu.empty())) d.gpu.clear();
+    for (const std::string& name : gpus)
+      if (ImGui::Selectable(name.c_str(), d.gpu == name)) d.gpu = name;
+    ImGui::EndCombo();
+  }
+  note(i18n::tr("Applies at next launch."));
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
   const UpdatePaths paths{
       .data = place.app_data, .install = place.executable.parent_path(), .executable = place.executable};
@@ -82,22 +99,23 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = result.pending->get();
     if (!done) log_channel("app")->warn("maj : {} {}", name(done.error().code), done.error().detail);
-    result =
-        done ? UpdateNote{.text = *done} : UpdateNote{.text = visible_error(done.error()), .refused = true};
+    result.pending.reset();
+    result.text = done ? *done : visible_error(done.error());
+    result.refused = !done;
   }
   const UpdateState state = load_update_state(state_file);
   const std::string managed = update_managed_reason(paths);
 
   section(i18n::tr("Updates"));
   struct Mode {
-    const char* key;
+    UpdateMode key;
     const char* label;
     const char* detail;
   };
   constexpr std::array<Mode, 3> kModes{
-      {{"notify", "Notify me", "A notification; you start the update yourself."},
-       {"auto", "Automatic", "Downloaded, verified, installed at next launch."},
-       {"never", "Never", "No checks."}}};
+      {{UpdateMode::Notify, "Notify me", "A notification; you start the update yourself."},
+       {UpdateMode::Auto, "Automatic", "Downloaded, verified, installed at next launch."},
+       {UpdateMode::Never, "Never", "No checks."}}};
   ImGui::BeginDisabled(!managed.empty());
   for (const Mode& mode : kModes) {
     if (ImGui::RadioButton(i18n::tr(mode.label), d.update_mode == mode.key)) d.update_mode = mode.key;
@@ -111,19 +129,23 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   section(i18n::tr("Channel and frequency"));
   ImGui::BeginDisabled(!managed.empty());
   if (ImGui::BeginCombo(i18n::tr("Channel"),
-                        d.update_channel == "preview" ? i18n::tr("Previews") : "Stable")) {
-    if (ImGui::Selectable("Stable", d.update_channel == "stable")) d.update_channel = "stable";
-    if (ImGui::Selectable(i18n::tr("Previews"), d.update_channel == "preview")) d.update_channel = "preview";
+                        d.update_channel == UpdateChannel::Preview ? i18n::tr("Previews") : "Stable")) {
+    if (ImGui::Selectable("Stable", d.update_channel == UpdateChannel::Stable))
+      d.update_channel = UpdateChannel::Stable;
+    if (ImGui::Selectable(i18n::tr("Previews"), d.update_channel == UpdateChannel::Preview))
+      d.update_channel = UpdateChannel::Preview;
     ImGui::EndCombo();
   }
-  const char* frequency = d.update_frequency == "launch"   ? i18n::tr("At every launch")
-                          : d.update_frequency == "weekly" ? i18n::tr("Weekly")
-                                                           : i18n::tr("Daily");
+  const char* frequency = d.update_frequency == UpdateFrequency::Launch   ? i18n::tr("At every launch")
+                          : d.update_frequency == UpdateFrequency::Weekly ? i18n::tr("Weekly")
+                                                                          : i18n::tr("Daily");
   if (ImGui::BeginCombo(i18n::tr("Frequency"), frequency)) {
-    if (ImGui::Selectable(i18n::tr("At every launch"), d.update_frequency == "launch"))
-      d.update_frequency = "launch";
-    if (ImGui::Selectable(i18n::tr("Daily"), d.update_frequency == "daily")) d.update_frequency = "daily";
-    if (ImGui::Selectable(i18n::tr("Weekly"), d.update_frequency == "weekly")) d.update_frequency = "weekly";
+    if (ImGui::Selectable(i18n::tr("At every launch"), d.update_frequency == UpdateFrequency::Launch))
+      d.update_frequency = UpdateFrequency::Launch;
+    if (ImGui::Selectable(i18n::tr("Daily"), d.update_frequency == UpdateFrequency::Daily))
+      d.update_frequency = UpdateFrequency::Daily;
+    if (ImGui::Selectable(i18n::tr("Weekly"), d.update_frequency == UpdateFrequency::Weekly))
+      d.update_frequency = UpdateFrequency::Weekly;
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
@@ -151,16 +173,17 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   const bool busy = result.pending != nullptr;
   ImGui::BeginDisabled(busy);
   if (ImGui::Button(i18n::tr("Check now"))) {
-    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
-        std::launch::async,
-        [paths, state_file, mode = d.update_mode,
-         channel = d.update_channel] -> std::expected<std::string, Refusal> {
+    result.pending = start_task<std::string>(
+        "settings",
+        [paths, state_file, mode = d.update_mode, channel = d.update_channel,
+         stop = result.stop] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
-          auto message = run_update_check(paths, mode == "never" ? "notify" : mode, channel, current, {});
+          auto message = run_update_check(paths, mode == UpdateMode::Never ? UpdateMode::Notify : mode,
+                                          name(channel), current, stop->get_token());
           if (const auto kept = save_update_state(state_file, current); !kept && message)
             return std::unexpected(kept.error());
           return message;
-        }));
+        });
     result.text.clear();
     result.refused = false;
   }
@@ -169,12 +192,14 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (!state.latest_version.empty() && managed.empty()) {
     ImGui::SameLine();
     if (ImGui::Button(i18n::tr("Install now"))) {
-      result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
-          std::launch::async,
-          [paths, state_file, channel = d.update_channel] -> std::expected<std::string, Refusal> {
+      result.pending = start_task<std::string>(
+          "settings",
+          [paths, state_file, channel = d.update_channel,
+           stop = result.stop] -> std::expected<std::string, Refusal> {
             UpdateState current = load_update_state(state_file);
             if (current.staged_version.empty()) {
-              auto checked = run_update_check(paths, "auto", channel, current, {});
+              auto checked =
+                  run_update_check(paths, UpdateMode::Auto, name(channel), current, stop->get_token());
               if (const auto kept = save_update_state(state_file, current); !kept)
                 return std::unexpected(kept.error());
               if (!checked) return checked;
@@ -187,7 +212,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
               return std::unexpected(kept.error());
             if (!applied) return applied;
             return *applied + i18n::tr(": restart the player");
-          }));
+          });
       result.text.clear();
       result.refused = false;
     }
@@ -195,15 +220,15 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   ImGui::SameLine();
   ImGui::BeginDisabled(state.previous_version.empty());
   if (ImGui::Button(i18n::tr("Roll back to the previous version"))) {
-    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
-        std::async(std::launch::async, [paths, state_file] -> std::expected<std::string, Refusal> {
+    result.pending =
+        start_task<std::string>("settings", [paths, state_file] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = roll_back_update(paths, current);
           if (!message) return message;
           if (const auto kept = save_update_state(state_file, current); !kept)
             return std::unexpected(kept.error());
           return *message + i18n::tr(": restart the player");
-        }));
+        });
     result.text.clear();
     result.refused = false;
   }
@@ -239,14 +264,14 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
   auto stop = std::make_shared<std::stop_source>();
   state.progress = progress;
   state.stop = stop;
-  state.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
-      std::launch::async, [run = prepare.run, progress, stop] -> std::expected<std::string, Refusal> {
+  state.pending = start_task<std::string>(
+      "settings", [run = prepare.run, progress, stop] -> std::expected<std::string, Refusal> {
         try {
           return run(*progress, stop->get_token());
         } catch (const std::exception& error) {  // un thread qui lève ne doit pas emporter le lecteur
           return std::unexpected(Refusal{RefusalCode::ThreadFailed, error.what()});
         }
-      }));
+      });
   state.text.clear();
   state.refused = false;
   state.completed = false;
@@ -311,7 +336,7 @@ bool bench_running(const BenchNote& bench) {
 
 namespace {
 
-ChainContext chain_of(const BenchContext& context) {
+[[maybe_unused]] ChainContext chain_of(const BenchContext& context) {  // hors macOS
   return ChainContext{.display_height = context.display_height,
                       .display_hz = context.display_hz,
                       .source_height = context.source_height,
@@ -321,9 +346,10 @@ ChainContext chain_of(const BenchContext& context) {
 // L'étape 4 : le mode Performance de SPAN. Rien à faire quand la carte ou le moteur ne le permettent pas (une
 // phrase le dit), quand il est déjà prêt, ou quand aucune vidéo n'est ouverte ; sinon le lecteur le prépare
 // sur la vidéo, ce qui prend une minute environ.
-std::expected<SpanFp8Verdict, Refusal> span_step(const BenchContext& context, Tier level,
-                                                 BenchProgress& shown, SpanDeriveProgress& span_progress,
-                                                 const std::stop_token& stop) {
+[[maybe_unused]] std::expected<SpanFp8Verdict, Refusal> span_step(const BenchContext& context, Tier level,
+                                                                  BenchProgress& shown,
+                                                                  SpanDeriveProgress& span_progress,
+                                                                  const std::stop_token& stop) {
   using State = SpanFp8Verdict::State;
   if (!context.fp8_reason.empty()) return SpanFp8Verdict{State::Unavailable, context.fp8_reason};
   if (context.span.ready) return SpanFp8Verdict{State::Ready, {}};
@@ -397,8 +423,8 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
     state.progress = std::make_shared<BenchProgress>();
     state.span_progress = std::make_shared<SpanDeriveProgress>();
     state.stop = std::make_shared<std::stop_source>();
-    state.pending = std::make_shared<std::future<std::expected<BenchDone, Refusal>>>(std::async(
-        std::launch::async,
+    state.pending = start_task<BenchDone>(
+        "settings",
         [place, video, context, progress = state.progress, span_progress = state.span_progress,
          stop = state.stop]() -> std::expected<BenchDone, Refusal> {
           try {
@@ -421,7 +447,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
           } catch (const std::exception& error) {  // un thread qui lève ne doit pas emporter le lecteur
             return std::unexpected(Refusal{RefusalCode::ThreadFailed, error.what()});
           }
-        }));
+        });
     bench.text.clear();
     bench.refused = false;
     state.result.reset();
@@ -462,6 +488,26 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   }
   return event;
 #endif
+}
+
+void report_problem_section(const PlayerPlace& place, const std::string& gpu_name) {
+  // Le corps d'une issue tient en 65 536 caractères : la fin du journal, là où est la panne.
+  constexpr std::streamoff kLogTail = std::streamoff{48} * 1024;
+  section(i18n::tr("Report a problem"));
+  if (ImGui::Button(i18n::tr("Report a problem"))) {
+    std::string report = std::format("ajp {} · {}\n\n", installed_version(), gpu_name);
+    std::ifstream log(place.app_data / "ajp.log", std::ios::binary | std::ios::ate);
+    if (log) {
+      const std::streamoff size = log.tellg();
+      log.seekg(std::max<std::streamoff>(0, size - kLogTail));
+      report.append(std::istreambuf_iterator<char>(log), std::istreambuf_iterator<char>());
+    }
+    ImGui::SetClipboardText(report.c_str());
+    SDL_OpenURL("https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/issues/new?template=bug.yml");
+  }
+  panel::tip(
+      i18n::tr("Copies the version, the graphics card and the end of the log, without your user name "
+               "or the folders of your videos, then opens the report page. Paste the log there."));
 }
 
 }  // namespace ajp::app::play

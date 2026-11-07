@@ -102,16 +102,21 @@ void Session::command(const Command& command) {
                  [this](const cmd::StepFrame& step) {
                    // Image par image : en pause, un seek exact d'une image de la source. Le seek
                    // part de la position visée, donc des pressions rapprochées avancent d'autant.
+                   // P3.42 : vers l'avant, l'image suivante déjà dans la file, sans seek.
                    if (!paused_) this->command(cmd::Pause{});
+                   if (step.direction > 0 && step_from_queue()) return;
+                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+                   if (period <= 0) period = kAssumedFramePeriodUs;
+                   // P3.78 : la cible est le milieu de l'image voisine, pas son début : des pts arrondis à la
+                   // microseconde (23,976 i/s) ne font plus tomber le seek exact deux images plus loin. Une
+                   // cible en attente est déjà un milieu.
                    std::int64_t base = 0;
                    if (pending_seek_us_) {
-                     base = *pending_seek_us_;
+                     base = *pending_seek_us_ - period / 2;
                    } else if (current_ && current_->pts_us != kNoPts) {
                      base = current_->pts_us;
                    }
-                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
-                   if (period <= 0) period = kAssumedFramePeriodUs;
-                   seek_to(std::max<std::int64_t>(base + step.direction * period, 0), true);
+                   seek_to(std::max<std::int64_t>(base + step.direction * period + period / 2, 0), true);
                  },
                  [this](const cmd::Quit&) {
                    finished_ = true;
@@ -136,6 +141,12 @@ void Session::command(const Command& command) {
                  },
                  [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
       command);
+}
+
+void Session::set_subtitle_delay(std::int64_t delay_us) {
+  if (delay_us == config_.subtitle_delay_us) return;
+  config_.subtitle_delay_us = delay_us;
+  if (current_) request_subtitles(*current_);  // comme la taille : l'image à l'écran redemande les siens
 }
 
 void Session::set_subtitle_scale(float scale) {
@@ -215,6 +226,27 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   pending_seek_us_ = target_us;
 }
 
+bool Session::step_from_queue() {
+  if (pending_seek_us_ || prerolling_ || !current_ || current_->pts_us == kNoPts) return false;
+  std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+  if (period <= 0) period = kAssumedFramePeriodUs;
+  const RingFrame shown = *current_;
+  // L'image une période source plus loin (les images interpolées d'entre deux sont passées) ; écrite.
+  const RingFrame* head = queue_.first_of(epoch_);
+  if (head == nullptr || head->pts_us == kNoPts || head->pts_us > shown.pts_us + period + period / 4)
+    return false;
+  late_.clear();
+  const std::optional<RingFrame> next = queue_.pick(shown.pts_us + period, period / 4, late_,
+                                                    [this](const RingFrame& f) { return screen_.ready(f); });
+  for (const RingFrame& frame : late_) retire(frame);
+  late_.clear();
+  if (!next) return false;
+  retire(shown);
+  current_ = next;
+  stepped_ = true;  // montrée au prochain tour
+  return true;
+}
+
 void Session::on_frame(const RingFrame& frame) {
   if (frame.epoch < epoch_) {  // d'avant un seek : jamais montrée
     retire(frame);
@@ -261,10 +293,12 @@ void Session::request_subtitles(const RingFrame& frame) {
     subtitle_waiting_ = frame;
     return;
   }
-  subtitle_pts_ = frame.pts_us;
   const OutputSize size = screen_.size();
+  if (size.width <= 0 || size.height <= 0) return;  // fenêtre réduite (P2.18) : rien à placer, rien de refusé
+  subtitle_pts_ = frame.pts_us;
   const subs::RenderRequest request{.pts_us = frame.pts_us,
                                     .epoch = frame.epoch,
+                                    .delay_us = config_.subtitle_delay_us,
                                     .target = {.width = size.width,
                                                .height = size.height,
                                                .video_width = config_.video_width,
@@ -397,9 +431,12 @@ void Session::watch_clock(const ClockSnapshot& now, std::int64_t host_now) {
     clock_stalled_since_us_ = host_now;
     return;
   }
-  if (host_now - *clock_stalled_since_us_ < audio_stall_grace_us_) return;
+  // P3.75 : passé la fin connue de la piste audio, l'horloge hôte mène tout de suite et sans message : ce
+  // n'est pas une panne, la vidéo continue seule.
+  const bool audio_over = config_.audio_end_us > 0 && current_->pts_us >= config_.audio_end_us - 200'000;
+  if (host_now - *clock_stalled_since_us_ < (audio_over ? 0 : audio_stall_grace_us_)) return;
   clock_stalled_since_us_.reset();
-  if (!stages_.audio_lost(epoch_, current_->pts_us)) return;
+  if (!stages_.audio_lost(epoch_, current_->pts_us) || audio_over) return;
   audio_stall_grace_us_ = kAudioStallRepeatUs;  // l'audio a déjà manqué : la prochaine fois, plus vite
   on_refusal({.stage = "main",
               .refusal = {RefusalCode::DeviceUnavailable, i18n::tr("audio missing: the display clock leads")},
@@ -429,19 +466,21 @@ void Session::follow_subtitles(std::int64_t host_now) {
   if (!now.valid) return;
   const std::int64_t media = now.media_at(host_now);
   int asked = 0;
-  while (subtitle_pts_.has_value() && media - subtitle_pts_.value() >= period &&
-         subtitle_requests_ < kMaxSubtitleRequests && asked < 4) {
-    RingFrame next = *current_;
-    next.pts_us = subtitle_pts_.value() + period;
+  const RingFrame shown = *current_;  // request_subtitles ne change pas l'image montrée
+  while (subtitle_requests_ < kMaxSubtitleRequests && asked < 4) {
+    const std::optional<std::int64_t> last = subtitle_pts_;
+    if (!last || media - *last < period) break;
+    RingFrame next = shown;
+    next.pts_us = *last + period;
     request_subtitles(next);
     if (subtitle_pts_ != next.pts_us) break;  // refusée : on réessaie au tour suivant
-    held_subtitle_pts_ = std::max(current_->pts_us, std::min(media, next.pts_us));
+    held_subtitle_pts_ = std::max(shown.pts_us, std::min(media, next.pts_us));
     ++asked;
   }
 }
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
-  fresh_ = false;
+  fresh_ = std::exchange(stepped_, false);
   last_tick_us_ = host_now;
   if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);
   measure_latency(host_now);
@@ -598,8 +637,11 @@ std::int64_t Session::display_period() const {
 // depth − 1 images déjà en file passent d'abord.
 std::int64_t Session::display_delay_us(std::int64_t period) const {
   if (config_.video_latency_us > 0) return config_.video_latency_us;
-  if (queue_fill_ > 0.5) return std::int64_t{std::max(config_.swapchain_depth - 1, 0)} * period + period / 2;
-  return stats_.render.median() + period / 2;
+  // P3.45 : en fenêtré, le compositeur garde l'image une trame de plus avant l'écran.
+  const std::int64_t compositor = composited_ ? period : 0;
+  if (queue_fill_ > 0.5)
+    return std::int64_t{std::max(config_.swapchain_depth - 1, 0)} * period + period / 2 + compositor;
+  return stats_.render.median() + period / 2 + compositor;
 }
 
 void Session::set_display(std::int64_t period_us, double hz) {

@@ -280,13 +280,29 @@ TEST_CASE("Image par image : pause, puis un seek exact d'une image de la source"
   rig.stages.log.clear();
 
   rig.session.command(cmd::StepFrame{.direction = 1});
-  CHECK(rig.stages.log == std::vector<std::string>{"pause", "pause", "flush 1", "seek 1041667"});
+  // Le milieu de l'image suivante (P3.78).
+  CHECK(rig.stages.log == std::vector<std::string>{"pause", "pause", "flush 1", "seek 1062500"});
   CHECK(rig.session.paused());
   // La touche répétée part de la cible, et reculer redescend d'une image.
   rig.session.command(cmd::StepFrame{.direction = 1});
-  CHECK(rig.stages.log.back() == "seek 1083334");
+  CHECK(rig.stages.log.back() == "seek 1104167");
   rig.session.command(cmd::StepFrame{.direction = -1});
-  CHECK(rig.stages.log.back() == "seek 1041667");
+  CHECK(rig.stages.log.back() == "seek 1062500");
+}
+
+TEST_CASE("Image par image : vers l'avant, l'image suivante de la file sans seek (P3.42)", "[app][session]") {
+  ajp::app::play::FrenchUi french;
+  Rig rig(SessionConfig{.duration_us = 60'000'000});
+  rig.session.handle(ring_frame(0, 1'000'000));
+  rig.tick();
+  rig.session.command(cmd::Pause{});
+  rig.session.handle(ring_frame(1, 1'020'833));  // une image interpolée, passée
+  rig.session.handle(ring_frame(2, 1'041'667));
+  rig.stages.log.clear();
+  rig.session.command(cmd::StepFrame{.direction = 1});
+  CHECK(rig.stages.log.empty());  // ni flush ni seek
+  rig.tick();
+  CHECK(rig.shown_pts() == 1'041'667);
 }
 
 TEST_CASE("Seek : un Flush refusé n'empêche pas le Seek, et le tout est rejoué jusqu'à passer",
@@ -407,7 +423,7 @@ TEST_CASE("Sous-titres : chaque vsync de l'image montrée a ses sous-titres, rin
 namespace {
 struct PeriodSource final : StatsSource {
   std::optional<std::string> rife() const override { return std::nullopt; }
-  std::optional<std::string> memory() const override { return std::nullopt; }
+  std::optional<std::string> memory() override { return std::nullopt; }
   std::int64_t source_period_us() const override { return 41'708; }
 };
 }  // namespace
@@ -536,7 +552,7 @@ TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][s
   ajp::app::play::FrenchUi french;
   struct Extra final : StatsSource {
     std::optional<std::string> rife() const override { return "RIFE : 3 paires"; }
-    std::optional<std::string> memory() const override { return std::nullopt; }
+    std::optional<std::string> memory() override { return std::nullopt; }
   } extra;
   Rig rig(SessionConfig{
       .header = {"SPAN ×2"}, .tracks = {"audio aac jpn"}, .output = "sortie HDR10", .extra = &extra});
@@ -700,7 +716,7 @@ TEST_CASE("Fluidité : les images neuves par seconde, relues chaque seconde", "[
 struct OutputRate final : StatsSource {
   double fps = 24000.0 / 1001.0 * 2.5;  // 23,976 im/s ×5/2 : 59,94 im/s
   std::optional<std::string> rife() const override { return std::nullopt; }
-  std::optional<std::string> memory() const override { return std::nullopt; }
+  std::optional<std::string> memory() override { return std::nullopt; }
   double output_fps() const override { return fps; }
 };
 

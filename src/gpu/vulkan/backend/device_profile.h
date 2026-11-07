@@ -15,8 +15,8 @@ struct DeviceProfile {
   DriverKind driver = DriverKind::Other;
   // Produit float16 × float16 + float32 en 16 × 16 × 16 par sous-groupe, activé sur le VkDevice.
   bool matrix_hardware = false;
-  bool matrix_allowed = false;   // famille et pilote dans la liste d'autorisation
-  bool matrix_unlisted = false;  // hors liste, proposées quand même (matrix_units_unlisted)
+  bool matrix_allowed = false;   // famille et pilote hors de la liste d'exclusion (matrix_units_excluded)
+  bool matrix_unlisted = false;  // famille inconnue : proposées sans être en tête (matrix_units_unlisted)
   std::string matrix_shapes;     // tuiles annoncées par le pilote (« 16×16×16 f16→f32, … »), ou vide
   net::Target target;
   // « 10de:2782:NVIDIA:615.78.08:9a13a200 » : constructeur, appareil, nom, version lisible et

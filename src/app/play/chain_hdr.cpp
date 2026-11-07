@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <condition_variable>
 #include <ctime>
 #include <filesystem>
 #include <format>
@@ -15,16 +16,22 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL_video.h>
+
 #include "app/play/chain.h"
 #include "app/play/chain_shots.h"
+#include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/thread.h"
 #include "render/looks.h"
 
 namespace ajp::app::play {
 namespace {
+
+inline constexpr double kFlashPeakNits = 250.0;  // plafond des flashs dangereux (P3.51)
 
 // Le vrai noir OLED est voulu : forcé, ou « auto » sur un écran détecté OLED.
 bool black_wanted(const PlaySettings& s, const std::optional<DisplayFacts>& display) {
@@ -127,7 +134,7 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
 std::vector<std::string> show_looks(PlaceboScreen& screen, LoadedLooks& looks) {
   std::array<const render::CubeLut*, render::kLookSlots> luts{};
   for (std::size_t i = 0; i < render::kLookSlots; ++i)
-    if (looks.luts.at(i)) luts.at(i) = &*looks.luts.at(i);
+    if (const std::optional<render::CubeLut>& lut = looks.luts.at(i); lut.has_value()) luts.at(i) = &*lut;
   std::vector<std::string> failed = std::move(looks.failed);
   if (auto set = screen.set_looks(luts); !set) {
     log_channel("app")->warn("look : {}", set.error().detail);
@@ -142,33 +149,83 @@ std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& 
   return show_looks(screen, looks);
 }
 
+struct LookLoader::State {
+  std::mutex mutex;
+  std::condition_variable_any wake;
+  std::optional<std::pair<PlaySettings, std::filesystem::path>> pending;  // sous mutex
+  std::optional<LoadedLooks> done;                                        // sous mutex
+  std::uint64_t asked = 0;                                                // sous mutex : demandes reçues
+  std::uint64_t finished = 0;  // sous mutex : la demande dont done est le résultat
+  bool busy = false;           // sous mutex : une lecture en cours
+};
+
+LookLoader::~LookLoader() {
+  if (!thread_.joinable()) return;
+  thread_.request_stop();
+  bool busy = false;
+  {
+    const std::scoped_lock lock(state_->mutex);
+    busy = state_->busy;
+  }
+  // Une lecture en cours finit seule (le fil garde l'état) : la fermeture de la chaîne ne l'attend pas.
+  if (busy) thread_.detach();
+}
+
+void LookLoader::request(const PlaySettings& s, const std::filesystem::path& luts_dir) {
+  if (!state_) state_ = std::make_shared<State>();
+  {
+    const std::scoped_lock lock(state_->mutex);
+    state_->pending.emplace(s, luts_dir);
+    ++state_->asked;
+  }
+  state_->wake.notify_one();
+  if (thread_.joinable()) return;
+  auto started = start_thread(
+      "looks",
+      ThreadReport([](const Refusal& refused) { log_channel("app")->warn("looks : {}", refused.detail); }),
+      [state = state_](const std::stop_token& stop, const ThreadReport&) {
+        std::unique_lock lock(state->mutex);
+        while (state->wake.wait(lock, stop, [&] { return state->pending.has_value(); })) {
+          auto [settings, dir] = std::move(*state->pending);
+          state->pending.reset();
+          const std::uint64_t asked = state->asked;
+          state->busy = true;
+          lock.unlock();
+          LoadedLooks looks = load_looks(settings, dir);
+          lock.lock();
+          state->busy = false;
+          state->done.emplace(std::move(looks));
+          state->finished = asked;
+        }
+      });
+  if (started) {
+    thread_ = std::move(*started);
+    return;
+  }
+  // Sans fil : la lecture se fait ici, comme avant 1.11.
+  log_channel("app")->warn("looks : {}", started.error().detail);
+  const std::scoped_lock lock(state_->mutex);
+  auto [settings, dir] = std::move(*state_->pending);
+  state_->pending.reset();
+  state_->done.emplace(load_looks(settings, dir));
+  state_->finished = state_->asked;
+}
+
+std::optional<LoadedLooks> LookLoader::take() {
+  if (!state_) return std::nullopt;
+  const std::scoped_lock lock(state_->mutex);
+  if (!state_->done || state_->finished != state_->asked) return std::nullopt;  // une plus récente vient
+  std::optional<LoadedLooks> looks = std::move(state_->done);
+  state_->done.reset();
+  return looks;
+}
+
 void start_looks(Chain& to, const PlaySettings& s) {
-  auto job = std::make_shared<LookLoad::Job>();
-  std::jthread thread([job, s, dir = to.luts_dir] {
-    LoadedLooks looks = load_looks(s, dir);
-    const std::scoped_lock lock(job->mutex);
-    job->result.emplace(std::move(looks));
-    job->done = true;
-  });
-  to.look_loads.push_back(LookLoad{.job = std::move(job), .thread = std::move(thread)});
+  to.looks.request(s, to.luts_dir);
 }
 
 void tend_looks(Chain& to, std::int64_t now_us) {
-  if (to.look_loads.empty()) return;
-  if (!to.look_loads.back().job->done) {
-    // Les lectures d'avant finies ne servent plus : leur fil se joint tout de suite.
-    for (std::size_t i = to.look_loads.size() - 1; i-- > 0;)
-      if (to.look_loads[i].job->done)
-        to.look_loads.erase(to.look_loads.begin() + static_cast<std::ptrdiff_t>(i));
-    return;
-  }
-  std::optional<LoadedLooks> looks;
-  {
-    LookLoad::Job& job = *to.look_loads.back().job;
-    const std::scoped_lock lock(job.mutex);
-    looks = std::move(job.result);
-  }
-  to.look_loads.clear();  // la dernière est finie ; les autres se joignent (leur lecture se termine)
+  std::optional<LoadedLooks> looks = to.looks.take();
   if (!looks) return;
   for (const std::string& failed : show_looks(to.screen, *looks))
     to.ui.controls().notify(i18n::ui_tr_format("Look unreadable: {}", failed), now_us);
@@ -198,8 +255,11 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   PlaySettings s = wanted;
   s.grade_values.scene_light = to.scene_light;
   s.grade_values.anime_exposure = to.anime_e;
-  const render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
-  to.live.set_deband_source(wanted.grade);
+  s.grade_values.series_apl_nits = to.anime_series_apl;
+  render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
+  // Flashs dangereux (P3.51) : le grade HDR plafonne vers 250 nits, le plein champ d'un écran OLED.
+  if (to.flash_limited && choice.pq) choice.pq->peak = std::min(choice.pq->peak, kFlashPeakNits);
+  to.live.set_deband_source(wanted.deband);  // la case Débandage, sur tous les moteurs (P3.56)
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
       from_measured_frame && !to.session.view().paused ? to.session.newest_frame() : nullptr;
@@ -248,13 +308,43 @@ void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t n
 }  // namespace
 
 void grade_tick(Chain& to, std::int64_t now_us) {
+  // P4.2 : fenêtre réduite ou cachée, l'interpolation s'arrête (rien n'est vu) ; l'audio et SPAN continuent,
+  // la reprise est immédiate.
+  if (SDL_Window* window = to.screen.window()) {
+    const bool hidden = (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_OCCLUDED)) != 0;
+    if (hidden != to.live.hidden())
+      log_channel("app")->info("fenêtre {} : interpolation {}", hidden ? "cachée" : "revenue",
+                               hidden ? "suspendue" : "reprise");
+    to.live.set_hidden(hidden);
+  }
   tend_looks(to, now_us);  // un look changé : posé une fois lu (1.11)
   // La scène : le plan de la pré-analyse (chain_shots.h) s'il est connu, sinon la scène vue à l'ingestion.
   feed_plan_shots(to);
   const std::optional<ShotScene> shot = next_shot(to, now_us);
   const bool new_shot = shot && shot->serial != to.shot_serial;
   to.shot_serial = shot ? shot->serial : 0;
+  if (const bool flashing = to.running.grade && next_flashing(to); flashing != to.flash_limited) {
+    to.flash_limited = flashing;
+    if (flashing)
+      log_channel("app")->info("flashs rapides : pic du grade plafonné à {:.0f} nits", kFlashPeakNits);
+    if (!flashing) log_channel("app")->info("flashs finis : pic du grade rendu");
+    set_grade(to, to.running, true);
+  }
   light_tick(to, shot ? shot : next_live(to), now_us, new_shot, shot.has_value());
+}
+
+void follow_display(Chain& to, std::optional<double> peak_nits) {
+  const int peak = auto_peak_nits(peak_nits);
+  std::string connector = to.display ? to.display->connector : std::string();
+  // Le premier écran vu est celui de l'ouverture : il ne compte pas comme un changement.
+  const bool moved = !to.display_seen.empty() && connector != to.display_seen;
+  to.display_seen = connector;
+  if (!moved && peak == to.auto_peak) return;
+  log_channel("app")->info("écran suivi : {}, pic {} nits", connector.empty() ? "?" : connector, peak);
+  to.auto_peak = peak;
+  apply_oled_care(to, to.running);
+  to.black_dirty = moved || to.black_dirty;
+  set_grade(to, to.running);
 }
 
 void refresh_black(Chain& to) {

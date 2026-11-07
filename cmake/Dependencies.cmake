@@ -25,6 +25,11 @@ target_compile_definitions(ajp_toml_headers INTERFACE TOML_HEADER_ONLY=1
                                                       "TOML_CONFIG_HEADER=\"${CMAKE_CURRENT_LIST_DIR}/../src/core/toml_config.h\"")
 ajp_alias_dep(toml ajp_toml_headers)
 
+# zlib : le deflate des roues et des zip que le lecteur télécharge (core/inflate.h). Celui du système
+# sous Linux et macOS, le port de vcpkg sous Windows.
+find_package(ZLIB REQUIRED)
+ajp_alias_dep(zlib ZLIB::ZLIB)
+
 find_package(spdlog CONFIG REQUIRED)
 ajp_alias_dep(spdlog spdlog::spdlog)
 target_compile_definitions(ajp_dep_spdlog INTERFACE SPDLOG_USE_STD_FORMAT)
@@ -52,14 +57,14 @@ find_package(PkgConfig REQUIRED)
 
 # FFmpeg 9.0.2 (libavformat 63.1), LGPL partagée.
 pkg_check_modules(AJP_FFMPEG REQUIRED IMPORTED_TARGET
-  libavformat>=63.1 libavcodec>=63.1 libavutil>=61.1 libswresample>=7.1 libswscale>=10.1)
+  libavformat>=63.1 libavcodec>=63.1 libavfilter>=12.1 libavutil>=61.1 libswresample>=7.1 libswscale>=10.1)
 ajp_alias_dep(ffmpeg PkgConfig::AJP_FFMPEG)
 
 # libplacebo v7.360.1 (overlay ports/libplacebo).
 pkg_check_modules(AJP_PLACEBO REQUIRED IMPORTED_TARGET libplacebo>=7.360)
 ajp_alias_dep(placebo PkgConfig::AJP_PLACEBO)
 
-# libass du fork the-database, commit 896614fa (overlay ports/libass).
+# libass du fork the-database, commit 896614fa (overlay ports/libass ; pourquoi le fork : son portfile).
 pkg_check_modules(AJP_ASS REQUIRED IMPORTED_TARGET libass)
 ajp_alias_dep(ass PkgConfig::AJP_ASS)
 

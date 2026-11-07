@@ -1,6 +1,6 @@
 #version 450
 // Dessins tenus depuis les plans de luma de deux images décodées (planes.glsl) : comme
-// block_diff, un groupe de travail par bloc 32 × 32, l'écart de chaque bloc et le pire par
+// block_diff, un groupe de travail par bloc 16 × 16, l'écart de chaque bloc et le pire par
 // atomicMax sur worst[0], remis à zéro avant chaque exécution.
 // Contrat : kernels/spec/detect.h ; référence : kernels/ref/detect.cpp (block_diff_max).
 #extension GL_GOOGLE_include_directive : require
