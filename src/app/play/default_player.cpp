@@ -40,9 +40,10 @@ constexpr std::array<std::string_view, 15> kMimeTypes{
     "video/x-matroska", "video/webm",    "video/mp4",  "video/x-m4v",     "video/quicktime",
     "video/x-msvideo",  "video/vnd.avi", "video/mpeg", "video/mp2t",      "video/x-flv",
     "video/x-ms-wmv",   "video/ogg",     "video/3gpp", "video/x-ogm+ogg", "video/x-theora+ogg"};
-constexpr std::array<std::string_view, 14> kExtensions{".mkv", ".webm", ".mp4",  ".m4v", ".mov",
+// La seule table des extensions vidéo (P3.85) : inscription, épisodes, fichiers glissés, boîte « Ouvrir ».
+constexpr std::array<std::string_view, 15> kExtensions{".mkv", ".webm", ".mp4",  ".m4v", ".mov",
                                                        ".avi", ".mpg",  ".mpeg", ".ts",  ".m2ts",
-                                                       ".flv", ".wmv",  ".ogv",  ".3gp"};
+                                                       ".mts", ".flv",  ".wmv",  ".ogv", ".3gp"};
 
 constexpr std::string_view kClasses = "Software\\Classes\\";
 constexpr std::string_view kCapabilities = "Software\\AJP\\Capabilities";
@@ -161,6 +162,18 @@ std::span<const std::string_view> video_mime_types() {
 
 std::span<const std::string_view> video_extensions() {
   return kExtensions;
+}
+
+const char* video_dialog_pattern() {
+  static const std::string pattern = [] {
+    std::string joined;
+    for (const std::string_view extension : kExtensions) {
+      if (!joined.empty()) joined += ';';
+      joined += extension.substr(1);
+    }
+    return joined;
+  }();
+  return pattern.c_str();
 }
 
 std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable) {

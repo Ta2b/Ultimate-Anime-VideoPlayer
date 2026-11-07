@@ -565,10 +565,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     wake.pending.store(false, std::memory_order_release);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      if (auto dropped = dropped_file(event)) {  // une autre vidéo : la chaîne se ferme pour elle
-        log->info("fichier glissé : {}", prepare::utf8_path(dropped->filename()));
-        chain.next_file = std::move(*dropped);
-        chain.reopen = chain.running;
+      if (auto drop = dropped(event)) {  // vidéo, sous-titres ou refus (P3.85)
+        take_drop(chain, *drop, host_now_us());
         continue;
       }
       if (p.ui.handle(event, host_now_us(), actions)) continue;  // saisie dans l'interface

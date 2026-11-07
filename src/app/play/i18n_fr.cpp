@@ -66,6 +66,7 @@ constexpr std::array kPlayer{
     Entry{"Muted", "Muet"},
     Entry{"Next chapter (Page Up)", "Chapitre suivant (Page haut)"},
     Entry{"No credits chapter here", "Pas de chapitre de générique ici"},
+    Entry{"Not a video or subtitles: {}", "Ni une vidéo ni des sous-titres : {}"},
     Entry{"No next episode in this folder", "Pas d'épisode suivant dans ce dossier"},
     Entry{"No previous episode in this folder", "Pas d'épisode précédent dans ce dossier"},
     Entry{"Off", "Désactivés"},

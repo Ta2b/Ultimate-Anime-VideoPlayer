@@ -14,6 +14,7 @@
 #include "core/log.h"
 #include "media/demuxer.h"
 #include "media/video_decoder.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
 namespace {
@@ -158,7 +159,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       choice.subtitle.reset();
     }
   }
-  if (!p->menu_.subtitles.empty()) {
+  // Le fil des sous-titres tourne même sans piste : un fichier glissé pendant la lecture s'y ajoute (P3.85).
+  if (config.subtitles) {
     p->subs_inbox_ = std::make_shared<subs::SubsInbox>(subs::kSubsInboxBounds);
     auto thread = subs::SubsThread::start(config.subs, p->mail_, p->subs_inbox_);
     if (!thread) return std::unexpected(std::move(thread.error()));
@@ -294,6 +296,22 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
   menu_.subtitle_selected = track;
   subtitle_track_ = *info;
   return {};
+}
+
+std::expected<int, Refusal> Pipeline::add_subtitle_file(const std::filesystem::path& file) {
+  if (!subs_inbox_)
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "pas de sous-titres pour cette lecture"});
+  if (external_.size() >= kMaxExternalSubtitles)
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "trop de sous-titres externes"});
+  const int index = kExternalSubtitleBase + static_cast<int>(external_.size());
+  external_.push_back(
+      {.path = file, .label = i18n::tr_format("External · {}", prepare::utf8_path(file.filename()))});
+  menu_.subtitles.push_back({.index = index, .label = external_.back().label});
+  tracks_.push_back({.index = index,
+                     .kind = media::TrackKind::Subtitle,
+                     .codec = "externe",
+                     .title = prepare::utf8_path(file.filename())});
+  return index;
 }
 
 void Pipeline::pump() {

@@ -39,6 +39,13 @@ struct StepChapter {
   int direction = 1;
 };
 struct CycleSubtitles {};
+// Un fichier glissé sur la fenêtre (P3.85) : une vidéo (video_extensions(), la seule table des extensions),
+// des sous-titres (.ass, .ssa, .srt) ou autre chose.
+enum class DropKind : std::uint8_t { Video, Subtitles, Other };
+struct Dropped {
+  std::filesystem::path path;
+  DropKind kind = DropKind::Other;
+};
 // Décalage des sous-titres (P3.72) : « z » −100 ms, « x » +100 ms, comme mpv.
 struct SubtitleDelayStep {
   int delta_ms = 0;

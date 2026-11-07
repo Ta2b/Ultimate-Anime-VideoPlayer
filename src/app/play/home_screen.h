@@ -50,8 +50,10 @@ struct HomeState {
   std::optional<PlayFile> start;  // la vidéo choisie par PlayFile : instant et pause
 };
 
-// Le fichier d'un SDL_EVENT_DROP_FILE ; rien pour un autre événement, ni pour un dossier ou un fichier
-// qui n'est pas une vidéo (sous-titres, image, texte).
+// Le fichier d'un SDL_EVENT_DROP_FILE et ce qu'il est (Dropped, input.h) ; rien pour un autre événement ou un
+// dossier.
+std::optional<Dropped> dropped(const SDL_Event& event);
+// La vidéo d'un SDL_EVENT_DROP_FILE ; rien pour le reste.
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event);
 
 // L'accueil jusqu'à une vidéo choisie ; rien si l'utilisateur quitte. problem : pourquoi la vidéo

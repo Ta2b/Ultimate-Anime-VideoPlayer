@@ -220,6 +220,24 @@ void ask_engines(Chain& to, EngineChange request) {
 
 }  // namespace
 
+void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
+  const std::string name = prepare::utf8_path(drop.path.filename());
+  if (drop.kind == DropKind::Video) {  // une autre vidéo : la chaîne se ferme pour elle
+    log_channel("app")->info("fichier glissé : {}", name);
+    to.next_file = drop.path;
+    to.reopen = to.running;
+    return;
+  }
+  if (drop.kind == DropKind::Subtitles) {
+    if (auto added = to.pipeline.add_subtitle_file(drop.path)) {
+      switch_subtitles(to, *added, now_us);
+      return;
+    }
+  }
+  log_channel("app")->info("fichier glissé refusé : {}", name);
+  to.ui.controls().notify(i18n::ui_tr_format("Not a video or subtitles: {}", name), now_us);
+}
+
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
 void apply(const Input& input, Chain& to, std::int64_t now_us) {
   Session& session = to.session;

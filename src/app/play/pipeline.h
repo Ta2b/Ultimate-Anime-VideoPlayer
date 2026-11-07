@@ -100,6 +100,9 @@ class Pipeline {
   // par un seek, pour que subs reçoive les paquets de la nouvelle piste. Refus : TrackUnavailable,
   // SubtitleBacklog.
   std::expected<void, Refusal> select_subtitles(std::optional<int> track);
+  // Un fichier de sous-titres glissé sur la fenêtre (P3.85) : ajouté au menu comme piste externe ; rend son
+  // index. Refus : TrackUnavailable (sous-titres coupés, trop de pistes externes).
+  std::expected<int, Refusal> add_subtitle_file(const std::filesystem::path& file);
 
  private:
   Pipeline() = default;

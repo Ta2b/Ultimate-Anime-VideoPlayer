@@ -164,6 +164,9 @@ void refresh_black(Chain& to);
 // L'écran a changé, ou son pic (P3.58) : le pic automatique, les soins OLED et le vrai noir suivent l'écran
 // courant (Chain::display) et le pic relu, sans rouvrir la chaîne.
 void follow_display(Chain& to, std::optional<double> peak_nits);
+// Un fichier glissé pendant la lecture (P3.85) : une vidéo la remplace, des sous-titres s'ajoutent comme
+// piste externe et sont choisis, le reste est refusé avec un message.
+void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us);
 // Une action de l'utilisateur (touche, barre, menu) sur la chaîne.
 void apply(const Input& input, Chain& to, std::int64_t now_us);
 

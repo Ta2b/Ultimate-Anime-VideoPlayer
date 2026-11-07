@@ -43,6 +43,8 @@ inline constexpr std::string_view kRegisteredName = "AJP";  // HKCU\Software\Reg
 // Les types vidéo proposés au système : types MIME (Linux) et extensions (Windows).
 std::span<const std::string_view> video_mime_types();
 std::span<const std::string_view> video_extensions();
+// Les mêmes extensions pour la boîte « Ouvrir une vidéo » de SDL (« mkv;webm;… »), valable jusqu'à la sortie.
+const char* video_dialog_pattern();
 
 // Le .desktop du lecteur. Refus FieldOutOfRange pour un chemin qu'une ligne ne peut porter (saut
 // de ligne, caractère de contrôle, UTF-8 mal formé).
