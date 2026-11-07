@@ -280,13 +280,14 @@ TEST_CASE("Image par image : pause, puis un seek exact d'une image de la source"
   rig.stages.log.clear();
 
   rig.session.command(cmd::StepFrame{.direction = 1});
-  CHECK(rig.stages.log == std::vector<std::string>{"pause", "pause", "flush 1", "seek 1041667"});
+  // Le milieu de l'image suivante (P3.78).
+  CHECK(rig.stages.log == std::vector<std::string>{"pause", "pause", "flush 1", "seek 1062500"});
   CHECK(rig.session.paused());
   // La touche répétée part de la cible, et reculer redescend d'une image.
   rig.session.command(cmd::StepFrame{.direction = 1});
-  CHECK(rig.stages.log.back() == "seek 1083334");
+  CHECK(rig.stages.log.back() == "seek 1104167");
   rig.session.command(cmd::StepFrame{.direction = -1});
-  CHECK(rig.stages.log.back() == "seek 1041667");
+  CHECK(rig.stages.log.back() == "seek 1062500");
 }
 
 TEST_CASE("Image par image : vers l'avant, l'image suivante de la file sans seek (P3.42)", "[app][session]") {

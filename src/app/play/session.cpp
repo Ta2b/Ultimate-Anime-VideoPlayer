@@ -105,15 +105,18 @@ void Session::command(const Command& command) {
                    // P3.42 : vers l'avant, l'image suivante déjà dans la file, sans seek.
                    if (!paused_) this->command(cmd::Pause{});
                    if (step.direction > 0 && step_from_queue()) return;
+                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+                   if (period <= 0) period = kAssumedFramePeriodUs;
+                   // P3.78 : la cible est le milieu de l'image voisine, pas son début : des pts arrondis à la
+                   // microseconde (23,976 i/s) ne font plus tomber le seek exact deux images plus loin. Une
+                   // cible en attente est déjà un milieu.
                    std::int64_t base = 0;
                    if (pending_seek_us_) {
-                     base = *pending_seek_us_;
+                     base = *pending_seek_us_ - period / 2;
                    } else if (current_ && current_->pts_us != kNoPts) {
                      base = current_->pts_us;
                    }
-                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
-                   if (period <= 0) period = kAssumedFramePeriodUs;
-                   seek_to(std::max<std::int64_t>(base + step.direction * period, 0), true);
+                   seek_to(std::max<std::int64_t>(base + step.direction * period + period / 2, 0), true);
                  },
                  [this](const cmd::Quit&) {
                    finished_ = true;
