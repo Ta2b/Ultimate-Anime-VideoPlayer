@@ -115,6 +115,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "AJP_WARNINGS_AS_ERRORS": "ON"
       }
     },
@@ -207,6 +208,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "AJP_BUILD_TESTS": "ON",
         "AJP_WARNINGS_AS_ERRORS": "ON"
       }
@@ -222,6 +224,7 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "AJP_WARNINGS_AS_ERRORS": "ON",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
