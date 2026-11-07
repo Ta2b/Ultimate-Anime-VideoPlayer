@@ -154,6 +154,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
   if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
     to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
+    to.live.set_deband_source(wanted.deband);
     controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
                                        wanted.deband ? i18n::tr("on") : i18n::tr("off")),
                     now_us);

@@ -256,7 +256,7 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
   // Flashs dangereux (P3.51) : le grade HDR plafonne vers 250 nits, le plein champ d'un écran OLED.
   if (to.flash_limited && choice.pq) choice.pq->peak = std::min(choice.pq->peak, kFlashPeakNits);
-  to.live.set_deband_source(wanted.grade);
+  to.live.set_deband_source(wanted.deband);  // la case Débandage, sur tous les moteurs (P3.56)
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
       from_measured_frame && !to.session.view().paused ? to.session.newest_frame() : nullptr;
