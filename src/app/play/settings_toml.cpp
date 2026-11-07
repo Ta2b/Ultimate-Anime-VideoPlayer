@@ -285,6 +285,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
         engine_known = true;
       }
     }
+    // P5.2 : GMFSS est débranché de la lecture et de l'export ; un ancien play.toml qui le nomme se lit en
+    // RIFE.
+    if (is_gmfss(s.motion_engine)) s.motion_engine = MotionEngine::Rife;
     if (!engine_known)
       reads.emplace_back(
           refuse_key(RefusalCode::FieldOutOfRange, "interpolation.engine", std::format(" : « {} »", engine)));
@@ -452,19 +455,20 @@ std::string format_settings(const PlaySettings& s) {
                                    {"work_height", s.work_height},
                                    {"downscale", std::string(name(s.downscale))},
                                    {"span_precision", std::string(name(s.span_precision))}});
-  toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
-                            {"model", s.rife_model},
-                            {"keep_poses", s.keep_poses},
-                            {"rife_fused", s.rife_fused},
-                            {"drba_fused", s.drba_fused},
-                            {"gmfss_fused", s.gmfss_fused},
-                            {"gmfss_precision", std::string(name(s.gmfss_precision))},
-                            {"motion_precision", std::string(name(s.motion_precision))},
-                            {"auto", s.rife_auto},
-                            {"auto_cap", s.auto_cap},
-                            {"auto_mode", std::string(s.auto_free ? "libre" : "recommande")},
-                            {"span_order", std::string(name(s.span_order))},
-                            {"smooth_motion", s.smooth_motion}};
+  toml::table interpolation{
+      {"engine", std::string(name(is_gmfss(s.motion_engine) ? MotionEngine::Rife : s.motion_engine))},
+      {"model", s.rife_model},
+      {"keep_poses", s.keep_poses},
+      {"rife_fused", s.rife_fused},
+      {"drba_fused", s.drba_fused},
+      {"gmfss_fused", s.gmfss_fused},
+      {"gmfss_precision", std::string(name(s.gmfss_precision))},
+      {"motion_precision", std::string(name(s.motion_precision))},
+      {"auto", s.rife_auto},
+      {"auto_cap", s.auto_cap},
+      {"auto_mode", std::string(s.auto_free ? "libre" : "recommande")},
+      {"span_order", std::string(name(s.span_order))},
+      {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {
     interpolation.insert("rife", static_cast<double>(s.rife_factor) / 2.0);
   } else {

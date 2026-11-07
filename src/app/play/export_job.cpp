@@ -45,6 +45,8 @@ PlaySettings export_chain(const PlaySettings& s) {
   out.hdr_native = false;
   out.grade = false;
   out.smooth_motion = false;
+  if (is_gmfss(out.motion_engine))
+    out.motion_engine = MotionEngine::Rife;  // P5.2 : débranché, comme à la lecture
   // P3.87 : en Auto, la lecture prend ce que l'écran affiche (×6 à 144 Hz) ; l'export, lu sur un téléviseur
   // ou un téléphone, prend ×2 quel que soit l'écran. Un multiplicateur choisi à la main reste.
   if (out.rife_auto && out.rife_factor > 0) {

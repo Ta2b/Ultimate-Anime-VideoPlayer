@@ -18,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain.h"
+#include "app/play/export_job.h"
 #include "app/play/free_engines.h"
 #include "app/play/host_facts.h"
 #include "app/play/live_settings.h"
@@ -62,10 +63,12 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
+  // P5.2 : GMFSS n'est plus écrit, et un ancien play.toml qui le nomme se lit en RIFE.
   s.motion_engine = MotionEngine::Gmfss;
-  CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::Gmfss);
-  s.motion_engine = MotionEngine::GmfssUnion;
-  CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::GmfssUnion);
+  CHECK(format_settings(s).find("gmfss\"") == std::string::npos);
+  CHECK(parse_settings("[interpolation]\nengine = \"gmfss\"\n")->motion_engine == MotionEngine::Rife);
+  CHECK(parse_settings("[interpolation]\nengine = \"gmfss_union\"\n")->motion_engine == MotionEngine::Rife);
+  CHECK(export_chain(s).motion_engine == MotionEngine::Rife);
   CHECK(is_gmfss(MotionEngine::GmfssUnion));
   CHECK_FALSE(is_gmfss(MotionEngine::Rife));
   // L'interpolation d'Apple se garde partout ; elle n'est proposée que sur un Mac.
