@@ -89,10 +89,12 @@ class LiveSettings {
   // actif, factor_now() remplace rife_factor(). `ceiling` : le palier le plus haut que l'écran permet.
   // `granularity` : core::kFineGranularity sur un écran VRR armé (cadence au fps près), 1 sinon ; `ceiling`
   // se compte alors en 1 / granularity (core::auto_ceiling).
-  void set_auto(bool on, int ceiling, int granularity = 1) {
+  // `locked` (P3.33) : à fréquence fixe, les seuls paliers permis (core::locked_steps) ; vide en VRR.
+  void set_auto(bool on, int ceiling, int granularity = 1, std::vector<int> locked = {}) {
     const std::scoped_lock lock(mutex_);
     auto_on_ = on;
     auto_.set_ceiling(ceiling, granularity);
+    auto_.set_locked(std::move(locked));
   }
   bool auto_active() const {
     const std::scoped_lock lock(mutex_);

@@ -427,9 +427,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     const bool free_wanted = free_requested(chain.running, free_fallback.active(host_now_us()));
     const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
-    // Au fps près (1/24 de multiplicateur) sur un écran VRR armé : la cadence n'y est plus liée au
-    // rafraîchissement. À fréquence fixe, des paliers entiers (les autres feraient vibrer).
-    const int granularity = vrr_armed ? core::kFineGranularity : 1;
+    // Au fps près en VRR armé ; à fréquence fixe, les seuls paliers calés sur l'écran (P3.33).
+    const int granularity = vrr_armed ? core::kFineGranularity : 2;
     const double limit_hz = core::auto_limit_hz(known_hz, chain.running.auto_cap);
     // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
     std::string why;
@@ -445,8 +444,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
       if (!why.empty()) log->info("Mode Rapide indisponible ({}) : mode Stable", why);
     }
-    chain.live.set_auto(on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity),
-                        granularity);
+    chain.live.set_auto(
+        on && !free, core::auto_ceiling(limit_hz, fps_of(video.frame_rate), granularity), granularity,
+        vrr_armed ? std::vector<int>{} : core::locked_steps(limit_hz, fps_of(video.frame_rate), granularity));
     // Écart minimal : la période de l'écran ou du plafond, à 1 % près ; à fréquence fixe, sur les vsyncs.
     const std::int64_t refresh_us = known_period_us;
     const bool vsync = free && !vrr_armed;
