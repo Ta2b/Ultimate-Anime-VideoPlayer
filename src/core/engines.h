@@ -28,10 +28,7 @@ struct GpuInfo {
   GpuVendor vendor = GpuVendor::Other;
   std::string name;
   std::uint64_t vram_bytes = 0;
-  bool tensor_cores = false;    // NVIDIA RTX (Turing et après)
-  bool rocm_supported = false;  // AMD reconnu par MIGraphX de ROCm (Linux)
-  bool winml_migraphx = false;  // AMD RDNA 3 et après, que MIGraphX de Windows ML sert (Windows)
-  bool openvino_gpu = false;    // Intel Arc ou intégré récent reconnu par OpenVINO
+  bool tensor_cores = false;  // NVIDIA RTX (Turing et après)
 };
 
 struct SystemInfo {
@@ -65,10 +62,10 @@ enum class Badge : std::uint8_t {
   LinuxOnly,
 };
 
-// Les moteurs que le lecteur propose, installe et ouvre. MIGraphX (ROCm, Windows ML) et OpenVINO restent
-// dans les sources et se construisent encore (AJP_WITH_MIGRAPHX, AJP_WITH_WINML, AJP_WITH_OPENVINO), mais
-// sont débranchés du lecteur : tout GPU qui n'est pas NVIDIA passe par Vulkan, le seul chemin mesuré fiable
-// et rapide sur AMD et Intel (docs/moteurs.md). DirectML n'a jamais eu de backend.
+// Les moteurs que le lecteur propose, installe et ouvre. MIGraphX et OpenVINO sont retirés des sources
+// (P5.1) : leurs noms restent lus dans un ancien play.toml ou un ancien index, et tout GPU qui n'est pas
+// NVIDIA passe par Vulkan, le seul chemin mesuré fiable et rapide sur AMD et Intel (docs/moteurs.md).
+// DirectML n'a jamais eu de backend.
 constexpr bool engine_plugged(EngineId id) {
   return id != EngineId::MiGraphX && id != EngineId::OpenVino && id != EngineId::DirectMl;
 }
@@ -77,7 +74,7 @@ constexpr bool engine_plugged(EngineId id) {
 enum class Reason : std::uint8_t {
   AlwaysIncluded,
   FastestForThisGpu,
-  CompareWithVulkan,  // DirectML, MIGraphX de Windows ML : à l'essai, utile si Vulkan mesure moins bien
+  CompareWithVulkan,  // un moteur à l'essai, utile si Vulkan mesure moins bien
   NoMatchingGpu,
 };
 

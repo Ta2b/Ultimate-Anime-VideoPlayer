@@ -5,13 +5,6 @@
 #                                           et les modèles (models/, sauf AJP_WITHOUT_MODELS)
 #   ajp-engine-tensorrt-windows-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA), si
 #                                           construit (AJP_WITH_CUDA=ON, TensorRT installé)
-#   ajp-engine-openvino-windows-x64.tar.gz  backend OpenVINO et OpenVINO (GPU Intel, NPU des Core
-#                                           Ultra), si construit (AJP_WITH_OPENVINO=ON, OpenVINO_DIR
-#                                           de la roue PyPI)
-#   ajp-engine-migraphx-windows-x64.tar.gz  backend MIGraphX de Windows ML et les DLL de Windows ML
-#                                           (AMD RDNA 3 et après, à l'essai), si construit
-#                                           (AJP_WITH_WINML=ON, AJP_WINML_ROOT de
-#                                           tools/deps/windows-winml.ps1)
 #
 #   $env:VCPKG_ROOT = "C:\vcpkg"; [$env:AJP_WITH_CUDA = "ON"]; [$env:AJP_RELEASE_TAG = "v0.2.0"]
 #   pwsh tools/release/package-windows.ps1 [dossier-de-sortie]
@@ -31,15 +24,12 @@ $Tag = if ($env:AJP_RELEASE_TAG) { $env:AJP_RELEASE_TAG } else { "v$Version" }
 $Repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else { "Ta2b/Ultimate-Anime-VideoPlayer" }
 $BaseUrl = "https://github.com/$Repo/releases/download/$Tag"
 $Cuda = if ($env:AJP_WITH_CUDA) { $env:AJP_WITH_CUDA } else { "OFF" }
-$OpenVino = if ($env:AJP_WITH_OPENVINO) { $env:AJP_WITH_OPENVINO } else { "OFF" }
-$WinMl = if ($env:AJP_WITH_WINML) { $env:AJP_WITH_WINML } else { "OFF" }
 
 $Extra = @()
 # Arbre de construction de vcpkg ailleurs (un chemin court : les sources de certains ports
 # dépassent les 260 caractères de MSVC sous build/).
 if ($env:AJP_VCPKG_BUILDTREES) { $Extra += "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" }
 # Triplet sans Debug (x64-windows-release) : la moitié des ports à compiler sur la CI.
-if ($WinMl -eq "ON") { $Extra += "-DAJP_WINML_ROOT=$env:AJP_WINML_ROOT" }
 # SPAN FP8 CUTLASS sous MSVC (12.4) : à l'essai, éteint par défaut hors Linux.
 if ($Cuda -eq "ON" -and $env:AJP_WITH_SPAN_FP8) { $Extra += "-DAJP_WITH_SPAN_FP8=$env:AJP_WITH_SPAN_FP8" }
 if ($Cuda -eq "ON" -and $env:AJP_TENSORRT_ROOT) { $Extra += "-DAJP_TENSORRT_ROOT=$env:AJP_TENSORRT_ROOT" }
@@ -50,8 +40,7 @@ if ($env:AJP_COMPILER_LAUNCHER) {
 if ($env:AJP_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
 }
-cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" "-DAJP_WITH_OPENVINO=$OpenVino" `
-  "-DAJP_WITH_WINML=$WinMl" @Extra
+cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" @Extra
 if ($LASTEXITCODE -ne 0) { throw "configuration" }
 cmake --build --preset windows-release -- -k 0  # toutes les erreurs de MSVC en une passe
 if ($LASTEXITCODE -ne 0) { throw "construction" }
@@ -127,42 +116,6 @@ if (Test-Path $TrtModule) {
     $trtVersion = if ($nvinfer) { $Matches[1] } else { $Version }
     Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
   }
-}
-
-$OvModule = "$Build/src/gpu/openvino/ajp_backend_openvino.dll"
-if (Test-Path $OvModule) {
-  $dir = Join-Path $Out "engine-openvino"
-  Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
-  New-Item -ItemType Directory -Force -Path $dir | Out-Null
-  Copy-Item $OvModule $dir
-  # OpenVINO depuis les bibliothèques de sa roue (OpenVINO_DIR = <roue>/openvino/cmake) : le
-  # runtime et TBB, les greffons GPU et NPU (avec le compilateur du NPU), le lecteur ONNX et
-  # cache.json (noyaux réglés du greffon GPU), ouverts depuis le dossier de openvino.dll.
-  $ovLibs = Join-Path (Split-Path $env:OpenVINO_DIR -Parent) "libs"
-  foreach ($pattern in "openvino.dll", "openvino_intel_gpu_plugin.dll", "openvino_intel_npu_*.dll",
-    "openvino_onnx_frontend.dll", "tbb12.dll", "tbbbind_2_5.dll", "tbbmalloc.dll", "cache.json") {
-    Copy-Item "$ovLibs/$pattern" $dir
-  }
-  Add-Engine "openvino" $Version "" $dir
-}
-
-$MxModule = "$Build/src/gpu/winml/ajp_backend_migraphx.dll"
-if (Test-Path $MxModule) {
-  $dir = Join-Path $Out "engine-migraphx"
-  Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
-  New-Item -ItemType Directory -Force -Path $dir | Out-Null
-  Copy-Item $MxModule $dir
-  # Les DLL que le paquet NuGet place à côté d'une application (redistribuables, licence de
-  # Windows ML à accepter dans le lecteur), chargées par leur chemin depuis le dossier du module ;
-  # le fournisseur MIGraphX, Windows l'installe lui-même (Windows Update).
-  $winml = $env:AJP_WINML_ROOT
-  foreach ($file in "onnxruntime.dll", "Microsoft.Windows.AI.MachineLearning.dll") {
-    Copy-Item "$winml/runtimes/win-x64/native/$file" $dir
-  }
-  Copy-Item "$winml/license.txt" (Join-Path $dir "WindowsML-license.txt")
-  Copy-Item "$winml/ThirdPartyNotices.txt" (Join-Path $dir "WindowsML-ThirdPartyNotices.txt")
-  $winmlVersion = (Select-String -Path "$Root/tools/release/versions.env" -Pattern '^WINML_VERSION=(\S+)$').Matches[0].Groups[1].Value
-  Add-Engine "migraphx" $winmlVersion "https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/$winmlVersion/License" $dir
 }
 
 # --- Les modèles SPAN et RIFE livrés (comme sous Linux) : le bash de Git, pas celui de WSL. ---

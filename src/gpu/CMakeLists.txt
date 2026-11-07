@@ -13,20 +13,6 @@ ajp_add_module(gpu DEPS ajp::core ajp::kernels)
 
 # Socle de calcul Vulkan (vk_compute), sous vulkan/compute.
 add_subdirectory(vulkan)
-# Backends Vulkan dont les réseaux passent par le runtime du fabricant.
-if(AJP_WITH_MIGRAPHX)
-  add_subdirectory(migraphx)
-endif()
-if(AJP_WITH_OPENVINO)
-  add_subdirectory(openvino)
-endif()
-# MIGraphX de Windows ML : le même module ajp_backend_migraphx, sous Windows, sans ROCm.
-if(AJP_WITH_WINML)
-  if(AJP_WITH_MIGRAPHX)
-    message(FATAL_ERROR "AJP_WITH_WINML et AJP_WITH_MIGRAPHX construisent tous deux ajp_backend_migraphx")
-  endif()
-  add_subdirectory(winml)
-endif()
 # Les parties portables du backend Core ML, vérifiées partout : les images de l'interpolation
 # d'Apple (coreml/vt_pixels.h), la place et les noms du modèle compilé (coreml/coreml_compiled.h).
 ajp_add_module(coreml_pixels SOURCES coreml/coreml_compiled.cpp coreml/vt_pixels.cpp DEPS ajp::gpu ajp::kernels)

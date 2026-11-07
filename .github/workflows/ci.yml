@@ -86,7 +86,7 @@ jobs:
   # qui garde pilotes et couches chargés jusqu'à la sortie (tools/ci/lsan.supp dit pourquoi).
   # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh) : sa
   # tâche est à part pour ne pas allonger celle des tests (15 min sur tout src/). Elle tourne sur chaque
-  # pull request, comme les autres. OpenVINO, débranché du lecteur, n'est plus construit (P1.18).
+  # pull request, comme les autres.
   player:
     name: Lecteur Linux (${{ matrix.name }})
     if: github.event_name != 'push' || github.ref == 'refs/heads/main'
@@ -183,7 +183,6 @@ jobs:
       # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
       # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-      # Windows ML (MIGraphX), débranché du lecteur, n'est plus construit (P1.18).
       - name: Configuration
         shell: pwsh
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.

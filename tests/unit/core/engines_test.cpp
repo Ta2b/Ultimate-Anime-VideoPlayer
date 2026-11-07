@@ -46,15 +46,11 @@ TEST_CASE("Moteurs : RTX 4070 Ti sous Windows", "[engines]") {
 
 TEST_CASE("Moteurs : AMD et Intel passent par Vulkan, MIGraphX et OpenVINO débranchés", "[engines]") {
   const std::array systems{
-      SystemInfo{.os = Os::Linux,
-                 .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 7900 XTX", .rocm_supported = true}}},
-      SystemInfo{
-          .os = Os::Windows,
-          .gpus = {GpuInfo{
-              .vendor = GpuVendor::Amd, .name = "AMD Radeon(TM) 860M Graphics", .winml_migraphx = true}}},
+      SystemInfo{.os = Os::Linux, .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 7900 XTX"}}},
+      SystemInfo{.os = Os::Windows,
+                 .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "AMD Radeon(TM) 860M Graphics"}}},
       SystemInfo{.os = Os::Windows, .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 580"}}},
-      SystemInfo{.os = Os::Linux,
-                 .gpus = {GpuInfo{.vendor = GpuVendor::Intel, .name = "Arc A770", .openvino_gpu = true}}}};
+      SystemInfo{.os = Os::Linux, .gpus = {GpuInfo{.vendor = GpuVendor::Intel, .name = "Arc A770"}}}};
   for (const SystemInfo& system : systems) {
     const auto offers = recommend_engines(system);
     CHECK_FALSE(find(offers, EngineId::MiGraphX));

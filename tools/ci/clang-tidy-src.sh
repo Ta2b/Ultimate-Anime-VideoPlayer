@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # clang-tidy sur les fichiers de src/ que compile la configuration donnée (son
-# compile_commands.json). Les backends dont le SDK manque à cette configuration (CUDA, OpenVINO,
-# MIGraphX, Core ML) et les sources d'un autre système ne s'analysent pas sans leurs en-têtes :
+# compile_commands.json). Les backends dont le SDK manque à cette configuration (CUDA,
+# Core ML) et les sources d'un autre système ne s'analysent pas sans leurs en-têtes :
 # ils sont nommés en tête de sortie au lieu d'échouer sur « file not found ».
 # AJP_TIDY_BASE (une référence git, « origin/main ») : n'analyse que les fichiers de src/ changés
 # depuis son point de départ commun avec HEAD ; tout src/ si un en-tête ou un CMakeLists.txt

@@ -261,9 +261,7 @@ Threads du lecteur : main (SDL, interface, rendu), source (lecture et décodage)
 audio, sous-titres, prepare (la chaîne GPU), et, à `--ring-watcher`, `veilleur` (attend l'écriture des slots
 de l'anneau et réveille main, `ring_watcher.h`). Threads des backends, lancés au
 premier besoin : `envoi` (backend Vulkan : copie des images hôte vers les tampons
-d'envoi, attendue seulement quand le lot part) et `openvino` (une requête
-d'inférence à la fois, exécutée hors du thread prepare pendant que la file Vulkan
-avance, `run_deferred`). Chacun n'attend que sa boîte `Inbox`.
+d'envoi, attendue seulement quand le lot part). Chacun n'attend que sa boîte `Inbox`.
 
 ## Journal
 

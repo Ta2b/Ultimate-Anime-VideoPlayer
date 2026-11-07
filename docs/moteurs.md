@@ -15,27 +15,20 @@ Paramètres > Général > Moteurs) et s'enregistre dans `settings.toml`.
 Règle : une carte NVIDIA RTX prend TensorRT, toute autre carte prend Vulkan. Vulkan est aussi le repli de
 TensorRT quand son module ne s'ouvre pas.
 
-## Ce qui est débranché
+## Ce qui est retiré
 
-**MIGraphX** (ROCm sous Linux, Windows ML sous Windows) et **OpenVINO** restent dans les sources
-(`src/gpu/migraphx`, `src/gpu/winml`, `src/gpu/openvino`) et la CI les construit encore (`ci.yml`), mais le
-lecteur ne les propose plus, ne les installe plus et ne les ouvre plus. La raison : aucune mesure ne montre
-qu'ils battent Vulkan sur une carte AMD ou Intel, et Windows ML n'a jamais démarré une vidéo sur la seule
-machine AMD essayée (Ryzen AI 7 350).
+**MIGraphX** (ROCm sous Linux, Windows ML sous Windows) et **OpenVINO** sont retirés des sources (0.10.0) :
+aucune mesure ne montrait qu'ils battent Vulkan sur une carte AMD ou Intel, et Windows ML n'a jamais démarré
+une vidéo sur la seule machine AMD essayée (Ryzen AI 7 350).
 
-Concrètement :
-- `core::engine_plugged()` (`src/core/engines.h`) dit non pour MIGraphX, OpenVINO et DirectML ;
-- `recommend_engines()` ne les propose pas, `installed_backends()` et `backend_candidates()` ne les ouvrent
-  pas, même installés par une version précédente ;
+Ce qui en reste, pour les anciens fichiers :
+- les noms `migraphx`, `openvino` et `directml` se lisent encore (`EngineId`, `core::engine_plugged()` dit non) ;
 - au lancement, un `settings.toml` qui les avait choisis les perd (journal : « débranché de ce lecteur »),
-  Vulkan prend leur place ;
-- les workflows de release ne les construisent plus : aucune archive `ajp-engine-migraphx-*` ni
-  `ajp-engine-openvino-*` n'est jointe.
+  Vulkan prend leur place ; un paquet installé par une version précédente ne s'ouvre plus.
 
-Pour les rebrancher : rendre `engine_plugged()` vrai pour le moteur, remettre ses offres dans
-`recommend_engines()` (l'historique git de `src/core/engines.cpp` les garde) et ses options `AJP_WITH_*` dans
-`release-linux.yml` et `release-windows.yml`. Le faire seulement après une mesure qui le justifie, sur la
-carte visée, face à Vulkan (`ajp bench`).
+Pour en rebrancher un : l'historique git garde `src/gpu/migraphx`, `src/gpu/openvino` et `src/gpu/winml`
+(avant 0.10.0). Le faire seulement après une mesure qui le justifie, sur la carte visée, face à Vulkan
+(`ajp bench`).
 
 DirectML n'a jamais eu de backend.
 

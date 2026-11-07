@@ -9,7 +9,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Modules, threads, graphe des cibles, règles de dépendance |
 | [`adr/`](adr/README.md) | Décisions d'architecture, une page chacune |
-| [`moteurs.md`](moteurs.md) | Moteurs des réseaux : Vulkan, TensorRT, Core ML ; MIGraphX et OpenVINO débranchés ; livraison de TensorRT |
+| [`moteurs.md`](moteurs.md) | Moteurs des réseaux : Vulkan, TensorRT, Core ML ; MIGraphX et OpenVINO retirés ; livraison de TensorRT |
 | [`interpolation.md`](interpolation.md) | Moteurs du mouvement : RIFE, DistilDRBA ; GMFSS débranché de la lecture |
 | [`auto-libre.md`](auto-libre.md) | Mode Auto de l'interpolation : Rapide et Stable |
 | [`hdr-anime.md`](hdr-anime.md) | Le grade HDR anime guidé ; la sortie HDR ou SDR qui suit le système |

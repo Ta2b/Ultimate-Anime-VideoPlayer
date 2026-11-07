@@ -78,13 +78,8 @@ struct InstalledPackage {
 std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
                                                   const core::EnginePackage& package);
 
-// Les bibliothèques des backends installés, par préférence : TensorRT, MIGraphX, OpenVINO.
+// La bibliothèque du backend TensorRT, s'il est installé.
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog);
-
-// Ce qui manque au système pour que le moteur tourne, que le lecteur ne peut pas installer seul
-// (pilote ROCm, pilote compute Intel, Windows 11 24H2 pour MIGraphX de Windows ML), avec la commande
-// à lancer ; rien s'il ne manque rien.
-std::optional<std::string> missing_prerequisite(core::EngineId engine);
 
 struct InstallProgress {
   std::function<void(float fraction, const std::string& stage)> report;

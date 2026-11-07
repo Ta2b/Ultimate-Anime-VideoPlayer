@@ -125,7 +125,7 @@ constexpr std::array<FlagSpec, 10> kFlags{{
        f.profile_dispatches = true;
        return {};
      }},
-    {"engine", "NOM", "impose ce moteur : vulkan, tensorrt, migraphx, openvino, directml, metal",
+    {"engine", "NOM", "impose ce moteur : vulkan, tensorrt, metal",
      [](DebugFlags& f, std::string_view v) -> Result {
        const auto engine = parse_engine(v);
        if (!engine) {

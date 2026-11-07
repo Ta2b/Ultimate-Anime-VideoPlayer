@@ -327,7 +327,7 @@ bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& p
   });
 }
 
-// Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT, MIGraphX et OpenVINO.
+// Ce qui est sur ce poste pour l'écran de bienvenue : les backends TensorRT et Core ML.
 EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& paths,
                          const EngineCatalog& catalog, std::string_view gpu_name) {
   EnginesHere here;
@@ -344,16 +344,13 @@ EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& path
             install_space(catalog, package, arch, directory_bytes(core::engine_dir(catalog.layout, package)))
                 .peak,
         .available = free_bytes(catalog.layout.engines),
-        .license = package.license,
-        .missing = missing_prerequisite(package.engine).value_or("")});
+        .license = package.license});
   }
   std::error_code error;
   for (const std::filesystem::path& backend : paths.backends) {
     if (!std::filesystem::exists(backend, error)) continue;
     const std::string file = backend.filename().string();
     here.tensorrt |= file.contains("tensorrt");
-    here.migraphx |= file.contains("migraphx");
-    here.openvino |= file.contains("openvino");
     here.coreml |= file.contains("coreml");
   }
   return here;
