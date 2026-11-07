@@ -20,6 +20,7 @@
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
+#include "core/thread.h"
 
 namespace ajp::app::play {
 
@@ -43,8 +44,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
   }
   const bool busy = last.pending != nullptr;
   const auto start = [&](std::expected<std::string, Refusal> (*action)(const PlayerPlace&)) {
-    last.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
-        std::async(std::launch::async, action, place));
+    last.pending = start_task<std::string>("registration", [action, place] { return action(place); });
     last.text.clear();
     last.refused = false;
   };
@@ -154,8 +154,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   const bool busy = result.pending != nullptr;
   ImGui::BeginDisabled(busy);
   if (ImGui::Button(i18n::tr("Check now"))) {
-    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
-        std::launch::async,
+    result.pending = start_task<std::string>(
+        "settings",
         [paths, state_file, mode = d.update_mode,
          channel = d.update_channel] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
@@ -163,7 +163,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
           if (const auto kept = save_update_state(state_file, current); !kept && message)
             return std::unexpected(kept.error());
           return message;
-        }));
+        });
     result.text.clear();
     result.refused = false;
   }
@@ -172,9 +172,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (!state.latest_version.empty() && managed.empty()) {
     ImGui::SameLine();
     if (ImGui::Button(i18n::tr("Install now"))) {
-      result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
-          std::launch::async,
-          [paths, state_file, channel = d.update_channel] -> std::expected<std::string, Refusal> {
+      result.pending = start_task<std::string>(
+          "settings", [paths, state_file, channel = d.update_channel] -> std::expected<std::string, Refusal> {
             UpdateState current = load_update_state(state_file);
             if (current.staged_version.empty()) {
               auto checked = run_update_check(paths, "auto", channel, current, {});
@@ -190,7 +189,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
               return std::unexpected(kept.error());
             if (!applied) return applied;
             return *applied + i18n::tr(": restart the player");
-          }));
+          });
       result.text.clear();
       result.refused = false;
     }
@@ -198,15 +197,15 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   ImGui::SameLine();
   ImGui::BeginDisabled(state.previous_version.empty());
   if (ImGui::Button(i18n::tr("Roll back to the previous version"))) {
-    result.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(
-        std::async(std::launch::async, [paths, state_file] -> std::expected<std::string, Refusal> {
+    result.pending =
+        start_task<std::string>("settings", [paths, state_file] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
           auto message = roll_back_update(paths, current);
           if (!message) return message;
           if (const auto kept = save_update_state(state_file, current); !kept)
             return std::unexpected(kept.error());
           return *message + i18n::tr(": restart the player");
-        }));
+        });
     result.text.clear();
     result.refused = false;
   }
@@ -242,14 +241,14 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
   auto stop = std::make_shared<std::stop_source>();
   state.progress = progress;
   state.stop = stop;
-  state.pending = std::make_shared<std::future<std::expected<std::string, Refusal>>>(std::async(
-      std::launch::async, [run = prepare.run, progress, stop] -> std::expected<std::string, Refusal> {
+  state.pending = start_task<std::string>(
+      "settings", [run = prepare.run, progress, stop] -> std::expected<std::string, Refusal> {
         try {
           return run(*progress, stop->get_token());
         } catch (const std::exception& error) {  // un thread qui lève ne doit pas emporter le lecteur
           return std::unexpected(Refusal{RefusalCode::ThreadFailed, error.what()});
         }
-      }));
+      });
   state.text.clear();
   state.refused = false;
   state.completed = false;
@@ -401,8 +400,8 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
     state.progress = std::make_shared<BenchProgress>();
     state.span_progress = std::make_shared<SpanDeriveProgress>();
     state.stop = std::make_shared<std::stop_source>();
-    state.pending = std::make_shared<std::future<std::expected<BenchDone, Refusal>>>(std::async(
-        std::launch::async,
+    state.pending = start_task<BenchDone>(
+        "settings",
         [place, video, context, progress = state.progress, span_progress = state.span_progress,
          stop = state.stop]() -> std::expected<BenchDone, Refusal> {
           try {
@@ -425,7 +424,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
           } catch (const std::exception& error) {  // un thread qui lève ne doit pas emporter le lecteur
             return std::unexpected(Refusal{RefusalCode::ThreadFailed, error.what()});
           }
-        }));
+        });
     bench.text.clear();
     bench.refused = false;
     state.result.reset();

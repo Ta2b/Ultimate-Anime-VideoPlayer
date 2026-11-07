@@ -21,6 +21,7 @@
 #include "app/play/look_catalog.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/thread.h"
 #include "render/looks.h"
 
 namespace ajp::app::play {
@@ -144,13 +145,23 @@ std::vector<std::string> apply_looks(PlaceboScreen& screen, const PlaySettings& 
 
 void start_looks(Chain& to, const PlaySettings& s) {
   auto job = std::make_shared<LookLoad::Job>();
-  std::jthread thread([job, s, dir = to.luts_dir] {
-    LoadedLooks looks = load_looks(s, dir);
-    const std::scoped_lock lock(job->mutex);
-    job->result.emplace(std::move(looks));
+  // Un refus (thread refusé, exception du corps) finit la lecture sans résultat : rien ne l'attend plus.
+  ThreadReport report([job](const Refusal& refused) {
+    log_channel("app")->warn("looks : {}", refused.detail);
     job->done = true;
   });
-  to.look_loads.push_back(LookLoad{.job = std::move(job), .thread = std::move(thread)});
+  auto thread =
+      start_thread("looks", report, [job, s, dir = to.luts_dir](const std::stop_token&, const ThreadReport&) {
+        LoadedLooks looks = load_looks(s, dir);
+        const std::scoped_lock lock(job->mutex);
+        job->result.emplace(std::move(looks));
+        job->done = true;
+      });
+  if (!thread) {
+    log_channel("app")->warn("looks : {}", thread.error().detail);
+    return;
+  }
+  to.look_loads.push_back(LookLoad{.job = std::move(job), .thread = std::move(*thread)});
 }
 
 void tend_looks(Chain& to, std::int64_t now_us) {

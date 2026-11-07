@@ -59,6 +59,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/settings.h"
+#include "core/thread.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
 #include "prepare/sha256.h"
@@ -143,26 +144,34 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   }
   if (!options.bench_out && !options.data_dir) {
     if (saved->update_mode != "never") {
-      update_check = std::jthread([=, &playing, mode = saved->update_mode, channel = saved->update_channel,
-                                   frequency = saved->update_frequency](const std::stop_token& stop) {
-        std::mutex mutex;
-        std::condition_variable_any wake;
-        for (bool first = true; !stop.stop_requested(); first = false) {
-          const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
-                                       std::chrono::system_clock::now().time_since_epoch())
-                                       .count();
-          UpdateState state = load_update_state(update_file);
-          if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
-            const auto message = run_update_check(update_paths, mode, channel, state, stop);
-            if (const auto kept = save_update_state(update_file, state); !kept)
-              log_channel("app")->warn("update.toml : {}", kept.error().detail);
-            log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
-          }
-          if (frequency == "launch") return;
-          std::unique_lock lock(mutex);
-          wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
-        }
-      });
+      auto started = start_thread(
+          "updates", ThreadReport([](const Refusal& refused) {
+            log_channel("app")->warn("mise à jour : {}", refused.detail);
+          }),
+          [=, &playing, mode = saved->update_mode, channel = saved->update_channel,
+           frequency = saved->update_frequency](const std::stop_token& stop, const ThreadReport&) {
+            std::mutex mutex;
+            std::condition_variable_any wake;
+            for (bool first = true; !stop.stop_requested(); first = false) {
+              const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                                           std::chrono::system_clock::now().time_since_epoch())
+                                           .count();
+              UpdateState state = load_update_state(update_file);
+              if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
+                const auto message = run_update_check(update_paths, mode, channel, state, stop);
+                if (const auto kept = save_update_state(update_file, state); !kept)
+                  log_channel("app")->warn("update.toml : {}", kept.error().detail);
+                log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
+              }
+              if (frequency == "launch") return;
+              std::unique_lock lock(mutex);
+              wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
+            }
+          });
+      if (started)
+        update_check = std::move(*started);
+      else
+        log->warn("mise à jour : {}", started.error().detail);
     }
   }
   // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.

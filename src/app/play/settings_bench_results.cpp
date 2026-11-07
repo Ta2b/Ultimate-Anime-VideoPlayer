@@ -14,6 +14,7 @@
 #include "app/play/panel_style.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
+#include "core/thread.h"
 #include "media/bench_clip.h"
 
 namespace ajp::app::play {
@@ -42,8 +43,8 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
                        .display_height = choices.display_height,
                        .display_hdr = choices.hdr_output};
   const int height = choices.display_height > 0 ? choices.display_height : 1080;
-  bench.pending = std::make_shared<std::future<std::expected<MachineCalibration, Refusal>>>(std::async(
-      std::launch::async,
+  bench.pending = start_task<MachineCalibration>(
+      "calibration",
       [plan, base, height, fraction = bench.fraction,
        stop = bench.stop]() -> std::expected<MachineCalibration, Refusal> {
         try {
@@ -52,7 +53,7 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
         } catch (const std::exception& thrown) {  // un thread qui lève ne doit pas emporter le lecteur
           return std::unexpected(Refusal{RefusalCode::ThreadFailed, thrown.what()});
         }
-      }));
+      });
 }
 
 // La couleur d'une ligne : vert, la machine tient avec de la marge (la recommandée l'est toujours) ; orange,
