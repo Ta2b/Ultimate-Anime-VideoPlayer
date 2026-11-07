@@ -181,7 +181,7 @@ std::optional<std::string> ChainStats::read_memory() const {
                          static_cast<double>(memory->total) / kMiB);
 }
 
-void ChainStats::start_sampler() const {
+void ChainStats::start_sampler() {
   std::call_once(sampler_started_, [this] {
     auto started =
         start_thread("stats", ThreadReport([](const Refusal& refusal) {
@@ -207,13 +207,13 @@ void ChainStats::start_sampler() const {
   });
 }
 
-std::optional<std::string> ChainStats::memory() const {
+std::optional<std::string> ChainStats::memory() {
   start_sampler();
   const std::scoped_lock lock(sampled_mutex_);
   return memory_text_;
 }
 
-std::optional<std::string> ChainStats::gpu() const {
+std::optional<std::string> ChainStats::gpu() {
   start_sampler();
   const std::scoped_lock lock(sampled_mutex_);
   return gpu_text_;

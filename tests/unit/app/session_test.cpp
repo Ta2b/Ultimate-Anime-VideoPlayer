@@ -423,7 +423,7 @@ TEST_CASE("Sous-titres : chaque vsync de l'image montrée a ses sous-titres, rin
 namespace {
 struct PeriodSource final : StatsSource {
   std::optional<std::string> rife() const override { return std::nullopt; }
-  std::optional<std::string> memory() const override { return std::nullopt; }
+  std::optional<std::string> memory() override { return std::nullopt; }
   std::int64_t source_period_us() const override { return 41'708; }
 };
 }  // namespace
@@ -552,7 +552,7 @@ TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][s
   ajp::app::play::FrenchUi french;
   struct Extra final : StatsSource {
     std::optional<std::string> rife() const override { return "RIFE : 3 paires"; }
-    std::optional<std::string> memory() const override { return std::nullopt; }
+    std::optional<std::string> memory() override { return std::nullopt; }
   } extra;
   Rig rig(SessionConfig{
       .header = {"SPAN ×2"}, .tracks = {"audio aac jpn"}, .output = "sortie HDR10", .extra = &extra});
@@ -716,7 +716,7 @@ TEST_CASE("Fluidité : les images neuves par seconde, relues chaque seconde", "[
 struct OutputRate final : StatsSource {
   double fps = 24000.0 / 1001.0 * 2.5;  // 23,976 im/s ×5/2 : 59,94 im/s
   std::optional<std::string> rife() const override { return std::nullopt; }
-  std::optional<std::string> memory() const override { return std::nullopt; }
+  std::optional<std::string> memory() override { return std::nullopt; }
   double output_fps() const override { return fps; }
 };
 

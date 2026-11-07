@@ -26,7 +26,7 @@ using test::ring_frame;
 struct OutputRate final : StatsSource {
   double fps = 164.9;
   std::optional<std::string> rife() const override { return std::nullopt; }
-  std::optional<std::string> memory() const override { return std::nullopt; }
+  std::optional<std::string> memory() override { return std::nullopt; }
   double output_fps() const override { return fps; }
 };
 

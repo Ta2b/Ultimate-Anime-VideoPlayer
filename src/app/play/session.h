@@ -49,9 +49,10 @@ class StatsSource {
  public:
   virtual ~StatsSource() = default;
   virtual std::optional<std::string> rife() const = 0;
-  virtual std::optional<std::string> memory() const = 0;
+  // Non const (P5.28) : la première lecture peut lancer le fil qui relève la mesure.
+  virtual std::optional<std::string> memory() = 0;
   // Horloges, puissance et chaleur de la carte (NVML) ; rien sans NVML ou sur une autre carte.
-  virtual std::optional<std::string> gpu() const { return std::nullopt; }
+  virtual std::optional<std::string> gpu() { return std::nullopt; }
   // Période nominale des images de sortie (la source, divisée par le facteur de RIFE) ; 0 :
   // inconnue. Sans elle, la session ne compte pas les images manquées.
   virtual std::int64_t output_period_us() const { return 0; }
@@ -107,7 +108,7 @@ struct SessionConfig {
   std::int64_t vrr_floor_us =
       0;                // VRR armé : plancher de l'écran (core/vrr_floor.h) ; 0 : pas de représentation
   StatsSettings stats;  // mesures affichées (Tab bascule toutes)
-  const StatsSource* extra = nullptr;  // vit plus longtemps que la session
+  StatsSource* extra = nullptr;  // vit plus longtemps que la session
   // Le retard des images, de leur soumission par gpu à leur écriture vue par main : la session le
   // mesure, gpu le lit. Vit plus longtemps que la session ; rien : pas de mesure.
   FrameLatency* latency = nullptr;

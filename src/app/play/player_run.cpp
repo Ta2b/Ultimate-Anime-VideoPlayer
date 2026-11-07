@@ -179,8 +179,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
   const std::uint64_t energy_start_mj =
       telemetry ? telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj : 0;
-  const ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
-                               fps_of(video.frame_rate), telemetry.get());
+  ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
+                         fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   p.screen.set_sample_aspect(session_config.video_sar);
