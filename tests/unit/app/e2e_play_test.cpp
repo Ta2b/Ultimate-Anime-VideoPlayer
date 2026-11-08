@@ -176,6 +176,28 @@ TEST_CASE("Bout en bout : une source 853×480 se lit", "[.e2e][app]") {
   CHECK(read_stats(stats).fresh >= 3);
 }
 
+// Une touche, une action (0.10.0 : la file des actions n'était plus vidée, chaque tour de boucle rejouait la
+// pause).
+TEST_CASE("Bout en bout : une pause demandée une fois s'applique une fois", "[.e2e][app]") {
+  const auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{.name = "e2e-pause.mkv",
+                                                                            .width = 320,
+                                                                            .height = 180,
+                                                                            .frames = 50,
+                                                                            .shot_frames = 50,
+                                                                            .shot_lumas = {200}});
+  REQUIRE(clip);
+  const fs::path dir = fresh_dir("ajp-e2e-pause");
+  const Run run = play(*clip, dir, {"--keys=0.5:Space,1.5:q"});
+  INFO(run.output);
+  CHECK(run.code >= 0);
+  std::size_t pauses = 0;
+  for (std::size_t at = run.output.find("action : pause"); at != std::string::npos;
+       at = run.output.find("action : pause", at + 1)) {
+    ++pauses;
+  }
+  CHECK(pauses == 1);
+}
+
 TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sautées comptées",
           "[.e2e][app]") {
   const fs::path player(AJP_PLAYER_EXE);

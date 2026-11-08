@@ -329,7 +329,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const core::KeyMap& keys = configured_keys();
   std::optional<Refusal> failure;
   if (p.began_us == 0) p.began_us = host_now_us();
-  std::vector<Input> actions;
+  std::vector<Input> actions;  // vidée à chaque tour en s'appliquant (la 0.10.0 la rejouait sans fin)
   session.begin(host_now_us());
   if (p.unsaved) {
     if (auto saved =
@@ -638,7 +638,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (chain.black_dirty && host_now_us() - chain.black_at_us >= kBlackRefreshUs) refresh_black(chain);
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
-    for (const Input& input : actions) apply(input, chain, host_now_us());
+    for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
     if (chain.dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) {
       writer.post("play.toml",
                   [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
