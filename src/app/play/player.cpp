@@ -33,6 +33,7 @@
 #include "app/play/engine_build.h"
 #include "app/play/engine_downloads.h"
 #include "app/play/engine_install.h"
+#include "app/play/engine_online.h"
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/export_run.h"
@@ -121,6 +122,21 @@ constexpr auto kProbeLimit = std::chrono::seconds(20);
 std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file, bool window_open) {
   return run_pumped_for<media::TrackInfo>("probe", kProbeLimit, window_open,
                                           [file] { return probe_once(file); });
+}
+
+// Les moteurs téléchargeables : ceux de l'engines.lock livré, et ceux joints à la release après elle
+// (TensorRT construit plus tard), relus en ligne sauf si les mises à jour sont refusées (la copie gardée sert
+// alors) ou pour un dossier de données à part (essais).
+EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& paths,
+                             const PlaySettings& saved) {
+  EngineCatalog catalog = load_catalog(
+      paths.engine_index, paths.engines.parent_path(),
+      saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
+  const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
+  add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
+                      installed_version(), online ? UpdateFetch(fetch_https) : UpdateFetch());
+  if (!catalog.problem.empty()) log_channel("app")->info("{}", catalog.problem);
+  return catalog;
 }
 
 }  // namespace
@@ -255,11 +271,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->info("moteurs : {} débranché de ce lecteur, Vulkan à sa place", engine_label(id));
     *engines = without_engine(std::move(*engines), id);
   }
-  // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
-  const EngineCatalog catalog = load_catalog(
-      paths.engine_index, paths.engines.parent_path(),
-      saved->engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved->engines_dir));
-  if (!catalog.problem.empty()) log->info("{}", catalog.problem);
+  const EngineCatalog catalog = engine_catalog(options, paths, *saved);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,
                                    .options = options,

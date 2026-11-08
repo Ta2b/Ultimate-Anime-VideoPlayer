@@ -30,6 +30,8 @@ l'étiquette, s'il existe, et en reprend les moteurs dans l'`engines.lock` qu'el
 accepte ainsi les licences du kit CUDA et de TensorRT) construit le module sur le runner et joint l'archive et
 `engines-nvidia.lock` à la release, après le même contrôle que `attach-nvidia-windows.ps1`. Le paquet du lecteur de ce
 lancement n'est pas joint. Pousser ensuite l'étiquette : la construction Windows de l'étiquette reprend l'index.
+Lancé après la release, rien d'autre à faire : les lecteurs de cette version (0.10.3 et suivantes) relisent
+`engines-nvidia.lock` de leur release au lancement et proposent TensorRT dans l'écran des moteurs.
 
 ## À essayer sur le poste Windows (non fait : aucune machine Windows côté développement)
 

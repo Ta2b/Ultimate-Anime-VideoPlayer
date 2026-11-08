@@ -64,6 +64,19 @@ if [ -z "$publish" ]; then
   exit 0
 fi
 gh release view "$tag" -R "$repo" >/dev/null 2>&1 || gh release create "$tag" -R "$repo" --prerelease --title "$tag" --notes "$tag"
+# Les moteurs d'un autre système déjà joints à cette release (TensorRT Windows) restent dans l'index : le lecteur
+# relit engines-nvidia.lock de sa release au lancement (src/app/play/engine_online.h).
+previous="$(mktemp)"
+if gh release download "$tag" -R "$repo" -p engines-nvidia.lock -O "$previous" --clobber 2>/dev/null; then
+  awk '
+    function flush() { if (block != "" && platform != "linux") printf "\n%s", block; block = ""; platform = "" }
+    /^\[\[(engine|vendor_file)\]\]$/ { flush(); block = $0 "\n"; inside = 1; next }
+    /^\[/ { flush(); inside = 0; next }
+    inside && /^platform = / { platform = $3; gsub(/"/, "", platform) }
+    inside && NF { block = block $0 "\n" }
+    END { flush() }' "$previous" >> "$out"
+fi
+rm -f "$previous"
 gh release upload "$tag" -R "$repo" --clobber "$archive" "$out"
 case "$tag" in
   trt-*) echo "Joint à $repo $tag : release fixe, lue par Release Linux pour toutes les étiquettes (pas d'étiquette à pousser)." ;;

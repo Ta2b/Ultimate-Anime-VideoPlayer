@@ -57,5 +57,15 @@ if (-not $Publish) { Write-Host "Contrôle seulement. Pour joindre : relancer av
 gh release view $Tag -R $repo *> $null
 # Une préversion pour l'instant : la CI de l'étiquette en fait une vraie release (sans « - ») et y met les notes.
 if ($LASTEXITCODE -ne 0) { gh release create $Tag -R $repo --prerelease --title $Tag --notes $Tag }
+# Les moteurs d'un autre système déjà joints à cette release (poste Linux) restent dans l'index : le lecteur relit
+# engines-nvidia.lock de sa release au lancement (src/app/play/engine_online.h), un paquet joint après coup compris.
+$previous = Join-Path ([System.IO.Path]::GetTempPath()) "ajp-engines-nvidia-$([guid]::NewGuid()).lock"
+gh release download $Tag -R $repo -p engines-nvidia.lock -O $previous 2>$null
+if ($LASTEXITCODE -eq 0 -and (Test-Path $previous)) {
+  $others = ((Get-Content $previous -Raw) -replace "`r`n", "`n") -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' |
+    Where-Object { $_ -match '^\[\[(engine|vendor_file)\]\]' -and $_ -notmatch '(?m)^platform = "windows"$' }
+  foreach ($block in $others) { Add-Content -Path $out -Value @("", $block.TrimEnd()) -Encoding utf8NoBOM }
+  Remove-Item $previous
+}
 gh release upload $Tag -R $repo --clobber $archive $out
 Write-Host "Joint à $repo $Tag. Pousser maintenant l'étiquette : git tag $Tag; git push origin $Tag"
