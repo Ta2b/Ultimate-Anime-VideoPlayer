@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "ajp",
-  "version-semver": "0.10.2",
+  "version-semver": "0.10.3",
   "builtin-baseline": "65886d79ccce671dc24ffbf9a348836beacb7f6f",
   "dependencies": [
     "tomlplusplus",
