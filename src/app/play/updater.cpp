@@ -255,6 +255,11 @@ std::vector<std::string> update_public_keys(const std::vector<std::string>& revo
     if (!key.empty() && std::ranges::find(revoked, key) == revoked.end()) keys.emplace_back(key);
   return keys;
 }
+std::expected<void, Refusal> fetch_https(std::string_view url, const fs::path& file, int max_seconds,
+                                         const std::stop_token& stop) {
+  return fetch(url, file, max_seconds, stop);
+}
+
 std::string_view installed_version() {
   return AJP_VERSION;
 }

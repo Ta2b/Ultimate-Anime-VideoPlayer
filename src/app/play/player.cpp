@@ -33,6 +33,7 @@
 #include "app/play/engine_build.h"
 #include "app/play/engine_downloads.h"
 #include "app/play/engine_install.h"
+#include "app/play/engine_online.h"
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/export_run.h"
@@ -256,9 +257,14 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     *engines = without_engine(std::move(*engines), id);
   }
   // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
-  const EngineCatalog catalog = load_catalog(
+  EngineCatalog catalog = load_catalog(
       paths.engine_index, paths.engines.parent_path(),
       saved->engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved->engines_dir));
+  // Et ceux joints à la release après elle (TensorRT construit plus tard) : relus en ligne, sauf si les
+  // mises à jour sont refusées (la copie gardée sert alors) ou pour un dossier de données à part (essais).
+  const bool online = saved->update_mode != UpdateMode::Never && !options.data_dir;
+  add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
+                      installed_version(), online ? UpdateFetch(fetch_https) : UpdateFetch());
   if (!catalog.problem.empty()) log->info("{}", catalog.problem);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,

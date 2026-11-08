@@ -36,8 +36,12 @@ DirectML n'a jamais eu de backend.
 
 - Windows : `release-windows.yml` avec `tensorrt=true` construit `ajp_backend_tensorrt.dll` et `trtexec.exe`,
   les joint à la release (`ajp-engine-tensorrt-windows-x64.tar.gz`) avec leur index `engines-nvidia.lock`. La
-  construction `tensorrt=false` de la même étiquette reprend cet index dans l'`engines.lock` de l'installeur :
-  **elle doit tourner après**, sinon l'installeur ne connaît pas TensorRT.
+  construction `tensorrt=false` de la même étiquette reprend cet index dans l'`engines.lock` de l'installeur.
+  Un paquet joint **après** la release sert aussi : le lecteur relit `engines-nvidia.lock` de la release de sa
+  version au lancement (au plus une fois par jour, `src/app/play/engine_online.h`) et propose le moteur dans
+  l'écran des moteurs, sans refaire la release. Il ne croit que les archives de cette release et les fichiers
+  de `pypi.nvidia.com`, vérifiés ensuite par taille et SHA-256 ; rien n'est relu si les mises à jour sont
+  refusées (Général > Mises à jour > Jamais).
 - Linux : le paquet se construit sur un poste Linux NVIDIA (`tools/release/trt-package.sh`) et vit dans une
   release fixe `trt-<empreinte>` (`tools/release/trt-fingerprint.sh`). Toute modification de `src/core`,
   `src/gpu`, `src/kernels` ou `src/prepare` change l'empreinte et demande un nouveau paquet.

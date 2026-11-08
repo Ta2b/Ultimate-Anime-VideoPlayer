@@ -100,6 +100,9 @@ std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, c
 // donne le sien.
 using UpdateFetch = std::function<std::expected<void, Refusal>(
     std::string_view url, const std::filesystem::path& file, int max_seconds, const std::stop_token& stop)>;
+// Le téléchargement du lecteur : curl du système, https seulement (un 404 est refusé TrackUnavailable).
+std::expected<void, Refusal> fetch_https(std::string_view url, const std::filesystem::path& file,
+                                         int max_seconds, const std::stop_token& stop);
 // Les clés publiques que le lecteur croit : l'active, puis celle de secours si elle est compilée, moins les
 // révoquées.
 std::vector<std::string> update_public_keys(const std::vector<std::string>& revoked);
