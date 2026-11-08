@@ -85,11 +85,11 @@ TEST_CASE("netteté : rien à 0, un bord plus franc sans halo, les aplats intact
   const std::vector<double> plain = rendered(gpu, source, nullptr);
   const std::vector<double> sharp = rendered(gpu, source, sharpen->hook());
   const auto edge = static_cast<std::size_t>(kSide / 2);
-  // Le bord se creuse côté sombre et monte côté clair, au plus de 10 % de l'écart (pas de liseré).
+  // Le bord se creuse côté sombre et monte côté clair, au plus du quart de l'écart (sharpen.hook : pad).
   CHECK(sharp[edge - 1] < plain[edge - 1] - 0.005);
   CHECK(sharp[edge] > plain[edge] + 0.005);
-  CHECK(sharp[edge - 1] >= 0.3 - 0.1 * 0.3 - 0.002);
-  CHECK(sharp[edge] <= 0.6 + 0.1 * 0.3 + 0.002);
+  CHECK(sharp[edge - 1] >= 0.3 - 0.25 * 0.3 - 0.002);
+  CHECK(sharp[edge] <= 0.6 + 0.25 * 0.3 + 0.002);
   // Loin du bord, l'aplat ne bouge pas, à la précision près de la texture intermédiaire du hook
   // (demi-flottant : un pas de 0,0005 vers 0,6).
   CHECK(sharp[10] == Catch::Approx(plain[10]).margin(1e-3));

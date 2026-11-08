@@ -357,6 +357,23 @@ TEST_CASE("La part directe d'un changement laisse ce qui demande une réouvertur
   CHECK(live_part(off, on, false).rife_factor == 0);  // RIFE à charger : attend « Appliquer »
 }
 
+TEST_CASE("Panneau : Auto choisi sans RIFE chargé reste choisi", "[app][settings]") {
+  PlaySettings off;
+  off.rife_factor = 0;
+  off.rife_auto = false;
+  PlaySettings draft = off;  // « Auto » choisi dans le menu
+  draft.rife_auto = true;
+  draft.rife_factor = 8;
+  const PlaySettings running = live_part(off, draft, false);  // rife_auto en direct, ×8 attend
+  CHECK(running.rife_factor == 0);
+  const PlaySettings followed = follow_running(draft, off, running, false);
+  CHECK(followed.rife_auto);
+  CHECK(followed.rife_factor == 8);
+  PlaySettings tab = running;  // Tab ailleurs : ×2 en direct, le brouillon le suit
+  tab.rife_factor = 2;
+  CHECK(follow_running(followed, running, tab, true).rife_factor == 2);
+}
+
 TEST_CASE("Écrire puis relire play.toml ; absent : les défauts", "[app][settings]") {
   const auto dir = std::filesystem::temp_directory_path() / "ajp-settings-test";
   std::filesystem::remove_all(dir);

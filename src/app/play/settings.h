@@ -353,5 +353,10 @@ struct Change {
 Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded);
 // La part de wanted qui s'applique en direct : running, avec les réglages directs de wanted.
 PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded);
+// Le brouillon du panneau quand running a changé ailleurs (seen : running vu avant) : il prend les réglages
+// directs de running, sans perdre un choix qui attend « Appliquer » (×8 choisi sans RIFE chargé, un moteur du
+// mouvement changé sans interpolation) : un tel réglage ne suit running que si running l'a lui-même changé.
+PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen, const PlaySettings& running,
+                            bool rife_loaded);
 
 }  // namespace ajp::app::play

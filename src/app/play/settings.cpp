@@ -433,6 +433,23 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   return s;
 }
 
+PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen, const PlaySettings& running,
+                            bool rife_loaded) {
+  PlaySettings s = live_part(draft, running, rife_loaded);
+  // Les réglages que live_part ne prend que selon l'état de running (interpolation coupée, SPAN éteint).
+  const auto keep = [&](auto member) {
+    if (running.*member == seen.*member) s.*member = draft.*member;
+  };
+  keep(&PlaySettings::rife_factor);
+  keep(&PlaySettings::rife_factor_den);
+  keep(&PlaySettings::motion_engine);
+  keep(&PlaySettings::rife_model);
+  keep(&PlaySettings::span_order);
+  keep(&PlaySettings::motion_precision);
+  keep(&PlaySettings::span_precision);
+  return s;
+}
+
 Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded) {
   std::vector<std::string> reopen;
   if (running.upscale != wanted.upscale || running.model != wanted.model ||

@@ -84,9 +84,8 @@ bool default_handler_is_ajp(std::string_view query_output);
 // Ce lecteur est-il déjà celui des vidéos ? Linux : xdg-mime ; ailleurs on ne sait pas (faux).
 bool is_default_player(const PlayerPlace& place);
 
-// Windows : lancé depuis l'Explorateur (double clic, « Ouvrir avec »), le lecteur ferme la console
-// que Windows a ouverte pour lui seul ; lancé d'un terminal, il la garde et l'écrit en UTF-8. Rien
-// ailleurs.
+// Windows : ajp.exe n'a pas de console à lui (sous-système fenêtré) ; lancé d'un terminal, il écrit dans la
+// console de ce terminal, en UTF-8. Rien ailleurs.
 void leave_lone_console();
 
 }  // namespace ajp::app::play

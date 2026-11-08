@@ -11,7 +11,7 @@
 //!MAXIMUM 1.0
 0.0
 
-//!HOOK MAIN
+//!HOOK SCALED
 //!BIND HOOKED
 //!DESC AJP netteté (masque flou adaptatif)
 
@@ -29,8 +29,8 @@ vec4 hook() {
   // P3.67 : sur un faible contraste local (le grain d'un aplat sombre, ou un aplat clair), le détail n'est
   // que du bruit : la netteté s'éteint sous 1 % d'écart dans le voisinage, entière au-delà de 4 %.
   vec3 contrast = smoothstep(vec3(0.01), vec3(0.04), hi - lo);
-  vec3 sharp = c.rgb + 2.0 * sharpness * room * contrast * detail;
+  vec3 sharp = c.rgb + 4.0 * sharpness * room * contrast * detail;
   // Un dépassement borné à une fraction de l'écart local : pas de liseré clair ou sombre.
-  vec3 pad = 0.1 * (hi - lo);
+  vec3 pad = 0.25 * (hi - lo);
   return vec4(clamp(sharp, lo - pad, hi + pad), c.a);
 }

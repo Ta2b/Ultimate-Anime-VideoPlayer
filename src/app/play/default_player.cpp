@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <fstream>
@@ -24,6 +25,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <io.h>
 #include <windows.h>
 // Le shell après windows.h.
 #include <shlobj.h>
@@ -400,12 +402,23 @@ bool is_default_player(const PlayerPlace& place) {
 
 void leave_lone_console() {
 #ifdef _WIN32
-  std::array<DWORD, 2> processes{};
-  if (GetConsoleProcessList(processes.data(), static_cast<DWORD>(processes.size())) == 1) {
-    FreeConsole();
-  } else {
-    SetConsoleOutputCP(CP_UTF8);  // le journal est en UTF-8 : « échoué », pas « ├®chou├® »
+  // ajp.exe est une application fenêtrée : un double clic n'ouvre plus de console (elle apparaissait un
+  // instant puis se refermait, le lecteur semblait s'ouvrir deux fois). Lancé d'un terminal, le lecteur
+  // écrit dans la console de ce terminal ; une sortie redirigée (tube, fichier) reste la sienne.
+  const auto missing = [](DWORD which) {
+    const HANDLE handle = GetStdHandle(which);
+    return handle == nullptr || handle == INVALID_HANDLE_VALUE;
+  };
+  const bool out = missing(STD_OUTPUT_HANDLE);
+  const bool err = missing(STD_ERROR_HANDLE);
+  if ((out || err) && AttachConsole(ATTACH_PARENT_PROCESS) != 0) {
+    FILE* reopened = nullptr;
+    if (out && freopen_s(&reopened, "CONOUT$", "w", stdout) == 0)
+      SetStdHandle(STD_OUTPUT_HANDLE, reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stdout))));
+    if (err && freopen_s(&reopened, "CONOUT$", "w", stderr) == 0)
+      SetStdHandle(STD_ERROR_HANDLE, reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stderr))));
   }
+  if (GetConsoleWindow() != nullptr) SetConsoleOutputCP(CP_UTF8);  // le journal est en UTF-8
 #endif
 }
 
