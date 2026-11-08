@@ -345,7 +345,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   if (!open_) return result;
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
   if (running != seen_) {
-    draft_ = live_part(draft_, running, choices.rife_loaded);
+    draft_ = follow_running(draft_, seen_, running, choices.rife_loaded);
     seen_ = running;
   }
   const ImGuiIO& io = ImGui::GetIO();

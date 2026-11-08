@@ -74,6 +74,15 @@ target_compile_definitions(ajp_app PRIVATE AJP_VERSION="${PROJECT_VERSION}" AJP_
 # ajp : l'exécutable. Les backends TensorRT, Core ML et Vulkan se cherchent à côté de lui, puis dans
 # l'arbre de construction quand ils y sont construits (TensorRT : AJP_WITH_CUDA).
 add_executable(ajp main.cpp)
+# Windows : une application fenêtrée, sans la console qu'un double clic ouvrait un instant (le lecteur
+# semblait s'ouvrir deux fois). main() reste le point d'entrée ; d'un terminal, leave_lone_console() reprend
+# sa console.
+if(WIN32)
+  set_target_properties(ajp PROPERTIES WIN32_EXECUTABLE TRUE)
+  if(MSVC)
+    target_link_options(ajp PRIVATE /ENTRY:mainCRTStartup)
+  endif()
+endif()
 target_link_libraries(ajp PRIVATE ajp::app ajp::dep::ffmpeg ajp::dep::sdl3 ajp::dep::spdlog)
 if(TARGET ajp_backend_tensorrt)
   target_compile_definitions(ajp PRIVATE AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>")
