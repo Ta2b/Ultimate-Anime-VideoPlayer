@@ -4,6 +4,7 @@
 .cache/
 compile_commands.json
 *.onnx
+!tools/upscale/models/*.onnx
 *.engine
 *.plan
 *.spv.inc

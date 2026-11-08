@@ -30,6 +30,9 @@ BREW_LOCK=(
 )
 brew_libs=()
 for entry in "${BREW_LOCK[@]}"; do brew_libs+=("${entry%% *}"); done
+# L'index de l'image du runner peut retarder sur le relevé (0.10.1 : harfbuzz 15.0.0 contre 15.1.0) :
+# le mettre à jour d'abord.
+brew update --quiet
 brew install --quiet "${BREW_TOOLS[@]}" "${brew_libs[@]}"
 # Une formule déjà dans l'image du runner n'est pas mise à jour par brew install (0.10.0 : harfbuzz 15.0.0 de
 # l'image contre 15.1.0 relevé) : la même que celle du dépôt Homebrew, celle du relevé.
