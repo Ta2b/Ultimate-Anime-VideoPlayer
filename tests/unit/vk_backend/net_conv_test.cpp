@@ -221,6 +221,22 @@ TEST_CASE("Réseau : ConvTranspose", "[vk_backend][net][conv]") {
   }
 }
 
+// ArtCNN (0.10.2) : une Conv en auto_pad SAME_UPPER suivie d'un DepthToSpace fondu tirait ses marges de la
+// sortie réarrangée, deux fois plus grande, et sortait une image fausse sauf un quart.
+TEST_CASE("Réseau : Conv en auto_pad SAME suivie d'un DepthToSpace fondu", "[vk_backend][net][conv]") {
+  NetRig rig = make_net_rig();
+  ModelBuilder m;
+  m.input("x", {1, 8, 10, 14}, ir::onnx::kFloat);
+  add_weight(m, "w", {4, 8, 3, 3}, false, 31);
+  add_weight(m, "b", {4}, false, 32);
+  m.node("Conv", {"x", "w", "b"}, {"c"}, {attr_string("auto_pad", "SAME_UPPER")});
+  m.node("DepthToSpace", {"c"}, {"y"}, {attr_int("blocksize", 2), attr_string("mode", "DCR")})
+      .output("y", ir::onnx::kFloat);
+  const ir::Graph graph = build(m);
+  const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 8, 10, 14}, 33)}};
+  check_all_variants(rig, graph, inputs, kFp32);
+}
+
 TEST_CASE("Réseau : graphe façon SPAN de bout en bout", "[vk_backend][net][graph]") {
   NetRig rig = make_net_rig();
   {

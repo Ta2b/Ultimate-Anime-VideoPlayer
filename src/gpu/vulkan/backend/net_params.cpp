@@ -118,7 +118,9 @@ std::expected<Window, Refusal> conv_window(const ir::Graph& graph, const ir::Nod
   const ir::ConvAttrs& a = **attrs;
   const ir::Dims& x = input_tensor(graph, node, ir::kConvX).dims;
   const ir::Dims& w = input_tensor(graph, node, ir::kConvW).dims;
-  const ir::Dims& y = graph.tensors[node.outputs[0]].dims;
+  // La forme que calcule la Conv : avec un DepthToSpace fondu, la sortie du nœud est b fois plus grande, et
+  // auto_pad SAME en tirait des marges fausses (ArtCNN de la 0.10.2 : image fausse sauf un quart).
+  const ir::Dims y = ir::conv_result_dims(graph.tensors[node.outputs[0]].dims, a.epilogue);
   if (x.size() != 4 || w.size() != 4 || y.size() != 4) return node_refusal(node, "rang 4 attendu");
   Window win{.kh = u32(w[2]),
              .kw = u32(w[3]),
