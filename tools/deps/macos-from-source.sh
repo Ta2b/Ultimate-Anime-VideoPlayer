@@ -41,7 +41,8 @@ BREW="$(brew --prefix)"
 drift=0
 for entry in "${BREW_LOCK[@]}"; do
   read -r formula want <<<"$entry"
-  got="$(brew list --versions "$formula" | awk '{print $NF}')"
+  # brew upgrade garde l'ancienne version à côté (« harfbuzz 15.0.0_1 15.1.0 ») : la plus récente compte.
+  got="$(brew list --versions "$formula" | tr ' ' '\n' | tail -n +2 | sort -V | tail -1)"
   got="${got%_*}"  # « 2.15.0_1 » : la révision de la formule, même source
   if [[ "$got" != "$want" ]]; then
     echo "Homebrew : $formula $got, relevé $want (BREW_LOCK de $0)" >&2
