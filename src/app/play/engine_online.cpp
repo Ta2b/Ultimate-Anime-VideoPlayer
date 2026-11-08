@@ -88,7 +88,8 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
   if (!fresh(cache) && fetch) {
     std::error_code error;
     std::filesystem::create_directories(cache.parent_path(), error);
-    const std::filesystem::path part = cache.string() + ".part";
+    std::filesystem::path part = cache;
+    part += ".part";
     std::filesystem::remove(part, error);
     if (auto got = fetch(prefix + "engines-nvidia.lock", part, kFetchSeconds, std::stop_token{}); got) {
       std::filesystem::rename(part, cache, error);
