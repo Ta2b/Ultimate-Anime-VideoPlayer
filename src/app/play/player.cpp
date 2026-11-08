@@ -124,6 +124,21 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
                                           [file] { return probe_once(file); });
 }
 
+// Les moteurs téléchargeables : ceux de l'engines.lock livré, et ceux joints à la release après elle
+// (TensorRT construit plus tard), relus en ligne sauf si les mises à jour sont refusées (la copie gardée sert
+// alors) ou pour un dossier de données à part (essais).
+EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& paths,
+                             const PlaySettings& saved) {
+  EngineCatalog catalog = load_catalog(
+      paths.engine_index, paths.engines.parent_path(),
+      saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
+  const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
+  add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
+                      installed_version(), online ? UpdateFetch(fetch_https) : UpdateFetch());
+  if (!catalog.problem.empty()) log_channel("app")->info("{}", catalog.problem);
+  return catalog;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -256,16 +271,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     log->info("moteurs : {} débranché de ce lecteur, Vulkan à sa place", engine_label(id));
     *engines = without_engine(std::move(*engines), id);
   }
-  // Les moteurs téléchargeables de cette version (engines.lock livré avec le lecteur).
-  EngineCatalog catalog = load_catalog(
-      paths.engine_index, paths.engines.parent_path(),
-      saved->engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved->engines_dir));
-  // Et ceux joints à la release après elle (TensorRT construit plus tard) : relus en ligne, sauf si les
-  // mises à jour sont refusées (la copie gardée sert alors) ou pour un dossier de données à part (essais).
-  const bool online = saved->update_mode != UpdateMode::Never && !options.data_dir;
-  add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
-                      installed_version(), online ? UpdateFetch(fetch_https) : UpdateFetch());
-  if (!catalog.problem.empty()) log->info("{}", catalog.problem);
+  const EngineCatalog catalog = engine_catalog(options, paths, *saved);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,
                                    .options = options,
