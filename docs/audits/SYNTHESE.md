@@ -50,7 +50,7 @@
 | 38. Promesses tenues | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/38-promesses-tenues.md) |
 | 39. Diagnostic et support | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/39-diagnostic-support.md) |
 | 40. Tests et couverture | À faire | |
-| 41. HDR, grade et looks | À faire | |
+| 41. HDR, grade et looks | Fusionné (11 défauts, 2 majeurs) | [rapport](rapports/41-hdr-grade.md) |
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
 | 43. Textes et traductions | À faire | |
 | 44. Représentation intermédiaire et import ONNX | À faire | |
@@ -583,6 +583,17 @@
 | A42-14 | Mineur | `src/app/play/chain_shots.cpp:23-35` | Empreinte sur le premier mégaoctet seul | 42 | |
 | A42-15 | Mineur | `src/app/play/chain_shots.cpp:44` | `path::string()` (dette) | 42 | |
 | A42-16 | Mineur | `tests/unit/media/shot_test.cpp` | Aucun test de l'animation tenue ni de l'éclair de deux images | 42 | |
+| A41-01 | Majeur | `src/render/cube_lut.cpp:287-314` | Pile de LUT composée en 65³ : 18,0 codes PQ d'écart au pire à l'écran, 129³ ne suffit pas, seule la chaîne dans le shader est exacte | 41 | A49-05 (même cause) |
+| A41-02 | Majeur | `src/render/shaders/anime-hdr-anime/3-anime.hook:119` | La pile et la passe kwin défont le grade : blanc à 695 nits sur 1 000, montée des émetteurs divisée par deux, limiteur OLED presque sans effet, MaxFALL faux (question à Tatoub) | 41 | |
+| A41-03 | Mineur | `data/luts/HDR grading base ver.9.0 33 point.cube` | Ombres écrasées : 0,30 nit (RVB 16) rendu à 0,02 (question à Tatoub) | 41 | |
+| A41-04 | Mineur | `src/app/play/placebo_grade.cpp:206-225` | Sans pile, la passe kwin reste active : blanc à 119 nits ; échec du hook non journalisé | 41 | |
+| A41-05 | Mineur | `src/render/grade.cpp:361-365` | `set_looks` lit un hook complet pour rien sur le thread de la boucle (images perdues) | 41 | |
+| A41-06 | Mineur | `src/render/shaders/sharpen.hook:14` | Netteté sur `SCALED`, domaine gamma ou linéaire selon la mise à l'échelle | 41 | |
+| A41-07 | Mineur | `src/render/grade_params.cpp:158-166` | Vrai noir annoncé mais jamais appliqué en sortie SDR | 41 | |
+| A41-08 | Mineur | `src/render/grade_params.cpp:115-116` | Source HDR non gradée : pic de l'écran non annoncé, hautes lumières écrêtées | 41 | |
+| A41-09 | Mineur | `src/render/grade.cpp:275-298` | Thread des LUT sans `try` | 41 | A30-04 (même cause) |
+| A41-10 | Mineur | `src/render/grade_params.cpp:56-70` | Chemins morts du grade SDR, quinze emplacements de LUT, pile composée deux fois (dette) | 41 | |
+| A41-11 | Mineur | `tests/unit/render/cube_lut_test.cpp:146` | Aucun test sur les LUT livrées ni sur la chaîne grade, pile, kwin | 41 | |
 
 ## Renvois
 
@@ -636,7 +647,7 @@
 | 09 | 23 | `src/app/play/home_screen.cpp:140` | `fp8_engine` vrai pour une RTX 20 ou 30 : Performance proposé sans FP8 | Traité par 23 |
 | 09 | 22 | `src/app/play/settings.h:114-117` | Critère d'Auto sur la hauteur de sortie (A09-08) | Traité par 22 |
 | 09 | 08 | `src/app/play/chain_setup.cpp:420-423` | Performance remplace le RIFE fusionné par un moteur entier (A09-02) | En attente (08 fini) |
-| 09 | 41 | `src/app/play/upscale_stage.cpp:244-271` | Statistiques du grade prises sur l'image débandée, ou pas du tout sous DistilDRBA | Ouvert |
+| 09 | 41 | `src/app/play/upscale_stage.cpp:244-271` | Statistiques du grade prises sur l'image débandée, ou pas du tout sous DistilDRBA | Réfuté par 41 (3/1000 du code, moyenne nulle) |
 | 09 | 31 | `src/app/play/ring_stage.cpp:108-112` | Seul `SourceResized` rouvre la chaîne sur une image de taille nouvelle | Traité par 31 |
 | 10 | 12 | `src/app/play/session.cpp:598-616` | Au niveau `Wait`, `vblank_grid()` toujours vide : effet sur `--vsync-index` et la PLL | Traité par 12 (A12-01, A12-03) |
 | 10 | 08 | `src/app/play/player_run.cpp:654` | Une erreur de `show` termine `run_chain` : message et réouverture en boucle ? | En attente (08 fini) |
@@ -762,7 +773,7 @@
 | 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | En attente (23 fini) |
 | 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Traité par 32 |
 | 49 | 34 | `src/app/play/span_auto.cpp:22-25` | Windows et Linux ne jouent pas le même SPAN en Auto calibré | Traité par 34 (A34-01) |
-| 49 | 41 | `src/render/cube_lut.cpp:289-314` | Écart de la LUT composée ; statistiques du grade sur l'image débandée | Ouvert |
+| 49 | 41 | `src/render/cube_lut.cpp:289-314` | Écart de la LUT composée ; statistiques du grade sur l'image débandée | Traité par 41 (A41-01 ; débandage réfuté) |
 | 29 | 13 | `src/app/play/player.cpp:454` | A13-09 réfuté : `Player` recréé à chaque fichier | Traité par 29 |
 | 29 | 31 | `src/app/play/chain_setup.cpp:497` | Refus de RIFE sans repli (A29-01) à compter dans la grille | Traité par 31 |
 | 29 | 31 | `src/app/play/player_engines.cpp:270-272` | `Cancelled` de DistilDRBA fusionné lance la construction de l'entier | Traité par 31 |
@@ -779,7 +790,7 @@
 | 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | En attente (32 fini) |
 | 30 | 42 | `src/media/shot_probe.cpp:108-110` | `~ShotProbe` joint sur le thread de la fenêtre | Traité par 42 (A42-12) |
 | 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | En attente (26 fini) |
-| 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Ouvert |
+| 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Traité par 41 (A41-09) |
 | 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | En attente (09 fini) |
 | 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Ouvert |
 | 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | En attente (28 fini) |
@@ -829,6 +840,12 @@
 | 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | En attente (07 fini) |
 | 42 | 09 | `src/app/play/rife_plan.cpp:10-14` | `kPlanCutFloor` comparé au score brut de RIFE | En attente (09 fini) |
 | 42 | 09 | `src/app/play/rife_plan.h:39-42` | `kPlanCutFloor` tenu sur une seule série | En attente (09 fini) |
-| 42 | 41 | `src/app/play/chain_hdr.cpp:252` | GPU-07 : métadonnées HDR10 fixes, grade seul plafonné | Ouvert |
-| 42 | 41 | `src/kernels/spec/frame_stats.h:5-6` | Statistiques de lumière du grade sur 9 216 points | Ouvert |
+| 42 | 41 | `src/app/play/chain_hdr.cpp:252` | GPU-07 : métadonnées HDR10 fixes, grade seul plafonné | Réfuté par 41 (pic plafonné lu, GPU-07 reste vrai) |
+| 42 | 41 | `src/kernels/spec/frame_stats.h:5-6` | Statistiques de lumière du grade sur 9 216 points | Réfuté par 41 pour le grade (reste à 42 pour les flashs) |
 | 42 | 07 | `src/app/play/auto_bench_run.cpp:37` | Pré-analyse active pendant les essais de calibration | En attente (07 fini) |
+| 41 | 10 | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | En attente (10 fini) |
+| 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | En attente (32 fini) |
+| 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | En attente (38 fini) |
+| 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
+| 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Ouvert |
+| 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Ouvert |
