@@ -12,7 +12,7 @@
 |---|---|---|
 | 01. TensorRT : exécution, voies, anneau et mémoire | Fusionné (8 défauts, 1 majeur, complément compris) | [rapport](rapports/01-tensorrt-execution.md), [complément](rapports/01-tensorrt-execution-complement.md) |
 | 02. SPAN FP8 : noyaux CUTLASS et dérivation | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/02-span-fp8.md), [complément](rapports/02-span-fp8-complement.md) |
-| 03. Interpolation fusionnée sous TensorRT (RIFE, DistilDRBA, warp) | Fusionné (19 défauts, 6 majeurs, complément DistilDRBA compris) | [rapport](rapports/03-interpolation-tensorrt.md), [complément](rapports/03-interpolation-tensorrt-complement.md) |
+| 03. Interpolation fusionnée sous TensorRT (RIFE, DistilDRBA, warp) | Fusionné (23 défauts, 7 majeurs, deux compléments compris) | [rapport](rapports/03-interpolation-tensorrt.md), [complément](rapports/03-interpolation-tensorrt-complement.md), [complément 2](rapports/03-interpolation-tensorrt-complement-2.md) |
 | 04. Analyse et découpe des modèles ONNX | Fusionné (11 défauts, 1 majeur) | [rapport](rapports/04-onnx-modeles.md) |
 | 05. Construction des moteurs, cache et trtexec | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/05-construction-moteurs.md) |
 | 06. Installation des moteurs et téléchargements | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/06-installation-moteurs.md), [complément](rapports/06-installation-moteurs-complement.md) |
@@ -630,7 +630,7 @@
 | A46-01 | Majeur | `tools/release/fetch-models.sh:80-98` | Le DistilDRBA épinglé est écrasé dans les paquets par une autre version, celle de `models-interp-1` | 46 | |
 | A46-02 | Majeur | `.github/workflows/export-interpolation-models.yml:34-35` | Export de DistilDRBA non reproductible : torch, onnx et onnxruntime non épinglés | 46 | |
 | A46-03 | Majeur | `tools/drba/export_distil_drba.py:194-197` | Qualité : le graphe FP16 livré n'est jamais comparé au réseau d'origine (16,5 codes 10 bits d'écart mesuré) | 46 | |
-| A46-04 | Majeur | `src/gpu/cuda/backend/drba_fused_kernels.cu:64-69` | Qualité : la voie fusionnée de DistilDRBA construit aussi la grille en FP16, alors que RIFE fusionné la calcule en FP32 | 46 | A03-18 (même cause) |
+| A46-04 | Majeur | `src/gpu/cuda/backend/drba_fused_kernels.cu:64-69` | Qualité : la voie fusionnée de DistilDRBA construit aussi la grille en FP16, alors que RIFE fusionné calcule la somme en FP32 (sa base reste FP16 : A03-20) | 46 | A03-18 (même cause) |
 | A46-05 | Majeur | `tools/release/fetch-models.sh:39` | 41,6 Mo de RIFE jamais proposés dans chaque paquet | 46 | |
 | A46-06 | Mineur | `src/app/play/model_choice.h:47-49` | Commentaire faux sur l'origine des RIFE FP16 livrés | 46 | |
 | A46-07 | Majeur | `tools/upscale/models/2x_ArtCNN_C4F32_rgb_fp16.onnx` | ArtCNN « fp16 » calcule entièrement en FP32 (TRT-07, partie modèle) | 46 | |
@@ -678,6 +678,10 @@
 | A02-14 | Mineur | `src/app/play/span_derive.cpp:27-35` | Paquet `.span8` et reçu écrits sans fsync : après une coupure, refus ordinaire et Performance bloqué en FP16 (QUA-05) | 02 | |
 | A01-08 | Mineur | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné bridée à deux blocs par SM, sans mesure | 01 | |
 | A06-13 | Mineur | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` sous Windows : échec si la révocation est injoignable (aussi `updater.cpp:88-91`) | 06 | |
+| A03-20 | Majeur | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Qualité : grille de base de RIFE v1 arrondie en FP16 dans les deux RIFE du menu, TensorRT et Vulkan (jusqu'à 0,234 px à 1920 de large), sans gain de vitesse | 03 | |
+| A03-21 | Mineur | `src/app/play/chain_setup.cpp:396-397` | Repli du fusionné vers l'entier écrit au journal seulement (2,10 ms contre 0,92) | 03 | |
+| A03-22 | Mineur | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-223` | Étapes de `stage()` relevées à la fermeture seulement ; profil de fin tronqué à 262 144 mesures sans le dire | 03 | |
+| A03-23 | Mineur | `tools/drba/export_distil_drba.py:46` | Qualité : DistilDRBA v1 jamais exporté ni comparé ; gain de v2 lite inconnu | 03 | A07-13 (même cause pour la porte de qualité) |
 
 ## Renvois
 
@@ -847,7 +851,7 @@
 | 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Traité par 38 (A38-01) |
 | 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | Traité par 08 (complément) |
 | 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | En attente (05 fini) |
-| 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | En attente (03 fini) |
+| 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | Traité par 03 (complément 2) |
 | 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | En attente (12 fini) |
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
 | 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
@@ -916,7 +920,7 @@
 | 37 | 01 | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné à deux blocs par SM | Traité par 01 (complément) |
 | 39 | 43 | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur, sans `tr()` | Traité par 43 (doublon d'A11-10) |
 | 39 | 18 | `src/app/main.cpp:108-111` | `fail()` n'écrit que sur stderr | En attente (18 fini) |
-| 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | En attente (03 fini) |
+| 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | Traité par 03 (complément 2) |
 | 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Traité par 43 (A43-02, 192) |
 | 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
 | 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | En attente (23 fini) |
@@ -946,14 +950,14 @@
 | 45 | 21 | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` posé par personne : option morte du contrat | En attente (21 fini) |
 | 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | En attente (21 fini) |
 | 45 | 08 | `src/app/play/chain_setup.h:89-93` | Ordre de destruction moteurs Vulkan puis backend au passage vers TensorRT | Traité par 08 (complément) |
-| 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | En attente (03 fini) |
+| 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | Traité par 03 (complément 2) |
 | 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Traité par 46 (A46-04 : grille en FP16) |
 | 44 | 49 | qualité DistilDRBA F16 | DistilDRBA F16 contre FP32 : 51 à 52 dB, écart max 13 à 19/255 (pour A49-14) | En attente (49 fini) |
 | 44 | 45 | shaders Vulkan | Arrondi f32 vers f16 (RTE ou RTZ), sous-normaux F16, accumulation des coopmat | En attente (45 fini) |
 | 46 | 20 | `src/core/model_index.cpp:356-410` | `models.lock` lu par aucun code du lecteur : code mort | En attente (20 fini) |
 | 46 | 45 | `src/gpu/vulkan/backend/net_gate.h:24-25` | Porte qui admet les sommes FP16 à 2 % sur du bruit, pour toutes les cartes | En attente (45 fini) |
 | 46 | 09 | `src/app/play/drba_model.h:17-21` | Flot de DistilDRBA à l'échelle 0,5 dès 1 440 lignes, sans mesure | Traité par 09 (complément) |
-| 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | En attente (03 fini) |
+| 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | Traité par 03 (complément 2) |
 | 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | Traité par 28 (complément) |
 | 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | En attente (18 fini) |
 | 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | En attente (10 fini) |
