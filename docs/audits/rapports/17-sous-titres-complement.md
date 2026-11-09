@@ -19,7 +19,7 @@ pas besoin de la donnée demandée). Aucun des trois ne baisse la qualité d'ima
 ### Correction de A24-19 côté subs
 
 `ass_set_line_position(renderer, pourcentage)` déplace vers le haut les seuls événements sans `\pos` ni `\move`
-et alignés en bas (c'est ainsi que mpv monte les sous-titres au-dessus de son OSC, `sub-pos`). Le déplacement se
+et alignés en bas (c'est l'option `sub-pos` de mpv). Le déplacement se
 fait par événement entier : une réplique de deux lignes monte d'un bloc, un panneau typographié reste sur son
 enseigne. Il suffit d'ajouter à `RenderTarget` (`subtitle_renderer.h:46-56`) un champ `line_position` (0 à 100,
 calculé par render depuis la hauteur de la barre), de l'appliquer dans `SubtitleRenderer` avant
