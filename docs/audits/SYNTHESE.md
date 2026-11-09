@@ -52,7 +52,7 @@
 | 40. Tests et couverture | À faire | |
 | 41. HDR, grade et looks | Fusionné (11 défauts, 2 majeurs) | [rapport](rapports/41-hdr-grade.md) |
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
-| 43. Textes et traductions | À faire | |
+| 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
 | 44. Représentation intermédiaire et import ONNX | À faire | |
 | 45. Moteur Vulkan : calcul, noyaux et shaders | À faire | |
 | 46. Outils de recherche, modèles et données livrées | À faire | |
@@ -594,6 +594,13 @@
 | A41-09 | Mineur | `src/render/grade.cpp:275-298` | Thread des LUT sans `try` | 41 | A30-04 (même cause) |
 | A41-10 | Mineur | `src/render/grade_params.cpp:56-70` | Chemins morts du grade SDR, quinze emplacements de LUT, pile composée deux fois (dette) | 41 | |
 | A41-11 | Mineur | `tests/unit/render/cube_lut_test.cpp:146` | Aucun test sur les LUT livrées ni sur la chaîne grade, pile, kwin | 41 | |
+| A43-01 | Majeur | `tests/unit/app/i18n_test.cpp:83` | Le test i18n laisse passer `ui_tr`, les clés passées par variable et les textes français en dur | 43 | |
+| A43-02 | Mineur | `src/app/play/i18n_fr_sound.cpp` | 192 entrées de traduction mortes sur 946 (UX-21) | 43 | |
+| A43-03 | Mineur | `src/app/play/i18n.h:30-33` | `tr_format` ne localise pas les nombres : point en français, virgule en anglais (UX-10) | 43 | |
+| A43-04 | Mineur | `src/app/play/i18n_fr_wizard.cpp:11` | Cinq noms pour le test de la machine qui règle Auto | 43 | |
+| A43-05 | Mineur | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » alors que l'assistant n'a pas ce bouton | 43 | |
+| A43-06 | Mineur | `src/app/play/i18n_fr_image.cpp:88` | Qualité : le coût en précision du FP8 n'est jamais dit ; « Balanced » nomme deux choses | 43 | |
+| A43-07 | Mineur | `src/app/play/french_text.h:12-30` | Typographie française appliquée à moitié | 43 | |
 
 ## Renvois
 
@@ -752,7 +759,7 @@
 | 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | En attente (07 fini) |
 | 25 | 08 | `src/app/play/player.cpp:559` | Après `handle_engine_change`, chaîne rouverte avec les réglages d'avant | En attente (08 fini) |
 | 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | En attente (19 fini) |
-| 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Ouvert |
+| 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Traité par 43 (A43-05) |
 | 26 | 28 | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | Traité par 28 |
 | 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Traité par 28 |
 | 26 | 28 | `.github/workflows/release-linux.yml:150` | `--latest` posé avant le manifeste signé (SEC-05) | Traité par 28 |
@@ -830,10 +837,10 @@
 | 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | En attente (15 fini) |
 | 37 | 02 | `src/gpu/cuda/backend/span_fp8_kernels.cuh:241` | Tag `Sm89` de CUTLASS compilé aussi pour sm_120 | En attente (02 fini) |
 | 37 | 01 | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné à deux blocs par SM | En attente (01 fini) |
-| 39 | 43 | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur, sans `tr()` | Ouvert |
+| 39 | 43 | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur, sans `tr()` | Traité par 43 (doublon d'A11-10) |
 | 39 | 18 | `src/app/main.cpp:108-111` | `fail()` n'écrit que sur stderr | En attente (18 fini) |
 | 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | En attente (03 fini) |
-| 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Ouvert |
+| 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Traité par 43 (A43-02, 192) |
 | 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
 | 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | En attente (23 fini) |
 | 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | En attente (28 fini) |
@@ -847,5 +854,15 @@
 | 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | En attente (32 fini) |
 | 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | En attente (38 fini) |
 | 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
-| 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Ouvert |
+| 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Traité par 43 (confirmé) |
 | 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Ouvert |
+| 43 | 11 | `src/app/play/gpu_telemetry.cpp:73-76` | « Go » et virgule décimale en dur dans la ligne VRAM de l'OSD anglais (UX-09) | En attente (11 fini) |
+| 43 | 24 | `src/app/play/home_screen.cpp:178` | « EDID illisible : OLED inconnu » en dur dans Vidéo > Affichage | En attente (24 fini) |
+| 43 | 41 | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur | En attente (41 fini) |
+| 43 | 41 | `src/app/play/chain_hdr.cpp:367` | GPU-14 toujours présent (« Vrai noir : mesure impossible » en dur) | En attente (41 fini) |
+| 43 | 25 | `src/app/play/first_run.cpp:29-31` | La `note` de l'assistant n'applique pas `french_spaces` | En attente (25 fini) |
+| 43 | 25 | `src/app/play/first_run.cpp:445` | Deux textes pour l'installation de la mise à jour | En attente (25 fini) |
+| 43 | 08 | `src/app/play/chain.cpp:113-131` | UX-20 : rien ne reformate l'affichage quand la langue change en direct | En attente (08 fini) |
+| 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | En attente (22 fini) |
+| 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | En attente (23 fini) |
+| 43 | 07 | `src/app/play/player.cpp:486-487` | « New graphics card » renvoie à un bouton du mode avancé, sous un autre nom | En attente (07 fini) |
