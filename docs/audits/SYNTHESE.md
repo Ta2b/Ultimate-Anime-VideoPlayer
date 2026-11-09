@@ -34,7 +34,7 @@
 | 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
 | 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
 | 24. Interface : rendu, contrôles et messages | À faire | |
-| 25. Assistant de premier lancement | À faire | |
+| 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | À faire | |
 | 27. Build, dépendances et ports | À faire | |
 | 28. CI, publication et signature | À faire | |
@@ -355,6 +355,24 @@
 | A23-13 | Mineur | `src/app/play/settings_export.cpp:68` | Page Export : quatre appels au système de fichiers par image | 23 | |
 | A23-14 | Mineur | `src/app/play/settings_system.cpp:495-506` | « Signaler un problème » coupe le journal au milieu d'une ligne, sans le dire | 23 | |
 | A23-15 | Mineur | `src/app/play/settings_panel.cpp:310-320` | Drapeau `advanced` mort, en-têtes périmés | 23 | |
+| A25-01 | Majeur | `src/app/play/engine_screen.cpp:202-311` | UX-02 : assistant relancé en lecture, ses choix et sa chaîne calibrée réécrits par l'ancienne chaîne | 25 | |
+| A25-02 | Majeur | `src/app/play/first_run.cpp:263-265` | Sur une RTX, calibration mesurée sous Vulkan sans le dire, jamais refaite quand TensorRT arrive : image plus petite | 25 | |
+| A25-03 | Majeur | `src/app/play/engine_screen.cpp:223-227` | UX-05 : durée d'optimisation annoncée fausse (4 min au lieu de 17 à 1080p) | 25 | |
+| A25-04 | Majeur | `src/app/play/engine_screen.cpp:286-291` | UX-06 : lecteur par défaut appliqué même quand l'écran Intégration a été passé | 25 | |
+| A25-05 | Mineur | `src/app/play/wizard.h:34` | UX-07 : `updates_managed` jamais rempli | 25 | |
+| A25-06 | Mineur | `src/app/play/engine_screen.cpp:110-113` | `calibrate_on_screen` rend toujours Auto, même sur annulation | 25 | |
+| A25-07 | Mineur | `src/app/play/engine_screen.cpp:274-291` | Inscription « Ouvrir avec » synchrone sur le thread de la fenêtre | 25 | |
+| A25-08 | Mineur | `src/app/play/first_run.cpp:461-465` | La calibration ne connaît que RIFE 4.22 lite ×2 : ni DistilDRBA ni RIFE 4.25 essayés | 25 | |
+| A25-09 | Mineur | `src/app/play/engine_screen.cpp:218` | Assistant relancé : part des défauts, pas des réglages en place | 25 | |
+| A25-10 | Mineur | `src/app/play/engine_screen.cpp:262` | Fenêtre fermée pendant le téléchargement : `settings_after` perdu | 25 | |
+| A25-11 | Mineur | `src/app/play/engine_screen.cpp:125` | TRT-18 : dossier de calibration à nom fixe effacé par `remove_all` | 25 | |
+| A25-12 | Mineur | `src/app/play/first_run.cpp:195-218` | UX-09 : unités et états en dur dans l'interface | 25 | |
+| A25-13 | Mineur | `src/app/play/wizard.cpp:30` | UX-14 : écran Moteurs sauté sans explication | 25 | |
+| A25-14 | Mineur | `src/app/play/engine_screen.cpp:72-76` | UX-23 : aucune navigation au clavier | 25 | |
+| A25-15 | Mineur | `src/app/play/engine_screen.cpp:43` | Redessin toutes les 16 ms sans événement | 25 | |
+| A25-16 | Mineur | `src/app/play/engine_screen.cpp:343` | Quatre `path::string()` (dette, voir A20-02) | 25 | |
+| A25-17 | Mineur | `src/app/play/first_run.cpp:138-147` | Code mort : MIGraphX, OpenVINO, DirectML encore nommés | 25 | |
+| A25-18 | Mineur | `tests/unit/app/wizard_test.cpp` | `run_engine_screen` et `calibrate_on_screen` sans test | 25 | |
 
 ## Renvois
 
@@ -385,7 +403,7 @@
 | 06 | 26 | `src/app/play/engine_online.cpp` | `merge_release_index` : SHA ou version changés du paquet TensorRT (voir A06-01) | Ouvert |
 | 06 | 28 | `tools/release/package-linux.sh:190` | Version du paquet TensorRT tirée de `ls libnvinfer.so.*` : « 11 » ou « 11.3.0 » | Ouvert |
 | 06 | 28 | `tools/release/package-windows.ps1:101` | Origine et stabilité de `$trtVersion` | Ouvert |
-| 06 | 25 | `src/app/play/first_run.cpp:125-131` | « Go » et « Mo » en dur dans l'interface anglaise (UX-09) | Ouvert |
+| 06 | 25 | `src/app/play/first_run.cpp:125-131` | « Go » et « Mo » en dur dans l'interface anglaise (UX-09) | Traité par 25 |
 | 06 | 34 | `src/app/play/engine_tools.cpp:19-36` | `curl.exe` de System32 : version minimale, révocation Schannel derrière une inspection TLS | Ouvert |
 | 06 | 21 | `src/app/play/backend_library.cpp:83-85` | Module refusé refermé : nvinfer se décharge-t-il sous Windows (A06-09) ? | Traité par 21 (à confirmer) |
 | 04 | 09 | `src/app/play/derived_model.cpp:19` | `stem().string()` dans le nom des modèles dérivés (comme A04-04) | Traité par 09 |
@@ -400,7 +418,7 @@
 | 08 | 18 | `src/app/play/player.cpp:525-534` | La reprise après « Annuler et regarder » modifie `settings` pour toute la suite | Traité par 18 |
 | 08 | 23 | `src/app/play/settings_panel.cpp` | UX-08 : Échap devrait fermer la liste ouverte avant le panneau | Traité par 23 |
 | 08 | 39 | `src/app/play/settings_system.cpp` | UX-13 : chemins hors du dossier personnel dans le journal envoyé | Ouvert |
-| 07 | 25 | `src/app/play/engine_screen.cpp:111` | `calibrate_on_screen` rend toujours Auto, même sur « Annuler » : remplace une chaîne Personnalisée | Ouvert |
+| 07 | 25 | `src/app/play/engine_screen.cpp:111` | `calibrate_on_screen` rend toujours Auto, même sur « Annuler » : remplace une chaîne Personnalisée | Traité par 25 |
 | 07 | 08 | `src/app/play/chain_setup.cpp:99` | Tailles de travail différentes possibles entre l'anneau et `c.work` | En attente (08 fini) |
 | 07 | 09 | `src/app/play/chain_setup.cpp:321` | Préparation FP8 automatique faite une seule fois, à la taille de la lecture en cours (avec A07-04) | En attente (09 fini) |
 | 07 | 18 | `src/app/play/player.cpp:411-414` | `calibration.toml` relu à chaque ouverture et remplissage du panneau | Traité par 18 |
@@ -458,7 +476,7 @@
 | 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
 | 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Ouvert |
 | 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Ouvert |
-| 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Ouvert |
+| 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Traité par 25 |
 | 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Ouvert |
 | 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | En attente (18 fini) |
 | 18 | 07 | `src/app/play/auto_config.h:22` | DistilDRBA n'entre jamais dans Auto et la calibration ne l'essaie pas | En attente (07 fini) |
@@ -507,3 +525,10 @@
 | 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Ouvert |
 | 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | En attente (07 fini) |
 | 23 | 08 | `src/app/play/chain.cpp:183-185` | Une notification par image pendant le glissement du délai des sous-titres | En attente (08 fini) |
+| 25 | 24 | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » depuis l'accueil n'ouvre que l'écran des moteurs | Ouvert |
+| 25 | 07 | `src/app/play/machine_calibration.cpp:115-135` | `best_candidate` ignore `priority` : la fluidité passe toujours avant la taille d'image | En attente (07 fini) |
+| 25 | 07 | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` ne note pas le moteur mesuré | En attente (07 fini) |
+| 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | En attente (07 fini) |
+| 25 | 08 | `src/app/play/player.cpp:559` | Après `handle_engine_change`, chaîne rouverte avec les réglages d'avant | En attente (08 fini) |
+| 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | En attente (19 fini) |
+| 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Ouvert |
