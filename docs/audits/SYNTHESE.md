@@ -31,7 +31,7 @@
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
 | 20. Socle commun (core) | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/20-socle-core.md) |
 | 21. Frontière des moteurs (interface et ABI) | En cours | |
-| 22. Réglages : modèle, application et persistance | À faire | |
+| 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
 | 23. Réglages : le panneau | À faire | |
 | 24. Interface : rendu, contrôles et messages | À faire | |
 | 25. Assistant de premier lancement | À faire | |
@@ -58,6 +58,7 @@
 | 46. Outils de recherche, modèles et données livrées | À faire | |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
+| 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | En cours | |
 
 ## Défauts trouvés
 
@@ -313,6 +314,22 @@
 | A20-11 | Mineur | `src/core/debug_flags.h:27-33` | Aucun outil livré pour mesurer DistilDRBA contre RIFE (NVTX, noms de threads, bascules mortes) | 20 | |
 | A20-12 | Mineur | `src/core/av_error.h:12-29` | FFmpeg inclus dans `core`, textes français dans le détail des refus | 20 | |
 | A20-13 | Mineur | `tests/unit/core/` | Aucun test des chemins d'échec du socle | 20 | |
+| A22-01 | Majeur | `src/app/play/settings.cpp:383-434` | UX-01 plus large : `restore_lines`, `gpu`, `rife_fused`, `drba_fused` ni appliqués ni écrits | 22 | |
+| A22-02 | Majeur | `src/app/play/settings_toml.cpp:624-626` | Écriture refusée de `play.toml` : le changement est perdu pour de bon (base de fusion retenue avant l'écriture) | 22 | |
+| A22-03 | Majeur | `src/app/play/settings.h:106-117` | Qualité sacrifiée par défaut : l'Auto de l'ordre warp et SPAN vaut toujours « le plus rapide » | 22 | A09-08 (même cause, gravité relevée) |
+| A22-04 | Mineur | `src/app/play/settings.cpp:453-499` | `change_between` classe en direct des réglages lus à l'ouverture | 22 | A08-03 (même cause) |
+| A22-05 | Mineur | `src/app/play/settings.cpp:336` | `--rife` coupe `rife_auto`, qui n'est pas rendu à l'écriture | 22 | |
+| A22-06 | Mineur | `src/app/play/settings_toml.cpp:501-534` | Valeur inconnue d'une clé connue écrasée à l'écriture suivante | 22 | |
+| A22-07 | Mineur | `src/core/settings.cpp:231-233` | `settings.toml` refusé entier pour une version différente | 22 | |
+| A22-08 | Mineur | `src/core/settings.h:55-58` | Langues et délai audio de `settings.toml` sans lecteur | 22 | |
+| A22-09 | Mineur | `src/app/play/settings.cpp:266-324` | `engines_dir` non validé, écrit à chaque frappe | 22 | |
+| A22-10 | Mineur | `src/app/play/settings.h:186-191` | Commentaire faux : en Rapide, `rife_factor` ne plafonne rien | 22 | |
+| A22-11 | Mineur | `src/app/play/settings.h:299-310` | Trois bornes différentes par délai (UX-18) | 22 | |
+| A22-12 | Mineur | `src/app/play/settings.cpp:481-490` | Un cran de précision hors Équilibre coupe le moteur fusionné en silence | 22 | |
+| A22-13 | Mineur | `src/app/play/settings_toml.cpp:570` | Cinq `path::string()` (dette, voir A20-02) | 22 | |
+| A22-14 | Mineur | `src/app/play/settings.h:180` | Qualité : réduction Hermite par défaut, plus douce que Spline36 annoncé le plus fin | 22 | |
+| A22-15 | Mineur | `tests/unit/app/settings_test.cpp` | Aucun test que chaque champ est appliqué ou annoncé ; ni écriture refusée | 22 | |
+| A22-16 | Mineur | `src/app/play/settings_toml.cpp:593-627` | Une écriture de `play.toml` fait quatre analyses TOML et ~90 relectures | 22 | |
 
 ## Renvois
 
@@ -351,7 +368,7 @@
 | 04 | 09 | `src/app/play/upscale_stage.cpp:198` | L'étage suppose `kSpanFactor` pour un `--model` quelconque (voir A04-06) | Traité par 09 |
 | 04 | 28 | `tests/fuzz/fuzz_parsers.cpp:33-37` | Aucune cible de fuzz pour les lecteurs ONNX de `prepare/` (SEC-21) | Ouvert |
 | 04 | 05 | `src/prepare/builder.cpp:174` | `read_model` relit et rehache tout l'ONNX avant et après chaque construction | En attente (05 fini) |
-| 08 | 22 | `src/app/play/settings.cpp:453-499` | `change_between` ne classe pas en réouverture plusieurs réglages dont `prepare_chain` dépend | Ouvert |
+| 08 | 22 | `src/app/play/settings.cpp:453-499` | `change_between` ne classe pas en réouverture plusieurs réglages dont `prepare_chain` dépend | Traité par 22 |
 | 08 | 05 | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre | En attente (05 fini) |
 | 08 | 11 | `src/app/play/host_facts.cpp:378` | `on_battery()` appelé deux fois par seconde | Traité par 11 (A11-09) |
 | 08 | 14 | `src/app/play/player_run.cpp:589-591` | MED-01 : la session doit distinguer vraie fin et erreur d'E/S | Traité par 14 |
@@ -364,7 +381,7 @@
 | 07 | 18 | `src/app/play/player.cpp:411-414` | `calibration.toml` relu à chaque ouverture et remplissage du panneau | Traité par 18 |
 | 07 | 34 | `src/app/play/auto_bench_run.cpp:35-44` | Essais en `--hidden` sur tous les bureaux, GNOME Wayland compris | Ouvert |
 | 09 | 23 | `src/app/play/home_screen.cpp:140` | `fp8_engine` vrai pour une RTX 20 ou 30 : Performance proposé sans FP8 | Ouvert |
-| 09 | 22 | `src/app/play/settings.h:114-117` | Critère d'Auto sur la hauteur de sortie (A09-08) | Ouvert |
+| 09 | 22 | `src/app/play/settings.h:114-117` | Critère d'Auto sur la hauteur de sortie (A09-08) | Traité par 22 |
 | 09 | 08 | `src/app/play/chain_setup.cpp:420-423` | Performance remplace le RIFE fusionné par un moteur entier (A09-02) | En attente (08 fini) |
 | 09 | 41 | `src/app/play/upscale_stage.cpp:244-271` | Statistiques du grade prises sur l'image débandée, ou pas du tout sous DistilDRBA | Ouvert |
 | 09 | 31 | `src/app/play/ring_stage.cpp:108-112` | Seul `SourceResized` rouvre la chaîne sur une image de taille nouvelle | Ouvert |
@@ -411,7 +428,7 @@
 | 17 | 13 | `src/app/play/pipeline.cpp:183-191` | Polices recopiées deux fois, attente sur le thread de la fenêtre | En attente (13 fini) |
 | 17 | 13 | `src/app/play/pipeline.cpp:47` | Extension `.Srt` étiquetée « ass » | En attente (13 fini) |
 | 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | En attente (14 fini) |
-| 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Ouvert |
+| 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Réfuté par 22 |
 | 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Ouvert |
 | 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
 | 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Ouvert |
@@ -444,3 +461,10 @@
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Ouvert |
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
 | 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
+| 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Ouvert |
+| 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | En attente (07 fini) |
+| 22 | 07 | `src/app/play/auto_config.cpp:203-205` | L'Auto calibré écrase `auto_free` et le modèle RIFE à chaque vidéo | En attente (07 fini) |
+| 22 | 23 | `src/app/play/settings_sound.cpp:72` | Bornes des curseurs de délai différentes des réglages et des touches | Ouvert |
+| 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | Ouvert |
+| 22 | 09 | `src/app/play/chain_setup.cpp:359-361` | Qualité : estimation RIFE sur copie 720p au-dessus de 720 lignes | En attente (09 fini) |
+| 22 | 18 | `src/app/play/options.cpp:298` | `--rife-model` n'entre pas dans `settings.rife_model` | En attente (18 fini) |
