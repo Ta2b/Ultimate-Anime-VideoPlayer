@@ -35,7 +35,7 @@
 | 23. Réglages : le panneau | Fusionné (16 défauts, 4 majeurs, complément compris) | [rapport](rapports/23-reglages-panneau.md), [complément](rapports/23-reglages-panneau-complement.md) |
 | 24. Interface : rendu, contrôles et messages | Fusionné (24 défauts, 3 majeurs, complément compris) | [rapport](rapports/24-interface-rendu.md), [complément](rapports/24-interface-rendu-complement.md) |
 | 25. Assistant de premier lancement | Fusionné (19 défauts, 4 majeurs, complément compris) | [rapport](rapports/25-assistant.md), [complément](rapports/25-assistant-complement.md) |
-| 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
+| 26. Mise à jour automatique et signature | Fusionné (13 défauts, 4 majeurs, complément compris) | [rapport](rapports/26-mise-a-jour.md), [complément](rapports/26-mise-a-jour-complement.md) |
 | 27. Build, dépendances et ports | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/27-build-dependances.md), [complément](rapports/27-build-dependances-complement.md) |
 | 28. CI, publication et signature | Fusionné (22 défauts, 1 bloquant, 8 majeurs, complément compris) | [rapport](rapports/28-ci-publication.md), [complément](rapports/28-ci-publication-complement.md) |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
@@ -710,6 +710,7 @@
 | A24-24 | Mineur | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » à l'accueil n'ouvre que l'écran des moteurs | 24 | |
 | A25-19 | Mineur | `src/app/play/first_run.cpp:445` | Texte de la mise à jour automatique différent entre l'assistant et le panneau | 25 | |
 | A27-14 | Mineur | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé et SDL3 lié en PUBLIC sans appelant ; liaisons du port imgui inutilisées sous Windows | 27 | |
+| A26-13 | Mineur | `src/app/play/updater.cpp:646-651` | Retour arrière de deux versions sur une installation mise à jour à la main | 26 | |
 
 ## Renvois
 
@@ -905,7 +906,7 @@
 | 30 | 32 | `src/gpu/cuda/backend/tensorrt_lanes.cpp:140-150` | Aucun `cudaSetDeviceFlags` : attente active sur un cœur | En attente (32 fini) |
 | 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | En attente (32 fini) |
 | 30 | 42 | `src/media/shot_probe.cpp:108-110` | `~ShotProbe` joint sur le thread de la fenêtre | Traité par 42 (A42-12) |
-| 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | En attente (26 fini) |
+| 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | Traité par 26 (complément) |
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Traité par 41 (A41-09) |
 | 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | Traité par 09 (complément) |
 | 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Traité par 40 (A40-09) |
@@ -914,7 +915,7 @@
 | 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | Traité par 28 (complément) |
 | 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | Traité par 05 (complément) |
 | 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
-| 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | En attente (26 fini) |
+| 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | Traité par 26 (complément) |
 | 28 | 09 | `src/app/play/drba_model.cpp:14-28` | Demi-flot DistilDRBA manquant : repli silencieux sur le flot entier | Traité par 09 (complément) |
 | 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Traité par 40 (A40-01) |
 | 32 | 03 | `src/app/play/upscale_drba.cpp:179-256` | L'entrée de DistilDRBA, pas seulement son nombre de passes | Traité par 03 (complément, A03-14) |
@@ -942,7 +943,7 @@
 | 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | Traité par 28 (complément) |
 | 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | Traité par 07 (complément) |
 | 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | Réfuté par 02 (complément) : le reçu porte le SHA du paquet |
-| 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | En attente (26 fini) |
+| 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | Traité par 26 (complément) |
 | 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | Traité par 15 (complément) |
 | 37 | 02 | `src/gpu/cuda/backend/span_fp8_kernels.cuh:241` | Tag `Sm89` de CUTLASS compilé aussi pour sm_120 | Traité par 02 (complément) |
 | 37 | 01 | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné à deux blocs par SM | Traité par 01 (complément) |
@@ -999,3 +1000,4 @@
 | 09 | 32 | `src/app/play/upscale_stage.cpp:391-402` | Attente de `scores_take` non mesurable au journal tant qu'A09-19 reste | Note pour la correction |
 | 09 | 42 | `src/app/play/rife_plan.cpp:10-14` | Après A42-01, rejuger le plancher sur le score rapporté et plusieurs séries | Note pour la correction |
 | 09 | 46 | `src/app/play/drba_model.cpp:14-24` | Paquet sans demi-flot non signalé (A09-21) | Note pour la correction |
+| 26 | 36 | `src/app/play/updater.cpp:616-631` | `previous_version` survit à une installation manuelle (A26-13) | Note pour la correction |
