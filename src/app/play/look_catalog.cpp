@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <charconv>
 #include <format>
 #include <fstream>
@@ -16,6 +17,7 @@
 #include "app/play/i18n.h"
 #include "core/dir_entries.h"
 #include "core/log.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 
@@ -39,7 +41,13 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
     if (!read) return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " illisible"});
     return anime_look(contrast, highlight, luts_dir);
   }
-  if (key.empty() || key.find('/') != std::string::npos || key.find('\\') != std::string::npos)
+  // Un nom de fichier seul, en .cube : ni séparateur ni « C:x.cube » de Windows, qui viserait le dossier
+  // courant d'un lecteur (A35-09).
+  const std::filesystem::path name = core::path_from_utf8(key);
+  std::string extension = core::to_utf8(name.extension());
+  std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return std::tolower(c); });
+  if (key.empty() || key.find('/') != std::string::npos || key.find('\\') != std::string::npos ||
+      key.find(':') != std::string::npos || name.filename() != name || extension != ".cube")
     return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : nom de fichier invalide"});
   std::filesystem::path path = luts_dir / key;
   std::ifstream file(path, std::ios::binary);
