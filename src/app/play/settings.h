@@ -237,10 +237,9 @@ struct PlaySettings {
   int sharpness = 0;
   // À la fin de la vidéo, lire la suivante du dossier (ordre naturel des noms) ; vaut au prochain
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
-  // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto
-  // », « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
+  // Mises à jour du lecteur (updater.h) : une notification, « notify » (Me prévenir, le défaut) ou « never »
+  // ; la fréquence « launch », « daily », « weekly ».
   UpdateMode update_mode = UpdateMode::Notify;
-  UpdateChannel update_channel = UpdateChannel::Stable;
   UpdateFrequency update_frequency = UpdateFrequency::Daily;
   // Langue de l'interface : « en » (le défaut, sans détection) ou « fr » ; prise en direct (app/play/i18n.h).
   std::string language = "en";

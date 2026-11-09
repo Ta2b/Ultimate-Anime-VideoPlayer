@@ -129,6 +129,8 @@ constexpr std::array kVisibleTexts{
           "{} : dérivé sur {}, ce GPU est {} : à préparer de nouveau"},
     Entry{"{}: kernels version {}, this engine has {}: prepare it again",
           "{} : noyaux en version {}, ce moteur a la {} : à préparer de nouveau"},
+    Entry{"{}: the engine package of this version is out of date, Vulkan instead",
+          "{} : le paquet de ce moteur pour cette version est périmé, Vulkan à la place"},
     Entry{"{}: new licence to accept (Engines)", "{} : nouvelle licence à accepter (Moteurs)"},
     Entry{"{}: not validated at {} yet", "{} : pas encore validé en {}"},
     Entry{"{}: receipt from another model", "{} : reçu d'un autre modèle"},

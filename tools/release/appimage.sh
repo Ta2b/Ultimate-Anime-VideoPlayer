@@ -5,10 +5,9 @@
 #
 # Prend l'archive de package-linux.sh (le lecteur, le backend Vulkan, leurs bibliothèques) et en fait
 # ajp-linux-x86_64.AppImage. Les moteurs (TensorRT) se téléchargent comme avant dans
-# le dossier de données de l'utilisateur ; aucun fichier de NVIDIA n'est dedans. La mise à jour
-# automatique ne s'applique pas à un AppImage (sa racine est en lecture seule) : le lecteur le dit et
-# renvoie vers la page des releases. La fiche « Ouvrir avec » pointe sur le fichier .AppImage
-# (variable APPIMAGE, posée par le lanceur). appimagetool est téléchargé à la version et
+# le dossier de données de l'utilisateur ; aucun fichier de NVIDIA n'est dedans. Une nouvelle version se
+# signale (notification) et se télécharge depuis la page des releases, comme pour les autres paquets. La
+# fiche « Ouvrir avec » pointe sur le fichier .AppImage (variable APPIMAGE, posée par le lanceur). appimagetool est téléchargé à la version et
 # à l'empreinte épinglées dans versions.env.
 set -euo pipefail
 

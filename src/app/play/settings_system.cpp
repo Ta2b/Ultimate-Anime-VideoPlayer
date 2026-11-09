@@ -94,8 +94,6 @@ void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
-  const UpdatePaths paths{
-      .data = place.app_data, .install = place.executable.parent_path(), .executable = place.executable};
   const std::filesystem::path state_file = paths::update_state(place.app_data);
   if (result.pending && result.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     const std::expected<std::string, Refusal> done = result.pending->get();
@@ -105,38 +103,26 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     result.refused = !done;
   }
   const UpdateState state = load_update_state(state_file);
-  const std::string managed = update_managed_reason(paths);
 
+  // Une simple notification (updater.h) : le lecteur dit qu'une version existe et où la prendre, il
+  // n'installe rien.
   section(i18n::tr("Updates"));
   struct Mode {
     UpdateMode key;
     const char* label;
     const char* detail;
   };
-  constexpr std::array<Mode, 3> kModes{
-      {{UpdateMode::Notify, "Notify me", "A notification; you start the update yourself."},
-       {UpdateMode::Auto, "Automatic", "Downloaded, verified, installed at next launch."},
+  constexpr std::array<Mode, 2> kModes{
+      {{UpdateMode::Notify, "Notify me",
+        "A notification with the link to the new version; you install it yourself."},
        {UpdateMode::Never, "Never", "No checks."}}};
-  ImGui::BeginDisabled(!managed.empty());
   for (const Mode& mode : kModes) {
     if (ImGui::RadioButton(i18n::tr(mode.label), d.update_mode == mode.key)) d.update_mode = mode.key;
     panel::tip(i18n::tr(mode.detail));
   }
-  ImGui::EndDisabled();
-  if (!managed.empty()) note(managed);
   if (std::string_view(update_public_key()).empty())
     note(i18n::tr("This package has no signing key: updates cannot be verified."));
 
-  section(i18n::tr("Channel and frequency"));
-  ImGui::BeginDisabled(!managed.empty());
-  if (ImGui::BeginCombo(i18n::tr("Channel"),
-                        d.update_channel == UpdateChannel::Preview ? i18n::tr("Previews") : "Stable")) {
-    if (ImGui::Selectable("Stable", d.update_channel == UpdateChannel::Stable))
-      d.update_channel = UpdateChannel::Stable;
-    if (ImGui::Selectable(i18n::tr("Previews"), d.update_channel == UpdateChannel::Preview))
-      d.update_channel = UpdateChannel::Preview;
-    ImGui::EndCombo();
-  }
   const char* frequency = d.update_frequency == UpdateFrequency::Launch   ? i18n::tr("At every launch")
                           : d.update_frequency == UpdateFrequency::Weekly ? i18n::tr("Weekly")
                                                                           : i18n::tr("Daily");
@@ -149,15 +135,8 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
       d.update_frequency = UpdateFrequency::Weekly;
     ImGui::EndCombo();
   }
-  ImGui::EndDisabled();
   note(i18n::tr_format("Installed version: {}", installed_version()));
-  if (!state.latest_version.empty())
-    note(i18n::tr_format("Available: {}{}", state.latest_version,
-                         state.staged_version.empty() ? "" : i18n::tr(" (ready)")));
-  // Les notes de la version proposée (notes_url du manifeste signé, en https).
-  if (!state.latest_version.empty() && state.notes_url.starts_with("https://") &&
-      ImGui::SmallButton(i18n::tr("Release notes")))
-    SDL_OpenURL(state.notes_url.c_str());
+  if (!state.latest_version.empty()) note(i18n::tr_format("Available: {}", state.latest_version));
   if (state.last_check_unix > 0) {
     const std::time_t at = static_cast<std::time_t>(state.last_check_unix);
     std::tm local{};
@@ -175,12 +154,9 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   ImGui::BeginDisabled(busy);
   if (ImGui::Button(i18n::tr("Check now"))) {
     result.pending = start_task<std::string>(
-        "settings",
-        [paths, state_file, mode = d.update_mode, channel = d.update_channel,
-         stop = result.stop] -> std::expected<std::string, Refusal> {
+        "settings", [state_file, stop = result.stop] -> std::expected<std::string, Refusal> {
           UpdateState current = load_update_state(state_file);
-          auto message = run_update_check(paths, mode == UpdateMode::Never ? UpdateMode::Notify : mode,
-                                          name(channel), current, stop->get_token());
+          auto message = run_update_check(current, stop->get_token());
           if (const auto kept = save_update_state(state_file, current); !kept && message)
             return std::unexpected(kept.error());
           return message;
@@ -188,54 +164,17 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     result.text.clear();
     result.refused = false;
   }
-  // « Me prévenir » ou non : la version vue s'installe d'un clic (téléchargée, vérifiée, appliquée), puis le
-  // lecteur demande à être relancé, comme le retour arrière.
-  if (!state.latest_version.empty() && managed.empty()) {
+  ImGui::EndDisabled();
+  // La page de la release (ses notes, du manifeste signé, en https), sinon celle des releases : l'utilisateur
+  // y prend l'archive ou l'installeur.
+  if (!state.latest_version.empty()) {
     ImGui::SameLine();
-    if (ImGui::Button(i18n::tr("Install now"))) {
-      result.pending = start_task<std::string>(
-          "settings",
-          [paths, state_file, channel = d.update_channel,
-           stop = result.stop] -> std::expected<std::string, Refusal> {
-            UpdateState current = load_update_state(state_file);
-            if (current.staged_version.empty()) {
-              auto checked =
-                  run_update_check(paths, UpdateMode::Auto, name(channel), current, stop->get_token());
-              if (const auto kept = save_update_state(state_file, current); !kept)
-                return std::unexpected(kept.error());
-              if (!checked) return checked;
-              if (current.staged_version.empty()) return checked;  // rien de plus récent à installer
-            }
-            auto applied = apply_staged_update(paths, current);
-            if (!applied)
-              current.staged_version.clear();  // une archive qui ne s'applique pas ne se réessaie pas
-            if (const auto kept = save_update_state(state_file, current); !kept)
-              return std::unexpected(kept.error());
-            if (!applied) return applied;
-            return *applied + i18n::tr(": restart the player");
-          });
-      result.text.clear();
-      result.refused = false;
+    if (ImGui::Button(i18n::tr("Download page"))) {
+      const std::string url =
+          state.notes_url.starts_with("https://") ? state.notes_url : releases_page(release_repo());
+      SDL_OpenURL(url.c_str());
     }
   }
-  ImGui::SameLine();
-  ImGui::BeginDisabled(state.previous_version.empty());
-  if (ImGui::Button(i18n::tr("Roll back to the previous version"))) {
-    result.pending =
-        start_task<std::string>("settings", [paths, state_file] -> std::expected<std::string, Refusal> {
-          UpdateState current = load_update_state(state_file);
-          auto message = roll_back_update(paths, current);
-          if (!message) return message;
-          if (const auto kept = save_update_state(state_file, current); !kept)
-            return std::unexpected(kept.error());
-          return *message + i18n::tr(": restart the player");
-        });
-    result.text.clear();
-    result.refused = false;
-  }
-  if (state.previous_version.empty()) panel::tip(i18n::tr("Greyed out: no update has been installed yet."));
-  ImGui::EndDisabled();
-  ImGui::EndDisabled();
   if (busy) {
     note(i18n::tr("Working…"));
   } else if (result.refused) {
@@ -246,17 +185,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     note(result.text);
   }
   if (!state.last_error.empty() && result.text.empty())
-    note(i18n::tr("The last update failed (details in the log)."));
-  // Une version retirée par la garde (elle ne démarrait pas) : on peut la proposer de nouveau.
-  if (!state.skipped_version.empty() && !busy) {
-    note(i18n::tr_format("Version {} was set aside: it did not start properly.", state.skipped_version));
-    if (ImGui::Button(i18n::tr("Offer it again"))) {
-      UpdateState current = load_update_state(state_file);
-      current.skipped_version.clear();
-      if (const auto kept = save_update_state(state_file, current); !kept)
-        log_channel("app")->warn("update.toml : {}", kept.error().detail);
-    }
-  }
+    note(i18n::tr_format("The last check failed: {}", state.last_error));
 }
 
 bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {

@@ -438,13 +438,10 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
     case WizardStep::Updates: {
       section(i18n::tr("Updates"));
       bool pick = false;
-      radio_note(i18n::tr("Notify me"), i18n::tr("A notification; you start the update yourself."),
+      radio_note(i18n::tr("Notify me"),
+                 i18n::tr("A notification with the link to the new version; you install it yourself."),
                  wizard.update_mode == UpdateMode::Notify, pick);
       if (pick) wizard.update_mode = UpdateMode::Notify;
-      pick = false;
-      radio_note(i18n::tr("Automatic"), i18n::tr("Downloaded, installed at next launch."),
-                 wizard.update_mode == UpdateMode::Auto, pick);
-      if (pick) wizard.update_mode = UpdateMode::Auto;
       pick = false;
       radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == UpdateMode::Never, pick);
       if (pick) wizard.update_mode = UpdateMode::Never;

@@ -319,8 +319,12 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
         reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, std::format("updates.{}", key),
                                       std::format(" : « {} »", text)));
     };
-    choice("mode", s.update_mode, kUpdateModeNames);
-    choice("channel", s.update_channel, kUpdateChannelNames);
+    // « auto », d'avant la simple notification, se lit « notify » ; channel (canal Préversions retiré) est
+    // ignoré.
+    if ((*updates)["mode"].value_or(std::string()) == "auto")
+      s.update_mode = UpdateMode::Notify;
+    else
+      choice("mode", s.update_mode, kUpdateModeNames);
     choice("frequency", s.update_frequency, kUpdateFrequencyNames);
   }
   // [span_prepare] background et [default_player] dismissed, d'avant 0.10, ne servaient à rien : ignorés.
@@ -466,7 +470,6 @@ std::string format_settings(const PlaySettings& s) {
     root.insert("engines", std::move(engines));
   }
   root.insert("updates", toml::table{{"mode", std::string(name(s.update_mode))},
-                                     {"channel", std::string(name(s.update_channel))},
                                      {"frequency", std::string(name(s.update_frequency))}});
   root.insert("subtitles",
               toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});

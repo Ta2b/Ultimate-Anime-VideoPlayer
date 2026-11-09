@@ -409,7 +409,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.autoplay_next = wanted.autoplay_next;
   s.engines_dir = wanted.engines_dir;
   s.update_mode = wanted.update_mode;
-  s.update_channel = wanted.update_channel;
   s.update_frequency = wanted.update_frequency;
   s.language = wanted.language;
   s.audio_delay_ms = wanted.audio_delay_ms;

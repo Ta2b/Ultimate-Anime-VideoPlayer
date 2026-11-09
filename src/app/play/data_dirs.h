@@ -26,4 +26,11 @@ int move_heavy_data(const std::filesystem::path& from, const std::filesystem::pa
 int purge_misplaced(const std::filesystem::path& shared,
                     const std::function<void(const std::string&)>& said = {});
 
+// Le dossier <données>/updates des versions qui se mettaient à jour elles-mêmes (archives préparées, extract,
+// copie previous de l'ancienne installation) : la mise à jour n'est plus qu'une notification, il se retire au
+// lancement. Rien ne part s'il contient autre chose que des versions, extract et previous. Rend 1 s'il est
+// retiré.
+int purge_update_leftovers(const std::filesystem::path& data,
+                           const std::function<void(const std::string&)>& said = {});
+
 }  // namespace ajp::app::play

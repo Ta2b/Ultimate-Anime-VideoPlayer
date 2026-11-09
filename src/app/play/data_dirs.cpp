@@ -9,6 +9,8 @@
 #include <string_view>
 #include <system_error>
 
+#include "core/utf8_path.h"
+
 #ifdef _WIN32
 #include <shlobj.h>
 #include <windows.h>
@@ -40,6 +42,21 @@ bool version_name(std::string_view name) {
          std::ranges::all_of(name, [](char c) {
            return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '.' || c == '-';
          });
+}
+
+// Le dossier updates/ des versions qui s'appliquaient elles-mêmes : rien que des versions, extract et
+// previous. Un parcours qui échoue ne reconnaît rien : rien ne part.
+bool update_leftovers(const std::filesystem::path& updates) {
+  namespace fs = std::filesystem;
+  std::error_code error;
+  if (!fs::is_directory(updates, error)) return false;
+  fs::directory_iterator it(updates, error);
+  for (; !error && it != fs::directory_iterator(); it.increment(error)) {
+    const std::string name = core::to_utf8(it->path().filename());
+    if (!it->is_directory(error) || !(name == "extract" || name == "previous" || version_name(name)))
+      return false;
+  }
+  return !error;
 }
 
 }  // namespace
@@ -125,17 +142,25 @@ int purge_misplaced(const std::filesystem::path& shared,
       if (entry.is_regular_file(error) && entry.path().extension() == ".shots") drop(entry.path());
     if (fs::is_empty(plans, error) && !error) drop(plans);
   }
-  const fs::path updates = shared / "updates";
-  if (fs::is_directory(updates, error)) {
-    bool ours = true;
-    for (const fs::directory_entry& entry : fs::directory_iterator(updates, error)) {
-      const std::string name = entry.path().filename().string();
-      ours = ours && entry.is_directory(error) &&
-             (name == "extract" || name == "previous" || version_name(name));
-    }
-    if (ours && !error) drop(updates);
-  }
+  if (const fs::path updates = shared / "updates"; update_leftovers(updates)) drop(updates);
   return removed;
+}
+
+int purge_update_leftovers(const std::filesystem::path& data,
+                           const std::function<void(const std::string&)>& said) {
+  namespace fs = std::filesystem;
+  if (data.empty()) return 0;
+  const fs::path updates = data / "updates";
+  if (!update_leftovers(updates)) return 0;
+  std::error_code error;
+  const auto count = fs::remove_all(updates, error);
+  if (error) {
+    if (said) said(std::format("{} : {}", core::to_utf8(updates), error.message()));  // i18n-ok : journal
+    return 0;
+  }
+  if (said && count > 0)
+    said(std::format("{} retiré, ancienne mise à jour", core::to_utf8(updates)));  // i18n-ok : journal
+  return count > 0 ? 1 : 0;
 }
 
 }  // namespace ajp::app::play
