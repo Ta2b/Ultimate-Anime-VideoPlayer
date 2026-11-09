@@ -26,9 +26,9 @@
 | 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (8 défauts, 2 majeurs) | [rapport](rapports/14-sources-demux.md) |
 | 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs) | [rapport](rapports/15-decodage-formats.md) |
 | 16. Audio | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/16-audio.md) |
-| 17. Sous-titres | En cours | |
-| 18. Démarrage et arrêt | À faire | |
-| 19. Intégration au système | À faire | |
+| 17. Sous-titres | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/17-sous-titres.md) |
+| 18. Démarrage et arrêt | En cours | |
+| 19. Intégration au système | En cours | |
 | 20. Socle commun (core) | À faire | |
 | 21. Frontière des moteurs (interface et ABI) | À faire | |
 | 22. Réglages : modèle, application et persistance | À faire | |
@@ -252,6 +252,19 @@
 | A16-11 | Mineur | `src/audio/devices.cpp:15-18` | Code mort, appareils désignés par leur seul nom | 16 | |
 | A16-12 | Mineur | `src/audio/player.h:5-13` | Commentaires faux : l'audio est maître sur tout écran, pas seulement sous VRR | 16 | |
 | A16-13 | Mineur | `src/audio/player.h:55` | PLL éteinte par défaut dans les tests, active dans le produit | 16 | |
+| A17-01 | Majeur | `src/subs/subtitle_renderer.cpp:199` | En 4K, un dessin plein écran dépasse l'atlas et laisse les sous-titres suivants à demi-définition (MED-05, démontré) | 17 | |
+| A17-02 | Majeur | `src/subs/subs_messages.h:42` | PGS et VobSub ignorés sans un mot, et ils empêchent le repli sur un .ass externe | 17 | |
+| A17-03 | Mineur | `src/subs/text_encoding.cpp:212-216` | Indice de langue qui impose son encodage, repli direct sur Windows-1252 (MED-11) | 17 | |
+| A17-04 | Mineur | `src/subs/text_encoding.cpp:95-102` | UTF-16 sans BOM non reconnu, demi-paires recopiées | 17 | |
+| A17-05 | Mineur | `src/subs/subtitle_track.cpp:137-161` | Pas de pré-lecture des sous-titres au seek | 17 | |
+| A17-06 | Mineur | `src/subs/subtitle_renderer.cpp:221` | Délai négatif sans paquets lus en avance (MED-09) | 17 | |
+| A17-07 | Mineur | `src/subs/subtitle_track.cpp:118-122` | Une seule cue SRT refusée fait refuser tout le fichier | 17 | |
+| A17-08 | Mineur | `src/subs/subtitle_renderer.cpp:229-234` | Un rendu libass par image de sortie, après l'interpolation | 17 | |
+| A17-09 | Mineur | `src/subs/ass_library.cpp:53-62` | Polices jointes sans plafond total | 17 | |
+| A17-10 | Mineur | `src/subs/subs_thread.cpp:50` | Initialisation de libass sur le thread de la fenêtre | 17 | |
+| A17-11 | Mineur | `src/app/play/external_subtitles.cpp:123-124` | Fichiers externes coupés à 16 avant le choix par langue | 17 | |
+| A17-12 | Mineur | `src/subs/subtitle_track.cpp:27` | `path::string()` dans les sous-titres | 17 | |
+| A17-13 | Mineur | `tests/unit/subs/` | Sans test : retour à pleine taille, encodages coréen et EUC-JP | 17 | |
 
 ## Renvois
 
@@ -326,7 +339,7 @@
 | 12 | 20 | `src/core/drawings.cpp:113` | `DrawingsTimeline` n'est appelé que par ses tests | Ouvert |
 | 13 | 14 | `src/media/source_loop.cpp:110-123` | `recover_position` qui échoue laisse la source inactive, lecture figée | Traité par 14 |
 | 13 | 14 | `src/media/source_loop.cpp:182-188` | Lecture abandonnée traitée comme la fin du fichier (origine de MED-01) | Traité par 14 |
-| 13 | 17 | `src/app/play/external_subtitles.cpp:92` | `path::string()` sur des noms de sous-titres | Ouvert |
+| 13 | 17 | `src/app/play/external_subtitles.cpp:92` | `path::string()` sur des noms de sous-titres | Traité par 17 (A17-12) |
 | 13 | 08 | `src/app/play/player_run.cpp:738-739` | Pistes copiées dans `Player` même pour une autre vidéo (A13-01, A13-09) | En attente (08 fini) |
 | 13 | 30 | `src/app/play/wiring.cpp:113-124` | `ThreadStages::play/pause` rendent faux sans que personne ne rejoue | Ouvert |
 | 14 | 13 | `src/app/play/pipeline.cpp:45-49` | `path::string()` sur les sous-titres externes | En attente (13 fini) |
@@ -346,3 +359,10 @@
 | 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | En attente (13 fini) |
 | 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | En attente (12 fini) |
 | 16 | 20 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Ouvert |
+| 17 | 13 | `src/app/play/pipeline.cpp:164-170` | Une piste PGS empêche le repli sur un fichier externe | En attente (13 fini) |
+| 17 | 13 | `src/app/play/pipeline.cpp:183-191` | Polices recopiées deux fois, attente sur le thread de la fenêtre | En attente (13 fini) |
+| 17 | 13 | `src/app/play/pipeline.cpp:47` | Extension `.Srt` étiquetée « ass » | En attente (13 fini) |
+| 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | En attente (14 fini) |
+| 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Ouvert |
+| 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Ouvert |
+| 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
