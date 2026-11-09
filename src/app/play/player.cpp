@@ -212,7 +212,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         log->warn("mise à jour : {}", started.error().detail);
     }
   }
-  load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] ; les anciens profils ne sont plus lus
+  load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] seul
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,

@@ -37,7 +37,8 @@ void apply_user_keys(std::string_view user_toml) {
 void load_user_keys(const std::filesystem::path& user_toml) {
   auto text = core::read_text_file_if_present(user_toml);
   if (!text) {
-    log_channel("app")->warn("{} : {} ; raccourcis par défaut", core::to_utf8(user_toml), text.error().detail);
+    log_channel("app")->warn("{} : {} ; raccourcis par défaut", core::to_utf8(user_toml),
+                             text.error().detail);
     key_slot() = core::KeyMap::defaults();
     ignored_slot().clear();
     return;
