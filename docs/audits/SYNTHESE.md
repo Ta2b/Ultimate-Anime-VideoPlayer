@@ -16,7 +16,7 @@
 | 04. Analyse et découpe des modèles ONNX | Fusionné (11 défauts, 1 majeur) | [rapport](rapports/04-onnx-modeles.md) |
 | 05. Construction des moteurs, cache et trtexec | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/05-construction-moteurs.md) |
 | 06. Installation des moteurs et téléchargements | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/06-installation-moteurs.md) |
-| 07. Calibration, niveaux et mode Auto | Fusionné (12 défauts, 3 majeurs) | [rapport](rapports/07-calibration-niveaux.md) |
+| 07. Calibration, niveaux et mode Auto | Fusionné (13 défauts, 3 majeurs, complément compris) | [rapport](rapports/07-calibration-niveaux.md), [complément](rapports/07-calibration-niveaux-complement.md) |
 | 08. Boucle du lecteur et ouverture de la chaîne | Fusionné (14 défauts, 4 majeurs) | [rapport](rapports/08-boucle-chaine.md) |
 | 09. Étages d'agrandissement et d'interpolation | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/09-etages-traitement.md) |
 | 10. Rendu et présentation par libplacebo | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/10-presentation-libplacebo.md) |
@@ -409,7 +409,7 @@
 | A24-22 | Mineur | `src/app/play/osd_text.cpp:68` | Seconde bibliothèque libass pour l'OSD | 24 | |
 | A24-23 | Mineur | `src/app/play/ui.cpp:117-129` | Polices de secours CJK différentes sous Windows et Linux | 24 | |
 | A49-01 | Majeur | `src/app/play/auto_config.cpp:69-75` | L'Auto ne joue jamais le SPAN b8f64, même en Ultra | 49 | |
-| A49-02 | Majeur | `src/app/play/auto_config.cpp:48` | Source 1080p réduite à 720p ou 540p avant SPAN | 49 | |
+| A49-02 | Majeur | `src/app/play/auto_config.cpp:48` | Source 1080p réduite à 720p ou 540p avant SPAN | 49 | Aggravé par 07 (complément) : sur une carte Qualité ou Ultra, calibrer donne une image moins bonne que ne pas calibrer |
 | A49-03 | Majeur | `src/app/play/auto_config.cpp:167-169` | Auto calibré en FP8 malgré l'ADR 0007 suspendue, sans essayer le b8f64 FP16, pour 6,5 % | 49 | |
 | A49-04 | Majeur | `src/app/play/options.h:113-114` | Anneau RGB10A2 par défaut sans la porte de banding de l'ADR 0008 | 49 | A21-03 (même cause) |
 | A49-05 | Majeur | `src/render/cube_lut.cpp:289-314` | Pile de looks composée en LUT 65³ : jusqu'à 15,5 codes PQ d'écart (mesuré) | 49 | |
@@ -491,7 +491,7 @@
 | A32-07 | Mineur | `src/app/play/placebo_ring.cpp:214-218` | `ready()` interroge le pilote à chaque question | 32 | |
 | A32-08 | Mineur | `src/core/free_rate.cpp:27-36` | Pas du mode Rapide calé sur un temps de service en temps de mur | 32 | |
 | A32-09 | Mineur | `docs/handoff-pc.md:77-78` | Temps de référence périmés | 32 | |
-| A34-01 | Majeur | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Auto calibré : b8f64 FP8 CUTLASS sous Linux, b5f48 FP16 ou INT8 sous Windows | 34 | |
+| A34-01 | Majeur | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Auto calibré : b8f64 FP8 CUTLASS sous Linux, b5f48 FP16 ou INT8 sous Windows | 34 | Précisé par 07 (complément) : sous Windows en 1080p, b8f64 INT8 ou FP16 |
 | A34-02 | Majeur | `src/media/shot_probe.cpp:165-175` | Pré-analyse sur un thread sous Windows : grade et coupes privés sur les sources lourdes (à confirmer) | 34 | Réfuté en grande partie par 42 (NVDEC par défaut, seul le repli logiciel est touché) |
 | A34-03 | Mineur | `src/app/play/single_instance.cpp:114-120` | Canal nommé de l'instance unique à nom prévisible | 34 | |
 | A34-04 | Mineur | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | 34 | |
@@ -658,6 +658,7 @@
 | A40-14 | Mineur | `.github/workflows/cloud.yml:57-58` | Tâches qui ne passent pas `check-skips.sh` ; préréglages de release non testés | 40 | |
 | A40-15 | Mineur | `.github/workflows/ci.yml` | Aucune mesure de couverture en CI (76 % mesuré ici) | 40 | |
 | A40-16 | Mineur | `tools/ci/check-cuda.sh:2-6` | Commentaire faux sur la construction CUDA en CI | 40 | |
+| A07-13 | Mineur | `src/app/play/auto_config.h:19-22` | La « porte de qualité » qui tient DistilDRBA hors de l'Auto n'est écrite nulle part ; le commentaire renvoie à un ADR sans rapport | 07 | |
 
 ## Renvois
 
@@ -764,7 +765,7 @@
 | 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Traité par 25 |
 | 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Traité par 24 |
 | 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | En attente (18 fini) |
-| 18 | 07 | `src/app/play/auto_config.h:22` | DistilDRBA n'entre jamais dans Auto et la calibration ne l'essaie pas | En attente (07 fini) |
+| 18 | 07 | `src/app/play/auto_config.h:22` | DistilDRBA n'entre jamais dans Auto et la calibration ne l'essaie pas | Traité par 07 (complément) |
 | 18 | 30 | `src/app/play/chain_hdr.cpp:162` | `LookLoader` détaché qui peut journaliser après `close_log` | Traité par 30 |
 | 18 | 26 | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant le téléchargement | Traité par 26 |
 | 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Traité par 26 |
@@ -772,7 +773,7 @@
 | 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Traité par 39 (doublon d'A26-12) |
 | 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
 | 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Traité par 32 |
-| 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | En attente (07 fini) |
+| 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | Traité par 07 (complément) |
 | 03 | 23 | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé hors RIFE alors qu'il décide la variante DistilDRBA | Traité par 23 |
 | 03 | 09 | `src/app/play/upscale_drba.cpp:144` | DistilDRBA mesure la paire à la taille de travail, RIFE sur la copie réduite | En attente (09 fini) |
 | 03 | 05 | `src/prepare/trtexec_command.cpp:105-106` | Formats des frontières des morceaux DistilDRBA laissés à TensorRT : reformatages possibles | En attente (05 fini) |
@@ -790,8 +791,8 @@
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
 | 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
 | 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Traité par 24 |
-| 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | En attente (07 fini) |
-| 22 | 07 | `src/app/play/auto_config.cpp:203-205` | L'Auto calibré écrase `auto_free` et le modèle RIFE à chaque vidéo | En attente (07 fini) |
+| 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | Traité par 07 (complément) |
+| 22 | 07 | `src/app/play/auto_config.cpp:203-205` | L'Auto calibré écrase `auto_free` et le modèle RIFE à chaque vidéo | Traité par 07 (complément) |
 | 22 | 23 | `src/app/play/settings_sound.cpp:72` | Bornes des curseurs de délai différentes des réglages et des touches | Traité par 23 (A23-11) |
 | 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | En attente (23 fini) |
 | 22 | 09 | `src/app/play/chain_setup.cpp:359-361` | Qualité : estimation RIFE sur copie 720p au-dessus de 720 lignes | En attente (09 fini) |
@@ -808,12 +809,12 @@
 | 23 | 22 | `src/app/play/settings.cpp:383-433` | Cause d'A23-01 (`restore_lines`, `gpu`) | Traité par 22 (A22-01) |
 | 23 | 22 | `src/app/play/settings.h:304-307` | Commentaire du seuil HDR posé au mauvais endroit | En attente (22 fini) |
 | 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Traité par 26 |
-| 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | En attente (07 fini) |
+| 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | Traité par 07 (complément) |
 | 23 | 08 | `src/app/play/chain.cpp:183-185` | Une notification par image pendant le glissement du délai des sous-titres | En attente (08 fini) |
 | 25 | 24 | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » depuis l'accueil n'ouvre que l'écran des moteurs | En attente (24 fini) |
-| 25 | 07 | `src/app/play/machine_calibration.cpp:115-135` | `best_candidate` ignore `priority` : la fluidité passe toujours avant la taille d'image | En attente (07 fini) |
-| 25 | 07 | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` ne note pas le moteur mesuré | En attente (07 fini) |
-| 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | En attente (07 fini) |
+| 25 | 07 | `src/app/play/machine_calibration.cpp:115-135` | `best_candidate` ignore `priority` : la fluidité passe toujours avant la taille d'image | Traité par 07 (complément) |
+| 25 | 07 | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` ne note pas le moteur mesuré | Traité par 07 (complément) |
+| 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | Traité par 07 (complément) |
 | 25 | 08 | `src/app/play/player.cpp:559` | Après `handle_engine_change`, chaîne rouverte avec les réglages d'avant | En attente (08 fini) |
 | 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | En attente (19 fini) |
 | 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Traité par 43 (A43-05) |
@@ -832,7 +833,7 @@
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
 | 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
 | 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | En attente (27 fini) |
-| 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | En attente (07 fini) |
+| 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | Traité par 07 (complément) |
 | 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | En attente (10 fini) |
 | 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | En attente (23 fini) |
 | 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Traité par 32 |
@@ -866,14 +867,14 @@
 | 28 | 09 | `src/app/play/drba_model.cpp:14-28` | Demi-flot DistilDRBA manquant : repli silencieux sur le flot entier | En attente (09 fini) |
 | 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Traité par 40 (A40-01) |
 | 32 | 03 | `src/app/play/upscale_drba.cpp:179-256` | L'entrée de DistilDRBA, pas seulement son nombre de passes | Traité par 03 (complément, A03-14) |
-| 32 | 07 | `src/app/play/auto_config.cpp:167-169` | Commentaire et code contradictoires sur le FP8 dans l'Auto (TRT-08) | En attente (07 fini) |
+| 32 | 07 | `src/app/play/auto_config.cpp:167-169` | Commentaire et code contradictoires sur le FP8 dans l'Auto (TRT-08) | Traité par 07 (complément) |
 | 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | En attente (10 fini) |
 | 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | En attente (12 fini) |
 | 32 | 21 | `src/gpu/gpu_profile.h` | `gpu_profile` sans équivalent Vulkan pour l'écran | En attente (21 fini) |
 | 32 | 28 | `docs/auto-libre.md` § 3 | Tableaux de temps à dater et marquer historiques | En attente (28 fini) |
 | 32 | 49 | `docs/adr/0008-anneau-rgb10a2.md` | Porte de qualité de l'anneau 10 bits jamais passée | Traité par 49 (A49-04) |
-| 34 | 07 | `src/app/play/auto_config.cpp:192-200` | L'Auto calibré force RIFE 4.22 lite, n'essaie ni DistilDRBA ni RIFE 4.25 | En attente (07 fini) |
-| 34 | 07 | `src/app/play/machine_calibration.cpp:279-330` | Premier essai FP8 perdu sans CUTLASS | En attente (07 fini) |
+| 34 | 07 | `src/app/play/auto_config.cpp:192-200` | L'Auto calibré force RIFE 4.22 lite, n'essaie ni DistilDRBA ni RIFE 4.25 | Traité par 07 (complément) |
+| 34 | 07 | `src/app/play/machine_calibration.cpp:279-330` | Premier essai FP8 perdu sans CUTLASS | Traité par 07 (complément) |
 | 34 | 31 | `src/app/play/drba_fused_choice.cpp:9` | A31-06 touche les deux systèmes | En attente (31 fini) |
 | 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | En attente (06 fini) |
 | 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | En attente (15 fini) |
@@ -888,7 +889,7 @@
 | 35 | 33 | `src/prepare/builder.cpp:139-145` | Un moteur par forme, sans purge | Traité par 33 (A33-04) |
 | 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | En attente (17 fini) |
 | 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | En attente (28 fini) |
-| 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | En attente (07 fini) |
+| 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | Traité par 07 (complément) |
 | 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | En attente (02 fini) |
 | 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | En attente (26 fini) |
 | 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | En attente (15 fini) |
@@ -901,12 +902,12 @@
 | 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
 | 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | En attente (23 fini) |
 | 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | En attente (28 fini) |
-| 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | En attente (07 fini) |
+| 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | Traité par 07 (complément) |
 | 42 | 09 | `src/app/play/rife_plan.cpp:10-14` | `kPlanCutFloor` comparé au score brut de RIFE | En attente (09 fini) |
 | 42 | 09 | `src/app/play/rife_plan.h:39-42` | `kPlanCutFloor` tenu sur une seule série | En attente (09 fini) |
 | 42 | 41 | `src/app/play/chain_hdr.cpp:252` | GPU-07 : métadonnées HDR10 fixes, grade seul plafonné | Réfuté par 41 (pic plafonné lu, GPU-07 reste vrai) |
 | 42 | 41 | `src/kernels/spec/frame_stats.h:5-6` | Statistiques de lumière du grade sur 9 216 points | Réfuté par 41 pour le grade (reste à 42 pour les flashs) |
-| 42 | 07 | `src/app/play/auto_bench_run.cpp:37` | Pré-analyse active pendant les essais de calibration | En attente (07 fini) |
+| 42 | 07 | `src/app/play/auto_bench_run.cpp:37` | Pré-analyse active pendant les essais de calibration | Traité par 07 (complément) |
 | 41 | 10 | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | En attente (10 fini) |
 | 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | En attente (32 fini) |
 | 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | En attente (38 fini) |
@@ -922,7 +923,7 @@
 | 43 | 08 | `src/app/play/chain.cpp:113-131` | UX-20 : rien ne reformate l'affichage quand la langue change en direct | En attente (08 fini) |
 | 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | En attente (22 fini) |
 | 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | En attente (23 fini) |
-| 43 | 07 | `src/app/play/player.cpp:486-487` | « New graphics card » renvoie à un bouton du mode avancé, sous un autre nom | En attente (07 fini) |
+| 43 | 07 | `src/app/play/player.cpp:486-487` | « New graphics card » renvoie à un bouton du mode avancé, sous un autre nom | Traité par 07 (complément) |
 | 45 | 21 | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` posé par personne : option morte du contrat | En attente (21 fini) |
 | 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | En attente (21 fini) |
 | 45 | 08 | `src/app/play/chain_setup.h:89-93` | Ordre de destruction moteurs Vulkan puis backend au passage vers TensorRT | En attente (08 fini) |
