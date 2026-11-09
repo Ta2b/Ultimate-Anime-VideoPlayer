@@ -64,7 +64,7 @@ ajp_alias_dep(ffmpeg PkgConfig::AJP_FFMPEG)
 pkg_check_modules(AJP_PLACEBO REQUIRED IMPORTED_TARGET libplacebo>=7.360)
 ajp_alias_dep(placebo PkgConfig::AJP_PLACEBO)
 
-# libass du fork the-database, commit 896614fa (overlay ports/libass ; pourquoi le fork : son portfile).
+# libass 0.17.5 de l'amont plus le rendu sur plusieurs fils (overlay ports/libass, son correctif et son portfile).
 pkg_check_modules(AJP_ASS REQUIRED IMPORTED_TARGET libass)
 ajp_alias_dep(ass PkgConfig::AJP_ASS)
 

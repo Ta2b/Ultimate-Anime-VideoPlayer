@@ -5,6 +5,10 @@
 # GITHUB_TOKEN ne lance pas ci.yml : la tâche le lance elle-même sur la branche (workflow_dispatch).
 # Il faut que « Allow GitHub Actions to create and approve pull requests » soit coché dans les
 # réglages du dépôt (Actions > General).
+#
+# Les failles connues (A35-01) : tools/ci/deps_vulns.py demande à OSV les avis qui touchent chaque bibliothèque
+# livrée (FFmpeg, libass, dav1d, FreeType, HarfBuzz, fribidi, zlib, SDL, libplacebo) ; s'il y en a, une issue
+# « Failles des dépendances livrées » les liste, tenue à jour chaque semaine.
 name: Dépendances en retard
 
 on:
@@ -25,6 +29,7 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        # Garde le jeton : la tâche pousse la branche deps/vcpkg-baseline.
       - name: Relevé et pull request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,3 +54,44 @@ jobs:
             gh pr edit "$branch" --body "$body"
           fi
           gh workflow run ci.yml --ref "$branch"
+
+  vulns:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Bibliothèques du paquet Linux (versions d'Ubuntu)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends libdav1d-dev libsvtav1enc-dev
+      - name: Avis de sécurité et issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Failles des dépendances livrées"
+          number="$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')"
+          if python3 -I tools/ci/deps_vulns.py >"$RUNNER_TEMP/vulns.md"; then
+            cat "$RUNNER_TEMP/vulns.md"
+            [ -z "$number" ] || gh issue close "$number" --comment "Plus aucun avis ouvert au relevé du $(date -u +%F)."
+            exit 0
+          fi
+          tee -a "$GITHUB_STEP_SUMMARY" <"$RUNNER_TEMP/vulns.md"
+          {
+            echo "Relevé du $(date -u +%F) par \`tools/ci/deps_vulns.py\` (OSV). Corriger en montant la version"
+            echo "(\`tools/deps/linux-from-source.sh\`, baseline de \`vcpkg.json\`, \`ports/\`), puis publier une release : le"
+            echo "lecteur annonce la nouvelle version. Un avis sans objet pour nos constructions va dans"
+            echo "\`tools/ci/deps-vulns-ignore.txt\` avec sa raison."
+            echo
+            cat "$RUNNER_TEMP/vulns.md"
+          } >"$RUNNER_TEMP/body.md"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi
+          exit 1
