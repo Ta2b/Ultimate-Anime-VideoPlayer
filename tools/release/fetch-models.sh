@@ -4,12 +4,17 @@
 #   <dest>/onnx/   SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), depuis le
 #                  dépôt mpv-AnimeJaNai-HDR à un commit fixé ; licence CC BY-NC-SA 4.0
 #                  ArtCNN C4F32 enveloppé en RGB (P6.7), rangé dans tools/upscale/models ; licence MIT
-#   <dest>/rife/   RIFE 4.25, 4.22, 4.22 lite, 4.26 et 4.26 heavy en fp16 (conversions de vs-mlrt), depuis la release
-#                  models-rife-fp16-1 d'animejanai-inference ; RIFE est sous licence MIT
+#   <dest>/rife/   RIFE 4.25 et 4.22 lite en fp16 (conversions de vs-mlrt), les deux que le menu propose
+#                  (kRifeCatalogue), depuis la release models-rife-fp16-1 d'animejanai-inference ; RIFE est
+#                  sous licence MIT
 #                  DistilDRBA v2 lite en fp16, converti par tools/drba/export_distil_drba.py depuis
 #                  routineLife1/DistilDRBA (db51bde, weights/v2_lite.pkl), depuis la release
 #                  models-drba-1 d'ajp-releases, sinon de la branche assets/distil-drba-v2-lite du
-#                  dépôt ; DistilDRBA est sous licence MIT
+#                  dépôt ; son demi-flot (échelle 0,5) depuis la release models-interp-1 ; DistilDRBA est
+#                  sous licence MIT
+#
+# Chaque fichier est épinglé ici par son SHA-256 : aucune empreinte n'est lue d'une release, qu'un envoi
+# --clobber pourrait changer (A28-06, A46-01).
 #
 #   tools/release/fetch-models.sh <dest> [dossier-de-cache]
 #
@@ -36,10 +41,7 @@ RIFE_URL="https://github.com/the-database/animejanai-inference/releases/download
 RIFE_ARCHIVE_SHA=3fcf3429f3bb661d15c59aa58ed7ba28c0ca7f79e2388f8e0165dd8bbe0648f9
 RIFE=(
   "de0fb71ae50fe082eb3903fd5cf752063dea5e9fd61e8bbf3c4577e11b877c9c rife_v4.25.onnx"
-  "7fdb67dcf02d23cd573b5269bb41c600b7d4241cfda366099e736938d8f7abc6 rife_v4.22.onnx"
   "8b30b93ef8ab0b3cd1bb8905ad8b911eb887ff4b2900558eb1914d99568e2ca5 rife_v4.22_lite.onnx"
-  "fd6b06538898c9a94d20f0fe55febceadbcde5ad64952240733b7275ef4c9d59 rife_v4.26.onnx"
-  "ae45000d804282764554820a665588352ff08025d0b5761023aad52425766928 rife_v4.26_heavy.onnx"
 )
 RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"  # P5.39 : le dépôt des releases, paramétrable
 DRBA_URL="https://github.com/$RELEASE_REPO/releases/download/models-drba-1"
@@ -83,22 +85,18 @@ for entry in "${DRBA[@]}"; do
   check "$sha" "$DEST/rife/$name"
 done
 
-# Le demi-flot de DistilDRBA : exporté par le workflow export-interpolation-models.yml, joint à la release
-# models-interp-1 avec son SHA256SUMS. Facultatif : tant que la release n'existe pas, les paquets partent sans lui
-# (le lecteur le signale absent). Tout ce que son SHA256SUMS liste est pris, sauf les graphes de GMFSS (gmfss_*),
-# retiré du lecteur (0.10.0) ; les graphes FP8 de DistilDRBA, facultatifs (plus lents que le fusionné), sont dans
-# SHA256SUMS.facultatif et ne sont jamais téléchargés ici.
+# Le demi-flot de DistilDRBA, exporté par export-interpolation-models.yml et joint à la release models-interp-1.
+# Seul ce nom est pris, à son empreinte : le DistilDRBA entier vient de models-drba-1 ci-dessus, et le reste de la
+# release (anciens graphes GMFSS, FP8 facultatifs) ne part jamais dans les paquets (A46-15).
 INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/$RELEASE_REPO/releases/download/models-interp-1}"
-if curl -fsSL -o "$CACHE/interp-SHA256SUMS" "$INTERP_URL/SHA256SUMS" 2>/dev/null; then
-  while read -r sha name; do
-    [ -n "${name:-}" ] || continue
-    case "$name" in gmfss_*) continue ;; esac
-    curl -fsSL -o "$DEST/rife/$name" "$INTERP_URL/$name"
-    check "$sha" "$DEST/rife/$name"
-  done < "$CACHE/interp-SHA256SUMS"
-else
-  echo "modèles d'interpolation (DRBA demi-flot) : release models-interp-1 absente, non joints" >&2
-fi
+INTERP=(
+  "edbbb928572fd45efad2bbfa7010966b2b2f6771b01ad2bd8965ccbd6bfcb145 distil_drba_v2_lite_s05.onnx"
+)
+for entry in "${INTERP[@]}"; do
+  read -r sha name <<<"$entry"
+  curl -fsSL -o "$DEST/rife/$name" "$INTERP_URL/$name"
+  check "$sha" "$DEST/rife/$name"
+done
 
 cat > "$DEST/LICENCES.txt" <<'TXT'
 Modèles livrés avec le lecteur
@@ -108,7 +106,7 @@ onnx/  AnimeJaNai HD V3.1 (SPAN), par the-database : Creative Commons BY-NC-SA 4
        https://github.com/the-database/mpv-upscale-2x_animejanai
        ArtCNN C4F32 (João Chrisóstomo), enveloppé en RGB par ajp : licence MIT.
        https://github.com/Artoriuz/ArtCNN
-rife/  RIFE 4.25, 4.22, 4.22 lite, 4.26 et 4.26 heavy (Practical-RIFE, hzwer), conversions ONNX de vs-mlrt passées en
+rife/  RIFE 4.25 et 4.22 lite (Practical-RIFE, hzwer), conversions ONNX de vs-mlrt passées en
        fp16 par animejanai-inference : licence MIT.
        https://github.com/hzwer/Practical-RIFE
        DistilDRBA v2 lite (routineLife1, « neko »), converti en ONNX fp16 par ajp : licence MIT.
