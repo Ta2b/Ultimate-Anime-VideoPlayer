@@ -41,7 +41,7 @@
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
 | 31. États dégradés et reprise sur erreur | Fusionné (15 défauts, 8 majeurs) | [rapport](rapports/31-etats-degrades.md) |
-| 32. Budget par image sur la cible | À faire | |
+| 32. Budget par image sur la cible | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/32-budget-par-image.md) |
 | 33. Longue durée, mémoire et ressources | À faire | |
 | 34. Parité Windows et CachyOS | À faire | |
 | 35. Entrées non sûres | À faire | |
@@ -482,6 +482,15 @@
 | A28-15 | Mineur | `.github/workflows/release-windows.yml` | Release Windows sans groupe de concurrence | 28 | |
 | A28-16 | Mineur | `tools/release/appimage.sh:145` | `appimagetool` téléchargé sans SHA-256 puis exécuté | 28 | |
 | A28-17 | Mineur | `.github/workflows/release-linux.yml:10-11` | En-têtes qui promettent des chemins interdits par la garde | 28 | |
+| A32-01 | Majeur | `docs/auto-libre.md:142-143` | Le service de 13 à 16 ms date de la chaîne avec RTX HDR : à remesurer ; 1,7 à 2,7 ms de GPU estimés par image à 1440p | 32 | |
+| A32-02 | Majeur | `src/gpu/cuda/backend/tensorrt_backend.cpp:407-498` | `gpu_profile` ne voit ni l'écran, ni les sémaphores, ni les attentes hôte | 32 | |
+| A32-03 | Majeur | `tests/unit/` | Aucun test de la sortie du lecteur contre un original | 32 | |
+| A32-04 | Majeur | `src/app/play/upscale_drba.cpp:179-256` | DistilDRBA refait deux `rife_input` par image créée, plus cher que son réseau | 32 | A03-14 (même cause) |
+| A32-05 | Mineur | `src/render/grade.cpp:355` | Passes d'écran du grade à fusionner | 32 | |
+| A32-06 | Mineur | `src/gpu/cuda/backend/warp_kernels.cu:100-170` | Warp en plans séparés : une vingtaine de lectures par pixel | 32 | |
+| A32-07 | Mineur | `src/app/play/placebo_ring.cpp:214-218` | `ready()` interroge le pilote à chaque question | 32 | |
+| A32-08 | Mineur | `src/core/free_rate.cpp:27-36` | Pas du mode Rapide calé sur un temps de service en temps de mur | 32 | |
+| A32-09 | Mineur | `docs/handoff-pc.md:77-78` | Temps de référence périmés | 32 | |
 
 ## Renvois
 
@@ -595,7 +604,7 @@
 | 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | En attente (17 fini) |
 | 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Ouvert |
 | 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
-| 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Ouvert |
+| 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Traité par 32 |
 | 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | En attente (07 fini) |
 | 03 | 23 | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé hors RIFE alors qu'il décide la variante DistilDRBA | Traité par 23 |
 | 03 | 09 | `src/app/play/upscale_drba.cpp:144` | DistilDRBA mesure la paire à la taille de travail, RIFE sur la copie réduite | En attente (09 fini) |
@@ -623,7 +632,7 @@
 | 21 | 26 | `src/app/play/engine_downloads.cpp:130` | Module mis à jour seulement sur `AbiMismatch` : un correctif hors frontière n'arrive jamais | Traité par 26 |
 | 21 | 09 | `src/app/play/upscale_drba.cpp:66-67` | Garder `filled01` et `filled12` d'une paire à la suivante | En attente (09 fini) |
 | 21 | 09 | `src/app/play/upscale_drba.cpp:99` | `scores_take` bloque le thread GPU à chaque paire (A21-06) | En attente (09 fini) |
-| 21 | 32 | `docs/auto-libre.md` § 3 | Décomposer les ≈ 11 ms de GPU par image hors réseau, qui ôtent à DistilDRBA son avance | Ouvert |
+| 21 | 32 | `docs/auto-libre.md` § 3 | Décomposer les ≈ 11 ms de GPU par image hors réseau, qui ôtent à DistilDRBA son avance | Traité par 32 |
 | 21 | 10 | `audit/mesures-auto-4070ti.md` | DistilDRBA ×6 : 962 images manquées sans paire en retard, la présentation plafonne | En attente (10 fini) |
 | 21 | 08 | `src/app/play/chain_setup.cpp:361-363` | Qualité : mouvement estimé à 720p, à remesurer surtout pour DistilDRBA | En attente (08 fini) |
 | 21 | 08 | `src/app/play/engine_screen.cpp:343` | `path().string()` dans le journal | En attente (08 fini) |
@@ -659,7 +668,7 @@
 | 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | En attente (07 fini) |
 | 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | En attente (10 fini) |
 | 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | En attente (23 fini) |
-| 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Ouvert |
+| 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Traité par 32 |
 | 49 | 34 | `src/app/play/span_auto.cpp:22-25` | Windows et Linux ne jouent pas le même SPAN en Auto calibré | Ouvert |
 | 49 | 41 | `src/render/cube_lut.cpp:289-314` | Écart de la LUT composée ; statistiques du grade sur l'image débandée | Ouvert |
 | 29 | 13 | `src/app/play/player.cpp:454` | A13-09 réfuté : `Player` recréé à chaque fichier | Traité par 29 |
@@ -672,10 +681,10 @@
 | 31 | 39 | `src/app/play/engine_screen.cpp:342-344` | Raison du refus de TensorRT au journal seulement | Ouvert |
 | 31 | 08 | `src/app/play/chain_setup.cpp:160-171` | Repli au cran Équilibre : baisse de qualité sans avis | En attente (08 fini) |
 | 31 | 34 | `src/app/play/chain_setup.cpp:415-427` | Sous Windows, Performance retombe toujours en FP16 entier | Ouvert |
-| 31 | 32 | `src/gpu/cuda/backend/tensorrt_export.cpp` | « CUDA Sysmem Fallback » sous Windows : lenteur sans refus | Ouvert |
+| 31 | 32 | `src/gpu/cuda/backend/tensorrt_export.cpp` | « CUDA Sysmem Fallback » sous Windows : lenteur sans refus | En attente (32 fini) |
 | 30 | 01 | `src/gpu/cuda/backend/tensorrt_backend.cpp:201-204` | `drain()` à placer dans `~TensorRtBackend` (A30-01) | En attente (01 fini) |
-| 30 | 32 | `src/gpu/cuda/backend/tensorrt_lanes.cpp:140-150` | Aucun `cudaSetDeviceFlags` : attente active sur un cœur | Ouvert |
-| 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | Ouvert |
+| 30 | 32 | `src/gpu/cuda/backend/tensorrt_lanes.cpp:140-150` | Aucun `cudaSetDeviceFlags` : attente active sur un cœur | En attente (32 fini) |
+| 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | En attente (32 fini) |
 | 30 | 42 | `src/media/shot_probe.cpp:108-110` | `~ShotProbe` joint sur le thread de la fenêtre | Ouvert |
 | 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | En attente (26 fini) |
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Ouvert |
@@ -689,3 +698,10 @@
 | 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | En attente (26 fini) |
 | 28 | 09 | `src/app/play/drba_model.cpp:14-28` | Demi-flot DistilDRBA manquant : repli silencieux sur le flot entier | En attente (09 fini) |
 | 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Ouvert |
+| 32 | 03 | `src/app/play/upscale_drba.cpp:179-256` | L'entrée de DistilDRBA, pas seulement son nombre de passes | Traité par 03 (complément, A03-14) |
+| 32 | 07 | `src/app/play/auto_config.cpp:167-169` | Commentaire et code contradictoires sur le FP8 dans l'Auto (TRT-08) | En attente (07 fini) |
+| 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | En attente (10 fini) |
+| 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | En attente (12 fini) |
+| 32 | 21 | `src/gpu/gpu_profile.h` | `gpu_profile` sans équivalent Vulkan pour l'écran | En attente (21 fini) |
+| 32 | 28 | `docs/auto-libre.md` § 3 | Tableaux de temps à dater et marquer historiques | En attente (28 fini) |
+| 32 | 49 | `docs/adr/0008-anneau-rgb10a2.md` | Porte de qualité de l'anneau 10 bits jamais passée | Traité par 49 (A49-04) |
