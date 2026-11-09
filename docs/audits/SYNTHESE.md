@@ -46,7 +46,7 @@
 | 34. Parité Windows et CachyOS | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/34-parite-windows-cachyos.md) |
 | 35. Entrées non sûres | Fusionné (9 défauts, 1 majeur) | [rapport](rapports/35-entrees-hostiles.md) |
 | 36. État persistant et compatibilité entre versions | Fusionné (9 défauts, 3 majeurs) | [rapport](rapports/36-etat-persistant.md) |
-| 37. Configurations NVIDIA variées | À faire | |
+| 37. Configurations NVIDIA variées | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/37-configurations-nvidia.md) |
 | 38. Promesses tenues | À faire | |
 | 39. Diagnostic et support | À faire | |
 | 40. Tests et couverture | À faire | |
@@ -529,6 +529,20 @@
 | A36-07 | Mineur | `tools/release/windows/ajp.iss:16-50` | Désinstaller laisse plusieurs Go sans le dire | 36 | |
 | A36-08 | Mineur | `src/app/play/paths.h:13-36` | Caches reconstructibles hors de `~/.cache` sous CachyOS | 36 | |
 | A36-09 | Mineur | `tests/unit/app/settings_test.cpp:620-645` | Aucun test de passage entre versions hors des clés inconnues | 36 | |
+| A37-01 | Majeur | `src/gpu/cuda/backend/span_fp8_net.cu:225-228` | SPAN FP8 CUTLASS déclaré pris en charge sur RTX 50 sans y avoir tourné ; seule garde la porte aveugle aux NaN (à confirmer) | 37 | |
+| A37-02 | Mineur | `src/app/play/home_screen.cpp:141` | FP8 présumé par le nom de la carte à l'accueil (RTX 20 et 30) | 37 | |
+| A37-03 | Mineur | `src/app/play/engine_install.cpp:97-115` | `cuda_arch_from_name` faux pour la RTX 2050 et une autre carte de la cible | 37 | |
+| A37-04 | Mineur | `data/gpu_tiers.toml:15-24` | Portables RTX 20 sans « Laptop » dans leur nom | 37 | |
+| A37-05 | Mineur | `src/app/play/auto_config.cpp:176-180` | Qualité : baisse choisie par le nom de la carte en Auto estimé, sans mesure | 37 | |
+| A37-06 | Mineur | `src/app/play/auto_config.cpp:131-138` | Hauteur de travail calée sur l'écran, pas sur la source | 37 | |
+| A37-07 | Mineur | `src/app/play/auto_config.cpp:223-225` | Chaîne d'un préréglage refaite à chaque vidéo | 37 | |
+| A37-08 | Mineur | `src/app/play/first_run.cpp:245-253` | Pilote minimum de TensorRT vérifié seulement à l'écran des moteurs | 37 | |
+| A37-09 | Mineur | `src/app/play/auto_bench.cpp:207` | Deux mesures de la machine qui traitent la batterie différemment | 37 | |
+| A37-10 | Mineur | `src/app/play/machine_calibration.cpp:160-166` | Une seule calibration par machine (une carte, un écran) | 37 | |
+| A37-11 | Mineur | `src/app/play/first_run.cpp:220-230` | Pilote libre NVK pris pour le pilote NVIDIA | 37 | |
+| A37-12 | Mineur | `src/app/play/home_screen.cpp` | Aucun test des décisions par configuration | 37 | |
+| A37-13 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:25` | Nombre de voies décidé sur la mémoire totale, pas la libre | 37 | |
+| A37-14 | Mineur | `src/app/play/auto_config.cpp:55` | En Stable, le plafond ×4 coupe les paliers des écrans rapides | 37 | |
 
 ## Renvois
 
@@ -762,3 +776,6 @@
 | 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | En attente (07 fini) |
 | 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | En attente (02 fini) |
 | 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | En attente (26 fini) |
+| 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | En attente (15 fini) |
+| 37 | 02 | `src/gpu/cuda/backend/span_fp8_kernels.cuh:241` | Tag `Sm89` de CUTLASS compilé aussi pour sm_120 | En attente (02 fini) |
+| 37 | 01 | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné à deux blocs par SM | En attente (01 fini) |
