@@ -31,7 +31,7 @@
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/19-integration-systeme.md), [complément](rapports/19-integration-systeme-complement.md) |
 | 20. Socle commun (core) | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/20-socle-core.md), [complément](rapports/20-socle-core-complement.md) |
 | 21. Frontière des moteurs (interface et ABI) | Fusionné (11 défauts, 3 majeurs, complément compris) | [rapport](rapports/21-frontiere-moteurs.md), [complément](rapports/21-frontiere-moteurs-complement.md) |
-| 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
+| 22. Réglages : modèle, application et persistance | Fusionné (18 défauts, 3 majeurs, complément compris) | [rapport](rapports/22-reglages-modele.md), [complément](rapports/22-reglages-modele-complement.md) |
 | 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
 | 24. Interface : rendu, contrôles et messages | Fusionné (23 défauts, 3 majeurs) | [rapport](rapports/24-interface-rendu.md) |
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
@@ -701,6 +701,8 @@
 | A17-14 | Mineur | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond cumulé des paquets d'une piste intégrée : MKV forgé, plusieurs Gio dans libass | 17 | |
 | A20-14 | Mineur | `src/core/model_index.h:1-6` | En-tête faux : modèles téléchargés et vérifiés, alors qu'ils sont livrés avec le lecteur | 20 | |
 | A21-11 | Mineur | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` morte, encore traitée par les deux moteurs (TensorRT la refuse avec un message trompeur) | 21 | |
+| A22-17 | Mineur | `src/app/play/settings.h:305-307` | Commentaire du seuil HDR posé au-dessus de la mauvaise constante | 22 | |
+| A22-18 | Mineur | `src/app/play/settings.cpp:130-138` | Valeurs et gardes GMFSS mortes (aucune n'atteint `PlaySettings`) | 22 | |
 
 ## Renvois
 
@@ -849,7 +851,7 @@
 | 21 | 45 | `src/gpu/vulkan/backend/entry_points.h:1-6` | Commentaire qui nomme MIGraphX et OpenVINO | Traité par 45 (A45-10) |
 | 21 | 40 | `tests/unit/gpu/backend_test.cpp` | `GuardedKernelOps` jamais testé ; `IngestSpec::chroma` non vérifié | Traité par 40 (A40-08, A40-07) |
 | 23 | 22 | `src/app/play/settings.cpp:383-433` | Cause d'A23-01 (`restore_lines`, `gpu`) | Traité par 22 (A22-01) |
-| 23 | 22 | `src/app/play/settings.h:304-307` | Commentaire du seuil HDR posé au mauvais endroit | En attente (22 fini) |
+| 23 | 22 | `src/app/play/settings.h:304-307` | Commentaire du seuil HDR posé au mauvais endroit | Traité par 22 (complément) |
 | 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Traité par 26 |
 | 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | Traité par 07 (complément) |
 | 23 | 08 | `src/app/play/chain.cpp:183-185` | Une notification par image pendant le glissement du délai des sous-titres | Traité par 08 (complément) |
@@ -963,7 +965,7 @@
 | 43 | 25 | `src/app/play/first_run.cpp:29-31` | La `note` de l'assistant n'applique pas `french_spaces` | En attente (25 fini) |
 | 43 | 25 | `src/app/play/first_run.cpp:445` | Deux textes pour l'installation de la mise à jour | En attente (25 fini) |
 | 43 | 08 | `src/app/play/chain.cpp:113-131` | UX-20 : rien ne reformate l'affichage quand la langue change en direct | Traité par 08 (complément) |
-| 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | En attente (22 fini) |
+| 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | Traité par 22 (complément) |
 | 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | En attente (23 fini) |
 | 43 | 07 | `src/app/play/player.cpp:486-487` | « New graphics card » renvoie à un bouton du mode avancé, sous un autre nom | Traité par 07 (complément) |
 | 45 | 21 | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` posé par personne : option morte du contrat | Traité par 21 (complément) |
@@ -981,7 +983,7 @@
 | 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | En attente (18 fini) |
 | 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | Traité par 10 (complément) |
 | 40 | 41 | `tests/unit/app/e2e_play_test.cpp:241-243` | Image SDR assombrie, à croiser avec le grade SDR | En attente (41 fini) |
-| 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | En attente (22 fini) |
+| 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | Réfuté par 22 (complément) : partage voulu et documenté |
 | 40 | 13 | `tests/unit/app/e2e_play_test.cpp:221` | Avec `--seconds`, l'épisode suivant s'enchaîne quand même | Traité par 13 (complément) |
 | 40 | 46 | `tools/bench/rife_triplets.py:100` | Le banc de qualité refuse DistilDRBA | En attente (46 fini) |
 | 28 | 39 | `src/prepare/builder.cpp:233` | Disque plein soupçonné au journal seulement, pas nommé à l'utilisateur | En attente (39 fini) |
