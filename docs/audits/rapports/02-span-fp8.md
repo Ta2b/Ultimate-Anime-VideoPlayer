@@ -10,10 +10,9 @@ NaN pour une image parfaite (PSNR 99 dB, verdict « passé »), et l'essai au ch
 
 ## Cadrage retenu
 
-Question posée à Tatoub : garder le FP8 et le fiabiliser, le garder en option secondaire, ou envisager de le
-retirer. Sans réponse au moment de l'écriture, l'audit suit l'option recommandée, « garder et fiabiliser » : le FP8
-est la voie Performance de la RTX 4070 Ti (9,3 ms contre 14,3 ms pour TensorRT FP16 en 1088×1920), donc la qualité
-face au FP16, la porte, les échelles et les noyaux passent en premier. Rien n'est mis de côté.
+Tatoub a choisi « garder et fiabiliser » : le FP8 est la voie Performance de la RTX 4070 Ti (9,3 ms contre
+14,3 ms pour TensorRT FP16 en 1088×1920), donc la qualité face au FP16, la porte, les échelles et les noyaux passent
+en premier. Rien n'est mis de côté.
 
 Le fil tourne sans GPU : tout ce qui demande une mesure est marqué « à confirmer », avec la manipulation. Le module
 `gpu_span_fp8` (C++ pur) a pu être compilé seul avec g++ 13 ; Catch2 manque dans le conteneur, les défauts
