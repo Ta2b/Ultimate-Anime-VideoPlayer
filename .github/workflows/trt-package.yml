@@ -72,7 +72,7 @@ jobs:
         if: env.SKIP != '1'
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
       - if: env.SKIP != '1'
         run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
