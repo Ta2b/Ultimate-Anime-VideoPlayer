@@ -40,14 +40,14 @@
 | 28. CI, publication et signature | Fusionné (22 défauts, 1 bloquant, 8 majeurs, complément compris) | [rapport](rapports/28-ci-publication.md), [complément](rapports/28-ci-publication-complement.md) |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
-| 31. États dégradés et reprise sur erreur | Fusionné (15 défauts, 8 majeurs) | [rapport](rapports/31-etats-degrades.md) |
+| 31. États dégradés et reprise sur erreur | Fusionné (16 défauts, 8 majeurs, complément compris) | [rapport](rapports/31-etats-degrades.md), [complément](rapports/31-etats-degrades-complement.md) |
 | 32. Budget par image sur la cible | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/32-budget-par-image.md) |
 | 33. Longue durée, mémoire et ressources | Fusionné (8 défauts, 4 majeurs) | [rapport](rapports/33-longue-duree-ressources.md) |
 | 34. Parité Windows et CachyOS | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/34-parite-windows-cachyos.md) |
 | 35. Entrées non sûres | Fusionné (9 défauts, 1 majeur) | [rapport](rapports/35-entrees-hostiles.md) |
 | 36. État persistant et compatibilité entre versions | Fusionné (9 défauts, 3 majeurs) | [rapport](rapports/36-etat-persistant.md) |
 | 37. Configurations NVIDIA variées | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/37-configurations-nvidia.md) |
-| 38. Promesses tenues | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/38-promesses-tenues.md) |
+| 38. Promesses tenues | Fusionné (16 défauts, 2 majeurs, complément compris) | [rapport](rapports/38-promesses-tenues.md), [complément](rapports/38-promesses-tenues-complement.md) |
 | 39. Diagnostic et support | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/39-diagnostic-support.md) |
 | 40. Tests et couverture | Fusionné (16 défauts, 5 majeurs) | [rapport](rapports/40-tests-couverture.md) |
 | 41. HDR, grade et looks | Fusionné (11 défauts, 2 majeurs) | [rapport](rapports/41-hdr-grade.md) |
@@ -711,6 +711,8 @@
 | A25-19 | Mineur | `src/app/play/first_run.cpp:445` | Texte de la mise à jour automatique différent entre l'assistant et le panneau | 25 | |
 | A27-14 | Mineur | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé et SDL3 lié en PUBLIC sans appelant ; liaisons du port imgui inutilisées sous Windows | 27 | |
 | A26-13 | Mineur | `src/app/play/updater.cpp:646-651` | Retour arrière de deux versions sur une installation mise à jour à la main | 26 | |
+| A31-16 | Mineur | `src/media/video_decoder.cpp:400` | Au réveil, NVDEC touche le contexte mort en premier et rend `DecodeFailed` fatal : la relance d'A31-02 ne se ferait pas | 31 | |
+| A38-16 | Mineur | `docs/hdr-anime.md:56-60` | « Noirs profonds selon la scène » : réglé sur la médiane de l'épisode, et à 64 % sans mesure | 38 | |
 
 ## Renvois
 
@@ -927,7 +929,7 @@
 | 32 | 49 | `docs/adr/0008-anneau-rgb10a2.md` | Porte de qualité de l'anneau 10 bits jamais passée | Traité par 49 (A49-04) |
 | 34 | 07 | `src/app/play/auto_config.cpp:192-200` | L'Auto calibré force RIFE 4.22 lite, n'essaie ni DistilDRBA ni RIFE 4.25 | Traité par 07 (complément) |
 | 34 | 07 | `src/app/play/machine_calibration.cpp:279-330` | Premier essai FP8 perdu sans CUTLASS | Traité par 07 (complément) |
-| 34 | 31 | `src/app/play/drba_fused_choice.cpp:9` | A31-06 touche les deux systèmes | En attente (31 fini) |
+| 34 | 31 | `src/app/play/drba_fused_choice.cpp:9` | A31-06 touche les deux systèmes | Traité par 31 (complément) |
 | 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | Traité par 06 (complément) |
 | 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | Traité par 15 (complément) |
 | 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | Traité par 19 (complément) |
@@ -937,7 +939,7 @@
 | 33 | 08 | `src/app/play/engine_build.cpp` | Un `TensorRtBackend` créé puis détruit par moteur préparé | Traité par 08 (complément) |
 | 33 | 28 | `src/prepare/cache.cpp` | Disque plein par le cache : l'écriture d'un moteur doit refuser proprement | Traité par 28 (complément) |
 | 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Traité par 36 |
-| 33 | 31 | `src/app/play/player_run.cpp:510` | Au réveil, perte du contexte CUDA et saut d'horloge ensemble | En attente (31 fini) |
+| 33 | 31 | `src/app/play/player_run.cpp:510` | Au réveil, perte du contexte CUDA et saut d'horloge ensemble | Traité par 31 (complément) |
 | 35 | 33 | `src/prepare/builder.cpp:139-145` | Un moteur par forme, sans purge | Traité par 33 (A33-04) |
 | 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | Traité par 17 (complément) |
 | 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | Traité par 28 (complément) |
@@ -962,7 +964,7 @@
 | 42 | 07 | `src/app/play/auto_bench_run.cpp:37` | Pré-analyse active pendant les essais de calibration | Traité par 07 (complément) |
 | 41 | 10 | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | Traité par 10 (complément) |
 | 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | En attente (32 fini) |
-| 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | En attente (38 fini) |
+| 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | Traité par 38 (complément) |
 | 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
 | 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Traité par 43 (confirmé) |
 | 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Traité par 46 (A46-08) |
@@ -1001,3 +1003,4 @@
 | 09 | 42 | `src/app/play/rife_plan.cpp:10-14` | Après A42-01, rejuger le plancher sur le score rapporté et plusieurs séries | Note pour la correction |
 | 09 | 46 | `src/app/play/drba_model.cpp:14-24` | Paquet sans demi-flot non signalé (A09-21) | Note pour la correction |
 | 26 | 36 | `src/app/play/updater.cpp:616-631` | `previous_version` survit à une installation manuelle (A26-13) | Note pour la correction |
+| 31 | 15 | `src/media/video_decoder.cpp:464` | Aucun repli logiciel de NVDEC après la première image (A31-16) | Note pour la correction |
