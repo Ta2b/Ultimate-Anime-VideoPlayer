@@ -622,7 +622,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         vrr_fullscreen = fullscreen;
         session.set_composited(!fullscreen);
         if (const auto display = window_display(out.window())) {
-          if (display_changed) p.display = display;  // P3.40 : l'écran courant, son connecteur et son EDID
+          if (display_changed) contract_watch.set_display(p.display = display);  // P3.40, A11-01
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);

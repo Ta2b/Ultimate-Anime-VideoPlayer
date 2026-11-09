@@ -473,7 +473,7 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 |---|---|---|---|---|---|
 | 1 | A08-03 | Majeur | `src/app/play/chain.cpp:204-211` | Facteur, Auto ou Rapide changés en direct sans refaire anneau, plus haut facteur ni warp | Corrigé |
 | 2 | A10-02 | Majeur | `src/app/play/placebo_open.cpp:497` | Avec le défaut `--present=wait`, `wp_presentation` n'est jamais ouvert : aucune grille des vblanks sous CachyOS | Corrigé |
-| 3 | A11-01 | Majeur | `src/app/play/display_contract.h:54` | Contrat d'écran figé sur l'écran d'ouverture (GPU-04) |  |
+| 3 | A11-01 | Majeur | `src/app/play/display_contract.h:54` | Contrat d'écran figé sur l'écran d'ouverture (GPU-04) | Corrigé |
 | 4 | A11-02 | Majeur | `src/app/play/host_facts.cpp:39-81` | Windows : requêtes d'écran sur le thread de la boucle (WIN-04, GPU-16, à mesurer) |  |
 | 5 | A12-01 | Majeur | `src/core/vblank_clock.cpp:32-36` | La grille des vblanks apprend la cadence du contenu au lieu de celle de l'écran (démontré) | Corrigé |
 | 6 | A12-02 | Majeur | `src/core/auto_rate.cpp:281-291` | Stable sans palier calé au-dessus de ×1 à 165 Hz pour 23,976, ni à 144 Hz pour 29,97 (démontré) | Corrigé |
@@ -494,17 +494,17 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 21 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre |  |
 | 22 | A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu | Corrigé |
 | 23 | A11-03 | Mineur | `src/app/play/display_edid.cpp:421-429` | Écran choisi par sous-chaîne du nom : deux écrans du même modèle confondus |  |
-| 24 | A11-04 | Mineur | `src/app/play/system_peak.cpp:85-108` | Entrée KWin choisie par le seul connecteur |  |
-| 25 | A11-05 | Mineur | `src/app/play/display_edid.cpp:56-63` | Demi-flottant infini retenu comme pic |  |
+| 24 | A11-04 | Mineur | `src/app/play/system_peak.cpp:85-108` | Entrée KWin choisie par le seul connecteur | Corrigé |
+| 25 | A11-05 | Mineur | `src/app/play/display_edid.cpp:56-63` | Demi-flottant infini retenu comme pic | Corrigé |
 | 26 | A11-06 | Mineur | `src/app/play/display_contract.cpp:24-42` | Hors KDE, blanc de référence fixé à 203 et marge mal rapportée sous Windows |  |
-| 27 | A11-07 | Mineur | `src/app/play/host_facts.cpp:247-250` | Windows : pic DXGI demandé seulement si un EDID a été lu |  |
-| 28 | A11-08 | Mineur | `src/app/play/gpu_telemetry.cpp:311-372` | `GpuTelemetry::sample` écrit sans verrou depuis deux threads (GPU-09) |  |
-| 29 | A11-09 | Mineur | `src/app/play/host_facts.cpp:378-380` | `on_battery()` sans cache sur le thread de la boucle | Corrigé (plus d'appel dans la boucle : le plafond de batterie est retiré) |
-| 30 | A11-10 | Mineur | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur dans l'OSD anglais |  |
+| 27 | A11-07 | Mineur | `src/app/play/host_facts.cpp:247-250` | Windows : pic DXGI demandé seulement si un EDID a été lu | Corrigé |
+| 28 | A11-08 | Mineur | `src/app/play/gpu_telemetry.cpp:311-372` | `GpuTelemetry::sample` écrit sans verrou depuis deux threads (GPU-09) | Corrigé |
+| 29 | A11-09 | Mineur | `src/app/play/host_facts.cpp:378-380` | `on_battery()` sans cache sur le thread de la boucle | Corrigé par A31-10 : on_battery n'est plus appelé par la boucle ; Corrigé (plus d'appel dans la boucle : le plafond de batterie est retiré) |
+| 30 | A11-10 | Mineur | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur dans l'OSD anglais | Corrigé |
 | 31 | A11-11 | Mineur | `src/app/play/display_edid.cpp:139-147` | Pic et noir dépendent de l'ordre des blocs EDID |  |
 | 32 | A11-12 | Mineur | `tests/unit/app/` | Aucun test du contrat d'écran, du multi-écran ni du pic de contenu |  |
 | 33 | A11-13 | Mineur | `src/app/play/host_facts.cpp:39-81` | Quatre copies de l'énumération `QueryDisplayConfig` |  |
-| 34 | A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) |  |
+| 34 | A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Corrigé |
 | 35 | A12-04 | Mineur | `src/core/auto_rate.cpp:293-301` | Paliers calés sur le plafond passé comme fréquence d'écran | Corrigé |
 | 36 | A12-05 | Mineur | `src/core/auto_rate.cpp:599-608` | Réarmement toutes les 8 s même sans palier calé | Corrigé |
 | 37 | A12-06 | Mineur | `src/core/pacing.cpp:61-67` | Calage de vitesse sur une fréquence fausse, jamais sur la phase | Corrigé pour la phase (`core/phase_trim.h`) ; le calage sur la fréquence annoncée reste permis faute de mesure sous Windows |

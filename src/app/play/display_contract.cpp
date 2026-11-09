@@ -83,7 +83,8 @@ render::DisplayContract ContractWatch::read() const {
     const SDL_PropertiesID props = SDL_GetWindowProperties(window_);
     headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0F);
   }
-  return contract_of(facts, read_kwin_output(facts.connector), headroom, std::nullopt);
+  const std::string edid = kwin_edid_key(facts.manufacturer, facts.product);
+  return contract_of(facts, read_kwin_output(facts.connector, edid), headroom, std::nullopt);
 }
 
 std::optional<render::DisplayContract> ContractWatch::tick() {

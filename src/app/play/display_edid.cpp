@@ -62,6 +62,12 @@ double half_to_double(std::uint16_t h) {
   return sign * std::ldexp(mantissa + 1024, exponent - 25);
 }
 
+// Une luminance qu'un écran peut annoncer (A11-05) : finie et positive, 10 000 nits au plus (le plafond du
+// PQ). Un demi-flottant 0x7C00 (infini) ou un NaN d'un EDID abîmé n'est pas retenu.
+bool plausible_nits(double nits) {
+  return std::isfinite(nits) && nits > 0.0 && nits <= 10'000.0;
+}
+
 std::string monitor_name(std::span<const std::uint8_t> base) {
   for (std::size_t at = 54; at + 18 <= 126; at += 18) {
     if (base[at] != 0 || base[at + 1] != 0 || base[at + 3] != 0xFC) continue;
@@ -131,8 +137,10 @@ void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out, VrrS
     const std::size_t length = block[at + 2];
     if (at + 3 + length > end) break;
     if (tag == kDisplayIdAdaptiveSync) {
-      // Des descripteurs de 6 octets : minimum (octet 2), maximum − 1 sur 10 bits (octets 3 et 4, bits 1:0).
-      for (std::size_t d = at + 3; d + 6 <= at + 3 + length; d += 6)
+      // Des descripteurs de 6 octets plus ceux que dit la révision du bloc (bits 6:4, A11-11) : minimum
+      // (octet 2), maximum − 1 sur 10 bits (octets 3 et 4, bits 1:0).
+      const std::size_t step = 6 + ((block[at + 1] >> 4U) & 0x7U);
+      for (std::size_t d = at + 3; d + step <= at + 3 + length; d += step)
         offer_range(vrr.displayid, block[d + 2],
                     static_cast<int>(((block[d + 4] & 0x03U) << 8U) | block[d + 3]) + 1);
     }
@@ -142,8 +150,8 @@ void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out, VrrS
       const auto nits = [&](std::size_t lo) {
         return half_to_double(static_cast<std::uint16_t>(params[lo] | (params[lo + 1] << 8U)));
       };
-      if (const double peak = nits(0x1A); peak > 0.0 && !out.peak_nits) out.peak_nits = peak;
-      if (const double black = nits(0x1C); black > 0.0) out.min_nits = black;
+      if (const double peak = nits(0x1A); plausible_nits(peak) && !out.peak_nits) out.peak_nits = peak;
+      if (const double black = nits(0x1C); plausible_nits(black)) out.min_nits = black;
     }
     at += 3 + length;
   }

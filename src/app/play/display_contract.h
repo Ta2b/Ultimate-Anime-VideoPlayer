@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <spdlog/logger.h>
 
@@ -45,6 +46,13 @@ class ContractWatch {
   ContractWatch& operator=(const ContractWatch&) = delete;
 
   std::optional<render::DisplayContract> tick();
+  // La fenêtre est passée sur un autre écran (A11-01) : son connecteur et son EDID remplacent ceux de
+  // l'ouverture, et le contrat est relu au prochain tick. Sans cela, KWin restait lu pour l'ancien
+  // connecteur, avec les primaires, le noir, l'OLED et le pic de repli de l'ancien écran.
+  void set_display(std::optional<DisplayFacts> facts) {
+    facts_ = std::move(facts);
+    hdr_changed_.store(true, std::memory_order_relaxed);
+  }
   const std::optional<render::DisplayContract>& current() const { return contract_; }
 
  private:
