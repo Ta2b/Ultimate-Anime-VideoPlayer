@@ -102,6 +102,16 @@ struct Pipe {
   Fd write;
 };
 
+// Un descripteur au-dessus de 0, 1 et 2 : un lecteur lancé sans eux recevrait son tube en 1, que
+// dup2(1, 1) laisserait en O_CLOEXEC, et l'enfant perdrait sa sortie.
+int above_stdio(int fd) {
+  if (fd > STDERR_FILENO) return fd;
+  const int moved = ::fcntl(fd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+  if (moved < 0) return fd;
+  ::close(fd);
+  return moved;
+}
+
 std::expected<Pipe, int> make_pipe() {
   std::array<int, 2> fds{};
 #ifdef __linux__
@@ -111,7 +121,7 @@ std::expected<Pipe, int> make_pipe() {
   ::fcntl(fds[0], F_SETFD, FD_CLOEXEC);
   ::fcntl(fds[1], F_SETFD, FD_CLOEXEC);
 #endif
-  Pipe pipe{.read = Fd(fds[0]), .write = Fd(fds[1])};
+  Pipe pipe{.read = Fd(above_stdio(fds[0])), .write = Fd(above_stdio(fds[1]))};
   ::fcntl(pipe.read.get(), F_SETFL, ::fcntl(pipe.read.get(), F_GETFL) | O_NONBLOCK);
   return pipe;
 }
@@ -209,8 +219,8 @@ std::expected<pid_t, int> spawn_child(const std::filesystem::path& program, char
                                       int output) {
   std::array<int, 2> report{};
   if (::pipe2(report.data(), O_CLOEXEC) != 0) return std::unexpected(errno);
-  const Fd report_read(report[0]);
-  Fd report_write(report[1]);
+  const Fd report_read(above_stdio(report[0]));
+  Fd report_write(above_stdio(report[1]));
   const char* dir = working_dir.empty() ? nullptr : working_dir.c_str();
   const pid_t parent = ::getpid();
   const pid_t pid = ::fork();

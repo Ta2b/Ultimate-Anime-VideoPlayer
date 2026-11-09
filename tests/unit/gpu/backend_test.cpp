@@ -256,12 +256,14 @@ TEST_CASE("GuardedBackend : une exception du backend devient un refus", "[backen
     std::expected<Fence, Refusal> signal() override { throw std::runtime_error("signal"); }
     std::expected<void, Refusal> wait(const Fence&) override { throw std::runtime_error("wait"); }
     void use_lane(Lane) override { throw std::runtime_error("lane"); }
+    void drain() override { throw std::runtime_error("drain"); }
   };
   GuardedBackend guarded(std::make_unique<Thrower>());
   CHECK(guarded.capabilities().name.empty());
   CHECK(guarded.match(DeviceUuid{}) == DeviceMatch::Unknown);
   CHECK(guarded.kernels() == nullptr);
   guarded.use_lane(Lane{});
+  guarded.drain();  // A30-01 : appelé par ~ChainEngines, il ne laisse rien traverser
   const auto signalled = guarded.signal();
   REQUIRE_FALSE(signalled);
   CHECK(signalled.error().code == RefusalCode::VendorCallFailed);

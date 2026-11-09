@@ -103,14 +103,6 @@ void save_reopened(Player& p) {
   p.unsaved.reset();
 }
 
-// Le profil GPU de la lecture gardé (0.2), puis les files attendues : le thread gpu arrêté a pu enfiler une
-// dernière passe, qui finit avant que ses moteurs et leurs poids partent (A30-01).
-void drain_backend(gpu::Backend& backend, const std::optional<std::filesystem::path>& stats,
-                   const std::optional<std::filesystem::path>& bench_out) {
-  keep_gpu_profile(backend.kernels()->gpu_profile(), stats, bench_out);
-  backend.drain();
-}
-
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -759,7 +751,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   out.flush();
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
-  if (c.backend) drain_backend(*c.backend, options.stats, p.options.bench_out);
+  if (c.backend)
+    keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2
   prepared->reset();
   if (failure) return std::unexpected(std::move(*failure));
   return reopen;

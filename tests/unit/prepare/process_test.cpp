@@ -178,6 +178,27 @@ TEST_CASE("run_process : l'annulation tue aussi les petits-enfants", "[prepare][
   CHECK_FALSE(running);
 }
 
+// Un lecteur lancé sans 0, 1 ni 2 (service, lanceur qui les ferme) : le tube de sortie tomberait sur 1, et
+// l'enfant perdrait sa sortie.
+TEST_CASE("run_process : la sortie arrive même quand le lecteur n'a ni stdin, ni stdout, ni stderr",
+          "[prepare][process]") {
+  const pid_t player = ::fork();
+  REQUIRE(player >= 0);
+  if (player == 0) {
+    ::close(STDIN_FILENO);
+    ::close(STDOUT_FILENO);
+    ::close(STDERR_FILENO);
+    bool seen = false;
+    const auto exit = run_process({.program = "/bin/sh", .args = {"-c", "echo vu"}, .timeout = 10s},
+                                  [&](std::string_view line) { seen = seen || line == "vu"; }, {});
+    ::_exit(exit && exit->code == 0 && seen ? 0 : 1);
+  }
+  int status = 0;
+  REQUIRE(::waitpid(player, &status, 0) == player);
+  CHECK(WIFEXITED(status));
+  CHECK(WEXITSTATUS(status) == 0);
+}
+
 // A05-01 : un lecteur tué (plantage, kill -9) ne laisse pas trtexec tourner seul.
 TEST_CASE("run_process : l'enfant meurt avec le lecteur", "[prepare][process]") {
   std::array<int, 2> report{};
