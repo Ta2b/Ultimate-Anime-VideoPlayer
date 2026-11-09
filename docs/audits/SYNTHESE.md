@@ -23,7 +23,7 @@
 | 11. Écran et matériel : EDID, VRR, HDR du système, télémétrie | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/11-ecran-materiel.md), [complément](rapports/11-ecran-materiel-complement.md) |
 | 12. Cadence et horloges | Fusionné (12 défauts, 4 majeurs, complément compris) | [rapport](rapports/12-cadence-horloges.md), [complément](rapports/12-cadence-horloges-complement.md) |
 | 13. Session de lecture : seek, épisodes et reprise | Fusionné (14 défauts, 1 bloquant, 1 majeur, complément compris) | [rapport](rapports/13-session-lecture.md), [complément](rapports/13-session-lecture-complement.md) |
-| 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (8 défauts, 2 majeurs) | [rapport](rapports/14-sources-demux.md) |
+| 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (10 défauts, 2 majeurs, complément compris) | [rapport](rapports/14-sources-demux.md), [complément](rapports/14-sources-demux-complement.md) |
 | 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs) | [rapport](rapports/15-decodage-formats.md) |
 | 16. Audio | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/16-audio.md) |
 | 17. Sous-titres | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/17-sous-titres.md) |
@@ -695,6 +695,8 @@
 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre | 10 | |
 | A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu | 10 | |
 | A13-14 | Mineur | `src/app/play/session.cpp:691` | `--seconds` termine sans quitter : l'épisode suivant s'enchaîne | 13 | |
+| A14-09 | Mineur | `src/media/source_loop.cpp:153-159` | Seek exact : chaque image jetée est convertie avant la décision (jusqu'à 1,8 s en 4K 4:4:4 logiciel) | 14 | |
+| A14-10 | Mineur | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images sans PTS sans borne : seek sans fin | 14 | A15-05 (même cause) |
 
 ## Renvois
 
@@ -779,8 +781,8 @@
 | 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | En attente (18 fini) |
 | 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | En attente (16 fini) |
 | 14 | 30 | `src/media/source_loop.cpp:303-305` | Boîte non lue pendant `wait_before_retry` | Traité par 30 |
-| 15 | 14 | `src/media/source_loop.cpp:153-159` | Image décodée et convertie avant la décision de saut du seek exact | En attente (14 fini) |
-| 15 | 14 | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images `kNoPts` : seek exact sans fin (avec A15-05) | En attente (14 fini) |
+| 15 | 14 | `src/media/source_loop.cpp:153-159` | Image décodée et convertie avant la décision de saut du seek exact | Traité par 14 (complément) |
+| 15 | 14 | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images `kNoPts` : seek exact sans fin (avec A15-05) | Traité par 14 (complément) |
 | 15 | 08 | `src/app/play/player.cpp:95-117` | La sonde devrait refuser les formats illisibles avec un message | Traité par 08 (complément) |
 | 15 | 01 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:24-41` | L'ingestion TensorRT ne lit ni 4:4:4 ni 4:2:2 en mémoire CUDA | Traité par 01 (complément) |
 | 15 | 42 | `src/media/shot_probe.cpp:173-175` | La pré-analyse paie la conversion 4:4:4 en pleine taille | Traité par 42 |
@@ -792,7 +794,7 @@
 | 17 | 13 | `src/app/play/pipeline.cpp:164-170` | Une piste PGS empêche le repli sur un fichier externe | Traité par 13 (complément) |
 | 17 | 13 | `src/app/play/pipeline.cpp:183-191` | Polices recopiées deux fois, attente sur le thread de la fenêtre | Traité par 13 (complément) |
 | 17 | 13 | `src/app/play/pipeline.cpp:47` | Extension `.Srt` étiquetée « ass » | Traité par 13 (complément) |
-| 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | En attente (14 fini) |
+| 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | Traité par 14 (complément) |
 | 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Réfuté par 22 |
 | 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Traité par 24 |
 | 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Traité par 35 (en partie) |
@@ -825,7 +827,7 @@
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | Traité par 02 (complément) |
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Traité par 45 (A45-08, A45-09) |
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Traité par 12 (complément) |
-| 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
+| 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | Traité par 14 (complément) |
 | 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Traité par 24 |
 | 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | Traité par 07 (complément) |
 | 22 | 07 | `src/app/play/auto_config.cpp:203-205` | L'Auto calibré écrase `auto_free` et le modèle RIFE à chaque vidéo | Traité par 07 (complément) |
