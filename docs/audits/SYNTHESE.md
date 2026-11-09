@@ -33,7 +33,7 @@
 | 21. Frontière des moteurs (interface et ABI) | Fusionné (11 défauts, 3 majeurs, complément compris) | [rapport](rapports/21-frontiere-moteurs.md), [complément](rapports/21-frontiere-moteurs-complement.md) |
 | 22. Réglages : modèle, application et persistance | Fusionné (18 défauts, 3 majeurs, complément compris) | [rapport](rapports/22-reglages-modele.md), [complément](rapports/22-reglages-modele-complement.md) |
 | 23. Réglages : le panneau | Fusionné (16 défauts, 4 majeurs, complément compris) | [rapport](rapports/23-reglages-panneau.md), [complément](rapports/23-reglages-panneau-complement.md) |
-| 24. Interface : rendu, contrôles et messages | Fusionné (23 défauts, 3 majeurs) | [rapport](rapports/24-interface-rendu.md) |
+| 24. Interface : rendu, contrôles et messages | Fusionné (24 défauts, 3 majeurs, complément compris) | [rapport](rapports/24-interface-rendu.md), [complément](rapports/24-interface-rendu-complement.md) |
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
 | 27. Build, dépendances et ports | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/27-build-dependances.md) |
@@ -707,6 +707,7 @@
 | A18-16 | Mineur | `src/app/main.cpp:371-401` | Ni minidump ni journal pendant l'application d'une mise à jour | 18 | |
 | A18-17 | Mineur | `src/app/play/settings.cpp:326-343` | `--rife-model` absent de `settings.rife_model` : menu et `--bench-out` donnent le mauvais modèle | 18 | |
 | A18-18 | Majeur | `src/app/play/auto_bench_run.cpp:363-367` | Qualité : le banc essaie RIFE 4.25 sans dossier, l'essai échoue toujours en silence et l'Auto reste sur 4.22 lite | 18 | Cause directe d'A25-08 et d'A38-02 |
+| A24-24 | Mineur | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » à l'accueil n'ouvre que l'écran des moteurs | 24 | |
 
 ## Renvois
 
@@ -859,7 +860,7 @@
 | 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Traité par 26 |
 | 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | Traité par 07 (complément) |
 | 23 | 08 | `src/app/play/chain.cpp:183-185` | Une notification par image pendant le glissement du délai des sous-titres | Traité par 08 (complément) |
-| 25 | 24 | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » depuis l'accueil n'ouvre que l'écran des moteurs | En attente (24 fini) |
+| 25 | 24 | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » depuis l'accueil n'ouvre que l'écran des moteurs | Traité par 24 (complément) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:115-135` | `best_candidate` ignore `priority` : la fluidité passe toujours avant la taille d'image | Traité par 07 (complément) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` ne note pas le moteur mesuré | Traité par 07 (complément) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | Traité par 07 (complément) |
@@ -963,7 +964,7 @@
 | 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Traité par 43 (confirmé) |
 | 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Traité par 46 (A46-08) |
 | 43 | 11 | `src/app/play/gpu_telemetry.cpp:73-76` | « Go » et virgule décimale en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Traité par 11 (complément) |
-| 43 | 24 | `src/app/play/home_screen.cpp:178` | « EDID illisible : OLED inconnu » en dur dans Vidéo > Affichage | En attente (24 fini) |
+| 43 | 24 | `src/app/play/home_screen.cpp:178` | « EDID illisible : OLED inconnu » en dur dans Vidéo > Affichage | Traité par 24 (complément) |
 | 43 | 41 | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur | En attente (41 fini) |
 | 43 | 41 | `src/app/play/chain_hdr.cpp:367` | GPU-14 toujours présent (« Vrai noir : mesure impossible » en dur) | En attente (41 fini) |
 | 43 | 25 | `src/app/play/first_run.cpp:29-31` | La `note` de l'assistant n'applique pas `french_spaces` | En attente (25 fini) |
