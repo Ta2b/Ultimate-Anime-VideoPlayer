@@ -494,8 +494,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
       options.present == PresentWanted::Open ? PresentCaps{} : read_present_caps(impl->vk, impl->surface);
   // wp_presentation (placebo_wayland.h), seulement s'il peut servir.
   std::unique_ptr<WaylandPresentation> wayland;
-  if (options.present == PresentWanted::Auto || options.present == PresentWanted::Wayland)
-    wayland = WaylandPresentation::open(impl->window, impl->channel);
+  if (wants_wayland(options.present)) wayland = WaylandPresentation::open(impl->window, impl->channel);
   impl->present_caps.wayland_presentation = wayland != nullptr;
   impl->present_level = choose_present_level(impl->present_caps, options.present);
   if (options.present != PresentWanted::Open) {
@@ -517,9 +516,8 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   if (impl->swapchain == nullptr)
     return refuse(RefusalCode::LibraryUnavailable, "pl_vulkan_create_swapchain a échoué");
   if (impl->present_level != PresentLevel::Open)
-    impl->feedback = std::make_unique<PresentFeedback>(
-        impl->vk, impl->present_level, impl->present_caps, impl->channel,
-        impl->present_level == PresentLevel::Wayland ? std::move(wayland) : nullptr);
+    impl->feedback = std::make_unique<PresentFeedback>(impl->vk, impl->present_level, impl->present_caps,
+                                                       impl->channel, std::move(wayland));
   if (impl->feedback) impl->feedback->record_stamps(options.screen_stamps);  // 0.7 : <stats>.screen.tsv
   log_surface_color_spaces(impl->vk, impl->surface);
   if (options.hdr) pl_swapchain_colorspace_hint(impl->swapchain, &pl_color_space_hdr10);

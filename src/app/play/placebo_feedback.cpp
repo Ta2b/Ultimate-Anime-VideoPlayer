@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -58,18 +60,14 @@ PresentFeedback::PresentFeedback(pl_vulkan vk, PresentLevel level, const Present
   load(api_->wait, "vkWaitForPresent2KHR");
   if (caps_.calibrated) load(api_->calibrated, "vkGetCalibratedTimestampsKHR");
   const bool timing = level_ == PresentLevel::Timing || level_ == PresentLevel::TimingAbsolute;
-  if (timing && (api_->queue_size == nullptr || api_->past == nullptr || api_->domains == nullptr)) {
-    channel_->warn("présentation : fonctions de present timing absentes, niveau wait");
-    level_ = PresentLevel::Wait;
-  }
+  if (timing && (api_->queue_size == nullptr || api_->past == nullptr || api_->domains == nullptr))
+    fall_back("fonctions de present timing absentes");
   // Le premier pixel visible si la surface le date, sinon le premier pixel sorti.
   stage_ = (caps_.present_stages & VK_PRESENT_STAGE_IMAGE_FIRST_PIXEL_VISIBLE_BIT_EXT) != 0
                ? VK_PRESENT_STAGE_IMAGE_FIRST_PIXEL_VISIBLE_BIT_EXT
                : VK_PRESENT_STAGE_IMAGE_FIRST_PIXEL_OUT_BIT_EXT;
-  if (timing && level_ != PresentLevel::Wait && (caps_.present_stages & stage_) == 0) {
-    channel_->warn("présentation : la surface ne date ni le premier pixel visible ni sorti, niveau wait");
-    level_ = PresentLevel::Wait;
-  }
+  if (timing_level(level_) && (caps_.present_stages & stage_) == 0)
+    fall_back("la surface ne date ni le premier pixel visible ni sorti");
 #endif
 }
 
@@ -91,6 +89,7 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
     recreations_ = recreations;
     new_swapchain(sw, now_us);
   }
+  drop_if_silent();
   if (level_ == PresentLevel::Wayland) {
     // wp_presentation : pas d'identifiant Vulkan (la swapchain n'en a pas), la demande part au compositeur.
     read_wayland();
@@ -141,6 +140,19 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
   return present_.present_id != 0 ? &present_ : nullptr;
 }
 
+// Present timing qui ne peut pas dater : wp_presentation s'il est ouvert (il date), sinon le sondage.
+void PresentFeedback::fall_back(std::string_view why) {
+  level_ = fallback_level(wayland_ != nullptr);
+  ledger_.forget();
+  channel_->warn("présentation : {}, niveau {}", why, name(level_));
+}
+
+// Present timing qui ne rend rien (NVIDIA 615 sous KDE Wayland : 0 image revenue) retombe (A10-06).
+void PresentFeedback::drop_if_silent() {
+  if (timing_level(level_) && feedback_silent(ledger_.issued(), ledger_.returned()))
+    fall_back(std::format("aucun retour après {} présentations", ledger_.issued()));
+}
+
 void PresentFeedback::submitted(VkResult result) {
 #ifdef AJP_PRESENT_FEEDBACK
   if (result == VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT) {
@@ -164,17 +176,12 @@ void PresentFeedback::new_swapchain(VkSwapchainKHR swapchain, std::int64_t now_u
 #ifdef AJP_PRESENT_FEEDBACK
   if (level_ != PresentLevel::Timing && level_ != PresentLevel::TimingAbsolute) return;
   if (const VkResult r = api_->queue_size(vk_->device, swapchain, kQueueSize); r != VK_SUCCESS) {
-    channel_->warn("présentation : vkSetSwapchainPresentTimingQueueSizeEXT a échoué ({}), niveau wait",
-                   static_cast<int>(r));
-    level_ = PresentLevel::Wait;
+    fall_back(std::format("vkSetSwapchainPresentTimingQueueSizeEXT a échoué ({})", static_cast<int>(r)));
     return;
   }
   read_properties(swapchain);
   choose_domain(swapchain);
-  if (!domain_.known() && !local_domain_) {
-    channel_->warn("présentation : aucun domaine de temps lisible, niveau wait");
-    level_ = PresentLevel::Wait;
-  }
+  if (!domain_.known() && !local_domain_) fall_back("aucun domaine de temps lisible");
 #else
   (void)swapchain;
 #endif

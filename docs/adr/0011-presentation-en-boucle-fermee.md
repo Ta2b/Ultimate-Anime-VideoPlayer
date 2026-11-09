@@ -68,7 +68,9 @@ main, p99 de l'attente, σ de `lag_us`) se mesurent sur le PC, en A/B contre `--
 Ce qui fonde les défauts, tel que le code le note :
 - `wait` plutôt que `auto` ou `timing` : sur NVIDIA 615 et KDE Wayland, present timing n'a rendu aucun retour
   (séance du 04/11, 0 image revenue) ; `present_wait2` répond, et le niveau descend seul quand l'appareil ne
-  l'offre pas ;
+  l'offre pas. Depuis l'audit (A10-02, A10-06), `wp_presentation` s'ouvre aussi pour `wait` et passe devant
+  `present_wait2`, qui ne date rien : sans date, ni grille des vblanks ni `--vsync-index`. Un niveau `timing`
+  resté muet 120 présentations retombe sur `wp_presentation`, sinon sur `wait` ;
 - veilleur d'écriture et attente précise : main n'est plus réveillé toutes les 4 ms pour sonder l'anneau.
 
 Les chiffres de 6.11 (σ visé − affiché, réveils de main, p99 de l'attente, σ de `lag_us`) n'ont pas été

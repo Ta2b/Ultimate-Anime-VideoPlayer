@@ -508,23 +508,6 @@ TEST_CASE("Cadence fixe : l'image est représentée à chaque période de l'écr
   CHECK(rig.shown_pts() == 0);
 }
 
-TEST_CASE("L'interface demande une présentation quand elle change, et une pour s'effacer", "[app][session]") {
-  ajp::app::play::FrenchUi french;
-  Rig rig;
-  rig.session.handle(ring_frame(0, 0));
-  rig.tick();
-  const std::size_t presents = rig.screen.shown.size();
-  const auto* ui = reinterpret_cast<const ImDrawData*>(&rig);  // jamais lue par la doublure
-  REQUIRE(rig.session.tick(rig.screen.now_us, UiFrame{.draw = ui, .changed = true}));
-  CHECK(rig.screen.shown.size() == presents + 1);
-  CHECK(rig.screen.shown.back().ui);
-  REQUIRE(rig.session.tick(rig.screen.now_us, UiFrame{.draw = ui, .changed = false}));
-  CHECK(rig.screen.shown.size() == presents + 1);  // inchangée : rien
-  REQUIRE(rig.session.tick(rig.screen.now_us, UiFrame{}));
-  CHECK(rig.screen.shown.size() == presents + 2);  // effacée : une présentation sans elle
-  CHECK_FALSE(rig.screen.shown.back().ui);
-}
-
 TEST_CASE("Statistiques masquées par défaut ; les refus ne vont qu'aux statistiques", "[app][session]") {
   ajp::app::play::FrenchUi french;
   Rig rig(SessionConfig{.header = {"SPAN ×2"}});
@@ -532,6 +515,7 @@ TEST_CASE("Statistiques masquées par défaut ; les refus ne vont qu'aux statist
   rig.tick();
   CHECK(rig.screen.shown.back().osd.empty());
   CHECK_FALSE(rig.session.view().stats);
+  rig.screen.now_us += kOverlayHoldUs;  // image tenue : l'OSD présente seul (overlay_hold.h)
   rig.session.command(cmd::ToggleOsd{});
   rig.tick();
   REQUIRE_FALSE(rig.screen.shown.back().osd.empty());
@@ -559,6 +543,7 @@ TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][s
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
   CHECK(rig.screen.shown.back().osd.empty());
+  rig.screen.now_us += kOverlayHoldUs;  // image tenue : l'OSD présente seul (overlay_hold.h)
   rig.session.set_stats(StatsSettings{.rife = true, .output = true});
   rig.tick();
   REQUIRE(rig.screen.shown.back().osd.size() == 2);

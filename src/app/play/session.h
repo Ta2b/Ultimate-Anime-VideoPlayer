@@ -25,6 +25,7 @@
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
 #include "app/play/links.h"
+#include "app/play/overlay_hold.h"
 #include "app/play/settings.h"
 #include "app/play/subtitle_queue.h"
 #include "core/clock.h"
@@ -292,6 +293,16 @@ class Session {
   OutputSize shown_size_;         // taille de sortie de la dernière présentation
   std::int64_t shown_at_us_ = 0;  // instant hôte de la dernière présentation
   bool present_requested_ = false;
+  // L'interface et l'OSD attendent l'image neuve quand elle est proche (overlay_hold.h, A24-02).
+  OverlayHold overlay_;
+  bool overlay_due(std::int64_t host_now, const UiFrame& ui, bool& osd_changed) {
+    const bool hold =
+        overlay_holds(paused_, stats_.last_new_present_us, host_now, pacing_period_us(), display_period());
+    const bool ui_new = ui.changed || (ui.draw != nullptr) != shown_ui_;
+    const OverlayHold::Due due = overlay_.note(osd_changed, ui_new, hold, fresh_);
+    osd_changed = due.osd;
+    return due.ui;
+  }
   bool shown_ui_ = false;                         // la dernière présentation avait une interface
   StatsSettings show_stats_;                      // mesures affichées
   std::vector<std::string> osd_;                  // relu toutes les kOsdPeriodUs
