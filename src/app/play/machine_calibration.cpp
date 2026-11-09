@@ -14,6 +14,7 @@
 #include "app/play/i18n.h"
 #include "core/log.h"
 #include "core/user_overlay.h"
+#include "core/utf8_path.h"
 #include "media/bench_clip.h"
 
 #ifndef TOML_EXCEPTIONS
@@ -265,7 +266,7 @@ std::filesystem::path calibration_file(const std::filesystem::path& data_dir) {
 
 std::expected<MachineCalibration, Refusal> load_calibration(const std::filesystem::path& file) {
   std::ifstream in(file, std::ios::binary);
-  if (!in) return std::unexpected(Refusal{RefusalCode::FileUnreadable, file.string()});
+  if (!in) return std::unexpected(Refusal{RefusalCode::FileUnreadable, core::to_utf8(file)});
   std::ostringstream text;
   text << in.rdbuf();
   return parse_calibration(text.str());
@@ -388,6 +389,11 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
     log->warn("calibration de la machine : sur batterie, mesure sous-estimée (à refaire sur secteur)");
   const TrialPlayer play = [&](const ChainCandidate& chain, int index,
                                bool first) -> std::expected<BenchReading, Refusal> {
+    // Relue à chaque essai (A07-09) : un portable débranché en cours de route bride sa carte.
+    if (!out.on_battery && on_battery()) {
+      out.on_battery = true;
+      log->warn("calibration de la machine : passée sur batterie, mesure sous-estimée");
+    }
     const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
     if (auto written = save_settings(settings, candidate_settings(chain, base, out.models)); !written)
       return std::unexpected(std::move(written.error()));

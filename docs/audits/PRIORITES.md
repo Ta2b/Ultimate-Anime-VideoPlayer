@@ -213,9 +213,9 @@ Source 1080p gardée, b8f64 essayé, FP8 seulement avec reçu, RIFE 4.25 enfin e
 | 13 | A07-02 | Majeur | `src/app/play/machine_calibration.cpp:338` | « Tient » ignore les images non interpolées quand le Rapide coupe RIFE |  |
 | 14 | A23-03 | Majeur | `src/app/play/settings_panel.cpp:250-255` | « Auto (calibré) » choisi au panneau applique une chaîne non calibrée |  |
 | 15 | A25-02 | Majeur | `src/app/play/first_run.cpp:263-265` | Sur une RTX, calibration mesurée sous Vulkan sans le dire, jamais refaite quand TensorRT arrive : image plus petite |  |
-| 16 | A31-06 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | Cran Qualité ou Performance retombé en FP16 : garde le refus du fusionné, plus lent qu'Équilibre (toujours sous Windows en Performance) | Touche aussi CachyOS (34) |
-| 17 | A31-07 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | DistilDRBA Performance avec graphe FP8 : moins de qualité et plus lent que le fusionné FP16 |  |
-| 18 | A34-01 | Majeur | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Auto calibré : b8f64 FP8 CUTLASS sous Linux, b5f48 FP16 ou INT8 sous Windows | Précisé par 07 (complément) : sous Windows en 1080p, b8f64 INT8 ou FP16 |
+| 16 | A31-06 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | Cran Qualité ou Performance retombé en FP16 : garde le refus du fusionné, plus lent qu'Équilibre (toujours sous Windows en Performance) | Touche aussi CachyOS (34) ; Passé à C05, qui possède ces fichiers |
+| 17 | A31-07 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | DistilDRBA Performance avec graphe FP8 : moins de qualité et plus lent que le fusionné FP16 | Passé à C05, qui possède ces fichiers |
+| 18 | A34-01 | Majeur | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Auto calibré : b8f64 FP8 CUTLASS sous Linux, b5f48 FP16 ou INT8 sous Windows | Précisé par 07 (complément) : sous Windows en 1080p, b8f64 INT8 ou FP16 ; Traité par A49-03 : l'Auto calibré ne pose plus le FP8 |
 | 19 | A36-02 | Majeur | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` jamais invalidé par la version du lecteur, du module ni par le pilote : Auto calibré bridé |  |
 | 20 | A37-01 | Majeur | `src/gpu/cuda/backend/span_fp8_net.cu:225-228` | SPAN FP8 CUTLASS déclaré pris en charge sur RTX 50 sans y avoir tourné ; seule garde la porte aveugle aux NaN (à confirmer) |  |
 | 21 | A38-02 | Majeur | `README.md:32` | Le README promet RIFE 4.25 en Qualité et Ultra, l'Auto calibré impose 4.22 lite : baisse de qualité sans mesure | A25-08 (même cause) |
