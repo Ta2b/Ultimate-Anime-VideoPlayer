@@ -1,7 +1,7 @@
-// AJP - netteté : un masque flou adaptatif sur MAIN, après SPAN et avant le filtre final vers la fenêtre.
+// AJP - netteté : un masque flou adaptatif sur SCALED, après SPAN et le filtre final vers la fenêtre.
 // Propre à ce dépôt. Le détail (le pixel moins la moyenne de ses quatre voisins) est ajouté, réduit près
 // des extrêmes du voisinage (comme un renforcement adaptatif au contraste) : les traits nets ne prennent
-// pas de halo et les aplats restent lisses. Le lecteur ne pose pas ce hook à force 0 : l'image reste alors
+// qu'un liseré borné (un quart de l'écart local au plus) et les aplats restent lisses. Le lecteur ne pose pas ce hook à force 0 : l'image reste alors
 // identique, octet pour octet.
 
 //!PARAM sharpness

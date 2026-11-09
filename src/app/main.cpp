@@ -52,6 +52,7 @@ extern "C" {
 #include "core/log_redact.h"
 #include "core/thread_role.h"
 #include "core/update_manifest.h"
+#include "media/ffmpeg_log.h"
 #include "prepare/utf8.h"
 
 #ifdef _WIN32
@@ -471,7 +472,8 @@ int run_player(int argc, char** argv) {
     if (!baked) return fail(baked.error());
     return 0;
   }
-  av_log_set_level(AV_LOG_ERROR);  // FFmpeg écrit sur stderr ; ses avertissements de sonde sont du bruit
+  ajp::media::route_ffmpeg_log_to_journal();  // les erreurs de FFmpeg vont au journal, ses avertissements de
+                                              // sonde sont du bruit
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
   }

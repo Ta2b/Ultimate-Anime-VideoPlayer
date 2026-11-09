@@ -258,7 +258,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       ImGui::EndCombo();
     }
     panel::tip(
-        i18n::tr("Stable follows what the GPU can hold in steps (×1 to ×6). Fast has no steps and falls back "
+        i18n::tr("Stable follows what the GPU can hold in steps (×1 to ×8). Fast has no steps and falls back "
                  "to Stable if too many frames are lost. Playback only."));
   }
   if (d.rife_auto && now.num > now.den) {
@@ -383,7 +383,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   ImGui::EndDisabled();
   panel::tip(
       i18n::tr("After SPAN upscales each source frame once, then warps it: faster. Before SPAN also cleans "
-               "each in-between frame. Auto picks After above 1080p. Reloads playback."));
+               "each in-between frame. Auto picks After from ×3 or above 1080p. Reloads playback."));
   // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
   if (exporting || !choices.nvidia) return;
   section(i18n::tr("Smooth Motion (NVIDIA driver)"));
