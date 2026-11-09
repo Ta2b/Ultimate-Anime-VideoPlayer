@@ -58,7 +58,7 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto sdr = parse({"épisode.mkv", "--sdr"});
   REQUIRE(sdr);
   CHECK(sdr->sdr);
-  CHECK(options->ring_rgb10a2);
+  CHECK_FALSE(options->ring_rgb10a2);  // RGBA16 tant que la porte de banding n'est pas mesurée (A49-04)
   const auto ten = parse({"épisode.mkv", "--ring-rgb10a2"});
   REQUIRE(ten);
   CHECK(ten->ring_rgb10a2);

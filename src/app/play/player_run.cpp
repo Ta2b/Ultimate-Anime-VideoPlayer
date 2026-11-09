@@ -168,7 +168,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = chain_work_size(settings, width, height);
-        // Étape 5.5a : anneau RGB10A2 derrière --ring-rgb10a2, tant que la porte de banding n'est pas faite.
+        // Anneau RGBA16 ; RGB10A2 derrière --ring-rgb10a2 tant que la porte de banding n'est pas mesurée (ADR
+        // 0008).
         const RingFormat ring_format =
             p.options.ring_rgb10a2 && c.backend && c.backend->capabilities().ring_rgb10a2
                 ? RingFormat::Rgb10a2Unorm
@@ -685,7 +686,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                    .period_us = bench_period_us,
                                    .work_height = chain.running.work_height,
                                    .rife_model = chain.running.rife_model,
-                                   .span_variant = span_variant});
+                                   .span_variant = span_variant,
+                                   .engine = c.backend_name});
   }
   for (const std::string& refusal : session.refusals()) log->warn("{}", refusal);
   // Un étage arrêté sur un refus fatal : un échec, jamais une fin d'épisode (pas d'épisode suivant).

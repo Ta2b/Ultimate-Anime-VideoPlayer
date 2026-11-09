@@ -80,6 +80,7 @@ struct SettingsChoices {
   // de l'assistant (calibration.toml) sur cette carte et cet écran ; explored_* : ce que l'exploration du
   // benchmark a trouvé (bench.toml), pour cette carte et ce pilote.
   std::optional<CalibratedChain> calibrated;
+  CalibrationHost calibration_host;  // la machine à laquelle le tableau du banc compare sa mesure
   int explored_work_height = 0;
   std::string explored_rife_model;
   std::string gpu_name;           // la carte

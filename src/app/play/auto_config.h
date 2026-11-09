@@ -71,8 +71,10 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
                           const core::SourceInfo& source);
 
 // La chaîne (celle que apply_preset écrit) diffère-t-elle entre a et b ? Un réglage de chaîne fait à la main
-// pendant qu'un préréglage est choisi bascule les réglages en Personnalisé.
-bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b);
+// pendant qu'un préréglage est choisi bascule les réglages en Personnalisé. calibrated : l'Auto calibré écrit
+// aussi le mode auto Rapide (auto_free), qui fait alors partie de la chaîne ; sans cela « Auto : Stable »
+// choisi au menu repasserait en Rapide à la vidéo suivante sans le dire (A07-06).
+bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool calibrated = false);
 
 // P3.21 : la fenêtre passée sur un écran d'une autre hauteur rouvre la chaîne d'un préréglage (la hauteur de
 // travail suit l'écran courant) ; Personnalisé garde la sienne.
