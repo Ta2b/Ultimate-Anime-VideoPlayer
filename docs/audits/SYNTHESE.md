@@ -30,7 +30,7 @@
 | 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/19-integration-systeme.md), [complément](rapports/19-integration-systeme-complement.md) |
 | 20. Socle commun (core) | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/20-socle-core.md), [complément](rapports/20-socle-core-complement.md) |
-| 21. Frontière des moteurs (interface et ABI) | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/21-frontiere-moteurs.md) |
+| 21. Frontière des moteurs (interface et ABI) | Fusionné (11 défauts, 3 majeurs, complément compris) | [rapport](rapports/21-frontiere-moteurs.md), [complément](rapports/21-frontiere-moteurs-complement.md) |
 | 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
 | 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
 | 24. Interface : rendu, contrôles et messages | Fusionné (23 défauts, 3 majeurs) | [rapport](rapports/24-interface-rendu.md) |
@@ -700,6 +700,7 @@
 | A16-14 | Mineur | `src/app/play/wiring.cpp:103-108` | Seek exact raté puis position rattrapée : audio rogné jusqu'à la cible manquée (gel de 1,5 s, silence) | 16 | |
 | A17-14 | Mineur | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond cumulé des paquets d'une piste intégrée : MKV forgé, plusieurs Gio dans libass | 17 | |
 | A20-14 | Mineur | `src/core/model_index.h:1-6` | En-tête faux : modèles téléchargés et vérifiés, alors qu'ils sont livrés avec le lecteur | 20 | |
+| A21-11 | Mineur | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` morte, encore traitée par les deux moteurs (TensorRT la refuse avec un message trompeur) | 21 | |
 
 ## Renvois
 
@@ -911,7 +912,7 @@
 | 32 | 07 | `src/app/play/auto_config.cpp:167-169` | Commentaire et code contradictoires sur le FP8 dans l'Auto (TRT-08) | Traité par 07 (complément) |
 | 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | Traité par 10 (complément) |
 | 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | Traité par 12 (complément) |
-| 32 | 21 | `src/gpu/gpu_profile.h` | `gpu_profile` sans équivalent Vulkan pour l'écran | En attente (21 fini) |
+| 32 | 21 | `src/gpu/gpu_profile.h` | `gpu_profile` sans équivalent Vulkan pour l'écran | Traité par 21 (complément) |
 | 32 | 28 | `docs/auto-libre.md` § 3 | Tableaux de temps à dater et marquer historiques | Traité par 28 (complément) |
 | 32 | 49 | `docs/adr/0008-anneau-rgb10a2.md` | Porte de qualité de l'anneau 10 bits jamais passée | Traité par 49 (A49-04) |
 | 34 | 07 | `src/app/play/auto_config.cpp:192-200` | L'Auto calibré force RIFE 4.22 lite, n'essaie ni DistilDRBA ni RIFE 4.25 | Traité par 07 (complément) |
@@ -965,8 +966,8 @@
 | 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | En attente (22 fini) |
 | 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | En attente (23 fini) |
 | 43 | 07 | `src/app/play/player.cpp:486-487` | « New graphics card » renvoie à un bouton du mode avancé, sous un autre nom | Traité par 07 (complément) |
-| 45 | 21 | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` posé par personne : option morte du contrat | En attente (21 fini) |
-| 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | En attente (21 fini) |
+| 45 | 21 | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` posé par personne : option morte du contrat | Traité par 21 (complément) |
+| 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | Traité par 21 (complément) |
 | 45 | 08 | `src/app/play/chain_setup.h:89-93` | Ordre de destruction moteurs Vulkan puis backend au passage vers TensorRT | Traité par 08 (complément) |
 | 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | Traité par 03 (complément 2) |
 | 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Traité par 46 (A46-04 : grille en FP16) |
