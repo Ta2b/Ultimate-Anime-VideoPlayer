@@ -14,7 +14,7 @@
 | 02. SPAN FP8 : noyaux CUTLASS et dérivation | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/02-span-fp8.md), [complément](rapports/02-span-fp8-complement.md) |
 | 03. Interpolation fusionnée sous TensorRT (RIFE, DistilDRBA, warp) | Fusionné (23 défauts, 7 majeurs, deux compléments compris) | [rapport](rapports/03-interpolation-tensorrt.md), [complément](rapports/03-interpolation-tensorrt-complement.md), [complément 2](rapports/03-interpolation-tensorrt-complement-2.md) |
 | 04. Analyse et découpe des modèles ONNX | Fusionné (11 défauts, 1 majeur) | [rapport](rapports/04-onnx-modeles.md) |
-| 05. Construction des moteurs, cache et trtexec | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/05-construction-moteurs.md) |
+| 05. Construction des moteurs, cache et trtexec | Fusionné (11 défauts, 1 majeur, complément compris) | [rapport](rapports/05-construction-moteurs.md), [complément](rapports/05-construction-moteurs-complement.md) |
 | 06. Installation des moteurs et téléchargements | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/06-installation-moteurs.md), [complément](rapports/06-installation-moteurs-complement.md) |
 | 07. Calibration, niveaux et mode Auto | Fusionné (13 défauts, 3 majeurs, complément compris) | [rapport](rapports/07-calibration-niveaux.md), [complément](rapports/07-calibration-niveaux-complement.md) |
 | 08. Boucle du lecteur et ouverture de la chaîne | Fusionné (17 défauts, 5 majeurs, complément compris) | [rapport](rapports/08-boucle-chaine.md), [complément](rapports/08-boucle-chaine-complement.md) |
@@ -682,6 +682,9 @@
 | A03-21 | Mineur | `src/app/play/chain_setup.cpp:396-397` | Repli du fusionné vers l'entier écrit au journal seulement (2,10 ms contre 0,92) | 03 | |
 | A03-22 | Mineur | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-223` | Étapes de `stage()` relevées à la fermeture seulement ; profil de fin tronqué à 262 144 mesures sans le dire | 03 | |
 | A03-23 | Mineur | `tools/drba/export_distil_drba.py:46` | Qualité : DistilDRBA v1 jamais exporté ni comparé ; gain de v2 lite inconnu | 03 | A07-13 (même cause pour la porte de qualité) |
+| A05-09 | Mineur | `src/prepare/builder.cpp:174` | L'ONNX relu et haché deux fois à chaque `build()`, cache compris | 05 | |
+| A05-10 | Mineur | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre sans pompe | 05 | A08-10 (même cause) |
+| A05-11 | Mineur | `src/prepare/process_win.cpp:128` | `trtexec.exe` relit sa ligne de commande en page ANSI : compte non ANSI, TensorRT inutilisable | 05 | A20-02 (même cause) |
 
 ## Renvois
 
@@ -719,9 +722,9 @@
 | 04 | 09 | `src/app/play/motion_model.cpp:90` | `filename().string()` et `stem().string()` sur le chemin du RIFE | Traité par 09 |
 | 04 | 09 | `src/app/play/upscale_stage.cpp:198` | L'étage suppose `kSpanFactor` pour un `--model` quelconque (voir A04-06) | Traité par 09 |
 | 04 | 28 | `tests/fuzz/fuzz_parsers.cpp:33-37` | Aucune cible de fuzz pour les lecteurs ONNX de `prepare/` (SEC-21) | Traité par 28 |
-| 04 | 05 | `src/prepare/builder.cpp:174` | `read_model` relit et rehache tout l'ONNX avant et après chaque construction | En attente (05 fini) |
+| 04 | 05 | `src/prepare/builder.cpp:174` | `read_model` relit et rehache tout l'ONNX avant et après chaque construction | Traité par 05 (complément) |
 | 08 | 22 | `src/app/play/settings.cpp:453-499` | `change_between` ne classe pas en réouverture plusieurs réglages dont `prepare_chain` dépend | Traité par 22 |
-| 08 | 05 | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre | En attente (05 fini) |
+| 08 | 05 | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre | Traité par 05 (complément) |
 | 08 | 11 | `src/app/play/host_facts.cpp:378` | `on_battery()` appelé deux fois par seconde | Traité par 11 (A11-09) |
 | 08 | 14 | `src/app/play/player_run.cpp:589-591` | MED-01 : la session doit distinguer vraie fin et erreur d'E/S | Traité par 14 |
 | 08 | 18 | `src/app/play/player.cpp:525-534` | La reprise après « Annuler et regarder » modifie `settings` pour toute la suite | Traité par 18 |
@@ -799,8 +802,8 @@
 | 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | Traité par 07 (complément) |
 | 03 | 23 | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé hors RIFE alors qu'il décide la variante DistilDRBA | Traité par 23 |
 | 03 | 09 | `src/app/play/upscale_drba.cpp:144` | DistilDRBA mesure la paire à la taille de travail, RIFE sur la copie réduite | Traité par 09 (complément) |
-| 03 | 05 | `src/prepare/trtexec_command.cpp:105-106` | Formats des frontières des morceaux DistilDRBA laissés à TensorRT : reformatages possibles | En attente (05 fini) |
-| 20 | 05 | `src/prepare/process_win.cpp:63-65` | `trtexec.exe` sans manifeste UTF-8 : chemin hors page ANSI abîmé | En attente (05 fini) |
+| 03 | 05 | `src/prepare/trtexec_command.cpp:105-106` | Formats des frontières des morceaux DistilDRBA laissés à TensorRT : reformatages possibles | Traité par 05 (complément) |
+| 20 | 05 | `src/prepare/process_win.cpp:63-65` | `trtexec.exe` sans manifeste UTF-8 : chemin hors page ANSI abîmé | Traité par 05 (complément) |
 | 20 | 06 | `src/app/play/engine_install.cpp:293` | A06-02 ne tient que pour `curl.exe` et `tar.exe` | Traité par 06 (complément) |
 | 20 | 34 | A02-12, A03-06, A04-04, A07-03, A08-09, A09-10, A10-10, A13-11, A17-12 | Supposent une exception de `path::string()` que le manifeste UTF-8 empêche sous Windows 11 : à requalifier | Traité par 34 (tous en dette) |
 | 20 | 18 | `src/app/play/crash_dump.cpp` | Le gestionnaire de plantage ne vide pas le journal (A20-04) | En attente (18 fini) |
@@ -850,7 +853,7 @@
 | 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | En attente (23 fini) |
 | 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Traité par 38 (A38-01) |
 | 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | Traité par 08 (complément) |
-| 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | En attente (05 fini) |
+| 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | Traité par 05 (complément) |
 | 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | Traité par 03 (complément 2) |
 | 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | En attente (12 fini) |
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
@@ -884,7 +887,7 @@
 | 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | Traité par 28 (complément) |
 | 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | Traité par 28 (complément) |
 | 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | Traité par 28 (complément) |
-| 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | En attente (05 fini) |
+| 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | Traité par 05 (complément) |
 | 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
 | 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | En attente (26 fini) |
 | 28 | 09 | `src/app/play/drba_model.cpp:14-28` | Demi-flot DistilDRBA manquant : repli silencieux sur le flot entier | Traité par 09 (complément) |
