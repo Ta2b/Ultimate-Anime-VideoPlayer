@@ -13,10 +13,11 @@ refusé, et environ 700 lignes de code mort.
 
 ## Cadrage retenu
 
-Deux questions posées à Tatoub en début de fil ; ses réponses n'étaient pas arrivées à l'écriture, le fil a donc
-suivi les options recommandées, comme convenu pour ne pas bloquer le travail :
+Deux questions posées à Tatoub en début de fil. Le fil a suivi les options recommandées sans attendre ; la
+première est confirmée par Tatoub :
 
-- `preparer` et `receipt` : seulement vérifiés comme morts et relevés pour retrait (QUA-03), sans audit détaillé ;
+- `preparer` et `receipt` : seulement vérifiés comme morts et relevés pour retrait (QUA-03), sans audit détaillé
+  (choix de Tatoub) ;
 - les deux usages couverts à égalité : premier lancement et changement de pilote (clé, reconstructions, délai,
   reprise après échec) d'un côté, tailles de vidéo variées de l'autre.
 
