@@ -21,7 +21,7 @@
 | 09. Étages d'agrandissement et d'interpolation | Fusionné (24 défauts, 1 majeur, complément compris) | [rapport](rapports/09-etages-traitement.md), [complément](rapports/09-etages-traitement-complement.md) |
 | 10. Rendu et présentation par libplacebo | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/10-presentation-libplacebo.md) |
 | 11. Écran et matériel : EDID, VRR, HDR du système, télémétrie | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/11-ecran-materiel.md), [complément](rapports/11-ecran-materiel-complement.md) |
-| 12. Cadence et horloges | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/12-cadence-horloges.md) |
+| 12. Cadence et horloges | Fusionné (12 défauts, 4 majeurs, complément compris) | [rapport](rapports/12-cadence-horloges.md), [complément](rapports/12-cadence-horloges-complement.md) |
 | 13. Session de lecture : seek, épisodes et reprise | Fusionné (13 défauts, 1 bloquant, 1 majeur) | [rapport](rapports/13-session-lecture.md) |
 | 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (8 défauts, 2 majeurs) | [rapport](rapports/14-sources-demux.md) |
 | 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs) | [rapport](rapports/15-decodage-formats.md) |
@@ -686,6 +686,8 @@
 | A05-10 | Mineur | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre sans pompe | 05 | A08-10 (même cause) |
 | A05-11 | Mineur | `src/prepare/process_win.cpp:128` | `trtexec.exe` relit sa ligne de commande en page ANSI : compte non ANSI, TensorRT inutilisable | 05 | A20-02 (même cause) |
 | A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) | 11 | |
+| A12-11 | Mineur | `src/core/clock_pll.h:28-40` | PLL audio réglée en lectures et non en temps (effet de 1 à 2 µs) | 12 | |
+| A12-12 | Majeur | `src/core/free_rate.cpp:28` | Qualité : le Rapide ignore les paires d'une image ; après un seul à-coup GPU, l'estimation se fige et l'interpolation s'arrête pour la séance (démontré) | 12 | |
 
 ## Renvois
 
@@ -778,7 +780,7 @@
 | 16 | 23 | `src/app/play/settings_sound.cpp:27-33` | En mode « suivre le système », un seul délai pour tous les appareils | Traité par 23 |
 | 16 | 08 | `src/app/play/pipeline.cpp:97-110` | Format de sortie figé, ordre `seek()` puis `AudioTrack` | Traité par 08 (complément) |
 | 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | En attente (13 fini) |
-| 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | En attente (12 fini) |
+| 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | Traité par 12 (complément) |
 | 16 | 20 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Traité par 20 (renvoyé à 12) |
 | 17 | 13 | `src/app/play/pipeline.cpp:164-170` | Une piste PGS empêche le repli sur un fichier externe | En attente (13 fini) |
 | 17 | 13 | `src/app/play/pipeline.cpp:183-191` | Polices recopiées deux fois, attente sur le thread de la fenêtre | En attente (13 fini) |
@@ -815,7 +817,7 @@
 | 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | Traité par 27 (A27-02) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | Traité par 02 (complément) |
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Traité par 45 (A45-08, A45-09) |
-| 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
+| 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Traité par 12 (complément) |
 | 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
 | 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Traité par 24 |
 | 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | Traité par 07 (complément) |
@@ -856,7 +858,7 @@
 | 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | Traité par 08 (complément) |
 | 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | Traité par 05 (complément) |
 | 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | Traité par 03 (complément 2) |
-| 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | En attente (12 fini) |
+| 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | Traité par 12 (complément) |
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
 | 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
 | 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | En attente (27 fini) |
@@ -896,7 +898,7 @@
 | 32 | 03 | `src/app/play/upscale_drba.cpp:179-256` | L'entrée de DistilDRBA, pas seulement son nombre de passes | Traité par 03 (complément, A03-14) |
 | 32 | 07 | `src/app/play/auto_config.cpp:167-169` | Commentaire et code contradictoires sur le FP8 dans l'Auto (TRT-08) | Traité par 07 (complément) |
 | 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | En attente (10 fini) |
-| 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | En attente (12 fini) |
+| 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | Traité par 12 (complément) |
 | 32 | 21 | `src/gpu/gpu_profile.h` | `gpu_profile` sans équivalent Vulkan pour l'écran | En attente (21 fini) |
 | 32 | 28 | `docs/auto-libre.md` § 3 | Tableaux de temps à dater et marquer historiques | Traité par 28 (complément) |
 | 32 | 49 | `docs/adr/0008-anneau-rgb10a2.md` | Porte de qualité de l'anneau 10 bits jamais passée | Traité par 49 (A49-04) |
