@@ -97,6 +97,32 @@ des dix GridSample en FP32), mêmes poids, mesuré avec `--reseau` :
 milieu vient du réseau, pas de son FP16. `seuils.json` garde les chiffres du fichier livré tant que le graphe
 réexporté n'est pas publié ; à ce moment, `--ecrire-seuils`.
 
+### Sur un épisode réel (C05, décision 8)
+
+`--video` sur un extrait de 30 s en 1080p (Re:Zero saison 4, épisode 18, de 17 min 10 à 17 min 40 ; fourni par
+Tatoub, hors du dépôt), 60 fenêtres, 1280 × 720 :
+
+| réseau | fidélité dB | pire dB | pire écart | vérité dB | SSIM | ms (processeur) |
+|---|---|---|---|---|---|---|
+| rife_v4.25 | 58,35 | 45,48 | 105,2 | 26,41 | 0,8322 | 1228 |
+| rife_v4.22_lite | 58,68 | 48,81 | 193,0 | 26,39 | 0,8345 | 1379 |
+| distil_drba_v2_lite (livré) | 60,08 | 54,22 | 23,1 | 24,57 | 0,8152 | 241 |
+| le même, grille en FP32 | 81,13 | 71,12 | 2,3 | 24,58 | 0,8150 | 374 |
+
+- **L'écart de 11 à 12 dB du mouvement de synthèse ne se retrouve pas.** En moyenne DistilDRBA est 1,8 dB sous
+  RIFE 4.22 lite ; l'écart médian par fenêtre est de 0,23 dB et DistilDRBA est devant sur 25 fenêtres sur 60.
+- L'écart dépend du plan. Là où RIFE dépasse 40 dB (10 fenêtres, mouvement lent et propre), DistilDRBA est à
+  38,4 dB contre 45,6 (SSIM 0,980 contre 0,994) : il rend ces plans moins nets, comme sur la synthèse. Entre 20
+  et 30 dB (21 fenêtres), les deux se valent (24,1 contre 24,0 dB). Sous 20 dB (19 fenêtres : coupes, dessin
+  « sur deux », mouvement que personne ne retrouve), aucun des deux n'est juste et la mesure ne les départage
+  pas.
+- La grille en FP32 donne 21 dB de fidélité à DistilDRBA ici aussi, et son pire écart tombe de 23 à 2 codes.
+- Les RIFE livrés ont un pire écart de 105 et 193 codes sur 255 entre leur FP16 et leur FP32 : sur un
+  mouvement fort, l'arrondi fait basculer une zone entière (le PSNR moyen reste à 58 dB). La cause n'est pas
+  cherchée ici ; les deux graphes reçoivent la même grille, ce n'est donc pas son arrondi d'entrée (A03-20).
+- Un seul extrait de 30 s : assez pour écarter « 11 à 12 dB », pas pour classer les deux réseaux. Le temps est
+  celui du processeur.
+
 ## Hauteur de travail et modèle de SPAN
 
 `tools/bench/qualite/travail.py` mesure ce que coûte une source réduite avant SPAN, et ce que gagne le modèle
