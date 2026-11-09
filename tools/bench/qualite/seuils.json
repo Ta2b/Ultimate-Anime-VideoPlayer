@@ -1,0 +1,45 @@
+{
+ "config": {
+  "taille": "1280x720",
+  "scenes": 8,
+  "plans": 6,
+  "source": "synthese"
+ },
+ "reseaux": {
+  "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx": {
+   "fidelite_psnr_pire_min": 74.29,
+   "fidelite_ecart_pire_max": 1.02,
+   "verite_psnr_min": 41.09
+  },
+  "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx": {
+   "fidelite_psnr_pire_min": 74.4,
+   "fidelite_ecart_pire_max": 0.88,
+   "verite_psnr_min": 40.94
+  },
+  "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx": {
+   "fidelite_psnr_pire_min": 74.63,
+   "fidelite_ecart_pire_max": 1.2,
+   "verite_psnr_min": 41.5
+  },
+  "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx": {
+   "fidelite_psnr_pire_min": 74.76,
+   "fidelite_ecart_pire_max": 1.01,
+   "verite_psnr_min": 41.37
+  },
+  "rife_v4.25.onnx": {
+   "fidelite_psnr_pire_min": 49.28,
+   "fidelite_ecart_pire_max": 52.29,
+   "verite_psnr_min": 46.94
+  },
+  "rife_v4.22_lite.onnx": {
+   "fidelite_psnr_pire_min": 49.55,
+   "fidelite_ecart_pire_max": 32.08,
+   "verite_psnr_min": 47.26
+  },
+  "distil_drba_v2_lite.onnx": {
+   "fidelite_psnr_pire_min": 50.98,
+   "fidelite_ecart_pire_max": 25.62,
+   "verite_psnr_min": 35.42
+  }
+ }
+}
