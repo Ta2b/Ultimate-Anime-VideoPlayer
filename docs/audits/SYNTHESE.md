@@ -36,7 +36,7 @@
 | 24. Interface : rendu, contrôles et messages | Fusionné (24 défauts, 3 majeurs, complément compris) | [rapport](rapports/24-interface-rendu.md), [complément](rapports/24-interface-rendu-complement.md) |
 | 25. Assistant de premier lancement | Fusionné (19 défauts, 4 majeurs, complément compris) | [rapport](rapports/25-assistant.md), [complément](rapports/25-assistant-complement.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
-| 27. Build, dépendances et ports | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/27-build-dependances.md) |
+| 27. Build, dépendances et ports | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/27-build-dependances.md), [complément](rapports/27-build-dependances-complement.md) |
 | 28. CI, publication et signature | Fusionné (22 défauts, 1 bloquant, 8 majeurs, complément compris) | [rapport](rapports/28-ci-publication.md), [complément](rapports/28-ci-publication-complement.md) |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
@@ -709,6 +709,7 @@
 | A18-18 | Majeur | `src/app/play/auto_bench_run.cpp:363-367` | Qualité : le banc essaie RIFE 4.25 sans dossier, l'essai échoue toujours en silence et l'Auto reste sur 4.22 lite | 18 | Cause directe d'A25-08 et d'A38-02 |
 | A24-24 | Mineur | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » à l'accueil n'ouvre que l'écran des moteurs | 24 | |
 | A25-19 | Mineur | `src/app/play/first_run.cpp:445` | Texte de la mise à jour automatique différent entre l'assistant et le panneau | 25 | |
+| A27-14 | Mineur | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé et SDL3 lié en PUBLIC sans appelant ; liaisons du port imgui inutilisées sous Windows | 27 | |
 
 ## Renvois
 
@@ -882,7 +883,7 @@
 | 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | Traité par 12 (complément) |
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
 | 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | Traité par 17 (complément) |
-| 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | En attente (27 fini) |
+| 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | Traité par 27 (complément) |
 | 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | Traité par 07 (complément) |
 | 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | Traité par 10 (complément) |
 | 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | Traité par 23 (complément) |
