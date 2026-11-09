@@ -51,7 +51,7 @@
 | 39. Diagnostic et support | Fusionné (10 défauts, 4 majeurs, complément compris) | [rapport](rapports/39-diagnostic-support.md), [complément](rapports/39-diagnostic-support-complement.md) |
 | 40. Tests et couverture | Fusionné (16 défauts, 5 majeurs) | [rapport](rapports/40-tests-couverture.md) |
 | 41. HDR, grade et looks | Fusionné (12 défauts, 2 majeurs, complément compris) | [rapport](rapports/41-hdr-grade.md), [complément](rapports/41-hdr-grade-complement.md) |
-| 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
+| 42. Analyse des plans, coupes et pré-analyse | Fusionné (19 défauts, 1 majeur, complément compris) | [rapport](rapports/42-plans-coupes.md), [complément](rapports/42-plans-coupes-complement.md) |
 | 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
 | 44. Représentation intermédiaire et import ONNX | Fusionné (12 défauts, 1 majeur) | [rapport](rapports/44-ir-onnx.md) |
 | 45. Moteur Vulkan : calcul, noyaux et shaders | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/45-backend-vulkan.md) |
@@ -719,6 +719,9 @@
 | A32-12 | Mineur | `src/app/play/upscale_drba.cpp:124-157` | DistilDRBA relit sa mesure dans la paire même : la file se vide à chaque paire | 32 | |
 | A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) | 32 | |
 | A41-12 | Mineur | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur ; « · grade » affiché même sans hook posé | 41 | |
+| A42-17 | Mineur | `src/app/play/chain_hdr.cpp:321` | Limiteur de flashs tardif (1 000 ms à 4 Hz), première montée non comptée, pré-analyse non utilisée | 42 | |
+| A42-18 | Mineur | `src/app/play/upscale_stage.cpp:259` | Analyse jetée quand deux relectures attendent : elle manque au limiteur | 42 | |
+| A42-19 | Mineur | `src/app/play/chain_hdr.cpp:321` | Plafond sans effet en sortie SDR mais journalisé comme posé | 42 | |
 
 ## Renvois
 
@@ -971,7 +974,7 @@
 | 41 | 10 | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | Traité par 10 (complément) |
 | 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | Traité par 32 (complément) |
 | 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | Traité par 38 (complément) |
-| 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
+| 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | Traité par 42 (complément) |
 | 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Traité par 43 (confirmé) |
 | 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Traité par 46 (A46-08) |
 | 43 | 11 | `src/app/play/gpu_telemetry.cpp:73-76` | « Go » et virgule décimale en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Traité par 11 (complément) |
