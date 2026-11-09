@@ -204,10 +204,13 @@ std::string latest_dump_name(const fs::path& dir) {
 
 std::string compose_report(const ReportParts& parts, std::size_t max_bytes) {
   std::string head;
-  for (const auto& [name, value] : parts.facts) head += name + " : " + value + "\n";
+  for (const auto& [name, value] : parts.facts) {
+    head.append(name).append(" : ").append(value).append("\n");
+  }
   if (!parts.dump_name.empty())
-    head += "Minidump : " + parts.dump_name +
-            " (à joindre en privé si on le demande, il peut contenir des chemins)\n";
+    head.append("Minidump : ")
+        .append(parts.dump_name)
+        .append(" (à joindre en privé si on le demande, il peut contenir des chemins)\n");
   head = sanitize_report_paths(head, parts.home);
   head += "\n";
   const std::string previous = sanitize_report_paths(parts.previous_log, parts.home);
@@ -278,8 +281,8 @@ fs::path report_log_file() {
 }
 
 std::string current_report(std::string_view home) {
-  constexpr std::size_t kBody = 60 * 1024;  // sous les 65 536 caractères d'un corps d'issue
-  constexpr std::size_t kTail = 48 * 1024;
+  constexpr std::size_t kBody = std::size_t{60} * 1024;  // sous les 65 536 caractères d'un corps d'issue
+  constexpr std::size_t kTail = std::size_t{48} * 1024;
   const fs::path log = report_log_file();
   ReportParts parts;
   parts.facts = report_facts();
