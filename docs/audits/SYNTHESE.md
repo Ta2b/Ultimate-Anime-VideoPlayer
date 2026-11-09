@@ -51,7 +51,7 @@
 | 39. Diagnostic et support | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/39-diagnostic-support.md) |
 | 40. Tests et couverture | À faire | |
 | 41. HDR, grade et looks | À faire | |
-| 42. Analyse des plans, coupes et pré-analyse | À faire | |
+| 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
 | 43. Textes et traductions | À faire | |
 | 44. Représentation intermédiaire et import ONNX | À faire | |
 | 45. Moteur Vulkan : calcul, noyaux et shaders | À faire | |
@@ -492,7 +492,7 @@
 | A32-08 | Mineur | `src/core/free_rate.cpp:27-36` | Pas du mode Rapide calé sur un temps de service en temps de mur | 32 | |
 | A32-09 | Mineur | `docs/handoff-pc.md:77-78` | Temps de référence périmés | 32 | |
 | A34-01 | Majeur | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Auto calibré : b8f64 FP8 CUTLASS sous Linux, b5f48 FP16 ou INT8 sous Windows | 34 | |
-| A34-02 | Majeur | `src/media/shot_probe.cpp:165-175` | Pré-analyse sur un thread sous Windows : grade et coupes privés sur les sources lourdes (à confirmer) | 34 | |
+| A34-02 | Majeur | `src/media/shot_probe.cpp:165-175` | Pré-analyse sur un thread sous Windows : grade et coupes privés sur les sources lourdes (à confirmer) | 34 | Réfuté en grande partie par 42 (NVDEC par défaut, seul le repli logiciel est touché) |
 | A34-03 | Mineur | `src/app/play/single_instance.cpp:114-120` | Canal nommé de l'instance unique à nom prévisible | 34 | |
 | A34-04 | Mineur | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | 34 | |
 | A34-05 | Mineur | `src/app/play/system_peak.cpp:136-158` | Fabrique DXGI recréée toutes les 2 s | 34 | |
@@ -567,6 +567,22 @@
 | A38-13 | Mineur | `src/app/play/auto_config.h:19-22` | Commentaire qui renvoie à une porte de qualité DistilDRBA inexistante | 38 | |
 | A38-14 | Mineur | `.github/ISSUE_TEMPLATE/bug.yml:56-60` | Formulaire sans Économe ni Personnalisé | 38 | A39-08 (même cause) |
 | A38-15 | Mineur | `src/render/shaders/sharpen.hook:1-5` | Netteté promise « sans halo » | 38 | |
+| A42-01 | Majeur | `src/media/shot_cutter.cpp:163` | Seuil de coupe sur la médiane, dessins tenus compris : un panoramique en trois devient une coupe par dessin (démontré, 24 plans sur 96 images) | 42 | |
+| A42-02 | Mineur | `src/media/shot_cutter.cpp:167-168` | Éclair de deux images pris pour une coupe | 42 | |
+| A42-03 | Mineur | `src/media/shot_timeline.cpp:49-52` | Un saut pendant l'analyse laisse un trou | 42 | |
+| A42-04 | Mineur | `src/app/play/chain_shots.cpp:177-179` | `next_shot` retombe sur la scène en direct | 42 | |
+| A42-05 | Mineur | `src/app/play/options.h:138` | Pré-analyse active pendant les essais de calibration | 42 | |
+| A42-06 | Mineur | `src/media/shot_probe.h:37-41` | Qualité : analyse en 256×144 sous NVDEC, mesurée en partie | 42 | |
+| A42-07 | Mineur | `src/media/shot_probe.cpp:66-68` | G calculé depuis R et B déjà bornés | 42 | |
+| A42-08 | Mineur | `src/media/flash_guard.h:1-5` | Limiteur de flash sur la luminance moyenne seule | 42 | |
+| A42-09 | Mineur | `src/app/play/chain_shots.cpp:93-96` | Coupes de l'interpolation dépendantes du grade | 42 | |
+| A42-10 | Mineur | `src/media/shot_cache.cpp:20-21` | Cache versionné par son format seulement | 42 | |
+| A42-11 | Mineur | `src/app/play/chain_shots.cpp:166-174` | Remplacement de plan à nombre égal non suivi | 42 | |
+| A42-12 | Mineur | `src/media/shot_probe.cpp:108-110` | Sonde détruite sur le thread de la fenêtre | 42 | A30-08 (même cause) |
+| A42-13 | Mineur | `src/media/shot_cutter.cpp:173` | Images du plan en cours toutes gardées et recopiées | 42 | |
+| A42-14 | Mineur | `src/app/play/chain_shots.cpp:23-35` | Empreinte sur le premier mégaoctet seul | 42 | |
+| A42-15 | Mineur | `src/app/play/chain_shots.cpp:44` | `path::string()` (dette) | 42 | |
+| A42-16 | Mineur | `tests/unit/media/shot_test.cpp` | Aucun test de l'animation tenue ni de l'éclair de deux images | 42 | |
 
 ## Renvois
 
@@ -655,7 +671,7 @@
 | 15 | 14 | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images `kNoPts` : seek exact sans fin (avec A15-05) | En attente (14 fini) |
 | 15 | 08 | `src/app/play/player.cpp:95-117` | La sonde devrait refuser les formats illisibles avec un message | En attente (08 fini) |
 | 15 | 01 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:24-41` | L'ingestion TensorRT ne lit ni 4:4:4 ni 4:2:2 en mémoire CUDA | En attente (01 fini) |
-| 15 | 42 | `src/media/shot_probe.cpp:173-175` | La pré-analyse paie la conversion 4:4:4 en pleine taille | Ouvert |
+| 15 | 42 | `src/media/shot_probe.cpp:173-175` | La pré-analyse paie la conversion 4:4:4 en pleine taille | Traité par 42 |
 | 16 | 23 | `src/app/play/settings_sound.cpp:27-33` | En mode « suivre le système », un seul délai pour tous les appareils | Traité par 23 |
 | 16 | 08 | `src/app/play/pipeline.cpp:97-110` | Format de sortie figé, ordre `seek()` puis `AudioTrack` | En attente (08 fini) |
 | 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | En attente (13 fini) |
@@ -761,7 +777,7 @@
 | 30 | 01 | `src/gpu/cuda/backend/tensorrt_backend.cpp:201-204` | `drain()` à placer dans `~TensorRtBackend` (A30-01) | En attente (01 fini) |
 | 30 | 32 | `src/gpu/cuda/backend/tensorrt_lanes.cpp:140-150` | Aucun `cudaSetDeviceFlags` : attente active sur un cœur | En attente (32 fini) |
 | 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | En attente (32 fini) |
-| 30 | 42 | `src/media/shot_probe.cpp:108-110` | `~ShotProbe` joint sur le thread de la fenêtre | Ouvert |
+| 30 | 42 | `src/media/shot_probe.cpp:108-110` | `~ShotProbe` joint sur le thread de la fenêtre | Traité par 42 (A42-12) |
 | 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | En attente (26 fini) |
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Ouvert |
 | 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | En attente (09 fini) |
@@ -811,3 +827,8 @@
 | 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | En attente (23 fini) |
 | 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | En attente (28 fini) |
 | 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | En attente (07 fini) |
+| 42 | 09 | `src/app/play/rife_plan.cpp:10-14` | `kPlanCutFloor` comparé au score brut de RIFE | En attente (09 fini) |
+| 42 | 09 | `src/app/play/rife_plan.h:39-42` | `kPlanCutFloor` tenu sur une seule série | En attente (09 fini) |
+| 42 | 41 | `src/app/play/chain_hdr.cpp:252` | GPU-07 : métadonnées HDR10 fixes, grade seul plafonné | Ouvert |
+| 42 | 41 | `src/kernels/spec/frame_stats.h:5-6` | Statistiques de lumière du grade sur 9 216 points | Ouvert |
+| 42 | 07 | `src/app/play/auto_bench_run.cpp:37` | Pré-analyse active pendant les essais de calibration | En attente (07 fini) |
