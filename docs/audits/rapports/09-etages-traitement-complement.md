@@ -4,8 +4,9 @@ Branche : `claude/project-thread-04rexq`. Commit audité : `d5df90d`. Date : `20
 
 ## Verdict
 
-Sur les dix renvois, sept donnent un défaut nouveau (huit ID, tous mineurs, A09-17 à A09-24), trois sont des
-doublons de défauts déjà au tableau (A07-04, A49-10 avec A03-19, A03-14, A21-06), et aucun n'est réfuté en entier.
+Sur les dix renvois, huit donnent un défaut nouveau (A09-17 à A09-24, tous mineurs) et quatre sont des doublons,
+en tout ou en partie, de défauts déjà au tableau (A07-04, A49-10 avec A03-19, A03-14, A21-06) ; deux de ces
+doublons n'apportent aucun défaut de plus. Aucun renvoi n'est réfuté en entier.
 Trois baisses de qualité faites pour la vitesse n'ont aucune mesure qui les justifie : le mouvement estimé à
 720p (doublon), la paire de reprise non interpolée après une image sautée (A09-20) et le demi-flot de DistilDRBA
 dès 1 440 lignes (A09-24).
