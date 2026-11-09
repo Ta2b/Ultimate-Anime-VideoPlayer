@@ -41,7 +41,7 @@
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
 | 31. États dégradés et reprise sur erreur | Fusionné (16 défauts, 8 majeurs, complément compris) | [rapport](rapports/31-etats-degrades.md), [complément](rapports/31-etats-degrades-complement.md) |
-| 32. Budget par image sur la cible | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/32-budget-par-image.md) |
+| 32. Budget par image sur la cible | Fusionné (13 défauts, 4 majeurs, complément compris) | [rapport](rapports/32-budget-par-image.md), [complément](rapports/32-budget-par-image-complement.md) |
 | 33. Longue durée, mémoire et ressources | Fusionné (8 défauts, 4 majeurs) | [rapport](rapports/33-longue-duree-ressources.md) |
 | 34. Parité Windows et CachyOS | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/34-parite-windows-cachyos.md) |
 | 35. Entrées non sûres | Fusionné (9 défauts, 1 majeur) | [rapport](rapports/35-entrees-hostiles.md) |
@@ -714,6 +714,10 @@
 | A31-16 | Mineur | `src/media/video_decoder.cpp:400` | Au réveil, NVDEC touche le contexte mort en premier et rend `DecodeFailed` fatal : la relance d'A31-02 ne se ferait pas | 31 | |
 | A38-16 | Mineur | `docs/hdr-anime.md:56-60` | « Noirs profonds selon la scène » : réglé sur la médiane de l'épisode, et à 64 % sans mesure | 38 | |
 | A39-10 | Mineur | `src/prepare/builder.cpp:233` | Disque plein montré comme « BuilderFailed » alors que le code « not enough disk space » existe | 39 | |
+| A32-10 | Mineur | `src/gpu/cuda/backend/trt_engine.cpp:140-165` | Mémoire vidéo pleine sous Windows : débordement en mémoire système ni refusé ni signalé | 32 | |
+| A32-11 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:17-19` | Attente active au-delà de 200 µs : événements sans `cudaEventBlockingSync` | 32 | |
+| A32-12 | Mineur | `src/app/play/upscale_drba.cpp:124-157` | DistilDRBA relit sa mesure dans la paire même : la file se vide à chaque paire | 32 | |
+| A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) | 32 | |
 
 ## Renvois
 
@@ -904,10 +908,10 @@
 | 31 | 39 | `src/app/play/engine_screen.cpp:342-344` | Raison du refus de TensorRT au journal seulement | Traité par 39 (A39-02) |
 | 31 | 08 | `src/app/play/chain_setup.cpp:160-171` | Repli au cran Équilibre : baisse de qualité sans avis | Traité par 08 (complément) |
 | 31 | 34 | `src/app/play/chain_setup.cpp:415-427` | Sous Windows, Performance retombe toujours en FP16 entier | Réfuté par 34 (A31-06 touche les deux systèmes) |
-| 31 | 32 | `src/gpu/cuda/backend/tensorrt_export.cpp` | « CUDA Sysmem Fallback » sous Windows : lenteur sans refus | En attente (32 fini) |
+| 31 | 32 | `src/gpu/cuda/backend/tensorrt_export.cpp` | « CUDA Sysmem Fallback » sous Windows : lenteur sans refus | Traité par 32 (complément) |
 | 30 | 01 | `src/gpu/cuda/backend/tensorrt_backend.cpp:201-204` | `drain()` à placer dans `~TensorRtBackend` (A30-01) | Traité par 01 (complément) |
-| 30 | 32 | `src/gpu/cuda/backend/tensorrt_lanes.cpp:140-150` | Aucun `cudaSetDeviceFlags` : attente active sur un cœur | En attente (32 fini) |
-| 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | En attente (32 fini) |
+| 30 | 32 | `src/gpu/cuda/backend/tensorrt_lanes.cpp:140-150` | Aucun `cudaSetDeviceFlags` : attente active sur un cœur | Traité par 32 (complément) |
+| 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | Traité par 32 (complément) |
 | 30 | 42 | `src/media/shot_probe.cpp:108-110` | `~ShotProbe` joint sur le thread de la fenêtre | Traité par 42 (A42-12) |
 | 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | Traité par 26 (complément) |
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Traité par 41 (A41-09) |
@@ -964,7 +968,7 @@
 | 42 | 41 | `src/kernels/spec/frame_stats.h:5-6` | Statistiques de lumière du grade sur 9 216 points | Réfuté par 41 pour le grade (reste à 42 pour les flashs) |
 | 42 | 07 | `src/app/play/auto_bench_run.cpp:37` | Pré-analyse active pendant les essais de calibration | Traité par 07 (complément) |
 | 41 | 10 | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | Traité par 10 (complément) |
-| 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | En attente (32 fini) |
+| 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | Traité par 32 (complément) |
 | 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | Traité par 38 (complément) |
 | 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
 | 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Traité par 43 (confirmé) |
