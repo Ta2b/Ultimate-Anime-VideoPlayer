@@ -38,7 +38,7 @@
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
 | 27. Build, dépendances et ports | À faire | |
 | 28. CI, publication et signature | À faire | |
-| 29. Parcours utilisateur de bout en bout | À faire | |
+| 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | À faire | |
 | 31. États dégradés et reprise sur erreur | À faire | |
 | 32. Budget par image sur la cible | À faire | |
@@ -220,7 +220,7 @@
 | A13-06 | Mineur | `src/app/play/session.cpp:78` | Retours de `play()` et `pause()` ignorés : pause perdue sur boîte audio pleine | 13 | |
 | A13-07 | Mineur | `src/app/play/session.cpp:229-247` | Après des pas vers l'avant, l'audio reprend à la position de la pause | 13 | |
 | A13-08 | Mineur | `src/app/play/session.cpp:189-227` | Seek refusé sans repositionnement : lecture figée (MED-06) | 13 | |
-| A13-09 | Mineur | `src/app/play/player_run.cpp:738-739` | Pistes audio et sous-titres gardées pour toute vidéo suivante | 13 | |
+| A13-09 | Mineur | `src/app/play/player_run.cpp:738-739` | Pistes audio et sous-titres gardées pour toute vidéo suivante | 13 | Réfuté par 29 (`Player` recréé à chaque fichier) |
 | A13-10 | Mineur | `src/app/play/resume.cpp:107-129` | `resume.tsv` réécrit sans verrou entre deux instances | 13 | |
 | A13-11 | Mineur | `src/app/play/resume.cpp:33` | `path::string()` dans la reprise et les sous-titres externes | 13 | |
 | A13-12 | Mineur | `src/app/play/resume.cpp:39-45` | Windows : comparaison sans casse en ASCII seulement | 13 | |
@@ -422,6 +422,13 @@
 | A49-12 | Mineur | `src/app/play/placebo_screen.cpp:130` | Présentation par défaut de libplacebo, sans anti-ringing | 49 | |
 | A49-13 | Mineur | `src/media/frame_data.cpp:247-275` | Conversion hôte bilinéaire, 12 bits ramené à 10 | 49 | |
 | A49-14 | Mineur | `tools/rife/convert_rife_fp16.py` | Aucune mesure des RIFE et DistilDRBA FP16 contre leurs originaux FP32 | 49 | |
+| A29-01 | Majeur | `src/app/play/chain_setup.cpp:497` | Un refus de RIFE ou de SPAN arrête l'épisode et renvoie à l'accueil, sans repli | 29 | |
+| A29-02 | Majeur | aucun fichier (`WM_POWERBROADCAST`, `PrepareForSleep` absents) | La mise en veille n'est traitée nulle part | 29 | |
+| A29-03 | Mineur | `src/app/play/player_run.cpp:617` | Réouverture du même fichier traitée comme un fichier suivant | 29 | |
+| A29-04 | Mineur | `src/app/main.cpp:528` | Après mise à jour d'un moteur, la relance rejoue `argv` et perd la vidéo en cours | 29 | |
+| A29-05 | Mineur | `src/app/play/settings_panel.cpp:572-574` | DistilDRBA ne se choisit qu'à la main, hors Auto et hors calibration | 29 | |
+| A29-06 | Mineur | `src/app/play/player_engines.cpp:146` | Désérialisation des moteurs TensorRT sur le thread de la fenêtre sans pompe | 29 | |
+| A29-07 | Mineur | `src/app/play/engine_screen.cpp:164-167` | « Refaire le banc » annulé en lecture : la chaîne repasse en Auto | 29 | |
 
 ## Renvois
 
@@ -593,7 +600,7 @@
 | 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | En attente (05 fini) |
 | 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | En attente (03 fini) |
 | 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | En attente (12 fini) |
-| 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Ouvert |
+| 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
 | 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
 | 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | Ouvert |
 | 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | En attente (07 fini) |
@@ -602,3 +609,9 @@
 | 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Ouvert |
 | 49 | 34 | `src/app/play/span_auto.cpp:22-25` | Windows et Linux ne jouent pas le même SPAN en Auto calibré | Ouvert |
 | 49 | 41 | `src/render/cube_lut.cpp:289-314` | Écart de la LUT composée ; statistiques du grade sur l'image débandée | Ouvert |
+| 29 | 13 | `src/app/play/player.cpp:454` | A13-09 réfuté : `Player` recréé à chaque fichier | Traité par 29 |
+| 29 | 31 | `src/app/play/chain_setup.cpp:497` | Refus de RIFE sans repli (A29-01) à compter dans la grille | Ouvert |
+| 29 | 31 | `src/app/play/player_engines.cpp:270-272` | `Cancelled` de DistilDRBA fusionné lance la construction de l'entier | Ouvert |
+| 29 | 33 | aucun fichier | La veille (A29-02) à inclure dans le banc de soirée | Ouvert |
+| 29 | 34 | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | Ouvert |
+| 29 | 36 | `src/app/play/player.cpp:574-581` | `save_settings` de l'épisode suivant écrit les raccourcis de séance avant l'ouverture | Ouvert |
