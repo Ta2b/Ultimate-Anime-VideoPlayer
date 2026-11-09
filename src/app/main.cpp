@@ -43,6 +43,7 @@ extern "C" {
 #include "app/play/options.h"
 #include "app/play/paths.h"
 #include "app/play/player.h"
+#include "app/play/problem_report.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
 #include "app/play/updater.h"
@@ -110,10 +111,26 @@ int fail(const ajp::Refusal& refusal) {
   return 1;
 }
 
+// Le diagnostic d'une séance : un plantage laisse un minidump à côté du journal sous Windows (P2.2), et le
+// rapport de « Signaler un problème » garde en tête la version, le système et le journal à lire. La marque
+// de séance, restée ouverte, dit que la séance d'avant s'est arrêtée brutalement : son journal est alors
+// ajp.log.1 (A39-01).
+void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file) {
+  namespace play = ajp::app::play;
+  if (!settings_dir.empty()) play::install_crash_dumps(settings_dir / "crashes");
+  play::set_report_log_file(log_file);
+  play::note_report_fact("ajp", play::installed_version());
+  play::note_report_fact("Système", play::os_description());
+  if (!settings_dir.empty() && play::begin_session(settings_dir))
+    ajp::log_channel("app")->warn(
+        "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");
+}
+
 // Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou
 // démarre à sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
-  ajp::close_log();  // execv remplace le processus : la file du journal s'écrit avant
+  ajp::app::play::end_session();  // une relance voulue n'est pas un plantage
+  ajp::close_log();               // execv remplace le processus : la file du journal s'écrit avant
 #ifdef _WIN32
   // _spawnv ne met aucun argument entre guillemets : un chemin à espaces (« C:\Mes vidéos\a.mkv »)
   // arriverait coupé en deux. Chaque argument est cité à la façon de CommandLineToArgvW, et l'exécutable
@@ -418,8 +435,6 @@ int run_player(int argc, char** argv) {
   }
   const std::filesystem::path log_file =
       settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
-  // Sous Windows, un plantage laisse un minidump à côté du journal (P2.2).
-  if (!settings_dir.empty()) ajp::app::play::install_crash_dumps(settings_dir / "crashes");
   if (!log_file.empty()) {
     // Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal,
     // la relance n'efface plus celui qui en garde la trace.
@@ -449,6 +464,7 @@ int run_player(int argc, char** argv) {
     ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
                                   ajp::app::play::installed_version());
   }
+  start_diagnostics(settings_dir, log_file);
   if (options->bake_looks) {
     const auto baked = ajp::app::play::bake_looks(ajp::app::play::paths::play_settings(settings_dir),
                                                   data / "luts", *options->bake_looks);
@@ -551,6 +567,7 @@ int run_player(int argc, char** argv) {
 int main(int argc, char** argv) {
   ajp::install_terminate_flush();
   const int code = ajp::run_logged([&] { return run_player(argc, argv); });
+  ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
   ajp::close_log();
   return code;
 }

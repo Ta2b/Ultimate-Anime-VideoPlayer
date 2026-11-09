@@ -26,6 +26,7 @@
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/paths.h"
+#include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
@@ -35,6 +36,7 @@
 #include "core/keys.h"
 #include "core/log.h"
 #include "core/thread.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -339,6 +341,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
   auto library = run_pumped<std::shared_ptr<BackendLibrary>>(
       "backend", [&] { return BackendLibrary::choose(backends_within(candidates, engines), probe); });
   // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
+  if (library) note_engine_facts(core::to_utf8((*library)->path().filename()), (*library)->passed_over());
   if (library && !(*library)->passed_over().empty())
     log_channel("app")->warn("moteurs : refus avant {} :{}", (*library)->path().string(),
                              (*library)->passed_over());
