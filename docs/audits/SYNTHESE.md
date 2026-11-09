@@ -40,7 +40,7 @@
 | 28. CI, publication et signature | À faire | |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | À faire | |
-| 31. États dégradés et reprise sur erreur | À faire | |
+| 31. États dégradés et reprise sur erreur | Fusionné (15 défauts, 8 majeurs) | [rapport](rapports/31-etats-degrades.md) |
 | 32. Budget par image sur la cible | À faire | |
 | 33. Longue durée, mémoire et ressources | À faire | |
 | 34. Parité Windows et CachyOS | À faire | |
@@ -429,6 +429,21 @@
 | A29-05 | Mineur | `src/app/play/settings_panel.cpp:572-574` | DistilDRBA ne se choisit qu'à la main, hors Auto et hors calibration | 29 | |
 | A29-06 | Mineur | `src/app/play/player_engines.cpp:146` | Désérialisation des moteurs TensorRT sur le thread de la fenêtre sans pompe | 29 | |
 | A29-07 | Mineur | `src/app/play/engine_screen.cpp:164-167` | « Refaire le banc » annulé en lecture : la chaîne repasse en Auto | 29 | |
+| A31-01 | Majeur | `src/app/play/ring_stage.cpp:106-113` | Tout refus GPU devient `ThreadFailed` : `DeviceLost` et sa phrase perdus, figé par un test | 31 | A20-09 (même cause) |
+| A31-02 | Majeur | `src/app/play/player.cpp:589-602` | Aucune relance après perte du GPU alors que le mécanisme existe | 31 | |
+| A31-03 | Majeur | `src/app/play/engine_screen.cpp:341-344` | TensorRT refusé remplacé par Vulkan sans avis à l'écran | 31 | |
+| A31-04 | Majeur | `src/app/play/chain_setup.cpp:355` | Un moteur refusé à l'ouverture empêche toute lecture, rien n'est retenu | 31 | A29-01 (même cause) |
+| A31-05 | Majeur | `src/app/play/player.cpp:523-533` | « Annuler et regarder » coupe aussi SPAN déjà prêt | 31 | |
+| A31-06 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | Cran Qualité ou Performance retombé en FP16 : garde le refus du fusionné, plus lent qu'Équilibre (toujours sous Windows en Performance) | 31 | |
+| A31-07 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | DistilDRBA Performance avec graphe FP8 : moins de qualité et plus lent que le fusionné FP16 | 31 | |
+| A31-08 | Mineur | `src/gpu/cuda/backend/cuda_status.h:38-39` | `cudaErrorMemoryAllocation` devient `VendorCallFailed` | 31 | |
+| A31-09 | Mineur | `src/app/play/upscale_drba.cpp:136` | Image ingérée avant le contrôle de taille | 31 | |
+| A31-10 | Mineur | `src/app/play/host_facts.h:48-51` | Sur batterie, Auto plafonné à 60 Hz sans avis, et retenu | 31 | |
+| A31-11 | Mineur | `src/core/file_sync.cpp:75-91` | Disque plein : place vérifiée seulement à l'installation des moteurs | 31 | |
+| A31-12 | Mineur | `src/app/play/player_run.cpp:510` | Veille et hibernation non gérées | 31 | A29-02 (même cause) |
+| A31-13 | Mineur | `src/app/play/placebo_ring.cpp:218` | `ready()` vrai quand le sémaphore échoue | 31 | |
+| A31-14 | Mineur | `src/gpu/cuda/backend/tensorrt_export.cpp:262-263` | GPU bloqué sans être perdu : attente sans délai | 31 | |
+| A31-15 | Majeur | `src/app/play/player_engines.cpp:259-260` | « Annuler » sur DistilDRBA fusionné lance la construction de l'entier, puis de RIFE ; même chose pour RIFE fusionné | 31 | |
 
 ## Renvois
 
@@ -438,7 +453,7 @@
 | 01 | 21 | `src/gpu/graph_book.h` | Compteurs d'échecs des graphes jamais remis à zéro, jeux d'adresses jamais évincés | Traité par 21 |
 | 01 | 21 | `src/gpu/lanes.h` | La table des ressources de `LaneHazards` ne perd jamais une adresse | Traité par 21 |
 | 01 | 30 | `src/app/play/chain_setup.h:64-93` | Moteurs détruits avant le backend sans attendre leur travail en vol | Ouvert |
-| 01 | 31 | `src/app/play/ring_stage.cpp:58-66` | `health()` n'est appelé que pendant l'attente d'un emplacement | Ouvert |
+| 01 | 31 | `src/app/play/ring_stage.cpp:58-66` | `health()` n'est appelé que pendant l'attente d'un emplacement | Traité par 31 |
 | 02 | 34 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | FP8 éteint hors Linux : sous Windows 11, le cran Performance reste en FP16 | Ouvert |
 | 02 | 01 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:325` | `write_ring` rend l'erreur sans signaler l'emplacement commencé (comme A02-08) | En attente (01 fini) |
 | 02 | 07 | `src/app/play/span_int8.cpp:166` | `size_key` plafonné à 1920×1088 : la taille validée n'est pas celle du moteur au-delà | Traité par 07 |
@@ -483,11 +498,11 @@
 | 09 | 22 | `src/app/play/settings.h:114-117` | Critère d'Auto sur la hauteur de sortie (A09-08) | Traité par 22 |
 | 09 | 08 | `src/app/play/chain_setup.cpp:420-423` | Performance remplace le RIFE fusionné par un moteur entier (A09-02) | En attente (08 fini) |
 | 09 | 41 | `src/app/play/upscale_stage.cpp:244-271` | Statistiques du grade prises sur l'image débandée, ou pas du tout sous DistilDRBA | Ouvert |
-| 09 | 31 | `src/app/play/ring_stage.cpp:108-112` | Seul `SourceResized` rouvre la chaîne sur une image de taille nouvelle | Ouvert |
+| 09 | 31 | `src/app/play/ring_stage.cpp:108-112` | Seul `SourceResized` rouvre la chaîne sur une image de taille nouvelle | Traité par 31 |
 | 10 | 12 | `src/app/play/session.cpp:598-616` | Au niveau `Wait`, `vblank_grid()` toujours vide : effet sur `--vsync-index` et la PLL | Traité par 12 (A12-01, A12-03) |
 | 10 | 08 | `src/app/play/player_run.cpp:654` | Une erreur de `show` termine `run_chain` : message et réouverture en boucle ? | En attente (08 fini) |
 | 10 | 18 | `src/app/play/placebo_open.cpp:327` | Décodeur Vulkan Video à détruire avant l'écran | En attente (18 fini) |
-| 10 | 31 | `src/app/play/placebo_ring.cpp:218` | `ready()` vrai quand `vkGetSemaphoreCounterValue` échoue | Ouvert |
+| 10 | 31 | `src/app/play/placebo_ring.cpp:218` | `ready()` vrai quand `vkGetSemaphoreCounterValue` échoue | Traité par 31 |
 | 10 | 34 | `src/app/play/placebo_open.cpp:384-390` | Windows : fenêtre cachée pendant l'ouverture, message d'erreur sans fenêtre ? | Ouvert |
 | 11 | 08 | `src/app/play/player_run.cpp:398-400` | Relevé de l'écran fait deux fois sous Windows | En attente (08 fini) |
 | 11 | 08 | `src/app/play/player_run.cpp:549-560` | Relecture du HDR à partir de l'événement SDL plutôt que du minuteur | En attente (08 fini) |
@@ -553,7 +568,7 @@
 | 20 | 18 | `src/app/play/crash_dump.cpp` | Le gestionnaire de plantage ne vide pas le journal (A20-04) | En attente (18 fini) |
 | 20 | 18 | `src/app/play/pumped_task.h:58` | Sonde détachée qui peut journaliser après `close_log()` | En attente (18 fini) |
 | 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Traité par 26 |
-| 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Ouvert |
+| 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Traité par 31 |
 | 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Traité par 24 |
 | 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | En attente (21 fini) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | En attente (02 fini) |
@@ -610,8 +625,13 @@
 | 49 | 34 | `src/app/play/span_auto.cpp:22-25` | Windows et Linux ne jouent pas le même SPAN en Auto calibré | Ouvert |
 | 49 | 41 | `src/render/cube_lut.cpp:289-314` | Écart de la LUT composée ; statistiques du grade sur l'image débandée | Ouvert |
 | 29 | 13 | `src/app/play/player.cpp:454` | A13-09 réfuté : `Player` recréé à chaque fichier | Traité par 29 |
-| 29 | 31 | `src/app/play/chain_setup.cpp:497` | Refus de RIFE sans repli (A29-01) à compter dans la grille | Ouvert |
-| 29 | 31 | `src/app/play/player_engines.cpp:270-272` | `Cancelled` de DistilDRBA fusionné lance la construction de l'entier | Ouvert |
+| 29 | 31 | `src/app/play/chain_setup.cpp:497` | Refus de RIFE sans repli (A29-01) à compter dans la grille | Traité par 31 |
+| 29 | 31 | `src/app/play/player_engines.cpp:270-272` | `Cancelled` de DistilDRBA fusionné lance la construction de l'entier | Traité par 31 |
 | 29 | 33 | aucun fichier | La veille (A29-02) à inclure dans le banc de soirée | Ouvert |
 | 29 | 34 | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | Ouvert |
 | 29 | 36 | `src/app/play/player.cpp:574-581` | `save_settings` de l'épisode suivant écrit les raccourcis de séance avant l'ouverture | Ouvert |
+| 31 | 40 | `tests/unit/app/ring_stage_test.cpp:243` | Test qui fige `ThreadFailed` ; aucun test d'injection de `DeviceLost` | Ouvert |
+| 31 | 39 | `src/app/play/engine_screen.cpp:342-344` | Raison du refus de TensorRT au journal seulement | Ouvert |
+| 31 | 08 | `src/app/play/chain_setup.cpp:160-171` | Repli au cran Équilibre : baisse de qualité sans avis | En attente (08 fini) |
+| 31 | 34 | `src/app/play/chain_setup.cpp:415-427` | Sous Windows, Performance retombe toujours en FP16 entier | Ouvert |
+| 31 | 32 | `src/gpu/cuda/backend/tensorrt_export.cpp` | « CUDA Sysmem Fallback » sous Windows : lenteur sans refus | Ouvert |
