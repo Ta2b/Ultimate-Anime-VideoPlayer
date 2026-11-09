@@ -4,7 +4,114 @@
 
 ## Bilan
 
-À écrire à la fin de toutes les vagues.
+Écrit le 9 novembre 2026, à la fin des audits 01 à 46 et 49 (47 et 48 non lancés) et de leurs compléments. Plus aucun renvoi en attente.
+
+Deux documents le prolongent :
+
+- [`PRIORITES.md`](PRIORITES.md) : les 661 défauts rangés en 14 chantiers, dans l'ordre de prise en charge, avec le modèle Claude conseillé pour chacun ;
+- [`A-CONFIRMER.md`](A-CONFIRMER.md) : les manipulations à faire sur la machine de Tatoub.
+
+### Comptes
+
+| Gravité | Défauts |
+|---|---|
+| Bloquant | 2 |
+| Majeur | 126 |
+| Mineur | 533 |
+| **Total** | **661**, dont 40 doublons d'une même cause |
+
+Par audit (bloquants / majeurs / mineurs) :
+
+| Audit | B | M | m | Audit | B | M | m | Audit | B | M | m |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01 |  | 1 | 7 | 17 |  | 2 | 12 | 33 |  | 4 | 4 |
+| 02 |  | 1 | 13 | 18 |  | 3 | 15 | 34 |  | 2 | 10 |
+| 03 |  | 7 | 16 | 19 |  | 1 | 12 | 35 |  | 1 | 8 |
+| 04 |  | 1 | 10 | 20 |  | 1 | 13 | 36 |  | 3 | 6 |
+| 05 |  | 1 | 10 | 21 |  | 2 | 9 | 37 |  | 1 | 13 |
+| 06 |  | 1 | 12 | 22 |  | 3 | 15 | 38 |  | 2 | 14 |
+| 07 |  | 2 | 11 | 23 |  | 4 | 12 | 39 |  | 4 | 6 |
+| 08 |  | 5 | 12 | 24 |  | 3 | 21 | 40 |  | 5 | 11 |
+| 09 |  | 1 | 23 | 25 |  | 4 | 15 | 41 |  | 2 | 10 |
+| 10 |  | 2 | 17 | 26 |  | 4 | 9 | 42 |  | 1 | 18 |
+| 11 |  | 2 | 12 | 27 |  | 1 | 13 | 43 |  | 1 | 6 |
+| 12 |  | 4 | 8 | 28 | 1 | 8 | 13 | 44 |  | 1 | 11 |
+| 13 | 1 | 1 | 12 | 29 |  | 2 | 5 | 45 |  | 2 | 13 |
+| 14 |  | 2 | 8 | 30 |  | 1 | 7 | 46 |  | 6 | 9 |
+| 15 |  | 2 | 12 | 31 |  | 8 | 8 | 49 |  | 6 | 10 |
+| 16 |  | 1 | 13 | 32 |  | 4 | 9 |  |  |  |  |
+
+### Les dix défauts les plus graves pour la cible
+
+Cible : RTX 4070 Ti, TensorRT, Windows 11 et CachyOS. Rangés par ordre de prise en charge.
+
+| Rang | ID | Chantier | Pourquoi |
+|---|---|---|---|
+| 1 | A28-02 | C01 | Aucun manifeste signé depuis la 0.5.1 : le canal Stable se croit à jour, aucune correction n'arrive chez personne. |
+| 2 | A28-01 (bloquant) | C01 | Une release Linux part sans paquet TensorRT sur un simple avertissement (0.10.1 et 0.10.3). |
+| 3 | A13-01 (bloquant) | C02 | Sous-titres externes à l'épisode suivant ou à la réouverture : déréférence nulle, plantage. |
+| 4 | A18-01 | C02 | `close_log` ne vide pas `ajp.log`, et tout journal écrit après lui plante. |
+| 5 | A29-01, A31-04 | C07 | Un RIFE ou un SPAN refusé arrête l'épisode et renvoie à l'accueil (décision 6 : la vidéo doit continuer sans lui). |
+| 6 | A49-02, A08-15 | C04 | La source 1080p est réduite à 720p ou 540p avant SPAN, même sur une carte qui tient la 1080p. |
+| 7 | A18-18 | C04 | Le banc essaie RIFE 4.25 sans son dossier : l'essai échoue toujours en silence et l'Auto reste sur 4.22 lite (cause d'A25-08 et A38-02). |
+| 8 | A03-18, A03-20, A44-01, A46-04 | C05 | Grilles de RIFE et de DistilDRBA arrondies en FP16 sur TensorRT et Vulkan, sans gain de vitesse : jusqu'à 2 dB et 16/255 perdus sur un panoramique. |
+| 9 | A41-02 | C06 | La pile de LUT et la passe kwin défont le grade HDR : blanc à 695 nits sur 1 000, émetteurs deux fois moins hauts, MaxFALL faux (décision 16). |
+| 10 | A12-01 | C08 | La grille des vblanks apprend la cadence du contenu au lieu de celle de l'écran : saccades (démontré). |
+
+Juste après : A01-01 et A31-02 (perte du GPU non reconnue, aucune relance), A26-01 (module TensorRT jamais remplacé hors changement d'ABI), A21-03 et A49-04 (anneau 10 bits sans porte de banding).
+
+### Qualité d'image
+
+Règle de Tatoub, donnée à tous les audits depuis le 21 : une baisse de qualité d'image faite pour la vitesse est un défaut, sauf justification mesurée. L'audit 49 et les compléments en ont trouvé partout où l'image passe : SPAN et l'Auto (chantier C04), l'interpolation (C05), le grade HDR (C06). Aucune de ces baisses n'a sa mesure écrite dans le dépôt. D'où le chantier C03 (banc de qualité contre un original FP32), placé avant eux.
+
+Les seize compromis listés par l'audit 49 sont tranchés ainsi, selon la recommandation de l'audit et la règle de Tatoub :
+
+| Compromis | Retenu | Chantier |
+|---|---|---|
+| C1 SPAN b5f48 au lieu du b8f64 en Auto | Corriger : b8f64 FP16 aux rangs Rapide et Ultra | C04 |
+| C2 Source 1080p réduite avant SPAN | Corriger : garder la 1080p dès qu'elle tient la cadence, sur tout écran | C04 |
+| C3 SPAN FP8 en Auto calibré | Corriger : FP16 d'abord, FP8 seulement s'il fait tenir un cran de plus, et jamais sur RTX 50 sans mesure (décision 14) | C04 |
+| C4 RIFE 4.22 lite imposé par l'Auto calibré | Corriger : calibrer avec le modèle du rang (A18-18) | C04 |
+| C5 Anneau en 10 bits tramés | Revenir à RGBA16 jusqu'à la porte de l'ADR 0008 | C04 |
+| C6 Pile de looks en LUT 65³ | Corriger : chaîne calculée dans le shader (A41-01 montre que 129³ ne suffit pas) | C06 |
+| C7 Warp bilinéaire après SPAN | Garder « après SPAN », passer en bicubique après mesure | C04 |
+| C8 Une passe RIFE par paire sous 15 px | Garder, écrire la mesure, régler le seuil | C05 |
+| C9 Mouvement estimé à 720p | Garder en attendant la mesure | C05 |
+| C10 Dessins tenus : sortie SPAN réutilisée | Durcir le seuil, retirer si la mesure le montre | C04 |
+| C11 Chroma bilinéaire à l'ingestion TensorRT | Corriger : Spline36 comme le contrat (A03-01) | C04 |
+| C12 Chroma 4:4:4 et 12 bits réduits | Corriger après les autres (sources rares) | C10 |
+| C13 DistilDRBA : deband, 720p, grille FP16 | Corriger A03-18 d'abord, puis mesurer le reste | C05 |
+| C14 Porte FP8 réglée sur le modèle | Rejuger en ΔE_ITP après le grade, NaN compris (A02-01) | C04 |
+| C15 Réduction avant SPAN en gamma, Hermite | Sans objet si C2 retire la réduction ; sinon mesurer | C04 |
+| C16 Rien au-dessus de RIFE 4.25 | Garder (ADR 0012) | |
+
+### DistilDRBA
+
+DistilDRBA compte autant que les deux RIFE pour Tatoub. Ce qu'il lui manque : une grille en FP32 (A03-18, A44-01, A46-04), une mesure contre le réseau d'origine (A46-03, A49-16), une mesure contre RIFE (A40-03), un export reproductible et épinglé (A46-01, A46-02), une porte de qualité écrite (A07-13), des tests de la voie fusionnée et de sa variante mouvement (A03-02, A03-03), et un coût par image créée ramené à celui de RIFE (A03-13, A03-14, A32-04). Décision 8 : il reste hors de l'Auto, au choix manuel, jusqu'à cette mesure.
+
+### Décisions de Tatoub
+
+1. Mise à jour en simple notification (chantier 00 des audits) : retenu.
+2. Canal Préversions : à retirer.
+3. Clé de secours de signature : hors ligne, chez Tatoub, sauvegarde chiffrée.
+4. Clé Ed25519 dans un secret protégé de la CI : oui.
+5. Chaque release a un paquet TensorRT, pour Windows et pour Linux. La 0.10.3 sans paquet n'a pas d'importance.
+6. RIFE ou SPAN qui ne se construit pas : un petit message, la vidéo continue sans eux.
+7. Veille : pause avant la veille, recalage au réveil.
+8. DistilDRBA hors de l'Auto tant que la mesure qualité et vitesse n'existe pas ; choix manuel possible.
+9. Perte du GPU : une relance, en lecture, avec un avis.
+10. Étage refusé : lecture sans lui, avec un avis et « Réessayer ».
+11. Plus de plafond à 60 Hz sur batterie : le plafond est toujours le maximum de l'écran.
+12. Pas de durcissement contre un autre compte Windows au-delà des droits normaux.
+13. libass amont avec le correctif AnimeJaNai, sauf mesure contraire.
+14. RTX 50 retirée du FP8 jusqu'à une mesure.
+15. Noms des portables RTX 20 et pilote minimum : inconnus, la question reste ouverte.
+16. Blanc HDR : ne pas rendre toutes les surfaces blanches éclatantes, pour que les vrais éclats gardent leur écart. Recaler la pile (A41-02), limiteur et Éclats après la pile, vrai MaxFALL.
+17. Noirs : adoucir le pied de courbe et garder le vrai noir pour le noir pur (sous RVB 4 environ), sans vérification à l'œil (A41-03).
+
+### À confirmer
+
+[`A-CONFIRMER.md`](A-CONFIRMER.md) liste 215 défauts dont la preuve demande une manipulation, dont 65 majeurs, rangés comme `PRIORITES.md`. Presque toutes demandent la RTX 4070 Ti, Windows 11 ou CachyOS, ce qu'un fil dans le nuage n'a pas. Le fil qui corrige un défaut fait la manipulation avant et après, sur le PC de Tatoub par une session à distance quand il l'accepte. Tatoub n'a à regarder lui-même que les points marqués « à l'œil » ou qui demandent un second écran.
 
 ## Avancement
 
@@ -96,13 +203,13 @@
 | A03-10 | Mineur | `src/gpu/cuda/backend/drba_fused_engine.cpp:361` | Environ 150 lignes dupliquées entre les deux moteurs fusionnés, déjà divergentes | 03 | |
 | A03-11 | Mineur | `src/gpu/cuda/backend/rife_fused_kernels.cu:241` | `__expf` approché pour RIFE, `expf` pour DistilDRBA | 03 | |
 | A03-12 | Mineur | `src/gpu/cuda/backend/slice_kernels.cu:268-273` | `ingest_tiled` compte le poids d'une prise hors tuile avant de la sauter (latent) | 03 | |
-| A03-13 | Majeur | `src/app/play/upscale_drba.cpp:247-257` | DistilDRBA fait une passe par image créée, RIFE une par paire : au-delà de ×5, plus de réseau que RIFE 4.25 | 03 (complément) | |
-| A03-14 | Majeur | `src/app/play/upscale_drba.cpp:193-208` | Pas d'entrée par pointeurs : quatre `rife_input` de 7 plans par paire, presque rien de lu, plus cher que la passe | 03 (complément) | |
-| A03-15 | Mineur | `src/gpu/cuda/backend/drba_fused_engine.cpp:225-242` | Encodeur refait à chaque côté : 6 encodages par paire pour une image nouvelle | 03 (complément) | |
-| A03-16 | Mineur | `src/gpu/cuda/backend/drba_fused_kernels.cu:277-290` | Flot agrandi puis rééchantillonné aussitôt par le warp | 03 (complément) | |
-| A03-17 | Mineur | `tests/unit/backend_tensorrt/drba_fused_test.cpp` | Aucun banc par paire ni par image ; RIFE 4.22 lite fusionné sans chiffre | 03 (complément) | |
-| A03-18 | Majeur | `tools/rife/convert_rife_fp16.py:35` | Grille des dix GridSample de DistilDRBA en FP16 dans le modèle livré (pas de 0,31 px à 1280 de large), reproduite par la colle fusionnée | 03 (complément) | |
-| A03-19 | Mineur | `src/app/play/chain_setup.cpp:359-363` | La vitesse de DistilDRBA n'est pas réinvestie : estimation à 720p alors qu'une passe pleine résolution reste moins chère que RIFE | 03 (complément) | |
+| A03-13 | Majeur | `src/app/play/upscale_drba.cpp:247-257` | DistilDRBA fait une passe par image créée, RIFE une par paire : au-delà de ×5, plus de réseau que RIFE 4.25 | 03 | |
+| A03-14 | Majeur | `src/app/play/upscale_drba.cpp:193-208` | Pas d'entrée par pointeurs : quatre `rife_input` de 7 plans par paire, presque rien de lu, plus cher que la passe | 03 | |
+| A03-15 | Mineur | `src/gpu/cuda/backend/drba_fused_engine.cpp:225-242` | Encodeur refait à chaque côté : 6 encodages par paire pour une image nouvelle | 03 | |
+| A03-16 | Mineur | `src/gpu/cuda/backend/drba_fused_kernels.cu:277-290` | Flot agrandi puis rééchantillonné aussitôt par le warp | 03 | |
+| A03-17 | Mineur | `tests/unit/backend_tensorrt/drba_fused_test.cpp` | Aucun banc par paire ni par image ; RIFE 4.22 lite fusionné sans chiffre | 03 | |
+| A03-18 | Majeur | `tools/rife/convert_rife_fp16.py:35` | Grille des dix GridSample de DistilDRBA en FP16 dans le modèle livré (pas de 0,31 px à 1280 de large), reproduite par la colle fusionnée | 03 | |
+| A03-19 | Mineur | `src/app/play/chain_setup.cpp:359-363` | La vitesse de DistilDRBA n'est pas réinvestie : estimation à 720p alors qu'une passe pleine résolution reste moins chère que RIFE | 03 | |
 | A05-01 | Majeur | `src/prepare/process_posix.cpp:127` | Sous Linux, `trtexec` survit à la mort du lecteur et fausse la construction suivante (démontré) | 05 | |
 | A05-02 | Mineur | `src/prepare/key_lock.h:26` | Délais qui ne s'emboîtent pas : l'attente du verrou de clé abandonne avant la fin possible du détenteur | 05 | |
 | A05-03 | Mineur | `src/prepare/builder.cpp:86-93` | Aucun repli si le timing cache persistant fait échouer `trtexec` | 05 | |
@@ -667,7 +774,7 @@
 | A08-15 | Majeur | `src/app/play/chain_setup.cpp:99` | Qualité : « Restaurer les traits » coupé, la source 1080p est réduite à 720p par l'étage alors que la chaîne la croit gardée ; refus « forme différente » en RIFE image | 08 | |
 | A08-16 | Mineur | `src/app/play/chain_setup.cpp:162-171` | Le repli remet les deux crans à Équilibre même quand un seul moteur est refusé | 08 | |
 | A08-17 | Mineur | `src/app/play/player.cpp:162` | Treize `path::string()` (dette) | 08 | A20-02 (même cause) |
-| A09-17 | Mineur | `src/app/play/span_auto.cpp:67-71` | Clé de tentative FP8 « modèle|vidéo » sans la taille de travail | 09 | |
+| A09-17 | Mineur | `src/app/play/span_auto.cpp:67-71` | Clé de tentative FP8 « modèle\|vidéo » sans la taille de travail | 09 | |
 | A09-18 | Mineur | `src/app/play/upscale_drba.cpp:144` | DistilDRBA mesure à la taille de travail, RIFE sur la copie 720p | 09 | |
 | A09-19 | Mineur | `src/app/play/upscale_drba.cpp:99` | Attente du côté b non comptée au journal | 09 | |
 | A09-20 | Mineur | `src/app/play/upscale_stage.cpp:574-579` | Qualité : baisse pour la vitesse sans mesure (gain estimé à 30 ms par saut à ×3) | 09 | |
