@@ -38,7 +38,7 @@ l'un ni l'autre n'est un défaut.
   (engines and models shared) » (`options.cpp:491`) ; `main.cpp:411-412` dit « réglages, profils et journal
   ailleurs (les essais du benchmark) ; moteurs et modèles restent ». `--data-dir` ne change que
   `settings_dir` (`main.cpp:413-416`), et `PlayerPaths::engines` reste `local_data(data) / "engines"`
-  (`main.cpp:478`, `:490`). C'est ce qu'il faut au banc : `auto_bench_run.cpp:73`, `:89` relance le lecteur avec
+  (`main.cpp:478`, `:489`). C'est ce qu'il faut au banc : `auto_bench_run.cpp:73`, `:89` relance le lecteur avec
   `--data-dir` pour mesurer sans écrire `play.toml`, et des moteurs isolés obligeraient chaque essai à
   reconstruire ses moteurs TensorRT (plusieurs minutes chacun).
 - Dossier `ajp/ajp` : c'est `SDL_GetPrefPath("ajp", "ajp")` (`main.cpp:337`), soit organisation puis
