@@ -48,7 +48,7 @@
 | 36. État persistant et compatibilité entre versions | Fusionné (9 défauts, 3 majeurs) | [rapport](rapports/36-etat-persistant.md) |
 | 37. Configurations NVIDIA variées | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/37-configurations-nvidia.md) |
 | 38. Promesses tenues | Fusionné (16 défauts, 2 majeurs, complément compris) | [rapport](rapports/38-promesses-tenues.md), [complément](rapports/38-promesses-tenues-complement.md) |
-| 39. Diagnostic et support | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/39-diagnostic-support.md) |
+| 39. Diagnostic et support | Fusionné (10 défauts, 4 majeurs, complément compris) | [rapport](rapports/39-diagnostic-support.md), [complément](rapports/39-diagnostic-support-complement.md) |
 | 40. Tests et couverture | Fusionné (16 défauts, 5 majeurs) | [rapport](rapports/40-tests-couverture.md) |
 | 41. HDR, grade et looks | Fusionné (11 défauts, 2 majeurs) | [rapport](rapports/41-hdr-grade.md) |
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
@@ -713,6 +713,7 @@
 | A26-13 | Mineur | `src/app/play/updater.cpp:646-651` | Retour arrière de deux versions sur une installation mise à jour à la main | 26 | |
 | A31-16 | Mineur | `src/media/video_decoder.cpp:400` | Au réveil, NVDEC touche le contexte mort en premier et rend `DecodeFailed` fatal : la relance d'A31-02 ne se ferait pas | 31 | |
 | A38-16 | Mineur | `docs/hdr-anime.md:56-60` | « Noirs profonds selon la scène » : réglé sur la médiane de l'épisode, et à 64 % sans mesure | 38 | |
+| A39-10 | Mineur | `src/prepare/builder.cpp:233` | Disque plein montré comme « BuilderFailed » alors que le code « not enough disk space » existe | 39 | |
 
 ## Renvois
 
@@ -953,7 +954,7 @@
 | 39 | 18 | `src/app/main.cpp:108-111` | `fail()` n'écrit que sur stderr | Traité par 18 (complément) |
 | 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | Traité par 03 (complément 2) |
 | 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Traité par 43 (A43-02, 192) |
-| 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
+| 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | Traité par 39 (complément) |
 | 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | Traité par 23 (complément) |
 | 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | Traité par 28 (complément) |
 | 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | Traité par 07 (complément) |
@@ -996,7 +997,7 @@
 | 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | Réfuté par 22 (complément) : partage voulu et documenté |
 | 40 | 13 | `tests/unit/app/e2e_play_test.cpp:221` | Avec `--seconds`, l'épisode suivant s'enchaîne quand même | Traité par 13 (complément) |
 | 40 | 46 | `tools/bench/rife_triplets.py:100` | Le banc de qualité refuse DistilDRBA | En attente (46 fini) |
-| 28 | 39 | `src/prepare/builder.cpp:233` | Disque plein soupçonné au journal seulement, pas nommé à l'utilisateur | En attente (39 fini) |
+| 28 | 39 | `src/prepare/builder.cpp:233` | Disque plein soupçonné au journal seulement, pas nommé à l'utilisateur | Traité par 39 (complément) |
 | 09 | 07 | `src/app/play/span_auto.cpp:67-71` | A09-17 se corrige au même endroit qu'A07-04 | Note pour la correction |
 | 09 | 21 | `src/gpu/kernel_ops.h:188-196` | La correction proposée pour A21-06 est une baisse de qualité à mesurer avant de la prendre | Note pour la correction |
 | 09 | 32 | `src/app/play/upscale_stage.cpp:391-402` | Attente de `scores_take` non mesurable au journal tant qu'A09-19 reste | Note pour la correction |
