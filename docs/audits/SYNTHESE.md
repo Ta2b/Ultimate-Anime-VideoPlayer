@@ -48,7 +48,7 @@
 | 36. État persistant et compatibilité entre versions | Fusionné (9 défauts, 3 majeurs) | [rapport](rapports/36-etat-persistant.md) |
 | 37. Configurations NVIDIA variées | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/37-configurations-nvidia.md) |
 | 38. Promesses tenues | À faire | |
-| 39. Diagnostic et support | À faire | |
+| 39. Diagnostic et support | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/39-diagnostic-support.md) |
 | 40. Tests et couverture | À faire | |
 | 41. HDR, grade et looks | À faire | |
 | 42. Analyse des plans, coupes et pré-analyse | À faire | |
@@ -543,6 +543,15 @@
 | A37-12 | Mineur | `src/app/play/home_screen.cpp` | Aucun test des décisions par configuration | 37 | |
 | A37-13 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:25` | Nombre de voies décidé sur la mémoire totale, pas la libre | 37 | |
 | A37-14 | Mineur | `src/app/play/auto_config.cpp:55` | En Stable, le plafond ×4 coupe les paliers des écrans rapides | 37 | |
+| A39-01 | Majeur | `src/app/main.cpp:424-433` | Après un plantage, « Report a problem » copie la nouvelle séance, pas le journal du plantage | 39 | |
+| A39-02 | Majeur | `src/app/play/settings_system.cpp:498` | Le rapport ne dit ni le système, ni le pilote, ni le préréglage, ni la raison du refus de TensorRT | 39 | |
+| A39-03 | Majeur | `src/app/play/chain.cpp:352-353` | UX-13 : chemins complets des vidéos dans le journal envoyé | 39 | |
+| A39-04 | Majeur | `src/app/play/crash_dump.cpp:47-50` | WIN-07 : minidumps sans PDB, jamais signalés, rien sous Linux | 39 | |
+| A39-05 | Mineur | `src/app/main.cpp:458` | Messages de FFmpeg absents d'`ajp.log` | 39 | |
+| A39-06 | Mineur | `src/app/play/chain_stats.cpp:167-174` | Télémétrie GPU absente du journal | 39 | |
+| A39-07 | Mineur | `src/app/play/chain_setup.cpp:352-353` | Qualité : cran Qualité sans FP32 retombe en silence | 39 | |
+| A39-08 | Mineur | `.github/ISSUE_TEMPLATE/bug.yml` | Formulaire de bogue avec des niveaux périmés | 39 | |
+| A39-09 | Mineur | `src/app/play/settings_system.cpp:499` | Le bouton lit `ajp.log` au mauvais endroit | 39 | |
 
 ## Renvois
 
@@ -587,7 +596,7 @@
 | 08 | 14 | `src/app/play/player_run.cpp:589-591` | MED-01 : la session doit distinguer vraie fin et erreur d'E/S | Traité par 14 |
 | 08 | 18 | `src/app/play/player.cpp:525-534` | La reprise après « Annuler et regarder » modifie `settings` pour toute la suite | Traité par 18 |
 | 08 | 23 | `src/app/play/settings_panel.cpp` | UX-08 : Échap devrait fermer la liste ouverte avant le panneau | Traité par 23 |
-| 08 | 39 | `src/app/play/settings_system.cpp` | UX-13 : chemins hors du dossier personnel dans le journal envoyé | Ouvert |
+| 08 | 39 | `src/app/play/settings_system.cpp` | UX-13 : chemins hors du dossier personnel dans le journal envoyé | Traité par 39 (A39-03) |
 | 07 | 25 | `src/app/play/engine_screen.cpp:111` | `calibrate_on_screen` rend toujours Auto, même sur « Annuler » : remplace une chaîne Personnalisée | Traité par 25 |
 | 07 | 08 | `src/app/play/chain_setup.cpp:99` | Tailles de travail différentes possibles entre l'anneau et `c.work` | En attente (08 fini) |
 | 07 | 09 | `src/app/play/chain_setup.cpp:321` | Préparation FP8 automatique faite une seule fois, à la taille de la lecture en cours (avec A07-04) | En attente (09 fini) |
@@ -654,7 +663,7 @@
 | 18 | 26 | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant le téléchargement | Traité par 26 |
 | 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Traité par 26 |
 | 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | En attente (17 fini) |
-| 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Ouvert |
+| 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Traité par 39 (doublon d'A26-12) |
 | 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
 | 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Traité par 32 |
 | 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | En attente (07 fini) |
@@ -730,7 +739,7 @@
 | 29 | 34 | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | Traité par 34 (A34-04) |
 | 29 | 36 | `src/app/play/player.cpp:574-581` | `save_settings` de l'épisode suivant écrit les raccourcis de séance avant l'ouverture | Traité par 36 |
 | 31 | 40 | `tests/unit/app/ring_stage_test.cpp:243` | Test qui fige `ThreadFailed` ; aucun test d'injection de `DeviceLost` | Ouvert |
-| 31 | 39 | `src/app/play/engine_screen.cpp:342-344` | Raison du refus de TensorRT au journal seulement | Ouvert |
+| 31 | 39 | `src/app/play/engine_screen.cpp:342-344` | Raison du refus de TensorRT au journal seulement | Traité par 39 (A39-02) |
 | 31 | 08 | `src/app/play/chain_setup.cpp:160-171` | Repli au cran Équilibre : baisse de qualité sans avis | En attente (08 fini) |
 | 31 | 34 | `src/app/play/chain_setup.cpp:415-427` | Sous Windows, Performance retombe toujours en FP16 entier | Réfuté par 34 (A31-06 touche les deux systèmes) |
 | 31 | 32 | `src/gpu/cuda/backend/tensorrt_export.cpp` | « CUDA Sysmem Fallback » sous Windows : lenteur sans refus | En attente (32 fini) |
@@ -779,3 +788,6 @@
 | 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | En attente (15 fini) |
 | 37 | 02 | `src/gpu/cuda/backend/span_fp8_kernels.cuh:241` | Tag `Sm89` de CUTLASS compilé aussi pour sm_120 | En attente (02 fini) |
 | 37 | 01 | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné à deux blocs par SM | En attente (01 fini) |
+| 39 | 43 | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur, sans `tr()` | Ouvert |
+| 39 | 18 | `src/app/main.cpp:108-111` | `fail()` n'écrit que sur stderr | En attente (18 fini) |
+| 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | En attente (03 fini) |
