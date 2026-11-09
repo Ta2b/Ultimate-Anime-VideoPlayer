@@ -123,6 +123,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "home_screen.cpp",
                                         "latest_writer.cpp",
                                         "main.cpp",
+                                        "problem_report.cpp",
                                         "model_choice.cpp",
                                         "motion_model.cpp",
                                         "placebo_export.cpp",

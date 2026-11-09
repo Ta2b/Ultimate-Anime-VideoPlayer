@@ -46,6 +46,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
   add_compile_definitions(NOMINMAX)
 endif()
+# Un minidump ne se lit qu'avec le PDB de son binaire (A39-04) : hors Debug, les objets portent leurs symboles
+# (/Z7, sans PDB partagé : sccache les met en cache et la compilation parallèle n'a pas de verrou) et le lieur
+# écrit un PDB complet pour chaque exécutable et chaque module. La CI les archive à part, jamais dans la release.
+if(MSVC)
+  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<NOT:$<CONFIG:Debug>>:Embedded>")
+  add_link_options($<$<NOT:$<CONFIG:Debug>>:/DEBUG:FULL$<SEMICOLON>/OPT:REF$<SEMICOLON>/OPT:ICF>)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 # P5.21 : un module de moteur n'exporte que ses quatre points d'entrée (AJP_BACKEND_EXPORT, gpu/backend.h) ;
 # le reste est caché, et le code position-indépendant n'est plus interposable (appels directs).
