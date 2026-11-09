@@ -49,7 +49,7 @@
 | 37. Configurations NVIDIA variées | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/37-configurations-nvidia.md) |
 | 38. Promesses tenues | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/38-promesses-tenues.md) |
 | 39. Diagnostic et support | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/39-diagnostic-support.md) |
-| 40. Tests et couverture | À faire | |
+| 40. Tests et couverture | Fusionné (16 défauts, 5 majeurs) | [rapport](rapports/40-tests-couverture.md) |
 | 41. HDR, grade et looks | Fusionné (11 défauts, 2 majeurs) | [rapport](rapports/41-hdr-grade.md) |
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
 | 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
@@ -642,6 +642,22 @@
 | A46-13 | Mineur | `data/luts/HDR grading base ver.9.0 33 point.cube` | Qualité : LUT de base à 33 points sur une courbe raide, 2,7 codes 10 bits d'erreur d'interpolation | 46 | |
 | A46-14 | Mineur | `data/gpu_tiers.toml:45` | Erreurs de tranche sur NVIDIA (Quadro RTX 6000, RTX PRO) | 46 | |
 | A46-15 | Mineur | `tools/release/fetch-models.sh:86-98` | GMFSS encore listé dans `SHA256SUMS` de `models-interp-1` ; fichier facultatif annoncé absent | 46 | |
+| A40-01 | Majeur | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70` | Aucun réseau livré ne tourne en CI, alors que les essais cachés passent en 4 min sous lavapipe | 40 | |
+| A40-02 | Majeur | `.github/workflows/ci.yml:219-258` | Le chemin de la cible (TensorRT, CUDA, SPAN FP8, RIFE et DistilDRBA fusionnés) n'est jamais exécuté avant une release (B3) | 40 | |
+| A40-03 | Majeur | `tools/bench/rife_triplets.py:96-100` | Qualité : rien ne mesure DistilDRBA contre RIFE ; le banc de qualité le refuse | 40 | |
+| A40-04 | Majeur | `tests/unit/app/e2e_play_test.cpp:96-104` | Le seul bout en bout joue sans SPAN, RIFE ni DistilDRBA | 40 | |
+| A40-05 | Mineur | `tests/unit/app/e2e_play_test.cpp:119-124` | Les cas e2e jouent tous les clips du dossier | 40 | |
+| A40-06 | Majeur | `tests/unit/app/e2e_play_test.cpp:236-243` | Qualité : un test fige une image SDR 38 % plus sombre que la source, grade coupé (à confirmer) | 40 | |
+| A40-07 | Mineur | `tests/unit/backend_tensorrt/backend_test.cpp:92` | Le test d'ingestion TensorRT fige la chroma bilinéaire | 40 | A03-01 (même cause) |
+| A40-08 | Mineur | `src/gpu/guarded_backend.h:56-170` | `GuardedKernelOps` jamais testé (26,5 % couvert) | 40 | |
+| A40-09 | Mineur | `CMakePresets.json:348` | TSan ne lance que les 6 tests `Inbox` à chaque poussée | 40 | |
+| A40-10 | Mineur | `src/app/play/span_int8.cpp:194-202` | `span_variant_order` non testé avec les capacités d'une RTX sous Windows | 40 | |
+| A40-11 | Mineur | `tests/unit/vk_backend/rife_fused_chain_test.cpp:100-106` | Variante mouvement des chaînes fusionnées jugée sur « flot borné » seulement | 40 | |
+| A40-12 | Mineur | `cmake/AjpModule.cmake:77` | Les 21 cas cachés sont invisibles à `ctest -N` et à `check-skips.sh` | 40 | |
+| A40-13 | Mineur | `tests/unit/app/ring_stage_test.cpp:150-153` | Tests à l'horloge réelle (26 fichiers avec `sleep_for`) | 40 | |
+| A40-14 | Mineur | `.github/workflows/cloud.yml:57-58` | Tâches qui ne passent pas `check-skips.sh` ; préréglages de release non testés | 40 | |
+| A40-15 | Mineur | `.github/workflows/ci.yml` | Aucune mesure de couverture en CI (76 % mesuré ici) | 40 | |
+| A40-16 | Mineur | `tools/ci/check-cuda.sh:2-6` | Commentaire faux sur la construction CUDA en CI | 40 | |
 
 ## Renvois
 
@@ -662,7 +678,7 @@
 | 03 | 09 | `src/app/play/upscale_motion.cpp:39` | Reprise à chaud absente sous RIFE fusionné ; invalidation sur coupe et saut à vérifier | Traité par 09 |
 | 03 | 09 | `src/app/play/player_engines.cpp:247-266` | Avec DistilDRBA fusionné, le warp repose sur la branche mouvement non testée (A03-03) | Traité par 09 |
 | 03 | 15 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:142-143` | Position de chroma : seuls `Center` et `TopLeft` sont distingués | Réfuté par 15 |
-| 03 | 40 | `tests/unit/backend_tensorrt/` | La suite CUDA ne tourne qu'à la main sur un poste NVIDIA, aucun garde-fou de CI | Ouvert |
+| 03 | 40 | `tests/unit/backend_tensorrt/` | La suite CUDA ne tourne qu'à la main sur un poste NVIDIA, aucun garde-fou de CI | Traité par 40 (A40-02) |
 | 05 | 27 | `src/gpu/cuda/backend/CMakeLists.txt:95` | Repli `trtexec` gardé en `RelWithDebInfo` (SEC-20) | Traité par 27 |
 | 05 | 01 | `src/gpu/cuda/backend/entry.cpp:56-59` | `pick_trtexec` appelé une fois : empreinte jamais revérifiée ensuite (A05-05) | En attente (01 fini) |
 | 05 | 06 | `src/app/play/engine_install.cpp:130-158` | TRT-17 : échec de `nvidia-smi` gardé pour le processus, carte inconnue rangée en « ptx » | Traité par 06 (TRT-17 en partie présent) |
@@ -788,7 +804,7 @@
 | 21 | 08 | `src/app/play/chain_setup.cpp:361-363` | Qualité : mouvement estimé à 720p, à remesurer surtout pour DistilDRBA | En attente (08 fini) |
 | 21 | 08 | `src/app/play/engine_screen.cpp:343` | `path().string()` dans le journal | En attente (08 fini) |
 | 21 | 45 | `src/gpu/vulkan/backend/entry_points.h:1-6` | Commentaire qui nomme MIGraphX et OpenVINO | Traité par 45 (A45-10) |
-| 21 | 40 | `tests/unit/gpu/backend_test.cpp` | `GuardedKernelOps` jamais testé ; `IngestSpec::chroma` non vérifié | Ouvert |
+| 21 | 40 | `tests/unit/gpu/backend_test.cpp` | `GuardedKernelOps` jamais testé ; `IngestSpec::chroma` non vérifié | Traité par 40 (A40-08, A40-07) |
 | 23 | 22 | `src/app/play/settings.cpp:383-433` | Cause d'A23-01 (`restore_lines`, `gpu`) | Traité par 22 (A22-01) |
 | 23 | 22 | `src/app/play/settings.h:304-307` | Commentaire du seuil HDR posé au mauvais endroit | En attente (22 fini) |
 | 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Traité par 26 |
@@ -828,7 +844,7 @@
 | 29 | 33 | aucun fichier | La veille (A29-02) à inclure dans le banc de soirée | Traité par 33 |
 | 29 | 34 | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | Traité par 34 (A34-04) |
 | 29 | 36 | `src/app/play/player.cpp:574-581` | `save_settings` de l'épisode suivant écrit les raccourcis de séance avant l'ouverture | Traité par 36 |
-| 31 | 40 | `tests/unit/app/ring_stage_test.cpp:243` | Test qui fige `ThreadFailed` ; aucun test d'injection de `DeviceLost` | Ouvert |
+| 31 | 40 | `tests/unit/app/ring_stage_test.cpp:243` | Test qui fige `ThreadFailed` ; aucun test d'injection de `DeviceLost` | Traité par 40 (test écrit, échoue : A31-01) |
 | 31 | 39 | `src/app/play/engine_screen.cpp:342-344` | Raison du refus de TensorRT au journal seulement | Traité par 39 (A39-02) |
 | 31 | 08 | `src/app/play/chain_setup.cpp:160-171` | Repli au cran Équilibre : baisse de qualité sans avis | En attente (08 fini) |
 | 31 | 34 | `src/app/play/chain_setup.cpp:415-427` | Sous Windows, Performance retombe toujours en FP16 entier | Réfuté par 34 (A31-06 touche les deux systèmes) |
@@ -840,7 +856,7 @@
 | 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | En attente (26 fini) |
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Traité par 41 (A41-09) |
 | 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | En attente (09 fini) |
-| 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Ouvert |
+| 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Traité par 40 (A40-09) |
 | 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | En attente (28 fini) |
 | 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | En attente (28 fini) |
 | 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | En attente (28 fini) |
@@ -848,7 +864,7 @@
 | 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
 | 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | En attente (26 fini) |
 | 28 | 09 | `src/app/play/drba_model.cpp:14-28` | Demi-flot DistilDRBA manquant : repli silencieux sur le flot entier | En attente (09 fini) |
-| 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Ouvert |
+| 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Traité par 40 (A40-01) |
 | 32 | 03 | `src/app/play/upscale_drba.cpp:179-256` | L'entrée de DistilDRBA, pas seulement son nombre de passes | Traité par 03 (complément, A03-14) |
 | 32 | 07 | `src/app/play/auto_config.cpp:167-169` | Commentaire et code contradictoires sur le FP8 dans l'Auto (TRT-08) | En attente (07 fini) |
 | 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | En attente (10 fini) |
@@ -864,7 +880,7 @@
 | 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | En attente (19 fini) |
 | 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | En attente (11 fini) |
 | 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | En attente (28 fini) |
-| 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Ouvert |
+| 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Traité par 40 (A40-10) |
 | 33 | 08 | `src/app/play/engine_build.cpp` | Un `TensorRtBackend` créé puis détruit par moteur préparé | En attente (08 fini) |
 | 33 | 28 | `src/prepare/cache.cpp` | Disque plein par le cache : l'écriture d'un moteur doit refuser proprement | En attente (28 fini) |
 | 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Traité par 36 |
@@ -920,3 +936,8 @@
 | 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | En attente (03 fini) |
 | 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | En attente (28 fini) |
 | 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | En attente (18 fini) |
+| 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | En attente (10 fini) |
+| 40 | 41 | `tests/unit/app/e2e_play_test.cpp:241-243` | Image SDR assombrie, à croiser avec le grade SDR | En attente (41 fini) |
+| 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | En attente (22 fini) |
+| 40 | 13 | `tests/unit/app/e2e_play_test.cpp:221` | Avec `--seconds`, l'épisode suivant s'enchaîne quand même | En attente (13 fini) |
+| 40 | 46 | `tools/bench/rife_triplets.py:100` | Le banc de qualité refuse DistilDRBA | En attente (46 fini) |
