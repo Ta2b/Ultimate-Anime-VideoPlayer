@@ -47,7 +47,7 @@
 | 35. Entrées non sûres | Fusionné (9 défauts, 1 majeur) | [rapport](rapports/35-entrees-hostiles.md) |
 | 36. État persistant et compatibilité entre versions | Fusionné (9 défauts, 3 majeurs) | [rapport](rapports/36-etat-persistant.md) |
 | 37. Configurations NVIDIA variées | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/37-configurations-nvidia.md) |
-| 38. Promesses tenues | À faire | |
+| 38. Promesses tenues | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/38-promesses-tenues.md) |
 | 39. Diagnostic et support | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/39-diagnostic-support.md) |
 | 40. Tests et couverture | À faire | |
 | 41. HDR, grade et looks | À faire | |
@@ -552,6 +552,21 @@
 | A39-07 | Mineur | `src/app/play/chain_setup.cpp:352-353` | Qualité : cran Qualité sans FP32 retombe en silence | 39 | |
 | A39-08 | Mineur | `.github/ISSUE_TEMPLATE/bug.yml` | Formulaire de bogue avec des niveaux périmés | 39 | |
 | A39-09 | Mineur | `src/app/play/settings_system.cpp:499` | Le bouton lit `ajp.log` au mauvais endroit | 39 | |
+| A38-01 | Majeur | `src/app/play/settings_system.cpp:493-511` | « Signaler un problème » copie les chemins complets hors du dossier personnel, nom d'utilisateur compris | 38 | A39-03 (même cause) |
+| A38-02 | Majeur | `README.md:32` | Le README promet RIFE 4.25 en Qualité et Ultra, l'Auto calibré impose 4.22 lite : baisse de qualité sans mesure | 38 | A25-08 (même cause) |
+| A38-03 | Mineur | `README.md:74-83` | Tableau des niveaux faux | 38 | |
+| A38-04 | Mineur | `README.md:29-31` | « Une source 1080p devient 4K » faux en Auto | 38 | |
+| A38-05 | Mineur | `README.md:57-66` | « Premier lancement » décrit un assistant qui n'existe plus | 38 | |
+| A38-06 | Mineur | `README.md:140` | Promesse fausse sur la construction des moteurs au premier lancement | 38 | |
+| A38-07 | Mineur | `README.md:129` | Raccourcis « dans `user.toml` » : quinze touches en dur | 38 | |
+| A38-08 | Mineur | `README.md:4` | Badge 0.10.0, code 0.10.3, CHANGELOG arrêté | 38 | |
+| A38-09 | Mineur | `THIRD_PARTY_NOTICES.md:40-49` | Notices tierces incomplètes | 38 | |
+| A38-10 | Mineur | `tools/release/notes/v0.10.3.md:3` | Notes 0.10.3 inexactes | 38 | |
+| A38-11 | Mineur | `src/app/play/options.cpp:470` | `--help` toujours faux | 38 | |
+| A38-12 | Mineur | `src/app/play/settings_chain_tabs.cpp:260-262` | Deux infobulles du panneau fausses | 38 | |
+| A38-13 | Mineur | `src/app/play/auto_config.h:19-22` | Commentaire qui renvoie à une porte de qualité DistilDRBA inexistante | 38 | |
+| A38-14 | Mineur | `.github/ISSUE_TEMPLATE/bug.yml:56-60` | Formulaire sans Économe ni Personnalisé | 38 | A39-08 (même cause) |
+| A38-15 | Mineur | `src/render/shaders/sharpen.hook:1-5` | Netteté promise « sans halo » | 38 | |
 
 ## Renvois
 
@@ -718,7 +733,7 @@
 | 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Traité par 35 |
 | 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | En attente (06 fini) |
 | 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | En attente (23 fini) |
-| 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Ouvert |
+| 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Traité par 38 (A38-01) |
 | 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | En attente (08 fini) |
 | 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | En attente (05 fini) |
 | 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | En attente (03 fini) |
@@ -791,3 +806,8 @@
 | 39 | 43 | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur, sans `tr()` | Ouvert |
 | 39 | 18 | `src/app/main.cpp:108-111` | `fail()` n'écrit que sur stderr | En attente (18 fini) |
 | 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | En attente (03 fini) |
+| 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Ouvert |
+| 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
+| 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | En attente (23 fini) |
+| 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | En attente (28 fini) |
+| 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | En attente (07 fini) |
