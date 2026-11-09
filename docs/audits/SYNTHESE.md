@@ -33,7 +33,7 @@
 | 21. Frontière des moteurs (interface et ABI) | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/21-frontiere-moteurs.md) |
 | 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
 | 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
-| 24. Interface : rendu, contrôles et messages | À faire | |
+| 24. Interface : rendu, contrôles et messages | Fusionné (23 défauts, 3 majeurs) | [rapport](rapports/24-interface-rendu.md) |
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
 | 27. Build, dépendances et ports | À faire | |
@@ -58,7 +58,7 @@
 | 46. Outils de recherche, modèles et données livrées | À faire | |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
-| 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | En cours | |
+| 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | Fusionné (14 défauts, 6 majeurs, 16 compromis à trancher) | [rapport](rapports/49-qualite-rendu.md) |
 
 ## Défauts trouvés
 
@@ -385,6 +385,43 @@
 | A26-10 | Mineur | `src/app/play/player.cpp:197-200` | SEC-09 : `update.toml` réécrit en entier par quatre écrivains | 26 | |
 | A26-11 | Mineur | `src/app/play/updater.cpp:267-271` | Le canal Préversions ne voit pas une stable plus récente | 26 | |
 | A26-12 | Mineur | `src/app/main.cpp:367-389` | Application de la mise à jour sans fenêtre ni journal | 26 | |
+| A24-01 | Majeur | `src/app/play/controls.cpp:128-131` | Un seul message de 1,6 s : les avis de qualité perdue (repli DistilDRBA vers RIFE) disparaissent avant d'être lus | 24 | |
+| A24-02 | Majeur | `src/app/play/controls.cpp:167-174` | L'interface déclenche des présentations hors cadence pendant la lecture | 24 | |
+| A24-03 | Majeur | `src/app/play/ui.cpp:325-343` | Aucun presse-papiers système hors Windows : « Signaler un problème » copie du vide sous CachyOS | 24 | |
+| A24-04 | Mineur | `src/app/play/input.cpp:18-58` | `key_of` ne traduit pas des touches que `[keys]` accepte | 24 | |
+| A24-05 | Mineur | `src/app/play/input.cpp:76` | AZERTY : répétition et Ctrl + « - » mal traduits (UX-11) | 24 | |
+| A24-06 | Mineur | `src/app/play/input.cpp:94-116` | Quinze touches en dur avant `[keys]`, non refusées | 24 | |
+| A24-07 | Mineur | `src/app/play/user_keys.cpp:16-24` | Une entrée fautive de `[keys]` remet tous les raccourcis par défaut | 24 | |
+| A24-08 | Mineur | `src/app/play/user_keys.cpp:32` | `path::string()` dans le journal (dette, voir A20-02) | 24 | |
+| A24-09 | Mineur | `src/app/play/visible_error.h:44-45` | 56 codes sur 71 affichés par leur nom anglais | 24 | A20-09 (même cause) |
+| A24-10 | Mineur | `src/app/play/visible_error.h:28` | UX-17 : phrase d'erreur répétée | 24 | |
+| A24-11 | Mineur | `src/app/play/controls_draw.cpp:354-371` | UX-15 : textes de préparation sans largeur maximale | 24 | |
+| A24-12 | Mineur | `src/app/play/controls_draw.cpp:114-125` | Message bref sans retour à la ligne, avis collés | 24 | |
+| A24-13 | Mineur | `src/app/play/panel_style.h:115-130` | UX-22 : badges qui ne suivent pas l'échelle | 24 | |
+| A24-14 | Mineur | `src/app/play/ui.cpp:452` | UX-08 : Échap ferme tout le panneau et jette les changements | 24 | |
+| A24-15 | Mineur | `src/app/play/home_screen.cpp:205-213` | `dropped()` passe la fenêtre au premier plan et interroge le disque | 24 | |
+| A24-16 | Mineur | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface à l'accueil | 24 | |
+| A24-17 | Mineur | `src/app/play/home_screen.cpp:336-341` | Accueil redessiné toutes les 16 ms sans événement | 24 | |
+| A24-18 | Mineur | `src/app/play/placebo_imgui.cpp:107-124` | Atlas des polices en RGBA32, renvoyé depuis l'origine | 24 | |
+| A24-19 | Mineur | `src/app/play/placebo_overlays.cpp:63-76` | Barre visible : panneaux typographiés montés avec les dialogues | 24 | |
+| A24-20 | Mineur | `src/app/play/placebo_overlays.cpp:45-47` | Sous-titres étirés à la nouvelle taille jusqu'au rendu suivant | 24 | |
+| A24-21 | Mineur | `src/app/play/placebo_imgui.cpp:161-207` | Une passe de dessin par commande ImGui | 24 | |
+| A24-22 | Mineur | `src/app/play/osd_text.cpp:68` | Seconde bibliothèque libass pour l'OSD | 24 | |
+| A24-23 | Mineur | `src/app/play/ui.cpp:117-129` | Polices de secours CJK différentes sous Windows et Linux | 24 | |
+| A49-01 | Majeur | `src/app/play/auto_config.cpp:69-75` | L'Auto ne joue jamais le SPAN b8f64, même en Ultra | 49 | |
+| A49-02 | Majeur | `src/app/play/auto_config.cpp:48` | Source 1080p réduite à 720p ou 540p avant SPAN | 49 | |
+| A49-03 | Majeur | `src/app/play/auto_config.cpp:167-169` | Auto calibré en FP8 malgré l'ADR 0007 suspendue, sans essayer le b8f64 FP16, pour 6,5 % | 49 | |
+| A49-04 | Majeur | `src/app/play/options.h:113-114` | Anneau RGB10A2 par défaut sans la porte de banding de l'ADR 0008 | 49 | A21-03 (même cause) |
+| A49-05 | Majeur | `src/render/cube_lut.cpp:289-314` | Pile de looks composée en LUT 65³ : jusqu'à 15,5 codes PQ d'écart (mesuré) | 49 | |
+| A49-06 | Majeur | `src/gpu/cuda/backend/warp_kernels.cu:144-171` | Warp après SPAN bilinéaire, gain jamais mesuré | 49 | |
+| A49-07 | Mineur | `src/app/play/span_int8.cpp:194-202` | Cran Équilibre annoncé FP16 mais INT8 dès qu'un reçu existe | 49 | |
+| A49-08 | Mineur | `src/gpu/span_fp8/derive.h:17-37` | Porte du FP8 réglée pour laisser passer le modèle | 49 | |
+| A49-09 | Mineur | `src/app/play/upscale_motion.cpp:97-193` | Une seule passe RIFE par paire sous 15 px : mouvements non linéaires | 49 | |
+| A49-10 | Mineur | `src/app/play/chain_setup.cpp:27` | RIFE estime le mouvement à 720p au-dessus de 720p | 49 | |
+| A49-11 | Mineur | `src/app/play/upscale_stage.cpp:498-504` | Dessins « tenus » : sortie SPAN réutilisée, petits changements gelés | 49 | |
+| A49-12 | Mineur | `src/app/play/placebo_screen.cpp:130` | Présentation par défaut de libplacebo, sans anti-ringing | 49 | |
+| A49-13 | Mineur | `src/media/frame_data.cpp:247-275` | Conversion hôte bilinéaire, 12 bits ramené à 10 | 49 | |
+| A49-14 | Mineur | `tools/rife/convert_rife_fp16.py` | Aucune mesure des RIFE et DistilDRBA FP16 contre leurs originaux FP32 | 49 | |
 
 ## Renvois
 
@@ -448,7 +485,7 @@
 | 11 | 08 | `src/app/play/player_run.cpp:398-400` | Relevé de l'écran fait deux fois sous Windows | En attente (08 fini) |
 | 11 | 08 | `src/app/play/player_run.cpp:549-560` | Relecture du HDR à partir de l'événement SDL plutôt que du minuteur | En attente (08 fini) |
 | 11 | 08 | `src/app/play/player_run.cpp:619-621` | `p.display` remplacé sans prévenir `contract_watch` | En attente (08 fini) |
-| 11 | 24 | `src/app/play/chain_stats.cpp:184-208` | NVML relevé toutes les 500 ms même OSD caché | Ouvert |
+| 11 | 24 | `src/app/play/chain_stats.cpp:184-208` | NVML relevé toutes les 500 ms même OSD caché | Traité par 24 |
 | 11 | 30 | `src/app/play/player_run.cpp:679` | `GpuTelemetry::sample` appelé depuis deux threads (A11-08) | Ouvert |
 | 11 | 34 | `src/app/play/host_facts.cpp:236-275` | Pic calculé dans deux unités différentes sous Windows et Linux | Ouvert |
 | 12 | 08 | `src/app/play/player_run.cpp:622-629` | GPU-05 : plancher VRR non recalculé (VRR hors sujet pour Tatoub) | En attente (08 fini) |
@@ -484,12 +521,12 @@
 | 17 | 13 | `src/app/play/pipeline.cpp:47` | Extension `.Srt` étiquetée « ass » | En attente (13 fini) |
 | 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | En attente (14 fini) |
 | 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Réfuté par 22 |
-| 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Ouvert |
+| 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Traité par 24 |
 | 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
 | 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Ouvert |
 | 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Ouvert |
 | 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Traité par 25 |
-| 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Ouvert |
+| 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Traité par 24 |
 | 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | En attente (18 fini) |
 | 18 | 07 | `src/app/play/auto_config.h:22` | DistilDRBA n'entre jamais dans Auto et la calibration ne l'essaie pas | En attente (07 fini) |
 | 18 | 30 | `src/app/play/chain_hdr.cpp:162` | `LookLoader` détaché qui peut journaliser après `close_log` | Ouvert |
@@ -510,13 +547,13 @@
 | 20 | 18 | `src/app/play/pumped_task.h:58` | Sonde détachée qui peut journaliser après `close_log()` | En attente (18 fini) |
 | 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Traité par 26 |
 | 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Ouvert |
-| 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Ouvert |
+| 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Traité par 24 |
 | 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | En attente (21 fini) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | En attente (02 fini) |
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Ouvert |
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
 | 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
-| 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Ouvert |
+| 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Traité par 24 |
 | 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | En attente (07 fini) |
 | 22 | 07 | `src/app/play/auto_config.cpp:203-205` | L'Auto calibré écrase `auto_free` et le modèle RIFE à chaque vidéo | En attente (07 fini) |
 | 22 | 23 | `src/app/play/settings_sound.cpp:72` | Bornes des curseurs de délai différentes des réglages et des touches | Traité par 23 (A23-11) |
@@ -537,7 +574,7 @@
 | 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Traité par 26 |
 | 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | En attente (07 fini) |
 | 23 | 08 | `src/app/play/chain.cpp:183-185` | Une notification par image pendant le glissement du délai des sous-titres | En attente (08 fini) |
-| 25 | 24 | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » depuis l'accueil n'ouvre que l'écran des moteurs | Ouvert |
+| 25 | 24 | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » depuis l'accueil n'ouvre que l'écran des moteurs | En attente (24 fini) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:115-135` | `best_candidate` ignore `priority` : la fluidité passe toujours avant la taille d'image | En attente (07 fini) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` ne note pas le moteur mesuré | En attente (07 fini) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | En attente (07 fini) |
@@ -550,3 +587,18 @@
 | 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Ouvert |
 | 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Ouvert |
 | 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | En attente (06 fini) |
+| 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | En attente (23 fini) |
+| 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Ouvert |
+| 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | En attente (08 fini) |
+| 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | En attente (05 fini) |
+| 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | En attente (03 fini) |
+| 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | En attente (12 fini) |
+| 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Ouvert |
+| 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
+| 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | Ouvert |
+| 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | En attente (07 fini) |
+| 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | En attente (10 fini) |
+| 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | En attente (23 fini) |
+| 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Ouvert |
+| 49 | 34 | `src/app/play/span_auto.cpp:22-25` | Windows et Linux ne jouent pas le même SPAN en Auto calibré | Ouvert |
+| 49 | 41 | `src/render/cube_lut.cpp:289-314` | Écart de la LUT composée ; statistiques du grade sur l'image débandée | Ouvert |
