@@ -719,9 +719,9 @@
 | A32-12 | Mineur | `src/app/play/upscale_drba.cpp:124-157` | DistilDRBA relit sa mesure dans la paire même : la file se vide à chaque paire | 32 | |
 | A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) | 32 | |
 | A41-12 | Mineur | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur ; « · grade » affiché même sans hook posé | 41 | |
-| A42-17 | Mineur | `src/app/play/chain_hdr.cpp:321` | Limiteur de flashs tardif (1 000 ms à 4 Hz), première montée non comptée, pré-analyse non utilisée | 42 | |
+| A42-17 | Mineur | `src/media/flash_guard.h:26-29` | Sécurité : limiteur de flashs tardif (1 000 ms à 4 Hz), première montée non comptée, pré-analyse non utilisée | 42 | |
 | A42-18 | Mineur | `src/app/play/upscale_stage.cpp:259` | Analyse jetée quand deux relectures attendent : elle manque au limiteur | 42 | |
-| A42-19 | Mineur | `src/app/play/chain_hdr.cpp:321` | Plafond sans effet en sortie SDR mais journalisé comme posé | 42 | |
+| A42-19 | Mineur | `src/app/play/chain_hdr.cpp:252` | Plafond sans effet en sortie SDR mais journalisé comme posé | 42 | |
 
 ## Renvois
 
