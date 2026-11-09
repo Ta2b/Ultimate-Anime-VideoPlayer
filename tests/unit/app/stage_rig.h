@@ -163,10 +163,16 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     return note("measure");
   }
   std::optional<gpu::PairScores> previous_scores() override { return std::nullopt; }
-  std::expected<void, Refusal> rife_input(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/, float t,
+  std::expected<void, Refusal> rife_input(const gpu::Tensor& a, const gpu::Tensor& b, float t,
                                           const gpu::Tensor& input) override {
     note_t(rife_ts_, t);
+    note_pair(a, b);
     return note("rife_input", input.handle);
+  }
+  // Les deux sources de chaque rife_input, dans l'ordre (0 : un tenseur qui n'a pas été ingéré).
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> rife_pairs() const {
+    const std::scoped_lock lock(mutex_);
+    return rife_pairs_;
   }
   std::expected<void, Refusal> rife_time(const gpu::Tensor& /*input*/, float t) override {
     note_t(rife_ts_, t);
@@ -243,8 +249,14 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     const std::scoped_lock lock(mutex_);
     into.push_back(t);
   }
+  void note_pair(const gpu::Tensor& a, const gpu::Tensor& b) {
+    const std::scoped_lock lock(mutex_);
+    const gpu::PairScores ids = scores_of(a, b);
+    rife_pairs_.emplace_back(ids.left.value, ids.right.value);
+  }
   std::vector<float> warp_ts_;
   std::vector<float> rife_ts_;
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> rife_pairs_;
   mutable std::mutex mutex_;
   std::vector<std::string> log_;
   std::vector<std::string> laned_;

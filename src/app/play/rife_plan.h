@@ -44,6 +44,9 @@ inline constexpr double kPlanCutFloor = 0.09;
 // Vrai si la paire enjambe une coupe : une coupe des plans au-dessus du plancher, ou la mesure de RIFE (l'une
 // ou l'autre, P3.31).
 bool pair_cut(const PairFacts& facts);
+// La coupe selon la seule mesure, le score rapporté à la zone hors bandes noires : ce que le journal des
+// désaccords compare aux plans (sur le score brut, toute vidéo à bandes comptait de faux désaccords, A09-01).
+bool measured_cut(const PairFacts& facts);
 
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.
 bool rife_runs(const PairFacts& facts);
