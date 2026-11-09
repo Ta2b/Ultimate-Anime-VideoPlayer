@@ -261,6 +261,23 @@ constexpr std::array<const char*, 15> kOptionalExtensions{
 
 // Le cache des shaders de libplacebo : au plus 64 Mo, relu d'un fichier à l'ouverture. Un fichier abîmé ou
 // d'une autre version de libplacebo est simplement ignoré (pl_cache_load le refuse) et sera réécrit.
+
+// Les « <cache>.<n>.part » d'une fermeture interrompue (save_shader_cache) : effacés passé une heure, le
+// temps qu'un autre lecteur finisse d'écrire le sien (A10-11).
+void purge_cache_parts(const std::filesystem::path& file) {
+  std::error_code error;
+  const std::u8string prefix = file.filename().u8string() + u8".";
+  const auto now = std::filesystem::file_time_type::clock::now();
+  for (std::filesystem::directory_iterator it(file.parent_path(), error), end; !error && it != end;
+       it.increment(error)) {
+    const std::u8string name = it->path().filename().u8string();
+    if (!name.starts_with(prefix) || !name.ends_with(u8".part")) continue;
+    std::error_code ignored;
+    const auto written = std::filesystem::last_write_time(it->path(), ignored);
+    if (!ignored && now - written > std::chrono::hours(1)) std::filesystem::remove(it->path(), ignored);
+  }
+}
+
 }  // namespace
 
 void PlaceboScreen::Impl::open_shader_cache(const std::filesystem::path& file) {
@@ -272,7 +289,14 @@ void PlaceboScreen::Impl::open_shader_cache(const std::filesystem::path& file) {
   impl.shader_cache = pl_cache_create(&params);
   if (impl.shader_cache == nullptr) return;
   impl.shader_cache_file = file;
-  if (std::ifstream in(file, std::ios::binary); in) {
+  purge_cache_parts(file);
+  std::error_code error;
+  const std::uintmax_t on_disk = std::filesystem::file_size(file, error);
+  if (!error && on_disk > params.max_total_size) {
+    // Jamais écrit par nous à cette taille : abîmé ou d'ailleurs, il n'est pas lu en mémoire (A10-11).
+    impl.channel->warn("cache des shaders : {} Mo sur le disque, plus que le plafond, ignoré",
+                       on_disk >> 20u);
+  } else if (std::ifstream in(file, std::ios::binary); in) {
     const std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     const int loaded =
         pl_cache_load(impl.shader_cache, reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());

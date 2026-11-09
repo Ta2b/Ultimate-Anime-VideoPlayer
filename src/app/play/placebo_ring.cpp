@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "app/play/placebo_impl.h"
+#include "core/log.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -226,7 +227,14 @@ SlotFree PlaceboRing::retire(pl_gpu gpu, const RingFrame& frame) {
     // les valeurs du sémaphore restent croissantes (core/ring.h).
     if (slot.placebo_value != frame.ready_value)
       take_from_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value, family());
-    hand_to_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value + 1, family());
+    // Cession refusée (mémoire de commandes, appareil en échec) : le sémaphore n'atteindra jamais la valeur
+    // que l'écriture suivante attend. Le slot n'est pas rendu au producteur, et le journal le dit (A10-09).
+    if (!hand_to_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value + 1, family())) {
+      log_channel("app")->error("anneau : le slot {} n'a pas pu être rendu au moteur (pl_vulkan_hold_ex)",
+                                frame.slot);
+      slot.placebo_value = 0;
+      return SlotFree{.slot = frame.slot, .semaphore_value = 0, .generation = UINT32_MAX};
+    }
     slot.placebo_value = 0;
   }
   return release_of(frame);

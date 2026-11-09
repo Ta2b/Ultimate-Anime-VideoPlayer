@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include <SDL3/SDL_events.h>
@@ -29,10 +30,13 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
   // La crête : celle réglée dans KDE, sinon la marge de SDL × la référence, sinon l'EDID.
   if (kwin && kwin->peak_override) {
     out.panel_peak_nits = *kwin->peak_override;
+    out.peak_source = render::DisplayContract::PeakSource::Compositor;
   } else if (headroom > 1.0) {
     out.panel_peak_nits = headroom * out.reference_nits;
+    out.peak_source = render::DisplayContract::PeakSource::Headroom;
   } else if (facts.peak_nits) {
     out.panel_peak_nits = *facts.peak_nits;
+    out.peak_source = render::DisplayContract::PeakSource::Edid;
   }
   out.abl = abl ? abl->nits : render::default_abl(out.panel_peak_nits, out.oled);
   for (double& nits : out.abl) nits = std::min(nits, out.panel_peak_nits);
@@ -42,11 +46,18 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
 }
 
 std::string describe(const render::DisplayContract& c) {
+  // La source de chaque valeur (A10-19) : un contrat par défaut ne se lit pas comme un écran HDR mesuré.
+  using Source = render::DisplayContract::PeakSource;
+  const std::string_view peak = c.peak_source == Source::Compositor ? "KDE"
+                                : c.peak_source == Source::Headroom ? "marge de SDL"
+                                : c.peak_source == Source::Edid     ? "EDID"
+                                                                    : "par défaut";
   std::string text = std::format(
-      "référence {:.0f} nits (k {:.3f}), pic {:.0f} nits ({:.0f} du contenu), MaxFALL {:.0f} ({:.0f} du "
-      "contenu), noir {:.4f}{}",
-      c.reference_nits, c.k(), c.panel_peak_nits, c.content_peak_nits(), c.abl.back(),
-      c.content_frame_average_nits(), c.min_nits, c.oled ? ", OLED" : "");
+      "référence {:.0f} nits ({}, k {:.3f}), pic {:.0f} nits ({}, {:.0f} du contenu), MaxFALL {:.0f} ({:.0f} "
+      "du contenu), noir {:.4f}{}",
+      c.reference_nits, c.from_compositor ? "KDE" : "par défaut", c.k(), c.panel_peak_nits, peak,
+      c.content_peak_nits(), c.abl.back(), c.content_frame_average_nits(), c.min_nits,
+      c.oled ? ", OLED" : "");
   if (c.primaries) {
     const render::Chromaticities& p = *c.primaries;
     text += std::format(", primaires R {:.3f}/{:.3f} G {:.3f}/{:.3f} B {:.3f}/{:.3f}", p.rx, p.ry, p.gx, p.gy,

@@ -485,14 +485,14 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 12 | A10-06 | Mineur | `src/app/play/placebo_feedback.cpp:241` | Le niveau de retour ne retombe jamais quand rien ne revient | Corrigé |
 | 13 | A10-07 | Mineur | `src/app/play/placebo_feedback.cpp:378` | Sous Windows, domaine d'horloge `CLOCK_MONOTONIC` qui n'y existe pas |  |
 | 14 | A10-08 | Mineur | `src/app/play/placebo_screen.cpp:569` | Image acquise jamais soumise sur les sorties en erreur |  |
-| 15 | A10-09 | Mineur | `src/app/play/placebo_ring.cpp:229` | `retire` ignore l'échec de `hand_to_cuda` |  |
-| 16 | A10-10 | Mineur | `src/app/play/placebo_screen.cpp:632` | `path::string()` dans les instantanés | Dette (34) |
-| 17 | A10-11 | Mineur | `src/app/play/placebo_open.cpp:275` | Cache des shaders lu sans plafond, `.part` jamais purgés |  |
+| 15 | A10-09 | Mineur | `src/app/play/placebo_ring.cpp:229` | `retire` ignore l'échec de `hand_to_cuda` | Corrigé |
+| 16 | A10-10 | Mineur | `src/app/play/placebo_screen.cpp:632` | `path::string()` dans les instantanés | Corrigé ; Dette (34) |
+| 17 | A10-11 | Mineur | `src/app/play/placebo_open.cpp:275` | Cache des shaders lu sans plafond, `.part` jamais purgés | Corrigé |
 | 18 | A10-13 | Mineur | `tests/unit/app/present_level_test.cpp` | Aucun test des chemins dégradés de la présentation |  |
 | 19 | A10-14 | Mineur | `src/app/play/placebo_screen.cpp:464-470` | `present_us` et `queue_wait_us` sont le retour de `swap_buffers`, pas un vsync (rend inopérante la vérification d'A12-03) | Corrigé en partie : commentaires et phase des vsyncs ; shown_at_us_ et les intervalles restent sur le retour de swap_buffers |
 | 20 | A10-15 | Mineur | `src/app/play/placebo_screen.cpp:328` | Présentation plafonnée vers 127 i/s à 165 Hz, RIFE comme DistilDRBA, cause à mesurer |  |
 | 21 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre |  |
-| 22 | A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu |  |
+| 22 | A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu | Corrigé |
 | 23 | A11-03 | Mineur | `src/app/play/display_edid.cpp:421-429` | Écran choisi par sous-chaîne du nom : deux écrans du même modèle confondus |  |
 | 24 | A11-04 | Mineur | `src/app/play/system_peak.cpp:85-108` | Entrée KWin choisie par le seul connecteur |  |
 | 25 | A11-05 | Mineur | `src/app/play/display_edid.cpp:56-63` | Demi-flottant infini retenu comme pic |  |
