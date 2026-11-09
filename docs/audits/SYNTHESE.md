@@ -23,9 +23,9 @@
 | 11. Écran et matériel : EDID, VRR, HDR du système, télémétrie | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/11-ecran-materiel.md) |
 | 12. Cadence et horloges | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/12-cadence-horloges.md) |
 | 13. Session de lecture : seek, épisodes et reprise | Fusionné (13 défauts, 1 bloquant, 1 majeur) | [rapport](rapports/13-session-lecture.md) |
-| 14. Sources, démultiplexage et erreurs d'E/S | En cours | |
-| 15. Décodage, matériel, formats et couleurs | À faire | |
-| 16. Audio | À faire | |
+| 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (8 défauts, 2 majeurs) | [rapport](rapports/14-sources-demux.md) |
+| 15. Décodage, matériel, formats et couleurs | En cours | |
+| 16. Audio | En cours | |
 | 17. Sous-titres | À faire | |
 | 18. Démarrage et arrêt | À faire | |
 | 19. Intégration au système | À faire | |
@@ -217,6 +217,14 @@
 | A13-11 | Mineur | `src/app/play/resume.cpp:33` | `path::string()` dans la reprise et les sous-titres externes | 13 | |
 | A13-12 | Mineur | `src/app/play/resume.cpp:39-45` | Windows : comparaison sans casse en ASCII seulement | 13 | |
 | A13-13 | Mineur | `tests/unit/app/resume_test.cpp` | Aucun test de la borne, des chemins non ASCII, du VFR ni de la fin sur erreur | 13 | |
+| A14-01 | Majeur | `src/media/demuxer.cpp:367` | `AVERROR_EOF` pris pour une vraie fin sans regarder `pb->error` : panne d'E/S en MP4 qui finit l'épisode sans notice | 14 | |
+| A14-02 | Majeur | `src/media/demuxer.cpp:252-254` | `rw_timeout` sans effet sur un partage monté : un NAS muet fige la lecture puis la fermeture | 14 | |
+| A14-03 | Mineur | `src/media/demuxer.cpp:273-283` | Chapitres ordonnés et éditions Matroska ni gérés ni détectés | 14 | |
+| A14-04 | Mineur | `src/media/source_loop.cpp:337-364` | Flush puis Seek refusé : les paquets jetés ne sont pas relus | 14 | |
+| A14-05 | Mineur | `src/media/track_language.cpp:44-46` | « VOSTFR » sur une piste audio lue comme du français | 14 | |
+| A14-06 | Mineur | `src/media/source.h:34-35` | File audio pleine qui fait attendre toute la lecture sur un fichier mal entrelacé | 14 | |
+| A14-07 | Mineur | `src/media/demuxer.cpp:369-377` | Panne d'E/S, interruption et données abîmées toutes en `DecodeFailed` | 14 | |
+| A14-08 | Mineur | `tests/unit/media/source_test.cpp:400-414` | Le test fige MED-01 comme comportement voulu | 14 | |
 
 ## Renvois
 
@@ -258,7 +266,7 @@
 | 08 | 22 | `src/app/play/settings.cpp:453-499` | `change_between` ne classe pas en réouverture plusieurs réglages dont `prepare_chain` dépend | Ouvert |
 | 08 | 05 | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre | En attente (05 fini) |
 | 08 | 11 | `src/app/play/host_facts.cpp:378` | `on_battery()` appelé deux fois par seconde | Traité par 11 (A11-09) |
-| 08 | 14 | `src/app/play/player_run.cpp:589-591` | MED-01 : la session doit distinguer vraie fin et erreur d'E/S | Ouvert |
+| 08 | 14 | `src/app/play/player_run.cpp:589-591` | MED-01 : la session doit distinguer vraie fin et erreur d'E/S | Traité par 14 |
 | 08 | 18 | `src/app/play/player.cpp:525-534` | La reprise après « Annuler et regarder » modifie `settings` pour toute la suite | Ouvert |
 | 08 | 23 | `src/app/play/settings_panel.cpp` | UX-08 : Échap devrait fermer la liste ouverte avant le panneau | Ouvert |
 | 08 | 39 | `src/app/play/settings_system.cpp` | UX-13 : chemins hors du dossier personnel dans le journal envoyé | Ouvert |
@@ -289,8 +297,15 @@
 | 12 | 10 | `src/app/play/placebo_screen.cpp:461-463` | `present_us` est le retour de `swap_buffers`, pas un vsync (A12-03) | En attente (10 fini) |
 | 12 | 34 | `src/app/play/loop_wait.cpp:56` | Windows : attente « précise » à 1 ms de résolution | Ouvert |
 | 12 | 20 | `src/core/drawings.cpp:113` | `DrawingsTimeline` n'est appelé que par ses tests | Ouvert |
-| 13 | 14 | `src/media/source_loop.cpp:110-123` | `recover_position` qui échoue laisse la source inactive, lecture figée | Ouvert |
-| 13 | 14 | `src/media/source_loop.cpp:182-188` | Lecture abandonnée traitée comme la fin du fichier (origine de MED-01) | Ouvert |
+| 13 | 14 | `src/media/source_loop.cpp:110-123` | `recover_position` qui échoue laisse la source inactive, lecture figée | Traité par 14 |
+| 13 | 14 | `src/media/source_loop.cpp:182-188` | Lecture abandonnée traitée comme la fin du fichier (origine de MED-01) | Traité par 14 |
 | 13 | 17 | `src/app/play/external_subtitles.cpp:92` | `path::string()` sur des noms de sous-titres | Ouvert |
 | 13 | 08 | `src/app/play/player_run.cpp:738-739` | Pistes copiées dans `Player` même pour une autre vidéo (A13-01, A13-09) | En attente (08 fini) |
 | 13 | 30 | `src/app/play/wiring.cpp:113-124` | `ThreadStages::play/pause` rendent faux sans que personne ne rejoue | Ouvert |
+| 14 | 13 | `src/app/play/pipeline.cpp:45-49` | `path::string()` sur les sous-titres externes | En attente (13 fini) |
+| 14 | 13 | `src/app/play/pipeline.cpp:65` | `config.file.string()` dans le refus « no video track » | En attente (13 fini) |
+| 14 | 13 | `src/app/play/session.cpp:286-287` | La session doit refuser d'enchaîner l'épisode sur une fin en erreur (MED-01) | En attente (13 fini) |
+| 14 | 18 | `src/app/play/player.cpp:99` | `file.string()` dans le refus de `probe_once` | Ouvert |
+| 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | Ouvert |
+| 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | Ouvert |
+| 14 | 30 | `src/media/source_loop.cpp:303-305` | Boîte non lue pendant `wait_before_retry` | Ouvert |
