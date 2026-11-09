@@ -36,7 +36,7 @@
 | 24. Interface : rendu, contrôles et messages | Fusionné (23 défauts, 3 majeurs) | [rapport](rapports/24-interface-rendu.md) |
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
-| 27. Build, dépendances et ports | À faire | |
+| 27. Build, dépendances et ports | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/27-build-dependances.md) |
 | 28. CI, publication et signature | À faire | |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
@@ -452,6 +452,19 @@
 | A30-06 | Mineur | `src/app/play/single_instance.cpp:155-157` | `ReadFile` sans délai sur le canal de l'instance unique (WIN-06) | 30 | |
 | A30-07 | Mineur | `tests/unit/app/` | Aucun test des durées de vie | 30 | |
 | A30-08 | Mineur | `src/media/shot_probe.cpp:108-110` | Attentes sans délai sur le thread de la fenêtre | 30 | |
+| A27-01 | Majeur | `ports/libplacebo/portfile.cmake:8` | libplacebo épinglé à 7.360.1, l'amont à 7.387.0 avec des correctifs de rendu ; notre correctif ne s'applique plus | 27 | |
+| A27-02 | Mineur | `tools/release/package-linux.sh:124` | `patchelf --set-rpath` pose un RUNPATH que `LD_LIBRARY_PATH` devance (démontré) | 27 | |
+| A27-03 | Mineur | `cmake/Dependencies.cmake:64` | Configure accepte un libplacebo sans notre correctif | 27 | |
+| A27-04 | Mineur | `cmake/Dependencies.cmake:4-5` | « Mêmes versions » Linux et Windows vrai en partie seulement | 27 | |
+| A27-05 | Mineur | `tools/deps/linux-from-source.sh:135-138` | Options de libplacebo fixées sous Windows seulement | 27 | |
+| A27-06 | Mineur | `tools/deps/linux-from-source.sh:58-66` | Marqueur de dépendance qui ignore les bibliothèques du système liées | 27 | |
+| A27-07 | Mineur | `CMakeLists.txt:28` | Le CI CUDA des PR ne compile pas toutes les architectures livrées | 27 | |
+| A27-08 | Mineur | `ports/libplacebo/0001-ajp-present-timing.patch:153-170` | Chemin `QUEUE_FULL` du correctif sur une hypothèse non vérifiée | 27 | |
+| A27-09 | Mineur | `cmake/Dependencies.cmake:115-117` | ImGui sans FreeType sous Windows | 27 | |
+| A27-10 | Mineur | `CMakePresets.json:18` | `AJP_WARNINGS_AS_ERRORS` OFF par défaut, contrairement à la règle | 27 | |
+| A27-11 | Mineur | `cmake/AjpSpirv.cmake:35` | `spirv-val` absent sous Windows sans un mot | 27 | |
+| A27-12 | Mineur | `third_party/cutlass/` | CUTLASS recopié sans commit ni somme | 27 | |
+| A27-13 | Mineur | `cmake/AjpModule.cmake:61-77` | En-têtes précompilés sans effet sur les tests | 27 | |
 
 ## Renvois
 
@@ -473,7 +486,7 @@
 | 03 | 09 | `src/app/play/player_engines.cpp:247-266` | Avec DistilDRBA fusionné, le warp repose sur la branche mouvement non testée (A03-03) | Traité par 09 |
 | 03 | 15 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:142-143` | Position de chroma : seuls `Center` et `TopLeft` sont distingués | Réfuté par 15 |
 | 03 | 40 | `tests/unit/backend_tensorrt/` | La suite CUDA ne tourne qu'à la main sur un poste NVIDIA, aucun garde-fou de CI | Ouvert |
-| 05 | 27 | `src/gpu/cuda/backend/CMakeLists.txt:95` | Repli `trtexec` gardé en `RelWithDebInfo` (SEC-20) | Ouvert |
+| 05 | 27 | `src/gpu/cuda/backend/CMakeLists.txt:95` | Repli `trtexec` gardé en `RelWithDebInfo` (SEC-20) | Traité par 27 |
 | 05 | 01 | `src/gpu/cuda/backend/entry.cpp:56-59` | `pick_trtexec` appelé une fois : empreinte jamais revérifiée ensuite (A05-05) | En attente (01 fini) |
 | 05 | 06 | `src/app/play/engine_install.cpp:130-158` | TRT-17 : échec de `nvidia-smi` gardé pour le processus, carte inconnue rangée en « ptx » | Traité par 06 (TRT-17 en partie présent) |
 | 05 | 18 | `src/app/play/crash_dump.cpp:90` | Le gestionnaire de plantage ne tue pas le `trtexec` en cours (A05-01) | Traité par 18 (réfuté sous Windows) |
@@ -578,7 +591,7 @@
 | 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Traité par 26 |
 | 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Traité par 31 |
 | 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Traité par 24 |
-| 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | En attente (21 fini) |
+| 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | Traité par 27 (A27-02) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | En attente (02 fini) |
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Ouvert |
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
@@ -651,3 +664,8 @@
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Ouvert |
 | 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | En attente (09 fini) |
 | 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Ouvert |
+| 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | Ouvert |
+| 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | Ouvert |
+| 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | Ouvert |
+| 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | En attente (05 fini) |
+| 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
