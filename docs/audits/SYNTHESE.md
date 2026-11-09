@@ -34,7 +34,7 @@
 | 22. Réglages : modèle, application et persistance | Fusionné (18 défauts, 3 majeurs, complément compris) | [rapport](rapports/22-reglages-modele.md), [complément](rapports/22-reglages-modele-complement.md) |
 | 23. Réglages : le panneau | Fusionné (16 défauts, 4 majeurs, complément compris) | [rapport](rapports/23-reglages-panneau.md), [complément](rapports/23-reglages-panneau-complement.md) |
 | 24. Interface : rendu, contrôles et messages | Fusionné (24 défauts, 3 majeurs, complément compris) | [rapport](rapports/24-interface-rendu.md), [complément](rapports/24-interface-rendu-complement.md) |
-| 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
+| 25. Assistant de premier lancement | Fusionné (19 défauts, 4 majeurs, complément compris) | [rapport](rapports/25-assistant.md), [complément](rapports/25-assistant-complement.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
 | 27. Build, dépendances et ports | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/27-build-dependances.md) |
 | 28. CI, publication et signature | Fusionné (22 défauts, 1 bloquant, 8 majeurs, complément compris) | [rapport](rapports/28-ci-publication.md), [complément](rapports/28-ci-publication-complement.md) |
@@ -708,6 +708,7 @@
 | A18-17 | Mineur | `src/app/play/settings.cpp:326-343` | `--rife-model` absent de `settings.rife_model` : menu et `--bench-out` donnent le mauvais modèle | 18 | |
 | A18-18 | Majeur | `src/app/play/auto_bench_run.cpp:363-367` | Qualité : le banc essaie RIFE 4.25 sans dossier, l'essai échoue toujours en silence et l'Auto reste sur 4.22 lite | 18 | Cause directe d'A25-08 et d'A38-02 |
 | A24-24 | Mineur | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » à l'accueil n'ouvre que l'écran des moteurs | 24 | |
+| A25-19 | Mineur | `src/app/play/first_run.cpp:445` | Texte de la mise à jour automatique différent entre l'assistant et le panneau | 25 | |
 
 ## Renvois
 
@@ -967,8 +968,8 @@
 | 43 | 24 | `src/app/play/home_screen.cpp:178` | « EDID illisible : OLED inconnu » en dur dans Vidéo > Affichage | Traité par 24 (complément) |
 | 43 | 41 | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur | En attente (41 fini) |
 | 43 | 41 | `src/app/play/chain_hdr.cpp:367` | GPU-14 toujours présent (« Vrai noir : mesure impossible » en dur) | En attente (41 fini) |
-| 43 | 25 | `src/app/play/first_run.cpp:29-31` | La `note` de l'assistant n'applique pas `french_spaces` | En attente (25 fini) |
-| 43 | 25 | `src/app/play/first_run.cpp:445` | Deux textes pour l'installation de la mise à jour | En attente (25 fini) |
+| 43 | 25 | `src/app/play/first_run.cpp:29-31` | La `note` de l'assistant n'applique pas `french_spaces` | Traité par 25 (complément) |
+| 43 | 25 | `src/app/play/first_run.cpp:445` | Deux textes pour l'installation de la mise à jour | Traité par 25 (complément) |
 | 43 | 08 | `src/app/play/chain.cpp:113-131` | UX-20 : rien ne reformate l'affichage quand la langue change en direct | Traité par 08 (complément) |
 | 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | Traité par 22 (complément) |
 | 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | Traité par 23 (complément) |
