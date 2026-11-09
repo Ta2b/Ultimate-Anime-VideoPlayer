@@ -46,10 +46,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
   add_compile_definitions(NOMINMAX)
 endif()
-# Un minidump ne se lit qu'avec le PDB de son binaire (A39-04) : hors Debug, MSVC en écrit un complet pour
-# chaque exécutable et chaque module. La CI les archive à part, jamais dans la release.
+# Un minidump ne se lit qu'avec le PDB de son binaire (A39-04) : hors Debug, les objets portent leurs symboles
+# (/Z7, sans PDB partagé : sccache les met en cache et la compilation parallèle n'a pas de verrou) et le lieur
+# écrit un PDB complet pour chaque exécutable et chaque module. La CI les archive à part, jamais dans la release.
 if(MSVC)
-  add_compile_options($<$<AND:$<NOT:$<CONFIG:Debug>>,$<COMPILE_LANGUAGE:CXX>>:/Zi$<SEMICOLON>/FS>)
+  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<NOT:$<CONFIG:Debug>>:Embedded>")
   add_link_options($<$<NOT:$<CONFIG:Debug>>:/DEBUG:FULL$<SEMICOLON>/OPT:REF$<SEMICOLON>/OPT:ICF>)
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
