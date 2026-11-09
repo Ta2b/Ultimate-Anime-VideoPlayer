@@ -44,7 +44,7 @@
 | 32. Budget par image sur la cible | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/32-budget-par-image.md) |
 | 33. Longue durée, mémoire et ressources | Fusionné (8 défauts, 4 majeurs) | [rapport](rapports/33-longue-duree-ressources.md) |
 | 34. Parité Windows et CachyOS | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/34-parite-windows-cachyos.md) |
-| 35. Entrées non sûres | À faire | |
+| 35. Entrées non sûres | Fusionné (9 défauts, 1 majeur) | [rapport](rapports/35-entrees-hostiles.md) |
 | 36. État persistant et compatibilité entre versions | À faire | |
 | 37. Configurations NVIDIA variées | À faire | |
 | 38. Promesses tenues | À faire | |
@@ -511,6 +511,15 @@
 | A33-06 | Mineur | `src/app/main.cpp:427-440` | Deux rotations du journal qui s'ignorent | 33 | |
 | A33-07 | Mineur | `src/app/play/pumped_task.h:58` | Sonde détachée qui garde son descripteur | 33 | A30-05 (même cause) |
 | A33-08 | Mineur | `src/app/play/gpu_telemetry.cpp` | Aucun essai de durée ni relevé de ressources | 33 | |
+| A35-01 | Majeur | `tools/deps/linux-from-source.sh:35` | FFmpeg, libass (fork), dav1d, FreeType et HarfBuzz figés sans veille des failles ; A28-02 bloque tout correctif | 35 | |
+| A35-02 | Mineur | `src/media/demuxer.cpp:190-199` | Chapitres dédoublonnés en O(n²) : 7 s par ouverture à 100 000 chapitres (démontré) | 35 | |
+| A35-03 | Mineur | `src/core/update_manifest.cpp:21-28` | Préversion multiligne affichée telle quelle (SEC-10) | 35 | |
+| A35-04 | Mineur | `src/core/model_index.cpp:33-40` | `safe_name` accepte les noms réservés de Windows (démontré) | 35 | |
+| A35-05 | Mineur | `src/app/play/engine_tools.cpp:79-88` | Téléchargements sans `--proto =https` ni `--proto-redir` | 35 | |
+| A35-06 | Mineur | `src/media/demuxer.cpp:116-117` | Aucune borne haute sur la taille annoncée par le fichier | 35 | |
+| A35-07 | Mineur | `src/app/play/updater.cpp:557-564` | `staged_file` non confiné à `updates/` | 35 | |
+| A35-08 | Mineur | `tests/fuzz/CMakeLists.txt:18-20` | Lecteurs d'octets extérieurs non fuzzés | 35 | |
+| A35-09 | Mineur | `src/app/play/look_catalog.cpp:42-44` | Nom d'un look gardé contre `/` et `\` seulement | 35 | |
 
 ## Renvois
 
@@ -611,7 +620,7 @@
 | 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | En attente (14 fini) |
 | 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Réfuté par 22 |
 | 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Traité par 24 |
-| 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
+| 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Traité par 35 (en partie) |
 | 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Traité par 28 |
 | 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Traité par 28 |
 | 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Traité par 25 |
@@ -674,7 +683,7 @@
 | 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Traité par 28 |
 | 26 | 28 | `.github/workflows/release-linux.yml:150` | `--latest` posé avant le manifeste signé (SEC-05) | Traité par 28 |
 | 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Ouvert |
-| 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Ouvert |
+| 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Traité par 35 |
 | 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | En attente (06 fini) |
 | 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | En attente (23 fini) |
 | 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Ouvert |
@@ -738,3 +747,6 @@
 | 33 | 28 | `src/prepare/cache.cpp` | Disque plein par le cache : l'écriture d'un moteur doit refuser proprement | En attente (28 fini) |
 | 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Ouvert |
 | 33 | 31 | `src/app/play/player_run.cpp:510` | Au réveil, perte du contexte CUDA et saut d'horloge ensemble | En attente (31 fini) |
+| 35 | 33 | `src/prepare/builder.cpp:139-145` | Un moteur par forme, sans purge | Traité par 33 (A33-04) |
+| 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | En attente (17 fini) |
+| 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | En attente (28 fini) |
