@@ -42,7 +42,7 @@
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
 | 31. États dégradés et reprise sur erreur | Fusionné (15 défauts, 8 majeurs) | [rapport](rapports/31-etats-degrades.md) |
 | 32. Budget par image sur la cible | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/32-budget-par-image.md) |
-| 33. Longue durée, mémoire et ressources | À faire | |
+| 33. Longue durée, mémoire et ressources | Fusionné (8 défauts, 4 majeurs) | [rapport](rapports/33-longue-duree-ressources.md) |
 | 34. Parité Windows et CachyOS | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/34-parite-windows-cachyos.md) |
 | 35. Entrées non sûres | À faire | |
 | 36. État persistant et compatibilité entre versions | À faire | |
@@ -503,6 +503,14 @@
 | A34-10 | Mineur | `src/app/play/placebo_open.cpp:510-515` | Présentation FIFO identique partout malgré la swapchain NVIDIA de Windows | 34 | |
 | A34-11 | Mineur | `src/subs/text_encoding.cpp:117-145` | WIN-09 vrai en partie seulement | 34 | |
 | A34-12 | Mineur | `src/app/play/data_dirs.cpp:67-101` | Migration en cours qui bloque l'instance unique | 34 | |
+| A33-01 | Majeur | `src/app/play/placebo_ring.cpp:84` | Mémoire vidéo d'une chaîne fermée gardée (anneau, réserve CUDA) ; « Refaire le banc » mesure avec moins de mémoire (TRT-06 élargi) | 33 | |
+| A33-02 | Majeur | `src/app/play/placebo_open.cpp` | SDL coupe l'économiseur et la veille pendant toute la vie du processus, même en pause et à l'accueil | 33 | |
+| A33-03 | Majeur | `src/core/clock.h:15` | Aucun trou de temps détecté : au réveil sous Windows, l'horloge court jusqu'à la fin de l'épisode | 33 | A29-02 (même cause, précisé) |
+| A33-04 | Majeur | `src/prepare/cache.cpp:81` | Cache des moteurs TensorRT sans aucune purge | 33 | |
+| A33-05 | Mineur | `src/gpu/cuda/backend/gpu_timing.h:53` | Profil GPU de fin de lecture tronqué | 33 | |
+| A33-06 | Mineur | `src/app/main.cpp:427-440` | Deux rotations du journal qui s'ignorent | 33 | |
+| A33-07 | Mineur | `src/app/play/pumped_task.h:58` | Sonde détachée qui garde son descripteur | 33 | A30-05 (même cause) |
+| A33-08 | Mineur | `src/app/play/gpu_telemetry.cpp` | Aucun essai de durée ni relevé de ressources | 33 | |
 
 ## Renvois
 
@@ -686,7 +694,7 @@
 | 29 | 13 | `src/app/play/player.cpp:454` | A13-09 réfuté : `Player` recréé à chaque fichier | Traité par 29 |
 | 29 | 31 | `src/app/play/chain_setup.cpp:497` | Refus de RIFE sans repli (A29-01) à compter dans la grille | Traité par 31 |
 | 29 | 31 | `src/app/play/player_engines.cpp:270-272` | `Cancelled` de DistilDRBA fusionné lance la construction de l'entier | Traité par 31 |
-| 29 | 33 | aucun fichier | La veille (A29-02) à inclure dans le banc de soirée | Ouvert |
+| 29 | 33 | aucun fichier | La veille (A29-02) à inclure dans le banc de soirée | Traité par 33 |
 | 29 | 34 | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | Traité par 34 (A34-04) |
 | 29 | 36 | `src/app/play/player.cpp:574-581` | `save_settings` de l'épisode suivant écrit les raccourcis de séance avant l'ouverture | Ouvert |
 | 31 | 40 | `tests/unit/app/ring_stage_test.cpp:243` | Test qui fige `ThreadFailed` ; aucun test d'injection de `DeviceLost` | Ouvert |
@@ -726,3 +734,7 @@
 | 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | En attente (11 fini) |
 | 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | En attente (28 fini) |
 | 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Ouvert |
+| 33 | 08 | `src/app/play/engine_build.cpp` | Un `TensorRtBackend` créé puis détruit par moteur préparé | En attente (08 fini) |
+| 33 | 28 | `src/prepare/cache.cpp` | Disque plein par le cache : l'écriture d'un moteur doit refuser proprement | En attente (28 fini) |
+| 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Ouvert |
+| 33 | 31 | `src/app/play/player_run.cpp:510` | Au réveil, perte du contexte CUDA et saut d'horloge ensemble | En attente (31 fini) |
