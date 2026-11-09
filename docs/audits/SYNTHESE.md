@@ -58,7 +58,7 @@
 | 46. Outils de recherche, modèles et données livrées | Fusionné (15 défauts, 6 majeurs, complément compris) | [rapport](rapports/46-outils-donnees.md), [complément](rapports/46-outils-donnees-complement.md) |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
-| 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | Fusionné (14 défauts, 6 majeurs, 16 compromis à trancher) | [rapport](rapports/49-qualite-rendu.md) |
+| 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | Fusionné (16 défauts, 6 majeurs, 16 compromis à trancher, complément compris) | [rapport](rapports/49-qualite-rendu.md), [complément](rapports/49-qualite-rendu-complement.md) |
 
 ## Défauts trouvés
 
@@ -723,6 +723,8 @@
 | A42-18 | Mineur | `src/app/play/upscale_stage.cpp:259` | Analyse jetée quand deux relectures attendent : elle manque au limiteur | 42 | |
 | A42-19 | Mineur | `src/app/play/chain_hdr.cpp:252` | Plafond sans effet en sortie SDR mais journalisé comme posé | 42 | |
 | A45-15 | Mineur | `src/gpu/vulkan/shaders/net_tensor.glsl:75-77` | Qualité : arrondi f32 → f16 et sous-normaux F16 laissés au pilote, sans `float_controls` ni test exact | 45 | |
+| A49-15 | Mineur | `docs/nvidia-linux.md:45` | La page annonce le FP8 de SPAN dans les préréglages ; le code pose le FP16 hors Auto calibré | 49 | |
+| A49-16 | Mineur | `tools/drba/export_distil_drba.py:155-198` | Qualité : DistilDRBA n'existe qu'en FP16, sans porte ni graphe FP32 livré, gain du FP16 jamais mesuré | 49 | |
 
 ## Renvois
 
@@ -926,7 +928,7 @@
 | 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | Traité par 28 (complément) |
 | 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | Traité par 28 (complément) |
 | 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | Traité par 05 (complément) |
-| 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
+| 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | Traité par 49 (complément) |
 | 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | Traité par 26 (complément) |
 | 28 | 09 | `src/app/play/drba_model.cpp:14-28` | Demi-flot DistilDRBA manquant : repli silencieux sur le flot entier | Traité par 09 (complément) |
 | 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Traité par 40 (A40-01) |
@@ -993,7 +995,7 @@
 | 45 | 08 | `src/app/play/chain_setup.h:89-93` | Ordre de destruction moteurs Vulkan puis backend au passage vers TensorRT | Traité par 08 (complément) |
 | 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | Traité par 03 (complément 2) |
 | 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Traité par 46 (A46-04 : grille en FP16) |
-| 44 | 49 | qualité DistilDRBA F16 | DistilDRBA F16 contre FP32 : 51 à 52 dB, écart max 13 à 19/255 (pour A49-14) | En attente (49 fini) |
+| 44 | 49 | qualité DistilDRBA F16 | DistilDRBA F16 contre FP32 : 51 à 52 dB, écart max 13 à 19/255 (pour A49-14) | Traité par 49 (complément) |
 | 44 | 45 | shaders Vulkan | Arrondi f32 vers f16 (RTE ou RTZ), sous-normaux F16, accumulation des coopmat | Traité par 45 (complément) |
 | 46 | 20 | `src/core/model_index.cpp:356-410` | `models.lock` lu par aucun code du lecteur : code mort | Traité par 20 (complément) |
 | 46 | 45 | `src/gpu/vulkan/backend/net_gate.h:24-25` | Porte qui admet les sommes FP16 à 2 % sur du bruit, pour toutes les cartes | Traité par 45 (complément) |
