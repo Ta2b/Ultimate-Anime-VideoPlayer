@@ -53,7 +53,7 @@
 | 41. HDR, grade et looks | Fusionné (11 défauts, 2 majeurs) | [rapport](rapports/41-hdr-grade.md) |
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
 | 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
-| 44. Représentation intermédiaire et import ONNX | À faire | |
+| 44. Représentation intermédiaire et import ONNX | Fusionné (12 défauts, 1 majeur) | [rapport](rapports/44-ir-onnx.md) |
 | 45. Moteur Vulkan : calcul, noyaux et shaders | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/45-backend-vulkan.md) |
 | 46. Outils de recherche, modèles et données livrées | À faire | |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
@@ -615,6 +615,18 @@
 | A45-12 | Mineur | `src/gpu/vulkan/backend/net_presets.cpp:4` | Table pré-réglée limitée à SPAN b5f48 720p et RIFE 4.25 | 45 | |
 | A45-13 | Mineur | `src/gpu/vulkan/backend/vulkan_backend.cpp:384-395` | Artefact réabaissé et réécrit sans repasser la porte | 45 | |
 | A45-14 | Mineur | `src/gpu/vulkan/backend/kernel_ops.h:116-143` | Ni mémoire de la carte ni temps par étage dans les statistiques du repli | 45 | |
+| A44-01 | Majeur | `src/gpu/ir/pass_cast.cpp` | Qualité, repli Vulkan : chaîne de grille de DistilDRBA en F16 (jusqu'à 2,07 dB et écart max 16,3/255 sur un panoramique réel, coût du F32 négligeable) | 44 | A03-18 (même cause, mesuré côté IR) |
+| A44-02 | Mineur | `src/gpu/ir/pass_fuse.cpp` | Pas de fusion élément par élément : DistilDRBA 230 dispatchs contre 134 pour RIFE 4.22 lite, lié aux dispatchs (à confirmer sur GPU) | 44 | |
+| A44-03 | Mineur | `src/gpu/ir/import.cpp:141` | Tri topologique quadratique : un ONNX hostile de 0,9 Mo prend 8,5 s | 44 | |
+| A44-04 | Mineur | `src/gpu/ir/onnx_reader.cpp` | Amplification mémoire ×8 à ×16 bornée seulement par la taille du fichier | 44 | |
+| A44-05 | Mineur | `src/gpu/ir/import.cpp:238` | `path.string()` dans les messages d'erreur (dette) | 44 | |
+| A44-06 | Mineur | `src/gpu/ir/pass_fuse.cpp:103` | Facteur par canal fondu dans des poids F16 : milliers de poids à zéro, sans perte mesurée | 44 | |
+| A44-07 | Mineur | `src/gpu/ir/onnx_reader.cpp:208` | Valeurs INT32 non vérifiées en plage | 44 | |
+| A44-08 | Mineur | `src/gpu/ir/onnx_io_type.cpp:648` | `with_float32` mort depuis le retrait de VitisAI (dette) | 44 | |
+| A44-09 | Mineur | `src/gpu/ir/describe.cpp:117` | `describe_stats` n'affiche pas les quantifications FP8 (dette) | 44 | |
+| A44-10 | Mineur | `src/gpu/ir/onnx_info_main.cpp` | `ajp_onnx_info` ne rejoue pas les passes propres à Vulkan | 44 | |
+| A44-11 | Mineur | `tests/unit/gpu_ir/` | Aucun test sur les modèles livrés ; passes Vulkan hors fuzz | 44 | |
+| A44-12 | Mineur | `src/gpu/ir/pass_transpose.cpp` | Deux DepthToSpace là où un suffit en mode phases | 44 | |
 
 ## Renvois
 
@@ -884,3 +896,6 @@
 | 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | En attente (21 fini) |
 | 45 | 08 | `src/app/play/chain_setup.h:89-93` | Ordre de destruction moteurs Vulkan puis backend au passage vers TensorRT | En attente (08 fini) |
 | 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | En attente (03 fini) |
+| 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Ouvert |
+| 44 | 49 | qualité DistilDRBA F16 | DistilDRBA F16 contre FP32 : 51 à 52 dB, écart max 13 à 19/255 (pour A49-14) | En attente (49 fini) |
+| 44 | 45 | shaders Vulkan | Arrondi f32 vers f16 (RTE ou RTZ), sous-normaux F16, accumulation des coopmat | En attente (45 fini) |
