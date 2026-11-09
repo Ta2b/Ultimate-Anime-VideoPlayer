@@ -21,9 +21,9 @@
 | 09. Étages d'agrandissement et d'interpolation | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/09-etages-traitement.md) |
 | 10. Rendu et présentation par libplacebo | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/10-presentation-libplacebo.md) |
 | 11. Écran et matériel : EDID, VRR, HDR du système, télémétrie | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/11-ecran-materiel.md) |
-| 12. Cadence et horloges | En cours | |
-| 13. Session de lecture : seek, épisodes et reprise | En cours | |
-| 14. Sources, démultiplexage et erreurs d'E/S | À faire | |
+| 12. Cadence et horloges | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/12-cadence-horloges.md) |
+| 13. Session de lecture : seek, épisodes et reprise | Fusionné (13 défauts, 1 bloquant, 1 majeur) | [rapport](rapports/13-session-lecture.md) |
+| 14. Sources, démultiplexage et erreurs d'E/S | En cours | |
 | 15. Décodage, matériel, formats et couleurs | À faire | |
 | 16. Audio | À faire | |
 | 17. Sous-titres | À faire | |
@@ -194,6 +194,29 @@
 | A11-11 | Mineur | `src/app/play/display_edid.cpp:139-147` | Pic et noir dépendent de l'ordre des blocs EDID | 11 | |
 | A11-12 | Mineur | `tests/unit/app/` | Aucun test du contrat d'écran, du multi-écran ni du pic de contenu | 11 | |
 | A11-13 | Mineur | `src/app/play/host_facts.cpp:39-81` | Quatre copies de l'énumération `QueryDisplayConfig` | 11 | |
+| A12-01 | Majeur | `src/core/vblank_clock.cpp:32-36` | La grille des vblanks apprend la cadence du contenu au lieu de celle de l'écran (démontré) | 12 | |
+| A12-02 | Majeur | `src/core/auto_rate.cpp:281-291` | Stable sans palier calé au-dessus de ×1 à 165 Hz pour 23,976, ni à 144 Hz pour 29,97 (démontré) | 12 | |
+| A12-03 | Majeur | `src/core/vsync_phase.h:2-5` | Phase des vsyncs apprise sur le retour de `swap_buffers` au niveau Open (à confirmer sous Windows) | 12 | |
+| A12-04 | Mineur | `src/core/auto_rate.cpp:293-301` | Paliers calés sur le plafond passé comme fréquence d'écran | 12 | |
+| A12-05 | Mineur | `src/core/auto_rate.cpp:599-608` | Réarmement toutes les 8 s même sans palier calé | 12 | |
+| A12-06 | Mineur | `src/core/pacing.cpp:61-67` | Calage de vitesse sur une fréquence fausse, jamais sur la phase | 12 | |
+| A12-07 | Mineur | `src/core/cadence.cpp:56-70` | `retarget` sort des bornes de `kRatioTerm` | 12 | |
+| A12-08 | Mineur | `src/core/steady_rate.cpp:162-166` | Le repli du Rapide compte les pertes du démarrage et des reprises | 12 | |
+| A12-09 | Mineur | `src/core/steady_rate.h:37` | Code mort dans les horloges | 12 | |
+| A12-10 | Mineur | `tests/unit/core/` | Aucun test de `VsyncPhase`, des paliers à 144 et 165 Hz, ni de `VblankClock` à la demande | 12 | |
+| A13-01 | Bloquant | `src/app/play/pipeline.cpp:172` | Index de sous-titres externes gardé à la réouverture ou à l'épisode suivant : déréférence nulle, plantage | 13 | |
+| A13-02 | Majeur | `src/app/play/session.cpp:66-68` | Fin de flux après abandon de lecture prise pour une vraie fin : épisode suivant lancé (MED-01) | 13 | |
+| A13-03 | Mineur | `src/app/play/episodes.cpp:43-47` | Un titre d'épisode contenant `MENU`, `PV` ou `CM` est classé en bonus | 13 | |
+| A13-04 | Mineur | `src/app/play/episodes.cpp:74-93` | Chiffres pleine chasse comparés octet par octet | 13 | |
+| A13-05 | Mineur | `src/app/play/session.cpp:102-120` | Pas d'image vers l'avant bloqué en VFR (MED-16) | 13 | |
+| A13-06 | Mineur | `src/app/play/session.cpp:78` | Retours de `play()` et `pause()` ignorés : pause perdue sur boîte audio pleine | 13 | |
+| A13-07 | Mineur | `src/app/play/session.cpp:229-247` | Après des pas vers l'avant, l'audio reprend à la position de la pause | 13 | |
+| A13-08 | Mineur | `src/app/play/session.cpp:189-227` | Seek refusé sans repositionnement : lecture figée (MED-06) | 13 | |
+| A13-09 | Mineur | `src/app/play/player_run.cpp:738-739` | Pistes audio et sous-titres gardées pour toute vidéo suivante | 13 | |
+| A13-10 | Mineur | `src/app/play/resume.cpp:107-129` | `resume.tsv` réécrit sans verrou entre deux instances | 13 | |
+| A13-11 | Mineur | `src/app/play/resume.cpp:33` | `path::string()` dans la reprise et les sous-titres externes | 13 | |
+| A13-12 | Mineur | `src/app/play/resume.cpp:39-45` | Windows : comparaison sans casse en ASCII seulement | 13 | |
+| A13-13 | Mineur | `tests/unit/app/resume_test.cpp` | Aucun test de la borne, des chemins non ASCII, du VFR ni de la fin sur erreur | 13 | |
 
 ## Renvois
 
@@ -249,7 +272,7 @@
 | 09 | 08 | `src/app/play/chain_setup.cpp:420-423` | Performance remplace le RIFE fusionné par un moteur entier (A09-02) | En attente (08 fini) |
 | 09 | 41 | `src/app/play/upscale_stage.cpp:244-271` | Statistiques du grade prises sur l'image débandée, ou pas du tout sous DistilDRBA | Ouvert |
 | 09 | 31 | `src/app/play/ring_stage.cpp:108-112` | Seul `SourceResized` rouvre la chaîne sur une image de taille nouvelle | Ouvert |
-| 10 | 12 | `src/app/play/session.cpp:598-616` | Au niveau `Wait`, `vblank_grid()` toujours vide : effet sur `--vsync-index` et la PLL | Ouvert |
+| 10 | 12 | `src/app/play/session.cpp:598-616` | Au niveau `Wait`, `vblank_grid()` toujours vide : effet sur `--vsync-index` et la PLL | Traité par 12 (A12-01, A12-03) |
 | 10 | 08 | `src/app/play/player_run.cpp:654` | Une erreur de `show` termine `run_chain` : message et réouverture en boucle ? | En attente (08 fini) |
 | 10 | 18 | `src/app/play/placebo_open.cpp:327` | Décodeur Vulkan Video à détruire avant l'écran | Ouvert |
 | 10 | 31 | `src/app/play/placebo_ring.cpp:218` | `ready()` vrai quand `vkGetSemaphoreCounterValue` échoue | Ouvert |
@@ -260,3 +283,14 @@
 | 11 | 24 | `src/app/play/chain_stats.cpp:184-208` | NVML relevé toutes les 500 ms même OSD caché | Ouvert |
 | 11 | 30 | `src/app/play/player_run.cpp:679` | `GpuTelemetry::sample` appelé depuis deux threads (A11-08) | Ouvert |
 | 11 | 34 | `src/app/play/host_facts.cpp:236-275` | Pic calculé dans deux unités différentes sous Windows et Linux | Ouvert |
+| 12 | 08 | `src/app/play/player_run.cpp:622-629` | GPU-05 : plancher VRR non recalculé (VRR hors sujet pour Tatoub) | En attente (08 fini) |
+| 12 | 08 | `src/app/play/player_run.cpp:420-438` | Plafond passé comme fréquence d'écran (A12-04) | En attente (08 fini) |
+| 12 | 08 | `src/app/play/session.cpp:665-672` | GPU-19 : vitesse calée même en VRR armé (VRR hors sujet pour Tatoub) | En attente (08 fini) |
+| 12 | 10 | `src/app/play/placebo_screen.cpp:461-463` | `present_us` est le retour de `swap_buffers`, pas un vsync (A12-03) | En attente (10 fini) |
+| 12 | 34 | `src/app/play/loop_wait.cpp:56` | Windows : attente « précise » à 1 ms de résolution | Ouvert |
+| 12 | 20 | `src/core/drawings.cpp:113` | `DrawingsTimeline` n'est appelé que par ses tests | Ouvert |
+| 13 | 14 | `src/media/source_loop.cpp:110-123` | `recover_position` qui échoue laisse la source inactive, lecture figée | Ouvert |
+| 13 | 14 | `src/media/source_loop.cpp:182-188` | Lecture abandonnée traitée comme la fin du fichier (origine de MED-01) | Ouvert |
+| 13 | 17 | `src/app/play/external_subtitles.cpp:92` | `path::string()` sur des noms de sous-titres | Ouvert |
+| 13 | 08 | `src/app/play/player_run.cpp:738-739` | Pistes copiées dans `Player` même pour une autre vidéo (A13-01, A13-09) | En attente (08 fini) |
+| 13 | 30 | `src/app/play/wiring.cpp:113-124` | `ThreadStages::play/pause` rendent faux sans que personne ne rejoue | Ouvert |
