@@ -16,7 +16,8 @@ Réponses de Tatoub :
 - **Épisode suivant automatique** : secondaire.
 - **Seek** : l'usage réel est le saut de ±5 s et la barre ; le pas d'image est secondaire, le VFR (MED-16) reste mineur.
 - **Statistiques** : auditées pour leur exactitude (diagnostic, mode Auto), sans plus.
-- Le VRR bugue sur son écran et n'est pas prioritaire (GPU-19 reste mineur).
+- Le VRR ne compte pas (GPU-19 revérifié, laissé mineur).
+- Après le cadrage, Tatoub ne veut plus de questions : chaque choix ouvert est couvert dans les deux sens.
 
 Aucune carte NVIDIA ni dépendance (FFmpeg, libplacebo, SDL) dans le conteneur : la suite Catch2 n'a pas pu être
 construite. `episodes.cpp` et `resume.cpp`, sans dépendance externe, ont été compilés seuls (g++ 13, C++23) avec un
@@ -44,7 +45,7 @@ petit programme de test ; les autres tests sont décrits.
 
 | ID | Statut | Note |
 |---|---|---|
-| GPU-19 | Toujours présent | `src/app/play/session.cpp:665-678` : `follow_display` cale la vitesse dès que `display_sync`, sans regarder le VRR (`config_.vrr_floor_us > 0` quand il est armé). 144 Hz, 47,95 i/s : 3 vsyncs, vitesse 1,0011. Correction : vitesse 1 quand le VRR est armé. Mineur, VRR non prioritaire. |
+| GPU-19 | Toujours présent | `src/app/play/session.cpp:665-678` : `follow_display` cale la vitesse dès que `display_sync`, sans regarder le VRR (`config_.vrr_floor_us > 0` quand il est armé). 144 Hz, 47,95 i/s : 3 vsyncs, vitesse 1,0011. Correction : vitesse 1 quand le VRR est armé. Mineur ; le VRR est hors des priorités de Tatoub. |
 | MED-10 | Toujours présent | `src/app/play/pipeline.cpp:343-346` lit `TrackInfo::duration_us`, tiré de `AVStream::duration` (`demuxer.cpp:110`) que matroskadec ne remplit pas : `audio_end_us = 0` en MKV, le gel de 1,5 s revient. Correction : estimer la fin audio par le dernier paquet audio vu, ou lire le tag `DURATION`. |
 | MED-15 | Toujours présent | `Pipeline::open` et `find_external_subtitles` (appelés par `player_run`), `sibling_episode` (`player_run.cpp:720`, `chain.cpp:339`, qui ouvre aussi chaque candidat par `readable`) tournent sur le thread de la fenêtre. S'y ajoute `GrowingFile::grew` (`player_run.cpp:713`, `episodes.cpp:157-170`) qui dort jusqu'à 3 s sur ce thread en fin de fichier écrit il y a moins de 10 s. |
 | MED-16 | Toujours présent | `src/app/play/session.cpp:108-119` et `:231-236` : la période moyenne de la source sert au pas et au repérage dans la file. Cas aggravé : A13-05. |
@@ -76,7 +77,10 @@ petit programme de test ; les autres tests sont décrits.
 
 ## Questions ouvertes
 
-- A13-09 : garder les pistes choisies d'un épisode au suivant est-il voulu ? Si oui, par langue et titre plutôt que
-  par index.
-- A13-02 : après une erreur de lecture, préfère-t-il un arrêt avec message, ou un nouvel essai automatique du fichier
-  au même endroit (comme pour un fichier qui grandit) ?
+Aucune : Tatoub ne veut plus de questions. Les deux choix possibles sont couverts ici.
+
+- A13-09 : les deux corrections conviennent. Garder les pistes d'un épisode au suivant en les retrouvant par langue et
+  titre (et non par index) sert les séries ; une autre vidéo ouverte ou glissée repart du choix par langue. C'est la
+  correction recommandée.
+- A13-02 : la session expose `ended_on_error()`. Le lecteur retente d'abord le fichier au même endroit (comme
+  `GrowingFile`) une fois, puis, s'il échoue encore, s'arrête avec un message, sans enchaîner l'épisode suivant.
