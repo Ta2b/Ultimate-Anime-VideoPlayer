@@ -8,18 +8,13 @@
 //   finish: sortie du bloc 2 agrandie ×t, flot, sigmoïde du masque, warps pleine résolution, mélange.
 // Le côté choisi (image 0 ou 2 selon tau) est lu sur le périphérique (plan 6 de pair01) : il change à chaque
 // image. Les arrondis FP16 du graphe (sorties des Resize, Mul, Add, Cast, Sigmoid) sont reproduits aux mêmes
-// endroits ; les Resize et GridSample du graphe sont en FP32.
+// endroits ; les Resize et GridSample du graphe sont en FP32. La grille des GridSample l'est aussi, depuis la
+// position en pixels : là, le fusionné suit le réseau d'origine et non le graphe FP16 livré (A03-18).
 #pragma once
 
 #include <cuda_runtime_api.h>
 
 namespace ajp::gpu::cuda {
-
-// Pas de grille d'un axe de n pixels : 2/(n-1) en FP32 (calcul de la base) et arrondi FP16 (échelle du flot).
-struct DrbaGridStep {
-  float step32 = 0.0F;
-  float step16 = 0.0F;
-};
 
 // Les entrées X_0, X_1, X_2 (leurs 0-8 images réduites et plans du temps) à partir des paires.
 struct DrbaPreParams {
@@ -55,8 +50,6 @@ struct DrbaGlueParams {
   int full_height = 0;  // pleine résolution (le plan de tau de pair01)
   int full_width = 0;
   void* x = nullptr;
-  DrbaGridStep grid_x;
-  DrbaGridStep grid_y;
 };
 
 struct DrbaFinishParams {
@@ -69,11 +62,7 @@ struct DrbaFinishParams {
   void* out = nullptr;   // 3 plans ; nullptr : variante mouvement (flow et mask)
   void* flow = nullptr;  // variante mouvement : 4 plans, le flot pleine résolution du warp final
   void* mask = nullptr;  // 1 plan : le masque après sigmoïde, poids de l'image du centre
-  DrbaGridStep grid_x;
-  DrbaGridStep grid_y;
 };
-
-DrbaGridStep drba_grid_step(int n);
 
 cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream);
 cudaError_t launch_drba_post(const DrbaPostParams& params, cudaStream_t stream);

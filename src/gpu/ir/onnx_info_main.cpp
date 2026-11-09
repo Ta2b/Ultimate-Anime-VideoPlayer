@@ -154,6 +154,9 @@ int report(const Options& options) {
   std::cout << "Après l'inférence des formes\n" << describe_interface(*graph);
 
   if (options.passes) {
+    // Comme le moteur Vulkan (net_build.cpp) : la grille des GridSample en float avant les passes.
+    if (const int grid = promote_grid_chains(*graph); grid > 0)
+      std::cout << std::format("Grille des GridSample : {} tenseurs passés en float\n", grid);
     auto stats = optimize(*graph);
     if (!stats) return refused(stats.error());
     std::cout << "Passes\n" << describe_stats(*stats);

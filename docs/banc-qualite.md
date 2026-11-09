@@ -83,6 +83,20 @@ Ce que ces chiffres disent :
   et la réduction par moyenne n'est pas la dégradation qu'il a apprise. La colonne sert à comparer deux états
   de SPAN (FP16, FP8, hauteur de travail), pas SPAN au bicubique.
 
+### DistilDRBA, grille en FP32 (C05, A03-18)
+
+Le graphe livré reconverti par `tools/rife/convert_rife_fp16.py` avec `DRBA_GRID_OPS` (la chaîne de la grille
+des dix GridSample en FP32), mêmes poids, mesuré avec `--reseau` :
+
+| réseau | fidélité dB | pire dB | pire écart | écart p99,9 | ΔE_ITP p99,9 | vérité dB | ms (processeur) |
+|---|---|---|---|---|---|---|---|
+| distil_drba_v2_lite (livré) | 57,01 | 51,98 | 20,10 | 7,33 | 10,69 | 35,72 | 189,0 |
+| le même, grille en FP32 | 77,51 | 73,96 | 1,19 | 0,42 | 0,60 | 35,76 | 180,5 |
+
+20 dB de fidélité gagnés, sans coût. La vérité ne bouge pas : sur ce mouvement de synthèse l'écart au vrai
+milieu vient du réseau, pas de son FP16. `seuils.json` garde les chiffres du fichier livré tant que le graphe
+réexporté n'est pas publié ; à ce moment, `--ecrire-seuils`.
+
 ## Hauteur de travail et modèle de SPAN
 
 `tools/bench/qualite/travail.py` mesure ce que coûte une source réduite avant SPAN, et ce que gagne le modèle

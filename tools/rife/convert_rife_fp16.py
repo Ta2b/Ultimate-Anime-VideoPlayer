@@ -7,7 +7,10 @@ lettre. Restent en fp32 :
   - tout ce qui ne dépend pas des valeurs de l'image : le calcul des coordonnées du v2 (Range,
     Cast, Reciprocal, Mul, Sub sur la forme ; Shape coupe la dépendance). En fp16, la grille
     normalisée dans [-1, 1] perd 1 à 2 pixels de précision ; vs-mlrt force ces couches en fp32 ;
-  - la chaîne Transpose(Add(grille, Mul(flot, pas))) qui mène à chaque GridSample, et GridSample ;
+  - la chaîne Transpose(Add(grille, Mul(flot, pas))) qui mène à chaque GridSample, et GridSample.
+    L'export de DistilDRBA y intercale un Concat (torch.cat([x, y]) avant permute) et un Cast
+    (grid.to(image.dtype)) : sans eux dans la remontée (DRBA_GRID_OPS), elle s'arrêtait au Concat
+    et l'addition de la grille restait en fp16, d'un pas de 0,31 pixel à 1280 de large (A03-18) ;
   - les Resize des blocs. Sans eux, TensorRT 11.3 génère pour 4.25 lite (v1 et v2) des noyaux
     fusionnés FP16 qui sortent des NaN, carrés noirs à l'écran : 32 paires sur 50 en mouvement de
     Re:Zero, alors qu'aucune activation ne dépasse 85 ni aucune accumulation de Conv 56 (pas de
@@ -33,6 +36,7 @@ from onnx import TensorProto, helper, numpy_helper, shape_inference
 
 FP16_MAX = 65504.0
 GRID_OPS = ("Transpose", "Add", "Mul")  # flot + grille, de GridSample vers l'amont
+DRBA_GRID_OPS = GRID_OPS + ("Concat", "Cast")  # la même chaîne dans l'export de DistilDRBA
 SHAPE_ONLY = ("Shape", "Size")  # leur sortie ne dépend que de la forme
 FIXED_FLOAT_INPUTS = {"Resize": {1, 2}}  # roi et scales : float32 quel que soit T
 FP32_OPS = ("GridSample", "Resize")  # voir plus haut : grille et NaN de TensorRT
@@ -48,7 +52,7 @@ def data_dependent(graph) -> set[str]:
     return tainted
 
 
-def fp32_nodes(graph, tainted: set[str]) -> set[str]:
+def fp32_nodes(graph, tainted: set[str], grid_ops: tuple[str, ...] = GRID_OPS) -> set[str]:
     """Le calcul des coordonnées, GridSample et Resize, et la chaîne qui ajoute le flot à la grille."""
     prod = {o: n for n in graph.node for o in n.output}
     keep = {n.name for n in graph.node if not any(o in tainted for o in n.output)}
@@ -59,7 +63,7 @@ def fp32_nodes(graph, tainted: set[str]) -> set[str]:
         stack = [node.input[1]]
         while stack:
             p = prod.get(stack.pop())
-            if p is None or p.name in keep or p.op_type not in GRID_OPS:
+            if p is None or p.name in keep or p.op_type not in grid_ops:
                 continue
             keep.add(p.name)
             stack.extend(p.input)
@@ -84,9 +88,11 @@ def tensor_types(model: onnx.ModelProto, shapes: dict[str, tuple[int, ...]]) -> 
     return {v.name: v.type.tensor_type.elem_type for v in inferred}
 
 
-def convert_model(model: onnx.ModelProto, shapes: dict[str, tuple[int, ...]] | None = None) -> onnx.ModelProto:
+def convert_model(model: onnx.ModelProto, shapes: dict[str, tuple[int, ...]] | None = None,
+                  grid_ops: tuple[str, ...] = GRID_OPS) -> onnx.ModelProto:
     """shapes : la taille fixe de chaque entrée pour l'inférence des types ; par défaut l'entrée
-    unique d'un RIFE, [1, 11 ou 7, 768, 1280]. Les entrées et sorties passent en fp16."""
+    unique d'un RIFE, [1, 11 ou 7, 768, 1280]. Les entrées et sorties passent en fp16.
+    grid_ops : les opérateurs de la chaîne de la grille, remontée depuis chaque GridSample."""
     g = model.graph
     if not any(n.op_type == "GridSample" for n in g.node):
         raise RuntimeError("aucun GridSample : pas un graphe RIFE")
@@ -98,7 +104,7 @@ def convert_model(model: onnx.ModelProto, shapes: dict[str, tuple[int, ...]] | N
     types = tensor_types(model, shapes)
     del g.value_info[:]
     tainted = data_dependent(g)
-    keep = fp32_nodes(g, tainted)
+    keep = fp32_nodes(g, tainted, grid_ops)
     for t in g.initializer:
         types[t.name] = t.data_type
     for i in list(g.input) + list(g.output):
