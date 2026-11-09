@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "ajp",
   "version-semver": "0.10.3",
-  "builtin-baseline": "65886d79ccce671dc24ffbf9a348836beacb7f6f",
+  "builtin-baseline": "ec48c11eae9448c8c6e7739d93e06fa2433aa95f",
   "dependencies": [
     "tomlplusplus",
     "zlib",
