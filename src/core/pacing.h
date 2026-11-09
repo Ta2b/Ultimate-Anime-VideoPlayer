@@ -30,6 +30,8 @@ inline constexpr int kMaxVsyncsPerFrame = 16;
 // d'un écran fixe à refresh_hz, à kMaxSpeedChange près ; 1 sans calage possible (sortie plus
 // rapide que l'écran, rapport trop loin d'un entier, valeur inconnue).
 double vsync_speed(double refresh_hz, double output_fps);
+// La même, ou rien quand aucun calage n'est possible : distingue « calé à la vitesse 1 » de « pas calé ».
+std::optional<double> vsync_lock(double refresh_hz, double output_fps);
 
 // Le facteur qui cale la cible : une petite fraction à pacing::kMaxSpeedChange près, sinon la fraction
 // exacte, ou rien (cible ≤ 1).

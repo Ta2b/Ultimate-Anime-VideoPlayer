@@ -97,14 +97,24 @@ struct OutputSize {
   friend bool operator==(const OutputSize&, const OutputSize&) = default;
 };
 
+// Une acquisition plus longue que cela a attendu l'écran (une image rendue par le compositeur ou le pilote
+// à un vsync) ; plus courte, elle a trouvé une image libre.
+inline constexpr std::int64_t kAcquireBlockedUs = 1'000;
+
 // Ce qu'une présentation a coûté, mesuré par l'écran.
 struct ScreenTiming {
   std::int64_t acquire_us = 0;  // attente d'une image de la swapchain (start_frame)
   std::int64_t render_us = 0;   // composition (grade, sous-titres, OSD) soumise, l'acquisition exclue
-  std::int64_t present_us = 0;  // instant hôte où l'image est partie à l'écran
-  // Temps passé à attendre une place dans la file de l'écran : au-delà d'une fraction de
-  // période, la file est pleine et l'image paraîtra après celles qui y sont déjà.
+  // Instant hôte où pl_swapchain_swap_buffers a rendu la main : la présentation est soumise. Ce n'est pas un
+  // vsync, ni l'heure d'affichage (A10-14) : celle-ci vient du retour de présentation (visible_us).
+  std::int64_t present_us = 0;
+  // Temps passé dans swap_buffers : l'attente des commandes des images en vol (libplacebo en garde
+  // swapchain_depth), pas celle de l'écran. L'attente de la file FIFO tombe dans l'acquisition (acquire_us).
   std::int64_t queue_wait_us = 0;
+  // Instant hôte où l'acquisition a rendu la main après avoir attendu la libération d'une image
+  // (kAcquireBlockedUs au moins) : en FIFO, un vsync vient de passer. 0 : l'acquisition n'a pas attendu,
+  // cette présentation ne dit rien de la phase de l'écran (A12-03).
+  std::int64_t vsync_us = 0;
   std::int64_t display_gpu_us = 0;  // temps GPU des passes d'affichage (libplacebo, avec son retard)
   bool presented = true;            // false : fenêtre cachée ou réduite, rien de présenté
   // Retour de présentation (6.3, niveaux Timing et Wait ; tout à 0 au niveau Open) : l'identifiant de

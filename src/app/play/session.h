@@ -29,6 +29,7 @@
 #include "app/play/subtitle_queue.h"
 #include "core/clock.h"
 #include "core/messages.h"
+#include "core/phase_trim.h"
 #include "core/ring.h"
 #include "core/vsync_index.h"
 #include "subs/subtitle_frame.h"
@@ -122,7 +123,8 @@ struct PresentRecord {
   bool fresh = false;
   std::int64_t acquire_us = 0;     // attente d'une image de la swapchain
   std::int64_t render_us = 0;      // composition soumise, l'acquisition exclue
-  std::int64_t queue_wait_us = 0;  // attente d'une place dans la file de l'écran
+  std::int64_t queue_wait_us = 0;  // temps passé dans swap_buffers (ScreenTiming::queue_wait_us)
+  std::int64_t vsync_us = 0;       // un vsync vu par l'acquisition (ScreenTiming::vsync_us) ; 0 : aucun
   std::int64_t interval_us = 0;    // depuis l'image neuve précédente ; 0 pour un redessin
   std::int64_t dropped = 0;        // total des images sautées
   // Ce qui a demandé la présentation : « i » image neuve, « s » sous-titres, « o » OSD, « u »
@@ -307,10 +309,17 @@ class Session {
   void pace(const RingFrame& frame, std::int64_t visible_us);
   // Synchro sur l'écran : la vitesse qui cale la sortie, demandée quand elle change.
   void follow_display();
+  // Le remplissage de la file, lissé : une présentation qui a attendu plus d'un quart de période compte
+  // pleine.
+  void note_queue_wait(std::int64_t waited_us, std::int64_t period);
   std::int64_t display_period() const;  // la période de l'écran, connue, mesurée ou supposée
   std::int64_t display_delay_us(std::int64_t period) const;
 
   double speed_ = 1.0;
+  // Calage de phase de la vitesse calée (A12-06) : nourri par la position des images neuves sur la grille
+  // mesurée des vblanks, seulement quand la vitesse est calée sur l'écran (speed_locked_).
+  core::PhaseTrim phase_trim_;
+  bool speed_locked_ = false;
   double queue_fill_ = 0.0;         // part récente des présentations qui ont attendu une place en file
   std::int64_t presented_seq_ = 0;  // présentations réussies (PresentRecord::seq)
 };

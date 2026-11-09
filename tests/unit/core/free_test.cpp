@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <random>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -472,4 +473,45 @@ TEST_CASE("free grid vsync : la source tombée près d'un vsync s'y montre telle
     }
   }
   CHECK(sources >= 12);  // une source sur deux au moins tombe à moins d'une demi-période d'un vsync
+}
+
+TEST_CASE("A12-03 : des instants quelconques ne font jamais une phase", "[free][vsync]") {
+  // Des présentations à heure arbitraire (niveau Open, écart de plusieurs vsyncs : l'heure suit la
+  // soumission, pas l'écran) : la phase reste inconnue, sur dix minutes et pour plusieurs tirages.
+  for (const unsigned seed : {1U, 2U, 3U, 4U, 5U}) {
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<std::int64_t> anywhere(0, kVsync - 1);
+    VsyncPhase phase;
+    phase.set_period(kVsync);
+    int known = 0;
+    for (int k = 0; k < 14'400; ++k) {
+      phase.note(k * 7 * kVsync + anywhere(rng));
+      if (phase.known()) ++known;
+    }
+    INFO("tirage " << seed);
+    CHECK(known == 0);
+    CHECK(phase.nearest(123'456) == 123'456);  // inconnue : l'instant demandé, sans calage
+  }
+}
+
+TEST_CASE("A12-03 : la phase se connaît après quelques vsyncs qui s'accordent, pas avant", "[free][vsync]") {
+  VsyncPhase phase;
+  phase.set_period(kVsync);
+  const std::int64_t offset = 4'321;
+  for (int k = 0; k < VsyncPhase::kMinNotes - 1; ++k) {
+    phase.note(offset + k * 5 * kVsync);
+    CHECK_FALSE(phase.known());
+  }
+  phase.note(offset + 40 * kVsync);
+  REQUIRE(phase.known());
+  CHECK(std::abs(phase.nearest(100 * kVsync + offset + 900) - (100 * kVsync + offset)) <= 1);
+  // Autour de zéro (la phase passe la couture du cercle) : pas de saut d'une demi-période.
+  VsyncPhase seam;
+  seam.set_period(kVsync);
+  for (int k = 0; k < 50; ++k) seam.note(k * kVsync + (k % 2 == 0 ? 150 : -150) + 10 * kVsync);
+  REQUIRE(seam.known());
+  CHECK(std::abs(seam.nearest(200 * kVsync + 400) - 200 * kVsync) <= 160);
+  // Une autre période : tout repart.
+  seam.set_period(kVsync + 100);
+  CHECK_FALSE(seam.known());
 }

@@ -583,7 +583,11 @@ std::optional<Factor> parse_factor(std::string_view text) {
 
 std::string factor_text(Factor factor) {
   if (factor.den == 2) return std::format("×{}{}5", factor.num / 2, i18n::decimal_point());
-  return std::format("×{}", factor.num);
+  if (factor.den <= 1 || factor.num % factor.den == 0)
+    return std::format("×{}", factor.num / std::max(factor.den, 1));
+  // Un facteur de l'Auto (palier fin ou fraction exacte d'un écran fixe) : deux décimales, « ×3,44 ».
+  const long centi = std::lround(100.0 * factor.num / factor.den);
+  return std::format("×{}{}{:02}", centi / 100, i18n::decimal_point(), centi % 100);
 }
 
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,

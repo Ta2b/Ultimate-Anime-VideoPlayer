@@ -39,9 +39,15 @@ TEST_CASE("Mode Rapide : la grille des vblanks mesurée prime sur la phase estim
   LiveSettings live;
   live.set_free(true, 6061, 0);
   live.set_vsync(6061, 3'000);  // 165 Hz annoncés, 3 ms entre présentation et affichage
+  // Un seul vsync vu ne fait pas une phase (A12-03) ; il en faut plusieurs qui s'accordent.
   live.vsync_note(1'000'000);
+  CHECK(live.vsync_grid(1'000'500).period_us == 0);
+  for (int k = 1; k < 12; ++k) live.vsync_note(1'000'000 + k * 6061);
   const LiveSettings::VsyncGrid estimated = live.vsync_grid(1'000'500);
   CHECK(estimated.period_us == 6061);
+  // Une présentation sans vsync vu (0) ne dit rien et ne défait rien.
+  live.vsync_note(0);
+  CHECK(live.vsync_grid(1'000'500).period_us == 6061);
   // 164,78 Hz mesurés, vblanks affichés à 2 000 000 + k × 6068,7 µs.
   const core::VblankGrid measured{.phase_us = 2'000'000.0, .period_us = 1e6 / 164.78};
   live.vsync_note(1'006'061, measured);

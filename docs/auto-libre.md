@@ -203,9 +203,11 @@ mais c'est utilisable partout. VRR armé : le comportement décrit plus haut ne 
   image est quantifiée. Il n'y a pas de rattachement à la source droite hors grille. L'écart minimal vaut la
   période de l'écran (ou du plafond `auto_cap`, s'il est plus lent) ; une image tardive est abandonnée avant
   calcul comme avant, la grille repart au vsync d'après.
-- **Phase** (`core/vsync_phase.*`) : la position des présentations neuves modulo la période, lissée en
-  cercle (8 % par présentation), recalée à chaque présentation : elle suit l'écart entre l'horloge de
-  contenu (audio) et celle de l'écran sans accumuler. L'origine de la grille est le vsync le plus proche
+- **Phase** (`core/vsync_phase.*`) : la position, modulo la période, des vsyncs vus, lissée en cercle (8 %
+  par mesure). Un vsync n'est « vu » que quand l'acquisition d'une image de la swapchain a attendu l'écran
+  (`ScreenTiming::vsync_us`) : l'heure où la présentation est soumise suit l'heure choisie par la boucle et
+  ne dit rien de l'écran (A12-03). La phase n'est connue qu'après huit mesures qui s'accordent ; sans elle,
+  et sans grille mesurée, la grille n'est pas calée. L'origine de la grille est le vsync le plus proche
   plus le délai d'affichage de la sélection (`Session::visible_delay_us`) plus une demi-période : l'image
   choisie une demi-période avant son pts s'affiche alors pile au vsync suivant, au milieu de la marge de la
   boucle (pas de bascule d'un vsync à l'autre à cause de la gigue).
@@ -245,3 +247,25 @@ fixe).
   en alternance (cadence moyenne exacte mais rythme inégal) ; c'est le prix du vsync, un VRR n'a pas ce défaut.
 - Un compositeur qui ne présente pas à chaque vsync (fenêtre non plein écran, composition en tampon) décale la
   phase mesurée : le mode reste valide mais l'image peut changer de vsync de temps en temps.
+
+## 6. Mode Stable à fréquence fixe : les paliers calés
+
+Sans VRR, le Stable ne prend que les facteurs où chaque image tient un nombre entier k de rafraîchissements :
+`écran / (k × cadence source)` (`core::auto_limits`). Quand ce facteur n'est pas un demi-palier, il est donné
+en fraction exacte (`core::lock_factor`, comme le Rapide à pas constant) : 11011/3200 à 165 Hz pour 23,976 i/s,
+soit 82,5 i/s, une image tous les deux rafraîchissements. Les facteurs sous ×1,5 sont laissés.
+
+| Écran | 23,976 i/s | 29,97 i/s |
+|---|---|---|
+| 60 Hz | ×1, ×2,5 | ×1, ×2 |
+| 120 Hz | ×1, ×1,67, ×2,5, ×5 | ×1, ×2, ×4 |
+| 144 Hz | ×1, ×1,5, ×2, ×3, ×6 | ×1, ×1,60, ×2,40, ×4,80 |
+| 165 Hz | ×1, ×1,72, ×2,29, ×3,44, ×6,88 | ×1, ×1,84, ×2,75, ×5,5 |
+
+Le niveau choisi borne toujours (×4 : jusqu'à ×4,5). Le plafond `auto_cap` borne la cadence de sortie mais
+ne déplace pas le calage, qui se fait sur l'écran : à 165 Hz plafonné à 120 i/s, restent ×1,72, ×2,29 et
+×3,44. Il n'y a plus de plafond sur batterie : le plafond est le maximum de l'écran.
+
+La vitesse de lecture cale ensuite la fréquence (`core/pacing.h`, 0,125 % au plus) et la phase
+(`core/phase_trim.h`, 0,01 % au plus) : l'échéance de chaque image neuve est ramenée sur un vblank de la
+grille mesurée, ce qui rattrape l'erreur de mesure de la fréquence de l'écran.

@@ -410,6 +410,10 @@ std::optional<RingFrame> Session::pick(const ClockSnapshot& now, std::int64_t ho
                      vsync_picker_.pick(grid->index_of(static_cast<double>(host_of(frame))))) <= next;
         },
         late_, ready);
+    // La position de l'image neuve sur la grille mesurée règle la vitesse calée (core/phase_trim.h) ; la
+    // nouvelle vitesse part au tour suivant (follow_display).
+    if (speed_locked_ && picked && picked->pts_us != kNoPts)
+      phase_trim_.note(grid->index_of(static_cast<double>(host_of(*picked))), host_now);
   } else {
     picked = queue_.pick(now.media_at(host_now), lead_us, late_, ready);
   }
@@ -546,10 +550,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   std::optional<PresentRecord> record;
   if (timing->presented) {
     const std::int64_t period = display_period();
-    if (period > 0) {
-      const double waited = timing->queue_wait_us > period / 4 ? 1.0 : 0.0;
-      queue_fill_ += kQueueFillSmoothing * (waited - queue_fill_);
-    }
+    note_queue_wait(timing->queue_wait_us, period);
     const std::int64_t previous = stats_.last_new_present_us;
     stats_.presented(timing->render_us, timing->present_us, fresh);
     if (fresh && current_) pace(*current_, host_now + display_delay_us(period));
@@ -560,6 +561,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
                            .acquire_us = timing->acquire_us,
                            .render_us = timing->render_us,
                            .queue_wait_us = timing->queue_wait_us,
+                           .vsync_us = timing->vsync_us,
                            .interval_us = fresh && previous != 0 ? timing->present_us - previous : 0,
                            .dropped = stats_.dropped,
                            .why = std::move(why),
@@ -644,6 +646,12 @@ std::int64_t Session::display_delay_us(std::int64_t period) const {
   return stats_.render.median() + period / 2 + compositor;
 }
 
+void Session::note_queue_wait(std::int64_t waited_us, std::int64_t period) {
+  if (period <= 0) return;
+  const double waited = waited_us > period / 4 ? 1.0 : 0.0;
+  queue_fill_ += kQueueFillSmoothing * (waited - queue_fill_);
+}
+
 void Session::set_display(std::int64_t period_us, double hz) {
   // La fréquence mesurée par le retour de présentation (6.8) : 164,78 Hz et non les 165 annoncés, l'écart
   // de 0,13 % dépassant la borne de la synchro (pacing.h). Même mode à 2 % près ; à 0,002 Hz près, la
@@ -657,6 +665,9 @@ void Session::set_display(std::int64_t period_us, double hz) {
     }
   }
   if (period_us == config_.display_period_us && hz == config_.display_hz) return;
+  // Un autre mode ou un autre écran (pas le même à la mesure près) : la phase repart.
+  if (config_.display_hz <= 0.0 || std::abs(hz - config_.display_hz) > config_.display_hz * 0.001)
+    phase_trim_.reset();
   config_.display_period_us = period_us;
   config_.display_hz = hz;
   follow_display();
@@ -664,12 +675,18 @@ void Session::set_display(std::int64_t period_us, double hz) {
 
 void Session::follow_display() {
   double speed = 1.0;
+  std::optional<double> lock;
   if (config_.display_sync && config_.extra != nullptr) {
     const double hz = config_.display_hz > 0.0        ? config_.display_hz
                       : config_.display_period_us > 0 ? 1e6 / static_cast<double>(config_.display_period_us)
                                                       : 0.0;
-    speed = core::vsync_speed(hz, config_.extra->output_fps());
+    lock = core::vsync_lock(hz, config_.extra->output_fps());
   }
+  // Calé sur la fréquence : la phase rattrape ce que la mesure de la fréquence laisse (A12-06). Sans
+  // calage, la correction de phase repart de zéro.
+  speed_locked_ = lock.has_value();
+  if (lock) speed = *lock + phase_trim_.trim();
+  if (!lock) phase_trim_.reset();
   if (speed == speed_) return;
   if (stages_.set_speed(speed)) {  // boîte audio pleine : redemandé au tour suivant
     speed_ = speed;

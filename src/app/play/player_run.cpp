@@ -92,6 +92,15 @@ constexpr std::int64_t kHdrPollUs = 2'000'000;
 constexpr std::int64_t kResizeWindowUs = 60'000'000;
 constexpr std::size_t kResizesRefused = 4;
 
+// Pourquoi le mode Rapide (core/free_grid.h) ne peut pas tourner : il lui faut un moteur qui calcule à un
+// instant libre et la fréquence de l'écran (ou un VRR armé). Vide : il le peut ; sinon l'Auto Stable le
+// remplace.
+std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known) {
+  if (free_instants_limit(engine) == 0)
+    return i18n::tr_format("{} cannot compute at a free instant", label(engine));
+  return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -410,30 +419,28 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     }
     const bool free_wanted = free_requested(chain.running, free_fallback.active(host_now_us()));
     const bool on = chain.running.rife_auto && chain.opened.rife_loaded && chain.running.rife_factor >= 2;
-    const double limit_hz =
-        core::auto_limit_hz(known_hz, power_auto_cap(chain.running.auto_cap, on_battery()));
-    // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
-    std::string why;
-    if (on && free_wanted) {
-      if (free_instants_limit(chain.running.motion_engine) == 0)
-        why = i18n::tr_format("{} cannot compute at a free instant", label(chain.running.motion_engine));
-      else if (limit_hz <= 0.0 || (!vrr_armed && known_period_us <= 0))
-        why = i18n::tr("display refresh rate unknown");
-    }
+    // Le plafond choisi borne la cadence ; le calage se fait toujours sur l'écran (A12-04), et jamais sur
+    // un plafond de batterie (décision 11, A31-10).
+    const double cap_hz = static_cast<double>(chain.running.auto_cap);
+    const double limit_hz = core::auto_limit_hz(known_hz, chain.running.auto_cap);
+    const std::string why = on && free_wanted ? free_refusal(chain.running.motion_engine, limit_hz > 0.0,
+                                                             vrr_armed || known_period_us > 0)
+                                              : std::string();
     const bool free = on && free_wanted && why.empty();
     if (why != free_note) {
       free_note = why;
       // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
       if (!why.empty()) log->info("Mode Rapide indisponible ({}) : mode Stable", why);
     }
-    chain.live.set_auto(on && !free, core::auto_limits(limit_hz, fps_of(video.frame_rate), vrr_armed,
-                                                       chain.running.rife_factor));
+    chain.live.set_auto(on && !free, core::auto_limits(known_hz, fps_of(video.frame_rate), vrr_armed,
+                                                       chain.running.rife_factor, cap_hz));
     // Écart minimal : la période de l'écran ou du plafond, à 1 % près ; à fréquence fixe, sur les vsyncs.
     const std::int64_t refresh_us = known_period_us;
     const bool vsync = free && !vrr_armed;
     chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * 0.99)) : 0,
                         host_now_us());
-    chain.live.set_steady(free && p.options.fast_steady, {.vrr = vrr_armed, .hz = limit_hz},
+    chain.live.set_steady(free && p.options.fast_steady,
+                          {.vrr = vrr_armed, .hz = vrr_armed ? limit_hz : known_hz, .cap_hz = cap_hz},
                           fps_of(video.frame_rate));
     chain.live.set_vsync(vsync ? refresh_us : 0, session.visible_delay_us());
   };
@@ -654,8 +661,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       failure = std::move(record.error());
       break;
     }
+    // La phase des vsyncs ne se nourrit que d'un vsync vu (acquisition qui a attendu l'écran), jamais de
+    // l'heure de la présentation, que la boucle a elle-même choisie (A12-03).
     if (*record && (*record)->fresh)
-      chain.live.vsync_note((*record)->host_us, out.vblank_grid(), (*record)->display_gpu_us);
+      chain.live.vsync_note((*record)->vsync_us, out.vblank_grid(), (*record)->display_gpu_us);
     if (*record && stats.is_open()) write_record(stats, **record);
     // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme. En
     // lecture, la boucle dort jusqu'à l'échéance de l'image suivante (Session::idle_wait_us) ; en pause,

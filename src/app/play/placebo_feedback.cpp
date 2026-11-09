@@ -351,7 +351,12 @@ void PresentFeedback::read_wayland() {
 void PresentFeedback::accept(std::uint64_t id, std::int64_t visible_us, bool dated) {
   const auto sample = ledger_.report(id, visible_us);
   if (!sample) return;
-  if (dated) clock_.observe(sample->visible_us, sample->id, sample->target_us);
+  if (dated) {
+    // La période annoncée (swapchain ou compositeur) numérote les vblanks : sans elle, des présentations
+    // à l'image neuve feraient apprendre la cadence du contenu (A12-01).
+    clock_.set_nominal_period(static_cast<double>(refresh_duration_) / 1000.0);
+    clock_.observe(sample->visible_us, sample->id, sample->target_us);
+  }
   read_ = FeedbackRead{.id = sample->id, .target_us = sample->target_us, .visible_us = sample->visible_us};
   if (const auto grid = clock_.grid(); grid && dated)
     read_.vsync_k = std::llround(grid->index_of(static_cast<double>(sample->visible_us)));

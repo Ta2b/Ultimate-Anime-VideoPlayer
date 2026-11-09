@@ -324,6 +324,27 @@ std::expected<void, Refusal> PlaceboScreen::Impl::draw_overlays(const pl_frame& 
   return {};
 }
 
+namespace {
+
+// L'acquisition (de asked à acquired) a attendu l'écran : en FIFO, une image vient d'être rendue à un vsync,
+// son retour le date (A12-03). Sinon 0 : cette présentation ne dit rien de la phase de l'écran.
+std::int64_t blocked_vsync(std::int64_t asked, std::int64_t acquired) {
+  return acquired - asked >= kAcquireBlockedUs ? acquired : 0;
+}
+
+// Le retour de présentation relu avant celle-ci, et son identifiant.
+void note_feedback(ScreenTiming& timing, const PresentFeedback& feedback) {
+  const FeedbackRead& read = feedback.last_read();
+  timing.present_id = feedback.last_id();
+  timing.level = feedback.level();
+  timing.feedback_id = read.id;
+  timing.target_us = read.target_us;
+  timing.visible_us = read.visible_us;
+  timing.vsync_k = read.vsync_k;
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
@@ -462,23 +483,16 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
   }
   const std::int64_t submitted = host_now_us();
-  pl_swapchain_swap_buffers(s.swapchain);  // FIFO : attend une place en file quand elle est pleine
+  pl_swapchain_swap_buffers(s.swapchain);  // attend les commandes des images en vol, pas l'écran (A10-14)
   const std::int64_t presented = host_now_us();
   ScreenTiming timing{.acquire_us = acquired - start,
                       .render_us = submitted - acquired,
                       .present_us = presented,
                       .queue_wait_us = presented - submitted,
+                      .vsync_us = blocked_vsync(start, acquired),
                       .display_gpu_us = static_cast<std::int64_t>(s.display_frame_ns / 1000),
                       .presented = true};
-  if (s.feedback) {
-    const FeedbackRead& read = s.feedback->last_read();
-    timing.present_id = s.feedback->last_id();
-    timing.level = s.feedback->level();
-    timing.feedback_id = read.id;
-    timing.target_us = read.target_us;
-    timing.visible_us = read.visible_us;
-    timing.vsync_k = read.vsync_k;
-  }
+  if (s.feedback) note_feedback(timing, *s.feedback);
   return timing;
 }
 

@@ -34,6 +34,19 @@ struct FreeInfo {
   std::uint32_t lost = 0;             // images perdues depuis le début
 };
 
+// La règle du repli, commune au Rapide et au Rapide à pas constant (A12-08) : des pertes d'au moins
+// per_mille des images produites sur la fenêtre, au moins min_lost, réparties sur min_buckets tranches
+// (des pertes durables, pas un à-coup isolé).
+struct FallbackRule {
+  int min_lost = 10;
+  int per_mille = 50;  // 5 %
+  int min_buckets = 4;
+};
+constexpr bool fallback_due(const FallbackRule& rule, int lost, int produced, int buckets_with_loss) {
+  return lost >= rule.min_lost && produced > 0 && lost * 1000 >= produced * rule.per_mille &&
+         buckets_with_loss >= rule.min_buckets;
+}
+
 class FreeRate {
  public:
   static constexpr double kMargin = 1.10;
