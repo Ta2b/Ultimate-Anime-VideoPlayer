@@ -213,6 +213,7 @@ class Session {
   void on_frame(const RingFrame& frame);
   void on_subtitles(subs::SubtitleFrame&& frame);
   void on_refusal(const StageRefusal& refusal);
+  void on_stream_ended(const StreamEnded& end);
   void request_subtitles(const RingFrame& frame);
   void retire(const RingFrame& frame);
   void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
@@ -237,6 +238,7 @@ class Session {
   bool stream_ended_ = false;
   bool finished_ = false;
   std::optional<Refusal> failure_;
+  std::optional<Refusal> read_lost_;  // lecture abandonnée par la source dans l'époque courante (A13-02)
   bool resized_ = false;
   bool quit_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image

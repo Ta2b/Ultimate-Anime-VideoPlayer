@@ -63,9 +63,7 @@ void Session::begin(std::int64_t /*host_now*/) {
 void Session::handle(MainInbox::Message&& message) {
   std::visit(Overloaded{[this](RingFrame& frame) { on_frame(frame); },
                         [this](subs::SubtitleFrame& frame) { on_subtitles(std::move(frame)); },
-                        [this](const StreamEnded& end) {
-                          if (end.epoch == epoch_) stream_ended_ = true;
-                        },
+                        [this](const StreamEnded& end) { on_stream_ended(end); },
                         [this](const StageRefusal& refusal) { on_refusal(refusal); }},
              message);
 }
@@ -195,6 +193,7 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   stages_.pause();
   screen_.new_scene();
   ++epoch_;
+  read_lost_.reset();  // un seek relit le fichier (la source repart, media/source.h)
   // Le Seek part même si une boîte a refusé son Flush : la source qui a reçu le sien attend ce
   // Seek pour reprendre (media/source.h). La diffusion se rejoue ensuite, à une époque neuve,
   // tant qu'une boîte a refusé quelque chose.
@@ -274,6 +273,14 @@ void Session::on_subtitles(subs::SubtitleFrame&& frame) {
   subtitles_.push(std::move(frame), current_ ? current_->pts_us : kNoPts);
 }
 
+void Session::on_stream_ended(const StreamEnded& end) {
+  if (end.epoch != epoch_) return;
+  stream_ended_ = true;
+  // La source a abandonné la lecture (disque débranché, partage perdu) : sa fin de flux n'est pas
+  // la fin de la vidéo. Un échec, qui se dit et n'enchaîne pas l'épisode suivant (A13-02).
+  if (read_lost_ && !failure_) failure_ = std::move(read_lost_);
+}
+
 void Session::on_refusal(const StageRefusal& refusal) {
   refusals_.push_back(
       std::format("{} : {} {}", refusal.stage, name(refusal.refusal.code), refusal.refusal.detail));
@@ -285,6 +292,11 @@ void Session::on_refusal(const StageRefusal& refusal) {
   if (refusal.fatal || resized_) finished_ = true;
   if (!refusal.fatal && refusal.refusal.recoverable && refusal.refusal.code != RefusalCode::FieldOutOfRange)
     notice_ = refusal.refusal;
+  // La source rend une fin de flux après ce refus (media/source.h) : retenu pour on_stream_ended.
+  if (!refusal.fatal && refusal.refusal.recoverable && refusal.stage == "source" &&
+      refusal.refusal.code == RefusalCode::DecodeFailed) {
+    read_lost_ = Refusal{refusal.refusal.code, std::format("{} : {}", refusal.stage, refusal.refusal.detail)};
+  }
 }
 
 void Session::request_subtitles(const RingFrame& frame) {

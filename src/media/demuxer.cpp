@@ -253,7 +253,12 @@ void Demuxer::fail_reads(ReadFault fault) {
 int Demuxer::State::read_frame(AVPacket* packet) {
   if (fault.count > 0 && packets_read >= fault.after_packets) {
     --fault.count;
-    return fault.error;
+    if (!fault.sticky_eof || format->pb == nullptr) return fault.error;
+    // Comme mov_read_packet après une erreur d'E/S : l'erreur reste dans l'AVIOContext et la
+    // lecture rend une fin de fichier.
+    format->pb->error = fault.error;
+    format->pb->eof_reached = 1;
+    return AVERROR_EOF;
   }
   const int err = av_read_frame(format.get(), packet);
   if (err >= 0) ++packets_read;
@@ -280,7 +285,12 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() {
   int io_errors = 0;
   int data_errors = 0;
   while (true) {
-    if (const int err = read_frame(raw); err < 0) {
+    if (int err = read_frame(raw); err < 0) {
+      // Une erreur d'E/S pose aussi eof_reached : beaucoup de démultiplexeurs (MP4 par avio_feof,
+      // AVI, MPEG-TS) rendent alors AVERROR_EOF. L'erreur collée à l'AVIOContext dit la vraie
+      // cause, qui passe par les nouveaux essais au lieu de finir l'épisode en silence (A14-01).
+      if (err == AVERROR_EOF && ctx.pb != nullptr && ctx.pb->error < 0 && ctx.pb->error != AVERROR_EOF)
+        err = ctx.pb->error;
       if (err == AVERROR_EOF) return std::nullopt;
       if (err == AVERROR_EXIT || interrupted.load())
         return refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet interrompue", err);
