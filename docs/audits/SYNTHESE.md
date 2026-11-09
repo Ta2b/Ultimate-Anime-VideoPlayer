@@ -675,7 +675,7 @@
 | A09-22 | Mineur | `src/app/play/rife_plan.cpp:10-14` | `kPlanCutFloor` comparé au score brut ; contradiction sous une zone utile de 0,75 | 09 | |
 | A09-23 | Mineur | `src/app/play/rife_plan.h:39-42` | `kPlanCutFloor` tenu sur une seule série | 09 | |
 | A09-24 | Mineur | `src/app/play/drba_model.h:17-21` | Qualité : demi-flot de DistilDRBA dès 1 440 lignes sans mesure ; seuil sur la hauteur d'estimation | 09 | |
-| A02-14 | Mineur | `src/gpu/cuda/backend/span_derive.cpp:27-35` | Paquet `.span8` et reçu écrits sans fsync : après une coupure, refus ordinaire et Performance bloqué en FP16 (QUA-05) | 02 | |
+| A02-14 | Mineur | `src/app/play/span_derive.cpp:27-35` | Paquet `.span8` et reçu écrits sans fsync : après une coupure, refus ordinaire et Performance bloqué en FP16 (QUA-05) | 02 | |
 
 ## Renvois
 
@@ -907,7 +907,7 @@
 | 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | En attente (17 fini) |
 | 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | Traité par 28 (complément) |
 | 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | Traité par 07 (complément) |
-| 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | Traité par 02 (complément) |
+| 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | Réfuté par 02 (complément) : le reçu porte le SHA du paquet |
 | 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | En attente (26 fini) |
 | 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | En attente (15 fini) |
 | 37 | 02 | `src/gpu/cuda/backend/span_fp8_kernels.cuh:241` | Tag `Sm89` de CUTLASS compilé aussi pour sm_120 | Traité par 02 (complément) |
