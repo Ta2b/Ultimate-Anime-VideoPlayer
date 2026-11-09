@@ -202,12 +202,18 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
 
 // Raccourcis Ctrl+G, Ctrl+I, Ctrl+0 : la chaîne voulue, en direct si elle le permet.
 void switch_chain(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
-  const Change change = change_between(to.running, wanted, to.rife_loaded);
+  const Change change = change_between(to.running, wanted, to.opened.rife_loaded, &to.opened);
   if (change.cost == ChangeCost::Reopen) {
     to.reopen = wanted;
   } else if (change.cost == ChangeCost::Live) {
     apply_live(to, wanted, now_us);
   }
+}
+
+// « Appliquer » du panneau, ou des réglages directs qui ne tiennent pas dans la chaîne ouverte : le panneau
+// ne livre en direct que ce qui y tient, ce garde-fou rouvre si un autre chemin en sortait (A08-03).
+bool must_reopen(const Chain& to, const ApplySettings& apply) {
+  return apply.reopen || !fits(to.opened, apply.settings);
 }
 
 // Onglet Moteurs : la chaîne se ferme pour changer de moteur ou rouvrir l'écran des moteurs, puis
@@ -387,7 +393,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
                 apply.settings.rife_factor_den != to.running.rife_factor_den)
               to.kept_rife.reset();
             const PlaySettings intended = with_kept_choices(to, apply.settings);
-            if (apply.reopen) {
+            if (must_reopen(to, apply)) {
               log_channel("app")->info("paramètres : réouverture de la chaîne");
               to.reopen = intended;
             } else {

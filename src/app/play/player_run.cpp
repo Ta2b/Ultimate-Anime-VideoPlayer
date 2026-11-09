@@ -173,8 +173,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
             p.options.ring_rgb10a2 && c.backend && c.backend->capabilities().ring_rgb10a2
                 ? RingFormat::Rgb10a2Unorm
                 : RingFormat::Rgba16Unorm;
-        auto slots = out.create_ring(sized.width * factor, sized.height * factor,
-                                     ring_depth(settings, rife_loaded ? factor_of(settings) : Factor{}),
+        auto slots = out.create_ring(sized.width * factor, sized.height * factor, c.opened.shape.ring,
                                      c.backend_name == "tensorrt", ring_format);
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
@@ -273,6 +272,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = c.drba_found,
       .rife_loaded = rife_loaded,
+      .opened = c.opened,
       .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
       .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
       .rife_folder = c.model_places.front().string(),
@@ -304,7 +304,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .pipeline = **pipeline,
               .live = *live,
               .running = settings,
-              .rife_loaded = rife_loaded,
+              .opened = c.opened,
               .auto_peak = auto_peak,
               .file = p.options.file,
               .display = p.display,
@@ -409,7 +409,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       free_fallback.clear();
     }
     const bool free_wanted = free_requested(chain.running, free_fallback.active(host_now_us()));
-    const bool on = chain.running.rife_auto && chain.rife_loaded && chain.running.rife_factor >= 2;
+    const bool on = chain.running.rife_auto && chain.opened.rife_loaded && chain.running.rife_factor >= 2;
     const double limit_hz =
         core::auto_limit_hz(known_hz, power_auto_cap(chain.running.auto_cap, on_battery()));
     // mode Rapide (core/free_grid.h) : écran VRR armé, RIFE, fréquence de l'écran connue ; sinon Auto.
