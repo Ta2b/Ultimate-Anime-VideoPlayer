@@ -32,10 +32,11 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
 - **Interpolation** par RIFE 4.22 lite, ou 4.25 aux niveaux Qualité et Ultra (DistilDRBA au choix). Le mode Auto vise la fréquence de votre écran et
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
-- **HDR anime** : l'anime SDR passe en HDR10 avec un grade guidé plan par plan. Les surfaces restent à leur place,
-  seuls les éclats (ciels, lumières, effets) montent. Sur un écran SDR, le même grade s'applique en SDR : les
-  surfaces gardent leur niveau jusqu'à 90 % du blanc, le blanc sort à 95 % et les éclats prennent les derniers
-  5 %.
+- **HDR anime** : l'anime SDR passe en HDR10 avec un grade guidé plan par plan. Le rendu est lumineux : une
+  surface blanche sort à la moitié du pic de l'écran (500 nits sur un écran de 1 000 nits), et les éclats
+  (lumières, effets) montent au-dessus, jusqu'au pic. Le noir pur reste noir, les scènes de nuit gardent leurs
+  détails. Sur un écran SDR, le même grade s'applique en SDR : les surfaces gardent leur niveau jusqu'à 90 % du
+  blanc, le blanc sort à 95 % et les éclats prennent les derniers 5 %.
 - **Netteté** réglable après l'agrandissement, sans halo.
 - **Export** : l'agrandissement et l'interpolation rejoués image par image vers un fichier MKV, MP4 ou MOV
   (sans le grade HDR, l'export reste en SDR).

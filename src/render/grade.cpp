@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "render/output_tune.h"
 #include "render/shaders.h"
 
 namespace ajp::render {
@@ -190,15 +191,21 @@ const CubeLut& neutral_lut() {
   return kNeutral;
 }
 
-// Le hook du look : le bloc de la texture de la LUT (ou d'une identité 2x2x2), puis le texte embarqué.
-std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu,
-                                              const std::array<const CubeLut*, kLookSlots>& luts) {
+// Le texte du hook du look : le texte embarqué, puis le bloc de la texture de la LUT (ou d'une identité
+// 2x2x2). Sans GPU : c'est la part que le thread de composition peut faire.
+std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
   const CubeLut& kNeutral = neutral_lut();
   // Le corps d'une texture court jusqu'à la prochaine directive //! : le bloc va donc après le texte du hook.
   std::string text = look_source();
   text += '\n';
   for (std::size_t i = 0; i < kLookSlots; ++i)
     text += lut_texture_block(luts[i] != nullptr ? *luts[i] : kNeutral, slot_name("AJG_LUT", i));
+  return text;
+}
+
+// Le hook du look lu par libplacebo, qui crée la texture : sur le thread qui rend, jamais ailleurs (un
+// autre thread qui ouvre une commande pendant la présentation fait échouer vk_cmd_submit).
+std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, std::string_view text) {
   auto parsed = parse(gpu, text, "anime-hdr-look.hook", kLookParams);
   if (!parsed) return parsed;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
@@ -218,6 +225,10 @@ struct Grade::Impl {
   float video_fps = 24.0F;
   std::optional<Grade::KwinMatch> kwin;  // set_kwin_match, réécrit dans un hook refait
   void put_kwin();
+  // La sortie HDR (décision 16) : le sommet de la courbe, le plafond des éclats et l'alpha de la passe
+  // anime, recalculés dès que les paramètres, la pile ou l'écran changent ; rien sans la dernière passe.
+  std::optional<OutputTune> tune;
+  void put_output();
   ParsedHook grade;
   ParsedHook look;
   ParsedHook black;
@@ -230,7 +241,9 @@ struct Grade::Impl {
   std::array<std::shared_ptr<const CubeLut>, kLookSlots> sources;
   std::optional<std::array<double, kLookSlots>> composed_for;
   bool composed = false;  // la texture du look est la pile composée (sinon une identité)
-  CubeLut stack;          // la pile composée lue par le hook quand composed
+  // Le refus du dernier hook composé (A41-04) : l'image passe sans look, le lecteur le journalise.
+  std::optional<Refusal> look_refusal;
+  CubeLut stack;  // la pile composée lue par le hook quand composed
 
   // La pile composée pour les intensités de `wanted`, refaite si elles changent ; le hook du look est
   // alors reconstruit, et ses paramètres sont à réécrire.
@@ -246,7 +259,7 @@ struct Grade::Impl {
     std::array<double, kLookSlots> mixes{};
     bool active = false;
     CubeLut stack;
-    std::expected<ParsedHook, Refusal> hook;
+    std::string text;  // le texte du hook, lu par adopt() sur le thread qui rend
   };
   bool background = false;
   std::optional<std::array<double, kLookSlots>> requested_for;
@@ -264,7 +277,6 @@ struct Grade::Impl {
   Impl& operator=(Impl&&) = delete;
   ~Impl() {
     worker = {};  // demande l'arrêt et attend le thread
-    if (done && done->hook) pl_mpv_user_shader_destroy(&done->hook->hook);
     pl_mpv_user_shader_destroy(&grade.hook);
     pl_mpv_user_shader_destroy(&look.hook);
     pl_mpv_user_shader_destroy(&black.hook);
@@ -290,9 +302,8 @@ void Grade::Impl::run(const std::stop_token& stop) {
     if (out.active) out.stack = compose_luts(luts, next.mixes);
     std::array<const CubeLut*, kLookSlots> slots{};
     if (out.active) slots[0] = &out.stack;
-    out.hook = parse_look(gpu, slots);
+    out.text = look_text(slots);
     const std::scoped_lock lock(job_mutex);
-    if (done && done->hook) pl_mpv_user_shader_destroy(&done->hook->hook);  // jamais adopté, dépassé
     done = std::move(out);
   }
 }
@@ -322,11 +333,13 @@ void Grade::Impl::compose(const GradeParams& wanted) {
   stack = active ? compose_luts(luts, mixes) : CubeLut{};
   std::array<const CubeLut*, kLookSlots> slots{};
   if (active) slots[0] = &stack;
-  auto rebuilt = parse_look(gpu, slots);
+  auto rebuilt = parse_look(gpu, look_text(slots));
   if (!rebuilt) {  // la même texture se lisait déjà à set_looks : improbable ; l'image passe alors sans look
     composed = false;
+    look_refusal = std::move(rebuilt.error());
     return;
   }
+  look_refusal.reset();
   pl_mpv_user_shader_destroy(&look.hook);
   look = std::move(*rebuilt);
   hooks[1] = look.hook;
@@ -343,7 +356,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   auto grade = parse(gpu, text, "anime-hdr-anime", kGradeParams);
   if (!grade) return std::unexpected(grade.error());
   impl->grade = std::move(*grade);
-  auto look = parse_look(gpu, {});
+  auto look = parse_look(gpu, look_text({}));
   if (!look) return std::unexpected(look.error());
   impl->look = std::move(*look);
   auto black = parse(gpu, shaders::anime_hdr_black, "anime-hdr-black.hook", kBlackParams);
@@ -360,7 +373,7 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
 
 std::expected<void, Refusal> Grade::set_looks(const std::array<const CubeLut*, kLookSlots>& luts) {
   // Chaque LUT doit se lire seule (le refus nomme la fautive) ; le hook, lui, ne lit que la pile composée.
-  auto look = parse_look(impl_->gpu, luts);
+  auto look = parse_look(impl_->gpu, look_text(luts));
   if (!look) return std::unexpected(look.error());
   pl_mpv_user_shader_destroy(&look->hook);  // la lecture seule importe : le hook posé lit la pile composée
   for (std::size_t i = 0; i < kLookSlots; ++i) {
@@ -399,6 +412,26 @@ void Grade::Impl::write_params() {
       size->f = static_cast<float>(is_stack ? kLutMaxSize : 2);
     if (pl_var_data* mix = find_param(look_hook, slot_name("look_mix", i))) mix->f = is_stack ? 1.0F : 0.0F;
   }
+  // Le pied adouci (décision 17) accompagne la pile d'HDR : ses seuils suivent le blanc relevé de la source.
+  if (pl_var_data* toe = find_param(look_hook, "look_toe")) {
+    const double white = params.adapt > 0.5 ? params.sdr_white : params.paper;
+    toe->f = static_cast<float>(composed && params.look_pq > 0.5 ? white * kAnimeLift : 0.0);
+  }
+  put_output();
+}
+
+void Grade::Impl::put_output() {
+  tune = kwin ? std::optional(output_tune(params, composed ? &stack : nullptr, kwin->reference, kwin->peak))
+              : std::nullopt;
+  const auto put = [this](std::string_view name, double value) {
+    for (const pl_hook* hook : {black.hook, grade.hook})
+      if (pl_var_data* data = find_param(*hook, name)) data->f = static_cast<float>(value);
+  };
+  put("an_late", tune ? 1.0 : 0.0);
+  if (tune) {
+    put("kwin_curve", std::clamp(tune->curve_peak, 50.0, 100000.0));
+    put("em_top", std::clamp(tune->top, 50.0, 10000.0));
+  }
 }
 
 void Grade::set_background(bool on) {
@@ -415,11 +448,14 @@ bool Grade::adopt() {
   Impl& s = *impl_;
   if (s.requested_for == ready->mixes) s.requested_for.reset();
   s.composed_for = ready->mixes;
-  if (!ready->hook) {  // la même texture se lisait déjà à set_looks : improbable ; l'image passe sans look
+  auto hook = parse_look(s.gpu, ready->text);
+  if (!hook) {  // la même texture se lisait déjà à set_looks : improbable ; l'image passe sans look
     s.composed = false;
+    s.look_refusal = std::move(hook.error());
   } else {
+    s.look_refusal.reset();
     pl_mpv_user_shader_destroy(&s.look.hook);
-    s.look = std::move(*ready->hook);
+    s.look = std::move(*hook);
     s.hooks[1] = s.look.hook;
     s.stack = std::move(ready->stack);
     s.composed = ready->active;
@@ -448,6 +484,7 @@ void Grade::Impl::put_kwin() {
     put("kwin_ref", std::clamp(kwin->reference, 50.0, 1000.0));
     put("kwin_peak", std::clamp(kwin->peak, 100.0, 10000.0));
   }
+  put_output();
 }
 
 std::optional<float> Grade::param(std::string_view name) const {
@@ -455,8 +492,16 @@ std::optional<float> Grade::param(std::string_view name) const {
   return std::nullopt;
 }
 
+const Refusal* Grade::look_refusal() const {
+  return impl_->look_refusal ? &*impl_->look_refusal : nullptr;
+}
+
 const CubeLut* Grade::look_stack() const {
   return impl_->composed ? &impl_->stack : nullptr;
+}
+
+std::optional<OutputTune> Grade::output() const {
+  return impl_->tune;
 }
 
 const GradeParams& Grade::params() const {

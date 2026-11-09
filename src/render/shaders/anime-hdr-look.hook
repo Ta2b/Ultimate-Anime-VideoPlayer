@@ -43,6 +43,13 @@
 //!MAXIMUM 1.0
 0.0
 
+//!PARAM look_toe
+//!DESC Pied adouci de la pile d'HDR : le blanc relevé de la source (nits) ; 0 = la pile telle quelle
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1000.0
+0.0
+
 //!PARAM look_gamma
 //!DESC Gamma de l'entrée de la LUT
 //!TYPE float
@@ -75,6 +82,7 @@
 //!BIND HOOKED
 //@LOOK_BINDS@
 //@LOOK_WHEN@
+//!COMPONENTS 4
 //!DESC AnimeJaNai HDR - look (LUT 3D)
 
 const mat3 AJL_2020_TO_709 = mat3( 1.6604910, -0.1245505, -0.0181508,
@@ -101,7 +109,22 @@ vec3 ajl_encode(vec3 n) {
 vec3 ajl_look(vec3 e) {
     if (look_pq > 0.5 && sdr_out < 0.5) {
         // LUT d'HDR : elle lit directement les codes PQ BT.2020 de l'image et rend des codes PQ.
-        return ajl_chain(e);
+        vec3 graded = ajl_chain(e);
+        if (look_toe <= 0.0) return graded;
+        // Pied adouci (audit A41-03, docs/hdr-anime.md). La LUT de base rendait noir tout ce qui est
+        // sous RVB 16 (0,30 nit rendu à 0,02) : les détails des nuits disparaissaient. Sous RVB 48 (là où la
+        // pile vaut presque l'identité), l'image quitte la pile pour un pied de pente 1,3 en log (la pile en
+        // avait 2), teinte gardée ; la pile reprend toute sa part entre RVB 32 et RVB 48. Le noir pur reste
+        // un vrai noir : 0 sous RVB 4, pied entier dès RVB 8. Les seuils sont les codes 8 bits d'une source
+        // au gamma 2,4, sur le maximum RVB : (c / 255)^2,4 × look_toe. Même calcul : render/output_tune.h.
+        vec3 lin = ajl_decode(e);
+        float m = max(lin.r, max(lin.g, lin.b));
+        float join = 1.8167e-2 * look_toe;  // RVB 48
+        if (m >= join) return graded;
+        float toe = join * pow(max(m, 1e-9) / join, 1.3) *
+                    smoothstep(4.6693e-5 * look_toe, 2.4644e-4 * look_toe, m);  // RVB 4 et RVB 8
+        float pile = smoothstep(log(6.8654e-3 * look_toe), log(join), log(max(m, 1e-9)));  // RVB 32
+        return ajl_encode(mix(lin * (toe / max(m, 1e-9)), ajl_decode(graded), pile));
     }
     vec3 nits = ajl_decode(e);
     // Linéaire BT.709, blanc de référence = 1 (la sortie SDR est déjà en BT.709).
