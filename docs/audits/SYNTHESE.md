@@ -30,9 +30,9 @@
 | 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
 | 20. Socle commun (core) | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/20-socle-core.md) |
-| 21. Frontière des moteurs (interface et ABI) | En cours | |
+| 21. Frontière des moteurs (interface et ABI) | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/21-frontiere-moteurs.md) |
 | 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
-| 23. Réglages : le panneau | À faire | |
+| 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
 | 24. Interface : rendu, contrôles et messages | À faire | |
 | 25. Assistant de premier lancement | À faire | |
 | 26. Mise à jour automatique et signature | À faire | |
@@ -330,14 +330,39 @@
 | A22-14 | Mineur | `src/app/play/settings.h:180` | Qualité : réduction Hermite par défaut, plus douce que Spline36 annoncé le plus fin | 22 | |
 | A22-15 | Mineur | `tests/unit/app/settings_test.cpp` | Aucun test que chaque champ est appliqué ou annoncé ; ni écriture refusée | 22 | |
 | A22-16 | Mineur | `src/app/play/settings_toml.cpp:593-627` | Une écriture de `play.toml` fait quatre analyses TOML et ~90 relectures | 22 | |
+| A21-01 | Majeur | `cmake/BoundaryHash.cmake:7-9` | L'empreinte d'ABI ne couvre ni `kernels/spec` ni `FrameStats` (démontré) | 21 | |
+| A21-02 | Majeur | `src/app/play/backend_library.cpp:55` | `path.string()` dans le chargeur : sans repli Vulkan sous Windows avec un profil non ASCII | 21 | À requalifier (A20-02, manifeste UTF-8) |
+| A21-03 | Majeur | `src/gpu/backend.h:132-133` | Qualité : anneau en RGB10A2 par défaut avant le grade HDR, sans la porte de qualité de l'ADR 0008 | 21 | |
+| A21-04 | Mineur | `src/gpu/guarded_backend.h:56-168` | Rien ne vérifie que `GuardedKernelOps` relaie toutes les virtuelles | 21 | |
+| A21-05 | Mineur | `src/app/play/backend_library.cpp:79-86` | `open` n'essaie pas les candidats suivants (latent) | 21 | |
+| A21-06 | Mineur | `src/gpu/kernel_ops.h:188-196` | `scores_take` attend toute la file sur une seule voie | 21 | |
+| A21-07 | Mineur | `src/gpu/backend.h:217-229` | `Engine::enqueue` sans scalaire : l'instant voyage en plans pleine taille | 21 | A03-14 (même cause) |
+| A21-08 | Mineur | `src/gpu/graph_book.h:195-221` | Échecs des graphes CUDA cumulés sur toute la vie du moteur | 21 | |
+| A21-09 | Mineur | `src/gpu/lanes.h:113-115` | `LaneHazards` ne perd jamais une adresse | 21 | |
+| A21-10 | Mineur | `src/gpu/kernel_ops.h:135` | Virtuelles pures mortes et commentaires périmés dans le contrat | 21 | |
+| A23-01 | Majeur | `src/app/play/settings_chain_tabs.cpp:84` | « Restaurer les traits » et la carte graphique jamais appliqués ni enregistrés (démontré) | 23 | A22-01 (même cause) |
+| A23-02 | Majeur | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé pour DistilDRBA alors qu'il décide sa variante | 23 | |
+| A23-03 | Majeur | `src/app/play/settings_panel.cpp:250-255` | « Auto (calibré) » choisi au panneau applique une chaîne non calibrée | 23 | |
+| A23-04 | Majeur | `src/app/play/settings_system.cpp:107-108` | Page Application : lecture d'`update.toml` et fichier d'essai créé et effacé à chaque image | 23 | |
+| A23-05 | Mineur | `src/app/play/settings_panel.cpp:290-301` | « Tout réinitialiser » sans confirmation, langue remise en anglais | 23 | |
+| A23-06 | Mineur | `src/app/play/settings_panel.h:53-54` | Aucun contrôle pour `motion_precision`, qui peut couper le fusionné en silence | 23 | |
+| A23-07 | Mineur | `src/app/play/settings_chain_tabs.cpp:363-374` | Le panneau ne montre pas l'état réel de DistilDRBA (fusionné, variante, refus) | 23 | |
+| A23-08 | Mineur | `src/app/play/settings_chain_tabs.cpp:63-64` | « DistilDRBA : le plus léger » faux au-delà de ×5 | 23 | |
+| A23-09 | Mineur | `src/app/play/settings_chain_tabs.cpp:213` | Plafond d'Auto caché, qui dépend du chemin suivi | 23 | |
+| A23-10 | Mineur | `src/app/play/settings_panel.cpp:242` | Deux « Niveau » et trois « Rapide » sur une même page | 23 | |
+| A23-11 | Mineur | `src/app/play/settings_sound.cpp:72-77` | Délai audio : infobulle ±10 000 ms, borne ±5 000 | 23 | |
+| A23-12 | Mineur | `src/app/play/settings_panel.cpp:199` | Délai des sous-titres appliqué à chaque image du glissement | 23 | |
+| A23-13 | Mineur | `src/app/play/settings_export.cpp:68` | Page Export : quatre appels au système de fichiers par image | 23 | |
+| A23-14 | Mineur | `src/app/play/settings_system.cpp:495-506` | « Signaler un problème » coupe le journal au milieu d'une ligne, sans le dire | 23 | |
+| A23-15 | Mineur | `src/app/play/settings_panel.cpp:310-320` | Drapeau `advanced` mort, en-têtes périmés | 23 | |
 
 ## Renvois
 
 | De | Vers | Où | Constat | Statut |
 |---|---|---|---|---|
 | 01 | 02 | `src/gpu/cuda/backend/tensorrt_span_fp8.cpp:78-89` | La queue du SPAN FP8 est enfilée après la jointure de génération (A01-02) | En attente (02 fini) |
-| 01 | 21 | `src/gpu/graph_book.h` | Compteurs d'échecs des graphes jamais remis à zéro, jeux d'adresses jamais évincés | Ouvert |
-| 01 | 21 | `src/gpu/lanes.h` | La table des ressources de `LaneHazards` ne perd jamais une adresse | Ouvert |
+| 01 | 21 | `src/gpu/graph_book.h` | Compteurs d'échecs des graphes jamais remis à zéro, jeux d'adresses jamais évincés | Traité par 21 |
+| 01 | 21 | `src/gpu/lanes.h` | La table des ressources de `LaneHazards` ne perd jamais une adresse | Traité par 21 |
 | 01 | 30 | `src/app/play/chain_setup.h:64-93` | Moteurs détruits avant le backend sans attendre leur travail en vol | Ouvert |
 | 01 | 31 | `src/app/play/ring_stage.cpp:58-66` | `health()` n'est appelé que pendant l'attente d'un emplacement | Ouvert |
 | 02 | 34 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | FP8 éteint hors Linux : sous Windows 11, le cran Performance reste en FP16 | Ouvert |
@@ -362,7 +387,7 @@
 | 06 | 28 | `tools/release/package-windows.ps1:101` | Origine et stabilité de `$trtVersion` | Ouvert |
 | 06 | 25 | `src/app/play/first_run.cpp:125-131` | « Go » et « Mo » en dur dans l'interface anglaise (UX-09) | Ouvert |
 | 06 | 34 | `src/app/play/engine_tools.cpp:19-36` | `curl.exe` de System32 : version minimale, révocation Schannel derrière une inspection TLS | Ouvert |
-| 06 | 21 | `src/app/play/backend_library.cpp:83-85` | Module refusé refermé : nvinfer se décharge-t-il sous Windows (A06-09) ? | Ouvert |
+| 06 | 21 | `src/app/play/backend_library.cpp:83-85` | Module refusé refermé : nvinfer se décharge-t-il sous Windows (A06-09) ? | Traité par 21 (à confirmer) |
 | 04 | 09 | `src/app/play/derived_model.cpp:19` | `stem().string()` dans le nom des modèles dérivés (comme A04-04) | Traité par 09 |
 | 04 | 09 | `src/app/play/motion_model.cpp:90` | `filename().string()` et `stem().string()` sur le chemin du RIFE | Traité par 09 |
 | 04 | 09 | `src/app/play/upscale_stage.cpp:198` | L'étage suppose `kSpanFactor` pour un `--model` quelconque (voir A04-06) | Traité par 09 |
@@ -373,14 +398,14 @@
 | 08 | 11 | `src/app/play/host_facts.cpp:378` | `on_battery()` appelé deux fois par seconde | Traité par 11 (A11-09) |
 | 08 | 14 | `src/app/play/player_run.cpp:589-591` | MED-01 : la session doit distinguer vraie fin et erreur d'E/S | Traité par 14 |
 | 08 | 18 | `src/app/play/player.cpp:525-534` | La reprise après « Annuler et regarder » modifie `settings` pour toute la suite | Traité par 18 |
-| 08 | 23 | `src/app/play/settings_panel.cpp` | UX-08 : Échap devrait fermer la liste ouverte avant le panneau | Ouvert |
+| 08 | 23 | `src/app/play/settings_panel.cpp` | UX-08 : Échap devrait fermer la liste ouverte avant le panneau | Traité par 23 |
 | 08 | 39 | `src/app/play/settings_system.cpp` | UX-13 : chemins hors du dossier personnel dans le journal envoyé | Ouvert |
 | 07 | 25 | `src/app/play/engine_screen.cpp:111` | `calibrate_on_screen` rend toujours Auto, même sur « Annuler » : remplace une chaîne Personnalisée | Ouvert |
 | 07 | 08 | `src/app/play/chain_setup.cpp:99` | Tailles de travail différentes possibles entre l'anneau et `c.work` | En attente (08 fini) |
 | 07 | 09 | `src/app/play/chain_setup.cpp:321` | Préparation FP8 automatique faite une seule fois, à la taille de la lecture en cours (avec A07-04) | En attente (09 fini) |
 | 07 | 18 | `src/app/play/player.cpp:411-414` | `calibration.toml` relu à chaque ouverture et remplissage du panneau | Traité par 18 |
 | 07 | 34 | `src/app/play/auto_bench_run.cpp:35-44` | Essais en `--hidden` sur tous les bureaux, GNOME Wayland compris | Ouvert |
-| 09 | 23 | `src/app/play/home_screen.cpp:140` | `fp8_engine` vrai pour une RTX 20 ou 30 : Performance proposé sans FP8 | Ouvert |
+| 09 | 23 | `src/app/play/home_screen.cpp:140` | `fp8_engine` vrai pour une RTX 20 ou 30 : Performance proposé sans FP8 | Traité par 23 |
 | 09 | 22 | `src/app/play/settings.h:114-117` | Critère d'Auto sur la hauteur de sortie (A09-08) | Traité par 22 |
 | 09 | 08 | `src/app/play/chain_setup.cpp:420-423` | Performance remplace le RIFE fusionné par un moteur entier (A09-02) | En attente (08 fini) |
 | 09 | 41 | `src/app/play/upscale_stage.cpp:244-271` | Statistiques du grade prises sur l'image débandée, ou pas du tout sous DistilDRBA | Ouvert |
@@ -419,7 +444,7 @@
 | 15 | 08 | `src/app/play/player.cpp:95-117` | La sonde devrait refuser les formats illisibles avec un message | En attente (08 fini) |
 | 15 | 01 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:24-41` | L'ingestion TensorRT ne lit ni 4:4:4 ni 4:2:2 en mémoire CUDA | En attente (01 fini) |
 | 15 | 42 | `src/media/shot_probe.cpp:173-175` | La pré-analyse paie la conversion 4:4:4 en pleine taille | Ouvert |
-| 16 | 23 | `src/app/play/settings_sound.cpp:27-33` | En mode « suivre le système », un seul délai pour tous les appareils | Ouvert |
+| 16 | 23 | `src/app/play/settings_sound.cpp:27-33` | En mode « suivre le système », un seul délai pour tous les appareils | Traité par 23 |
 | 16 | 08 | `src/app/play/pipeline.cpp:97-110` | Format de sortie figé, ordre `seek()` puis `AudioTrack` | En attente (08 fini) |
 | 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | En attente (13 fini) |
 | 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | En attente (12 fini) |
@@ -445,7 +470,7 @@
 | 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
 | 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Ouvert |
 | 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | En attente (07 fini) |
-| 03 | 23 | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé hors RIFE alors qu'il décide la variante DistilDRBA | Ouvert |
+| 03 | 23 | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé hors RIFE alors qu'il décide la variante DistilDRBA | Traité par 23 |
 | 03 | 09 | `src/app/play/upscale_drba.cpp:144` | DistilDRBA mesure la paire à la taille de travail, RIFE sur la copie réduite | En attente (09 fini) |
 | 03 | 05 | `src/prepare/trtexec_command.cpp:105-106` | Formats des frontières des morceaux DistilDRBA laissés à TensorRT : reformatages possibles | En attente (05 fini) |
 | 20 | 05 | `src/prepare/process_win.cpp:63-65` | `trtexec.exe` sans manifeste UTF-8 : chemin hors page ANSI abîmé | En attente (05 fini) |
@@ -456,7 +481,7 @@
 | 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Ouvert |
 | 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Ouvert |
 | 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Ouvert |
-| 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | Ouvert |
+| 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | En attente (21 fini) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | En attente (02 fini) |
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Ouvert |
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
@@ -464,7 +489,21 @@
 | 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Ouvert |
 | 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | En attente (07 fini) |
 | 22 | 07 | `src/app/play/auto_config.cpp:203-205` | L'Auto calibré écrase `auto_free` et le modèle RIFE à chaque vidéo | En attente (07 fini) |
-| 22 | 23 | `src/app/play/settings_sound.cpp:72` | Bornes des curseurs de délai différentes des réglages et des touches | Ouvert |
-| 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | Ouvert |
+| 22 | 23 | `src/app/play/settings_sound.cpp:72` | Bornes des curseurs de délai différentes des réglages et des touches | Traité par 23 (A23-11) |
+| 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | En attente (23 fini) |
 | 22 | 09 | `src/app/play/chain_setup.cpp:359-361` | Qualité : estimation RIFE sur copie 720p au-dessus de 720 lignes | En attente (09 fini) |
 | 22 | 18 | `src/app/play/options.cpp:298` | `--rife-model` n'entre pas dans `settings.rife_model` | En attente (18 fini) |
+| 21 | 26 | `src/app/play/engine_downloads.cpp:130` | Module mis à jour seulement sur `AbiMismatch` : un correctif hors frontière n'arrive jamais | Ouvert |
+| 21 | 09 | `src/app/play/upscale_drba.cpp:66-67` | Garder `filled01` et `filled12` d'une paire à la suivante | En attente (09 fini) |
+| 21 | 09 | `src/app/play/upscale_drba.cpp:99` | `scores_take` bloque le thread GPU à chaque paire (A21-06) | En attente (09 fini) |
+| 21 | 32 | `docs/auto-libre.md` § 3 | Décomposer les ≈ 11 ms de GPU par image hors réseau, qui ôtent à DistilDRBA son avance | Ouvert |
+| 21 | 10 | `audit/mesures-auto-4070ti.md` | DistilDRBA ×6 : 962 images manquées sans paire en retard, la présentation plafonne | En attente (10 fini) |
+| 21 | 08 | `src/app/play/chain_setup.cpp:361-363` | Qualité : mouvement estimé à 720p, à remesurer surtout pour DistilDRBA | En attente (08 fini) |
+| 21 | 08 | `src/app/play/engine_screen.cpp:343` | `path().string()` dans le journal | En attente (08 fini) |
+| 21 | 45 | `src/gpu/vulkan/backend/entry_points.h:1-6` | Commentaire qui nomme MIGraphX et OpenVINO | Ouvert |
+| 21 | 40 | `tests/unit/gpu/backend_test.cpp` | `GuardedKernelOps` jamais testé ; `IngestSpec::chroma` non vérifié | Ouvert |
+| 23 | 22 | `src/app/play/settings.cpp:383-433` | Cause d'A23-01 (`restore_lines`, `gpu`) | Traité par 22 (A22-01) |
+| 23 | 22 | `src/app/play/settings.h:304-307` | Commentaire du seuil HDR posé au mauvais endroit | En attente (22 fini) |
+| 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Ouvert |
+| 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | En attente (07 fini) |
+| 23 | 08 | `src/app/play/chain.cpp:183-185` | Une notification par image pendant le glissement du délai des sous-titres | En attente (08 fini) |
