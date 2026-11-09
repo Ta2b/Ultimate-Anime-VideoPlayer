@@ -53,6 +53,11 @@ class FreeGrid {
 
   std::optional<std::int64_t> next_due_us() const { return next_due_; }
 
+  // La dernière paire poussée n'a que sa source parce que le pas l'a voulu : ni l'horloge prédite ni
+  // l'écart minimal n'empêchaient une image interpolée. Rien ne mesure alors le temps de service dont le
+  // pas est tiré (FreeRate::starved, A12-12).
+  bool starved() const { return starved_; }
+
  private:
   CadenceStep origin(const SourceStamp& source, GridEvent event);
 
@@ -61,6 +66,7 @@ class FreeGrid {
   std::optional<std::int64_t> last_emitted_;  // dernier pts émis
   std::uint32_t epoch_ = 0;
   bool started_ = false;
+  bool starved_ = false;
 };
 
 }  // namespace ajp::core
