@@ -27,7 +27,7 @@ veille et Windows porte « à confirmer » avec la manipulation.
 50 clips de 3 s (H.264 640×360, 24 i/s, AAC) dans un dossier, lecture automatique de l'épisode suivant, sans y
 toucher : `xvfb-run ajp --software-gpu --mute --no-upscale --rife=0 --no-resume --data-dir=<neuf> "Serie - 01.mkv"`.
 Relevé toutes les 2 s dans `/proc/<pid>` : `VmRSS`, `Threads`, nombre d'entrées de `fd`. Les 50 fichiers passent en
-196 s, 49 lignes « épisode suivant », aucun refus, sortie propre à la fin du dernier.
+196 s, 49 lignes « épisode suivant », aucune ligne d'erreur au journal, sortie propre à la fin du dernier.
 
 | Fichier | 1 | 5 | 10 | 15 | 20 | 25 | 30 | 35 | 40 | 45 | 50 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
