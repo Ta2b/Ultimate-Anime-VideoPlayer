@@ -28,8 +28,8 @@
 | 16. Audio | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/16-audio.md), [complément](rapports/16-audio-complement.md) |
 | 17. Sous-titres | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/17-sous-titres.md), [complément](rapports/17-sous-titres-complement.md) |
 | 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
-| 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
-| 20. Socle commun (core) | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/20-socle-core.md) |
+| 19. Intégration au système | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/19-integration-systeme.md), [complément](rapports/19-integration-systeme-complement.md) |
+| 20. Socle commun (core) | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/20-socle-core.md), [complément](rapports/20-socle-core-complement.md) |
 | 21. Frontière des moteurs (interface et ABI) | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/21-frontiere-moteurs.md) |
 | 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
 | 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
@@ -699,6 +699,7 @@
 | A14-10 | Mineur | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images sans PTS sans borne : seek sans fin | 14 | A15-05 (même cause) |
 | A16-14 | Mineur | `src/app/play/wiring.cpp:103-108` | Seek exact raté puis position rattrapée : audio rogné jusqu'à la cible manquée (gel de 1,5 s, silence) | 16 | |
 | A17-14 | Mineur | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond cumulé des paquets d'une piste intégrée : MKV forgé, plusieurs Gio dans libass | 17 | |
+| A20-14 | Mineur | `src/core/model_index.h:1-6` | En-tête faux : modèles téléchargés et vérifiés, alors qu'ils sont livrés avec le lecteur | 20 | |
 
 ## Renvois
 
@@ -811,7 +812,7 @@
 | 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Traité par 26 |
 | 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | Traité par 17 (complément) |
 | 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Traité par 39 (doublon d'A26-12) |
-| 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
+| 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | Traité par 20 (complément) |
 | 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Traité par 32 |
 | 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | Traité par 07 (complément) |
 | 03 | 23 | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé hors RIFE alors qu'il décide la variante DistilDRBA | Traité par 23 |
@@ -856,7 +857,7 @@
 | 25 | 07 | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` ne note pas le moteur mesuré | Traité par 07 (complément) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | Traité par 07 (complément) |
 | 25 | 08 | `src/app/play/player.cpp:559` | Après `handle_engine_change`, chaîne rouverte avec les réglages d'avant | Traité par 08 (complément) |
-| 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | En attente (19 fini) |
+| 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | Traité par 19 (complément) |
 | 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Traité par 43 (A43-05) |
 | 26 | 28 | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | Traité par 28 |
 | 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Traité par 28 |
@@ -918,7 +919,7 @@
 | 34 | 31 | `src/app/play/drba_fused_choice.cpp:9` | A31-06 touche les deux systèmes | En attente (31 fini) |
 | 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | Traité par 06 (complément) |
 | 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | Traité par 15 (complément) |
-| 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | En attente (19 fini) |
+| 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | Traité par 19 (complément) |
 | 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | Traité par 11 (complément) |
 | 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | Traité par 28 (complément) |
 | 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Traité par 40 (A40-10) |
@@ -971,7 +972,7 @@
 | 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Traité par 46 (A46-04 : grille en FP16) |
 | 44 | 49 | qualité DistilDRBA F16 | DistilDRBA F16 contre FP32 : 51 à 52 dB, écart max 13 à 19/255 (pour A49-14) | En attente (49 fini) |
 | 44 | 45 | shaders Vulkan | Arrondi f32 vers f16 (RTE ou RTZ), sous-normaux F16, accumulation des coopmat | En attente (45 fini) |
-| 46 | 20 | `src/core/model_index.cpp:356-410` | `models.lock` lu par aucun code du lecteur : code mort | En attente (20 fini) |
+| 46 | 20 | `src/core/model_index.cpp:356-410` | `models.lock` lu par aucun code du lecteur : code mort | Traité par 20 (complément) |
 | 46 | 45 | `src/gpu/vulkan/backend/net_gate.h:24-25` | Porte qui admet les sommes FP16 à 2 % sur du bruit, pour toutes les cartes | En attente (45 fini) |
 | 46 | 09 | `src/app/play/drba_model.h:17-21` | Flot de DistilDRBA à l'échelle 0,5 dès 1 440 lignes, sans mesure | Traité par 09 (complément) |
 | 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | Traité par 03 (complément 2) |
