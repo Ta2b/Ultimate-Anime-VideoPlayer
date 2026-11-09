@@ -24,9 +24,9 @@
 | 12. Cadence et horloges | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/12-cadence-horloges.md) |
 | 13. Session de lecture : seek, épisodes et reprise | Fusionné (13 défauts, 1 bloquant, 1 majeur) | [rapport](rapports/13-session-lecture.md) |
 | 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (8 défauts, 2 majeurs) | [rapport](rapports/14-sources-demux.md) |
-| 15. Décodage, matériel, formats et couleurs | En cours | |
-| 16. Audio | En cours | |
-| 17. Sous-titres | À faire | |
+| 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs) | [rapport](rapports/15-decodage-formats.md) |
+| 16. Audio | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/16-audio.md) |
+| 17. Sous-titres | En cours | |
 | 18. Démarrage et arrêt | À faire | |
 | 19. Intégration au système | À faire | |
 | 20. Socle commun (core) | À faire | |
@@ -225,6 +225,33 @@
 | A14-06 | Mineur | `src/media/source.h:34-35` | File audio pleine qui fait attendre toute la lecture sur un fichier mal entrelacé | 14 | |
 | A14-07 | Mineur | `src/media/demuxer.cpp:369-377` | Panne d'E/S, interruption et données abîmées toutes en `DecodeFailed` | 14 | |
 | A14-08 | Mineur | `tests/unit/media/source_test.cpp:400-414` | Le test fige MED-01 comme comportement voulu | 14 | |
+| A15-01 | Majeur | `src/media/video_decoder.cpp:320-323` | 4:4:4, et 4:2:2 sur RTX 50, via NVDEC arrêtent la lecture sous TensorRT (MED-02) | 15 | |
+| A15-02 | Majeur | `src/media/deinterlace.cpp:66` | Pas d'IVTC, et images NVDEC entrelacées non désentrelacées (MED-13) | 15 | |
+| A15-03 | Mineur | `src/media/video_decoder.cpp:400` | Pas de repli logiciel sur une erreur NVDEC en cours de flux | 15 | |
+| A15-04 | Mineur | `src/media/deinterlace.cpp:47-49` | bwdif perd une image au changement de taille (démontré) | 15 | |
+| A15-05 | Mineur | `src/media/deinterlace.cpp:79` | bwdif perd le `best_effort_timestamp` (démontré) | 15 | |
+| A15-06 | Mineur | `src/media/frame_data.cpp:247-275` | Conversion hôte 4:4:4 sans pool : 7,5 ms et 25 Mo par image 4K (MED-03, mesuré) | 15 | |
+| A15-07 | Mineur | `src/media/frame_data.cpp:253` | Chroma 4:4:4 réduite avant SPAN, formats illisibles mal refusés (MED-04) | 15 | |
+| A15-08 | Mineur | `src/media/color.cpp:72` | Matrice non étiquetée devinée par la taille même en BT.2020 ou PQ | 15 | |
+| A15-09 | Mineur | `src/media/video_decoder.cpp:166-167` | Durée d'image par la période moyenne sans durée de paquet (MED-16) | 15 | A13-05 (même cause) |
+| A15-10 | Mineur | `src/media/video_decoder.cpp:167` | `pts + duration` sans garde (MED-14) | 15 | |
+| A15-11 | Mineur | `src/media/stills.cpp:295` | `extract_stills` décode jusqu'à 8 threads à priorité normale | 15 | |
+| A15-12 | Mineur | `src/media/stills.cpp:230-236` | Corpus de calibration FP8 à chroma au plus proche, différente de la lecture | 15 | |
+| A15-13 | Mineur | `tests/unit/media/` | Sans test : conversion hôte, bascule NVDEC, chemin entrelacé | 15 | |
+| A15-14 | Mineur | `src/media/hw_device.cpp:204` | Code mort pour le produit | 15 | |
+| A16-01 | Majeur | `src/audio/sdl_sink.cpp:151-160` | Sans sortie par défaut après retrait : refus à chaque bloc, gel à chaque seek, appareil rebranché jamais repris (MED-08) | 16 | |
+| A16-02 | Mineur | `src/audio/player.cpp:138-151` | Délai de l'appareil retiré gardé sur la sortie par défaut (MED-08) | 16 | |
+| A16-03 | Mineur | `src/audio/sdl_sink.cpp:100-113` | Changement de sortie par défaut invisible au module | 16 | |
+| A16-04 | Mineur | `src/audio/sdl_sink.cpp:189-199` | Latence du périphérique comptée sur un seul tampon | 16 | |
+| A16-05 | Mineur | `src/audio/pcm.h:25` | Correction de dérive bornée à 0,125 %, au ras du calage de vitesse | 16 | |
+| A16-06 | Mineur | `src/audio/packet.h:41-44` | `AudioTrack` sans époque : paquets de l'ancienne piste après un changement | 16 | |
+| A16-07 | Mineur | `src/app/play/pipeline.cpp:97-110` | Sortie ouverte au format de la première piste | 16 | |
+| A16-08 | Mineur | `src/audio/converter.cpp:132-135` | Mixage surround vers stéréo normalisé : son plus faible | 16 | |
+| A16-09 | Mineur | `src/audio/player.cpp:349-364` | Avec la PLL, `set_delay` décale l'horloge avant le son | 16 | |
+| A16-10 | Mineur | `src/audio/output.cpp:29-32` | Aucun contrôle de continuité des `pts` audio | 16 | |
+| A16-11 | Mineur | `src/audio/devices.cpp:15-18` | Code mort, appareils désignés par leur seul nom | 16 | |
+| A16-12 | Mineur | `src/audio/player.h:5-13` | Commentaires faux : l'audio est maître sur tout écran, pas seulement sous VRR | 16 | |
+| A16-13 | Mineur | `src/audio/player.h:55` | PLL éteinte par défaut dans les tests, active dans le produit | 16 | |
 
 ## Renvois
 
@@ -244,7 +271,7 @@
 | 03 | 01 | `src/gpu/cuda/backend/tensorrt_textures.cpp:15-78` | Objets texture du warp gardés par adresse : réutilisés après une réallocation à la même adresse | En attente (01 fini) |
 | 03 | 09 | `src/app/play/upscale_motion.cpp:39` | Reprise à chaud absente sous RIFE fusionné ; invalidation sur coupe et saut à vérifier | Traité par 09 |
 | 03 | 09 | `src/app/play/player_engines.cpp:247-266` | Avec DistilDRBA fusionné, le warp repose sur la branche mouvement non testée (A03-03) | Traité par 09 |
-| 03 | 15 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:142-143` | Position de chroma : seuls `Center` et `TopLeft` sont distingués | Ouvert |
+| 03 | 15 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:142-143` | Position de chroma : seuls `Center` et `TopLeft` sont distingués | Réfuté par 15 |
 | 03 | 40 | `tests/unit/backend_tensorrt/` | La suite CUDA ne tourne qu'à la main sur un poste NVIDIA, aucun garde-fou de CI | Ouvert |
 | 05 | 27 | `src/gpu/cuda/backend/CMakeLists.txt:95` | Repli `trtexec` gardé en `RelWithDebInfo` (SEC-20) | Ouvert |
 | 05 | 01 | `src/gpu/cuda/backend/entry.cpp:56-59` | `pick_trtexec` appelé une fois : empreinte jamais revérifiée ensuite (A05-05) | En attente (01 fini) |
@@ -307,5 +334,15 @@
 | 14 | 13 | `src/app/play/session.cpp:286-287` | La session doit refuser d'enchaîner l'épisode sur une fin en erreur (MED-01) | En attente (13 fini) |
 | 14 | 18 | `src/app/play/player.cpp:99` | `file.string()` dans le refus de `probe_once` | Ouvert |
 | 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | Ouvert |
-| 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | Ouvert |
+| 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | En attente (16 fini) |
 | 14 | 30 | `src/media/source_loop.cpp:303-305` | Boîte non lue pendant `wait_before_retry` | Ouvert |
+| 15 | 14 | `src/media/source_loop.cpp:153-159` | Image décodée et convertie avant la décision de saut du seek exact | En attente (14 fini) |
+| 15 | 14 | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images `kNoPts` : seek exact sans fin (avec A15-05) | En attente (14 fini) |
+| 15 | 08 | `src/app/play/player.cpp:95-117` | La sonde devrait refuser les formats illisibles avec un message | En attente (08 fini) |
+| 15 | 01 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:24-41` | L'ingestion TensorRT ne lit ni 4:4:4 ni 4:2:2 en mémoire CUDA | En attente (01 fini) |
+| 15 | 42 | `src/media/shot_probe.cpp:173-175` | La pré-analyse paie la conversion 4:4:4 en pleine taille | Ouvert |
+| 16 | 23 | `src/app/play/settings_sound.cpp:27-33` | En mode « suivre le système », un seul délai pour tous les appareils | Ouvert |
+| 16 | 08 | `src/app/play/pipeline.cpp:97-110` | Format de sortie figé, ordre `seek()` puis `AudioTrack` | En attente (08 fini) |
+| 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | En attente (13 fini) |
+| 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | En attente (12 fini) |
+| 16 | 20 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Ouvert |
