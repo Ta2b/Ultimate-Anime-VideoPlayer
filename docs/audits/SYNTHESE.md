@@ -37,7 +37,7 @@
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
 | 27. Build, dépendances et ports | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/27-build-dependances.md) |
-| 28. CI, publication et signature | À faire | |
+| 28. CI, publication et signature | Fusionné (17 défauts, 1 bloquant, 7 majeurs) | [rapport](rapports/28-ci-publication.md) |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
 | 31. États dégradés et reprise sur erreur | Fusionné (15 défauts, 8 majeurs) | [rapport](rapports/31-etats-degrades.md) |
@@ -465,6 +465,23 @@
 | A27-11 | Mineur | `cmake/AjpSpirv.cmake:35` | `spirv-val` absent sous Windows sans un mot | 27 | |
 | A27-12 | Mineur | `third_party/cutlass/` | CUTLASS recopié sans commit ni somme | 27 | |
 | A27-13 | Mineur | `cmake/AjpModule.cmake:61-77` | En-têtes précompilés sans effet sur les tests | 27 | |
+| A28-01 | Bloquant | `.github/workflows/release-linux.yml:96-102` | Release Linux sans paquet TensorRT publiée sur un simple avertissement : 0.10.3 et 0.10.1 Linux parties sans TensorRT (démontré) | 28 | |
+| A28-02 | Majeur | `tools/release/sign-manifest.sh` | Aucun manifeste signé publié depuis la 0.5.1 : tout le canal Stable se croit à jour (démontré) | 28 | |
+| A28-03 | Majeur | `.github/workflows/release-linux.yml:146-150` | `--latest` posé par chaque plateforme avant le manifeste | 28 | |
+| A28-04 | Majeur | `.github/workflows/release-guard.yml:24-39` | Étiquette jamais comparée à `PROJECT_VERSION` | 28 | |
+| A28-05 | Majeur | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | 28 | |
+| A28-06 | Majeur | `tools/release/fetch-models.sh:172-190` | `models-interp-1` non épinglé remplace le DistilDRBA épinglé (démontré, même graphe aujourd'hui) | 28 | |
+| A28-07 | Majeur | `tests/unit/prepare/CMakeLists.txt:13-20` | Tests du chemin livré non lancés avant la publication | 28 | |
+| A28-08 | Majeur | `.github/workflows/` (16 `actions/checkout`) | Jetons gardés par `checkout` dans les jobs de release | 28 | |
+| A28-09 | Mineur | `tools/release/package-linux.sh:190` | Version TensorRT de `engines.lock` réduite au numéro majeur (démontré) | 28 | |
+| A28-10 | Mineur | `tools/release/preflight/nvidia-package.sh:24-32` | Deux chemins publient le même paquet `trt-<empreinte>` | 28 | |
+| A28-11 | Mineur | `.github/workflows/ci.yml:219-251` | CUDA des PR : `sm_89` seul, en Debug | 28 | A27-07 (même cause) |
+| A28-12 | Mineur | `CMakePresets.json:458` | Filtres des tests de livraison trop larges | 28 | |
+| A28-13 | Mineur | `.github/workflows/fuzz.yml:63-64` | UBSan sans `-fno-sanitize-recover` dans le fuzz de nuit | 28 | |
+| A28-14 | Mineur | `.github/workflows/export-interpolation-models.yml:58-61` | `models-interp-1` créée sans `--latest=false` | 28 | |
+| A28-15 | Mineur | `.github/workflows/release-windows.yml` | Release Windows sans groupe de concurrence | 28 | |
+| A28-16 | Mineur | `tools/release/appimage.sh:145` | `appimagetool` téléchargé sans SHA-256 puis exécuté | 28 | |
+| A28-17 | Mineur | `.github/workflows/release-linux.yml:10-11` | En-têtes qui promettent des chemins interdits par la garde | 28 | |
 
 ## Renvois
 
@@ -493,15 +510,15 @@
 | 05 | 07 | appelants de `Backend::build` | Une construction par taille de source : coût à mesurer, cache sans purge (TRT-17) | Traité par 07 |
 | 05 | 36 | `src/prepare/identity.cpp:161-164` | Jeton `driver` dans la clé : reconstruction complète à chaque saut de CUDA du pilote | Ouvert |
 | 06 | 26 | `src/app/play/engine_online.cpp` | `merge_release_index` : SHA ou version changés du paquet TensorRT (voir A06-01) | Traité par 26 |
-| 06 | 28 | `tools/release/package-linux.sh:190` | Version du paquet TensorRT tirée de `ls libnvinfer.so.*` : « 11 » ou « 11.3.0 » | Ouvert |
-| 06 | 28 | `tools/release/package-windows.ps1:101` | Origine et stabilité de `$trtVersion` | Ouvert |
+| 06 | 28 | `tools/release/package-linux.sh:190` | Version du paquet TensorRT tirée de `ls libnvinfer.so.*` : « 11 » ou « 11.3.0 » | Traité par 28 |
+| 06 | 28 | `tools/release/package-windows.ps1:101` | Origine et stabilité de `$trtVersion` | Traité par 28 |
 | 06 | 25 | `src/app/play/first_run.cpp:125-131` | « Go » et « Mo » en dur dans l'interface anglaise (UX-09) | Traité par 25 |
 | 06 | 34 | `src/app/play/engine_tools.cpp:19-36` | `curl.exe` de System32 : version minimale, révocation Schannel derrière une inspection TLS | Ouvert |
 | 06 | 21 | `src/app/play/backend_library.cpp:83-85` | Module refusé refermé : nvinfer se décharge-t-il sous Windows (A06-09) ? | Traité par 21 (à confirmer) |
 | 04 | 09 | `src/app/play/derived_model.cpp:19` | `stem().string()` dans le nom des modèles dérivés (comme A04-04) | Traité par 09 |
 | 04 | 09 | `src/app/play/motion_model.cpp:90` | `filename().string()` et `stem().string()` sur le chemin du RIFE | Traité par 09 |
 | 04 | 09 | `src/app/play/upscale_stage.cpp:198` | L'étage suppose `kSpanFactor` pour un `--model` quelconque (voir A04-06) | Traité par 09 |
-| 04 | 28 | `tests/fuzz/fuzz_parsers.cpp:33-37` | Aucune cible de fuzz pour les lecteurs ONNX de `prepare/` (SEC-21) | Ouvert |
+| 04 | 28 | `tests/fuzz/fuzz_parsers.cpp:33-37` | Aucune cible de fuzz pour les lecteurs ONNX de `prepare/` (SEC-21) | Traité par 28 |
 | 04 | 05 | `src/prepare/builder.cpp:174` | `read_model` relit et rehache tout l'ONNX avant et après chaque construction | En attente (05 fini) |
 | 08 | 22 | `src/app/play/settings.cpp:453-499` | `change_between` ne classe pas en réouverture plusieurs réglages dont `prepare_chain` dépend | Traité par 22 |
 | 08 | 05 | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre | En attente (05 fini) |
@@ -566,8 +583,8 @@
 | 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Réfuté par 22 |
 | 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Traité par 24 |
 | 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
-| 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Ouvert |
-| 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Ouvert |
+| 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Traité par 28 |
+| 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Traité par 28 |
 | 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Traité par 25 |
 | 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Traité par 24 |
 | 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | En attente (18 fini) |
@@ -624,9 +641,9 @@
 | 25 | 08 | `src/app/play/player.cpp:559` | Après `handle_engine_change`, chaîne rouverte avec les réglages d'avant | En attente (08 fini) |
 | 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | En attente (19 fini) |
 | 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Ouvert |
-| 26 | 28 | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | Ouvert |
-| 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Ouvert |
-| 26 | 28 | `.github/workflows/release-linux.yml:150` | `--latest` posé avant le manifeste signé (SEC-05) | Ouvert |
+| 26 | 28 | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | Traité par 28 |
+| 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Traité par 28 |
+| 26 | 28 | `.github/workflows/release-linux.yml:150` | `--latest` posé avant le manifeste signé (SEC-05) | Traité par 28 |
 | 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Ouvert |
 | 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Ouvert |
 | 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | En attente (06 fini) |
@@ -664,8 +681,11 @@
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Ouvert |
 | 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | En attente (09 fini) |
 | 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Ouvert |
-| 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | Ouvert |
-| 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | Ouvert |
-| 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | Ouvert |
+| 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | En attente (28 fini) |
+| 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | En attente (28 fini) |
+| 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | En attente (28 fini) |
 | 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | En attente (05 fini) |
 | 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
+| 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | En attente (26 fini) |
+| 28 | 09 | `src/app/play/drba_model.cpp:14-28` | Demi-flot DistilDRBA manquant : repli silencieux sur le flot entier | En attente (09 fini) |
+| 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Ouvert |
