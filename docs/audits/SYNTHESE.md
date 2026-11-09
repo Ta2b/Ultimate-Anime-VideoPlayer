@@ -27,7 +27,7 @@
 | 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/15-decodage-formats.md), [complément](rapports/15-decodage-formats-complement.md) |
 | 16. Audio | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/16-audio.md), [complément](rapports/16-audio-complement.md) |
 | 17. Sous-titres | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/17-sous-titres.md), [complément](rapports/17-sous-titres-complement.md) |
-| 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
+| 18. Démarrage et arrêt | Fusionné (18 défauts, 3 majeurs, complément compris) | [rapport](rapports/18-demarrage-arret.md), [complément](rapports/18-demarrage-arret-complement.md) |
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/19-integration-systeme.md), [complément](rapports/19-integration-systeme-complement.md) |
 | 20. Socle commun (core) | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/20-socle-core.md), [complément](rapports/20-socle-core-complement.md) |
 | 21. Frontière des moteurs (interface et ABI) | Fusionné (11 défauts, 3 majeurs, complément compris) | [rapport](rapports/21-frontiere-moteurs.md), [complément](rapports/21-frontiere-moteurs-complement.md) |
@@ -704,6 +704,9 @@
 | A22-17 | Mineur | `src/app/play/settings.h:305-307` | Commentaire du seuil HDR posé au-dessus de la mauvaise constante | 22 | |
 | A22-18 | Mineur | `src/app/play/settings.cpp:130-138` | Valeurs et gardes GMFSS mortes (aucune n'atteint `PlaySettings`) | 22 | |
 | A23-16 | Mineur | `src/app/play/settings_engines.cpp:75-85` | Annuler et Rétablir changent `engines_dir` sans mettre à jour le champ ; chemin long coupé à 512 octets sans le dire | 23 | |
+| A18-16 | Mineur | `src/app/main.cpp:371-401` | Ni minidump ni journal pendant l'application d'une mise à jour | 18 | |
+| A18-17 | Mineur | `src/app/play/settings.cpp:326-343` | `--rife-model` absent de `settings.rife_model` : menu et `--bench-out` donnent le mauvais modèle | 18 | |
+| A18-18 | Majeur | `src/app/play/auto_bench_run.cpp:363-367` | Qualité : le banc essaie RIFE 4.25 sans dossier, l'essai échoue toujours en silence et l'Auto reste sur 4.22 lite | 18 | Cause directe d'A25-08 et d'A38-02 |
 
 ## Renvois
 
@@ -761,7 +764,7 @@
 | 09 | 31 | `src/app/play/ring_stage.cpp:108-112` | Seul `SourceResized` rouvre la chaîne sur une image de taille nouvelle | Traité par 31 |
 | 10 | 12 | `src/app/play/session.cpp:598-616` | Au niveau `Wait`, `vblank_grid()` toujours vide : effet sur `--vsync-index` et la PLL | Traité par 12 (A12-01, A12-03) |
 | 10 | 08 | `src/app/play/player_run.cpp:654` | Une erreur de `show` termine `run_chain` : message et réouverture en boucle ? | Traité par 08 (complément) |
-| 10 | 18 | `src/app/play/placebo_open.cpp:327` | Décodeur Vulkan Video à détruire avant l'écran | En attente (18 fini) |
+| 10 | 18 | `src/app/play/placebo_open.cpp:327` | Décodeur Vulkan Video à détruire avant l'écran | Traité par 18 (complément) |
 | 10 | 31 | `src/app/play/placebo_ring.cpp:218` | `ready()` vrai quand `vkGetSemaphoreCounterValue` échoue | Traité par 31 |
 | 10 | 34 | `src/app/play/placebo_open.cpp:384-390` | Windows : fenêtre cachée pendant l'ouverture, message d'erreur sans fenêtre ? | Réfuté par 34 |
 | 11 | 08 | `src/app/play/player_run.cpp:398-400` | Relevé de l'écran fait deux fois sous Windows | Traité par 08 (complément) |
@@ -785,7 +788,7 @@
 | 14 | 13 | `src/app/play/pipeline.cpp:65` | `config.file.string()` dans le refus « no video track » | Traité par 13 (complément) |
 | 14 | 13 | `src/app/play/session.cpp:286-287` | La session doit refuser d'enchaîner l'épisode sur une fin en erreur (MED-01) | Traité par 13 (complément) |
 | 14 | 18 | `src/app/play/player.cpp:99` | `file.string()` dans le refus de `probe_once` | Traité par 18 |
-| 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | En attente (18 fini) |
+| 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | Traité par 18 (complément) |
 | 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | Traité par 16 (complément) |
 | 14 | 30 | `src/media/source_loop.cpp:303-305` | Boîte non lue pendant `wait_before_retry` | Traité par 30 |
 | 15 | 14 | `src/media/source_loop.cpp:153-159` | Image décodée et convertie avant la décision de saut du seek exact | Traité par 14 (complément) |
@@ -809,7 +812,7 @@
 | 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Traité par 28 |
 | 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Traité par 25 |
 | 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Traité par 24 |
-| 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | En attente (18 fini) |
+| 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | Traité par 18 (complément) |
 | 18 | 07 | `src/app/play/auto_config.h:22` | DistilDRBA n'entre jamais dans Auto et la calibration ne l'essaie pas | Traité par 07 (complément) |
 | 18 | 30 | `src/app/play/chain_hdr.cpp:162` | `LookLoader` détaché qui peut journaliser après `close_log` | Traité par 30 |
 | 18 | 26 | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant le téléchargement | Traité par 26 |
@@ -825,8 +828,8 @@
 | 20 | 05 | `src/prepare/process_win.cpp:63-65` | `trtexec.exe` sans manifeste UTF-8 : chemin hors page ANSI abîmé | Traité par 05 (complément) |
 | 20 | 06 | `src/app/play/engine_install.cpp:293` | A06-02 ne tient que pour `curl.exe` et `tar.exe` | Traité par 06 (complément) |
 | 20 | 34 | A02-12, A03-06, A04-04, A07-03, A08-09, A09-10, A10-10, A13-11, A17-12 | Supposent une exception de `path::string()` que le manifeste UTF-8 empêche sous Windows 11 : à requalifier | Traité par 34 (tous en dette) |
-| 20 | 18 | `src/app/play/crash_dump.cpp` | Le gestionnaire de plantage ne vide pas le journal (A20-04) | En attente (18 fini) |
-| 20 | 18 | `src/app/play/pumped_task.h:58` | Sonde détachée qui peut journaliser après `close_log()` | En attente (18 fini) |
+| 20 | 18 | `src/app/play/crash_dump.cpp` | Le gestionnaire de plantage ne vide pas le journal (A20-04) | Traité par 18 (complément) |
+| 20 | 18 | `src/app/play/pumped_task.h:58` | Sonde détachée qui peut journaliser après `close_log()` | Traité par 18 (complément) |
 | 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Traité par 26 |
 | 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Traité par 31 |
 | 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Traité par 24 |
@@ -841,7 +844,7 @@
 | 22 | 23 | `src/app/play/settings_sound.cpp:72` | Bornes des curseurs de délai différentes des réglages et des touches | Traité par 23 (A23-11) |
 | 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | Traité par 23 (complément) |
 | 22 | 09 | `src/app/play/chain_setup.cpp:359-361` | Qualité : estimation RIFE sur copie 720p au-dessus de 720 lignes | Traité par 09 (complément) |
-| 22 | 18 | `src/app/play/options.cpp:298` | `--rife-model` n'entre pas dans `settings.rife_model` | En attente (18 fini) |
+| 22 | 18 | `src/app/play/options.cpp:298` | `--rife-model` n'entre pas dans `settings.rife_model` | Traité par 18 (complément) |
 | 21 | 26 | `src/app/play/engine_downloads.cpp:130` | Module mis à jour seulement sur `AbiMismatch` : un correctif hors frontière n'arrive jamais | Traité par 26 |
 | 21 | 09 | `src/app/play/upscale_drba.cpp:66-67` | Garder `filled01` et `filled12` d'une paire à la suivante | Traité par 09 (complément) |
 | 21 | 09 | `src/app/play/upscale_drba.cpp:99` | `scores_take` bloque le thread GPU à chaque paire (A21-06) | Traité par 09 (complément) |
@@ -941,7 +944,7 @@
 | 37 | 02 | `src/gpu/cuda/backend/span_fp8_kernels.cuh:241` | Tag `Sm89` de CUTLASS compilé aussi pour sm_120 | Traité par 02 (complément) |
 | 37 | 01 | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné à deux blocs par SM | Traité par 01 (complément) |
 | 39 | 43 | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur, sans `tr()` | Traité par 43 (doublon d'A11-10) |
-| 39 | 18 | `src/app/main.cpp:108-111` | `fail()` n'écrit que sur stderr | En attente (18 fini) |
+| 39 | 18 | `src/app/main.cpp:108-111` | `fail()` n'écrit que sur stderr | Traité par 18 (complément) |
 | 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | Traité par 03 (complément 2) |
 | 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Traité par 43 (A43-02, 192) |
 | 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
@@ -981,7 +984,7 @@
 | 46 | 09 | `src/app/play/drba_model.h:17-21` | Flot de DistilDRBA à l'échelle 0,5 dès 1 440 lignes, sans mesure | Traité par 09 (complément) |
 | 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | Traité par 03 (complément 2) |
 | 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | Traité par 28 (complément) |
-| 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | En attente (18 fini) |
+| 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | Traité par 18 (complément) |
 | 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | Traité par 10 (complément) |
 | 40 | 41 | `tests/unit/app/e2e_play_test.cpp:241-243` | Image SDR assombrie, à croiser avec le grade SDR | En attente (41 fini) |
 | 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | Réfuté par 22 (complément) : partage voulu et documenté |
