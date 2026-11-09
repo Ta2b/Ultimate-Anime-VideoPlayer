@@ -36,10 +36,10 @@
 | 24. Interface : rendu, contrôles et messages | Fusionné (23 défauts, 3 majeurs) | [rapport](rapports/24-interface-rendu.md) |
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
-| 27. Build, dépendances et ports | À faire | |
+| 27. Build, dépendances et ports | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/27-build-dependances.md) |
 | 28. CI, publication et signature | À faire | |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
-| 30. Concurrence, threads et durée de vie | À faire | |
+| 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
 | 31. États dégradés et reprise sur erreur | Fusionné (15 défauts, 8 majeurs) | [rapport](rapports/31-etats-degrades.md) |
 | 32. Budget par image sur la cible | À faire | |
 | 33. Longue durée, mémoire et ressources | À faire | |
@@ -444,6 +444,27 @@
 | A31-13 | Mineur | `src/app/play/placebo_ring.cpp:218` | `ready()` vrai quand le sémaphore échoue | 31 | |
 | A31-14 | Mineur | `src/gpu/cuda/backend/tensorrt_export.cpp:262-263` | GPU bloqué sans être perdu : attente sans délai | 31 | |
 | A31-15 | Majeur | `src/app/play/player_engines.cpp:259-260` | « Annuler » sur DistilDRBA fusionné lance la construction de l'entier, puis de RIFE ; même chose pour RIFE fusionné | 31 | |
+| A30-01 | Majeur | `src/gpu/cuda/backend/trt_engine.cpp:115-119` | Moteurs TensorRT détruits sans attendre les files CUDA, à chaque fermeture de chaîne (à confirmer) | 30 | |
+| A30-02 | Mineur | `src/app/play/chain_hdr.cpp:153-163` | `LookLoader` détaché qui journalise après `close_log` : plantage à la sortie avec A18-01 (GPU-12) | 30 | |
+| A30-03 | Mineur | `src/app/play/settings_system.cpp:177-216` | Deux vérifications de mise à jour en parallèle sur la même archive | 30 | |
+| A30-04 | Mineur | `src/render/grade.cpp:316` | Thread des LUT en `std::jthread` brut, sans `try` (GPU-11) | 30 | |
+| A30-05 | Mineur | `src/app/play/pumped_task.h:47-58` | Sonde du fichier détachée d'office (QUA-13) | 30 | |
+| A30-06 | Mineur | `src/app/play/single_instance.cpp:155-157` | `ReadFile` sans délai sur le canal de l'instance unique (WIN-06) | 30 | |
+| A30-07 | Mineur | `tests/unit/app/` | Aucun test des durées de vie | 30 | |
+| A30-08 | Mineur | `src/media/shot_probe.cpp:108-110` | Attentes sans délai sur le thread de la fenêtre | 30 | |
+| A27-01 | Majeur | `ports/libplacebo/portfile.cmake:8` | libplacebo épinglé à 7.360.1, l'amont à 7.387.0 avec des correctifs de rendu ; notre correctif ne s'applique plus | 27 | |
+| A27-02 | Mineur | `tools/release/package-linux.sh:124` | `patchelf --set-rpath` pose un RUNPATH que `LD_LIBRARY_PATH` devance (démontré) | 27 | |
+| A27-03 | Mineur | `cmake/Dependencies.cmake:64` | Configure accepte un libplacebo sans notre correctif | 27 | |
+| A27-04 | Mineur | `cmake/Dependencies.cmake:4-5` | « Mêmes versions » Linux et Windows vrai en partie seulement | 27 | |
+| A27-05 | Mineur | `tools/deps/linux-from-source.sh:135-138` | Options de libplacebo fixées sous Windows seulement | 27 | |
+| A27-06 | Mineur | `tools/deps/linux-from-source.sh:58-66` | Marqueur de dépendance qui ignore les bibliothèques du système liées | 27 | |
+| A27-07 | Mineur | `CMakeLists.txt:28` | Le CI CUDA des PR ne compile pas toutes les architectures livrées | 27 | |
+| A27-08 | Mineur | `ports/libplacebo/0001-ajp-present-timing.patch:153-170` | Chemin `QUEUE_FULL` du correctif sur une hypothèse non vérifiée | 27 | |
+| A27-09 | Mineur | `cmake/Dependencies.cmake:115-117` | ImGui sans FreeType sous Windows | 27 | |
+| A27-10 | Mineur | `CMakePresets.json:18` | `AJP_WARNINGS_AS_ERRORS` OFF par défaut, contrairement à la règle | 27 | |
+| A27-11 | Mineur | `cmake/AjpSpirv.cmake:35` | `spirv-val` absent sous Windows sans un mot | 27 | |
+| A27-12 | Mineur | `third_party/cutlass/` | CUTLASS recopié sans commit ni somme | 27 | |
+| A27-13 | Mineur | `cmake/AjpModule.cmake:61-77` | En-têtes précompilés sans effet sur les tests | 27 | |
 
 ## Renvois
 
@@ -452,7 +473,7 @@
 | 01 | 02 | `src/gpu/cuda/backend/tensorrt_span_fp8.cpp:78-89` | La queue du SPAN FP8 est enfilée après la jointure de génération (A01-02) | En attente (02 fini) |
 | 01 | 21 | `src/gpu/graph_book.h` | Compteurs d'échecs des graphes jamais remis à zéro, jeux d'adresses jamais évincés | Traité par 21 |
 | 01 | 21 | `src/gpu/lanes.h` | La table des ressources de `LaneHazards` ne perd jamais une adresse | Traité par 21 |
-| 01 | 30 | `src/app/play/chain_setup.h:64-93` | Moteurs détruits avant le backend sans attendre leur travail en vol | Ouvert |
+| 01 | 30 | `src/app/play/chain_setup.h:64-93` | Moteurs détruits avant le backend sans attendre leur travail en vol | Traité par 30 |
 | 01 | 31 | `src/app/play/ring_stage.cpp:58-66` | `health()` n'est appelé que pendant l'attente d'un emplacement | Traité par 31 |
 | 02 | 34 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | FP8 éteint hors Linux : sous Windows 11, le cran Performance reste en FP16 | Ouvert |
 | 02 | 01 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:325` | `write_ring` rend l'erreur sans signaler l'emplacement commencé (comme A02-08) | En attente (01 fini) |
@@ -465,7 +486,7 @@
 | 03 | 09 | `src/app/play/player_engines.cpp:247-266` | Avec DistilDRBA fusionné, le warp repose sur la branche mouvement non testée (A03-03) | Traité par 09 |
 | 03 | 15 | `src/gpu/cuda/backend/tensorrt_kernels.cpp:142-143` | Position de chroma : seuls `Center` et `TopLeft` sont distingués | Réfuté par 15 |
 | 03 | 40 | `tests/unit/backend_tensorrt/` | La suite CUDA ne tourne qu'à la main sur un poste NVIDIA, aucun garde-fou de CI | Ouvert |
-| 05 | 27 | `src/gpu/cuda/backend/CMakeLists.txt:95` | Repli `trtexec` gardé en `RelWithDebInfo` (SEC-20) | Ouvert |
+| 05 | 27 | `src/gpu/cuda/backend/CMakeLists.txt:95` | Repli `trtexec` gardé en `RelWithDebInfo` (SEC-20) | Traité par 27 |
 | 05 | 01 | `src/gpu/cuda/backend/entry.cpp:56-59` | `pick_trtexec` appelé une fois : empreinte jamais revérifiée ensuite (A05-05) | En attente (01 fini) |
 | 05 | 06 | `src/app/play/engine_install.cpp:130-158` | TRT-17 : échec de `nvidia-smi` gardé pour le processus, carte inconnue rangée en « ptx » | Traité par 06 (TRT-17 en partie présent) |
 | 05 | 18 | `src/app/play/crash_dump.cpp:90` | Le gestionnaire de plantage ne tue pas le `trtexec` en cours (A05-01) | Traité par 18 (réfuté sous Windows) |
@@ -508,7 +529,7 @@
 | 11 | 08 | `src/app/play/player_run.cpp:549-560` | Relecture du HDR à partir de l'événement SDL plutôt que du minuteur | En attente (08 fini) |
 | 11 | 08 | `src/app/play/player_run.cpp:619-621` | `p.display` remplacé sans prévenir `contract_watch` | En attente (08 fini) |
 | 11 | 24 | `src/app/play/chain_stats.cpp:184-208` | NVML relevé toutes les 500 ms même OSD caché | Traité par 24 |
-| 11 | 30 | `src/app/play/player_run.cpp:679` | `GpuTelemetry::sample` appelé depuis deux threads (A11-08) | Ouvert |
+| 11 | 30 | `src/app/play/player_run.cpp:679` | `GpuTelemetry::sample` appelé depuis deux threads (A11-08) | Traité par 30 |
 | 11 | 34 | `src/app/play/host_facts.cpp:236-275` | Pic calculé dans deux unités différentes sous Windows et Linux | Ouvert |
 | 12 | 08 | `src/app/play/player_run.cpp:622-629` | GPU-05 : plancher VRR non recalculé (VRR hors sujet pour Tatoub) | En attente (08 fini) |
 | 12 | 08 | `src/app/play/player_run.cpp:420-438` | Plafond passé comme fréquence d'écran (A12-04) | En attente (08 fini) |
@@ -520,14 +541,14 @@
 | 13 | 14 | `src/media/source_loop.cpp:182-188` | Lecture abandonnée traitée comme la fin du fichier (origine de MED-01) | Traité par 14 |
 | 13 | 17 | `src/app/play/external_subtitles.cpp:92` | `path::string()` sur des noms de sous-titres | Traité par 17 (A17-12) |
 | 13 | 08 | `src/app/play/player_run.cpp:738-739` | Pistes copiées dans `Player` même pour une autre vidéo (A13-01, A13-09) | En attente (08 fini) |
-| 13 | 30 | `src/app/play/wiring.cpp:113-124` | `ThreadStages::play/pause` rendent faux sans que personne ne rejoue | Ouvert |
+| 13 | 30 | `src/app/play/wiring.cpp:113-124` | `ThreadStages::play/pause` rendent faux sans que personne ne rejoue | Traité par 30 |
 | 14 | 13 | `src/app/play/pipeline.cpp:45-49` | `path::string()` sur les sous-titres externes | En attente (13 fini) |
 | 14 | 13 | `src/app/play/pipeline.cpp:65` | `config.file.string()` dans le refus « no video track » | En attente (13 fini) |
 | 14 | 13 | `src/app/play/session.cpp:286-287` | La session doit refuser d'enchaîner l'épisode sur une fin en erreur (MED-01) | En attente (13 fini) |
 | 14 | 18 | `src/app/play/player.cpp:99` | `file.string()` dans le refus de `probe_once` | Traité par 18 |
 | 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | En attente (18 fini) |
 | 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | En attente (16 fini) |
-| 14 | 30 | `src/media/source_loop.cpp:303-305` | Boîte non lue pendant `wait_before_retry` | Ouvert |
+| 14 | 30 | `src/media/source_loop.cpp:303-305` | Boîte non lue pendant `wait_before_retry` | Traité par 30 |
 | 15 | 14 | `src/media/source_loop.cpp:153-159` | Image décodée et convertie avant la décision de saut du seek exact | En attente (14 fini) |
 | 15 | 14 | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images `kNoPts` : seek exact sans fin (avec A15-05) | En attente (14 fini) |
 | 15 | 08 | `src/app/play/player.cpp:95-117` | La sonde devrait refuser les formats illisibles avec un message | En attente (08 fini) |
@@ -551,7 +572,7 @@
 | 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Traité par 24 |
 | 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | En attente (18 fini) |
 | 18 | 07 | `src/app/play/auto_config.h:22` | DistilDRBA n'entre jamais dans Auto et la calibration ne l'essaie pas | En attente (07 fini) |
-| 18 | 30 | `src/app/play/chain_hdr.cpp:162` | `LookLoader` détaché qui peut journaliser après `close_log` | Ouvert |
+| 18 | 30 | `src/app/play/chain_hdr.cpp:162` | `LookLoader` détaché qui peut journaliser après `close_log` | Traité par 30 |
 | 18 | 26 | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant le téléchargement | Traité par 26 |
 | 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Traité par 26 |
 | 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | En attente (17 fini) |
@@ -570,7 +591,7 @@
 | 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Traité par 26 |
 | 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Traité par 31 |
 | 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Traité par 24 |
-| 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | En attente (21 fini) |
+| 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | Traité par 27 (A27-02) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | En attente (02 fini) |
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Ouvert |
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
@@ -617,7 +638,7 @@
 | 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | En attente (12 fini) |
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
 | 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
-| 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | Ouvert |
+| 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | En attente (27 fini) |
 | 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | En attente (07 fini) |
 | 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | En attente (10 fini) |
 | 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | En attente (23 fini) |
@@ -635,3 +656,16 @@
 | 31 | 08 | `src/app/play/chain_setup.cpp:160-171` | Repli au cran Équilibre : baisse de qualité sans avis | En attente (08 fini) |
 | 31 | 34 | `src/app/play/chain_setup.cpp:415-427` | Sous Windows, Performance retombe toujours en FP16 entier | Ouvert |
 | 31 | 32 | `src/gpu/cuda/backend/tensorrt_export.cpp` | « CUDA Sysmem Fallback » sous Windows : lenteur sans refus | Ouvert |
+| 30 | 01 | `src/gpu/cuda/backend/tensorrt_backend.cpp:201-204` | `drain()` à placer dans `~TensorRtBackend` (A30-01) | En attente (01 fini) |
+| 30 | 32 | `src/gpu/cuda/backend/tensorrt_lanes.cpp:140-150` | Aucun `cudaSetDeviceFlags` : attente active sur un cœur | Ouvert |
+| 30 | 32 | `src/app/play/upscale_stage.h:500` | Comparer l'attente de `scores_take` pour DistilDRBA et RIFE | Ouvert |
+| 30 | 42 | `src/media/shot_probe.cpp:108-110` | `~ShotProbe` joint sur le thread de la fenêtre | Ouvert |
+| 30 | 26 | `src/app/play/updater.cpp:466-474` | Téléchargement sans `.part` ni verrou | En attente (26 fini) |
+| 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Ouvert |
+| 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | En attente (09 fini) |
+| 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Ouvert |
+| 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | Ouvert |
+| 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | Ouvert |
+| 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | Ouvert |
+| 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | En attente (05 fini) |
+| 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
