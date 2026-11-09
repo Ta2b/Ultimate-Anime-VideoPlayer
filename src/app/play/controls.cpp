@@ -131,7 +131,7 @@ void Controls::notify(const i18n::Translated& text, std::int64_t now_us) {
 }
 
 void Controls::defer(const i18n::Translated& text) {
-  if (!deferred_.empty()) deferred_ += "  ·  ";
+  if (!deferred_.empty()) deferred_ += "\n";  // un avis par ligne (A24-12)
   deferred_ += text.str();
 }
 

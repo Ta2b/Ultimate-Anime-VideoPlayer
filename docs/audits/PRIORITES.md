@@ -519,7 +519,7 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 46 | A24-08 | Mineur | `src/app/play/user_keys.cpp:32` | `path::string()` dans le journal (dette, voir A20-02) | Corrigé |
 | 47 | A24-10 | Mineur | `src/app/play/visible_error.h:28` | UX-17 : phrase d'erreur répétée |  |
 | 48 | A24-11 | Mineur | `src/app/play/controls_draw.cpp:354-371` | UX-15 : textes de préparation sans largeur maximale |  |
-| 49 | A24-12 | Mineur | `src/app/play/controls_draw.cpp:114-125` | Message bref sans retour à la ligne, avis collés |  |
+| 49 | A24-12 | Mineur | `src/app/play/controls_draw.cpp:114-125` | Message bref sans retour à la ligne, avis collés | Corrigé |
 | 50 | A24-13 | Mineur | `src/app/play/panel_style.h:115-130` | UX-22 : badges qui ne suivent pas l'échelle |  |
 | 51 | A24-14 | Mineur | `src/app/play/ui.cpp:452` | UX-08 : Échap ferme tout le panneau et jette les changements |  |
 | 52 | A24-15 | Mineur | `src/app/play/home_screen.cpp:205-213` | `dropped()` passe la fenêtre au premier plan et interroge le disque |  |
