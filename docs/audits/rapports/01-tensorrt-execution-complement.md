@@ -42,7 +42,7 @@ Aucun nouveau : TRT-06, TRT-12 et TRT-13 sont traités au rapport 01.
 | Vers l'audit | Où | Constat |
 |---|---|---|
 | 02 | `src/gpu/cuda/backend/tensorrt_span_fp8.cpp:104` | A02-08 : le scénario « la présentation attend l'emplacement » est réfuté par la même preuve que le premier renvoi ci-dessus (`ring_stage.cpp:107`, `:179-200`). À reclasser par le coordinateur. |
-| 02 | `src/gpu/cuda/backend/drba_fused_engine.cpp:179-185` | L'essai au chargement de DistilDRBA fusionné écrit aussi la zone partagée sur un flux privé : à inclure dans la correction de A02-03. |
+| 02 | `src/gpu/cuda/backend/drba_fused_engine.cpp:174-179` | L'essai au chargement de DistilDRBA fusionné écrit aussi la zone partagée sur un flux privé : à inclure dans la correction de A02-03. |
 
 ## Points positifs
 
