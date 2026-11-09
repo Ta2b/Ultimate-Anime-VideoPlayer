@@ -15,7 +15,7 @@ Réponses de Tatoub aux deux questions posées :
 
 - **modèle fourni par `--model` ou `--rife-model`** : « jamais de plantage ». Un fichier tronqué ou hostile doit
   donner un refus clair ; un plantage ou une lecture hors bornes compte comme Majeur ;
-- **découpe de RIFE et de DistilDRBA** : « seulement les modèles livrés » (RIFE 4.22 lite, DistilDRBA v2 lite).
+- **découpe de RIFE et de DistilDRBA** : « seulement les modèles livrés » ; Tatoub précise que les RIFE livrés sont 4.22 lite et 4.25 (avec DistilDRBA v2 lite).
   Une autre version n'a pas à se découper, mais elle doit être refusée proprement, jamais découpée de travers.
 
 `onnx_blend` (interpolateur de Core ML) est hors cible : lu seulement pour la validité du modèle écrit.
@@ -90,5 +90,3 @@ La fiche n'en cite aucun et `SYNTHESE.md` n'a pas de renvoi vers 04. La fiche no
   tel quel à l'utilisateur (audit 24) ?
 - Sous Windows, un emplacement de poids `CON`, `NUL` ou `aux.bin` passe `is_safe_location` ; selon la version de
   Windows, il désigne un périphérique. À confirmer sur la machine Windows de Tatoub, sans urgence.
-- RIFE 4.25 se découpe toujours (5 blocs) alors que le lecteur ne livre plus que 4.22 lite : faut-il garder ce
-  chemin, ou refuser tout ce qui n'est pas 4.22 lite (plus simple que A04-03) ?
