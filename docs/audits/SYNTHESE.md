@@ -50,12 +50,12 @@
 | 38. Promesses tenues | Fusionné (16 défauts, 2 majeurs, complément compris) | [rapport](rapports/38-promesses-tenues.md), [complément](rapports/38-promesses-tenues-complement.md) |
 | 39. Diagnostic et support | Fusionné (10 défauts, 4 majeurs, complément compris) | [rapport](rapports/39-diagnostic-support.md), [complément](rapports/39-diagnostic-support-complement.md) |
 | 40. Tests et couverture | Fusionné (16 défauts, 5 majeurs) | [rapport](rapports/40-tests-couverture.md) |
-| 41. HDR, grade et looks | Fusionné (11 défauts, 2 majeurs) | [rapport](rapports/41-hdr-grade.md) |
+| 41. HDR, grade et looks | Fusionné (12 défauts, 2 majeurs, complément compris) | [rapport](rapports/41-hdr-grade.md), [complément](rapports/41-hdr-grade-complement.md) |
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
 | 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
 | 44. Représentation intermédiaire et import ONNX | Fusionné (12 défauts, 1 majeur) | [rapport](rapports/44-ir-onnx.md) |
 | 45. Moteur Vulkan : calcul, noyaux et shaders | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/45-backend-vulkan.md) |
-| 46. Outils de recherche, modèles et données livrées | Fusionné (15 défauts, 6 majeurs) | [rapport](rapports/46-outils-donnees.md) |
+| 46. Outils de recherche, modèles et données livrées | Fusionné (15 défauts, 6 majeurs, complément compris) | [rapport](rapports/46-outils-donnees.md), [complément](rapports/46-outils-donnees-complement.md) |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
 | 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | Fusionné (14 défauts, 6 majeurs, 16 compromis à trancher) | [rapport](rapports/49-qualite-rendu.md) |
@@ -718,6 +718,7 @@
 | A32-11 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:17-19` | Attente active au-delà de 200 µs : événements sans `cudaEventBlockingSync` | 32 | |
 | A32-12 | Mineur | `src/app/play/upscale_drba.cpp:124-157` | DistilDRBA relit sa mesure dans la paire même : la file se vide à chaque paire | 32 | |
 | A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) | 32 | |
+| A41-12 | Mineur | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur ; « · grade » affiché même sans hook posé | 41 | |
 
 ## Renvois
 
@@ -975,8 +976,8 @@
 | 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Traité par 46 (A46-08) |
 | 43 | 11 | `src/app/play/gpu_telemetry.cpp:73-76` | « Go » et virgule décimale en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Traité par 11 (complément) |
 | 43 | 24 | `src/app/play/home_screen.cpp:178` | « EDID illisible : OLED inconnu » en dur dans Vidéo > Affichage | Traité par 24 (complément) |
-| 43 | 41 | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur | En attente (41 fini) |
-| 43 | 41 | `src/app/play/chain_hdr.cpp:367` | GPU-14 toujours présent (« Vrai noir : mesure impossible » en dur) | En attente (41 fini) |
+| 43 | 41 | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur | Traité par 41 (complément) |
+| 43 | 41 | `src/app/play/chain_hdr.cpp:367` | GPU-14 toujours présent (« Vrai noir : mesure impossible » en dur) | Traité par 41 (complément) |
 | 43 | 25 | `src/app/play/first_run.cpp:29-31` | La `note` de l'assistant n'applique pas `french_spaces` | Traité par 25 (complément) |
 | 43 | 25 | `src/app/play/first_run.cpp:445` | Deux textes pour l'installation de la mise à jour | Traité par 25 (complément) |
 | 43 | 08 | `src/app/play/chain.cpp:113-131` | UX-20 : rien ne reformate l'affichage quand la langue change en direct | Traité par 08 (complément) |
@@ -997,10 +998,10 @@
 | 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | Traité par 28 (complément) |
 | 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | Traité par 18 (complément) |
 | 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | Traité par 10 (complément) |
-| 40 | 41 | `tests/unit/app/e2e_play_test.cpp:241-243` | Image SDR assombrie, à croiser avec le grade SDR | En attente (41 fini) |
+| 40 | 41 | `tests/unit/app/e2e_play_test.cpp:241-243` | Image SDR assombrie, à croiser avec le grade SDR | Traité par 41 (complément) |
 | 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | Réfuté par 22 (complément) : partage voulu et documenté |
 | 40 | 13 | `tests/unit/app/e2e_play_test.cpp:221` | Avec `--seconds`, l'épisode suivant s'enchaîne quand même | Traité par 13 (complément) |
-| 40 | 46 | `tools/bench/rife_triplets.py:100` | Le banc de qualité refuse DistilDRBA | En attente (46 fini) |
+| 40 | 46 | `tools/bench/rife_triplets.py:100` | Le banc de qualité refuse DistilDRBA | Traité par 46 (complément) |
 | 28 | 39 | `src/prepare/builder.cpp:233` | Disque plein soupçonné au journal seulement, pas nommé à l'utilisateur | Traité par 39 (complément) |
 | 09 | 07 | `src/app/play/span_auto.cpp:67-71` | A09-17 se corrige au même endroit qu'A07-04 | Note pour la correction |
 | 09 | 21 | `src/gpu/kernel_ops.h:188-196` | La correction proposée pour A21-06 est une baisse de qualité à mesurer avant de la prendre | Note pour la correction |
@@ -1009,3 +1010,4 @@
 | 09 | 46 | `src/app/play/drba_model.cpp:14-24` | Paquet sans demi-flot non signalé (A09-21) | Note pour la correction |
 | 26 | 36 | `src/app/play/updater.cpp:616-631` | `previous_version` survit à une installation manuelle (A26-13) | Note pour la correction |
 | 31 | 15 | `src/media/video_decoder.cpp:464` | Aucun repli logiciel de NVDEC après la première image (A31-16) | Note pour la correction |
+| 41 | 40 | `tests/unit/app/e2e_play_test.cpp:241-243` | Le grade SDR est l'identité sur ce pixel : le commentaire du test est faux (A40-06) | Note pour la correction |
