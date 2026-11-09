@@ -33,6 +33,11 @@ std::unique_ptr<RingWatcher> RingWatcher::start(VkDevice device, PFN_vkGetDevice
       .signal = load<PFN_vkSignalSemaphore>(device_proc, device, "vkSignalSemaphore", "vkSignalSemaphoreKHR"),
       .create = load<PFN_vkCreateSemaphore>(device_proc, device, "vkCreateSemaphore"),
       .destroy = load<PFN_vkDestroySemaphore>(device_proc, device, "vkDestroySemaphore")};
+  return start_with(device, api, waker, context);
+}
+
+std::unique_ptr<RingWatcher> RingWatcher::start_with(VkDevice device, const Api& api, Waker waker,
+                                                     void* context) {
   if (api.wait == nullptr || api.counter == nullptr || api.signal == nullptr || api.create == nullptr ||
       api.destroy == nullptr)
     return nullptr;
@@ -105,10 +110,28 @@ std::optional<std::int64_t> RingWatcher::take(VkSemaphore semaphore, std::uint64
 void RingWatcher::forget_all() {
   std::unique_lock lock(mutex_);
   entries_.clear();
-  if (!thread_.joinable()) return;
+  if (!thread_.joinable() || dead_) return;
   const std::uint64_t epoch = ++forget_epoch_;
   nudge();
-  settled_.wait(lock, [&] { return seen_epoch_ >= epoch || stopping_; });
+  settled_.wait(lock, [&] { return seen_epoch_ >= epoch || stopping_ || dead_; });
+}
+
+bool RingWatcher::alive() const {
+  const std::scoped_lock lock(mutex_);
+  return thread_.joinable() && !dead_;
+}
+
+// Le thread sort sur une erreur : forget_all ne l'attend plus, main sonde l'anneau comme avant, et le journal
+// le dit une fois (A10-03, GPU-10).
+void RingWatcher::die(VkResult result) {
+  {
+    const std::scoped_lock lock(mutex_);
+    dead_ = true;
+  }
+  settled_.notify_all();
+  log_channel("app")->warn(
+      "veilleur d'écriture : vkWaitSemaphores a échoué ({}), l'anneau est de nouveau sondé",
+      static_cast<int>(result));
 }
 
 std::uint64_t RingWatcher::wakes() const {
@@ -141,7 +164,7 @@ void RingWatcher::run(const std::stop_token& stop) {
                                    .pValues = values.data()};
     const VkResult waited = api_.wait(device_, &info, kTimeoutNs);
     const std::int64_t now = host_now_us();
-    if (waited != VK_SUCCESS && waited != VK_TIMEOUT) return;  // appareil perdu : main sonde comme avant
+    if (waited != VK_SUCCESS && waited != VK_TIMEOUT) return die(waited);  // appareil perdu
     if (waited != VK_SUCCESS) continue;
     bool written = false;
     {

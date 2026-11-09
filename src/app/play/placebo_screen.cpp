@@ -233,7 +233,7 @@ std::optional<std::int64_t> PlaceboScreen::written_at(const RingFrame& frame) {
 }
 
 bool PlaceboScreen::wakes_on_write() const {
-  return impl_->watcher != nullptr;
+  return impl_->watcher != nullptr && impl_->watcher->alive();
 }
 
 std::optional<bool> PlaceboScreen::vrr_armed() const {
