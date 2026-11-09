@@ -44,8 +44,8 @@
 | 32. Budget par image sur la cible | Fusionné (9 défauts, 4 majeurs) | [rapport](rapports/32-budget-par-image.md) |
 | 33. Longue durée, mémoire et ressources | Fusionné (8 défauts, 4 majeurs) | [rapport](rapports/33-longue-duree-ressources.md) |
 | 34. Parité Windows et CachyOS | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/34-parite-windows-cachyos.md) |
-| 35. Entrées non sûres | À faire | |
-| 36. État persistant et compatibilité entre versions | À faire | |
+| 35. Entrées non sûres | Fusionné (9 défauts, 1 majeur) | [rapport](rapports/35-entrees-hostiles.md) |
+| 36. État persistant et compatibilité entre versions | Fusionné (9 défauts, 3 majeurs) | [rapport](rapports/36-etat-persistant.md) |
 | 37. Configurations NVIDIA variées | À faire | |
 | 38. Promesses tenues | À faire | |
 | 39. Diagnostic et support | À faire | |
@@ -511,6 +511,24 @@
 | A33-06 | Mineur | `src/app/main.cpp:427-440` | Deux rotations du journal qui s'ignorent | 33 | |
 | A33-07 | Mineur | `src/app/play/pumped_task.h:58` | Sonde détachée qui garde son descripteur | 33 | A30-05 (même cause) |
 | A33-08 | Mineur | `src/app/play/gpu_telemetry.cpp` | Aucun essai de durée ni relevé de ressources | 33 | |
+| A35-01 | Majeur | `tools/deps/linux-from-source.sh:35` | FFmpeg, libass (fork), dav1d, FreeType et HarfBuzz figés sans veille des failles ; A28-02 bloque tout correctif | 35 | |
+| A35-02 | Mineur | `src/media/demuxer.cpp:190-199` | Chapitres dédoublonnés en O(n²) : 7 s par ouverture à 100 000 chapitres (démontré) | 35 | |
+| A35-03 | Mineur | `src/core/update_manifest.cpp:21-28` | Préversion multiligne affichée telle quelle (SEC-10) | 35 | |
+| A35-04 | Mineur | `src/core/model_index.cpp:33-40` | `safe_name` accepte les noms réservés de Windows (démontré) | 35 | |
+| A35-05 | Mineur | `src/app/play/engine_tools.cpp:79-88` | Téléchargements sans `--proto =https` ni `--proto-redir` | 35 | |
+| A35-06 | Mineur | `src/media/demuxer.cpp:116-117` | Aucune borne haute sur la taille annoncée par le fichier | 35 | |
+| A35-07 | Mineur | `src/app/play/updater.cpp:557-564` | `staged_file` non confiné à `updates/` | 35 | |
+| A35-08 | Mineur | `tests/fuzz/CMakeLists.txt:18-20` | Lecteurs d'octets extérieurs non fuzzés | 35 | |
+| A35-09 | Mineur | `src/app/play/look_catalog.cpp:42-44` | Nom d'un look gardé contre `/` et `\` seulement | 35 | |
+| A36-01 | Majeur | `src/app/play/settings_toml_lenient.cpp:73-74` | Au retour arrière, `play.toml` perd toutes les clés de la version récente dès qu'une valeur lui est inconnue (démontré) | 36 | A22-06 (même cause, gravité relevée) |
+| A36-02 | Majeur | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` jamais invalidé par la version du lecteur, du module ni par le pilote : Auto calibré bridé | 36 | |
+| A36-03 | Majeur | `src/app/play/engine_install.cpp:539-571` | Paquet TensorRT installé sans fsync et jugé sur sa présence : Vulkan pour toujours après une coupure (à confirmer) | 36 | |
+| A36-04 | Mineur | `src/app/play/derived_model.cpp:18-22` | Nom d'un modèle dérivé sans la version du dériveur | 36 | |
+| A36-05 | Mineur | `src/app/play/updater.cpp:273-293` | `update.toml` réécrit avec les seuls champs connus | 36 | |
+| A36-06 | Mineur | `src/core/model_index.cpp:440-442` | Anciens paquets TensorRT jamais retirés | 36 | |
+| A36-07 | Mineur | `tools/release/windows/ajp.iss:16-50` | Désinstaller laisse plusieurs Go sans le dire | 36 | |
+| A36-08 | Mineur | `src/app/play/paths.h:13-36` | Caches reconstructibles hors de `~/.cache` sous CachyOS | 36 | |
+| A36-09 | Mineur | `tests/unit/app/settings_test.cpp:620-645` | Aucun test de passage entre versions hors des clés inconnues | 36 | |
 
 ## Renvois
 
@@ -537,7 +555,7 @@
 | 05 | 06 | `src/app/play/engine_install.cpp:130-158` | TRT-17 : échec de `nvidia-smi` gardé pour le processus, carte inconnue rangée en « ptx » | Traité par 06 (TRT-17 en partie présent) |
 | 05 | 18 | `src/app/play/crash_dump.cpp:90` | Le gestionnaire de plantage ne tue pas le `trtexec` en cours (A05-01) | Traité par 18 (réfuté sous Windows) |
 | 05 | 07 | appelants de `Backend::build` | Une construction par taille de source : coût à mesurer, cache sans purge (TRT-17) | Traité par 07 |
-| 05 | 36 | `src/prepare/identity.cpp:161-164` | Jeton `driver` dans la clé : reconstruction complète à chaque saut de CUDA du pilote | Ouvert |
+| 05 | 36 | `src/prepare/identity.cpp:161-164` | Jeton `driver` dans la clé : reconstruction complète à chaque saut de CUDA du pilote | Traité par 36 |
 | 06 | 26 | `src/app/play/engine_online.cpp` | `merge_release_index` : SHA ou version changés du paquet TensorRT (voir A06-01) | Traité par 26 |
 | 06 | 28 | `tools/release/package-linux.sh:190` | Version du paquet TensorRT tirée de `ls libnvinfer.so.*` : « 11 » ou « 11.3.0 » | Traité par 28 |
 | 06 | 28 | `tools/release/package-windows.ps1:101` | Origine et stabilité de `$trtVersion` | Traité par 28 |
@@ -611,7 +629,7 @@
 | 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | En attente (14 fini) |
 | 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Réfuté par 22 |
 | 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Traité par 24 |
-| 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
+| 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Traité par 35 (en partie) |
 | 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Traité par 28 |
 | 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Traité par 28 |
 | 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Traité par 25 |
@@ -673,8 +691,8 @@
 | 26 | 28 | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | Traité par 28 |
 | 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Traité par 28 |
 | 26 | 28 | `.github/workflows/release-linux.yml:150` | `--latest` posé avant le manifeste signé (SEC-05) | Traité par 28 |
-| 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Ouvert |
-| 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Ouvert |
+| 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Traité par 36 |
+| 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Traité par 35 |
 | 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | En attente (06 fini) |
 | 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | En attente (23 fini) |
 | 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Ouvert |
@@ -696,7 +714,7 @@
 | 29 | 31 | `src/app/play/player_engines.cpp:270-272` | `Cancelled` de DistilDRBA fusionné lance la construction de l'entier | Traité par 31 |
 | 29 | 33 | aucun fichier | La veille (A29-02) à inclure dans le banc de soirée | Traité par 33 |
 | 29 | 34 | `src/app/play/default_player.cpp:203` | Plusieurs épisodes ouverts : un processus par fichier | Traité par 34 (A34-04) |
-| 29 | 36 | `src/app/play/player.cpp:574-581` | `save_settings` de l'épisode suivant écrit les raccourcis de séance avant l'ouverture | Ouvert |
+| 29 | 36 | `src/app/play/player.cpp:574-581` | `save_settings` de l'épisode suivant écrit les raccourcis de séance avant l'ouverture | Traité par 36 |
 | 31 | 40 | `tests/unit/app/ring_stage_test.cpp:243` | Test qui fige `ThreadFailed` ; aucun test d'injection de `DeviceLost` | Ouvert |
 | 31 | 39 | `src/app/play/engine_screen.cpp:342-344` | Raison du refus de TensorRT au journal seulement | Ouvert |
 | 31 | 08 | `src/app/play/chain_setup.cpp:160-171` | Repli au cran Équilibre : baisse de qualité sans avis | En attente (08 fini) |
@@ -736,5 +754,11 @@
 | 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Ouvert |
 | 33 | 08 | `src/app/play/engine_build.cpp` | Un `TensorRtBackend` créé puis détruit par moteur préparé | En attente (08 fini) |
 | 33 | 28 | `src/prepare/cache.cpp` | Disque plein par le cache : l'écriture d'un moteur doit refuser proprement | En attente (28 fini) |
-| 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Ouvert |
+| 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Traité par 36 |
 | 33 | 31 | `src/app/play/player_run.cpp:510` | Au réveil, perte du contexte CUDA et saut d'horloge ensemble | En attente (31 fini) |
+| 35 | 33 | `src/prepare/builder.cpp:139-145` | Un moteur par forme, sans purge | Traité par 33 (A33-04) |
+| 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | En attente (17 fini) |
+| 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | En attente (28 fini) |
+| 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | En attente (07 fini) |
+| 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | En attente (02 fini) |
+| 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | En attente (26 fini) |
