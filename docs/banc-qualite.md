@@ -77,11 +77,42 @@ Ce que ces chiffres disent :
   en FP16 ; le banc en donne la mesure, la correction donnera la sienne.
 - **DistilDRBA est 11 à 12 dB sous RIFE 4.22 lite sur ce mouvement** (35,7 contre 47,6 dB), pour un temps cinq
   fois plus court sur processeur. Il place bien le mouvement (un panoramique pur tombe au bon endroit) mais le
-  rend moins net. « Plus rapide à qualité proche » n'est donc pas tenu sur ces scènes ; un épisode réel
-  (`--video`), où ses poses tenues comptent, reste à mesurer avant de conclure.
+  rend moins net. « Plus rapide à qualité proche » n'est donc pas tenu sur ces scènes ; la mesure sur un
+  épisode réel suit.
 - **SPAN ne bat pas le bicubique en PSNR sur ce banc** : il renforce les traits au lieu de rendre l'original,
   et la réduction par moyenne n'est pas la dégradation qu'il a apprise. La colonne sert à comparer deux états
   de SPAN (FP16, FP8, hauteur de travail), pas SPAN au bicubique.
+
+## Mesure sur un épisode
+
+Un extrait de 31 s d'un épisode en 1080p (743 images, surtout de l'action), avec `--video`. Le banc y prend des
+fenêtres où k, k+1 et k+2 diffèrent, et compare l'image créée à k+1. PSNR contre la vraie image, graphes FP16.
+
+| Taille, fenêtres | RIFE 4.25 | RIFE 4.22 lite | DistilDRBA v2 lite | DistilDRBA en tout FP32 |
+|---|---:|---:|---:|---:|
+| 1280 × 720, les 60 | 26,41 | 26,39 | 24,57 | 24,58 |
+| 1280 × 720, les 13 faciles (RIFE au-dessus de 35 dB) | 43,77 | 43,54 | 36,79 | 36,85 |
+| 1280 × 720, les 8 entre 28 et 35 dB | 31,38 | 31,44 | 29,71 | |
+| 1280 × 720, les 39 sous 28 dB | 19,61 | 19,64 | 19,45 | |
+| 1920 × 1080, les 16 | 24,78 | 24,74 | 23,66 | 23,66 |
+| 1920 × 1080, les 2 faciles | 44,87 | 44,43 | 38,99 | 38,98 |
+
+- **DistilDRBA vaut RIFE sur l'action et perd sur le mouvement simple** : égalité sous 28 dB, où tous échouent ;
+  6,8 dB de moins sur les fenêtres faciles en 720p, 5,4 dB en 1080p. En moyenne 1,8 dB de moins en 720p
+  (0,2 dB en médiane, il gagne 25 fenêtres sur 60) et 1,1 dB en 1080p. Les 11 à 12 dB de la synthèse sont donc
+  le cas le plus défavorable, pas la moyenne d'un épisode.
+- **L'écart vient du réseau, pas du FP16** : avec tout le calcul en FP32, grilles comprises, DistilDRBA ne gagne
+  que 0,06 dB sur les fenêtres faciles.
+- **RIFE 4.25 et RIFE 4.22 lite ne se distinguent pas** : 0,02 dB en 720p, 0,04 dB en 1080p.
+- **Le FP16 des RIFE s'écarte davantage sur un épisode** : pire écart de 105 codes (4.25) et 193 codes (4.22 lite)
+  en 720p, 61 et 54 en 1080p, contre 23 et 34 pour DistilDRBA ; le PSNR moyen contre la vraie image n'en bouge
+  pas (26,41 contre 26,45 en FP32).
+- Temps sur processeur : DistilDRBA 140 ms par image créée en 720p contre 776 (4.22 lite) et 906 (4.25) ; 288 ms
+  en 1080p contre 1861 et 1953.
+
+Ce que cette mesure ne dit pas : un seul extrait ; **les poses tenues et les coupes ne sont pas mesurées** (une
+fenêtre dont le dessin du milieu est tenu est écartée, et une coupe entre k et k+2 n'est pas détectée). Les poses
+tenues sont l'argument de DistilDRBA.
 
 ## Limites
 
