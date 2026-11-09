@@ -54,7 +54,7 @@
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (19 défauts, 1 majeur, complément compris) | [rapport](rapports/42-plans-coupes.md), [complément](rapports/42-plans-coupes-complement.md) |
 | 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
 | 44. Représentation intermédiaire et import ONNX | Fusionné (12 défauts, 1 majeur) | [rapport](rapports/44-ir-onnx.md) |
-| 45. Moteur Vulkan : calcul, noyaux et shaders | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/45-backend-vulkan.md) |
+| 45. Moteur Vulkan : calcul, noyaux et shaders | Fusionné (15 défauts, 2 majeurs, complément compris) | [rapport](rapports/45-backend-vulkan.md), [complément](rapports/45-backend-vulkan-complement.md) |
 | 46. Outils de recherche, modèles et données livrées | Fusionné (15 défauts, 6 majeurs, complément compris) | [rapport](rapports/46-outils-donnees.md), [complément](rapports/46-outils-donnees-complement.md) |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
@@ -601,8 +601,8 @@
 | A43-05 | Mineur | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » alors que l'assistant n'a pas ce bouton | 43 | |
 | A43-06 | Mineur | `src/app/play/i18n_fr_image.cpp:88` | Qualité : le coût en précision du FP8 n'est jamais dit ; « Balanced » nomme deux choses | 43 | |
 | A43-07 | Mineur | `src/app/play/french_text.h:12-30` | Typographie française appliquée à moitié | 43 | |
-| A45-01 | Majeur | `src/gpu/vulkan/backend/net_presets.cpp:1-29` | Qualité : la table pré-réglée NvidiaAda met 28 couches sur 29 de SPAN et RIFE 4.25 en sommes FP16 dans le repli Vulkan, sans mesure (erreur par couche ×4 à ×9 en simulation) | 45 | |
-| A45-02 | Mineur | `src/gpu/vulkan/backend/net_autotune.cpp:101-115` | Qualité : porte de l'autotuner trop large et jugée contre FP16 | 45 | |
+| A45-01 | Majeur | `src/gpu/vulkan/backend/net_presets.cpp:1-29` | Qualité : la table pré-réglée NvidiaAda met 28 couches sur 29 de SPAN et RIFE 4.25 en sommes FP16 dans le repli Vulkan, sans mesure (erreur par couche ×4 à ×9 en simulation, peut-être sous-estimée : troncature des Tensor Cores) | 45 | |
+| A45-02 | Majeur | `src/gpu/vulkan/backend/net_autotune.cpp:101-115` | Qualité : porte de l'autotuner trop large et jugée contre FP16 ; règle le rendu normal sur AMD et Intel | 45 | Requalifié en majeur par le complément 45 |
 | A45-03 | Mineur | `src/gpu/vulkan/backend/kernel_ops.h:116-143` | Qualité : pas de débandage avant SPAN sous Vulkan | 45 | |
 | A45-04 | Mineur | `src/gpu/vulkan/backend/drba_fused_engine.cpp:335-341` | DistilDRBA fusionné Vulkan : encodeur refait trois images par appel | 45 | A03-15 (même cause) |
 | A45-05 | Mineur | `src/gpu/vulkan/backend/queue.cpp:117-125` | Un `vkQueueSubmit` refusé fige la file pour de bon | 45 | |
@@ -722,6 +722,7 @@
 | A42-17 | Mineur | `src/media/flash_guard.h:26-29` | Sécurité : limiteur de flashs tardif (1 000 ms à 4 Hz), première montée non comptée, pré-analyse non utilisée | 42 | |
 | A42-18 | Mineur | `src/app/play/upscale_stage.cpp:259` | Analyse jetée quand deux relectures attendent : elle manque au limiteur | 42 | |
 | A42-19 | Mineur | `src/app/play/chain_hdr.cpp:252` | Plafond sans effet en sortie SDR mais journalisé comme posé | 42 | |
+| A45-15 | Mineur | `src/gpu/vulkan/shaders/net_tensor.glsl:75-77` | Qualité : arrondi f32 → f16 et sous-normaux F16 laissés au pilote, sans `float_controls` ni test exact | 45 | |
 
 ## Renvois
 
@@ -993,9 +994,9 @@
 | 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | Traité par 03 (complément 2) |
 | 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Traité par 46 (A46-04 : grille en FP16) |
 | 44 | 49 | qualité DistilDRBA F16 | DistilDRBA F16 contre FP32 : 51 à 52 dB, écart max 13 à 19/255 (pour A49-14) | En attente (49 fini) |
-| 44 | 45 | shaders Vulkan | Arrondi f32 vers f16 (RTE ou RTZ), sous-normaux F16, accumulation des coopmat | En attente (45 fini) |
+| 44 | 45 | shaders Vulkan | Arrondi f32 vers f16 (RTE ou RTZ), sous-normaux F16, accumulation des coopmat | Traité par 45 (complément) |
 | 46 | 20 | `src/core/model_index.cpp:356-410` | `models.lock` lu par aucun code du lecteur : code mort | Traité par 20 (complément) |
-| 46 | 45 | `src/gpu/vulkan/backend/net_gate.h:24-25` | Porte qui admet les sommes FP16 à 2 % sur du bruit, pour toutes les cartes | En attente (45 fini) |
+| 46 | 45 | `src/gpu/vulkan/backend/net_gate.h:24-25` | Porte qui admet les sommes FP16 à 2 % sur du bruit, pour toutes les cartes | Traité par 45 (complément) |
 | 46 | 09 | `src/app/play/drba_model.h:17-21` | Flot de DistilDRBA à l'échelle 0,5 dès 1 440 lignes, sans mesure | Traité par 09 (complément) |
 | 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | Traité par 03 (complément 2) |
 | 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | Traité par 28 (complément) |
