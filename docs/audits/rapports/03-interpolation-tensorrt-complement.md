@@ -59,6 +59,33 @@ RIFE 4.22 lite fusionné n'a aucune mesure par passe dans les documents : la com
 | A03-16 | Mineur | `src/gpu/cuda/backend/drba_fused_kernels.cu:277-290`, `src/app/play/upscale_drba.cpp:273-279` | En variante mouvement, la fin agrandit le flot et le masque × t jusqu'à la taille remplie (5 plans), que le warp rééchantillonne aussitôt à la taille de sortie : deux interpolations bilinéaires de suite, et la fin est le noyau le plus cher de la chaîne (0,085 ms sur 0,152 à 1920 × 1088, à sa borne mémoire ; mesuré en variante image, la variante mouvement ne l'est pas). | Chaque image créée en « warp après SPAN », le chemin par défaut. | Sortir le flot et le masque à 1/t (le DepthToSpace de Y_2, sans agrandissement) et laisser le warp faire la seule mise à l'échelle (`Motion::area` la prévoit). Demande une fenêtre dont le coin n'est pas multiple de t pour certaines hauteurs, et change le sous-pixel du flot : à valider par PSNR contre la sortie actuelle. | Lu. À confirmer : banc `drba_fusion_bench`, fin en variante mouvement, avec et sans agrandissement. |
 | A03-17 | Mineur | `tests/unit/backend_tensorrt/drba_fused_test.cpp`, `docs/drba-fusionne.md:51-79`, `docs/rife-fusionne.md:48-63` | Rien ne mesure ce que la question demande. Les bancs et les documents donnent le temps **par passe**, chaque moteur contre son réseau entier ; aucun ne donne le coût **par paire** ou **par image créée** (entrée, passes, warps) de DistilDRBA contre RIFE à chaîne égale, et RIFE 4.22 lite fusionné n'a aucun chiffre. La décision « Très rapide = DistilDRBA » du menu (`settings.h:82`) repose sur le temps par passe. | Une régression qui double l'entrée de DistilDRBA ne se voit dans aucun chiffre suivi. | Un banc caché `[.bench]` : pour 1 à 6 instants par paire, coût GPU total d'une paire (entrée, passes, warps à 1440p) pour RIFE 4.25, RIFE 4.22 lite et DistilDRBA fusionnés, à 1280 × 768 ; le tableau va dans `docs/interpolation.md`. | Lu. |
 
+## Qualité : où le modèle est dégradé (ajout du 09/11, à la demande de Tatoub)
+
+Question posée : tirer mieux parti de la vitesse sans négliger la qualité, et vérifier que le modèle n'est
+dégradé nulle part. Le trajet relu : export, conversion FP16, ingestion, entrée, réseau, colle, sortie, warp.
+
+| ID | Gravité | Où | Défaut | Scénario | Correction | Preuve |
+|---|---|---|---|---|---|---|
+| A03-18 | Majeur | `tools/rife/convert_rife_fp16.py:35`, `:56-65`, `tools/drba/export_distil_drba.py:65-73`, `src/gpu/cuda/backend/drba_fused_kernels.cu:64-69` | La grille des dix GridSample de DistilDRBA est calculée en **FP16**, ce que le convertisseur interdit pour RIFE (« perd 1 à 2 pixels de précision », `:8-9`). Le convertisseur remonte de chaque GridSample par `Transpose`, `Add`, `Mul` ; dans l'export de DistilDRBA un `Concat` s'intercale (`torch.cat([x, y])` puis `permute`) et arrête la remontée : `Add(grille, Mul(flot, pas))` reste en FP16. Un pas de FP16 près de 1 vaut 0,31 pixel à 1280 de large et 0,47 à 1920, surtout dans la moitié droite et basse de l'image. Les noyaux fusionnés reproduisent cet arrondi exprès (`grid`, deux arrondis), et tous les contrôles de qualité comparent au graphe FP16 lui-même : l'écart au modèle d'origine en FP32 n'a jamais été mesuré à la taille de lecture (`check` compare le FP32 avant conversion, en 256 × 192). | Panoramique lent : les warps internes placent les traits sur une grille d'un tiers à un demi pixel au lieu de les suivre ; tremblement fin des contours, plus fort à droite de l'image. En variante image, le warp final du graphe a le même défaut à pleine résolution. | Ajouter `Concat` à `GRID_OPS` pour que la chaîne de la grille reste en FP32 dans le graphe entier, et retirer les arrondis de `grid` dans la colle (calcul en FP32, sans coût). Le fusionné devient alors plus fidèle au modèle d'origine que le graphe FP16 actuel ; ses tests se comparent au graphe corrigé. | Lu, et vérifié sur le modèle livré (`distil_drba_v2_lite.onnx`, parcours du graphe avec `onnx`) : devant le dernier GridSample, `/Sub_41` et `/Sub_43` (la base) passent par un Cast vers FP16, `/Add_20` et `/Add_21` sont en FP16, puis `/Cast_65` (FP16) et un Cast vers FP32. Reste à mesurer : sortie du graphe FP16 actuel et du graphe corrigé contre le FP32 d'origine (ONNX Runtime), 1280 × 768, paires d'anime avec 6 et 20 px de décalage ; l'écart attendu est le « plancher de 60 à 67 dB » de `docs/drba-fusionne.md:60-61`. |
+| A03-19 | Mineur | `src/app/play/chain_setup.cpp:359-363`, `:378-381`, `src/app/play/upscale_drba.cpp:273-279` | La vitesse de DistilDRBA n'est pas réinvestie dans l'image. Au-dessus de 720 lignes de travail il estime, comme RIFE, sur une copie réduite à 720p (D4), alors qu'une passe à 1920 × 1088 ne coûte que 0,92 ms, moins qu'une passe de RIFE 4.25 à 960 × 576. | Source 1080p agrandie en 4K : le flot est estimé à 720p puis étiré 3 fois au warp ; les petits mouvements (mèches, bouches) sont lissés. | Pour DistilDRBA seul, estimer à la taille de travail jusqu'à 1080 lignes ; garder le demi-flot au-delà, comme l'auteur le conseille. À juger à l'œil et au temps. | Lu. À confirmer : même plan, estimé en 720p puis en 1080p, contours des petits objets en mouvement. |
+
+Les autres points du trajet, relus :
+
+- **Déjà au tableau des audits, et qui touchent ce que le modèle reçoit ou rend** : chroma rééchantillonnée en
+  bilinéaire avant le modèle (A03-01) ; variante mouvement jamais comparée au graphe (A03-03) ; fantôme d'une
+  image avant certaines coupes (A09-01) ; pas de débandage avant SPAN avec DistilDRBA (A09-07) ; cran
+  Performance en FP8, 49,6 dB au pire, et deux fois plus lent (A09-02).
+- **Conformes au modèle d'origine** : l'instant (`drba_call`, tau = 1 + t avant le milieu, t après), le côté
+  répété au début, à une coupe et en fin de flux, le remplissage noir, l'ordre des canaux, les réductions
+  (bit à bit contre l'hôte), le sigmoïde et le mélange.
+- **Choix assumés, à connaître** : le warp après SPAN remplace l'image du réseau par un warp des images
+  agrandies avec son flot (plus net, un SPAN par source, mais SPAN ne nettoie plus le warp) ; un côté « tenu »
+  rend l'image sans passe (seuil des dessins tenus) ; seul le modèle v2 lite est reconnu par la découpe, le v1
+  à cinq échelles de l'auteur, plus lourd, n'a jamais été essayé alors que la marge de temps existe.
+- **Les corrections de vitesse proposées plus haut** : A03-13 (a), A03-14 et A03-15 rendent la même image, au
+  bit près pour les deux dernières. A03-16 change le sous-pixel du flot et A03-13 (b) change l'image : avec la
+  consigne « sans négliger la qualité », (b) est à écarter et A03-16 à ne faire que si le PSNR tient.
+
 ## Défauts connus revérifiés
 
 | ID | Statut | Note |
