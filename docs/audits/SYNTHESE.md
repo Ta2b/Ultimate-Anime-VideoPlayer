@@ -54,7 +54,7 @@
 | 42. Analyse des plans, coupes et pré-analyse | Fusionné (16 défauts, 1 majeur) | [rapport](rapports/42-plans-coupes.md) |
 | 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
 | 44. Représentation intermédiaire et import ONNX | À faire | |
-| 45. Moteur Vulkan : calcul, noyaux et shaders | À faire | |
+| 45. Moteur Vulkan : calcul, noyaux et shaders | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/45-backend-vulkan.md) |
 | 46. Outils de recherche, modèles et données livrées | À faire | |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
@@ -601,6 +601,20 @@
 | A43-05 | Mineur | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » alors que l'assistant n'a pas ce bouton | 43 | |
 | A43-06 | Mineur | `src/app/play/i18n_fr_image.cpp:88` | Qualité : le coût en précision du FP8 n'est jamais dit ; « Balanced » nomme deux choses | 43 | |
 | A43-07 | Mineur | `src/app/play/french_text.h:12-30` | Typographie française appliquée à moitié | 43 | |
+| A45-01 | Majeur | `src/gpu/vulkan/backend/net_presets.cpp:1-29` | Qualité : la table pré-réglée NvidiaAda met 28 couches sur 29 de SPAN et RIFE 4.25 en sommes FP16 dans le repli Vulkan, sans mesure (erreur par couche ×4 à ×9 en simulation) | 45 | |
+| A45-02 | Mineur | `src/gpu/vulkan/backend/net_autotune.cpp:101-115` | Qualité : porte de l'autotuner trop large et jugée contre FP16 | 45 | |
+| A45-03 | Mineur | `src/gpu/vulkan/backend/kernel_ops.h:116-143` | Qualité : pas de débandage avant SPAN sous Vulkan | 45 | |
+| A45-04 | Mineur | `src/gpu/vulkan/backend/drba_fused_engine.cpp:335-341` | DistilDRBA fusionné Vulkan : encodeur refait trois images par appel | 45 | A03-15 (même cause) |
+| A45-05 | Mineur | `src/gpu/vulkan/backend/queue.cpp:117-125` | Un `vkQueueSubmit` refusé fige la file pour de bon | 45 | |
+| A45-06 | Mineur | `src/gpu/vulkan/backend/kernel_frames.cpp:238-248` | Échec des vues : refus rendu au lieu de la copie promise | 45 | |
+| A45-07 | Mineur | `src/gpu/vulkan/backend/net_build.cpp:194-218` | Écriture d'artefacts sans fsync, temporaires jamais purgés (QUA-05) | 45 | |
+| A45-08 | Mineur | `src/gpu/vulkan/backend/entry.cpp:7-9` | `--profile-dispatches` sans effet dans le lecteur | 45 | |
+| A45-09 | Mineur | `src/gpu/vulkan/compute/library.cpp:43-99` | `VulkanLibrary` recopie `DynamicLibrary` (dette) | 45 | |
+| A45-10 | Mineur | `src/gpu/vulkan/backend/entry_points.h:1-6` | Commentaires et code d'interop MIGraphX, OpenVINO, HIP morts (dette) | 45 | |
+| A45-11 | Mineur | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70` | Tests de concordance des moteurs fusionnés Vulkan cachés, hors CI | 45 | |
+| A45-12 | Mineur | `src/gpu/vulkan/backend/net_presets.cpp:4` | Table pré-réglée limitée à SPAN b5f48 720p et RIFE 4.25 | 45 | |
+| A45-13 | Mineur | `src/gpu/vulkan/backend/vulkan_backend.cpp:384-395` | Artefact réabaissé et réécrit sans repasser la porte | 45 | |
+| A45-14 | Mineur | `src/gpu/vulkan/backend/kernel_ops.h:116-143` | Ni mémoire de la carte ni temps par étage dans les statistiques du repli | 45 | |
 
 ## Renvois
 
@@ -729,7 +743,7 @@
 | 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Traité par 24 |
 | 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | Traité par 27 (A27-02) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | En attente (02 fini) |
-| 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Ouvert |
+| 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Traité par 45 (A45-08, A45-09) |
 | 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
 | 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
 | 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Traité par 24 |
@@ -746,7 +760,7 @@
 | 21 | 10 | `audit/mesures-auto-4070ti.md` | DistilDRBA ×6 : 962 images manquées sans paire en retard, la présentation plafonne | En attente (10 fini) |
 | 21 | 08 | `src/app/play/chain_setup.cpp:361-363` | Qualité : mouvement estimé à 720p, à remesurer surtout pour DistilDRBA | En attente (08 fini) |
 | 21 | 08 | `src/app/play/engine_screen.cpp:343` | `path().string()` dans le journal | En attente (08 fini) |
-| 21 | 45 | `src/gpu/vulkan/backend/entry_points.h:1-6` | Commentaire qui nomme MIGraphX et OpenVINO | Ouvert |
+| 21 | 45 | `src/gpu/vulkan/backend/entry_points.h:1-6` | Commentaire qui nomme MIGraphX et OpenVINO | Traité par 45 (A45-10) |
 | 21 | 40 | `tests/unit/gpu/backend_test.cpp` | `GuardedKernelOps` jamais testé ; `IngestSpec::chroma` non vérifié | Ouvert |
 | 23 | 22 | `src/app/play/settings.cpp:383-433` | Cause d'A23-01 (`restore_lines`, `gpu`) | Traité par 22 (A22-01) |
 | 23 | 22 | `src/app/play/settings.h:304-307` | Commentaire du seuil HDR posé au mauvais endroit | En attente (22 fini) |
@@ -866,3 +880,7 @@
 | 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | En attente (22 fini) |
 | 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | En attente (23 fini) |
 | 43 | 07 | `src/app/play/player.cpp:486-487` | « New graphics card » renvoie à un bouton du mode avancé, sous un autre nom | En attente (07 fini) |
+| 45 | 21 | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` posé par personne : option morte du contrat | En attente (21 fini) |
+| 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | En attente (21 fini) |
+| 45 | 08 | `src/app/play/chain_setup.h:89-93` | Ordre de destruction moteurs Vulkan puis backend au passage vers TensorRT | En attente (08 fini) |
+| 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | En attente (03 fini) |
