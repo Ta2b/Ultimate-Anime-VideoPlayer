@@ -28,7 +28,7 @@
 | 16. Audio | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/16-audio.md), [complément](rapports/16-audio-complement.md) |
 | 17. Sous-titres | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/17-sous-titres.md), [complément](rapports/17-sous-titres-complement.md) |
 | 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
-| 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
+| 19. Intégration au système | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/19-integration-systeme.md), [complément](rapports/19-integration-systeme-complement.md) |
 | 20. Socle commun (core) | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/20-socle-core.md) |
 | 21. Frontière des moteurs (interface et ABI) | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/21-frontiere-moteurs.md) |
 | 22. Réglages : modèle, application et persistance | Fusionné (16 défauts, 3 majeurs) | [rapport](rapports/22-reglages-modele.md) |
@@ -856,7 +856,7 @@
 | 25 | 07 | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` ne note pas le moteur mesuré | Traité par 07 (complément) |
 | 25 | 07 | `src/app/play/machine_calibration.cpp:288-290` | Écriture refusée de `chaine-N.toml` : toute la calibration s'arrête | Traité par 07 (complément) |
 | 25 | 08 | `src/app/play/player.cpp:559` | Après `handle_engine_change`, chaîne rouverte avec les réglages d'avant | Traité par 08 (complément) |
-| 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | En attente (19 fini) |
+| 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | Traité par 19 (complément) |
 | 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Traité par 43 (A43-05) |
 | 26 | 28 | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | Traité par 28 |
 | 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Traité par 28 |
@@ -918,7 +918,7 @@
 | 34 | 31 | `src/app/play/drba_fused_choice.cpp:9` | A31-06 touche les deux systèmes | En attente (31 fini) |
 | 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | Traité par 06 (complément) |
 | 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | Traité par 15 (complément) |
-| 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | En attente (19 fini) |
+| 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | Traité par 19 (complément) |
 | 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | Traité par 11 (complément) |
 | 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | Traité par 28 (complément) |
 | 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Traité par 40 (A40-10) |
