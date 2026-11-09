@@ -88,6 +88,9 @@ struct Player {
   // Réglages d'une réouverture demandée : écrits dans play.toml une fois la chaîne ouverte, pas avant
   // (une chaîne qui ne s'ouvre pas ne doit pas devenir celle du prochain lancement).
   std::optional<PlaySettings> unsaved;
+  // Raccourcis de séance (Chain::kept) : ils survivent aux réouvertures de la chaîne de cette vidéo, et
+  // tout ce que la lecture écrit dans play.toml passe par with_kept_choices (A08-04).
+  KeptChoices kept;
   // La préparation automatique du mode Performance de SPAN (span_auto.h) : elle survit aux réouvertures de la
   // chaîne et s'arrête avec le lecteur.
   SpanJob span_job;

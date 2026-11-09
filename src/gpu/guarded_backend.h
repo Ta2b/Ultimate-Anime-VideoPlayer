@@ -209,6 +209,9 @@ class GuardedBackend final : public Backend {
   std::expected<void, Refusal> wait(const Fence& fence) override {
     return guarded_detail::call("wait", [&] { return in_->wait(fence); });
   }
+  void drain() override {
+    guarded_detail::call_void([&] { in_->drain(); });
+  }
   void use_lane(Lane lane) override {
     guarded_detail::call_void([&] { in_->use_lane(lane); });
   }

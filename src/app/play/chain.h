@@ -66,6 +66,14 @@ class LookLoader {
   std::jthread thread_;
 };
 
+// Les valeurs de play.toml qu'un raccourci de séance (Ctrl+G, interpolation, tout couper) a remplacées dans
+// la chaîne ; rien : la chaîne suit le fichier. Elles survivent aux réouvertures de la chaîne d'une vidéo
+// (Player::kept, A08-04).
+struct KeptChoices {
+  std::optional<bool> grade;
+  std::optional<std::pair<int, int>> rife;  // facteur, dénominateur
+};
+
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
 struct Chain {
   Session& session;
@@ -79,8 +87,7 @@ struct Chain {
   bool dirty = false;  // play.toml à réécrire
   // Raccourcis du clavier (Ctrl+G, interpolation, tout couper) : valables pour la séance, pas écrits dans
   // play.toml. Chaque champ garde la valeur du fichier jusqu'à ce que le menu change ce réglage.
-  std::optional<bool> kept_grade;
-  std::optional<std::pair<int, int>> kept_rife;    // facteur, dénominateur
+  KeptChoices kept;
   std::optional<PlaySettings> reopen;              // demandé par le menu des paramètres
   std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
@@ -126,7 +133,8 @@ struct Chain {
 };
 
 // Les réglages que play.toml retient : le grade et l'interpolation choisis au menu, pas ceux d'un raccourci
-// de séance (kept_grade, kept_rife).
+// de séance (Chain::kept).
+PlaySettings with_kept_choices(const KeptChoices& kept, PlaySettings settings);
 PlaySettings with_kept_choices(const Chain& to, PlaySettings settings);
 
 // Une fois par tour : pose le look lu sur un fil de fond, lit le plan analysé de l'image qui vient

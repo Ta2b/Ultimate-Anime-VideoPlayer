@@ -40,13 +40,17 @@ double fps_of(const media::Rational& rate) {
   return rate.den > 0 ? static_cast<double>(rate.num) / static_cast<double>(rate.den) : 0.0;
 }
 
-PlaySettings with_kept_choices(const Chain& to, PlaySettings settings) {
-  if (to.kept_grade) settings.grade = *to.kept_grade;
-  if (to.kept_rife) {
-    settings.rife_factor = to.kept_rife->first;
-    settings.rife_factor_den = to.kept_rife->second;
+PlaySettings with_kept_choices(const KeptChoices& kept, PlaySettings settings) {
+  if (kept.grade) settings.grade = *kept.grade;
+  if (kept.rife) {
+    settings.rife_factor = kept.rife->first;
+    settings.rife_factor_den = kept.rife->second;
   }
   return settings;
+}
+
+PlaySettings with_kept_choices(const Chain& to, PlaySettings settings) {
+  return with_kept_choices(to.kept, std::move(settings));
 }
 
 namespace {
@@ -61,8 +65,8 @@ bool grade_changed(const PlaySettings& a, const PlaySettings& b) {
 
 // Un raccourci change la chaîne pour la séance : play.toml garde ce qu'il avait avant.
 void keep_for_file(Chain& to, bool grade, bool rife) {
-  if (grade && !to.kept_grade) to.kept_grade = to.running.grade;
-  if (rife && !to.kept_rife) to.kept_rife = std::pair{to.running.rife_factor, to.running.rife_factor_den};
+  if (grade && !to.kept.grade) to.kept.grade = to.running.grade;
+  if (rife && !to.kept.rife) to.kept.rife = std::pair{to.running.rife_factor, to.running.rife_factor_den};
 }
 
 // Piste audio : le pont change de piste à l'époque du seek qui suit, à la position courante.
@@ -382,14 +386,14 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const ApplySettings& apply) {
             // Le menu qui change un de ces réglages le choisit pour de bon ; sinon le raccourci reste de
             // séance.
-            if (apply.settings.grade != to.running.grade) to.kept_grade.reset();
+            if (apply.settings.grade != to.running.grade) to.kept.grade.reset();
             if (apply.settings.rife_factor != to.running.rife_factor ||
                 apply.settings.rife_factor_den != to.running.rife_factor_den)
-              to.kept_rife.reset();
-            const PlaySettings intended = with_kept_choices(to, apply.settings);
+              to.kept.rife.reset();
             if (apply.reopen) {
+              // Le raccourci de séance tient, play.toml n'en garde rien (Player::kept, A08-04).
               log_channel("app")->info("paramètres : réouverture de la chaîne");
-              to.reopen = intended;
+              to.reopen = apply.settings;
             } else {
               apply_live(to, apply.settings, now_us);
             }

@@ -29,6 +29,8 @@ struct Reopen {
                                                    // (vide : l'accueil)
   std::optional<std::int64_t> next_start_us;       // l'instant où l'ouvrir (PlayFile) ; rien : la reprise
   bool next_paused = false;                        // l'ouvrir en pause (PlayFile)
+  // L'assistant a écrit play.toml : rien à y réécrire, la vidéo rouverte le relit (A25-01).
+  bool settings_written = false;
 };
 
 // Une ouverture de la chaîne : moteurs, HDR, threads, session et boucle de main, jusqu'à la

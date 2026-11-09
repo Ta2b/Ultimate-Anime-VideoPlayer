@@ -78,7 +78,8 @@ namespace ajp::gpu {
 // 30 : GMFSS retiré (gmfss_frames, soft_splat, soft_splat_all, soft_splat_fill, gmfss_compose,
 // gmfss_compose_ring, fill ; BackendCaps::gmfss_fused).
 // 31 : Engine::next_warm (RIFE à chaud, P6.15) ; PairScores::moving (la zone qui bouge, P6.6 et P6.18).
-inline constexpr int kBackendAbi = 31;
+// 32 : Backend::drain (les files attendues avant la destruction des moteurs, A30-01).
+inline constexpr int kBackendAbi = 32;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -271,6 +272,10 @@ class Backend {
   // moteur, enqueue() et les noyaux s'enfilent sur sa file. Les dépendances entre voies sont
   // l'affaire du backend ; signal() suit le travail de toutes. Un backend à une voie l'ignore.
   virtual void use_lane(Lane /*lane*/) {}
+  // Attend côté hôte la fin de tout le travail enfilé sur chaque voie : à appeler avant de détruire les
+  // moteurs et les tampons qu'il lit encore (A30-01). Un backend dont les destructions attendent déjà
+  // leur file l'ignore.
+  virtual void drain() {}
   // Dérive le paquet « .span8 » du SPAN entier en FP8 (docs/span-fp8-cutlass.md) : relève sur les images de
   // calibration le maximum de chaque tenseur quantifié par une référence FP16 (mêmes convolutions CUTLASS,
   // sans quantification), en tire les échelles, puis juge le réseau FP8 contre cette référence sur les images
