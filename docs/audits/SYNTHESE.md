@@ -24,8 +24,8 @@
 | 12. Cadence et horloges | Fusionné (12 défauts, 4 majeurs, complément compris) | [rapport](rapports/12-cadence-horloges.md), [complément](rapports/12-cadence-horloges-complement.md) |
 | 13. Session de lecture : seek, épisodes et reprise | Fusionné (14 défauts, 1 bloquant, 1 majeur, complément compris) | [rapport](rapports/13-session-lecture.md), [complément](rapports/13-session-lecture-complement.md) |
 | 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (10 défauts, 2 majeurs, complément compris) | [rapport](rapports/14-sources-demux.md), [complément](rapports/14-sources-demux-complement.md) |
-| 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs) | [rapport](rapports/15-decodage-formats.md) |
-| 16. Audio | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/16-audio.md) |
+| 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/15-decodage-formats.md), [complément](rapports/15-decodage-formats-complement.md) |
+| 16. Audio | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/16-audio.md), [complément](rapports/16-audio-complement.md) |
 | 17. Sous-titres | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/17-sous-titres.md) |
 | 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
@@ -697,6 +697,7 @@
 | A13-14 | Mineur | `src/app/play/session.cpp:691` | `--seconds` termine sans quitter : l'épisode suivant s'enchaîne | 13 | |
 | A14-09 | Mineur | `src/media/source_loop.cpp:153-159` | Seek exact : chaque image jetée est convertie avant la décision (jusqu'à 1,8 s en 4K 4:4:4 logiciel) | 14 | |
 | A14-10 | Mineur | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images sans PTS sans borne : seek sans fin | 14 | A15-05 (même cause) |
+| A16-14 | Mineur | `src/app/play/wiring.cpp:103-108` | Seek exact raté puis position rattrapée : audio rogné jusqu'à la cible manquée (gel de 1,5 s, silence) | 16 | |
 
 ## Renvois
 
@@ -779,7 +780,7 @@
 | 14 | 13 | `src/app/play/session.cpp:286-287` | La session doit refuser d'enchaîner l'épisode sur une fin en erreur (MED-01) | Traité par 13 (complément) |
 | 14 | 18 | `src/app/play/player.cpp:99` | `file.string()` dans le refus de `probe_once` | Traité par 18 |
 | 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | En attente (18 fini) |
-| 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | En attente (16 fini) |
+| 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | Traité par 16 (complément) |
 | 14 | 30 | `src/media/source_loop.cpp:303-305` | Boîte non lue pendant `wait_before_retry` | Traité par 30 |
 | 15 | 14 | `src/media/source_loop.cpp:153-159` | Image décodée et convertie avant la décision de saut du seek exact | Traité par 14 (complément) |
 | 15 | 14 | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images `kNoPts` : seek exact sans fin (avec A15-05) | Traité par 14 (complément) |
@@ -915,7 +916,7 @@
 | 34 | 07 | `src/app/play/machine_calibration.cpp:279-330` | Premier essai FP8 perdu sans CUTLASS | Traité par 07 (complément) |
 | 34 | 31 | `src/app/play/drba_fused_choice.cpp:9` | A31-06 touche les deux systèmes | En attente (31 fini) |
 | 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | Traité par 06 (complément) |
-| 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | En attente (15 fini) |
+| 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | Traité par 15 (complément) |
 | 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | En attente (19 fini) |
 | 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | Traité par 11 (complément) |
 | 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | Traité par 28 (complément) |
@@ -930,7 +931,7 @@
 | 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | Traité par 07 (complément) |
 | 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | Réfuté par 02 (complément) : le reçu porte le SHA du paquet |
 | 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | En attente (26 fini) |
-| 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | En attente (15 fini) |
+| 37 | 15 | `src/app/play/chain_setup.cpp:43` | RTX 20 : AV1 en décodage logiciel puis copie hôte sur le thread de soumission | Traité par 15 (complément) |
 | 37 | 02 | `src/gpu/cuda/backend/span_fp8_kernels.cuh:241` | Tag `Sm89` de CUTLASS compilé aussi pour sm_120 | Traité par 02 (complément) |
 | 37 | 01 | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné à deux blocs par SM | Traité par 01 (complément) |
 | 39 | 43 | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur, sans `tr()` | Traité par 43 (doublon d'A11-10) |
