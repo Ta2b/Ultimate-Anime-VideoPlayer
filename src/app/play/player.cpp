@@ -212,8 +212,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         log->warn("mise à jour : {}", started.error().detail);
     }
   }
-  // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.
-  load_user_keys(paths::user_keys(settings_path.parent_path()));
+  load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] ; les anciens profils ne sont plus lus
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -237,6 +236,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
+  note_ignored_keys((*ui)->controls());
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
   class Release {
    public:

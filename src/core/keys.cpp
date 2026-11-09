@@ -262,4 +262,53 @@ std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml) {
   return map;
 }
 
+KeysRead read_keys(std::string_view profile_toml) {
+  KeysRead out{.map = KeyMap::defaults(), .ignored = {}};
+  auto root = fields::parse(profile_toml, RefusalCode::ProfileUnreadable, "profil");
+  if (!root) {
+    out.ignored.push_back(root.error().detail);
+    return out;
+  }
+  const toml::node* keys_node = root->get("keys");
+  if (keys_node == nullptr) return out;
+  const toml::table* keys = keys_node->as_table();
+  if (keys == nullptr) {
+    out.ignored.emplace_back("keys");
+    return out;
+  }
+  std::vector<Action> redefined;
+  for (const auto& [key, node] : *keys) {
+    if (key.str().starts_with("profile_")) continue;  // les profils retirés d'un ancien user.toml
+    const std::optional<Action> action = parse_action(key.str());
+    const std::optional<std::string> text = node.value_exact<std::string>();
+    std::expected<Chord, Refusal> chord = Chord{};
+    if (action && text && !text->empty()) chord = parse_chord(*text);
+    if (!action || !text || !chord) {
+      out.ignored.push_back(text ? std::format("{} = {}", key.str(), *text) : std::string(key.str()));
+      continue;
+    }
+    out.map.chords_[index(*action)] = text->empty() ? std::nullopt : std::optional<Chord>(*chord);
+    redefined.push_back(*action);
+  }
+  // Les conflits après toutes les redéfinitions (échanger deux touches reste possible) : l'action en conflit
+  // reprend son raccourci par défaut s'il est libre, sinon aucun.
+  const KeyMap defaults = KeyMap::defaults();
+  for (const Action action : redefined) {
+    const std::optional<Chord> chord = out.map.chord(action);
+    if (!chord) continue;
+    const std::optional<Action> owner = [&]() -> std::optional<Action> {
+      for (std::size_t other = 0; other < kActionCount; ++other)
+        if (other != index(action) && out.map.chords_[other] == chord) return static_cast<Action>(other);
+      return std::nullopt;
+    }();
+    if (!owner) continue;
+    // Sans langue : le texte va à l'écran. « toggle_grade = Space (pause) » nomme l'action qui tient la touche.
+    out.ignored.push_back(
+        std::format("{} = {} ({})", action_name(action), format_chord(*chord), action_name(*owner)));
+    const std::optional<Chord>& fallback = defaults.chord(action);
+    out.map.chords_[index(action)] = fallback && !out.map.action_for(*fallback) ? fallback : std::nullopt;
+  }
+  return out;
+}
+
 }  // namespace ajp::core
