@@ -12,7 +12,7 @@
 |---|---|---|
 | 01. TensorRT : exécution, voies, anneau et mémoire | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/01-tensorrt-execution.md) |
 | 02. SPAN FP8 : noyaux CUTLASS et dérivation | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/02-span-fp8.md) |
-| 03. Interpolation fusionnée sous TensorRT (RIFE, DistilDRBA, warp) | Fusionné (12 défauts, 3 majeurs) | [rapport](rapports/03-interpolation-tensorrt.md) |
+| 03. Interpolation fusionnée sous TensorRT (RIFE, DistilDRBA, warp) | Fusionné (17 défauts, 5 majeurs, complément DistilDRBA compris) | [rapport](rapports/03-interpolation-tensorrt.md), [complément](rapports/03-interpolation-tensorrt-complement.md) |
 | 04. Analyse et découpe des modèles ONNX | Fusionné (11 défauts, 1 majeur) | [rapport](rapports/04-onnx-modeles.md) |
 | 05. Construction des moteurs, cache et trtexec | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/05-construction-moteurs.md) |
 | 06. Installation des moteurs et téléchargements | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/06-installation-moteurs.md) |
@@ -29,7 +29,7 @@
 | 17. Sous-titres | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/17-sous-titres.md) |
 | 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
-| 20. Socle commun (core) | En cours | |
+| 20. Socle commun (core) | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/20-socle-core.md) |
 | 21. Frontière des moteurs (interface et ABI) | En cours | |
 | 22. Réglages : modèle, application et persistance | À faire | |
 | 23. Réglages : le panneau | À faire | |
@@ -95,6 +95,11 @@
 | A03-10 | Mineur | `src/gpu/cuda/backend/drba_fused_engine.cpp:361` | Environ 150 lignes dupliquées entre les deux moteurs fusionnés, déjà divergentes | 03 | |
 | A03-11 | Mineur | `src/gpu/cuda/backend/rife_fused_kernels.cu:241` | `__expf` approché pour RIFE, `expf` pour DistilDRBA | 03 | |
 | A03-12 | Mineur | `src/gpu/cuda/backend/slice_kernels.cu:268-273` | `ingest_tiled` compte le poids d'une prise hors tuile avant de la sauter (latent) | 03 | |
+| A03-13 | Majeur | `src/app/play/upscale_drba.cpp:247-257` | DistilDRBA fait une passe par image créée, RIFE une par paire : au-delà de ×5, plus de réseau que RIFE 4.25 | 03 (complément) | |
+| A03-14 | Majeur | `src/app/play/upscale_drba.cpp:193-208` | Pas d'entrée par pointeurs : quatre `rife_input` de 7 plans par paire, presque rien de lu, plus cher que la passe | 03 (complément) | |
+| A03-15 | Mineur | `src/gpu/cuda/backend/drba_fused_engine.cpp:225-242` | Encodeur refait à chaque côté : 6 encodages par paire pour une image nouvelle | 03 (complément) | |
+| A03-16 | Mineur | `src/gpu/cuda/backend/drba_fused_kernels.cu:277-290` | Flot agrandi puis rééchantillonné aussitôt par le warp | 03 (complément) | |
+| A03-17 | Mineur | `tests/unit/backend_tensorrt/drba_fused_test.cpp` | Aucun banc par paire ni par image ; RIFE 4.22 lite fusionné sans chiffre | 03 (complément) | |
 | A05-01 | Majeur | `src/prepare/process_posix.cpp:127` | Sous Linux, `trtexec` survit à la mort du lecteur et fausse la construction suivante (démontré) | 05 | |
 | A05-02 | Mineur | `src/prepare/key_lock.h:26` | Délais qui ne s'emboîtent pas : l'attente du verrou de clé abandonne avant la fin possible du détenteur | 05 | |
 | A05-03 | Mineur | `src/prepare/builder.cpp:86-93` | Aucun repli si le timing cache persistant fait échouer `trtexec` | 05 | |
@@ -293,6 +298,19 @@
 | A18-13 | Mineur | `src/app/play/player.cpp:445-452` | Échec d'`open_backend` depuis l'accueil : le lecteur quitte | 18 | |
 | A18-14 | Mineur | `src/app/play/mapped_file.cpp:229-247` | Police tronquée entre la taille lue et la projection | 18 | |
 | A18-15 | Mineur | `src/app/play/bridges.cpp:374-385` | `mov_text` et `webvtt` refusés | 18 | A17-02 (même cause) |
+| A20-01 | Majeur | `src/core/file_sync.cpp:81-91` | `write_atomic` sans nouvel essai sous Windows, refus jeté à `main.cpp:526` : la garde peut revenir à l'ancienne version | 20 | |
+| A20-02 | Mineur | `src/core/utf8_path.h:3-7` | Prémisse fausse : le manifeste UTF-8 empêche l'exception de `path::string()` dans le lecteur ; le risque est dans `trtexec`, `curl`, `tar` | 20 | |
+| A20-03 | Mineur | `src/core/log_redact.cpp:25-29` | Nettoyage du journal par sous-chaîne : casse, noms 8.3, `/run/media/<user>` (démontré) | 20 | |
+| A20-04 | Mineur | `src/core/log.cpp:104-112` | Journal asynchrone sans `flush_on` : la dernière seconde est perdue au plantage | 20 | |
+| A20-05 | Mineur | `src/core/thread.h:103-127` | `start_task` par `std::async` : pool Windows sans nom, futur bloquant non documenté | 20 | |
+| A20-06 | Mineur | `src/core/thread_role.cpp:42-56` | Rôles de thread sans héritage ni priorité d'E/S sous Windows | 20 | |
+| A20-07 | Mineur | `src/core/dynamic_library.cpp:28-36` | Aucun `SetDefaultDllDirectories` : DLL secondaires prises dans le `PATH` | 20 | |
+| A20-08 | Mineur | `src/core/file_sync.cpp:63-79` | Lien symbolique remplacé, temporaires jamais purgés (démontré) | 20 | |
+| A20-09 | Mineur | `src/core/types.h:19-20` | Refus fatal codé par `ThreadFailed` ; 58 codes sur 71 sans phrase | 20 | |
+| A20-10 | Mineur | `src/core/debug_flags.cpp` | Environ 1 250 lignes de `core` sans appelant | 20 | |
+| A20-11 | Mineur | `src/core/debug_flags.h:27-33` | Aucun outil livré pour mesurer DistilDRBA contre RIFE (NVTX, noms de threads, bascules mortes) | 20 | |
+| A20-12 | Mineur | `src/core/av_error.h:12-29` | FFmpeg inclus dans `core`, textes français dans le détail des refus | 20 | |
+| A20-13 | Mineur | `tests/unit/core/` | Aucun test des chemins d'échec du socle | 20 | |
 
 ## Renvois
 
@@ -364,7 +382,7 @@
 | 12 | 08 | `src/app/play/session.cpp:665-672` | GPU-19 : vitesse calée même en VRR armé (VRR hors sujet pour Tatoub) | En attente (08 fini) |
 | 12 | 10 | `src/app/play/placebo_screen.cpp:461-463` | `present_us` est le retour de `swap_buffers`, pas un vsync (A12-03) | En attente (10 fini) |
 | 12 | 34 | `src/app/play/loop_wait.cpp:56` | Windows : attente « précise » à 1 ms de résolution | Ouvert |
-| 12 | 20 | `src/core/drawings.cpp:113` | `DrawingsTimeline` n'est appelé que par ses tests | Ouvert |
+| 12 | 20 | `src/core/drawings.cpp:113` | `DrawingsTimeline` n'est appelé que par ses tests | Traité par 20 |
 | 13 | 14 | `src/media/source_loop.cpp:110-123` | `recover_position` qui échoue laisse la source inactive, lecture figée | Traité par 14 |
 | 13 | 14 | `src/media/source_loop.cpp:182-188` | Lecture abandonnée traitée comme la fin du fichier (origine de MED-01) | Traité par 14 |
 | 13 | 17 | `src/app/play/external_subtitles.cpp:92` | `path::string()` sur des noms de sous-titres | Traité par 17 (A17-12) |
@@ -386,7 +404,7 @@
 | 16 | 08 | `src/app/play/pipeline.cpp:97-110` | Format de sortie figé, ordre `seek()` puis `AudioTrack` | En attente (08 fini) |
 | 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | En attente (13 fini) |
 | 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | En attente (12 fini) |
-| 16 | 20 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Ouvert |
+| 16 | 20 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Traité par 20 (renvoyé à 12) |
 | 17 | 13 | `src/app/play/pipeline.cpp:164-170` | Une piste PGS empêche le repli sur un fichier externe | En attente (13 fini) |
 | 17 | 13 | `src/app/play/pipeline.cpp:183-191` | Polices recopiées deux fois, attente sur le thread de la fenêtre | En attente (13 fini) |
 | 17 | 13 | `src/app/play/pipeline.cpp:47` | Extension `.Srt` étiquetée « ass » | En attente (13 fini) |
@@ -405,4 +423,22 @@
 | 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Ouvert |
 | 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | En attente (17 fini) |
 | 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Ouvert |
-| 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | Ouvert |
+| 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
+| 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Ouvert |
+| 03 | 07 | `src/app/play/auto_config.h:22` | Calibration sans DistilDRBA, Auto calibré imposé à RIFE 4.22 lite | En attente (07 fini) |
+| 03 | 23 | `src/app/play/settings_chain_tabs.cpp:375-383` | « Warp and SPAN » grisé hors RIFE alors qu'il décide la variante DistilDRBA | Ouvert |
+| 03 | 09 | `src/app/play/upscale_drba.cpp:144` | DistilDRBA mesure la paire à la taille de travail, RIFE sur la copie réduite | En attente (09 fini) |
+| 03 | 05 | `src/prepare/trtexec_command.cpp:105-106` | Formats des frontières des morceaux DistilDRBA laissés à TensorRT : reformatages possibles | En attente (05 fini) |
+| 20 | 05 | `src/prepare/process_win.cpp:63-65` | `trtexec.exe` sans manifeste UTF-8 : chemin hors page ANSI abîmé | En attente (05 fini) |
+| 20 | 06 | `src/app/play/engine_install.cpp:293` | A06-02 ne tient que pour `curl.exe` et `tar.exe` | En attente (06 fini) |
+| 20 | 34 | A02-12, A03-06, A04-04, A07-03, A08-09, A09-10, A10-10, A13-11, A17-12 | Supposent une exception de `path::string()` que le manifeste UTF-8 empêche sous Windows 11 : à requalifier | Ouvert |
+| 20 | 18 | `src/app/play/crash_dump.cpp` | Le gestionnaire de plantage ne vide pas le journal (A20-04) | En attente (18 fini) |
+| 20 | 18 | `src/app/play/pumped_task.h:58` | Sonde détachée qui peut journaliser après `close_log()` | En attente (18 fini) |
+| 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Ouvert |
+| 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Ouvert |
+| 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Ouvert |
+| 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | Ouvert |
+| 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | En attente (02 fini) |
+| 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Ouvert |
+| 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
+| 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
