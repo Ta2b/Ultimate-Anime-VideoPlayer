@@ -477,21 +477,31 @@ TEST_CASE("free grid vsync : la source tombée près d'un vsync s'y montre telle
 
 TEST_CASE("A12-03 : des instants quelconques ne font jamais une phase", "[free][vsync]") {
   // Des présentations à heure arbitraire (niveau Open, écart de plusieurs vsyncs : l'heure suit la
-  // soumission, pas l'écran) : la phase reste inconnue, sur dix minutes et pour plusieurs tirages.
-  for (const unsigned seed : {1U, 2U, 3U, 4U, 5U}) {
+  // soumission, pas l'écran) : la phase reste inconnue. Le tirage est rng() % kVsync : la suite de
+  // std::mt19937 est fixée par la norme, celle de std::uniform_int_distribution ne l'est pas (libc++ et
+  // libstdc++ ne tirent pas les mêmes nombres, et le test ne disait pas la même chose sur macOS).
+  const auto fooled = [](unsigned seed, int notes) {
     std::mt19937 rng(seed);
-    std::uniform_int_distribution<std::int64_t> anywhere(0, kVsync - 1);
     VsyncPhase phase;
     phase.set_period(kVsync);
     int known = 0;
-    for (int k = 0; k < 14'400; ++k) {
-      phase.note(k * 7 * kVsync + anywhere(rng));
+    for (int k = 0; k < notes; ++k) {
+      phase.note(k * 7 * kVsync + static_cast<std::int64_t>(rng() % kVsync));
       if (phase.known()) ++known;
     }
-    INFO("tirage " << seed);
-    CHECK(known == 0);
     CHECK(phase.nearest(123'456) == 123'456);  // inconnue : l'instant demandé, sans calage
+    return known;
+  };
+  // Dix minutes, cinq tirages.
+  for (const unsigned seed : {1U, 2U, 3U, 4U, 5U}) {
+    INFO("tirage " << seed);
+    CHECK(fooled(seed, 14'400) == 0);
   }
+  // Le départ, où la moyenne pèse le moins : 2 000 tirages. Avec kMinNotes à 8, quatre d'entre eux (dont
+  // le 147) donnaient une phase pour un ou deux instants.
+  int total = 0;
+  for (unsigned seed = 1; seed <= 2'000; ++seed) total += fooled(seed, 200);
+  CHECK(total == 0);
 }
 
 TEST_CASE("A12-03 : la phase se connaît après quelques vsyncs qui s'accordent, pas avant", "[free][vsync]") {

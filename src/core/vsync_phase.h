@@ -17,7 +17,11 @@ namespace ajp::core {
 class VsyncPhase {
  public:
   static constexpr double kSmoothing = 0.08;
-  static constexpr int kMinNotes = 8;
+  // Assez d'instants pour que la moyenne ait presque tout son poids (1 − 0,92²⁴ = 0,86). À 8, elle ne
+  // pesait que huit points : des instants au hasard passaient le seuil d'accord pour 4 tirages sur 2 000, un
+  // ou deux instants de suite au départ ; à 24, aucun sur 2 000 tirages de dix minutes. Le prix : la phase
+  // d'un écran à 60 Hz se connaît après 0,4 s de vsyncs vus au lieu de 0,13 s.
+  static constexpr int kMinNotes = 24;
   // Longueur du vecteur moyen au-dessus de laquelle les instants s'accordent : 0,8 vaut un écart type
   // d'environ un dixième de période ; des instants au hasard donnent 0,2 à 0,4.
   static constexpr double kAgreement = 0.8;
