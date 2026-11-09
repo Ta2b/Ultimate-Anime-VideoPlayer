@@ -35,7 +35,7 @@
 | 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
 | 24. Interface : rendu, contrôles et messages | À faire | |
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
-| 26. Mise à jour automatique et signature | À faire | |
+| 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
 | 27. Build, dépendances et ports | À faire | |
 | 28. CI, publication et signature | À faire | |
 | 29. Parcours utilisateur de bout en bout | À faire | |
@@ -373,6 +373,18 @@
 | A25-16 | Mineur | `src/app/play/engine_screen.cpp:343` | Quatre `path::string()` (dette, voir A20-02) | 25 | |
 | A25-17 | Mineur | `src/app/play/first_run.cpp:138-147` | Code mort : MIGraphX, OpenVINO, DirectML encore nommés | 25 | |
 | A25-18 | Mineur | `tests/unit/app/wizard_test.cpp` | `run_engine_screen` et `calibrate_on_screen` sans test | 25 | |
+| A26-01 | Majeur | `src/app/play/engine_downloads.cpp:130` | Module TensorRT remplacé seulement sur `AbiMismatch` : les correctifs de noyaux, qualité comprise, n'arrivent jamais | 26 | |
+| A26-02 | Majeur | `src/app/play/engine_online.cpp:84-107` | `engines-nvidia.lock` non signé : contourne la signature Ed25519 pour le module et `trtexec` | 26 | |
+| A26-03 | Majeur | `src/app/main.cpp:376-386` | Aucune garde contre une version qui ne démarre pas du tout | 26 | |
+| A26-04 | Majeur | `src/app/CMakeLists.txt:70` | `PROJECT_VERSION` sans suffixe de préversion : garde désactivée, canal Préversions figé | 26 | |
+| A26-05 | Mineur | `src/app/play/settings_system.cpp:200-209` | « Install now » applique `staged_version` sans la comparer | 26 | |
+| A26-06 | Mineur | `src/app/play/updater.cpp:466-474` | Archives préparées jamais purgées | 26 | |
+| A26-07 | Mineur | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant la vérification et le téléchargement | 26 | |
+| A26-08 | Mineur | `src/app/play/updater.cpp:490-497` | `update_managed_reason` crée et efface un fichier à chaque appel | 26 | A23-04 (même cause) |
+| A26-09 | Mineur | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` ignoré : compté comme un plantage | 26 | A20-01 (même cause) |
+| A26-10 | Mineur | `src/app/play/player.cpp:197-200` | SEC-09 : `update.toml` réécrit en entier par quatre écrivains | 26 | |
+| A26-11 | Mineur | `src/app/play/updater.cpp:267-271` | Le canal Préversions ne voit pas une stable plus récente | 26 | |
+| A26-12 | Mineur | `src/app/main.cpp:367-389` | Application de la mise à jour sans fenêtre ni journal | 26 | |
 
 ## Renvois
 
@@ -400,7 +412,7 @@
 | 05 | 18 | `src/app/play/crash_dump.cpp:90` | Le gestionnaire de plantage ne tue pas le `trtexec` en cours (A05-01) | Traité par 18 (réfuté sous Windows) |
 | 05 | 07 | appelants de `Backend::build` | Une construction par taille de source : coût à mesurer, cache sans purge (TRT-17) | Traité par 07 |
 | 05 | 36 | `src/prepare/identity.cpp:161-164` | Jeton `driver` dans la clé : reconstruction complète à chaque saut de CUDA du pilote | Ouvert |
-| 06 | 26 | `src/app/play/engine_online.cpp` | `merge_release_index` : SHA ou version changés du paquet TensorRT (voir A06-01) | Ouvert |
+| 06 | 26 | `src/app/play/engine_online.cpp` | `merge_release_index` : SHA ou version changés du paquet TensorRT (voir A06-01) | Traité par 26 |
 | 06 | 28 | `tools/release/package-linux.sh:190` | Version du paquet TensorRT tirée de `ls libnvinfer.so.*` : « 11 » ou « 11.3.0 » | Ouvert |
 | 06 | 28 | `tools/release/package-windows.ps1:101` | Origine et stabilité de `$trtVersion` | Ouvert |
 | 06 | 25 | `src/app/play/first_run.cpp:125-131` | « Go » et « Mo » en dur dans l'interface anglaise (UX-09) | Traité par 25 |
@@ -481,8 +493,8 @@
 | 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | En attente (18 fini) |
 | 18 | 07 | `src/app/play/auto_config.h:22` | DistilDRBA n'entre jamais dans Auto et la calibration ne l'essaie pas | En attente (07 fini) |
 | 18 | 30 | `src/app/play/chain_hdr.cpp:162` | `LookLoader` détaché qui peut journaliser après `close_log` | Ouvert |
-| 18 | 26 | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant le téléchargement | Ouvert |
-| 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Ouvert |
+| 18 | 26 | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant le téléchargement | Traité par 26 |
+| 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Traité par 26 |
 | 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | En attente (17 fini) |
 | 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Ouvert |
 | 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
@@ -496,7 +508,7 @@
 | 20 | 34 | A02-12, A03-06, A04-04, A07-03, A08-09, A09-10, A10-10, A13-11, A17-12 | Supposent une exception de `path::string()` que le manifeste UTF-8 empêche sous Windows 11 : à requalifier | Ouvert |
 | 20 | 18 | `src/app/play/crash_dump.cpp` | Le gestionnaire de plantage ne vide pas le journal (A20-04) | En attente (18 fini) |
 | 20 | 18 | `src/app/play/pumped_task.h:58` | Sonde détachée qui peut journaliser après `close_log()` | En attente (18 fini) |
-| 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Ouvert |
+| 20 | 26 | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` compté comme un plantage (A20-01) | Traité par 26 |
 | 20 | 31 | `src/app/play/ring_stage.cpp:112` | Tout refus GPU devient `ThreadFailed`, `DeviceLost` perdu (A20-09) | Ouvert |
 | 20 | 24 | `src/app/play/visible_error.h:44-45` | 58 codes sur 71 affichés par leur nom anglais | Ouvert |
 | 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | En attente (21 fini) |
@@ -511,7 +523,7 @@
 | 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | En attente (23 fini) |
 | 22 | 09 | `src/app/play/chain_setup.cpp:359-361` | Qualité : estimation RIFE sur copie 720p au-dessus de 720 lignes | En attente (09 fini) |
 | 22 | 18 | `src/app/play/options.cpp:298` | `--rife-model` n'entre pas dans `settings.rife_model` | En attente (18 fini) |
-| 21 | 26 | `src/app/play/engine_downloads.cpp:130` | Module mis à jour seulement sur `AbiMismatch` : un correctif hors frontière n'arrive jamais | Ouvert |
+| 21 | 26 | `src/app/play/engine_downloads.cpp:130` | Module mis à jour seulement sur `AbiMismatch` : un correctif hors frontière n'arrive jamais | Traité par 26 |
 | 21 | 09 | `src/app/play/upscale_drba.cpp:66-67` | Garder `filled01` et `filled12` d'une paire à la suivante | En attente (09 fini) |
 | 21 | 09 | `src/app/play/upscale_drba.cpp:99` | `scores_take` bloque le thread GPU à chaque paire (A21-06) | En attente (09 fini) |
 | 21 | 32 | `docs/auto-libre.md` § 3 | Décomposer les ≈ 11 ms de GPU par image hors réseau, qui ôtent à DistilDRBA son avance | Ouvert |
@@ -522,7 +534,7 @@
 | 21 | 40 | `tests/unit/gpu/backend_test.cpp` | `GuardedKernelOps` jamais testé ; `IngestSpec::chroma` non vérifié | Ouvert |
 | 23 | 22 | `src/app/play/settings.cpp:383-433` | Cause d'A23-01 (`restore_lines`, `gpu`) | Traité par 22 (A22-01) |
 | 23 | 22 | `src/app/play/settings.h:304-307` | Commentaire du seuil HDR posé au mauvais endroit | En attente (22 fini) |
-| 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Ouvert |
+| 23 | 26 | `src/app/play/updater.cpp:490-497` | `update_managed_reason` écrit un fichier d'essai à chaque appel | Traité par 26 |
 | 23 | 07 | `src/app/play/auto_config.cpp:134-147` | Qualité : écran 1080p, source 1080p réduite à 540p avant SPAN | En attente (07 fini) |
 | 23 | 08 | `src/app/play/chain.cpp:183-185` | Une notification par image pendant le glissement du délai des sous-titres | En attente (08 fini) |
 | 25 | 24 | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » depuis l'accueil n'ouvre que l'écran des moteurs | Ouvert |
@@ -532,3 +544,9 @@
 | 25 | 08 | `src/app/play/player.cpp:559` | Après `handle_engine_change`, chaîne rouverte avec les réglages d'avant | En attente (08 fini) |
 | 25 | 19 | `src/app/play/default_player.cpp:334-336` | `update-desktop-database` lancé deux fois de suite | En attente (19 fini) |
 | 25 | 43 | `src/app/play/settings_panel.cpp:283` | Infobulle « Finish » sans bouton Terminer | Ouvert |
+| 26 | 28 | `src/app/CMakeLists.txt:69` | Trois dépôts de release par défaut différents | Ouvert |
+| 26 | 28 | `.github/workflows/release-guard.yml` | Étiquette jamais comparée à `PROJECT_VERSION` (cause d'A26-04) | Ouvert |
+| 26 | 28 | `.github/workflows/release-linux.yml:150` | `--latest` posé avant le manifeste signé (SEC-05) | Ouvert |
+| 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Ouvert |
+| 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Ouvert |
+| 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | En attente (06 fini) |
