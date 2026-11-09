@@ -253,7 +253,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
         const int height = stage.track->height;
-        const WorkSize sized = work_size(width, height, settings.work_height);
+        const WorkSize sized = chain_work_size(settings, width, height);
         const ExportSize output{.width = sized.width * c.factor, .height = sized.height * c.factor};
         std::vector<RingSlotDesc> slots;
         if (sink) {

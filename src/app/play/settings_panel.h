@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "app/play/calibrated_chain.h"
 #include "app/play/default_player.h"
 #include "app/play/input.h"
 #include "app/play/precision.h"
@@ -73,9 +74,15 @@ struct SettingsChoices {
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
-  int display_height = 0;   // hauteur de l'écran en pixels ; 0 : inconnue
-  bool calibrated = false;  // Auto suit la calibration de l'assistant (calibration.toml) sur cette carte
-  std::string gpu_name;     // la carte
+  int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
+  // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo
+  // (A23-03) : choisir « Auto » au panneau doit donner la même chaîne. calibrated : Auto suit la calibration
+  // de l'assistant (calibration.toml) sur cette carte et cet écran ; explored_* : ce que l'exploration du
+  // benchmark a trouvé (bench.toml), pour cette carte et ce pilote.
+  std::optional<CalibratedChain> calibrated;
+  int explored_work_height = 0;
+  std::string explored_rife_model;
+  std::string gpu_name;           // la carte
   std::vector<std::string> gpus;  // toutes les cartes du système : le choix n'est montré qu'à partir de deux
   struct AudioOut {
     std::string name;

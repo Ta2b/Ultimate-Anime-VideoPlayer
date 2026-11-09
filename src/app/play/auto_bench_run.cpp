@@ -197,6 +197,14 @@ BenchReading worse(const BenchReading& x, const BenchReading& y) {
   return out;
 }
 
+// Un essai de l'exploration tient-il ? Un essai qui n'a rien rendu (modèle introuvable, refus) se dit dans
+// les notes du rapport : sans cela la recherche s'arrête en silence et l'Auto garde la chaîne du niveau sans
+// que rien ne l'explique (A18-18).
+bool explore_held(const Trial& trial, std::vector<std::string>& notes) {
+  if (!trial.reading && !trial.why.empty()) notes.push_back(trial.why);
+  return trial.reading && holds(trial.reading->run);
+}
+
 }  // namespace
 
 std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const Variant& variant, int index,
@@ -351,7 +359,7 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
           cancelled = true;
           return false;
         }
-        return trial.reading && holds(trial.reading->run);
+        return explore_held(trial, outcome.notes);
       };
       int height = base->work_height;
       while (const auto next = next_work_height(height, kExplorationSourceHeight)) {

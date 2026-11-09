@@ -19,6 +19,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "app/play/auto_bench.h"
+#include "app/play/auto_config.h"
 #include "app/play/auto_watch.h"
 #include "app/play/backend_library.h"
 #include "app/play/bench_events.h"
@@ -47,7 +48,6 @@
 #include "app/play/latest_writer.h"
 #include "app/play/look_catalog.h"
 #include "app/play/loop_wait.h"
-#include "app/play/machine_calibration.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
 #include "app/play/pipeline.h"
@@ -167,7 +167,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
         const int height = stage.track->height;
-        const WorkSize sized = work_size(width, height, settings.work_height);
+        const WorkSize sized = chain_work_size(settings, width, height);
         // Étape 5.5a : anneau RGB10A2 derrière --ring-rgb10a2, tant que la porte de banding n'est pas faite.
         const RingFormat ring_format =
             p.options.ring_rgb10a2 && c.backend && c.backend->capabilities().ring_rgb10a2
@@ -290,9 +290,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
       .source_file = p.options.file,
       .display_height = display_height(out.window()),
-      .calibrated = calibrated_chain(p.settings_path.parent_path(), gpu_facts(p.screen).name,
-                                     display_height(out.window()))
-                        .has_value(),
       .span_prepare = span_prepare,
       .fp8_reason = fp8_reason,
       .span_job = p.span_job.note};

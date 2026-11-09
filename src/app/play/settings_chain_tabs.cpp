@@ -144,7 +144,6 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   panel::tip(i18n::tr("The size the video is reduced to before SPAN, which doubles it: 720p gives 1440p."));
-  if (d.work_height == 720) panel::badge(std::string(badge_text(Badge::Recommended)).c_str(), panel::kGood);
   const bool reduces = d.work_height > 0 && d.work_height < choices.source_height;
   if (choices.source_height > 0) {
     const int work = reduces ? d.work_height : choices.source_height;
