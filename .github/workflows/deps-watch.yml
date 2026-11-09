@@ -54,6 +54,9 @@ jobs:
             gh pr edit "$branch" --body "$body"
           fi
           gh workflow run ci.yml --ref "$branch"
+          # La pull request ne pose que la baseline de Windows : le reste du tableau (Linux, surcouches) reste à
+          # faire à la main, et la tâche le dit en échouant (A28-19).
+          exit 1
 
   vulns:
     runs-on: ubuntu-24.04
