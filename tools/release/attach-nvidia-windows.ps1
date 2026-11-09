@@ -68,4 +68,4 @@ if ($LASTEXITCODE -eq 0 -and (Test-Path $previous)) {
   Remove-Item $previous
 }
 gh release upload $Tag -R $repo --clobber $archive $out
-Write-Host "Joint à $repo $Tag. Pousser maintenant l'étiquette : git tag $Tag; git push origin $Tag"
+Write-Host "Joint à $repo $Tag. Pousser maintenant l'étiquette (ou relancer Release si elle existe : le lecteur ne croit engines-nvidia.lock que signé) : git tag $Tag; git push origin $Tag"

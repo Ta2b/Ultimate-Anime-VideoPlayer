@@ -184,7 +184,9 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   dir="$OUT/engine-tensorrt"; rm -rf "$dir"; mkdir -p "$dir"
   cp "$TRT_MODULE" "$dir/"
   TRTEXEC="$(sed -n 's/^AJP_TRTEXEC_PACKAGED:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
-  [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] && cp "$TRTEXEC" "$dir/trtexec"
+  # Sans trtexec, le moteur ne construit aucun réseau : le paquet ne part pas (TRT-04).
+  [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] || { echo "trtexec introuvable (AJP_TRTEXEC_PACKAGED : « $TRTEXEC »)" >&2; exit 1; }
+  cp "$TRTEXEC" "$dir/trtexec"
   # Le module ne lance que le trtexec dont il garde l'empreinte : un paquet où elle manque ne construirait rien.
   if [ -f "$dir/trtexec" ] && ! strings "$dir/ajp_backend_tensorrt.so" |
       grep -qx "$(sha256sum "$dir/trtexec" | cut -d' ' -f1)"; then
@@ -192,14 +194,17 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
     exit 1
   fi
   copy_deps "$dir" "$dir"/*
-  TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
+  # La version entière de TensorRT (11.3.0.99), celle de versions.env que les [[vendor_file]] tirent : jamais le
+  # seul numéro majeur, ni la version du lecteur par défaut (A28-09). Elle nomme le dossier d'installation.
+  TRT_VERSION="$(sed -n 's/^TENSORRT_LIBS_VERSION=//p' "$ROOT/tools/release/versions.env")"
+  [ -n "$TRT_VERSION" ] || { echo "TENSORRT_LIBS_VERSION absent de versions.env" >&2; exit 1; }
   VENDOR="$ROOT/tools/release/nvidia-vendor/tensorrt-linux-x64.lock"
   if [ -z "${AJP_NVIDIA_BUNDLE:-}" ] && [ -f "$VENDOR" ]; then
     # Lien direct : le paquet ne porte que ce qui est à nous (module, trtexec). Les bibliothèques de
     # NVIDIA n'y entrent pas : le lecteur les tire des archives de NVIDIA elles-mêmes, après
     # l'acceptation de sa licence à l'écran (entrées [[vendor_file]], tools/release/vendor-index.py).
     rm -f "$dir"/libnvinfer* "$dir"/libnvonnxparser* "$dir"/libnvrtc* "$dir"/libcu*
-    engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
+    engine_package tensorrt "$TRT_VERSION" \
       "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
     { echo; cat "$VENDOR"; } >> "$LOCK"
   else
@@ -209,8 +214,7 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
       'libnvinfer_plugin.so.[0-9]*' 'libnvonnxparser.so.[0-9]*'
     for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
     check_portable "$dir" "$STAGE/lib"
-    TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
-    engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
+    engine_package tensorrt "$TRT_VERSION" \
       "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
   fi
 fi

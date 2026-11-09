@@ -134,7 +134,9 @@ EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& path
       saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
   const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
   add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
-                      installed_version(), online ? UpdateFetch(fetch_https) : UpdateFetch());
+                      installed_version(),
+                      update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),
+                      online ? UpdateFetch(fetch_https) : UpdateFetch());
   if (!catalog.problem.empty()) log_channel("app")->info("{}", catalog.problem);
   return catalog;
 }
@@ -169,8 +171,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::atomic<bool> playing{false};
   std::jthread update_check;
   const std::filesystem::path update_file = paths::update_state(paths.data);
-  const UpdatePaths update_paths{
-      .data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable};
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
@@ -186,8 +186,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           "updates", ThreadReport([](const Refusal& refused) {
             log_channel("app")->warn("mise à jour : {}", refused.detail);
           }),
-          [=, &playing, mode = saved->update_mode, channel = saved->update_channel,
-           frequency = saved->update_frequency](const std::stop_token& stop, const ThreadReport&) {
+          [=, &playing, mode = saved->update_mode, frequency = saved->update_frequency](
+              const std::stop_token& stop, const ThreadReport&) {
             std::mutex mutex;
             std::condition_variable_any wake;
             for (bool first = true; !stop.stop_requested(); first = false) {
@@ -196,7 +196,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                            .count();
               UpdateState state = load_update_state(update_file);
               if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
-                const auto message = run_update_check(update_paths, mode, name(channel), state, stop);
+                const auto message = run_update_check(state, stop);
                 if (const auto kept = save_update_state(update_file, state); !kept)
                   log_channel("app")->warn("update.toml : {}", kept.error().detail);
                 log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);

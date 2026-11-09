@@ -17,11 +17,14 @@
 #include <vector>
 
 #include "app/play/engine_tools.h"
+#include "app/play/engine_versions.h"
 #include "app/play/i18n.h"
 #include "core/dir_entries.h"
+#include "core/file_sync.h"
 #include "core/inflate.h"
 #include "core/log.h"
 #include "core/text.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 core::Os host_os() {
@@ -73,16 +76,7 @@ bool installed(const EngineCatalog& catalog, const core::EnginePackage& package)
 
 std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
                                                   const core::EnginePackage& package) {
-  std::ifstream in(core::engine_dir(catalog.layout, package) / std::string(kPackageNote));
-  if (!in) return std::nullopt;
-  InstalledPackage found;
-  std::string line;
-  while (std::getline(in, line)) {
-    if (line.starts_with("sha256=")) found.sha256 = line.substr(7);
-    if (line.starts_with("licence=")) found.license = line.substr(8);
-  }
-  if (found.sha256.empty()) return std::nullopt;
-  return found;
+  return read_package_note(core::engine_dir(catalog.layout, package));
 }
 
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog) {
@@ -401,6 +395,22 @@ namespace {
 
 // Les étapes de l'installation ; `step` dit où elle en est, pour le journal si elle échoue. Une seule
 // progression globale (octets tirés, archive et fichiers tiers) au lieu d'une barre par fichier.
+// Chaque fichier d'un dossier extrait, sur le disque : FlushFileBuffers sous Windows, fsync ailleurs.
+std::expected<void, Refusal> sync_tree(const std::filesystem::path& root) {
+  std::error_code error;
+  std::filesystem::recursive_directory_iterator it(root, error);
+  for (; !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
+    std::error_code kind;
+    if (!it->is_regular_file(kind) || it->is_symlink(kind)) continue;
+    if (const std::error_code synced = core::sync_file(it->path()))
+      return refuse(RefusalCode::FileUnwritable,
+                    std::format("{} : {}", core::to_utf8(it->path()), synced.message()));
+  }
+  if (error)
+    return refuse(RefusalCode::FileUnreadable, std::format("{} : {}", core::to_utf8(root), error.message()));
+  return {};
+}
+
 std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog& catalog,
                                                             const core::EnginePackage& package,
                                                             const InstallProgress& progress,
@@ -536,13 +546,22 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     done_bytes += static_cast<double>(file.packed_size);
   }
   step = i18n::tr("replacing the installed version");
+  // Chaque fichier sur le disque, puis la note en dernier (A36-03) : après une coupure, un dossier de version
+  // (ou un « .partiel » qui a sa note, recover_interrupted_install) est entier, jamais fait de fichiers
+  // vides.
+  if (const auto synced = sync_tree(staging); !synced) {
+    std::filesystem::remove_all(staging, error);
+    return std::unexpected(synced.error());
+  }
   {
     std::ofstream note(staging / std::string(kPackageNote), std::ios::trunc);
     note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
-    if (!note.flush()) {
+    note.close();
+    if (!note || core::sync_file(staging / std::string(kPackageNote))) {
       std::filesystem::remove_all(staging, error);
       return refuse(RefusalCode::FileUnwritable, i18n::tr_format("{}: package note", staging.string()));
     }
+    core::sync_directory(staging);
   }
   // L'ancien dossier est mis de côté avant d'être remplacé, puis effacé : si l'un de ses fichiers est
   // encore ouvert (Windows), il ne reste pas à moitié supprimé, et il est remis en place sur échec.
@@ -567,6 +586,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     if (replaced) std::filesystem::rename(aside, target, restore);
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
   }
+  core::sync_directory(target.parent_path());
   if (replaced) std::filesystem::remove_all(aside, error);
   error.clear();
   report(1.0F, i18n::tr_format("{} installed", name));
@@ -580,7 +600,9 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
                                                               const InstallProgress& progress) {
   const auto log = log_channel("app");
   const std::string name(core::engine_name(package.engine));
-  // Les restes d'un essai raté ou interrompu partent avant tout nouvel essai : ils ne s'accumulent pas.
+  // Une installation coupée entre ses deux renommages remet d'abord sa copie complète (A06-08) ; les restes
+  // d'un essai raté ou interrompu partent ensuite, avant tout nouvel essai : ils ne s'accumulent pas.
+  recover_interrupted_install(catalog, package);
   std::error_code error;
   for (const char* suffix : {".partiel", ".ancien"}) {
     std::filesystem::path leftover = core::engine_dir(catalog.layout, package);

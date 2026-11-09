@@ -37,10 +37,6 @@ out="$dir/manifest.toml"
   done
 } > "$out"
 
-openssl pkeyutl -sign -inkey "$key" -rawin -in "$out" -out "$out.sig.bin"
-# Hexadécimal sans xxd (absent de certaines images) : od, puis une seule ligne.
-od -An -tx1 -v "$out.sig.bin" | tr -d ' \n' > "$out.sig"
-echo >> "$out.sig"
-rm -f "$out.sig.bin"
+"$(dirname "$0")/sign-file.sh" "$out"
 echo "manifeste : $out"
 echo "signature : $out.sig"

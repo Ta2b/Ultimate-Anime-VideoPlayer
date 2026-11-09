@@ -219,3 +219,15 @@
 | A16-11 | Mineur | C14 | Code mort, appareils désignés par leur seul nom | sous Windows avec deux sorties HDMI de même modèle. |
 | A34-06 | Mineur | C14 | `hide_is_reliable*` morts | la même chaîne en `ajp bench` puis en lecture plein écran, sur les deux systèmes. |
 | A46-06 | Mineur | C14 | Commentaire faux sur l'origine des RIFE FP16 livrés | Lu (graphes inspectés) ; NaN à confirmer. |
+
+## C01 : corrigé dans le code, à confirmer sur la machine
+
+Le fil C01 a corrigé ces défauts sans la machine ; la manipulation de la table ci-dessus confirme la correction.
+
+| ID | Correction | Ce qu'il faut voir |
+|---|---|---|
+| A06-01 | `installed_state` (`engine_versions.cpp`) voit une autre version installée, `update_stale_engines` réinstalle et retire l'ancienne | la manipulation ci-dessus : réinstallation au lancement, puis un seul dossier sous `backends/tensorrt/`. |
+| A06-03 | module de la version courante refusé (ABI) avec le même SHA-256 : plus de réinstallation en boucle, avis « out of date, Vulkan instead » | sur la RTX, un `ajp_backend_tensorrt` d'une autre version copié à la place du module : un seul avis, aucun téléchargement. |
+| A06-08, A36-03 | arbre installé synchronisé (fsync), note du paquet écrite en dernier, `.partiel` ou `.ancien` remis en place au lancement | sur CachyOS, couper le courant (ou `kill -9`) pendant « replacing the installed version », relancer : TensorRT revient sans téléchargement ou se réinstalle. |
+| A26-02 | `engines-nvidia.lock` en ligne cru seulement avec sa signature Ed25519 (`engines-nvidia.lock.sig`) | à la première release signée par la CI : le journal dit « moteurs de la release : 1 paquet(s) » et non « signature absente ou fausse ». |
+| A26-08, A26-12 | sans objet : la mise à jour n'est plus qu'une notification, le code d'application est retiré | rien. |

@@ -80,5 +80,5 @@ rm -f "$previous"
 gh release upload "$tag" -R "$repo" --clobber "$archive" "$out"
 case "$tag" in
   trt-*) echo "Joint à $repo $tag : release fixe, lue par Release Linux pour toutes les étiquettes (pas d'étiquette à pousser)." ;;
-  *)     echo "Joint à $repo $tag. Pousser maintenant l'étiquette : git tag $tag && git push origin $tag" ;;
+  *)     echo "Joint à $repo $tag. Pousser maintenant l'étiquette (ou relancer Release si elle existe : le lecteur ne croit engines-nvidia.lock que signé) : git tag $tag && git push origin $tag" ;;
 esac

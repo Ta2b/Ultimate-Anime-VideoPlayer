@@ -71,6 +71,21 @@ jobs:
           gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
             -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip -p engines.lock
           tools/release/check-release.sh "$TAG" "$dir"
+      - name: Index NVIDIA signé
+        env:
+          UPDATE_KEY: ${{ secrets.AJP_UPDATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -n "$UPDATE_KEY" ] || { echo "::error::secret AJP_UPDATE_KEY absent de l'environnement release (docs/signature-des-releases.md)"; exit 1; }
+          dir="$RUNNER_TEMP/release"
+          # Un paquet joint après coup à cette étiquette (attach-nvidia-*) passe avant ceux des archives.
+          gh release download "$TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -O "$dir/joint.lock" 2>/dev/null || true
+          tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/joint.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
+          key="$RUNNER_TEMP/ajp-update-key.pem"
+          (umask 077; printf '%s\n' "$UPDATE_KEY" > "$key")
+          trap 'rm -f "$key"' EXIT
+          # Le lecteur ne croit l'index que signé (A26-02).
+          AJP_UPDATE_KEY="$key" tools/release/sign-file.sh "$dir/engines-nvidia.lock"
       - name: Manifeste signé
         if: ${{ !contains(env.TAG, '-') }}
         env:
@@ -95,6 +110,7 @@ jobs:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
         run: |
           dir="$RUNNER_TEMP/release"
+          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/engines-nvidia.lock" "$dir/engines-nvidia.lock.sig"
           if [[ "$TAG" == *-* ]]; then
             gh release edit "$TAG" -R "$AJP_RELEASE_REPO" --prerelease=true --latest=false
             echo "préversion $TAG publiée (sans manifeste)" | tee -a "$GITHUB_STEP_SUMMARY"
