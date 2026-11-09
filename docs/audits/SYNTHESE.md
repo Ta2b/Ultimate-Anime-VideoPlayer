@@ -58,6 +58,7 @@
 | 46. Outils de recherche, modèles et données livrées | À faire | |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
+| 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | En cours | |
 
 ## Défauts trouvés
 
