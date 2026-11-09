@@ -28,8 +28,8 @@
 | 16. Audio | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/16-audio.md) |
 | 17. Sous-titres | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/17-sous-titres.md) |
 | 18. Démarrage et arrêt | En cours | |
-| 19. Intégration au système | En cours | |
-| 20. Socle commun (core) | À faire | |
+| 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
+| 20. Socle commun (core) | En cours | |
 | 21. Frontière des moteurs (interface et ABI) | À faire | |
 | 22. Réglages : modèle, application et persistance | À faire | |
 | 23. Réglages : le panneau | À faire | |
@@ -265,6 +265,19 @@
 | A17-11 | Mineur | `src/app/play/external_subtitles.cpp:123-124` | Fichiers externes coupés à 16 avant le choix par langue | 17 | |
 | A17-12 | Mineur | `src/subs/subtitle_track.cpp:27` | `path::string()` dans les sous-titres | 17 | |
 | A17-13 | Mineur | `tests/unit/subs/` | Sans test : retour à pleine taille, encodages coréen et EUC-JP | 17 | |
+| A19-01 | Majeur | `src/app/play/data_dirs.cpp:77-93` | Migration coupée : `engines/` tronqué pris pour complet (démontré) | 19 | |
+| A19-02 | Mineur | `src/app/play/single_instance.cpp:52` | Accusé « ok » envoyé avant que le fichier soit remis à SDL | 19 | |
+| A19-03 | Mineur | `src/app/play/settings.h:246` | La langue du système ne règle pas la langue de l'interface | 19 | |
+| A19-04 | Mineur | `src/app/play/default_player.cpp:381-391` | `xdg-mime query` (jusqu'à 10 s) sur le thread principal | 19 | |
+| A19-05 | Mineur | `src/app/play/default_player.cpp:379` | Lecteur par défaut : état inconnu sous Windows, seul le MKV interrogé sous Linux | 19 | |
+| A19-06 | Mineur | `src/app/play/default_player.cpp:221-244` | Inscription jamais refaite si l'exécutable bouge | 19 | |
+| A19-07 | Mineur | `src/app/play/single_instance.cpp:148-150` | Windows : erreur de `ConnectNamedPipe` en boucle sans `DisconnectNamedPipe` | 19 | |
+| A19-08 | Mineur | `src/app/play/home_screen.cpp:204-212` | Sous Wayland, la fenêtre ne passe pas au premier plan sur un fichier transmis | 19 | |
+| A19-09 | Mineur | `src/app/play/data_dirs.cpp:124` | `directory_iterator` qui peut lever malgré le code d'erreur | 19 | |
+| A19-10 | Mineur | `src/app/play/single_instance.cpp:385-386` | Socket trop long : instance unique éteinte sans journal | 19 | |
+| A19-11 | Mineur | `src/app/play/default_player.cpp:421` | `SetConsoleOutputCP` change la console du terminal parent | 19 | |
+| A19-12 | Mineur | `src/app/play/system_language.cpp:81-82` | Fichiers de KDE lus hors d'une session KDE, avant SDL | 19 | |
+| A19-13 | Mineur | `tests/unit/app/single_instance_test.cpp:20` | Sans test : course de deux lancements, migration coupée | 19 | |
 
 ## Renvois
 
@@ -366,3 +379,8 @@
 | 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Ouvert |
 | 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Ouvert |
 | 17 | 35 | `tests/fuzz/fuzz_parsers.cpp:40-44` | `to_utf8` fuzzé sans indice : branches iconv non couvertes | Ouvert |
+| 19 | 28 | `tools/release/windows/ajp.iss` | Pas de `--unregister` à la désinstallation | Ouvert |
+| 19 | 28 | `CMakePresets.json:108-121` | Aucun PDB produit ni gardé | Ouvert |
+| 19 | 25 | `src/app/play/engine_screen.cpp:277-290` | Inscription synchrone à la fin de l'assistant | Ouvert |
+| 19 | 24 | `src/app/play/home_screen.cpp:204-212` | Passage au premier plan en effet de bord de `dropped()` | Ouvert |
+| 19 | 18 | `src/app/main.cpp:376-400` | Mise à jour appliquée avant `install_crash_dumps` | Ouvert |
