@@ -1,8 +1,17 @@
 name: Release Windows
 
-# Lancé à la main (ou par une étiquette v*) : le lecteur universel et son backend Vulkan, et
-# TensorRT quand l'entrée tensorrt le demande : la CI télécharge alors le kit CUDA et TensorRT,
-# sous leurs licences NVIDIA, que le propriétaire du dépôt accepte en cochant l'entrée.
+# Le lecteur universel Windows (backend Vulkan) et son paquet TensorRT. Appelé par release.yml pour une étiquette v*
+# (la seule entrée des releases, qui publie ensuite le manifeste et la « latest ») ; lancé à la main sans étiquette, il
+# construit le même paquet en artefact (et TensorRT en artefact si l'entrée tensorrt est cochée). Lancé à la main avec
+# une étiquette, il reconstruit le paquet de cette étiquette au commit de l'étiquette (la garde refuse tout autre
+# commit) et le joint à sa release tant qu'elle n'est pas publiée.
+#
+# Le paquet TensorRT Windows (notre module et trtexec.exe, sans fichier de NVIDIA) vit dans la release
+# « trt-win-<empreinte de ses entrées> » (tools/release/trt-fingerprint.sh --windows), comme celui de Linux : il ne se
+# construit que quand l'empreinte change, ici même, avant le paquet du lecteur, qui reprend son index (A28-01, A28-17).
+# Pour une étiquette, le propriétaire du dépôt accepte les licences du kit CUDA et de TensorRT de NVIDIA en
+# poussant l'étiquette (décision de Tatoub : chaque release a un paquet TensorRT Windows et Linux). Une release
+# finale sans TensorRT Windows échoue ; une préversion n'a qu'un avertissement.
 on:
   workflow_dispatch:
     inputs:
@@ -10,29 +19,148 @@ on:
         description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
         required: false
       tensorrt:
-        description: "Construire TensorRT : j'accepte les licences du kit CUDA et de TensorRT de NVIDIA"
+        description: "Sans étiquette : construire aussi TensorRT en artefact (j'accepte les licences du kit CUDA et de TensorRT de NVIDIA)"
         type: boolean
         default: false
       span_fp8:
-        description: "Avec TensorRT : construire aussi les noyaux CUTLASS du SPAN FP8 sous MSVC (essai 12.4)"
+        description: "Sans étiquette, avec TensorRT : construire aussi les noyaux CUTLASS du SPAN FP8 sous MSVC (essai 12.4)"
         type: boolean
         default: false
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
 
 permissions:
   contents: write
   actions: read  # release-guard.yml lit les exécutions de ci.yml
 
+# Une seule construction par étiquette, commune à release.yml et au lancement à la main (A28-15).
+concurrency:
+  group: release-windows-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ !inputs.tag }}
+
+env:
+  AJP_TAG: ${{ inputs.tag || '' }}
+
 jobs:
   guard:
     uses: ./.github/workflows/release-guard.yml
     with:
-      tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag || '' }}
+      tag: ${{ inputs.tag || '' }}
+
+  # L'empreinte Windows se calcule sous Linux : les fins de ligne d'une extraction Windows la changeraient.
+  trt-check:
+    name: Paquet TensorRT Windows publié ?
+    needs: [guard]
+    runs-on: ubuntu-24.04
+    outputs:
+      fp: ${{ steps.fp.outputs.fp }}
+      repo: ${{ steps.fp.outputs.repo }}
+      build: ${{ steps.fp.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: fp
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IN_TENSORRT: ${{ inputs.tensorrt }}
+        run: |
+          source tools/release/versions.env
+          fp="$(tools/release/trt-fingerprint.sh --windows)"
+          echo "fp=$fp" >>"$GITHUB_OUTPUT"
+          echo "repo=$AJP_RELEASE_REPO" >>"$GITHUB_OUTPUT"
+          build=false
+          if [ -n "$AJP_TAG" ]; then
+            gh release view "trt-win-$fp" -R "$AJP_RELEASE_REPO" --json assets -q '.assets[].name' 2>/dev/null \
+              | grep -qx engines-nvidia.lock || build=true
+          elif [ "$IN_TENSORRT" = true ]; then
+            build=true
+          fi
+          echo "build=$build" >>"$GITHUB_OUTPUT"
+          echo "empreinte TensorRT Windows : $fp ; construction : $build" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  tensorrt:
+    name: TensorRT Windows (x64)
+    needs: [trt-check]
+    if: needs.trt-check.outputs.build == 'true'
+    runs-on: windows-2025
+    env:
+      AJP_VCPKG: C:\v
+      AJP_VCPKG_BUILDTREES: C:\vb
+      VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
+      AJP_VCPKG_TRIPLET: x64-windows-release
+      SCCACHE_GHA_ENABLED: "true"
+      AJP_COMPILER_LAUNCHER: sccache
+      FP: ${{ needs.trt-check.outputs.fp }}
+      AJP_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\vc
+          key: vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
+          restore-keys: |
+            vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
+            vcpkg-windows-x64-release-
+      - name: vcpkg à la référence du manifeste
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
+          $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
+          git -C $env:AJP_VCPKG checkout -q $baseline
+          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+      - name: CUDA et TensorRT
+        shell: pwsh
+        run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
+      - name: Paquet TensorRT
+        shell: pwsh
+        env:
+          IN_SPAN_FP8: ${{ inputs.span_fp8 }}
+        run: |
+          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          $env:AJP_WITH_CUDA = "ON"
+          # Le SPAN FP8 sous MSVC reste un essai : jamais dans le paquet d'une empreinte publiée.
+          if ($env:IN_SPAN_FP8 -eq "true" -and -not $env:AJP_TAG) { $env:AJP_WITH_SPAN_FP8 = "ON" }
+          # Les liens de l'index nomment la release fixe de l'empreinte, celle que lit le paquet du lecteur.
+          $env:AJP_RELEASE_TAG = "trt-win-$env:FP"
+          $env:AJP_WITHOUT_MODELS = "1"
+          pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+          if ($LASTEXITCODE -ne 0) { throw "paquet TensorRT" }
+          # Un paquet sans module ni trtexec.exe ne sert à rien : refusé ici plutôt que chez l'utilisateur (TRT-04).
+          $members = tar tzf "$env:RUNNER_TEMP/package/ajp-engine-tensorrt-windows-x64.tar.gz"
+          if (-not ($members -match 'ajp_backend_tensorrt\.dll$')) { throw "module TensorRT absent de l'archive" }
+          if (-not ($members -match 'trtexec\.exe$')) { throw "trtexec.exe absent de l'archive" }
+          pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "trt-win-$env:FP"
+          if ($LASTEXITCODE -ne 0) { throw "contrôle du paquet TensorRT" }
+      # Seulement l'archive du moteur (notre module et trtexec.exe) et son index : le contrôle
+      # d'attach-nvidia-windows.ps1 refuse une archive qui contient un fichier de NVIDIA.
+      - name: Publication dans trt-win-${{ env.FP }}
+        if: env.AJP_TAG != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+        run: pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "trt-win-$env:FP" -Publish
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        continue-on-error: true
+        with:
+          retention-days: 7
+          name: ajp-engine-tensorrt-windows-x64-${{ env.FP }}
+          path: |
+            ${{ runner.temp }}/package/ajp-engine-tensorrt-windows-x64.tar.gz
+            ${{ runner.temp }}/package/engines-nvidia.lock
 
   package:
     name: Lecteur Windows (x64)
-    needs: [guard]
+    needs: [trt-check, tensorrt]
+    if: ${{ !cancelled() && needs.trt-check.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
     runs-on: windows-2025
     env:
       # Chemins courts : les sources de spirv-tools dépassent sinon les 260 caractères de MSVC.
@@ -44,8 +172,30 @@ jobs:
       # En Release, sans informations de débogage, cl.exe est mis en cache tel quel.
       SCCACHE_GHA_ENABLED: "true"
       AJP_COMPILER_LAUNCHER: sccache
+      FP: ${{ needs.trt-check.outputs.fp }}
+      AJP_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
     steps:
+      # Le jeton du dépôt ne reste pas dans .git/config, où les ports vcpkg le liraient (A28-08).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # L'index du paquet TensorRT Windows, pris AVANT toute construction : le jeton n'est jamais dans
+      # l'environnement d'un code tiers (A28-08). Un paquet joint à l'étiquette elle-même reste lu en second.
+      - name: Index TensorRT
+        if: env.AJP_TAG != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release download "trt-win-$FP" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP" \
+             || gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
+            echo "AJP_ENGINES_LOCK=$RUNNER_TEMP/engines-nvidia.lock" >>"$GITHUB_ENV"
+          elif [[ "$AJP_TAG" == *-* ]]; then
+            echo "::warning::pas de paquet TensorRT Windows pour l'empreinte $FP : préversion publiée sans lui"
+          else
+            echo "::error::pas de paquet TensorRT Windows pour l'empreinte $FP : une release finale en a toujours un (A28-01)"
+            exit 1
+          fi
       # Restauration et sauvegarde séparées : les ports déjà compilés restent en cache même quand
       # la construction échoue plus loin.
       - id: vcpkg-cache
@@ -69,22 +219,9 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       # AMD et Intel passent par Vulkan (docs/moteurs.md).
-      # Seulement sur l'entrée tensorrt (licences NVIDIA acceptées par le propriétaire du dépôt).
-      - name: CUDA et TensorRT
-        if: inputs.tensorrt
-        shell: pwsh
-        run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
       - name: Paquet
         shell: pwsh
         env:
-          # Les liens d'engines.lock visent la release de cette étiquette : sans elle, le script
-          # prend v<version du projet>, une release qui n'existe pas.
-          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-          # Les entrées passent par l'environnement, jamais dans le script (injection, P1.20).
-          IN_TENSORRT: ${{ inputs.tensorrt }}
-          IN_SPAN_FP8: ${{ inputs.span_fp8 }}
-          IN_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
           # Signature Authenticode (P7.1) : vide tant que le compte Trusted Signing n'existe pas.
           AJP_TS_ENDPOINT: ${{ vars.AJP_TS_ENDPOINT }}
           AJP_TS_ACCOUNT: ${{ vars.AJP_TS_ACCOUNT }}
@@ -95,18 +232,11 @@ jobs:
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
-          if ($env:IN_TENSORRT -eq "true") { $env:AJP_WITH_CUDA = "ON" }
-          if ($env:IN_TENSORRT -eq "true" -and $env:IN_SPAN_FP8 -eq "true") { $env:AJP_WITH_SPAN_FP8 = "ON" }
-          $env:AJP_RELEASE_REPO = $env:IN_RELEASE_REPO
-          if ($env:TAG) { $env:AJP_RELEASE_TAG = $env:TAG }
-          # TensorRT se construit sur un poste Windows NVIDIA et se joint à la release AVANT l'étiquette avec son index
-          # engines-nvidia.lock (tools/release/attach-nvidia-windows.ps1) : repris ici s'il existe.
-          if ($env:TAG) {
-            gh release download $env:TAG -R $env:AJP_RELEASE_REPO -p engines-nvidia.lock -D $env:RUNNER_TEMP 2>$null
-            if ($LASTEXITCODE -eq 0) { $env:AJP_ENGINES_LOCK = "$env:RUNNER_TEMP/engines-nvidia.lock" }
-            else { Write-Host "::notice::pas d'engines-nvidia.lock dans la release $env:TAG : voulu, TensorRT se construit sur le poste NVIDIA" }
-          }
+          # Les liens d'engines.lock visent la release de cette étiquette : sans elle, le script
+          # prend v<version du projet>, une release qui n'existe pas.
+          if ($env:AJP_TAG) { $env:AJP_RELEASE_TAG = $env:AJP_TAG }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
+          if ($LASTEXITCODE -ne 0) { throw "paquet" }
       # L'installeur (Inno Setup, installation pour l'utilisateur seul) à côté du zip portable.
       - name: Installeur
         shell: pwsh
@@ -122,6 +252,8 @@ jobs:
           choco install innosetup -y --no-progress | Out-Null
           $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)\r?$').Groups[1].Value
           if (-not $version) { throw "version introuvable dans CMakeLists.txt" }
+          # Une préversion affiche sa version entière (0.11.0-rc.1), comme le binaire (A28-04).
+          if ($env:AJP_TAG -and $env:AJP_TAG.StartsWith("v$version-")) { $version = $env:AJP_TAG.Substring(1) }
           $out = "$env:RUNNER_TEMP/package"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\ajp" "/DAppVer=$version" "/DOutput=$out" tools/release/windows/ajp.iss
           if ($LASTEXITCODE -ne 0) { throw "installeur" }
@@ -130,9 +262,8 @@ jobs:
           $setup = Get-Item "$out/ajp-windows-x64-setup.exe"
           Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
-      # arrête tout avant l'artefact et la release.
+      # arrête tout avant l'artefact et la release, préversions comprises (P1.15).
       - name: Tests sans GPU
-        # Préversions comprises (P1.15).
         shell: pwsh
         run: |
           ctest --preset windows-release
@@ -144,6 +275,7 @@ jobs:
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: env.AJP_TAG == ''
         continue-on-error: true
         with:
           retention-days: 3
@@ -151,53 +283,14 @@ jobs:
           path: |
             ${{ runner.temp }}/package/ajp-*
             ${{ runner.temp }}/package/SHA256SUMS-windows.txt
-      # Avec TensorRT et une étiquette : seule l'archive du moteur (notre module et trtexec.exe) et son index
-      # engines-nvidia.lock se joignent à la release, comme depuis un poste Windows NVIDIA ; le contrôle
-      # d'attach-nvidia-windows.ps1 refuse une archive qui contient un fichier de NVIDIA. La construction de
-      # l'étiquette reprend ensuite engines-nvidia.lock dans son engines.lock.
-      - name: Joindre le paquet TensorRT
-        if: inputs.tensorrt && inputs.tag != ''
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
-          TAG: ${{ inputs.tag }}  # par l'environnement, jamais dans le script (injection, P1.20)
-        run: pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "$env:TAG" -Publish
+      # Joint à la release de l'étiquette, qui reste une préversion : seul le job « publier » de release.yml la rend
+      # finale et « latest » (A28-03). Seule étape à porter le jeton d'écriture, après toute construction (A28-08).
       - name: Joindre à la release
-        # Jamais avec TensorRT : un paquet qui embarque des composants NVIDIA reste un artefact.
-        if: (github.event_name == 'push' || inputs.tag != '') && !inputs.tensorrt
-        shell: pwsh
+        if: env.AJP_TAG != ''
+        shell: bash
         env:
-          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
-          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
-          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-        # La construction macOS de la même étiquette peut créer la release au même moment : un
-        # refus de création ne compte que si la release n'existe toujours pas.
         run: |
-          gh release view $env:TAG -R $env:AJP_RELEASE_REPO *> $null
-          if ($LASTEXITCODE -ne 0) {
-            $notes = "tools/release/notes/$env:TAG.md"
-            if (Test-Path $notes) {
-              gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes-file $notes
-            } else {
-              gh release create $env:TAG -R $env:AJP_RELEASE_REPO --prerelease --title $env:TAG --notes $env:TAG
-            }
-            if ($LASTEXITCODE -ne 0) {
-              gh release view $env:TAG -R $env:AJP_RELEASE_REPO *> $null
-              if ($LASTEXITCODE -ne 0) { throw "release $env:TAG" }
-            }
-          }
-          # Une étiquette sans « - » (v0.7.0) est une vraie release ; une rc reste une préversion. Les notes
-          # reprennent celles du dépôt, même si la release a été créée avant (paquet TensorRT Windows joint).
-          # @(…) autour du if : un tableau d'un seul élément serait déroulé en chaîne, puis éclaté lettre par lettre.
-          $edit = @(if ($env:TAG -like "*-*") { "--prerelease=true" } else { "--prerelease=false"; "--latest" })
-          $notes = "tools/release/notes/$env:TAG.md"
-          if (Test-Path $notes) { $edit += @("--notes-file", $notes) }
-          gh release edit $env:TAG -R $env:AJP_RELEASE_REPO @edit
-          if ($LASTEXITCODE -ne 0) { throw "release $env:TAG : edit" }
-          $assets = @(Get-ChildItem "$env:RUNNER_TEMP/package" -File | Where-Object { $_.Name -like "ajp-*" -or $_.Name -eq "SHA256SUMS-windows.txt" } | ForEach-Object { $_.FullName })
-          # Une vraie release ne se réécrit pas : --clobber seulement pour une préversion (P1.16).
-          $clobber = @(if ($env:TAG -like "*-*") { "--clobber" })
-          gh release upload $env:TAG -R $env:AJP_RELEASE_REPO @assets @clobber
+          shopt -s nullglob
+          assets=("$RUNNER_TEMP"/package/ajp-*.zip "$RUNNER_TEMP"/package/ajp-*-setup.exe "$RUNNER_TEMP/package/SHA256SUMS-windows.txt")
+          tools/release/attach-assets.sh "$AJP_TAG" "${assets[@]}"

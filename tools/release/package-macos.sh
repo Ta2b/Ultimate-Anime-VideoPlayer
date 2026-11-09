@@ -15,7 +15,11 @@ OUT="$(mkdir -p "${1:-$ROOT/build/package}" && cd "${1:-$ROOT/build/package}" &&
 BREW="$(brew --prefix)"
 brew install --quiet dylibbundler
 
-cmake --preset macos-release -S "$ROOT"
+# Une étiquette de préversion (AJP_RELEASE_TAG=v0.11.0-rc.1) donne son suffixe au binaire (A26-04).
+VERSION="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt")"
+SUFFIX=""
+case "${AJP_RELEASE_TAG:-}" in "v$VERSION"-*) SUFFIX="${AJP_RELEASE_TAG#"v$VERSION"}" ;; esac
+cmake --preset macos-release -S "$ROOT" -DAJP_VERSION_SUFFIX="$SUFFIX"
 cmake --build --preset macos-release
 BUILD="$ROOT/build/macos-release"
 
@@ -62,7 +66,6 @@ dylibbundler -of -b -cd -d "$APP/Contents/Frameworks" -p @executable_path/../Fra
 # Le module du backend vit dans PlugIns : ses dépendances se résolvent depuis l'exécutable.
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/ajp" 2>/dev/null || true
 
-VERSION="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt")"
 # Les vidéos qu'AJP.app ouvre depuis le Finder (« Ouvrir avec », puis « Tout modifier » pour en
 # faire le lecteur par défaut ; rang Alternate : il ne prend la place de personne de lui-même).
 # macOS ne déclare ni .mkv ni .webm : l'app importe leurs types. Le fichier arrive par un Apple

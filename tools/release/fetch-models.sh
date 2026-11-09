@@ -41,7 +41,7 @@ RIFE=(
   "fd6b06538898c9a94d20f0fe55febceadbcde5ad64952240733b7275ef4c9d59 rife_v4.26.onnx"
   "ae45000d804282764554820a665588352ff08025d0b5761023aad52425766928 rife_v4.26_heavy.onnx"
 )
-RELEASE_REPO="${AJP_RELEASE_REPO:-Ta2b/ajp-releases}"  # P5.39 : le dépôt des releases, paramétrable
+RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"  # P5.39 : le dépôt des releases, paramétrable
 DRBA_URL="https://github.com/$RELEASE_REPO/releases/download/models-drba-1"
 # Le même fichier, tant que la release models-drba-1 n'existe pas (le SHA-256 vérifie les deux).
 DRBA_MIRROR="https://raw.githubusercontent.com/Ta2b/Ultimate-Anime-VideoPlayer/305b4cd5de2d516d2e55bb5a12b299828374ca39"

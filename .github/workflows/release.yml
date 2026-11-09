@@ -1,0 +1,114 @@
+name: Release
+
+# La seule entrée d'une release du lecteur : une étiquette v* poussée (ou donnée à la main). Dans l'ordre :
+#   1. la garde (commit, version de l'étiquette, ci.yml vert) ;
+#   2. les trois plateformes en parallèle, chacune avec son paquet TensorRT quand elle en a un (Linux et Windows,
+#      construits et publiés s'ils manquent : A28-01) ; chacune joint ses fichiers à la release de l'étiquette, qui
+#      reste une préversion ;
+#   3. « publier », seulement quand les trois ont réussi : vérifie que la release a tout ce qu'elle doit avoir,
+#      signe le manifeste des mises à jour avec la clé Ed25519 du secret AJP_UPDATE_KEY (environnement protégé
+#      « release ») et le joint (A28-02), puis, pour une release finale, la rend finale et « latest » si elle est plus
+#      récente que l'actuelle (A28-03). Une préversion n'a pas de manifeste : le canal Préversions est retiré.
+#
+# Aucune étiquette ne se pose sans la demande de Tatoub (CLAUDE.md). Configuration du dépôt : docs/signature-des-releases.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette à (re)construire et publier"
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+# Une seule release par étiquette à la fois, jamais annulée en cours (A28-15).
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit
+
+  windows:
+    uses: ./.github/workflows/release-windows.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit
+
+  macos:
+    uses: ./.github/workflows/release-macos.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit
+
+  publish:
+    name: Publier
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    # La clé de signature n'existe que dans cet environnement : ses règles disent quelles étiquettes y ont accès.
+    environment: release
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Fichiers de la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source tools/release/versions.env
+          echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
+          dir="$RUNNER_TEMP/release"
+          mkdir -p "$dir"
+          gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
+            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip -p engines.lock
+          tools/release/check-release.sh "$TAG" "$dir"
+      - name: Manifeste signé
+        if: ${{ !contains(env.TAG, '-') }}
+        env:
+          UPDATE_KEY: ${{ secrets.AJP_UPDATE_KEY }}
+        run: |
+          [ -n "$UPDATE_KEY" ] || { echo "::error::secret AJP_UPDATE_KEY absent de l'environnement release : pas de manifeste, pas de publication (docs/signature-des-releases.md)"; exit 1; }
+          dir="$RUNNER_TEMP/release"
+          key="$RUNNER_TEMP/ajp-update-key.pem"
+          (umask 077; printf '%s\n' "$UPDATE_KEY" > "$key")
+          trap 'rm -f "$key"' EXIT
+          AJP_UPDATE_KEY="$key" tools/release/sign-manifest.sh "${TAG#v}" stable "$dir" \
+            "https://github.com/$AJP_RELEASE_REPO/releases/download/$TAG" \
+            "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
+          # La signature se vérifie avec la clé publique compilée dans le lecteur, archive par archive.
+          pub="$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
+          for archive in ajp-linux-x64.tar.gz ajp-windows-x64.zip ajp-macos-arm64.zip; do
+            AJP_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$dir/$archive"
+          done
+          cat "$dir/manifest.toml" >>"$GITHUB_STEP_SUMMARY"
+      - name: Publication
+        env:
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+        run: |
+          dir="$RUNNER_TEMP/release"
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$TAG" -R "$AJP_RELEASE_REPO" --prerelease=true --latest=false
+            echo "préversion $TAG publiée (sans manifeste)" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Le manifeste d'abord : la « latest » ne désigne jamais une release sans lui (A28-02, A28-03).
+          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
+          # Une relance sur une étiquette plus ancienne ne ramène pas la « latest » en arrière.
+          current="$(gh release view -R "$AJP_RELEASE_REPO" --json tagName -q .tagName 2>/dev/null || true)"
+          latest=--latest
+          if [ -n "$current" ] && [ "$current" != "$TAG" ] && \
+             [ "$(printf '%s\n%s\n' "${current#v}" "${TAG#v}" | sort -V | tail -1)" != "${TAG#v}" ]; then
+            latest=--latest=false
+            echo "::warning::$TAG est plus ancienne que la « latest » actuelle ($current) : elle le reste"
+          fi
+          gh release edit "$TAG" -R "$AJP_RELEASE_REPO" --prerelease=false "$latest"
+          echo "release $TAG publiée ($latest)" | tee -a "$GITHUB_STEP_SUMMARY"

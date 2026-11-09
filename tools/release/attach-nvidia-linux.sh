@@ -63,7 +63,7 @@ if [ -z "$publish" ]; then
   echo "Contrôle seulement. Pour joindre : relancer avec --publish, puis pousser l'étiquette $tag."
   exit 0
 fi
-gh release view "$tag" -R "$repo" >/dev/null 2>&1 || gh release create "$tag" -R "$repo" --prerelease --title "$tag" --notes "$tag"
+gh release view "$tag" -R "$repo" >/dev/null 2>&1 || gh release create "$tag" -R "$repo" --prerelease --latest=false --title "$tag" --notes "$tag"
 # Les moteurs d'un autre système déjà joints à cette release (TensorRT Windows) restent dans l'index : le lecteur
 # relit engines-nvidia.lock de sa release au lancement (src/app/play/engine_online.h).
 previous="$(mktemp)"

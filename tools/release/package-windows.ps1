@@ -21,7 +21,10 @@ $Out = (Resolve-Path $Out).Path
 $Version = (Select-String -Path "$Root/CMakeLists.txt" -Pattern '^  VERSION ([0-9.]+)$').Matches[0].Groups[1].Value
 $Tag = if ($env:AJP_RELEASE_TAG) { $env:AJP_RELEASE_TAG } else { "v$Version" }
 # Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
-$Repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else { "Ta2b/Ultimate-Anime-VideoPlayer" }
+# Une seule source pour le dépôt par défaut : tools/release/versions.env (A28-05).
+$Repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else {
+  (Select-String -Path "$PSScriptRoot/versions.env" -Pattern '^AJP_RELEASE_REPO=(.+)$').Matches[0].Groups[1].Value
+}
 $BaseUrl = "https://github.com/$Repo/releases/download/$Tag"
 $Cuda = if ($env:AJP_WITH_CUDA) { $env:AJP_WITH_CUDA } else { "OFF" }
 
@@ -40,7 +43,9 @@ if ($env:AJP_COMPILER_LAUNCHER) {
 if ($env:AJP_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
 }
-cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" @Extra
+# Une étiquette de préversion (v0.11.0-rc.1) donne son suffixe au binaire : il dit la version de l'étiquette (A26-04).
+$Suffix = if ($Tag.StartsWith("v$Version-")) { $Tag.Substring("v$Version".Length) } else { "" }
+cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" "-DAJP_VERSION_SUFFIX=$Suffix" @Extra
 if ($LASTEXITCODE -ne 0) { throw "configuration" }
 cmake --build --preset windows-release -- -k 0  # toutes les erreurs de MSVC en une passe
 if ($LASTEXITCODE -ne 0) { throw "construction" }

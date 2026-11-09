@@ -8,7 +8,7 @@
 #
 # Entrées : le dépôt à l'étiquette (monté en lecture seule), l'étiquette, le dossier de sortie.
 # Variables : AJP_TRT_ROOT (défaut ~/ajp-trt-release : bin/trtexec construit en conteneur, lib/ des ressources du
-# constructeur), AJP_RELEASE_REPO (défaut Ta2b/ajp-releases), CUDA_DIR (défaut /opt/cuda), CCCL_DIR (/usr/include/cccl).
+# constructeur), AJP_RELEASE_REPO (défaut : celui de versions.env), CUDA_DIR (défaut /opt/cuda), CCCL_DIR (/usr/include/cccl).
 #
 # L'IMAGE EST RECONSTRUITE d'abord (comme run.sh) : une image plus ancienne que tools/deps/linux-from-source.sh embarque
 # un FFmpeg d'avant --disable-bzlib, et le contrôle de portabilité de package-linux.sh (libbz2.so.1.0 n'existe que sous
@@ -22,7 +22,7 @@ REPO="$(cd "$REPO" && pwd)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 TRT="${AJP_TRT_ROOT:-$HOME/ajp-trt-release}"
-RELEASE_REPO="${AJP_RELEASE_REPO:-Ta2b/ajp-releases}"
+RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
 CUDA="${CUDA_DIR:-/opt/cuda}"
 CCCL="${CCCL_DIR:-/usr/include/cccl}"
 IMAGE=ajp-preflight

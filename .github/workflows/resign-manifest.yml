@@ -1,0 +1,69 @@
+name: Re-signer le manifeste
+
+# Le manifeste des mises à jour expire 120 jours après sa signature (sign-manifest.sh) : sans release dans ce délai,
+# tout le parc verrait une erreur (SEC-24). Chaque mois, celui de la « latest » est re-signé quand il lui reste moins
+# de 45 jours, avec les mêmes archives, revérifiées. À la main, il est re-signé sans condition.
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resign-manifest
+  cancel-in-progress: false
+
+jobs:
+  resign:
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Manifeste de la « latest »
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          source tools/release/versions.env
+          echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
+          tag="$(gh release view -R "$AJP_RELEASE_REPO" --json tagName -q .tagName)"
+          echo "TAG=$tag" >>"$GITHUB_ENV"
+          dir="$RUNNER_TEMP/release"
+          mkdir -p "$dir"
+          gh release download "$tag" -R "$AJP_RELEASE_REPO" -D "$dir" -p manifest.toml
+          expires="$(sed -n 's/^expires = "\(.*\)"$/\1/p' "$dir/manifest.toml")"
+          left=$(( ( $(date -u -d "$expires" +%s) - $(date -u +%s) ) / 86400 ))
+          echo "$tag : le manifeste expire le $expires ($left jours)" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT" = schedule ] && [ "$left" -ge 45 ]; then echo "SKIP=1" >>"$GITHUB_ENV"; fi
+      - name: Signature
+        if: env.SKIP != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_KEY: ${{ secrets.AJP_UPDATE_KEY }}
+        run: |
+          [ -n "$UPDATE_KEY" ] || { echo "::error::secret AJP_UPDATE_KEY absent de l'environnement release"; exit 1; }
+          dir="$RUNNER_TEMP/release"
+          gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
+            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip
+          key="$RUNNER_TEMP/ajp-update-key.pem"
+          (umask 077; printf '%s\n' "$UPDATE_KEY" > "$key")
+          trap 'rm -f "$key"' EXIT
+          AJP_UPDATE_KEY="$key" tools/release/sign-manifest.sh "${TAG#v}" stable "$dir" \
+            "https://github.com/$AJP_RELEASE_REPO/releases/download/$TAG" \
+            "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
+          pub="$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
+          for archive in "$dir"/ajp-*; do
+            AJP_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$archive"
+          done
+      - name: Remplacement dans la release
+        if: env.SKIP != '1'
+        env:
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
+        run: |
+          dir="$RUNNER_TEMP/release"
+          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
+          echo "manifeste de $TAG re-signé" | tee -a "$GITHUB_STEP_SUMMARY"

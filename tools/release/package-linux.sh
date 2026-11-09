@@ -35,10 +35,15 @@ pack() {  # dossier-parent entrée archive.tar.gz : tar trié, propriétaire neu
   tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" -C "$1" -cf - "$2" | gzip -9n > "$3"
 }
 # Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
-BASE_URL="https://github.com/${AJP_RELEASE_REPO:-Ta2b/Ultimate-Anime-VideoPlayer}/releases/download/$TAG"
+# Le dépôt par défaut vient de versions.env, la seule source (A28-05) ; AJP_RELEASE_REPO posé l'emporte.
+AJP_RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
+BASE_URL="https://github.com/${AJP_RELEASE_REPO}/releases/download/$TAG"
 
+# Une étiquette de préversion (v0.11.0-rc.1) donne son suffixe au binaire : il dit la version de l'étiquette (A26-04).
+SUFFIX=""
+case "$TAG" in "v$VERSION"-*) SUFFIX="${TAG#"v$VERSION"}" ;; esac
 cmake --preset linux-release -S "$ROOT" \
-  -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" \
+  -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" -DAJP_VERSION_SUFFIX="$SUFFIX" \
   ${AJP_TENSORRT_ROOT:+-DAJP_TENSORRT_ROOT="$AJP_TENSORRT_ROOT"}
 cmake --build --preset linux-release
 BUILD="$ROOT/build/linux-release"

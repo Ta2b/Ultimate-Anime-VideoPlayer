@@ -66,8 +66,22 @@ set(AJP_UPDATE_PUBKEY "c50eeb3e63c327a087487cd3f485e66fbbf8ef2340a0b90d7ec99d4c2
 # La clé de secours (P1.14) : un manifeste signé par elle est cru aussi, et peut révoquer l'active (revoked_keys).
 # Vide tant qu'elle n'est pas créée (docs/signature-des-releases.md).
 set(AJP_UPDATE_PUBKEY_BACKUP "" CACHE STRING "Clé publique Ed25519 de secours (hexadécimal) des mises à jour")
-set(AJP_RELEASE_REPO "Ta2b/ajp-releases" CACHE STRING "Dépôt GitHub des releases")
-target_compile_definitions(ajp_app PRIVATE AJP_VERSION="${PROJECT_VERSION}" AJP_RELEASE_REPO="${AJP_RELEASE_REPO}"
+# Le dépôt des releases par défaut vient de tools/release/versions.env, la seule source des workflows et des scripts
+# de paquet (A28-05).
+file(STRINGS "${PROJECT_SOURCE_DIR}/tools/release/versions.env" ajp_release_repo_line REGEX "^AJP_RELEASE_REPO=")
+string(REGEX REPLACE "^AJP_RELEASE_REPO=" "" ajp_release_repo_default "${ajp_release_repo_line}")
+if(NOT ajp_release_repo_default)
+  message(FATAL_ERROR "AJP_RELEASE_REPO absent de tools/release/versions.env")
+endif()
+set(AJP_RELEASE_REPO "${ajp_release_repo_default}" CACHE STRING "Dépôt GitHub des releases")
+# Le suffixe de préversion de l'étiquette (« -rc.1 »), posé par la CI de release (A26-04) : le binaire dit alors la même
+# version que l'étiquette. Vide pour une release finale et hors CI.
+set(AJP_VERSION_SUFFIX "" CACHE STRING "Suffixe de préversion de la version (-rc.N), tiré de l'étiquette")
+if(AJP_VERSION_SUFFIX AND NOT AJP_VERSION_SUFFIX MATCHES "^-[0-9A-Za-z.]+$")
+  message(FATAL_ERROR "AJP_VERSION_SUFFIX « ${AJP_VERSION_SUFFIX} » : attendu -<lettres, chiffres, points>")
+endif()
+target_compile_definitions(ajp_app PRIVATE AJP_VERSION="${PROJECT_VERSION}${AJP_VERSION_SUFFIX}"
+                           AJP_RELEASE_REPO="${AJP_RELEASE_REPO}"
                            AJP_UPDATE_PUBKEY="${AJP_UPDATE_PUBKEY}"
                            AJP_UPDATE_PUBKEY_BACKUP="${AJP_UPDATE_PUBKEY_BACKUP}")
 

@@ -1,28 +1,35 @@
 name: Release macOS
 
-# Lancé à la main (ou par une étiquette v*) : les minutes macOS coûtent dix fois celles de Linux.
-# Une poussée sur la branche release/macos construit le même paquet sans release : il reste en
-# artefact de l'exécution, et les dépendances construites remplissent le cache.
+# Appelé par release.yml pour une étiquette v* (la seule entrée des releases, qui publie ensuite le manifeste et la
+# « latest ») ; lancé à la main sans étiquette, ou par une poussée sur la branche release/macos, il construit le même
+# paquet sans release : il reste en artefact de l'exécution, et les dépendances construites remplissent le cache. Les
+# minutes macOS coûtent dix fois celles de Linux.
 on:
   workflow_dispatch:
     inputs:
       tag:
         description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
         required: false
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
   push:
-    tags: ["v*"]
     branches: ["release/macos"]
 
 permissions:
   contents: write
   actions: read  # release-guard.yml lit les exécutions de ci.yml
 
-# Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
+# Une seule construction par étiquette, commune à release.yml et au lancement à la main (A28-15). Une étiquette
+# n'est jamais annulée en cours.
 concurrency:
-  group: release-macos-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-macos-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ !inputs.tag }}
 
 env:
+  AJP_TAG: ${{ inputs.tag || '' }}
   # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
   # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
@@ -31,14 +38,17 @@ jobs:
   guard:
     uses: ./.github/workflows/release-guard.yml
     with:
-      tag: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || '' }}
+      tag: ${{ inputs.tag || '' }}
 
   package:
     name: AJP.app (Apple Silicon)
     needs: [guard]
     runs-on: macos-15
     steps:
+      # Le jeton du dépôt ne reste pas dans .git/config, où tout code tiers construit ensuite le lirait (A28-08).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       # Restauration et sauvegarde séparées : les dépendances déjà construites (marquées .built-*)
       # restent en cache même quand la construction échoue plus loin.
       - id: deps-cache
@@ -85,6 +95,7 @@ jobs:
           else
             echo "::notice::pas de certificat Developer ID : signature ad hoc (P7.1)"
           fi
+          [ -z "$AJP_TAG" ] || export AJP_RELEASE_TAG="$AJP_TAG"
           tools/release/package-macos.sh "$RUNNER_TEMP/package"
           rm -f "$RUNNER_TEMP/notary.p8"
       # spirv-val ne voit pas ce que seul Metal refuse : chaque shader passe par SPIRV-Cross et le
@@ -107,30 +118,13 @@ jobs:
             ${{ runner.temp }}/package/ajp-macos-arm64.zip.sha256
             ${{ runner.temp }}/package/ajp-macos-arm64.dmg
             ${{ runner.temp }}/package/ajp-macos-arm64.dmg.sha256
+      # Joint à la release de l'étiquette, qui reste une préversion : seul le job « publier » de release.yml la rend
+      # finale et « latest » (A28-03). Seule étape à porter le jeton d'écriture, après toute construction (A28-08).
       - name: Joindre à la release
-        if: github.ref_type == 'tag' || inputs.tag != ''
+        if: env.AJP_TAG != ''
         env:
-          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
-          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
-          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
-        # La construction Windows de la même étiquette peut créer la release au même moment : un
-        # refus de création ne compte que si la release n'existe toujours pas.
         run: |
-          notes="tools/release/notes/$TAG.md"
-          [ -f "$notes" ] || notes=/dev/null
-          gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
-            || gh release create "$TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$TAG" --notes-file "$notes" \
-            || gh release view "$TAG" -R "$AJP_RELEASE_REPO" >/dev/null
-          # Une étiquette sans « - » (v0.7.0) est une vraie release ; une rc reste une préversion. Les notes
-          # reprennent celles du dépôt, même si la release a été créée avant (paquet TensorRT Windows joint).
-          pre=true; [[ "$TAG" == *-* ]] || pre=false
-          edit=(--prerelease="$pre"); [ "$pre" = true ] || edit+=(--latest)
-          [ "$notes" = /dev/null ] || edit+=(--notes-file "$notes")
-          gh release edit "$TAG" -R "$AJP_RELEASE_REPO" "${edit[@]}"
-          # Une vraie release ne se réécrit pas : --clobber seulement pour une préversion (P1.16).
-          clobber=(); [ "$pre" = true ] && clobber=(--clobber)
-          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
+          tools/release/attach-assets.sh "$AJP_TAG" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
             "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" "$RUNNER_TEMP/package/ajp-macos-arm64.dmg" \
-            "$RUNNER_TEMP/package/ajp-macos-arm64.dmg.sha256" "${clobber[@]}"
+            "$RUNNER_TEMP/package/ajp-macos-arm64.dmg.sha256"

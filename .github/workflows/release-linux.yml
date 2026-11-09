@@ -1,37 +1,44 @@
 name: Release Linux
 
-# Une étiquette v* (poussée, ou créée avec une release depuis GitHub) : le lecteur Linux
-# (Vulkan) construit ici et joint à la release de l'étiquette, créée en préversion avec les notes de
-# tools/release/notes/<étiquette>.md si elle n'existe pas encore. Les builds Windows et macOS
-# partent de la même étiquette et se joignent à la même release. Une poussée sur la branche
-# release/linux construit le même paquet sans release : il reste en artefact de l'exécution.
-# Rien ne s'empaquette sans les règles (rules.yml) ni, pour une étiquette, sans ci.yml vert sur son commit
-# (release-guard.yml). Les tests sans GPU tournent sur le build même du paquet, préversions comprises.
-# Versions et paquets : tools/release/versions.env.
-# À la main : le paquet de la branche choisie, joint à la release de l'étiquette donnée (un
-# correctif du lecteur dans une release déjà publiée), ou en artefact sans étiquette.
+# Le lecteur Linux (Vulkan) et son paquet TensorRT. Appelé par release.yml pour une étiquette v* (la seule entrée des
+# releases, qui publie ensuite le manifeste et la « latest ») ; lancé à la main sans étiquette, ou par une poussée sur
+# la branche release/linux, il construit le même paquet sans release : il reste en artefact de l'exécution. Lancé à
+# la main avec une étiquette, il reconstruit le paquet de cette étiquette au commit de l'étiquette (la garde refuse
+# tout autre commit) et le joint à sa release tant qu'elle n'est pas publiée.
+#
+# Rien ne s'empaquette sans les règles (rules.yml) ni, pour une étiquette, sans la garde (release-guard.yml : commit
+# et version de l'étiquette, ci.yml vert). Le paquet TensorRT Linux vit dans la release « trt-<empreinte de ses
+# entrées> » : trt-package.yml le construit et le publie s'il manque, avant le paquet du lecteur (A28-01). Une
+# release finale sans TensorRT Linux échoue ; une préversion n'a qu'un avertissement. Les tests sans GPU tournent sur
+# le build même du paquet, et les tests de découpe sur les modèles qu'il livre (A28-07). Versions, paquets et dépôt
+# des releases : tools/release/versions.env.
 on:
   push:
-    tags: ["v*"]
     branches: ["release/linux"]
   workflow_dispatch:
     inputs:
       tag:
         description: "Étiquette de la release où joindre le paquet (vide : artefact seulement)"
         required: false
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
 
 permissions:
   contents: write
   actions: read  # release-guard.yml lit les exécutions de ci.yml
 
-# Une seule construction par branche ou étiquette : la plus récente remplace la précédente.
+# Une seule construction par étiquette (ou branche), commune à la poussée et au lancement à la main (A28-15). Une
+# étiquette n'est jamais annulée en cours : deux constructions ne se remplacent pas l'une l'autre à moitié.
 concurrency:
-  group: release-linux-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-linux-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ !inputs.tag }}
 
 env:
-  # L'étiquette de la release visée : celle poussée, ou celle donnée à la main ; vide sinon.
-  AJP_TAG: ${{ (github.event_name == 'push' && github.ref_type == 'tag') && github.ref_name || inputs.tag || '' }}
+  # L'étiquette de la release visée : celle donnée par release.yml ou à la main ; vide sinon.
+  AJP_TAG: ${{ inputs.tag || '' }}
   # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
   # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
@@ -45,20 +52,54 @@ jobs:
   guard:
     uses: ./.github/workflows/release-guard.yml
     with:
-      tag: ${{ (github.event_name == 'push' && github.ref_type == 'tag') && github.ref_name || inputs.tag || '' }}
+      tag: ${{ inputs.tag || '' }}
+
+  # Le paquet TensorRT de l'empreinte courante : rien à faire s'il existe déjà, sinon construit et publié (A28-01).
+  tensorrt:
+    if: inputs.tag != ''
+    needs: [rules, guard]
+    uses: ./.github/workflows/trt-package.yml
+    with:
+      publier: true
+      seulement-si-absent: true
+    secrets: inherit
 
   package:
     name: Lecteur Linux (x64)
-    needs: [rules, guard]
+    needs: [rules, guard, tensorrt]
+    # Sans étiquette, le job tensorrt est sauté : le paquet se construit quand même.
+    if: ${{ !cancelled() && needs.rules.result == 'success' && needs.guard.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
     runs-on: ubuntu-24.04
     steps:
+      # Le jeton du dépôt ne reste pas dans .git/config, où tout code tiers construit ensuite le lirait (A28-08).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Paquets système
         run: |
           source tools/release/versions.env
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE
           pip install --user "meson==$MESON_VERSION"
+          echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
+      # L'index du paquet TensorRT, pris AVANT toute construction : le jeton n'est jamais dans l'environnement d'un
+      # code tiers (A28-08). Le paquet vit dans la release « trt-<empreinte> » (trt-package.yml, job tensorrt) ; un
+      # paquet joint à l'étiquette elle-même (ancienne méthode) reste lu en second.
+      - name: Index TensorRT
+        if: env.AJP_TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fp="$(tools/release/trt-fingerprint.sh)"
+          if gh release download "trt-$fp" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP" \
+             || gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
+            echo "AJP_ENGINES_LOCK=$RUNNER_TEMP/engines-nvidia.lock" >>"$GITHUB_ENV"
+          elif [[ "$AJP_TAG" == *-* ]]; then
+            echo "::warning::pas de paquet TensorRT Linux pour l'empreinte $fp : préversion publiée sans lui"
+          else
+            echo "::error::pas de paquet TensorRT Linux pour l'empreinte $fp : une release finale en a toujours un (A28-01)"
+            exit 1
+          fi
       # Restauration et sauvegarde séparées : les dépendances construites restent en cache même
       # quand une étape suivante échoue (quota d'artefacts atteint, paquet refusé…).
       - id: deps-cache
@@ -76,31 +117,11 @@ jobs:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       # AMD et Intel passent par Vulkan (docs/moteurs.md).
-      # TensorRT se construit ailleurs (licence NVIDIA).
       - name: Place sur le disque
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-      # TensorRT se construit sur un poste NVIDIA (le module et trtexec seulement : les bibliothèques de
-      # NVIDIA se tirent de chez NVIDIA, lien direct). Le poste joint son paquet à la release AVANT
-      # l'étiquette, avec son index engines-nvidia.lock (tools/release/attach-nvidia-linux.sh), que cette
-      # étape reprend s'il existe : ses [[engine]] et [[vendor_file]] rejoignent l'engines.lock joint.
       - name: Paquet
-        env:
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
         run: |
-          if [ -n "$AJP_TAG" ]; then
-            export AJP_RELEASE_TAG="$AJP_TAG"
-            # Le paquet TensorRT est indépendant de l'étiquette : il vit dans la release « trt-<empreinte de ses
-            # entrées> » (tools/release/trt-package.sh), construit une fois sur le poste NVIDIA. Un paquet joint
-            # à l'étiquette elle-même (ancienne méthode) reste lu en second.
-            fp="$(tools/release/trt-fingerprint.sh)"
-            if gh release download "trt-$fp" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP" \
-               || gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
-              export AJP_ENGINES_LOCK="$RUNNER_TEMP/engines-nvidia.lock"
-            else
-              echo "::warning::pas de paquet TensorRT pour l'empreinte $fp : sur le poste NVIDIA, tools/release/trt-package.sh, puis relancer ce workflow (docs/nvidia-linux.md)"
-            fi
-          fi
+          [ -z "$AJP_TAG" ] || export AJP_RELEASE_TAG="$AJP_TAG"
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
       # Les tests sans GPU du build même du paquet (préréglage de test linux-release) : un échec arrête tout
       # avant l'artefact et la release, préversions comprises.
@@ -108,6 +129,23 @@ jobs:
         env:
           AJP_TEST_VULKAN_VALIDATION: "off"
         run: ctest --preset linux-release
+      # Les modèles livrés passent la découpe du chemin fusionné (RIFE 4.25, 4.22 lite, DistilDRBA et son demi-flot) :
+      # un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur (A28-07). Un
+      # saut compte comme un échec.
+      - name: Découpe des modèles livrés
+        if: env.AJP_TAG != ''
+        run: |
+          models="$RUNNER_TEMP/package/ajp-linux-x64/models/rife"
+          for f in rife_v4.25.onnx rife_v4.22_lite.onnx distil_drba_v2_lite.onnx distil_drba_v2_lite_s05.onnx; do
+            [ -f "$models/$f" ] || { echo "::error::modèle livré absent : $f"; exit 1; }
+          done
+          cmake --preset linux-release -DAJP_RIFE_MODEL_DIR="$models" -DAJP_DRBA_MODEL_DIR="$models"
+          cmake --build --preset linux-release --target ajp_prepare_tests
+          ctest --test-dir build/linux-release -R 'du catalogue se coupent' --no-tests=error --output-on-failure \
+            --output-junit "$RUNNER_TEMP/models-junit.xml"
+          ran="$(grep -c '<testcase' "$RUNNER_TEMP/models-junit.xml" || true)"
+          skipped="$(grep -c '<skipped' "$RUNNER_TEMP/models-junit.xml" || true)"
+          [ "$ran" -ge 2 ] && [ "$skipped" -eq 0 ] || { echo "::error::tests de découpe sautés ($skipped sur $ran)"; exit 1; }
       # Le même lecteur en un seul fichier (tools/release/appimage.sh) : à rendre exécutable et à lancer.
       - name: AppImage
         run: |
@@ -127,29 +165,14 @@ jobs:
             ${{ runner.temp }}/package/engines.lock
             ${{ runner.temp }}/package/SHA256SUMS
           compression-level: 0
-      - name: Préversion
+      # Joint à la release de l'étiquette, créée en préversion si elle n'existe pas. Elle reste une préversion : seul
+      # le job « publier » de release.yml en fait une release finale et la « latest », une fois les trois plateformes
+      # et le manifeste signé joints (A28-03).
+      - name: Joindre à la release
         if: env.AJP_TAG != ''
         env:
-          # Un dépôt public à part peut porter les releases (le lecteur télécharge ses moteurs sans
-          # compte) : variable AJP_RELEASE_REPO et secret AJP_RELEASE_TOKEN qui peut y écrire.
+          # Un dépôt public à part porte les releases (le lecteur télécharge ses moteurs sans compte) : secret
+          # AJP_RELEASE_TOKEN qui peut y écrire. Seule étape à porter ce jeton, après toute construction (A28-08).
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
-        run: |
-          notes="tools/release/notes/$AJP_TAG.md"
-          [ -f "$notes" ] || notes=/dev/null
-          assets=("$RUNNER_TEMP"/package/ajp-*.tar.gz "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage" "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS")
-          # Les constructions Windows et macOS de la même étiquette peuvent créer la release au même
-          # moment : un refus de création ne compte que si la release n'existe toujours pas.
-          gh release view "$AJP_TAG" -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
-            || gh release create "$AJP_TAG" -R "$AJP_RELEASE_REPO" --prerelease --title "$AJP_TAG" \
-              --notes-file "$notes" \
-            || gh release view "$AJP_TAG" -R "$AJP_RELEASE_REPO" >/dev/null
-          # Une étiquette sans « - » (v0.7.0) est une vraie release ; une rc reste une préversion. Les notes
-          # reprennent celles du dépôt, même si la release a été créée avant (paquet TensorRT Windows joint).
-          pre=true; [[ "$AJP_TAG" == *-* ]] || pre=false
-          edit=(--prerelease="$pre"); [ "$pre" = true ] || edit+=(--latest)
-          [ "$notes" = /dev/null ] || edit+=(--notes-file "$notes")
-          gh release edit "$AJP_TAG" -R "$AJP_RELEASE_REPO" "${edit[@]}"
-          # Une vraie release ne se réécrit pas : --clobber seulement pour une préversion (P1.16).
-          clobber=(); [ "$pre" = true ] && clobber=(--clobber)
-          gh release upload "$AJP_TAG" -R "$AJP_RELEASE_REPO" "${clobber[@]}" "${assets[@]}"
+        run: tools/release/attach-assets.sh "$AJP_TAG" "$RUNNER_TEMP"/package/ajp-*.tar.gz \
+          "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage" "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS"

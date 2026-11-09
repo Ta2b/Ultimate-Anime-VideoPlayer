@@ -34,17 +34,15 @@ DirectML n'a jamais eu de backend.
 
 ## TensorRT : comment le module arrive
 
-- Windows : `release-windows.yml` avec `tensorrt=true` construit `ajp_backend_tensorrt.dll` et `trtexec.exe`,
-  les joint à la release (`ajp-engine-tensorrt-windows-x64.tar.gz`) avec leur index `engines-nvidia.lock`. La
-  construction `tensorrt=false` de la même étiquette reprend cet index dans l'`engines.lock` de l'installeur.
-  Un paquet joint **après** la release sert aussi : le lecteur relit `engines-nvidia.lock` de la release de sa
-  version au lancement (au plus une fois par jour, `src/app/play/engine_online.h`) et propose le moteur dans
-  l'écran des moteurs, sans refaire la release. Il ne croit que les archives de cette release et les fichiers
-  de `pypi.nvidia.com`, vérifiés ensuite par taille et SHA-256 ; rien n'est relu si les mises à jour sont
-  refusées (Général > Mises à jour > Jamais).
-- Linux : le paquet se construit sur un poste Linux NVIDIA (`tools/release/trt-package.sh`) et vit dans une
-  release fixe `trt-<empreinte>` (`tools/release/trt-fingerprint.sh`). Toute modification de `src/core`,
-  `src/gpu`, `src/kernels` ou `src/prepare` change l'empreinte et demande un nouveau paquet.
+- Chaque release a un paquet TensorRT pour Linux et pour Windows (décision de Tatoub) : `release.yml` échoue sur une
+  release finale qui n'en a pas. Le paquet vit dans une release fixe, `trt-<empreinte>` (Linux) ou
+  `trt-win-<empreinte>` (Windows), où l'empreinte est celle de ses entrées (`tools/release/trt-fingerprint.sh`,
+  `--windows`). Toute modification de `src/core`, `src/gpu`, `src/kernels`, `src/prepare`, de CUTLASS ou des
+  définitions CMake change l'empreinte : la CI de release construit alors le paquet sur un runner sans carte
+  (`trt-package.yml` pour Linux, job `tensorrt` de `release-windows.yml`), le publie, puis le reprend dans
+  l'`engines.lock` du lecteur. Les tests sur GPU restent au poste NVIDIA.
+- Un paquet joint **après** la release sert aussi : le lecteur relit `engines-nvidia.lock` de la release de sa
+  version au lancement (au plus une fois par jour, `src/app/play/engine_online.h`).
 - Aucun fichier NVIDIA n'est dans nos archives : `engines.lock` décrit chaque bibliothèque (`[[vendor_file]]`,
   plage HTTP dans la roue NVIDIA, SHA-256) et le lecteur la télécharge après l'accord de licence.
 - Un module d'une version précédente (empreinte binaire différente, `gpu::check_backend_abi`) se réinstalle

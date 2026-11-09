@@ -7,13 +7,13 @@
 #   tools/release/trt-package.sh            # construit et joint si absent
 #   tools/release/trt-package.sh --check    # dit seulement si le paquet existe (code 0) ou manque (code 3)
 #
-# Variables : AJP_RELEASE_REPO (défaut Ta2b/ajp-releases), AJP_TRT_WORK (dossier de travail, défaut ~/ajp-work/trt) ;
+# Variables : AJP_RELEASE_REPO (défaut : celui de versions.env), AJP_TRT_WORK (dossier de travail, défaut ~/ajp-work/trt) ;
 # celles de preflight/nvidia-package.sh (AJP_TRT_ROOT, CUDA_DIR, CCCL_DIR).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-repo="${AJP_RELEASE_REPO:-Ta2b/ajp-releases}"
+repo="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"
 fp="$("$HERE/trt-fingerprint.sh" "$ROOT")"
 tag="trt-$fp"
 echo "empreinte : $fp (release $repo $tag)"
