@@ -32,7 +32,7 @@
 | 20. Socle commun (core) | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/20-socle-core.md), [complément](rapports/20-socle-core-complement.md) |
 | 21. Frontière des moteurs (interface et ABI) | Fusionné (11 défauts, 3 majeurs, complément compris) | [rapport](rapports/21-frontiere-moteurs.md), [complément](rapports/21-frontiere-moteurs-complement.md) |
 | 22. Réglages : modèle, application et persistance | Fusionné (18 défauts, 3 majeurs, complément compris) | [rapport](rapports/22-reglages-modele.md), [complément](rapports/22-reglages-modele-complement.md) |
-| 23. Réglages : le panneau | Fusionné (15 défauts, 4 majeurs) | [rapport](rapports/23-reglages-panneau.md) |
+| 23. Réglages : le panneau | Fusionné (16 défauts, 4 majeurs, complément compris) | [rapport](rapports/23-reglages-panneau.md), [complément](rapports/23-reglages-panneau-complement.md) |
 | 24. Interface : rendu, contrôles et messages | Fusionné (23 défauts, 3 majeurs) | [rapport](rapports/24-interface-rendu.md) |
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
@@ -703,6 +703,7 @@
 | A21-11 | Mineur | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` morte, encore traitée par les deux moteurs (TensorRT la refuse avec un message trompeur) | 21 | |
 | A22-17 | Mineur | `src/app/play/settings.h:305-307` | Commentaire du seuil HDR posé au-dessus de la mauvaise constante | 22 | |
 | A22-18 | Mineur | `src/app/play/settings.cpp:130-138` | Valeurs et gardes GMFSS mortes (aucune n'atteint `PlaySettings`) | 22 | |
+| A23-16 | Mineur | `src/app/play/settings_engines.cpp:75-85` | Annuler et Rétablir changent `engines_dir` sans mettre à jour le champ ; chemin long coupé à 512 octets sans le dire | 23 | |
 
 ## Renvois
 
@@ -838,7 +839,7 @@
 | 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | Traité par 07 (complément) |
 | 22 | 07 | `src/app/play/auto_config.cpp:203-205` | L'Auto calibré écrase `auto_free` et le modèle RIFE à chaque vidéo | Traité par 07 (complément) |
 | 22 | 23 | `src/app/play/settings_sound.cpp:72` | Bornes des curseurs de délai différentes des réglages et des touches | Traité par 23 (A23-11) |
-| 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | En attente (23 fini) |
+| 22 | 23 | `src/app/play/settings_engines.cpp:81-84` | Dossier des moteurs recopié à chaque frappe | Traité par 23 (complément) |
 | 22 | 09 | `src/app/play/chain_setup.cpp:359-361` | Qualité : estimation RIFE sur copie 720p au-dessus de 720 lignes | Traité par 09 (complément) |
 | 22 | 18 | `src/app/play/options.cpp:298` | `--rife-model` n'entre pas dans `settings.rife_model` | En attente (18 fini) |
 | 21 | 26 | `src/app/play/engine_downloads.cpp:130` | Module mis à jour seulement sur `AbiMismatch` : un correctif hors frontière n'arrive jamais | Traité par 26 |
@@ -868,7 +869,7 @@
 | 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Traité par 36 |
 | 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Traité par 35 |
 | 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | Traité par 06 (complément) |
-| 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | En attente (23 fini) |
+| 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | Traité par 23 (complément) |
 | 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Traité par 38 (A38-01) |
 | 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | Traité par 08 (complément) |
 | 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | Traité par 05 (complément) |
@@ -879,7 +880,7 @@
 | 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | En attente (27 fini) |
 | 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | Traité par 07 (complément) |
 | 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | Traité par 10 (complément) |
-| 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | En attente (23 fini) |
+| 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | Traité par 23 (complément) |
 | 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Traité par 32 |
 | 49 | 34 | `src/app/play/span_auto.cpp:22-25` | Windows et Linux ne jouent pas le même SPAN en Auto calibré | Traité par 34 (A34-01) |
 | 49 | 41 | `src/render/cube_lut.cpp:289-314` | Écart de la LUT composée ; statistiques du grade sur l'image débandée | Traité par 41 (A41-01 ; débandage réfuté) |
@@ -944,7 +945,7 @@
 | 39 | 03 | `src/gpu/cuda/backend/tensorrt_backend.cpp:205-224` | Lignes « profil GPU » écrites seulement à la fermeture | Traité par 03 (complément 2) |
 | 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Traité par 43 (A43-02, 192) |
 | 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
-| 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | En attente (23 fini) |
+| 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | Traité par 23 (complément) |
 | 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | Traité par 28 (complément) |
 | 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | Traité par 07 (complément) |
 | 42 | 09 | `src/app/play/rife_plan.cpp:10-14` | `kPlanCutFloor` comparé au score brut de RIFE | Traité par 09 (complément) |
@@ -966,7 +967,7 @@
 | 43 | 25 | `src/app/play/first_run.cpp:445` | Deux textes pour l'installation de la mise à jour | En attente (25 fini) |
 | 43 | 08 | `src/app/play/chain.cpp:113-131` | UX-20 : rien ne reformate l'affichage quand la langue change en direct | Traité par 08 (complément) |
 | 43 | 22 | `src/app/play/settings.cpp:130-138` | `label(MotionEngine)` nomme encore GMFSS, retiré | Traité par 22 (complément) |
-| 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | En attente (23 fini) |
+| 43 | 23 | `src/app/play/settings.cpp:493` | Séparateur « ; » en dur dans le bandeau anglais « To apply » | Traité par 23 (complément) |
 | 43 | 07 | `src/app/play/player.cpp:486-487` | « New graphics card » renvoie à un bouton du mode avancé, sous un autre nom | Traité par 07 (complément) |
 | 45 | 21 | `src/gpu/kernel_ops.h:49-53` | `IngestSpec::rife_conversion` posé par personne : option morte du contrat | Traité par 21 (complément) |
 | 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | Traité par 21 (complément) |
