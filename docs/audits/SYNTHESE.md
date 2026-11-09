@@ -20,7 +20,7 @@
 | 08. Boucle du lecteur et ouverture de la chaîne | Fusionné (17 défauts, 5 majeurs, complément compris) | [rapport](rapports/08-boucle-chaine.md), [complément](rapports/08-boucle-chaine-complement.md) |
 | 09. Étages d'agrandissement et d'interpolation | Fusionné (24 défauts, 1 majeur, complément compris) | [rapport](rapports/09-etages-traitement.md), [complément](rapports/09-etages-traitement-complement.md) |
 | 10. Rendu et présentation par libplacebo | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/10-presentation-libplacebo.md) |
-| 11. Écran et matériel : EDID, VRR, HDR du système, télémétrie | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/11-ecran-materiel.md) |
+| 11. Écran et matériel : EDID, VRR, HDR du système, télémétrie | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/11-ecran-materiel.md), [complément](rapports/11-ecran-materiel-complement.md) |
 | 12. Cadence et horloges | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/12-cadence-horloges.md) |
 | 13. Session de lecture : seek, épisodes et reprise | Fusionné (13 défauts, 1 bloquant, 1 majeur) | [rapport](rapports/13-session-lecture.md) |
 | 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (8 défauts, 2 majeurs) | [rapport](rapports/14-sources-demux.md) |
@@ -685,6 +685,7 @@
 | A05-09 | Mineur | `src/prepare/builder.cpp:174` | L'ONNX relu et haché deux fois à chaque `build()`, cache compris | 05 | |
 | A05-10 | Mineur | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre sans pompe | 05 | A08-10 (même cause) |
 | A05-11 | Mineur | `src/prepare/process_win.cpp:128` | `trtexec.exe` relit sa ligne de commande en page ANSI : compte non ANSI, TensorRT inutilisable | 05 | A20-02 (même cause) |
+| A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) | 11 | |
 
 ## Renvois
 
@@ -905,7 +906,7 @@
 | 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | Traité par 06 (complément) |
 | 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | En attente (15 fini) |
 | 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | En attente (19 fini) |
-| 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | En attente (11 fini) |
+| 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | Traité par 11 (complément) |
 | 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | Traité par 28 (complément) |
 | 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Traité par 40 (A40-10) |
 | 33 | 08 | `src/app/play/engine_build.cpp` | Un `TensorRtBackend` créé puis détruit par moteur préparé | Traité par 08 (complément) |
@@ -940,7 +941,7 @@
 | 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
 | 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Traité par 43 (confirmé) |
 | 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Traité par 46 (A46-08) |
-| 43 | 11 | `src/app/play/gpu_telemetry.cpp:73-76` | « Go » et virgule décimale en dur dans la ligne VRAM de l'OSD anglais (UX-09) | En attente (11 fini) |
+| 43 | 11 | `src/app/play/gpu_telemetry.cpp:73-76` | « Go » et virgule décimale en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Traité par 11 (complément) |
 | 43 | 24 | `src/app/play/home_screen.cpp:178` | « EDID illisible : OLED inconnu » en dur dans Vidéo > Affichage | En attente (24 fini) |
 | 43 | 41 | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur | En attente (41 fini) |
 | 43 | 41 | `src/app/play/chain_hdr.cpp:367` | GPU-14 toujours présent (« Vrai noir : mesure impossible » en dur) | En attente (41 fini) |
