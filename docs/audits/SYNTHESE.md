@@ -15,7 +15,7 @@
 | 03. Interpolation fusionnée sous TensorRT (RIFE, DistilDRBA, warp) | Fusionné (19 défauts, 6 majeurs, complément DistilDRBA compris) | [rapport](rapports/03-interpolation-tensorrt.md), [complément](rapports/03-interpolation-tensorrt-complement.md) |
 | 04. Analyse et découpe des modèles ONNX | Fusionné (11 défauts, 1 majeur) | [rapport](rapports/04-onnx-modeles.md) |
 | 05. Construction des moteurs, cache et trtexec | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/05-construction-moteurs.md) |
-| 06. Installation des moteurs et téléchargements | Fusionné (12 défauts, 2 majeurs) | [rapport](rapports/06-installation-moteurs.md) |
+| 06. Installation des moteurs et téléchargements | Fusionné (13 défauts, 1 majeur, complément compris) | [rapport](rapports/06-installation-moteurs.md), [complément](rapports/06-installation-moteurs-complement.md) |
 | 07. Calibration, niveaux et mode Auto | Fusionné (13 défauts, 3 majeurs, complément compris) | [rapport](rapports/07-calibration-niveaux.md), [complément](rapports/07-calibration-niveaux-complement.md) |
 | 08. Boucle du lecteur et ouverture de la chaîne | Fusionné (17 défauts, 5 majeurs, complément compris) | [rapport](rapports/08-boucle-chaine.md), [complément](rapports/08-boucle-chaine-complement.md) |
 | 09. Étages d'agrandissement et d'interpolation | Fusionné (24 défauts, 1 majeur, complément compris) | [rapport](rapports/09-etages-traitement.md), [complément](rapports/09-etages-traitement-complement.md) |
@@ -112,7 +112,7 @@
 | A05-07 | Mineur | `src/prepare/trtexec_progress.cpp:21-22` | Barre figée à 10 % pendant l'essentiel de la construction | 05 | |
 | A05-08 | Mineur | `src/prepare/preparer.cpp` | Environ 700 lignes de code mort (`preparer`, `receipt`, `rebuild`, `rejected_sha256`…) | 05 | |
 | A06-01 | Majeur | `src/app/play/engine_downloads.cpp:123` | Une version TensorRT changée dans l'index fait perdre le moteur choisi sans un mot (Vulkan à la place), l'ancienne version n'est jamais purgée | 06 | |
-| A06-02 | Majeur | `src/app/play/engine_install.cpp:293` | Windows : chemins passés à curl et tar en page ANSI, l'installation échoue avec un compte accentué | 06 | |
+| A06-02 | Mineur | `src/app/play/engine_install.cpp:293` | Windows : chemins passés à curl et tar en page ANSI, l'installation échoue avec un compte accentué | 06 | Requalifié en mineur par 06 (complément) : manifeste UTF-8, A20-02 (même cause) |
 | A06-03 | Mineur | `src/app/play/engine_downloads.cpp:130-166` | Module refusé pour `AbiMismatch` réinstallé depuis le même paquet à chaque lancement (TRT-03) | 06 | |
 | A06-04 | Mineur | `src/app/play/engine_install.cpp:271` | `.part` nommé par le fichier et non par son SHA, `.part` orphelins jamais purgés (TRT-10) | 06 | |
 | A06-05 | Mineur | `src/app/play/engine_install.cpp:338-346` | Décompression sans plafond (SEC-14, démontré) | 06 | |
@@ -677,6 +677,7 @@
 | A09-24 | Mineur | `src/app/play/drba_model.h:17-21` | Qualité : demi-flot de DistilDRBA dès 1 440 lignes sans mesure ; seuil sur la hauteur d'estimation | 09 | |
 | A02-14 | Mineur | `src/app/play/span_derive.cpp:27-35` | Paquet `.span8` et reçu écrits sans fsync : après une coupure, refus ordinaire et Performance bloqué en FP16 (QUA-05) | 02 | |
 | A01-08 | Mineur | `src/gpu/cuda/backend/rife_fused_kernels.cu:141-147` | Sur sm_120, colle de RIFE fusionné bridée à deux blocs par SM, sans mesure | 01 | |
+| A06-13 | Mineur | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` sous Windows : échec si la révocation est injoignable (aussi `updater.cpp:88-91`) | 06 | |
 
 ## Renvois
 
@@ -796,7 +797,7 @@
 | 03 | 09 | `src/app/play/upscale_drba.cpp:144` | DistilDRBA mesure la paire à la taille de travail, RIFE sur la copie réduite | Traité par 09 (complément) |
 | 03 | 05 | `src/prepare/trtexec_command.cpp:105-106` | Formats des frontières des morceaux DistilDRBA laissés à TensorRT : reformatages possibles | En attente (05 fini) |
 | 20 | 05 | `src/prepare/process_win.cpp:63-65` | `trtexec.exe` sans manifeste UTF-8 : chemin hors page ANSI abîmé | En attente (05 fini) |
-| 20 | 06 | `src/app/play/engine_install.cpp:293` | A06-02 ne tient que pour `curl.exe` et `tar.exe` | En attente (06 fini) |
+| 20 | 06 | `src/app/play/engine_install.cpp:293` | A06-02 ne tient que pour `curl.exe` et `tar.exe` | Traité par 06 (complément) |
 | 20 | 34 | A02-12, A03-06, A04-04, A07-03, A08-09, A09-10, A10-10, A13-11, A17-12 | Supposent une exception de `path::string()` que le manifeste UTF-8 empêche sous Windows 11 : à requalifier | Traité par 34 (tous en dette) |
 | 20 | 18 | `src/app/play/crash_dump.cpp` | Le gestionnaire de plantage ne vide pas le journal (A20-04) | En attente (18 fini) |
 | 20 | 18 | `src/app/play/pumped_task.h:58` | Sonde détachée qui peut journaliser après `close_log()` | En attente (18 fini) |
@@ -841,7 +842,7 @@
 | 26 | 28 | `.github/workflows/release-linux.yml:150` | `--latest` posé avant le manifeste signé (SEC-05) | Traité par 28 |
 | 26 | 36 | `src/app/main.cpp:398-401` | Retour arrière sur des fichiers écrits par la version plus récente | Traité par 36 |
 | 26 | 35 | `src/core/update_manifest.cpp:93-96` | Version du manifeste non assainie (SEC-10 démontré) | Traité par 35 |
-| 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | En attente (06 fini) |
+| 26 | 06 | `src/app/play/engine_downloads.cpp:130-166` | A06-03 et A26-01 : même correction, à faire ensemble | Traité par 06 (complément) |
 | 24 | 23 | `src/app/play/settings_system.cpp:497-509` | « Signaler un problème » promet un journal sans nom d'utilisateur mais copie la fin brute | En attente (23 fini) |
 | 24 | 38 | `src/app/play/settings_system.cpp:507-509` | Même promesse non tenue | Traité par 38 (A38-01) |
 | 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | Traité par 08 (complément) |
@@ -894,7 +895,7 @@
 | 34 | 07 | `src/app/play/auto_config.cpp:192-200` | L'Auto calibré force RIFE 4.22 lite, n'essaie ni DistilDRBA ni RIFE 4.25 | Traité par 07 (complément) |
 | 34 | 07 | `src/app/play/machine_calibration.cpp:279-330` | Premier essai FP8 perdu sans CUTLASS | Traité par 07 (complément) |
 | 34 | 31 | `src/app/play/drba_fused_choice.cpp:9` | A31-06 touche les deux systèmes | En attente (31 fini) |
-| 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | En attente (06 fini) |
+| 34 | 06 | `src/app/play/engine_tools.cpp:76-87` | `curl.exe` sans `--ssl-revoke-best-effort` | Traité par 06 (complément) |
 | 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | En attente (15 fini) |
 | 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | En attente (19 fini) |
 | 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | En attente (11 fini) |
