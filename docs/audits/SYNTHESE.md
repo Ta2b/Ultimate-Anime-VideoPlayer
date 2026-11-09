@@ -19,10 +19,10 @@
 | 07. Calibration, niveaux et mode Auto | Fusionné (13 défauts, 3 majeurs, complément compris) | [rapport](rapports/07-calibration-niveaux.md), [complément](rapports/07-calibration-niveaux-complement.md) |
 | 08. Boucle du lecteur et ouverture de la chaîne | Fusionné (17 défauts, 5 majeurs, complément compris) | [rapport](rapports/08-boucle-chaine.md), [complément](rapports/08-boucle-chaine-complement.md) |
 | 09. Étages d'agrandissement et d'interpolation | Fusionné (24 défauts, 1 majeur, complément compris) | [rapport](rapports/09-etages-traitement.md), [complément](rapports/09-etages-traitement-complement.md) |
-| 10. Rendu et présentation par libplacebo | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/10-presentation-libplacebo.md) |
+| 10. Rendu et présentation par libplacebo | Fusionné (19 défauts, 2 majeurs, complément compris) | [rapport](rapports/10-presentation-libplacebo.md), [complément](rapports/10-presentation-libplacebo-complement.md) |
 | 11. Écran et matériel : EDID, VRR, HDR du système, télémétrie | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/11-ecran-materiel.md), [complément](rapports/11-ecran-materiel-complement.md) |
-| 12. Cadence et horloges | Fusionné (10 défauts, 3 majeurs) | [rapport](rapports/12-cadence-horloges.md) |
-| 13. Session de lecture : seek, épisodes et reprise | Fusionné (13 défauts, 1 bloquant, 1 majeur) | [rapport](rapports/13-session-lecture.md) |
+| 12. Cadence et horloges | Fusionné (12 défauts, 4 majeurs, complément compris) | [rapport](rapports/12-cadence-horloges.md), [complément](rapports/12-cadence-horloges-complement.md) |
+| 13. Session de lecture : seek, épisodes et reprise | Fusionné (14 défauts, 1 bloquant, 1 majeur, complément compris) | [rapport](rapports/13-session-lecture.md), [complément](rapports/13-session-lecture-complement.md) |
 | 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (8 défauts, 2 majeurs) | [rapport](rapports/14-sources-demux.md) |
 | 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs) | [rapport](rapports/15-decodage-formats.md) |
 | 16. Audio | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/16-audio.md) |
@@ -646,7 +646,7 @@
 | A40-02 | Majeur | `.github/workflows/ci.yml:219-258` | Le chemin de la cible (TensorRT, CUDA, SPAN FP8, RIFE et DistilDRBA fusionnés) n'est jamais exécuté avant une release (B3) | 40 | |
 | A40-03 | Majeur | `tools/bench/rife_triplets.py:96-100` | Qualité : rien ne mesure DistilDRBA contre RIFE ; le banc de qualité le refuse | 40 | |
 | A40-04 | Majeur | `tests/unit/app/e2e_play_test.cpp:96-104` | Le seul bout en bout joue sans SPAN, RIFE ni DistilDRBA | 40 | |
-| A40-05 | Mineur | `tests/unit/app/e2e_play_test.cpp:119-124` | Les cas e2e jouent tous les clips du dossier | 40 | |
+| A40-05 | Mineur | `tests/unit/app/e2e_play_test.cpp:119-124` | Les cas e2e jouent tous les clips du dossier | 40 | A13-14 (même cause) |
 | A40-06 | Majeur | `tests/unit/app/e2e_play_test.cpp:236-243` | Qualité : un test fige une image SDR 38 % plus sombre que la source, grade coupé (à confirmer) | 40 | |
 | A40-07 | Mineur | `tests/unit/backend_tensorrt/backend_test.cpp:92` | Le test d'ingestion TensorRT fige la chroma bilinéaire | 40 | A03-01 (même cause) |
 | A40-08 | Mineur | `src/gpu/guarded_backend.h:56-170` | `GuardedKernelOps` jamais testé (26,5 % couvert) | 40 | |
@@ -686,6 +686,15 @@
 | A05-10 | Mineur | `src/app/play/engine_build.cpp:28-31` | `~EngineBuild` joint le fil de construction sur le thread de la fenêtre sans pompe | 05 | A08-10 (même cause) |
 | A05-11 | Mineur | `src/prepare/process_win.cpp:128` | `trtexec.exe` relit sa ligne de commande en page ANSI : compte non ANSI, TensorRT inutilisable | 05 | A20-02 (même cause) |
 | A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) | 11 | |
+| A12-11 | Mineur | `src/core/clock_pll.h:28-40` | PLL audio réglée en lectures et non en temps (effet de 1 à 2 µs) | 12 | |
+| A12-12 | Majeur | `src/core/free_rate.cpp:28` | Qualité : le Rapide ignore les paires d'une image ; après un seul à-coup GPU, l'estimation se fige et l'interpolation s'arrête pour la séance (démontré) | 12 | |
+| A10-14 | Mineur | `src/app/play/placebo_screen.cpp:464-470` | `present_us` et `queue_wait_us` sont le retour de `swap_buffers`, pas un vsync (rend inopérante la vérification d'A12-03) | 10 | |
+| A10-15 | Mineur | `src/app/play/placebo_screen.cpp:328` | Présentation plafonnée vers 127 i/s à 165 Hz, RIFE comme DistilDRBA, cause à mesurer | 10 | |
+| A10-16 | Mineur | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé | 10 | |
+| A10-17 | Mineur | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | 10 | A41-06 (même cause) |
+| A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre | 10 | |
+| A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu | 10 | |
+| A13-14 | Mineur | `src/app/play/session.cpp:691` | `--seconds` termine sans quitter : l'épisode suivant s'enchaîne | 13 | |
 
 ## Renvois
 
@@ -755,7 +764,7 @@
 | 12 | 08 | `src/app/play/player_run.cpp:622-629` | GPU-05 : plancher VRR non recalculé (VRR hors sujet pour Tatoub) | Traité par 08 (complément) |
 | 12 | 08 | `src/app/play/player_run.cpp:420-438` | Plafond passé comme fréquence d'écran (A12-04) | Traité par 08 (complément) |
 | 12 | 08 | `src/app/play/session.cpp:665-672` | GPU-19 : vitesse calée même en VRR armé (VRR hors sujet pour Tatoub) | Traité par 08 (complément) |
-| 12 | 10 | `src/app/play/placebo_screen.cpp:461-463` | `present_us` est le retour de `swap_buffers`, pas un vsync (A12-03) | En attente (10 fini) |
+| 12 | 10 | `src/app/play/placebo_screen.cpp:461-463` | `present_us` est le retour de `swap_buffers`, pas un vsync (A12-03) | Traité par 10 (complément) |
 | 12 | 34 | `src/app/play/loop_wait.cpp:56` | Windows : attente « précise » à 1 ms de résolution | Traité par 34 (A34-07) |
 | 12 | 20 | `src/core/drawings.cpp:113` | `DrawingsTimeline` n'est appelé que par ses tests | Traité par 20 |
 | 13 | 14 | `src/media/source_loop.cpp:110-123` | `recover_position` qui échoue laisse la source inactive, lecture figée | Traité par 14 |
@@ -763,9 +772,9 @@
 | 13 | 17 | `src/app/play/external_subtitles.cpp:92` | `path::string()` sur des noms de sous-titres | Traité par 17 (A17-12) |
 | 13 | 08 | `src/app/play/player_run.cpp:738-739` | Pistes copiées dans `Player` même pour une autre vidéo (A13-01, A13-09) | Traité par 08 (complément) |
 | 13 | 30 | `src/app/play/wiring.cpp:113-124` | `ThreadStages::play/pause` rendent faux sans que personne ne rejoue | Traité par 30 |
-| 14 | 13 | `src/app/play/pipeline.cpp:45-49` | `path::string()` sur les sous-titres externes | En attente (13 fini) |
-| 14 | 13 | `src/app/play/pipeline.cpp:65` | `config.file.string()` dans le refus « no video track » | En attente (13 fini) |
-| 14 | 13 | `src/app/play/session.cpp:286-287` | La session doit refuser d'enchaîner l'épisode sur une fin en erreur (MED-01) | En attente (13 fini) |
+| 14 | 13 | `src/app/play/pipeline.cpp:45-49` | `path::string()` sur les sous-titres externes | Traité par 13 (complément) |
+| 14 | 13 | `src/app/play/pipeline.cpp:65` | `config.file.string()` dans le refus « no video track » | Traité par 13 (complément) |
+| 14 | 13 | `src/app/play/session.cpp:286-287` | La session doit refuser d'enchaîner l'épisode sur une fin en erreur (MED-01) | Traité par 13 (complément) |
 | 14 | 18 | `src/app/play/player.cpp:99` | `file.string()` dans le refus de `probe_once` | Traité par 18 |
 | 14 | 18 | `src/app/play/pipeline.h:76` | `~Pipeline` joint un thread source bloqué sur un partage muet | En attente (18 fini) |
 | 14 | 16 | `src/audio/` | Rognage audio sur la cible d'un seek refusé (MED-06) | En attente (16 fini) |
@@ -777,12 +786,12 @@
 | 15 | 42 | `src/media/shot_probe.cpp:173-175` | La pré-analyse paie la conversion 4:4:4 en pleine taille | Traité par 42 |
 | 16 | 23 | `src/app/play/settings_sound.cpp:27-33` | En mode « suivre le système », un seul délai pour tous les appareils | Traité par 23 |
 | 16 | 08 | `src/app/play/pipeline.cpp:97-110` | Format de sortie figé, ordre `seek()` puis `AudioTrack` | Traité par 08 (complément) |
-| 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | En attente (13 fini) |
-| 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | En attente (12 fini) |
+| 16 | 13 | `src/app/play/session.cpp:420-445` | Sans sortie audio, un gel de 0,4 s à chaque seek | Traité par 13 (complément) |
+| 16 | 12 | `src/core/clock_pll.h:28-40` | PLL comptée en lectures, pas en temps | Traité par 12 (complément) |
 | 16 | 20 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Traité par 20 (renvoyé à 12) |
-| 17 | 13 | `src/app/play/pipeline.cpp:164-170` | Une piste PGS empêche le repli sur un fichier externe | En attente (13 fini) |
-| 17 | 13 | `src/app/play/pipeline.cpp:183-191` | Polices recopiées deux fois, attente sur le thread de la fenêtre | En attente (13 fini) |
-| 17 | 13 | `src/app/play/pipeline.cpp:47` | Extension `.Srt` étiquetée « ass » | En attente (13 fini) |
+| 17 | 13 | `src/app/play/pipeline.cpp:164-170` | Une piste PGS empêche le repli sur un fichier externe | Traité par 13 (complément) |
+| 17 | 13 | `src/app/play/pipeline.cpp:183-191` | Polices recopiées deux fois, attente sur le thread de la fenêtre | Traité par 13 (complément) |
+| 17 | 13 | `src/app/play/pipeline.cpp:47` | Extension `.Srt` étiquetée « ass » | Traité par 13 (complément) |
 | 17 | 14 | `src/media/source_loop.cpp:90-106` | Aucune pré-lecture des sous-titres au seek ni pour un délai négatif | En attente (14 fini) |
 | 17 | 22 | `src/app/play/settings.cpp:420` | MED-17 : délai de sous-titres gardé d'un épisode à l'autre | Réfuté par 22 |
 | 17 | 24 | `src/app/play/osd_text.cpp:70` | Seconde bibliothèque libass pour l'OSD | Traité par 24 |
@@ -815,7 +824,7 @@
 | 20 | 21 | `tools/release/package-linux.sh:124` | `RUNPATH` devancé par `LD_LIBRARY_PATH` : TensorRT système avant celui du paquet | Traité par 27 (A27-02) |
 | 20 | 02 | `src/app/play/span_derive.cpp:27-35` | Écriture « atomique » sans fsync | Traité par 02 (complément) |
 | 20 | 45 | `src/gpu/vulkan/compute/library.cpp:48` | Copie de `DynamicLibrary` ; `profile_dispatches` jamais posé | Traité par 45 (A45-08, A45-09) |
-| 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | En attente (12 fini) |
+| 20 | 12 | `src/core/clock.h:1-3` | Commentaire faux sur l'audio maître | Traité par 12 (complément) |
 | 20 | 14 | `src/media/av_util.cpp:48-51` | `duration_to_us` peut rendre `kNoPts` sur une base de temps nulle | En attente (14 fini) |
 | 22 | 24 | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface pendant un réglage à l'accueil | Traité par 24 |
 | 22 | 07 | `src/app/play/auto_config.cpp:202` | Qualité : l'Auto calibré passe SPAN en FP8 malgré `auto_config.cpp:166-169` | Traité par 07 (complément) |
@@ -828,7 +837,7 @@
 | 21 | 09 | `src/app/play/upscale_drba.cpp:66-67` | Garder `filled01` et `filled12` d'une paire à la suivante | Traité par 09 (complément) |
 | 21 | 09 | `src/app/play/upscale_drba.cpp:99` | `scores_take` bloque le thread GPU à chaque paire (A21-06) | Traité par 09 (complément) |
 | 21 | 32 | `docs/auto-libre.md` § 3 | Décomposer les ≈ 11 ms de GPU par image hors réseau, qui ôtent à DistilDRBA son avance | Traité par 32 |
-| 21 | 10 | `audit/mesures-auto-4070ti.md` | DistilDRBA ×6 : 962 images manquées sans paire en retard, la présentation plafonne | En attente (10 fini) |
+| 21 | 10 | `audit/mesures-auto-4070ti.md` | DistilDRBA ×6 : 962 images manquées sans paire en retard, la présentation plafonne | Traité par 10 (complément) |
 | 21 | 08 | `src/app/play/chain_setup.cpp:361-363` | Qualité : mouvement estimé à 720p, à remesurer surtout pour DistilDRBA | Traité par 08 (complément) |
 | 21 | 08 | `src/app/play/engine_screen.cpp:343` | `path().string()` dans le journal | Traité par 08 (complément) |
 | 21 | 45 | `src/gpu/vulkan/backend/entry_points.h:1-6` | Commentaire qui nomme MIGraphX et OpenVINO | Traité par 45 (A45-10) |
@@ -856,12 +865,12 @@
 | 24 | 08 | `src/app/play/player.cpp:163` | `filename().string()` dans un message | Traité par 08 (complément) |
 | 24 | 05 | `src/app/play/player_engines.cpp:135` | `stem().string()` et `path.string()` | Traité par 05 (complément) |
 | 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | Traité par 03 (complément 2) |
-| 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | En attente (12 fini) |
+| 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | Traité par 12 (complément) |
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
 | 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
 | 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | En attente (27 fini) |
 | 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | Traité par 07 (complément) |
-| 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | En attente (10 fini) |
+| 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | Traité par 10 (complément) |
 | 49 | 23 | `src/app/play/auto_config.cpp:167-169` | Trois commentaires contredits par le code (FP8, RGB10A2, LUT) | En attente (23 fini) |
 | 49 | 32 | `tests/unit/` | Aucun test de qualité de bout en bout contre l'original | Traité par 32 |
 | 49 | 34 | `src/app/play/span_auto.cpp:22-25` | Windows et Linux ne jouent pas le même SPAN en Auto calibré | Traité par 34 (A34-01) |
@@ -895,8 +904,8 @@
 | 28 | 40 | `tests/unit/vk_backend/drba_fused_chain_test.cpp:70-72` | Essais du fusionné contre le réseau entier cachés | Traité par 40 (A40-01) |
 | 32 | 03 | `src/app/play/upscale_drba.cpp:179-256` | L'entrée de DistilDRBA, pas seulement son nombre de passes | Traité par 03 (complément, A03-14) |
 | 32 | 07 | `src/app/play/auto_config.cpp:167-169` | Commentaire et code contradictoires sur le FP8 dans l'Auto (TRT-08) | Traité par 07 (complément) |
-| 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | En attente (10 fini) |
-| 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | En attente (12 fini) |
+| 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | Traité par 10 (complément) |
+| 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | Traité par 12 (complément) |
 | 32 | 21 | `src/gpu/gpu_profile.h` | `gpu_profile` sans équivalent Vulkan pour l'écran | En attente (21 fini) |
 | 32 | 28 | `docs/auto-libre.md` § 3 | Tableaux de temps à dater et marquer historiques | Traité par 28 (complément) |
 | 32 | 49 | `docs/adr/0008-anneau-rgb10a2.md` | Porte de qualité de l'anneau 10 bits jamais passée | Traité par 49 (A49-04) |
@@ -935,7 +944,7 @@
 | 42 | 41 | `src/app/play/chain_hdr.cpp:252` | GPU-07 : métadonnées HDR10 fixes, grade seul plafonné | Réfuté par 41 (pic plafonné lu, GPU-07 reste vrai) |
 | 42 | 41 | `src/kernels/spec/frame_stats.h:5-6` | Statistiques de lumière du grade sur 9 216 points | Réfuté par 41 pour le grade (reste à 42 pour les flashs) |
 | 42 | 07 | `src/app/play/auto_bench_run.cpp:37` | Pré-analyse active pendant les essais de calibration | Traité par 07 (complément) |
-| 41 | 10 | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | En attente (10 fini) |
+| 41 | 10 | `src/app/play/placebo_screen.cpp:155` | Commentaire « netteté sur MAIN » faux | Traité par 10 (complément) |
 | 41 | 32 | `src/render/shaders/anime-hdr-anime/3-anime.hook:60-130` | Trois ou quatre passes HDR plein écran, valeurs constantes recalculées par pixel | En attente (32 fini) |
 | 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | En attente (38 fini) |
 | 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
@@ -964,10 +973,10 @@
 | 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | Traité par 03 (complément 2) |
 | 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | Traité par 28 (complément) |
 | 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | En attente (18 fini) |
-| 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | En attente (10 fini) |
+| 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | Traité par 10 (complément) |
 | 40 | 41 | `tests/unit/app/e2e_play_test.cpp:241-243` | Image SDR assombrie, à croiser avec le grade SDR | En attente (41 fini) |
 | 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | En attente (22 fini) |
-| 40 | 13 | `tests/unit/app/e2e_play_test.cpp:221` | Avec `--seconds`, l'épisode suivant s'enchaîne quand même | En attente (13 fini) |
+| 40 | 13 | `tests/unit/app/e2e_play_test.cpp:221` | Avec `--seconds`, l'épisode suivant s'enchaîne quand même | Traité par 13 (complément) |
 | 40 | 46 | `tools/bench/rife_triplets.py:100` | Le banc de qualité refuse DistilDRBA | En attente (46 fini) |
 | 28 | 39 | `src/prepare/builder.cpp:233` | Disque plein soupçonné au journal seulement, pas nommé à l'utilisateur | En attente (39 fini) |
 | 09 | 07 | `src/app/play/span_auto.cpp:67-71` | A09-17 se corrige au même endroit qu'A07-04 | Note pour la correction |
