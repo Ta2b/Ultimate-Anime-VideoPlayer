@@ -223,9 +223,10 @@ SpanFp8Net::SpanFp8Net(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 SpanFp8Net::~SpanFp8Net() = default;
 
 bool SpanFp8Net::supported_device(int major, int minor) {
-  // Ada (sm 8.9) et Blackwell grand public (sm 12.0, RTX 50, étape 10.2) : la même boucle CUTLASS (garde
-  // >= 890) ; le reçu v2 porte l'architecture, un paquet d'Ada ne sert pas sur Blackwell sans revalidation.
-  return (major == 8 && minor == 9) || (major == 12 && minor == 0);
+  // Ada (sm 8.9) seulement. Blackwell grand public (sm 12.0, RTX 50, étape 10.2) a la même boucle CUTLASS
+  // (garde >= 890) et la bibliothèque est compilée pour lui, mais aucun noyau n'y a jamais tourné : pas de
+  // FP8 sur RTX 50 avant une mesure sur la carte (décision 14 des audits, A37-01 ; docs/span-fp8-cutlass.md).
+  return major == 8 && minor == 9;
 }
 
 std::int64_t SpanFp8Net::workspace_bytes() const {
