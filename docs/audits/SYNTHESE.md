@@ -55,7 +55,7 @@
 | 43. Textes et traductions | Fusionné (7 défauts, 1 majeur) | [rapport](rapports/43-textes-traductions.md) |
 | 44. Représentation intermédiaire et import ONNX | Fusionné (12 défauts, 1 majeur) | [rapport](rapports/44-ir-onnx.md) |
 | 45. Moteur Vulkan : calcul, noyaux et shaders | Fusionné (14 défauts, 1 majeur) | [rapport](rapports/45-backend-vulkan.md) |
-| 46. Outils de recherche, modèles et données livrées | À faire | |
+| 46. Outils de recherche, modèles et données livrées | Fusionné (15 défauts, 6 majeurs) | [rapport](rapports/46-outils-donnees.md) |
 | 47. Export vidéo | Ne pas lancer (hors cible) | |
 | 48. Moteur Core ML (macOS) | Ne pas lancer (hors cible) | |
 | 49. Qualité du rendu (transversal, ajouté à la demande de Tatoub) | Fusionné (14 défauts, 6 majeurs, 16 compromis à trancher) | [rapport](rapports/49-qualite-rendu.md) |
@@ -627,6 +627,21 @@
 | A44-10 | Mineur | `src/gpu/ir/onnx_info_main.cpp` | `ajp_onnx_info` ne rejoue pas les passes propres à Vulkan | 44 | |
 | A44-11 | Mineur | `tests/unit/gpu_ir/` | Aucun test sur les modèles livrés ; passes Vulkan hors fuzz | 44 | |
 | A44-12 | Mineur | `src/gpu/ir/pass_transpose.cpp` | Deux DepthToSpace là où un suffit en mode phases | 44 | |
+| A46-01 | Majeur | `tools/release/fetch-models.sh:80-98` | Le DistilDRBA épinglé est écrasé dans les paquets par une autre version, celle de `models-interp-1` | 46 | |
+| A46-02 | Majeur | `.github/workflows/export-interpolation-models.yml:34-35` | Export de DistilDRBA non reproductible : torch, onnx et onnxruntime non épinglés | 46 | |
+| A46-03 | Majeur | `tools/drba/export_distil_drba.py:194-197` | Qualité : le graphe FP16 livré n'est jamais comparé au réseau d'origine (16,5 codes 10 bits d'écart mesuré) | 46 | |
+| A46-04 | Majeur | `src/gpu/cuda/backend/drba_fused_kernels.cu:64-69` | Qualité : la voie fusionnée de DistilDRBA construit aussi la grille en FP16, alors que RIFE fusionné la calcule en FP32 | 46 | A03-18 (même cause) |
+| A46-05 | Majeur | `tools/release/fetch-models.sh:39` | 41,6 Mo de RIFE jamais proposés dans chaque paquet | 46 | |
+| A46-06 | Mineur | `src/app/play/model_choice.h:47-49` | Commentaire faux sur l'origine des RIFE FP16 livrés | 46 | |
+| A46-07 | Majeur | `tools/upscale/models/2x_ArtCNN_C4F32_rgb_fp16.onnx` | ArtCNN « fp16 » calcule entièrement en FP32 (TRT-07, partie modèle) | 46 | |
+| A46-08 | Mineur | `data/luts/ATTRIBUTION.md:11-13` | Auteur et licence des quatre LUT livrées absents | 46 | |
+| A46-09 | Mineur | `THIRD_PARTY_NOTICES.md:8-12` | Avis des données livrées faux ou incomplets (ArtCNN, RIFE) | 46 | |
+| A46-10 | Mineur | `data/calibration/calibration.mkv` | 19,8 Mo d'extraits de Blu-ray commerciaux dans un dépôt public, plus livrés | 46 | |
+| A46-11 | Mineur | `tools/vk/presets/NvidiaAda-rtx4070ti-1.tsv` | Qualité : sommes FP16 pour 40 couches sur 58 dans les tables Ada, sans mesure d'image | 46 | A45-01 (même cause) |
+| A46-12 | Mineur | `src/render/cube_lut.cpp:325-334` | Deux des quatre LUT livrées non reconnues comme LUT d'HDR | 46 | |
+| A46-13 | Mineur | `data/luts/HDR grading base ver.9.0 33 point.cube` | Qualité : LUT de base à 33 points sur une courbe raide, 2,7 codes 10 bits d'erreur d'interpolation | 46 | |
+| A46-14 | Mineur | `data/gpu_tiers.toml:45` | Erreurs de tranche sur NVIDIA (Quadro RTX 6000, RTX PRO) | 46 | |
+| A46-15 | Mineur | `tools/release/fetch-models.sh:86-98` | GMFSS encore listé dans `SHA256SUMS` de `models-interp-1` ; fichier facultatif annoncé absent | 46 | |
 
 ## Renvois
 
@@ -881,7 +896,7 @@
 | 41 | 38 | `docs/hdr-anime.md:63-67` | Trois promesses non tenues : nuits lisibles, blanc à 203 nits, vrai noir en SDR | En attente (38 fini) |
 | 41 | 42 | `src/app/play/chain_hdr.cpp:321` | Seuils de `next_flashing` non audités | En attente (42 fini) |
 | 41 | 43 | `src/app/play/placebo_screen.cpp:64-66` | `output_description` en français hors `tr()` | Traité par 43 (confirmé) |
-| 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Ouvert |
+| 41 | 46 | `data/luts/ATTRIBUTION.md` | Auteur et licence des quatre LUT livrées | Traité par 46 (A46-08) |
 | 43 | 11 | `src/app/play/gpu_telemetry.cpp:73-76` | « Go » et virgule décimale en dur dans la ligne VRAM de l'OSD anglais (UX-09) | En attente (11 fini) |
 | 43 | 24 | `src/app/play/home_screen.cpp:178` | « EDID illisible : OLED inconnu » en dur dans Vidéo > Affichage | En attente (24 fini) |
 | 43 | 41 | `src/app/play/placebo_screen.cpp:64-66` | Ligne de sortie en français en dur | En attente (41 fini) |
@@ -896,6 +911,12 @@
 | 45 | 21 | `src/gpu/kernel_ops.h:42-56` | Rééchantillonnage de l'image décodée différent sous TensorRT et Vulkan, rien dans le contrat ne l'impose | En attente (21 fini) |
 | 45 | 08 | `src/app/play/chain_setup.h:89-93` | Ordre de destruction moteurs Vulkan puis backend au passage vers TensorRT | En attente (08 fini) |
 | 45 | 03 | `src/kernels/glsl/rife_fused_glue.comp:121-128` | Grille de base FP16 dans RIFE v1 (comme A03-18), sur les deux moteurs | En attente (03 fini) |
-| 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Ouvert |
+| 44 | 46 | voie fusionnée DistilDRBA | Vérifier la grille en F32 sur la voie fusionnée, comme A44-01 | Traité par 46 (A46-04 : grille en FP16) |
 | 44 | 49 | qualité DistilDRBA F16 | DistilDRBA F16 contre FP32 : 51 à 52 dB, écart max 13 à 19/255 (pour A49-14) | En attente (49 fini) |
 | 44 | 45 | shaders Vulkan | Arrondi f32 vers f16 (RTE ou RTZ), sous-normaux F16, accumulation des coopmat | En attente (45 fini) |
+| 46 | 20 | `src/core/model_index.cpp:356-410` | `models.lock` lu par aucun code du lecteur : code mort | En attente (20 fini) |
+| 46 | 45 | `src/gpu/vulkan/backend/net_gate.h:24-25` | Porte qui admet les sommes FP16 à 2 % sur du bruit, pour toutes les cartes | En attente (45 fini) |
+| 46 | 09 | `src/app/play/drba_model.h:17-21` | Flot de DistilDRBA à l'échelle 0,5 dès 1 440 lignes, sans mesure | En attente (09 fini) |
+| 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | En attente (03 fini) |
+| 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | En attente (28 fini) |
+| 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | En attente (18 fini) |
