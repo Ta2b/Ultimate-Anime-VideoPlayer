@@ -85,15 +85,27 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
   const auto curl = system_tool("curl");
   if (!curl)
     return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found: cannot check for updates"));
+  // -q en premier : aucun .curlrc ne change ce que fait curl ; https seulement, redirections comprises ;
+  // un manifeste ou un index tient en quelques Ko (SEC-13, A35-05). Sous Windows, le proxy et la révocation
+  // vérifiée au mieux, comme les moteurs (A06-13).
+  std::vector<std::string> args{"-q",
+                                "-fsSL",
+                                "--proto",
+                                "=https",
+                                "--proto-redir",
+                                "=https",
+                                "--max-filesize",
+                                std::to_string(kMaxFetchBytes),
+                                "--retry",
+                                "2",
+                                "--max-time",
+                                std::to_string(max_seconds)};
+  for (std::string& arg : curl_system_args()) args.push_back(std::move(arg));
+  for (std::string arg : {std::string("--write-out"), std::string(kCurlStatusFormat), std::string("-o"),
+                          prepare::utf8_path(file), std::string(url)})
+    args.push_back(std::move(arg));
   prepare::ProcessSpec spec{
-      .program = *curl,
-      // -q en premier : aucun .curlrc ne change ce que fait curl ; https seulement, redirections comprises ;
-      // un manifeste ou un index tient en quelques Ko (SEC-13, A35-05).
-      .args = {"-q", "-fsSL", "--proto", "=https", "--proto-redir", "=https", "--max-filesize",
-               std::to_string(kMaxFetchBytes), "--retry", "2", "--max-time", std::to_string(max_seconds),
-               "--write-out", std::string(kCurlStatusFormat), "-o", prepare::utf8_path(file),
-               std::string(url)},
-      .timeout = std::chrono::seconds(max_seconds + 10)};
+      .program = *curl, .args = std::move(args), .timeout = std::chrono::seconds(max_seconds + 10)};
   int status = 0;
   auto exit = prepare::run_process(
       spec,

@@ -177,6 +177,7 @@ constexpr std::array kMessages{
           "{} absent : seuls les moteurs livrés sont proposés"},
     Entry{"{}: package note", "{} : note du paquet"},
     Entry{"{}: {} bytes received, {} expected", "{} : {} octets reçus, {} attendus"},
+    Entry{"{}: the server ignored the byte range", "{} : le serveur a ignoré la plage d'octets"},
     Entry{"×2 upscaling from {}p", "agrandissement ×2 depuis {}p"},
 };
 

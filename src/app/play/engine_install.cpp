@@ -234,24 +234,51 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
 bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
                        const std::filesystem::path& engines_root, const std::stop_token& stop) {
   std::error_code error;
-  for (const auto& entry : std::filesystem::directory_iterator(engines_root, error)) {
-    const std::filesystem::path candidate = entry.path() / file.name;
+  // Parcours sans exception (A06-10) : un dossier voisin illisible arrête la recherche, il ne fait pas
+  // échouer l'installation.
+  std::filesystem::directory_iterator it(engines_root, error);
+  for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+    const std::filesystem::path candidate = it->path() / file.name;
     if (candidate.parent_path() == dest.parent_path()) continue;
-    if (!std::filesystem::is_regular_file(candidate, error) ||
-        std::filesystem::file_size(candidate, error) != file.size)
+    std::error_code checked;
+    if (!std::filesystem::is_regular_file(candidate, checked) ||
+        std::filesystem::file_size(candidate, checked) != file.size || checked)
       continue;
     if (!core::verify_file(candidate, file.size, file.sha256, stop)) continue;
-    std::filesystem::create_directories(dest.parent_path(), error);
-    std::filesystem::remove(dest, error);
-    error.clear();
-    std::filesystem::create_hard_link(candidate, dest, error);
-    if (error) {
-      error.clear();
-      std::filesystem::copy_file(candidate, dest, std::filesystem::copy_options::overwrite_existing, error);
+    std::error_code placed;
+    std::filesystem::create_directories(dest.parent_path(), placed);
+    std::filesystem::remove(dest, placed);
+    placed.clear();
+    std::filesystem::create_hard_link(candidate, dest, placed);
+    if (placed) {
+      placed.clear();
+      std::filesystem::copy_file(candidate, dest, std::filesystem::copy_options::overwrite_existing, placed);
     }
-    if (!error) return true;
+    if (!placed) return true;
   }
   return false;
+}
+
+int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep) {
+  namespace fs = std::filesystem;
+  std::vector<std::string> known{std::string(keep)};
+  for (const core::EnginePackage& package : catalog.packages) known.push_back(package.sha256);
+  for (const core::VendorFile& file : catalog.vendor_files) known.push_back(file.sha256);
+  int removed = 0;
+  std::error_code error;
+  fs::directory_iterator it(catalog.layout.downloads, error);
+  for (; !error && it != fs::directory_iterator(); it.increment(error)) {
+    // « <sha256>.<suite> » : un paquet, un .part ou un morceau ; le reste n'est pas à nous.
+    const std::string name = core::to_utf8(it->path().filename());
+    const std::string sha = name.substr(0, name.find('.'));
+    if (sha.size() != 64 ||
+        !std::ranges::all_of(sha, [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }))
+      continue;
+    if (std::ranges::find(known, sha) != known.end()) continue;
+    std::error_code gone;
+    if (fs::remove_all(it->path(), gone) > 0 && !gone) ++removed;
+  }
+  return removed;
 }
 
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
@@ -262,8 +289,9 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   if (!curl) return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found on this system"));
   std::error_code error;
   std::filesystem::create_directories(scratch, error);
-  const std::filesystem::path packed = scratch / (file.name + ".part");
-  const std::filesystem::path chunk = scratch / (file.name + ".morceau");
+  // Nommés par l'empreinte du fichier (A06-04) : un .part d'une autre version au même nom ne se reprend pas.
+  const std::filesystem::path packed = scratch / (file.sha256 + ".part");
+  const std::filesystem::path chunk = scratch / (file.sha256 + ".morceau");
   const auto cleanup = [&] {
     std::error_code ignored;
     std::filesystem::remove(packed, ignored);
@@ -283,8 +311,11 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   for (int attempt = 0; attempt < 4 && have < file.packed_size; ++attempt) {
     std::filesystem::remove(chunk, error);
     std::vector<std::string> args = curl_download_args();
-    args.insert(args.end(), {"--progress-bar", "--range", std::format("{}-{}", file.data_offset + have, last),
-                             "--output", chunk.string(), file.url});
+    // --max-filesize : un serveur ou un proxy qui ignore la plage et rend la roue entière (200) est arrêté
+    // tout de suite (A06-07).
+    args.insert(args.end(), {"--progress-bar", "--max-filesize", std::to_string(file.packed_size - have),
+                             "--range", std::format("{}-{}", file.data_offset + have, last), "--output",
+                             core::to_utf8(chunk), file.url});
     const double done = static_cast<double>(have) / static_cast<double>(file.packed_size);
     auto fetched = run_tool(
         {.program = *curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
@@ -293,11 +324,17 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
             progress.report(static_cast<float>(done + ((1.0 - done) * *f)) * 0.85F, file.name);
         },
         progress.stop, i18n::tr_format("downloading {}", file.name));
-    // Ce qui est arrivé, même coupé, s'ajoute au .part.
-    {
+    // Ce qui est arrivé, même coupé, s'ajoute au .part ; un morceau plus long que la plage demandée n'est pas
+    // la plage (réponse 200 entière) : jeté (A06-07).
+    const std::uintmax_t piece_size =
+        std::filesystem::exists(chunk, error) ? std::filesystem::file_size(chunk, error) : 0;
+    if (!error && piece_size <= file.packed_size - have) {
       std::ifstream piece(chunk, std::ios::binary);
       std::ofstream whole(packed, std::ios::binary | std::ios::app);
       if (piece && whole) whole << piece.rdbuf();
+    } else if (!error) {
+      fetched = refuse(RefusalCode::HashMismatch,
+                       i18n::tr_format("{}: the server ignored the byte range", file.name));
     }
     std::filesystem::remove(chunk, error);
     have = std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
@@ -329,8 +366,15 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   core::Sha256 hash;
   std::uint64_t produced = 0;
   bool write_failed = false;
+  bool overflow = false;
   const auto sink = [&](std::span<const std::uint8_t> bytes) {
     if (progress.stop.stop_requested()) return false;
+    // Jamais plus que la taille de l'index : un flux deflate forgé peut produire mille fois sa taille
+    // (A06-05).
+    if (produced + bytes.size() > file.size) {
+      overflow = true;
+      return false;
+    }
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!out) {
       write_failed = true;
@@ -370,6 +414,11 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   if (write_failed || !flushed) {
     discard();
     return refuse(RefusalCode::FileUnwritable, partial.string());
+  }
+  if (overflow) {
+    discard();
+    return refuse(RefusalCode::HashMismatch,
+                  std::format("{} : plus de {} octets décompressés, refusé", file.name, file.size));
   }
   if (!result) {
     discard();
@@ -435,6 +484,9 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     if (progress.report) progress.report(fraction, stage);
   };
   std::error_code error;
+  // Les téléchargements coupés que l'index ne nomme plus (une autre version) ne servent plus (A06-04).
+  if (const int purged = purge_stale_downloads(catalog, package.sha256); purged > 0)
+    log_channel("app")->info("téléchargements : {} reste(s) d'un autre index retiré(s)", purged);
   step = i18n::tr("checking free space");
   // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
   // installation recommencée.
