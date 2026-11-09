@@ -37,7 +37,7 @@
 | 25. Assistant de premier lancement | Fusionné (18 défauts, 4 majeurs) | [rapport](rapports/25-assistant.md) |
 | 26. Mise à jour automatique et signature | Fusionné (12 défauts, 4 majeurs) | [rapport](rapports/26-mise-a-jour.md) |
 | 27. Build, dépendances et ports | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/27-build-dependances.md) |
-| 28. CI, publication et signature | Fusionné (17 défauts, 1 bloquant, 7 majeurs) | [rapport](rapports/28-ci-publication.md) |
+| 28. CI, publication et signature | Fusionné (22 défauts, 1 bloquant, 8 majeurs, complément compris) | [rapport](rapports/28-ci-publication.md), [complément](rapports/28-ci-publication-complement.md) |
 | 29. Parcours utilisateur de bout en bout | Fusionné (7 défauts, 2 majeurs) | [rapport](rapports/29-parcours-utilisateur.md) |
 | 30. Concurrence, threads et durée de vie | Fusionné (8 défauts, 1 majeur) | [rapport](rapports/30-concurrence-duree-de-vie.md) |
 | 31. États dégradés et reprise sur erreur | Fusionné (15 défauts, 8 majeurs) | [rapport](rapports/31-etats-degrades.md) |
@@ -659,6 +659,11 @@
 | A40-15 | Mineur | `.github/workflows/ci.yml` | Aucune mesure de couverture en CI (76 % mesuré ici) | 40 | |
 | A40-16 | Mineur | `tools/ci/check-cuda.sh:2-6` | Commentaire faux sur la construction CUDA en CI | 40 | |
 | A07-13 | Mineur | `src/app/play/auto_config.h:19-22` | La « porte de qualité » qui tient DistilDRBA hors de l'Auto n'est écrite nulle part ; le commentaire renvoie à un ADR sans rapport | 07 | |
+| A28-18 | Majeur | `tools/release/trt-fingerprint.sh:9-10` | Empreinte TensorRT sans le CMakeLists racine, les CMakePresets, CUTLASS ni le Dockerfile du préflight | 28 | |
+| A28-19 | Mineur | `tools/ci/deps_lag.py:20-21` | Veille des dépendances limitée à la baseline vcpkg, tâche verte avec retards restants | 28 | |
+| A28-20 | Mineur | `.github/workflows/release-linux.yml:64-70` | Clé de cache de la release sans version d'image | 28 | A27-06 (même cause) |
+| A28-21 | Mineur | `docs/auto-libre.md:140-174` | § 3 non daté, ligne GMFSS, rangé parmi les documents à jour | 28 | |
+| A28-22 | Mineur | `src/prepare/cache.cpp:117-133` | Aucun test de disque plein à l'écriture d'un moteur | 28 | |
 
 ## Renvois
 
@@ -858,9 +863,9 @@
 | 30 | 41 | `src/render/grade.cpp:277-301` | Thread des LUT sans `try` | Traité par 41 (A41-09) |
 | 30 | 09 | `src/app/play/upscale_stage.cpp:574-579` | Qualité : après une image sautée, la paire suivante n'est pas interpolée | En attente (09 fini) |
 | 30 | 40 | `.github/workflows/ci.yml:100` | TSan ne couvre ni `LookLoader`, ni `ChainStats`, ni le module TensorRT | Traité par 40 (A40-09) |
-| 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | En attente (28 fini) |
-| 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | En attente (28 fini) |
-| 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | En attente (28 fini) |
+| 27 | 28 | `tools/release/trt-fingerprint.sh:17-19` | Empreinte TensorRT qui ignore le `CMakeLists.txt` racine, les presets et CUTLASS | Traité par 28 (complément) |
+| 27 | 28 | `.github/workflows/deps-watch.yml` | Baseline vcpkg sans les versions Linux ; libplacebo en retard non bloqué | Traité par 28 (complément) |
+| 27 | 28 | `.github/workflows/release-linux.yml:67-70` | `restore-keys` qui restaure un préfixe d'une autre image | Traité par 28 (complément) |
 | 27 | 05 | `src/gpu/cuda/backend/CMakeLists.txt:83` | Même RUNPATH pour `trtexec` | En attente (05 fini) |
 | 27 | 49 | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Qualité : noyaux FP8 de SPAN activés par défaut sous Linux (9,1 contre 14,25 ms pour 50-52 dB) | En attente (49 fini) |
 | 28 | 26 | `src/app/play/updater.cpp:410-415` | Un 404 du manifeste se lit « à jour » sans journal | En attente (26 fini) |
@@ -871,7 +876,7 @@
 | 32 | 10 | `src/render/shaders/anime-hdr-look.hook:100` | Commentaire périmé ; `pl_render_default_params` | En attente (10 fini) |
 | 32 | 12 | `src/core/free_rate.cpp:27` | En ×2, le mode Rapide n'a aucune mesure de service | En attente (12 fini) |
 | 32 | 21 | `src/gpu/gpu_profile.h` | `gpu_profile` sans équivalent Vulkan pour l'écran | En attente (21 fini) |
-| 32 | 28 | `docs/auto-libre.md` § 3 | Tableaux de temps à dater et marquer historiques | En attente (28 fini) |
+| 32 | 28 | `docs/auto-libre.md` § 3 | Tableaux de temps à dater et marquer historiques | Traité par 28 (complément) |
 | 32 | 49 | `docs/adr/0008-anneau-rgb10a2.md` | Porte de qualité de l'anneau 10 bits jamais passée | Traité par 49 (A49-04) |
 | 34 | 07 | `src/app/play/auto_config.cpp:192-200` | L'Auto calibré force RIFE 4.22 lite, n'essaie ni DistilDRBA ni RIFE 4.25 | Traité par 07 (complément) |
 | 34 | 07 | `src/app/play/machine_calibration.cpp:279-330` | Premier essai FP8 perdu sans CUTLASS | Traité par 07 (complément) |
@@ -880,15 +885,15 @@
 | 34 | 15 | `src/media/cuda_driver.cpp:105-109` | `libcuda.so.1` chargé par son nom | En attente (15 fini) |
 | 34 | 19 | `src/app/play/single_instance.cpp:114-120` | Canal nommé à nom prévisible | En attente (19 fini) |
 | 34 | 11 | `src/app/play/system_peak.cpp:150-151` | Maximum de toutes les sorties quand le moniteur manque | En attente (11 fini) |
-| 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | En attente (28 fini) |
+| 34 | 28 | `.github/workflows/release-windows.yml:16-19` | PDB et CUTLASS absents de la release Windows : à trancher | Traité par 28 (complément) |
 | 34 | 40 | `tests/unit/` | `span_variant_order` jamais testé avec les capacités d'une RTX sous Windows | Traité par 40 (A40-10) |
 | 33 | 08 | `src/app/play/engine_build.cpp` | Un `TensorRtBackend` créé puis détruit par moteur préparé | En attente (08 fini) |
-| 33 | 28 | `src/prepare/cache.cpp` | Disque plein par le cache : l'écriture d'un moteur doit refuser proprement | En attente (28 fini) |
+| 33 | 28 | `src/prepare/cache.cpp` | Disque plein par le cache : l'écriture d'un moteur doit refuser proprement | Traité par 28 (complément) |
 | 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Traité par 36 |
 | 33 | 31 | `src/app/play/player_run.cpp:510` | Au réveil, perte du contexte CUDA et saut d'horloge ensemble | En attente (31 fini) |
 | 35 | 33 | `src/prepare/builder.cpp:139-145` | Un moteur par forme, sans purge | Traité par 33 (A33-04) |
 | 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | En attente (17 fini) |
-| 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | En attente (28 fini) |
+| 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | Traité par 28 (complément) |
 | 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | Traité par 07 (complément) |
 | 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | En attente (02 fini) |
 | 36 | 26 | `src/app/play/updater.cpp:670-679` | `updates/previous` jamais retiré après confirmation | En attente (26 fini) |
@@ -901,7 +906,7 @@
 | 38 | 43 | `src/app/play/i18n_fr_*.cpp` | Environ 180 traductions sans texte anglais correspondant | Traité par 43 (A43-02, 192) |
 | 38 | 39 | `src/core/log_redact.cpp:52-73` | Nettoyage du journal à étendre aux racines de montage | En attente (39 fini) |
 | 38 | 23 | `src/app/play/auto_config.cpp:167-169` | Commentaire FP8 des préréglages contredit | En attente (23 fini) |
-| 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | En attente (28 fini) |
+| 38 | 28 | `tools/release/notes/v0.10.3.md` | Notes publiées muettes sur l'absence de TensorRT Linux | Traité par 28 (complément) |
 | 38 | 07 | `src/app/play/auto_config.cpp:203-204` | L'Auto calibré écrase le modèle RIFE de la tranche | Traité par 07 (complément) |
 | 42 | 09 | `src/app/play/rife_plan.cpp:10-14` | `kPlanCutFloor` comparé au score brut de RIFE | En attente (09 fini) |
 | 42 | 09 | `src/app/play/rife_plan.h:39-42` | `kPlanCutFloor` tenu sur une seule série | En attente (09 fini) |
@@ -935,10 +940,11 @@
 | 46 | 45 | `src/gpu/vulkan/backend/net_gate.h:24-25` | Porte qui admet les sommes FP16 à 2 % sur du bruit, pour toutes les cartes | En attente (45 fini) |
 | 46 | 09 | `src/app/play/drba_model.h:17-21` | Flot de DistilDRBA à l'échelle 0,5 dès 1 440 lignes, sans mesure | En attente (09 fini) |
 | 46 | 03 | `tools/drba/export_distil_drba.py:46` | DistilDRBA v1 jamais comparé à v2 lite et à RIFE | En attente (03 fini) |
-| 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | En attente (28 fini) |
+| 46 | 28 | `THIRD_PARTY_NOTICES.md:49` | Moteurs retirés encore listés dans l'avis livré | Traité par 28 (complément) |
 | 46 | 18 | `tools/grade/compare_shots.sh:18` | Chemin de la vidéo de calibration absente du paquet | En attente (18 fini) |
 | 40 | 10 | `src/app/play/placebo_snapshot.cpp:16-40` | Sortie SDR ou instantané ×0,62, grade coupé ; contrat d'écran HDR au journal d'une sortie SDR | En attente (10 fini) |
 | 40 | 41 | `tests/unit/app/e2e_play_test.cpp:241-243` | Image SDR assombrie, à croiser avec le grade SDR | En attente (41 fini) |
 | 40 | 22 | `src/app/play/options.cpp` | `--data-dir` n'isole pas les moteurs (dossier `ajp` doublé) | En attente (22 fini) |
 | 40 | 13 | `tests/unit/app/e2e_play_test.cpp:221` | Avec `--seconds`, l'épisode suivant s'enchaîne quand même | En attente (13 fini) |
 | 40 | 46 | `tools/bench/rife_triplets.py:100` | Le banc de qualité refuse DistilDRBA | En attente (46 fini) |
+| 28 | 39 | `src/prepare/builder.cpp:233` | Disque plein soupçonné au journal seulement, pas nommé à l'utilisateur | En attente (39 fini) |
