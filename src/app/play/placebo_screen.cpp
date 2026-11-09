@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <format>
+#include <mutex>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -346,6 +347,21 @@ void note_feedback(ScreenTiming& timing, const PresentFeedback& feedback) {
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+// La présentation part. Le thread qui compose le look (render::Grade) ne touche pas le pl_gpu pendant ce
+// temps : voir Grade::gpu_guard.
+std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present* present) {
+  const std::unique_lock<std::mutex> guard = grade ? grade->gpu_guard() : std::unique_lock<std::mutex>{};
+  if (present == nullptr) {
+    if (pl_swapchain_submit_frame(swapchain)) return {};
+    return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
+  }
+  VkResult result = VK_SUCCESS;
+  const bool ok = pl_vulkan_swapchain_submit(swapchain, present, &result);
+  feedback->submitted(result);
+  if (!ok) return refuse(RefusalCode::VendorCallFailed, "pl_vulkan_swapchain_submit");
+  return {};
+}
+
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
   const pl_gpu gpu = s.vk->gpu;
@@ -474,14 +490,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   // son identifiant et sa demande de date.
   const pl_vulkan_present* present =
       s.feedback ? s.feedback->prepare(s.swapchain, host_now_us(), request.target_us) : nullptr;
-  if (present != nullptr) {
-    VkResult result = VK_SUCCESS;
-    const bool ok = pl_vulkan_swapchain_submit(s.swapchain, present, &result);
-    s.feedback->submitted(result);
-    if (!ok) return refuse(RefusalCode::VendorCallFailed, "pl_vulkan_swapchain_submit");
-  } else if (!pl_swapchain_submit_frame(s.swapchain)) {
-    return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
-  }
+  if (auto sent = s.submit(present); !sent) return std::unexpected(std::move(sent.error()));
   const std::int64_t submitted = host_now_us();
   pl_swapchain_swap_buffers(s.swapchain);  // attend les commandes des images en vol, pas l'écran (A10-14)
   const std::int64_t presented = host_now_us();

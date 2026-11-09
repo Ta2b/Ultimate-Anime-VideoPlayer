@@ -213,7 +213,8 @@ struct PlaceboScreen::Impl {
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
-  void match_kwin();             // la cadence des images vidéo distinctes, pour les lissages du grade
+  std::expected<void, Refusal> submit(const pl_vulkan_present* present);  // placebo_screen.cpp
+  void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   bool frame_debanded = false;  // l'image montrée a été débandée avant SPAN (RingFrame::debanded, P3.56)

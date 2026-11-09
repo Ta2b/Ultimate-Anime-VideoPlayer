@@ -251,6 +251,7 @@ struct Grade::Impl {
   bool background = false;
   std::optional<std::array<double, kLookSlots>> requested_for;
   std::mutex job_mutex;
+  std::mutex gpu_mutex;  // tenu par le thread pendant qu'il lit un hook sur le pl_gpu (Grade::gpu_guard)
   std::condition_variable_any job_ready;
   std::optional<Job> job;
   std::optional<Composed> done;
@@ -290,7 +291,10 @@ void Grade::Impl::run(const std::stop_token& stop) {
     if (out.active) out.stack = compose_luts(luts, next.mixes);
     std::array<const CubeLut*, kLookSlots> slots{};
     if (out.active) slots[0] = &out.stack;
-    out.hook = parse_look(gpu, slots);
+    {
+      const std::scoped_lock on_gpu(gpu_mutex);  // gpu_guard : jamais pendant que la fenêtre présente
+      out.hook = parse_look(gpu, slots);
+    }
     const std::scoped_lock lock(job_mutex);
     if (done && done->hook) pl_mpv_user_shader_destroy(&done->hook->hook);  // jamais adopté, dépassé
     done = std::move(out);
@@ -403,6 +407,10 @@ void Grade::Impl::write_params() {
 
 void Grade::set_background(bool on) {
   impl_->background = on;
+}
+
+std::unique_lock<std::mutex> Grade::gpu_guard() {
+  return std::unique_lock(impl_->gpu_mutex);
 }
 
 bool Grade::adopt() {
