@@ -45,6 +45,11 @@ class ContractWatch {
   ContractWatch(const ContractWatch&) = delete;
   ContractWatch& operator=(const ContractWatch&) = delete;
 
+  // Ce que le filtre d'événements de SDL pose (display_contract.cpp).
+  struct Flags {
+    std::atomic<bool>* hdr;
+    std::atomic<bool>* peak;
+  };
   std::optional<render::DisplayContract> tick();
   // La fenêtre est passée sur un autre écran (A11-01) : son connecteur et son EDID remplacent ceux de
   // l'ouverture, et le contrat est relu au prochain tick. Sans cela, KWin restait lu pour l'ancien
@@ -52,7 +57,12 @@ class ContractWatch {
   void set_display(std::optional<DisplayFacts> facts) {
     facts_ = std::move(facts);
     hdr_changed_.store(true, std::memory_order_relaxed);
+    peak_changed_.store(true, std::memory_order_relaxed);
   }
+  // Vrai une fois après un événement qui peut changer le HDR ou le pic du système : HDR allumé ou coupé,
+  // fenêtre passée sur un autre écran, réglages de KDE réécrits. Le relevé du pic (énumérations d'écrans
+  // coûteuses sous Windows, A11-02) se fait alors tout de suite, au lieu d'un sondage toutes les 2 s.
+  bool take_peak_change() { return peak_changed_.exchange(false, std::memory_order_relaxed); }
   const std::optional<render::DisplayContract>& current() const { return contract_; }
 
  private:
@@ -63,7 +73,9 @@ class ContractWatch {
   std::shared_ptr<spdlog::logger> log_;
   std::optional<render::DisplayContract> contract_;
   std::optional<std::int64_t> kwin_stamp_;
-  std::atomic<bool> hdr_changed_{true};  // posé par le filtre d'événements SDL ; vrai : première lecture
+  std::atomic<bool> hdr_changed_{true};    // posé par le filtre d'événements SDL ; vrai : première lecture
+  std::atomic<bool> peak_changed_{false};  // les mêmes événements, pour take_peak_change
+  Flags flags_{&hdr_changed_, &peak_changed_};
 };
 
 }  // namespace ajp::app::play

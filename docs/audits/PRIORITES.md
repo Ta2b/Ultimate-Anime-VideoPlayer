@@ -474,7 +474,7 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 1 | A08-03 | Majeur | `src/app/play/chain.cpp:204-211` | Facteur, Auto ou Rapide changés en direct sans refaire anneau, plus haut facteur ni warp | Corrigé |
 | 2 | A10-02 | Majeur | `src/app/play/placebo_open.cpp:497` | Avec le défaut `--present=wait`, `wp_presentation` n'est jamais ouvert : aucune grille des vblanks sous CachyOS | Corrigé |
 | 3 | A11-01 | Majeur | `src/app/play/display_contract.h:54` | Contrat d'écran figé sur l'écran d'ouverture (GPU-04) | Corrigé |
-| 4 | A11-02 | Majeur | `src/app/play/host_facts.cpp:39-81` | Windows : requêtes d'écran sur le thread de la boucle (WIN-04, GPU-16, à mesurer) |  |
+| 4 | A11-02 | Majeur | `src/app/play/host_facts.cpp:39-81` | Windows : requêtes d'écran sur le thread de la boucle (WIN-04, GPU-16, à mesurer) | Corrigé en partie : pic relu sur événement (filet à 10 s) et un seul relevé du mode par tour ; le fil « écran » et la fabrique DXGI gardée restent à faire, après mesure sous Windows |
 | 5 | A12-01 | Majeur | `src/core/vblank_clock.cpp:32-36` | La grille des vblanks apprend la cadence du contenu au lieu de celle de l'écran (démontré) | Corrigé |
 | 6 | A12-02 | Majeur | `src/core/auto_rate.cpp:281-291` | Stable sans palier calé au-dessus de ×1 à 165 Hz pour 23,976, ni à 144 Hz pour 29,97 (démontré) | Corrigé |
 | 7 | A12-03 | Majeur | `src/core/vsync_phase.h:2-5` | Phase des vsyncs apprise sur le retour de `swap_buffers` au niveau Open (à confirmer sous Windows) | Corrigé |
@@ -501,7 +501,7 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 28 | A11-08 | Mineur | `src/app/play/gpu_telemetry.cpp:311-372` | `GpuTelemetry::sample` écrit sans verrou depuis deux threads (GPU-09) | Corrigé |
 | 29 | A11-09 | Mineur | `src/app/play/host_facts.cpp:378-380` | `on_battery()` sans cache sur le thread de la boucle | Corrigé par A31-10 : on_battery n'est plus appelé par la boucle ; Corrigé (plus d'appel dans la boucle : le plafond de batterie est retiré) |
 | 30 | A11-10 | Mineur | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur dans l'OSD anglais | Corrigé |
-| 31 | A11-11 | Mineur | `src/app/play/display_edid.cpp:139-147` | Pic et noir dépendent de l'ordre des blocs EDID |  |
+| 31 | A11-11 | Mineur | `src/app/play/display_edid.cpp:139-147` | Pic et noir dépendent de l'ordre des blocs EDID | Corrigé en partie : taille des descripteurs Adaptive-Sync ; le choix d'une seule source par grandeur change le pic ou le noir de l'écran cible, il attend une décision |
 | 32 | A11-12 | Mineur | `tests/unit/app/` | Aucun test du contrat d'écran, du multi-écran ni du pic de contenu |  |
 | 33 | A11-13 | Mineur | `src/app/play/host_facts.cpp:39-81` | Quatre copies de l'énumération `QueryDisplayConfig` |  |
 | 34 | A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Corrigé |

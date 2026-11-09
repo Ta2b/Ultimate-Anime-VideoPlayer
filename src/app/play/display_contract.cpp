@@ -14,8 +14,14 @@ namespace {
 
 // Le filtre de SDL voit chaque événement en file, quel que soit le fil : il ne fait que poser le drapeau.
 bool on_event(void* context, SDL_Event* event) {
-  if (event->type == SDL_EVENT_WINDOW_HDR_STATE_CHANGED || event->type == SDL_EVENT_WINDOW_DISPLAY_CHANGED)
-    static_cast<std::atomic<bool>*>(context)->store(true, std::memory_order_relaxed);
+  // Le HDR de la fenêtre, son écran, ou tout changement d'un écran (branché, retiré, mode).
+  const bool display = event->type >= SDL_EVENT_DISPLAY_FIRST && event->type <= SDL_EVENT_DISPLAY_LAST;
+  if (event->type == SDL_EVENT_WINDOW_HDR_STATE_CHANGED || event->type == SDL_EVENT_WINDOW_DISPLAY_CHANGED ||
+      display) {
+    auto* flags = static_cast<ContractWatch::Flags*>(context);
+    flags->hdr->store(true, std::memory_order_relaxed);
+    flags->peak->store(true, std::memory_order_relaxed);
+  }
   return true;
 }
 
@@ -69,11 +75,11 @@ std::string describe(const render::DisplayContract& c) {
 ContractWatch::ContractWatch(SDL_Window* window, std::optional<DisplayFacts> facts,
                              std::shared_ptr<spdlog::logger> log)
     : window_(window), facts_(std::move(facts)), log_(std::move(log)), kwin_stamp_(kwin_config_stamp()) {
-  (void)SDL_AddEventWatch(&on_event, &hdr_changed_);
+  (void)SDL_AddEventWatch(&on_event, &flags_);
 }
 
 ContractWatch::~ContractWatch() {
-  SDL_RemoveEventWatch(&on_event, &hdr_changed_);
+  SDL_RemoveEventWatch(&on_event, &flags_);
 }
 
 render::DisplayContract ContractWatch::read() const {
@@ -91,6 +97,7 @@ std::optional<render::DisplayContract> ContractWatch::tick() {
   const std::optional<std::int64_t> stamp = kwin_config_stamp();
   const bool rewritten = stamp != kwin_stamp_;
   kwin_stamp_ = stamp;
+  if (rewritten) peak_changed_.store(true, std::memory_order_relaxed);
   if (!hdr_changed_.exchange(false, std::memory_order_relaxed) && !rewritten) return std::nullopt;
   render::DisplayContract contract = read();
   if (contract_ && *contract_ == contract) return std::nullopt;

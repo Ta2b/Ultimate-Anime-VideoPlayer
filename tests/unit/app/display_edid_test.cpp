@@ -227,6 +227,9 @@ TEST_CASE("Contrat d'écran : la fenêtre change d'écran, le contrat suit le no
   CHECK_FALSE(moved->oled);
   CHECK(moved->panel_peak_nits == 600.0);
   CHECK_FALSE(moved->primaries.has_value());
+  // A11-02 : le changement d'écran demande aussi de relire le pic du système, une fois.
+  CHECK(watch.take_peak_change());
+  CHECK_FALSE(watch.take_peak_change());
 }
 
 namespace {
