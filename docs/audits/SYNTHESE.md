@@ -434,7 +434,7 @@
 | A31-03 | Majeur | `src/app/play/engine_screen.cpp:341-344` | TensorRT refusé remplacé par Vulkan sans avis à l'écran | 31 | |
 | A31-04 | Majeur | `src/app/play/chain_setup.cpp:355` | Un moteur refusé à l'ouverture empêche toute lecture, rien n'est retenu | 31 | A29-01 (même cause) |
 | A31-05 | Majeur | `src/app/play/player.cpp:523-533` | « Annuler et regarder » coupe aussi SPAN déjà prêt | 31 | |
-| A31-06 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | Cran Qualité ou Performance retombé en FP16 : garde le refus du fusionné, plus lent qu'Équilibre (toujours sous Windows en Performance) | 31 |Touche aussi CachyOS (34) |
+| A31-06 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | Cran Qualité ou Performance retombé en FP16 : garde le refus du fusionné, plus lent qu'Équilibre (toujours sous Windows en Performance) | 31 | Touche aussi CachyOS (34) |
 | A31-07 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | DistilDRBA Performance avec graphe FP8 : moins de qualité et plus lent que le fusionné FP16 | 31 | |
 | A31-08 | Mineur | `src/gpu/cuda/backend/cuda_status.h:38-39` | `cudaErrorMemoryAllocation` devient `VendorCallFailed` | 31 | |
 | A31-09 | Mineur | `src/app/play/upscale_drba.cpp:136` | Image ingérée avant le contrôle de taille | 31 | |
