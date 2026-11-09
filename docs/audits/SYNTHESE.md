@@ -26,7 +26,7 @@
 | 14. Sources, démultiplexage et erreurs d'E/S | Fusionné (10 défauts, 2 majeurs, complément compris) | [rapport](rapports/14-sources-demux.md), [complément](rapports/14-sources-demux-complement.md) |
 | 15. Décodage, matériel, formats et couleurs | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/15-decodage-formats.md), [complément](rapports/15-decodage-formats-complement.md) |
 | 16. Audio | Fusionné (14 défauts, 1 majeur, complément compris) | [rapport](rapports/16-audio.md), [complément](rapports/16-audio-complement.md) |
-| 17. Sous-titres | Fusionné (13 défauts, 2 majeurs) | [rapport](rapports/17-sous-titres.md) |
+| 17. Sous-titres | Fusionné (14 défauts, 2 majeurs, complément compris) | [rapport](rapports/17-sous-titres.md), [complément](rapports/17-sous-titres-complement.md) |
 | 18. Démarrage et arrêt | Fusionné (15 défauts, 2 majeurs) | [rapport](rapports/18-demarrage-arret.md) |
 | 19. Intégration au système | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/19-integration-systeme.md) |
 | 20. Socle commun (core) | Fusionné (13 défauts, 1 majeur) | [rapport](rapports/20-socle-core.md) |
@@ -698,6 +698,7 @@
 | A14-09 | Mineur | `src/media/source_loop.cpp:153-159` | Seek exact : chaque image jetée est convertie avant la décision (jusqu'à 1,8 s en 4K 4:4:4 logiciel) | 14 | |
 | A14-10 | Mineur | `src/media/source_loop.cpp:21-25` | `ends_before` jette les images sans PTS sans borne : seek sans fin | 14 | A15-05 (même cause) |
 | A16-14 | Mineur | `src/app/play/wiring.cpp:103-108` | Seek exact raté puis position rattrapée : audio rogné jusqu'à la cible manquée (gel de 1,5 s, silence) | 16 | |
+| A17-14 | Mineur | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond cumulé des paquets d'une piste intégrée : MKV forgé, plusieurs Gio dans libass | 17 | |
 
 ## Renvois
 
@@ -808,7 +809,7 @@
 | 18 | 30 | `src/app/play/chain_hdr.cpp:162` | `LookLoader` détaché qui peut journaliser après `close_log` | Traité par 30 |
 | 18 | 26 | `src/app/play/updater.cpp:504-506` | `last_check_unix` posé avant le téléchargement | Traité par 26 |
 | 18 | 26 | `src/app/play/updater.cpp:637-644` | Purge des `.old` dans `guard_new_version` (A18-05) | Traité par 26 |
-| 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | En attente (17 fini) |
+| 18 | 17 | `src/app/play/bridges.cpp:383-385` | PGS et VobSub refusés | Traité par 17 (complément) |
 | 18 | 39 | `src/app/main.cpp:378-401` | Mises à jour absentes d'`ajp.log` | Traité par 39 (doublon d'A26-12) |
 | 18 | 20 | `src/core/log.cpp:82-95` | `log_channel` déréférence un journal nul (A18-01) | En attente (20 fini) |
 | 03 | 32 | `docs/auto-libre.md:157-172` | Le service d'une image (13 à 16 ms) borne la cadence, pas la passe d'interpolation : relevé à refaire par étape | Traité par 32 |
@@ -870,7 +871,7 @@
 | 24 | 03 | `src/app/play/chain_setup.cpp:396-397` | Repli de DistilDRBA fusionné vers l'entier écrit au journal seulement | Traité par 03 (complément 2) |
 | 24 | 12 | `src/app/play/session.cpp:506` | Présentation pour l'interface seule hors échéance | Traité par 12 (complément) |
 | 24 | 29 | `src/app/play/player_engines.cpp:54-57` | Boucles d'attente qui jettent les fichiers d'un second lancement | Traité par 29 |
-| 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | En attente (17 fini) |
+| 24 | 17 | `src/subs/subtitle_frame.h` | Le rectangle d'un sous-titre ne dit pas s'il est positionné | Traité par 17 (complément) |
 | 24 | 27 | `cmake/Dependencies.cmake:123` | `imgui_impl_sdl3.cpp` compilé sans être utilisé | En attente (27 fini) |
 | 49 | 07 | `src/app/play/machine_calibration.h:37-47` | Calibration : ajouter le b8f64 FP16, les hauteurs au-dessus de la moitié de l'écran et le RIFE du rang | Traité par 07 (complément) |
 | 49 | 10 | `src/app/play/placebo_screen.cpp:130` | Paramètres par défaut de libplacebo, pas d'anti-ringing | Traité par 10 (complément) |
@@ -926,7 +927,7 @@
 | 33 | 36 | `src/prepare/cache.cpp` | Purge des moteurs orphelins avec le changement de pilote | Traité par 36 |
 | 33 | 31 | `src/app/play/player_run.cpp:510` | Au réveil, perte du contexte CUDA et saut d'horloge ensemble | En attente (31 fini) |
 | 35 | 33 | `src/prepare/builder.cpp:139-145` | Un moteur par forme, sans purge | Traité par 33 (A33-04) |
-| 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | En attente (17 fini) |
+| 35 | 17 | `src/subs/subtitle_track.cpp:146-149` | Aucun plafond d'événements d'une piste ASS intégrée | Traité par 17 (complément) |
 | 35 | 28 | `.github/dependabot.yml` | Seules les actions GitHub suivies | Traité par 28 (complément) |
 | 36 | 07 | `src/app/play/machine_calibration.cpp:240-252` | Un seul jeton d'identité de la mesure (avec A36-02 et le renvoi 25→07) | Traité par 07 (complément) |
 | 36 | 02 | `src/app/play/span_int8.cpp:114-125` | Reçu FP8/INT8 sans le SHA du paquet dérivé | Réfuté par 02 (complément) : le reçu porte le SHA du paquet |
