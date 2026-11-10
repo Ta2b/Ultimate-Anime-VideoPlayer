@@ -294,7 +294,7 @@ CalibrationUse calibration_use(const MachineCalibration& calibration, const Cali
 }
 
 bool calibration_driver_changed(const MachineCalibration& calibration, const CalibrationHost& host) {
-  return !calibration.driver.empty() && !host.driver.empty() && calibration.driver != host.driver;
+  return driver_branch_changed(calibration.driver, host.driver);
 }
 
 std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir,

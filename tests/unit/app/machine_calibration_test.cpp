@@ -215,7 +215,7 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   // Un autre pilote : suivie, mais le tableau le dit (A36-02). Un pilote inconnu ne dit rien.
   CHECK_FALSE(calibration_driver_changed(c, host));
   CalibrationHost updated = host;
-  updated.driver = "590";
+  updated.driver = std::to_string((590U << 22U) | (10U << 14U));
   CHECK(calibration_use(c, updated) == CalibrationUse::Followed);
   CHECK(calibration_driver_changed(c, updated));
   updated.driver.clear();

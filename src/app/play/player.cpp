@@ -487,13 +487,12 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       chosen.preset = Preset::Auto;
       chosen.priority = Priority::Balance;
     }
-    // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et ce pilote, et pas pour un
-    // essai.
+    // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et cette branche de pilote
+    // (A37-09), et pas pour un essai.
     const GpuFacts here = gpu_facts(**screen);
     const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
                                                   library_wanted, *engines, catalog, paths);
-    const bool explored = measured_tier && !file_options.bench_level && measured_tier->gpu == here.name &&
-                          measured_tier->driver == here.driver;
+    const bool explored = measured_tier && !file_options.bench_level && measured_here(*measured_tier, here);
     chosen = apply_preset(
         chosen,
         Machine{.tier = tier,

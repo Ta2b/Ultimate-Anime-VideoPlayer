@@ -140,8 +140,8 @@ std::expected<MachineCalibration, Refusal> load_calibration(const std::filesyste
 // Ce que l'Auto fait de cette calibration sur cette machine : suivie si elle est de cette version, mesurée
 // sur secteur, sur cette carte, à cette hauteur d'écran et par le moteur en service.
 CalibrationUse calibration_use(const MachineCalibration& calibration, const CalibrationHost& host);
-// Suivie, mais le pilote a changé depuis la mesure : le tableau propose de refaire le banc (A36-02). Un
-// pilote inconnu d'un côté ne dit rien.
+// Suivie, mais la branche du pilote a changé depuis la mesure : le tableau propose de refaire le banc
+// (A36-02), même règle que bench.toml (driver_branch_changed, A37-09).
 bool calibration_driver_changed(const MachineCalibration& calibration, const CalibrationHost& host);
 // La chaîne de calibration.toml (dossier data_dir) si l'Auto la suit (calibration_use) : les bornes de l'Auto
 // calibré. std::nullopt sinon.
