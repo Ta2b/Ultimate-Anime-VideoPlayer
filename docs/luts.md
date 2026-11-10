@@ -4,6 +4,10 @@ Le grade HDR anime (`docs/hdr-anime.md`) passe l'image par une pile de LUT 3D d'
 LUT de 65 points (`anime_look`, `src/app/play/look_catalog.cpp`) et appliquée par `anime-hdr-look.hook`
 après le grade et avant le vrai noir OLED.
 
+Deux corrections entourent la pile depuis novembre 2026 (`docs/hdr-anime.md`, « Niveaux à l'écran ») : sous
+RVB 48, un pied adouci remplace le bas de la LUT de base, qui rendait noir tout ce qui était sous RVB 16 ; et
+la dernière passe ramène le blanc que la pile porte vers 6 300 nits à la moitié du pic de l'écran.
+
 ## La pile
 Quatre fichiers de `data/luts/`, livrés dans un dossier `luts/` à côté du lecteur (Contents/Resources dans
 AJP.app) :
