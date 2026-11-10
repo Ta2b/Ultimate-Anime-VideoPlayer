@@ -22,6 +22,7 @@
 #include <libplacebo/vulkan.h>
 
 #include "app/play/i18n.h"
+#include "app/play/modal_redraw.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "core/clock.h"
@@ -405,7 +406,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     // et le thread de la fenêtre resterait bloqué. L'attente est rendue au premier événement, 50 ms au plus.
     if ((SDL_GetWindowFlags(s.window) & (SDL_WINDOW_OCCLUDED | SDL_WINDOW_MINIMIZED)) != 0) {
       constexpr Sint32 kHiddenWaitMs = 50;
-      (void)SDL_WaitEventTimeout(nullptr, kHiddenWaitMs);
+      wait_events_no_modal_turn(kHiddenWaitMs);
       return ScreenTiming{.presented = false};
     }
     // A10-01 : un échec d'acquisition sur un appareil en échec est une perte du GPU, pas une fenêtre cachée.

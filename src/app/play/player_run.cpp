@@ -49,6 +49,7 @@
 #include "app/play/latest_writer.h"
 #include "app/play/look_catalog.h"
 #include "app/play/loop_wait.h"
+#include "app/play/modal_redraw.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
 #include "app/play/pipeline.h"
@@ -406,6 +407,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
   double session_hz_seen = known_hz;
   ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
+  const ModalRedraw modal(out.window(), [&] { modal_turn(**pipeline, session); });  // A10-05
   const auto read_display_facts = [&] {
     if (const double hz = display_refresh_hz(out.window()); hz > 0.0) {
       known_hz = hz;
