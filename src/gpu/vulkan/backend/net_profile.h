@@ -1,11 +1,11 @@
 // Profil des dispatchs d'un réseau : temps GPU et nombre de dispatchs par nom de shader.
 //
-// Option de débogage (DebugFlags::profile_dispatches, BackendOptions::profile_dispatches) : le
-// moteur écrit une estampille avant et après chaque dispatch de l'enregistrement, lit les
-// résultats une fois l'exécution finie, et journalise un tableau par shader à sa destruction.
-// Désactivée, aucun pool n'est créé et l'enregistrement est celui de toujours. Chaque dispatch est
-// encadré de deux commandes d'horodatage, donc de deux barrières : la somme des intervalles mesure
-// les noyaux, pas les trous entre eux (voir ProfileReport::span_ms pour la durée d'ensemble).
+// Option de débogage (--profile-dispatches du lecteur par BackendInit::profile_dispatches,
+// BackendOptions::profile_dispatches) : le moteur écrit une estampille avant et après chaque dispatch de
+// l'enregistrement, lit les résultats une fois l'exécution finie, et journalise un tableau par shader à sa
+// destruction. Désactivée, aucun pool n'est créé et l'enregistrement est celui de toujours. Chaque dispatch
+// est encadré de deux commandes d'horodatage, donc de deux barrières : la somme des intervalles mesure les
+// noyaux, pas les trous entre eux (voir ProfileReport::span_ms pour la durée d'ensemble).
 #pragma once
 
 #include <cstddef>

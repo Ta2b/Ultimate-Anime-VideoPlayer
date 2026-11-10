@@ -240,6 +240,54 @@ TEST_CASE("exécution : attente et signal de sémaphores timeline externes", "[v
   CHECK(late.error().detail.find("VK_TIMEOUT") != std::string::npos);
 }
 
+TEST_CASE("exécution : un vkQueueSubmit refusé ne fige pas la suite (A45-05)", "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  const kernels::RgbImage image = synthetic_rgb(16, 16, 4, 0.0F, 1.0F);
+  TensorBuffer src = upload_rgb(rig, image, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 16, 16, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 16, 16, 3, Precision::F32);
+  const std::unique_ptr<Recording> recording = round_trip(rig, src.view, middle.view, dst.view);
+  TimelineSemaphore done = require_value(TimelineSemaphore::create(*rig.context, 0));
+  require_ok(rig.context->submit(*recording));
+
+  // La carte à court de mémoire un instant : la soumission est refusée, et le dit.
+  rig.context->fail_next_submits(1);
+  const std::array signals{done.at(3)};
+  const Done refused = rig.context->submit(*recording, {}, signals);
+  require_refusal(refused, RefusalCode::GpuMemoryExhausted);
+  CHECK(refused.error().detail.find("vkQueueSubmit") != std::string::npos);
+  CHECK_FALSE(rig.context->lost());
+  // Ses signaux sont partis sans elle : ni l'exécution promise ni le sémaphore d'ailleurs ne restent en
+  // suspens, ce qui figeait toute soumission suivante.
+  CHECK(recording->last_run().value == 2);
+  require_ok(rig.context->wait_on_host(recording->last_run(), std::chrono::seconds(10)));
+  require_ok(rig.context->wait_on_host(done.at(3), std::chrono::seconds(10)));
+  // La suite tourne comme avant.
+  require_ok(rig.context->submit(*recording));
+  require_ok(rig.context->wait_on_host(recording->last_run(), std::chrono::seconds(10)));
+  CHECK(require_value(recording->runs().value()) == 3);
+  CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1e-3F);
+}
+
+TEST_CASE("exécution : sans signaux de rattrapage, le contexte est tenu pour perdu (A45-05)",
+          "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  const kernels::RgbImage image = synthetic_rgb(16, 16, 5, 0.0F, 1.0F);
+  TensorBuffer src = upload_rgb(rig, image, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 16, 16, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 16, 16, 3, Precision::F32);
+  const std::unique_ptr<Recording> recording = round_trip(rig, src.view, middle.view, dst.view);
+  require_ok(rig.context->submit(*recording));
+  require_ok(rig.context->wait_on_host(recording->last_run()));
+  // La soumission puis ses signaux seuls sont refusés : plus rien ne les enverra.
+  rig.context->fail_next_submits(2);
+  require_refusal(rig.context->submit(*recording), RefusalCode::GpuMemoryExhausted);
+  CHECK(rig.context->lost());
+  CHECK(recording->last_run().value == 1);  // l'exécution refusée n'est plus attendue
+  // Chaque soumission suivante est refusée tout de suite, sans attendre.
+  require_refusal(rig.context->submit(*recording), RefusalCode::DeviceLost);
+}
+
 TEST_CASE("exécution : refus du Recorder et des soumissions", "[vk_compute][execution]") {
   Rig rig = make_rig();
   TensorBuffer a = tensor_target(rig, 16, 16, 3, Precision::F32);

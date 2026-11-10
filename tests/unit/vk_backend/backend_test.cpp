@@ -2,9 +2,16 @@
 // enqueue rejoué contre l'interpréteur, aller-retour et refus des artefacts, autotuner,
 // opérateur inconnu refusé à la construction, appareil de rendu qui ne convient pas.
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <fstream>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -66,6 +73,38 @@ ShapeSet shapes(std::int64_t h, std::int64_t w) {
 Artifact build(vk::VulkanBackend& backend, const ModelSpec& model, const ShapeSet& set) {
   Progress progress;
   return require_value(backend.build(model, set, progress));
+}
+
+// Le journal d'un backend, écrit depuis ses threads.
+class Journal {
+ public:
+  void add(std::string_view text) {
+    const std::scoped_lock lock(guard_);
+    text_ += text;
+    text_ += '\n';
+  }
+  std::string text() {
+    const std::scoped_lock lock(guard_);
+    return text_;
+  }
+
+ private:
+  std::mutex guard_;
+  std::string text_;
+};
+
+// Un backend qui journalise dans journal ; saute sans Vulkan.
+std::unique_ptr<vk::VulkanBackend> make_logged_backend(Journal& journal, BackendInit init,
+                                                       vk::BackendOptions options) {
+  init.log = [&journal](BackendLogLevel, std::string_view text) { journal.add(text); };
+  auto made = vk::VulkanBackend::create(init, std::move(options));
+  if (!made) {
+    const RefusalCode code = made.error().code;
+    if (code == RefusalCode::LibraryUnavailable || code == RefusalCode::DeviceUnavailable)
+      SKIP("aucun Vulkan : " << describe(made.error()));
+    FAIL(describe(made.error()));
+  }
+  return std::move(*made);
 }
 
 }  // namespace
@@ -317,4 +356,101 @@ TEST_CASE("Backend : adoption de l'appareil de rendu", "[vk_backend][backend]") 
   auto u = require_value(adopted->alloc_tensor(TensorType::F32, Shape{{1, 3, 16, 16}}));
   require_ok(adopted->kernels()->resample(t->tensor(), kernels::Filter::Bilinear, u->tensor()));
   require_ok(adopted->context().wait_on_host(adopted->queue().last()));
+}
+
+TEST_CASE("Backend : --profile-dispatches arrive par BackendInit et écrit au journal (A45-08)",
+          "[vk_backend][backend]") {
+  TempDir dir("profil");
+  Journal journal;
+  auto backend = make_logged_backend(journal, {.cache_dir = dir.path() / "cache", .profile_dispatches = true},
+                                     {.autotune = false});
+  const bool half = backend->profile().target.f16_storage;
+  const TensorType type = half ? TensorType::F16 : TensorType::F32;
+  const ModelSpec model = write_model(dir.path(), "span_profil", span_model(half), type);
+  const Artifact artifact = build(*backend, model, shapes(20, 28));
+  {
+    auto engine = require_value(backend->load(artifact));
+    auto in = require_value(backend->alloc_tensor(type, Shape{{1, 3, 20, 28}}));
+    auto out = require_value(backend->alloc_tensor(type, Shape{{1, 3, 40, 56}}));
+    std::array inputs{in->tensor()};
+    std::array outputs{out->tensor()};
+    require_ok(backend->enqueue(*engine, inputs, outputs));
+    require_ok(backend->wait(require_value(backend->signal())));
+    backend->drain();
+  }
+  // Le tableau à la décharge du réseau, ou la raison pour laquelle l'appareil ne mesure pas.
+  CHECK(journal.text().find("profil des dispatchs") != std::string::npos);
+}
+
+TEST_CASE("Cache Vulkan : l'écriture ne laisse pas de temporaire, les anciens sont purgés (A45-07)",
+          "[vk_backend][backend]") {
+  TempDir dir("purge");
+  const std::filesystem::path folder = dir.path() / "vulkan";
+  const std::vector<std::byte> bytes(64, std::byte{7});
+  require_ok(vk::net::write_file(folder / "reseau.ajpvk", bytes));
+  CHECK(require_value(vk::net::read_file(folder / "reseau.ajpvk")) == bytes);
+  std::size_t entries = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+    (void)entry;
+    ++entries;
+  }
+  CHECK(entries == 1);  // le temporaire a été renommé
+
+  // Deux temporaires d'écritures coupées, aux deux formes de nom, vieux de deux heures ; un récent,
+  // qu'un autre écrivain tient peut-être ; un artefact entier.
+  const auto touch = [&](const char* name, std::chrono::hours age) {
+    std::ofstream(folder / name) << "x";
+    std::filesystem::last_write_time(folder / name, std::filesystem::file_time_type::clock::now() - age);
+  };
+  touch("reseau.ajpvk.tmp-123-456", std::chrono::hours(2));
+  touch(".reseau.ajpvk.1234-5.tmp", std::chrono::hours(2));
+  touch(".autre.ajpvk.99-1.tmp", std::chrono::hours(0));
+  std::filesystem::last_write_time(folder / "reseau.ajpvk",
+                                   std::filesystem::file_time_type::clock::now() - std::chrono::hours(48));
+  CHECK(vk::net::purge_stale_temporaries(folder) == 2);
+  CHECK_FALSE(std::filesystem::exists(folder / "reseau.ajpvk.tmp-123-456"));
+  CHECK_FALSE(std::filesystem::exists(folder / ".reseau.ajpvk.1234-5.tmp"));
+  CHECK(std::filesystem::exists(folder / ".autre.ajpvk.99-1.tmp"));
+  CHECK(std::filesystem::exists(folder / "reseau.ajpvk"));
+  // Un dossier absent n'est pas une erreur.
+  CHECK(vk::net::purge_stale_temporaries(dir.path() / "absent") == 0);
+}
+
+TEST_CASE("Backend : un artefact dont le programme a changé repasse la porte au chargement (A45-13)",
+          "[vk_backend][backend]") {
+  TempDir dir("porte");
+  Journal journal;
+  auto backend = make_logged_backend(journal, {.cache_dir = dir.path() / "cache"},
+                                     {.autotune = true, .tuner = {.warmup = 1, .passes = 1, .repeats = 1}});
+  const bool half = backend->profile().target.f16_storage;
+  const ModelSpec model =
+      write_model(dir.path(), "span_porte", span_model(half), half ? TensorType::F16 : TensorType::F32);
+  const Artifact artifact = build(*backend, model, shapes(12, 16));
+  // La porte se dit au journal quand elle passe, quand elle se replie ou quand elle ne peut pas être jouée.
+  const auto gates = [&] {
+    const std::string text = journal.text();
+    std::size_t count = 0;
+    for (const std::string_view mark :
+         {"porte de bout en bout", "porte jugée", "trop loin de la référence"}) {
+      for (std::size_t at = text.find(mark); at != std::string::npos; at = text.find(mark, at + 1)) ++count;
+    }
+    return count;
+  };
+  const std::size_t built = gates();
+  CHECK(built >= 1);
+  // Chargé tel qu'il a été construit : la porte ne rejoue pas.
+  (void)require_value(backend->load(artifact));
+  CHECK(gates() == built);
+  // Comme après une mise à jour qui change l'abaissement sans changer de version : le programme rangé
+  // n'est plus celui que l'abaissement refait.
+  const std::vector<std::byte> bytes = require_value(vk::net::read_file(artifact.path));
+  vk::net::ArtifactData changed = require_value(vk::net::deserialize(bytes));
+  changed.dispatches.front().groups[0] += 1;
+  require_ok(vk::net::write_file(artifact.path, vk::net::serialize(changed)));
+  (void)require_value(backend->load(artifact));
+  CHECK(gates() > built);
+  CHECK(journal.text().find("programme refait autrement") != std::string::npos);
+  (void)require_value(vk::net::verify_artifact(
+      require_value(vk::net::deserialize(require_value(vk::net::read_file(artifact.path)))),
+      backend->profile()));
 }
