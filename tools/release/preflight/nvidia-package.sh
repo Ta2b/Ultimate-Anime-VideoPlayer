@@ -8,7 +8,7 @@
 #
 # Entrées : le dépôt à l'étiquette (monté en lecture seule), l'étiquette, le dossier de sortie.
 # Variables : AJP_TRT_ROOT (défaut ~/ajp-trt-release : bin/trtexec construit en conteneur, lib/ des ressources du
-# constructeur), AJP_RELEASE_REPO (défaut Ta2b/ajp-releases), CUDA_DIR (défaut /opt/cuda), CCCL_DIR (/usr/include/cccl).
+# constructeur), AJP_RELEASE_REPO (défaut : celui de versions.env), CUDA_DIR (défaut /opt/cuda), CCCL_DIR (/usr/include/cccl).
 #
 # L'IMAGE EST RECONSTRUITE d'abord (comme run.sh) : une image plus ancienne que tools/deps/linux-from-source.sh embarque
 # un FFmpeg d'avant --disable-bzlib, et le contrôle de portabilité de package-linux.sh (libbz2.so.1.0 n'existe que sous
@@ -22,7 +22,7 @@ REPO="$(cd "$REPO" && pwd)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 TRT="${AJP_TRT_ROOT:-$HOME/ajp-trt-release}"
-RELEASE_REPO="${AJP_RELEASE_REPO:-Ta2b/ajp-releases}"
+RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
 CUDA="${CUDA_DIR:-/opt/cuda}"
 CCCL="${CCCL_DIR:-/usr/include/cccl}"
 IMAGE=ajp-preflight
@@ -30,6 +30,20 @@ STAGE=deps
 
 [ -x "$TRT/bin/trtexec" ] || { echo "$TRT/bin/trtexec absent (AJP_TRT_ROOT)" >&2; exit 1; }
 [ -d "$CUDA" ] || { echo "$CUDA absent (CUDA_DIR)" >&2; exit 1; }
+# Le paquet de ce poste et celui de trt-package.yml partent sous le même nom trt-<empreinte> (A28-10) : le
+# TensorRT et la série CUDA d'ici doivent être ceux de versions.env, que les [[vendor_file]] font tirer au client.
+. "$ROOT/tools/release/versions.env"
+header="$(find "$TRT" -maxdepth 3 -name NvInferVersion.h | head -1)"
+[ -n "$header" ] || { echo "NvInferVersion.h introuvable sous $TRT" >&2; exit 1; }
+IFS=. read -r want_major want_minor want_patch _ <<<"$TENSORRT_LIBS_VERSION"
+for part in "MAJOR $want_major" "MINOR $want_minor" "PATCH $want_patch"; do
+  read -r name value <<<"$part"
+  grep -Eq "#define TRT_${name}_ENTERPRISE +$value\b" "$header" ||
+    { echo "$header n'est pas TensorRT $TENSORRT_LIBS_VERSION (TRT_${name}_ENTERPRISE) : versions.env" >&2; exit 1; }
+done
+nvcc_series="$("$CUDA/bin/nvcc" --version | sed -n 's/.*release \([0-9]*\.[0-9]*\).*/\1/p')"
+[ "$nvcc_series" = "$CUDA_REDIST_SERIES" ] ||
+  { echo "nvcc de $CUDA en CUDA ${nvcc_series:-?}, versions.env demande $CUDA_REDIST_SERIES" >&2; exit 1; }
 # Une étiquette du lecteur : le dépôt doit être à son commit (le SHA-256 de l'archive en dépend). Une release « trt-<empreinte> »
 # (tools/release/trt-package.sh, AJP_ALLOW_UNTAGGED=1) n'est pas une étiquette git : le dépôt propre suffit.
 if [ -z "${AJP_ALLOW_UNTAGGED:-}" ]; then
@@ -45,8 +59,9 @@ mkdir -p "$CTX/tools/deps" "$CTX/tools/release"
 cp "$REPO/tools/release/preflight/Dockerfile" "$CTX/"
 cp "$REPO/tools/deps/linux-from-source.sh" "$CTX/tools/deps/"
 cp "$REPO/tools/release/versions.env" "$CTX/tools/release/"
-mkdir -p "$CTX/ports/libplacebo"
+mkdir -p "$CTX/ports/libplacebo" "$CTX/ports/libass"
 cp "$REPO/ports/libplacebo/0001-ajp-present-timing.patch" "$CTX/ports/libplacebo/"
+cp "$REPO/ports/libass/rendu-sur-plusieurs-fils.patch" "$CTX/ports/libass/"
 docker build -q -t "$IMAGE:$STAGE" --target "$STAGE" "$CTX" >/dev/null
 echo "image $IMAGE:$STAGE à jour"
 

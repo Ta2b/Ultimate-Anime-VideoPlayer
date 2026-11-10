@@ -19,6 +19,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -30,6 +31,7 @@
 
 #include "core/log.h"
 #include "core/thread.h"
+#include "core/utf8_path.h"
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
@@ -46,13 +48,13 @@ bool message_complete(std::string_view message) {
 
 // Les fichiers reçus vont dans la file de SDL comme un glisser-déposer ; SDL garde le pointeur jusqu'à la
 // lecture de l'événement, les textes restent donc ici (quelques chemins par session).
-void push_files(const std::vector<std::string>& files, const std::stop_token& stop) {
+bool push_files(const std::vector<std::string>& files) {
   static std::mutex mutex;
   static std::deque<std::string> held;
-  while (!stop.stop_requested() && SDL_WasInit(SDL_INIT_EVENTS) == 0) std::this_thread::sleep_for(kSlice);
   const std::scoped_lock lock(mutex);
   // Sans fichier (l'icône relancée), un dépôt vide : la fenêtre passe devant, rien ne s'ouvre.
   const std::vector<std::string> dropped = files.empty() ? std::vector<std::string>{std::string()} : files;
+  bool all = true;
   for (const std::string& file : dropped) {
     held.push_back(file);
     SDL_Event drop{};
@@ -60,9 +62,29 @@ void push_files(const std::vector<std::string>& files, const std::stop_token& st
     drop.drop.source = kForwardedDrop.data();
     drop.drop.data = held.back().c_str();
     if (SDL_PushEvent(&drop)) continue;
+    all = false;
     const auto log = log_channel("app");
     log->warn("instance : fichier reçu perdu ({})", SDL_GetError());
   }
+  return all;
+}
+
+// Remet les fichiers à SDL puis répond au lancement qui les envoie (A19-02) : « ok » seulement une fois
+// les fichiers dans la file, sinon il ouvre lui-même sa fenêtre. Un lecteur qui démarre encore (SDL pas
+// prêt avant la fin de l'attente de l'autre côté) répond tout de suite et remet les fichiers ensuite.
+template <class Reply>
+void hand_over(const std::vector<std::string>& files, const std::stop_token& stop, Reply reply) {
+  const auto until = std::chrono::steady_clock::now() + kAckWait / 2;
+  while (!stop.stop_requested() && SDL_WasInit(SDL_INIT_EVENTS) == 0 &&
+         std::chrono::steady_clock::now() < until)
+    std::this_thread::sleep_for(kSlice);
+  if (SDL_WasInit(SDL_INIT_EVENTS) != 0) {
+    if (push_files(files)) reply();
+    return;
+  }
+  reply();
+  while (!stop.stop_requested() && SDL_WasInit(SDL_INIT_EVENTS) == 0) std::this_thread::sleep_for(kSlice);
+  if (!stop.stop_requested()) push_files(files);
 }
 
 }  // namespace
@@ -145,10 +167,20 @@ class InstanceListener {
  private:
   void serve(const std::stop_token& stop) {
     while (!stop.stop_requested()) {
-      if (ConnectNamedPipe(pipe_, nullptr) == 0 && GetLastError() != ERROR_PIPE_CONNECTED) {
-        std::this_thread::sleep_for(kSlice);
-        continue;
+      if (ConnectNamedPipe(pipe_, nullptr) == 0) {
+        const DWORD error = GetLastError();
+        if (error != ERROR_PIPE_CONNECTED) {
+          // ERROR_NO_DATA (un client venu puis parti) et toute autre erreur : le canal se déconnecte avant
+          // l'essai suivant, sinon chaque ConnectNamedPipe rend la même erreur et l'écoute est morte
+          // (A19-07).
+          DisconnectNamedPipe(pipe_);
+          if (error != last_error_) log_channel("app")->info("instance : ConnectNamedPipe, erreur {}", error);
+          last_error_ = error;
+          std::this_thread::sleep_for(kSlice);
+          continue;
+        }
       }
+      last_error_ = 0;
       if (stop.stop_requested()) break;
       std::string message;
       std::array<char, 4096> chunk{};
@@ -157,17 +189,22 @@ class InstanceListener {
              ReadFile(pipe_, chunk.data(), static_cast<DWORD>(chunk.size()), &read, nullptr) != 0 && read > 0)
         message.append(chunk.data(), read);
       const auto files = instance_message_files(message);
-      DWORD written = 0;
-      WriteFile(pipe_, kAck.data(), static_cast<DWORD>(kAck.size()), &written, nullptr);
-      FlushFileBuffers(pipe_);
-      DisconnectNamedPipe(pipe_);
       const auto log = log_channel("app");
       log->info("instance : {} fichier(s) reçu(s) d'un autre lancement", files.size());
-      push_files(files, stop);
+      bool replied = false;
+      hand_over(files, stop, [&] {
+        DWORD written = 0;
+        WriteFile(pipe_, kAck.data(), static_cast<DWORD>(kAck.size()), &written, nullptr);
+        FlushFileBuffers(pipe_);
+        DisconnectNamedPipe(pipe_);
+        replied = true;
+      });
+      if (!replied) DisconnectNamedPipe(pipe_);
     }
   }
 
   HANDLE pipe_;
+  DWORD last_error_ = 0;  // la dernière erreur de ConnectNamedPipe journalisée
   std::wstring name_;
   std::jthread thread_;
 };
@@ -281,8 +318,14 @@ Fd unix_socket() {
 std::optional<sockaddr_un> socket_address(const std::filesystem::path& path) {
   sockaddr_un address{};
   address.sun_family = AF_UNIX;
-  const std::string text = path.string();
-  if (text.size() >= sizeof(address.sun_path)) return std::nullopt;
+  const std::string text = core::to_utf8(path);
+  if (text.size() >= sizeof(address.sun_path)) {
+    // A19-10 : le lecteur marche sans instance unique, mais le journal dit pourquoi.
+    const auto log = log_channel("app");
+    log->warn("instance : chemin du socket trop long ({} octets sur {}), instance unique éteinte : {}",
+              text.size(), sizeof(address.sun_path) - 1, text);
+    return std::nullopt;
+  }
   std::memcpy(static_cast<char*>(address.sun_path), text.c_str(), text.size() + 1);
   return address;
 }
@@ -345,10 +388,9 @@ class InstanceListener {
         message.append(chunk.data(), static_cast<std::size_t>(got));
       }
       const auto files = instance_message_files(message);
-      write_all(client.get(), kAck);
       const auto log = log_channel("app");
       log->info("instance : {} fichier(s) reçu(s) d'un autre lancement", files.size());
-      push_files(files, stop);
+      hand_over(files, stop, [&] { write_all(client.get(), kAck); });
     }
   }
 
@@ -384,6 +426,11 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
     const std::filesystem::path path = channel_dir / "instance.sock";
     const auto address = socket_address(path);
     if (!address) return {};
+    // Deux lancements simultanés (A19-13) : sans verrou, le second peut trouver le socket du premier lié mais
+    // pas encore à l'écoute (ECONNREFUSED), le prendre pour orphelin et le retirer. Le verrou tient de la
+    // connexion à l'écoute ; il tombe avec le descripteur, même si le lecteur est tué.
+    const Fd lock(::open((channel_dir / "instance.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600));
+    if (lock) ::flock(lock.get(), LOCK_EX);
     // Deux tours : un socket resté d'un lecteur arrêté net se retire, et un lancement simultané qui vient
     // de le prendre se trouve au second.
     for (int attempt = 0; attempt < 2; ++attempt) {

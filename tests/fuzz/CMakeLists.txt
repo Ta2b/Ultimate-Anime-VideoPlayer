@@ -15,7 +15,7 @@ option(AJP_FUZZ_LIBFUZZER "Cibles libFuzzer en plus du rejeu (Clang : -fsanitize
 
 set(ajp_fuzz_targets settings play_settings edid build_log resume osd_script)
 # Les lecteurs de fichiers et de flux (P1.29) : une source pour toutes, fuzz_parsers.cpp.
-set(ajp_fuzz_parser_targets onnx srt cube inflate manifest options)
+set(ajp_fuzz_parser_targets onnx srt cube inflate manifest options engine_index update_state)
 set(ajp_fuzz_sources)
 foreach(name IN LISTS ajp_fuzz_targets)
   list(APPEND ajp_fuzz_sources fuzz_${name}.cpp)
@@ -41,7 +41,7 @@ if(AJP_FUZZ_LIBFUZZER)
     endif()
     target_link_libraries(ajp_fuzz_${name} PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::render ajp::subs)
     target_compile_definitions(ajp_fuzz_${name} PRIVATE AJP_FUZZ_TARGET=${name})
-    target_compile_options(ajp_fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_compile_options(ajp_fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
     target_link_options(ajp_fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined)
     ajp_set_warnings(ajp_fuzz_${name})
   endforeach()

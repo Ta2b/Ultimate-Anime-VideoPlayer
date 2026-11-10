@@ -123,6 +123,25 @@ TEST_CASE("produce_once : un échec ne publie rien et ne laisse rien", "[prepare
   CHECK(test::stage_count(dir.path()) == 0);
 }
 
+TEST_CASE("produce_once : disque plein en pleine écriture, rien de publié ni de laissé (A28-22)",
+          "[prepare][cache]") {
+  const test::TempDir dir;
+  const CacheEntry entry{.destination = dir / "moteurs/a.engine"};
+  // Le constructeur écrit un moteur tronqué puis dit que le disque est plein.
+  const auto full = [](const test::fs::path& output) -> std::expected<void, ajp::Refusal> {
+    test::write_file(output, "moteur tron");
+    return std::unexpected(ajp::Refusal{RefusalCode::CacheIo, "No space left on device"});
+  };
+  CHECK(test::refusal(produce_once(entry, full)) == RefusalCode::CacheIo);
+  CHECK_FALSE(test::fs::exists(entry.destination));
+  CHECK(test::stage_count(entry.destination.parent_path()) == 0);
+  // La place revenue, la production suivante publie le moteur entier.
+  CHECK(produce_once(entry, [](const test::fs::path& output) {
+          return write_output(output, "moteur");
+        }).value() == Production::Produced);
+  CHECK(test::read_file(entry.destination) == "moteur");
+}
+
 TEST_CASE("produce_once : huit threads, une seule production", "[prepare][cache]") {
   const test::TempDir dir;
   const CacheEntry entry{.destination = dir / "a.engine"};

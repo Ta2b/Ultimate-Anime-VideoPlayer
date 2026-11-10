@@ -40,8 +40,9 @@ mkdir -p "$CTX/tools/deps" "$CTX/tools/release"
 cp "$HERE/Dockerfile" "$CTX/"
 cp "$ROOT/tools/deps/linux-from-source.sh" "$CTX/tools/deps/"
 cp "$ROOT/tools/release/versions.env" "$CTX/tools/release/"
-mkdir -p "$CTX/ports/libplacebo"
+mkdir -p "$CTX/ports/libplacebo" "$CTX/ports/libass"
 cp "$ROOT/ports/libplacebo/0001-ajp-present-timing.patch" "$CTX/ports/libplacebo/"
+cp "$ROOT/ports/libass/rendu-sur-plusieurs-fils.patch" "$CTX/ports/libass/"
 build_image() {  # étage
   check_disk
   docker build -q -t "$IMAGE:$1" --target "$1" "$CTX" >/dev/null

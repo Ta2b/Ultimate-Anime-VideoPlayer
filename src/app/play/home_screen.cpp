@@ -32,6 +32,7 @@
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
+#include "app/play/home_idle.h"
 #include "app/play/host_choices.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
@@ -59,7 +60,6 @@ struct Overloaded : F... {
 };
 
 // L'accueil suit la souris : ~60 images par seconde.
-constexpr std::int32_t kHomeFrameMs = 16;
 
 constexpr std::size_t usage(core::Usage u) {
   return static_cast<std::size_t>(u);
@@ -190,6 +190,31 @@ PlaySettings home_settings(const HomeScreen& h, const PlaySettings& base) {
   return settings_for(base, h.options);
 }
 
+// Quelque chose avance sans événement et se regarde : l'accueil garde son rythme plein (home_idle.h).
+bool home_busy(const HomeScreen& h, const HomeView& view) {
+  const bool scripted = !h.options.keys.empty() || h.options.snapshot.has_value();
+  return scripted || view.dialog_open || h.ui.controls().toast(host_now_us()).has_value();
+}
+
+// L'écran des moteurs depuis l'accueil, ou l'assistant en entier pour « Relancer l'assistant » (A24-24 :
+// avant, l'accueil n'ouvrait que les moteurs). L'assistant écrit play.toml : st.saved le relit, sans quoi
+// l'accueil réécrirait par-dessus ses réglages d'avant. Rend faux quand la fenêtre se ferme.
+bool home_engines(const HomeScreen& h, HomeState& st, bool wizard) {
+  const EngineScreen screen{.screen = h.screen,
+                            .ui = h.ui,
+                            .options = h.options,
+                            .paths = h.paths,
+                            .catalog = h.catalog,
+                            .engines_path = paths::engine_settings(h.settings_path.parent_path()),
+                            .restart_wizard = wizard};
+  auto shown = run_engine_screen(screen, st.engines, true, st.next_key, st.snapshot);
+  if (!shown) log_channel("app")->warn("écran des moteurs : {}", shown.error().detail);
+  if (wizard) {
+    if (auto reread = load_settings(h.settings_path)) st.saved = std::move(*reread);
+  }
+  return !shown || *shown;
+}
+
 }  // namespace
 
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
@@ -231,9 +256,9 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   const auto log = log_channel("app");
   log->info("accueil : Ouvrir une vidéo, ou un fichier glissé sur la fenêtre");
   SDL_SetWindowTitle(h.screen.window(), "ajp");
-  const PlaySettings from_file = st.saved;
+  PlaySettings from_file = st.saved;
   PlaySettings running = home_settings(h, st.saved);
-  const PlaySettings started = running;
+  PlaySettings started = running;
   const auto refresh = [&] { h.ui.set_settings(running, home_choices(h, st, running)); };
   refresh();
   h.ui.open_settings();
@@ -259,12 +284,14 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   std::vector<Input> actions;
   std::optional<std::filesystem::path> chosen;
   bool quit = false;
+  std::int64_t last_event = opened;  // A24-17 : au repos, l'accueil ne redessine plus 60 fois par seconde
   while (!chosen && !quit) {
     for (; st.next_key < h.options.keys.size() && host_now_us() - opened >= h.options.keys[st.next_key].first;
          ++st.next_key)
       press(h.options.keys[st.next_key].second, h.screen.window());
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      last_event = host_now_us();
       if (auto dropped = dropped_file(event)) {
         if (!chosen) chosen = std::move(*dropped);
         continue;
@@ -304,20 +331,12 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                               log->info("moteur des réseaux : {}", engine_label(use.id));
                               refresh();
                             },
-                            [&](const OpenEngineScreen&) {
-                              const EngineScreen screen{
-                                  .screen = h.screen,
-                                  .ui = h.ui,
-                                  .options = h.options,
-                                  .paths = h.paths,
-                                  .catalog = h.catalog,
-                                  .engines_path = paths::engine_settings(h.settings_path.parent_path())};
-                              auto shown =
-                                  run_engine_screen(screen, st.engines, true, st.next_key, st.snapshot);
-                              if (!shown) {
-                                log->warn("écran des moteurs : {}", shown.error().detail);
-                              } else if (!*shown) {
-                                quit = true;
+                            [&](const OpenEngineScreen& open) {
+                              if (open.wizard) save();  // l'assistant part des réglages à jour
+                              quit = !home_engines(h, st, open.wizard);
+                              if (open.wizard) {  // et l'accueil repart de ce qu'il a écrit
+                                from_file = st.saved;
+                                started = running = home_settings(h, st.saved);
                               }
                               refresh();
                             },
@@ -338,7 +357,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     if (std::exchange(view.show_settings, false)) h.ui.open_settings();
     if (auto shown = h.screen.show(ShowRequest{.ui = draw}); !shown)
       return std::unexpected(std::move(shown.error()));
-    (void)SDL_WaitEventTimeout(nullptr, kHomeFrameMs);
+    (void)SDL_WaitEventTimeout(nullptr, home_wait_ms(host_now_us(), last_event, home_busy(h, view)));
   }
   if (dirty) save();
   if (!chosen) return std::nullopt;

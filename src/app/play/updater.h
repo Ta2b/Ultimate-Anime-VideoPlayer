@@ -1,17 +1,10 @@
-// La mise à jour automatique signée du lecteur (docs/ux-parametres.md, 4.5).
+// La notification des nouvelles versions du lecteur : une simple notification, l'utilisateur installe
+// lui-même (chantier C01).
 //
-//   1. Vérification : manifest.toml et manifest.toml.sig de la release (https, curl du système), la signature
-//      Ed25519 vérifiée avec la clé publique compilée dans le lecteur. Seule donnée envoyée : la requête
-//      HTTPS.
-//   2. Préparation : l'archive du système, téléchargée à côté, sa taille et son SHA-256 comparés au
-//   manifeste.
-//   3. Application : au prochain lancement, jamais en pleine lecture ; l'archive est vérifiée de nouveau
-//      (taille, SHA-256) et doit contenir le lecteur, puis l'ancienne version est copiée dans
-//      <données>/updates/previous pour le retour arrière. Une mise à jour ratée laisse l'ancienne en place.
-//   4. Garde : la nouvelle version n'est confirmée qu'après une lecture menée à son terme ; après
-//      kMaxUnconfirmedLaunches lancements qui ne se sont pas refermés (elle plante ; une fermeture voulue ne
-//      compte pas, launch_open), l'ancienne revient d'elle-même, et la version est mise de côté jusqu'à ce
-//      qu'on la propose de nouveau (Paramètres > Général > Application).
+//   Vérification : manifest.toml et manifest.toml.sig de la dernière release (https, curl du système), la
+//   signature Ed25519 vérifiée avec les clés publiques compilées dans le lecteur. Seule donnée envoyée : la
+//   requête HTTPS. Une version plus récente se signale (notice et page Général > Application) avec le lien de
+//   sa release ; le lecteur ne télécharge ni n'installe rien lui-même.
 // Sans clé de signature compilée, rien n'est cru : la vérification dit pourquoi et ne fait rien d'autre.
 #pragma once
 
@@ -37,26 +30,20 @@ std::string_view release_repo();
 std::string_view update_public_key();
 std::string_view installed_version();
 
-// Où chercher le manifeste : « stable » → la dernière release, « preview » → la release de tag « preview ».
-std::string manifest_url(std::string_view repo, std::string_view channel);
+// Où chercher le manifeste : celui de la dernière release (« latest »), seul canal publié.
+std::string manifest_url(std::string_view repo);
+// La page des releases, où l'utilisateur prend la nouvelle version.
+std::string releases_page(std::string_view repo);
 
-// Ce que le lecteur retient entre deux lancements (<données>/update.toml).
+// Ce que le lecteur retient entre deux lancements (<données>/update.toml). Les champs des versions qui
+// s'appliquaient elles-mêmes (staged_*, previous_version, unconfirmed_*…) sont ignorés à la lecture.
 struct UpdateState {
-  std::int64_t last_check_unix = 0;
-  std::string latest_version;  // la plus récente vue et plus récente que l'installée ; vide : à jour
+  std::int64_t last_check_unix = 0;    // la dernière vérification qui a eu une réponse du serveur
+  std::int64_t last_attempt_unix = 0;  // la dernière tentative, réponse ou non (nouvel essai après une panne)
+  std::string latest_version;          // la plus récente vue et plus récente que l'installée ; vide : à jour
   std::string notes_url;
-  std::string staged_version;    // préparée, à appliquer au prochain lancement
-  std::string staged_file;       // son archive, sous <données>/updates
-  std::string previous_version;  // celle que le retour arrière rend
   std::string last_error;
-  std::string staged_sha256;  // de l'archive préparée, revérifiée avant l'application
-  std::uint64_t staged_size = 0;
-  std::string unconfirmed_version;  // appliquée, pas encore confirmée par une lecture menée à son terme
-  int unconfirmed_launches = 0;     // ses lancements qui ne sont pas allés au bout (plantage), depuis
-  std::string skipped_version;  // retirée par la garde : signalée, préparée de nouveau seulement sur demande
-  bool launch_open = false;
-  std::vector<std::string> revoked_keys;  // clés publiques qu'un manifeste vérifié a révoquées     // lancée
-                                          // et pas encore refermée : posé au lancement, retiré à la sortie
+  std::vector<std::string> revoked_keys;  // clés publiques qu'un manifeste vérifié a révoquées
   friend bool operator==(const UpdateState&, const UpdateState&) = default;
 };
 
@@ -66,21 +53,18 @@ std::expected<UpdateState, Refusal> parse_update_state(std::string_view toml_tex
 UpdateState load_update_state(const std::filesystem::path& file);
 std::expected<void, Refusal> save_update_state(const std::filesystem::path& file, const UpdateState& state);
 
+// Après une tentative sans réponse du serveur (pas de réseau), la suivante attend au moins ce délai, pas
+// toute la période choisie (A26-07).
+inline constexpr std::int64_t kUpdateRetrySeconds = 3600;
+
 // Faut-il vérifier maintenant ? frequency : « launch » (à chaque lancement), « daily », « weekly » ; mode «
 // never » : jamais.
 bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix);
 
-struct UpdatePaths {
-  std::filesystem::path data;     // <données>
-  std::filesystem::path install;  // le dossier du lecteur (celui de l'exécutable)
-  std::filesystem::path executable;
-};
-
 struct CheckResult {
-  std::optional<core::UpdateManifest>
-      newer;            // plus récent que le lecteur, de ce canal, avec une archive pour ce système
-  std::string message;  // « à jour », « 0.7.0 disponible »…
-  std::vector<std::string> revoked_keys;  // révoquées par le manifeste vérifié, à retenir
+  std::optional<core::UpdateManifest> newer;  // plus récent que le lecteur
+  std::string message;                        // « à jour », « 0.7.0 disponible »…
+  std::vector<std::string> revoked_keys;      // révoquées par le manifeste vérifié, à retenir
 };
 
 // Le statut HTTP que curl écrit par --write-out kCurlStatusFormat (« ajp-http 404 »), jamais lu dans ses
@@ -92,9 +76,9 @@ std::optional<int> curl_status_line(std::string_view line);
 // Internet »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
 Refusal curl_failure(int code, int http_status);
 
-// Télécharge et vérifie le manifeste. Refus : clé absente, réseau, signature fausse, manifeste illisible. Un
-// canal sans manifeste publié (HTTP 404) n'est pas un refus : le lecteur est à jour.
-std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop);
+// Télécharge et vérifie le manifeste. Refus : clé absente, réseau, manifeste absent (la dernière release n'en
+// a pas : jamais lu comme « à jour », SEC-05), signature fausse, manifeste illisible ou expiré.
+std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop);
 
 // Un téléchargement : l'adresse dans le fichier, en max_seconds au plus. Celui du lecteur est curl ; un test
 // donne le sien.
@@ -106,56 +90,16 @@ std::expected<void, Refusal> fetch_https(std::string_view url, const std::filesy
 // Les clés publiques que le lecteur croit : l'active, puis celle de secours si elle est compilée, moins les
 // révoquées.
 std::vector<std::string> update_public_keys(const std::vector<std::string>& revoked);
-// La même vérification, avec ce téléchargement et ces clés publiques (hexadécimal) : le manifeste doit être
-// signé par l'une d'elles, et ne vaut plus si sa propre clé y est révoquée.
-std::expected<CheckResult, Refusal> check_for_update(std::string_view channel, const std::stop_token& stop,
-                                                     const UpdateFetch& fetch,
-                                                     const std::vector<std::string>& keys);
+// La même vérification, avec ce téléchargement, ces clés publiques (hexadécimal) et cette version installée :
+// le manifeste doit être signé par l'une d'elles, et ne vaut plus si sa propre clé y est révoquée.
+std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop, const UpdateFetch& fetch,
+                                                     const std::vector<std::string>& keys,
+                                                     std::string_view installed);
 
-// Télécharge l'archive du manifeste sous <données>/updates, vérifie taille et SHA-256 ; rend son chemin.
-std::expected<std::filesystem::path, Refusal> download_update(const UpdatePaths& paths,
-                                                              const core::UpdateManifest& manifest,
-                                                              const std::stop_token& stop);
-std::expected<std::filesystem::path, Refusal> download_update(const UpdatePaths& paths,
-                                                              const core::UpdateManifest& manifest,
-                                                              const std::stop_token& stop,
-                                                              const UpdateFetch& fetch);
-
-// Applique l'archive préparée : copie l'installation actuelle dans previous, extrait l'archive sur
-// l'installation. Rend le message ; en cas d'échec l'installation d'avant est remise. L'état est mis à jour
-// (pas écrit).
-std::expected<std::string, Refusal> apply_staged_update(const UpdatePaths& paths, UpdateState& state);
-
-// Remet la version gardée dans previous. Même contrat.
-std::expected<std::string, Refusal> roll_back_update(const UpdatePaths& paths, UpdateState& state);
-
-// Lancements d'une version appliquée sans lecture menée à son terme, au-delà desquels elle est retirée.
-inline constexpr int kMaxUnconfirmedLaunches = 3;
-
-// Au lancement (étape 4) : compte un lancement de la version appliquée pas encore confirmée ; au-delà de
-// kMaxUnconfirmedLaunches, remet l'ancienne (rend son message : le lecteur se relance). Retire aussi les
-// « .old » qu'une application a laissés (Windows). L'état est mis à jour (pas écrit).
-std::optional<std::string> guard_new_version(const UpdatePaths& paths, UpdateState& state,
-                                             std::string_view running_version);
-// Une lecture menée à son terme : la version en cours est bonne. Vrai si l'état a changé.
-bool confirm_version(UpdateState& state, std::string_view running_version);
-// À toute sortie du lecteur qui n'est pas un plantage (fermeture voulue, erreur dite) : le lancement est
-// refermé et ne compte pas pour la garde. Rend true si l'état a changé.
-bool close_launch(UpdateState& state);
-
-// Pourquoi ce lecteur ne se met pas à jour lui-même : « mis à jour par votre gestionnaire de paquets »
-// (Flatpak, dossier en lecture seule). Vide : il le peut.
-std::string update_managed_reason(const UpdatePaths& paths);
-
-// La vérification en arrière-plan (updater.h : étapes 1 et 2) : met à jour state (dernière vérification,
-// version vue, archive préparée si mode == « auto »). Rend le message. À lancer hors de la lecture.
-std::expected<std::string, Refusal> run_update_check(const UpdatePaths& paths, UpdateMode mode,
-                                                     std::string_view channel, UpdateState& state,
-                                                     const std::stop_token& stop);
-
-// Le rythme de l'extraction : une archive tar.gz (ou zip sous Windows, par tar.exe) dont la racine est un
-// dossier.
-std::expected<void, Refusal> extract_archive(const std::filesystem::path& archive,
-                                             const std::filesystem::path& into);
+// La vérification en arrière-plan : met à jour state (tentative, dernière réponse, version vue, clés
+// révoquées). Rend le message. À lancer hors de la lecture.
+std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop);
+std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop,
+                                                     const UpdateFetch& fetch, std::int64_t now_unix);
 
 }  // namespace ajp::app::play

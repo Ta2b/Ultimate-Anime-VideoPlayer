@@ -76,14 +76,38 @@ std::optional<std::string> windows_proxy() {
 
 }  // namespace
 
-std::vector<std::string> curl_download_args() {
-  std::vector<std::string> args{
-      "--fail",        "--location", "--retry",      "5",  "--retry-delay",     "3", "--retry-all-errors",
-      "--speed-limit", "1024",       "--speed-time", "60", "--connect-timeout", "30"};
+std::vector<std::string> curl_system_args() {
+  std::vector<std::string> args;
+#ifdef _WIN32
+  args.emplace_back("--ssl-revoke-best-effort");
+#endif
   if (const auto proxy = windows_proxy()) {
     args.emplace_back("--proxy");
     args.push_back(*proxy);
   }
+  return args;
+}
+
+std::vector<std::string> curl_download_args() {
+  std::vector<std::string> args{"-q",
+                                "--proto",
+                                "=https,file",
+                                "--proto-redir",
+                                "=https",
+                                "--fail",
+                                "--location",
+                                "--retry",
+                                "5",
+                                "--retry-delay",
+                                "3",
+                                "--retry-all-errors",
+                                "--speed-limit",
+                                "1024",
+                                "--speed-time",
+                                "60",
+                                "--connect-timeout",
+                                "30"};
+  for (std::string& arg : curl_system_args()) args.push_back(std::move(arg));
   return args;
 }
 

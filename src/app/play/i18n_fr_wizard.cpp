@@ -74,7 +74,6 @@ constexpr std::array kWizardTexts{
     Entry{"Compatibility", "Compatibilité"},
     Entry{"Display {}p · {:.0f} Hz", "Écran {}p · {:.0f} Hz"},
     Entry{"Does not suit this GPU", "Ne convient pas à ce GPU"},
-    Entry{"Downloaded, installed at next launch.", "Téléchargée, installée au prochain lancement."},
     Entry{"Engine", "Moteur"},
     Entry{"Estimated level: {}", "Niveau estimé : {}"},
     Entry{"Everything can be changed later in Settings (p). To redo this: ajp --first-run.",
@@ -144,7 +143,6 @@ constexpr std::array kWizardTexts{
           "Vulkan sert tous les GPU. Les moteurs cochés s'installent après « {} », vérifiés par empreinte ; "
           "Vulkan prend le relais si l'un échoue."},
     Entry{"Welcome", "Bienvenue"},
-    Entry{"automatic", "automatiques"},
     Entry{"bundled with the player", "livré avec le lecteur"},
     Entry{"cannot be installed in this version yet", "pas encore installable dans cette version"},
     Entry{"installed", "installé"},
