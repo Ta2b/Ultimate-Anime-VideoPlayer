@@ -371,6 +371,19 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   panel::tip(
       i18n::tr("Splits DistilDRBA into small TensorRT engines: more than twice as fast. TensorRT only, "
                "Balanced precision. Reloads playback; built on first use for this size."));
+  // Le cran de précision du mouvement (A23-06) : hors Équilibre, la chaîne fusionnée ne tourne pas.
+  const TierSupport& motion_tiers =
+      d.motion_engine == MotionEngine::DistilDrba ? choices.drba_tiers : choices.rife_tiers;
+  if (d.motion_engine != MotionEngine::Apple &&
+      (motion_tiers.performance || motion_tiers.quality || d.motion_precision != PrecisionTier::Balanced)) {
+    TierSupport offered = motion_tiers;
+    offered.performance = offered.performance || d.motion_precision == PrecisionTier::Performance;
+    offered.quality = offered.quality || d.motion_precision == PrecisionTier::Quality;
+    precision_combo(i18n::tr("Interpolation precision"), d.motion_precision, offered);
+    panel::tip(i18n::tr("Balanced is FP16; Quality is FP32. Reloads playback."));
+    if (d.motion_precision != PrecisionTier::Balanced && (d.rife_fused || d.drba_fused))
+      note(i18n::tr("Fused engines only run at Balanced precision: the whole network is used instead."));
+  }
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   if (ImGui::BeginCombo(i18n::tr("Warp and SPAN"), std::string(label(d.span_order)).c_str())) {
     for (int i = 0; i < kSpanOrderCount; ++i) {

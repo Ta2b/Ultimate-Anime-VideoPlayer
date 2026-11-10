@@ -102,9 +102,13 @@ constexpr std::array kSettingsPages{
           "calibration."},
     Entry{"All settings", "Tous les réglages"},
     Entry{"Puts every setting back to its default value: chain, HDR, grade and colors, sound, playback. The "
-          "engines folder is kept.",
+          "engines folder and the language are kept.",
           "Remet tous les réglages à leur valeur par défaut : chaîne, HDR, grade et couleurs, son, lecture. "
-          "Le dossier des moteurs est conservé."},
+          "Le dossier des moteurs et la langue sont conservés."},
+    Entry{"Every setting goes back to its default. This cannot be undone.",
+          "Tous les réglages reviennent à leur valeur par défaut. Impossible à annuler."},
+    Entry{"Yes, reset everything", "Oui, tout réinitialiser"},
+    Entry{"Keep my settings", "Garder mes réglages"},
     Entry{"Reset all settings", "Tout réinitialiser"},
     Entry{"Undo", "Annuler"},
     Entry{"Redo", "Rétablir"},

@@ -297,12 +297,26 @@ bool reset_page(PlaySettings& draft) {
   section(i18n::tr("All settings"));
   note(
       i18n::tr("Puts every setting back to its default value: chain, HDR, grade and colors, sound, playback. "
-               "The engines folder is kept."));
-  if (ImGui::Button(i18n::tr("Reset all settings"))) {
-    PlaySettings fresh;
-    fresh.engines_dir = draft.engines_dir;
-    draft = fresh;
-    reset_all = true;
+               "The engines folder and the language are kept."));
+  // Une confirmation avant de tout perdre (A23-05) : le premier clic demande, le second réinitialise.
+  ImGuiStorage* storage = ImGui::GetStateStorage();
+  const ImGuiID asking_id = ImGui::GetID("reset-all-asking");
+  if (!storage->GetBool(asking_id, false)) {
+    if (ImGui::Button(i18n::tr("Reset all settings"))) storage->SetBool(asking_id, true);
+  } else {
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    panel::wrapped(i18n::tr("Every setting goes back to its default. This cannot be undone."));
+    ImGui::PopStyleColor();
+    if (ImGui::Button(i18n::tr("Yes, reset everything"))) {
+      PlaySettings fresh;
+      fresh.engines_dir = draft.engines_dir;
+      fresh.language = draft.language;
+      draft = fresh;
+      reset_all = true;
+      storage->SetBool(asking_id, false);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(i18n::tr("Keep my settings"))) storage->SetBool(asking_id, false);
   }
   return reset_all;
 }
