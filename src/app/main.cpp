@@ -295,6 +295,10 @@ int run_player(int argc, char** argv) {
   // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
   ajp::set_thread_role(ajp::ThreadRole::Playback);
 #ifdef _WIN32
+  // Les DLL qu'une bibliothèque chargée demande par son seul nom (TensorRT, ses ressources, NVRTC) ne se
+  // cherchent plus dans le PATH ni le dossier courant (A20-07) : dossier du lecteur, System32, et les
+  // dossiers que core/dynamic_library.cpp ajoute pour chaque bibliothèque ouverte.
+  SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   // Minuteur à 1 ms : les attentes courtes (vidange de l'export, démarrage) ne s'arrondissent pas
   // aux 15,6 ms par défaut de Windows. La cadence de lecture suit, elle, le swapchain.
   timeBeginPeriod(1);

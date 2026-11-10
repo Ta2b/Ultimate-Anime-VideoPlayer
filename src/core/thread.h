@@ -103,6 +103,10 @@ std::expected<std::jthread, Refusal> start_thread(std::string_view name, ThreadR
 // std::async(std::launch::async, fn) sans exception (P2.3) : l'exception du corps devient un refus
 // ThreadFailed, un thread refusé par le système un futur déjà prêt sur ThreadUnavailable. Nul seulement
 // sans mémoire pour ce futur.
+// Deux choses à savoir (A20-05) : la destruction du dernier futur ATTEND la fin de la tâche (règle de
+// std::async), donc une tâche longue reçoit un arrêt avant que son propriétaire ne la lâche ; et sous MSVC la
+// tâche tourne sur le pool de Windows, sur un thread réutilisé : elle ne pose ni rôle (set_thread_role) ni
+// thread_local qui lui survivrait. Pour un travail long ou de fond, start_thread.
 template <class T, class Fn>
 std::shared_ptr<std::future<std::expected<T, Refusal>>> start_task(std::string_view name, Fn fn) noexcept {
   using Result = std::expected<T, Refusal>;
