@@ -25,8 +25,13 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
   (4.22 lite en 128×64 sur lavapipe : 74,6 dB).
   Les tampons intermédiaires (≈ 120 Mo à 768×1280) suivent les activations dans la zone partagée de la voie.
 - Deux sorties : l'image (RIFE image) ou le flot et le masque (variante mouvement, le chemin par défaut du lecteur).
-- Entrée par pointeurs (étape 5.2, backend TensorRT) : les noyaux CUDA calculent le maillage (plans 7 à 10) au lieu de
-  le lire, aux mêmes expressions et au même arrondi que `rife_input`, et lisent l'instant à l'élément 0 du plan 6.
+- Grille des warps (A03-20) : la colle, CUDA comme Vulkan, ne lit plus le maillage FP16 des plans 7 à 10. Elle prend la
+  position en pixels `x + flot` en FP32 (`pixel_tap`), ce que vaut la grille normalisée du graphe une fois ramenée en
+  pixels, sans l'arrondi FP16 de la base (jusqu'à 0,234 pixel à 1920 de large). Mesuré sur le graphe 4.22 lite en ONNX
+  Runtime, la grille seule changée : un plan fixe sort à 78 à 86 dB de sa source au lieu de 51 à 60, un panoramique de
+  6 pixels gagne 2 à 5 dB. Le RIFE entier v1 lit toujours ses plans 7 à 10 : seul le format v2 (grille calculée dans le
+  graphe, en FP32) le corrige.
+- Entrée par pointeurs (étape 5.2, backend TensorRT) : les noyaux CUDA lisent l'instant à l'élément 0 du plan 6.
   Quand le dernier moteur à lire l'entrée est la chaîne fusionnée, `rife_time` n'écrit plus qu'un demi-flottant au lieu
   d'un plan entier ; un moteur TensorRT entier ou DistilDRBA fusionné qui lit la même adresse ramène l'écriture du plan
   entier. Les plans 0 à 5 restent copiés (l'encodeur les veut remplis au multiple de 64). Le chemin Vulkan ne change pas.

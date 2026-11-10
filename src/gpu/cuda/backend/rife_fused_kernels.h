@@ -5,7 +5,9 @@
 // ou l'identité (d = 1) : les noyaux n'évaluent le flot et le warp que sur les pixels que le bloc suivant
 // lira (4/64 des pixels pour d = 8, 4/16 pour d = 4), puis moyennent. Rien de pleine résolution n'est écrit
 // hors de l'entrée du dernier bloc. Les arrondis FP16 du graphe (sortie du Resize, Mul, Add, Cast, Sigmoid…)
-// sont reproduits aux mêmes endroits : l'écart au graphe ne vient que de l'ordre des sommes.
+// sont reproduits aux mêmes endroits. Une exception voulue : la grille des warps, calculée en FP32 depuis la
+// position en pixels et non lue dans le maillage FP16 de l'entrée v1 (A03-20). L'écart au graphe vient de là
+// et de l'ordre des sommes.
 #pragma once
 
 #include <cuda_runtime_api.h>
