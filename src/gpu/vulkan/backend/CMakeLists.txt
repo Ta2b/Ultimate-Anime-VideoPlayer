@@ -44,7 +44,7 @@ ajp_add_module(vk_backend
     vulkan_drba_fused.cpp
     vulkan_rife_fused.cpp
   DEPS ajp::vk_compute ajp::gpu ajp::gpu_ir ajp::core_types
-  PRIVATE_DEPS ajp::kernels ajp::prepare ajp::dep::spdlog)
+  PRIVATE_DEPS ajp::core ajp::kernels ajp::prepare ajp::dep::spdlog)
 
 set(shaders "${PROJECT_SOURCE_DIR}/src/gpu/vulkan/shaders")
 # Une variante « _f16 » (tenseurs float16 permis) de chaque shader de réseau.

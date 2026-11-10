@@ -101,3 +101,14 @@ TEST_CASE("DriftRegulator : restart garde la dérive apprise, reset l'oublie", "
   regulator.reset();
   CHECK(regulator.update(0, kPeriodUs) == 1.0);
 }
+
+TEST_CASE("DriftRegulator : calage de vitesse maximal et carte son 100 ppm lente, sans recalage (A16-05)",
+          "[audio][drift]") {
+  // Le maître avance au calage le plus grand (1,00125) ; la carte son, plus lente de 100 ppm, demande
+  // 1,00135.
+  DriftRegulator regulator;
+  const Run run =
+      simulate(regulator, ajp::audio::limits::kMaxSpeedChangeCovered + 0.0001, 0.0, 1800.0, 0.002);
+  CHECK(run.worst_correction <= kBound);
+  CHECK(std::abs(run.final_error_s) < 0.005);  // loin du recalage franc de 50 ms
+}

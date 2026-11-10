@@ -538,4 +538,10 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   return Change{.cost = ChangeCost::Live};
 }
 
+std::optional<std::int64_t> audio_fallback_delay_us(const PlaySettings& settings) {
+  if (settings.audio_device.empty()) return std::nullopt;
+  const auto known = settings.audio_device_delays_ms.find("");
+  return std::int64_t{known != settings.audio_device_delays_ms.end() ? known->second : 0} * 1000;
+}
+
 }  // namespace ajp::app::play

@@ -212,14 +212,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_rife_factor(rife_loaded ? factor_of(played) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
-  PipelineConfig config{
-      .file = options.file,
-      .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
-      .languages = {.presets = settings.language_presets},
-      .audio_device = settings.audio_device,
-      .audio_pll = p.options.audio_pll,
-      .audio_track = p.audio_track,
-      .subtitle_track = p.subtitle_track};
+  const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
   auto pipeline = Pipeline::open(

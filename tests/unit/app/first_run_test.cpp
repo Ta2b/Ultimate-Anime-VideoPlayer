@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/engine_install.h"
 #include "core/settings.h"
 #include "french_ui.h"
 
@@ -40,8 +41,20 @@ TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 
   CHECK(gpu_line(gpu) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · Resizable BAR actif, 12 Go · cœurs Tensor");
   gpu.host_visible_vram_bytes = 256ULL << 20U;
   CHECK(rebar_text(gpu) == "inactif, 256 Mo");
+  CHECK(shown_size(1536ULL << 20U) == "1,5 Go");
   gpu.vendor = GpuVendor::Intel;
   CHECK(rebar_text(gpu).empty());
+}
+
+TEST_CASE("Bienvenue : la ligne du GPU et les tailles suivent la langue de l'interface (A25-12)",
+          "[app][first_run]") {
+  GpuFacts gpu = kRtx;
+  gpu.host_visible_vram_bytes = 12ULL << 30U;
+  CHECK(gpu_line(gpu) == "NVIDIA GeForce RTX 4070 Ti · 12 GB · Resizable BAR active, 12 GB · Tensor cores");
+  gpu.host_visible_vram_bytes = 256ULL << 20U;
+  CHECK(rebar_text(gpu) == "inactive, 256 MB");
+  CHECK(shown_size(900ULL << 20U) == "900 MB");
+  CHECK(shown_size(1536ULL << 20U) == "1.5 GB");
 }
 
 TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
@@ -215,6 +228,36 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
   CHECK(failed.preferred[static_cast<std::size_t>(core::Usage::Upscale)] == core::EngineId::Vulkan);
 }
 
+TEST_CASE("Assistant fermé pendant le téléchargement : la case et la licence reviennent (A25-10)",
+          "[app][first_run]") {
+  EnginesHere here{.os = core::Os::Linux};
+  here.downloads.push_back(EngineDownload{
+      .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
+  FirstRunView view = first_run_view(kRtx, here);
+  for (EngineRow& row : view.engines) {
+    if (row.offer.id != core::EngineId::TensorRt) continue;
+    row.chosen = true;
+    row.license_accepted = true;
+  }
+  // Ce que l'écran écrit avant le téléchargement : le choix, l'assistant pas encore fini.
+  core::Settings written = settings_after(view, {});
+  written.first_run_done = false;
+  const auto tensorrt_of = [](const FirstRunView& v) {
+    const auto row = std::ranges::find_if(
+        v.engines, [](const EngineRow& r) { return r.offer.id == core::EngineId::TensorRt; });
+    REQUIRE(row != v.engines.end());
+    return *row;
+  };
+  const EngineRow resumed = tensorrt_of(first_run_view(kRtx, here, written));
+  CHECK(resumed.chosen);
+  CHECK(resumed.license_accepted);
+  CHECK(chosen(settings_after(first_run_view(kRtx, here, written), {}), core::EngineId::TensorRt));
+  // Sans ce choix écrit, la licence attend toujours l'accord.
+  const EngineRow fresh = tensorrt_of(first_run_view(kRtx, here));
+  CHECK_FALSE(fresh.chosen);
+  CHECK_FALSE(fresh.license_accepted);
+}
+
 TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est dite (P3.4)",
           "[app][first_run]") {
   EngineRow vulkan{.offer = {.id = ajp::core::EngineId::Vulkan}, .usable = true, .chosen = true};
@@ -240,8 +283,13 @@ TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est
   REQUIRE(unchecked.size() == 2);
   CHECK(unchecked[0].find("TensorRT") == std::string::npos);
   CHECK(unchecked[1].find("TensorRT") != std::string::npos);
-  trt.usable = false;  // pas installable ici : rien à cocher
+  trt.usable = false;  // pas installable ici : rien à cocher, mais la raison se lit (A25-13)
   CHECK(engines_summary({vulkan, trt}).size() == 1);
+  trt.status = "NVIDIA driver 580 or newer required, you have 575.02";
+  const auto locked = engines_summary({vulkan, trt});
+  REQUIRE(locked.size() == 2);
+  CHECK(locked[1].find("TensorRT") != std::string::npos);
+  CHECK(locked[1].find("575.02") != std::string::npos);
 }
 
 TEST_CASE("Pilote NVIDIA lu avant le téléchargement de TensorRT (P3.6)", "[app][first_run]") {

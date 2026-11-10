@@ -287,6 +287,8 @@ ImGuiKey imgui_key(SDL_Keycode key) {
   switch (key) {
     case SDLK_TAB:
       return ImGuiKey_Tab;
+    case SDLK_SPACE:
+      return ImGuiKey_Space;
     case SDLK_LEFT:
       return ImGuiKey_LeftArrow;
     case SDLK_RIGHT:
@@ -418,6 +420,16 @@ void PlayerUi::follow_text_input() {
   }
 }
 
+void PlayerUi::set_keyboard_nav(bool on) {
+  keyboard_nav_ = on;
+  ImGuiIO& io = ImGui::GetIO();
+  if (on) {
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  } else {
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+  }
+}
+
 namespace {
 
 // Échap appuyée alors qu'une liste ou un menu d'ImGui est ouvert.
@@ -443,9 +455,11 @@ bool PlayerUi::handle_key(const SDL_Event& event) {
     close_popups_ = input_pending_ = true;
     return true;
   }
-  if (!text_input_) return false;
-  if (const ImGuiKey key = imgui_key(event.key.key); key != ImGuiKey_None)
-    io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
+  const ImGuiKey key = imgui_key(event.key.key);
+  // Hors saisie, l'assistant au clavier (A25-14) garde pour lui les touches qu'ImGui connaît : « q » n'y
+  // ferme plus le lecteur. Les autres (F11) suivent le chemin des raccourcis.
+  if (!text_input_ && (!keyboard_nav_ || key == ImGuiKey_None)) return false;
+  if (key != ImGuiKey_None) io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
   input_pending_ = true;
   return true;
 }

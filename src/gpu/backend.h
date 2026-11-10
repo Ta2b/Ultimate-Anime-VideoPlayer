@@ -79,7 +79,8 @@ namespace ajp::gpu {
 // gmfss_compose_ring, fill ; BackendCaps::gmfss_fused).
 // 31 : Engine::next_warm (RIFE à chaud, P6.15) ; PairScores::moving (la zone qui bouge, P6.6 et P6.18).
 // 32 : Backend::drain (les files attendues avant la destruction des moteurs, A30-01).
-inline constexpr int kBackendAbi = 32;
+// 33 : BackendInit::profile_dispatches (--profile-dispatches atteint le backend, A45-08).
+inline constexpr int kBackendAbi = 33;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -97,6 +98,9 @@ struct BackendInit {
   const GpuDevice* render = nullptr;  // appareil de rendu : le backend s'y lie ou refuse
   std::filesystem::path cache_dir;    // artefacts construits (moteurs, SPIR-V réglé)
   BackendLog log;  // appelé depuis n'importe quel thread du backend ; vide : rien n'est écrit
+  // --profile-dispatches (option d'essai) : temps GPU et nombre de dispatchs par shader des réseaux, au
+  // journal quand un réseau se décharge. Lu par le backend Vulkan ; sans effet ailleurs.
+  bool profile_dispatches = false;
   // Rempli quand ajp_backend_create rend nullptr : AbiMismatch, DeviceMismatch,
   // LibraryUnavailable… ; nullptr si l'appelant n'en veut pas.
   Refusal* refusal = nullptr;

@@ -5,6 +5,7 @@
 // shaders et cette version de l'abaissement ; verify_artifact rend en plus son programme.
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -65,8 +66,14 @@ std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const 
 // Clé de cache de l'artefact : modèle, forme, précision, appareil et versions.
 std::uint64_t artifact_key(const BuildRequest& request, const DeviceProfile& profile);
 
-// Écriture atomique (fichier temporaire puis renommage) et lecture. Refus CacheIo.
+// Écriture atomique (core::write_atomic : temporaire écrit sur le disque, puis renommage) et lecture.
+// Refus CacheIo.
 std::expected<void, Refusal> write_file(const std::filesystem::path& path, std::span<const std::byte> bytes);
+// Retire du dossier les temporaires qu'une écriture interrompue a laissés (un artefact fait des dizaines
+// de Mo), s'ils ont plus de older_than : un temporaire récent peut être celui d'un autre écrivain en
+// cours. Renvoie le nombre de fichiers retirés ; un dossier absent ou illisible n'est pas une erreur.
+int purge_stale_temporaries(const std::filesystem::path& folder,
+                            std::chrono::seconds older_than = std::chrono::hours(1));
 std::expected<std::vector<std::byte>, Refusal> read_file(const std::filesystem::path& path);
 
 }  // namespace ajp::gpu::vk::net

@@ -2,6 +2,8 @@
 // lu en place ; des minutes sur lavapipe) : le manifeste dérivé (prepare/drba_split.h) construit et chargé,
 // contre le DistilDRBA entier sur le même backend, sur trois images synthétiques décalées, des deux côtés de
 // l'image du milieu (tau 0,5 et 1,25) : PSNR d'au moins 50 dB ; la variante mouvement, un flot borné.
+// Aussi contre l'interpréteur en float, qui ne partage aucun noyau avec le moteur : au moins 55 dB (A45-11).
+// La CI le lance la nuit et à la demande, sur le modèle téléchargé (ci.yml) ; sans modèle il est sauté.
 //   ajp_vk_backend_tests "[.drba_fused]"
 #include <algorithm>
 #include <array>
@@ -16,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "backend_rig.h"
+#include "fused_reference.h"
 #include "prepare/drba_split.h"
 #include "prepare/model_source.h"
 #include "prepare/onnx_dims.h"
@@ -152,6 +155,14 @@ TEST_CASE("DistilDRBA fusionné : la chaîne Vulkan contre le DistilDRBA entier"
     WARN("tau " << tau << (reuse ? " (temps seul)" : "") << " : PSNR " << psnr
                 << " dB contre le DistilDRBA entier, écart maximal " << worst);
     CHECK(psnr >= 50.0);
+    if (!reuse) {
+      // Contre une référence qui ne passe par aucun noyau Vulkan : l'interpréteur, en float (A45-11).
+      const auto reference = interpreter_planes(
+          static_onnx, {pair_of(img0, img1, h, w, tau), pair_of(img1, img2, h, w, tau)}, h, w, 3);
+      const double fidelity = planes_psnr(got, reference);
+      WARN("tau " << tau << " : PSNR " << fidelity << " dB contre l'interpréteur en float");
+      CHECK(fidelity >= 55.0);
+    }
   }
   // La variante mouvement : le flot du warp final, dans les bornes d'un mouvement de quelques pixels.
   const auto flow = run(**fused, 4);

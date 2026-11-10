@@ -96,7 +96,10 @@ struct FirstRunView {
   std::vector<EngineRow> engines;
   bool done = false;       // « Commencer »
   bool revisit = false;    // rouvert depuis l'onglet Moteurs : la lecture reprend ensuite
-  bool cancelled = false;  // « Annuler » (revisit seulement) : rien ne change
+  bool cancelled = false;  // « Annuler » (pendant une lecture seulement) : rien ne change
+  // Ouvert pendant une lecture, l'assistant entier compris (A25-14) : « Annuler » rend la lecture, fermer
+  // la fenêtre n'est plus la seule sortie.
+  bool during_playback = false;
   // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
   Wizard wizard;
   WizardFacts facts;

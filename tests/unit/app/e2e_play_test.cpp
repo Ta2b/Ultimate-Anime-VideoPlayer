@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <sstream>
 #include <stop_token>
 #include <string>
@@ -271,4 +272,70 @@ TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sa
   // et que chaque image manquante est comptée.
   CHECK(presented.fresh >= 15);
   CHECK(presented.fresh + presented.dropped >= 30);
+}
+
+namespace {
+
+// Le dossier de réglages d'un premier lancement d'essai : « Ouvrir avec » déjà noté, pour que l'assistant
+// n'inscrive pas le lecteur d'essai sur le poste qui lance les tests.
+fs::path first_launch_dir(const std::string& name) {
+  const fs::path dir = fresh_dir(name);
+  fs::create_directories(dir / "reglages");
+  std::ofstream(dir / "reglages" / "settings.toml") << "version = 1\nopen_with_registered = true\n";
+  return dir;
+}
+
+std::string slurp(const fs::path& path) {
+  std::ifstream in(path);
+  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+std::optional<fs::path> wizard_clip(const std::string& name) {
+  auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{
+      .name = name, .width = 320, .height = 180, .frames = 50, .shot_frames = 50, .shot_lumas = {200}});
+  if (!clip) return std::nullopt;
+  return *clip;
+}
+
+}  // namespace
+
+// A25-14, A25-18 : run_engine_screen de bout en bout, au clavier seul. « q » n'y ferme plus le lecteur,
+// Entrée vaut « Suivant », Tab mène à « Set it up myself » ; les choix s'écrivent et la lecture suit.
+TEST_CASE("Bout en bout : l'assistant se parcourt au clavier, « q » ne le ferme pas", "[.e2e][app]") {
+  const auto clip = wizard_clip("e2e-assistant.mkv");
+  REQUIRE(clip);
+  const fs::path dir = first_launch_dir("ajp-e2e-assistant");
+  // Bienvenue, Langues, Intégration par Entrée ; sur Prêt, Tab trois fois (Précédent, Optimiser, Régler
+  // moi-même) puis Entrée. Le dernier « q », lui, tombe pendant la lecture.
+  const Run run =
+      play(alone(*clip, dir), dir,
+           {"--first-run", "--keys=0.5:q,1:Return,1.5:Return,2:Return,2.6:Tab,3:Tab,3.4:Tab,3.8:Return,6:q"});
+  INFO(run.output);
+  CHECK(run.code == 0);
+  CHECK(run.output.find("assistant : ") != std::string::npos);
+  CHECK(run.output.find("moteurs choisis : Vulkan") != std::string::npos);
+  CHECK(run.output.find("calibration de la machine") == std::string::npos);
+  CHECK(slurp(dir / "reglages" / "settings.toml").find("first_run_done = true") != std::string::npos);
+  CHECK(fs::exists(dir / "reglages" / "play.toml"));
+}
+
+// A25-18 : calibrate_on_screen de bout en bout. Les essais ne trouvent pas de carte ici (ils ne reçoivent
+// pas --software-gpu) : la calibration échoue, l'assistant garde l'Auto estimé et la lecture suit.
+TEST_CASE("Bout en bout : une calibration qui échoue à l'écran laisse l'Auto et la lecture", "[.e2e][app]") {
+  const auto clip = wizard_clip("e2e-calibration.mkv");
+  REQUIRE(clip);
+  const fs::path dir = first_launch_dir("ajp-e2e-calibration");
+  // Le clip de calibration déjà là : sa génération (des dizaines de secondes en Debug) n'est pas l'objet.
+  fs::copy_file(*clip, dir / "reglages" / "bench-clip-v4.mkv");
+  const Run run = play(alone(*clip, dir), dir,
+                       {"--first-run", "--keys=1:Return,1.5:Return,2:Return,2.6:Tab,3:Tab,3.4:Return,6:q"});
+  INFO(run.output);
+  CHECK(run.code == 0);
+  CHECK(run.output.find("calibration de la machine") != std::string::npos);
+  CHECK(run.output.find("moteurs choisis : Vulkan") != std::string::npos);
+  const std::string play_toml = slurp(dir / "reglages" / "play.toml");
+  CHECK(play_toml.find("preset = 'auto'") != std::string::npos);
+  // Le dossier des essais ne reste pas (A25-11).
+  for (const auto& entry : fs::directory_iterator(dir / "reglages"))
+    CHECK_FALSE(entry.path().filename().string().starts_with("calibration-essais-"));
 }
