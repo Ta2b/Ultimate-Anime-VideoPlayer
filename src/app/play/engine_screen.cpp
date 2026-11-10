@@ -30,6 +30,7 @@
 #include "app/play/pumped_task.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
+#include "app/play/updater.h"
 #include "app/play/user_keys.h"
 #include "app/play/wizard.h"
 #include "core/clock.h"
@@ -221,6 +222,10 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
     view.laptop = gpu.name.find("Laptop") != std::string::npos;
+    view.managed_updates = update_managed_reason({.data = s.paths.data,
+                                                  .install = s.paths.executable.parent_path(),
+                                                  .executable = s.paths.executable});
+    view.facts.updates_managed = !view.managed_updates.empty();
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).

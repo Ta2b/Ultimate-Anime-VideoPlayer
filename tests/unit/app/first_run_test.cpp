@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/engine_install.h"
 #include "core/settings.h"
 #include "french_ui.h"
 
@@ -40,8 +41,20 @@ TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 
   CHECK(gpu_line(gpu) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · Resizable BAR actif, 12 Go · cœurs Tensor");
   gpu.host_visible_vram_bytes = 256ULL << 20U;
   CHECK(rebar_text(gpu) == "inactif, 256 Mo");
+  CHECK(shown_size(1536ULL << 20U) == "1,5 Go");
   gpu.vendor = GpuVendor::Intel;
   CHECK(rebar_text(gpu).empty());
+}
+
+TEST_CASE("Bienvenue : la ligne du GPU et les tailles suivent la langue de l'interface (A25-12)",
+          "[app][first_run]") {
+  GpuFacts gpu = kRtx;
+  gpu.host_visible_vram_bytes = 12ULL << 30U;
+  CHECK(gpu_line(gpu) == "NVIDIA GeForce RTX 4070 Ti · 12 GB · Resizable BAR active, 12 GB · Tensor cores");
+  gpu.host_visible_vram_bytes = 256ULL << 20U;
+  CHECK(rebar_text(gpu) == "inactive, 256 MB");
+  CHECK(shown_size(900ULL << 20U) == "900 MB");
+  CHECK(shown_size(1536ULL << 20U) == "1.5 GB");
 }
 
 TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
