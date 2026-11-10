@@ -121,7 +121,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   std::error_code error;
   BenchPlan plan{.executable = paths.executable,
                  .video = data_dir / "bench-clip-v4.mkv",
-                 .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
+                 .work_dir = calibration_work_dir(data_dir),
                  .data = data_dir,
                  .display_width = display_width(screen.window()),
                  .display_height = display_height(screen.window()),
@@ -199,6 +199,19 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   return calibrated;
 }
 
+namespace {
+
+// Ce que l'assistant dit de cet hôte : un portable (construction des moteurs deux fois plus longue, A25-03),
+// et pourquoi « Automatique » ne pourrait rien installer ici (A25-05).
+void host_notes(FirstRunView& view, const GpuFacts& gpu, const PlayerPaths& paths) {
+  view.laptop = gpu.name.find("Laptop") != std::string::npos;
+  view.managed_updates = update_managed_reason(
+      {.data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable});
+  view.facts.updates_managed = !view.managed_updates.empty();
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
                                                std::size_t& next_key, SnapshotPlan& snapshot) {
@@ -221,11 +234,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
-    view.laptop = gpu.name.find("Laptop") != std::string::npos;
-    view.managed_updates = update_managed_reason({.data = s.paths.data,
-                                                  .install = s.paths.executable.parent_path(),
-                                                  .executable = s.paths.executable});
-    view.facts.updates_managed = !view.managed_updates.empty();
+    host_notes(view, gpu, s.paths);
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
