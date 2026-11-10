@@ -1,12 +1,14 @@
 #include "app/play/updater.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <system_error>
@@ -195,8 +197,51 @@ UpdateState load_update_state(const fs::path& file) {
   return state ? *state : UpdateState{};
 }
 
+namespace {
+
+// Les clés que cette version écrit, et celles des versions qui s'appliquaient elles-mêmes : retirées.
+bool own_or_obsolete_key(std::string_view key) {
+  static constexpr std::array<std::string_view, 6> kOwn{
+      "last_check_unix", "latest_version", "notes_url", "last_error", "revoked_keys", "last_attempt_unix"};
+  return std::ranges::contains(kOwn, key) || key.starts_with("staged_") || key.starts_with("unconfirmed_") ||
+         key == "previous_version";
+}
+
+// Une à la fois dans le processus : le fil des mises à jour et le bouton « Check now » (A26-10).
+std::mutex& update_state_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+}  // namespace
+
+std::string merge_update_state(std::string_view previous, const UpdateState& state) {
+  const std::string own = format_update_state(state);
+  toml::parse_result before = toml::parse(previous);
+  if (!before) return own;
+  toml::table merged = toml::parse(own).table();
+  // Les clés d'une version plus récente restent : un retour à celle-ci les retrouve (A36-05).
+  for (auto&& [key, node] : before.table())
+    if (!own_or_obsolete_key(key.str())) merged.insert(key, node);
+  std::ostringstream out;
+  out << merged << '\n';
+  return out.str();
+}
+
 std::expected<void, Refusal> save_update_state(const fs::path& file, const UpdateState& state) {
-  return core::write_text_atomically(file, format_update_state(state));
+  std::error_code error;
+  const std::string previous = fs::exists(file, error) ? read_all(file) : std::string();
+  return core::write_text_atomically(file, merge_update_state(previous, state));
+}
+
+std::expected<void, Refusal> change_update_state(const fs::path& file,
+                                                 const std::function<void(UpdateState&)>& change) {
+  const std::scoped_lock lock(update_state_mutex());
+  UpdateState state = load_update_state(file);
+  const UpdateState before = state;
+  change(state);
+  if (state == before) return {};
+  return save_update_state(file, state);
 }
 
 bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix) {

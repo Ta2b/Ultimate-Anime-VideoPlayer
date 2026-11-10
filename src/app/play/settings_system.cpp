@@ -156,10 +156,11 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (ImGui::Button(i18n::tr("Check now"))) {
     result.pending = start_task<std::string>(
         "settings", [state_file, stop = result.stop] -> std::expected<std::string, Refusal> {
-          UpdateState current = load_update_state(state_file);
-          auto message = run_update_check(current, stop->get_token());
-          if (const auto kept = save_update_state(state_file, current); !kept && message)
-            return std::unexpected(kept.error());
+          std::expected<std::string, Refusal> message = std::unexpected(Refusal{});
+          const auto kept = change_update_state(state_file, [&](UpdateState& current) {
+            message = run_update_check(current, stop->get_token());
+          });
+          if (!kept && message) return std::unexpected(kept.error());
           return message;
         });
     result.text.clear();
