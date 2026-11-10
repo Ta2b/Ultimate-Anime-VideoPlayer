@@ -71,6 +71,14 @@ bool transient_rename_refusal([[maybe_unused]] const std::error_code& error) {
 #endif
 }
 
+std::string temp_suffix() {
+  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+  const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+  return std::format("{:x}-{:x}", ticks, thread);
+}
+
+}  // namespace
+
 std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to) {
   std::error_code error;
   auto pause = std::chrono::milliseconds(10);
@@ -82,6 +90,8 @@ std::error_code rename_retrying(const std::filesystem::path& from, const std::fi
     pause = std::min(pause * 2, std::chrono::milliseconds(250));
   }
 }
+
+namespace {
 
 // Un temporaire plus vieux que ceci n'a plus d'écrivain : un arrêt brutal l'a laissé (A20-08). L'âge laisse
 // tranquille celui qu'un autre processus écrit en ce moment.
@@ -118,12 +128,6 @@ void remove_orphan_temps(const std::filesystem::path& path) {
     const auto written = it->last_write_time(stale);
     if (!stale && now - written > kOrphanAge) std::filesystem::remove(it->path(), stale);
   }
-}
-
-std::string temp_suffix() {
-  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-  const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
-  return std::format("{:x}-{:x}", ticks, thread);
 }
 
 }  // namespace

@@ -23,6 +23,7 @@
 
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/cuda/backend/span_fp8_ref.h"
+#include "gpu/cuda/backend/span_fp8_view.h"
 #include "gpu/span_fp8/package.h"
 
 namespace {
@@ -85,19 +86,7 @@ int main(int argc, char* const* argv) {
   if (!SpanFp8Net::supported_device(props.major, props.minor))
     return fail("appareil sans noyaux FP8 CUTLASS");
 
-  ajp::gpu::cuda::SpanFp8Weights weights;
-  const auto view = [](const ajp::gpu::span_fp8::Conv& conv) {
-    return ajp::gpu::cuda::SpanFp8ConvView{.weights = conv.weights.data(), .bias = conv.bias.data()};
-  };
-  weights.blocks = static_cast<int>(package->blocks.size());
-  weights.scales = package->scales.data();
-  weights.first = view(package->first);
-  for (std::size_t b = 0; b < package->blocks.size(); ++b) {
-    for (std::size_t i = 0; i < 3; ++i) weights.conv[b][i] = view(package->blocks[b].conv[i]);
-    weights.attention[b] = view(package->blocks[b].attention);
-  }
-  weights.concat = view(package->concat);
-  weights.pixel = view(package->pixel);
+  const ajp::gpu::cuda::SpanFp8Weights weights = ajp::gpu::cuda::span_fp8_view(*package);
   ajp::gpu::cuda::SpanFp8Status status = ajp::gpu::cuda::SpanFp8Status::Ok;
   std::string why;
   std::unique_ptr<ajp::gpu::cuda::SpanFp8Reference> reference;

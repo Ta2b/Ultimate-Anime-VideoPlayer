@@ -45,8 +45,8 @@ struct LoadedLooks {
   std::vector<std::string> failed;  // les clés illisibles
 };
 // Un seul fil de lecture des LUT, qui ne garde que la dernière demande (P2.9) : cent allers-retours du
-// curseur ne lancent plus cent fils, et le thread d'affichage n'en joint jamais un qui lit encore (il est
-// détaché).
+// curseur ne lancent plus cent fils. La destruction le joint (A30-02) : une lecture en cours, bornée,
+// finit avant.
 class LookLoader {
  public:
   LookLoader() = default;
@@ -61,7 +61,7 @@ class LookLoader {
   // Le résultat de la dernière demande, une fois ; rien tant qu'elle n'est pas lue.
   std::optional<LoadedLooks> take();
 
-  struct State;  // partagé avec le fil, qui lui survit s'il est détaché
+  struct State;  // partagé avec le fil
 
  private:
   std::shared_ptr<State> state_;

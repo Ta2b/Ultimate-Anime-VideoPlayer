@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "core/file_sync.h"
+#include "core/utf8_path.h"
 #include "prepare/model_source.h"
 #include "prepare/onnx_outputs.h"
 #include "prepare/onnx_scan.h"
@@ -496,16 +497,18 @@ std::expected<std::filesystem::path, Refusal> derive_drba_fused(const std::files
                                                                 int width) {
   auto sha = sha256_file_known(drba_onnx);
   if (!sha) return std::unexpected(std::move(sha.error()));
-  const std::string stem = std::format("{}-{}-{}x{}-{}", drba_onnx.stem().string(), kDrbaFusedDerivation,
-                                       height, width, sha->substr(0, 16));
-  std::filesystem::path manifest_path = dir / std::format("{}{}", stem, kDrbaFusedExtension);
+  const std::string stem = std::format("{}-{}-{}x{}-{}", core::to_utf8(drba_onnx.stem()),
+                                       kDrbaFusedDerivation, height, width, sha->substr(0, 16));
+  std::filesystem::path manifest_path =
+      dir / core::path_from_utf8(std::format("{}{}", stem, kDrbaFusedExtension));
   // Déjà dérivé : le manifeste est écrit en dernier, sa présence dit que les morceaux y sont.
   if (std::ifstream known(manifest_path); known) {
     const std::string text{std::istreambuf_iterator<char>(known), std::istreambuf_iterator<char>()};
     if (const auto parsed = parse_drba_manifest(text);
         parsed && parsed->height == height && parsed->width == width &&
-        std::ranges::all_of(parsed->pieces,
-                            [&](const std::string& piece) { return exists_nonempty(dir / piece); }))
+        std::ranges::all_of(parsed->pieces, [&](const std::string& piece) {
+          return exists_nonempty(dir / core::path_from_utf8(piece));
+        }))
       return manifest_path;
   }
   auto bytes = read_onnx_bytes(drba_onnx);
@@ -519,8 +522,8 @@ std::expected<std::filesystem::path, Refusal> derive_drba_fused(const std::files
   DrbaFusedManifest manifest{.height = height, .width = width, .plan = split->plan};
   for (const DrbaPiece& piece : *pieces) {
     const std::string file = std::format("{}-{}.onnx", stem, piece.name);
-    if (!exists_nonempty(dir / file)) {
-      if (auto written = write_atomic(dir / file, piece.model); !written)
+    if (!exists_nonempty(dir / core::path_from_utf8(file))) {
+      if (auto written = write_atomic(dir / core::path_from_utf8(file), piece.model); !written)
         return std::unexpected(std::move(written.error()));
     }
     manifest.pieces.push_back(file);

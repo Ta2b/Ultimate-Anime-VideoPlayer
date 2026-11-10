@@ -602,7 +602,19 @@ TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toute
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3060") == "sm86");
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2070") == "sm75");
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 5080") == "sm120");
+  // Les exceptions à la règle par série (A37-03).
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2050") == "sm86");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3050 A Laptop GPU") == "sm89");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3050 Laptop GPU") == "sm86");
   CHECK(ajp::app::play::cuda_arch_from_name("AMD Radeon RX 7900").empty());
+  // Présomption du FP8 à l'accueil, même règle que le moteur (A37-02, A37-12).
+  CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3080"));
+  CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 2050"));
+  CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3050 A Laptop GPU"));
+  CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 5080"));
+  CHECK(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 4070 Ti"));
+  CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 5080"));  // pas avant une mesure (A37-01)
+  CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 3060"));
   CHECK(ajp::app::play::effective_cuda_arch("sm90", "RTX 4050") == "sm90");
   CHECK(ajp::app::play::effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
   CHECK(ajp::app::play::effective_cuda_arch("", "inconnue") == "ptx");
