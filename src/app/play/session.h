@@ -248,6 +248,12 @@ class Session {
   void send_play(std::uint32_t epoch, std::int64_t media_us);
   void send_pause();
   void retry_clock();
+  void retry_pending(
+      std::int64_t host_now);      // seeks et commandes d'horloge refusés, au tour qui leur revient
+  void resume();                   // cmd::Play
+  void step_frame(int direction);  // cmd::StepFrame
+  void frame_lines(std::vector<std::string>& lines) const;  // les lignes des images de l'OSD
+  void extra_lines(const StatsSettings& show, std::vector<std::string>& lines) const;  // celles de la chaîne
   struct ClockRetry {
     bool play = false;
     std::uint32_t epoch = 0;

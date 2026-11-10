@@ -68,18 +68,7 @@ void Session::handle(MainInbox::Message&& message) {
 
 void Session::command(const Command& command) {
   std::visit(
-      Overloaded{[this](const cmd::Play&) {
-                   if (!paused_) return;
-                   paused_ = false;
-                   // A13-07 : des pas pris dans la file n'ont pas déplacé l'audio, resté à la pause. La
-                   // lecture repart par un seek exact sur l'image montrée, comme après un pas en arrière.
-                   if (std::exchange(stepped_in_queue_, false) && !prerolling_ && current_ &&
-                       current_->pts_us != kNoPts) {
-                     seek_to(current_->pts_us, true);
-                     return;
-                   }
-                   if (!prerolling_ && !start_pts_ && current_) send_play(epoch_, current_->pts_us);
-                 },
+      Overloaded{[this](const cmd::Play&) { resume(); },
                  [this](const cmd::Pause&) {
                    if (paused_) return;
                    paused_ = true;
@@ -102,35 +91,7 @@ void Session::command(const Command& command) {
                    }
                    seek_to(base + seek.delta_us, seek.exact);
                  },
-                 [this](const cmd::StepFrame& step) {
-                   // Image par image : en pause, un seek exact d'une image de la source. Le seek
-                   // part de la position visée, donc des pressions rapprochées avancent d'autant.
-                   // P3.42 : vers l'avant, l'image suivante déjà dans la file, sans seek.
-                   if (!paused_) this->command(cmd::Pause{});
-                   if (step.direction > 0 && step_from_queue()) return;
-                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
-                   if (period <= 0) period = kAssumedFramePeriodUs;
-                   // P3.78 : la cible est le milieu de l'image voisine, pas son début : des pts arrondis à la
-                   // microseconde (23,976 i/s) ne font plus tomber le seek exact deux images plus loin. Une
-                   // cible en attente est déjà un milieu.
-                   std::int64_t base = 0;
-                   if (pending_seek_us_) {
-                     base = *pending_seek_us_ - period / 2;
-                   } else if (current_ && current_->pts_us != kNoPts) {
-                     base = current_->pts_us;
-                     // A13-05 : le pas d'avant est retombé dans l'image montrée (elle dure plus que la
-                     // période moyenne, en VFR) ; le suivant part de sa cible, sans quoi rien ne bougerait
-                     // jamais.
-                     if (step.direction > 0 && last_step_ && last_step_->from_pts_us == base)
-                       base = std::max(base, last_step_->target_us - period / 2);
-                   }
-                   const std::int64_t target =
-                       std::max<std::int64_t>(base + step.direction * period + period / 2, 0);
-                   const std::optional<std::int64_t> from =
-                       current_ ? std::optional(current_->pts_us) : std::optional<std::int64_t>();
-                   seek_to(target, true);
-                   if (step.direction > 0 && from) last_step_ = StepMark{*from, target};
-                 },
+                 [this](const cmd::StepFrame& step) { step_frame(step.direction); },
                  [this](const cmd::Quit&) {
                    finished_ = true;
                    quit_ = true;
@@ -154,6 +115,46 @@ void Session::command(const Command& command) {
                  },
                  [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
       command);
+}
+
+void Session::resume() {
+  if (!paused_) return;
+  paused_ = false;
+  // A13-07 : des pas pris dans la file n'ont pas déplacé l'audio, resté à la pause. La lecture repart par un
+  // seek exact sur l'image montrée, comme après un pas en arrière.
+  if (std::exchange(stepped_in_queue_, false) && !prerolling_ && current_ && current_->pts_us != kNoPts) {
+    seek_to(current_->pts_us, true);
+    return;
+  }
+  if (!prerolling_ && !start_pts_ && current_) send_play(epoch_, current_->pts_us);
+}
+
+// Image par image : en pause, un seek exact d'une image de la source. Le seek part de la position visée, donc
+// des pressions rapprochées avancent d'autant. P3.42 : vers l'avant, l'image suivante déjà dans la file, sans
+// seek.
+void Session::step_frame(int direction) {
+  if (!paused_) command(cmd::Pause{});
+  if (direction > 0 && step_from_queue()) return;
+  std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+  if (period <= 0) period = kAssumedFramePeriodUs;
+  // P3.78 : la cible est le milieu de l'image voisine, pas son début : des pts arrondis à la microseconde
+  // (23,976 i/s) ne font plus tomber le seek exact deux images plus loin. Une cible en attente est déjà un
+  // milieu.
+  std::int64_t base = 0;
+  if (pending_seek_us_) {
+    base = *pending_seek_us_ - period / 2;
+  } else if (current_ && current_->pts_us != kNoPts) {
+    base = current_->pts_us;
+    // A13-05 : le pas d'avant est retombé dans l'image montrée (elle dure plus que la période moyenne, en
+    // VFR) ; le suivant part de sa cible, sans quoi rien ne bougerait jamais.
+    if (direction > 0 && last_step_ && last_step_->from_pts_us == base)
+      base = std::max(base, last_step_->target_us - period / 2);
+  }
+  const std::int64_t target = std::max<std::int64_t>(base + direction * period + period / 2, 0);
+  const std::optional<std::int64_t> from =
+      current_ ? std::optional(current_->pts_us) : std::optional<std::int64_t>();
+  seek_to(target, true);
+  if (direction > 0 && from) last_step_ = StepMark{*from, target};
 }
 
 void Session::set_subtitle_delay(std::int64_t delay_us) {
@@ -329,6 +330,16 @@ void Session::send_play(std::uint32_t epoch, std::int64_t media_us) {
 
 void Session::send_pause() {
   clock_retry_ = stages_.pause() ? std::nullopt : std::optional(ClockRetry{false, 0, 0});
+}
+
+void Session::retry_pending(std::int64_t host_now) {
+  if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);
+  if (seek_lost_at_us_ && host_now >= *seek_lost_at_us_ && prerolling_ && pending_seek_us_ &&
+      queue_.first_of(epoch_) == nullptr) {
+    seek_lost_wait_us_ = std::min(seek_lost_wait_us_ * 2, kSeekLostMaxUs);
+    seek_to(*pending_seek_us_, true);  // garde le délai doublé : seek_lost_at_us_ est encore posé
+  }
+  retry_clock();
 }
 
 // A13-06 : un Play ou une Pause refusés (boîte audio pleine) sont redits à chaque tour, tant qu'ils valent
@@ -543,13 +554,7 @@ void Session::follow_subtitles(std::int64_t host_now) {
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   fresh_ = std::exchange(stepped_, false);
   last_tick_us_ = host_now;
-  if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);
-  if (seek_lost_at_us_ && host_now >= *seek_lost_at_us_ && prerolling_ && pending_seek_us_ &&
-      queue_.first_of(epoch_) == nullptr) {
-    seek_lost_wait_us_ = std::min(seek_lost_wait_us_ * 2, kSeekLostMaxUs);
-    seek_to(*pending_seek_us_, true);  // garde le délai doublé : seek_lost_at_us_ est encore posé
-  }
-  retry_clock();
+  retry_pending(host_now);
   measure_latency(host_now);
   retire_written();
   follow_display();
