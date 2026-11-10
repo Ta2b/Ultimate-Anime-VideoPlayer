@@ -78,6 +78,7 @@ struct SubtitleFrame {
   std::uint32_t epoch = 0;  // celle de la demande ; render jette une époque passée
   int width = 0;            // résolution de sortie à laquelle les rectangles sont placés
   int height = 0;
+  float line_lift = 0.0F;  // la montée des dialogues à laquelle ils sont placés (RenderTarget::line_lift)
   std::shared_ptr<const SubtitleAtlas> atlas;  // nullptr : rien à dessiner à ce pts
   std::vector<SubtitleRect> rects;
 };

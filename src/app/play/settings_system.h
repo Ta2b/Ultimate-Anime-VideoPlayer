@@ -29,7 +29,7 @@ struct SystemNote {
 
 struct BenchState;  // l'essai en cours et de quoi le défaire (settings_system.cpp ; auto_bench.h le décrit)
 
-// Le bouton « Optimiser pour ma machine » : l'essai en cours (étapes, progression, annulation), son résultat
+// Le bouton « Calibrer cette machine » : l'essai en cours (étapes, progression, annulation), son résultat
 // en une phrase, et de quoi défaire les réglages posés.
 struct BenchNote {
   std::string text;  // le résultat en une phrase, ou ce qui a manqué
@@ -81,7 +81,7 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& note);
 // vidéo ». Discrète : réglages avancés seulement.
 void span_prepare_section(const SpanPrepare& prepare, PrepareNote& note);
 
-// La page « Optimiser pour ma machine » : un bouton, l'étape en cours, une barre, Annuler, le résultat. draft
+// La page « Calibrer cette machine » : un bouton, l'étape en cours, une barre, Annuler, le résultat. draft
 // : les réglages du panneau, que l'optimisation règle (préréglage Auto sur la mesure) ou que « Annuler ces
 // réglages » rétablit (avec le bench.toml d'avant). Une optimisation tourne : le panneau demande des images
 // même en pause, pour que l'étape et la barre avancent.

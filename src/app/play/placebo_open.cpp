@@ -29,6 +29,7 @@
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
+#include "app/play/close_watch.h"
 #include "app/play/host_facts.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
@@ -361,6 +362,12 @@ void PlaceboScreen::Impl::save_shader_cache() {
   pl_cache_destroy(&impl.shader_cache);
 }
 
+namespace {
+// Le démontage d'un pilote sain se compte en secondes (moteurs TensorRT compris) ; au-delà, il ne finira pas.
+constexpr std::chrono::seconds kCloseLimit{60};
+constexpr int kStuckExitCode = 75;  // EX_TEMPFAIL : la machine, pas la vidéo
+}  // namespace
+
 PlaceboScreen::Impl::~Impl() {
   // La fermeture : la fenêtre est d'abord cachée et le compositeur attendu (SDL_SyncWindow), avant le
   // démontage du GPU, qui peut durer (pilote NVIDIA, moteurs TensorRT). Sous Wayland, une fenêtre que le
@@ -372,6 +379,16 @@ PlaceboScreen::Impl::~Impl() {
     SDL_HideWindow(window);
     SDL_SyncWindow(window);
   }
+  // A10-04 : tout ce démontage attend le GPU sans délai. Sur un GPU bloqué, le lecteur sort au lieu de
+  // rester sans fenêtre pour toujours ; le journal dit pourquoi.
+  const CloseWatch stuck(kCloseLimit, [log = channel] {
+    if (log) {
+      log->error("fermeture : le GPU ne répond pas depuis {} s, le lecteur sort sans l'attendre",
+                 kCloseLimit.count());
+      log->flush();
+    }
+    std::_Exit(kStuckExitCode);
+  });
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
   for (pl_tex& tex : offscreen_tex)
     if (tex != nullptr) pl_tex_destroy(vk->gpu, &tex);
