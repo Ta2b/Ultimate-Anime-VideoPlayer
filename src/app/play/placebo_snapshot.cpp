@@ -92,7 +92,7 @@ void PlaceboScreen::Impl::take_snapshot(const pl_frame* image, const pl_frame& t
   }
   if (++snapshot_index >= snapshot_count) snapshot.reset();
   if (auto saved = save_snapshot(image, target, out, drawn_ui, path); !saved) {
-    channel->warn("instantané {} : {}", core::to_utf8(path), saved.error().detail);
+    channel->warn("instantané {} : {}", core::to_utf8(path.filename()), saved.error().detail);
   }
 }
 

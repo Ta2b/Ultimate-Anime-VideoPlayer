@@ -25,6 +25,11 @@
 
 namespace ajp::media {
 
+// Threads d'un décodage de fond (pré-analyse des plans, images de calibration) : la moitié des cœurs, de 2
+// à 4, pour ne pas disputer les cœurs au rendu ; un seul sous Windows, où les threads de FFmpeg n'héritent
+// pas de la priorité basse de leur créateur (A15-11).
+int background_decoder_threads();
+
 class VideoDecoder {
  public:
   // Essaie options.attempts dans l'ordre ; les essais écartés restent dans rejected().
