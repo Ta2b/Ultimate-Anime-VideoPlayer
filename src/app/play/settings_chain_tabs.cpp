@@ -172,6 +172,69 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
 }
 
+namespace {
+
+// Le niveau d'interpolation : liste déroulante et note.
+void level_combo(PlaySettings& d, const SettingsChoices& choices) {
+  // Le niveau : un nom pour tous (Très rapide, Rapide, Équilibré), le modèle derrière nommé en mode avancé.
+  const std::string rife_now = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
+  const std::optional<InterpLevel> level_now = interp_level(d.motion_engine, rife_now);
+  const auto level_name = [](InterpLevel level) -> std::string {
+    switch (level) {
+      case InterpLevel::VeryFast:
+        return i18n::tr("Very fast");
+      case InterpLevel::Fast:
+        return i18n::tr("Fast");
+      case InterpLevel::Balanced:
+        return i18n::tr("Balanced");
+      case InterpLevel::System:
+        return i18n::tr("System (macOS)");
+    }
+    return {};
+  };
+  const auto model_name = [](const InterpChoice& choice) {
+    return choice.engine == MotionEngine::Rife ? rife_label(std::string(choice.rife_model))
+                                               : std::string(label(choice.engine));
+  };
+  const auto level_text = [&](const InterpChoice& choice) {
+    std::string text = level_name(choice.level);
+    if (panel::advanced()) text += " · " + model_name(choice);
+    if (choice.engine == MotionEngine::Rife && choice.rife_model == choices.default_rife_model)
+      text += i18n::tr(" (recommended)");
+    return text;
+  };
+  const auto present = [&](const InterpChoice& choice) {
+    if (!offered(choice.engine)) return false;
+    if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
+    if (choice.engine == MotionEngine::Rife)
+      return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
+    return true;
+  };
+  std::string shown = level_now ? std::string() : rife_label(rife_now);
+  if (d.motion_engine != MotionEngine::Rife && !level_now) shown = std::string(label(d.motion_engine));
+  for (const InterpChoice& choice : kInterpLevels) {
+    if (level_now == choice.level) shown = level_text(choice);
+  }
+  ImGui::BeginDisabled(!choices.rife_available);
+  if (ImGui::BeginCombo(i18n::tr("Level"), shown.c_str())) {
+    for (const InterpChoice& choice : kInterpLevels) {
+      if (!present(choice)) continue;
+      if (ImGui::Selectable(level_text(choice).c_str(), level_now == choice.level)) {
+        d.motion_engine = choice.engine;
+        if (choice.engine == MotionEngine::Rife)
+          d.rife_model = choice.rife_model == choices.default_rife_model ? std::string()
+                                                                         : std::string(choice.rife_model);
+      }
+      panel::tip(motion_description(choice));
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
+  panel::tip(i18n::tr("Very fast is the lightest, Balanced the cleanest. Applies after a short reload."));
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
   // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
@@ -284,61 +347,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   ImGui::EndDisabled();
   if (!choices.rife_available)
     note(i18n::tr("No interpolation model found: put a RIFE model in the models folder."));
-  // Le niveau : un nom pour tous (Très rapide, Rapide, Équilibré), le modèle derrière nommé en mode avancé.
-  const std::string rife_now = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
-  const std::optional<InterpLevel> level_now = interp_level(d.motion_engine, rife_now);
-  const auto level_name = [](InterpLevel level) -> std::string {
-    switch (level) {
-      case InterpLevel::VeryFast:
-        return i18n::tr("Very fast");
-      case InterpLevel::Fast:
-        return i18n::tr("Fast");
-      case InterpLevel::Balanced:
-        return i18n::tr("Balanced");
-      case InterpLevel::System:
-        return i18n::tr("System (macOS)");
-    }
-    return {};
-  };
-  const auto model_name = [](const InterpChoice& choice) {
-    return choice.engine == MotionEngine::Rife ? rife_label(std::string(choice.rife_model))
-                                               : std::string(label(choice.engine));
-  };
-  const auto level_text = [&](const InterpChoice& choice) {
-    std::string text = level_name(choice.level);
-    if (panel::advanced()) text += " · " + model_name(choice);
-    if (choice.engine == MotionEngine::Rife && choice.rife_model == choices.default_rife_model)
-      text += i18n::tr(" (recommended)");
-    return text;
-  };
-  const auto present = [&](const InterpChoice& choice) {
-    if (!offered(choice.engine)) return false;
-    if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
-    if (choice.engine == MotionEngine::Rife)
-      return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
-    return true;
-  };
-  std::string shown = level_now ? std::string() : rife_label(rife_now);
-  if (d.motion_engine != MotionEngine::Rife && !level_now) shown = std::string(label(d.motion_engine));
-  for (const InterpChoice& choice : kInterpLevels) {
-    if (level_now == choice.level) shown = level_text(choice);
-  }
-  ImGui::BeginDisabled(!choices.rife_available);
-  if (ImGui::BeginCombo(i18n::tr("Level"), shown.c_str())) {
-    for (const InterpChoice& choice : kInterpLevels) {
-      if (!present(choice)) continue;
-      if (ImGui::Selectable(level_text(choice).c_str(), level_now == choice.level)) {
-        d.motion_engine = choice.engine;
-        if (choice.engine == MotionEngine::Rife)
-          d.rife_model = choice.rife_model == choices.default_rife_model ? std::string()
-                                                                         : std::string(choice.rife_model);
-      }
-      panel::tip(motion_description(choice));
-    }
-    ImGui::EndCombo();
-  }
-  ImGui::EndDisabled();
-  panel::tip(i18n::tr("Very fast is the lightest, Balanced the cleanest. Applies after a short reload."));
+  level_combo(d, choices);
   if (d.motion_engine == MotionEngine::DistilDrba && !choices.distil_drba_available) {
     note(i18n::tr_format("DistilDRBA model not found in {} ({}); RIFE is used instead.", choices.rife_folder,
                          kDistilDrbaFile));
