@@ -261,12 +261,13 @@ TEST_CASE("SourceThread : la première image passe sans qu'on retire l'audio, m�
 
   CHECK(source.pop().pts_us == 0);  // l'audio n'est pas retiré
   CHECK((*audio)->size() == 8);
-  // Amorcée, l'époque reprend la contre-pression : la file audio pleine retient la
-  // lecture, et donc la vidéo, jusqu'à ce que l'audio retire ses paquets.
-  CHECK_FALSE(source.sink.pop(source.inbox, 200ms).has_value());
+  // Amorcée, la file audio pleine ne retient plus la vidéo tant que gpu prend ses images et que la réserve
+  // reste sous la moitié de son plafond (A14-06) : un fichier mal entrelacé ne prive pas la vidéo.
+  CHECK(source.sink.pop(source.inbox, 200ms).has_value());
+  CHECK((*audio)->size() == 8);
 
   std::vector<Packet> audio_packets;
-  int frames = 1;
+  int frames = 2;
   const auto deadline = std::chrono::steady_clock::now() + kTimeout;
   while ((frames < 30 || audio_packets.size() < 60) && std::chrono::steady_clock::now() < deadline) {
     if (auto frame = source.sink.pop(source.inbox, 1ms)) ++frames;
@@ -397,7 +398,9 @@ TEST_CASE("SourceThread : une erreur de lecture passagère est retentée, rien n
   CHECK(source.listener.failure_count() == 0);
 }
 
-TEST_CASE("SourceThread : une erreur de lecture qui dure finit le flux proprement, sans refus fatal",
+// A14-08 : la fin du flux qui suit n'est pas une fin de fichier. Le refus qui la précède le dit, avec un code
+// d'E/S (A14-07) que la session prend pour un échec, sans enchaîner l'épisode suivant (A13-02).
+TEST_CASE("SourceThread : une erreur de lecture qui dure se dit en IoFailed avant la fin du flux",
           "[media][source]") {
   Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
                  ReadFault{.after_packets = 60, .count = 1000, .error = AVERROR(EIO)});
@@ -409,7 +412,7 @@ TEST_CASE("SourceThread : une erreur de lecture qui dure finit le flux propremen
   for (std::size_t n = 0; n < pts.size(); ++n) CHECK(pts[n] == static_cast<std::int64_t>(n) * kFrameUs);
   const auto failures = source.listener.failures();
   REQUIRE(failures.size() == 1);
-  CHECK(failures.front().code == RefusalCode::DecodeFailed);
+  CHECK(failures.front().code == RefusalCode::IoFailed);
   CHECK(failures.front().recoverable);
 }
 
@@ -433,7 +436,7 @@ TEST_CASE("SourceThread : une fin de fichier sur erreur d'E/S qui dure se dit", 
   CHECK(pts.size() < 100);
   const auto failures = source.listener.failures();
   REQUIRE(failures.size() == 1);
-  CHECK(failures.front().code == RefusalCode::DecodeFailed);
+  CHECK(failures.front().code == RefusalCode::IoFailed);
   CHECK(failures.front().recoverable);
 }
 
@@ -469,5 +472,54 @@ TEST_CASE("SourceThread : une source aux dimensions impaires arrive paire, sans 
   CHECK(static_cast<int>(luma[63]) == pattern(0, 63, 0, 0, 8));
   const std::vector<std::int64_t> rest = play_to_end(source);
   CHECK(rest.size() == 29);
+  CHECK(source.listener.failure_count() == 0);
+}
+
+// A14-04 : un seek refusé sans toucher au fichier (cible au-delà de la durée) après un Flush. Le Flush a jeté
+// l'image tenue : la lecture reprend à elle, sous la nouvelle époque, sans trou.
+TEST_CASE("SourceThread : un seek refusé sans bouger le fichier reprend à la dernière image tenue",
+          "[media][source]") {
+  Running source(require_clip(long_clip()), 4);
+  play_count(source, 20);
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 1}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 3'600'000'000, .exact = true}}));
+  std::int64_t last_old = 19 * kFrameUs;
+  std::vector<std::int64_t> fresh;
+  while (fresh.size() < 10) {
+    auto frame = source.sink.pop(source.inbox);
+    if (!frame) break;
+    if (frame->epoch == 0) {
+      last_old = std::max(last_old, frame->pts_us);
+    } else {
+      fresh.push_back(frame->pts_us);
+    }
+  }
+  REQUIRE(fresh.size() == 10);
+  CHECK(fresh.front() > last_old - kFrameUs);
+  CHECK(fresh.front() <= last_old + kFrameUs);
+  for (std::size_t n = 0; n < fresh.size(); ++n)
+    CHECK(fresh[n] == fresh.front() + static_cast<std::int64_t>(n) * kFrameUs);
+  const auto failures = source.listener.failures();
+  REQUIRE(failures.size() == 1);
+  CHECK(failures.front().code == RefusalCode::SeekFailed);
+  CHECK(failures.front().recoverable);
+}
+
+// A14-06 : l'audio qui n'est plus retiré laisse la vidéo avancer, puis la réserve à mi-plafond la retient :
+// une attente, jamais le refus PacketBacklog qui arrêterait la lecture.
+TEST_CASE("SourceThread : la réserve à mi-plafond retient la vidéo sans refus", "[media][source]") {
+  SourceInbox* inbox = nullptr;
+  auto credit = [&inbox] { std::ignore = inbox->try_push(Credit{}); };
+  auto audio = PacketQueue::create({.max_duration_us = 160'000}, credit);
+  auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
+  REQUIRE(audio.has_value());
+  REQUIRE(subs.has_value());
+  Running source(seek_clip(), 4, 0, {{.track = 1, .sink = audio->get()}, {.track = 2, .sink = subs->get()}},
+                 0, kMinReserveBytes);
+  inbox = &source.inbox;
+  int frames = 0;
+  while (source.sink.pop(source.inbox, 300ms)) ++frames;
+  CHECK(frames > 1);
+  CHECK(frames < 30);  // retenue avant la fin, l'audio n'étant jamais retiré
   CHECK(source.listener.failure_count() == 0);
 }

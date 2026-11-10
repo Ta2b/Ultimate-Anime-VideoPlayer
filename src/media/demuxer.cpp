@@ -26,6 +26,7 @@ struct Demuxer::State {
   FormatPtr format;
   std::vector<TrackInfo> tracks;
   std::vector<Chapter> chapters;
+  ChapterLayout chapter_layout;  // A14-03 : édition ordonnée ou segments liés, que FFmpeg aplatit
   std::int64_t start_us = 0;
   std::int64_t duration_us = 0;
   PacketPtr scratch;            // reçoit av_read_frame avant d'être partagé
@@ -116,6 +117,12 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
     info.width = chain_dimension(par.width);
     info.height = chain_dimension(par.height);
     info.frame_rate = frame_rate_of(stream);
+    // A15-02 : 29,97 i/s entrelacé, le télécinéma d'un anime 23,976 : la chaîne reçoit les images d'origine.
+    const bool interlaced = par.field_order != AV_FIELD_UNKNOWN && par.field_order != AV_FIELD_PROGRESSIVE;
+    if (interlaced && std::int64_t{info.frame_rate.num} * 1001 == std::int64_t{info.frame_rate.den} * 30000) {
+      info.inverse_telecine = true;
+      info.frame_rate = {24000, 1001};
+    }
     const AVRational sar =
         stream.sample_aspect_ratio.num > 0 ? stream.sample_aspect_ratio : par.sample_aspect_ratio;
     if (sar.num > 0 && sar.den > 0) info.sample_aspect = {sar.num, sar.den};
@@ -199,6 +206,13 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path)
     });
     if (!again) state->chapters.push_back(std::move(next));
   }
+  if (std::string_view(raw->iformat->name).find("matroska") != std::string_view::npos) {
+    state->chapter_layout = read_chapter_layout(path);
+    if (!state->chapter_layout.plain())
+      state->log->warn("{} : chapitres {}{} non pris en charge, lecture dans l'ordre du fichier", shown,
+                       state->chapter_layout.ordered ? "ordonnés" : "",
+                       state->chapter_layout.linked ? " liés à d'autres fichiers" : "");
+  }
   state->scratch.reset(av_packet_alloc());
   if (!state->scratch) return refuse(RefusalCode::MediaUnreadable, shown + " : mémoire insuffisante");
   state->log->debug("{} : {} pistes, {} chapitres, {} µs", shown, state->tracks.size(),
@@ -215,6 +229,9 @@ const std::vector<TrackInfo>& Demuxer::tracks() const {
 }
 const std::vector<Chapter>& Demuxer::chapters() const {
   return state_->chapters;
+}
+ChapterLayout Demuxer::chapter_layout() const {
+  return state_->chapter_layout;
 }
 std::int64_t Demuxer::duration_us() const {
   return state_->duration_us;
@@ -293,13 +310,15 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() {
       if (err == AVERROR_EOF && ctx.pb != nullptr && ctx.pb->error < 0 && ctx.pb->error != AVERROR_EOF)
         err = ctx.pb->error;
       if (err == AVERROR_EOF) return std::nullopt;
+      // A14-07 : trois causes, trois codes. Une interruption (fermeture) : Cancelled ; une panne du disque
+      // ou du réseau : IoFailed ; des données abîmées : DecodeFailed.
       if (err == AVERROR_EXIT || interrupted.load())
-        return refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet interrompue", err);
+        return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", err);
       const bool data = err == AVERROR_INVALIDDATA;
       int& errors = data ? data_errors : io_errors;
       const int limit = data ? kDataRetries : kIoRetries;
       if (errors >= limit) {
-        auto refused = refuse_av(RefusalCode::DecodeFailed,
+        auto refused = refuse_av(data ? RefusalCode::DecodeFailed : RefusalCode::IoFailed,
                                  std::format("lecture d'un paquet, après {} essais", errors + 1), err);
         refused.error().recoverable = true;
         return refused;
@@ -308,7 +327,7 @@ std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() {
       if (errors == 0) log->warn("lecture d'un paquet : {}, nouvel essai", av_error_text(err));
       if (!data) {
         if (!wait_before_retry(errors))
-          return refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet interrompue", AVERROR_EXIT);
+          return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", AVERROR_EXIT);
         // Une erreur de l'AVIOContext reste collée : sans l'effacer, chaque essai la rendrait.
         if (ctx.pb != nullptr) {
           ctx.pb->error = 0;

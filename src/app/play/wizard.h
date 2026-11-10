@@ -55,6 +55,9 @@ struct Wizard {
   int seen = 0;                    // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
 
+// Le lecteur par défaut est-il demandé ? Non si l'écran qui le propose a été passé (A25-04).
+bool make_default_requested(const Wizard& wizard);
+
 // Reprend à l'écran noté dans first_run_step (le suivant du dernier vu), sans dépasser le résumé.
 Wizard begin_wizard(const WizardFacts& facts, int last_step_seen);
 

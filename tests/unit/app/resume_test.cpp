@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/utf8_path.h"
+#include "prepare/key_lock.h"
 
 using namespace ajp::app::play;
 
@@ -145,4 +146,27 @@ TEST_CASE("reprise : deux lecteurs qui écrivent ensemble gardent chacun leur vi
   }
   CHECK(refused == 0);
   for (const auto& video : videos) CHECK(resume_position(place.store, video) == 26 * kMinute);
+}
+
+TEST_CASE("reprise : un verrou tenu par un autre lecteur fait refuser sans écrire à l'aveugle (A13-10)",
+          "[app][resume]") {
+  const Place place("held");
+  const auto first = place.video("h0.mkv");
+  const auto second = place.video("h1.mkv");
+  REQUIRE(remember_position(place.store, first, 7 * kMinute, 4 * kEpisode));
+  std::filesystem::path lock_file = place.store;
+  lock_file += ".lock";
+  {
+    // Un autre lecteur (un autre processus) tient le verrou au-delà du délai : écrire sans lui perdrait ce
+    // qu'il écrit, la position est refusée et le fichier reste tel quel.
+    auto held = ajp::prepare::KeyLock::acquire(lock_file);
+    REQUIRE(held);
+    const auto refused = remember_position(place.store, second, 9 * kMinute, 4 * kEpisode);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == ajp::RefusalCode::CacheBusy);
+  }
+  CHECK(resume_position(place.store, first) == 7 * kMinute);
+  CHECK_FALSE(resume_position(place.store, second));
+  REQUIRE(remember_position(place.store, second, 9 * kMinute, 4 * kEpisode));  // verrou rendu
+  CHECK(resume_position(place.store, second) == 9 * kMinute);
 }

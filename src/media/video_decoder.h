@@ -25,6 +25,11 @@
 
 namespace ajp::media {
 
+// Threads d'un décodage de fond (pré-analyse des plans, images de calibration) : la moitié des cœurs, de 2
+// à 4, pour ne pas disputer les cœurs au rendu ; un seul sous Windows, où les threads de FFmpeg n'héritent
+// pas de la priorité basse de leur créateur (A15-11).
+int background_decoder_threads();
+
 class VideoDecoder {
  public:
   // Essaie options.attempts dans l'ordre ; les essais écartés restent dans rejected().
@@ -59,6 +64,11 @@ class VideoDecoder {
   // Image suivante, sans identité ni époque ; std::nullopt s'il faut un paquet.
   std::expected<std::optional<DecodedFrame>, Refusal> receive();
   bool drained() const;
+  // Seek exact (A14-09) : une image qui finit avant cette cible est écartée dès sa sortie du décodeur, avant
+  // la copie en mémoire hôte et la conversion, qu'elle ne paierait que pour être jetée. La dernière écartée
+  // ressort à la fin du flux (la cible est alors après la dernière image). Les images entrelacées passent
+  // toutes (bwdif a besoin de l'image d'avant). std::nullopt : plus rien d'écarté ici.
+  void skip_before(std::optional<std::int64_t> target_us);
   // Au seek : vide le décodeur sans le rouvrir.
   void flush();
 
