@@ -1,6 +1,7 @@
 #include "gpu/vulkan/backend/vulkan_backend.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <limits>
@@ -323,6 +324,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (auto bytes = net::read_file(artifact.path)) {
     if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) return artifact;
   }
+  const auto started = std::chrono::steady_clock::now();  // A45-12 : la durée se lit au journal
   std::optional<net::Autotuner> tuner;
   if (options_.autotune) {
     tuner.emplace(*context_, *memory_, *pipelines_, profile_, cache_dir_ / "vulkan" / "autotune.tsv",
@@ -338,8 +340,9 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   log(BackendLogLevel::Info,
-      std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
-                  data->dispatches.size(),
+      std::format("{} construit en {:.1f} s : {} nœuds, {} dispatchs{}", model.id,
+                  std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(),
+                  data->graph.nodes.size(), data->dispatches.size(),
                   tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante), "
                                       "{} dès leur sondage, {} choix revérifiés sous ce pilote ({}, {})",
                                       tuner->measured(), tuner->rejected(), tuner->pruned(),

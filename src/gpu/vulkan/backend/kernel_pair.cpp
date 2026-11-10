@@ -2,11 +2,13 @@
 // mesure d'une paire (coupe de scène, dessins tenus) relue sans attente par previous_scores.
 #include <cstring>
 #include <format>
+#include <optional>
 #include <span>
 
 #include "core/moving_area.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
+#include "gpu/vulkan/compute/memory.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
 
@@ -165,6 +167,12 @@ std::expected<void, Refusal> VulkanKernelOps::measure(const DecodedFrame& a, con
                static_cast<std::uint32_t>(kernels::kHeldBlock);
   s.order = ++score_order_;
   return {};
+}
+
+std::optional<KernelOps::DeviceMemory> VulkanKernelOps::device_memory() {
+  const std::optional<HeapUse> use = device_heap_use(context_);
+  if (!use) return std::nullopt;
+  return DeviceMemory{.used = use->used, .total = use->total};
 }
 
 std::optional<PairScores> VulkanKernelOps::previous_scores() {
