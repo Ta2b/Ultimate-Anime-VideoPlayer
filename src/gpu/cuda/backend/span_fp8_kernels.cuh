@@ -23,6 +23,11 @@
 #include "gpu/cuda/backend/ring_surface.h"
 
 namespace ajp::gpu::cuda::span_fp8_kernels {
+// Espace anonyme, comme span_fp8_layout.cuh : chaque .cu qui inclut ce fichier (réseau FP8, référence) a
+// ses propres noyaux, souches et lanceurs. Nommés, l'éditeur de liens pliait les souches des mêmes
+// instanciations d'un fichier à l'autre, et l'attribut de mémoire partagée visait un autre module que
+// celui du lancement (A02-05).
+namespace {
 
 struct KP {
   const uint8_t* skip = nullptr;  // saut x, NHWC E4M3 (mode 1)
@@ -253,12 +258,10 @@ struct Launcher {
   KP kp;
   dim3 grid, block;
   size_t smem = 0;
-  // Refus de cudaFuncSetAttribute (mémoire partagée au-delà de 48 Ko). Posé à init, puis de nouveau avant le
-  // premier lancement : net_kernel est instancié dans plusieurs .cu (référence et réseau FP8), et en Release
-  // le pliage des souches de l'hôte faisait viser à l'attribut le module d'un autre fichier que celui du
-  // lancement (« invalid argument », 58 368 o, RTX 4070 Ti). Posé dans launch, il vise le même.
-  mutable cudaError_t attribute = cudaSuccess;
-  mutable bool armed = false;
+  // Refus de cudaFuncSetAttribute (mémoire partagée au-delà de 48 Ko), posé à init. Les noyaux sont propres
+  // à chaque .cu (espace anonyme) : l'attribut vise le module du lancement. Seul le mode 1 (W1 en mémoire
+  // partagée) dépasse encore 48 Ko en FP16 ; les autres n'ont plus besoin de l'opt-in (A02-02).
+  cudaError_t attribute = cudaSuccess;
 
   // Convolution RxR (remplissage pad), Cin canaux d'entrée, Kout canaux de sortie, image HxW.
   void init(int H, int W, int R, int pad, int Cin, int Kout, const E* in, const E* w, const KP& k) {
@@ -277,19 +280,15 @@ struct Launcher {
     kp.fw = W;
     grid = typename Base::ThreadblockSwizzle().get_grid_shape(params.grid_tiled_shape);
     block = dim3(Base::kThreadCount);
-    smem = ((sizeof(typename Base::Mma::SharedStorage) + 15) / 16) * 16 + 64 * 72 * 2;
+    // W1 (64 × 72 demi-flottants) n'est réservé qu'en mode 1, le seul qui le lise : le FP16 (C16) des
+    // autres modes tient en 48 Ko pile et loge deux blocs par SM sur Ada au lieu d'un (A02-02).
+    smem = ((sizeof(typename Base::Mma::SharedStorage) + 15) / 16) * 16 + (Mode == 1 ? 64 * 72 * 2 : 0);
     if (smem > 48 * 1024)
       attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
                                        cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
   }
-  void launch(cudaStream_t s) const {
-    if (smem > 48 * 1024 && !armed) {
-      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
-                                       cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
-      armed = true;
-    }
-    net_kernel<Base, Mode, Relu><<<grid, block, smem, s>>>(params, kp);
-  }
+  void launch(cudaStream_t s) const { net_kernel<Base, Mode, Relu><<<grid, block, smem, s>>>(params, kp); }
 };
 
+}  // namespace
 }  // namespace ajp::gpu::cuda::span_fp8_kernels
