@@ -216,8 +216,8 @@ TEST_CASE("Erreurs visibles : chaque code de refus a une phrase, pas son seul no
   for (int value = 0; value <= static_cast<int>(ajp::RefusalCode::EncodeFailed); ++value) {
     const auto code = static_cast<ajp::RefusalCode>(value);
     for (const bool french : {false, true}) {
-      const std::optional<ajp::app::play::FrenchUi> ui =
-          french ? std::optional<ajp::app::play::FrenchUi>(std::in_place) : std::nullopt;
+      std::optional<ajp::app::play::FrenchUi> ui;  // construit sur place : FrenchUi ne se copie pas
+      if (french) ui.emplace();
       const std::string shown = ajp::app::play::visible_error(ajp::Refusal{code, "détail"});
       INFO(name(code) << " : " << shown);
       if (shown.starts_with("error ") || shown.starts_with("erreur ")) ++by_name;
