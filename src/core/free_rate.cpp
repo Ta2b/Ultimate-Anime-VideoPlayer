@@ -96,8 +96,9 @@ bool FreeRate::should_fall_back(std::int64_t now_us) const {
   const auto spread = std::ranges::count_if(buckets_, [&](const Bucket& b) {
     return b.lost > 0 && b.index >= first && b.index <= now_us / kBucketUs;
   });
-  return lost >= kFallbackMinLost && produced > 0 && lost * 1000 >= produced * kFallbackPerMille &&
-         spread >= kFallbackMinBuckets;
+  return fallback_due(
+      {.min_lost = kFallbackMinLost, .per_mille = kFallbackPerMille, .min_buckets = kFallbackMinBuckets},
+      lost, produced, static_cast<int>(spread));
 }
 
 FreeInfo FreeRate::info(std::int64_t now_us) const {

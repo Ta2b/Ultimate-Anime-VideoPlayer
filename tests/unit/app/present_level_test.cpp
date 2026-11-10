@@ -33,6 +33,39 @@ TEST_CASE("présentation : table des niveaux selon ce qui est offert et demandé
   CHECK(choose_present_level(wait, PresentWanted::Timing) == PresentLevel::Wait);
 }
 
+TEST_CASE("présentation : le niveau qui date passe devant celui qui sonde (A10-02)", "[app][present]") {
+  // CachyOS, KDE Wayland, le défaut --present=wait : wp_presentation doit s'ouvrir, et passer devant
+  // present_wait2 qui ne date rien (sans date, pas de grille des vblanks).
+  CHECK(wants_wayland(PresentWanted::Wait));
+  CHECK(wants_wayland(PresentWanted::Auto));
+  CHECK(wants_wayland(PresentWanted::Timing));
+  CHECK(wants_wayland(PresentWanted::Wayland));
+  CHECK_FALSE(wants_wayland(PresentWanted::Open));
+  const PresentCaps both{.present_id2 = true, .present_wait2 = true, .wayland_presentation = true};
+  CHECK(choose_present_level(both, PresentWanted::Wait) == PresentLevel::Wayland);
+  CHECK(choose_present_level(both, PresentWanted::Auto) == PresentLevel::Wayland);
+  CHECK(choose_present_level(both, PresentWanted::Wayland) == PresentLevel::Wayland);
+  // Sans wp_presentation (X11, Windows), le sondage reste.
+  const PresentCaps wait{.present_id2 = true, .present_wait2 = true};
+  CHECK(choose_present_level(wait, PresentWanted::Wait) == PresentLevel::Wait);
+  // Present timing date aussi : il reste devant quand il est demandé, jamais à --present=wait.
+  const PresentCaps all{
+      .present_id2 = true, .present_wait2 = true, .timing = true, .wayland_presentation = true};
+  CHECK(choose_present_level(all, PresentWanted::Auto) == PresentLevel::Timing);
+  CHECK(choose_present_level(all, PresentWanted::Wait) == PresentLevel::Wayland);
+}
+
+TEST_CASE("présentation : present timing muet retombe (A10-06)", "[app][present]") {
+  CHECK_FALSE(feedback_silent(0, 0));
+  CHECK_FALSE(feedback_silent(kSilentPresents - 1, 0));
+  CHECK(feedback_silent(kSilentPresents, 0));
+  CHECK_FALSE(feedback_silent(10 * kSilentPresents, 1));  // un seul retour : le niveau répond
+  CHECK(fallback_level(true) == PresentLevel::Wayland);
+  CHECK(fallback_level(false) == PresentLevel::Wait);
+  CHECK(timing_level(PresentLevel::TimingAbsolute));
+  CHECK_FALSE(timing_level(PresentLevel::Wayland));
+}
+
 TEST_CASE("présentation : --present et la forme de la swapchain", "[app][present]") {
   CHECK(parse_present("auto") == PresentWanted::Auto);
   CHECK(parse_present("timing") == PresentWanted::Timing);

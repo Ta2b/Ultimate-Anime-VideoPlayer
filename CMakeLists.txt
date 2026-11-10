@@ -50,7 +50,7 @@ endif()
 # (/Z7, sans PDB partagé : sccache les met en cache et la compilation parallèle n'a pas de verrou) et le lieur
 # écrit un PDB complet pour chaque exécutable et chaque module. La CI les archive à part, jamais dans la release.
 if(MSVC)
-  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<NOT:$<CONFIG:Debug>>:Embedded>")
+  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<CONFIG:Debug>,ProgramDatabase,Embedded>")
   add_link_options($<$<NOT:$<CONFIG:Debug>>:/DEBUG:FULL$<SEMICOLON>/OPT:REF$<SEMICOLON>/OPT:ICF>)
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)

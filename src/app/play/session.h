@@ -25,10 +25,12 @@
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
 #include "app/play/links.h"
+#include "app/play/overlay_hold.h"
 #include "app/play/settings.h"
 #include "app/play/subtitle_queue.h"
 #include "core/clock.h"
 #include "core/messages.h"
+#include "core/phase_trim.h"
 #include "core/ring.h"
 #include "core/vsync_index.h"
 #include "subs/subtitle_frame.h"
@@ -122,7 +124,8 @@ struct PresentRecord {
   bool fresh = false;
   std::int64_t acquire_us = 0;     // attente d'une image de la swapchain
   std::int64_t render_us = 0;      // composition soumise, l'acquisition exclue
-  std::int64_t queue_wait_us = 0;  // attente d'une place dans la file de l'écran
+  std::int64_t queue_wait_us = 0;  // temps passé dans swap_buffers (ScreenTiming::queue_wait_us)
+  std::int64_t vsync_us = 0;       // un vsync vu par l'acquisition (ScreenTiming::vsync_us) ; 0 : aucun
   std::int64_t interval_us = 0;    // depuis l'image neuve précédente ; 0 pour un redessin
   std::int64_t dropped = 0;        // total des images sautées
   // Ce qui a demandé la présentation : « i » image neuve, « s » sous-titres, « o » OSD, « u »
@@ -213,7 +216,13 @@ class Session {
   void on_frame(const RingFrame& frame);
   void on_subtitles(subs::SubtitleFrame&& frame);
   void on_refusal(const StageRefusal& refusal);
-  void on_stream_ended(const StreamEnded& end);
+  // La source a abandonné la lecture (disque débranché, partage perdu) : sa fin de flux n'est pas la fin de
+  // la vidéo. Un échec, qui se dit et n'enchaîne pas l'épisode suivant (A13-02).
+  void on_stream_ended(const StreamEnded& end) {
+    if (end.epoch != epoch_) return;
+    stream_ended_ = true;
+    if (read_lost_ && !failure_) failure_ = std::move(read_lost_);
+  }
   void request_subtitles(const RingFrame& frame);
   void retire(const RingFrame& frame);
   void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
@@ -304,6 +313,16 @@ class Session {
   OutputSize shown_size_;         // taille de sortie de la dernière présentation
   std::int64_t shown_at_us_ = 0;  // instant hôte de la dernière présentation
   bool present_requested_ = false;
+  // L'interface et l'OSD attendent l'image neuve quand elle est proche (overlay_hold.h, A24-02).
+  OverlayHold overlay_;
+  bool overlay_due(std::int64_t host_now, const UiFrame& ui, bool& osd_changed) {
+    const bool hold =
+        overlay_holds(paused_, stats_.last_new_present_us, host_now, pacing_period_us(), display_period());
+    const bool ui_new = ui.changed || (ui.draw != nullptr) != shown_ui_;
+    const OverlayHold::Due due = overlay_.note(osd_changed, ui_new, hold, fresh_);
+    osd_changed = due.osd;
+    return due.ui;
+  }
   bool shown_ui_ = false;                         // la dernière présentation avait une interface
   StatsSettings show_stats_;                      // mesures affichées
   std::vector<std::string> osd_;                  // relu toutes les kOsdPeriodUs
@@ -322,10 +341,17 @@ class Session {
   void pace(const RingFrame& frame, std::int64_t visible_us);
   // Synchro sur l'écran : la vitesse qui cale la sortie, demandée quand elle change.
   void follow_display();
+  // Le remplissage de la file, lissé : une présentation qui a attendu plus d'un quart de période compte
+  // pleine.
+  void note_queue_wait(std::int64_t waited_us, std::int64_t period);
   std::int64_t display_period() const;  // la période de l'écran, connue, mesurée ou supposée
   std::int64_t display_delay_us(std::int64_t period) const;
 
   double speed_ = 1.0;
+  // Calage de phase de la vitesse calée (A12-06) : nourri par la position des images neuves sur la grille
+  // mesurée des vblanks, seulement quand la vitesse est calée sur l'écran (speed_locked_).
+  core::PhaseTrim phase_trim_;
+  bool speed_locked_ = false;
   double queue_fill_ = 0.0;         // part récente des présentations qui ont attendu une place en file
   std::int64_t presented_seq_ = 0;  // présentations réussies (PresentRecord::seq)
 };

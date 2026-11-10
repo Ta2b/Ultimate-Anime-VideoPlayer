@@ -358,10 +358,16 @@ struct Change {
   ChangeCost cost = ChangeCost::None;
   std::string reason;  // pour Reopen : ce qui sera reconstruit ou rechargé, affiché avant d'appliquer
 };
+struct OpenedChain;  // chain_shape.h
 // rife_loaded : un moteur RIFE est chargé (passer de 0 à ×N se fait alors en direct).
-Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded);
-// La part de wanted qui s'applique en direct : running, avec les réglages directs de wanted.
-PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded);
+// opened : la chaîne ouverte ; un facteur, Auto, Rapide ou plafond qui demandent un anneau plus profond ou un
+// autre ordre du warp la rouvrent (A08-03). nullptr : aucune chaîne ouverte, rien à comparer.
+Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
+                      const OpenedChain* opened = nullptr);
+// La part de wanted qui s'applique en direct : running, avec les réglages directs de wanted. Avec opened, le
+// facteur, Auto, Rapide et le plafond de wanted ne passent que si la chaîne ouverte leur convient.
+PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
+                       const OpenedChain* opened = nullptr);
 // Le brouillon du panneau quand running a changé ailleurs (seen : running vu avant) : il prend les réglages
 // directs de running, sans perdre un choix qui attend « Appliquer » (×8 choisi sans RIFE chargé, un moteur du
 // mouvement changé sans interpolation) : un tel réglage ne suit running que si running l'a lui-même changé.

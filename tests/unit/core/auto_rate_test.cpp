@@ -514,3 +514,112 @@ TEST_CASE("auto : le plafond du niveau tient en lecture (P3.36)", "[auto_rate]")
   CHECK(fixed.ceiling == 5);
   CHECK(fixed.locked == std::vector<int>{2, 5});
 }
+
+namespace {
+
+constexpr double kFilm = 24000.0 / 1001.0;   // 23,976 i/s
+constexpr double kVideo = 30000.0 / 1001.0;  // 29,97 i/s
+
+// Les facteurs des paliers calés, en multiplicateur.
+std::vector<double> locked_factors(const ajp::core::AutoLimits& limits) {
+  std::vector<double> out;
+  for (const ajp::core::Ratio& r : limits.exact) out.push_back(r.value());
+  return out;
+}
+
+}  // namespace
+
+TEST_CASE("A12-02 : à 165 Hz fixe, le Stable a des paliers calés pour 23,976 et 29,97", "[auto_rate]") {
+  using ajp::core::auto_limits;
+  using ajp::core::Ratio;
+  const ajp::core::AutoLimits film = auto_limits(165.0, kFilm, false, 4);
+  REQUIRE(film.locked.size() == film.exact.size());
+  REQUIRE(film.locked.size() >= 4);
+  // ×1, puis 165 / (k · 23,976) pour k = 4, 3, 2 : chaque image tient k rafraîchissements, exactement.
+  CHECK(film.exact[0] == Ratio{1, 1});
+  CHECK(film.exact[1] == Ratio{11011, 6400});
+  CHECK(film.exact[2] == Ratio{11011, 4800});
+  CHECK(film.exact[3] == Ratio{11011, 3200});
+  for (std::size_t i = 1; i < film.exact.size(); ++i) {
+    const double vsyncs = 165.0 / ((24000.0 / 1001.0) * film.exact[i].value());
+    CHECK(std::abs(vsyncs - std::round(vsyncs)) < 1e-4);
+  }
+  // Le niveau ×4 s'arrête à ×3,44 ; ×6,88 reste hors d'atteinte.
+  CHECK(film.ceiling == 9);
+  CHECK(film.locked[3] == 7);
+  // Niveau ×8 : ×6,88, une image par rafraîchissement, arrondi à 14 demi-paliers et atteignable.
+  const ajp::core::AutoLimits top = auto_limits(165.0, kFilm, false, 8);
+  CHECK(top.exact.back() == Ratio{11011, 1600});
+  CHECK(top.locked.back() == 14);
+  CHECK(top.ceiling >= 14);
+
+  const ajp::core::AutoLimits video = auto_limits(165.0, kVideo, false, 4);
+  CHECK(video.exact.size() >= 3);
+  CHECK(video.exact[2] == Ratio{11, 4});  // ×2,75 : deux rafraîchissements par image
+}
+
+TEST_CASE("A12-02 : à 144 Hz fixe, le 29,97 est interpolé ; les écrans d'avant gardent leurs paliers",
+          "[auto_rate]") {
+  using ajp::core::auto_limits;
+  using ajp::core::Ratio;
+  const ajp::core::AutoLimits video = auto_limits(144.0, kVideo, false, 4);
+  REQUIRE(video.exact.size() >= 3);
+  CHECK(video.exact[1] == Ratio{1001, 625});   // ×1,60 : trois rafraîchissements par image
+  CHECK(video.exact[2] == Ratio{3003, 1250});  // ×2,40 : deux
+  // Les tableaux de l'audit, inchangés : mêmes paliers, mêmes facteurs.
+  CHECK(auto_limits(60.0, kFilm, false, 4).locked == std::vector<int>{2, 5});
+  CHECK(auto_limits(60.0, kVideo, false, 4).locked == std::vector<int>{2, 4});
+  CHECK(auto_limits(144.0, kFilm, false, 8).locked == std::vector<int>{2, 3, 4, 6, 12});
+  CHECK(locked_factors(auto_limits(144.0, kFilm, false, 8)) == std::vector<double>{1.0, 1.5, 2.0, 3.0, 6.0});
+  CHECK(auto_limits(120.0, kVideo, false, 4).locked == std::vector<int>{2, 4, 8});
+  // 120 Hz et 23,976 : ×5/3 (trois rafraîchissements par image) s'ajoute à ×2,5 et ×5.
+  CHECK(locked_factors(auto_limits(120.0, kFilm, false, 8)) == std::vector<double>{1.0, 5.0 / 3.0, 2.5, 5.0});
+}
+
+TEST_CASE("A12-02 : le palier courant rend son facteur exact", "[auto_rate]") {
+  ajp::core::AutoLimits limits = ajp::core::auto_limits(165.0, kFilm, false, 4);
+  ajp::core::AutoRate rate;
+  rate.set_ceiling(limits.ceiling, limits.granularity);
+  rate.set_locked(limits.locked, limits.exact);
+  // Départ à ×2 (4 demi-paliers) : ramené au palier calé du dessous, ×1,72.
+  CHECK(rate.step() == 3);
+  CHECK(rate.factor() == ajp::core::Ratio{11011, 6400});
+  // Sans facteurs exacts (VRR, ou paliers posés à la main) : palier / granularité.
+  ajp::core::AutoRate plain(6, 2);
+  CHECK(plain.factor() == ajp::core::Ratio{4, 2});
+}
+
+TEST_CASE("A12-04 : les paliers se calent sur l'écran, le plafond ne fait que borner", "[auto_rate]") {
+  // Écran fixe à 165 Hz, plafond de 120 i/s : ×2,5 et ×5 calent 120 Hz, pas 165. Restent les paliers de
+  // l'écran dont la cadence tient sous le plafond : ×1,72 (41 i/s), ×2,29 (55 i/s), ×3,44 (82,5 i/s).
+  const ajp::core::AutoLimits capped = ajp::core::auto_limits(165.0, kFilm, false, 8, 120.0);
+  CHECK(capped.locked == std::vector<int>{2, 3, 5, 7});
+  CHECK(capped.exact.back() == ajp::core::Ratio{11011, 3200});
+  for (const ajp::core::Ratio& r : capped.exact) CHECK(r.value() * kFilm <= 120.0 * 1.01);
+  // Sans plafond, comme avant.
+  CHECK(ajp::core::auto_limits(165.0, kFilm, false, 8).locked.back() == 14);
+}
+
+TEST_CASE("A12-05 : aucun réarmement quand aucun palier n'existe au-dessus du plancher", "[auto_rate]") {
+  ajp::core::AutoRate rate(9, 2);
+  rate.set_locked({2});
+  CHECK(rate.step() == 2);
+  const std::uint32_t before = rate.changes();
+  std::int64_t now = 10 * kSecond;
+  for (int i = 0; i < 600; ++i) {  // 60 s de lecture, des paires propres
+    now += 100'000;
+    rate.alive(now);
+    rate.tick(now, true);
+  }
+  CHECK(rate.step() == 2);
+  CHECK(rate.changes() == before);
+  // Avec un palier calé au-dessus, le réarmement tient toujours.
+  ajp::core::AutoRate locked(9, 2);
+  locked.set_locked({2, 5});
+  for (int i = 0; i < 200; ++i) {
+    now += 100'000;
+    locked.alive(now);
+    locked.tick(now, true);
+  }
+  CHECK(locked.step() == 5);
+}

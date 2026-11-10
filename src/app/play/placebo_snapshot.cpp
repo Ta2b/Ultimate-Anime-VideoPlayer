@@ -21,14 +21,14 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
   params.w = out.width;
   params.h = out.height;
   // PQ seulement si l'écran le reçoit ; sinon l'instantané reste en SDR.
-  const bool pq = path.string().ends_with(".pq.ppm") && target.color.transfer == PL_COLOR_TRC_PQ;
+  const bool pq = core::to_utf8(path).ends_with(".pq.ppm") && target.color.transfer == PL_COLOR_TRC_PQ;
   // Constat 6 de l'audit du grade : le grade chargé est celui du PQ ; rendu en sRGB, l'instantané sort sans
   // lui (coché ou décoché, le même fichier). Seul .pq.ppm est fidèle : le journal le dit.
   if (!pq && target.color.transfer == PL_COLOR_TRC_PQ && grade && channel)
     channel->warn(
         "instantané {} : sortie HDR10, l'image SDR est sans grade ; un nom en .pq.ppm garde "
         "l'image gradée telle que l'écran la reçoit",
-        path.filename().string());
+        core::to_utf8(path.filename()));
   params.format = pl_find_named_fmt(gpu, pq ? "rgba16" : "rgba8");
   params.renderable = true;
   params.blit_dst = true;

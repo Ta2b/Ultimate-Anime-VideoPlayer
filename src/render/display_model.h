@@ -11,6 +11,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <optional>
 
 namespace ajp::render {
@@ -56,6 +57,10 @@ struct DisplayContract {
   double min_nits = 0.0;                          // noir annoncé, cd/m² affichées
   bool oled = false;
   bool from_compositor = false;  // la référence et le pic lus chez le compositeur (KDE), pas supposés
+  // D'où vient le pic, pour le journal (A10-19) : sans KDE, ni marge de SDL, ni EDID, les 1000 nits ne sont
+  // qu'une valeur par défaut.
+  enum class PeakSource : std::uint8_t { Default, Compositor, Headroom, Edid };
+  PeakSource peak_source = PeakSource::Default;
 
   double k() const { return reference_nits > 0.0 ? reference_nits / kContentReferenceNits : 1.0; }
   double content_peak_nits() const { return panel_peak_nits / k(); }      // C_pk

@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "core/cost_model.h"
+#include "core/profile.h"
 
 namespace ajp::core {
 
@@ -53,15 +54,25 @@ int auto_ceiling(double display_hz, double source_fps, int granularity = 1);
 // l'écran ou la cadence sont inconnus.
 std::vector<int> locked_steps(double display_hz, double source_fps, int granularity);
 
-// Les bornes du mode Stable pour un écran : au fps près en VRR armé (kFineGranularity) ; à fréquence fixe, en
-// demi-paliers et seulement les paliers calés (P3.33). Plafond : l'écran, et le niveau (P3.36, ×2, ×3, ×4 :
-// level_factor ; en demi-paliers, un de plus, ×2,5 à 60 Hz pour un niveau à ×2 ; < 2 : aucun).
+// Les bornes du mode Stable pour un écran : au fps près en VRR armé (kFineGranularity) ; à fréquence fixe,
+// seulement les paliers calés (P3.33). Plafond : l'écran, et le niveau (P3.36, ×2, ×3, ×4 : level_factor ; en
+// demi-paliers, un de plus, ×2,5 à 60 Hz pour un niveau à ×2 ; < 2 : aucun).
+//
+// À fréquence fixe, un palier calé est un facteur display_hz / (k · source_fps) : chaque image tient k
+// rafraîchissements. Quand ce facteur n'est pas un demi-palier (×3,44 pour 23,976 i/s à 165 Hz, ×2,40 pour
+// 29,97 à 144 Hz), il est donné en fraction exacte (core/pacing.h : lock_factor) : `exact` porte le facteur
+// de chaque palier de `locked`, le palier lui-même n'étant que son arrondi en demi-paliers pour le modèle de
+// coût (A12-02). Les facteurs sous ×1,5 sont laissés : presque toutes les images y seraient créées pour un
+// gain de fluidité faible.
+// cap_hz (A12-04) : le plafond choisi, en i/s ; il borne la cadence de sortie, jamais le calage, qui se fait
+// sur l'écran. 0 : aucun.
 struct AutoLimits {
   int ceiling = 1;
   int granularity = 1;
-  std::vector<int> locked;  // vide : tous les paliers
+  std::vector<int> locked;   // vide : tous les paliers
+  std::vector<Ratio> exact;  // le facteur de chaque palier de locked
 };
-AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor);
+AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor, double cap_hz = 0.0);
 
 // La fréquence que le plafond du mode auto prend pour l'écran : la plus basse du plafond choisi (cap > 0, en
 // i/s) et de l'écran ; écran inconnu (<= 0) : inchangé, l'interpolation reste à ×1.
@@ -113,6 +124,7 @@ struct PairOutcome {
 
 struct AutoInfo {
   int step = 1;
+  int centi = 100;  // le facteur du palier, en centièmes (AutoRate::centi)
   int granularity = 1;
   int ceiling = 1;
   int predicted = 0;   // le palier que la prédiction tiendrait ; 0 : pas assez de mesures
@@ -169,14 +181,19 @@ class AutoRate {
   // Plafond et granularité changés ensemble (le VRR s'arme ou se coupe) : le palier courant, le plafond
   // appris et les pénalités passent dans la nouvelle unité, sans dépasser le plafond.
   void set_ceiling(int ceiling, int granularity);
-  // P3.33 : les seuls paliers permis (locked_steps) ; vide, tous.
-  void set_locked(std::vector<int> steps);
+  // P3.33 : les seuls paliers permis (locked_steps, ou auto_limits avec leur facteur exact) ; vide, tous.
+  // `exact` : rien, ou un facteur par palier, dans le même ordre.
+  void set_locked(std::vector<int> steps, std::vector<Ratio> exact = {});
+  // Le facteur d'interpolation du palier courant : sa fraction exacte s'il en a une, sinon palier /
+  // granularité.
+  Ratio factor() const;
 
   // Départ à un palier retenu (en centièmes de multiplicateur) : un cran en dessous, la montée rapide fait
   // le reste.
   void seed(int remembered_centi, std::int64_t now_us);
-  // Le palier courant en centièmes de multiplicateur (250 = ×2,5), indépendant de la granularité.
-  int centi() const { return step_ * 100 / granularity_; }
+  // Le facteur courant en centièmes de multiplicateur (250 = ×2,5, 344 pour 11011/3200), indépendant de la
+  // granularité.
+  int centi() const;
 
   // Une paire préparée. Rend le palier à utiliser pour la suivante.
   int pair(const PairOutcome& outcome);
@@ -219,7 +236,8 @@ class AutoRate {
   int ceiling_;
   int step_;
   std::vector<int> locked_;
-  int hint_ = 0;  // dernier palier tenu, retenu d'une lecture d'avant
+  std::vector<Ratio> exact_;  // vide, ou un facteur par palier de locked_
+  int hint_ = 0;              // dernier palier tenu, retenu d'une lecture d'avant
   AutoReason reason_ = AutoReason::Start;
   std::uint32_t changes_ = 0;
   std::int64_t last_change_us_ = -kMinRiseGapUs;

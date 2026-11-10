@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -34,7 +35,7 @@ struct FeedbackRead {
 
 class PresentFeedback {
  public:
-  // wayland : la source du retour au niveau Wayland (placebo_wayland.h), nulle aux autres.
+  // wayland : la source du retour au niveau Wayland (placebo_wayland.h) ; aux niveaux Timing, le repli.
   PresentFeedback(pl_vulkan vk, PresentLevel level, const PresentCaps& caps,
                   std::shared_ptr<spdlog::logger> channel, std::unique_ptr<WaylandPresentation> wayland = {});
   ~PresentFeedback();
@@ -47,7 +48,8 @@ class PresentFeedback {
   // Le résultat de vkQueuePresentKHR (pl_vulkan_swapchain_submit).
   void submitted(VkResult result);
 
-  // Le niveau effectif : Timing peut retomber à Wait sans domaine de temps lisible.
+  // Le niveau effectif : Timing retombe (Wayland s'il est ouvert, sinon Wait) sans domaine de temps lisible
+  // ou quand rien ne revient (present_level.h : feedback_silent).
   PresentLevel level() const { return level_; }
   std::uint64_t last_id() const { return last_id_; }
   const FeedbackRead& last_read() const { return read_; }
@@ -89,6 +91,8 @@ class PresentFeedback {
   void poll_wait(VkSwapchainKHR swapchain, std::int64_t now_us);
   void accept(std::uint64_t id, std::int64_t visible_us, bool dated);
   void read_wayland();
+  void fall_back(std::string_view why);
+  void drop_if_silent();
 
   pl_vulkan vk_;
   PresentLevel level_;

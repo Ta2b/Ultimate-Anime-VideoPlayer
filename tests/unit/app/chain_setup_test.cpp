@@ -42,4 +42,101 @@ TEST_CASE("Repli du Rapide : la séance passe en Stable, le choix des réglages 
   CHECK_FALSE(free_requested(s, false));
 }
 
+namespace {
+
+// Une chaîne ouverte pour s : 1080p de sortie, 23,976 i/s, écran à 165 Hz, SPAN et RIFE chargés.
+OpenedChain opened_for(const PlaySettings& s, int output_height = 1080) {
+  OpenedChain o{.display_hz = 165.0,
+                .source_fps = 23.976,
+                .output_height = output_height,
+                .span = true,
+                .rife_loaded = true};
+  o.shape = chain_shape(s, o);
+  return o;
+}
+
+PlaySettings manual(int factor) {
+  PlaySettings s;
+  s.upscale = true;
+  s.rife_factor = factor;
+  s.rife_auto = false;
+  s.auto_free = false;
+  return s;
+}
+
+}  // namespace
+
+TEST_CASE("A08-03 : ×2 ouvert, ×4 demande un autre anneau et un autre ordre du warp", "[app][chain]") {
+  const PlaySettings x2 = manual(2);
+  const OpenedChain opened = opened_for(x2);
+  CHECK(opened.shape == ChainShape{.ring = 4, .warp_after_span = false});
+  CHECK(fits(opened, x2));
+
+  const PlaySettings x4 = manual(4);
+  CHECK_FALSE(fits(opened, x4));
+  const Change change = change_between(x2, x4, true, &opened);
+  CHECK(change.cost == ChangeCost::Reopen);
+  CHECK(change.reason.find("frame ring") != std::string::npos);
+  CHECK(change.reason.find("after SPAN") != std::string::npos);
+  // Sans chaîne à comparer (accueil), le facteur reste un réglage direct.
+  CHECK(change_between(x2, x4, true).cost == ChangeCost::Live);
+  // Et la part directe garde le facteur en cours jusqu'à « Appliquer ».
+  CHECK(live_part(x2, x4, true, &opened).rife_factor == 2);
+  CHECK(live_part(x2, x4, true).rife_factor == 4);
+}
+
+TEST_CASE("A08-03 : ×2 manuel ouvert, Auto Rapide à 165 Hz rouvre", "[app][chain]") {
+  const PlaySettings x2 = manual(2);
+  const OpenedChain opened = opened_for(x2);
+  PlaySettings fast = x2;
+  fast.rife_auto = true;
+  fast.auto_free = true;
+  CHECK(chain_shape(fast, opened) == ChainShape{.ring = 8, .warp_after_span = true});
+  CHECK(change_between(x2, fast, true, &opened).cost == ChangeCost::Reopen);
+  const PlaySettings live = live_part(x2, fast, true, &opened);
+  CHECK_FALSE(live.rife_auto);
+  CHECK_FALSE(live.auto_free);
+  // Le brouillon du panneau garde le choix qui attend quand un autre réglage bouge ailleurs.
+  PlaySettings louder = x2;
+  louder.volume = 0.5F;
+  const PlaySettings draft = follow_running(fast, x2, louder, true);
+  CHECK(draft.rife_auto);
+  CHECK(draft.auto_free);
+  CHECK(draft.volume == 0.5F);
+}
+
+TEST_CASE("A08-03 : ce qui tient dans la chaîne ouverte reste direct", "[app][chain]") {
+  // Ouverte à ×4 : anneau de 6, warp après SPAN. ×3 y tient ; ×2 demande le warp avant SPAN (qualité).
+  const PlaySettings x4 = manual(4);
+  const OpenedChain opened = opened_for(x4);
+  CHECK(opened.shape == ChainShape{.ring = 6, .warp_after_span = true});
+  CHECK(change_between(x4, manual(3), true, &opened).cost == ChangeCost::Live);
+  const Change down = change_between(x4, manual(2), true, &opened);
+  CHECK(down.cost == ChangeCost::Reopen);
+  CHECK(down.reason.find("before SPAN") != std::string::npos);
+  // Couper l'interpolation ne rouvre jamais.
+  CHECK(change_between(x4, manual(0), true, &opened).cost == ChangeCost::Live);
+  // Sortie au-dessus de 1080p : le warp est après SPAN à tout facteur, ×2 → ×3 ne demande que l'anneau.
+  const OpenedChain uhd = opened_for(manual(4), 2160);
+  CHECK(change_between(manual(4), manual(2), true, &uhd).cost == ChangeCost::Live);
+  // Sans SPAN, l'ordre du warp ne compte pas.
+  OpenedChain bare = opened_for(manual(4));
+  bare.span = false;
+  bare.shape = chain_shape(manual(4), bare);
+  CHECK(change_between(manual(4), manual(2), true, &bare).cost == ChangeCost::Live);
+}
+
+TEST_CASE("A22-04 : le plafond de l'Auto qui change le plus haut facteur rouvre", "[app][chain]") {
+  // Auto Stable jusqu'à ×4, plafonné à 60 i/s : ×2 au plus sur 23,976, warp avant SPAN, anneau de 4.
+  PlaySettings capped = manual(4);
+  capped.rife_auto = true;
+  capped.auto_cap = 60;
+  const OpenedChain opened = opened_for(capped);
+  CHECK(opened.shape == ChainShape{.ring = 6, .warp_after_span = false});
+  PlaySettings free = capped;
+  free.auto_cap = 0;  // l'écran : ×4, warp après SPAN
+  CHECK(change_between(capped, free, true, &opened).cost == ChangeCost::Reopen);
+  CHECK(live_part(capped, free, true, &opened).auto_cap == 60);
+}
+
 }  // namespace ajp::app::play
