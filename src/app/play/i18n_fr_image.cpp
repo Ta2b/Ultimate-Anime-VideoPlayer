@@ -90,6 +90,9 @@ constexpr std::array kImageTabs{
         "on this PC, then faster, at the cost of some precision.",
         "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger. FP8 : "
         "préparé une fois sur ce PC, puis plus rapide, au prix d'un peu de précision."},
+    Entry{"Interpolation precision", "Précision de l'interpolation"},
+    Entry{"Fused engines only run at Balanced precision: the whole network is used instead.",
+          "Les moteurs fusionnés ne tournent qu'au cran Équilibre : le réseau entier sert à la place."},
     Entry{"DistilDRBA is running: fused engines.", "DistilDRBA tourne : moteurs fusionnés."},
     Entry{"DistilDRBA is running: whole network.", "DistilDRBA tourne : réseau entier."},
     Entry{"Motion variant: one SPAN pass per source frame.",
