@@ -18,6 +18,7 @@ CadenceStep FreeGrid::origin(const SourceStamp& source, GridEvent event) {
 }
 
 CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) {
+  starved_ = false;
   if (source.epoch < epoch_) return CadenceStep(GridEvent::Stale, {}, source.id);
   if (source.epoch > epoch_) {
     epoch_ = source.epoch;
@@ -53,8 +54,13 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   std::int64_t base = std::max(
       {next_due_.value_or(INT64_MIN), last_emitted_.value_or(INT64_MIN) + spacing, inputs.ready_us, g + 1});
   std::int64_t t = on_vsync(base);
+  // Le même premier instant sans l'échéance reportée : ce que la paire aurait eu si le pas ne l'avait pas
+  // repoussée.
+  const std::int64_t unheld =
+      on_vsync(std::max({last_emitted_.value_or(INT64_MIN) + spacing, inputs.ready_us, g + 1}));
   CadenceStep out(GridEvent::Pair, left_->id, source.id);
   std::size_t emitted = 0;
+  std::size_t interpolated = 0;
   // Un instant à moins d'un quart de pas de la source droite lui est ramené : l'image est la source elle-même
   // (aucune passe d'interpolation), décalée de quelques millisecondes au plus. Sur écran fixe (P3.37), le
   // vsync à moins d'une demi-période avant la source la montre telle quelle, à l'heure du vsync.
@@ -65,6 +71,7 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
     out.add({.t = on_source ? Ratio{1, 1} : Ratio{at - g, gap}, .pts_us = at});
     last_emitted_ = at;
     ++emitted;
+    if (!on_source) ++interpolated;
     base = vsync > 0 ? std::max(base + step, at + spacing) : at + step;
     t = on_vsync(base);
     if (on_source) break;
@@ -75,6 +82,8 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
     last_emitted_ = d;
     base = std::max(base, d + min_gap);
   }
+  // Affamée par le pas : la source seule, alors qu'un instant tenait à un écart minimal avant elle.
+  starved_ = interpolated == 0 && inputs.step_us > 0 && unheld <= d - min_gap;
   next_due_ = base;
   left_ = source;
   return out;
