@@ -142,22 +142,27 @@ std::expected<void, Refusal> SdlSink::open_stream(SDL_AudioDeviceID device_id) {
   const SDL_AudioSpec spec{
       .format = SDL_AUDIO_F32, .channels = format_.channels, .freq = format_.sample_rate};
   // Le périphérique s'ouvre en pause ; SDL convertit vers son format réel si besoin.
-  stream_ = SDL_OpenAudioDeviceStream(device_id, &spec, nullptr, nullptr);
-  if (stream_ == nullptr) return refuse_sdl("SDL_OpenAudioDeviceStream");
+  SDL_AudioStream* opened = SDL_OpenAudioDeviceStream(device_id, &spec, nullptr, nullptr);
+  if (opened == nullptr) return refuse_sdl("SDL_OpenAudioDeviceStream");
+  stream_ = opened;
   device_.store(SDL_GetAudioStreamDevice(stream_));
   return {};
 }
 
+// A16-01 : le flux neuf d'abord ; s'il ne s'ouvre pas (aucune sortie par défaut), l'ancien reste en place,
+// sur un périphérique retiré qui ne joue plus rien, au lieu d'un flux nul pour toute la vidéo. Le lecteur
+// réessaie plus tard (PlayerConfig::reopen_retry_us).
 std::expected<void, Refusal> SdlSink::reopen_default() {
-  const float kept_gain = stream_ != nullptr ? gain() : 1.0F;
-  const double kept_ratio = stream_ != nullptr ? ratio() : 1.0;
-  if (stream_ != nullptr) {
-    SDL_SetAudioStreamGetCallback(stream_, nullptr, nullptr);  // attend la fin d'un rappel en cours
-    SDL_DestroyAudioStream(stream_);
-    stream_ = nullptr;
-  }
+  SDL_AudioStream* old = stream_;
+  const float kept_gain = old != nullptr ? gain() : 1.0F;
+  const double kept_ratio = old != nullptr ? ratio() : 1.0;
   device_.store(0);
-  if (auto opened = open_stream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK); !opened) return opened;
+  if (old != nullptr) SDL_SetAudioStreamGetCallback(old, nullptr, nullptr);  // attend la fin d'un rappel
+  if (auto opened = open_stream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK); !opened) {
+    stream_ = old;
+    return opened;
+  }
+  if (old != nullptr) SDL_DestroyAudioStream(old);
   set_gain(kept_gain);
   set_ratio(kept_ratio);
   if (demand_) SDL_SetAudioStreamGetCallback(stream_, &on_device_request, this);

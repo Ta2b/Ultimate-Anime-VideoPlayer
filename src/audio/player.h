@@ -59,6 +59,9 @@ struct PlayerConfig {
   // Le délai mémorisé de la sortie du système, repris quand l'appareil choisi disparaît et que le son y passe
   // (A16-02) : un casque Bluetooth éteint ne laisse pas son retard aux haut-parleurs. Absent : délai gardé.
   std::optional<std::int64_t> fallback_delay_us;
+  // Sortie retirée sans sortie par défaut pour la remplacer (A16-01) : la lecture continue sans son, et la
+  // sortie par défaut est rouverte au plus toutes les reopen_retry_us.
+  std::int64_t reopen_retry_us = 2'000'000;
 };
 
 // La configuration telle quelle si elle est dans ses bornes, un refus sinon.
@@ -95,6 +98,10 @@ class AudioPlayer {
  private:
   void start_epoch(std::uint32_t epoch);
   void pump();
+  // Sans sortie (A16-01) : ce qui arrive part sans être joué, un seul refus dit ; vrai quand une sortie est
+  // de nouveau là, rouverte à son heure.
+  void lose_output(const Refusal& why);
+  bool output_back();
   void decode_next();
   void open_decoder(const AudioTrack& track);
   void queue(std::vector<PcmBlock>&& blocks);
@@ -129,7 +136,8 @@ class AudioPlayer {
   std::deque<AudioPacket> held_;             // reçus, pas encore décodés : la file du périphérique est pleine
   std::deque<PcmBlock> ready_;               // décodés, pas encore poussés
   std::optional<std::int64_t> trim_before_us_;
-  std::optional<std::int64_t> pushed_end_us_;  // fin du dernier bloc poussé, en temps média (A16-10)
+  std::optional<std::int64_t> output_retry_us_;  // sans sortie : l'instant du prochain essai
+  std::optional<std::int64_t> pushed_end_us_;    // fin du dernier bloc poussé, en temps média (A16-10)
   std::optional<std::int64_t> last_follow_us_;
   core::ClockPll pll_;                           // PlayerConfig::pll
   std::optional<std::int64_t> last_publish_us_;  // relevé précédent filtré par pll_

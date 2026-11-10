@@ -250,12 +250,30 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
   }
   if (drop.kind == DropKind::Subtitles) {
     if (auto added = to.pipeline.add_subtitle_file(drop.path)) {
+      if (to.dropped_subtitles != nullptr) to.dropped_subtitles->push_back(drop.path);
       switch_subtitles(to, *added, now_us);
       return;
     }
   }
   log_channel("app")->info("fichier glissé refusé : {}", name);
   to.ui.controls().notify(i18n::ui_tr_format("Not a video or subtitles: {}", name), now_us);
+}
+
+void carry_session(Chain& to, StageMemory* stages, std::vector<std::filesystem::path>& dropped,
+                   std::optional<std::optional<int>> wanted) {
+  to.stages = stages;
+  to.dropped_subtitles = &dropped;
+  std::erase_if(*to.dropped_subtitles, [&](const std::filesystem::path& file) {
+    auto added = to.pipeline.add_subtitle_file(file);
+    if (!added) {
+      log_channel("app")->warn("sous-titres glissés, à la réouverture : {}", added.error().detail);
+      return true;
+    }
+    if (wanted && *wanted == *added && to.pipeline.select_subtitles(*added)) to.session.set_subtitles(true);
+    return false;
+  });
+  to.ui.set_tracks(to.pipeline.tracks());
+  to.session.set_tracks(to.pipeline.describe());
 }
 
 namespace {

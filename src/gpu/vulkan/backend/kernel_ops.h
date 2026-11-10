@@ -134,6 +134,8 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
   std::expected<void, Refusal> health() override { return queue_.health(); }
+  // A45-14 : la mémoire de la carte pour les statistiques, lue du budget du pilote.
+  std::optional<DeviceMemory> device_memory() override;
 
   std::size_t recordings() const { return recordings_.size(); }
   std::size_t retained_frames() const { return retained_.size(); }

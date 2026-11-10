@@ -16,6 +16,7 @@ namespace ajp::app::play {
 // Des refus à dire en clair à l'ouverture (P3.26, P3.28) : la clé du refus les distingue.
 inline constexpr std::string_view kDolbyVision5Key = "dolby-vision-5";
 inline constexpr std::string_view kAudioOnlyKey = "audio-only";
+inline constexpr std::string_view kImageSubtitlesKey = "image-subtitles";  // A17-02
 
 namespace detail {
 
@@ -131,6 +132,8 @@ inline std::string visible_error(const Refusal& refusal) {
   if (refusal.key == kDolbyVision5Key)
     return i18n::tr("Dolby Vision profile 5 is not supported (no HDR10 or SDR picture in this file)");
   if (refusal.key == kAudioOnlyKey) return i18n::tr("this file has sound only, no picture to play");
+  if (refusal.key == kImageSubtitlesKey)
+    return i18n::tr("image subtitles (PGS, VobSub) are not supported: no subtitles");
   switch (detail::error_family(refusal.code)) {
     case detail::ErrorFamily::Unreadable:
       return i18n::tr("the file cannot be read (unknown format, damaged or missing)");

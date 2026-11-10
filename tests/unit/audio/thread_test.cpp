@@ -91,9 +91,12 @@ TEST_CASE("AudioThread : Flush et fin de flux passent par la boîte, l'horloge s
     REQUIRE(eventually([&] { return (*thread)->push_packet(AudioPacket{packet}); }));
   }
   REQUIRE((*thread)->post(EndOfStream{.epoch = 1}));
+  // En lecture, la vitesse publiée est celle du périphérique corrigée par la PLL (active par défaut) :
+  // rarement 1 tout juste. Attendre 1,0 exact ne réussissait parfois qu'à la fin de la piste, quand
+  // l'horloge passe sur l'hôte (30,31 s relevés sous macOS) ; une vitesse non nulle suffit.
   REQUIRE(eventually([&] {
     const ClockSnapshot now = clock->snapshot();
-    return now.valid && now.epoch == 1 && now.rate == 1.0;
+    return now.valid && now.epoch == 1 && now.rate > 0.0;
   }));
   const ClockSnapshot playing = clock->snapshot();
   CHECK(playing.media_us >= 30'000'000);

@@ -122,6 +122,23 @@ TEST_CASE("KernelOps : les copies d'images hôte passent par le fil d'envoi", "[
   CHECK(held.expired());
 }
 
+TEST_CASE("KernelOps : la mémoire de la carte se lit pour les statistiques (A45-14)",
+          "[vk_backend][kernels]") {
+  TempDir dir("memoire");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  const auto before = ops.device_memory();
+  if (!before) SKIP("VK_EXT_memory_budget absent de cet appareil");
+  CHECK(before->total > 0);
+  CHECK(before->used <= before->total);
+  // Un tenseur de plus ne fait pas baisser ce qui est pris.
+  auto big = rgb_tensor(*backend, 1920, 1080, TensorType::F32);
+  const auto after = ops.device_memory();
+  REQUIRE(after);
+  CHECK(after->total == before->total);
+  CHECK(after->used <= after->total);
+}
+
 TEST_CASE("KernelOps : refus nommés du contrat", "[vk_backend][kernels]") {
   TempDir dir("refus");
   auto backend = make_backend(dir.path());
