@@ -202,6 +202,69 @@ TEST_CASE("frame_data : 4:4:4, 4:2:2 et 12 bits deviennent du 4:2:0 que la chaî
   }
 }
 
+TEST_CASE("frame_data : la chaîne qui les lit garde le 4:4:4 entier et les 12 bits (A15-07, A49-13)",
+          "[media][frame_data]") {
+  struct Case {
+    AVPixelFormat from;
+    int bits;
+    ajp::PixelFormat to;
+  };
+  const Case c = GENERATE(Case{AV_PIX_FMT_YUV444P, 8, ajp::PixelFormat::Yuv444p16},
+                          Case{AV_PIX_FMT_YUV444P10LE, 10, ajp::PixelFormat::Yuv444p16},
+                          Case{AV_PIX_FMT_YUV444P12LE, 12, ajp::PixelFormat::Yuv444p16},
+                          Case{AV_PIX_FMT_YUV420P12LE, 12, ajp::PixelFormat::P016},
+                          Case{AV_PIX_FMT_YUV422P10LE, 10, ajp::PixelFormat::Yuv420p10});
+  CAPTURE(av_get_pix_fmt_name(c.from));
+  FramePtr frame = host_frame(c.from, c.bits);
+  frame->chroma_location = AVCHROMA_LOC_TOPLEFT;
+  auto decoded = to_decoded_frame(std::move(frame), 1000, 40'000, {}, true);
+  REQUIRE(decoded);
+  CHECK(decoded->format == c.to);
+  const AVFrame* out = av_frame_of(*decoded->data);
+  REQUIRE(out != nullptr);
+  CHECK(out->width == 64);
+  CHECK(out->height == 32);
+  // 12 bits en 4:2:0 : la chroma n'est pas rééchantillonnée, sa position reste.
+  if (c.to == ajp::PixelFormat::P016) CHECK(out->chroma_location == AVCHROMA_LOC_TOPLEFT);
+  if (c.to == ajp::PixelFormat::Yuv420p10) return;
+  // Le noir et le blanc du code source se retrouvent aux deux bouts des 16 bits, à un code source près.
+  const auto luma = [&](int x) {
+    return reinterpret_cast<const std::uint16_t*>(out->data[0] + 5 * out->linesize[0])[x];
+  };
+  const int step = 1 << (16 - c.bits);
+  CHECK(luma(0) == 0);
+  CHECK(luma(63) >= 65536 - step);
+  // 4:4:4 : le plan de chroma a la taille de l'image.
+  if (c.to == ajp::PixelFormat::Yuv444p16) CHECK(out->linesize[1] >= 2 * 64);
+}
+
+// Une rampe de chroma en largeur : tout filtre normalisé la rend telle quelle, à la position où il pose ses
+// points. À gauche, le point j de la chroma réduite vaut celui de la colonne 2j ; au centre, il vaudrait la
+// moyenne des colonnes 2j et 2j+1, une demi-marche plus haut.
+TEST_CASE("frame_data : la chroma réduite se pose à gauche, comme l'image le dit (A15-07)",
+          "[media][frame_data]") {
+  const AVPixelFormat from = GENERATE(AV_PIX_FMT_YUV444P10LE, AV_PIX_FMT_YUV422P10LE);
+  CAPTURE(av_get_pix_fmt_name(from));
+  FramePtr frame = host_frame(from, 10);
+  const bool wide = from == AV_PIX_FMT_YUV444P10LE;
+  constexpr int kStep = 8;  // codes par colonne de luma
+  for (int y = 0; y < 32; ++y) {
+    auto* row = reinterpret_cast<std::uint16_t*>(frame->data[1] + y * frame->linesize[1]);
+    for (int x = 0; x < (wide ? 64 : 32); ++x)
+      row[x] = static_cast<std::uint16_t>(200 + kStep * (wide ? x : 2 * x));
+  }
+  auto decoded = to_decoded_frame(std::move(frame), 0, 40'000, {});
+  REQUIRE(decoded);
+  REQUIRE(decoded->format == ajp::PixelFormat::Yuv420p10);
+  CHECK(decoded->color.siting == ajp::ChromaSiting::Left);
+  const AVFrame* out = av_frame_of(*decoded->data);
+  const auto* row = reinterpret_cast<const std::uint16_t*>(out->data[1] + 8 * out->linesize[1]);
+  for (const int j : {8, 16, 24}) {
+    CAPTURE(j);
+    CHECK(std::abs(static_cast<int>(row[j]) - (200 + kStep * 2 * j)) <= 1);
+  }
+}
+
 TEST_CASE("frame_data : yuvj444p (plage pleine) sort en plage limitée", "[media][frame_data]") {
   FramePtr frame = host_frame(AV_PIX_FMT_YUVJ444P, 8);
   auto decoded = to_decoded_frame(std::move(frame), 0, 40'000, {});

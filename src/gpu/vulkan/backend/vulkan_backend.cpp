@@ -1,6 +1,7 @@
 #include "gpu/vulkan/backend/vulkan_backend.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <limits>
@@ -12,12 +13,12 @@
 #include "core/utf8_path.h"
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/drba_fused_engine.h"
+#include "gpu/vulkan/backend/host_tensor.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_gate.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/rife_fused_engine.h"
-#include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
 #include "prepare/drba_split.h"
@@ -216,39 +217,28 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   auto pipelines = PipelineCache::create(*context_, saved);
   if (!pipelines) return std::unexpected(pipelines.error());
   pipelines_ = std::move(*pipelines);
-  // Le runtime avant la file : en interop, la timeline de la file s'exporte vers lui.
   if (options_.runtime) {
     auto runtime = options_.runtime(context_->caps());
     if (!runtime) return std::unexpected(runtime.error());
     runtime_ = std::move(*runtime);
     host_views_ = std::make_shared<HostViews>();
-    shared_memory_.store(runtime_->imports_memory() && exports_memory(*context_, runtime_->memory_handle()));
-    runtime_->use_device_memory(shared_memory_.load());
     // GPU intégré seulement : sur une carte, la mémoire hôte se lit par le bus, et le runtime
     // copie mieux vers la mémoire de la carte que ses noyaux ne la liraient de loin.
-    if (!shared_memory_.load() && context_->caps().type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+    if (context_->caps().type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
       host_alignment_ = host_import_alignment(*context_);
   }
-  const bool export_timeline =
-      shared_memory_.load() && runtime_->imports_semaphores() && exports_semaphores(*context_);
-  const VkExternalSemaphoreHandleTypeFlags exports =
-      export_timeline ? VkExternalSemaphoreHandleTypeFlags{VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT}
-                      : 0U;
-  // Plusieurs voies sans runtime seulement : ses étapes s'ordonnent sur la seule timeline exportée.
-  auto queue = BackendQueue::create(*context_, exports, !runtime_);
+  // Plusieurs voies sans runtime seulement : ses étapes s'ordonnent sur la timeline principale.
+  auto queue = BackendQueue::create(*context_, !runtime_);
   if (!queue) return std::unexpected(queue.error());
   BackendQueue& made = queue_.emplace(std::move(*queue));
-  if (export_timeline) import_timeline(made);
   profile_ = profile_device(*context_);
   kernels_ = std::make_unique<VulkanKernelOps>(*context_, *memory_, *pipelines_, made);
   if (runtime_) {
     log(BackendLogLevel::Info,
-        std::format("réseaux par {} {} sur {}{}{}", runtime_->name(), runtime_->version(),
+        std::format("réseaux par {} {} sur {}{}", runtime_->name(), runtime_->version(),
                     runtime_->device_name(),
-                    shared_memory_.load()  ? ", mémoire partagée avec la chaîne Vulkan"
-                    : host_alignment_ != 0 ? ", tenseurs dans la mémoire hôte du runtime, importée"
-                                           : ", tenseurs par l'hôte",
-                    imported_timeline_ ? ", ordonnés côté GPU" : ""));
+                    host_alignment_ != 0 ? ", tenseurs dans la mémoire hôte du runtime, importée"
+                                         : ", tenseurs par l'hôte"));
   }
   log(BackendLogLevel::Info,
       std::format(
@@ -276,11 +266,10 @@ BackendCaps VulkanBackend::capabilities() const {
     return {.name = std::string(runtime_->name()),
             .device_name = std::format("{} (chaîne Vulkan : {})", runtime_->device_name(), caps.device_name),
             .driver_version = runtime_->version(),
-            .needs_host_sync = !imported_timeline_,
+            .needs_host_sync = true,
             .fp16 = true,
             .int8 = false,
-            .matrix_units = false,
-            .import_formats = {}};
+            .matrix_units = false};
   }
   return {.name = "vulkan",
           .device_name = caps.device_name,
@@ -292,7 +281,6 @@ BackendCaps VulkanBackend::capabilities() const {
           .rife_fused = profile_.target.f16_storage,
           .drba_fused = profile_.target.f16_storage,
           .matrix_units = profile_.target.matrix_units,
-          .import_formats = {},
           .lanes = queue_ ? queue_->lanes() : 1};
 }
 
@@ -323,6 +311,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (auto bytes = net::read_file(artifact.path)) {
     if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) return artifact;
   }
+  const auto started = std::chrono::steady_clock::now();  // A45-12 : la durée se lit au journal
   std::optional<net::Autotuner> tuner;
   if (options_.autotune) {
     tuner.emplace(*context_, *memory_, *pipelines_, profile_, cache_dir_ / "vulkan" / "autotune.tsv",
@@ -338,8 +327,9 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   log(BackendLogLevel::Info,
-      std::format("{} construit : {} nœuds, {} dispatchs{}", model.id, data->graph.nodes.size(),
-                  data->dispatches.size(),
+      std::format("{} construit en {:.1f} s : {} nœuds, {} dispatchs{}", model.id,
+                  std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(),
+                  data->graph.nodes.size(), data->dispatches.size(),
                   tuner ? std::format(", {} couches mesurées, {} variantes écartées (sortie discordante), "
                                       "{} dès leur sondage, {} choix revérifiés sous ce pilote ({}, {})",
                                       tuner->measured(), tuner->rejected(), tuner->pruned(),
@@ -431,14 +421,6 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
                                        std::move(*program), std::move(engine_options));
   if (!engine) return std::unexpected(engine.error());
   return std::make_unique<VulkanEngine>(std::move(*engine));
-}
-
-std::expected<Tensor, Refusal> VulkanBackend::import(const ExternalImage& image) {
-  return refuse_backend(
-      RefusalCode::FormatUnsupported,
-      std::format("import d'une image {}x{} : le backend Vulkan lit les images décodées par "
-                  "KernelOps::ingest et écrit le ring par write_ring, sans tenseur importé",
-                  image.width, image.height));
 }
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tensor(TensorType type,

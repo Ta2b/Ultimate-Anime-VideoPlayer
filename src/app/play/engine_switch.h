@@ -16,9 +16,11 @@ namespace ajp::app::play {
 // Le moteur d'une bibliothèque de backend, par son nom (« ajp_backend_tensorrt.so ») ; rien
 // pour un fichier qui n'en est pas une.
 std::optional<core::EngineId> engine_of_library(const std::filesystem::path& library);
+// La bibliothèque d'un moteur retiré (MIGraphX, OpenVINO) laissée par une ancienne version.
+bool retired_library(const std::filesystem::path& library);
 
 // Les moteurs des réseaux dont la bibliothèque est parmi candidates, sans doublon, dans l'ordre de
-// l'onglet : Vulkan, TensorRT, MIGraphX, OpenVINO, Core ML.
+// l'onglet : Vulkan, TensorRT, Core ML.
 std::vector<core::EngineId> switchable_engines(std::span<const std::filesystem::path> candidates);
 
 // settings avec id choisi, installé et préféré pour SPAN et RIFE.

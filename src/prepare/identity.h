@@ -22,7 +22,9 @@
 
 namespace ajp::prepare {
 
-enum class ProgramFormat : std::uint8_t { OnnxExport, TensorRt, CoreMl, OrtProvider, MiGraphX };
+// Seul TensorRt entre dans une clé publiée ; les valeurs gardent leur rang (OrtProvider et MiGraphX, retirés
+// avec leurs moteurs, étaient les deux dernières).
+enum class ProgramFormat : std::uint8_t { OnnxExport, TensorRt, CoreMl };
 enum class IoPolicy : std::uint8_t { SourceDefined, Specialized };
 
 struct Binding {

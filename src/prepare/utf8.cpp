@@ -5,6 +5,15 @@
 
 #include "core/utf8_path.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <system_error>
+#include <vector>
+#include <windows.h>
+#endif
+
 namespace ajp::prepare {
 
 std::string utf8_path(const std::filesystem::path& path) {
@@ -13,6 +22,52 @@ std::string utf8_path(const std::filesystem::path& path) {
 
 std::filesystem::path path_from_utf8(std::string_view text) {
   return core::path_from_utf8(text);
+}
+
+#ifdef _WIN32
+namespace {
+
+// Le texte s'écrit-il dans la page ANSI sans caractère de remplacement ?
+bool ansi_representable(const std::wstring& text) {
+  if (text.empty()) return true;
+  BOOL replaced = FALSE;
+  const int size = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, text.c_str(),
+                                       static_cast<int>(text.size()), nullptr, 0, nullptr, &replaced);
+  return size > 0 && replaced == FALSE;
+}
+
+std::wstring short_name(const std::wstring& existing) {
+  const DWORD size = GetShortPathNameW(existing.c_str(), nullptr, 0);
+  if (size == 0) return {};
+  std::vector<wchar_t> out(size);
+  const DWORD written = GetShortPathNameW(existing.c_str(), out.data(), size);
+  if (written == 0 || written >= size) return {};
+  return {out.data(), written};
+}
+
+}  // namespace
+#endif
+
+std::string ansi_safe_path(const std::filesystem::path& path) {
+#ifdef _WIN32
+  if (ansi_representable(path.native())) return core::to_utf8(path);
+  // La plus longue partie qui existe prend son nom court ; ce qui reste (le fichier à écrire) est ajouté.
+  std::filesystem::path existing = path;
+  std::filesystem::path rest;
+  std::error_code error;
+  while (!existing.empty() && !std::filesystem::exists(existing, error)) {
+    rest = rest.empty() ? existing.filename() : existing.filename() / rest;
+    if (existing == existing.parent_path()) break;
+    existing = existing.parent_path();
+  }
+  const std::wstring shortened = existing.empty() ? std::wstring() : short_name(existing.native());
+  if (shortened.empty()) return core::to_utf8(path);
+  const std::filesystem::path candidate =
+      rest.empty() ? std::filesystem::path(shortened) : std::filesystem::path(shortened) / rest;
+  return ansi_representable(candidate.native()) ? core::to_utf8(candidate) : core::to_utf8(path);
+#else
+  return core::to_utf8(path);
+#endif
 }
 
 bool is_utf8(std::string_view text) {

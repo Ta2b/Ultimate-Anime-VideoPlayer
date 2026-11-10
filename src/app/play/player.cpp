@@ -143,10 +143,10 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& paths,
                              const PlaySettings& saved) {
   EngineCatalog catalog = load_catalog(
-      paths.engine_index, paths.engines.parent_path(),
+      paths.engine_index, paths::data_root(paths),
       saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
   const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
-  add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
+  add_release_engines(catalog, paths::data_root(paths) / "engines-nvidia.lock", release_repo(),
                       installed_version(),
                       update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),
                       online ? UpdateFetch(fetch_https) : UpdateFetch());
@@ -193,17 +193,6 @@ CalibrationHost calibration_host(const GpuFacts& here, int display_height, const
   return {.gpu = here.name, .display_height = display_height, .tensorrt = tensorrt, .driver = here.driver};
 }
 
-// Une vérification du thread des mises à jour, si elle est due, sous le verrou de check_updates_in (A30-03).
-void check_updates_logged(const std::filesystem::path& update_file, const std::stop_token& stop,
-                          UpdateMode mode, UpdateFrequency frequency) {
-  const std::int64_t now =
-      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
-          .count();
-  const auto message = check_updates_in(
-      update_file, stop, [&](const UpdateState& state) { return update_due(state, mode, frequency, now); });
-  if (message) log_channel("app")->info("mise à jour : {}", *message ? **message : message->error().detail);
-}
-
 // Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur. Au
 // lancement si elle est due, puis relue toutes les 30 minutes tant que le lecteur reste ouvert (la
 // fréquence « au lancement » ne revérifie pas) ; pendant une lecture (playing), elle attend la fin de la
@@ -212,21 +201,24 @@ std::jthread start_update_check(const PlaySettings& saved, const PlayerPaths& pa
                                 std::atomic<bool>& playing) {
   if (saved.update_mode == UpdateMode::Never) return {};
   const std::filesystem::path update_file = paths::update_state(paths.data);
-  auto started = start_thread("updates", ThreadReport([](const Refusal& refused) {
-                                log_channel("app")->warn("mise à jour : {}", refused.detail);
-                              }),
-                              [=, &playing, mode = saved.update_mode, frequency = saved.update_frequency](
-                                  const std::stop_token& stop, const ThreadReport&) {
-                                std::mutex mutex;
-                                std::condition_variable_any wake;
-                                for (bool first = true; !stop.stop_requested(); first = false) {
-                                  if (first || !playing.load())
-                                    check_updates_logged(update_file, stop, mode, frequency);
-                                  if (frequency == UpdateFrequency::Launch) return;
-                                  std::unique_lock lock(mutex);
-                                  wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
-                                }
-                              });
+  auto started = start_thread(
+      "updates", ThreadReport([](const Refusal& refused) {
+        log_channel("app")->warn("mise à jour : {}", refused.detail);
+      }),
+      [=, &playing, mode = saved.update_mode, frequency = saved.update_frequency](const std::stop_token& stop,
+                                                                                  const ThreadReport&) {
+        std::mutex mutex;
+        std::condition_variable_any wake;
+        for (bool first = true; !stop.stop_requested(); first = false) {
+          const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count();
+          check_updates_if_due(update_file, mode, frequency, first || !playing.load(), now, stop);
+          if (frequency == UpdateFrequency::Launch) return;
+          std::unique_lock lock(mutex);
+          wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
+        }
+      });
   if (started) return std::move(*started);
   log_channel("app")->warn("mise à jour : {}", started.error().detail);
   return {};
@@ -354,12 +346,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     startup_notes.push_back(set_aside(engines_path, engines.error()));
     engines = core::Settings{};
   }
-  // Un moteur débranché depuis (MIGraphX, OpenVINO) sort des choix : Vulkan prend sa place.
-  for (const core::EngineId id : {core::EngineId::MiGraphX, core::EngineId::OpenVino}) {
-    if (!chosen(*engines, id)) continue;
-    log->info("moteurs : {} débranché de ce lecteur, Vulkan à sa place", engine_label(id));
-    *engines = without_engine(std::move(*engines), id);
-  }
+  // Un moteur retiré (MIGraphX, OpenVINO) est écarté dès la lecture de settings.toml (core::retired_engine).
   const EngineCatalog catalog = engine_catalog(options, paths, *saved);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,

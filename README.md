@@ -1,7 +1,7 @@
 # Ultimate Anime VideoPlayer
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
-![Version 0.10.0](https://img.shields.io/badge/version-0.10.0-informational.svg)
+![Version 0.10.3](https://img.shields.io/badge/version-0.10.3-informational.svg)
 ![Linux · Windows · macOS](https://img.shields.io/badge/plateformes-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-lightgrey.svg)
 
 Un lecteur vidéo fait pour l'anime. Il agrandit l'image avec les modèles **AnimeJaNai**, ajoute des images
@@ -27,9 +27,11 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
 
 ## Ce qu'il fait
 
-- **Agrandissement ×2** par les modèles SPAN d'AnimeJaNai HD V3.1 : une source 720p ou 1080p devient
-  1440p ou 4K, traits nets et aplats propres. Aux niveaux Qualité et Ultra, la source 1080p n'est pas
-  réduite avant SPAN et le modèle est le plus fin (Balanced, b8f64).
+- **Agrandissement ×2** par les modèles SPAN d'AnimeJaNai HD V3.1 : SPAN double la résolution de travail,
+  traits nets et aplats propres. Aux niveaux Qualité et Ultra, une source jusqu'à 1080p entre entière dans
+  SPAN (une 1080p sort en 4K) avec le modèle le plus fin (Balanced, b8f64). Aux niveaux Rapide et Normal, la
+  source est d'abord réduite à la moitié de l'écran ou moins (540p ou 720p), puis SPAN la double ; libplacebo
+  ajuste ensuite à la taille de l'écran.
 - **Interpolation** par RIFE 4.22 lite, ou 4.25 aux niveaux Qualité et Ultra (DistilDRBA au choix). Le mode Auto vise la fréquence de votre écran et
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
@@ -49,9 +51,9 @@ Téléchargez la dernière version sur la page des [releases](https://github.com
 
 | Système | Fichier | Remarque |
 |---|---|---|
-| Windows 10 et 11 (x64) | `ajp-windows-x64.zip` | décompresser, lancer `ajp.exe` |
-| Linux (x64) | `ajp-linux-x64.tar.gz` | décompresser, lancer `ajp` ; Vulkan et un pilote récent requis |
-| macOS 14+ (Apple Silicon) | `ajp-macos-arm64.zip` | `AJP.app` |
+| Windows 10 et 11 (x64) | `ajp-windows-x64-setup.exe` | installeur ; ou `ajp-windows-x64.zip` à décompresser, puis lancer `ajp.exe` |
+| Linux (x64) | `ajp-linux-x86_64.AppImage` | rendre exécutable et lancer ; ou `ajp-linux-x64.tar.gz` à décompresser, puis lancer `ajp`. Vulkan et un pilote récent requis |
+| macOS 14+ (Apple Silicon) | `ajp-macos-arm64.dmg` | glisser `AJP.app` dans Applications ; ou `ajp-macos-arm64.zip` |
 
 Mettez à jour le pilote de votre carte graphique avant le premier lancement. Le lecteur s'installe léger : il
 embarque son moteur Vulkan, et le moteur NVIDIA (TensorRT) se télécharge à part si vous le choisissez.
@@ -60,12 +62,16 @@ embarque son moteur Vulkan, et le moteur NVIDIA (TensorRT) se télécharge à pa
 
 Un assistant de quelques écrans, tous sautables :
 
-1. **Moteurs** : sur une carte NVIDIA RTX, TensorRT est proposé (téléchargé depuis NVIDIA après l'accord de
-   licence). Les autres cartes utilisent Vulkan, livré avec le lecteur.
-2. **Calibration de la machine** : après « Terminer », le lecteur essaie quelques réglages sur une séquence
-   exigeante et garde la meilleure combinaison que votre PC tient sans saccade. Quelques minutes, un peu plus la
-   première fois (les moteurs se construisent une fois).
-3. **Langues** audio et sous-titres préférées, puis **mises à jour**.
+1. **Bienvenue**.
+2. **Langues** audio et sous-titres préférées.
+3. **Intégration** : mises à jour, lecteur vidéo par défaut.
+4. **Moteur** (seulement s'il y a un choix à faire) : sur une carte NVIDIA RTX, TensorRT est proposé
+   (téléchargé depuis NVIDIA après l'accord de licence). Les autres cartes utilisent Vulkan, livré avec le
+   lecteur.
+5. **Prêt** : « Calibrer maintenant » essaie plusieurs réglages sur une séquence exigeante et garde la
+   meilleure combinaison que votre PC tient sans saccade ; « Régler moi-même » garde le niveau Auto estimé
+   pour la carte. La calibration prend de 5 à 30 minutes selon l'écran : l'assistant affiche l'estimation
+   pour votre machine, plus longue avec TensorRT, qui construit ses moteurs pendant l'essai.
 
 Ensuite, `p` ouvre le menu des paramètres et `Tab` les statistiques à l'écran.
 
@@ -74,15 +80,20 @@ Ensuite, `p` ouvre le menu des paramètres et `Tab` les statistiques à l'écran
 Le niveau se choisit dans **Vidéo > Post-traitement**. **Auto**, le défaut, prend le niveau de votre carte et
 règle la chaîne selon l'écran et la vidéo ouverte. Changer un réglage à la main passe en **Personnalisé**.
 
-| Niveau | Ce qu'il fait | Cartes typiques |
-|---|---|---|
-| Économe | la vidéo telle quelle, ni agrandissement ni interpolation | graphiques intégrés d'entrée de gamme, GT, MX |
-| Rapide | SPAN depuis 540p, interpolation jusqu'à ×2 | GTX 10 et 16, RX 5000, Arc A3, Iris Xe |
-| Normal | SPAN depuis 720p, interpolation jusqu'à ×3 | RTX 20 à 50 d'entrée de gamme, RX 6600 à 7600, Arc A5/A7/B5, Apple M |
-| Qualité | SPAN depuis 720p, interpolation jusqu'à ×4 | RTX 3070 à 4070, RTX 5070, RX 6800 à 7800, Apple Pro et Max |
-| Ultra | SPAN jusqu'à 1080p, interpolation jusqu'à ×4 | RTX 4080 à 5090, RX 7900, RX 9070, Apple Ultra |
+| Niveau | Agrandissement (résolution de travail) | Interpolation en mode Stable | Cartes typiques |
+|---|---|---|---|
+| Économe | aucun, la vidéo telle quelle | aucune | graphiques intégrés d'entrée de gamme, GT, MX, RTX A400 |
+| Rapide | SPAN depuis 480p (écran 1080p) ou 540p (écran 1440p et plus) | jusqu'à ×2 | GTX 9, 10 (sauf 1070 et 1080) et 16, RX 400 et 500, RX 5000 (sauf 5700), RX 6400 et 6500, Arc A3, Iris Xe, RTX portables d'entrée de gamme |
+| Normal | SPAN depuis 540p (écran 1080p) ou 720p (écran 1440p et plus) | jusqu'à ×3 | GTX 1070 et 1080, RTX 20 à 50 d'entrée de gamme, RX 5700, RX 6600 à 7600, Arc A5/A7/B5, Apple M, RTX 2080, 3070, 3080, 4070 et 5070 portables |
+| Qualité | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 2080, RTX 3070 à 3090, RTX 4070, RTX 5070, RX 6800 à 7800, RX 9060, Apple Pro et Max, RTX 4080 à 5090 portables |
+| Ultra | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 4080 à 5090, RX 7900, RX 9070, Apple Ultra |
 
-La résolution de travail suit votre écran : SPAN double l'image, donc 720p pour un écran 1440p.
+La priorité Fluidité descend d'un cran (720p au plus en Qualité et Ultra), la priorité Image monte d'un cran.
+La calibration, qui mesure votre carte, peut monter plus haut. En mode **Rapide** de l'interpolation (le
+défaut), le multiplicateur n'a pas de plafond : il suit la fréquence de l'écran (jusqu'à ×6 sur un écran
+144 Hz pour une source à 23,976 i/s), et seul le plafond de cadence choisi dans le menu le borne. Le
+multiplicateur du tableau ne vaut qu'en mode **Stable**. La table complète des cartes est
+[`data/gpu_tiers.toml`](data/gpu_tiers.toml).
 
 ## Le menu
 
@@ -128,7 +139,9 @@ réglages avancés.
 | Ctrl+G / Ctrl+I | grade / interpolation |
 | `q` | quitter |
 
-Les raccourcis se changent dans `user.toml` (section `[keys]`, dossier des données du lecteur).
+Neuf actions se changent dans `user.toml` (section `[keys]`, dossier des données du lecteur) : `pause`,
+`seek_backward`, `seek_forward`, `step_forward`, `step_backward`, `processing_off`, `toggle_grade`,
+`toggle_interpolation` et `toggle_osd`. Les autres touches du tableau sont fixes et passent avant `[keys]`.
 `ajp --help` liste aussi les options de la ligne de commande.
 
 ## Moteurs et cartes graphiques
@@ -139,7 +152,8 @@ Les raccourcis se changent dans `user.toml` (section `[keys]`, dossier des donn�
 | AMD, Intel, NVIDIA sans TensorRT | Vulkan | livré avec le lecteur |
 | Apple Silicon | Core ML | livré avec le lecteur macOS |
 
-Le premier lancement de TensorRT construit ses moteurs pour votre carte : quelques minutes, une seule fois.
+TensorRT construit ses moteurs pour votre carte : quelques minutes pour chaque taille d'image, puis de
+nouveau après une mise à jour de TensorRT. Les moteurs construits sont gardés d'une lecture à l'autre.
 Détails : [`docs/moteurs.md`](docs/moteurs.md).
 
 ## Mises à jour

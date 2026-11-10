@@ -27,9 +27,6 @@ class CountingKernels final : public gpu::KernelOps {
   std::expected<void, Refusal> resample(const gpu::Tensor&, kernels::Filter, const gpu::Tensor&) override {
     return refuse(RefusalCode::FormatUnsupported, "factice");
   }
-  std::expected<void, Refusal> rife_pad(const DecodedFrame&, const gpu::Tensor&) override {
-    return refuse(RefusalCode::FormatUnsupported, "factice");
-  }
   std::expected<void, Refusal> rife_crop(const gpu::Tensor&, const gpu::Tensor&) override {
     return refuse(RefusalCode::FormatUnsupported, "factice");
   }
@@ -41,10 +38,6 @@ class CountingKernels final : public gpu::KernelOps {
                                           const gpu::RingWrite&) override {
     return refuse(RefusalCode::FormatUnsupported, "factice");
   }
-  std::expected<void, Refusal> measure(const DecodedFrame&, const DecodedFrame&) override {
-    return refuse(RefusalCode::FormatUnsupported, "factice");
-  }
-  std::optional<gpu::PairScores> previous_scores() override { return std::nullopt; }
 };
 
 TEST_CASE("ChainStats : après stop(), plus aucun relevé ne lit les noyaux, même si l'OSD redemande (A08-02)",

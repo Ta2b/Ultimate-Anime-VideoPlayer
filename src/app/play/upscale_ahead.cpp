@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "app/play/upscale_stage.h"
+#include "core/trace.h"
 
 namespace ajp::app::play {
 
@@ -59,6 +60,7 @@ std::expected<bool, Refusal> UpscaleStage::deband_source(const gpu::Tensor& rgb)
 }
 
 std::expected<gpu::PairScores, Refusal> UpscaleStage::pair_scores() {
+  AJP_TRACE("rife.scores");
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (auto taken = std::exchange(ahead_taken_, std::nullopt);
       taken && previous_ && taken->first == previous_->id)
@@ -134,6 +136,7 @@ std::expected<void, Refusal> UpscaleStage::write_rife_pair(float t) {
 }
 
 std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
+  AJP_TRACE("rife.pair");
   if (rife_in_pair_ && rife_in_t_ == t) return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (rife_in_pair_ && rife_time_) {
@@ -143,6 +146,25 @@ std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
     rife_time_ = false;
   }
   return write_rife_pair(t);
+}
+
+void UpscaleStage::count_measured(const PairFacts& facts) {
+  if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
+    ++pairs_;
+    if (setup_.live) setup_.live->count_pair();
+  }
+  if (pair_cut(facts)) {
+    forget_motion();
+    ++cuts_;
+    if (setup_.live) {
+      setup_.live->count_cut();
+      setup_.live->auto_cut(host_now_us());
+      setup_.live->free_cut(host_now_us());
+    }
+  } else if (facts.scores && kernels::is_held(facts.scores->worst_block)) {
+    ++held_;
+    if (setup_.live) setup_.live->count_held();
+  }
 }
 
 }  // namespace ajp::app::play

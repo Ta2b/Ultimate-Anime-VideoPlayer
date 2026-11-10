@@ -125,9 +125,9 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
     if (error == std::errc{} && end != last && *end == '.') blocks.insert(number);
   }
   const int block_count = static_cast<int>(blocks.size());
-  if (blocks.empty() || block_count > kBlocks || *blocks.begin() != 1 || *blocks.rbegin() != block_count)
-    return refuse(
-        std::format("{} blocs trouvés, 1 à {} numérotés depuis 1 attendus", blocks.size(), kBlocks));
+  if (std::clamp(block_count, kMinBlocks, kBlocks) != block_count || *blocks.begin() != 1 ||
+      *blocks.rbegin() != block_count)
+    return refuse(std::format("{} blocs, {} à {} attendus (depuis 1)", block_count, kMinBlocks, kBlocks));
 
   // shape : la forme du modèle ; out_to, in_to : celle du paquet (64 canaux) ; groups : voir flat_padded.
   const auto conv = [&](const std::string& weight, const std::string& bias,

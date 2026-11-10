@@ -25,7 +25,12 @@ constexpr std::size_t usage(core::Usage u) {
 TEST_CASE("Le moteur d'une bibliothèque se lit à son nom", "[app][engine_switch]") {
   CHECK(engine_of_library("base/ajp_backend_tensorrt.so") == core::EngineId::TensorRt);
   CHECK(engine_of_library("C:/ajp/ajp_backend_vulkan.dll") == core::EngineId::Vulkan);
-  CHECK(engine_of_library("build/libajp_backend_migraphx.so") == core::EngineId::MiGraphX);
+  // MIGraphX et OpenVINO, retirés : une ancienne bibliothèque n'est d'aucun moteur, et reconnue retirée.
+  CHECK_FALSE(engine_of_library("build/libajp_backend_migraphx.so").has_value());
+  CHECK(retired_library("build/libajp_backend_migraphx.so"));
+  CHECK(retired_library("base/ajp_backend_openvino.dll"));
+  CHECK_FALSE(retired_library("base/ajp_backend_tensorrt.so"));
+  CHECK_FALSE(retired_library("base/openvino.dll"));
   CHECK(engine_of_library("AJP.app/Contents/PlugIns/ajp_backend_coreml.so") == core::EngineId::Metal);
   CHECK_FALSE(engine_of_library("base/libvulkan.so.1").has_value());
 }
@@ -34,8 +39,7 @@ TEST_CASE("L'onglet propose les moteurs présents, Vulkan d'abord, sans doublon"
   const std::array<std::filesystem::path, 4> candidates{
       "data/backends/tensorrt/10/ajp_backend_tensorrt.so", "base/ajp_backend_tensorrt.so",
       "base/ajp_backend_openvino.so", "base/ajp_backend_vulkan.so"};
-  const std::vector<core::EngineId> expected{core::EngineId::Vulkan, core::EngineId::TensorRt,
-                                             core::EngineId::OpenVino};
+  const std::vector<core::EngineId> expected{core::EngineId::Vulkan, core::EngineId::TensorRt};
   CHECK(switchable_engines(candidates) == expected);
 }
 

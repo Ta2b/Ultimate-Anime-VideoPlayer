@@ -82,14 +82,14 @@ struct Fixture {
   Fixture(const Fixture&) = delete;
   Fixture& operator=(const Fixture&) = delete;
 
-  // Un paquet OpenVINO dont l'archive tient la bibliothèque du backend et un fichier à côté.
-  core::EnginePackage openvino_package(bool with_library = true) {
+  // Un paquet (TensorRT) dont l'archive tient la bibliothèque du backend et un fichier à côté.
+  core::EnginePackage engine_package(bool with_library = true) {
     const fs::path source = root / "source";
     const fs::path library =
-        core::backend_library(catalog.layout, core::EnginePackage{.engine = core::EngineId::OpenVino});
+        core::backend_library(catalog.layout, core::EnginePackage{.engine = core::EngineId::TensorRt});
     if (with_library) write_all(source / library.filename(), "bibliothèque factice\n");
     write_all(source / "LICENCE.txt", "licence factice\n");
-    return package_of(core::EngineId::OpenVino, pack(source, root / "openvino.tar.gz"));
+    return package_of(core::EngineId::TensorRt, pack(source, root / "tensorrt.tar.gz"));
   }
 
   core::EnginePackage package_of(core::EngineId engine, const fs::path& archive) {
@@ -146,7 +146,7 @@ struct Wheel {
     path = f.root / (deflated ? "roue-deflate.whl" : "roue-stockee.whl");
     constexpr std::string_view kPrefix = "PK-entete-";
     write_all(path, std::string(kPrefix) + std::string(member) + "-fin-de-la-roue");
-    file.engine = core::EngineId::OpenVino;
+    file.engine = core::EngineId::TensorRt;
     file.platform = f.catalog.layout.os;
     file.url = "file://" + path.generic_string();
     file.data_offset = kPrefix.size();
@@ -241,7 +241,7 @@ TEST_CASE("Téléchargements : ce que l'index ne nomme plus est retiré, le rest
   Fixture f("purge");
   const std::string kept(64, 'a');
   const std::string stale(64, 'b');
-  f.catalog.packages.push_back(core::EnginePackage{.engine = core::EngineId::OpenVino, .sha256 = kept});
+  f.catalog.packages.push_back(core::EnginePackage{.engine = core::EngineId::TensorRt, .sha256 = kept});
   fs::create_directories(f.catalog.layout.downloads);
   std::ofstream(f.catalog.layout.downloads / (kept + ".part")) << "x";
   std::ofstream(f.catalog.layout.downloads / (stale + ".part")) << "x";
@@ -257,7 +257,7 @@ TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent
           "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("tiers-installation");
-  const core::EnginePackage package = f.openvino_package();
+  const core::EnginePackage package = f.engine_package();
   Wheel wheel(f, kPlain, false);
   const auto vendor = [&](std::string name, std::string arch) {
     core::VendorFile file = wheel.file;
@@ -280,7 +280,7 @@ TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent
 
   // Un fichier tiers refusé fait échouer l'installation, sans dossier à moitié rempli.
   Fixture g("tiers-refuse");
-  const core::EnginePackage other = g.openvino_package();
+  const core::EnginePackage other = g.engine_package();
   Wheel bad(g, kPlain, false);
   bad.file.name = "faux.so";
   bad.file.size = kPlain.size();
@@ -293,7 +293,7 @@ TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent
 TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("complet");
-  const core::EnginePackage package = f.openvino_package();
+  const core::EnginePackage package = f.engine_package();
   // Une version déjà extraite, à moitié, est remplacée entière.
   const fs::path target = core::engine_dir(f.catalog.layout, package);
   write_all(target / "reste.txt", "vieux\n");
@@ -310,14 +310,14 @@ TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][i
   CHECK(f.fractions.front() == 0.0F);
   CHECK(f.fractions.back() == 1.0F);
   CHECK(std::ranges::is_sorted(f.fractions));
-  CHECK(f.stages.back() == "openvino installé");
+  CHECK(f.stages.back() == "tensorrt installé");
 }
 
 TEST_CASE("Installation : le paquet installé et sa licence restent notés à côté du moteur",
           "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("note");
-  core::EnginePackage package = f.openvino_package();
+  core::EnginePackage package = f.engine_package();
   CHECK_FALSE(installed_package(f.catalog, package));
   package.license = "https://exemple.invalid/licence";
   require_installed(install_package(f.catalog, package, f.progress()));
@@ -328,7 +328,7 @@ TEST_CASE("Installation : le paquet installé et sa licence restent notés à c�
 TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("sha");
-  core::EnginePackage package = f.openvino_package();
+  core::EnginePackage package = f.engine_package();
   package.sha256 = std::string(64, 'a');
   require_refused(install_package(f.catalog, package, f.progress()), RefusalCode::HashMismatch);
   // Un fichier faux ne se reprend pas : effacé, le prochain essai repart de zéro.
@@ -340,7 +340,7 @@ TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier",
 TEST_CASE("Installation : une taille fausse refuse le paquet", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("taille");
-  core::EnginePackage package = f.openvino_package();
+  core::EnginePackage package = f.engine_package();
   package.size += 1;
   require_refused(install_package(f.catalog, package, f.progress()), RefusalCode::HashMismatch);
   CHECK_FALSE(fs::exists(core::download_path(f.catalog.layout, package.sha256)));
@@ -349,10 +349,10 @@ TEST_CASE("Installation : une taille fausse refuse le paquet", "[app][install]")
 TEST_CASE("Installation : une archive sans la bibliothèque du backend est refusée", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("sans-bibliotheque");
-  const core::EnginePackage package = f.openvino_package(false);
+  const core::EnginePackage package = f.engine_package(false);
   const auto result = install_package(f.catalog, package, f.progress());
   require_refused(result, RefusalCode::HashMismatch);
-  CHECK(result.error().detail.contains("ajp_backend_openvino"));
+  CHECK(result.error().detail.contains("ajp_backend_tensorrt"));
   const fs::path target = core::engine_dir(f.catalog.layout, package);
   CHECK_FALSE(fs::exists(target));
   CHECK_FALSE(fs::exists(fs::path(target.string() + ".partiel")));
@@ -362,8 +362,8 @@ TEST_CASE("Installation : une archive sans la bibliothèque du backend est refus
 TEST_CASE("Installation : un .part interrompu reprend où il en était", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("reprise");
-  const core::EnginePackage package = f.openvino_package();
-  const std::string archive = read_all(f.root / "openvino.tar.gz");
+  const core::EnginePackage package = f.engine_package();
+  const std::string archive = read_all(f.root / "tensorrt.tar.gz");
   const std::size_t head = archive.size() * 2 / 5;
   // Le .part tient le début de l'archive ; le serveur en sert une copie dont ce début est faux :
   // seule une reprise à la bonne position rend un fichier dont le SHA-256 est le bon.
@@ -379,7 +379,7 @@ TEST_CASE("Installation : un .part interrompu reprend où il en était", "[app][
 TEST_CASE("Installation : un .part complet mais faux repart de zéro", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("part-faux");
-  const core::EnginePackage package = f.openvino_package();
+  const core::EnginePackage package = f.engine_package();
   write_all(core::download_path(f.catalog.layout, package.sha256), std::string(package.size + 7, 'x'));
   const fs::path library = require_installed(install_package(f.catalog, package, f.progress()));
   CHECK(read_all(library) == "bibliothèque factice\n");
@@ -389,8 +389,8 @@ TEST_CASE("Installation : un .part complet mais faux repart de zéro", "[app][in
 TEST_CASE("Installation : un .part déjà complet et juste s'installe sans transfert", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("part-juste");
-  const core::EnginePackage package = f.openvino_package();
-  write_all(core::download_path(f.catalog.layout, package.sha256), read_all(f.root / "openvino.tar.gz"));
+  const core::EnginePackage package = f.engine_package();
+  write_all(core::download_path(f.catalog.layout, package.sha256), read_all(f.root / "tensorrt.tar.gz"));
   core::EnginePackage unreachable = package;
   unreachable.url = "file://" + (f.root / "absent.bin").generic_string();
   const fs::path library = require_installed(install_package(f.catalog, unreachable, f.progress()));
@@ -401,7 +401,7 @@ TEST_CASE("Installation : un .part déjà complet et juste s'installe sans trans
 TEST_CASE("Installation : une archive inaccessible est un refus de transfert", "[app][install]") {
   ajp::app::play::FrenchUi french;
   Fixture f("inaccessible");
-  core::EnginePackage package = f.openvino_package();
+  core::EnginePackage package = f.engine_package();
   package.url = "file://" + (f.root / "absent.bin").generic_string();
   require_refused(install_package(f.catalog, package, f.progress()), RefusalCode::DecodeFailed);
   CHECK_FALSE(installed(f.catalog, package));
@@ -524,6 +524,40 @@ TEST_CASE("Espace : le pic compte le décompressé et l'ancienne version, pas se
   CHECK(again.peak > 2 * fresh.installed);
 }
 
+TEST_CASE("Espace : un fichier tiers repris par lien dur ne compte ni au téléchargement ni au pic (A06-06)",
+          "[app][install][space]") {
+  EngineCatalog catalog;
+  catalog.layout = core::install_layout(host_os(), "/d");
+  constexpr std::uint64_t kMo = 1U << 20;
+  core::VendorFile big;
+  big.engine = core::EngineId::TensorRt;
+  big.platform = host_os();
+  big.name = "libnvinfer.so.11";
+  big.packed_size = 306 * kMo;
+  big.size = 663 * kMo;
+  catalog.vendor_files.push_back(big);
+  core::EnginePackage package;
+  package.engine = core::EngineId::TensorRt;
+  package.size = 2 * kMo;
+  const std::filesystem::path root = std::filesystem::temp_directory_path() / "ajp-space-linked";
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root / "11.2");
+  {
+    std::ofstream(root / "11.2" / big.name) << "";
+  }
+  std::filesystem::resize_file(root / "11.2" / big.name, big.size);  // creux : aucune place prise
+
+  const InstallSpace fresh = install_space(catalog, package, "sm89");
+  const InstallSpace linked = install_space(catalog, package, "sm89", big.size, root);
+  CHECK(linked.download == package.size);
+  CHECK(linked.installed == fresh.installed);  // le dossier final a la même taille apparente
+  CHECK(linked.peak < fresh.peak);  // l'ancienne version compte, mais rien ne se tire ni ne se copie
+  // Une autre taille : pas le même fichier, il se télécharge.
+  std::filesystem::resize_file(root / "11.2" / big.name, big.size - 1);
+  CHECK(install_space(catalog, package, "sm89", big.size, root).download == fresh.download);
+  std::filesystem::remove_all(root);
+}
+
 TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "[app][install][space]") {
   ajp::app::play::FrenchUi french;
   const InstallSpace space{.download = 742ULL << 20, .installed = 1250ULL << 20, .peak = 1400ULL << 20};
@@ -541,7 +575,7 @@ TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "
 TEST_CASE("Installation : sans place, rien n'est tiré et le moteur reste absent", "[app][install][space]") {
   ajp::app::play::FrenchUi french;
   Fixture f("sans-place");
-  core::EnginePackage package = f.openvino_package();
+  core::EnginePackage package = f.engine_package();
   package.size = std::numeric_limits<std::uint64_t>::max() / 16;  // un paquet qu'aucun disque ne tient
   InstallProgress progress = f.progress();
   const auto installed = install_package(f.catalog, package, progress);
@@ -550,8 +584,7 @@ TEST_CASE("Installation : sans place, rien n'est tiré et le moteur reste absent
   CHECK_FALSE(fs::exists(core::engine_dir(f.catalog.layout, package)));
 }
 
-TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là, les modèles restent",
-          "[app][install][space]") {
+TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là", "[app][install][space]") {
   ajp::app::play::FrenchUi french;
   const fs::path data = fs::temp_directory_path() / "ajp-catalogue-data";
   const fs::path moved = fs::temp_directory_path() / "ajp-catalogue-moteurs";
@@ -559,7 +592,6 @@ TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là, les m
   const EngineCatalog plain = load_catalog(data / "absent.lock", data);
   CHECK(catalog.layout.engines.string().starts_with(moved.string()));
   CHECK(catalog.layout.downloads.string().starts_with(moved.string()));
-  CHECK(catalog.layout.models == plain.layout.models);
   CHECK(plain.layout.engines.string().starts_with(data.string()));
 }
 

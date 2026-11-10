@@ -1,5 +1,5 @@
-// AudioPlayer sur un périphérique simulé, audio maître (VRR) : file, époques,
-// seek, réglages et horloge publiée. L'écran maître est dans sync_test.cpp.
+// AudioPlayer sur un périphérique simulé, audio maître (le cas courant) : file, époques,
+// seek, réglages et horloge publiée. L'hôte maître (calage) est dans sync_test.cpp.
 #include "audio/player.h"
 
 #include <cmath>
@@ -307,6 +307,35 @@ TEST_CASE("AudioPlayer : la PLL filtre la gigue des relevés du périphérique",
   const double filtered = sigma_ms(true);
   CHECK(raw > 0.8);
   CHECK(filtered * 3.0 < raw);
+}
+
+// A16-01 : casque débranché sur un PC sans haut-parleurs, aucune sortie par défaut. Un seul refus (pas un
+// par bloc), les paquets ne s'entassent pas, et la sortie revient d'elle-même au casque rebranché.
+TEST_CASE("AudioPlayer : sans sortie par défaut, lecture sans son, un refus, puis reprise",
+          "[audio][player]") {
+  Rig rig(PlayerConfig{.reopen_retry_us = 0});
+  rig.feed(encode_sine({.seconds = 1.0}));
+  rig.player->handle(Command{cmd::Play{}});
+  const std::int64_t t = rig.now_us() + 100'000;
+  rig.player->handle(rig.fake->play(4'800, t));
+  rig.fake->fail_reopens(3);
+  rig.player->handle(DeviceRemoved{});
+  REQUIRE(rig.refusals.size() == 1);
+  CHECK(rig.refusals[0].code == RefusalCode::AudioDeviceUnavailable);
+  CHECK_FALSE(rig.clock().valid);  // l'horloge hôte prend la main
+  // Des paquets arrivent encore : chacun relâché (le thread source n'attend pas), aucun refus de plus.
+  const std::size_t released = rig.released;
+  const EncodedClip more = encode_sine({.seconds = 0.5});
+  for (AudioPacket packet : more.packets) rig.player->handle(std::move(packet));
+  CHECK(rig.refusals.size() == 1);
+  CHECK(rig.released > released);
+  // Deux essais de plus échouent, le troisième retrouve une sortie : le son repart.
+  CHECK(rig.fake->reopens() >= 4);
+  rig.feed(encode_sine({.seconds = 0.5}));
+  rig.player->handle(rig.fake->play(4'800, t + 600'000));
+  CHECK(rig.refusals.size() == 1);
+  CHECK(rig.fake->pushed_frames() > 0);
+  CHECK(rig.clock().valid);
 }
 
 TEST_CASE("AudioPlayer : casque débranché, le son reprend sur la sortie par défaut sans rien perdre (P2.7)",

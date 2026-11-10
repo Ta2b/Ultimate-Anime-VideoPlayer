@@ -1,12 +1,12 @@
 // Construction du moteur SPAN en arrière-plan (trtexec, une minute la première fois, puis lu
 // dans le cache) sur une instance de backend à elle : main garde la fenêtre vivante et
 // affiche la progression pendant ce temps.
-//
-// Provisoire : le thread preparer (prepare/preparer.h), branché par gpu, en prendra la place.
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -25,6 +25,14 @@ struct EngineRequest {
   gpu::ModelSpec model;
   gpu::ShapeSet shapes;
 };
+
+// A31-11 : une construction refusée à l'écriture (BuilderFailed, CacheIo, FileUnwritable, IoFailed) alors que
+// le dossier du cache a moins de kBuildSpaceBytes libres devient InsufficientSpace : « disque plein » à
+// l'écran au lieu d'une erreur de fichier ou de construction.
+inline constexpr std::uintmax_t kBuildSpaceBytes = 256ULL * 1024 * 1024;
+std::expected<gpu::Artifact, Refusal> with_space_reason(std::expected<gpu::Artifact, Refusal> outcome,
+                                                        const std::filesystem::path& cache_dir,
+                                                        std::uintmax_t needed = kBuildSpaceBytes);
 
 class EngineBuild {
  public:

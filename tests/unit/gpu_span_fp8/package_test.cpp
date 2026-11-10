@@ -115,6 +115,9 @@ TEST_CASE("un paquet v1 b8f64 se relit toujours, un v2 à 5 blocs aussi (3.2b)",
   Package none = synthetic(0.01F, 5);
   none.blocks.clear();
   CHECK_FALSE(parse(serialize(none)));
+  // Un seul bloc : les noyaux le refusent, la lecture aussi, dès le départ (A02-10).
+  CHECK_FALSE(parse(serialize(synthetic(0.01F, 1))));
+  CHECK(parse(serialize(synthetic(0.01F, 2))));
 }
 
 TEST_CASE("le CRC-32 est celui de zlib", "[span_fp8]") {

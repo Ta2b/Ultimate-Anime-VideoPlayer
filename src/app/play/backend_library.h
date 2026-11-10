@@ -1,7 +1,5 @@
 // Une bibliothèque de backend chargée à l'exécution (dlopen, LoadLibraryExW), ses points d'entrée vérifiés
 // (check_backend_abi), et les instances qu'elle crée.
-//
-// Provisoire : le chargeur du module gpu (pc/gpu, loader.h) prend sa place à la fusion.
 #pragma once
 
 #include <expected>

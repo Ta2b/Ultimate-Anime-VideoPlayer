@@ -2,7 +2,8 @@
 # aujourd'hui. Il sert à choisir les réglages automatiques (docs/ux-parametres.md, 4.7) : ce sont des
 # ESTIMATIONS, corrigées par « Évaluer ma machine ».
 #
-# Tranches : 0 Économe, 1 Léger, 2 Normal, 3 Rapide, 4 Ultra.
+# Tranches, avec les noms du menu (gpu_tier.cpp, tier_label) : 0 Économe, 1 Rapide (Tier::Light),
+# 2 Normal, 3 Qualité (Tier::Fast), 4 Ultra.
 # La première règle dont le fabricant correspond et dont TOUTES les chaînes de `contains` se trouvent dans
 # le nom (minuscules, sans « (tm) » ni « (r) ») gagne : du plus précis au plus général. Une carte inconnue
 # tombe sur l'estimation par fabricant, VRAM et unités matricielles (gpu_tier.cpp).

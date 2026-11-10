@@ -246,8 +246,8 @@ k::RgbImage download(VulkanBackend& backend, const TensorBuffer& t, int w, int h
                   TensorType::F32);
 }
 
-// Tout ce que les noyaux font d'une image décodée, depuis frame et depuis son double hôte : mêmes
-// tenseurs et mêmes mesures.
+// Ce que les noyaux font de deux images décodées, depuis frame et other puis depuis leurs doubles hôte :
+// mêmes tenseurs.
 void same_as_host(VulkanBackend& backend, vk::VulkanKernelOps& ops, const k::YuvImage& image,
                   const DecodedFrame& frame, const DecodedFrame& other, const DecodedFrame& host,
                   const DecodedFrame& host_other) {
@@ -262,25 +262,9 @@ void same_as_host(VulkanBackend& backend, vk::VulkanKernelOps& ops, const k::Yuv
   CHECK(max_abs_diff(download(backend, *rgb, w, h), *want) <= k::tolerance::kRgbF16);
   CHECK(max_abs_diff(download(backend, *rgb, w, h), download(backend, *rgb_host, w, h)) <= 1e-6F);
 
-  const k::RifeGeometry g = k::rife_geometry(w, h);
-  auto padded = rgb_tensor(backend, g.padded_width, g.padded_height, TensorType::F32);
-  auto padded_host = rgb_tensor(backend, g.padded_width, g.padded_height, TensorType::F32);
-  require_ok(ops.rife_pad(frame, padded->tensor()));
-  require_ok(ops.rife_pad(host, padded_host->tensor()));
-  CHECK(max_abs_diff(download(backend, *padded, g.padded_width, g.padded_height),
-                     download(backend, *padded_host, g.padded_width, g.padded_height)) <= 1e-6F);
-
-  require_ok(ops.measure(frame, other));
-  require_ok(backend.context().wait_on_host(backend.queue().last()));
-  const auto scores = ops.previous_scores();
-  REQUIRE(scores);
-  require_ok(ops.measure(host, host_other));
-  require_ok(backend.context().wait_on_host(backend.queue().last()));
-  const auto scores_host = ops.previous_scores();
-  REQUIRE(scores_host);
-  CHECK(scores->scene_score == scores_host->scene_score);
-  CHECK(scores->worst_block == scores_host->worst_block);
-  CHECK(scores->identical == scores_host->identical);
+  require_ok(ops.ingest(other, {}, rgb->tensor()));
+  require_ok(ops.ingest(host_other, {}, rgb_host->tensor()));
+  CHECK(max_abs_diff(download(backend, *rgb, w, h), download(backend, *rgb_host, w, h)) <= 1e-6F);
 }
 
 }  // namespace
@@ -312,7 +296,7 @@ TEST_CASE("KernelOps : les plans d'une image décodée se lisent en place", "[vk
     // précédent rendues) ; chaque lecture a attendu et signalé le sémaphore de l'image, sans la
     // copier dans un tampon.
     CHECK(ops.plane_views() == 2);
-    CHECK(data_a->value() == 3);  // ingestion, remplissage RIFE, mesure
+    CHECK(data_a->value() == 1);  // une ingestion chacune
     CHECK(data_b->value() == 1);
     CHECK(data_a->opened() == data_a->closed());
     require_ok(backend->context().wait_on_host(backend->queue().last()));
@@ -367,16 +351,14 @@ TEST_CASE("KernelOps : une image hôte s'envoie une fois pour toutes ses lecture
   const DecodedFrame frame_b = host_frame(b, color, 2);
   const DecodedFrame frame_c = host_frame(c, color, 3);
   auto rgb = rgb_tensor(*backend, 48, 32, TensorType::F32);
-  const k::RifeGeometry g = k::rife_geometry(48, 32);
-  auto padded = rgb_tensor(*backend, g.padded_width, g.padded_height, TensorType::F32);
-  // La chaîne d'une image : mesure avec la précédente, remplissage RIFE, ingestion ; chaque image
-  // part une fois.
-  require_ok(ops.measure(frame_a, frame_b));
-  CHECK(ops.uploads_queued() == 2);
-  require_ok(ops.rife_pad(frame_b, padded->tensor()));
+  auto small = rgb_tensor(*backend, 24, 16, TensorType::F32);
+  // Les lectures d'une même image (ingestion réduite, puis pleine) : chaque image part une fois.
+  require_ok(ops.ingest(frame_a, {}, small->tensor()));
+  CHECK(ops.uploads_queued() == 1);
+  require_ok(ops.ingest(frame_b, {}, small->tensor()));
   require_ok(ops.ingest(frame_b, {}, rgb->tensor()));
   CHECK(ops.uploads_queued() == 2);
-  require_ok(ops.measure(frame_b, frame_c));
+  require_ok(ops.ingest(frame_c, {}, small->tensor()));
   CHECK(ops.uploads_queued() == 3);
   require_ok(ops.ingest(frame_c, {}, rgb->tensor()));
   CHECK(ops.uploads_queued() == 3);

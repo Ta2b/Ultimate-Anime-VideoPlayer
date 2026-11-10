@@ -1,6 +1,7 @@
 #include "app/play/chain_shots.h"
 
 #include <algorithm>
+#include <atomic>
 #include <expected>
 #include <tuple>
 #include <utility>
@@ -20,9 +21,17 @@ constexpr std::int64_t kSeekBehindUs = 2'000'000;  // la lecture revient derriè
 constexpr std::int64_t kSeekAheadUs = 5'000'000;   // ou la dépasse de loin
 constexpr std::int64_t kSeekEveryUs = 1'000'000;
 
+// Un échec d'écriture du cache des plans (dossier en lecture seule, disque plein) : dit une fois par séance,
+// sinon chaque vidéo se réanalyse à chaque ouverture sans une ligne au journal (A42-15).
+void note_cache_failure(const std::filesystem::path& dir) {
+  static std::atomic<bool> said{false};
+  if (said.exchange(true)) return;
+  log_channel("app")->warn("plans : le cache {} ne s'écrit pas, chaque vidéo sera réanalysée",
+                           core::to_utf8(dir.filename()));
+}
+
 // Le grade lit les plans (sauf celui, neutre, d'une source HDR sans grade natif) ; l'interpolation aussi,
-// sous
-// --shot-cuts.
+// sous --shot-cuts.
 bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr) {
   const bool grade = settings.grade && (!source_hdr || settings.hdr_native);
   return grade || (shot_cuts && settings.rife_factor != 0);
@@ -80,6 +89,8 @@ void keep_if_done(const ShotWork& work, ShotJob& job) {
     const auto log = log_channel("app");
     if (media::save_shot_cache(dir, key, shots, true, media::kShotCacheKeep, flashes, variant))
       log->info("plans de {} gardés : {} plans", name, shots.size());
+    else
+      note_cache_failure(dir);
     return {};
   };
   if (work.writer != nullptr) {
@@ -118,6 +129,8 @@ void ShotJob::retire() noexcept {
                                timeline->flashes(), variant)) {
       const auto log = log_channel("app");
       log->info("plans de {} gardés en partie : {} plans", core::to_utf8(file.filename()), timeline->size());
+    } else {
+      note_cache_failure(cache_dir);
     }
   } catch (...) {  // NOLINT(bugprone-empty-catch) : le cache est un confort, pas une obligation
   }

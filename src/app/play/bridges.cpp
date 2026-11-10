@@ -1,5 +1,6 @@
 #include "app/play/bridges.h"
 
+#include <algorithm>
 #include <format>
 #include <string>
 #include <utility>
@@ -95,7 +96,10 @@ std::expected<subs::SelectTrack, Refusal> subtitle_track(const media::TrackInfo&
     for (std::size_t i = 0; i < extra.size(); ++i) header[i] = static_cast<char>(extra[i]);
     return subs::SelectTrack{.id = id, .source = subs::AssStream{.header = std::move(header)}};
   }
-  if (track.codec == "subrip" || track.codec == "text" || track.codec == "srt") {
+  // mov_text (MP4) : le texte derrière sa longueur, relu par SubsBridge ; WebVTT : le texte de la réplique
+  // (A18-15). Les balises de style de l'un et de l'autre ne sont pas rendues.
+  if (track.codec == "subrip" || track.codec == "text" || track.codec == "srt" || track.codec == "mov_text" ||
+      track.codec == "webvtt") {
     return subs::SelectTrack{.id = id, .source = subs::TextStream{}};
   }
   return std::unexpected(
@@ -103,20 +107,36 @@ std::expected<subs::SelectTrack, Refusal> subtitle_track(const media::TrackInfo&
               std::format("piste {} : sous-titres {} non pris en charge", track.index, track.codec)});
 }
 
-std::vector<subs::AttachFont> attached_fonts(std::span<const media::TrackInfo> tracks) {
-  std::vector<subs::AttachFont> fonts;
+std::span<const std::byte> mov_text_payload(std::span<const std::byte> packet) {
+  // tx3g (ISO 14496-17) : une longueur sur deux octets, gros-boutiste, puis le texte en UTF-8, puis les
+  // boîtes de style, laissées de côté.
+  if (packet.size() < 2) return {};
+  const std::size_t length =
+      (std::to_integer<std::size_t>(packet[0]) << 8U) | std::to_integer<std::size_t>(packet[1]);
+  return packet.subspan(2, std::min(length, packet.size() - 2));
+}
+
+AttachedFonts attached_fonts(std::span<const media::TrackInfo> tracks, std::size_t max_bytes) {
+  AttachedFonts out;
+  std::size_t total = 0;
   for (const media::TrackInfo& track : tracks) {
     if (!media::is_font(track) || !track.parameters) continue;
     const auto extra = track.parameters->extradata();
-    fonts.push_back(subs::AttachFont{.name = track.filename, .data = {extra.begin(), extra.end()}});
+    if (extra.size() > max_bytes - total) {
+      ++out.dropped;
+      continue;
+    }
+    total += extra.size();
+    out.fonts.push_back(subs::AttachFont{.name = track.filename, .data = {extra.begin(), extra.end()}});
   }
-  return fonts;
+  return out;
 }
 
 bool SubsBridge::try_push(media::Packet&& packet) {
   if (packet.track != track_.load()) return true;  // piste non choisie : écartée
   if (packet.pts_us == kNoPts) return true;        // sans instant, rien à afficher : écarté
-  const auto bytes = packet.data();
+  auto bytes = packet.data();
+  if (std::ranges::contains(mov_text_, packet.track)) bytes = mov_text_payload(bytes);
   subs::TrackPacket out{.track = subs_track_id(packet.track),
                         .packet = {.start_us = packet.pts_us, .duration_us = packet.duration_us, .data = {}}};
   out.packet.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());

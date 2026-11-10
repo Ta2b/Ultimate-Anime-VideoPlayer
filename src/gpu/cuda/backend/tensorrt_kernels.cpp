@@ -94,14 +94,13 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   }
   const auto format = ingest_format(frame.format, host);
   const auto matrix = matrix_of(frame.color.matrix);
-  if (!format || !matrix || spec.rife_conversion) {
+  if (!format || !matrix) {
     return refuse(RefusalCode::FormatUnsupported,
                   host
                       ? "ingestion hôte : NV12, P010, P016 ou YUV 4:2:0 8 ou 10 bits, chaîne d'agrandissement"
                       : "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
   }
   // Tenseur à la taille de l'image, ou plus petit : réduction Area fusionnée (slice_kernels.h).
-  // Extension de ce backend au contrat de KernelOps::ingest, signalée pour l'intégration.
   const int out_width = static_cast<int>(rgb.shape.dims[3]);
   const int out_height = static_cast<int>(rgb.shape.dims[2]);
   if (out_width < 1 || out_height < 1 || out_width > frame.width || out_height > frame.height ||
@@ -363,12 +362,6 @@ std::expected<void, Refusal> TensorRtBackend::resample(const Tensor& in, kernels
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("cuMemcpyDtoDAsync : erreur {}", static_cast<int>(copied)));
   return {};
-}
-std::expected<void, Refusal> TensorRtBackend::rife_pad(const DecodedFrame&, const Tensor&) {
-  return not_here("rife_pad");
-}
-std::expected<void, Refusal> TensorRtBackend::measure(const DecodedFrame&, const DecodedFrame&) {
-  return not_here("measure");
 }
 
 }  // namespace ajp::gpu::cuda

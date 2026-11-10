@@ -1,6 +1,6 @@
-// Horloge maître de la lecture. Avec VRR, l'audio la publie ; sur un écran à
-// rafraîchissement fixe, present la publie et l'audio la suit en se
-// rééchantillonnant. present et gpu la lisent sans attendre.
+// Horloge maître de la lecture. D'ordinaire l'audio la publie, sur tout écran ;
+// sous calage sur l'écran (ou sans son), present la publie et l'audio la suit
+// en se rééchantillonnant. present et gpu la lisent sans attendre.
 // Fait partie de core_types : aucune dépendance hors bibliothèque standard.
 #pragma once
 

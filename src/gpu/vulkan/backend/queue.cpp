@@ -13,15 +13,13 @@ constexpr std::uintptr_t kUnknownAccess = 2;
 
 }  // namespace
 
-std::expected<BackendQueue, Refusal> BackendQueue::create(VkContext& context,
-                                                          VkExternalSemaphoreHandleTypeFlags exports,
-                                                          bool lanes) {
+std::expected<BackendQueue, Refusal> BackendQueue::create(VkContext& context, bool lanes) {
   // Les voies sur les files : l'agrandissement sur la principale (0), l'interpolation sur la
   // deuxième, la mesure sur la troisième ou, à défaut, avec l'agrandissement.
   const std::size_t files = lanes ? std::min<std::size_t>(context.queue_lanes(), kLanes) : 1;
   std::vector<LaneState> states;
   for (std::size_t lane = 0; lane < kLanes; ++lane) {
-    auto timeline = TimelineSemaphore::create(context, 0, lane == kMain ? exports : 0);
+    auto timeline = TimelineSemaphore::create(context, 0);
     if (!timeline) return std::unexpected(timeline.error());
     std::size_t file = 0;
     if (lane == lane_index(Lane::Interpolate) && files >= 2) file = 1;
@@ -144,11 +142,6 @@ std::expected<TimelinePoint, Refusal> BackendQueue::joined() {
   keep_mark(current_, op.mark);
   state.pending.clear();
   return last();
-}
-
-std::optional<BackendQueue::Step> BackendQueue::external_step() {
-  if (!lanes_[current_].pending.empty()) return std::nullopt;
-  return host_step();
 }
 
 BackendQueue::Step BackendQueue::host_step() {

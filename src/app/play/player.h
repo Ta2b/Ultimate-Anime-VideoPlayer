@@ -24,7 +24,12 @@ struct PlayerPaths {
   // comme lecteur par défaut part de son grand-parent (place_of).
   std::filesystem::path data;
   std::filesystem::path executable;  // le lecteur lui-même, que l'inscription comme lecteur par défaut nomme
-  std::filesystem::path engines;     // moteurs construits (SDL_GetPrefPath)
+  std::filesystem::path engines;     // moteurs construits (sous cache)
+  // Le dossier des données lourdes (paquets, modèles téléchargés, LUT) ; vide : le parent de engines.
+  std::filesystem::path heavy;
+  // Les caches qui se refont seuls (modèles dérivés, plans, cache des shaders) ; vide : le dossier des
+  // données. Sous Linux, ~/.cache/ajp (A36-08).
+  std::filesystem::path cache;
   std::filesystem::path
       settings;  // play.toml, user.toml, bench.toml… ; vide : le parent de engines (--data-dir)
   std::vector<std::filesystem::path>

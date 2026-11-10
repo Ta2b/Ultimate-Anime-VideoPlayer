@@ -80,6 +80,28 @@ jobs:
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
 
+  # Le cœur avec le compilateur d'Arch (celui de CachyOS, le poste du propriétaire), en -Werror : un GCC plus
+  # récent que celui de la CI apporte des avertissements que rien d'autre ne voit avant lui. Arch avance en
+  # continu : la tâche signale sans bloquer (continue-on-error), à lire quand elle passe au rouge.
+  arch:
+    name: Cœur (GCC d'Arch)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    container: archlinux:latest
+    env:
+      AJP_DEPS_PREFIX: /opt/ajp-deps
+      CCACHE_DIR: /tmp/ccache
+    steps:
+      - run: pacman -Syu --noconfirm --needed base-devel git cmake ninja ccache pkgconf python
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: gcc --version | head -n 1
+      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" /tmp/deps-src
+      - run: cmake --preset linux-prefix-core
+      - run: cmake --build --preset linux-prefix-core
+      - run: ctest --preset linux-prefix-core
+
   # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
   # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
   # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous TSan. Sous
@@ -242,16 +264,24 @@ jobs:
       - name: Tests sans GPU
         shell: pwsh
         run: |
-          ctest --preset windows-ci
+          ctest --preset windows-ci --output-junit "$env:GITHUB_WORKSPACE/junit.xml"
           if ($LASTEXITCODE -ne 0) {
             # Les échecs seuls, relancés à la fin du journal : leur sortie se lit sans fouiller 4 000 lignes.
             ctest --preset windows-ci --rerun-failed --output-on-failure -j1
             throw "tests"
           }
+      # Le runner n'a pas de GPU : les tests de rendu sautent. Un saut ne passe pas pour une réussite (C14) :
+      # la liste s'écrit au résumé de la tâche, et leur nombre ne dépasse pas le plafond de skip-ceiling.txt.
+      - name: Tests sautés
+        if: always() && hashFiles('junit.xml') != ''
+        shell: bash
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" windows | tee -a "$GITHUB_STEP_SUMMARY"
 
   # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque pull request (P1.17) : le kit
   # CUDA et TensorRT viennent de NVIDIA (tools/deps/linux-tensorrt.sh) et ne sortent pas de la tâche.
-  # Construction seule, pour sm_89 (linux-prefix-cuda) : les tests TensorRT demandent un GPU NVIDIA.
+  # Construction seule (linux-prefix-cuda), pour toutes les architectures livrées et pas sm_89 seule : un
+  # noyau qui déborde sur sm_75 ou emploie un intrinsèque absent de Turing cassait le paquet TensorRT le jour
+  # de la release, sans que la pull request l'ait vu. Les tests TensorRT demandent un GPU NVIDIA.
   cuda:
     name: Lecteur Linux (CUDA et TensorRT)
     if: github.event_name != 'push'
@@ -285,7 +315,9 @@ jobs:
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: CUDA et TensorRT
         run: tools/deps/linux-tensorrt.sh "$RUNNER_TEMP/nvidia"
-      - run: cmake --preset linux-prefix-cuda "-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"
+      - run: >-
+          cmake --preset linux-prefix-cuda "-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"
+          "-DAJP_CUDA_ARCHITECTURES=75-real;86-real;89-real;120-real;120-virtual"
       - run: cmake --build --preset linux-prefix-cuda
       # P5.8 : le backend TensorRT, que la tâche clang-tidy de Linux ne compile pas (ses .cpp ; nvcc garde les .cu).
       - name: clang-tidy sur le backend TensorRT

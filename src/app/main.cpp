@@ -319,6 +319,33 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
+// Où vivent les données lourdes et les caches, une fois déplacés ceux d'une version d'avant.
+struct DataPlaces {
+  std::filesystem::path heavy;
+  std::filesystem::path cache;
+};
+
+DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::PlayerPlace& place,
+                       bool purge_updates) {
+  const auto said = [](const std::string& line) { ajp::log_channel("app")->info("données : {}", line); };
+  // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois. Sous
+  // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/ajp (A36-08).
+  DataPlaces places{.heavy = ajp::app::play::local_data(data)};
+  ajp::app::play::move_heavy_data(data, places.heavy, said);
+  places.cache = ajp::app::play::cache_data(place.home, places.heavy);
+  ajp::app::play::move_cache_data(places.heavy, places.cache, said);
+  ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), said);
+  // La mise à jour n'est plus qu'une notification : les archives préparées et la copie
+  // de l'ancienne installation qu'avaient laissées les versions qui s'appliquaient elles-mêmes se retirent
+  // (A26-06).
+  if (!purge_updates) return places;  // --data-dir, banc : ni le dossier de l'utilisateur ni son bureau
+  ajp::app::play::purge_update_leftovers(
+      data, [](const std::string& line) { ajp::log_channel("app")->info("mise à jour : {}", line); });
+  // Un lecteur inscrit dont le dossier a bougé suit sa nouvelle place (A19-06).
+  if (ajp::app::play::refresh_registration(place)) said("inscription refaite à la nouvelle place du lecteur");
+  return places;
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 int run_player(int argc, char** argv) {
   // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
@@ -475,25 +502,17 @@ int run_player(int argc, char** argv) {
   // démarrer.
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
-  // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois.
-  const std::filesystem::path heavy = ajp::app::play::local_data(data);
-  ajp::app::play::move_heavy_data(
-      data, heavy, [](const std::string& line) { ajp::log_channel("app")->info("données : {}", line); });
-  ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), [](const std::string& line) {
-    ajp::log_channel("app")->info("données : {}", line);
-  });
-  // La mise à jour n'est plus qu'une notification : les archives préparées et la copie
-  // de l'ancienne installation qu'avaient laissées les versions qui s'appliquaient elles-mêmes se retirent
-  // (A26-06).
-  if (!options->data_dir && !options->bench_out)
-    ajp::app::play::purge_update_leftovers(
-        data, [](const std::string& line) { ajp::log_channel("app")->info("mise à jour : {}", line); });
+  const DataPlaces places = settle_data(data, place, !options->data_dir && !options->bench_out);
+  const std::filesystem::path& heavy = places.heavy;
+  const std::filesystem::path& cache = places.cache;
   bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
       .data = data,  // le dossier des données du lecteur
       .executable = place.executable,
-      .engines = heavy / "engines",
+      .engines = cache / "engines",
+      .heavy = heavy,
+      .cache = cache,
       .settings = settings_dir,
       .engine_index = base / "engines.lock",
       .models = base / "models",
@@ -548,6 +567,7 @@ int run_player(int argc, char** argv) {
 // asynchrone du journal avant de s'arrêter (P2.1).
 int main(int argc, char** argv) {
   ajp::install_terminate_flush();
+  ajp::install_system_thread_names();  // Nsight, gdb et les vidages nomment chaque thread (A20-11)
   const int code = ajp::run_logged([&] { return run_player(argc, argv); });
   ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
   // Une sonde de fichier bloquée sur un partage muet (run_pumped_for) : un instant pour finir, sinon le

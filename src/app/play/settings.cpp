@@ -117,10 +117,6 @@ std::string_view name(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
       return "rife";
-    case MotionEngine::Gmfss:
-      return "gmfss";
-    case MotionEngine::GmfssUnion:
-      return "gmfss_union";
     case MotionEngine::DistilDrba:
       return "distil_drba";
     case MotionEngine::Apple:
@@ -133,10 +129,6 @@ std::string_view label(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
       return "RIFE";
-    case MotionEngine::Gmfss:
-      return "GMFSS Fortuna";
-    case MotionEngine::GmfssUnion:
-      return "GMFSS Fortuna Union";
     case MotionEngine::DistilDrba:
       return "DistilDRBA";
     case MotionEngine::Apple:

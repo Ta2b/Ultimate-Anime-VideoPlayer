@@ -29,11 +29,6 @@ enum class Production : std::uint8_t {
 struct CacheEntry {
   std::filesystem::path destination;  // fichier final, publié par renommage
   std::string kind = "engine";        // propriétaire des dossiers : « <kind>:<nom du fichier> »
-  // SHA-256 d'une entrée publiée que son consommateur n'a pas pu charger (moteur
-  // tronqué par une coupure, désérialisation refusée) : elle est reproduite et
-  // remplacée. Si un autre processus l'a déjà remplacée, la nouvelle se reprend.
-  // Vide : toute entrée publiée se reprend.
-  std::string rejected_sha256;
   // Attente maximale du verrou de la clé : au moins tout ce que le détenteur peut y passer (attente du GPU
   // puis construction), sans quoi un second lecteur abandonne alors que rien n'est figé (A05-02).
   std::chrono::milliseconds max_wait = kMaxLockWait;

@@ -15,12 +15,12 @@ extern "C" {
 #include <libavutil/samplefmt.h>
 }
 
-#include "core/av_error.h"
+#include "av/av_error.h"
 #include "core/types.h"
 
 namespace ajp::audio {
 
-using core::av_error_text;
+using av::av_error_text;
 namespace {
 
 constexpr std::int64_t kMicroseconds = 1'000'000;
