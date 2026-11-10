@@ -1,9 +1,6 @@
-// L'écran provisoire de la tranche verticale : fenêtre SDL3, appareil Vulkan et swapchain
-// libplacebo, ring de sortie exporté vers CUDA, composition des slots avec sous-titres et OSD.
-//
-// Provisoire : render (appareil, ring, composition, grade, ImGui) et present (fenêtre,
-// swapchain, cadence, écran) le remplacent dès qu'ils sont fusionnés ; le contrat qu'il tient
-// est celui de Screen (links.h) et du ring (core/ring.h), le même qu'eux.
+// L'écran du lecteur : fenêtre SDL3, appareil Vulkan et swapchain libplacebo, ring de sortie exporté vers
+// CUDA, composition des slots avec sous-titres et OSD. Le contrat qu'il tient est celui de Screen
+// (links.h) et du ring (core/ring.h).
 #pragma once
 
 #include <cstdint>
@@ -62,7 +59,8 @@ struct ScreenOptions {
   bool allow_software = false;  // appareil Vulkan logiciel (lavapipe) accepté : essais sans GPU
   std::string
       device_name;  // la carte demandée (play.toml, engines.gpu) ; absente ou vide : libplacebo choisit
-  // --present : le retour de présentation (chantier 6, present_level.h) ; open, celle d'aujourd'hui.
+  // --present : le retour de présentation (chantier 6, present_level.h). Le lecteur passe toujours celui des
+  // options (wait par défaut, options.h, player.cpp) : la valeur ci-dessous n'est jamais prise.
   PresentWanted present = PresentWanted::Open;
   // Le cache des shaders et pipelines de libplacebo (le grade, ses passes, les LUT) : relu à l'ouverture,
   // gardé à la fermeture. Sans lui, tout se recompile à chaque lancement. Vide : pas de cache.

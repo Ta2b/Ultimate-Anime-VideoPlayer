@@ -96,7 +96,7 @@ void SubtitleLead::run(const std::stop_token& stop) {
     {
       std::unique_lock lock(mutex_);
       busy_ = false;
-      if (!wake_.wait(lock, stop, [this] { return wanted(); })) return;
+      if (!wake_.wait(lock, stop, [this] { return wanted(); }) || !track_) return;
       busy_ = true;
       job = Job{.track = *track_, .place = std::exchange(place_, std::nullopt), .generation = generation_};
     }

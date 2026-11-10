@@ -41,7 +41,6 @@ constexpr std::array kSystemPages{
     Entry{"Below the playback output, libplacebo scales down with its best filter (EWA Lanczos).",
           "Sous la sortie de la lecture, libplacebo réduit avec son meilleur filtre (EWA Lanczos)."},
     Entry{"Built engines", "Moteurs construits"},
-    Entry{"Cancel##bench", "Annuler##bench"},
     Entry{"Cancel##moteur", "Annuler##moteur"},
     Entry{"Cancel##span_prepare", "Annuler##span_prepare"},
     Entry{"Check now", "Vérifier maintenant"},
@@ -81,8 +80,6 @@ constexpr std::array kSystemPages{
     Entry{"Installed engines", "Moteurs installés"},
     Entry{"Installed version: {}", "Version installée : {}"},
     Entry{"Last check: {}", "Dernière vérification : {}"},
-    Entry{"Version {} was set aside: it did not start properly.",
-          "La version {} a été mise de côté : elle ne démarrait pas correctement."},
     Entry{"MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use "
           ".mkv to keep everything. Esc cancels.",
           "MP4 et MOV gardent les instants exacts, les chapitres et l'audio compatible, mais ni sous-titres "
@@ -96,16 +93,12 @@ constexpr std::array kSystemPages{
           "Un seul moteur installé : « Installer d'autres moteurs » propose ceux qui conviennent à ce GPU."},
     Entry{"Open a video: the export uses its settings and is named next to it.",
           "Ouvrez une vidéo : l'export reprend ses réglages et se nomme à côté d'elle."},
-    Entry{"Optimization cancelled: nothing changed.", "Optimisation annulée : rien n'a changé."},
-    Entry{"Calibrate this machine", "Calibrer cette machine"},
     Entry{"Playback output · {}x{}", "Sortie de la lecture · {}x{}"},
     Entry{"Prepare again for this video", "Refaire la préparation pour cette vidéo"},
-    Entry{"Previous settings restored.", "Réglages d'avant rétablis."},
     Entry{"Remove from \"Open with\"", "Retirer de « Ouvrir avec »"},
     Entry{"Reopens the engines screen; playback resumes at the same spot.",
           "Rouvre l'écran des moteurs ; la lecture reprend ensuite au même endroit."},
     Entry{"SPAN Performance mode (FP8)", "Mode Performance de SPAN (FP8)"},
-    Entry{"SPAN Performance mode (FP8) preparation", "préparation du mode Performance de SPAN (FP8)"},
     Entry{"Same engines and settings as playback, with no skipped frame. No HDR or grading: the "
           "chain's picture as is.",
           "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. Ni HDR, ni étalonnage : "
@@ -114,11 +107,6 @@ constexpr std::array kSystemPages{
     Entry{"Suggested name", "Nom proposé"},
     Entry{"The output is an MKV, MP4 or MOV: its name ends in .mkv, .mp4 or .mov.",
           "Le fichier exporté est un MKV, un MP4 ou un MOV : son nom finit par .mkv, .mp4 ou .mov."},
-    Entry{"The player tries a few seconds of video with its recommended settings, lightest to heaviest, "
-          "keeps what your PC holds without stutter and applies it. About a minute (several the first time).",
-          "Le lecteur essaie quelques secondes de vidéo avec ses réglages recommandés, du plus léger au plus "
-          "lourd, garde ceux que votre PC tient sans saccade et les applique. Environ une minute (plusieurs "
-          "la première fois)."},
     Entry{"This file exists: it is replaced only when the export succeeds.",
           "Ce fichier existe : il n'est remplacé qu'à la fin d'un export réussi."},
     Entry{"This file is the video being played.", "Ce fichier est la vidéo lue."},
@@ -129,7 +117,6 @@ constexpr std::array kSystemPages{
           "each model and size.",
           "À appliquer : la lecture se rouvre au même endroit avec {} ; ses moteurs se construisent la "
           "première fois pour chaque modèle et chaque taille."},
-    Entry{"Undo these settings", "Annuler ces réglages"},
     Entry{"Updates", "Mises à jour"},
     Entry{"Use the playback settings", "Reprendre les réglages de la lecture"},
     Entry{"Use this engine", "Utiliser ce moteur"},

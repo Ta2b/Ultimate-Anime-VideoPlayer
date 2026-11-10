@@ -27,43 +27,6 @@ struct SystemNote {
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
 };
 
-struct BenchState;  // l'essai en cours et de quoi le défaire (settings_system.cpp ; auto_bench.h le décrit)
-
-// Le bouton « Calibrer cette machine » : l'essai en cours (étapes, progression, annulation), son résultat
-// en une phrase, et de quoi défaire les réglages posés.
-struct BenchNote {
-  std::string text;  // le résultat en une phrase, ou ce qui a manqué
-  bool refused = false;
-  std::shared_ptr<BenchState> state;
-  ~BenchNote();
-  BenchNote();
-  BenchNote(const BenchNote&) = delete;
-  BenchNote& operator=(const BenchNote&) = delete;
-  // Arrête l'essai en cours (le panneau qui disparaît).
-  void stop();
-};
-
-// Ce que la page sait de la machine et de la vidéo ouverte.
-struct BenchContext {
-  int display_height = 1080;
-  double display_hz = 60.0;
-  int source_height = 1080;
-  double source_fps = 23.976;
-  SpanPrepare span;        // la préparation du mode Performance (étape 4) : offerte avec une vidéo ouverte
-  std::string fp8_reason;  // pourquoi le mode Performance est impossible ici (vide : possible)
-  // Le dossier des réglages (celui de play.toml : bench.toml, settings.toml et la séquence de test y sont).
-  // PlayerPlace::data est la racine des données de l'utilisateur, un ou deux niveaux plus haut : y écrire le
-  // résultat le rendait introuvable (« jamais évaluée ») et les essais perdaient les moteurs choisis.
-  std::filesystem::path data_dir;
-};
-
-enum class BenchEvent : std::uint8_t {
-  None,
-  Started,  // l'optimisation vient de partir : l'appelant met la lecture en pause
-  Applied,  // elle a fini : le brouillon porte les réglages recommandés, à appliquer
-  Undone,   // « Annuler ces réglages » : le brouillon est revenu à l'état d'avant
-};
-
 // Vidéo > Post-traitement (réglages avancés) : « Refaire la préparation sur cette vidéo » (span_derive.h),
 // la tâche partagée avec la boucle du lecteur (span_auto.h) avec sa progression et son résultat.
 struct PrepareNote {
@@ -80,15 +43,6 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& note);
 // La section de la préparation : son état, sa progression, son résultat et « Refaire la préparation sur cette
 // vidéo ». Discrète : réglages avancés seulement.
 void span_prepare_section(const SpanPrepare& prepare, PrepareNote& note);
-
-// La page « Calibrer cette machine » : un bouton, l'étape en cours, une barre, Annuler, le résultat. draft
-// : les réglages du panneau, que l'optimisation règle (préréglage Auto sur la mesure) ou que « Annuler ces
-// réglages » rétablit (avec le bench.toml d'avant). Une optimisation tourne : le panneau demande des images
-// même en pause, pour que l'étape et la barre avancent.
-bool bench_running(const BenchNote& bench);
-
-BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& video,
-                      const BenchContext& context, BenchNote& bench, PlaySettings& draft);
 
 // Général > Application : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
 // Le panneau qui se ferme arrête la vérification ou le téléchargement en cours (P2.6) : le futur attendu par

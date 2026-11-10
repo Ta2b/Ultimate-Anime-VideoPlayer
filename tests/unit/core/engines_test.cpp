@@ -39,12 +39,10 @@ TEST_CASE("Moteurs : RTX 4070 Ti sous Windows", "[engines]") {
   CHECK(has(*trt, Badge::NvidiaOnly));
 
   CHECK_FALSE(find(offers, EngineId::Metal));
-  CHECK_FALSE(find(offers, EngineId::MiGraphX));
-  CHECK_FALSE(find(offers, EngineId::OpenVino));
-  CHECK_FALSE(find(offers, EngineId::DirectMl));
+  CHECK(offers.size() == 2);
 }
 
-TEST_CASE("Moteurs : AMD et Intel passent par Vulkan, MIGraphX et OpenVINO débranchés", "[engines]") {
+TEST_CASE("Moteurs : AMD et Intel passent par Vulkan, seul proposé", "[engines]") {
   const std::array systems{
       SystemInfo{.os = Os::Linux, .gpus = {GpuInfo{.vendor = GpuVendor::Amd, .name = "RX 7900 XTX"}}},
       SystemInfo{.os = Os::Windows,
@@ -53,16 +51,9 @@ TEST_CASE("Moteurs : AMD et Intel passent par Vulkan, MIGraphX et OpenVINO débr
       SystemInfo{.os = Os::Linux, .gpus = {GpuInfo{.vendor = GpuVendor::Intel, .name = "Arc A770"}}}};
   for (const SystemInfo& system : systems) {
     const auto offers = recommend_engines(system);
-    CHECK_FALSE(find(offers, EngineId::MiGraphX));
-    CHECK_FALSE(find(offers, EngineId::OpenVino));
-    CHECK_FALSE(find(offers, EngineId::DirectMl));
-    CHECK_FALSE(find(offers, EngineId::TensorRt));  // P3.5 : ni case ni écran Moteurs hors RTX
+    CHECK(offers.size() == 1);  // P3.5 : ni case ni écran Moteurs hors RTX
     CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
   }
-  CHECK_FALSE(engine_plugged(EngineId::MiGraphX));
-  CHECK_FALSE(engine_plugged(EngineId::OpenVino));
-  CHECK(engine_plugged(EngineId::TensorRt));
-  CHECK(engine_plugged(EngineId::Vulkan));
 }
 
 TEST_CASE("Moteurs : Mac, Metal inclus et recommandé", "[engines]") {

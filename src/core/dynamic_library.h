@@ -31,6 +31,10 @@ class DynamicLibrary {
   // Refuse (LibraryUnavailable) un chemin relatif, ou avec le message du chargeur du système.
   static std::expected<DynamicLibrary, Refusal> open(const std::filesystem::path& path,
                                                      SymbolScope scope = SymbolScope::Local);
+  // Une bibliothèque du système, par son nom seul (« libvulkan.so.1 », « vulkan-1.dll ») : le chargeur du
+  // système la cherche dans ses dossiers à lui (sous Windows, ceux du système seulement, jamais le PATH).
+  // Réservé aux noms fixés dans le code : un nom venu d'un fichier passe par open.
+  static std::expected<DynamicLibrary, Refusal> open_system(const char* name);
 
   DynamicLibrary(DynamicLibrary&& other) noexcept;
   DynamicLibrary& operator=(DynamicLibrary&& other) noexcept;

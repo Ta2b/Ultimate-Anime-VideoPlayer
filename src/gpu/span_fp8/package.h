@@ -1,7 +1,7 @@
 // Le paquet de poids du SPAN entier en FP8 : ce que tools/span/derive_span_fp8.py écrit et ce que les noyaux
 // CUTLASS du backend TensorRT chargent (docs/span-fp8-cutlass.md). Un fichier « .span8 », petit-boutiste :
 //
-//   en-tête de 40 octets : « AJPSPAN8 », version (u32 = 2 ; 1 reste lue), blocs (u32, 1 à 8 ; 8 en
+//   en-tête de 40 octets : « AJPSPAN8 », version (u32 = 2 ; 1 reste lue), blocs (u32, 2 à 8 ; 8 en
 //   version 1), canaux rangés (u32 = 64), canaux réels du modèle (u32 : 48 ou 64 ; 0 en version 1, lu 64),
 //   taille de la charge (u64), CRC-32 de la charge (u32), drapeaux (u32 : bit 0 = accumulateur f16 hors
 //   blocs, étape 3.5 ; 0 en version 1, les autres bits refusés) ; charge : les 1 + 3·blocs échelles E4M3 des
@@ -31,6 +31,9 @@ namespace ajp::gpu::span_fp8 {
 inline constexpr std::size_t kHeaderBytes = 40;
 inline constexpr std::uint32_t kVersion = 2;
 inline constexpr int kBlocks = 8;  // au plus ; le b8f64 en a 8, le b5f48 5
+// Au moins : le premier et le dernier bloc écrivent chacun leur tranche de la concaténation, et les noyaux
+// (span_fp8_net.cu) refusent un seul bloc (A02-10).
+inline constexpr int kMinBlocks = 2;
 inline constexpr int kChannels = 64;
 inline constexpr int kUnshuffled = 12;        // canaux après le dégroupage 2×2 des 3 plans
 inline constexpr int kUnshuffledPadded = 16;  // conv_1 lit 16 canaux, les 4 derniers nuls

@@ -9,6 +9,7 @@
 
 #include "app/play/auto_config.h"
 #include "app/play/i18n.h"
+#include "core/file_sync.h"
 #include "core/text.h"
 
 namespace ajp::app::play {
@@ -190,10 +191,10 @@ std::expected<void, Refusal> restore_bench_file(const BenchUndo& undo,
     if (error) return refuse(RefusalCode::IoFailed, i18n::tr("bench.toml: ") + error.message());
     return {};
   }
-  std::ofstream out(bench_file, std::ios::binary | std::ios::trunc);
-  out << *undo.bench_toml;
-  out.close();
-  if (!out) return refuse(RefusalCode::IoFailed, i18n::tr("bench.toml: cannot write"));
+  // Renommage atomique : une coupure pendant « Annuler » laisse l'ancien bench.toml ou le rendu, jamais un
+  // fichier tronqué (A07-12).
+  if (!core::write_text_atomically(bench_file, *undo.bench_toml))
+    return refuse(RefusalCode::IoFailed, i18n::tr("bench.toml: cannot write"));
   return {};
 }
 

@@ -121,7 +121,6 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<gpu::Artifact, Refusal> build(const gpu::ModelSpec& model, const gpu::ShapeSet& /*shapes*/,
                                               gpu::Progress& /*progress*/) override;
   std::expected<std::unique_ptr<gpu::Engine>, Refusal> load(const gpu::Artifact& artifact) override;
-  std::expected<gpu::Tensor, Refusal> import(const gpu::ExternalImage& /*image*/) override;
   std::expected<std::unique_ptr<gpu::TensorBuffer>, Refusal> alloc_tensor(gpu::TensorType type,
                                                                           const gpu::Shape& shape) override;
   gpu::KernelOps* kernels() override { return this; }
@@ -148,10 +147,6 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
                                         const gpu::Tensor& /*out*/) override {
     return note("resample");
   }
-  std::expected<void, Refusal> rife_pad(const DecodedFrame& /*frame*/,
-                                        const gpu::Tensor& /*padded*/) override {
-    return note("rife_pad");
-  }
   std::expected<void, Refusal> rife_crop(const gpu::Tensor& /*padded*/, const gpu::Tensor& out) override {
     return note("rife_crop", out.handle);
   }
@@ -168,10 +163,6 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   }
   std::expected<void, Refusal> write_ring(const gpu::Tensor& rgb, const RingSlotDesc& slot,
                                           const gpu::RingWrite& sync) override;
-  std::expected<void, Refusal> measure(const DecodedFrame& /*a*/, const DecodedFrame& /*b*/) override {
-    return note("measure");
-  }
-  std::optional<gpu::PairScores> previous_scores() override { return std::nullopt; }
   std::expected<void, Refusal> rife_input(const gpu::Tensor& a, const gpu::Tensor& b, float t,
                                           const gpu::Tensor& input) override {
     note_t(rife_ts_, t);

@@ -12,10 +12,6 @@ std::vector<AudioDevice> playback_devices() {
   int count = 0;
   SDL_AudioDeviceID* ids = SDL_GetAudioPlaybackDevices(&count);
   if (ids == nullptr) return out;
-  SDL_AudioSpec preferred{};
-  SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &preferred, nullptr);
-  const char* default_name = nullptr;
-  (void)default_name;
   for (int i = 0; i < count; ++i) {
     AudioDevice device{.id = ids[i]};
     if (const char* name = SDL_GetAudioDeviceName(ids[i])) device.name = name;

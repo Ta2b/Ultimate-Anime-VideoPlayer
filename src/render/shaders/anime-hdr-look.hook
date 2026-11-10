@@ -115,7 +115,8 @@ vec3 ajl_encode(vec3 n) {
 
 //@LOOK_CHAIN@
 
-// Le look d'un pixel encodé (PQ BT.2020, ou SDR) : aussi lu dans la passe du grade fusionné (grade.cpp).
+// Le look d'un pixel encodé (PQ BT.2020, ou SDR), lu par les passes de ce hook seulement ; grade.cpp n'y
+// insère que la pile (marque LOOK_CHAIN).
 vec3 ajl_look(vec3 e) {
     if (look_pq > 0.5 && sdr_out < 0.5) {
         // LUT d'HDR : elle lit directement les codes PQ BT.2020 de l'image et rend des codes PQ.

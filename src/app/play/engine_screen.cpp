@@ -124,8 +124,7 @@ namespace {
 
 // Un moteur des réseaux ajouté entre before et after.
 bool network_added(const core::Settings& before, const core::Settings& after) {
-  const std::vector<core::EngineId> networks = {core::EngineId::TensorRt, core::EngineId::MiGraphX,
-                                                core::EngineId::OpenVino, core::EngineId::Metal};
+  const std::vector<core::EngineId> networks = {core::EngineId::TensorRt, core::EngineId::Metal};
   return std::ranges::any_of(networks,
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
 }
@@ -379,8 +378,7 @@ std::vector<std::filesystem::path> backend_candidates(const EngineCatalog& catal
                                                       const PlayerPaths& paths) {
   std::vector<std::filesystem::path> out = installed_backends(catalog);
   for (const std::filesystem::path& backend : paths.backends) {
-    const std::optional<core::EngineId> id = engine_of_library(backend);
-    if (!id || core::engine_plugged(*id)) out.push_back(backend);  // MIGraphX, OpenVINO : débranchés
+    if (!retired_library(backend)) out.push_back(backend);  // MIGraphX, OpenVINO : retirés
   }
   return out;
 }
