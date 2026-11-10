@@ -61,7 +61,7 @@ inline bool has_validation_layer(const pl_vk_inst_t& inst) {
 // même sur un PC à GPU (C14). Ailleurs, nullptr : libplacebo prend le chargeur auquel il est lié.
 inline PFN_vkGetInstanceProcAddr vulkan_loader() {
 #if defined(_WIN32)
-  static const auto library = ajp::core::DynamicLibrary::open_system("vulkan-1.dll");
+  static const auto library = ajp::DynamicLibrary::open_system("vulkan-1.dll");
   if (!library) return nullptr;
   const auto entry =
       library->symbol<std::remove_pointer_t<PFN_vkGetInstanceProcAddr>>("vkGetInstanceProcAddr");
