@@ -60,4 +60,10 @@ std::int64_t from_us(std::int64_t us, AVRational time_base, std::int64_t start_u
 // Durée d'un flux en microsecondes, 0 si inconnue ou négative.
 std::int64_t duration_to_us(std::int64_t duration, AVRational time_base);
 
+// A15-01 : une piste dont la chroma n'est pas en 4:2:0 (HEVC RExt 4:4:4, VP9 profils 1 et 3, AV1 High et
+// Professional, et sur RTX 50 la HEVC 4:2:2) : NVDEC la décode en yuv444p, p210 ou nv16, que l'ingestion
+// TensorRT ne prend pas en mémoire CUDA (NV12, P010, P016 seulement). Le décodage logiciel la convertit. Le
+// format de la piste fait foi ; inconnu, le profil.
+bool chroma_beyond_420(const AVCodecParameters& av);
+
 }  // namespace ajp::media

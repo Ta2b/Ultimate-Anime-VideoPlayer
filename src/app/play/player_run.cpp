@@ -342,6 +342,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .shot_cuts = p.options.shot_cuts,
               .anime_shots = p.options.anime_shots};
   chain.stages = p.stages;
+  chain.dropped_subtitles = &p.dropped_subtitles;
+  restore_dropped_subtitles(chain, p.subtitle_track);
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -640,11 +642,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
         if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
             display_moves_chain(chain.running.preset, opened_height, display_height(out.window())))
-          actions.emplace_back(PlayFile{p.options.file, session.view().position_us, session.paused()});
+          chain.reopen = chain.running;  // A29-03 : la chaîne, pas le lecteur ; pistes et sous-titres gardés
         vrr_fullscreen = fullscreen;
         session.set_composited(!fullscreen);
         if (const auto display = window_display(out.window())) {
-          if (display_changed) contract_watch.set_display(p.display = display);  // P3.40, A11-01
+          if (display_changed) {
+            contract_watch.set_display(p.display = display);         // P3.40, A11-01
+            follow_display(chain, content_peak_nits(out.window()));  // A08-07 : en SDR aussi
+          }
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
@@ -742,7 +747,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   if (!chain.reopen && !failure && !session.quit_asked() && opened_file.grew(p.options.file)) {
     log->info("le fichier grandit encore : relu au même endroit");
-    apply(Input{PlayFile{p.options.file, session.view().position_us, false}}, chain, host_now_us());
+    chain.reopen = chain.running;  // A29-03 : comme une réouverture de la chaîne, pistes gardées
   }
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&

@@ -80,6 +80,9 @@ struct Player {
   std::int64_t began_us = 0;
   std::optional<int> audio_track;
   std::optional<std::optional<int>> subtitle_track;
+  // Les sous-titres glissés sur la fenêtre pendant cette vidéo : rajoutés à chaque réouverture de la chaîne
+  // (A29-03), dans le même ordre, donc aux mêmes numéros.
+  std::vector<std::filesystem::path> dropped_subtitles;
   core::Settings engines;               // settings.toml : les moteurs choisis à l'écran de bienvenue
   std::optional<DisplayFacts> display;  // l'écran selon son EDID (OLED ou non)
   std::filesystem::path resume_path;    // mémoire de lecture (resume.h) ; vide : aucune

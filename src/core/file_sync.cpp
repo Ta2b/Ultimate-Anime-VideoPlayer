@@ -91,6 +91,20 @@ std::string temp_suffix() {
 
 }  // namespace
 
+std::optional<Refusal> lacking_space(const std::filesystem::path& dir, std::uintmax_t needed) {
+  std::error_code error;
+  std::filesystem::path at = dir.empty() ? std::filesystem::path(".") : dir;
+  while (!std::filesystem::exists(at, error) && at.has_parent_path() && at.parent_path() != at)
+    at = at.parent_path();
+  const std::filesystem::space_info space = std::filesystem::space(at, error);
+  if (error || space.available >= needed) return std::nullopt;
+  constexpr double kMiB = 1024.0 * 1024.0;
+  return Refusal{RefusalCode::InsufficientSpace,
+                 std::format("disque plein : {:.0f} Mo libres sur {}, {:.0f} Mo demandés",
+                             static_cast<double>(space.available) / kMiB, to_utf8(at),
+                             static_cast<double>(needed) / kMiB)};
+}
+
 std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
                                           std::span<const std::byte> bytes) {
   std::error_code error;
@@ -105,12 +119,17 @@ std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
     out.close();  // la fermeture vide le tampon : son échec compte aussi
     if (!out) {
       std::filesystem::remove(temp, error);
+      if (auto full = lacking_space(path.parent_path(), bytes.size()))
+        return std::unexpected(std::move(*full));
       return std::unexpected(Refusal{RefusalCode::FileUnwritable, to_utf8(temp)});
     }
   }
   // Sur le disque avant le renommage : une coupure juste après ne laisse pas un fichier vide.
   if (const std::error_code synced = sync_file(temp)) {
     std::filesystem::remove(temp, error);
+    if (synced == std::errc::no_space_on_device)
+      return std::unexpected(Refusal{RefusalCode::InsufficientSpace,
+                                     std::format("disque plein : {} ({})", to_utf8(path), synced.message())});
     return std::unexpected(
         Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", to_utf8(temp), synced.message())});
   }

@@ -9,12 +9,14 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "app/play/visible_error.h"
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "core/log.h"
 #include "core/text.h"
 #include "kernels/spec/color.h"
 #include "media/demuxer.h"
+#include "media/selection.h"
 #include "media/video_decoder.h"
 #include "prepare/utf8.h"
 
@@ -48,6 +50,37 @@ void report_unreadable(const media::Demuxer& demuxer, int index, MainMail& mail)
   const media::TrackInfo* track = demuxer.track(index);
   if (track == nullptr) return;
   if (auto refused = subtitle_track(*track, 0); !refused) mail.report("subs", refused.error(), false);
+}
+
+// A17-02 : des pistes de sous-titres image (PGS, VobSub) et rien d'autre de choisi : dit une fois, au lieu
+// d'une lecture sans sous-titres et sans un mot.
+void note_image_subtitles(const media::Demuxer& demuxer, bool chosen, MainMail& mail) {
+  if (chosen) return;
+  std::string codecs;
+  for (const media::TrackInfo& track : demuxer.tracks()) {
+    if (track.kind != media::TrackKind::Subtitle || !media::subtitle_image(track.codec)) continue;
+    if (codecs.find(track.codec) == std::string::npos) codecs += (codecs.empty() ? "" : ", ") + track.codec;
+  }
+  if (codecs.empty()) return;
+  mail.report("subs",
+              Refusal{.code = RefusalCode::TrackUnavailable,
+                      .detail = std::format("sous-titres image ({}) non pris en charge", codecs),
+                      .key = std::string(kImageSubtitlesKey)},
+              false);
+}
+
+// Une piste de sous-titres que le lecteur sait lire. A17-02 : une piste image (PGS) que rien ne lit n'empêche
+// plus le fichier d'à côté.
+bool readable_subtitles(const media::Demuxer& demuxer) {
+  return std::ranges::any_of(demuxer.tracks(), [](const media::TrackInfo& t) {
+    return t.kind == media::TrackKind::Subtitle && media::subtitle_readable(t.codec);
+  });
+}
+
+// A18-15 : une piste mov_text (MP4) arrive avec sa longueur en tête, que le pont retire.
+void mark_mov_text(const media::Demuxer& demuxer, int index, SubsBridge& bridge) {
+  if (const media::TrackInfo* track = demuxer.track(index); track && track->codec == "mov_text")
+    bridge.mov_text(index);
 }
 
 }  // namespace
@@ -183,12 +216,9 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
                             .codec = "externe",
                             .title = prepare::utf8_path(p->external_[k].path.filename())});
     }
-    if (!choice.subtitle && !config.subtitle_track && !p->external_.empty() &&
-        std::ranges::none_of(demuxer->tracks(), [](const media::TrackInfo& t) {
-          return t.kind == media::TrackKind::Subtitle;
-        })) {
+    if (!choice.subtitle && !config.subtitle_track && !p->external_.empty() && !readable_subtitles(*demuxer))
       choice.subtitle = kExternalSubtitleBase;
-    }
+    note_image_subtitles(*demuxer, choice.subtitle.has_value(), p->mail_);
     if (choice.subtitle && !std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
       report_unreadable(*demuxer, *choice.subtitle, p->mail_);
       choice.subtitle.reset();
@@ -227,8 +257,9 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     p->menu_.subtitle_selected = chosen;
     p->subs_bridge_ = std::make_unique<SubsBridge>(p->subs_inbox_, chosen);
     for (const TrackEntry& entry : p->menu_.subtitles) {
-      if (entry.index < kExternalSubtitleBase)
-        routes.push_back({.track = entry.index, .sink = p->subs_bridge_.get()});
+      if (entry.index >= kExternalSubtitleBase) continue;
+      routes.push_back({.track = entry.index, .sink = p->subs_bridge_.get()});
+      mark_mov_text(*demuxer, entry.index, *p->subs_bridge_);
     }
   }
 

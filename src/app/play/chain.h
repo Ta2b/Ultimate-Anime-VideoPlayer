@@ -96,7 +96,8 @@ struct Chain {
   std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
   bool calibrate = false;               // « Refaire le banc » : à faire avant de rouvrir
-  StageMemory* stages = nullptr;        // les étages refusés de la séance, oubliés par « Réessayer »
+  std::vector<std::filesystem::path>* dropped_subtitles = nullptr;  // Player::dropped_subtitles
+  StageMemory* stages = nullptr;  // les étages refusés de la séance, oubliés par « Réessayer »
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
   std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
@@ -186,5 +187,9 @@ void apply(const Input& input, Chain& to, std::int64_t now_us);
 // --stats : une ligne par présentation ; le bilan de fin dans le journal.
 void write_record(std::ofstream& stats, const PresentRecord& record);
 void log_summary(const Session& session);
+
+// Les sous-titres glissés pendant la vidéo, rajoutés à la chaîne rouverte (A29-03) ; wanted : la piste
+// choisie avant la réouverture, reprise si c'est l'un d'eux.
+void restore_dropped_subtitles(Chain& to, std::optional<std::optional<int>> wanted);
 
 }  // namespace ajp::app::play
