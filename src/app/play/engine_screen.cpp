@@ -337,7 +337,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
   // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
   if (library) note_engine_facts(core::to_utf8((*library)->path().filename()), (*library)->passed_over());
   if (library && !(*library)->passed_over().empty())
-    log_channel("app")->warn("moteurs : refus avant {} :{}", core::to_utf8((*library)->path()),
+    log_channel("app")->warn("moteurs : refus avant {} :{}", core::to_utf8((*library)->path().filename()),
                              (*library)->passed_over());
   return library;
 }
@@ -385,12 +385,13 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   }
   auto library = open_backend(p.catalog, p.paths, p.engines, probe);
   if (!library) {
-    log->warn("moteurs : {} ; {} reste en service", library.error().detail, core::to_utf8(p.library->path()));
+    log->warn("moteurs : {} ; {} reste en service", library.error().detail,
+              core::to_utf8(p.library->path().filename()));
     p.notice = i18n::ui_tr("Engine unchanged: no other one opens (see log)");
     return true;
   }
   p.library = std::move(*library);
-  log->info("moteurs : {}", core::to_utf8(p.library->path()));
+  log->info("moteurs : {}", core::to_utf8(p.library->path().filename()));
   const std::optional<core::EngineId> now = engine_of_library(p.library->path());
   const std::string name =
       now ? std::string(engine_label(*now)) : core::to_utf8(p.library->path().filename());
