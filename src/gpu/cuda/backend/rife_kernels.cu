@@ -47,7 +47,7 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_input(R
         inside ? b[static_cast<std::size_t>(c) * source_plane + j] : black;
   }
   if (p.planes <= 6) return;  // les deux images seules
-  out[6 * plane + i] = __float2half_rn(p.time);
+  if (!p.lone_time || i == 0) out[6 * plane + i] = __float2half_rn(p.time);
   if (p.planes < 11 || !p.mesh) return;  // RIFE v2 : la grille est dans le graphe
   // kernels::rife_mesh et rife_mesh_step.
   out[7 * plane + i] =

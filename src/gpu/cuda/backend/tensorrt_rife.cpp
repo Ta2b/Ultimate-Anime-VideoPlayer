@@ -66,6 +66,11 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
     return refuse(RefusalCode::FieldOutOfRange, std::format("{} : instant {} hors de ]0, 1[", op, t));
   }
   if (auto ok = bind(); !ok) return ok;
+  // A03-07 : RIFE fusionné ne lit que l'élément 0 du plan de l'instant ; quand il est le dernier lecteur de
+  // ce tampon, le noyau n'écrit que lui, et l'instant reste à étendre pour un moteur entier (A03-04).
+  const auto reader =
+      std::ranges::find(compact_rife_inputs_, input.handle + input.offset, &CompactRifeInput::key);
+  const bool compact = reader != compact_rife_inputs_.end();
   const RifeInputParams params{.a = address(a),
                                .b = address(b),
                                .width = g.width,
@@ -78,13 +83,13 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
                                .time = t,
                                .input = address(input),
                                .planes = static_cast<int>(planes),
-                               .mesh = mesh};
+                               .mesh = mesh,
+                               .lone_time = compact};
   if (auto ok = order({a.handle, b.handle}, {input.handle}); !ok) return ok;
-  // Le noyau écrit le plan de l'instant en entier : plus rien à étendre pour un moteur entier (A03-04).
-  if (const auto reader =
-          std::ranges::find(compact_rife_inputs_, input.handle + input.offset, &CompactRifeInput::key);
-      reader != compact_rife_inputs_.end())
-    reader->lone_time.reset();
+  if (compact) {
+    reader->lone_time = kernels::ref::float_to_half(t);
+    reader->plane = static_cast<std::size_t>(g.padded_width) * static_cast<std::size_t>(g.padded_height);
+  }
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
   auto launched =
