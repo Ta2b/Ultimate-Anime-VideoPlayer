@@ -107,10 +107,15 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
     auto library = open(std::span(&path, 1));
     if (!library) {
       tried += std::format("\n  {}", library.error().detail);
+      if (init.log)
+        init.log(gpu::BackendLogLevel::Warn, std::format("backend écarté : {}", library.error().detail));
       continue;
     }
     if (auto probe = create(*library, init); !probe) {
-      tried += std::format("\n  {} : {} ({})", path.string(), probe.error().detail, name(probe.error().code));
+      const std::string why =
+          std::format("{} : {} ({})", path.string(), probe.error().detail, name(probe.error().code));
+      tried += "\n  " + why;
+      if (init.log) init.log(gpu::BackendLogLevel::Warn, "backend écarté : " + why);
       continue;
     }
     (*library)->passed_over_ = std::move(tried);
