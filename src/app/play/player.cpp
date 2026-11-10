@@ -502,7 +502,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                 .explored_work_height = explored ? measured_tier->work_height : 0,
                 .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
                 .calibrated = file_options.bench_level ? std::nullopt
-                                                       : calibrated_chain(settings_path.parent_path(), host)},
+                                                       : calibrated_chain(settings_path.parent_path(), host),
+                .display_width = display_width((*screen)->window())},
         source);
     PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
