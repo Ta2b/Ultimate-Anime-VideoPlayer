@@ -58,12 +58,17 @@ std::optional<Ratio> lock_factor(double target) {
   return std::nullopt;
 }
 
-double vsync_speed(double refresh_hz, double output_fps) {
-  if (!(refresh_hz > 0.0 && output_fps > 0.0)) return 1.0;
+std::optional<double> vsync_lock(double refresh_hz, double output_fps) {
+  if (!(refresh_hz > 0.0 && output_fps > 0.0)) return std::nullopt;
   const long long vsyncs = std::llround(refresh_hz / output_fps);
-  if (vsyncs < 1 || vsyncs > pacing::kMaxVsyncsPerFrame) return 1.0;
+  if (vsyncs < 1 || vsyncs > pacing::kMaxVsyncsPerFrame) return std::nullopt;
   const double speed = refresh_hz / (static_cast<double>(vsyncs) * output_fps);
-  return std::abs(speed - 1.0) <= pacing::kMaxSpeedChange ? speed : 1.0;
+  if (std::abs(speed - 1.0) > pacing::kMaxSpeedChange) return std::nullopt;
+  return speed;
+}
+
+double vsync_speed(double refresh_hz, double output_fps) {
+  return vsync_lock(refresh_hz, output_fps).value_or(1.0);
 }
 
 }  // namespace ajp::core

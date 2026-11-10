@@ -191,8 +191,9 @@ const CubeLut& neutral_lut() {
   return kNeutral;
 }
 
-// Le texte du hook du look : le texte embarqué, puis le bloc de la texture de la LUT (ou d'une identité
-// 2x2x2). Sans GPU : c'est la part que le thread de composition peut faire.
+// Le texte du hook du look : le texte embarqué, puis le bloc de la texture de chaque LUT (ou d'une identité
+// 2x2x2). Sans GPU (4,4 Mo et une dizaine de millisecondes pour une pile de 65 points) : c'est la part que
+// le thread de composition peut faire.
 std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
   const CubeLut& kNeutral = neutral_lut();
   // Le corps d'une texture court jusqu'à la prochaine directive //! : le bloc va donc après le texte du hook.

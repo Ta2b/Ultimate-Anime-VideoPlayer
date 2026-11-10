@@ -47,6 +47,25 @@ void wake(void* context) {
   static_cast<std::atomic<int>*>(context)->fetch_add(1);
 }
 
+// Un appareil simulé dont vkWaitSemaphores rend VK_ERROR_DEVICE_LOST (A10-03).
+VKAPI_ATTR VkResult VKAPI_CALL lost_wait(VkDevice, const VkSemaphoreWaitInfo*, uint64_t) {
+  return VK_ERROR_DEVICE_LOST;
+}
+VKAPI_ATTR VkResult VKAPI_CALL fake_counter(VkDevice, VkSemaphore, uint64_t* value) {
+  *value = 0;
+  return VK_SUCCESS;
+}
+VKAPI_ATTR VkResult VKAPI_CALL fake_signal(VkDevice, const VkSemaphoreSignalInfo*) {
+  return VK_SUCCESS;
+}
+VKAPI_ATTR VkResult VKAPI_CALL fake_create(VkDevice, const VkSemaphoreCreateInfo*,
+                                           const VkAllocationCallbacks*, VkSemaphore* out) {
+  static int handle = 0;
+  *out = reinterpret_cast<VkSemaphore>(&handle);  // jamais déréférencé par le veilleur
+  return VK_SUCCESS;
+}
+VKAPI_ATTR void VKAPI_CALL fake_destroy(VkDevice, VkSemaphore, const VkAllocationCallbacks*) {}
+
 }  // namespace
 
 TEST_CASE("veilleur d'écriture : l'écriture finie est datée et réveille main", "[app][session]") {
@@ -91,6 +110,32 @@ TEST_CASE("veilleur d'écriture : l'écriture finie est datée et réveille main
     CHECK(host_now_us() - before < 80'000);
   }
   pl_vulkan_sem_destroy(device.vk->gpu, &semaphore);
+}
+
+TEST_CASE("veilleur d'écriture : une erreur de vkWaitSemaphores le dit mort, forget_all rend la main",
+          "[app][session]") {
+  std::atomic<int> wakes{0};
+  int device_storage = 0;
+  auto* device = reinterpret_cast<VkDevice>(&device_storage);  // jamais déréférencé : l'Api est simulée
+  const RingWatcher::Api api{.wait = lost_wait,
+                             .counter = fake_counter,
+                             .signal = fake_signal,
+                             .create = fake_create,
+                             .destroy = fake_destroy};
+  auto watcher = RingWatcher::start_with(device, api, wake, &wakes);
+  REQUIRE(watcher);
+  int semaphore_storage = 0;
+  watcher->watch(reinterpret_cast<VkSemaphore>(&semaphore_storage), 1);
+  // Le thread sort à sa première attente.
+  const std::int64_t start = host_now_us();
+  while (watcher->alive() && host_now_us() - start < 2'000'000)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  CHECK_FALSE(watcher->alive());  // main sonde de nouveau l'anneau (Screen::wakes_on_write)
+  // Avant : forget_all attendait pour toujours un thread fini.
+  const std::int64_t asked = host_now_us();
+  watcher->forget_all();
+  CHECK(host_now_us() - asked < 100'000);
+  CHECK(wakes.load() == 0);
 }
 
 }  // namespace ajp::app::play

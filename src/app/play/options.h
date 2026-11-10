@@ -165,9 +165,10 @@ struct PlayOptions {
   // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
   bool vsync_index = true;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
-  // wait (le défaut) : present_wait2, ou le meilleur niveau en dessous si l'appareil ne l'offre pas ; auto et
-  // timing ne rendent aucun retour sur NVIDIA 615 / KDE Wayland (mesuré : 0 revenue) ; --no-present
-  // ou --present=open : la présentation d'avant.
+  // wait (le défaut) : wp_presentation quand le compositeur l'offre (il date l'affichage, d'où la grille des
+  // vblanks), sinon present_wait2, sinon open ; auto et timing ne rendent aucun retour sur NVIDIA 615 / KDE
+  // Wayland (mesuré : 0 revenue) et retombent alors seuls (present_level.h : feedback_silent) ;
+  // --no-present ou --present=open : la présentation d'avant.
   PresentWanted present = PresentWanted::Wait;
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
   // : le peps du grade HDR anime, à régler à l'œil (render::GradeSettings::anime_contrast…).
@@ -212,6 +213,10 @@ struct WorkSize {
 WorkSize work_size(int width, int height, int work_height);
 // SPAN tourne-t-il sur cette source (P3.19) ? Pas sans « Restaurer les traits » quand il faudrait la réduire.
 bool span_runs(bool upscale, bool restore_lines, int source_height, int work_height);
+// La taille de travail que la chaîne joue, la seule à lire (A08-15) : les moteurs, l'anneau, l'étage et
+// l'export la prennent ici. C'est work_size, sauf quand SPAN est demandé mais ne tourne pas faute de
+// « Restaurer les traits » : la source est alors gardée telle quelle, jamais réduite pour rien.
+WorkSize chain_work_size(bool upscale, bool restore_lines, int width, int height, int work_height);
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), ou une valeur
 // illisible ou hors plage (FieldOutOfRange), sont refusées ; sans fichier, l'écran d'accueil.

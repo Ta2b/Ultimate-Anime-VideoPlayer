@@ -10,6 +10,7 @@
 #include "app/play/i18n.h"
 #include "app/play/settings.h"
 #include "core/charconv.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -350,6 +351,11 @@ WorkSize work_size(int width, int height, int work_height) {
   return {std::max(2, scaled + (scaled % 2)), work_height};
 }
 
+WorkSize chain_work_size(bool upscale, bool restore_lines, int width, int height, int work_height) {
+  const bool kept = upscale && !span_runs(upscale, restore_lines, height, work_height);
+  return work_size(width, height, kept ? 0 : work_height);
+}
+
 std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::string_view> args) {
   BenchOptions options;
   for (std::size_t i = 0; i < args.size(); ++i) {
@@ -467,7 +473,7 @@ std::string play_usage(bool debug) {
   const std::string usage = std::format(
       "ajp play [file] [options]   (without a file: home screen, Open a video)\n"
       "  --model=FILE.onnx      SPAN ×2 model (default: {})\n"
-      "  --no-upscale           source picture as is\n"
+      "  --no-upscale           source picture, reduced only to the working resolution\n"
       "  --no-restore-lines     a source above the working resolution keeps its detail, no SPAN\n"
       "  --window=WxH           window size (default 1280x720)\n"
       "  --fullscreen           full screen from the start\n"
@@ -496,7 +502,8 @@ std::string play_usage(bool debug) {
       "                         export or export=FILE.mkv (or .mp4, .mov) starts exporting\n"
       "                         the current chain\n"
       "  --work-height=N        shrinks the source to N lines before SPAN (default 720; 0 never)\n"
-      "  --rife=N               ×N interpolation before SPAN (1.5, 2 to 10; default {}; 0 none)\n"
+      "  --rife=N               ×N interpolation (1.5, 2 to 10; default {}; 0 none); order: Warp and SPAN,\n"
+      "                         Auto by default\n"
       "  --rife-model=FILE      RIFE model (default: {})\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade (default: the screen's, else 1000)\n"
       "ajp --register           registers the player with the system (\"Open with\", default\n"
@@ -583,7 +590,11 @@ std::optional<Factor> parse_factor(std::string_view text) {
 
 std::string factor_text(Factor factor) {
   if (factor.den == 2) return std::format("×{}{}5", factor.num / 2, i18n::decimal_point());
-  return std::format("×{}", factor.num);
+  if (factor.den <= 1 || factor.num % factor.den == 0)
+    return std::format("×{}", factor.num / std::max(factor.den, 1));
+  // Un facteur de l'Auto (palier fin ou fraction exacte d'un écran fixe) : deux décimales, « ×3,44 ».
+  const long centi = std::lround(100.0 * factor.num / factor.den);
+  return std::format("×{}{}{:02}", centi / 100, i18n::decimal_point(), centi % 100);
 }
 
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
@@ -607,14 +618,23 @@ std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem
 
 namespace {
 
-// Le fichier donné par l'option (il doit exister), sinon le premier candidat présent.
+// Le fichier donné par l'option (il doit exister), sinon le premier candidat présent. Un nom seul, sans
+// dossier (« rife_v4.25.onnx »), absent du dossier courant, se cherche dans les dossiers des candidats
+// (A18-18) : le banc et la ligne de commande nomment un modèle du catalogue sans savoir où il est installé.
 std::expected<std::filesystem::path, Refusal> find_file(const std::optional<std::filesystem::path>& given,
                                                         std::string_view option, std::string_view what,
                                                         std::span<const std::filesystem::path> candidates) {
   std::error_code error;
   if (given) {
     if (std::filesystem::is_regular_file(*given, error)) return *given;
-    return refuse(RefusalCode::ModelUnreadable, std::format("{}: {} not found", option, given->string()));
+    if (!given->has_parent_path()) {
+      for (const auto& path : candidates) {
+        std::filesystem::path beside = path.parent_path() / *given;
+        if (std::filesystem::is_regular_file(beside, error)) return beside;
+      }
+    }
+    return refuse(RefusalCode::ModelUnreadable,
+                  std::format("{}: {} not found", option, core::to_utf8(*given)));
   }
   std::string tried;
   for (const auto& path : candidates) {

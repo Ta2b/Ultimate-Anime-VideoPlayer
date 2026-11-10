@@ -43,6 +43,7 @@ extern "C" {
 #include "app/play/options.h"
 #include "app/play/paths.h"
 #include "app/play/player.h"
+#include "app/play/problem_report.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
 #include "app/play/updater.h"
@@ -51,6 +52,7 @@ extern "C" {
 #include "core/log_redact.h"
 #include "core/thread_role.h"
 #include "core/update_manifest.h"
+#include "media/ffmpeg_log.h"
 #include "prepare/utf8.h"
 
 #ifdef _WIN32
@@ -110,10 +112,26 @@ int fail(const ajp::Refusal& refusal) {
   return 1;
 }
 
+// Le diagnostic d'une séance : un plantage laisse un minidump à côté du journal sous Windows (P2.2), et le
+// rapport de « Signaler un problème » garde en tête la version, le système et le journal à lire. La marque
+// de séance, restée ouverte, dit que la séance d'avant s'est arrêtée brutalement : son journal est alors
+// ajp.log.1 (A39-01).
+void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file) {
+  namespace play = ajp::app::play;
+  if (!settings_dir.empty()) play::install_crash_dumps(settings_dir / "crashes");
+  play::set_report_log_file(log_file);
+  play::note_report_fact("ajp", play::installed_version());
+  play::note_report_fact("Système", play::os_description());
+  if (!settings_dir.empty() && play::begin_session(settings_dir))
+    ajp::log_channel("app")->warn(
+        "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");
+}
+
 // Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou
 // démarre à sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
-  ajp::close_log();  // execv remplace le processus : la file du journal s'écrit avant
+  ajp::app::play::end_session();  // une relance voulue n'est pas un plantage
+  ajp::close_log();               // execv remplace le processus : la file du journal s'écrit avant
 #ifdef _WIN32
   // _spawnv ne met aucun argument entre guillemets : un chemin à espaces (« C:\Mes vidéos\a.mkv »)
   // arriverait coupé en deux. Chaque argument est cité à la façon de CommandLineToArgvW, et l'exécutable
@@ -233,14 +251,26 @@ int run_bench_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
-// « ajp calibrate [--display-height=N] [--visible] » : le bench de la page « Résultats du bench », en ligne
-// de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de l'utilisateur.
+// « ajp calibrate [--display-height=N] [--tier=N] [--visible] » : le bench de la page « Résultats du bench »,
+// en ligne de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de
+// l'utilisateur. --tier : le niveau de la carte (0 Économe à 4 Ultra), qui donne les modèles joués
+// (auto_config.h) ; cette commande n'ouvre pas la carte et ne peut pas l'estimer : sans --tier, 3 (Qualité),
+// le niveau de la RTX 4070 Ti du poste de mesure.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
   int display_height = 2160;
+  int tier = static_cast<int>(play::Tier::Fast);
   bool silent = true;
+  constexpr const char* kUsage = "ajp calibrate [--display-height=N] [--tier=N] [--visible]\n";
   for (const std::string_view arg : args) {
-    if (arg.starts_with("--display-height=")) {
+    if (arg.starts_with("--tier=")) {
+      const std::string_view text = arg.substr(7);
+      const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), tier);
+      if (error != std::errc{} || end != text.data() + text.size() || tier < 0 || tier >= play::kTierCount) {
+        std::fputs("ajp calibrate : --tier=N, N de 0 (Économe) à 4 (Ultra)\n", stderr);
+        return 2;
+      }
+    } else if (arg.starts_with("--display-height=")) {
       // from_chars et une plage (P2.35) : « abc » ou « 99999 » ne donnent plus 0 ou une hauteur absurde.
       const std::string_view text = arg.substr(17);
       const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), display_height);
@@ -252,7 +282,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
     } else if (arg == "--visible") {
       silent = false;
     } else {
-      std::fputs("ajp calibrate [--display-height=N] [--visible]\n", stderr);
+      std::fputs(kUsage, stderr);
       return 2;
     }
   }
@@ -271,13 +301,17 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
                              .display_width = display_height * 16 / 9,
                              .display_height = display_height};
   const auto base_settings = play::load_settings(data / "play.toml");
-  const auto done = play::calibrate_machine(plan, base_settings.value_or(play::PlaySettings{}),
-                                            display_height, std::stop_token{}, [](float fraction) {
-                                              std::fprintf(stdout, "%.0f %%\n", 100.0F * fraction);
-                                              std::fflush(stdout);
-                                            });
+  const auto done =
+      play::calibrate_machine(plan, base_settings.value_or(play::PlaySettings{}), display_height,
+                              static_cast<play::Tier>(tier), std::stop_token{}, [](float fraction) {
+                                std::fprintf(stdout, "%.0f %%\n", 100.0F * fraction);
+                                std::fflush(stdout);
+                              });
   if (!done) return fail(done.error());
-  std::fprintf(stdout, "SPAN %s\n", done->span_fp8 ? "Balanced Sharp FP8" : "Performance Sharp FP16");
+  std::fprintf(
+      stdout, "SPAN %s FP16, RIFE %s\n",
+      done->models.span.empty() ? std::string(play::kDefaultModelFile).c_str() : done->models.span.c_str(),
+      done->models.rife.c_str());
   for (const play::CandidateTrial& t : done->tried)
     std::fprintf(stdout, "%-48s %s  %.1f / %.0f i/s, 1 %% low %.1f, %.1f %% perdues%s\n",
                  play::describe(t.chain).c_str(), t.holds ? "tient     " : "ne tient pas", t.fps,
@@ -418,8 +452,6 @@ int run_player(int argc, char** argv) {
   }
   const std::filesystem::path log_file =
       settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
-  // Sous Windows, un plantage laisse un minidump à côté du journal (P2.2).
-  if (!settings_dir.empty()) ajp::app::play::install_crash_dumps(settings_dir / "crashes");
   if (!log_file.empty()) {
     // Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal,
     // la relance n'efface plus celui qui en garde la trace.
@@ -449,13 +481,15 @@ int run_player(int argc, char** argv) {
     ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
                                   ajp::app::play::installed_version());
   }
+  start_diagnostics(settings_dir, log_file);
   if (options->bake_looks) {
     const auto baked = ajp::app::play::bake_looks(ajp::app::play::paths::play_settings(settings_dir),
                                                   data / "luts", *options->bake_looks);
     if (!baked) return fail(baked.error());
     return 0;
   }
-  av_log_set_level(AV_LOG_ERROR);  // FFmpeg écrit sur stderr ; ses avertissements de sonde sont du bruit
+  ajp::media::route_ffmpeg_log_to_journal();  // les erreurs de FFmpeg vont au journal, ses avertissements de
+                                              // sonde sont du bruit
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
   }
@@ -551,6 +585,7 @@ int run_player(int argc, char** argv) {
 int main(int argc, char** argv) {
   ajp::install_terminate_flush();
   const int code = ajp::run_logged([&] { return run_player(argc, argv); });
+  ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
   ajp::close_log();
   return code;
 }

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <format>
+#include <mutex>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -25,6 +26,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/trace.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -232,7 +234,7 @@ std::optional<std::int64_t> PlaceboScreen::written_at(const RingFrame& frame) {
 }
 
 bool PlaceboScreen::wakes_on_write() const {
-  return impl_->watcher != nullptr;
+  return impl_->watcher != nullptr && impl_->watcher->alive();
 }
 
 std::optional<bool> PlaceboScreen::vrr_armed() const {
@@ -324,7 +326,42 @@ std::expected<void, Refusal> PlaceboScreen::Impl::draw_overlays(const pl_frame& 
   return {};
 }
 
+namespace {
+
+// L'acquisition (de asked à acquired) a attendu l'écran : en FIFO, une image vient d'être rendue à un vsync,
+// son retour le date (A12-03). Sinon 0 : cette présentation ne dit rien de la phase de l'écran.
+std::int64_t blocked_vsync(std::int64_t asked, std::int64_t acquired) {
+  return acquired - asked >= kAcquireBlockedUs ? acquired : 0;
+}
+
+// Le retour de présentation relu avant celle-ci, et son identifiant.
+void note_feedback(ScreenTiming& timing, const PresentFeedback& feedback) {
+  const FeedbackRead& read = feedback.last_read();
+  timing.present_id = feedback.last_id();
+  timing.level = feedback.level();
+  timing.feedback_id = read.id;
+  timing.target_us = read.target_us;
+  timing.visible_us = read.visible_us;
+  timing.vsync_k = read.vsync_k;
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+// La présentation part. Aucun autre thread n'ouvre de commande sur le pl_gpu pendant ce temps : le thread
+// qui compose le look (render::Grade) n'écrit que du texte, Grade::adopt crée la texture sur ce thread-ci.
+std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present* present) {
+  if (present == nullptr) {
+    if (pl_swapchain_submit_frame(swapchain)) return {};
+    return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
+  }
+  VkResult result = VK_SUCCESS;
+  const bool ok = pl_vulkan_swapchain_submit(swapchain, present, &result);
+  feedback->submitted(result);
+  if (!ok) return refuse(RefusalCode::VendorCallFailed, "pl_vulkan_swapchain_submit");
+  return {};
+}
+
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
   const pl_gpu gpu = s.vk->gpu;
@@ -427,15 +464,16 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     std::filesystem::path path = *s.snapshot;
     if (s.snapshot_count > 1) {
       // « nom.pq.ppm » → « nom-001.pq.ppm », « nom.ppm » → « nom-001.ppm ».
-      const std::string file = path.filename().string();
+      const std::string file = core::to_utf8(path.filename());
       const std::size_t dot = file.ends_with(".pq.ppm") ? file.size() - 7 : file.rfind('.');
-      path.replace_filename(std::format("{}-{:03}{}", file.substr(0, dot), s.snapshot_index + 1,
-                                        dot == std::string::npos ? std::string() : file.substr(dot)));
+      path.replace_filename(
+          core::path_from_utf8(std::format("{}-{:03}{}", file.substr(0, dot), s.snapshot_index + 1,
+                                           dot == std::string::npos ? std::string() : file.substr(dot))));
     }
     if (++s.snapshot_index >= s.snapshot_count) s.snapshot.reset();
     if (auto saved = s.save_snapshot(frame != nullptr ? &image : nullptr, target, out, request.ui, path);
         !saved) {
-      s.channel->warn("instantané {} : {}", path.string(), saved.error().detail);
+      s.channel->warn("instantané {} : {}", core::to_utf8(path), saved.error().detail);
     }
   }
   if (s.offscreen) {
@@ -453,32 +491,18 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   // son identifiant et sa demande de date.
   const pl_vulkan_present* present =
       s.feedback ? s.feedback->prepare(s.swapchain, host_now_us(), request.target_us) : nullptr;
-  if (present != nullptr) {
-    VkResult result = VK_SUCCESS;
-    const bool ok = pl_vulkan_swapchain_submit(s.swapchain, present, &result);
-    s.feedback->submitted(result);
-    if (!ok) return refuse(RefusalCode::VendorCallFailed, "pl_vulkan_swapchain_submit");
-  } else if (!pl_swapchain_submit_frame(s.swapchain)) {
-    return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
-  }
+  if (auto sent = s.submit(present); !sent) return std::unexpected(std::move(sent.error()));
   const std::int64_t submitted = host_now_us();
-  pl_swapchain_swap_buffers(s.swapchain);  // FIFO : attend une place en file quand elle est pleine
+  pl_swapchain_swap_buffers(s.swapchain);  // attend les commandes des images en vol, pas l'écran (A10-14)
   const std::int64_t presented = host_now_us();
   ScreenTiming timing{.acquire_us = acquired - start,
                       .render_us = submitted - acquired,
                       .present_us = presented,
                       .queue_wait_us = presented - submitted,
+                      .vsync_us = blocked_vsync(start, acquired),
                       .display_gpu_us = static_cast<std::int64_t>(s.display_frame_ns / 1000),
                       .presented = true};
-  if (s.feedback) {
-    const FeedbackRead& read = s.feedback->last_read();
-    timing.present_id = s.feedback->last_id();
-    timing.level = s.feedback->level();
-    timing.feedback_id = read.id;
-    timing.target_us = read.target_us;
-    timing.visible_us = read.visible_us;
-    timing.vsync_k = read.vsync_k;
-  }
+  if (s.feedback) note_feedback(timing, *s.feedback);
   return timing;
 }
 

@@ -1,8 +1,13 @@
 // Boucle à verrouillage de phase du second ordre pour l'horloge audio (étape 6.9). Pure.
 //
-// Chaque lecture donne l'écart brut entre l'horloge audio et la référence ; la boucle le filtre
-// (Kp 0,1, Ki 0,005 par lecture), suit une dérive constante sans erreur, recale d'un coup au-delà
-// de 20 ms, et propose une correction de vitesse bornée à ±0,05 %.
+// Chaque lecture donne l'écart brut entre l'horloge audio et la référence ; la boucle le filtre, suit une
+// dérive constante sans erreur, recale d'un coup au-delà de 20 ms, et propose une correction de vitesse
+// bornée à ±0,05 %.
+//
+// La boucle est réglée en temps, pas en lectures (A12-11) : la dérive se compte en µs par µs et les gains
+// (Kp 0,1 et Ki 0,005 pour une lecture toutes les 20 ms) s'appliquent au prorata de l'intervalle. Une
+// lecture perdue ou un périphérique plus lent (quantum PipeWire de 21 ms contre 10 ms sous WASAPI) ne
+// changent ni la vitesse proposée ni la constante de temps.
 #pragma once
 
 #include <algorithm>
@@ -23,25 +28,34 @@ class ClockPll {
     double speed = 1.0;      // facteur de vitesse proposé
   };
 
-  // measured_us : écart brut de cette lecture ; interval_us : temps écoulé depuis la précédente.
+  // L'intervalle de lecture pour lequel kKp et kKi sont donnés.
+  static constexpr double kReferenceUs = 20'000.0;
+  // Au-delà, l'intervalle compte pour cela : un gain proportionnel au-dessus de 1 dépasserait la mesure.
+  static constexpr double kMaxIntervalUs = 5.0 * kReferenceUs;
+
+  // measured_us : écart brut de cette lecture ; interval_us : temps écoulé depuis la précédente (<= 0 :
+  // inconnu, compté pour kReferenceUs).
   Out update(double measured_us, double interval_us) {
     if (!locked_ || std::abs(measured_us - phase_) > kStepUs) {
       phase_ = measured_us;
       rate_ = 0.0;
       locked_ = true;
     } else {
+      const double dt = interval_us > 0.0 ? std::min(interval_us, kMaxIntervalUs) : kReferenceUs;
+      const double share = dt / kReferenceUs;
+      // La phase avance d'abord de la dérive suivie pendant dt, puis reçoit sa part de l'erreur restante.
+      phase_ += rate_ * dt;
       const double error = measured_us - phase_;
-      phase_ += kKp * error + rate_;
-      rate_ += kKi * error;
+      phase_ += std::min(kKp * share, 1.0) * error;
+      rate_ += kKi * share * error / kReferenceUs;
     }
-    const double speed = interval_us > 0.0 ? rate_ / interval_us : 0.0;
-    return {.offset_us = phase_, .speed = 1.0 + std::clamp(speed, -kMaxSpeed, kMaxSpeed)};
+    return {.offset_us = phase_, .speed = 1.0 + std::clamp(rate_, -kMaxSpeed, kMaxSpeed)};
   }
   void reset() { locked_ = false; }
 
  private:
   double phase_ = 0.0;
-  double rate_ = 0.0;  // µs de dérive par lecture
+  double rate_ = 0.0;  // dérive suivie, en µs par µs
   bool locked_ = false;
 };
 

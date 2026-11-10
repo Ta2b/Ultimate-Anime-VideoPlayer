@@ -4,6 +4,8 @@
 #include <cmath>
 #include <limits>
 
+#include "core/pacing.h"
+
 namespace ajp::core {
 namespace {
 
@@ -40,14 +42,60 @@ std::vector<int> locked_steps(double display_hz, double source_fps, int granular
   return out;
 }
 
-AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor) {
+namespace {
+
+// Les paliers calés d'un écran fixe et leur facteur exact, du plus bas au plus haut ; rien si l'écran ou la
+// cadence sont inconnus. cap_hz > 0 : aucune cadence de sortie au-dessus.
+void lock_to_display(AutoLimits& out, double display_hz, double source_fps, double cap_hz) {
+  if (!(display_hz > 0.0) || !(source_fps >= 5.0) || source_fps > 240.0) return;
+  constexpr double kLowest = 1.49;  // ×1,5 à 1 % près
+  out.locked.push_back(out.granularity);
+  out.exact.push_back(Ratio{1, 1});
+  for (int vsyncs = pacing::kMaxVsyncsPerFrame; vsyncs >= 1; --vsyncs) {
+    const double target = display_hz / (static_cast<double>(vsyncs) * source_fps);
+    if (target < kLowest || target > static_cast<double>(kAutoMaxStep)) continue;
+    if (cap_hz > 0.0 && target * source_fps > cap_hz * 1.01) continue;
+    const std::optional<Ratio> factor = lock_factor(target);
+    if (!factor) continue;
+    const int step = static_cast<int>(std::lround(factor->value() * out.granularity));
+    if (step <= out.granularity) continue;
+    if (step == out.locked.back()) {  // deux facteurs pour un même arrondi : le plus fluide
+      out.exact.back() = *factor;
+      continue;
+    }
+    out.locked.push_back(step);
+    out.exact.push_back(*factor);
+  }
+}
+
+}  // namespace
+
+AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level_factor, double cap_hz) {
   AutoLimits out;
   out.granularity = vrr ? kFineGranularity : 2;
-  out.ceiling = auto_ceiling(display_hz, source_fps, out.granularity);
+  const double limit_hz = cap_hz > 0.0 && display_hz > 0.0 ? std::min(display_hz, cap_hz) : display_hz;
+  out.ceiling = auto_ceiling(limit_hz, source_fps, out.granularity);
+  if (!vrr) {
+    lock_to_display(out, display_hz, source_fps, cap_hz);
+    // Un facteur exact s'arrondit parfois au-dessus du plafond en demi-paliers (×6,88 : 14 pour 13).
+    if (!out.locked.empty()) out.ceiling = std::max(out.ceiling, out.locked.back());
+  }
   if (level_factor >= 2)
     out.ceiling = std::min(out.ceiling, level_factor * out.granularity + (out.granularity == 2 ? 1 : 0));
-  if (!vrr) out.locked = locked_steps(display_hz, source_fps, out.granularity);
   return out;
+}
+
+int AutoRate::centi() const {
+  if (exact_.size() != locked_.size() || exact_.empty()) return step_ * 100 / granularity_;
+  return static_cast<int>(std::lround(factor().value() * 100.0));
+}
+
+Ratio AutoRate::factor() const {
+  if (exact_.size() == locked_.size()) {
+    const auto at = std::ranges::find(locked_, step_);
+    if (at != locked_.end()) return exact_[static_cast<std::size_t>(at - locked_.begin())];
+  }
+  return Ratio{step_, granularity_};
 }
 
 int AutoRate::snap_down(int step) const {
@@ -65,8 +113,11 @@ int AutoRate::snap_up(int step) const {
   return 0;
 }
 
-void AutoRate::set_locked(std::vector<int> steps) {
-  std::ranges::sort(steps);
+void AutoRate::set_locked(std::vector<int> steps, std::vector<Ratio> exact) {
+  if (exact.size() != steps.size()) exact.clear();
+  if (exact.empty()) std::ranges::sort(steps);  // avec leurs facteurs, les paliers viennent déjà en ordre
+  if (steps == locked_ && exact == exact_) return;
+  exact_ = std::move(exact);
   if (steps == locked_) return;
   locked_ = std::move(steps);
   const int snapped = snap_down(step_);
@@ -349,11 +400,16 @@ int AutoRate::tick(std::int64_t now_us, bool playing) {
   if (step_ <= granularity_ && ceiling_ > granularity_ && !mute_) {
     if (floor_since_us_ == 0) floor_since_us_ = now_us;
     if (now_us - floor_since_us_ >= kFloorEscapeUs && now_us - last_change_us_ >= kFloorEscapeUs) {
+      // Aucun palier permis au-dessus du plancher (écran fixe sans palier calé, ou le premier au-dessus
+      // du plafond) : rien à tenter, ni changement compté ni mesures ignorées (A12-05).
       const int up = snap_up(granularity_ + (fine() ? std::max(2, granularity_ * 8 / 100) : 1));
-      step_ = up > 0 ? std::min(up, ceiling_) : step_;
-      probing_ = true;
-      probe_until_us_ = now_us + kProbeUs;
-      changed(AutoReason::Rearm, now_us);
+      const int target = locked_.empty() ? std::min(up, ceiling_) : up;
+      if (target > granularity_ && target <= ceiling_) {
+        step_ = target;
+        probing_ = true;
+        probe_until_us_ = now_us + kProbeUs;
+        changed(AutoReason::Rearm, now_us);
+      }
       floor_since_us_ = 0;
     }
   } else {
@@ -381,6 +437,7 @@ void AutoRate::settle(std::int64_t now_us) {
 AutoInfo AutoRate::info(std::int64_t now_us) const {
   AutoInfo out;
   out.step = step_;
+  out.centi = centi();
   out.granularity = granularity_;
   out.ceiling = ceiling_;
   out.predicted = predicted_step(now_us);

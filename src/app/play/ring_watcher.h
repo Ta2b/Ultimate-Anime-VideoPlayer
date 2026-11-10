@@ -40,8 +40,11 @@ class RingWatcher {
   void forget_all();
 
   std::uint64_t wakes() const;  // réveils de main envoyés
+  // Faux une fois le thread sorti sur une erreur de vkWaitSemaphores (appareil perdu, mémoire) : main sonde
+  // alors l'anneau comme sans veilleur (A10-03).
+  bool alive() const;
 
- private:
+  // Les fonctions Vulkan du veilleur ; publiques pour qu'un test en simule l'échec (start_with).
   struct Api {
     PFN_vkWaitSemaphores wait = nullptr;
     PFN_vkGetSemaphoreCounterValue counter = nullptr;
@@ -49,6 +52,9 @@ class RingWatcher {
     PFN_vkCreateSemaphore create = nullptr;
     PFN_vkDestroySemaphore destroy = nullptr;
   };
+  static std::unique_ptr<RingWatcher> start_with(VkDevice device, const Api& api, Waker waker, void* context);
+
+ private:
   struct Entry {
     VkSemaphore semaphore;
     std::uint64_t value;
@@ -57,6 +63,7 @@ class RingWatcher {
   RingWatcher(VkDevice device, Api api, VkSemaphore wake, Waker waker, void* context);
   void run(const std::stop_token& stop);
   void nudge();  // signale le sémaphore de réveil, sous mutex_
+  void die(VkResult result);
 
   VkDevice device_;
   Api api_;
@@ -71,6 +78,7 @@ class RingWatcher {
   std::uint64_t seen_epoch_ = 0;  // forget_epoch_ vu par le thread hors de toute attente
   std::uint64_t wakes_ = 0;
   bool stopping_ = false;
+  bool dead_ = false;  // le thread est sorti sur une erreur : plus personne n'avance seen_epoch_
   std::jthread thread_;
 };
 

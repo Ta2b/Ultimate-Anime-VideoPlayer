@@ -158,7 +158,13 @@ TEST_CASE("Contrat d'écran : KWin, puis la marge de SDL, puis l'EDID", "[app][d
   // La courbe mesurée remplace celle par défaut.
   const MeasuredAbl measured{.nits = {990.0, 900.0, 600.0, 400.0, 250.0}};
   CHECK(contract_of(d, std::nullopt, 1.0, measured).abl.back() == 250.0);
-  CHECK(describe(dim).find("référence 83 nits") != std::string::npos);
+  CHECK(describe(dim).find("référence 83 nits (KDE") != std::string::npos);
+  CHECK(describe(dim).find("pic 332 nits (marge de SDL") != std::string::npos);
+  // A10-19 : rien de lu (lavapipe sous Xvfb, écran sans EDID HDR), le journal dit des valeurs par défaut.
+  const std::string defaults = describe(contract_of(DisplayFacts{}, std::nullopt, 1.0, std::nullopt));
+  CHECK(defaults.find("référence 203 nits (par défaut") != std::string::npos);
+  CHECK(defaults.find("pic 1000 nits (par défaut") != std::string::npos);
+  CHECK(describe(bare).find("nits (EDID") != std::string::npos);
 }
 
 namespace {

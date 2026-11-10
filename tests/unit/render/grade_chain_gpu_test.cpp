@@ -2,8 +2,10 @@
 // dernière passe. Les niveaux écrits ici sont ceux des décisions 16 et 17 du 09/11/2026 (docs/hdr-anime.md).
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -221,6 +223,32 @@ TEST_CASE("sortie SDR de l'anime : le vrai noir OLED s'applique (A41-07)", "[ren
   for (std::size_t x = 0; x < black.size(); ++x) {
     if (code(x) < 0.015) CHECK(black[x][0] < 1e-3);
     if (code(x) > 0.09) CHECK(std::abs(black[x][0] - plain[x][0]) < 4e-3);
+  }
+}
+
+// Ce que le thread qui rend paie quand une pile composée en tâche de fond est prête : adopt() lit le texte
+// du hook (4,4 Mo) et crée la texture de 65 points. À lire sur un binaire Release.
+TEST_CASE("mesure : temps de adopt() pour la pile par défaut", "[.mesure][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const CubeLut stack = default_stack();
+  set_player_output(gpu, stack, 1000.0);
+  gpu.grade->set_background(true);
+  GradeParams params = player_params(1000.0);
+  for (int round = 0; round < 10; ++round) {
+    params.look_mixes[0] = 1.0 - 0.05 * round;  // une autre intensité : la pile est à refaire
+    gpu.grade->set_params(params);
+    double last_ms = 0.0;
+    bool adopted = false;
+    for (int i = 0; i < 2000 && !adopted; ++i) {
+      const auto start = std::chrono::steady_clock::now();
+      adopted = gpu.grade->adopt();
+      last_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+      if (!adopted) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    REQUIRE(adopted);
+    std::printf("adopt() %2d : %6.2f ms\n", round, last_ms);
   }
 }
 

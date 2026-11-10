@@ -33,6 +33,7 @@ void SteadyRate::configure(const FreeParams& params, const FreeDisplay& display,
     for (int k = 1; k <= 8; ++k) {
       const std::optional<Ratio> n = lock_factor(display_.hz / (static_cast<double>(k) * fps_));
       if (!n || n->value() > top || n->value() <= 1.0) continue;
+      if (display_.cap_hz > 0.0 && n->value() * fps_ > display_.cap_hz * 1.01) continue;
       if (std::ranges::find(candidates_, *n) == candidates_.end()) candidates_.push_back(*n);
     }
     std::ranges::sort(candidates_, below);
@@ -156,13 +157,16 @@ SteadyRate::Bucket& SteadyRate::bucket(std::int64_t now_us) {
 }
 
 void SteadyRate::produced(int images, std::int64_t now_us) {
+  if (quiet_until_us_ < 0) quiet_until_us_ = now_us + params_.start_us;
   if (images > 0) bucket(now_us).produced += images;
 }
 
 void SteadyRate::lost(std::int64_t now_us, int count) {
   if (count <= 0) return;
   lost_total_ += static_cast<std::uint32_t>(count);
-  bucket(now_us).lost += count;
+  // Les pertes du démarrage et des reprises ne comptent pas pour le repli (A12-08).
+  if (quiet_until_us_ < 0) quiet_until_us_ = now_us + params_.start_us;
+  if (now_us >= quiet_until_us_) bucket(now_us).lost += count;
   if (now_us < settled_until_us_) return;
   for (int i = 0; i < count; ++i) recent_losses_[next_loss_++ % recent_losses_.size()] = now_us;
   int inside = 0;
@@ -184,6 +188,7 @@ void SteadyRate::lost(std::int64_t now_us, int count) {
 
 void SteadyRate::settle(std::int64_t now_us) {
   settled_until_us_ = now_us + params_.settle_us;
+  quiet_until_us_ = std::max(quiet_until_us_, now_us + params_.start_us);
   recent_losses_.fill(0);
 }
 
@@ -194,13 +199,18 @@ bool SteadyRate::should_fall_back(std::int64_t now_us) const {
   const std::int64_t first = (now_us - params_.fallback_window_us) / kBucketUs;
   int produced = 0;
   int lost = 0;
+  int spread = 0;
   for (const Bucket& b : buckets_) {
     if (b.index > first && b.index <= last) {
       produced += b.produced;
       lost += b.lost;
+      if (b.lost > 0) ++spread;
     }
   }
-  return lost >= params_.fallback_min_lost && lost * 1000 >= params_.fallback_per_mille * (produced + lost);
+  return fallback_due({.min_lost = params_.fallback_min_lost,
+                       .per_mille = params_.fallback_per_mille,
+                       .min_buckets = params_.fallback_min_buckets},
+                      lost, produced, spread);
 }
 
 SteadyInfo SteadyRate::info() const {

@@ -25,7 +25,7 @@ void FreeRate::sum(std::int64_t now_us, std::int64_t span_us, int& produced, int
 }
 
 void FreeRate::cost(int images, std::int64_t busy_us, std::int64_t now_us, bool heavy) {
-  if (images < 2 || busy_us <= 0 || now_us < settled_until_us_) return;
+  if (images < 1 || busy_us <= 0 || now_us < settled_until_us_) return;
   const double sample = static_cast<double>(std::min(busy_us, kMaxSampleUs * images)) / images;
   double& service = heavy ? heavy_us_ : service_us_;
   if (service <= 0.0) {
@@ -35,6 +35,13 @@ void FreeRate::cost(int images, std::int64_t busy_us, std::int64_t now_us, bool 
   } else {
     service += 0.12 * (sample - service);  // une scène légère : lentement
   }
+}
+
+void FreeRate::starved(std::int64_t now_us, bool heavy) {
+  if (now_us < settled_until_us_) return;
+  // Le temps qui a fixé l'écart de cette paire (step_us) : c'est lui qui l'a affamée.
+  double& service = heavy && heavy_us_ > service_us_ ? heavy_us_ : service_us_;
+  service *= 1.0 - kStarvedDecay;
 }
 
 void FreeRate::produced(int images, std::int64_t now_us) {
@@ -89,8 +96,9 @@ bool FreeRate::should_fall_back(std::int64_t now_us) const {
   const auto spread = std::ranges::count_if(buckets_, [&](const Bucket& b) {
     return b.lost > 0 && b.index >= first && b.index <= now_us / kBucketUs;
   });
-  return lost >= kFallbackMinLost && produced > 0 && lost * 1000 >= produced * kFallbackPerMille &&
-         spread >= kFallbackMinBuckets;
+  return fallback_due(
+      {.min_lost = kFallbackMinLost, .per_mille = kFallbackPerMille, .min_buckets = kFallbackMinBuckets},
+      lost, produced, static_cast<int>(spread));
 }
 
 FreeInfo FreeRate::info(std::int64_t now_us) const {

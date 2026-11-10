@@ -42,7 +42,7 @@ changer `AJP_CUDA_ARCHITECTURES` (`89-real` pour la 4070 Ti).
 | Resizable BAR journalisé et affiché au premier lancement (LN-09) | « Resizable BAR actif, 12 Go » ou avertissement | |
 | Télémétrie NVML dans l'OSD, touche Tab (LN-10) | horloges, P-state, puissance, température, PCIe, écrêtage ; avertit si les horloges sont basses sous charge | |
 | Versions minimales du pilote : RTX HDR 550, Smooth Motion 580.82.07 | avertissement au journal | |
-| SPAN en basse précision dans les préréglages (ADR 0007) : FP8 CUTLASS sur RTX 40 et RTX 50 (sm 8.9, 12.0), INT8 TensorRT s'il passe sa porte, sinon FP16 | paquet préparé en silence, pris à l'ouverture suivante ; reçu v2 par architecture | préréglage Personnalisé |
+| SPAN en basse précision (ADR 0007, suspendue) : les préréglages et l'Auto calibré jouent SPAN en FP16 ; le FP8 CUTLASS (RTX 40, sm 8.9) se choisit à la main dans la liste des modèles (« … · FP8 »), INT8 TensorRT s'il passe sa porte | paquet préparé en silence, pris à l'ouverture suivante ; reçu v2 par architecture | choisir un modèle sans « · FP8 » |
 
 ### SPAN basse précision par famille (chantier 10)
 

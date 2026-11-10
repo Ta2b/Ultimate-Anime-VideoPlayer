@@ -1,5 +1,6 @@
 #include "app/play/settings_bench_results.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -43,12 +44,13 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
                        .display_height = choices.display_height,
                        .display_hdr = choices.hdr_output};
   const int height = choices.display_height > 0 ? choices.display_height : 1080;
+  const auto tier = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1));
   bench.pending = start_task<MachineCalibration>(
       "calibration",
-      [plan, base, height, fraction = bench.fraction,
+      [plan, base, height, tier, fraction = bench.fraction,
        stop = bench.stop]() -> std::expected<MachineCalibration, Refusal> {
         try {
-          return calibrate_machine(plan, base, height, stop->get_token(),
+          return calibrate_machine(plan, base, height, tier, stop->get_token(),
                                    [fraction](float f) { fraction->store(f); });
         } catch (const std::exception& thrown) {  // un thread qui lève ne doit pas emporter le lecteur
           return std::unexpected(Refusal{RefusalCode::ThreadFailed, thrown.what()});
@@ -90,6 +92,18 @@ std::string downscale_text(const ChainCandidate& chain) {
   return std::format("{}p", chain.height);
 }
 
+// Sous l'en-tête du tableau : les modèles que les essais ont joués, et pourquoi l'Auto ne suit pas la mesure
+// quand c'est le cas (version plus ancienne, batterie).
+void measure_notes(const MachineCalibration& r) {
+  note(i18n::tr_format("SPAN: {} in FP16 · RIFE: {}",
+                       model_label(r.models.span.empty() ? std::string(kDefaultModelFile) : r.models.span),
+                       rife_label(r.models.rife.empty() ? std::string(kLightRifeModel) : r.models.rife)));
+  if (r.version < kCalibrationVersion)
+    note(i18n::tr("Measured by an older version: Auto keeps its estimate. Run the bench again."));
+  if (r.on_battery)
+    note(i18n::tr("Measured on battery: Auto keeps its estimate. Run the bench again plugged in."));
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -125,10 +139,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     const MachineCalibration& r = *bench.result;
     note(i18n::tr_format("{} · {} · display {}p", r.gpu.empty() ? i18n::tr("Unknown graphics card") : r.gpu,
                          r.date, r.display_height));
-    note(r.span_fp8 ? i18n::tr("SPAN: Balanced Sharp in FP8.")
-                    : i18n::tr("SPAN: Performance Sharp in FP16 (no FP8 on this card)."));
-    if (r.on_battery)
-      note(i18n::tr("Measured on battery: Auto keeps its estimate. Run the bench again plugged in."));
+    measure_notes(r);
     constexpr ImGuiTableFlags kFlags =
         ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX;
     if (ImGui::BeginTable("##bench", 6, kFlags)) {
@@ -161,7 +172,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
           ImGui::SetTooltip("%s", i18n::tr_format("{:.1f} % lost", trial.lost_percent).c_str());
         ImGui::TableNextColumn();
         if (ImGui::SmallButton(i18n::tr("Apply"))) {
-          d = candidate_settings(trial.chain, std::move(d), r.span_fp8);
+          d = candidate_settings(trial.chain, std::move(d), r.models);
           applied = true;
         }
         if (recommended) panel::badge(i18n::tr("Recommended"), panel::kGood);
@@ -173,8 +184,8 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
         i18n::tr("Green: recommended, with margin. Orange: holds just barely, or misses a little. Red: this "
                  "machine cannot keep up."));
     panel::tip(
-        i18n::tr("Interpolation is always RIFE 4.22 lite in Auto Fast mode. The working resolution stops at "
-                 "half the display: SPAN doubles it."));
+        i18n::tr("Interpolation runs in Auto Fast mode. The working resolution goes up to the 1080p of the "
+                 "test sequence; SPAN doubles it."));
   }
   if (ImGui::Button(bench.result ? i18n::tr("Run the bench again") : i18n::tr("Run the bench"))) {
     if (choices.source_file.empty()) {

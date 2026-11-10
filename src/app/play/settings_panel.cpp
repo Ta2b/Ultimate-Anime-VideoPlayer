@@ -250,8 +250,12 @@ void level_section(PlaySettings& d, const SettingsChoices& choices) {
         next.preset = preset;
         d = apply_preset(
             next,
-            Machine{
-                .tier = detected, .display_height = choices.display_height, .display_hz = choices.display_hz},
+            Machine{.tier = detected,
+                    .display_height = choices.display_height,
+                    .display_hz = choices.display_hz,
+                    .explored_work_height = choices.explored_work_height,
+                    .explored_rife_model = choices.explored_rife_model,
+                    .calibrated = choices.calibrated},
             core::SourceInfo{
                 .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
       }
@@ -576,12 +580,12 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::PopItemWidth();
 
     // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
-    PlaySettings live = live_part(running, draft_, choices.rife_loaded);
+    PlaySettings live = live_part(running, draft_, choices.rife_loaded, choices.chain());
     // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
     // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
     if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
     if (live != running) result.live = live;
-    const Change pending = change_between(live, draft_, choices.rife_loaded);
+    const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
     pending_shown_ = pending.cost == ChangeCost::Reopen;
     if (pending.cost == ChangeCost::Reopen) {
       ImGui::Spacing();

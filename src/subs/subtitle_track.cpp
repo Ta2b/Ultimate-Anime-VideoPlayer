@@ -11,6 +11,7 @@
 
 #include <ass/ass.h>
 
+#include "core/utf8_path.h"
 #include "subs/log.h"
 #include "subs/srt.h"
 #include "subs/text_encoding.h"
@@ -41,17 +42,20 @@ std::expected<std::string, Refusal> read_script(const std::filesystem::path& pat
   std::error_code error;
   const std::uintmax_t size = std::filesystem::file_size(path, error);
   if (error) {
-    return refuse(RefusalCode::SubtitleUnreadable, std::format("{} : {}", path.string(), error.message()));
+    return refuse(RefusalCode::SubtitleUnreadable,
+                  std::format("{} : {}", core::to_utf8(path.filename()), error.message()));
   }
   if (size > kMaxScriptBytes) {
-    return refuse(RefusalCode::SubtitleUnreadable,
-                  std::format("{} : {} octets, au-delà de {}", path.string(), size, kMaxScriptBytes));
+    return refuse(
+        RefusalCode::SubtitleUnreadable,
+        std::format("{} : {} octets, au-delà de {}", core::to_utf8(path.filename()), size, kMaxScriptBytes));
   }
   std::ifstream file(path, std::ios::binary);
   std::string text(static_cast<std::size_t>(size), '\0');
   file.read(text.data(), static_cast<std::streamsize>(text.size()));
   if (!file.is_open() || file.bad()) {
-    return refuse(RefusalCode::SubtitleUnreadable, std::format("{} : lecture", path.string()));
+    return refuse(RefusalCode::SubtitleUnreadable,
+                  std::format("{} : lecture", core::to_utf8(path.filename())));
   }
   text.resize(static_cast<std::size_t>(file.gcount()));
   // L'indice d'encodage : le dernier suffixe du nom (« ep01.ja » donne « ja »).
@@ -127,7 +131,8 @@ std::expected<SubtitleTrack, Refusal> SubtitleTrack::load(const AssLibrary& libr
                                                           const std::filesystem::path& path) {
   const std::string extension = lowercase_extension(path);
   if (extension != ".ass" && extension != ".ssa" && extension != ".srt") {
-    return refuse(RefusalCode::SubtitleFormat, std::format("{} : extension inconnue", path.string()));
+    return refuse(RefusalCode::SubtitleFormat,
+                  std::format("{} : extension inconnue", core::to_utf8(path.filename())));
   }
   auto script = read_script(path);
   if (!script) return std::unexpected(std::move(script.error()));

@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "core/cost_model.h"
+#include "core/free_rate.h"
 #include "core/profile.h"
 
 namespace ajp::core {
@@ -44,11 +45,16 @@ struct FreeParams {
   int fallback_min_lost = 10;
   double display_smoothing = 0.1;      // lissage de d
   std::int64_t settle_us = 1'200'000;  // après seek ou reprise : mesures ignorées
+  // Après la mise en route, un seek ou une reprise : les pertes ne comptent pas pour le repli (le démarrage
+  // perd toujours quelques images, comme FreeRate::kStartUs).
+  std::int64_t start_us = 5'000'000;
+  int fallback_min_buckets = 4;  // pertes réparties sur autant de tranches de 250 ms
 };
 
 struct FreeDisplay {
   bool vrr = true;
-  double hz = 60.0;
+  double hz = 60.0;     // VRR : l'écran ou le plafond ; fréquence fixe : l'écran, sur lequel on cale
+  double cap_hz = 0.0;  // fréquence fixe : le plafond choisi, qui borne sans caler (A12-04) ; 0 : aucun
 };
 
 struct SteadyInfo {
@@ -122,6 +128,7 @@ class SteadyRate {
   double boot_per_image_sum_ = 0.0;  // sans a priori : coût par image des premières paires
   int boot_n_ = 0;
   std::int64_t settled_until_us_ = 0;
+  std::int64_t quiet_until_us_ = -1;  // pertes hors du compte du repli jusque-là ; −1 : à la première image
   std::array<std::int64_t, 8> recent_losses_{};  // instants des dernières pertes
   std::size_t next_loss_ = 0;
   std::uint32_t lost_total_ = 0;

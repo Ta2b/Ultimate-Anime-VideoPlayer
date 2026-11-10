@@ -482,6 +482,9 @@ class UpscaleStage final : public RingStage {
   std::uint64_t smoothed_holds_ = 0;
   // L'instant de la sortie serait passé quand une image soumise maintenant paraîtrait.
   bool instant_late(const DecodedFrame& frame, std::uint32_t output) const;
+  // Annonce la paire en cours au compte du mode auto ou du Rapide (`free`), avec ce qu'elle vaut si elle
+  // n'a qu'une image (LonePair, A12-12). `runs` : l'interpolation tourne sur cette paire.
+  void expect_pair(std::uint32_t id, int written, std::int64_t lead_us, bool free, bool steady, bool runs);
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
   // Warp après SPAN : deux images sources agrandies (span_of_), et l'image intermédiaire (une par
   // instant à tour de rôle, comme middles_).

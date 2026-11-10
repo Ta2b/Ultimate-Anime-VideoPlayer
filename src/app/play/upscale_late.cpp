@@ -21,6 +21,20 @@ bool UpscaleStage::instant_late(const DecodedFrame& frame, std::uint32_t output)
   return pts < ready_media_us(now, host_now_us(), 0, latency_us());
 }
 
+// Une paire du Rapide à une image. Réduite à sa source par le pas seul (FreeGrid::starved), elle fait
+// redescendre l'estimation du temps de service, que plus rien ne mesure. Une image interpolée et calculée se
+// mesure. Toute autre image seule (coupe, dessin tenu, copie d'une pose) ne dit rien.
+void UpscaleStage::expect_pair(std::uint32_t id, int written, std::int64_t lead_us, bool free, bool steady,
+                               bool runs) {
+  LonePair lone = LonePair::Source;
+  if (free && !steady && free_grid_.starved()) {
+    lone = LonePair::Starved;
+  } else if (runs && outputs_ == 1 && intermediates_ == 1 && !copy_pair_) {
+    lone = LonePair::Interpolated;
+  }
+  setup_.live->auto_expect(id, written, lead_us, free && heavy_pair_, lone);
+}
+
 std::expected<void, Refusal> UpscaleStage::late(const DecodedFrame& frame, std::uint32_t output) {
   ++late_dropped_;
   if (setup_.live) setup_.live->auto_unexpect(frame.id.value, 1);
