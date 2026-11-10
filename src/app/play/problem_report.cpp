@@ -172,6 +172,9 @@ std::string sanitize_report_paths(std::string_view text, std::string_view home) 
   return out;
 }
 
+// Dit au lecteur du rapport que le début du journal manque (A23-14).
+constexpr std::string_view kLogCut = "[… début du journal omis]\n";
+
 std::string read_tail(const fs::path& file, std::size_t max_bytes) {
   std::ifstream in(file, std::ios::binary | std::ios::ate);
   if (!in) return {};
@@ -183,6 +186,7 @@ std::string read_tail(const fs::path& file, std::size_t max_bytes) {
     // Coupé au milieu d'une ligne : la première, partielle, saute.
     const std::size_t newline = text.find('\n');
     text.erase(0, newline == std::string::npos ? text.size() : newline + 1);
+    text.insert(0, kLogCut);
   }
   return text;
 }
@@ -225,10 +229,11 @@ std::string compose_report(const ReportParts& parts, std::size_t max_bytes) {
   const std::size_t current_room = room - previous_room;
   const auto tail = [](const std::string& text, std::size_t room_bytes) {
     if (text.size() <= room_bytes) return text;
-    std::string cut = text.substr(text.size() - room_bytes);
+    if (room_bytes <= kLogCut.size()) return std::string();
+    std::string cut = text.substr(text.size() - (room_bytes - kLogCut.size()));
     const std::size_t newline = cut.find('\n');
     cut.erase(0, newline == std::string::npos ? cut.size() : newline + 1);
-    return cut;
+    return std::string(kLogCut) + cut;
   };
   std::string report = head;
   if (both) {

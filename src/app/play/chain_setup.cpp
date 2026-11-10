@@ -498,9 +498,9 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       return stage_refused(std::move(loaded.error()), ChainStage::Motion);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
-                                          : i18n::ui_tr("DistilDRBA unavailable"),
-                             host_now_us());
+      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
+                                        : i18n::ui_tr("DistilDRBA unavailable"),
+                           host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -530,9 +530,9 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       return stage_refused(std::move(loaded.error()), ChainStage::Motion);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
-                                          : i18n::ui_tr("Apple interpolation unavailable"),
-                             host_now_us());
+      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
+                                        : i18n::ui_tr("Apple interpolation unavailable"),
+                           host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {

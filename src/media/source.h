@@ -31,8 +31,10 @@
 //   d'images, images B) et un seek exact décode et jette jusqu'à la cible : des
 //   centaines de paquets audio peuvent précéder la première image. Au-delà du
 //   plafond : refus PacketBacklog, qui arrête la source et la lecture (refus non `recoverable`).
-// - Ensuite, une file pleine fait attendre son Credit : c'est ce qui cale la
-//   lecture du fichier sur l'horloge audio.
+// - Ensuite, une file pleine fait attendre son Credit dès que gpu refuse une
+//   image, ou que la réserve atteint la moitié de son plafond : c'est ce qui
+//   cale la lecture du fichier sur l'horloge audio, sans priver la vidéo de
+//   paquets sur un fichier mal entrelacé (A14-06).
 // En retour, chaque consommateur retire ses paquets à son propre rythme, jamais
 // selon la vidéo (contrat de PacketSink dans media/packet.h) : un module audio
 // qui attendrait la première image pour vider sa file bloquerait la source dès

@@ -6,10 +6,13 @@
 #include <chrono>
 #include <format>
 #include <fstream>
+#include <istream>
 #include <iterator>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "core/text.h"
@@ -75,9 +78,8 @@ bool parse(std::string_view text, T& value) {
 }
 
 // Les lignes lisibles, de la plus ancienne à la plus récente ; les autres sont ignorées.
-std::vector<Entry> load(const std::filesystem::path& store) {
+std::vector<Entry> parse_entries(std::istream& in) {
   std::vector<Entry> entries;
-  std::ifstream in(store);
   std::string line;
   while (std::getline(in, line)) {
     const std::size_t a = line.find('\t');
@@ -92,6 +94,36 @@ std::vector<Entry> load(const std::filesystem::path& store) {
     entries.push_back(std::move(e));
   }
   return entries;
+}
+
+std::vector<Entry> load(const std::filesystem::path& store) {
+  std::ifstream in(store);
+  return parse_entries(in);
+}
+
+// Avant une réécriture : un fichier qui existe mais ne s'ouvre pas (tenu un instant par un autre
+// programme sous Windows) ne doit pas passer pour vide, sinon la réécriture perd toutes les autres
+// vidéos. Quelques essais, puis refus.
+std::expected<std::vector<Entry>, Refusal> load_for_update(const std::filesystem::path& store) {
+  for (int attempt = 0;; ++attempt) {
+    std::ifstream in(store);
+    if (in.is_open()) return parse_entries(in);
+    std::error_code error;
+    if (!std::filesystem::exists(store, error) && !error) return std::vector<Entry>{};
+    if (attempt == 9) {
+      return std::unexpected(Refusal{RefusalCode::FileUnwritable,
+                                     std::format("{} : relecture impossible", core::to_utf8(store))});
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+}
+
+// Les lecteurs d'un même processus passent l'un après l'autre sans délai : le verrou de fichier, pris
+// par essais toutes les 20 ms, laissait un lecteur qui réécrit sans cesse affamer l'autre jusqu'au
+// délai maximal (A13-10, vu sous Windows où chaque écriture attend le disque).
+std::mutex& writers() {
+  static std::mutex mutex;
+  return mutex;
 }
 
 std::expected<void, Refusal> save(const std::filesystem::path& store, const std::vector<Entry>& entries) {
@@ -128,13 +160,18 @@ std::expected<void, Refusal> remember_position(const std::filesystem::path& stor
   std::optional<Entry> entry = identify(file);
   if (!entry) return {};  // fichier disparu, ou chemin qu'une ligne ne sait pas porter
   // A13-10 : deux lecteurs ouverts relisent puis réécrivent le même fichier. Sous verrou, chacun relit ce que
-  // l'autre vient d'écrire et le garde. Un verrou impossible (dossier en lecture seule, autre lecteur figé)
-  // n'empêche pas d'écrire, comme avant : l'écriture reste atomique.
+  // l'autre vient d'écrire et le garde. Un verrou qui ne s'ouvre pas (dossier en lecture seule) n'empêche
+  // pas d'écrire, comme avant : l'écriture reste atomique. Un verrou tenu par un autre lecteur au-delà du
+  // délai fait refuser : écrire sans lui perdrait la position que l'autre écrit.
+  const std::scoped_lock in_process(writers());
   std::filesystem::path lock_file = store;
   lock_file += ".lock";
   const auto lock =
       prepare::KeyLock::acquire(lock_file, {}, prepare::LockWait::Block, std::chrono::seconds(2));
-  std::vector<Entry> entries = load(store);
+  if (!lock && lock.error().code == RefusalCode::CacheBusy) return std::unexpected(lock.error());
+  auto loaded = load_for_update(store);
+  if (!loaded) return std::unexpected(std::move(loaded.error()));
+  std::vector<Entry> entries = std::move(*loaded);
   const std::size_t before = entries.size();
   std::erase_if(entries, [&](const Entry& e) {
     return same_path(e.path, entry->path) ||

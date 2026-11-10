@@ -202,7 +202,7 @@ constexpr std::array kSettingsPages{
     Entry{"Normal", "Normal"},
     Entry{"Not optimized yet: settings are an estimate from the card.",
           "Pas encore optimisée : réglages estimés d'après la carte."},
-    Entry{"Nothing changes until \"Finish\".", "Rien ne change avant « Terminer »."},
+    Entry{"Nothing changes until \"Start\".", "Rien ne change avant « Commencer »."},
     Entry{"OLED black", "Noir OLED"},
     Entry{"OLED care", "Soin OLED"},
     Entry{"On", "Activé"},

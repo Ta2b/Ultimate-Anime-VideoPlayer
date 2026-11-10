@@ -106,6 +106,8 @@ class PlaceboScreen final : public Screen {
   SDL_Window* window() const;
   // Ce que l'écran présente : sa sortie (sRGB ou PQ) et son type, pour l'OSD.
   std::string output_description() const;
+  // Faux quand le grade n'a pas pu se créer sur ce GPU (ses hooks refusés) : l'image passe sans lui.
+  bool has_grade() const;
 
   // Crée le ring : count slots RGBA16 (ou RGB10A2, si format le demande et que l'appareil le prend) de
   // width × height, exportés (mémoire et sémaphore timeline) et cédés à CUDA en disposition GENERAL,

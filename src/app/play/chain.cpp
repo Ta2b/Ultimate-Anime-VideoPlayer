@@ -8,6 +8,7 @@
 
 #include "app/play/chapters.h"
 #include "app/play/episodes.h"
+#include "app/play/gpu_telemetry.h"
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "app/play/present_stats.h"
@@ -465,6 +466,7 @@ void log_summary(const Session& session) {
       format_ms(static_cast<std::int64_t>(stats.frame_interval.stddev())),
       format_ms(stats.frame_interval.percentile(95)), format_ms(stats.lag.percentile(95)),
       format_ms(stats.render.median()));
+  if (const std::string range = take_gpu_range_text(); !range.empty()) log_channel("app")->info("{}", range);
 }
 
 }  // namespace ajp::app::play

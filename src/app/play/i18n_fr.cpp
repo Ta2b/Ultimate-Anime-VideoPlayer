@@ -38,6 +38,8 @@ constexpr std::array kPlayer{
     Entry{"Export cancelled", "Export annulé"},
     Entry{"Export done: {} ({} frames, {:.0f} MB, {})", "Export terminé : {} ({} images, {:.0f} Mo, {})"},
     Entry{"Export stopped: {}", "Export arrêté : {}"},
+    Entry{"Ordered chapters are not supported: playing in file order",
+          "Chapitres ordonnés non pris en charge : lecture dans l'ordre du fichier"},
     Entry{"Fast mode: too many frames lost, back to Stable",
           "Mode Rapide : trop d'images perdues, retour au mode Stable"},
     Entry{"French", "Français"},
