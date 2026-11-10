@@ -416,7 +416,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
                                                       std::span<Tensor> outputs) {
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
   // Étape 5.2 : qui lit l'entrée de RIFE en dernier décide de ce que rife_time y écrit.
-  if (!inputs.empty()) note_rife_reader(inputs[0], dynamic_cast<RifeFusedEngine*>(&engine) != nullptr);
+  if (!inputs.empty()) {
+    if (auto ok = note_rife_reader(inputs[0], dynamic_cast<RifeFusedEngine*>(&engine) != nullptr); !ok)
+      return ok;
+  }
   if (trt == nullptr) {
     if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine))
       return enqueue_rife_fused(*rife, inputs, outputs);
