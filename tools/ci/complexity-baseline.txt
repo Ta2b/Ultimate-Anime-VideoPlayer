@@ -9,7 +9,7 @@ src/app/play/controls_draw.cpp	ajp::app::play::draw_controls	57	197
 src/app/play/display_edid.cpp	ajp::app::play::parse_edid	32	56
 src/app/play/engine_install.cpp	ajp::app::play::fetch_vendor_file	27	114
 src/app/play/engine_install.cpp	ajp::app::play::install_steps	30	171
-src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	38	88
+src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	36	86
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
 src/app/play/home_screen.cpp	ajp::app::play::run_home	29	114
 src/app/play/input.cpp	ajp::app::play::input_of	49	62
@@ -31,7 +31,6 @@ src/app/play/settings_system.cpp	ajp::app::play::updates_page	28	94
 src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	57	224
 src/app/play/span_derive.cpp	ajp::app::play::derive_span_fp8	18	126
 src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	31	96
-src/app/play/ui.cpp	ajp::app::play::PlayerUi::handle	26	77
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	41	104
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	169	260

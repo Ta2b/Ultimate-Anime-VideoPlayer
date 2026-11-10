@@ -53,6 +53,18 @@ constexpr std::size_t usage(core::Usage u) {
   return static_cast<std::size_t>(u);
 }
 
+// La navigation au clavier de l'interface, le temps de l'écran (A25-14).
+class KeyboardNav {
+ public:
+  explicit KeyboardNav(PlayerUi& ui) : ui_(ui) { ui_.set_keyboard_nav(true); }
+  ~KeyboardNav() { ui_.set_keyboard_nav(false); }
+  KeyboardNav(const KeyboardNav&) = delete;
+  KeyboardNav& operator=(const KeyboardNav&) = delete;
+
+ private:
+  PlayerUi& ui_;
+};
+
 // L'écran jusqu'à « Commencer » ou « Annuler » ; rien si l'utilisateur quitte. Les touches d'essai
 // (--keys) qui tombent pendant l'écran y sont pressées, comptées depuis son ouverture.
 std::expected<std::optional<FirstRunView>, Refusal> welcome(
@@ -63,6 +75,7 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(
   std::vector<Input> actions;
   std::size_t at = view.wizard.at;
   std::int64_t last_event_us = started;
+  const KeyboardNav nav(ui);
   while (!view.done && !view.cancelled) {
     // P3.3 : chaque « Suivant », « Passer » ou « Précédent » enregistre les choix faits jusque-là.
     if (view.wizard.at != at) {
@@ -217,8 +230,11 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
 namespace {
 
 // Ce que l'assistant dit de cet hôte : un portable (construction des moteurs deux fois plus longue, A25-03).
-void host_notes(FirstRunView& view, const GpuFacts& gpu) {
+void host_notes(FirstRunView& view, const GpuFacts& gpu, SDL_Window* window) {
   view.laptop = gpu.name.find("Laptop") != std::string::npos;
+  const int height = display_height(window);
+  if (height > 0)
+    view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, display_refresh_hz(window));
 }
 
 // L'assistant part des réglages en place dès que play.toml existe : repris en route (P3.3), relancé par
@@ -275,7 +291,9 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   // L'assistant du premier lancement (ou de --first-run, ou relancé depuis les paramètres) ; rouvert depuis
   // l'onglet Moteurs, l'ancien écran des seuls moteurs.
   const bool wizard_mode = !revisit || s.restart_wizard;
+  const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   view.revisit = revisit && !wizard_mode;
+  view.during_playback = revisit;
   if (wizard_mode) {
     const TierEstimate estimate = estimate_tier(gpu);
     view.facts = WizardFacts{.engine_choice = std::ranges::any_of(view.engines, [](const EngineRow& row) {
@@ -284,13 +302,9 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     view.wizard =
         begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
     view.tier_line = i18n::tr_format("Estimated level: {}", tier_label(estimate.tier));
-    const int height = display_height(s.screen.window());
-    const double hz = display_refresh_hz(s.screen.window());
-    if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
-    host_notes(view, gpu);
+    host_notes(view, gpu, s.screen.window());
+    start_from_saved(view.wizard, play_path);
   }
-  const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
-  if (wizard_mode) start_from_saved(view.wizard, play_path);
   const auto on_step = [&](const Wizard& wizard) {
     if (!wizard_mode || revisit) return;
     PlaySettings saved;

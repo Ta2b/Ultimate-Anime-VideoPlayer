@@ -271,6 +271,8 @@ ImGuiKey imgui_key(SDL_Keycode key) {
   switch (key) {
     case SDLK_TAB:
       return ImGuiKey_Tab;
+    case SDLK_SPACE:
+      return ImGuiKey_Space;
     case SDLK_LEFT:
       return ImGuiKey_LeftArrow;
     case SDLK_RIGHT:
@@ -401,6 +403,34 @@ void PlayerUi::follow_text_input() {
   }
 }
 
+void PlayerUi::set_keyboard_nav(bool on) {
+  keyboard_nav_ = on;
+  ImGuiIO& io = ImGui::GetIO();
+  if (on) {
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  } else {
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+  }
+}
+
+bool PlayerUi::handle_key(const SDL_Event& event) {
+  ImGuiIO& io = ImGui::GetIO();
+  // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
+  // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
+  const SDL_Keymod mod = event.key.mod;
+  io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
+  io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
+  io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
+  io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
+  const ImGuiKey key = imgui_key(event.key.key);
+  // Hors saisie, l'assistant au clavier (A25-14) garde pour lui les touches qu'ImGui connaît : « q » n'y
+  // ferme plus le lecteur. Les autres (F11) suivent le chemin des raccourcis.
+  if (!text_input_ && (!keyboard_nav_ || key == ImGuiKey_None)) return false;
+  if (key != ImGuiKey_None) io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
+  input_pending_ = true;
+  return true;
+}
+
 bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<Input>& actions) {
   ImGuiIO& io = ImGui::GetIO();
   // Les coordonnées de SDL sont en unités de fenêtre ; l'interface travaille en pixels.
@@ -460,20 +490,8 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
       input_pending_ = true;
       return true;
     case SDL_EVENT_KEY_DOWN:
-    case SDL_EVENT_KEY_UP: {
-      // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
-      // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
-      const SDL_Keymod mod = event.key.mod;
-      io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
-      io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
-      io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
-      io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
-      if (!text_input_) return false;
-      if (const ImGuiKey key = imgui_key(event.key.key); key != ImGuiKey_None)
-        io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
-      input_pending_ = true;
-      return true;
-    }
+    case SDL_EVENT_KEY_UP:
+      return handle_key(event);
     default:
       return false;
   }
