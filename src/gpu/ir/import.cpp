@@ -145,7 +145,6 @@ std::expected<Node, Refusal> import_node(Builder& b, const onnx::Node& source, s
 // producteur vient après lui dans le fichier. Les passes elles-mêmes coûtaient le carré du nombre de nœuds
 // sur un fichier en ordre inverse (A44-03 : 8,5 s pour 40 000 nœuds).
 std::expected<std::vector<Node>, Refusal> sort_nodes(const Graph& graph, std::vector<Node> nodes) {
-  constexpr std::size_t kNoNode = std::numeric_limits<std::size_t>::max();
   std::vector<std::size_t> producer(graph.tensors.size(), kNoNode);
   for (std::size_t n = 0; n < nodes.size(); ++n) {
     for (const TensorId id : nodes[n].outputs) producer[id] = n;
