@@ -230,8 +230,12 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest_colum
 constexpr int kTileWidth = 32;
 constexpr int kTileHeight = 16;
 constexpr int kTileThreadsY = 8;
+// Blocs par SM promis à ptxas. Sans ce nombre il s'en tient à 64 registres, et sm_120, qui garde les
+// paramètres en registres, en renverse en mémoire locale depuis la chroma Spline36 (refusé par
+// --warn-on-spills). À trois blocs : 64 registres de sm_75 à sm_89, 79 pour sm_120, aucun renversé.
+constexpr int kTileBlocksPerSm = 3;
 
-__global__ void __launch_bounds__(kTileWidth* kTileThreadsY) ingest_tiled(IngestParams p) {
+__global__ void __launch_bounds__(kTileWidth* kTileThreadsY, kTileBlocksPerSm) ingest_tiled(IngestParams p) {
   extern __shared__ float tile[];  // 3 plans de p.tile_rows × kTileWidth
   const int x0 = static_cast<int>(blockIdx.x) * kTileWidth;
   const int y0 = static_cast<int>(blockIdx.y) * kTileHeight;
