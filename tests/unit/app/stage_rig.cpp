@@ -102,10 +102,6 @@ std::expected<std::unique_ptr<gpu::Engine>, Refusal> FakeBackend::load(const gpu
                 std::format("backend factice : {} ne se charge pas", artifact.path.string()));
 }
 
-std::expected<gpu::Tensor, Refusal> FakeBackend::import(const gpu::ExternalImage&) {
-  return refuse(RefusalCode::FormatUnsupported, "backend factice : pas d'import");
-}
-
 std::expected<std::unique_ptr<gpu::TensorBuffer>, Refusal> FakeBackend::alloc_tensor(
     gpu::TensorType type, const gpu::Shape& shape) {
   for (const std::int64_t d : shape.dims) {

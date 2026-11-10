@@ -27,16 +27,16 @@ std::expected<void, ajp::Refusal> write_output(const test::fs::path& output, std
   return {};
 }
 
-}  // namespace
-
-TEST_CASE("write_atomic : contenu remplacé d'un coup, aucun temporaire laissé", "[prepare][cache]") {
-  const test::TempDir dir;
-  REQUIRE(write_atomic(dir / "recu.toml", "premier"));
-  REQUIRE(write_atomic(dir / "recu.toml", "second"));
-  CHECK(test::read_file(dir / "recu.toml") == "second");
-  CHECK(std::distance(test::fs::directory_iterator(dir.path()), test::fs::directory_iterator{}) == 1);
-  CHECK(test::refusal(write_atomic(dir / "absent/recu.toml", "x")) == RefusalCode::CacheIo);
+// Un dossier de travail de ce propriétaire reste-t-il dans parent ?
+bool has_owned_stages(const test::fs::path& parent, std::string_view prefix, std::string_view owner) {
+  std::error_code error;
+  for (const auto& entry : test::fs::directory_iterator(parent, error)) {
+    if (entry.path().filename().string().starts_with(prefix) && owns_stage(entry.path(), owner)) return true;
+  }
+  return false;
 }
+
+}  // namespace
 
 TEST_CASE("KeyLock : exclusif entre deux ouvertures, rendu à la destruction", "[prepare][cache]") {
   const test::TempDir dir;
@@ -206,52 +206,6 @@ TEST_CASE("produce_once : le reste d'un constructeur mort est nettoyé", "[prepa
         }).value() == Production::Produced);
   CHECK_FALSE(has_owned_stages(dir.path(), kStagePrefix, entry.owner()));
   CHECK(test::read_file(entry.destination) == "neuf");
-}
-
-TEST_CASE("produce_once : une entrée refusée est remplacée, une entrée déjà remplacée reprise",
-          "[prepare][cache]") {
-  const test::TempDir dir;
-  const auto destination = dir / "a.engine";
-  int calls = 0;
-  const auto producer = [&](const test::fs::path& output) {
-    ++calls;
-    return write_output(output, "reconstruit");
-  };
-  test::write_file(destination, "tronqué");
-  const std::string rejected = sha256_hex("tronqué");
-
-  // Les octets en place ne sont pas ceux que le consommateur a refusés : on les reprend.
-  CHECK(
-      produce_once({.destination = destination, .rejected_sha256 = sha256_hex("autres")}, producer).value() ==
-      Production::Reused);
-  CHECK(calls == 0);
-
-  CHECK(produce_once({.destination = destination, .rejected_sha256 = rejected}, producer).value() ==
-        Production::Produced);
-  CHECK(calls == 1);
-  CHECK(test::read_file(destination) == "reconstruit");
-  CHECK(test::stage_count(dir.path()) == 0);
-
-  // Un second consommateur qui avait refusé l'ancien moteur reprend le remplaçant.
-  CHECK(produce_once({.destination = destination, .rejected_sha256 = rejected}, producer).value() ==
-        Production::Reused);
-  CHECK(calls == 1);
-
-  CHECK(test::refusal(produce_once({.destination = destination, .rejected_sha256 = "court"}, producer)) ==
-        RefusalCode::FieldOutOfRange);
-}
-
-TEST_CASE("produce_once : l'entrée refusée reste en place si sa reconstruction échoue", "[prepare][cache]") {
-  const test::TempDir dir;
-  const auto destination = dir / "a.engine";
-  test::write_file(destination, "tronqué");
-  const auto failing = [](const test::fs::path&) -> std::expected<void, ajp::Refusal> {
-    return std::unexpected(ajp::Refusal{RefusalCode::BuilderFailed, "échec"});
-  };
-  CHECK(test::refusal(produce_once({.destination = destination, .rejected_sha256 = sha256_hex("tronqué")},
-                                   failing)) == RefusalCode::BuilderFailed);
-  CHECK(test::read_file(destination) == "tronqué");
-  CHECK(test::stage_count(dir.path()) == 0);
 }
 
 TEST_CASE("sync_file et publish_file : écrit sur disque, puis publié", "[prepare][cache]") {

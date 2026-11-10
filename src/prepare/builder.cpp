@@ -173,13 +173,6 @@ TrtexecBuilder::TrtexecBuilder(TrtexecConfig config, EngineCheck check)
 std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec& model,
                                                             const gpu::ShapeSet& shapes,
                                                             gpu::Progress& progress) const {
-  return rebuild(model, shapes, progress, {});
-}
-
-std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSpec& model,
-                                                              const gpu::ShapeSet& shapes,
-                                                              gpu::Progress& progress,
-                                                              const std::string& rejected_sha256) const {
   if (config_.runtime.major < 11) {
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange,
                                    "TensorRT " + config_.runtime.token() + " : trtexec 11 ou plus attendu"});
@@ -198,7 +191,7 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSp
   }
 
   report(progress, 0.0F, "Préparation");
-  const CacheEntry entry{.destination = plan->engine, .rejected_sha256 = rejected_sha256};
+  const CacheEntry entry{.destination = plan->engine};
   auto produced = produce_once(
       entry, [&](const fs::path& output) { return run(*plan, model, *source, output, progress); },
       progress.stop);

@@ -10,13 +10,14 @@ namespace ajp::app::play {
 namespace {
 
 // Les moteurs des réseaux, dans l'ordre de l'onglet, et le mot de leur bibliothèque.
-constexpr std::array<std::pair<std::string_view, core::EngineId>, 5> kLibraries{{
+constexpr std::array<std::pair<std::string_view, core::EngineId>, 3> kLibraries{{
     {"vulkan", core::EngineId::Vulkan},
     {"tensorrt", core::EngineId::TensorRt},
-    {"migraphx", core::EngineId::MiGraphX},
-    {"openvino", core::EngineId::OpenVino},
     {"coreml", core::EngineId::Metal},  // le moteur natif du Mac : Core ML derrière MoltenVK
 }};
+// Les bibliothèques des moteurs retirés (core/engines.h), qu'une ancienne version a pu laisser dans le
+// dossier : jamais proposées ni ouvertes.
+constexpr std::array<std::string_view, 2> kRetiredLibraries{"migraphx", "openvino"};
 
 constexpr std::size_t usage(core::Usage u) {
   return static_cast<std::size_t>(u);
@@ -31,6 +32,12 @@ std::optional<core::EngineId> engine_of_library(const std::filesystem::path& lib
     if (file.contains(word)) return id;
   }
   return std::nullopt;
+}
+
+bool retired_library(const std::filesystem::path& library) {
+  const std::string file = library.filename().string();
+  return file.contains("ajp_backend_") &&
+         std::ranges::any_of(kRetiredLibraries, [&](std::string_view word) { return file.contains(word); });
 }
 
 std::vector<core::EngineId> switchable_engines(std::span<const std::filesystem::path> candidates) {

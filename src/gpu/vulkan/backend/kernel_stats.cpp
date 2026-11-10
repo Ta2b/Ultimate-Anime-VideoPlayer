@@ -1,13 +1,16 @@
 // L'analyse d'une image pour le grade (gpu/kernel_ops.h, frame_stats_start) : le noyau frame_stats
 // sur la voie courante, ses comptes relus par l'hôte sans copie et sans attente, puis tirés en mesures
-// par kernels/ref/frame_stats.h (la même fonction que la pré-analyse des plans).
+// par kernels/ref/frame_stats.h (la même fonction que la pré-analyse des plans). Aussi la mémoire de la
+// carte pour les statistiques (device_memory).
 #include <cstring>
 #include <format>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
+#include "gpu/vulkan/compute/memory.h"
 #include "kernels/ref/frame_stats.h"
 
 namespace ajp::gpu::vk {
@@ -18,6 +21,12 @@ std::unexpected<Refusal> refuse_stats(RefusalCode code, std::string text) {
 }
 
 }  // namespace
+
+std::optional<KernelOps::DeviceMemory> VulkanKernelOps::device_memory() {
+  const std::optional<HeapUse> use = device_heap_use(context_);
+  if (!use) return std::nullopt;
+  return DeviceMemory{.used = use->used, .total = use->total};
+}
 
 std::expected<std::uint64_t, Refusal> VulkanKernelOps::frame_stats_start(const Tensor& rgb,
                                                                          kernels::FrameTransfer transfer) {

@@ -49,8 +49,6 @@ enum class OpCode : std::uint64_t {
   RifeCrop = 2,
   Warp = 3,
   Ingest = 10,
-  RifePad = 20,
-  Measure = 30,
   RifeInput = 40,
   ScoresStart = 41,
   FlowMaxStart = 42,
@@ -59,10 +57,9 @@ enum class OpCode : std::uint64_t {
   WriteRing = 50,
   FrameStats = 51,
 };
-constexpr std::array kOpCodes{OpCode::Resample,     OpCode::RifeCrop, OpCode::Warp,      OpCode::Ingest,
-                              OpCode::RifePad,      OpCode::Measure,  OpCode::RifeInput, OpCode::ScoresStart,
-                              OpCode::FlowMaxStart, OpCode::RifeTime, OpCode::RifePair,  OpCode::WriteRing,
-                              OpCode::FrameStats};
+constexpr std::array kOpCodes{OpCode::Resample,  OpCode::RifeCrop,    OpCode::Warp,         OpCode::Ingest,
+                              OpCode::RifeInput, OpCode::ScoresStart, OpCode::FlowMaxStart, OpCode::RifeTime,
+                              OpCode::RifePair,  OpCode::WriteRing,   OpCode::FrameStats};
 static_assert(
     [] {
       for (std::size_t i = 0; i < kOpCodes.size(); ++i)
@@ -101,7 +98,6 @@ class VulkanKernelOps final : public KernelOps {
   // Remises de tampons de transfert sans servir après lesquelles un tampon d'une autre forme
   // cède sa place : assez pour que deux formes en alternance gardent chacune les leurs.
   static constexpr std::uint64_t kStagingIdleUses = 256;
-  static constexpr std::size_t kScoreSlots = 3;
   // Envois d'images hôte en file pour le fil d'envoi ; au-delà, le fil du GPU attend les siens.
   static constexpr std::size_t kUploadBound = 8;
 
@@ -116,7 +112,6 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> ingest(const DecodedFrame& frame, const IngestSpec& spec,
                                       const Tensor& rgb) override;
   std::expected<void, Refusal> resample(const Tensor& in, kernels::Filter filter, const Tensor& out) override;
-  std::expected<void, Refusal> rife_pad(const DecodedFrame& frame, const Tensor& padded) override;
   std::expected<void, Refusal> rife_crop(const Tensor& padded, const Tensor& out) override;
   std::expected<void, Refusal> warp_blend(const Tensor& a, const Tensor& b, const Motion& motion, float t,
                                           const Tensor& out) override;
@@ -138,8 +133,6 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
-  std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
-  std::optional<PairScores> previous_scores() override;
   std::expected<void, Refusal> health() override { return queue_.health(); }
   // A45-14 : la mémoire de la carte pour les statistiques, lue du budget du pilote.
   std::optional<DeviceMemory> device_memory() override;
@@ -168,7 +161,7 @@ class VulkanKernelOps final : public KernelOps {
     std::uint64_t upload =
         0;  // dernier envoi hôte vers lui (uploads_queued_) ; occupé tant qu'il n'est pas fait
     // L'image décodée qu'il contient (mémo de copie) : une opération suivante sur la même image
-    // (mesure, puis remplissage RIFE, puis ingestion) la relit sans la recopier. Valide tant que
+    // (ingestion réduite puis pleine, par exemple) la relit sans la recopier. Valide tant que
     // l'image vit (le lot recycle les adresses) et que le tampon n'a pas reçu une autre image.
     const FrameData* held_ptr = nullptr;
     std::weak_ptr<const FrameData> held;
@@ -191,16 +184,6 @@ class VulkanKernelOps final : public KernelOps {
   struct Retained {
     std::shared_ptr<const FrameData> frame;
     std::uint64_t until = 0;
-  };
-  struct ScoreSlot {
-    Buffer partials;  // Readback : lu par l'hôte sans copie
-    Buffer blocks;
-    std::uint64_t value = 0;  // 0 : rien en cours
-    PairScores scores;
-    std::uint32_t area = 0;  // pw × ph de RIFE
-    std::uint32_t count = 0;
-    std::uint32_t blocks_x = 0;  // blocs 16 × 16 par ligne
-    std::uint64_t order = 0;
   };
   struct RingView {
     std::uint32_t generation = 0;
@@ -289,7 +272,6 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> submit_frames(Recording& recording, std::span<Source> sources,
                                              std::span<const DecodedFrame* const> frames);
   std::expected<VkImageView, Refusal> ring_view(const RingSlotDesc& slot);
-  std::expected<std::size_t, Refusal> score_slot(std::uint32_t width, std::uint32_t height);
 
   VkContext& context_;
   MemoryAllocator& memory_;
@@ -324,9 +306,6 @@ class VulkanKernelOps final : public KernelOps {
   std::uint64_t uploads_done_ = 0;
   std::optional<Refusal> upload_failure_;
   std::jthread upload_thread_;
-  std::vector<ScoreSlot> scores_;
-  std::uint64_t score_order_ = 0;
-  std::uint64_t returned_order_ = 0;
   std::vector<RingView> ring_views_;
   std::uint32_t ring_generation_ = 0;
   // Mesures relues par l'hôte sans copie (scores_start, flow_max_start), kPendingReadbacks

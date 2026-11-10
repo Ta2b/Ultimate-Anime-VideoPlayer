@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Compile la partie CUDA sans GPU : les noyaux .cu, le backend TensorRT et ses tests, que la CI ne
-# construit pas (AJP_WITH_CUDA n'y est ON que dans release-windows.yml, sur son entrée tensorrt :
-# installer le kit CUDA engage sa licence, une décision du propriétaire du dépôt). À lancer avant
-# chaque poussée qui touche src/gpu/cuda, src/kernels ou les contrats du backend, là où le kit CUDA
-# et TensorRT sont installés.
+# Compile la partie CUDA sans GPU : les noyaux .cu, le backend TensorRT et ses tests. La CI les construit
+# aussi, à chaque PR (tâche `cuda` de ci.yml), sans pouvoir les lancer faute de GPU NVIDIA. Ce script sert
+# en local, avant une poussée qui touche src/gpu/cuda, src/kernels ou les contrats du backend, là où le
+# kit CUDA et TensorRT sont installés.
 # Usage : tools/ci/check-cuda.sh [préréglage]   (linux-prefix-cuda par défaut ; windows-rtx sur le PC)
 set -euo pipefail
 

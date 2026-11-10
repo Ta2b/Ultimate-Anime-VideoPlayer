@@ -333,45 +333,6 @@ TEST_CASE("TrtexecBuilder : un ONNX qui n'est pas un fichier est refusé sans ex
         RefusalCode::ModelUnreadable);
 }
 
-TEST_CASE("TrtexecBuilder : rebuild remplace le moteur refusé par load(), pas un autre",
-          "[prepare][builder]") {
-  Bench bench("ok");
-  const TrtexecBuilder builder(bench.config);
-  Steps steps;
-  auto progress = steps.progress();
-  const auto first = builder.build(bench.model, kHd, progress);
-  REQUIRE(first);
-  // Publié tronqué (son empreinte avec lui) : seul load() le refuse.
-  test::write_file(first->path, "moteur tronqué par une coupure");
-  test::write_file(test::fs::path(first->path.string() + ".sha256"),
-                   sha256_hex("moteur tronqué par une coupure") + "\n");
-  const std::string rejected = sha256_file(first->path).value();
-
-  // Un autre lecteur a refusé d'autres octets : ceux en place se reprennent.
-  REQUIRE(builder.rebuild(bench.model, kHd, progress, sha256_hex("autres octets")));
-  CHECK(bench.builder_calls() == 1);
-  CHECK(test::read_file(first->path) == "moteur tronqué par une coupure");
-
-  const auto second = builder.rebuild(bench.model, kHd, progress, rejected);
-  REQUIRE(second);
-  CHECK(second->path == first->path);
-  CHECK(bench.builder_calls() == 2);
-  CHECK(test::read_file(second->path) == "moteur factice pour " + bench.model.onnx_path.string());
-  CHECK(test::stage_count(bench.cache()) == 0);
-  CHECK(bench.timing_cache() == std::vector<std::string>{"passe", "passe"});  // reçu, puis enrichi
-
-  // Un échec de la reconstruction garde le moteur en place.
-  test::write_file(first->path, "encore tronqué");
-  const TrtexecBuilder refusing(bench.config, [](const test::fs::path&) -> std::expected<void, ajp::Refusal> {
-    return std::unexpected(ajp::Refusal{RefusalCode::BuilderFailed, "désérialisation impossible"});
-  });
-  CHECK(test::refusal(refusing.rebuild(bench.model, kHd, progress, sha256_file(first->path).value())) ==
-        RefusalCode::BuilderFailed);
-  CHECK(test::read_file(first->path) == "encore tronqué");
-  CHECK(test::refusal(builder.rebuild(bench.model, kHd, progress, "pas un sha")) ==
-        RefusalCode::FieldOutOfRange);
-}
-
 TEST_CASE("TrtexecBuilder : deux demandes simultanées, un seul trtexec", "[prepare][builder]") {
   Bench bench("slow");
   const TrtexecBuilder builder(bench.config);

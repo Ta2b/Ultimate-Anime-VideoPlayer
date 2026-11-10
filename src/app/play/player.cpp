@@ -346,12 +346,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     startup_notes.push_back(set_aside(engines_path, engines.error()));
     engines = core::Settings{};
   }
-  // Un moteur débranché depuis (MIGraphX, OpenVINO) sort des choix : Vulkan prend sa place.
-  for (const core::EngineId id : {core::EngineId::MiGraphX, core::EngineId::OpenVino}) {
-    if (!chosen(*engines, id)) continue;
-    log->info("moteurs : {} débranché de ce lecteur, Vulkan à sa place", engine_label(id));
-    *engines = without_engine(std::move(*engines), id);
-  }
+  // Un moteur retiré (MIGraphX, OpenVINO) est écarté dès la lecture de settings.toml (core::retired_engine).
   const EngineCatalog catalog = engine_catalog(options, paths, *saved);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,

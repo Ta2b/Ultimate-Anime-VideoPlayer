@@ -19,7 +19,7 @@ struct BenchClipSpec {
   int seconds = 12;
 };
 
-// Écrit le clip (MKV, MPEG-4 partie 2, ~30 Mb/s : un décodeur que toutes les machines ont) ; remplace le
+// Écrit le clip (MKV, MPEG-2, ~30 Mb/s : un décodeur que toutes les machines ont) ; remplace le
 // fichier s'il existe. Refus : LibraryUnavailable si FFmpeg n'a pas l'encodeur ou le conteneur,
 // FileUnwritable si le fichier ne s'écrit pas.
 std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,

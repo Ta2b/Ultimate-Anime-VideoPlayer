@@ -1,6 +1,7 @@
-// Les tenseurs d'un runtime dans sa propre mémoire hôte, importée par Vulkan (shared_tensor.h,
-// host_imported_tensor) : USM d'OpenVINO et IOSurface de Core ML sur un GPU intégré, mémoire
-// épinglée de MIGraphX sous Windows.
+// Les tenseurs d'un runtime dans sa propre mémoire hôte, importée par Vulkan (host_tensor.h) : IOSurface de
+// Core ML sur un GPU intégré.
+#include "gpu/vulkan/backend/host_tensor.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -10,7 +11,6 @@
 #include <utility>
 
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
-#include "gpu/vulkan/backend/shared_tensor.h"
 
 namespace ajp::gpu::vk {
 namespace {

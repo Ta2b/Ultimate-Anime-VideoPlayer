@@ -51,6 +51,26 @@ std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesyste
 #endif
 }
 
+std::expected<DynamicLibrary, Refusal> DynamicLibrary::open_system(const char* name) {
+  const std::filesystem::path path(name);
+#ifdef _WIN32
+  HMODULE module = LoadLibraryExW(path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+  if (module == nullptr) {
+    return refuse(RefusalCode::LibraryUnavailable,
+                  std::format("{} ne se charge pas (erreur Windows {})", name, GetLastError()));
+  }
+  return DynamicLibrary(static_cast<void*>(module), path);
+#else
+  void* handle = dlopen(name, RTLD_NOW | RTLD_LOCAL);
+  if (handle == nullptr) {
+    const char* error = dlerror();
+    return refuse(RefusalCode::LibraryUnavailable, std::format("{} ne se charge pas : {}", name,
+                                                               error != nullptr ? error : "erreur inconnue"));
+  }
+  return DynamicLibrary(handle, path);
+#endif
+}
+
 DynamicLibrary::DynamicLibrary(DynamicLibrary&& other) noexcept
     : handle_(std::exchange(other.handle_, nullptr)), path_(std::move(other.path_)) {}
 

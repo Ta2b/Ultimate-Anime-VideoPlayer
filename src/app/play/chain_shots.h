@@ -12,7 +12,6 @@
 #include <string>
 
 #include "app/play/settings.h"
-#include "gpu/kernel_ops.h"
 #include "media/shot_probe.h"
 #include "media/shot_timeline.h"
 
@@ -76,10 +75,24 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
 // Le cache : à appeler à chaque tour, ne fait rien la plupart du temps.
 void tend_shots(ShotWork& work);
 
+// Statistiques de luminance d'une image (0 à 1, pondération BT.709 des canaux) : moyenne, centiles et parts
+// de noir et de clair. La pré-analyse des plans les mesure (media/shot_cutter.h).
+struct SceneStats {
+  float mean = 0.0F;
+  float p05 = 0.0F;
+  float p50 = 0.0F;
+  float p95 = 0.0F;
+  float p995 = 0.0F;    // le pic de la scène
+  float dark = 0.0F;    // part des points sous 10 % de luminance
+  float bright = 0.0F;  // part des points au-dessus de 80 %
+  float blue = 0.0F;    // moyenne de max(0, B - max(R, V)) : ciel, eau, aplats bleus saturés
+  float chroma = 0.0F;  // moyenne de max(R, V, B) - min(R, V, B)
+};
+
 // Le plan de l'image qui suit la dernière préparée, s'il est analysé : ses valeurs sur l'échelle de
 // SceneStats et son numéro (il change à chaque coupe). Cale aussi l'analyse sur la lecture (avance, sauts).
 struct ShotScene {
-  gpu::KernelOps::SceneStats stats;
+  SceneStats stats;
   render::SceneLight light;  // pour le grade en trois passes (render/grade_params.h)
   std::uint64_t serial = 0;
   bool fade = false;

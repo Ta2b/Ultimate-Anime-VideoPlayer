@@ -39,13 +39,10 @@ std::vector<EngineOffer> recommend_engines(const SystemInfo& system) {
                                  .relevant = true,
                                  .preselected = true});
   } else {
-    // MIGraphX et OpenVINO ne sont pas proposés (engine_plugged) : AMD et Intel passent par Vulkan.
+    // AMD et Intel passent par Vulkan (engines.h).
     // TensorRT seulement sur une RTX (P3.5) : ailleurs, ni case ni écran Moteurs, Vulkan seul.
     if (rtx) offers.push_back(vendor_engine(EngineId::TensorRt, Badge::NvidiaOnly, rtx));
   }
-
-  // Pas d'offre DirectML : aucun moteur DirectML n'existe dans cette version (les anciens AMD
-  // restent sur Vulkan).
 
   // Vulkan est recommandé quand aucun moteur plus rapide ne convient à ce GPU.
   bool faster_engine = false;

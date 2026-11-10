@@ -27,11 +27,6 @@ enum class Production : std::uint8_t {
 struct CacheEntry {
   std::filesystem::path destination;  // fichier final, publié par renommage
   std::string kind = "engine";        // propriétaire des dossiers : « <kind>:<nom du fichier> »
-  // SHA-256 d'une entrée publiée que son consommateur n'a pas pu charger (moteur
-  // tronqué par une coupure, désérialisation refusée) : elle est reproduite et
-  // remplacée. Si un autre processus l'a déjà remplacée, la nouvelle se reprend.
-  // Vide : toute entrée publiée se reprend.
-  std::string rejected_sha256;
 
   std::filesystem::path lock_file() const;  // « <destination>.key-lock », jamais supprimé
   // « <destination>.sha256 » : l'empreinte écrite à la publication, revérifiée à chaque reprise (P2.31).

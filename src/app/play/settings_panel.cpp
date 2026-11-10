@@ -82,7 +82,7 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
   return true;
 }
 
-void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<Input>& /*actions*/) {
+void grade_tab(PlaySettings& d) {
   // Tri de l'ADR 0012 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds,
   // qui suivent l'épisode (le curseur est leur maximum, dans un épisode très clair : A38-16), et le look : la
   // LUT de base et « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de
@@ -343,17 +343,16 @@ bool reset_page(PlaySettings& draft) {
 // L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`. Trois
 // catégories (ADR 0012) : Vidéo, Audio et lecture, Général.
 constexpr std::array<SettingsPage, 10> kPages{{
-    {Page::PostProcessing, "Video", "Post-processing", false},  // niveau, agrandissement, interpolation
-    {Page::Colors, "Video", "Colors", false},    // sortie HDR ou SDR (elle suit le système), grade anime
-    {Page::Display, "Video", "Display", false},  // filtre final, débandage ; OLED en avancé
-    {Page::Sound, "Audio and playback", "Sound", false},
-    {Page::Playback, "Audio and playback", "Playback",
-     false},                                               // langues préférées, sous-titres, épisode suivant
-    {Page::Application, "General", "Application", false},  // langue, mises à jour, lecteur par défaut
-    {Page::Engines, "General", "Engines", false},          // le moteur et l'état de ses modules
-    {Page::Export, "General", "Export", false},
-    {Page::Statistics, "General", "Statistics", false},
-    {Page::About, "General", "About", false},  // la machine, l'assistant, tout réinitialiser
+    {Page::PostProcessing, "Video", "Post-processing"},  // niveau, agrandissement, interpolation
+    {Page::Colors, "Video", "Colors"},    // sortie HDR ou SDR (elle suit le système), grade anime
+    {Page::Display, "Video", "Display"},  // filtre final, débandage ; OLED en avancé
+    {Page::Sound, "Audio and playback", "Sound"},
+    {Page::Playback, "Audio and playback", "Playback"},  // langues préférées, sous-titres, épisode suivant
+    {Page::Application, "General", "Application"},       // langue, mises à jour, lecteur par défaut
+    {Page::Engines, "General", "Engines"},               // le moteur et l'état de ses modules
+    {Page::Export, "General", "Export"},
+    {Page::Statistics, "General", "Statistics"},
+    {Page::About, "General", "About"},  // la machine, l'assistant, tout réinitialiser
 }};
 
 std::span<const SettingsPage> settings_pages() {
@@ -366,12 +365,11 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
 bool SettingsPanel::busy() const {
-  return open_ && (bench_running(bench_) || prepare_.pending != nullptr || (machine_ && machine_->running()));
+  return open_ && (prepare_.pending != nullptr || (machine_ && machine_->running()));
 }
 
 SettingsPanel::~SettingsPanel() {
   if (prepare_.stop) prepare_.stop->request_stop();  // la tâche dépend du lecteur qui ouvre ce panneau
-  bench_.stop();
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -379,8 +377,7 @@ namespace {
 
 // L'arbre des pages, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les
 // pages en retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
-void draw_tree(int& current, int shown_page, std::array<bool, 8>& opened, bool advanced, float scale) {
-  const auto visible = [&](std::size_t i) { return advanced || !kPages[i].advanced; };
+void draw_tree(int& current, int shown_page, std::array<bool, 8>& opened, float scale) {
   ImDrawList* draw = ImGui::GetWindowDrawList();
   const ImGuiStyle& style = ImGui::GetStyle();
   const float row_height = ImGui::GetFontSize() + 12.0F * scale;
@@ -400,7 +397,6 @@ void draw_tree(int& current, int shown_page, std::array<bool, 8>& opened, bool a
   bool category_open = false;
   for (std::size_t i = 0; i < kPages.size(); ++i) {
     const SettingsPage& page = kPages[i];
-    if (!visible(i)) continue;
     if (std::string_view(page.category) != category) {
       category = page.category;
       ++category_index;
@@ -478,7 +474,7 @@ void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices
     }
     case Page::Colors: {
       hdr_tab(draft_, choices);
-      grade_tab(draft_, choices, actions);
+      grade_tab(draft_);
       break;
     }
     case Page::Display: {
@@ -611,9 +607,6 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
                          2.0F * ImGui::GetStyle().ItemSpacing.y;
     const float tree_width = std::min(200.0F * scale, width * 0.3F);
-    if (!advanced_ && kPages[static_cast<std::size_t>(page_)].advanced) page_ = 0;
-    // Une page masquée : un réglage avancé sans la case « Réglages avancés ».
-    const auto visible = [&](std::size_t i) { return advanced_ || !kPages[i].advanced; };
     // Barre de défilement fine, collée au bord extérieur des deux zones.
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0F * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0F * scale);
@@ -624,14 +617,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     // La molette sur l'arbre passe d'une page à la suivante ou à la précédente.
     if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F) {
       const int step = io.MouseWheel < 0.0F ? 1 : -1;
-      for (int next = page_ + step; next >= 0 && next < static_cast<int>(kPages.size()); next += step) {
-        if (visible(static_cast<std::size_t>(next))) {
-          page_ = next;
-          break;
-        }
-      }
+      page_ = std::clamp(page_ + step, 0, static_cast<int>(kPages.size()) - 1);
     }
-    draw_tree(page_, shown_page_, category_open_, advanced_, scale);
+    draw_tree(page_, shown_page_, category_open_, scale);
     shown_page_ = page_;
     ImGui::EndChild();
     ImGui::SameLine();
