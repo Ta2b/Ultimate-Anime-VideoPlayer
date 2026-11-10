@@ -22,8 +22,7 @@ src/app/play/placebo_screen.cpp	ajp::app::play::PlaceboScreen::show	39	156
 src/app/play/player.cpp	ajp::app::play::play	131	482
 src/app/play/player_run.cpp	ajp::app::play::run_chain	200	653
 src/app/play/ring_stage.cpp	ajp::app::play::RingStage::emit	30	100
-src/app/play/session.cpp	ajp::app::play::Session::osd_lines	34	48
-src/app/play/session.cpp	ajp::app::play::Session::tick	48	98
+src/app/play/session.cpp	ajp::app::play::Session::tick	43	95
 src/app/play/settings.cpp	ajp::app::play::change_between	34	47
 src/app/play/settings_bench_results.cpp	ajp::app::play::bench_results_section	26	92
 src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	90	224

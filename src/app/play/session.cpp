@@ -19,8 +19,13 @@ namespace {
 constexpr std::int64_t kEndGraceUs = 1'000'000;
 // Un seek dont une boîte a refusé un message est rejoué après ce délai.
 constexpr std::int64_t kSeekRetryUs = 50'000;
-// Des images attendent l'horloge audio depuis 1,5 s (Session::audio_stall_grace_us_) : l'horloge hôte prend
-// la main. Après une première perte, le délai est plus court : la piste est probablement illisible.
+// Un seek que la source a refusé sans retrouver de position (partage muet, MED-06) : rejoué après ce délai,
+// doublé à chaque échec jusqu'à kSeekLostMaxUs, tant que l'époque n'a pas d'image (A13-08).
+constexpr std::int64_t kSeekLostRetryUs = 2'000'000;
+constexpr std::int64_t kSeekLostMaxUs = 16'000'000;
+// Des images attendent l'horloge audio depuis 1,5 s (Session::audio_stall_grace_us_) : l'horloge
+// hôte prend la main. Après une première perte, le délai est plus court : la piste est
+// probablement illisible.
 constexpr std::int64_t kAudioStallRepeatUs = 400'000;
 constexpr std::size_t kMaxRefusals = 3;
 // L'OSD se recompose quatre fois par seconde, pas à chaque vsync.
@@ -29,12 +34,6 @@ constexpr std::int64_t kOsdPeriodUs = 250'000;
 constexpr std::int64_t kCadenceSlackUs = 500;
 // À l'amorce, la première image attend ses sous-titres au plus ce temps.
 constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
-// Une présentation qui attend plus d'un quart de période a trouvé la file de l'écran pleine ; la
-// part de ces attentes se lisse sur une dizaine de présentations, et au-delà de la moitié la file
-// est tenue pour pleine.
-constexpr double kQueueFillSmoothing = 0.1;
-// Période d'écran supposée tant qu'aucune présentation rapprochée ne la borne : 60 Hz.
-constexpr std::int64_t kAssumedPeriodUs = 16'667;
 constexpr std::int64_t kAssumedFramePeriodUs = 41'667;  // une image de la source à 24 i/s, faute de mieux
 
 template <class... F>
@@ -69,15 +68,11 @@ void Session::handle(MainInbox::Message&& message) {
 
 void Session::command(const Command& command) {
   std::visit(
-      Overloaded{[this](const cmd::Play&) {
-                   if (!paused_) return;
-                   paused_ = false;
-                   if (!prerolling_ && !start_pts_ && current_) stages_.play(epoch_, current_->pts_us);
-                 },
+      Overloaded{[this](const cmd::Play&) { resume(); },
                  [this](const cmd::Pause&) {
                    if (paused_) return;
                    paused_ = true;
-                   stages_.pause();
+                   send_pause();
                  },
                  [this](const cmd::TogglePause&) {
                    if (paused_) {
@@ -96,25 +91,7 @@ void Session::command(const Command& command) {
                    }
                    seek_to(base + seek.delta_us, seek.exact);
                  },
-                 [this](const cmd::StepFrame& step) {
-                   // Image par image : en pause, un seek exact d'une image de la source. Le seek
-                   // part de la position visée, donc des pressions rapprochées avancent d'autant.
-                   // P3.42 : vers l'avant, l'image suivante déjà dans la file, sans seek.
-                   if (!paused_) this->command(cmd::Pause{});
-                   if (step.direction > 0 && step_from_queue()) return;
-                   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
-                   if (period <= 0) period = kAssumedFramePeriodUs;
-                   // P3.78 : la cible est le milieu de l'image voisine, pas son début : des pts arrondis à la
-                   // microseconde (23,976 i/s) ne font plus tomber le seek exact deux images plus loin. Une
-                   // cible en attente est déjà un milieu.
-                   std::int64_t base = 0;
-                   if (pending_seek_us_) {
-                     base = *pending_seek_us_ - period / 2;
-                   } else if (current_ && current_->pts_us != kNoPts) {
-                     base = current_->pts_us;
-                   }
-                   seek_to(std::max<std::int64_t>(base + step.direction * period + period / 2, 0), true);
-                 },
+                 [this](const cmd::StepFrame& step) { step_frame(step.direction); },
                  [this](const cmd::Quit&) {
                    finished_ = true;
                    quit_ = true;
@@ -138,6 +115,46 @@ void Session::command(const Command& command) {
                  },
                  [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
       command);
+}
+
+void Session::resume() {
+  if (!paused_) return;
+  paused_ = false;
+  // A13-07 : des pas pris dans la file n'ont pas déplacé l'audio, resté à la pause. La lecture repart par un
+  // seek exact sur l'image montrée, comme après un pas en arrière.
+  if (std::exchange(stepped_in_queue_, false) && !prerolling_ && current_ && current_->pts_us != kNoPts) {
+    seek_to(current_->pts_us, true);
+    return;
+  }
+  if (!prerolling_ && !start_pts_ && current_) send_play(epoch_, current_->pts_us);
+}
+
+// Image par image : en pause, un seek exact d'une image de la source. Le seek part de la position visée, donc
+// des pressions rapprochées avancent d'autant. P3.42 : vers l'avant, l'image suivante déjà dans la file, sans
+// seek.
+void Session::step_frame(int direction) {
+  if (!paused_) command(cmd::Pause{});
+  if (direction > 0 && step_from_queue()) return;
+  std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
+  if (period <= 0) period = kAssumedFramePeriodUs;
+  // P3.78 : la cible est le milieu de l'image voisine, pas son début : des pts arrondis à la microseconde
+  // (23,976 i/s) ne font plus tomber le seek exact deux images plus loin. Une cible en attente est déjà un
+  // milieu.
+  std::int64_t base = 0;
+  if (pending_seek_us_) {
+    base = *pending_seek_us_ - period / 2;
+  } else if (current_ && current_->pts_us != kNoPts) {
+    base = current_->pts_us;
+    // A13-05 : le pas d'avant est retombé dans l'image montrée (elle dure plus que la période moyenne, en
+    // VFR) ; le suivant part de sa cible, sans quoi rien ne bougerait jamais.
+    if (direction > 0 && last_step_ && last_step_->from_pts_us == base)
+      base = std::max(base, last_step_->target_us - period / 2);
+  }
+  const std::int64_t target = std::max<std::int64_t>(base + direction * period + period / 2, 0);
+  const std::optional<std::int64_t> from =
+      current_ ? std::optional(current_->pts_us) : std::optional<std::int64_t>();
+  seek_to(target, true);
+  if (direction > 0 && from) last_step_ = StepMark{*from, target};
 }
 
 void Session::set_subtitle_delay(std::int64_t delay_us) {
@@ -189,7 +206,15 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   const bool retrying = retry_seek_.has_value();
   retry_seek_.reset();
   clock_stalled_since_us_.reset();
-  stages_.pause();
+  // Un pas garde sa marque jusqu'à sa première image (A13-05) ; tout autre seek l'oublie.
+  last_step_.reset();
+  stepped_in_queue_ = false;
+  if (seek_lost_at_us_) {
+    seek_lost_at_us_.reset();
+  } else {
+    seek_lost_wait_us_ = kSeekLostRetryUs;
+  }
+  send_pause();
   screen_.new_scene();
   ++epoch_;
   read_lost_.reset();  // un seek relit le fichier (la source repart, media/source.h)
@@ -242,7 +267,8 @@ bool Session::step_from_queue() {
   if (!next) return false;
   retire(shown);
   current_ = next;
-  stepped_ = true;  // montrée au prochain tour
+  stepped_ = true;           // montrée au prochain tour
+  stepped_in_queue_ = true;  // l'audio est resté à la pause : la reprise le recale (A13-07)
   return true;
 }
 
@@ -255,6 +281,7 @@ void Session::on_frame(const RingFrame& frame) {
   // Une image reçue tient son slot jusqu'à être écrite : jamais plus de kMaxRingSlots en attente.
   if (config_.latency != nullptr && frame.submitted_us > 0 && unmeasured_.size() < kMaxRingSlots)
     unmeasured_.push_back(frame);
+  seek_lost_at_us_.reset();  // la source a retrouvé une position : rien à rejouer
   screen_.watch(frame);
   queue_.push(frame);
   newest_ = frame;
@@ -286,8 +313,46 @@ void Session::on_refusal(const StageRefusal& refusal) {
     notice_ = refusal.refusal;
   // La source rend une fin de flux après ce refus (media/source.h) : retenu pour on_stream_ended.
   if (!refusal.fatal && refusal.refusal.recoverable && refusal.stage == "source" &&
-      refusal.refusal.code == RefusalCode::DecodeFailed) {
+      (refusal.refusal.code == RefusalCode::DecodeFailed || refusal.refusal.code == RefusalCode::IoFailed)) {
     read_lost_ = Refusal{refusal.refusal.code, std::format("{} : {}", refusal.stage, refusal.refusal.detail)};
+  }
+  // La source n'a pas retrouvé de position après un seek refusé : rien ne viendra avant un autre seek. Il est
+  // rejoué au tour où son délai passe (A13-08).
+  if (refusal.stage == "source" && refusal.refusal.code == RefusalCode::SeekFailed && prerolling_ &&
+      pending_seek_us_ && queue_.first_of(epoch_) == nullptr)
+    seek_lost_at_us_ = last_tick_us_ + seek_lost_wait_us_;
+}
+
+void Session::send_play(std::uint32_t epoch, std::int64_t media_us) {
+  clock_retry_ =
+      stages_.play(epoch, media_us) ? std::nullopt : std::optional(ClockRetry{true, epoch, media_us});
+}
+
+void Session::send_pause() {
+  clock_retry_ = stages_.pause() ? std::nullopt : std::optional(ClockRetry{false, 0, 0});
+}
+
+void Session::retry_pending(std::int64_t host_now) {
+  if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);
+  if (seek_lost_at_us_ && host_now >= *seek_lost_at_us_ && prerolling_ && pending_seek_us_ &&
+      queue_.first_of(epoch_) == nullptr) {
+    seek_lost_wait_us_ = std::min(seek_lost_wait_us_ * 2, kSeekLostMaxUs);
+    seek_to(*pending_seek_us_, true);  // garde le délai doublé : seek_lost_at_us_ est encore posé
+  }
+  retry_clock();
+}
+
+// A13-06 : un Play ou une Pause refusés (boîte audio pleine) sont redits à chaque tour, tant qu'ils valent
+// encore. Perdue, une pause laissait courir l'horloge audio sous une barre « en pause ».
+void Session::retry_clock() {
+  if (!clock_retry_) return;
+  const ClockRetry retry = *clock_retry_;
+  if (retry.play && (paused_ || retry.epoch != epoch_)) {
+    clock_retry_.reset();
+  } else if (retry.play) {
+    send_play(retry.epoch, retry.media_us);
+  } else {
+    send_pause();
   }
 }
 
@@ -490,7 +555,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   if (auto lost = screen_.device_lost()) return std::unexpected(std::move(*lost));  // relance, pas de gel
   fresh_ = std::exchange(stepped_, false);
   last_tick_us_ = host_now;
-  if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);
+  retry_pending(host_now);
   measure_latency(host_now);
   retire_written();
   follow_display();
@@ -627,76 +692,6 @@ std::int64_t Session::pacing_period_us() const {
   return nominal > 0 ? std::max(nominal, display_period()) : 0;
 }
 
-// Mesurée faute de mieux : la présentation est à la demande, chaque intervalle est donc un
-// multiple de la période (six à 24 i/s sur 144 Hz, des centaines avant la première image) et le
-// plus court des derniers la borne. La médiane rendait la cadence du contenu : l'image suivante
-// devenait due une période d'image trop tôt et les images partaient par paires.
-std::int64_t Session::display_period() const {
-  if (config_.display_period_us > 0) return config_.display_period_us;
-  const std::int64_t shortest = stats_.present_interval.percentile(0);
-  return shortest > 0 ? std::min(shortest, kAssumedPeriodUs) : kAssumedPeriodUs;
-}
-
-// Imposé par le réglage, ou estimé : la file de l'écran a de la place, l'image part après son
-// rendu et paraît au vsync suivant (une demi-période plus tard en moyenne) ; file pleine, les
-// depth − 1 images déjà en file passent d'abord.
-std::int64_t Session::display_delay_us(std::int64_t period) const {
-  if (config_.video_latency_us > 0) return config_.video_latency_us;
-  // P3.45 : en fenêtré, le compositeur garde l'image une trame de plus avant l'écran.
-  const std::int64_t compositor = composited_ ? period : 0;
-  if (queue_fill_ > 0.5)
-    return std::int64_t{std::max(config_.swapchain_depth - 1, 0)} * period + period / 2 + compositor;
-  return stats_.render.median() + period / 2 + compositor;
-}
-
-void Session::note_queue_wait(std::int64_t waited_us, std::int64_t period) {
-  if (period <= 0) return;
-  const double waited = waited_us > period / 4 ? 1.0 : 0.0;
-  queue_fill_ += kQueueFillSmoothing * (waited - queue_fill_);
-}
-
-void Session::set_display(std::int64_t period_us, double hz) {
-  // La fréquence mesurée par le retour de présentation (6.8) : 164,78 Hz et non les 165 annoncés, l'écart
-  // de 0,13 % dépassant la borne de la synchro (pacing.h). Même mode à 2 % près ; à 0,002 Hz près, la
-  // fréquence d'avant reste (pas de vitesse redemandée à chaque relevé).
-  if (const auto grid = screen_.vblank_grid(); grid && grid->period_us > 0.0 && hz > 0.0) {
-    const double measured = 1e6 / grid->period_us;
-    if (std::abs(measured - hz) < hz * 0.02) {
-      const bool same = config_.display_hz > 0.0 && std::abs(measured - config_.display_hz) < 0.002;
-      hz = same ? config_.display_hz : measured;
-      period_us = same ? config_.display_period_us : std::llround(grid->period_us);
-    }
-  }
-  if (period_us == config_.display_period_us && hz == config_.display_hz) return;
-  // Un autre mode ou un autre écran (pas le même à la mesure près) : la phase repart.
-  if (config_.display_hz <= 0.0 || std::abs(hz - config_.display_hz) > config_.display_hz * 0.001)
-    phase_trim_.reset();
-  config_.display_period_us = period_us;
-  config_.display_hz = hz;
-  follow_display();
-}
-
-void Session::follow_display() {
-  double speed = 1.0;
-  std::optional<double> lock;
-  if (config_.display_sync && config_.extra != nullptr) {
-    const double hz = config_.display_hz > 0.0        ? config_.display_hz
-                      : config_.display_period_us > 0 ? 1e6 / static_cast<double>(config_.display_period_us)
-                                                      : 0.0;
-    lock = core::vsync_lock(hz, config_.extra->output_fps());
-  }
-  // Calé sur la fréquence : la phase rattrape ce que la mesure de la fréquence laisse (A12-06). Sans
-  // calage, la correction de phase repart de zéro.
-  speed_locked_ = lock.has_value();
-  if (lock) speed = *lock + phase_trim_.trim();
-  if (!lock) phase_trim_.reset();
-  if (speed == speed_) return;
-  if (stages_.set_speed(speed)) {  // boîte audio pleine : redemandé au tour suivant
-    speed_ = speed;
-    osd_at_us_.reset();
-  }
-}
-
 void Session::pace(const RingFrame& frame, std::int64_t visible_us) {
   // Le retard ne se lit que pendant la lecture : en pause ou avant le départ, l'horloge est figée.
   const ClockSnapshot now = clock_.snapshot();
@@ -731,70 +726,6 @@ void Session::end() {
   current_.reset();
   subtitles_.clear();
   stages_.quit();
-}
-
-std::vector<std::string> Session::osd_lines() const {
-  const StatsSettings& show = show_stats_;
-  std::vector<std::string> lines;
-  if (show.all || show.chain) lines.insert(lines.end(), config_.header.begin(), config_.header.end());
-  if (show.all || show.tracks) lines.insert(lines.end(), config_.tracks.begin(), config_.tracks.end());
-  if ((show.all || show.output) && !config_.output.empty()) lines.push_back(config_.output);
-  if (show.all || show.frames) {
-    const std::uint64_t skipped = config_.extra != nullptr ? config_.extra->skipped() : 0;
-    lines.push_back(i18n::tr_format(
-        "frame {} (σ {}) · render {} · skipped {}{}", format_ms(stats_.frame_interval.median()),
-        format_ms(static_cast<std::int64_t>(stats_.frame_interval.stddev())),
-        format_ms(stats_.render.median()), stats_.dropped,
-        skipped > 0 ? i18n::tr_format(" (+ {} before compute)", skipped) : std::string()));
-    const std::int64_t period = pacing_period_us();
-    std::string synced;
-    if (speed_ != 1.0) {
-      synced = i18n::tr_format(" · locked to the display {:+.3f} %", (speed_ - 1.0) * 100.0);
-      std::ranges::replace(synced, '.', ',');
-    }
-    lines.push_back(i18n::tr_format(
-        "smoothness {}{} fps · missed {}{} · p95 delay {}{}", format_fps(stats_.shown_fps),
-        period > 0 && !(config_.extra != nullptr && config_.extra->uncapped())
-            ? std::format(" / {}", format_fps(1e6 / static_cast<double>(period)))
-            : std::string(),
-        stats_.missing,
-        stats_.uninterpolated > 0 ? i18n::tr_format(" (+ {} cuts and held drawings)", stats_.uninterpolated)
-                                  : std::string(),
-        format_ms(stats_.lag.percentile(95)), synced));
-  }
-  if ((show.all || show.rife) && config_.extra != nullptr) {
-    if (auto rife = config_.extra->rife()) lines.push_back(std::move(*rife));
-  }
-  if ((show.all || show.memory) && config_.extra != nullptr) {
-    if (auto memory = config_.extra->memory()) lines.push_back(std::move(*memory));
-  }
-  if ((show.all || show.memory) && config_.extra != nullptr) {
-    if (auto gpu = config_.extra->gpu()) lines.push_back(std::move(*gpu));
-  }
-  if (show.all || show.position) {
-    const std::int64_t position = current_ ? current_->pts_us : kNoPts;
-    lines.push_back(std::format("{} / {}{}", format_position(position), format_position(config_.duration_us),
-                                paused_ ? i18n::tr(" · paused") : ""));
-  }
-  // Les refus (nom d'étage, code interne, détail en français) sont pour les statistiques et le journal :
-  // incrustés sur l'image, un refus passager y restait jusqu'à la fin de l'épisode.
-  if (show.all) lines.insert(lines.end(), refusals_.begin(), refusals_.end());
-  return lines;
-}
-
-ControlsView Session::view() const {
-  std::int64_t position = kNoPts;
-  if (pending_seek_us_) {
-    position = *pending_seek_us_;
-  } else if (current_) {
-    position = current_->pts_us;
-  }
-  return ControlsView{.position_us = position,
-                      .duration_us = config_.duration_us,
-                      .paused = paused_,
-                      .fullscreen = screen_.fullscreen(),
-                      .stats = show_stats_.all,
-                      .chapters = config_.chapters};
 }
 
 }  // namespace ajp::app::play

@@ -31,7 +31,7 @@ std::expected<void, Refusal> UpscaleStage::smooth_decide(const DecodedFrame& fra
   if (!scores) return std::unexpected(std::move(scores.error()));
   ahead_taken_ = std::pair{frame.id, *scores};
   // b doit être un dessin nouveau, sans coupe : une tenue plus longue ou une coupe gardent le rythme source.
-  if (kernels::is_scene_cut(scores->scene_score) || kernels::is_held(scores->worst_block)) return {};
+  if (cut_measured(*scores, frame.pts_us, next()->pts_us) || kernels::is_held(scores->worst_block)) return {};
   smooth_first_ = true;
   smooth_b_id_ = *ahead_.id;
   ++smoothed_holds_;
