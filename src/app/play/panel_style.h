@@ -29,6 +29,16 @@ inline bool& advanced() {
   return state().advanced;
 }
 
+// Un texte à la ligne, avec la typographie française (A43-07) : toute phrase qui s'écrit passe par ici, ou
+// par note() et tip(), jamais par ImGui::TextWrapped directement.
+inline void wrapped(const std::string& text) {
+  const std::string shown = french_spaces(text);
+  ImGui::TextWrapped("%s", shown.c_str());
+}
+inline void wrapped(const char* text) {
+  wrapped(std::string(text));
+}
+
 inline void note(const char* text) {
   const std::string shown = french_spaces(text);
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
