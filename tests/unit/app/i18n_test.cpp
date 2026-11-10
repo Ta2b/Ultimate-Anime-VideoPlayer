@@ -156,6 +156,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "default_player.cpp",
                                         "player.cpp",
                                         "maxine_install.cpp",
+                                        "relaunch_target.cpp",
+                                        "sleep_watch.cpp",
                                         "system_peak.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";

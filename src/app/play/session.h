@@ -207,6 +207,8 @@ class Session {
   const FrameStats& stats() const { return stats_; }
   const std::vector<std::string>& refusals() const { return refusals_; }
   std::vector<std::string> osd_lines() const;
+  // Les lignes de l'OSD recomposées au plus toutes les kOsdPeriodUs : vrai si elles ont changé.
+  bool refresh_osd(std::int64_t host_now);
   // Ce que la barre de lecture montre : la position (la cible d'un seek en cours, sinon l'image à
   // l'écran), la durée, la pause, le plein écran, les statistiques.
   ControlsView view() const;

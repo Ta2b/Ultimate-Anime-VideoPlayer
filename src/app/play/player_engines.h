@@ -25,6 +25,7 @@
 #include "app/play/player.h"
 #include "app/play/settings.h"
 #include "app/play/span_auto.h"
+#include "app/play/stage_fallback.h"
 #include "app/play/ui.h"
 #include "core/clock.h"
 #include "core/settings.h"
@@ -100,6 +101,15 @@ struct Player {
   // P3.30 : les réouvertures pour une source qui change de taille, de cette vidéo seulement (survivent aux
   // réouvertures de sa chaîne, pas à la vidéo suivante).
   std::deque<std::int64_t> resizes;
+  // Les étages refusés ou annulés de la séance (stage_fallback.h) : ceux du lecteur, qui survivent aux vidéos
+  // suivantes. Nul : aucun repli, un refus arrête la lecture.
+  StageMemory* stages = nullptr;
+  // Une vidéo glissée sur la fenêtre pendant la construction d'un moteur (A08-08) : la préparation s'arrête
+  // et la lecture passe à elle.
+  std::optional<std::filesystem::path> dropped_video;
+  // Où en était la dernière ouverture de la chaîne quand elle s'est fermée : la relance après une perte du
+  // GPU reprend là (A31-02).
+  std::int64_t stopped_at_us = 0;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.
@@ -115,6 +125,9 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label);
 // P3.10 : la clé du refus d'une construction annulée par « Annuler et regarder » : la vidéo se rouvre sans
 // agrandissement ni interpolation.
 inline constexpr std::string_view kWatchNowKey = "engine.watch-now";
+// A08-08 : la clé du refus d'une préparation arrêtée par une vidéo glissée (Player::dropped_video).
+inline constexpr std::string_view kDroppedVideoKey = "engine.dropped-video";
+Refusal dropped_video_refusal();
 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
@@ -155,11 +168,16 @@ struct DrbaFusedUse {
 // l'utilisateur ferme la fenêtre. Refus : FieldMissing (graphe absent), et ceux de la dérivation
 // et du backend. align : le multiple des plans remplis du graphe trouvé (64, ou 128 au demi-flot).
 // motion : demandé, la variante « mouvement » (flot et masque, warp après SPAN) : le fusionné la sait, le
-// graphe entier la dérive (drba_motion_model) ; en sortie, vrai si le moteur rendu la sert.
+// graphe entier la dérive (drba_motion_model) ; en sortie, vrai si le moteur rendu la sert. image_elsewhere :
+// l'image du graphe se jouerait à une autre taille que work (variante mouvement estimée plus bas) : sans
+// variante dérivable, rien n'est construit à cette taille, le refus de clé kDrbaImageElsewhereKey le dit
+// (A08-06). Une construction annulée (« Annuler et regarder ») est rendue telle quelle, sans autre essai.
+inline constexpr std::string_view kDrbaImageElsewhereKey = "drba.image-elsewhere";
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier = PrecisionTier::Balanced, DrbaFusedUse* fused = nullptr, bool* motion = nullptr);
+    PrecisionTier tier = PrecisionTier::Balanced, DrbaFusedUse* fused = nullptr, bool* motion = nullptr,
+    bool image_elsewhere = false);
 
 // L'interpolation d'Apple pour des images de travail work_width × work_height, chargée comme RIFE
 // image (plans v2, remplis au multiple de 64) : son modèle (apple_model.h), essayé à la

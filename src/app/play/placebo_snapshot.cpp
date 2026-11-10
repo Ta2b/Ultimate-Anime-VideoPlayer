@@ -83,4 +83,22 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
   return {};
 }
 
+void PlaceboScreen::Impl::take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
+                                        const ImDrawData* drawn_ui) {
+  if (!snapshot) return;
+  std::filesystem::path path = *snapshot;
+  if (snapshot_count > 1) {
+    // « nom.pq.ppm » → « nom-001.pq.ppm », « nom.ppm » → « nom-001.ppm ».
+    const std::string file = core::to_utf8(path.filename());
+    const std::size_t dot = file.ends_with(".pq.ppm") ? file.size() - 7 : file.rfind('.');
+    path.replace_filename(
+        core::path_from_utf8(std::format("{}-{:03}{}", file.substr(0, dot), snapshot_index + 1,
+                                         dot == std::string::npos ? std::string() : file.substr(dot))));
+  }
+  if (++snapshot_index >= snapshot_count) snapshot.reset();
+  if (auto saved = save_snapshot(image, target, out, drawn_ui, path); !saved) {
+    channel->warn("instantané {} : {}", core::to_utf8(path.filename()), saved.error().detail);
+  }
+}
+
 }  // namespace ajp::app::play
