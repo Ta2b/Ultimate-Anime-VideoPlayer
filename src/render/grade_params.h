@@ -56,8 +56,9 @@ struct SceneLight {
 struct GradeSettings {
   bool grade = true;              // grade activé
   bool grade_native_hdr = false;  // grade aussi une source déjà HDR
-  // Route native : le blanc de la source à 203 nits et les aplats à la moitié du pic (le défaut) ; faux : le
-  // blanc au blanc papier (paper_white). La clé de play.toml garde son nom d'avant (truehdr_look).
+  // Route native (le défaut) : le blanc de la source entre dans le grade à 203 nits ; à l'écran, la dernière
+  // passe pose le blanc d'une surface à la moitié du pic et les éclats au-dessus (render/output_tune.h).
+  // Faux : le blanc au blanc papier (paper_white). La clé de play.toml garde son nom d'avant (truehdr_look).
   bool truehdr_look = true;
   double paper_white = 203.0;  // nits, blanc papier
   double shadows = 0.15;
@@ -170,8 +171,8 @@ std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display);
 
 // Le grade PQ d'une source SDR, tourné vers une sortie SDR (méthode « HDR anime ») : sdr_tm, les bornes de la
 // courbe du plan (tm_white : les surfaces relevées ; tm_top : la marge des éclats que la méthode donne au
-// plan, selon sa luminosité moyenne fs_apl), sans vrai noir (ses seuils sont ceux d'un écran HDR) ni pile de
-// LUT (étalonnée pour l'écran HDR et KWin).
+// plan, selon sa luminosité moyenne fs_apl), sans pile de LUT (étalonnée pour l'écran HDR). Le vrai noir
+// reste : ses seuils sont mesurés sur la sortie jouée.
 void sdr_tonemap(GradeParams& p);
 
 std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& settings,

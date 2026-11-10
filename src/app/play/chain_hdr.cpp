@@ -346,7 +346,8 @@ void refresh_black(Chain& to) {
   to.black_dirty = false;
   to.black_at_us = host_now_us();
   const PlaySettings& s = to.running;
-  // Le grade s'applique sur toutes les routes : HDR et SDR (en SDR comme en PQ).
+  // Le vrai noir s'applique sur les deux sorties du grade (A41-07) : en HDR10, et en SDR où ses seuils
+  // sont mesurés sur l'image que la dernière passe ramène au SDR (render::sdr_tonemap les garde).
   const bool wanted = black_wanted(s, to.display) && s.grade;
   const std::optional<render::BlackThresholds> before = std::exchange(to.black, std::nullopt);
   if (!wanted) {
@@ -364,7 +365,7 @@ void refresh_black(Chain& to) {
   auto nits = to.screen.grade_ramp(levels);
   if (!nits) {
     log_channel("app")->warn("vrai noir : {}", nits.error().detail);
-    to.ui.set_black_status("Vrai noir : mesure impossible (voir le journal).");
+    to.ui.set_black_status(i18n::tr("True black: cannot measure (see the log)."));
     return;
   }
   to.black = render::black_thresholds(*nits, s.oled_black_steps);
