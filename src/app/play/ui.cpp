@@ -20,6 +20,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_video.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #if AJP_WITH_FONTCONFIG
 #include <fontconfig/fontconfig.h>
 #endif
@@ -388,6 +389,7 @@ void PlayerUi::begin_frame(std::int64_t now_us) {
                                     : 1.0F / 60.0F;
   last_frame_us_ = now_us;
   ImGui::NewFrame();
+  if (std::exchange(close_popups_, false)) ImGui::ClosePopupToLevel(0, true);
 }
 
 void PlayerUi::follow_text_input() {
@@ -399,6 +401,38 @@ void PlayerUi::follow_text_input() {
   } else {
     SDL_StopTextInput(window_);
   }
+}
+
+namespace {
+
+// Échap appuyée alors qu'une liste ou un menu d'ImGui est ouvert.
+bool escapes_popup(const SDL_Event& event) {
+  return event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE &&
+         ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+}
+
+}  // namespace
+
+bool PlayerUi::handle_key(const SDL_Event& event) {
+  ImGuiIO& io = ImGui::GetIO();
+  // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
+  // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
+  const SDL_Keymod mod = event.key.mod;
+  io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
+  io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
+  io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
+  io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
+  // A24-14 : Échap sur une liste ouverte ne ferme que la liste. Avant, la touche partait au lecteur, qui
+  // fermait tout le panneau et jetait les réglages en attente d'« Appliquer ».
+  if (escapes_popup(event)) {
+    close_popups_ = input_pending_ = true;
+    return true;
+  }
+  if (!text_input_) return false;
+  if (const ImGuiKey key = imgui_key(event.key.key); key != ImGuiKey_None)
+    io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
+  input_pending_ = true;
+  return true;
 }
 
 bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<Input>& actions) {
@@ -460,20 +494,8 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
       input_pending_ = true;
       return true;
     case SDL_EVENT_KEY_DOWN:
-    case SDL_EVENT_KEY_UP: {
-      // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
-      // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
-      const SDL_Keymod mod = event.key.mod;
-      io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
-      io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
-      io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
-      io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
-      if (!text_input_) return false;
-      if (const ImGuiKey key = imgui_key(event.key.key); key != ImGuiKey_None)
-        io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
-      input_pending_ = true;
-      return true;
-    }
+    case SDL_EVENT_KEY_UP:
+      return handle_key(event);
     default:
       return false;
   }
