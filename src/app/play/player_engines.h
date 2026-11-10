@@ -166,6 +166,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife
 struct DrbaFusedUse {
   bool used = false;
   std::string declined;
+  std::optional<RefusalCode> refused;  // le fusionné a été essayé et refusé : le code de ce refus (A03-21)
 };
 // DistilDRBA pour des images de travail work_width × work_height : son graphe, trouvé dans le
 // premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si
