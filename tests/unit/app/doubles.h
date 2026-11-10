@@ -35,6 +35,7 @@ struct FakeStages final : Stages {
   std::vector<double> speeds;  // vitesses acceptées, dans l'ordre
   bool refuse_speed = false;   // boîte audio pleine : set_speed refuse
   int refuse_flushes = 0;      // les n prochains Flush sont refusés (boîte pleine), le Seek passe
+  int refuse_clock = 0;        // les n prochains Play ou Pause sont refusés (boîte audio pleine)
   bool quit_called = false;
 
   bool flush(std::uint32_t epoch) override;
