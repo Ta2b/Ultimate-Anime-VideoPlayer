@@ -104,6 +104,15 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
   }
 }
 
+// Entrée sans rien de choisi au clavier vaut « Suivant » (A25-14) ; un choix en surbrillance ou une liste
+// ouverte la gardent pour eux. Pas sur Prêt : la calibration ne part pas d'une touche tapée trop vite.
+bool enter_goes_next() {
+  const ImGuiIO& io = ImGui::GetIO();
+  return (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0 && !io.NavVisible &&
+         !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) &&
+         (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false));
+}
+
 }  // namespace
 
 void draw_wizard(FirstRunView& view, float scale) {
@@ -123,7 +132,8 @@ void draw_wizard(FirstRunView& view, float scale) {
                        {-1.0F, 6.0F * scale}, "");
     ImGui::PopStyleColor();
     const float footer = ImGui::GetFrameHeight() * 1.6F + ImGui::GetStyle().ItemSpacing.y * 3.0F;
-    ImGui::BeginChild("##ecran", {0.0F, -footer});
+    // NavFlattened : au clavier, Tab passe des choix de l'écran aux boutons sans s'arrêter sur le cadre.
+    ImGui::BeginChild("##ecran", {0.0F, -footer}, ImGuiChildFlags_NavFlattened);
     draw_wizard_step(view, wizard);
     ImGui::EndChild();
     ImGui::Separator();
@@ -143,9 +153,10 @@ void draw_wizard(FirstRunView& view, float scale) {
         wizard.calibrate = true;
         view.done = true;
       }
-    } else if (ImGui::Button(i18n::tr("Next"), {0.0F, tall})) {
+    } else if (ImGui::Button(i18n::tr("Next"), {0.0F, tall}) || enter_goes_next()) {
       next(wizard);
     }
+    ImGui::SetItemDefaultFocus();  // au clavier, Entrée part du bouton principal
     ImGui::PopStyleColor(2);
     // Le bouton secondaire de Prêt : sans calibration, le niveau Auto estimé pour cette carte (P3.1).
     if (is_last(wizard)) {
@@ -154,6 +165,10 @@ void draw_wizard(FirstRunView& view, float scale) {
         set_up_myself(wizard);
         view.done = true;
       }
+    }
+    if (view.during_playback) {
+      ImGui::SameLine();
+      if (ImGui::Button(i18n::tr("Cancel"), {0.0F, tall})) view.cancelled = true;
     }
   }
   ImGui::End();
