@@ -227,7 +227,7 @@ __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
                     read_z(last_y, p.y_height, p.y_width, k, y, x));
   const float mask = read_z(last_y, p.y_height, p.y_width, 4, y, x);
   const float sig = rounded(1.0F / (1.0F + expf(-mask)));  // expf exact, comme DistilDRBA (A03-11)
-  if (p.image == nullptr) {  // variante mouvement : le flot final et le masque
+  if (p.image == nullptr) {                                // variante mouvement : le flot final et le masque
     auto* flow = static_cast<__half*>(p.flow);
     auto* out_mask = static_cast<__half*>(p.mask);
 #pragma unroll
