@@ -20,8 +20,8 @@ namespace ajp::app::play {
 
 void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, const PlayerPaths& paths,
                        const EngineCatalog& catalog, const std::filesystem::path& settings_dir) {
-  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Évaluer ma machine » si elle est
-  // de cette carte et de ce pilote, sinon l'estimation.
+  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Calibrer cette machine » si elle
+  // est de cette carte et de ce pilote, sinon l'estimation.
   std::optional<BenchResult> measured;
   if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);

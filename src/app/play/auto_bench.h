@@ -1,4 +1,4 @@
-// « Évaluer ma machine » (docs/ux-parametres.md, 4.7) : la décision. Le lecteur joue quelques secondes de
+// « Calibrer cette machine » (docs/ux-parametres.md, 4.7) : la décision. Le lecteur joue quelques secondes de
 // vidéo avec la chaîne d'un niveau (auto_config.h) et relève ce que la présentation en a fait ; la
 // recherche monte d'un niveau tant que la machine tient, redescend sinon, et garde le plus haut niveau qui
 // tient. Le résultat remplace la tranche estimée de la carte (gpu_tier.h) et se garde dans bench.toml.

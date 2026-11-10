@@ -15,7 +15,3 @@ if(NOT MSVC)
   target_compile_options(ajp_gpu_ir PRIVATE -ffp-contract=off)
 endif()
 
-# Inspection d'un modèle : opérateurs, formes et mémoire après passes.
-add_executable(ajp_onnx_info onnx_info_main.cpp)
-target_link_libraries(ajp_onnx_info PRIVATE ajp::gpu_ir ajp::kernels)
-ajp_set_warnings(ajp_onnx_info)

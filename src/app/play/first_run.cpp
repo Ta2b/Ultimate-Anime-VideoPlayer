@@ -475,7 +475,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
       section(i18n::tr("Machine calibration"));
       note(
-          i18n::tr("\"Optimise now\" tests several settings on a very demanding sequence: picture "
+          i18n::tr("\"Calibrate now\" tests several settings on a very demanding sequence: picture "
                    "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
                    "machine sustains. Only a progress bar is shown; it takes a few minutes, longer the first "
                    "time (the engines are built once)."));
@@ -540,7 +540,7 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
     if (is_last(wizard)) {
-      if (ImGui::Button(i18n::tr("Optimise now"), {0.0F, tall})) {
+      if (ImGui::Button(i18n::tr("Calibrate now"), {0.0F, tall})) {
         wizard.calibrate = true;
         view.done = true;
       }
