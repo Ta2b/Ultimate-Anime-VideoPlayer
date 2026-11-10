@@ -716,9 +716,9 @@ Mesurer avant de changer : toute accélération qui touche l'image passe par le 
 | 25 | A32-07 | Mineur | `src/app/play/placebo_ring.cpp:214-218` | `ready()` interroge le pilote à chaque question | Corrigé : dernière valeur lue gardée par emplacement |
 | 26 | A32-08 | Mineur | `src/core/free_rate.cpp:27-36` | Pas du mode Rapide calé sur un temps de service en temps de mur | Non corrigé : attend la mesure du service côté GPU (A32-02) |
 | 27 | A32-10 | Mineur | `src/gpu/cuda/backend/trt_engine.cpp:140-165` | Mémoire vidéo pleine sous Windows : débordement en mémoire système ni refusé ni signalé | Corrigé : avis au journal et dans l'OSD sous 256 Mio libres |
-| 28 | A32-11 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:17-19` | Attente active au-delà de 200 µs : événements sans `cudaEventBlockingSync` | Brouillon : `cudaEventBlockingSync`, à mesurer |
+| 28 | A32-11 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:17-19` | Attente active au-delà de 200 µs : événements sans `cudaEventBlockingSync` | Brouillon (#697) : `cudaEventBlockingSync`, à mesurer |
 | 29 | A32-12 | Mineur | `src/app/play/upscale_drba.cpp:124-157` | DistilDRBA relit sa mesure dans la paire même : la file se vide à chaque paire | Chronomètre (1) déjà là (A09-19) ; (2) et (3) attendent sa mesure |
-| 30 | A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) | Brouillon : seuils sur l'hôte, `pq_of` scalaire, à passer au banc |
+| 30 | A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) | Brouillon (#697) : `pq_of` et le niveau local en scalaire, à passer au banc |
 | 31 | A33-05 | Mineur | `src/gpu/cuda/backend/gpu_timing.h:53` | Profil GPU de fin de lecture tronqué | Corrigé : échantillon réservoir, toutes les mesures comptées (`core/sample_reservoir.h`) |
 | 32 | A33-06 | Mineur | `src/app/main.cpp:427-440` | Deux rotations du journal qui s'ignorent | Corrigé : les parts de séance tournent avec leur journal |
 | 33 | A33-08 | Mineur | `src/app/play/gpu_telemetry.cpp` | Aucun essai de durée ni relevé de ressources | Corrigé : ligne « ressources » toutes les 5 min et à chaque fermeture de chaîne ; l'essai de durée en CI reste à faire |
