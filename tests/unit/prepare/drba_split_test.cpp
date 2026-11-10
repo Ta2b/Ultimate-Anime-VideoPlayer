@@ -133,6 +133,10 @@ struct Edit {
   std::string rename_node;  // un nœud du câblage renommé (absent du graphe)
   std::string scale_node;   // un nœud dont la première constante est changée en 3,0
   bool drop_fourth_block = true;
+  // Grille des GridSample tirée directement d'un nœud au lieu de « <tenseur>/cast32 » : son type et, pour un
+  // Cast, le type visé (1 FLOAT, 10 FLOAT16). Vide : le câblage du graphe converti en FP16.
+  std::string grid_op;
+  std::int64_t grid_to = 1;
 };
 
 Bytes fake_drba(const Edit& e) {
@@ -175,6 +179,14 @@ Bytes fake_drba(const Edit& e) {
     }
     for (std::string& i : inputs) {
       if (i.empty() && n.op != "Resize") i = "w";
+    }
+    if (n.op == "GridSample" && !e.grid_op.empty() && inputs[1].ends_with("/cast32")) {
+      // Le DistilDRBA republié (A03-18) : la grille sort d'un Cast vers FP32, sans « /cast32 ».
+      inputs[1].resize(inputs[1].size() - std::string_view("/cast32").size());
+      std::vector<Attr> to;
+      if (e.grid_op == "Cast") to = {{.name = "to", .num = e.grid_to}};
+      add(node(inputs[1].substr(0, inputs[1].size() - std::string_view("_output_0").size()), e.grid_op, {"w"},
+               {inputs[1]}, to));
     }
     const std::string name = n.name == e.rename_node ? n.name + "_renomme" : n.name;
     add(node(name, n.op, inputs, {std::format("{}_output_0", n.name)}, attrs));
@@ -237,6 +249,22 @@ TEST_CASE("Un graphe à la structure de DistilDRBA se reconnaît et se coupe", "
     // Une taille que les noyaux ne prennent pas : refusée avant toute coupe.
     CHECK(split_drba(model, *split, h + 8, w).error().code == RefusalCode::ShapeInvalid);
   }
+}
+
+TEST_CASE("Un DistilDRBA aux grilles calculées en FP32 se reconnaît (A03-18)",
+          "[prepare][onnx][drba_fused]") {
+  Edit fp32;
+  fp32.grid_op = "Cast";
+  const auto split = analyze_drba(fake_drba(fp32));
+  REQUIRE(split);
+  CHECK(split->plan.tail == 4);
+  // La grille doit bien être en FP32 : un Cast vers FP16, ou un autre nœud, n'est pas le même graphe.
+  Edit half = fp32;
+  half.grid_to = 10;
+  CHECK(analyze_drba(fake_drba(half)).error().code == RefusalCode::FieldMissing);
+  Edit other;
+  other.grid_op = "Identity";
+  CHECK(analyze_drba(fake_drba(other)).error().code == RefusalCode::FieldMissing);
 }
 
 TEST_CASE("DistilDRBA « mouvement » sort le flot et le masque du warp final", "[prepare][onnx][drba_fused]") {

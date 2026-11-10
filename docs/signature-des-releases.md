@@ -3,7 +3,7 @@
 Le lecteur ne croit un manifeste de mise à jour que s'il porte une signature Ed25519 valide pour la clé publique
 compilée dans `AJP_UPDATE_PUBKEY` (`src/app/CMakeLists.txt`).
 
-- **Clé publique** : `c50eeb3e63c327a087487cd3f485e66fbbf8ef2340a0b90d7ec99d4c2d3f0d58` (valeur par défaut de `AJP_UPDATE_PUBKEY`).
+- **Clé publique** : `c09703350d91e8a6ebdb815bf27ec8b662e301c954aed52568da164258d45088` (valeur par défaut de `AJP_UPDATE_PUBKEY`), en place depuis le 10 novembre 2026 : l'ancienne clé privée n'a pas été retrouvée.
 - **Clé privée** : dans le secret `AJP_UPDATE_KEY` de l'environnement protégé `release` du dépôt des sources (décision
   de Tatoub, 9 novembre 2026). Elle n'est **jamais** dans le dépôt ni dans un message. Une copie de sauvegarde reste
   chez Tatoub, chiffrée.

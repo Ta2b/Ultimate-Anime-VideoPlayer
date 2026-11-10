@@ -267,6 +267,26 @@ std::expected<std::vector<std::byte>, Refusal> with_drba_motion_outputs(std::spa
   return with_outputs(model, outputs);
 }
 
+namespace {
+
+// L'entrée i de got répond-elle à want ? Égale, ou bien, là où le graphe converti en FP16 remontait en FP32
+// par « <tenseur>/cast32 », le tenseur lui-même quand un Cast vers FP32 le produit déjà : c'est le DistilDRBA
+// republié avec ses grilles calculées en FP32 (A03-18, #660), que le noyau fusionné suit déjà.
+bool input_matches(const Index& index, const OnnxFullNode& node, std::size_t i, const std::string& want) {
+  if (i >= node.inputs.size()) return false;
+  const std::string& got = node.inputs[i];
+  if (got == want) return true;
+  constexpr std::string_view kCast32 = "/cast32";
+  if (!want.ends_with(kCast32) || got != std::string_view(want).substr(0, want.size() - kCast32.size()))
+    return false;
+  const OnnxFullNode* producer = index.producer(got);
+  if (producer == nullptr || producer->op_type != "Cast") return false;
+  const OnnxAttribute* to = producer->attribute("to");
+  return to != nullptr && to->integer == static_cast<std::int64_t>(OnnxType::Float);
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model) {
   auto summary = scan_onnx(model);
@@ -309,7 +329,7 @@ std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model)
     if (got == nullptr || got->op_type != want.op)
       return unknown(want.name + " : nœud absent ou d'un autre type");
     for (std::size_t i = 0; i < want.inputs.size(); ++i) {
-      if (!want.inputs[i].empty() && (i >= got->inputs.size() || got->inputs[i] != want.inputs[i]))
+      if (!want.inputs[i].empty() && !input_matches(index, *got, i, want.inputs[i]))
         return unknown(std::format("{} : entrée {} différente", want.name, i));
     }
   }

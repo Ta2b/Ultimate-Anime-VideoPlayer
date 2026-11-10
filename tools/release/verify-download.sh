@@ -11,7 +11,7 @@ set -euo pipefail
 
 [ $# -eq 3 ] || { sed -n '2,10p' "$0"; exit 2; }
 manifest=$1 sig=$2 archive=$3
-pub=${AJP_UPDATE_PUBKEY:-c50eeb3e63c327a087487cd3f485e66fbbf8ef2340a0b90d7ec99d4c2d3f0d58}
+pub=${AJP_UPDATE_PUBKEY:-c09703350d91e8a6ebdb815bf27ec8b662e301c954aed52568da164258d45088}
 [[ "$pub" =~ ^[0-9a-f]{64}$ ]] || { echo "clé publique invalide : $pub" >&2; exit 2; }
 
 work=$(mktemp -d)
