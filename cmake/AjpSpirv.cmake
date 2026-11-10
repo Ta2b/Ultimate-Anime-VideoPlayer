@@ -32,7 +32,18 @@ endif()
 
 include_guard(GLOBAL)
 
-find_program(AJP_SPIRV_VAL NAMES spirv-val HINTS "$ENV{VULKAN_SDK}/bin")
+# spirv-val : celui du système ou du SDK Vulkan ; sous Windows, l'outil de l'hôte du port spirv-tools de vcpkg
+# (tiré par shaderc). Absent, les shaders ne sont pas validés : la configuration le dit, et
+# AJP_REQUIRE_SPIRV_VAL (la CI) en fait une erreur.
+find_program(AJP_SPIRV_VAL NAMES spirv-val
+  HINTS "$ENV{VULKAN_SDK}/bin" "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/spirv-tools")
+option(AJP_REQUIRE_SPIRV_VAL "Refuser de configurer sans spirv-val" OFF)
+if(NOT AJP_SPIRV_VAL)
+  if(AJP_REQUIRE_SPIRV_VAL)
+    message(FATAL_ERROR "spirv-val introuvable (AJP_REQUIRE_SPIRV_VAL) : paquet spirv-tools, ou SDK Vulkan")
+  endif()
+  message(STATUS "spirv-val introuvable : les shaders de calcul ne sont pas validés à la construction")
+endif()
 # En cache : include_guard(GLOBAL) n'exécute ce fichier qu'une fois, et un autre dossier qui
 # appelle ajp_add_spirv ne verrait pas une variable ordinaire posée ici.
 set(AJP_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_FILE}" CACHE INTERNAL "Script de conversion SPIR-V vers C++")

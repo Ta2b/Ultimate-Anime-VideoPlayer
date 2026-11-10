@@ -1,9 +1,12 @@
 #include "app/play/updater.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -106,6 +109,48 @@ TEST_CASE("mises à jour : l'update.toml d'une version future se relit sans perd
   const auto reread = parse_update_state(format_update_state(*state));
   REQUIRE(reread);
   CHECK(*reread == *state);
+}
+
+TEST_CASE("mises à jour : la réécriture garde les clés d'une version future, retire celles d'avant (A36-05)",
+          "[updater]") {
+  const std::string previous =
+      "last_check_unix = 1\nchannel_hint = \"stable\"\nretries = [1, 2]\nstaged_version = \"0.9.0\"\n"
+      "previous_version = \"0.8.0\"\nunconfirmed_launches = 2\n[futur]\nmirror = \"https://m\"\n";
+  const std::string merged =
+      merge_update_state(previous, UpdateState{.last_check_unix = 7, .latest_version = "1.0.0"});
+  CHECK(merged.contains("channel_hint"));
+  CHECK(merged.contains("https://m"));
+  CHECK_FALSE(merged.contains("staged_version"));
+  CHECK_FALSE(merged.contains("previous_version"));
+  CHECK_FALSE(merged.contains("unconfirmed_"));
+  const auto reread = parse_update_state(merged);
+  REQUIRE(reread);
+  CHECK(reread->last_check_unix == 7);
+  CHECK(reread->latest_version == "1.0.0");
+  // Un ancien fichier illisible ne bloque pas l'écriture.
+  CHECK(
+      parse_update_state(merge_update_state("= cassé", UpdateState{.last_check_unix = 3}))->last_check_unix ==
+      3);
+}
+
+TEST_CASE("mises à jour : deux fils qui changent update.toml ne perdent rien de l'autre (A26-10)",
+          "[updater]") {
+  const std::filesystem::path file = std::filesystem::temp_directory_path() / "ajp-update-concurrent.toml";
+  std::filesystem::remove(file);
+  std::vector<std::thread> writers;
+  std::atomic<int> refused = 0;  // Catch2 ne vérifie pas depuis un autre fil
+  for (int i = 0; i < 8; ++i)
+    writers.emplace_back([&file, &refused, i] {
+      const auto kept = change_update_state(file, [i](UpdateState& state) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));  // une vérification qui prend du temps
+        state.revoked_keys.push_back(std::to_string(i));
+      });
+      if (!kept) ++refused;
+    });
+  for (std::thread& writer : writers) writer.join();
+  CHECK(refused == 0);
+  CHECK(load_update_state(file).revoked_keys.size() == 8);
+  std::filesystem::remove(file);
 }
 
 TEST_CASE("mises à jour : un seul manifeste, celui de la dernière release", "[updater]") {

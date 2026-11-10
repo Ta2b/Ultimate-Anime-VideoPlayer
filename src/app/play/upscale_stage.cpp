@@ -737,6 +737,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
 }
 
 std::expected<void, Refusal> UpscaleStage::span_current() {
+  AJP_TRACE("span");
   if (spanned_now_) return {};
   spanned_now_ = true;
   if (reuse_span_) {  // dessin tenu : le tampon de la précédente

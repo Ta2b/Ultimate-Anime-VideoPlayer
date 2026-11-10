@@ -35,6 +35,10 @@ jobs:
         run: tools/ci/check-no-atoi.sh
       - name: Un seul exemplaire des utilitaires
         run: tools/ci/check-utilities.sh
+      - name: Mêmes dépendances sous Linux, macOS et Windows
+        run: tools/ci/check-deps-versions.sh
+      - name: Copie de CUTLASS intacte
+        run: tools/deps/cutlass-copy.sh --check
       - name: Graphe des modules
         run: tools/ci/check-module-graph.py
       - name: Complexité des fonctions

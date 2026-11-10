@@ -1,8 +1,12 @@
 # Toutes les dépendances tierces sont trouvées ici, une fois, et exposées sous
 # des cibles ajp::dep::<nom>. Les modules ne font jamais de find_package.
 #
-# Deux sources possibles, mêmes versions : le manifeste vcpkg (CI, Windows,
-# versions livrées), ou un préfixe construit par tools/deps/linux-from-source.sh.
+# Deux sources possibles : le manifeste vcpkg (Windows), ou un préfixe construit par
+# tools/deps/linux-from-source.sh (Linux, CI) ou macos-from-source.sh. Ce que le dépôt fixe lui-même y est aux
+# mêmes références (tools/ci/check-deps-versions.sh le vérifie). Le reste ne l'est pas : sous Linux, dav1d,
+# lcms2, shaderc, FriBidi, FreeType et HarfBuzz viennent de la distribution (Ubuntu 24.04 pour le paquet),
+# sous Windows de la baseline de vcpkg, plus récente. Un écart mesuré entre les deux systèmes peut donc venir
+# de ces bibliothèques (docs/audits/A-CONFIRMER.md, A27-04).
 include_guard(GLOBAL)
 
 function(ajp_alias_dep name target)
@@ -60,12 +64,31 @@ pkg_check_modules(AJP_FFMPEG REQUIRED IMPORTED_TARGET
   libavformat>=63.1 libavcodec>=63.1 libavfilter>=12.1 libavutil>=61.1 libswresample>=7.1 libswscale>=10.1)
 ajp_alias_dep(ffmpeg PkgConfig::AJP_FFMPEG)
 
-# libplacebo v7.360.1 (overlay ports/libplacebo).
-pkg_check_modules(AJP_PLACEBO REQUIRED IMPORTED_TARGET libplacebo>=7.360)
+# Une dépendance que le dépôt corrige (libplacebo, libass) : son en-tête doit déclarer la fonction que le
+# correctif ajoute. Sans ce contrôle, une bibliothèque officielle trouvée avant celle du préfixe passait la
+# configuration et n'échouait qu'à l'édition de liens, loin de sa cause.
+function(ajp_require_patched name include_dirs header symbol)
+  find_file(AJP_${name}_HEADER NAMES ${header} HINTS ${include_dirs} NO_CACHE)
+  if(AJP_${name}_HEADER)
+    file(STRINGS "${AJP_${name}_HEADER}" found REGEX "${symbol}" LIMIT_COUNT 1)
+  endif()
+  if(NOT found)
+    message(FATAL_ERROR
+      "${name} : ${header} ne déclare pas ${symbol} (${AJP_${name}_HEADER}). Ce n'est pas la bibliothèque "
+      "corrigée du dépôt : construire le préfixe avec tools/deps/linux-from-source.sh (ou "
+      "macos-from-source.sh, ou les ports vcpkg de ports/) et le placer devant celui du système "
+      "(AJP_DEPS_PREFIX, PKG_CONFIG_PATH).")
+  endif()
+endfunction()
+
+# libplacebo v7.387.0 (overlay ports/libplacebo), avec le correctif de présentation.
+pkg_check_modules(AJP_PLACEBO REQUIRED IMPORTED_TARGET libplacebo>=7.387)
+ajp_require_patched(libplacebo "${AJP_PLACEBO_INCLUDE_DIRS}" libplacebo/vulkan.h pl_vulkan_swapchain_submit)
 ajp_alias_dep(placebo PkgConfig::AJP_PLACEBO)
 
 # libass 0.17.5 de l'amont plus le rendu sur plusieurs fils (overlay ports/libass, son correctif et son portfile).
 pkg_check_modules(AJP_ASS REQUIRED IMPORTED_TARGET libass)
+ajp_require_patched(libass "${AJP_ASS_INCLUDE_DIRS}" ass/ass.h ass_set_render_thread_count)
 ajp_alias_dep(ass PkgConfig::AJP_ASS)
 
 # fontconfig, facultatif : la police du bureau pour l'interface (app/play/ui.cpp).
@@ -115,14 +138,24 @@ find_program(AJP_GLSLC NAMES glslc
 find_package(imgui CONFIG QUIET)
 if(TARGET imgui::imgui)
   ajp_alias_dep(imgui imgui::imgui)
+  # Le port avec sa fonction « freetype » (vcpkg.json) : le même chargeur de polices que sous Linux, pour les
+  # polices CFF2 et variables que stb_truetype refuse.
+  get_target_property(AJP_IMGUI_DEFINITIONS imgui::imgui INTERFACE_COMPILE_DEFINITIONS)
+  find_path(AJP_IMGUI_FREETYPE_DIR imgui_freetype.h PATH_SUFFIXES misc/freetype)
+  if("${AJP_IMGUI_DEFINITIONS}" MATCHES "IMGUI_ENABLE_FREETYPE" AND AJP_IMGUI_FREETYPE_DIR)
+    target_include_directories(ajp_dep_imgui SYSTEM INTERFACE "${AJP_IMGUI_FREETYPE_DIR}")
+    target_compile_definitions(ajp_dep_imgui INTERFACE AJP_WITH_FREETYPE=1)
+  else()
+    message(STATUS "ImGui sans FreeType : les polices CFF2 et variables seront refusées")
+  endif()
 else()
   find_path(AJP_IMGUI_DIR imgui.cpp PATH_SUFFIXES share/imgui REQUIRED)
   add_library(ajp_imgui STATIC
     "${AJP_IMGUI_DIR}/imgui.cpp" "${AJP_IMGUI_DIR}/imgui_draw.cpp"
-    "${AJP_IMGUI_DIR}/imgui_tables.cpp" "${AJP_IMGUI_DIR}/imgui_widgets.cpp"
-    "${AJP_IMGUI_DIR}/backends/imgui_impl_sdl3.cpp")
-  target_include_directories(ajp_imgui SYSTEM PUBLIC "${AJP_IMGUI_DIR}" "${AJP_IMGUI_DIR}/backends")
-  target_link_libraries(ajp_imgui PUBLIC SDL3::SDL3)
+    "${AJP_IMGUI_DIR}/imgui_tables.cpp" "${AJP_IMGUI_DIR}/imgui_widgets.cpp")
+  # Aucun backend d'ImGui : le lecteur remplit ImGuiIO lui-même (app/play/ui.cpp) et dessine par libplacebo
+  # (placebo_imgui.cpp).
+  target_include_directories(ajp_imgui SYSTEM PUBLIC "${AJP_IMGUI_DIR}")
   # FreeType pour les polices : stb_truetype ne lit ni le CFF2 (Noto Sans CJK variable, installé par défaut sous Fedora) ni
   # les polices variables ; sans ce chargeur le japonais n'apparaît pas. Facultatif : sans FreeType ou sans les sources du
   # chargeur, ImGui garde stb_truetype.

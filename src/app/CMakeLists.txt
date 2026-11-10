@@ -15,7 +15,7 @@ ajp_add_module(app
     play/upscale_ahead.cpp play/upscale_drba.cpp play/upscale_late.cpp play/upscale_motion.cpp play/upscale_smooth.cpp play/upscale_stage.cpp play/vulkan_share.cpp play/wiring.cpp
   DEPS ajp::core ajp::core_log ajp::core_os ajp::media ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::export
-  PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::placebo ajp::dep::sdl3 ajp::dep::spdlog ajp::dep::vulkan
+  PRIVATE_DEPS ajp::av ajp::dep::ffmpeg ajp::dep::placebo ajp::dep::sdl3 ajp::dep::spdlog ajp::dep::vulkan
                ajp::dep::imgui ajp::dep::toml ${CMAKE_DL_LIBS})
 # data/gpu_tiers.toml, embarqué octet pour octet (gpu_tier.h).
 add_custom_command(

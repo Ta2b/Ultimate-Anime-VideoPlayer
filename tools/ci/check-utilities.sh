@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Les petits utilitaires n'existent qu'une fois (P5.13) : refuse dans core/types.h, trim, ascii_lower et
-# iequal dans core/text.h, le texte d'un AVERROR dans core/av_error.h, le demi-flottant dans
+# iequal dans core/text.h, le texte d'un AVERROR dans av/av_error.h, le demi-flottant dans
 # kernels/ref/half.h. Une copie locale dans src/ est refusée, hors commentaires et chaînes.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -10,7 +10,7 @@ rules=(
   'std::unexpected<\w*:*Refusal>\s+refuse\(\s*RefusalCode\s+\w+\s*,\s*std::string\s+\w+\s*\)\s*\{ ;; src/core/types.h ;; core/types.h : ajp::refuse'
   'std::(?:tolower|toupper)\s*\( ;; src/core/text.h ;; core::ascii_lower (core/text.h)'
   'std::string_view\s+(?:trim|trimmed)\s*\(\s*std::string_view ;; src/core/text.h ;; core::trim (core/text.h)'
-  '\bav_strerror\s*\( ;; src/core/av_error.h ;; core::av_error_text (core/av_error.h)'
+  '\bav_strerror\s*\( ;; src/av/av_error.h ;; av::av_error_text (av/av_error.h)'
   'std::uint16_t\s+(?:to_half|float_to_half)\s*\(\s*float ;; src/kernels/ref/half.h|src/gpu/coreml/vt_pixels.cpp ;; kernels::ref::float_to_half'
 )
 status=0
