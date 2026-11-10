@@ -24,7 +24,7 @@ namespace ajp::app::play {
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
                               const std::string& fp8_reason, int auto_peak) {
   const media::TrackInfo& video = p.video;
-  PlaceboScreen& out = p.screen;
+  const PlaceboScreen& out = p.screen;
   const WorkSize work = c.work;
   const bool rife_loaded = c.interpolates();
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;

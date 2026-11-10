@@ -152,6 +152,9 @@ struct PlaceboScreen::Impl {
   void draw_ui(const ImDrawData* ui, const pl_frame& target);
   std::expected<void, Refusal> save_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                                              const ImDrawData* ui, const std::filesystem::path& path);
+  // L'instantané demandé (--snapshot), numéroté s'il y en a plusieurs ; un refus est écrit au journal.
+  void take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
+                     const ImDrawData* drawn_ui);
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
   pl_log log = nullptr;

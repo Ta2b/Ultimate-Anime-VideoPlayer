@@ -281,8 +281,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     saved = PlaySettings{};
   }
   if (!options.bench_out && !options.data_dir) update_check = start_update_check(*saved, paths, playing);
-  // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.
-  load_user_keys(paths::user_keys(settings_path.parent_path()));
+  load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] seul
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -309,6 +308,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   if (!SDL_EnableScreenSaver()) log->warn("économiseur d'écran : {}", SDL_GetError());
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
+  note_ignored_keys((*ui)->controls());
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
   class Release {
    public:

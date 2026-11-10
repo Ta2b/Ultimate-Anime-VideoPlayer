@@ -472,22 +472,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     }
   }
   s.draw_ui(request.ui, target);
-  if (s.snapshot) {
-    std::filesystem::path path = *s.snapshot;
-    if (s.snapshot_count > 1) {
-      // « nom.pq.ppm » → « nom-001.pq.ppm », « nom.ppm » → « nom-001.ppm ».
-      const std::string file = core::to_utf8(path.filename());
-      const std::size_t dot = file.ends_with(".pq.ppm") ? file.size() - 7 : file.rfind('.');
-      path.replace_filename(
-          core::path_from_utf8(std::format("{}-{:03}{}", file.substr(0, dot), s.snapshot_index + 1,
-                                           dot == std::string::npos ? std::string() : file.substr(dot))));
-    }
-    if (++s.snapshot_index >= s.snapshot_count) s.snapshot.reset();
-    if (auto saved = s.save_snapshot(frame != nullptr ? &image : nullptr, target, out, request.ui, path);
-        !saved) {
-      s.channel->warn("instantané {} : {}", core::to_utf8(path), saved.error().detail);
-    }
-  }
+  if (s.snapshot) s.take_snapshot(frame != nullptr ? &image : nullptr, target, out, request.ui);
   if (s.offscreen) {
     pl_gpu_flush(gpu);
     const std::int64_t submitted = host_now_us();

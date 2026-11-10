@@ -89,10 +89,24 @@ constexpr std::int32_t kPausedWaitMs = 33;
 // L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle) ; le
 // HDR et le pic du système toutes les 2 s, l'appel coûte plus et l'utilisateur ne bascule pas plus vite.
 constexpr std::int64_t kDisplayPollUs = 500'000;
-constexpr std::int64_t kHdrPollUs = 2'000'000;
+// Le pic et le HDR du système se relisent sur événement (ContractWatch::take_peak_change) ; ce sondage n'est
+// que le filet, pour un système qui ne dit rien (A11-02 : sous Windows, chaque relevé énumère les écrans).
+constexpr std::int64_t kHdrPollUs = 10'000'000;
 // Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
 constexpr std::int64_t kResizeWindowUs = 60'000'000;
 constexpr std::size_t kResizesRefused = 4;
+
+// La période d'une fréquence déjà relue (display_period_us referait le relevé du mode, deux
+// QueryDisplayConfig par tour sous Windows) ; une fréquence inutilisable laisse SDL répondre.
+std::int64_t period_of_hz(double hz, SDL_Window* window) {
+  return hz > 1.0 ? std::llround(1e6 / hz) : display_period_us(window);
+}
+
+// Le pic et le HDR du système sont à relire : un événement l'a dit, ou le filet de kHdrPollUs est échu.
+bool peak_due(ContractWatch& watch, std::int64_t polled_at) {
+  const bool changed = watch.take_peak_change();
+  return changed || host_now_us() - polled_at >= kHdrPollUs;
+}
 
 // Les réglages d'une réouverture demandée, écrits une fois la chaîne rouverte (Player::unsaved), sans les
 // raccourcis de séance (A08-04).
@@ -156,8 +170,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
     // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
     Reopen to_dropped{
-        .settings = settings, .position_us = start_us, .next_file = std::move(*p.dropped_video)};
-    p.dropped_video.reset();
+        .settings = settings, .position_us = start_us, .next_file = std::exchange(p.dropped_video, {})};
     return to_dropped;
   }
   if (!prepared) return std::unexpected(std::move(prepared.error()));
@@ -401,7 +414,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const auto read_display_facts = [&] {
     if (const double hz = display_refresh_hz(out.window()); hz > 0.0) {
       known_hz = hz;
-      known_period_us = display_period_us(out.window());
+      known_period_us = period_of_hz(hz, out.window());  // un seul relevé du mode par tour (A11-02)
     }
   };
   // Repli du Rapide pour la séance seulement : play.toml garde le choix, qu'un choix explicite annule.
@@ -556,8 +569,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence, son VRR et son état sont relus.
       read_display_facts();
       if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
-      // Le HDR et le pic suivent le système et l'écran (Windows, KDE), relus toutes les 2 s.
-      if (!p.options.sdr && host_now_us() - hdr_polled_at >= kHdrPollUs) {
+      // Le HDR et le pic suivent le système et l'écran (Windows, KDE) : relus sur événement, sinon à 10 s.
+      if (!p.options.sdr && peak_due(contract_watch, hdr_polled_at)) {
         hdr_polled_at = host_now_us();
         const std::optional<double> peak_now = content_peak_nits(out.window());
         if (system_hdr(peak_now) != chain.running.hdr_native) {
@@ -629,7 +642,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         vrr_fullscreen = fullscreen;
         session.set_composited(!fullscreen);
         if (const auto display = window_display(out.window())) {
-          if (display_changed) p.display = display;  // P3.40 : l'écran courant, son connecteur et son EDID
+          if (display_changed) contract_watch.set_display(p.display = display);  // P3.40, A11-01
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);

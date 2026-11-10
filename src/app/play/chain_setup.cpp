@@ -305,7 +305,7 @@ std::optional<SpanInt8> usable_variant(SpanVariantKind kind, const ModelChoice& 
 std::expected<bool, StageFailure> prepare_manual_fp8(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                                      const PlaySettings& settings,
                                                      const SpanFp8Context& fp8_context) {
-  if (p.options.file.empty() || p.options.bench_out) return true;
+  if (!c.model || p.options.file.empty() || p.options.bench_out) return true;
   const std::optional<bool> ready =
       prepare_span_fp8(p, init, c.model->path, paths::derived_models(p.paths),
                        span_still_reduce(c.work.width, c.work.height, settings.downscale), fp8_context);
@@ -323,6 +323,7 @@ std::expected<bool, StageFailure> prepare_manual_fp8(Player& p, const gpu::Backe
 // la suivante, et la dernière au SPAN choisi, en FP16 sous TensorRT. Faux : la fenêtre fermée.
 std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                             const PlaySettings& settings) {
+  if (!c.model) return true;  // rien à charger : l'appelant ne vient qu'avec un modèle
   const auto log = log_channel("app");
   const std::filesystem::path variants = paths::derived_models(p.paths);
   const gpu::BackendCaps caps = c.backend->capabilities();

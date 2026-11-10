@@ -173,20 +173,28 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
   // Une autre résolution ou un autre modèle se mesure à part.
   (void)require_value(reread.choose(graph, 0, options, "autre"));
   CHECK(reread.measured() == 1);
-  // Une autre version du même pilote : rien de remesuré, la sortie du choix revérifiée une fois.
+  // Une autre version du même pilote : rien de remesuré, la sortie du choix revérifiée une fois. Un choix à
+  // précision réduite, lui, se remesure (A45-01) : son gain de temps ne se reprend pas d'un pilote à l'autre.
   DeviceProfile updated = profile;
   updated.driver_build += "+1";
   updated.key = updated.stable_key + ":" + updated.driver_build;
+  net::KernelChoice kept = best;
   {
     net::Autotuner after(*rig.context, *rig.memory, *rig.pipelines, updated, file, quick);
-    CHECK(require_value(after.choose(graph, 0, options, "test")) == best);
-    CHECK(after.measured() == 0);
-    CHECK(after.reverified() == 1);
-    CHECK(after.cached() == 1);
+    kept = require_value(after.choose(graph, 0, options, "test"));
+    if (net::low_precision(best)) {
+      CHECK(after.measured() == 1);
+      CHECK(after.reverified() == 0);
+    } else {
+      CHECK(kept == best);
+      CHECK(after.measured() == 0);
+      CHECK(after.reverified() == 1);
+      CHECK(after.cached() == 1);
+    }
     require_ok(after.save());
   }
   net::Autotuner settled(*rig.context, *rig.memory, *rig.pipelines, updated, file, quick);
-  CHECK(require_value(settled.choose(graph, 0, options, "test")) == best);
+  CHECK(require_value(settled.choose(graph, 0, options, "test")) == kept);
   CHECK(settled.reverified() == 0);
   CHECK(settled.cached() == 1);
   // Un autre pilote (ou une autre carte) se mesure à part.
@@ -221,8 +229,10 @@ TEST_CASE("Autotuner : table pré-réglée de la famille", "[vk_backend][autotun
   (void)require_value(ir::optimize(graph));
   const auto options = require_value(net::candidates(graph, 0, profile.target));
   REQUIRE(options.size() > 1);
-  // Le dernier candidat, souvent à trois ou quatre réglages : la table les porte tous.
-  const net::KernelChoice& preset = options.back();
+  // Le dernier candidat aux sommes en float, souvent à trois ou quatre réglages : la table les porte tous.
+  const auto full = std::ranges::find_last_if(options, [](const auto& c) { return !net::low_precision(c); });
+  REQUIRE_FALSE(full.empty());
+  const net::KernelChoice& preset = full.front();
   INFO(preset.variant << " (" << preset.tuning.size() << " réglages)");
   std::string tuning;
   for (const std::uint32_t t : preset.tuning) tuning += std::format("{}{}", tuning.empty() ? "" : ",", t);
@@ -244,6 +254,18 @@ TEST_CASE("Autotuner : table pré-réglée de la famille", "[vk_backend][autotun
     CHECK(tuner.measured() == 0);
     CHECK(tuner.reverified() == 1);
     CHECK(tuner.cached() == 1);
+  }
+  // Un choix à précision réduite lu dans la table : jamais repris sans mesure (A45-01, la table NvidiaAda
+  // livrée jusqu'en novembre 2026 donnait 28 couches sur 29 en sommes float16).
+  if (const auto low = std::ranges::find_if(options, net::low_precision); low != options.end()) {
+    std::string text;
+    for (const std::uint32_t t : low->tuning) text += std::format("{}{}", text.empty() ? "" : ",", t);
+    const std::array<net::PresetEntry, 1> entries{{{signature, low->variant, text}}};
+    const std::array<net::PresetTable, 1> tables{{{.family = profile.family, .entries = entries}}};
+    net::Autotuner tuner(*rig.context, *rig.memory, *rig.pipelines, profile, {}, quick, tables);
+    require_value(tuner.choose(graph, 0, options, "test"));
+    CHECK(tuner.measured() == 1);
+    CHECK(tuner.reverified() == 0);
   }
   // Une autre famille, des réglages qu'aucun candidat n'a, illisibles : mesuré.
   const GpuFamily other = profile.family == GpuFamily::NvidiaAda ? GpuFamily::AmdRdna4 : GpuFamily::NvidiaAda;

@@ -28,6 +28,7 @@ ajp_add_unit_tests(vk_backend
     net_profile_test.cpp
     net_rig.cpp
     net_runtime_test.cpp
+    net_sums_test.cpp
     drba_fused_chain_test.cpp
     rife_fused_chain_test.cpp
     rife_fused_test.cpp
