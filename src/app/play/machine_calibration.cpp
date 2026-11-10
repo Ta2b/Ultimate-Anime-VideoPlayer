@@ -78,6 +78,26 @@ bool needs_second_run(const CandidateTrial& trial) {
   return lossy || slow;
 }
 
+double credited_fps(const BenchReading& reading) {
+  if (reading.interval_mean_us <= 0) return 0.0;
+  const double fps = 1e6 / static_cast<double>(reading.interval_mean_us);
+  if (reading.new_frames <= 0) return fps;
+  return fps * static_cast<double>(reading.new_frames + reading.uninterpolated) /
+         static_cast<double>(reading.new_frames);
+}
+
+double trial_target_fps(const ChainCandidate& chain, std::int64_t period_us) {
+  const auto source = static_cast<double>(media::BenchClipSpec{}.fps);
+  if (!chain.rife) return source;
+  const double display = period_us > 0 ? 1e6 / static_cast<double>(period_us) : 0.0;
+  return display > source ? std::min(2.0 * source, display) : 2.0 * source;
+}
+
+bool trial_holds(const ChainCandidate& chain, const BenchReading& reading, double target_fps) {
+  if (!holds(reading.run)) return false;
+  return !chain.rife || credited_fps(reading) >= kMinRifeShare * target_fps;
+}
+
 std::vector<int> calibration_heights() {
   return {kCalibrationHeights.rbegin(), kCalibrationHeights.rend()};
 }
@@ -170,6 +190,8 @@ std::string format_calibration(const MachineCalibration& c) {
   root.insert("display_height", static_cast<std::int64_t>(c.display_height));
   root.insert("span_model", c.models.span);
   root.insert("rife_model", c.models.rife);
+  root.insert("engine", c.engine);
+  root.insert("driver", c.driver);
   root.insert("on_battery", c.on_battery);
   const auto chain_table = [](const ChainCandidate& chain) {
     toml::table t;
@@ -216,6 +238,8 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
       static_cast<int>(std::clamp<std::int64_t>(root["version"].value_or(std::int64_t{1}), 1, 1000));
   out.models = {.span = root["span_model"].value_or(std::string()),
                 .rife = root["rife_model"].value_or(std::string())};
+  out.engine = root["engine"].value_or(std::string());
+  out.driver = root["driver"].value_or(std::string());
   out.on_battery = root["on_battery"].value_or(false);
   if (const toml::table* chosen = root["chosen"].as_table()) out.chosen = chain_of(*chosen);
   if (const toml::array* trials = root["trials"].as_array()) {
@@ -247,15 +271,29 @@ std::expected<MachineCalibration, Refusal> load_calibration(const std::filesyste
   return parse_calibration(text.str());
 }
 
-std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir, std::string_view gpu,
-                                                int display_height) {
+CalibrationUse calibration_use(const MachineCalibration& calibration, const CalibrationHost& host) {
+  // D'une version plus ancienne : ses bornes (moitié de l'écran, RIFE 4.22 lite, RIFE coupé par le Rapide
+  // compté comme tenu) sont sous ou à côté de ce que l'Auto estimé donne aujourd'hui (A49-02, A07-02).
+  if (calibration.version < kCalibrationVersion) return CalibrationUse::OldVersion;
+  // Sur batterie : l'Auto estimé vaut mieux que les bornes d'une carte bridée (P3.12).
+  if (calibration.on_battery) return CalibrationUse::OnBattery;
+  if (calibration.gpu != host.gpu ||
+      (host.display_height > 0 && calibration.display_height != host.display_height))
+    return CalibrationUse::OtherMachine;
+  // Les bornes de Vulkan sous TensorRT brident la carte, celles de TensorRT sous Vulkan la débordent
+  // (A25-02, A07-05).
+  if ((calibration.engine == "tensorrt") != host.tensorrt) return CalibrationUse::OtherEngine;
+  return CalibrationUse::Followed;
+}
+
+bool calibration_driver_changed(const MachineCalibration& calibration, const CalibrationHost& host) {
+  return !calibration.driver.empty() && !host.driver.empty() && calibration.driver != host.driver;
+}
+
+std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir,
+                                                const CalibrationHost& host) {
   auto calibration = load_calibration(calibration_file(data_dir));
-  // Mesurée sur batterie : l'Auto estimé vaut mieux que des bornes d'une carte bridée (P3.12). D'une
-  // version plus ancienne : ses bornes (moitié de l'écran, RIFE 4.22 lite) sont sous ce que l'Auto estimé
-  // donne aujourd'hui (A49-02, A38-02).
-  if (!calibration || calibration->version < kCalibrationVersion || calibration->on_battery ||
-      calibration->gpu != gpu || (display_height > 0 && calibration->display_height != display_height))
-    return std::nullopt;
+  if (!calibration || calibration_use(*calibration, host) != CalibrationUse::Followed) return std::nullopt;
   const ChainCandidate& chosen = calibration->chosen;
   return CalibratedChain{.span = chosen.span,
                          .rife = chosen.rife,
@@ -267,6 +305,64 @@ std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& dat
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
                                               const MachineCalibration& calibration) {
   return core::write_text_atomically(file, format_calibration(calibration));
+}
+
+std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlayer& play,
+                                                                 const std::stop_token& stop,
+                                                                 const std::function<void(float)>& fraction) {
+  const auto log = log_channel("app");
+  CalibrationTrials out;
+  // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
+  const auto most = static_cast<float>(2 * calibration_heights().size() + 1);
+  int index = 0;
+  std::optional<ChainCandidate> retried;  // la chaîne déjà rejouée une fois
+  std::optional<ChainCandidate> rebuilt;  // la chaîne rejouée avec le délai d'une construction
+  while (const auto chain = next_candidate(out.tried)) {
+    if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
+    // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps.
+    auto reading = play(*chain, index, out.tried.empty() || rebuilt == *chain);
+    if (stop.stop_requested())
+      return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
+    // Délai dépassé (P3.12) : un moteur long à construire (un portable) n'est pas une machine lente ; l'essai
+    // se refait une fois avec le délai d'une construction, le moteur fini reste en cache.
+    if (!reading && reading.error().key == kTrialTimedOutKey && rebuilt != *chain) {
+      log->info("calibration de la machine : {} a dépassé son délai, rejoué avec celui d'une construction",
+                describe(*chain));
+      rebuilt = *chain;
+      ++index;
+      continue;
+    }
+    if (!reading && out.tried.empty()) return std::unexpected(std::move(reading.error()));
+    CandidateTrial trial{.chain = *chain,
+                         .target_fps = trial_target_fps(*chain, reading ? reading->run.period_us : 0)};
+    if (reading) {
+      out.gpu = reading->gpu;
+      out.driver = reading->driver;
+      out.engine = reading->engine;
+      trial.holds = trial_holds(*chain, *reading, trial.target_fps);
+      const auto presents = std::max<std::int64_t>(reading->run.presents, 1);
+      trial.lost_percent = 100.0 * static_cast<double>(reading->run.dropped + reading->run.missing) /
+                           static_cast<double>(presents);
+      if (reading->interval_mean_us > 0) trial.fps = 1e6 / static_cast<double>(reading->interval_mean_us);
+      if (reading->interval_p99_us > 0) trial.low_fps = 1e6 / static_cast<double>(reading->interval_p99_us);
+    }
+    // Rejoué dans les deux sens (P3.12) : un essai qui ne tient pas (le premier d'une taille construit son
+    // moteur à froid et perd quelques images au démarrage), et un essai qui tient de justesse (une mesure
+    // chanceuse) ; le second passage décide.
+    if (reading && needs_second_run(trial) && retried != *chain) {
+      log->info("calibration de la machine : {} {} ({:.1f} % perdues, {:.1f} i/s pour {:.0f}), rejoué",
+                describe(*chain), trial.holds ? "tient de justesse" : "ne tient pas", trial.lost_percent,
+                trial.fps, trial.target_fps);
+      retried = *chain;
+      ++index;
+      continue;
+    }
+    log->info("calibration de la machine : {} {} ({:.1f} i/s pour {:.0f})", describe(*chain),
+              trial.holds ? "tient" : "ne tient pas", trial.fps, trial.target_fps);
+    out.tried.push_back(trial);
+    ++index;
+  }
+  return out;
 }
 
 std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& plan, const PlaySettings& base,
@@ -287,64 +383,25 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   }
   log->info("calibration de la machine : SPAN {}, RIFE {}, en FP16",
             out.models.span.empty() ? std::string(kDefaultModelFile) : out.models.span, out.models.rife);
-  // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
-  const auto most = static_cast<float>(2 * calibration_heights().size() + 1);
-  int index = 0;
-  std::optional<ChainCandidate> retried;  // la chaîne déjà rejouée une fois
-  std::optional<ChainCandidate> rebuilt;  // la chaîne rejouée avec le délai d'une construction
   out.on_battery = on_battery();
   if (out.on_battery)
     log->warn("calibration de la machine : sur batterie, mesure sous-estimée (à refaire sur secteur)");
-  while (const auto chain = next_candidate(out.tried)) {
-    if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
+  const TrialPlayer play = [&](const ChainCandidate& chain, int index,
+                               bool first) -> std::expected<BenchReading, Refusal> {
     const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
-    if (auto written = save_settings(settings, candidate_settings(*chain, base, out.models)); !written)
+    if (auto written = save_settings(settings, candidate_settings(chain, base, out.models)); !written)
       return std::unexpected(std::move(written.error()));
-    const Variant variant{.name = describe(*chain), .settings = settings};
-    // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps.
-    auto reading =
-        play_variant(plan, variant, index, stop,
-                     out.tried.empty() || rebuilt == *chain ? plan.first_allowance : plan.build_allowance);
-    if (stop.stop_requested())
-      return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
-    // Délai dépassé (P3.12) : un moteur long à construire (un portable) n'est pas une machine lente ; l'essai
-    // se refait une fois avec le délai d'une construction, le moteur fini reste en cache.
-    if (!reading && reading.error().key == kTrialTimedOutKey && rebuilt != *chain) {
-      log->info("calibration de la machine : {} a dépassé son délai, rejoué avec celui d'une construction",
-                describe(*chain));
-      rebuilt = *chain;
-      ++index;
-      continue;
-    }
-    if (!reading && out.tried.empty()) return std::unexpected(std::move(reading.error()));
-    CandidateTrial trial{
-        .chain = *chain,
-        .target_fps = static_cast<double>(media::BenchClipSpec{}.fps) * (chain->rife ? 2.0 : 1.0)};
-    if (reading) {
-      out.gpu = reading->gpu;
-      trial.holds = holds(reading->run);
-      const auto presents = std::max<std::int64_t>(reading->run.presents, 1);
-      trial.lost_percent = 100.0 * static_cast<double>(reading->run.dropped + reading->run.missing) /
-                           static_cast<double>(presents);
-      if (reading->interval_mean_us > 0) trial.fps = 1e6 / static_cast<double>(reading->interval_mean_us);
-      if (reading->interval_p99_us > 0) trial.low_fps = 1e6 / static_cast<double>(reading->interval_p99_us);
-    }
-    // Rejoué dans les deux sens (P3.12) : un essai qui ne tient pas (le premier d'une taille construit son
-    // moteur à froid et perd quelques images au démarrage), et un essai qui tient de justesse (une mesure
-    // chanceuse) ; le second passage décide.
-    if (reading && needs_second_run(trial) && retried != *chain) {
-      log->info("calibration de la machine : {} {} ({:.1f} % perdues), rejoué une fois", describe(*chain),
-                trial.holds ? "tient de justesse" : "ne tient pas", trial.lost_percent);
-      retried = *chain;
-      ++index;
-      continue;
-    }
-    log->info("calibration de la machine : {} {}", describe(*chain), trial.holds ? "tient" : "ne tient pas");
-    out.tried.push_back(trial);
-    ++index;
-  }
+    return play_variant(plan, Variant{.name = describe(chain), .settings = settings}, index, stop,
+                        first ? plan.first_allowance : plan.build_allowance);
+  };
+  auto trials = run_calibration_trials(play, stop, fraction);
+  if (!trials) return std::unexpected(std::move(trials.error()));
+  out.tried = std::move(trials->tried);
+  out.gpu = std::move(trials->gpu);
+  out.driver = std::move(trials->driver);
+  out.engine = std::move(trials->engine);
   out.chosen = best_candidate(out.tried);
-  log->info("calibration de la machine : recommandé {}", describe(out.chosen));
+  log->info("calibration de la machine : recommandé {} (moteur {})", describe(out.chosen), out.engine);
   std::filesystem::remove_all(plan.work_dir, error);
   if (!plan.data.empty()) {
     if (auto saved = save_calibration(calibration_file(plan.data), out); !saved)

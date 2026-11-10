@@ -231,7 +231,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   return out;
 }
 
-bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b) {
+bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool calibrated) {
+  if (calibrated && a.auto_free != b.auto_free) return true;
   return a.upscale != b.upscale || a.work_height != b.work_height || a.downscale != b.downscale ||
          a.model != b.model || a.span_order != b.span_order || a.rife_auto != b.rife_auto ||
          a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||

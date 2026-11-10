@@ -63,9 +63,7 @@ void Session::begin(std::int64_t /*host_now*/) {
 void Session::handle(MainInbox::Message&& message) {
   std::visit(Overloaded{[this](RingFrame& frame) { on_frame(frame); },
                         [this](subs::SubtitleFrame& frame) { on_subtitles(std::move(frame)); },
-                        [this](const StreamEnded& end) {
-                          if (end.epoch == epoch_) stream_ended_ = true;
-                        },
+                        [this](const StreamEnded& end) { on_stream_ended(end); },
                         [this](const StageRefusal& refusal) { on_refusal(refusal); }},
              message);
 }
@@ -75,7 +73,7 @@ void Session::command(const Command& command) {
       Overloaded{[this](const cmd::Play&) {
                    if (!paused_) return;
                    paused_ = false;
-                   if (!prerolling_ && current_) stages_.play(epoch_, current_->pts_us);
+                   if (!prerolling_ && !start_pts_ && current_) stages_.play(epoch_, current_->pts_us);
                  },
                  [this](const cmd::Pause&) {
                    if (paused_) return;
@@ -195,6 +193,8 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   stages_.pause();
   screen_.new_scene();
   ++epoch_;
+  read_lost_.reset();  // un seek relit le fichier (la source repart, media/source.h)
+  start_pts_.reset();
   // Le Seek part même si une boîte a refusé son Flush : la source qui a reçu le sien attend ce
   // Seek pour reprendre (media/source.h). La diffusion se rejoue ensuite, à une époque neuve,
   // tant qu'une boîte a refusé quelque chose.
@@ -285,6 +285,11 @@ void Session::on_refusal(const StageRefusal& refusal) {
   if (refusal.fatal || resized_) finished_ = true;
   if (!refusal.fatal && refusal.refusal.recoverable && refusal.refusal.code != RefusalCode::FieldOutOfRange)
     notice_ = refusal.refusal;
+  // La source rend une fin de flux après ce refus (media/source.h) : retenu pour on_stream_ended.
+  if (!refusal.fatal && refusal.refusal.recoverable && refusal.stage == "source" &&
+      refusal.refusal.code == RefusalCode::DecodeFailed) {
+    read_lost_ = Refusal{refusal.refusal.code, std::format("{} : {}", refusal.stage, refusal.refusal.detail)};
+  }
 }
 
 void Session::request_subtitles(const RingFrame& frame) {
@@ -362,8 +367,7 @@ void Session::choose(std::int64_t host_now) {
     prerolling_ = false;
     pending_seek_us_.reset();
     last_fresh_host_us_ = host_now;
-    if (!paused_) stages_.play(epoch_, first->pts_us);
-    if (!playing_since_us_) playing_since_us_ = host_now;
+    start_pts_ = first->pts_us;  // l'horloge part quand elle est rendue (shown_at)
     return;
   }
   const ClockSnapshot now = clock_.snapshot();
@@ -542,8 +546,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   // Présentation refusée (fenêtre cachée, swapchain à refaire) : l'image n'est pas à l'écran, elle se
   // représente au tour suivant au lieu d'être tenue pour affichée.
   if (!timing->presented) present_requested_ = true;
-  shown_once_ = true;
-  shown_at_us_ = timing->presented ? timing->present_us : host_now;
+  shown_at(timing->presented ? timing->present_us : host_now);
   shown_ui_ = ui.draw != nullptr;
   shown_subtitles_ = std::move(look);
   shown_size_ = size;
@@ -705,7 +708,8 @@ void Session::pace(const RingFrame& frame, std::int64_t visible_us) {
 void Session::check_end(std::int64_t host_now) {
   if (playing_since_us_) {
     const std::int64_t played = host_now - *playing_since_us_;
-    if (config_.stop_after_us > 0 && played >= config_.stop_after_us) finished_ = true;
+    // --seconds atteint : un arrêt demandé, sans épisode suivant (A13-14).
+    if (config_.stop_after_us > 0 && played >= config_.stop_after_us) finished_ = quit_ = true;
     if (config_.fullscreen_after_us > 0 && !fullscreen_done_ && played >= config_.fullscreen_after_us) {
       screen_.set_fullscreen(true);
       fullscreen_done_ = true;

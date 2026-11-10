@@ -28,8 +28,11 @@ tient dans six noyaux.
 - L'entrée et la sortie de l'encodeur sont adressées dans l'entrée X_2 du bloc 2 (plans 0-8 et 9-56) : ces 57 canaux ne
   sont jamais copiés. Le côté choisi (image 0 ou 2) est lu sur le périphérique, dans le plan du temps de `pair01` : il
   change à chaque image.
-- Les arrondis FP16 du graphe sont reproduits aux mêmes endroits (sorties de Resize, grille FP16 = base + flot × pas,
-  sigmoïde, mélange) ; les Resize et GridSample du graphe sont en FP32 entre deux Cast.
+- Les arrondis FP16 du graphe sont reproduits aux mêmes endroits (sorties de Resize, sigmoïde, mélange) ; les Resize et
+  GridSample du graphe sont en FP32 entre deux Cast. La grille des warps fait exception : la colle lit la position en
+  pixels `x + flot` en FP32 (`pixel_tap`, `tap_of`), égale à la grille normalisée `base + flot × pas` du graphe ramenée en
+  pixels, sans l'arrondi FP16 de la base ni de la somme (A46-04). Le graphe livré `models-drba-1` arrondit encore sa grille
+  en FP16 (A03-18) : la chaîne est plus juste que lui, jusqu'à ce que le graphe réexporté (`DRBA_GRID_OPS`) soit publié.
 - Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran de précision hors Équilibre, structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur
   une paire de zéros (exécution à froid, capture du graphe, rejeu) avec synchronisation : une erreur CUDA se voit là, avant
@@ -57,8 +60,11 @@ borne mémoire 0,075).
 
 Qualité de `out` contre ORT CPU FP16 du réseau entier (3 images d'anime réelles, décalages de 6 et 20 px, tau 0,5, plus un
 cas à tau 1,25 de l'autre côté) : 57,9 à 67,1 dB (SSIM 0,99986 à 0,99996), le TensorRT FP16 entier faisant 59,2 à 68,7 dB
-(à 1,3 dB près de la chaîne). Le plancher de bruit du réseau est là : la grille de warp est en FP16 (un ulp = 0,5 pixel à
+(à 1,3 dB près de la chaîne). Le plancher de bruit du réseau était là : la grille de warp en FP16 (un ulp = 0,5 pixel à
 1920 de large), deux réalisations du même graphe s'écartent de 60 à 67 dB (ORT enchaîné contre ORT entier : 66,8 dB).
+Ces chiffres datent d'avant la grille en FP32 de la colle et sont à refaire sur la RTX. Le graphe seul, grille en FP32
+(reconverti par `convert_rife_fp16.py`, `DRBA_GRID_OPS`) : 77,5 dB de fidélité à son FP32 au banc de qualité, contre
+57,0 dB pour le graphe livré (`docs/banc-qualite.md`).
 
 Dans le lecteur : voir la section suivante.
 

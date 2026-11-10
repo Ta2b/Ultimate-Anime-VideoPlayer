@@ -83,6 +83,22 @@ Ce que ces chiffres disent :
   et la réduction par moyenne n'est pas la dégradation qu'il a apprise. La colonne sert à comparer deux états
   de SPAN (FP16, FP8, hauteur de travail), pas SPAN au bicubique.
 
+### DistilDRBA, grille en FP32 (C05, A03-18)
+
+Le graphe livré reconverti par `tools/rife/convert_rife_fp16.py` avec `DRBA_GRID_OPS` (la chaîne de la grille
+des dix GridSample en FP32), mêmes poids, mesuré avec `--reseau` :
+
+| réseau | fidélité dB | pire dB | pire écart | écart p99,9 | ΔE_ITP p99,9 | vérité dB | ms (processeur) |
+|---|---|---|---|---|---|---|---|
+| distil_drba_v2_lite (livré) | 57,01 | 51,98 | 20,10 | 7,33 | 10,69 | 35,72 | 189,0 |
+| le même, grille en FP32 | 77,51 | 73,96 | 1,19 | 0,42 | 0,60 | 35,76 | 180,5 |
+
+20 dB de fidélité gagnés, sans coût. La vérité ne bouge pas : sur ce mouvement de synthèse l'écart au vrai
+milieu vient du réseau, pas de son FP16. Sur l'extrait de la section « Mesure sur un épisode » (`--video`,
+60 fenêtres, 1280 × 720), le même graphe passe de 60,08 à 81,13 dB de fidélité, et son pire écart de 23,1 à
+2,3 codes ; la comparaison à RIFE sur cet extrait est dans cette section. `seuils.json` garde les chiffres du
+fichier livré tant que le graphe réexporté n'est pas publié ; à ce moment, `--ecrire-seuils`.
+
 ## Mesure sur un épisode
 
 Un extrait de 31 s d'un épisode en 1080p (743 images, surtout de l'action), avec `--video`. Le banc y prend des
@@ -161,6 +177,31 @@ Ce que ces chiffres disent :
 - Sans SPAN, la source portée à l'écran par libplacebo donne 42,74 dB (4K) et 48,70 dB (1440p) : au-dessus de
   SPAN, pour la raison dite plus haut (SPAN renforce les traits, la moyenne 2 × 2 n'est pas la dégradation qu'il
   a apprise). Ce banc classe des chaînes avec SPAN entre elles ; il ne dit pas s'il faut SPAN.
+
+### Sur un vrai épisode
+
+La même mesure sur cinq plans d'un extrait réel de 30 s (H.264 1080p, 23,976 i/s, hors du dépôt : contenu
+protégé), par `--calibration extrait.mkv --plans 5` :
+
+| Écran | Travail | b8f64 (dB) | b5f48 (dB) | Sans SPAN (dB) |
+|---|---|---:|---:|---:|
+| 2160p | 1080p | 43,36 | 43,34 | 46,35 |
+| 2160p | 720p | 42,44 | 42,33 | |
+| 2160p | 540p | 39,75 | 39,48 | |
+| 1440p | 1080p | 47,51 | 47,47 | 52,45 |
+| 1440p | 720p | 44,75 | 44,83 | |
+| 1440p | 540p | 41,86 | 41,57 | |
+| 1080p | 1080p | 47,81 | 47,86 | |
+| 1080p | 720p | 43,37 | 43,29 | |
+| 1080p | 540p | 41,42 | 41,12 | |
+
+- Garder la 1080p plutôt que travailler en 720p rend 0,9 dB sur un écran 4K, 2,8 dB en 1440p et 4,4 dB en
+  1080p ; contre 540p, 3,6, 5,7 et 6,4 dB. Le sens est celui de la séquence de calibration, l'écart en 4K est
+  plus petit (0,9 dB au lieu de 2,3).
+- Le b8f64 et le b5f48 sont à égalité quand la source est gardée (−0,05 à +0,04 dB) ; le b8f64 ne gagne que sur
+  une source réduite à 540p (0,3 dB). Sur cet extrait, le b8f64 des niveaux Qualité et Ultra ne s'achète donc
+  par aucun gain mesurable en PSNR : son temps sur la carte décidera (A49-01).
+- Sans SPAN, la source portée à l'écran reste devant (3,0 dB en 4K), avec la même réserve que plus haut.
 
 Le temps de ces chaînes ne se mesure que sur la carte : voir `docs/audits/A-CONFIRMER.md` (A49-01, A49-02).
 

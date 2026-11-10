@@ -29,9 +29,14 @@ directement dans un emplacement, sans le noyau `write_rgba16` ?
    10 bits. `ImportedSlot::surface()` pose `dither` pour tout emplacement RGB10A2 (TPDF fixe par pixel, ±1 code).
    Le contrôle de la porte reste à faire sur la RTX : `tools/ring/banding.py` avec `--no-ring-rgb10a2` en
    référence.
+6. **Novembre 2026, après les audits (A21-03, A49-04) : RGBA16 redevient le défaut.** Le point 5 gardait un
+   défaut que le point 4 interdit : aucune mesure de banding n'existe, et le tramage ±1 code ne répond pas à
+   l'étirement des paliers par le grade HDR, il le masque. RGB10A2 reste derrière `--ring-rgb10a2`, et ne
+   reviendra par défaut qu'avec la porte du point 4 mesurée sur la RTX (`docs/audits/A-CONFIRMER.md`). Le coût :
+   l'anneau reprend ses 8 octets par pixel sous TensorRT.
 
 ## Conséquences
 - `kBackendAbi` passe à 26 (`BackendCaps::ring_rgb10a2`).
-- Moitié moins de mémoire pour l'anneau et pour chaque écriture, une fois le défaut changé.
+- Moitié moins de mémoire pour l'anneau et pour chaque écriture, avec `--ring-rgb10a2` (point 6).
 - Une image de l'anneau perd ses 6 bits de poids faible : sans effet sur une sortie 10 bits, à surveiller sur
   les dégradés sombres d'une sortie SDR 8 bits tramée par libplacebo.

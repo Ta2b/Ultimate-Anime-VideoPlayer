@@ -58,6 +58,9 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
     shapes.push_back({.name = input.name, .dims = input.dims});
   }
   if (auto ok = ir::infer_shapes(*graph, shapes); !ok) return std::unexpected(ok.error());
+  // La grille des GridSample en float (DistilDRBA exporté avant novembre 2026 : A44-01), avant que le
+  // pliage des constantes n'arrondisse sa base à travers son Cast.
+  (void)ir::promote_grid_chains(*graph);
   // Les ConvTranspose deviennent des Conv là où celles-ci passent par les matrices coopératives
   // (au plus 16 tuiles de 16 canaux, net_lower_conv.cpp).
   const ir::OptimizeOptions options{.transpose_conv_channels = target.matrix_units ? 256 : 0,

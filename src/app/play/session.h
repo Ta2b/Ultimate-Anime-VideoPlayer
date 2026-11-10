@@ -216,6 +216,13 @@ class Session {
   void on_frame(const RingFrame& frame);
   void on_subtitles(subs::SubtitleFrame&& frame);
   void on_refusal(const StageRefusal& refusal);
+  // La source a abandonné la lecture (disque débranché, partage perdu) : sa fin de flux n'est pas la fin de
+  // la vidéo. Un échec, qui se dit et n'enchaîne pas l'épisode suivant (A13-02).
+  void on_stream_ended(const StreamEnded& end) {
+    if (end.epoch != epoch_) return;
+    stream_ended_ = true;
+    if (read_lost_ && !failure_) failure_ = std::move(read_lost_);
+  }
   void request_subtitles(const RingFrame& frame);
   void retire(const RingFrame& frame);
   void retire_written();  // les images rendues avant d'être écrites, qui le sont maintenant
@@ -224,6 +231,18 @@ class Session {
   bool step_from_queue();  // P3.42 : image suivante de la file, en pause, sans seek
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
+  // Une présentation vient d'être rendue. Si c'est la première image d'une époque, l'horloge part de son pts
+  // maintenant, et --seconds compte d'ici : partie au choix de l'image, elle courait pendant ce premier rendu
+  // (la compilation des shaders, plus d'une seconde sous lavapipe sans cache) et la lecture sautait autant
+  // d'images.
+  void shown_at(std::int64_t at_us) {
+    shown_once_ = true;
+    shown_at_us_ = at_us;
+    if (!start_pts_) return;
+    if (!paused_) stages_.play(epoch_, *start_pts_);
+    if (!playing_since_us_) playing_since_us_ = at_us;
+    start_pts_.reset();
+  }
   void watch_clock(const ClockSnapshot& now, std::int64_t host_now);
 
   SessionConfig config_;
@@ -240,6 +259,7 @@ class Session {
   bool stream_ended_ = false;
   bool finished_ = false;
   std::optional<Refusal> failure_;
+  std::optional<Refusal> read_lost_;  // lecture abandonnée par la source dans l'époque courante (A13-02)
   bool resized_ = false;
   bool quit_ = false;
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
@@ -308,6 +328,7 @@ class Session {
   std::vector<std::string> osd_;                  // relu toutes les kOsdPeriodUs
   std::optional<std::int64_t> osd_at_us_;         // rien : à relire au prochain tour
   std::optional<std::int64_t> playing_since_us_;  // instant hôte de la première image
+  std::optional<std::int64_t> start_pts_;         // première image choisie, horloge pas encore partie
   std::int64_t last_fresh_host_us_ = 0;
   bool fullscreen_done_ = false;
   FrameStats stats_;
