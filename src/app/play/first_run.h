@@ -87,7 +87,8 @@ struct EngineRow {
 };
 
 // P3.4 : les lignes Moteurs du résumé de l'assistant : les moteurs retenus, avec la taille à télécharger, et
-// chaque moteur coché dont la licence n'est pas acceptée, qui ne s'installera pas.
+// chaque moteur coché dont la licence n'est pas acceptée, qui ne s'installera pas, et le moteur recommandé
+// pour cette carte s'il est resté décoché (A25-02).
 std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows);
 
 struct FirstRunView {

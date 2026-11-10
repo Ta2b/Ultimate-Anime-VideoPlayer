@@ -21,10 +21,6 @@ layout(push_constant) uniform Push {
   uint width;
   uint full_height;
   uint full_width;
-  float step32_x;
-  float step16_x;
-  float step32_y;
-  float step16_y;
 } pc;
 
 float lerp_z(uint c, DrbaEnlarge e, uint zh, uint zw) {
@@ -60,8 +56,7 @@ void main() {
   for (uint k = 0u; k < 9u; ++k) x.v[(96u + k) * plane + o] = AJP_TENSOR(lerp_z(4u + k, e, zh, zw));
   // Warps : n = 0 image 1 et f1 avec le flot 0-1 ; n = 1 image et f du côté choisi avec le flot 2-3.
   for (uint n = 0u; n < 2u; ++n) {
-    FusedTap t = grid_tap(drba_grid(ox, flow[2u * n], pc.step32_x, pc.step16_x),
-                          drba_grid(oy, flow[2u * n + 1u], pc.step32_y, pc.step16_y), pc.width, pc.height);
+    FusedTap t = pixel_tap(ox, oy, flow[2u * n], flow[2u * n + 1u], pc.width, pc.height);
     uint img = n == 0u ? 3u : (before ? 0u : 6u);
     uint enc = n == 0u ? 25u : (before ? 9u : 41u);
     for (uint k = 0u; k < 3u; ++k) x.v[(57u + 3u * n + k) * plane + o] = AJP_TENSOR(x_tap(img + k, t));

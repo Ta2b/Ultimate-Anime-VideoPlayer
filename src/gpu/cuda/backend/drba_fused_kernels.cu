@@ -61,22 +61,19 @@ __device__ __forceinline__ void enlarge(const SourceZ& z, int c0, int s, int px,
   }
 }
 
-// Grille normalisée du graphe : base FP16 (i × 2/(n-1) - 1) + flot FP16 × (2/(n-1) arrondi FP16), deux sommes
-// FP16.
-__device__ __forceinline__ float grid(int i, float flow, DrbaGridStep g) {
-  const float base = rounded(__fsub_rn(__fmul_rn(static_cast<float>(i), g.step32), 1.0F));
-  return rounded(base + rounded(flow * g.step16));
-}
-
-// GridSample (bilinéaire, bords répétés, coins alignés) : indices et poids depuis la grille normalisée.
+// GridSample (bilinéaire, bords répétés, coins alignés) : indices et poids depuis la position en pixels. La
+// grille normalisée du graphe, base + flot × pas ramenée par (g + 1) / 2 × (n - 1), vaut exactement x + flot.
+// Le graphe FP16 livré la calcule en deux sommes FP16, d'un pas de 0,31 px à 1280 de large et de 0,47 px à
+// 1920 (A03-18, A46-04) ; ici en FP32, comme le réseau d'origine. Le fusionné s'écarte donc exprès du graphe
+// FP16 tant que celui-ci n'est pas réexporté avec sa grille en FP32 (tools/rife/convert_rife_fp16.py).
 struct Tap {
   int i00, i01, i10, i11;  // indices dans un plan h × w
   float wx, wy;
 };
 
-__device__ __forceinline__ Tap tap_of(float gx, float gy, int w, int h) {
-  float ix = (gx + 1.0F) * static_cast<float>(w - 1) * 0.5F;
-  float iy = (gy + 1.0F) * static_cast<float>(h - 1) * 0.5F;
+__device__ __forceinline__ Tap tap_of(int x, int y, float flow_x, float flow_y, int w, int h) {
+  float ix = __fadd_rn(static_cast<float>(x), flow_x);
+  float iy = __fadd_rn(static_cast<float>(y), flow_y);
   ix = fminf(fmaxf(ix, 0.0F), static_cast<float>(w - 1));
   iy = fminf(fmaxf(iy, 0.0F), static_cast<float>(h - 1));
   const int x0 = static_cast<int>(ix);
@@ -252,8 +249,7 @@ __global__ void __launch_bounds__(128) glue_kernel(DrbaGlueParams p) {
   // Warps : n = 0 image 1 et f1 avec le flot 0-1 ; n = 1 image et f du côté choisi avec le flot 2-3.
 #pragma unroll
   for (int n = 0; n < 2; ++n) {
-    const Tap t =
-        tap_of(grid(ox, flow[2 * n], p.grid_x), grid(oy, flow[2 * n + 1], p.grid_y), p.width, p.height);
+    const Tap t = tap_of(ox, oy, flow[2 * n], flow[2 * n + 1], p.width, p.height);
     const int image = n == 0 ? 3 : (before ? 0 : 6);
     const int encoding = n == 0 ? 25 : (before ? 9 : 41);
 #pragma unroll
@@ -293,8 +289,7 @@ __global__ void __launch_bounds__(256) finish_kernel(DrbaFinishParams p) {
   float warped[2][3];
 #pragma unroll
   for (int n = 0; n < 2; ++n) {
-    const Tap t =
-        tap_of(grid(x, flow[2 * n], p.grid_x), grid(y, flow[2 * n + 1], p.grid_y), p.width, p.height);
+    const Tap t = tap_of(x, y, flow[2 * n], flow[2 * n + 1], p.width, p.height);
     const __half* src = n == 0 ? pair01 + 3 * plane : (before ? pair01 : pair12 + 3 * plane);
 #pragma unroll
     for (int k = 0; k < 3; ++k) warped[n][k] = rounded(sample(src + k * plane, t));
@@ -316,11 +311,6 @@ unsigned blocks_for(std::size_t elements) {
 }
 
 }  // namespace
-
-DrbaGridStep drba_grid_step(int n) {
-  const double step = 2.0 / static_cast<double>(n - 1);
-  return {static_cast<float>(step), __half2float(__double2half(step))};
-}
 
 cudaError_t launch_drba_pre(const DrbaPreParams& params, cudaStream_t stream) {
   std::size_t elements = 0;

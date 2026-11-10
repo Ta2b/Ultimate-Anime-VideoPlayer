@@ -32,7 +32,13 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   // choisi au panneau donne la même chaîne (A23-03).
   choices.explored_work_height = explored ? measured->work_height : 0;
   choices.explored_rife_model = explored ? measured->rife_model : std::string();
-  choices.calibrated = calibrated_chain(settings_dir, machine.name, display_height(screen.window()));
+  // Le moteur en service : celui de la bibliothèque chargée, ou à l'accueil le préféré s'il est installé.
+  choices.calibration_host = {.gpu = machine.name,
+                              .display_height = display_height(screen.window()),
+                              .tensorrt = choices.engine_in_use == core::EngineId::TensorRt &&
+                                          tensorrt_backend_present(catalog, paths),
+                              .driver = machine.driver};
+  choices.calibrated = calibrated_chain(settings_dir, choices.calibration_host);
   choices.gpu_name = machine.name;
   choices.gpus = screen.device_names();
   choices.nvidia = vendor_from_pci(screen.device_facts().pci_vendor) == GpuVendor::Nvidia;

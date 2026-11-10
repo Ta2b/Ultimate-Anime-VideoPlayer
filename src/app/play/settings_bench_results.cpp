@@ -93,15 +93,30 @@ std::string downscale_text(const ChainCandidate& chain) {
 }
 
 // Sous l'en-tête du tableau : les modèles que les essais ont joués, et pourquoi l'Auto ne suit pas la mesure
-// quand c'est le cas (version plus ancienne, batterie).
-void measure_notes(const MachineCalibration& r) {
+// quand c'est le cas (version plus ancienne, batterie, autre moteur, autre carte ou écran), ou que le pilote
+// a changé depuis.
+void measure_notes(const MachineCalibration& r, const CalibrationHost& host) {
   note(i18n::tr_format("SPAN: {} in FP16 · RIFE: {}",
                        model_label(r.models.span.empty() ? std::string(kDefaultModelFile) : r.models.span),
                        rife_label(r.models.rife.empty() ? std::string(kLightRifeModel) : r.models.rife)));
-  if (r.version < kCalibrationVersion)
-    note(i18n::tr("Measured by an older version: Auto keeps its estimate. Run the bench again."));
-  if (r.on_battery)
-    note(i18n::tr("Measured on battery: Auto keeps its estimate. Run the bench again plugged in."));
+  switch (calibration_use(r, host)) {
+    case CalibrationUse::OldVersion:
+      note(i18n::tr("Measured by an older version: Auto keeps its estimate. Run the bench again."));
+      break;
+    case CalibrationUse::OnBattery:
+      note(i18n::tr("Measured on battery: Auto keeps its estimate. Run the bench again plugged in."));
+      break;
+    case CalibrationUse::OtherEngine:
+      note(i18n::tr("Measured with another engine: Auto keeps its estimate. Run the bench again."));
+      break;
+    case CalibrationUse::OtherMachine:
+      note(i18n::tr("Measured on another card or display: Auto keeps its estimate. Run the bench again."));
+      break;
+    case CalibrationUse::Followed:
+      if (calibration_driver_changed(r, host))
+        note(i18n::tr("The graphics driver changed since this measure: run the bench again to refresh it."));
+      break;
+  }
 }
 
 }  // namespace
@@ -139,7 +154,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     const MachineCalibration& r = *bench.result;
     note(i18n::tr_format("{} · {} · display {}p", r.gpu.empty() ? i18n::tr("Unknown graphics card") : r.gpu,
                          r.date, r.display_height));
-    measure_notes(r);
+    measure_notes(r, choices.calibration_host);
     constexpr ImGuiTableFlags kFlags =
         ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX;
     if (ImGui::BeginTable("##bench", 6, kFlags)) {

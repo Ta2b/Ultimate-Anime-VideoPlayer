@@ -18,7 +18,9 @@ ici en sélection sur tenseurs, les blocs et l'encodeur du dépôt restant tels 
 limite aux opérateurs du moteur Vulkan (gpu/ir) : ni comparaison (le côté est un Clip), ni
 ConstantOfShape (le plan de tau est pris dans l'entrée), Range sur des entiers. Il est comparé au
 forward d'origine pour tau des deux côtés, puis converti en FP16 avec les règles de
-convert_rife_fp16.py (grille, GridSample et Resize en FP32).
+convert_rife_fp16.py (grille, GridSample et Resize en FP32). Le graphe FP16, celui qui est livré, est
+comparé à son tour à forward, à la taille de lecture (1280 × 768) : c'est là qu'une grille restée en
+FP16 se voit, son pas grandit avec la largeur (A03-18, A46-03).
 
     git clone https://github.com/routineLife1/DistilDRBA
     python -I tools/drba/export_distil_drba.py DistilDRBA --weights DistilDRBA/weights/v2_lite.pkl \\
@@ -169,6 +171,31 @@ def check(net, arch: str, scale: float, onnx_path: Path, h: int, w: int) -> None
             raise SystemExit(f"tau {tau} : le graphe s'écarte de forward ({error})")
 
 
+# Écart toléré du graphe FP16 à forward, en codes 10 bits (1/1023), au pire et en moyenne, sur les images
+# lisses de frames() à 1280 × 768. Mesuré sur de telles images contre le même graphe en FP32 (ONNX Runtime) :
+# 0,55 au pire et 0,10 en moyenne avec la grille en FP32, 27,6 et 2,0 avec la grille en FP16.
+HALF_MAX_CODES = 4.0
+HALF_MEAN_CODES = 0.25
+
+
+def check_half(net, arch: str, scale: float, half: onnx.ModelProto, h: int, w: int) -> None:
+    """Le graphe FP16 livré contre forward du dépôt, à la taille de lecture, des deux côtés de img1."""
+    import onnxruntime as ort
+
+    session = ort.InferenceSession(half.SerializeToString(), providers=["CPUExecutionProvider"])
+    images = frames(h, w, 11)
+    for tau in (0.75, 1.25):
+        a, b = packed(images, tau)
+        with torch.no_grad():
+            want = net(*images, timestep=tau, scale_list=[s / scale for s in SCALES[arch]])[0].numpy()
+        got = session.run(None, {"pair01": a.numpy().astype(np.float16), "pair12": b.numpy().astype(np.float16)})[0]
+        codes = np.abs(got.astype(np.float64) - want) * 1023.0
+        print(f"  FP16, tau {tau}, {w} × {h} : écart max {codes.max():.2f} codes 10 bits, moyen {codes.mean():.3f}")
+        if codes.max() > HALF_MAX_CODES or codes.mean() > HALF_MEAN_CODES:
+            raise SystemExit(f"tau {tau} : le graphe FP16 s'écarte de forward "
+                             f"({codes.max():.2f} codes au pire, {codes.mean():.3f} en moyenne)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("repo", type=Path, help="clone de routineLife1/DistilDRBA (models/drba)")
@@ -194,8 +221,10 @@ def main() -> int:
         check(net, arch, args.scale, fp32, args.height, args.width)
         check(net, arch, args.scale, fp32, args.height + align, args.width + 2 * align)
         shape = (1, 7, 768, 1280)
-        half = convert_rife_fp16.convert_model(onnx.load(str(fp32)), {"pair01": shape, "pair12": shape})
+        half = convert_rife_fp16.convert_model(onnx.load(str(fp32)), {"pair01": shape, "pair12": shape},
+                                               convert_rife_fp16.DRBA_GRID_OPS)
     onnx.checker.check_model(half)
+    check_half(net, arch, args.scale, half, 768, 1280)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     onnx.save(half, str(args.out))
     print(f"{args.out} : {args.out.stat().st_size / 1e6:.1f} Mo")

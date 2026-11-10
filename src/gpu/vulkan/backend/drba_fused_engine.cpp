@@ -8,7 +8,6 @@
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/refuse.h"
-#include "kernels/ref/half.h"
 
 namespace ajp::gpu::vk {
 namespace {
@@ -31,23 +30,10 @@ struct PostPush {
 };
 struct GluePush {
   std::uint32_t height, width, full_height, full_width;
-  float step32_x, step16_x, step32_y, step16_y;
 };
 struct FinishPush {
   std::uint32_t height, width, upscale;
-  float step32_x, step16_x, step32_y, step16_y;
 };
-
-struct GridStep {
-  float step32 = 0.0F;
-  float step16 = 0.0F;
-};
-
-// Pas de grille d'un axe de n pixels : 2/(n-1) en FP32 et arrondi FP16 (drba_grid_step du backend CUDA).
-GridStep grid_step(int n) {
-  const double step = 2.0 / static_cast<double>(n - 1);
-  return {static_cast<float>(step), kernels::ref::round_to_half(static_cast<float>(step))};
-}
 
 std::optional<int> number(std::string_view text) {
   int value = 0;
@@ -242,10 +228,7 @@ std::expected<DrbaFusedEngine::Glue*, Refusal> DrbaFusedEngine::glue_for(std::sp
   for (int k = 1; k < kDrbaFusedBlocks; ++k) {
     if (auto ok = record([&](Recorder& r) -> Done {
           const kernels::DrbaFusedDims x = kernels::drba_fused_x(plan_, k, h, w);
-          const GridStep gx = grid_step(x.width);
-          const GridStep gy = grid_step(x.height);
-          const GluePush push{u32(x.height), u32(x.width), u32(h),    u32(w),
-                              gx.step32,     gx.step16,    gy.step32, gy.step16};
+          const GluePush push{u32(x.height), u32(x.width), u32(h), u32(w)};
           const std::array buffers{y_view(k - 1), io[0], x_view(k)};
           return detail::run(pipelines_, r, "drba_fused_glue", Precision::F16, {}, buffers, {},
                              detail::bytes_of(push),
@@ -256,9 +239,7 @@ std::expected<DrbaFusedEngine::Glue*, Refusal> DrbaFusedEngine::glue_for(std::sp
   }
   // fin
   if (auto ok = record([&](Recorder& r) -> Done {
-        const GridStep gx = grid_step(w);
-        const GridStep gy = grid_step(h);
-        const FinishPush push{u32(h), u32(w), u32(t), gx.step32, gx.step16, gy.step32, gy.step16};
+        const FinishPush push{u32(h), u32(w), u32(t)};
         const std::array buffers{y_view(kDrbaFusedBlocks - 1), io[0], io[1], io[2], motion ? io[3] : io[2]};
         const std::array constants{motion ? 1U : 0U};
         return detail::run(pipelines_, r, "drba_fused_finish", Precision::F16, constants, buffers, {},

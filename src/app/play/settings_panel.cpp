@@ -575,7 +575,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::EndDisabled();
     // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
     if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
-        preset_chain_differs(before, draft_))
+        preset_chain_differs(before, draft_, choices.calibrated.has_value()))
       draft_.preset = Preset::Custom;
     ImGui::PopItemWidth();
 

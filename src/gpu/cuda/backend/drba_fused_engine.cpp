@@ -257,29 +257,27 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                                 .pair01 = pair01,
                                 .full_height = h,
                                 .full_width = w,
-                                .x = at_ptr(layout_.x[i + 1]),
-                                .grid_x = drba_grid_step(next.width),
-                                .grid_y = drba_grid_step(next.height)};
+                                .x = at_ptr(layout_.x[i + 1])};
       if (auto ok = cuda_check(launch_drba_glue(glue, stream), "drba_glue<<<>>>"); !ok) return ok;
     }
   }
   const auto last = static_cast<std::size_t>(kernels::kDrbaFusedBlocks - 1);
-  return cuda_check(
-      launch_drba_finish({.height = h,
-                          .width = w,
-                          .upscale = t,
-                          .y = at_ptr(layout_.y[last]),
-                          .pair01 = pair01,
-                          .pair12 = pair12,
-                          // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
-                          .out = outputs.size() == 1 ? const_cast<void*>(address_of(outputs[0])) : nullptr,
-                          .flow = outputs.size() == 2 ? const_cast<void*>(address_of(outputs[0])) : nullptr,
-                          .mask = outputs.size() == 2 ? const_cast<void*>(address_of(outputs[1])) : nullptr,
-                          // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
-                          .grid_x = drba_grid_step(w),
-                          .grid_y = drba_grid_step(h)},
-                         stream),
-      "drba_finish<<<>>>");
+  return cuda_check(launch_drba_finish(
+                        {
+                            .height = h,
+                            .width = w,
+                            .upscale = t,
+                            .y = at_ptr(layout_.y[last]),
+                            .pair01 = pair01,
+                            .pair12 = pair12,
+                            // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
+                            .out = outputs.size() == 1 ? const_cast<void*>(address_of(outputs[0])) : nullptr,
+                            .flow = outputs.size() == 2 ? const_cast<void*>(address_of(outputs[0])) : nullptr,
+                            .mask = outputs.size() == 2 ? const_cast<void*>(address_of(outputs[1])) : nullptr,
+                            // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
+                        },
+                        stream),
+                    "drba_finish<<<>>>");
 }
 
 std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,

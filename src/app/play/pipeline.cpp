@@ -27,6 +27,28 @@ std::string track_text(std::string_view kind, const media::TrackInfo& track) {
   return text;
 }
 
+// Un choix de sous-titres gardé d'une autre ouverture (réouverture, épisode précédent, fichier glissé
+// d'ailleurs) : pris seulement s'il existe ici. Un index externe peut ne plus désigner aucun fichier
+// trouvé à côté de la vidéo : il est oublié, jamais déréférencé (A13-01). nullopt (aucun) existe toujours.
+bool subtitle_exists(std::optional<int> wanted, const media::Demuxer& demuxer, std::size_t externals) {
+  if (!wanted) return true;
+  if (*wanted >= kExternalSubtitleBase) {
+    if (static_cast<std::size_t>(*wanted - kExternalSubtitleBase) < externals) return true;
+    const auto log = log_channel("subs");
+    log->info("sous-titres externes {} absents de cette ouverture : oubliés", *wanted);
+    return false;
+  }
+  const media::TrackInfo* track = demuxer.track(*wanted);
+  return track != nullptr && track->kind == media::TrackKind::Subtitle;
+}
+
+// La raison d'une piste choisie qui ne se lit pas, à l'OSD ; un index externe n'a pas de piste.
+void report_unreadable(const media::Demuxer& demuxer, int index, MainMail& mail) {
+  const media::TrackInfo* track = demuxer.track(index);
+  if (track == nullptr) return;
+  if (auto refused = subtitle_track(*track, 0); !refused) mail.report("subs", refused.error(), false);
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -55,11 +77,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   };
   if (config.audio_track && kind_of(*config.audio_track) == media::TrackKind::Audio)
     choice.audio = config.audio_track;
-  if (config.subtitle_track) {
-    const std::optional<int> wanted = *config.subtitle_track;
-    if (!wanted || kind_of(*wanted) == media::TrackKind::Subtitle || *wanted >= kExternalSubtitleBase)
-      choice.subtitle = wanted;
-  }
+  if (config.subtitle_track && subtitle_exists(*config.subtitle_track, *demuxer, externals.size()))
+    choice.subtitle = *config.subtitle_track;
   if (!choice.video) {
     return std::unexpected(
         Refusal{RefusalCode::TrackUnavailable, std::format("{}: no video track", config.file.string())});
@@ -169,8 +188,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       choice.subtitle = kExternalSubtitleBase;
     }
     if (choice.subtitle && !std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
-      auto refused = subtitle_track(*demuxer->track(*choice.subtitle), 0);
-      p->mail_.report("subs", refused.error(), false);
+      report_unreadable(*demuxer, *choice.subtitle, p->mail_);
       choice.subtitle.reset();
     }
   }
