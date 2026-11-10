@@ -11,6 +11,10 @@
 namespace ajp::app::play {
 
 // Vide : RIFE fusionné s'essaie. Sinon la raison, pour le journal.
-std::string rife_fused_declined(const PlaySettings& settings, bool backend_does_it, int rife_planes);
+// tier : le cran que la lecture aura vraiment (model_tier, model_choice.h), pas celui du réglage : un cran
+// Qualité ou Performance dont le graphe manque retombe sur le modèle livré, celui que la découpe connaît
+// (A31-06).
+std::string rife_fused_declined(const PlaySettings& settings, bool backend_does_it, int rife_planes,
+                                PrecisionTier tier);
 
 }  // namespace ajp::app::play
