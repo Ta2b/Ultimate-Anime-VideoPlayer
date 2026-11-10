@@ -21,6 +21,7 @@
 #include "app/play/settings_toml_lenient.h"
 #include "core/log.h"
 #include "core/user_overlay.h"
+#include "core/utf8_path.h"
 
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
@@ -578,7 +579,7 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
   std::error_code error;
   if (!std::filesystem::exists(path, error)) return PlaySettings{};
   std::ifstream file(path, std::ios::binary);
-  if (!file) return refuse(RefusalCode::FileUnreadable, path.string());
+  if (!file) return refuse(RefusalCode::FileUnreadable, core::to_utf8(path));
   std::ostringstream text;
   text << file.rdbuf();
   std::vector<std::string> dropped;
@@ -587,15 +588,16 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
     // La version lue (P2.22) : une plus récente garde ses clés à la réécriture, et se dit au journal.
     if (const auto version = parsed.table()["version"].value<std::int64_t>();
         version && *version > kSettingsVersion)
-      log_channel("app")->warn("{} : version {} plus récente que {}, clés inconnues gardées", path.string(),
-                               *version, kSettingsVersion);
+      log_channel("app")->warn("{} : version {} plus récente que {}, clés inconnues gardées",
+                               core::to_utf8(path), *version, kSettingsVersion);
   }
   for (const std::string& why : dropped)
-    log_channel("app")->warn("{} : valeur écartée, défaut gardé ({})", path.string(), why);
+    log_channel("app")->warn("{} : valeur écartée, défaut gardé ({})", core::to_utf8(path), why);
   if (!settings)
-    return std::unexpected(Refusal{.code = settings.error().code,
-                                   .detail = std::format("{} : {}", path.string(), settings.error().detail),
-                                   .key = settings.error().key});
+    return std::unexpected(
+        Refusal{.code = settings.error().code,
+                .detail = std::format("{} : {}", core::to_utf8(path), settings.error().detail),
+                .key = settings.error().key});
   if (toml::parse_result seen_now = toml::parse(format_settings(*settings)); seen_now)
     remember(path, std::move(seen_now).table());
   return settings;

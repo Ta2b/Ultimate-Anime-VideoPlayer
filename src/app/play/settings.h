@@ -296,6 +296,9 @@ struct PlaySettings {
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
 
+// La longueur d'un chemin de dossier d'installation que le menu et play.toml acceptent (A22-09).
+inline constexpr std::size_t kMaxEnginesDirBytes = 4096;
+
 namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};

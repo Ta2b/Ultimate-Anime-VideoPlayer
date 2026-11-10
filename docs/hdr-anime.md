@@ -43,16 +43,16 @@ Mesuré sous lavapipe sur les shaders du lecteur (`ajp_render_tests "[.mesure]"`
 | 24 | 0,158 | 0,484 |
 | 32 | 0,74 | 1,18 |
 | 48 | 3,97 | 3,97 |
-| 128 | 44,0 | 43,7 |
-| 160 | 106 | 103 |
-| 192 | 305 | 256 |
+| 128 | 44,0 | 43,6 |
+| 160 | 106 | 102 |
+| 192 | 305 | 258 |
 | 224 | 538 | 403 |
-| 255 (blanc d'une surface) | 690 | 499 |
-| Émetteur blanc, Éclats 100 %, scène sombre | 793 | 693 |
-| Émetteur blanc, Éclats 100 %, scène très claire | 793 | 595 |
+| 255 (blanc d'une surface) | 690 | 496 |
+| Émetteur blanc, Éclats 100 %, scène sombre | 793 | 690 |
+| Émetteur blanc, Éclats 100 %, scène très claire | 793 | 592 |
 | Émetteur blanc, Éclats 200 %, scène sombre | 899 | 975 |
 
-Blanc des surfaces selon le pic : 279 nits à 400 (320 avant), 499 à 1 000 (690), 997 à 2 000 (1 310).
+Blanc des surfaces selon le pic : 278 nits à 400 (320 avant), 496 à 1 000 (690), 992 à 2 000 (1 310).
 
 Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) reste dans
 `docs/audits/A-CONFIRMER.md`.
