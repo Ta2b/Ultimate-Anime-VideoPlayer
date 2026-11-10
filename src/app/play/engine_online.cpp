@@ -24,6 +24,8 @@ constexpr std::string_view kVendorPrefix = "https://pypi.nvidia.com/";
 // Relu au plus une fois par jour : un paquet joint après coup paraît au lancement du lendemain au plus tard,
 // ou tout de suite après un lancement sans copie gardée.
 constexpr auto kFreshFor = std::chrono::hours(24);
+// Un échec qui n'est pas un 404 (hors ligne, portail captif, délai) : un nouvel essai quelques heures après.
+constexpr auto kRetryAfter = std::chrono::hours(6);
 constexpr int kFetchSeconds = 8;
 
 std::string read_text(const std::filesystem::path& file) {
@@ -31,12 +33,12 @@ std::string read_text(const std::filesystem::path& file) {
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
-bool fresh(const std::filesystem::path& file) {
+bool fresh(const std::filesystem::path& file, std::filesystem::file_time_type::duration within = kFreshFor) {
   std::error_code error;
   const auto written = std::filesystem::last_write_time(file, error);
   if (error) return false;
   const auto age = std::filesystem::file_time_type::clock::now() - written;
-  return age >= std::filesystem::file_time_type::duration::zero() && age < kFreshFor;
+  return age >= std::filesystem::file_time_type::duration::zero() && age < within;
 }
 
 }  // namespace
@@ -97,60 +99,88 @@ int merge_release_index(EngineCatalog& catalog, std::string_view text, std::stri
   return taken;
 }
 
-void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& cache, std::string_view repo,
-                         std::string_view version, const std::vector<std::string>& keys,
-                         const UpdateFetch& fetch) {
-  if (repo.empty() || version.empty()) return;
+namespace {
+
+std::filesystem::path beside(const std::filesystem::path& cache, std::string_view suffix) {
+  std::filesystem::path file = cache;
+  file += suffix;
+  return file;
+}
+
+}  // namespace
+
+bool release_index_due(const std::filesystem::path& cache) {
+  return !fresh(cache) && !fresh(beside(cache, ".absent")) && !fresh(beside(cache, ".tried"), kRetryAfter);
+}
+
+void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
+                           std::string_view version, const UpdateFetch& fetch, const std::stop_token& stop) {
+  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache)) return;
   const std::string url = release_download_prefix(repo, version) + "engines-nvidia.lock";
-  std::filesystem::path signature = cache;
-  signature += ".sig";
+  const std::filesystem::path signature = beside(cache, ".sig");
   // Un 404 se retient un jour, comme une copie fraîche : sans paquet NVIDIA dans la release, le lancement
-  // suivant ne refait pas la requête, jusqu'à 8 s sur le thread de la fenêtre (A38-10).
-  std::filesystem::path absent = cache;
-  absent += ".absent";
+  // suivant ne refait pas la requête (A38-10). Un autre échec (hors ligne, portail captif) se retient
+  // quelques heures (A18-02).
+  const std::filesystem::path absent = beside(cache, ".absent");
+  const std::filesystem::path tried = beside(cache, ".tried");
   const auto log = log_channel("app");
-  if (!fresh(cache) && !fresh(absent) && fetch) {
-    std::error_code error;
-    std::filesystem::create_directories(cache.parent_path(), error);
-    std::filesystem::path part = cache;
-    part += ".part";
-    std::filesystem::path sig_part = signature;
-    sig_part += ".part";
-    std::filesystem::remove(part, error);
-    std::filesystem::remove(sig_part, error);
-    auto got = fetch(url, part, kFetchSeconds, std::stop_token{});
-    if (got) got = fetch(url + ".sig", sig_part, kFetchSeconds, std::stop_token{});
-    if (got) {
-      // La signature d'abord : une copie gardée a toujours la sienne à côté.
-      std::filesystem::remove(absent, error);
-      std::filesystem::rename(sig_part, signature, error);
-      if (!error) std::filesystem::rename(part, cache, error);
-      if (error) log->info("moteurs de la release : {}", error.message());
-    } else {
-      std::filesystem::remove(part, error);
-      std::filesystem::remove(sig_part, error);
-      // 404 : la release n'a pas de paquet NVIDIA (ou pas de signature) ; une copie gardée d'avant ne vaut
-      // plus.
-      if (got.error().code == RefusalCode::TrackUnavailable) {
-        std::filesystem::remove(cache, error);
-        std::filesystem::remove(signature, error);
-        std::ofstream(absent, std::ios::binary | std::ios::trunc).put('\n');
-      }
-      log->info("moteurs de la release : {}", got.error().detail);
-    }
+  std::error_code error;
+  std::filesystem::create_directories(cache.parent_path(), error);
+  const std::filesystem::path part = beside(cache, ".part");
+  const std::filesystem::path sig_part = beside(signature, ".part");
+  std::filesystem::remove(part, error);
+  std::filesystem::remove(sig_part, error);
+  auto got = fetch(url, part, kFetchSeconds, stop);
+  if (got) got = fetch(url + ".sig", sig_part, kFetchSeconds, stop);
+  if (got) {
+    // La signature d'abord : une copie gardée a toujours la sienne à côté.
+    std::filesystem::remove(absent, error);
+    std::filesystem::remove(tried, error);
+    std::filesystem::rename(sig_part, signature, error);
+    if (!error) std::filesystem::rename(part, cache, error);
+    if (error) log->info("moteurs de la release : {}", error.message());
+    return;
   }
-  const std::string text = read_text(cache);
-  if (text.empty()) return;
+  std::filesystem::remove(part, error);
+  std::filesystem::remove(sig_part, error);
+  if (got.error().code == RefusalCode::Cancelled || stop.stop_requested()) return;  // lecteur fermé
+  if (got.error().code == RefusalCode::TrackUnavailable) {
+    // 404 : la release n'a pas de paquet NVIDIA (ou pas de signature) ; une copie gardée d'avant ne vaut
+    // plus.
+    std::filesystem::remove(cache, error);
+    std::filesystem::remove(signature, error);
+    std::ofstream(absent, std::ios::binary | std::ios::trunc).put('\n');
+  } else {
+    std::ofstream(tried, std::ios::binary | std::ios::trunc).put('\n');
+  }
+  log->info("moteurs de la release : {}", got.error().detail);
+}
+
+ReleaseIndexCopy read_release_index(const std::filesystem::path& cache) {
+  return {.text = read_text(cache), .signature = read_text(beside(cache, ".sig"))};
+}
+
+void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, std::string_view repo,
+                        const std::vector<std::string>& keys) {
+  if (repo.empty() || copy.text.empty()) return;
   // Signé en CI par la clé des mises à jour (A26-02) : sans signature valide, rien n'est cru, même la copie
   // gardée (un fichier du dossier de données changé à la main ne pointe pas ailleurs).
-  if (!release_index_signed(text, read_text(signature), keys)) {
+  if (!release_index_signed(copy.text, copy.signature, keys)) {
     catalog.problem += std::format("{}engines-nvidia.lock : signature absente ou fausse, écarté",
                                    catalog.problem.empty() ? "" : " ; ");
     return;
   }
   const std::string prefix = release_repo_prefix(repo);
-  if (const int taken = merge_release_index(catalog, text, prefix); taken > 0)
-    log->info("moteurs de la release : {} paquet(s) de {}", taken, prefix);
+  if (const int taken = merge_release_index(catalog, copy.text, prefix); taken > 0)
+    log_channel("app")->info("moteurs de la release : {} paquet(s) de {}", taken, prefix);
+}
+
+void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& cache, std::string_view repo,
+                         std::string_view version, const std::vector<std::string>& keys,
+                         const UpdateFetch& fetch) {
+  if (repo.empty() || version.empty()) return;
+  refresh_release_index(cache, repo, version, fetch, std::stop_token{});
+  merge_release_copy(catalog, read_release_index(cache), repo, keys);
 }
 
 }  // namespace ajp::app::play

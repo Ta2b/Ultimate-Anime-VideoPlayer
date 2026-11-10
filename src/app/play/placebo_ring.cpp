@@ -1,5 +1,6 @@
 // Le ring de PlaceboScreen : textures RGBA16 exportées vers CUDA (descripteurs, HANDLE sous Windows), passage
 // des slots en disposition GENERAL par VK_QUEUE_FAMILY_EXTERNAL (core/ring.h : kRingLayout).
+#include <algorithm>
 #include <format>
 #include <utility>
 
@@ -215,8 +216,10 @@ std::expected<pl_tex, Refusal> PlaceboRing::acquire(pl_gpu gpu, const RingFrame&
 bool PlaceboRing::ready(const RingFrame& frame) const {
   // Hors du ring courant, ou sans moyen de lire : vrai, acquire ou retire en décident.
   if (counter_ == nullptr || frame.generation != generation_ || frame.slot >= slots_.size()) return true;
+  const Slot& slot = slots_[frame.slot];
+  if (slot.seen_value >= frame.ready_value) return true;
   std::uint64_t value = 0;
-  const VkResult read = counter_(device_, slots_[frame.slot].semaphore, &value);
+  const VkResult read = counter_(device_, slot.semaphore, &value);
   // Appareil perdu : l'image ne sera jamais écrite, libplacebo l'attendrait sans fin (A31-13) ; l'écran le
   // dit à la session (Screen::device_lost). Une autre erreur laisse acquire en décider, comme avant.
   if (read == VK_ERROR_DEVICE_LOST) {
@@ -224,6 +227,7 @@ bool PlaceboRing::ready(const RingFrame& frame) const {
     return false;
   }
   if (read != VK_SUCCESS) return true;
+  slot.seen_value = std::max(slot.seen_value, value);
   return value >= frame.ready_value;
 }
 

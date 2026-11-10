@@ -11,6 +11,7 @@
 #pragma once
 
 #include <filesystem>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -34,9 +35,27 @@ bool release_index_signed(std::string_view text, std::string_view signature,
 // récent). Rend le nombre de moteurs pris ; une entrée hors de la release est écartée et dite dans problem.
 int merge_release_index(EngineCatalog& catalog, std::string_view text, std::string_view prefix);
 
-// Au lancement : relit engines-nvidia.lock et sa signature de la release (au plus une fois par jour, en
-// quelques secondes au plus, gardés dans cache et cache.sig), puis l'ajoute au catalogue s'il est signé par
-// l'une des keys. Sans réseau, la copie gardée sert, revérifiée.
+// Faux tant qu'une copie gardée a moins d'un jour, qu'un 404 a moins d'un jour, ou qu'un autre échec a moins
+// de quelques heures : rien à demander au réseau.
+bool release_index_due(const std::filesystem::path& cache);
+// Relit engines-nvidia.lock et sa signature de la release si c'est dû (release_index_due), en quelques
+// secondes au plus, dans cache et cache.sig ; hors du thread de la fenêtre (A18-02). stop coupe curl.
+void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
+                           std::string_view version, const UpdateFetch& fetch, const std::stop_token& stop);
+// La copie gardée, lue d'un coup : l'index et sa signature vont ensemble.
+struct ReleaseIndexCopy {
+  std::string text;
+  std::string signature;
+};
+ReleaseIndexCopy read_release_index(const std::filesystem::path& cache);
+// Ajoute au catalogue les moteurs d'une copie lue, si elle est signée par l'une des keys.
+void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, std::string_view repo,
+                        const std::vector<std::string>& keys);
+
+// refresh_release_index puis merge_release_copy, sur le thread de l'appelant (essais) : relit
+// engines-nvidia.lock et sa signature de la release (au plus une fois par jour, en quelques secondes au plus,
+// gardés dans cache et cache.sig), puis l'ajoute au catalogue s'il est signé par l'une des keys. Sans réseau,
+// la copie gardée sert, revérifiée.
 void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& cache, std::string_view repo,
                          std::string_view version, const std::vector<std::string>& keys,
                          const UpdateFetch& fetch);

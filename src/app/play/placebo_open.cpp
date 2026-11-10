@@ -395,12 +395,13 @@ PlaceboScreen::Impl::~Impl() {
   if (composed != nullptr) pl_tex_destroy(vk->gpu, &composed);
   share.reset();  // avant l'appareil qu'il prête
   if (!grade_gpu_us.empty()) {
-    std::ranges::sort(grade_gpu_us);
+    std::vector<std::uint32_t>& kept = grade_gpu_us.kept();
+    std::ranges::sort(kept);
     const auto at = [&](double q) {
-      return grade_gpu_us[static_cast<std::size_t>(q * static_cast<double>(grade_gpu_us.size() - 1))];
+      return kept[static_cast<std::size_t>(q * static_cast<double>(kept.size() - 1))];
     };
-    channel->info("profil GPU · grade HDR : médiane {:.2f} ms, p95 {:.2f} ms ({} images)", at(0.5) / 1000.0,
-                  at(0.95) / 1000.0, grade_gpu_us.size());
+    channel->info("profil GPU · grade HDR : médiane {:.2f} ms, p95 {:.2f} ms ({} images, centiles sur {})",
+                  at(0.5) / 1000.0, at(0.95) / 1000.0, grade_gpu_us.seen(), kept.size());
   }
   if (recompositions + reuses > 0)
     channel->info("composition gardee : {} recompositions, {} recopies sans recomposition", recompositions,

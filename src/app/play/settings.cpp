@@ -328,6 +328,14 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.was_given("--no-restore-lines")) s.restore_lines = false;
   if (options.was_given("--model") && options.model) s.model = core::to_utf8(options.model->filename());
   if (options.was_given("--work-height")) s.work_height = options.work_height;
+  // A18-17 : le RIFE chargé est celui que le menu montre et que --bench-out enregistre.
+  if (options.was_given("--rife-model") && options.rife_model) {
+    s.rife_model = core::to_utf8(options.rife_model->filename());
+    s.motion_engine = MotionEngine::Rife;
+  }
+  if (options.motion)  // A18-09
+    s.motion_engine =
+        *options.motion == MotionChoice::DistilDrba ? MotionEngine::DistilDrba : MotionEngine::Rife;
   if (options.was_given("--rife")) {
     s.rife_factor = options.rife_factor;
     s.rife_factor_den = options.rife_factor_den;
@@ -351,6 +359,9 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--no-restore-lines", &PlaySettings::restore_lines);
   keep("--model", &PlaySettings::model);
   keep("--work-height", &PlaySettings::work_height);
+  keep("--rife-model", &PlaySettings::rife_model);
+  keep("--rife-model", &PlaySettings::motion_engine);
+  keep("--motion", &PlaySettings::motion_engine);
   keep("--rife", &PlaySettings::rife_factor);
   keep("--rife", &PlaySettings::rife_factor_den);
   keep("--rife", &PlaySettings::rife_auto);  // l'option la coupe pour cette lecture seulement (A22-05)

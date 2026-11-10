@@ -78,11 +78,13 @@ TEST_CASE("ChainStats : stop() attend le relevé en vol avant de rendre les noya
 TEST_CASE("ChainStats : stop() sans relevé lancé ne démarre rien", "[app][stats]") {
   const LiveSettings live;
   CountingKernels kernels;
-  ChainStats stats(live, kernels, false, "RIFE", 24.0);
-  stats.stop();
+  ChainStats stats(live, kernels, false, "RIFE", 24.0);  // une lecture à l'ouverture (A32-10)
+  stats.stop();                                          // une à la fermeture, pour le journal (A33-08)
+  const int seen = kernels.reads.load();
+  CHECK(seen == 2);
   static_cast<void>(stats.memory());
   std::this_thread::sleep_for(50ms);
-  CHECK(kernels.reads.load() == 0);
+  CHECK(kernels.reads.load() == seen);  // aucun fil de relevé
 }
 
 }  // namespace

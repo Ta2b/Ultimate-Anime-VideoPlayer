@@ -53,6 +53,8 @@
 #include "app/play/player_run.h"
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
+#include "app/play/release_refresh.h"
+#include "app/play/resource_usage.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
@@ -137,23 +139,6 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
                                           [file] { return probe_once(file); });
 }
 
-// Les moteurs téléchargeables : ceux de l'engines.lock livré, et ceux joints à la release après elle
-// (TensorRT construit plus tard), relus en ligne sauf si les mises à jour sont refusées (la copie gardée sert
-// alors) ou pour un dossier de données à part (essais).
-EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& paths,
-                             const PlaySettings& saved) {
-  EngineCatalog catalog = load_catalog(
-      paths.engine_index, paths::data_root(paths),
-      saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
-  const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
-  add_release_engines(catalog, paths::data_root(paths) / "engines-nvidia.lock", release_repo(),
-                      installed_version(),
-                      update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),
-                      online ? UpdateFetch(fetch_https) : UpdateFetch());
-  if (!catalog.problem.empty()) log_channel("app")->info("{}", catalog.problem);
-  return catalog;
-}
-
 // A25-01 : l'assistant relancé en lecture a écrit play.toml (langues, mises à jour, chaîne calibrée). La
 // vidéo se rouvre comme un fichier qu'on ouvre, au même endroit : réglages relus, préréglage rejoué, et
 // l'ancienne chaîne en mémoire ne réécrit plus ses choix (Reopen::settings_written).
@@ -196,20 +181,22 @@ CalibrationHost calibration_host(const GpuFacts& here, int display_height, const
 // Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur. Au
 // lancement si elle est due, puis relue toutes les 30 minutes tant que le lecteur reste ouvert (la
 // fréquence « au lancement » ne revérifie pas) ; pendant une lecture (playing), elle attend la fin de la
-// vidéo.
-std::jthread start_update_check(const PlaySettings& saved, const PlayerPaths& paths,
+// vidéo. Le mode et la fréquence se relisent dans play.toml à chaque tour (A18-03) : « Jamais » choisi dans
+// l'assistant ou dans Général vaut tout de suite.
+std::jthread start_update_check(const std::filesystem::path& settings_path, const PlayerPaths& paths,
                                 std::atomic<bool>& playing) {
-  if (saved.update_mode == UpdateMode::Never) return {};
   const std::filesystem::path update_file = paths::update_state(paths.data);
   auto started = start_thread(
       "updates", ThreadReport([](const Refusal& refused) {
         log_channel("app")->warn("mise à jour : {}", refused.detail);
       }),
-      [=, &playing, mode = saved.update_mode, frequency = saved.update_frequency](const std::stop_token& stop,
-                                                                                  const ThreadReport&) {
+      [=, &playing](const std::stop_token& stop, const ThreadReport&) {
         std::mutex mutex;
         std::condition_variable_any wake;
         for (bool first = true; !stop.stop_requested(); first = false) {
+          const auto saved = load_settings(settings_path);
+          const UpdateMode mode = saved ? saved->update_mode : UpdateMode::Notify;
+          const UpdateFrequency frequency = saved ? saved->update_frequency : UpdateFrequency::Daily;
           const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
                                        std::chrono::system_clock::now().time_since_epoch())
                                        .count();
@@ -248,6 +235,32 @@ void announce_first(i18n::Translated& notice, i18n::Translated& first) {
   if (first.empty()) return;
   notice = notice.empty() ? first : first + i18n::Translated::data(" · ") + notice;
   first = {};
+}
+
+// Annoncés une fois par lancement, pas à chaque vidéo.
+struct Announced {
+  bool update = false;
+  bool calibration = false;
+};
+
+// « Me prévenir » : une version plus récente vue par la dernière vérification. P3.11 : une calibration faite
+// sur une autre carte ne sert plus ; la refaire est proposé.
+void announce_once(Player& player, Announced& announced, const std::filesystem::path& update_file,
+                   UpdateMode mode, const std::string& gpu, int display_height) {
+  const UpdateState update = load_update_state(update_file);
+  if (!announced.update && mode == UpdateMode::Notify && !update.latest_version.empty()) {
+    announced.update = true;
+    player.notice =
+        i18n::ui_tr_format("Update {} available (Settings > General > Application)", update.latest_version);
+  }
+  // La calibration de cet écran (A37-10), sinon l'ancien calibration.toml.
+  const auto calibration = load_calibration_at(player.settings_path.parent_path(), display_height);
+  if (!announced.calibration && calibration && !calibration->gpu.empty() && calibration->gpu != gpu) {
+    announced.calibration = true;
+    const i18n::Translated redo =
+        i18n::ui_tr("New graphics card: calibrate this PC again (Video > Post-processing)");
+    player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
+  }
 }
 
 }  // namespace
@@ -291,8 +304,9 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     startup_notes.push_back(set_aside(settings_path, saved.error()));
     saved = PlaySettings{};
   }
-  if (!options.bench_out && !options.data_dir) update_check = start_update_check(*saved, paths, playing);
-  load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] seul
+  ReleaseRefresh release_index = start_release_refresh(options, paths, *saved);  // A18-02
+  const std::jthread resource_log = start_resource_log();                        // A33-08
+  load_user_keys(paths::user_keys(settings_path.parent_path()));                 // [keys] seul
   const std::string title = given ? std::format("ajp — {}", core::to_utf8(options.file.filename())) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -347,7 +361,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     engines = core::Settings{};
   }
   // Un moteur retiré (MIGraphX, OpenVINO) est écarté dès la lecture de settings.toml (core::retired_engine).
-  const EngineCatalog catalog = engine_catalog(options, paths, *saved);
+  const EngineCatalog catalog = engine_catalog(paths, *saved, release_index);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,
                                    .options = options,
@@ -367,6 +381,9 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     // quoi il reprendrait les réglages d'avant et les réécrirait par-dessus.
     if (auto reread = load_settings(settings_path)) saved = std::move(*reread);
   }
+  // Après l'assistant, qui choisit le mode des mises à jour (A18-03).
+  if (!options.bench_out && !options.data_dir)
+    update_check = start_update_check(settings_path, paths, playing);
   // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
   // Une seule relance par mise à jour : si le module reste périmé après elle, on ne boucle pas.
   const std::filesystem::path relaunch_marker = paths.data / "engines-relaunched";
@@ -422,10 +439,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   }
   // Une seconde perte du GPU dans la minute de la relance ne relance plus : le message et l'accueil.
   const bool lost_recently = reopened_after.has_value() && reopened_after->reason == RelaunchReason::GpuLost;
-  // Annoncés une fois par lancement, pas à chaque vidéo : la mise à jour vue, la calibration d'une autre
-  // carte.
-  bool update_announced = false;
-  bool calibration_told = false;
+  Announced announced;  // la mise à jour vue, la calibration d'une autre carte
   const HomeScreen home{.screen = **screen,
                         .ui = **ui,
                         .options = options,
@@ -537,7 +551,13 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       const gpu::BackendInit probe{
           .render = &(*screen)->device(), .cache_dir = paths.engines, .log = backend_log()};
       auto opened = open_backend(catalog, paths, *engines, probe);
-      if (!opened) return std::unexpected(std::move(opened.error()));
+      if (!opened && (scripted || !from_home)) return std::unexpected(std::move(opened.error()));
+      if (!opened) {  // A18-13 : choisie à l'accueil, la vidéo y ramène avec la raison
+        problem = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(file.filename()),
+                                  visible_error(opened.error()));
+        file.clear();
+        continue;
+      }
       library = std::move(*opened);
       library_wanted = wanted;
       // A31-03 : le moteur choisi refuse ce GPU (pilote trop ancien, module abîmé) : un autre le remplace,
@@ -566,27 +586,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                   .display = window_display((*screen)->window())};
     player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     player.stages = &stage_memory;
-    {
-      // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
-      // lancement.
-      const UpdateState update = load_update_state(update_file);
-      if (!update_announced && saved->update_mode == UpdateMode::Notify && !update.latest_version.empty()) {
-        update_announced = true;
-        player.notice = i18n::ui_tr_format("Update {} available (Settings > General > Application)",
-                                           update.latest_version);
-      }
-    }
-    {
-      // P3.11 : une calibration faite sur une autre carte ne sert plus ; la refaire est proposé une fois par
-      // lancement.
-      const auto calibration = load_calibration_at(settings_path.parent_path(), host.display_height);
-      if (!calibration_told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
-        calibration_told = true;
-        const i18n::Translated redo =
-            i18n::ui_tr("New graphics card: calibrate this PC again (Video > Post-processing)");
-        player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
-      }
-    }
+    announce_once(player, announced, update_file, saved->update_mode, here.name, host.display_height);
     announce_first(player.notice, relaunch_note);
     announce_first(player.notice, engine_fallback);
     // Déjà traduites par set_aside() : montrées telles quelles.

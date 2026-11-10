@@ -11,6 +11,7 @@
 
 #include "app/play/build_progress.h"
 #include "app/play/i18n.h"
+#include "app/play/resource_usage.h"
 #include "app/play/settings.h"
 #include "app/play/span_int8.h"
 #include "core/clock.h"
@@ -192,12 +193,30 @@ std::optional<std::string> ChainStats::read_gpu() const {
   return line;
 }
 
+bool ChainStats::note_memory(const gpu::KernelOps::DeviceMemory& memory) const {
+  constexpr std::uint64_t kMargin = std::uint64_t{256} << 20;
+  const bool full = memory.total > 0 && (memory.used >= memory.total || memory.total - memory.used < kMargin);
+  if (full && !memory_full_told_.exchange(true))
+    log_channel("app")->warn(
+        "mémoire vidéo pleine ({} / {} Mio) : le pilote peut déborder en "  // i18n-ok
+        "mémoire système, la chaîne ralentit",                              // i18n-ok
+        memory.used >> 20U, memory.total >> 20U);
+  return full;
+}
+
+void ChainStats::check_memory() const {
+  if (const auto memory = kernels_.device_memory()) note_memory(*memory);
+}
+
 std::optional<std::string> ChainStats::read_memory() const {
   const auto memory = kernels_.device_memory();
   if (!memory) return std::nullopt;
   constexpr double kMiB = 1024.0 * 1024.0;
-  return i18n::tr_format("video memory {:.0f} / {:.0f} MiB", static_cast<double>(memory->used) / kMiB,
-                         static_cast<double>(memory->total) / kMiB);
+  std::string text =
+      i18n::tr_format("video memory {:.0f} / {:.0f} MiB", static_cast<double>(memory->used) / kMiB,
+                      static_cast<double>(memory->total) / kMiB);
+  if (note_memory(*memory)) text += i18n::tr(" · full: the driver may spill into system memory");
+  return text;
 }
 
 void ChainStats::start_sampler() {
@@ -231,6 +250,15 @@ void ChainStats::stop() {
     sampler_.request_stop();
     sampler_.join();
   }
+  // A33-08 : à chaque fermeture de chaîne, ce que le processus et la carte tiennent encore.
+  std::string line = describe(process_resources());
+  if (const auto memory = kernels_.device_memory()) {
+    constexpr double kMiB = 1024.0 * 1024.0;
+    constexpr std::string_view kVideo = ", mémoire vidéo";  // i18n-ok : journal
+    line += std::format("{} {:.0f} / {:.0f} Mio", kVideo, static_cast<double>(memory->used) / kMiB,
+                        static_cast<double>(memory->total) / kMiB);
+  }
+  log_channel("app")->info("ressources à la fermeture de la chaîne : {}", line);  // i18n-ok : journal
 }
 
 std::optional<std::string> ChainStats::memory() {

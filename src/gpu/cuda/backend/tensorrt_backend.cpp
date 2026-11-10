@@ -268,7 +268,7 @@ TensorRtBackend::~TensorRtBackend() {
   for (cudaEvent_t fence : fences_) {
     if (fence != nullptr) cudaEventDestroy(fence);
   }
-  destroy_lanes();
+  destroy_lanes();  // et rend la réserve CUDA au pilote (A33-01)
 }
 
 std::expected<void, Refusal> TensorRtBackend::bind() const {

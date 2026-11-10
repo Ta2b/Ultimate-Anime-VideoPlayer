@@ -70,6 +70,9 @@ enum class Registration : std::uint8_t { None, Register, Unregister };
 
 inline constexpr double kDefaultKdeSdrNits = 200.0;  // la luminosité SDR de KDE par défaut
 
+// --motion : RIFE ou DistilDRBA (settings.h : MotionEngine, que ce fichier ne voit pas).
+enum class MotionChoice : std::uint8_t { Rife, DistilDrba };
+
 struct PlayOptions {
   std::filesystem::path file;                  // vide : l'écran d'accueil choisit la vidéo
   std::optional<std::filesystem::path> model;  // --model : absent, celui du lecteur actuel
@@ -100,6 +103,9 @@ struct PlayOptions {
   // --rife-calm-model (essai, P6.17) : un RIFE plus léger (4.22 lite) pour la passe du milieu des paires
   // calmes, RIFE mouvement seulement ; mêmes plans d'entrée et même remplissage que rife_model, sinon ignoré.
   std::optional<std::filesystem::path> rife_calm_model;
+  // --motion=rife|drba (A18-09) : le moteur de l'interpolation pour cette lecture, comme le menu ; absent,
+  // celui de play.toml ou du préréglage.
+  std::optional<MotionChoice> motion;
   int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
   bool help = false;      // --help
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
