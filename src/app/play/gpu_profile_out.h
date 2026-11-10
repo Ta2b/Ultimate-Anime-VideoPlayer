@@ -29,6 +29,7 @@ struct BenchChain {
   int work_height = 0;
   std::string rife_model;
   std::string span_variant;
+  std::string engine;  // le moteur en service (« tensorrt », « vulkan »…)
 };
 
 // Écrit la mesure du banc (--bench-out, auto_bench.h) : ce que la lecture a présenté et la chaîne jouée. Un

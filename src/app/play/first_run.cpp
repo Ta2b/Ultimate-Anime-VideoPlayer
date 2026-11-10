@@ -372,8 +372,15 @@ std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
   std::uint64_t bytes = 0;
   std::vector<std::string> refused;
   for (const EngineRow& row : rows) {
-    if (!row.chosen || !row.usable) continue;
     const std::string_view label = engine_label(row.offer.id);
+    // Le moteur recommandé pour cette carte reste décoché (sa licence ne se coche jamais d'office) : la
+    // calibration mesurerait l'autre sans le dire (A25-02).
+    if (row.usable && !row.chosen && std::ranges::contains(row.offer.badges, core::Badge::Recommended) &&
+        row.offer.id != core::EngineId::Vulkan)
+      refused.push_back(i18n::tr_format(
+          "{}: recommended for this card but not selected. The calibration will measure a slower engine.",
+          label));
+    if (!row.chosen || !row.usable) continue;
     if (row.download && !row.license.empty() && !row.license_accepted) {
       refused.push_back(i18n::tr_format("{}: licence not accepted, it will not be installed", label));
       continue;

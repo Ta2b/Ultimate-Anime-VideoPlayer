@@ -52,7 +52,10 @@ void write_bench_reading(const std::filesystem::path& file, const GpuFacts& gpu,
                              .render_median_us = seen.render.median(),
                              .work_height = chain.work_height,
                              .rife_model = chain.rife_model,
-                             .span_variant = chain.span_variant};
+                             .span_variant = chain.span_variant,
+                             .engine = chain.engine,
+                             .new_frames = seen.new_frames,
+                             .uninterpolated = seen.uninterpolated};
   if (auto written = save_reading(file, reading); !written)
     log_channel("app")->warn("{}", written.error().detail);
 }

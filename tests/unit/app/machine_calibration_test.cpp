@@ -1,6 +1,8 @@
 #include "app/play/machine_calibration.h"
 
 #include <filesystem>
+#include <map>
+#include <stop_token>
 #include <string>
 #include <string_view>
 
@@ -166,7 +168,9 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
                        .gpu = "RTX 4070 Ti",
                        .date = "2026-11-01",
                        .display_height = 1440,
-                       .models = calibration_models(Tier::Fast)};
+                       .models = calibration_models(Tier::Fast),
+                       .engine = "tensorrt",
+                       .driver = "581"};
   const auto read = parse_calibration(format_calibration(c));
   REQUIRE(read);
   CHECK(read->chosen == c.chosen);
@@ -180,6 +184,8 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   CHECK(read->display_height == 1440);
   CHECK(read->version == kCalibrationVersion);
   CHECK(read->models == c.models);
+  CHECK(read->engine == "tensorrt");
+  CHECK(read->driver == "581");
   CHECK_FALSE(read->on_battery);
   CHECK_FALSE(parse_calibration("version = 1\n"));
   // Rejoués dans les deux sens (P3.12) : l'échec, et le succès de justesse ; pas le succès net.
@@ -192,17 +198,34 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-battery";
   std::filesystem::create_directories(dir);
   REQUIRE(save_calibration(calibration_file(dir), c));
-  const auto followed = calibrated_chain(dir, "RTX 4070 Ti", 1440);
+  const CalibrationHost host{.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true, .driver = "581"};
+  const auto followed = calibrated_chain(dir, host);
   REQUIRE(followed);
   CHECK(followed->height == 540);
   CHECK(followed->span_model == kQualitySpanModel);
   CHECK(followed->rife_model == "rife_v4.25.onnx");
-  CHECK_FALSE(calibrated_chain(dir, "RTX 4090", 1440));  // une autre carte
+  CHECK_FALSE(calibrated_chain(dir, {.gpu = "RTX 4090", .display_height = 1440, .tensorrt = true}));
+  CHECK(calibration_use(c, {.gpu = "RTX 4070 Ti", .display_height = 2160, .tensorrt = true}) ==
+        CalibrationUse::OtherMachine);
+  // Mesurée sous TensorRT, jouée sous Vulkan (TensorRT refusé ou désinstallé) : pas suivie (A07-05).
+  CalibrationHost vulkan = host;
+  vulkan.tensorrt = false;
+  CHECK(calibration_use(c, vulkan) == CalibrationUse::OtherEngine);
+  CHECK_FALSE(calibrated_chain(dir, vulkan));
+  // Un autre pilote : suivie, mais le tableau le dit (A36-02). Un pilote inconnu ne dit rien.
+  CHECK_FALSE(calibration_driver_changed(c, host));
+  CalibrationHost updated = host;
+  updated.driver = "590";
+  CHECK(calibration_use(c, updated) == CalibrationUse::Followed);
+  CHECK(calibration_driver_changed(c, updated));
+  updated.driver.clear();
+  CHECK_FALSE(calibration_driver_changed(c, updated));
   // Mesurée sur batterie : relue, mais l'Auto ne la suit pas.
   c.on_battery = true;
   REQUIRE(save_calibration(calibration_file(dir), c));
   CHECK(load_calibration(calibration_file(dir))->on_battery);
-  CHECK_FALSE(calibrated_chain(dir, "RTX 4070 Ti", 1440));
+  CHECK(calibration_use(c, host) == CalibrationUse::OnBattery);
+  CHECK_FALSE(calibrated_chain(dir, host));
   std::filesystem::remove_all(dir);
 }
 
@@ -240,7 +263,9 @@ target_fps = 48.0
   std::filesystem::create_directories(dir);
   REQUIRE(save_calibration(calibration_file(dir), *read));  // garde sa version : toujours ancienne
   CHECK(load_calibration(calibration_file(dir))->version == 1);
-  CHECK_FALSE(calibrated_chain(dir, "RTX 4070 Ti", 1440));
+  const CalibrationHost host{.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true};
+  CHECK(calibration_use(*read, host) == CalibrationUse::OldVersion);
+  CHECK_FALSE(calibrated_chain(dir, host));
   std::filesystem::remove_all(dir);
 }
 
@@ -255,4 +280,155 @@ TEST_CASE("la durée annoncée et la barre qui avance pendant une construction (
   CHECK(creeping_fraction(0.05F, 300.0) > 0.1F);   // cinq minutes de construction : la barre a bougé
   CHECK(creeping_fraction(0.05F, 1e6) <= 0.131F);  // sans rattraper l'essai suivant
   CHECK(creeping_fraction(0.95F, 1e6) <= 0.97F);
+}
+
+namespace {
+
+// Une lecture de dix secondes sur un écran à 60 Hz : sans perte, fps images neuves par seconde.
+BenchReading reading_at(double fps, std::int64_t uninterpolated = 0) {
+  BenchReading reading{.gpu = "RTX 4070 Ti", .driver = "581", .engine = "tensorrt"};
+  reading.run = {.presents = 600, .lag_p95_us = 4000, .period_us = 16'667};
+  reading.interval_mean_us = static_cast<std::int64_t>(1e6 / fps);
+  reading.interval_p99_us = reading.interval_mean_us * 2;
+  reading.new_frames = static_cast<std::int64_t>(fps * 10.0);
+  reading.uninterpolated = uninterpolated;
+  return reading;
+}
+
+}  // namespace
+
+TEST_CASE("un essai avec RIFE ne tient que si RIFE double vraiment la cadence (A07-02)",
+          "[calibration-machine]") {
+  const ChainCandidate both{.span = true, .rife = true, .height = 540};
+  const ChainCandidate alone{.span = true, .rife = false, .height = 540};
+  // Le Rapide a baissé le facteur faute de temps : 26 i/s pour 48, aucune image perdue. Avant, « tient ».
+  const BenchReading cut = reading_at(26.0);
+  CHECK(holds(cut.run));
+  CHECK_FALSE(trial_holds(both, cut, 48.0));
+  CHECK(trial_holds(both, reading_at(47.5), 48.0));
+  // Les coupes et les dessins tenus de la séquence ne comptent pas contre RIFE : 43 i/s et 4,5 instants
+  // par seconde laissés sans image à dessein valent 47,5.
+  CHECK_FALSE(trial_holds(both, reading_at(43.0), 48.0));
+  CHECK(trial_holds(both, reading_at(43.0, 45), 48.0));
+  // Sans RIFE, la cadence obtenue n'entre pas dans le verdict ; des pertes, toujours.
+  CHECK(trial_holds(alone, reading_at(24.0), 24.0));
+  BenchReading lossy = reading_at(47.9);
+  lossy.run.dropped = 60;
+  CHECK_FALSE(trial_holds(both, lossy, 48.0));
+  // Une lecture sans décompte (lecteur plus ancien) : la cadence brute.
+  BenchReading old = reading_at(47.0);
+  old.new_frames = 0;
+  CHECK(credited_fps(old) > 46.9);
+  CHECK(credited_fps(BenchReading{}) == 0.0);
+  // La cadence visée : doublée, sans dépasser l'écran ; un écran inconnu ou plus lent que la source ne
+  // borne rien.
+  CHECK(trial_target_fps(alone, 16'667) == 24.0);
+  CHECK(trial_target_fps(both, 16'667) == 48.0);
+  CHECK(trial_target_fps(both, 0) == 48.0);
+  CHECK(trial_target_fps(both, 25'000) == 40.0);
+}
+
+TEST_CASE("la recherche descend SPAN + RIFE jusqu'au palier où RIFE tourne vraiment (A07-02, A07-11)",
+          "[calibration-machine]") {
+  // SPAN seul tient jusqu'à 720p ; avec RIFE, 720p et 540p retombent à 26 i/s sans perte, 480p tient.
+  std::map<int, int> played;  // par hauteur, les essais SPAN + RIFE joués
+  const TrialPlayer play = [&](const ChainCandidate& chain, int,
+                               bool) -> std::expected<BenchReading, ajp::Refusal> {
+    if (!chain.rife) {
+      BenchReading reading = reading_at(24.0);
+      if (chain.height > 720) reading.run.dropped = 200;
+      return reading;
+    }
+    ++played[chain.height];
+    return reading_at(chain.height > 480 ? 26.0 : 47.8);
+  };
+  const auto trials = run_calibration_trials(play, std::stop_token{}, {});
+  REQUIRE(trials);
+  CHECK(trials->gpu == "RTX 4070 Ti");
+  CHECK(trials->driver == "581");
+  CHECK(trials->engine == "tensorrt");
+  CHECK(best_candidate(trials->tried) == ChainCandidate{.span = true, .rife = true, .height = 480});
+  // Un essai qui ne tient pas se rejoue une fois ; celui qui tient avec marge, non.
+  CHECK(played[720] == 2);
+  CHECK(played[540] == 2);
+  CHECK(played[480] == 1);
+  CHECK(played.count(1080) == 0);  // au-dessus du plus haut palier de SPAN seul : pas essayé
+  for (const CandidateTrial& trial : trials->tried)
+    if (trial.chain.rife && trial.chain.height > 480) CHECK_FALSE(trial.holds);
+}
+
+TEST_CASE("la recherche : arrêt demandé, premier essai vide, délai dépassé rejoué (A07-11)",
+          "[calibration-machine]") {
+  std::stop_source stop;
+  const TrialPlayer cancelled = [&](const ChainCandidate&, int,
+                                    bool) -> std::expected<BenchReading, ajp::Refusal> {
+    stop.request_stop();
+    return reading_at(24.0);
+  };
+  const auto stopped = run_calibration_trials(cancelled, stop.get_token(), {});
+  REQUIRE_FALSE(stopped);
+  CHECK(stopped.error().code == ajp::RefusalCode::Cancelled);
+
+  const TrialPlayer nothing = [](const ChainCandidate&, int,
+                                 bool) -> std::expected<BenchReading, ajp::Refusal> {
+    return std::unexpected(ajp::Refusal{ajp::RefusalCode::DecodeFailed, "rien"});
+  };
+  const auto empty = run_calibration_trials(nothing, std::stop_token{}, {});
+  REQUIRE_FALSE(empty);
+  CHECK(empty.error().code == ajp::RefusalCode::DecodeFailed);
+
+  // Un délai dépassé (une construction de moteur) : le même essai, une fois, avec le long délai.
+  int calls = 0;
+  bool long_second = false;
+  const TrialPlayer slow_build = [&](const ChainCandidate& chain, int,
+                                     bool first) -> std::expected<BenchReading, ajp::Refusal> {
+    ++calls;
+    if (calls == 2) {
+      ajp::Refusal refusal{ajp::RefusalCode::DecodeFailed, "délai"};
+      refusal.key = std::string(kTrialTimedOutKey);
+      return std::unexpected(std::move(refusal));
+    }
+    if (calls == 3) long_second = first && chain.height == 480;
+    return reading_at(chain.rife ? 47.9 : 24.0);
+  };
+  float last = 0.0F;
+  const auto built = run_calibration_trials(slow_build, std::stop_token{}, [&](float f) { last = f; });
+  REQUIRE(built);
+  CHECK(long_second);
+  CHECK(last > 0.0F);
+  CHECK(best_candidate(built->tried) == ChainCandidate{.span = true, .rife = true, .height = 1080});
+}
+
+TEST_CASE("un calibration.toml de version 2 (sans moteur noté) se relit mais n'est plus suivi",
+          "[calibration-machine]") {
+  constexpr std::string_view kTwo = R"(version = 2
+gpu = "RTX 4070 Ti"
+date = "2026-11-09"
+display_height = 1440
+span_model = "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx"
+rife_model = "rife_v4.25.onnx"
+on_battery = false
+
+[chosen]
+span = true
+rife = true
+height = 1080
+
+[[trials]]
+span = true
+rife = true
+height = 1080
+holds = true
+lost_percent = 0.0
+fps = 26.0
+low_fps = 22.0
+target_fps = 48.0
+)";
+  const auto read = parse_calibration(kTwo);
+  REQUIRE(read);
+  CHECK(read->version == 2);
+  CHECK(read->engine.empty());
+  CHECK(read->models.rife == "rife_v4.25.onnx");
+  CHECK(calibration_use(*read, {.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true}) ==
+        CalibrationUse::OldVersion);
 }
