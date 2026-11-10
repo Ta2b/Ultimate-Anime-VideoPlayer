@@ -161,7 +161,7 @@
 | A12-06 | Mineur | C08 | Calage de vitesse sur une fréquence fausse, jamais sur la phase | Corrigé d'après le code (C08), effet à confirmer : `--stats` une heure sur écran fixe, compter les `interval_us` qui sortent du motif ; et relever ce que SDL annonce sous Windows pour un mode 59,94 Hz. |
 | A24-08 | Mineur | C08 | `path::string()` dans le journal (dette, voir A20-02) | Corrigé d'après le code (C08), effet à confirmer : sur Windows. |
 | A24-16 | Mineur | C08 | `save_settings` synchrone sur le thread de l'interface à l'accueil | Lu ; durée à confirmer. |
-| A24-17 | Mineur | C08 | Accueil redessiné toutes les 16 ms sans événement | charge GPU sur l'accueil immobile. |
+| A24-17 | Mineur | C08 | Accueil redessiné toutes les 16 ms sans événement | Corrigé d'après le code (C08), effet à confirmer : charge GPU sur l'accueil immobile. |
 | A24-18 | Mineur | C08 | Atlas des polices en RGBA32, renvoyé depuis l'origine | (`AJP_TRACE` autour de `update_texture`). |
 | A24-20 | Mineur | C08 | Sous-titres étirés à la nouvelle taille jusqu'au rendu suivant | Lu ; durée à confirmer. |
 | A24-21 | Mineur | C08 | Une passe de dessin par commande ImGui | `--stats`, temps de rendu avec et sans le menu ouvert. |
@@ -230,3 +230,27 @@
 | A16-11 | Mineur | C14 | Code mort, appareils désignés par leur seul nom | sous Windows avec deux sorties HDMI de même modèle. |
 | A34-06 | Mineur | C14 | `hide_is_reliable*` morts | la même chaîne en `ajp bench` puis en lecture plein écran, sur les deux systèmes. |
 | A46-06 | Mineur | C14 | Commentaire faux sur l'origine des RIFE FP16 livrés | Lu (graphes inspectés) ; NaN à confirmer. |
+
+## C01 : corrigé dans le code, à confirmer sur la machine
+
+Le fil C01 a corrigé ces défauts sans la machine ; la manipulation de la table ci-dessus confirme la correction.
+
+| ID | Correction | Ce qu'il faut voir |
+|---|---|---|
+| A06-01 | `installed_state` (`engine_versions.cpp`) voit une autre version installée, `update_stale_engines` réinstalle et retire l'ancienne | la manipulation ci-dessus : réinstallation au lancement, puis un seul dossier sous `backends/tensorrt/`. |
+| A06-03 | module de la version courante refusé (ABI) avec le même SHA-256 : plus de réinstallation en boucle, avis « out of date, Vulkan instead » | sur la RTX, un `ajp_backend_tensorrt` d'une autre version copié à la place du module : un seul avis, aucun téléchargement. |
+| A06-08, A36-03 | arbre installé synchronisé (fsync), note du paquet écrite en dernier, `.partiel` ou `.ancien` remis en place au lancement | sur CachyOS, couper le courant (ou `kill -9`) pendant « replacing the installed version », relancer : TensorRT revient sans téléchargement ou se réinstalle. |
+| A26-02 | `engines-nvidia.lock` en ligne cru seulement avec sa signature Ed25519 (`engines-nvidia.lock.sig`) | à la première release signée par la CI : le journal dit « moteurs de la release : 1 paquet(s) » et non « signature absente ou fausse ». |
+| A26-08, A26-12 | sans objet : la mise à jour n'est plus qu'une notification, le code d'application est retiré | rien. |
+| A19-01 | migration vers le dossier local copiée sous `<nom>.migration`, renommée une fois entière ; un reste est retiré et la copie recommence | sur Windows avec un profil itinérant redirigé, tuer `ajp.exe` pendant la migration, relancer : `engines/` local complet. |
+| A20-01, A26-09 | `write_atomic` réessaie environ 1,5 s un renommage refusé par un fichier tenu ouvert (Windows) ; la garde d'`update.toml` qui comptait le refus comme un plantage est retirée | test `file_sync_test.cpp` (Windows) en CI ; sur la machine, la manipulation de la table ci-dessus. |
+| A21-01 | l'empreinte de la frontière couvre `kernels/spec/*.h`, `core/moving_area.h`, `core/messages.h`, et les tailles de `FrameStats`, `DeviceMemory`, `GpuStageSummary` | sur la RTX : le module TensorRT de la release précédente est refusé (`AbiMismatch`) puis remplacé par celui de la release. |
+| A35-01 | libass de l'amont (0.17.5) plus le rendu sur plusieurs fils en correctif (`ports/libass/rendu-sur-plusieurs-fils.patch`) ; veille hebdomadaire des failles par OSV (`tools/ci/deps_vulns.py`, issue tenue à jour) | à l'œil : sous-titres d'un épisode chargé (karaoké, flous) identiques à la 0.10.3, sous Windows et sous CachyOS. |
+| A36-07 | désinstallation Windows : `ajp --unregister`, puis une question qui propose de retirer `%APPDATA%\ajp\ajp` et `%LOCALAPPDATA%\ajp\ajp` ; section « Désinstaller » du LISEZMOI Linux | sous Windows : installer, lancer une fois, désinstaller depuis Paramètres > Applications ; la question paraît, « Oui » retire les deux dossiers, « Ouvrir avec » ne montre plus le lecteur. |
+| A06-13 | `--ssl-revoke-best-effort` pour curl.exe (moteurs et notification des mises à jour) | sous Windows avec un antivirus qui inspecte le HTTPS : TensorRT s'installe. |
+| A19-07 | `DisconnectNamedPipe` après une erreur de `ConnectNamedPipe`, erreur journalisée une fois | sous Windows, lancer deux fois de suite `ajp.exe film.mkv` pendant que le premier démarre : le second fichier s'ouvre dans la première fenêtre, `ajp.log` sans erreur en boucle. |
+| A19-11 | la page de code de la console est rendue à la sortie (`atexit`) | sous Windows, `chcp 850`, lancer `ajp --help` depuis cmd, puis `chcp` : 850. |
+| A20-03 | journal : le dossier personnel est remplacé seulement à la limite d'un composant, sans tenir compte de la casse sous Windows, sous sa forme courte (`JRME~1`) aussi | compte Windows « Jérôme » : `ajp.log` ne montre ni le nom ni sa forme courte. |
+| A20-06 | fond sous Windows en `THREAD_MODE_BACKGROUND_BEGIN` (processeur, E/S et mémoire) | la manipulation de la table ci-dessus : moins d'images perdues avec la pré-analyse. |
+| A20-07 | `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)` au démarrage, et le dossier de chaque bibliothèque ouverte ajouté par `AddDllDirectory` | la manipulation de la table ci-dessus : aucun dossier du `PATH` sondé, **et TensorRT s'ouvre toujours** (c'est le risque du changement). |
+| A28-10 | `nvidia-package.sh` refuse un TensorRT ou une série CUDA du poste autres que ceux de `versions.env` | sur le poste NVIDIA, lancer `nvidia-package.sh` : il passe, ou dit quelle version diffère. |

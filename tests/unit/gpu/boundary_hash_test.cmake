@@ -23,3 +23,10 @@ if(added STREQUAL base)
   message(FATAL_ERROR "une virtuelle ajoutée ne change pas l'empreinte (${base})")
 endif()
 message(STATUS "empreinte ${base} ; virtuelle ajoutée : ${added}")
+
+# Les en-têtes de kernels/spec sont de la frontière (A21-01) : un champ de FrameStats la change.
+list(FIND AJP_BOUNDARY_HEADERS "src/kernels/spec/frame_stats.h" spec_found)
+list(FIND AJP_BOUNDARY_HEADERS "src/core/moving_area.h" moving_found)
+if(spec_found EQUAL -1 OR moving_found EQUAL -1)
+  message(FATAL_ERROR "kernels/spec/frame_stats.h ou core/moving_area.h hors de l'empreinte : ${AJP_BOUNDARY_HEADERS}")
+endif()

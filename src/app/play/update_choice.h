@@ -1,5 +1,7 @@
 // Les choix des mises à jour du lecteur (P5.29) : des énumérations, lues et écrites par leur nom dans
-// play.toml ([updates] mode, channel, frequency), plus des chaînes comparées partout.
+// play.toml ([updates] mode, frequency), plus des chaînes comparées partout. La mise à jour n'est plus qu'une
+// notification et le canal Préversions est retiré : un ancien « auto » se lit « notify », et la clé channel
+// est ignorée (settings_toml.cpp).
 #pragma once
 
 #include <array>
@@ -9,19 +11,14 @@
 
 namespace ajp::app::play {
 
-enum class UpdateMode : std::uint8_t { Notify, Auto, Never };  // « Me prévenir » est le défaut
-enum class UpdateChannel : std::uint8_t { Stable, Preview };   // le manifeste de « latest » ou de « preview »
+enum class UpdateMode : std::uint8_t { Notify, Never };  // « Me prévenir » est le défaut
 enum class UpdateFrequency : std::uint8_t { Launch, Daily, Weekly };
 
-inline constexpr std::array<std::string_view, 3> kUpdateModeNames{"notify", "auto", "never"};
-inline constexpr std::array<std::string_view, 2> kUpdateChannelNames{"stable", "preview"};
+inline constexpr std::array<std::string_view, 2> kUpdateModeNames{"notify", "never"};
 inline constexpr std::array<std::string_view, 3> kUpdateFrequencyNames{"launch", "daily", "weekly"};
 
 constexpr std::string_view name(UpdateMode v) {
   return kUpdateModeNames.at(static_cast<std::size_t>(v));
-}
-constexpr std::string_view name(UpdateChannel v) {
-  return kUpdateChannelNames.at(static_cast<std::size_t>(v));
 }
 constexpr std::string_view name(UpdateFrequency v) {
   return kUpdateFrequencyNames.at(static_cast<std::size_t>(v));

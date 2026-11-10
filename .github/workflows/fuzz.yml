@@ -34,6 +34,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Paquets système
         run: |
           source tools/release/versions.env
@@ -44,7 +46,7 @@ jobs:
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -61,7 +63,7 @@ jobs:
           CXX: clang++-20
         run: |
           cmake --preset linux-prefix -B build/fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DAJP_FUZZ_LIBFUZZER=ON \
-            "-DCMAKE_CXX_FLAGS=-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer"
+            "-DCMAKE_CXX_FLAGS=-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
           targets="$(sed -n 's/^set(ajp_fuzz_\(parser_\)\?targets \(.*\))$/\2/p' tests/fuzz/CMakeLists.txt | tr '\n' ' ')"
           echo "TARGETS=$targets" >>"$GITHUB_ENV"
           cmake --build build/fuzz --target $(printf 'ajp_fuzz_%s ' $targets)

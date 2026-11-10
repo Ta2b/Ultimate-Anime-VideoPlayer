@@ -23,7 +23,13 @@ std::optional<float> curl_percent(std::string_view line);
 // P3.7 : les options de curl d'un gros téléchargement : cinq essais sur toute erreur, abandon d'une connexion
 // sous 1 Ko/s pendant une minute (elle se reprend à l'essai suivant), et le proxy du système sous Windows
 // (curl.exe ne lit pas les réglages de WinINET ; ailleurs, curl lit https_proxy).
+// -q en tête (aucun .curlrc), https seulement d'une redirection à l'autre (A35-05 ; file:// reste pour une
+// archive locale de l'index), puis curl_system_args().
 std::vector<std::string> curl_download_args();
+// Ce que curl demande pour passer comme le système sous Windows : le proxy manuel, et la révocation du
+// certificat vérifiée au mieux (--ssl-revoke-best-effort) : Schannel refuse sinon toute connexion dont la
+// révocation ne se vérifie pas (antivirus qui inspecte le HTTPS, OCSP bloqué ; A06-13). Rien ailleurs.
+std::vector<std::string> curl_system_args();
 // Le proxy manuel de Windows (« hôte:port », ou la valeur https= d'une liste par protocole) ; rien sans proxy
 // manuel ou hors Windows. Exposé pour les tests.
 std::optional<std::string> proxy_from_setting(std::string_view setting);

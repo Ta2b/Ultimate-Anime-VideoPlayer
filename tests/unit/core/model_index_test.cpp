@@ -297,6 +297,27 @@ TEST_CASE("Fichiers tiers d'un moteur : lus avec leur architecture, choisis pour
   CHECK(read_engine_index(head)->vendor_files.empty());
 }
 
+TEST_CASE("Index des moteurs : un nom de périphérique de Windows est écarté (A35-04)", "[model_index]") {
+  const auto engine = [](const std::string& version) {
+    return "[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\nurl = "
+           "\"https://e.example/x.tar.gz\"\nsha256 = \"" +
+           kSha + "\"\nsize = 1\nversion = \"" + version + "\"\n";
+  };
+  for (const std::string bad : {"CON", "nul", "Aux.1", "COM3", "lpt9.txt"}) {
+    auto index = read_engine_index("version = 1\n" + engine(bad));
+    REQUIRE(index);
+    INFO(bad);
+    CHECK(index->packages.empty());
+  }
+  // Des noms voisins restent permis.
+  for (const std::string good : {"11.3", "CONSOLE", "COM", "COM10", "nul2"}) {
+    auto index = read_engine_index("version = 1\n" + engine(good));
+    REQUIRE(index);
+    INFO(good);
+    CHECK(index->packages.size() == 1);
+  }
+}
+
 TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]") {
   for (const EngineId id : {EngineId::Vulkan, EngineId::TensorRt, EngineId::MiGraphX, EngineId::OpenVino,
                             EngineId::DirectMl, EngineId::Metal}) {

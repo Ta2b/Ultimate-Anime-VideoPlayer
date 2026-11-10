@@ -1,0 +1,6 @@
+last_check_unix = 1700000000
+last_attempt_unix = 1700000100
+latest_version = "0.11.0"
+notes_url = "https://github.com/Ta2b/ajp-releases/releases/tag/v0.11.0"
+last_error = ""
+revoked_keys = ["cd"]

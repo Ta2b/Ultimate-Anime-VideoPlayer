@@ -62,8 +62,63 @@ index f873f54..02d6ae7 100644
  // Vulkan interop API, for sharing a single VkDevice (and associated vulkan
  // resources) directly with the API user. The use of this API is a bit sketchy
  // and requires careful communication of Vulkan API state.
+diff --git a/src/vulkan/gpu.c b/src/vulkan/gpu.c
+index e541582..d7f06ee 100644
+--- a/src/vulkan/gpu.c
++++ b/src/vulkan/gpu.c
+@@ -772,6 +772,16 @@ static bool vk_gpu_is_failed(pl_gpu gpu)
+ }
+ 
+ struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu)
++{
++    struct vk_cmd *cmd = pl_vk_steal_cmd_locked(gpu);
++    pl_vk_unlock_recording(gpu);
++    return cmd;
++}
++
++// AJP present timing patch: the same, but `recording` stays held until
++// pl_vk_unlock_recording(), so that no other thread records or submits on the
++// queue between the theft and the caller's vk_cmd_submit (vk_sw_submit_ex).
++struct vk_cmd *pl_vk_steal_cmd_locked(pl_gpu gpu)
+ {
+     struct pl_vk *p = PL_PRIV(gpu);
+     struct vk_ctx *vk = p->vk;
+@@ -779,7 +789,6 @@ struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu)
+     pl_mutex_lock(&p->recording);
+     struct vk_cmd *cmd = p->cmd;
+     p->cmd = NULL;
+-    pl_mutex_unlock(&p->recording);
+ 
+     struct vk_cmdpool *pool = vk->pool_graphics;
+     if (!cmd || cmd->pool != pool) {
+@@ -790,6 +799,12 @@ struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu)
+     return cmd;
+ }
+ 
++void pl_vk_unlock_recording(pl_gpu gpu)
++{
++    struct pl_vk *p = PL_PRIV(gpu);
++    pl_mutex_unlock(&p->recording);
++}
++
+ void pl_vk_print_heap(pl_gpu gpu, enum pl_log_level lev)
+ {
+     struct pl_vk *p = PL_PRIV(gpu);
+diff --git a/src/vulkan/gpu.h b/src/vulkan/gpu.h
+index dfcee56..113ab48 100644
+--- a/src/vulkan/gpu.h
++++ b/src/vulkan/gpu.h
+@@ -33,6 +33,8 @@ pl_gpu pl_gpu_create_vk(struct vk_ctx *vk);
+ // GPU, so the caller can do custom vk_cmd_ calls on it. The caller should
+ // submit it as well.
+ struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu);
++struct vk_cmd *pl_vk_steal_cmd_locked(pl_gpu gpu);
++void pl_vk_unlock_recording(pl_gpu gpu);
+ 
+ // Print memory usage statistics
+ void pl_vk_print_heap(pl_gpu, enum pl_log_level);
 diff --git a/src/vulkan/swapchain.c b/src/vulkan/swapchain.c
-index fa38e9c..90c57f2 100644
+index fa38e9c..ebce630 100644
 --- a/src/vulkan/swapchain.c
 +++ b/src/vulkan/swapchain.c
 @@ -31,6 +31,7 @@ struct vk_swapchain {
@@ -188,7 +243,30 @@ index fa38e9c..90c57f2 100644
  {
      pl_gpu gpu = sw->gpu;
      struct priv *p = PL_PRIV(sw);
-@@ -978,13 +1025,45 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
+@@ -940,15 +987,20 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
+         return false;
+     }
+ 
+-    struct vk_cmd *cmd = pl_vk_steal_cmd(gpu);
++    // `recording` held from the theft to the submission: another thread's
++    // CMD_SUBMIT would otherwise race this vk_cmd_submit on the same queue.
++    struct vk_cmd *cmd = pl_vk_steal_cmd_locked(gpu);
+     if (!cmd) {
++        pl_vk_unlock_recording(gpu);
+         pl_mutex_unlock(&p->lock);
+         return false;
+     }
+ 
+     pl_rc_ref(&p->frames_in_flight);
+     vk_cmd_callback(cmd, VK_CB_FUNC(present_cb), p, NULL);
+-    if (!vk_cmd_submit(&cmd)) {
++    bool submitted = vk_cmd_submit(&cmd);
++    pl_vk_unlock_recording(gpu);
++    if (!submitted) {
+         pl_mutex_unlock(&p->lock);
+         return false;
+     }
+@@ -978,13 +1030,45 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
      if (current->fences_out.num > 0) {
          VkFence *pfence = &current->fences_out.elem[idx];
          fenceInfo.pFences = pfence;
@@ -235,7 +313,7 @@ index fa38e9c..90c57f2 100644
      pl_mutex_unlock(&p->lock);
  
      switch (res) {
-@@ -1058,6 +1137,22 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
+@@ -1058,6 +1142,22 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
      return p->suboptimal;
  }
  
