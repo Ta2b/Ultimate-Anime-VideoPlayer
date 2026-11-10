@@ -1,7 +1,8 @@
 // ajp_onnx_info : charge un modèle ONNX dans l'IR et imprime opérateurs,
 // formes et mémoire, avant et après les passes. --run exécute l'interpréteur
 // sur une entrée déterministe (et --dump écrit la première sortie en float32 brut),
-// pour comparer à une autre implémentation.
+// pour comparer à une autre implémentation. --vulkan décrit et exécute le graphe que le moteur
+// Vulkan abaisse : le même prepare_graph, passes propres au moteur comprises (A44-10).
 #include <charconv>
 #include <cmath>
 #include <exception>
@@ -20,6 +21,8 @@
 #include "gpu/ir/memory_plan.h"
 #include "gpu/ir/passes.h"
 #include "gpu/ir/shape.h"
+#include "gpu/vulkan/backend/net_build.h"
+#include "gpu/vulkan/backend/net_program.h"
 #include "kernels/ref/half.h"
 
 namespace {
@@ -28,7 +31,10 @@ using namespace ajp::gpu::ir;
 
 constexpr std::string_view kUsage =
     "usage : ajp_onnx_info <modèle.onnx> [--input nom=1x3x720x1280]... [--nodes] [--no-passes]\n"
-    "                      [--run] [--dump sortie.f32]\n";
+    "                      [--vulkan] [--matrices] [--fp32] [--run] [--dump sortie.f32]\n"
+    "  --vulkan   : le graphe du moteur Vulkan (prepare_graph), en float16 là où le modèle l'est\n"
+    "  --matrices : avec --vulkan, comme un appareil à matrices coopératives (ConvTranspose réécrites)\n"
+    "  --fp32     : avec --vulkan, tous les tenseurs en float\n";
 
 struct Options {
   std::string model;
@@ -36,6 +42,9 @@ struct Options {
   bool nodes = false;
   bool passes = true;
   bool run = false;
+  bool vulkan = false;
+  bool matrices = false;
+  bool fp32 = false;
   std::string dump;
 };
 
@@ -61,6 +70,12 @@ bool parse_args(std::span<char*> args, Options& options) {
       options.passes = false;
     } else if (arg == "--run") {
       options.run = true;
+    } else if (arg == "--vulkan") {
+      options.vulkan = true;
+    } else if (arg == "--matrices") {
+      options.matrices = true;
+    } else if (arg == "--fp32") {
+      options.fp32 = true;
     } else if ((arg == "--input" || arg == "--dump") && k + 1 < args.size()) {
       const std::string_view value = args[++k];
       if (arg == "--dump") {
@@ -78,7 +93,8 @@ bool parse_args(std::span<char*> args, Options& options) {
       return false;
     }
   }
-  return !options.model.empty();
+  if ((options.matrices || options.fp32) && !options.vulkan) return false;
+  return !options.model.empty() && (options.passes || !options.vulkan);
 }
 
 // Entrée reproductible ailleurs : valeur k = partie fractionnaire de k φ, en double.
@@ -142,6 +158,30 @@ int run_graph(const Graph& graph, const Options& options) {
   return 0;
 }
 
+// Les passes communes à tous les moteurs, celles de l'interpréteur.
+std::expected<void, ajp::Refusal> generic_passes(Graph& graph) {
+  // Comme le moteur Vulkan (net_build.cpp) : la grille des GridSample en float avant les passes.
+  if (const int grid = promote_grid_chains(graph); grid > 0)
+    std::cout << std::format("Grille des GridSample : {} tenseurs passés en float\n", grid);
+  auto stats = optimize(graph);
+  if (!stats) return std::unexpected(stats.error());
+  std::cout << "Passes\n" << describe_stats(*stats);
+  std::cout << std::format("Après les passes : {} nœuds\n  {}\n", graph.nodes.size(), describe_ops(graph));
+  return {};
+}
+
+// Les passes du moteur Vulkan, les mêmes que prepare_graph après l'inférence des formes.
+std::expected<void, ajp::Refusal> vulkan_passes(Graph& graph, const Options& options) {
+  namespace net = ajp::gpu::vk::net;
+  const net::Target target{.f16_storage = true, .matrix_units = options.matrices};
+  if (auto done = net::engine_passes(graph, options.model, !options.fp32, target); !done) return done;
+  std::cout << std::format("Après la préparation Vulkan ({}, {}) : {} nœuds\n  {}\n",
+                           options.matrices ? "matrices coopératives" : "sans matrices",
+                           options.fp32 ? "float" : "float16 du modèle", graph.nodes.size(),
+                           describe_ops(graph));
+  return {};
+}
+
 int report(const Options& options) {
   auto graph = load_onnx_file(options.model);
   if (!graph) return refused(graph.error());
@@ -153,15 +193,10 @@ int report(const Options& options) {
   if (auto shapes = infer_shapes(*graph, options.shapes); !shapes) return refused(shapes.error());
   std::cout << "Après l'inférence des formes\n" << describe_interface(*graph);
 
-  if (options.passes) {
-    // Comme le moteur Vulkan (net_build.cpp) : la grille des GridSample en float avant les passes.
-    if (const int grid = promote_grid_chains(*graph); grid > 0)
-      std::cout << std::format("Grille des GridSample : {} tenseurs passés en float\n", grid);
-    auto stats = optimize(*graph);
-    if (!stats) return refused(stats.error());
-    std::cout << "Passes\n" << describe_stats(*stats);
-    std::cout << std::format("Après les passes : {} nœuds\n  {}\n", graph->nodes.size(),
-                             describe_ops(*graph));
+  if (options.vulkan) {
+    if (auto done = vulkan_passes(*graph, options); !done) return refused(done.error());
+  } else if (options.passes) {
+    if (auto done = generic_passes(*graph); !done) return refused(done.error());
   }
   if (options.nodes) std::cout << "Nœuds\n" << describe_nodes(*graph);
   auto plan = plan_memory(*graph);

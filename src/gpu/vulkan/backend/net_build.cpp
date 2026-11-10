@@ -35,6 +35,36 @@ std::expected<void, Refusal> check_interface(const ir::Graph& graph) {
 
 }  // namespace
 
+std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& model_id, bool fp16,
+                                           const Target& target) {
+  // La grille des GridSample en float (DistilDRBA exporté avant novembre 2026 : A44-01), avant que le
+  // pliage des constantes n'arrondisse sa base à travers son Cast.
+  (void)ir::promote_grid_chains(graph);
+  // Les ConvTranspose deviennent des Conv là où celles-ci passent par les matrices coopératives
+  // (au plus 16 tuiles de 16 canaux, net_lower_conv.cpp).
+  const ir::OptimizeOptions options{.transpose_conv_channels = target.matrix_units ? 256 : 0,
+                                    .transpose_phases = target.matrix_units};
+  if (auto ok = ir::optimize(graph, options); !ok) return std::unexpected(ok.error());
+  const bool has_f16 =
+      std::ranges::any_of(graph.tensors, [](const ir::Tensor& t) { return t.type == ir::DataType::F16; });
+  if (!fp16) {
+    // Tout en float : une constante float16 garde ses valeurs (déjà représentables).
+    for (ir::Tensor& t : graph.tensors) {
+      if (t.type == ir::DataType::F16) t.type = ir::DataType::F32;
+      if (t.value.type == ir::DataType::F16) t.value.type = ir::DataType::F32;
+    }
+  } else if (has_f16 && !target.f16_storage) {
+    return refuse(RefusalCode::FeatureUnavailable,
+                  std::format("{} en float16 : l'appareil n'a pas le stockage 16 bits", model_id));
+  }
+  // Les noyaux lisent et écrivent chaque tenseur dans son type : les Cast qu'ils feraient
+  // d'eux-mêmes disparaissent, ceux qu'un modèle FP16 garde autour de Resize par exemple.
+  if (ir::fold_float_casts(graph) > 0) (void)ir::eliminate_dead_code(graph);
+  // Les réductions remontées devant les Concat et les Split qui les précèdent (net_hoist.h).
+  if (hoist_downscales(graph) > 0) (void)ir::eliminate_dead_code(graph);
+  return check_interface(graph);
+}
+
 std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, const Target& target) {
   auto graph = ir::load_onnx_file(request.onnx);
   if (!graph) return std::unexpected(graph.error());
@@ -58,32 +88,8 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
     shapes.push_back({.name = input.name, .dims = input.dims});
   }
   if (auto ok = ir::infer_shapes(*graph, shapes); !ok) return std::unexpected(ok.error());
-  // La grille des GridSample en float (DistilDRBA exporté avant novembre 2026 : A44-01), avant que le
-  // pliage des constantes n'arrondisse sa base à travers son Cast.
-  (void)ir::promote_grid_chains(*graph);
-  // Les ConvTranspose deviennent des Conv là où celles-ci passent par les matrices coopératives
-  // (au plus 16 tuiles de 16 canaux, net_lower_conv.cpp).
-  const ir::OptimizeOptions options{.transpose_conv_channels = target.matrix_units ? 256 : 0,
-                                    .transpose_phases = target.matrix_units};
-  if (auto ok = ir::optimize(*graph, options); !ok) return std::unexpected(ok.error());
-  const bool has_f16 =
-      std::ranges::any_of(graph->tensors, [](const ir::Tensor& t) { return t.type == ir::DataType::F16; });
-  if (!request.fp16) {
-    // Tout en float : une constante float16 garde ses valeurs (déjà représentables).
-    for (ir::Tensor& t : graph->tensors) {
-      if (t.type == ir::DataType::F16) t.type = ir::DataType::F32;
-      if (t.value.type == ir::DataType::F16) t.value.type = ir::DataType::F32;
-    }
-  } else if (has_f16 && !target.f16_storage) {
-    return refuse(RefusalCode::FeatureUnavailable,
-                  std::format("{} en float16 : l'appareil n'a pas le stockage 16 bits", request.model_id));
-  }
-  // Les noyaux lisent et écrivent chaque tenseur dans son type : les Cast qu'ils feraient
-  // d'eux-mêmes disparaissent, ceux qu'un modèle FP16 garde autour de Resize par exemple.
-  if (ir::fold_float_casts(*graph) > 0) (void)ir::eliminate_dead_code(*graph);
-  // Les réductions remontées devant les Concat et les Split qui les précèdent (net_hoist.h).
-  if (hoist_downscales(*graph) > 0) (void)ir::eliminate_dead_code(*graph);
-  if (auto ok = check_interface(*graph); !ok) return std::unexpected(ok.error());
+  if (auto ok = engine_passes(*graph, request.model_id, request.fp16, target); !ok)
+    return std::unexpected(ok.error());
   return graph;
 }
 
