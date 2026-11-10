@@ -20,7 +20,7 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
 
 La phase 5 a livré ses contrôles de CI (complexité avec `tools/ci/complexity-baseline.txt`, graphe des modules,
 utilitaires réécrits, `path::string()`, commentaires, version unique), le code mort, les options fantômes, les
-utilitaires communs (`core/text.h`, `core/av_error.h`, `ajp::refuse`), les seuils nommés, le module de chemins
+utilitaires communs (`core/text.h`, `av/av_error.h`, `ajp::refuse`), les seuils nommés, le module de chemins
 (`paths.h`), l'état du menu hors des `static`, les en-têtes précompilés (`AJP_PCH`), clang-tidy sur TensorRT et
 Core ML, et l'empreinte de la frontière des moteurs (`cmake/BoundaryHash.cmake`). Les journaux restent en français
 (P5.40). Restent, chacun une PR à lui :
@@ -42,5 +42,5 @@ Le job lavapipe lance les cas `[e2e]` de `tests/unit/app/e2e_play_test.cpp` : la
 le scénario 14 pour une source 853×480, et le scénario 15 (fichier tronqué lu jusqu'à sa fin, fichier illisible
 refusé avec un message). Les tests unitaires couvrent l'ordre des épisodes du scénario 19 (`episodes_test`), la
 fenêtre unique du scénario 21 (`single_instance_test`) et la lecture de `[keys]` du scénario 25
-(`keys_test`, `user_overlay_test`). Les autres scénarios demandent un vrai GPU, un écran HDR ou VRR, ou un réseau : ils se
+(`keys_test`, `text_file_test`). Les autres scénarios demandent un vrai GPU, un écran HDR ou VRR, ou un réseau : ils se
 jouent sur les machines de Tatoub à la fin.

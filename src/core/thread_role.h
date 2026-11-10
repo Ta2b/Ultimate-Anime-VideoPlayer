@@ -31,4 +31,9 @@ bool set_thread_priority_raiser(PriorityRaiser raiser) noexcept;
 // Applique le rôle au thread appelant, pour toute sa vie.
 void set_thread_role(ThreadRole role) noexcept;
 
+// Pose thread_namer (core/thread.h) : chaque start_thread donne ensuite son nom au système
+// (pthread_setname_np, 15 octets sous Linux ; SetThreadDescription sous Windows), pour Nsight, gdb et les
+// vidages de plantage (A20-11). À appeler une fois au démarrage, avant le premier thread.
+void install_system_thread_names() noexcept;
+
 }  // namespace ajp

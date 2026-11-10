@@ -1,12 +1,14 @@
 #include "app/play/updater.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <system_error>
@@ -21,6 +23,7 @@
 #include "app/play/engine_tools.h"
 #include "app/play/i18n.h"
 #include "core/file_sync.h"
+#include "core/log.h"
 #include "core/text.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
@@ -102,7 +105,7 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
                                 std::to_string(max_seconds)};
   for (std::string& arg : curl_system_args()) args.push_back(std::move(arg));
   for (std::string arg : {std::string("--write-out"), std::string(kCurlStatusFormat), std::string("-o"),
-                          prepare::utf8_path(file), std::string(url)})
+                          prepare::ansi_safe_path(file), std::string(url)})
     args.push_back(std::move(arg));
   prepare::ProcessSpec spec{
       .program = *curl, .args = std::move(args), .timeout = std::chrono::seconds(max_seconds + 10)};
@@ -195,8 +198,71 @@ UpdateState load_update_state(const fs::path& file) {
   return state ? *state : UpdateState{};
 }
 
+namespace {
+
+// Les clés que cette version écrit, et celles des versions qui s'appliquaient elles-mêmes : retirées.
+bool own_or_obsolete_key(std::string_view key) {
+  static constexpr std::array<std::string_view, 6> kOwn{
+      "last_check_unix", "latest_version", "notes_url", "last_error", "revoked_keys", "last_attempt_unix"};
+  return std::ranges::contains(kOwn, key) || key.starts_with("staged_") || key.starts_with("unconfirmed_") ||
+         key == "previous_version";
+}
+
+// Une à la fois dans le processus : le fil des mises à jour et le bouton « Check now » (A26-10).
+std::mutex& update_state_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+}  // namespace
+
+std::string merge_update_state(std::string_view previous, const UpdateState& state) {
+  std::string own = format_update_state(state);
+  toml::parse_result before = toml::parse(previous);
+  if (!before) return own;
+  toml::table merged = toml::parse(own).table();
+  // Les clés d'une version plus récente restent : un retour à celle-ci les retrouve (A36-05).
+  for (auto&& [key, node] : before.table())
+    if (!own_or_obsolete_key(key.str())) merged.insert(key, node);
+  std::ostringstream out;
+  out << merged << '\n';
+  return out.str();
+}
+
 std::expected<void, Refusal> save_update_state(const fs::path& file, const UpdateState& state) {
-  return core::write_text_atomically(file, format_update_state(state));
+  std::error_code error;
+  const std::string previous = fs::exists(file, error) ? read_all(file) : std::string();
+  return core::write_text_atomically(file, merge_update_state(previous, state));
+}
+
+std::expected<void, Refusal> change_update_state(const fs::path& file,
+                                                 const std::function<void(UpdateState&)>& change) {
+  const std::scoped_lock lock(update_state_mutex());
+  UpdateState state = load_update_state(file);
+  const UpdateState before = state;
+  change(state);
+  if (state == before) return {};
+  return save_update_state(file, state);
+}
+
+void check_updates_if_due(const fs::path& file, UpdateMode mode, UpdateFrequency frequency, bool may_check,
+                          std::int64_t now_unix, const std::stop_token& stop) {
+  std::optional<std::expected<std::string, Refusal>> message;
+  const auto kept = change_update_state(file, [&](UpdateState& state) {
+    if (may_check && update_due(state, mode, frequency, now_unix)) message = run_update_check(state, stop);
+  });
+  if (!kept) log_channel("app")->warn("update.toml : {}", kept.error().detail);
+  if (!message) return;
+  log_channel("app")->info("mise à jour : {}",  // i18n-ok : journal
+                           *message ? **message : message->error().detail);
+}
+
+std::expected<std::string, Refusal> check_updates_now(const fs::path& file, const std::stop_token& stop) {
+  std::expected<std::string, Refusal> message = std::unexpected(Refusal{});
+  const auto kept =
+      change_update_state(file, [&](UpdateState& state) { message = run_update_check(state, stop); });
+  if (!kept && message) return std::unexpected(kept.error());
+  return message;
 }
 
 bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix) {

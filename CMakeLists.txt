@@ -14,7 +14,8 @@ option(AJP_WITH_COREML "Construire ajp_backend_coreml (réseaux par Core ML via 
 option(AJP_BUILD_TESTS "Construire les tests unitaires" ON)
 option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels et leurs tests" ON)
 # Avertissements en erreurs : ON dans les préréglages de développement et de CI (base, prefix), OFF
-# par défaut, pour qu'un compilateur plus récent (avertissements nouveaux) construise encore.
+# par défaut et dans linux-prefix-cuda-machine (le lecteur construit sur le poste, avec le compilateur de la
+# distribution), pour qu'un compilateur plus récent (avertissements nouveaux) construise encore.
 option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" OFF)
 # En-têtes précompilés (P5.25) : la bibliothèque standard la plus lue, par module. Pour les constructions
 # locales ; la CI les laisse éteints, pour que ccache serve et qu'une inclusion oubliée reste une erreur.
@@ -101,6 +102,7 @@ endif()
 add_subdirectory(src/core)
 add_subdirectory(src/kernels)
 if(AJP_BUILD_PLAYER)
+  add_subdirectory(src/av)
   add_subdirectory(src/media)
   add_subdirectory(src/subs)
   add_subdirectory(src/gpu)
