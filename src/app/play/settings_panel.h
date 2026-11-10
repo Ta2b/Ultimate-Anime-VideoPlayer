@@ -80,6 +80,7 @@ struct SettingsChoices {
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
   int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
+  int display_width = 0;   // sa largeur ; 0 : inconnue (16:9 supposé)
   // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo
   // (A23-03) : choisir « Auto » au panneau doit donner la même chaîne. calibrated : Auto suit la calibration
   // de l'assistant (calibration.toml) sur cette carte et cet écran ; explored_* : ce que l'exploration du

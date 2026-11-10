@@ -22,6 +22,9 @@ rules = [
   { vendor = "nvidia", contains = ["rtx 2080", "laptop"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 3050", "laptop"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx 2050"], tier = 1 },
+  # Les autres RTX portables (4060, 4050, 3060, 5060, 2070, 2060, RTX A… Laptop) : une tranche sous la règle
+  # générale de leur famille, plus bas dans la table (A07-08).
+  { vendor = "nvidia", contains = ["rtx", "laptop"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx 5090"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 5080"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 4090"], tier = 4 },
@@ -42,6 +45,10 @@ rules = [
   { vendor = "nvidia", contains = ["rtx a2000"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx a1000"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx a500"], tier = 1 },
+  # Après « rtx a4000 » et « rtx a4500 », dont le nom contient « rtx a400 » : la RTX A400 (4 Go).
+  { vendor = "nvidia", contains = ["rtx a400"], tier = 0 },
+  # La Quadro RTX 6000 (Turing) avant « rtx 6000 », qui est la RTX 6000 Ada.
+  { vendor = "nvidia", contains = ["quadro rtx 6000"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 6000"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 5000 ada"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 4500 ada"], tier = 3 },

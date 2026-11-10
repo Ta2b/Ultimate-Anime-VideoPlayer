@@ -55,3 +55,15 @@ TEST_CASE("mémoire auto : la clé ne porte ni guillemet ni saut de ligne", "[co
   CHECK(key.find('"') == std::string::npos);
   CHECK(key.find('\n') == std::string::npos);
 }
+
+TEST_CASE("mémoire auto : un palier au-dessus de ×6 se relit, jusqu'au plafond de l'Auto",
+          "[core][auto_memory]") {
+  // A07-07 : écran de 165 Hz en VRR, 23,976 i/s, palier tenu ×6,88 ; la relecture le jetait.
+  AutoMemory memory;
+  memory.put("vrr", 688);
+  memory.put("max", 800);
+  const AutoMemory read = AutoMemory::parse(memory.dump());
+  CHECK(read.find("vrr") == 688);
+  CHECK(read.find("max") == 800);
+  CHECK_FALSE(AutoMemory::parse("[\"trop\"]\nstep = 801\n").find("trop"));
+}
