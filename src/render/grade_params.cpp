@@ -162,8 +162,8 @@ void sdr_tonemap(GradeParams& p) {
   p.look_pq = 0.0;
   p.sdr_tm = 1.0;
   p.sdr_out = 0.0;
-  p.black_lo = 0.0;
-  p.black_hi = 0.0;
+  // Le vrai noir reste (A41-07) : ses seuils sont mesurés sur cette sortie, en nits de l'image PQ que la
+  // dernière passe ramène au SDR (PlaceboScreen::grade_ramp).
   // Les mêmes bornes que 3-anime.hook : le blanc de la source, la clé de la scène, la marge des éclats.
   const double white = p.adapt > 0.5 ? p.sdr_white : p.paper;
   const double key = std::clamp((p.fs_apl >= 0.0 ? p.fs_apl : 0.15 * white) / p.sdr_white, 0.0, 1.0);
