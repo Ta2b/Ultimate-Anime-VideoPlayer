@@ -84,11 +84,18 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
 // aussi, quand le multiplicateur voulu (fréquence / cadence de la source) n'est plus le même, car rife_factor
 // borne le mode Stable. Fréquences ou cadence inconnues (0) : seule la hauteur compte.
 struct DisplayMove {
-  int opened_height = 0;
-  int now_height = 0;
+  int opened_height = 0;  // l'écran de l'ouverture
   double opened_hz = 0.0;
-  double now_hz = 0.0;
   double source_fps = 0.0;
+  int now_height = 0;  // l'écran courant
+  double now_hz = 0.0;
+  // La même ouverture, vue sur l'écran courant.
+  DisplayMove now(int height, double hz) const {
+    DisplayMove out = *this;
+    out.now_height = height;
+    out.now_hz = hz;
+    return out;
+  }
 };
 bool display_moves_chain(Preset preset, const DisplayMove& move);
 

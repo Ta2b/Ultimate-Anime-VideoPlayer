@@ -295,18 +295,18 @@ TEST_CASE("un écran d'une autre fréquence rouvre la chaîne quand le multiplic
   // Deux écrans 1440p, 60 Hz puis 165 Hz, source 24 i/s : ×2 puis ×6 voulu.
   CHECK(display_moves_chain(
       Preset::Auto,
-      {.opened_height = 1440, .now_height = 1440, .opened_hz = 60.0, .now_hz = 165.0, .source_fps = 23.976}));
+      {.opened_height = 1440, .opened_hz = 60.0, .source_fps = 23.976, .now_height = 1440, .now_hz = 165.0}));
   // 144 et 165 Hz demandent tous deux ×6 : rien à rouvrir.
   CHECK_FALSE(display_moves_chain(Preset::Auto, {.opened_height = 1440,
-                                                 .now_height = 1440,
                                                  .opened_hz = 144.0,
-                                                 .now_hz = 165.0,
-                                                 .source_fps = 23.976}));
+                                                 .source_fps = 23.976,
+                                                 .now_height = 1440,
+                                                 .now_hz = 165.0}));
   // Source 30 i/s ouverte sur une télé à 50 Hz (×1, pas d'interpolation), puis écran 144 Hz : ×4.
   CHECK(display_moves_chain(
       Preset::Normal,
-      {.opened_height = 1080, .now_height = 1080, .opened_hz = 50.0, .now_hz = 144.0, .source_fps = 30.0}));
+      {.opened_height = 1080, .opened_hz = 50.0, .source_fps = 30.0, .now_height = 1080, .now_hz = 144.0}));
   CHECK_FALSE(display_moves_chain(
       Preset::Custom,
-      {.opened_height = 1080, .now_height = 1080, .opened_hz = 50.0, .now_hz = 144.0, .source_fps = 30.0}));
+      {.opened_height = 1080, .opened_hz = 50.0, .source_fps = 30.0, .now_height = 1080, .now_hz = 144.0}));
 }

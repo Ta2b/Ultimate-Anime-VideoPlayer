@@ -1,7 +1,7 @@
 # fichier	fonction	CCN	lignes : fonctions au-delà de CCN 25 ou 120 lignes, qui ne peuvent que baisser (check-complexity.py)
 src/app/main.cpp	run_player	49	213
 src/app/play/auto_bench_run.cpp	ajp::app::play::run_bench	34	104
-src/app/play/auto_config.cpp	ajp::app::play::apply_preset	28	80
+src/app/play/auto_config.cpp	ajp::app::play::apply_preset	28	79
 src/app/play/chain.cpp	ajp::app::play::apply	30	170
 src/app/play/chain.cpp	ajp::app::play::apply_live	39	92
 src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	106	256
@@ -17,7 +17,7 @@ src/app/play/options.cpp	ajp::app::play::parse_play_options	95	192
 src/app/play/placebo_open.cpp	ajp::app::play::PlaceboScreen::open	49	222
 src/app/play/placebo_ring.cpp	ajp::app::play::PlaceboRing::create	28	112
 src/app/play/placebo_screen.cpp	ajp::app::play::PlaceboScreen::show	33	132
-src/app/play/player.cpp	ajp::app::play::play	128	468
+src/app/play/player.cpp	ajp::app::play::play	127	468
 src/app/play/player_run.cpp	ajp::app::play::run_chain	189	633
 src/app/play/ring_stage.cpp	ajp::app::play::RingStage::emit	30	100
 src/app/play/session.cpp	ajp::app::play::Session::tick	42	90
