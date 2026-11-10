@@ -85,6 +85,8 @@ class Pipeline {
   // RingFrame n'arrivera que celles déjà dans la boîte.
   bool video_idle() const { return video_->idle(); }
   const media::TrackInfo& video_track() const { return video_track_; }
+  // Matroska à édition ordonnée ou à segments liés : lu dans l'ordre du fichier, à annoncer (A14-03).
+  bool chapters_flattened() const { return chapters_flattened_; }
   // Ce que la session doit savoir du fichier : durée, taille, sous-titres.
   SessionConfig session_config() const;
   std::vector<std::string> describe() const;  // pistes choisies, pour l'OSD et le journal
@@ -136,6 +138,7 @@ class Pipeline {
   std::optional<media::TrackInfo> subtitle_track_;
   std::int64_t duration_us_ = 0;
   std::vector<ChapterMark> chapters_;
+  bool chapters_flattened_ = false;
   std::string decoder_api_;
   TrackMenu menu_;
   std::vector<std::pair<int, audio::AudioCodecInfo>> audio_codecs_;  // pistes audio décodables

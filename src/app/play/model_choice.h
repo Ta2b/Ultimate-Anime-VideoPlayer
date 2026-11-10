@@ -6,6 +6,7 @@
 #include <array>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -64,6 +65,9 @@ std::expected<ModelChoice, Refusal> choose_rife_model(
 // Le graphe du cran tier à côté de model : « rife_v4.25_fp8.onnx » (Performance), « rife_v4.25_fp32.onnx »
 // (Qualité). model lui-même pour Équilibre ou si le fichier du cran manque.
 std::filesystem::path tier_variant(const std::filesystem::path& model, PrecisionTier tier);
+// L'inverse : le cran du graphe chargé, lu à son nom (« _fp8 », « _fp32 ») ; Équilibre pour le modèle livré
+// ou absent. C'est le cran rendu, celui qui dit si la chaîne fusionnée s'applique (A31-06).
+PrecisionTier model_tier(const std::optional<std::filesystem::path>& model);
 // Les crans dont le graphe est à côté de model ; fp8_engine : le moteur calcule le FP8.
 TierSupport sibling_tiers(const std::filesystem::path& model, bool fp8_engine);
 struct RifeEntry {

@@ -17,7 +17,9 @@ namespace ajp::render {
 
 inline constexpr int kLutMinSize = 17;
 inline constexpr int kLutMaxSize = 65;
-inline constexpr std::size_t kLookSlots = 15;  // LUT enchaînées au plus dans le menu Couleurs
+// LUT enchaînées au plus : la pile du look HDR anime à ses curseurs au maximum (1 base, 6 + 8 de contraste,
+// 3 d'éclats, 1 « skin fix ») en demande 19.
+inline constexpr std::size_t kLookSlots = 20;
 inline constexpr std::size_t kLutMaxBytes = 16U * 1024U * 1024U;  // un .cube de 65³ pèse ~5 Mo
 
 struct CubeLut {
@@ -35,11 +37,21 @@ struct CubeLut {
 // vaut pas size³, valeur illisible ou non finie, DOMAIN_MIN/MAX incohérent.
 std::expected<CubeLut, Refusal> parse_cube(std::string_view text);
 
-// Une pile de LUT réduite à une seule : en chaque point d'une grille size³, la couleur traverse les LUT dans
-// l'ordre comme dans le hook du look (entrée bornée à [0, 1], lecture trilinéaire, mélange à son intensité
-// `mixes[i]`, une LUT absente ou d'intensité 0 sautée). Une pile d'une LUT de 17 ou 33 points se refait à
-// 65 points sans écart : la grille fine tombe sur la grosse. Le hook lit ensuite une texture au lieu de
-// quinze.
+// Une pile de LUT et l'intensité de chacune, dans l'ordre : une LUT absente ou d'intensité 0 est sautée.
+struct LookChain {
+  std::span<const CubeLut* const> luts;
+  std::span<const double> mixes;
+  bool active() const;  // une LUT au moins s'applique
+};
+
+// La couleur `c` passée par la pile comme dans le hook du look : à chaque LUT, entrée bornée à [0, 1],
+// lecture trilinéaire, mélange à son intensité. C'est le calcul exact, celui du shader.
+std::array<float, 3> sample_chain(const LookChain& chain, std::array<float, 3> c);
+
+// Une pile de LUT réduite à une seule table de size³ points (--bake-looks, pour un autre lecteur). Une
+// approximation : entre deux points la table interpole la pile entière au lieu de la parcourir, jusqu'à 18
+// codes PQ 10 bits d'écart à 65 points pour la pile livrée (A41-01). Le lecteur, lui, parcourt la pile
+// dans son shader. Une pile d'une seule LUT de 17 ou 33 points se refait à 65 points sans écart.
 CubeLut compose_luts(std::span<const CubeLut* const> luts, std::span<const double> mixes,
                      int size = kLutMaxSize);
 

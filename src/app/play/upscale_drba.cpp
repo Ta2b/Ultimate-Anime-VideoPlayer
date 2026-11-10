@@ -73,8 +73,8 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
     drba_.bridge_ticket.reset();
     auto bridged = setup_.backend->kernels()->scores_take(ticket);
     if (!bridged) return std::unexpected(std::move(bridged.error()));
-    drba_.before_ok =
-        previous_ && previous_->epoch == frame.epoch && !kernels::is_scene_cut(bridged->scene_score);
+    drba_.before_ok = previous_ && previous_->epoch == frame.epoch &&
+                      !cut_measured(*bridged, drba_.bridge_left_pts_us, drba_.bridge_right_pts_us);
   }
   // b est déjà ingérée si elle est arrivée derrière l'image précédente.
   if (drba_.after_id == frame.id && drba_.after_epoch == frame.epoch) {
@@ -101,9 +101,17 @@ std::expected<void, Refusal> UpscaleStage::settle_after_scores() {
   scores->left = drba_.ticket_left;
   scores->right = drba_.ticket_right;
   drba_.after_scores = *scores;
-  drba_.after_ok = !kernels::is_scene_cut(scores->scene_score);
+  drba_.after_ok = !cut_measured(*scores, drba_.left_pts_us, drba_.right_pts_us);
   drba_.after_held = drba_.after_ok && kernels::is_held(scores->worst_block);
   return {};
+}
+
+bool UpscaleStage::cut_measured(const gpu::PairScores& scores, std::int64_t left_pts_us,
+                                std::int64_t right_pts_us) const {
+  PairFacts facts{.scores = scores, .useful_area = useful_area_};
+  if (setup_.live && left_pts_us != kNoPts && right_pts_us != kNoPts)
+    facts.known_cut = setup_.live->cuts().cut_between(left_pts_us, right_pts_us);
+  return pair_cut(facts);
 }
 
 std::expected<gpu::PairScores, Refusal> UpscaleStage::drba_scores(const DecodedFrame& frame) {
@@ -129,8 +137,10 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (std::exchange(drba_.bridge, false)) {
     // Reprise après une image sautée : elle (rgb_ de l'autre côté) contre celle-ci, relue à la suivante.
-    if (auto ticket = ops.scores_start(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor()))
+    if (auto ticket = ops.scores_start(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor())) {
       drba_.bridge_ticket = *ticket;
+      drba_.bridge_right_pts_us = frame.pts_us;
+    }
   }
   const DecodedFrame* after = next();
   if (after == nullptr) return {};
@@ -140,6 +150,8 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   }
   drba_.after_id = after->id;
   drba_.after_epoch = after->epoch;
+  drba_.left_pts_us = frame.pts_us;
+  drba_.right_pts_us = after->pts_us;
   if (!measure) return {};
   if (auto ticket = ops.scores_start(rgb_[current_]->tensor(), drba_.after->tensor())) {
     drba_.after_ticket = *ticket;
@@ -152,7 +164,7 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   scores->left = frame.id;
   scores->right = after->id;
   drba_.after_scores = *scores;
-  drba_.after_ok = !kernels::is_scene_cut(scores->scene_score);
+  drba_.after_ok = !cut_measured(*scores, drba_.left_pts_us, drba_.right_pts_us);
   drba_.after_held = drba_.after_ok && kernels::is_held(scores->worst_block);
   return {};
 }
@@ -174,6 +186,7 @@ void UpscaleStage::keep_skipped(const DecodedFrame& frame) {
   std::swap(rgb_[current_], drba_.after);
   if (small_[current_]) std::swap(small_[current_], drba_.small_after);
   drba_.bridge = true;
+  drba_.bridge_left_pts_us = frame.pts_us;
 }
 
 std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& call,
