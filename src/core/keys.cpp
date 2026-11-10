@@ -262,6 +262,38 @@ std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml) {
   return map;
 }
 
+bool fixed_key(Key key) {
+  constexpr std::array fixed{Key::Q, Key::F,      Key::Escape,   Key::M,  Key::J,
+                             Key::Z, Key::X,      Key::A,        Key::P,  Key::N,
+                             Key::O, Key::PageUp, Key::PageDown, Key::Up, Key::Down};
+  return std::ranges::find(fixed, key) != fixed.end();
+}
+
+namespace {
+
+// Une entrée de [keys] : la touche (aucune pour ""), ou le texte à dire si elle est ignorée.
+std::expected<std::optional<Chord>, std::string> read_entry(std::string_view name, const toml::node& node) {
+  const std::optional<std::string> text = node.value_exact<std::string>();
+  if (!parse_action(name) || !text)
+    return std::unexpected(text ? std::format("{} = {}", name, *text) : std::string(name));
+  if (text->empty()) return std::nullopt;
+  const auto chord = parse_chord(*text);
+  if (!chord) return std::unexpected(std::format("{} = {}", name, *text));
+  if (!chord->ctrl && !chord->alt && !chord->meta && fixed_key(chord->key))
+    return std::unexpected(std::format("{} = {} (fixed)", name, *text));  // A24-06
+  return *chord;
+}
+
+// L'autre action qui tient déjà cette touche.
+std::optional<Action> other_owner(const KeyMap& map, Action action, const Chord& chord) {
+  for (std::size_t other = 0; other < kActionCount; ++other)
+    if (other != index(action) && map.chord(static_cast<Action>(other)) == chord)
+      return static_cast<Action>(other);
+  return std::nullopt;
+}
+
+}  // namespace
+
 KeysRead read_keys(std::string_view profile_toml) {
   KeysRead out{.map = KeyMap::defaults(), .ignored = {}};
   auto root = fields::parse(profile_toml, RefusalCode::ProfileUnreadable, "profil");
@@ -279,30 +311,24 @@ KeysRead read_keys(std::string_view profile_toml) {
   std::vector<Action> redefined;
   for (const auto& [key, node] : *keys) {
     if (key.str().starts_with("profile_")) continue;  // les profils retirés d'un ancien user.toml
-    const std::optional<Action> action = parse_action(key.str());
-    const std::optional<std::string> text = node.value_exact<std::string>();
-    std::expected<Chord, Refusal> chord = Chord{};
-    if (action && text && !text->empty()) chord = parse_chord(*text);
-    if (!action || !text || !chord) {
-      out.ignored.push_back(text ? std::format("{} = {}", key.str(), *text) : std::string(key.str()));
+    auto chord = read_entry(key.str(), node);
+    if (!chord) {
+      out.ignored.push_back(std::move(chord.error()));
       continue;
     }
-    out.map.chords_[index(*action)] = text->empty() ? std::nullopt : std::optional<Chord>(*chord);
-    redefined.push_back(*action);
+    const Action action = parse_action(key.str()).value();
+    out.map.chords_[index(action)] = *chord;
+    redefined.push_back(action);
   }
   // Les conflits après toutes les redéfinitions (échanger deux touches reste possible) : l'action en conflit
   // reprend son raccourci par défaut s'il est libre, sinon aucun.
   const KeyMap defaults = KeyMap::defaults();
   for (const Action action : redefined) {
     const std::optional<Chord> chord = out.map.chord(action);
-    if (!chord) continue;
-    const std::optional<Action> owner = [&]() -> std::optional<Action> {
-      for (std::size_t other = 0; other < kActionCount; ++other)
-        if (other != index(action) && out.map.chords_[other] == chord) return static_cast<Action>(other);
-      return std::nullopt;
-    }();
+    const std::optional<Action> owner = chord ? other_owner(out.map, action, *chord) : std::nullopt;
     if (!owner) continue;
-    // Sans langue : le texte va à l'écran. « toggle_grade = Space (pause) » nomme l'action qui tient la touche.
+    // Sans langue : le texte va à l'écran. « toggle_grade = Space (pause) » nomme l'action qui tient la
+    // touche.
     out.ignored.push_back(
         std::format("{} = {} ({})", action_name(action), format_chord(*chord), action_name(*owner)));
     const std::optional<Chord>& fallback = defaults.chord(action);

@@ -193,6 +193,22 @@ toggle_grade = "Space"
   CHECK(broken.ignored.size() == 1);
 }
 
+TEST_CASE("Raccourcis : une touche gardée par le lecteur n'est pas donnée à une action (A24-06)", "[keys]") {
+  // Avant : « pause = "M" » était accepté, puis M coupait le son et la pause n'avait plus de touche.
+  const KeysRead read =
+      read_keys("[keys]\npause = \"M\"\ntoggle_osd = \"Shift+N\"\nstep_forward = \"Ctrl+M\"\n");
+  CHECK(read.map.chord(Action::TogglePause) == KeyMap::defaults().chord(Action::TogglePause));
+  CHECK(read.map.chord(Action::ToggleOsd) == KeyMap::defaults().chord(Action::ToggleOsd));
+  CHECK(read.map.chord(Action::StepForward) == ctrl(Key::M));  // avec Ctrl, la touche est libre
+  REQUIRE(read.ignored.size() == 2);
+  CHECK(read.ignored[0].contains("(fixed)"));
+  // Aucun raccourci par défaut n'est sur une touche gardée.
+  for (std::size_t a = 0; a < kActionCount; ++a) {
+    const auto chord = KeyMap::defaults().chord(static_cast<Action>(a));
+    if (chord && !chord->ctrl && !chord->alt && !chord->meta) CHECK_FALSE(fixed_key(chord->key));
+  }
+}
+
 TEST_CASE("Raccourcis : rebind refuse de prendre la touche d'une autre action", "[keys]") {
   const KeyMap map = KeyMap::defaults();
   auto conflict = map.rebind(Action::ToggleOsd, key(Key::Space));

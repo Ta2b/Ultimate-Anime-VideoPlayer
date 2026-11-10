@@ -77,4 +77,26 @@ TEST_CASE("Touches : Ctrl + la touche du « - » règle le délai audio, quel qu
   CHECK((!plain || !std::holds_alternative<SubtitleDelayStep>(*plain)));
 }
 
+TEST_CASE("Touches : core::fixed_key dit exactement les touches lues avant [keys] (A24-06)", "[app][input]") {
+  // Sans aucun raccourci, une touche seule ne fait quelque chose que si le lecteur la garde.
+  const core::KeysRead none = core::read_keys(
+      "[keys]\npause = \"\"\nseek_backward = \"\"\nseek_forward = \"\"\nstep_forward = \"\"\n"
+      "step_backward = \"\"\nprocessing_off = \"\"\ntoggle_grade = \"\"\ntoggle_interpolation = \"\"\n"
+      "toggle_osd = \"\"\n");
+  REQUIRE(none.ignored.empty());
+  int fixed = 0;
+  for (SDL_Keycode code = SDLK_BACKSPACE; code <= SDLK_UP; ++code) {
+    if (code == SDLK_DELETE + 1) code = SDLK_CAPSLOCK;  // des caractères aux touches sans caractère
+    const auto key = key_of(code);
+    if (!key) continue;
+    SDL_Event down{};
+    down.type = SDL_EVENT_KEY_DOWN;
+    down.key.key = code;
+    INFO("code SDL " << code);
+    CHECK(input_of(down, none.map).has_value() == core::fixed_key(*key));
+    if (core::fixed_key(*key)) ++fixed;
+  }
+  CHECK(fixed == 15);
+}
+
 }  // namespace ajp::app::play

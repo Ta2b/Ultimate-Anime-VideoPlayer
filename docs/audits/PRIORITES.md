@@ -514,7 +514,7 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 41 | A12-11 | Mineur | `src/core/clock_pll.h:28-40` | PLL audio réglée en lectures et non en temps (effet de 1 à 2 µs) | Corrigé |
 | 42 | A24-04 | Mineur | `src/app/play/input.cpp:18-58` | `key_of` ne traduit pas des touches que `[keys]` accepte | Corrigé |
 | 43 | A24-05 | Mineur | `src/app/play/input.cpp:76` | AZERTY : répétition et Ctrl + « - » mal traduits (UX-11) | Corrigé |
-| 44 | A24-06 | Mineur | `src/app/play/input.cpp:94-116` | Quinze touches en dur avant `[keys]`, non refusées |  |
+| 44 | A24-06 | Mineur | `src/app/play/input.cpp:94-116` | Quinze touches en dur avant `[keys]`, non refusées | Corrigé |
 | 45 | A24-07 | Mineur | `src/app/play/user_keys.cpp:16-24` | Une entrée fautive de `[keys]` remet tous les raccourcis par défaut | Corrigé |
 | 46 | A24-08 | Mineur | `src/app/play/user_keys.cpp:32` | `path::string()` dans le journal (dette, voir A20-02) | Corrigé |
 | 47 | A24-10 | Mineur | `src/app/play/visible_error.h:28` | UX-17 : phrase d'erreur répétée |  |
