@@ -24,6 +24,8 @@
 
 namespace ajp::app::play {
 
+class SubtitleLead;
+
 // Horloge maître sans piste audio, ou quand l'écran mène : le temps hôte, mis en marche et arrêté
 // par la session, à la vitesse qui cale la sortie sur les vsyncs (1 sinon).
 class HostClock final : public MasterClock {
@@ -97,6 +99,9 @@ struct StageLinks {
   // Toujours : maître sans audio ; avec audio, prête à mener quand l'écran se cale (lead).
   std::shared_ptr<HostClock> host_clock;
   LeadClock* lead = nullptr;  // avec audio : qui mène, l'audio ou l'horloge hôte
+  // nullptr : pas de piste de sous-titres du conteneur. Suit les seeks et les demandes de rendu (A17-05,
+  // A17-06).
+  SubtitleLead* subs_lead = nullptr;
 };
 
 // Un délai audio négatif fait entendre le son avant l'image : pour que l'image voulue soit montrée,

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "app/play/subtitle_lead.h"
 #include "app/play/visible_error.h"
 #include "audio/devices.h"
 #include "audio/output.h"
@@ -79,9 +80,17 @@ bool readable_subtitles(const media::Demuxer& demuxer) {
 }
 
 // A18-15 : une piste mov_text (MP4) arrive avec sa longueur en tête, que le pont retire.
-void mark_mov_text(const media::Demuxer& demuxer, int index, SubsBridge& bridge) {
-  if (const media::TrackInfo* track = demuxer.track(index); track && track->codec == "mov_text")
+void mark_mov_text(const media::Demuxer& demuxer, int index, SubsBridge& bridge, std::vector<int>& mov_text) {
+  if (const media::TrackInfo* track = demuxer.track(index); track && track->codec == "mov_text") {
     bridge.mov_text(index);
+    mov_text.push_back(index);
+  }
+}
+
+// La piste que relit SubtitleLead : une piste du conteneur, pas un fichier externe.
+std::optional<int> container_track(std::optional<int> track) {
+  if (track && *track >= kExternalSubtitleBase) return std::nullopt;
+  return track;
 }
 
 }  // namespace
@@ -142,7 +151,12 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   for (const media::Chapter& chapter : demuxer->chapters())
     p->chapters_.push_back({.start_us = chapter.start_us, .title = chapter.title});
   std::ranges::sort(p->chapters_, {}, &ChapterMark::start_us);
-  p->chapters_flattened_ = !demuxer->chapter_layout().plain();
+  // A14-03 : une édition ordonnée se joue dans son ordre ; seuls les chapitres liés à d'autres fichiers
+  // manquent.
+  const media::ChapterLayout layout = demuxer->chapter_layout();
+  p->chapters_flattened_ = layout.linked;
+  for (const media::ChapterPart& part : layout.parts)
+    p->parts_.push_back({.start_us = part.start_us, .end_us = part.end_us});
   AttachedFonts fonts = attached_fonts(demuxer->tracks());
   std::vector<media::PacketRoute> routes;
 
@@ -181,7 +195,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
                                                          .audio_bridge = p->audio_bridge_.get(),
                                                          .subs = p->subs_inbox_,
                                                          .host_clock = p->host_clock_,
-                                                         .lead = p->lead_.get()});
+                                                         .lead = p->lead_.get(),
+                                                         .subs_lead = p->subs_lead_.get()});
 
   auto source = media::SourceThread::start(
       std::move(*media),
@@ -319,10 +334,21 @@ std::expected<void, Refusal> Pipeline::open_subtitles(
   }
   menu_.subtitle_selected = chosen;
   subs_bridge_ = std::make_unique<SubsBridge>(subs_inbox_, chosen);
+  std::vector<int> mov_text;
+  bool contained = false;
   for (const TrackEntry& entry : menu_.subtitles) {
     if (entry.index >= kExternalSubtitleBase) continue;
     routes.push_back({.track = entry.index, .sink = subs_bridge_.get()});
-    mark_mov_text(demuxer, entry.index, *subs_bridge_);
+    mark_mov_text(demuxer, entry.index, *subs_bridge_, mov_text);
+    contained = true;
+  }
+  // A17-05, A17-06 : la piste choisie du conteneur, relue en avance au seek et pour un délai négatif.
+  if (contained) {
+    subs_lead_ = std::make_unique<SubtitleLead>(SubtitleLeadConfig{.file = config.file,
+                                                                   .reference = video_track_.index,
+                                                                   .mov_text = std::move(mov_text),
+                                                                   .inbox = subs_inbox_});
+    subs_lead_->select(container_track(chosen));
   }
   return {};
 }
@@ -402,6 +428,7 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "aucune piste de sous-titres lisible"});
   if (!track) {
     subs_bridge_->select(std::nullopt);
+    if (subs_lead_) subs_lead_->select(std::nullopt);
     menu_.subtitle_selected.reset();
     subtitle_track_.reset();
     return {};
@@ -415,6 +442,7 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
   if (!subs_inbox_->try_push(std::move(*select)))
     return std::unexpected(Refusal{RefusalCode::SubtitleBacklog, "subtitle track: mailbox full"});
   subs_bridge_->select(track);
+  if (subs_lead_) subs_lead_->select(container_track(track));
   menu_.subtitle_selected = track;
   subtitle_track_ = *info;
   return {};
@@ -452,6 +480,7 @@ SessionConfig Pipeline::session_config() const {
                           ? audio_track_->duration_us
                           : 0,
       .chapters = chapters_,
+      .parts = parts_,
       .subtitles = subtitle_track_.has_value(),
       .video_width = video_track_.width,
       .video_height = video_track_.height,

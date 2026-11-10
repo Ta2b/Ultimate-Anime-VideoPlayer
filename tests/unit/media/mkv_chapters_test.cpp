@@ -89,3 +89,57 @@ TEST_CASE("Chapitres Matroska : autre format ou fichier tronqué, disposition si
   cut.resize(cut.size() / 2);
   CHECK(read_chapter_layout(write("ajp-chap-cut.mkv", cut)).plain());
 }
+
+namespace {
+
+Bytes ns(std::uint64_t value) {
+  Bytes out(8);
+  for (int i = 0; i < 8; ++i)
+    out[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(value >> (56 - 8 * i));
+  return out;
+}
+
+// Un chapitre de start_s à end_s secondes ; disabled : ChapterFlagEnabled = 0 ; linked : dans un autre
+// segment.
+Bytes atom(std::uint64_t start_s, std::uint64_t end_s, bool disabled = false, bool linked = false) {
+  return element({0xB6}, join({element({0x73, 0xC4}, {0x01}), element({0x91}, ns(start_s * 1'000'000'000)),
+                               element({0x92}, ns(end_s * 1'000'000'000)),
+                               disabled ? element({0x45, 0x98}, {0x00}) : Bytes{},
+                               linked ? element({0x6E, 0x67}, Bytes(16, 0xAB)) : Bytes{}}));
+}
+
+Bytes edition(bool ordered, bool by_default, std::initializer_list<Bytes> atoms) {
+  Bytes body = join({element({0x45, 0xDD}, {ordered ? std::uint8_t{1} : std::uint8_t{0}}),
+                     element({0x45, 0xDB}, {by_default ? std::uint8_t{1} : std::uint8_t{0}})});
+  for (const Bytes& a : atoms) body.insert(body.end(), a.begin(), a.end());
+  return element({0x45, 0xB9}, body);
+}
+
+}  // namespace
+
+TEST_CASE("Chapitres Matroska : les parties de l'édition ordonnée jouée, dans son ordre",
+          "[media][chapters]") {
+  // La première édition, simple, n'est pas celle par défaut ; la seconde, ordonnée, l'est. Son chapitre
+  // désactivé et son générique lié ne sont pas des parties de ce fichier.
+  const Bytes both = element(
+      {0x10, 0x43, 0xA7, 0x70},
+      join({edition(false, false, {atom(0, 10)}),
+            edition(true, true,
+                    {atom(4, 6), atom(0, 2), atom(2, 4, true), atom(0, 90, false, true), atom(6, 10)})}));
+  const auto layout = read_chapter_layout(write("ajp-chap-parts.mkv", both));
+  CHECK(layout.ordered);
+  CHECK(layout.linked);
+  REQUIRE(layout.parts.size() == 3);
+  CHECK(layout.parts[0].start_us == 4'000'000);
+  CHECK(layout.parts[0].end_us == 6'000'000);
+  CHECK(layout.parts[1].start_us == 0);
+  CHECK(layout.parts[2].end_us == 10'000'000);
+
+  // Sans édition par défaut, la première est jouée : simple, elle ne donne aucune partie.
+  const Bytes first_plain =
+      element({0x10, 0x43, 0xA7, 0x70},
+              join({edition(false, false, {atom(0, 10)}), edition(true, false, {atom(4, 6)})}));
+  const auto plain = read_chapter_layout(write("ajp-chap-first.mkv", first_plain));
+  CHECK(plain.ordered);
+  CHECK(plain.parts.empty());
+}
