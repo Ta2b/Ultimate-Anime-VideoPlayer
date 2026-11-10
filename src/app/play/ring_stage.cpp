@@ -7,6 +7,7 @@
 #include <utility>
 #include <variant>
 
+#include "app/play/links.h"
 #include "core/clock.h"
 #include "core/thread.h"
 #include "core/thread_role.h"
@@ -109,7 +110,10 @@ void RingStage::fail(const ThreadReport& report, const Refusal& refusal) {
     report(refusal);
     return;
   }
-  report(Refusal{RefusalCode::ThreadFailed, std::format("{} {}", name(refusal.code), refusal.detail)});
+  // Fatal pour main par sa clé, le code gardé : DeviceLost dit « relancer » et déclenche la relance (A31-01).
+  Refusal fatal = refusal;
+  fatal.key = std::string(kFatalStageKey);
+  report(fatal);
 }
 
 void RingStage::emit(const ThreadReport& report) {
