@@ -111,7 +111,6 @@ class PlayerUi {
   bool over_ui() const;
   void begin_frame(std::int64_t now_us);
   void follow_text_input();
-  bool handle_key(const SDL_Event& event);  // une touche pressée ou relâchée : vrai si l'interface la garde
 
   SDL_Window* window_;
   std::vector<FontFile> fonts_;  // lues par l'atlas d'ImGui tant que le contexte vit
