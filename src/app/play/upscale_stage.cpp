@@ -369,8 +369,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     const ClockSnapshot now = setup_.clock->snapshot();
     if (now.valid && now.epoch == frame.epoch && now.rate > 0.0) {
       play_rate = now.rate;
+      // A09-06 : une image sans date (kNoPts) ne se soustrait pas, la différence déborderait.
       const std::int64_t period =
-          std::max<std::int64_t>(frame.pts_us - previous_->pts_us, 0) * factor.den / factor.num;
+          std::max<std::int64_t>(pts_gap_us(previous_->pts_us, frame.pts_us), 0) * factor.den / factor.num;
       const std::int64_t ready = ready_media_us(now, host_now_us(), period, latency_us());
       std::size_t middles = 0;
       for (const core::OutputInstant& at : step->instants()) {
@@ -388,9 +389,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   PairFacts facts{.factor = wanted,
                   .same_epoch = previous_ && previous_->epoch == frame.epoch,
-                  .gap_us = previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts
-                                ? frame.pts_us - previous_->pts_us
-                                : 0,
+                  .gap_us = previous_ ? pts_gap_us(previous_->pts_us, frame.pts_us) : 0,
                   .useful_area = useful_area_};
   if (!facts.same_epoch) forget_motion();  // début ou saut : le mouvement d'avant ne dit plus rien
   std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
@@ -404,11 +403,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     const auto waited =
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
             .count();
-    if (scores_wait_us_.size() < kScoresWaitKept) {
-      scores_wait_us_.push_back(waited);
-    } else {
-      scores_wait_us_[scores_wait_next_++ % kScoresWaitKept] = waited;
-    }
+    keep_scores_wait(waited);
     lead_us = waited;
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
@@ -609,7 +604,9 @@ RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t outp
 void UpscaleStage::skip(const DecodedFrame& frame, std::uint32_t output) {
   if (setup_.skip_held && drba()) {
     if (setup_.live) setup_.live->auto_unexpect(frame.id.value, 1);
-    if (instants_[std::min<std::size_t>(output, instants_.size() - 1)].t >= 1.0F) {
+    // La source, ou la dernière sortie d'une paire sans source (A09-12, comme late()) : cette image reste
+    // l'image d'avant de la suivante.
+    if (instants_[std::min<std::size_t>(output, instants_.size() - 1)].t >= 1.0F || output + 1 >= outputs_) {
       previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     }
     return;
