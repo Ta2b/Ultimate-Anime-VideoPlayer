@@ -52,8 +52,12 @@ UpscaleStage::~UpscaleStage() {
   if (setup_.rife_motion_calm != nullptr)
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
   if (setup_.rife_warm)
-    log_channel("gpu")->info("RIFE à chaud : {} passes sur {} sans les blocs grossiers", warm_runs_,
-                             rife_runs_);
+    log_channel("gpu")->info("RIFE à chaud : {} passes sur {} sans les blocs grossiers{}", warm_runs_,
+                             rife_runs_,
+                             warm_runs_ == 0 && rife_runs_ > 0
+                                 ? " (ce moteur ne reprend pas à chaud : l'essai est sans effet hors du RIFE "
+                                   "fusionné de Vulkan)"
+                                 : "");
   if (moving_.pairs > 0) {
     const auto pairs = static_cast<double>(moving_.pairs);
     log_channel("gpu")->info(
@@ -419,22 +423,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
               *facts.known_cut ? "coupe" : "plan", *facts.known_cut ? "plan" : "coupe", scores->scene_score);
       }
     }
-    if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
-      ++pairs_;
-      if (setup_.live) setup_.live->count_pair();
-    }
-    if (pair_cut(facts)) {
-      forget_motion();
-      ++cuts_;
-      if (setup_.live) {
-        setup_.live->count_cut();
-        setup_.live->auto_cut(host_now_us());
-        setup_.live->free_cut(host_now_us());
-      }
-    } else if (kernels::is_held(scores->worst_block)) {
-      ++held_;
-      if (setup_.live) setup_.live->count_held();
-    }
+    count_measured(facts);
   }
   // Smooth : une tenue de deux sources fondue en un mouvement (upscale_smooth.cpp).
   smooth_second_ = std::exchange(smooth_first_, false) && facts.same_epoch;
@@ -448,6 +437,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   middle_rank_ = 0;
   instants_[0] = Instant{.t = 1.0F, .pts_us = frame.pts_us};
   const bool runs = on_grid && (smooth_first_ || rife_runs(facts));
+  // P6.15 : une paire sans passe (dessin tenu, coupe, hors grille) sépare la suivante de la dernière passe
+  // du milieu ; ses blocs grossiers, vieux de plusieurs sources, ne se reprennent pas (A09-13).
+  if (!runs) warm_from_ = nullptr;
   // Mode auto : seules les paires qui ont chargé le GPU disent s'il tient ; à ×1 rien ne tourne, le
   // temps seul compte. Coupe de scène ou dessin tenu : aucun verdict, mais le moteur vit.
   const bool auto_measured =

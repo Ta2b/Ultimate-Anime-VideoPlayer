@@ -140,7 +140,7 @@ std::expected<gpu::PairScores, Refusal> UpscaleStage::drba_scores(const DecodedF
     return kept;
   }
   drba_.after_scores.reset();
-  return setup_.backend->kernels()->scores_now(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor());
+  return setup_.backend->kernels()->scores_now(rife_source(current_ ^ 1U), rife_source(current_));
 }
 
 kernels::RifeGeometry UpscaleStage::drba_geometry() const {
@@ -155,7 +155,7 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (std::exchange(drba_.bridge, false)) {
     // Reprise après une image sautée : elle (rgb_ de l'autre côté) contre celle-ci, relue à la suivante.
-    if (auto ticket = ops.scores_start(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor())) {
+    if (auto ticket = ops.scores_start(rife_source(current_ ^ 1U), rife_source(current_))) {
       drba_.bridge_ticket = *ticket;
       drba_.bridge_right_pts_us = frame.pts_us;
     }
@@ -174,13 +174,16 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   drba_.left_pts_us = frame.pts_us;
   drba_.right_pts_us = after->pts_us;
   if (!measure) return {};
-  if (auto ticket = ops.scores_start(rgb_[current_]->tensor(), drba_.after->tensor())) {
+  // A09-18 : la mesure se fait sur les copies réduites quand elles existent, comme sous RIFE : le seuil
+  // des dessins tenus est réglé à cette taille, et la paire y coûte moins de pixels lus.
+  const gpu::Tensor& measured_after = drba_.small_after ? drba_.small_after->tensor() : drba_.after->tensor();
+  if (auto ticket = ops.scores_start(rife_source(current_), measured_after)) {
     drba_.after_ticket = *ticket;
     drba_.ticket_left = frame.id;
     drba_.ticket_right = after->id;
     return {};
   }
-  auto scores = ops.scores_now(rgb_[current_]->tensor(), drba_.after->tensor());
+  auto scores = ops.scores_now(rife_source(current_), measured_after);
   if (!scores) return std::unexpected(std::move(scores.error()));
   scores->left = frame.id;
   scores->right = after->id;

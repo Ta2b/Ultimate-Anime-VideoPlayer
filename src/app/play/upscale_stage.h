@@ -175,6 +175,9 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> drba_arrive(const DecodedFrame& frame, const gpu::IngestSpec& spec);
   // L'image sautée, gardée comme image d'avant (D3).
   void keep_skipped(const DecodedFrame& frame);
+  // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
+  // mouvement.
+  void count_measured(const PairFacts& facts);
   // Où DistilDRBA estime : la taille de RIFE.
   kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);

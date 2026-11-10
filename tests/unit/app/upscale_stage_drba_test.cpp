@@ -177,6 +177,10 @@ TEST_CASE("Étage gpu : DistilDRBA mouvement estimé plus petit que le travail, 
   for (const char* entry : {"ingest 1", "ingest 2", "ingest 3", "ingest 4"})
     CHECK(rig.backend.count(entry) == 2);
   CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
+  // A09-18 : les paires se mesurent sur les copies réduites, comme sous RIFE, jamais à la taille de travail.
+  const std::vector<int> heights = rig.backend.scored_heights();
+  REQUIRE_FALSE(heights.empty());
+  CHECK(std::ranges::all_of(heights, [](int height) { return height == kHeight / 2; }));
 }
 
 TEST_CASE("Étage gpu : DistilDRBA image refusé plus petit que le travail", "[app][stage]") {

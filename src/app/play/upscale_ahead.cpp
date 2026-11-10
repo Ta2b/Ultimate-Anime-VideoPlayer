@@ -145,4 +145,23 @@ std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
   return write_rife_pair(t);
 }
 
+void UpscaleStage::count_measured(const PairFacts& facts) {
+  if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
+    ++pairs_;
+    if (setup_.live) setup_.live->count_pair();
+  }
+  if (pair_cut(facts)) {
+    forget_motion();
+    ++cuts_;
+    if (setup_.live) {
+      setup_.live->count_cut();
+      setup_.live->auto_cut(host_now_us());
+      setup_.live->free_cut(host_now_us());
+    }
+  } else if (facts.scores && kernels::is_held(facts.scores->worst_block)) {
+    ++held_;
+    if (setup_.live) setup_.live->count_held();
+  }
+}
+
 }  // namespace ajp::app::play

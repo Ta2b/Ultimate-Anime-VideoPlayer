@@ -36,6 +36,13 @@ class FakeEngine final : public gpu::Engine {
   FakeEngine(std::string name, std::vector<std::string> inputs, std::vector<std::string> outputs)
       : name_(std::move(name)), inputs_(std::move(inputs)), outputs_(std::move(outputs)) {}
   const std::string& name() const { return name_; }
+  // next_warm accepté (comme le RIFE fusionné de Vulkan) ; faux par défaut. warm_asked : ses appels.
+  void offer_warm(bool on) { warm_ = on; }
+  int warm_asked() const { return warm_asked_; }
+  bool next_warm() override {
+    ++warm_asked_;
+    return warm_;
+  }
   std::span<const std::string> input_names() const override { return inputs_; }
   std::span<const std::string> output_names() const override { return outputs_; }
 
@@ -43,6 +50,8 @@ class FakeEngine final : public gpu::Engine {
   std::string name_;
   std::vector<std::string> inputs_;
   std::vector<std::string> outputs_;
+  bool warm_ = false;
+  int warm_asked_ = 0;
 };
 
 // Une écriture du ring, telle que le backend l'a reçue.
@@ -188,6 +197,11 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     if (!rife_pair_) return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_pair : absent"});
     return note("rife_pair", input.handle);
   }
+  // La hauteur des deux images de chaque mesure de paire, dans l'ordre (A09-18).
+  std::vector<int> scored_heights() const {
+    const std::scoped_lock lock(mutex_);
+    return scored_heights_;
+  }
   std::expected<gpu::PairScores, Refusal> scores_now(const gpu::Tensor& a, const gpu::Tensor& b) override;
   std::expected<std::uint64_t, Refusal> scores_start(const gpu::Tensor& a, const gpu::Tensor& b) override;
   std::expected<gpu::PairScores, Refusal> scores_take(std::uint64_t ticket) override;
@@ -268,6 +282,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::map<std::uintptr_t, SourceId> ingested_;  // tenseur → dernière image ingérée dedans
   std::map<PairKey, gpu::PairScores> scores_;
   std::map<std::uint64_t, gpu::PairScores> tickets_;
+  std::vector<int> scored_heights_;
   std::map<std::uint64_t, float> flow_tickets_;
   float motion_max_ = 0.0F;
   std::uintptr_t next_handle_ = 1;
