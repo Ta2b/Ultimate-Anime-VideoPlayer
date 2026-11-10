@@ -473,7 +473,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     if (++s.snapshot_index >= s.snapshot_count) s.snapshot.reset();
     if (auto saved = s.save_snapshot(frame != nullptr ? &image : nullptr, target, out, request.ui, path);
         !saved) {
-      s.channel->warn("instantané {} : {}", core::to_utf8(path), saved.error().detail);
+      s.channel->warn("instantané {} : {}", core::to_utf8(path.filename()), saved.error().detail);
     }
   }
   if (s.offscreen) {
