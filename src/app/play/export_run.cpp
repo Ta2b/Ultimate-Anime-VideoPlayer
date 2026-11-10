@@ -167,7 +167,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   std::vector<std::string> unavailable;
   const PlaySettings settings = within_engines(export_chain(job.chain), p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
-  auto prepared = prepare_chain(p, settings);
+  auto prepared = prepare_chain(p, settings, nullptr);  // l'export rejoue la chaîne demandée, ou rien
   if (!prepared) return stopped(prepared.error());
   if (!*prepared) return {.end = ExportEnd::Quit};
   ChainEngines& c = **prepared;

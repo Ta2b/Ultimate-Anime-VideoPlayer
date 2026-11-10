@@ -20,6 +20,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_video.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #if AJP_WITH_FONTCONFIG
 #include <fontconfig/fontconfig.h>
 #endif
@@ -29,6 +30,7 @@
 
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/ui_fonts.h"
 #include "core/log.h"
 #include "core/text.h"
 #ifdef AJP_WITH_FREETYPE
@@ -100,32 +102,32 @@ std::filesystem::path windows_fonts() {
   return root / L"Fonts";
 }
 
-// La première de ces polices du dossier de Windows qui se lit (index : celle de la collection).
-std::optional<FontFile> first_font(const std::filesystem::path& dir,
-                                   std::initializer_list<std::pair<const wchar_t*, int>> files) {
-  for (const auto& [name, index] : files) {
+// La première des polices de ce groupe qui se lit dans le dossier de Windows.
+std::optional<FontFile> first_font(const std::filesystem::path& dir, const WindowsFontGroup& group) {
+  for (const wchar_t* name : group.files) {
+    if (name == nullptr) break;
     const std::filesystem::path path = dir / name;
-    FontFile font{.path = core::to_utf8(path), .index = index};
+    FontFile font{.path = core::to_utf8(path), .index = 0};
     if (read_font(path, font)) return font;
   }
   return std::nullopt;
 }
 
-// Sans fontconfig, les polices que Windows 10 et 11 installent toujours : Segoe UI (latin
-// accentué, grec, cyrillique), Yu Gothic pour le japonais des titres de pistes (Meiryo ou MS
-// Gothic, polices supplémentaires, à défaut), Segoe UI Symbol pour les symboles qui manquent aux
-// deux (▶, filets).
+// Sans fontconfig, les polices que Windows 10 et 11 installent toujours (ui_fonts.h).
 std::vector<FontFile> search_fonts() {
   std::vector<FontFile> fonts;
   const std::filesystem::path dir = windows_fonts();
-  std::optional<FontFile> main = first_font(dir, {{L"segoeui.ttf", 0}, {L"arial.ttf", 0}});
-  if (!main) return fonts;
-  fonts.push_back(std::move(*main));
-  if (std::optional<FontFile> japanese = first_font(
-          dir, {{L"YuGothM.ttc", 0}, {L"YuGothR.ttc", 0}, {L"meiryo.ttc", 0}, {L"msgothic.ttc", 0}}))
-    fonts.push_back(std::move(*japanese));
-  if (std::optional<FontFile> symbols = first_font(dir, {{L"seguisym.ttf", 0}}))
-    fonts.push_back(std::move(*symbols));
+  for (const WindowsFontGroup& group : kWindowsFonts) {
+    std::optional<FontFile> font = first_font(dir, group);
+    if (font) {
+      fonts.push_back(std::move(*font));
+    } else if (group.required) {
+      return fonts;
+    } else {
+      log_channel("app")->warn("interface : aucune police pour le {} dans les polices de Windows",
+                               group.role);
+    }
+  }
   return fonts;
 }
 #else
@@ -138,14 +140,25 @@ std::vector<FontFile> search_fonts() {
   // Titres japonais (et chinois, coréens) : la police CJK que fontconfig donne pour la langue, sinon les
   // familles courantes des distributions (Fedora : google-noto-sans-cjk-fonts ; Debian : fonts-noto-cjk ;
   // Arch : noto-fonts-cjk).
+  bool main_covers = false;
   for (const char* pattern : {"sans-serif:lang=ja", "Noto Sans CJK JP", "Noto Sans JP", "Source Han Sans",
                               "IPAexGothic", "TakaoGothic", "VL Gothic", "WenQuanYi Zen Hei",
                               "Droid Sans Fallback", "sans-serif:lang=zh-cn", "sans-serif:lang=ko"}) {
     std::optional<FontFile> cjk = system_font(pattern, true);
-    if (!cjk || cjk->path == fonts.front().path || !read_font(std::filesystem::path(cjk->path), *cjk))
+    if (!cjk) continue;
+    // La police du bureau est déjà celle que fontconfig donne pour cette langue : elle la couvre, il n'y a
+    // rien à ajouter ni à signaler (A24-23).
+    if (cjk->path == fonts.front().path) {
+      main_covers = true;
       continue;
+    }
+    if (!read_font(std::filesystem::path(cjk->path), *cjk)) continue;
     log_channel("app")->info("interface : police CJK {} ({})", cjk->path, pattern);
     fonts.push_back(std::move(*cjk));
+    return fonts;
+  }
+  if (main_covers) {
+    log_channel("app")->info("interface : la police du bureau couvre le japonais, pas de police de repli");
     return fonts;
   }
   log_channel("app")->warn(
@@ -169,6 +182,9 @@ bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
 // à la taille demandée.
 void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fonts) {
   const auto log = log_channel("app");
+  // Un octet par pixel au lieu de quatre (A24-18) : l'atlas n'a que des couvertures, le dessin
+  // (placebo_imgui.cpp) lit une texture r8 comme l'alpha d'un blanc, et chaque glyphe neuf renvoie l'atlas.
+  atlas.TexDesiredFormat = ImTextureFormat_Alpha8;
 #ifdef AJP_WITH_FREETYPE
   // FreeType lit les polices que stb_truetype ne lit pas : OpenType CFF2 et variables (Noto Sans CJK de
   // Fedora).
@@ -271,6 +287,8 @@ ImGuiKey imgui_key(SDL_Keycode key) {
   switch (key) {
     case SDLK_TAB:
       return ImGuiKey_Tab;
+    case SDLK_SPACE:
+      return ImGuiKey_Space;
     case SDLK_LEFT:
       return ImGuiKey_LeftArrow;
     case SDLK_RIGHT:
@@ -388,6 +406,7 @@ void PlayerUi::begin_frame(std::int64_t now_us) {
                                     : 1.0F / 60.0F;
   last_frame_us_ = now_us;
   ImGui::NewFrame();
+  if (std::exchange(close_popups_, false)) ImGui::ClosePopupToLevel(0, true);
 }
 
 void PlayerUi::follow_text_input() {
@@ -399,6 +418,50 @@ void PlayerUi::follow_text_input() {
   } else {
     SDL_StopTextInput(window_);
   }
+}
+
+void PlayerUi::set_keyboard_nav(bool on) {
+  keyboard_nav_ = on;
+  ImGuiIO& io = ImGui::GetIO();
+  if (on) {
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  } else {
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+  }
+}
+
+namespace {
+
+// Échap appuyée alors qu'une liste ou un menu d'ImGui est ouvert.
+bool escapes_popup(const SDL_Event& event) {
+  return event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE &&
+         ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+}
+
+}  // namespace
+
+bool PlayerUi::handle_key(const SDL_Event& event) {
+  ImGuiIO& io = ImGui::GetIO();
+  // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
+  // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
+  const SDL_Keymod mod = event.key.mod;
+  io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
+  io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
+  io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
+  io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
+  // A24-14 : Échap sur une liste ouverte ne ferme que la liste. Avant, la touche partait au lecteur, qui
+  // fermait tout le panneau et jetait les réglages en attente d'« Appliquer ».
+  if (escapes_popup(event)) {
+    close_popups_ = input_pending_ = true;
+    return true;
+  }
+  const ImGuiKey key = imgui_key(event.key.key);
+  // Hors saisie, l'assistant au clavier (A25-14) garde pour lui les touches qu'ImGui connaît : « q » n'y
+  // ferme plus le lecteur. Les autres (F11) suivent le chemin des raccourcis.
+  if (!text_input_ && (!keyboard_nav_ || key == ImGuiKey_None)) return false;
+  if (key != ImGuiKey_None) io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
+  input_pending_ = true;
+  return true;
 }
 
 bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<Input>& actions) {
@@ -460,20 +523,8 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
       input_pending_ = true;
       return true;
     case SDL_EVENT_KEY_DOWN:
-    case SDL_EVENT_KEY_UP: {
-      // Les modificateurs arrivent toujours à ImGui (Ctrl + clic sur un curseur ouvre sa saisie,
-      // et un Ctrl relâché hors saisie ne reste pas enfoncé) ; les touches, seulement en saisie.
-      const SDL_Keymod mod = event.key.mod;
-      io.AddKeyEvent(ImGuiMod_Ctrl, (mod & SDL_KMOD_CTRL) != 0);
-      io.AddKeyEvent(ImGuiMod_Shift, (mod & SDL_KMOD_SHIFT) != 0);
-      io.AddKeyEvent(ImGuiMod_Alt, (mod & SDL_KMOD_ALT) != 0);
-      io.AddKeyEvent(ImGuiMod_Super, (mod & SDL_KMOD_GUI) != 0);
-      if (!text_input_) return false;
-      if (const ImGuiKey key = imgui_key(event.key.key); key != ImGuiKey_None)
-        io.AddKeyEvent(key, event.type == SDL_EVENT_KEY_DOWN);
-      input_pending_ = true;
-      return true;
-    }
+    case SDL_EVENT_KEY_UP:
+      return handle_key(event);
     default:
       return false;
   }

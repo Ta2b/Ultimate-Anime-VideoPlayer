@@ -216,7 +216,14 @@ bool PlaceboRing::ready(const RingFrame& frame) const {
   // Hors du ring courant, ou sans moyen de lire : vrai, acquire ou retire en décident.
   if (counter_ == nullptr || frame.generation != generation_ || frame.slot >= slots_.size()) return true;
   std::uint64_t value = 0;
-  if (counter_(device_, slots_[frame.slot].semaphore, &value) != VK_SUCCESS) return true;
+  const VkResult read = counter_(device_, slots_[frame.slot].semaphore, &value);
+  // Appareil perdu : l'image ne sera jamais écrite, libplacebo l'attendrait sans fin (A31-13) ; l'écran le
+  // dit à la session (Screen::device_lost). Une autre erreur laisse acquire en décider, comme avant.
+  if (read == VK_ERROR_DEVICE_LOST) {
+    lost_ = true;
+    return false;
+  }
+  if (read != VK_SUCCESS) return true;
   return value >= frame.ready_value;
 }
 

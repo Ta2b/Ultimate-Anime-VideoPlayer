@@ -187,5 +187,28 @@ TEST_CASE("Moteurs de la release : l'index et sa signature se téléchargent ens
   CHECK(catalog.packages.empty());
   CHECK_FALSE(fs::exists(cache));
   CHECK_FALSE(fs::exists(dir / "engines-nvidia.lock.sig"));
+
+  // Le 404 est retenu un jour : le lancement suivant ne refait pas la requête.
+  int asked_again = 0;
+  const UpdateFetch counting = [&](std::string_view, const fs::path&, int,
+                                   const std::stop_token&) -> std::expected<void, Refusal> {
+    ++asked_again;
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "404"});
+  };
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, counting);
+  CHECK(asked_again == 0);
+
+  // Un jour plus tard, on redemande ; et un téléchargement réussi retire la marque.
+  fs::last_write_time(dir / "engines-nvidia.lock.absent",
+                      fs::file_time_type::clock::now() - std::chrono::hours(48));
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, counting);
+  CHECK(asked_again == 1);
+  fs::last_write_time(dir / "engines-nvidia.lock.absent",
+                      fs::file_time_type::clock::now() - std::chrono::hours(48));
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, fetch);
+  CHECK(catalog.packages.size() == 1);
+  CHECK_FALSE(fs::exists(dir / "engines-nvidia.lock.absent"));
   fs::remove_all(dir);
 }

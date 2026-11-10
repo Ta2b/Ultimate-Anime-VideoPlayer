@@ -54,6 +54,9 @@ std::string format_clock(std::int64_t us, std::int64_t duration_us);
 // Décalage vers le haut des sous-titres du bas (bas du texte à text_bottom) pour qu'ils restent
 // au-dessus d'une barre de hauteur reserved, sur une sortie de hauteur height ; 0 s'ils y sont déjà.
 float subtitle_lift(float text_bottom, float height, float reserved);
+// La montée demandée à libass (subs::RenderTarget::line_lift) pour une barre de reserved pixels sur une
+// sortie de height pixels : la part de la hauteur que la barre prend, au plus la moitié ; 0 sans barre.
+float line_lift(int reserved, int height);
 
 // Fraction de la barre ↔ temps, bornés à [0, 1] et [0, durée].
 double fraction_of(std::int64_t position_us, std::int64_t duration_us);

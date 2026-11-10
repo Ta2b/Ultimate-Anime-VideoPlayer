@@ -75,6 +75,9 @@ class PlayerUi {
   const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view);
   // L'image de l'écran de bienvenue (first_run.h), recomposée à chaque appel.
   const ImDrawData* welcome(std::int64_t now_us, FirstRunView& view);
+  // La navigation au clavier d'ImGui, le temps de l'assistant (A25-14) : Tab et les flèches parcourent les
+  // choix, Entrée et Espace les activent, et les lettres ne sont plus des raccourcis du lecteur.
+  void set_keyboard_nav(bool on);
   // L'image de l'écran d'accueil (home_view.h) et du menu des paramètres s'il est ouvert ;
   // recomposée à chaque appel. Les réglages changés au menu vont dans actions.
   const ImDrawData* home(std::int64_t now_us, HomeView& view, std::vector<Input>& actions);
@@ -102,6 +105,7 @@ class PlayerUi {
   void release(PlaceboScreen& screen);
 
  private:
+  bool handle_key(const SDL_Event& event);  // les touches : modificateurs, Échap sur une liste, saisie
   PlayerUi(SDL_Window* window, std::string title);
   void apply_scale();
   bool over_ui() const;
@@ -118,6 +122,7 @@ class PlayerUi {
   PlaySettings running_;
   SettingsChoices choices_;
   bool input_pending_ = false;
+  bool close_popups_ = false;  // Échap sur une liste ouverte : elle seule se ferme, au tour suivant (A24-14)
   static constexpr int kSettleFrames = 2;
   int settle_ = 0;  // images encore à recomposer après la dernière entrée
   // Un élément survolé attend son infobulle (immobilité de la souris puis délai d'ImGui) : en pause,
@@ -135,7 +140,8 @@ class PlayerUi {
   float wheel_ = 0.0F;         // crans de molette pas encore rendus en pas de volume
   bool cursor_hidden_ = false;
   bool text_input_ = false;
-  bool home_ = false;  // l'écran d'accueil est à l'écran : le menu y prend la molette
+  bool keyboard_nav_ = false;  // l'assistant : Tab, flèches, Entrée et Espace vont à ImGui (A25-14)
+  bool home_ = false;          // l'écran d'accueil est à l'écran : le menu y prend la molette
   std::int64_t last_frame_us_ = 0;
   const ImDrawData* draw_ = nullptr;  // dernière image recomposée, si quelque chose y est visible
   int bottom_ = 0;                    // hauteur de la barre dans cette image

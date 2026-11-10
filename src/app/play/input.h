@@ -87,10 +87,13 @@ struct StartExport {
 // « Refaire le banc » pendant la lecture (P3.12) : la lecture se ferme et libère la mémoire vidéo, la
 // calibration mesure, puis la lecture reprend avec la chaîne trouvée.
 struct StartCalibration {};
+// « Réessayer » (décision 10) : les étages refusés ou annulés sont oubliés, la chaîne se rouvre au même
+// endroit telle qu'elle est demandée (stage_fallback.h).
+struct RetryStages {};
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
                            SelectSubtitles, CycleAudio, CycleSubtitles, SubtitleDelayStep, StepChapter,
                            StepEpisode, SkipCredits, ToggleSettings, ApplySettings, UseEngine,
-                           OpenEngineScreen, StartExport, PlayFile, StartCalibration>;
+                           OpenEngineScreen, StartExport, PlayFile, StartCalibration, RetryStages>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);
