@@ -334,10 +334,10 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
 std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place) {
   auto registered = register_player(place);
   if (!registered) return registered;
-  return default_once_registered(std::move(*registered));
+  return default_once_registered(*registered);
 }
 
-std::expected<std::string, Refusal> default_once_registered([[maybe_unused]] std::string registered) {
+std::expected<std::string, Refusal> default_once_registered([[maybe_unused]] const std::string& registered) {
 #if defined(_WIN32)
   // Windows 11 ouvre la page du lecteur, avec « Définir par défaut » pour tous ses types ; Windows 10
   // ouvre la liste des applications par défaut.

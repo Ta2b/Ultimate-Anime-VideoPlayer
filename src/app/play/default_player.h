@@ -81,7 +81,7 @@ std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place);
 // La seconde moitié de choose_as_default, pour qui vient d'inscrire le lecteur (A25-07) : l'assistant ne
 // relance pas update-desktop-database (15 s au plus) juste après l'avoir lancé. registered : ce que
 // register_player a rendu, repris là où le système ne laisse rien faire de plus.
-std::expected<std::string, Refusal> default_once_registered(std::string registered);
+std::expected<std::string, Refusal> default_once_registered(const std::string& registered);
 
 // La sortie de « xdg-mime query default video/x-matroska » désigne-t-elle ce lecteur ?
 bool default_handler_is_ajp(std::string_view query_output);
