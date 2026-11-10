@@ -116,6 +116,7 @@ constexpr std::array kWizardTexts{
     Entry{"Read the licence", "Lire la licence"},
     Entry{"Not installed until its licence is accepted.",
           "Pas installé tant que sa licence n'est pas acceptée."},
+    Entry{"{} is not available here: {}", "{} n'est pas disponible ici : {}"},
     Entry{"{}: recommended for this card but not selected. The calibration will measure a slower engine.",
           "{} : recommandé pour cette carte mais pas coché. La calibration mesurera un moteur plus lent."},
     Entry{"{}: licence not accepted, it will not be installed",

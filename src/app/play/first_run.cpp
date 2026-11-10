@@ -262,9 +262,14 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
         row.status = i18n::tr("cannot be installed in this version yet");
         break;
     }
-    const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected;
+    // Coché à l'assistant puis la fenêtre fermée pendant le téléchargement : le choix est écrit avant
+    // (A25-10), la case et l'accord de la licence reviennent à la reprise.
+    const bool agreed = row.download && chosen(current, offer.id);
+    const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected || agreed;
     // Une licence ne se coche jamais d'office : le moteur qui en demande une attend l'accord.
-    row.chosen = offer.id == core::EngineId::Vulkan || (wanted && row.usable && row.license.empty());
+    row.chosen =
+        offer.id == core::EngineId::Vulkan || (wanted && row.usable && (row.license.empty() || agreed));
+    row.license_accepted = agreed;
     view.engines.push_back(std::move(row));
   }
   return view;
@@ -382,6 +387,11 @@ std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
       refused.push_back(i18n::tr_format(
           "{}: recommended for this card but not selected. The calibration will measure a slower engine.",
           label));
+    // Le moteur recommandé que ce poste ne peut pas installer : sa raison (pilote trop ancien, place, paquet
+    // non publié) se lit ici, l'écran Moteurs étant sauté quand Vulkan est le seul choix (A25-13).
+    if (!row.usable && !row.status.empty() && row.offer.id != core::EngineId::Vulkan &&
+        std::ranges::contains(row.offer.badges, core::Badge::Recommended))
+      refused.push_back(i18n::tr_format("{} is not available here: {}", label, row.status));
     if (!row.chosen || !row.usable) continue;
     if (row.download && !row.license.empty() && !row.license_accepted) {
       refused.push_back(i18n::tr_format("{}: licence not accepted, it will not be installed", label));

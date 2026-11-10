@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/engine_screen.h"
 #include "french_ui.h"
 
 using namespace ajp::app::play;
@@ -91,4 +92,13 @@ TEST_CASE("Lecteur par défaut : pas demandé quand l'écran Intégration est pa
   CHECK(make_default_requested(wizard));
   wizard.skipped.push_back(WizardStep::Updates);
   CHECK_FALSE(make_default_requested(wizard));
+}
+
+TEST_CASE("Bienvenue : au repos l'écran ne se redessine plus 60 fois par seconde (A25-15)", "[app][wizard]") {
+  using ajp::app::play::welcome_wait_ms;
+  CHECK(welcome_wait_ms(0, false) == 16);
+  CHECK(welcome_wait_ms(999'999, false) == 16);
+  CHECK(welcome_wait_ms(1'000'000, false) == 250);
+  // Un essai (--keys, --snapshot) garde sa précision.
+  CHECK(welcome_wait_ms(5'000'000, true) == 16);
 }
