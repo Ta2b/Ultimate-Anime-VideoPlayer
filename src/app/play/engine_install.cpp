@@ -25,8 +25,11 @@
 #include "core/log.h"
 #include "core/text.h"
 #include "core/utf8_path.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
+
+using prepare::ansi_safe_path;  // curl et tar relisent leur ligne de commande en ANSI sous Windows
 core::Os host_os() {
   return core::kHostOs;
 }
@@ -357,7 +360,7 @@ std::expected<void, Refusal> pull_packed(const core::VendorFile& file, const std
     // tout de suite (A06-07).
     args.insert(args.end(), {"--progress-bar", "--max-filesize", std::to_string(file.packed_size - have),
                              "--range", std::format("{}-{}", file.data_offset + have, last), "--output",
-                             core::to_utf8(chunk), file.url});
+                             ansi_safe_path(chunk), file.url});
     const double done = static_cast<double>(have) / static_cast<double>(file.packed_size);
     auto fetched = run_tool(
         {.program = curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
@@ -587,8 +590,8 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
          .args =
              [&] {
                std::vector<std::string> args = curl_download_args();
-               args.insert(args.end(),
-                           {"--continue-at", "-", "--progress-bar", "--output", part.string(), package.url});
+               args.insert(args.end(), {"--continue-at", "-", "--progress-bar", "--output",
+                                        ansi_safe_path(part), package.url});
                return args;
              }(),
          .timeout = std::chrono::hours(4)},
@@ -619,7 +622,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   done_bytes = static_cast<double>(package.size);
   overall(0.0, i18n::tr_format("extracting {}", name));
   if (auto ok = run_tool({.program = *tar,
-                          .args = {"-xzf", part.string(), "-C", staging.string()},
+                          .args = {"-xzf", ansi_safe_path(part), "-C", ansi_safe_path(staging)},
                           .timeout = std::chrono::minutes(30)},
                          {}, progress.stop, i18n::tr_format("extracting {}", name));
       !ok) {

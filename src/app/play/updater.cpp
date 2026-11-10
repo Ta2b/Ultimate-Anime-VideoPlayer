@@ -105,7 +105,7 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
                                 std::to_string(max_seconds)};
   for (std::string& arg : curl_system_args()) args.push_back(std::move(arg));
   for (std::string arg : {std::string("--write-out"), std::string(kCurlStatusFormat), std::string("-o"),
-                          prepare::utf8_path(file), std::string(url)})
+                          prepare::ansi_safe_path(file), std::string(url)})
     args.push_back(std::move(arg));
   prepare::ProcessSpec spec{
       .program = *curl, .args = std::move(args), .timeout = std::chrono::seconds(max_seconds + 10)};
