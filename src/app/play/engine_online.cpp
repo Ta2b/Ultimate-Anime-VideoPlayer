@@ -104,8 +104,12 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
   const std::string url = release_download_prefix(repo, version) + "engines-nvidia.lock";
   std::filesystem::path signature = cache;
   signature += ".sig";
+  // Un 404 se retient un jour, comme une copie fraîche : sans paquet NVIDIA dans la release, le lancement
+  // suivant ne refait pas la requête, jusqu'à 8 s sur le thread de la fenêtre (A38-10).
+  std::filesystem::path absent = cache;
+  absent += ".absent";
   const auto log = log_channel("app");
-  if (!fresh(cache) && fetch) {
+  if (!fresh(cache) && !fresh(absent) && fetch) {
     std::error_code error;
     std::filesystem::create_directories(cache.parent_path(), error);
     std::filesystem::path part = cache;
@@ -118,6 +122,7 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
     if (got) got = fetch(url + ".sig", sig_part, kFetchSeconds, std::stop_token{});
     if (got) {
       // La signature d'abord : une copie gardée a toujours la sienne à côté.
+      std::filesystem::remove(absent, error);
       std::filesystem::rename(sig_part, signature, error);
       if (!error) std::filesystem::rename(part, cache, error);
       if (error) log->info("moteurs de la release : {}", error.message());
@@ -129,6 +134,7 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
       if (got.error().code == RefusalCode::TrackUnavailable) {
         std::filesystem::remove(cache, error);
         std::filesystem::remove(signature, error);
+        std::ofstream(absent, std::ios::binary | std::ios::trunc).put('\n');
       }
       log->info("moteurs de la release : {}", got.error().detail);
     }

@@ -108,6 +108,9 @@ struct SettingsChoices {
   SpanPrepare span_prepare;
   std::string fp8_reason;
   std::shared_ptr<PrepareNote> span_job;
+  // Les étages que la chaîne joue sans eux, ou à un autre cran, et pourquoi (stage_fallback.h) : la page
+  // Post-traitement l'affiche avec « Réessayer ». Vide : la chaîne demandée tourne.
+  std::string stage_note;
   std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
 };
 
