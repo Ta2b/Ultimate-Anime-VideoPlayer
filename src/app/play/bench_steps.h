@@ -1,4 +1,4 @@
-// « Optimiser pour ma machine » (docs/ux-parametres.md, 4.7) : ce que l'utilisateur voit. Quatre étapes
+// « Calibrer cette machine » (docs/ux-parametres.md, 4.7) : ce que l'utilisateur voit. Quatre étapes
 // lisibles, une barre de progression globale, des échecs d'essai toujours expliqués en une phrase, un
 // résultat en une phrase, et de quoi défaire ce que l'optimisation a réglé. Rien ici ne joue ni ne touche
 // l'interface : ce sont des fonctions pures et deux petits objets, que l'évaluation (auto_bench_run.h) et la

@@ -39,10 +39,7 @@ Settings full() {
   settings.chosen_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::OpenVino};
   settings.installed_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::OpenVino};
   settings.preferred = {EngineId::TensorRt, EngineId::Vulkan};
-  settings.audio_languages = {"ja", "en"};
-  settings.subtitle_languages = {"fr", "pt-BR", "en"};
   settings.resume_position = false;
-  settings.audio_delay_ms = -120;
   return settings;
 }
 
@@ -107,9 +104,7 @@ TEST_CASE("Réglages : écrire puis relire rend les mêmes valeurs", "[settings]
 TEST_CASE("Réglages : une valeur fausse est écartée seule, le fichier vaut (P2.21)", "[settings]") {
   for (const char* text :
        {"first_run_done = \"yes\"", "[engines]\nchosen = [\"cuda\"]", "[engines]\ninstalled = \"vulkan\"",
-        "[engines]\npreferred = { upscale = \"tensorrt\" }", "[languages]\naudio = [\"english\"]",
-        "[languages]\naudio = [1]", "[playback]\naudio_delay_ms = 20000", "[playback]\naudio_delay_ms = 1.5",
-        "playback = 3"}) {
+        "[engines]\npreferred = { upscale = \"tensorrt\" }", "playback = 3"}) {
     INFO(text);
     CHECK(skipped_of(text).size() == 1);
   }
@@ -121,9 +116,9 @@ TEST_CASE("Réglages : une valeur fausse est écartée seule, le fichier vaut (P
   auto missing = parse_settings("first_run_done = true\n");
   REQUIRE_FALSE(missing);
   CHECK(missing.error().code == RefusalCode::FieldMissing);
-  auto newer = parse_settings("version = 2\n");
-  REQUIRE_FALSE(newer);
-  CHECK(newer.error().code == RefusalCode::FormatVersion);
+  auto older = parse_settings("version = 0\n");
+  REQUIRE_FALSE(older);
+  CHECK(older.error().code == RefusalCode::FormatVersion);
   auto broken = parse_settings("version = \n");
   REQUIRE_FALSE(broken);
   CHECK(broken.error().code == RefusalCode::FileUnreadable);
@@ -134,23 +129,6 @@ TEST_CASE("Réglages : une valeur fausse est écartée seule, le fichier vaut (P
   settings = full();
   settings.preferred[static_cast<std::size_t>(Usage::Upscale)] = EngineId::MiGraphX;
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
-  settings = full();
-  settings.audio_languages = {"ja", "ja"};
-  CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
-  settings = full();
-  settings.subtitle_languages = std::vector<std::string>(9, "fr");
-  CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
-  for (const char* tag : {"zh-Hant", "pt-BR", "jpn", "es-419"}) {
-    settings = full();
-    settings.audio_languages = {tag};
-    CHECK(validate_settings(settings));
-  }
-  for (const char* tag : {"", "e", "EN", "en-", "en_US", "english", "en-x"}) {
-    settings = full();
-    settings.audio_languages = {tag};
-    INFO(tag);
-    CHECK_FALSE(validate_settings(settings));
-  }
 }
 
 TEST_CASE("Réglages : l'écriture est atomique et garde les clés inconnues", "[settings]") {
@@ -177,7 +155,7 @@ TEST_CASE("Réglages : un refus laisse le fichier en place", "[settings]") {
   write(path, "version = 1\nfirst_run_done = true\n");
 
   Settings wrong = full();
-  wrong.audio_delay_ms = 99'999;
+  wrong.installed_engines.push_back(EngineId::Vulkan);  // un doublon
   auto refused = save_settings(path, wrong);
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
@@ -221,4 +199,41 @@ TEST_CASE("Réglages : assistant et inscription font l'aller-retour", "[settings
   const auto read = parse_settings(*text);
   REQUIRE(read);
   CHECK(*read == settings);
+}
+
+TEST_CASE("Réglages : une version plus récente se lit, sans être abaissée (A22-07)", "[settings]") {
+  std::vector<std::string> skipped;
+  auto newer =
+      parse_settings("version = 7\nfirst_run_done = true\n[engines]\nchosen = [\"tensorrt\"]\n", &skipped);
+  REQUIRE(newer);
+  CHECK(newer->first_run_done);
+  CHECK(newer->chosen_engines == std::vector{EngineId::Vulkan, EngineId::TensorRt});
+  REQUIRE(skipped.size() == 1);
+  CHECK(skipped[0].find("version = 7") != std::string::npos);
+
+  // Réécrit par ce lecteur : la version et les clés inconnues restent.
+  auto text = format_settings(*newer, "version = 7\nfuture_option = 42\n");
+  REQUIRE(text);
+  CHECK(text->find("version = 7") != std::string::npos);
+  CHECK(text->find("future_option = 42") != std::string::npos);
+  auto fresh = format_settings(*newer, "");
+  REQUIRE(fresh);
+  CHECK(fresh->find("version = 1") != std::string::npos);
+}
+
+TEST_CASE("Réglages : un ancien settings.toml avec langues et délai se relit (A22-08)", "[settings]") {
+  const std::string old =
+      "version = 1\nfirst_run_done = true\n[languages]\naudio = [\"ja\", \"en\"]\nsubtitles = [\"fr\"]\n"
+      "[playback]\nresume_position = false\naudio_delay_ms = -120\n";
+  std::vector<std::string> skipped;
+  auto settings = parse_settings(old, &skipped);
+  REQUIRE(settings);
+  CHECK(settings->first_run_done);
+  CHECK_FALSE(settings->resume_position);
+  CHECK(skipped.empty());
+  // La réécriture garde les clés que ce lecteur ne connaît plus.
+  auto text = format_settings(*settings, old);
+  REQUIRE(text);
+  CHECK(text->find("audio_delay_ms = -120") != std::string::npos);
+  CHECK(text->find("subtitles") != std::string::npos);
 }
