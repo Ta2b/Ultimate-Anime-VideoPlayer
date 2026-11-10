@@ -133,3 +133,23 @@ TEST_CASE("PcmConverter : le rééchantillonnage rend sa queue au drain", "[audi
   CHECK(tail.pts_us == block->pts_us + frames_to_us(block->frames(), 48'000));
   CHECK(std::abs(block->frames() + tail.frames() - 4'800) <= 2);
 }
+
+TEST_CASE("PcmConverter : 5.1 vers stéréo sans normaliser, les crêtes limitées sous 1 (A16-08)",
+          "[audio][converter]") {
+  constexpr double kHz = 1'000.0;
+  // Les six canaux au même signal : gauche = FL + 0,707 FC + 0,707 SL = 2,414 fois le signal (LFE écarté).
+  // Normalisée, la matrice le divisait par 2,414 : les dialogues du centre sortaient à −10,7 dB.
+  PcmConverter quiet({.sample_rate = 48'000, .channels = 2});
+  const auto low = quiet.convert(*sine_frame(AV_SAMPLE_FMT_FLTP, 48'000, 6, 4'800, kHz, 0.25, 0), 0);
+  REQUIRE(low);
+  const std::vector<float> left = channel(low->samples, 2, 0);
+  CHECK(std::abs(tone_amplitude(left, 48'000, kHz) - (0.25 * 2.414)) < 0.02);
+
+  PcmConverter loud({.sample_rate = 48'000, .channels = 2});
+  const auto high = loud.convert(*sine_frame(AV_SAMPLE_FMT_FLTP, 48'000, 6, 4'800, kHz, 0.6, 0), 0);
+  REQUIRE(high);
+  float peak = 0.0F;
+  for (const float sample : high->samples) peak = std::max(peak, std::abs(sample));
+  CHECK(peak < 1.0F);
+  CHECK(peak > 0.9F);
+}

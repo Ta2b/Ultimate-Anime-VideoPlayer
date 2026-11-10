@@ -49,6 +49,7 @@ class PcmConverter {
   std::unique_ptr<SwrContext, SwrFree> swr_;
   std::string input_;  // format, fréquence et disposition de l'entrée en cours
   std::optional<std::int64_t> next_pts_us_;
+  bool downmix_ = false;  // plus de canaux en entrée qu'en sortie : limiteur doux après le mixage
 };
 
 }  // namespace ajp::audio

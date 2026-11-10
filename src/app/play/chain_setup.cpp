@@ -237,6 +237,14 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.smooth_drawings = o.smooth_drawings;
 }
 
+// Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches).
+gpu::BackendInit chain_backend_init(Player& p) {
+  return {.render = &p.screen.device(),
+          .cache_dir = p.paths.engines,
+          .log = backend_log(),
+          .profile_dispatches = p.options.profile_dispatches};
+}
+
 // P6.17, essai (--rife-calm-model) : la variante mouvement d'un RIFE plus léger, à la forme de rife_motion,
 // pour la passe du milieu des paires calmes. Facultative : un modèle aux autres plans ou à un autre
 // remplissage, une dérivation ou une construction refusée la laissent de côté, la raison au journal (essai :
@@ -433,8 +441,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
         choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error(),
         ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
-  const gpu::BackendInit init{
-      .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
+  const gpu::BackendInit init = chain_backend_init(p);
   auto backend = BackendLibrary::create(p.library, init);
   if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
