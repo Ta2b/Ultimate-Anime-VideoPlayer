@@ -89,6 +89,8 @@ Les seize compromis listés par l'audit 49 sont tranchés ainsi, selon la recomm
 
 DistilDRBA compte autant que les deux RIFE pour Tatoub. Ce qu'il lui manque : une grille en FP32 (A03-18, A44-01, A46-04), une mesure contre le réseau d'origine (A46-03, A49-16), une mesure contre RIFE (A40-03), un export reproductible et épinglé (A46-01, A46-02), une porte de qualité écrite (A07-13), des tests de la voie fusionnée et de sa variante mouvement (A03-02, A03-03), et un coût par image créée ramené à celui de RIFE (A03-13, A03-14, A32-04). Décision 8 : il reste hors de l'Auto, au choix manuel, jusqu'à cette mesure.
 
+La mesure contre RIFE existe (`docs/banc-qualite.md`, A40-03) : DistilDRBA v2 lite est 11 à 12 dB sous RIFE 4.22 lite sur le mouvement de synthèse (35,7 contre 47,6 dB en 720p). Sur un extrait réel d'épisode, l'écart moyen est de 1,8 dB en 720p (24,6 contre 26,4 dB) et de 1,1 dB en 1080p : égalité sur l'action rapide, 6,8 dB de moins sur les mouvements simples (5,4 dB en 1080p). L'écart vient du réseau et non du FP16 (0,06 dB de gain en tout FP32). Poses tenues et coupes non mesurées.
+
 ### Décisions de Tatoub
 
 1. Mise à jour en simple notification (chantier 00 des audits) : retenu.

@@ -12,6 +12,7 @@
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "core/log.h"
+#include "core/text.h"
 #include "kernels/spec/color.h"
 #include "media/demuxer.h"
 #include "media/video_decoder.h"
@@ -25,6 +26,28 @@ std::string track_text(std::string_view kind, const media::TrackInfo& track) {
   if (!track.language.empty()) text += std::format(" {}", track.language);
   if (!track.title.empty()) text += std::format(" \"{}\"", track.title);
   return text;
+}
+
+// Un choix de sous-titres gardé d'une autre ouverture (réouverture, épisode précédent, fichier glissé
+// d'ailleurs) : pris seulement s'il existe ici. Un index externe peut ne plus désigner aucun fichier
+// trouvé à côté de la vidéo : il est oublié, jamais déréférencé (A13-01). nullopt (aucun) existe toujours.
+bool subtitle_exists(std::optional<int> wanted, const media::Demuxer& demuxer, std::size_t externals) {
+  if (!wanted) return true;
+  if (*wanted >= kExternalSubtitleBase) {
+    if (static_cast<std::size_t>(*wanted - kExternalSubtitleBase) < externals) return true;
+    const auto log = log_channel("subs");
+    log->info("sous-titres externes {} absents de cette ouverture : oubliés", *wanted);
+    return false;
+  }
+  const media::TrackInfo* track = demuxer.track(*wanted);
+  return track != nullptr && track->kind == media::TrackKind::Subtitle;
+}
+
+// La raison d'une piste choisie qui ne se lit pas, à l'OSD ; un index externe n'a pas de piste.
+void report_unreadable(const media::Demuxer& demuxer, int index, MainMail& mail) {
+  const media::TrackInfo* track = demuxer.track(index);
+  if (track == nullptr) return;
+  if (auto refused = subtitle_track(*track, 0); !refused) mail.report("subs", refused.error(), false);
 }
 
 }  // namespace
@@ -41,12 +64,12 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       config.subtitles ? find_external_subtitles(config.file) : std::vector<ExternalSubtitle>{};
   std::vector<media::TrackInfo> candidates(demuxer->tracks().begin(), demuxer->tracks().end());
   for (std::size_t k = 0; k < externals.size(); ++k) {
-    const std::string extension = externals[k].path.extension().string();
+    const std::string extension = core::ascii_lower(prepare::utf8_path(externals[k].path.extension()));
     candidates.push_back({.index = kExternalSubtitleBase + static_cast<int>(k),
                           .kind = media::TrackKind::Subtitle,
-                          .codec = extension == ".srt" || extension == ".SRT" ? "subrip" : "ass",
+                          .codec = extension == ".srt" ? "subrip" : "ass",
                           .language = externals[k].language,
-                          .title = externals[k].path.filename().string()});
+                          .title = prepare::utf8_path(externals[k].path.filename())});
   }
   media::TrackChoice choice = media::choose_tracks(candidates, config.languages);
   const auto kind_of = [&](int index) {
@@ -55,14 +78,11 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   };
   if (config.audio_track && kind_of(*config.audio_track) == media::TrackKind::Audio)
     choice.audio = config.audio_track;
-  if (config.subtitle_track) {
-    const std::optional<int> wanted = *config.subtitle_track;
-    if (!wanted || kind_of(*wanted) == media::TrackKind::Subtitle || *wanted >= kExternalSubtitleBase)
-      choice.subtitle = wanted;
-  }
+  if (config.subtitle_track && subtitle_exists(*config.subtitle_track, *demuxer, externals.size()))
+    choice.subtitle = *config.subtitle_track;
   if (!choice.video) {
-    return std::unexpected(
-        Refusal{RefusalCode::TrackUnavailable, std::format("{}: no video track", config.file.string())});
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable,
+                                   std::format("{}: no video track", prepare::utf8_path(config.file))});
   }
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();
@@ -160,7 +180,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       p->tracks_.push_back({.index = index,
                             .kind = media::TrackKind::Subtitle,
                             .codec = "externe",
-                            .title = p->external_[k].path.filename().string()});
+                            .title = prepare::utf8_path(p->external_[k].path.filename())});
     }
     if (!choice.subtitle && !config.subtitle_track && !p->external_.empty() &&
         std::ranges::none_of(demuxer->tracks(), [](const media::TrackInfo& t) {
@@ -169,8 +189,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       choice.subtitle = kExternalSubtitleBase;
     }
     if (choice.subtitle && !std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
-      auto refused = subtitle_track(*demuxer->track(*choice.subtitle), 0);
-      p->mail_.report("subs", refused.error(), false);
+      report_unreadable(*demuxer, *choice.subtitle, p->mail_);
       choice.subtitle.reset();
     }
   }

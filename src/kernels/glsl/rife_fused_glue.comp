@@ -118,14 +118,8 @@ void main() {
         }
       }
       // Warp des deux images (7 canaux chacune : 3 de l'image, 4 de l'encodage).
-      float gx0 = float(input_planes.v[7u * plane + i]);
-      float gy0 = float(input_planes.v[8u * plane + i]);
-      float sx = float(input_planes.v[9u * plane + i]);
-      float sy = float(input_planes.v[10u * plane + i]);
       for (uint n = 0u; n < 2u; ++n) {
-        precise float gx = gx0 + fl[2u * n] * sx;
-        precise float gy = gy0 + fl[2u * n + 1u] * sy;
-        FusedTap tap = grid_tap(gx, gy, pc.width, pc.height);
+        FusedTap tap = pixel_tap(px, py, fl[2u * n], fl[2u * n + 1u], pc.width, pc.height);
         for (uint ch = 0u; ch < 7u; ++ch) {
           bool enc = ch >= 3u;
           uint p = enc ? 4u * n + ch - 3u : 3u * n + ch;

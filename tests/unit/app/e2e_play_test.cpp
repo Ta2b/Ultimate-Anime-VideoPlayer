@@ -123,6 +123,14 @@ fs::path fresh_dir(const std::string& name) {
   return dir;
 }
 
+// Le clip seul dans le dossier du cas : write_clip range tous les clips ensemble, et un cas sans --seconds
+// enchaînait les autres comme des épisodes suivants (A40-05).
+fs::path alone(const fs::path& clip, const fs::path& dir) {
+  const fs::path copy = dir / clip.filename();
+  fs::copy_file(clip, copy, fs::copy_options::overwrite_existing);
+  return copy;
+}
+
 }  // namespace
 
 // Recette, scénario 15 (P7.12) : un fichier coupé à mi-longueur se lit jusqu'où il va, puis le lecteur
@@ -170,10 +178,12 @@ TEST_CASE("Bout en bout : une source 853×480 se lit", "[.e2e][app]") {
   REQUIRE(clip);
   const fs::path dir = fresh_dir("ajp-e2e-853");
   const fs::path stats = dir / "stats.tsv";
-  const Run run = play(*clip, dir, {"--seconds=1", "--stats=" + ajp::prepare::utf8_path(stats)});
+  const Run run = play(alone(*clip, dir), dir, {"--seconds=1", "--stats=" + ajp::prepare::utf8_path(stats)});
   INFO(run.output);
   CHECK(run.code == 0);
   CHECK(read_stats(stats).fresh >= 3);
+  // --seconds quitte : les autres clips du dossier ne s'enchaînent pas (ils récrivaient stats.tsv).
+  CHECK(run.output.find("épisode suivant") == std::string::npos);
 }
 
 // Une touche, une action (0.10.0 : la file des actions n'était plus vidée, chaque tour de boucle rejouait la
@@ -187,7 +197,7 @@ TEST_CASE("Bout en bout : une pause demandée une fois s'applique une fois", "[.
                                                                             .shot_lumas = {200}});
   REQUIRE(clip);
   const fs::path dir = fresh_dir("ajp-e2e-pause");
-  const Run run = play(*clip, dir, {"--keys=0.5:Space,1.5:q"});
+  const Run run = play(alone(*clip, dir), dir, {"--keys=0.5:Space,1.5:q"});
   INFO(run.output);
   CHECK(run.code >= 0);
   std::size_t pauses = 0;
@@ -218,8 +228,8 @@ TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sa
   std::string output;
   const auto exit = ajp::prepare::run_process(
       {.program = player,
-       .args = {"play", ajp::prepare::utf8_path(*clip), "--software-gpu", "--mute", "--no-upscale",
-                "--rife=0", "--no-resume", "--window=320x180", "--seconds=2",
+       .args = {"play", ajp::prepare::utf8_path(alone(*clip, dir)), "--software-gpu", "--mute",
+                "--no-upscale", "--rife=0", "--no-resume", "--window=320x180", "--seconds=2",
                 "--data-dir=" + ajp::prepare::utf8_path(dir / "reglages"),
                 "--stats=" + ajp::prepare::utf8_path(stats),
                 "--snapshot=" + ajp::prepare::utf8_path(snapshot), "--snapshot-at=1.5"},
@@ -247,6 +257,7 @@ TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sa
       3;
   CHECK(picture.rgb[center + 1] > picture.rgb[center] + 20);      // vert au-dessus du rouge
   CHECK(picture.rgb[center + 1] > picture.rgb[center + 2] + 20);  // et du bleu
+  CHECK(output.find("épisode suivant") == std::string::npos);     // --seconds quitte, sans enchaîner
   const Presented presented = read_stats(stats);
   // 50 images en 2 s. Sur le runner de la CI, lavapipe met environ 40 ms par image et en saute une partie
   // (25 neuves, 11 sautées le 07/11/2026) : la cadence n'est pas jugée ici, seulement que la lecture avance

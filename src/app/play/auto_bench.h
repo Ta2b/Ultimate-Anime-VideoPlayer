@@ -61,6 +61,13 @@ struct BenchReading {
   // La variante de SPAN jouée : « FP8 CUTLASS », « INT8 »… (span_int8.h, variant_text), « FP16 » ; vide :
   // sans SPAN ou lecteur plus ancien.
   std::string span_variant;
+  // Le moteur qui a joué (« tensorrt », « vulkan », « coreml ») ; vide : lecteur plus ancien.
+  std::string engine;
+  // Les images neuves montrées, et les instants laissés sans image à dessein (coupes, dessins tenus :
+  // FrameStats::uninterpolated) ; 0 image neuve : lecteur plus ancien. Le verdict d'un essai avec RIFE s'en
+  // sert (machine_calibration.h : credited_fps).
+  std::int64_t new_frames = 0;
+  std::int64_t uninterpolated = 0;
   // Le profil GPU de l'essai (0.2) : une table [[gpu_stage]] par étape ; vide : backend sans profil.
   std::vector<gpu::GpuStageSummary> gpu_stages;
 };

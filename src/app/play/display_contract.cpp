@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include <SDL3/SDL_events.h>
@@ -13,8 +14,14 @@ namespace {
 
 // Le filtre de SDL voit chaque événement en file, quel que soit le fil : il ne fait que poser le drapeau.
 bool on_event(void* context, SDL_Event* event) {
-  if (event->type == SDL_EVENT_WINDOW_HDR_STATE_CHANGED || event->type == SDL_EVENT_WINDOW_DISPLAY_CHANGED)
-    static_cast<std::atomic<bool>*>(context)->store(true, std::memory_order_relaxed);
+  // Le HDR de la fenêtre, son écran, ou tout changement d'un écran (branché, retiré, mode).
+  const bool display = event->type >= SDL_EVENT_DISPLAY_FIRST && event->type <= SDL_EVENT_DISPLAY_LAST;
+  if (event->type == SDL_EVENT_WINDOW_HDR_STATE_CHANGED || event->type == SDL_EVENT_WINDOW_DISPLAY_CHANGED ||
+      display) {
+    auto* flags = static_cast<ContractWatch::Flags*>(context);
+    flags->hdr->store(true, std::memory_order_relaxed);
+    flags->peak->store(true, std::memory_order_relaxed);
+  }
   return true;
 }
 
@@ -29,10 +36,13 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
   // La crête : celle réglée dans KDE, sinon la marge de SDL × la référence, sinon l'EDID.
   if (kwin && kwin->peak_override) {
     out.panel_peak_nits = *kwin->peak_override;
+    out.peak_source = render::DisplayContract::PeakSource::Compositor;
   } else if (headroom > 1.0) {
     out.panel_peak_nits = headroom * out.reference_nits;
+    out.peak_source = render::DisplayContract::PeakSource::Headroom;
   } else if (facts.peak_nits) {
     out.panel_peak_nits = *facts.peak_nits;
+    out.peak_source = render::DisplayContract::PeakSource::Edid;
   }
   out.abl = abl ? abl->nits : render::default_abl(out.panel_peak_nits, out.oled);
   for (double& nits : out.abl) nits = std::min(nits, out.panel_peak_nits);
@@ -42,11 +52,18 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
 }
 
 std::string describe(const render::DisplayContract& c) {
+  // La source de chaque valeur (A10-19) : un contrat par défaut ne se lit pas comme un écran HDR mesuré.
+  using Source = render::DisplayContract::PeakSource;
+  const std::string_view peak = c.peak_source == Source::Compositor ? "KDE"
+                                : c.peak_source == Source::Headroom ? "marge de SDL"
+                                : c.peak_source == Source::Edid     ? "EDID"
+                                                                    : "par défaut";
   std::string text = std::format(
-      "référence {:.0f} nits (k {:.3f}), pic {:.0f} nits ({:.0f} du contenu), MaxFALL {:.0f} ({:.0f} du "
-      "contenu), noir {:.4f}{}",
-      c.reference_nits, c.k(), c.panel_peak_nits, c.content_peak_nits(), c.abl.back(),
-      c.content_frame_average_nits(), c.min_nits, c.oled ? ", OLED" : "");
+      "référence {:.0f} nits ({}, k {:.3f}), pic {:.0f} nits ({}, {:.0f} du contenu), MaxFALL {:.0f} ({:.0f} "
+      "du contenu), noir {:.4f}{}",
+      c.reference_nits, c.from_compositor ? "KDE" : "par défaut", c.k(), c.panel_peak_nits, peak,
+      c.content_peak_nits(), c.abl.back(), c.content_frame_average_nits(), c.min_nits,
+      c.oled ? ", OLED" : "");
   if (c.primaries) {
     const render::Chromaticities& p = *c.primaries;
     text += std::format(", primaires R {:.3f}/{:.3f} G {:.3f}/{:.3f} B {:.3f}/{:.3f}", p.rx, p.ry, p.gx, p.gy,
@@ -58,11 +75,11 @@ std::string describe(const render::DisplayContract& c) {
 ContractWatch::ContractWatch(SDL_Window* window, std::optional<DisplayFacts> facts,
                              std::shared_ptr<spdlog::logger> log)
     : window_(window), facts_(std::move(facts)), log_(std::move(log)), kwin_stamp_(kwin_config_stamp()) {
-  (void)SDL_AddEventWatch(&on_event, &hdr_changed_);
+  (void)SDL_AddEventWatch(&on_event, &flags_);
 }
 
 ContractWatch::~ContractWatch() {
-  SDL_RemoveEventWatch(&on_event, &hdr_changed_);
+  SDL_RemoveEventWatch(&on_event, &flags_);
 }
 
 render::DisplayContract ContractWatch::read() const {
@@ -72,13 +89,15 @@ render::DisplayContract ContractWatch::read() const {
     const SDL_PropertiesID props = SDL_GetWindowProperties(window_);
     headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0F);
   }
-  return contract_of(facts, read_kwin_output(facts.connector), headroom, std::nullopt);
+  const std::string edid = kwin_edid_key(facts.manufacturer, facts.product);
+  return contract_of(facts, read_kwin_output(facts.connector, edid), headroom, std::nullopt);
 }
 
 std::optional<render::DisplayContract> ContractWatch::tick() {
   const std::optional<std::int64_t> stamp = kwin_config_stamp();
   const bool rewritten = stamp != kwin_stamp_;
   kwin_stamp_ = stamp;
+  if (rewritten) peak_changed_.store(true, std::memory_order_relaxed);
   if (!hdr_changed_.exchange(false, std::memory_order_relaxed) && !rewritten) return std::nullopt;
   render::DisplayContract contract = read();
   if (contract_ && *contract_ == contract) return std::nullopt;

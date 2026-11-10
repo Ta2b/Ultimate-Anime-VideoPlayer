@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <utility>
 
@@ -55,7 +56,7 @@ std::string throttle_text(std::uint64_t mask) {
   };
   add(kSoftwarePowerCap, i18n::tr("power limit"));
   add(kHardwareSlowdown, i18n::tr("hardware slowdown"));
-  add(kSoftwareThermal | kHardwareThermal, "chaleur");
+  add(kSoftwareThermal | kHardwareThermal, i18n::tr("heat"));
   add(kPowerBrake, i18n::tr("power brake"));
   return text;
 }
@@ -70,10 +71,12 @@ std::string telemetry_line(const GpuSample& s) {
   line += std::format(" · {} °C · {} %", s.temperature_c, s.gpu_percent);
   if (s.pcie_generation > 0) line += std::format(" · PCIe {} x{}", s.pcie_generation, s.pcie_width);
   if (s.vram_total_mib > 0) {
-    std::string vram = std::format("{:.1f} / {:.1f} Go", static_cast<double>(s.vram_used_mib) / 1024.0,
+    std::string vram = std::format("{:.1f} / {:.1f}", static_cast<double>(s.vram_used_mib) / 1024.0,
                                    static_cast<double>(s.vram_total_mib) / 1024.0);
-    std::ranges::replace(vram, '.', ',');  // la virgule décimale, comme le reste de l'OSD
-    line += " · VRAM " + vram;
+    // La virgule décimale et l'unité de la langue de l'interface (A11-14) : « 7,2 / 12,0 Go », « 7.2 / 12.0
+    // GB ».
+    std::ranges::replace(vram, '.', i18n::decimal_point());
+    line += std::format(" · VRAM {} {}", vram, i18n::tr("GB"));
   }
   if (const std::string why = throttle_text(s.throttle); !why.empty()) line += " · " + why;
   return line;
@@ -227,6 +230,7 @@ struct GpuTelemetry::Impl {
   int (*energy)(Handle, unsigned long long*) = nullptr;
   std::optional<GpuSample> last;
   std::int64_t last_us = 0;
+  std::mutex sample_mutex;  // sample() est appelé du fil « stats » et de la boucle (A11-08)
 
   Impl() = default;
   explicit Impl(DynamicLibrary lib) : library(std::move(lib)) {}
@@ -310,6 +314,8 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
 
 std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
   Impl& i = *impl_;
+  // Le fil « stats » et la boucle (énergie de fin de lecture) relèvent tous deux (A11-08).
+  const std::scoped_lock lock(i.sample_mutex);
   if (i.last && host_us - i.last_us < kRefreshUs) return i.last;
   GpuSample s;
 #if defined(__linux__)

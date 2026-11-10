@@ -111,7 +111,7 @@ std::string ChainEngines::span_label() const {
 UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr<LiveSettings> live,
                                    const MasterClock* clock, int width, int height,
                                    std::vector<RingSlotDesc> slots) const {
-  const WorkSize sized = work_size(width, height, settings.work_height);
+  const WorkSize sized = chain_work_size(settings, width, height);
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
@@ -147,32 +147,27 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .slots = std::move(slots)};
 }
 
-int top_factor(const PlaySettings& settings, double display_hz, double source_fps) {
-  if (settings.rife_factor < 2) return 1;
-  if (!settings.rife_auto) return settings.rife_factor / std::max(settings.rife_factor_den, 1);
-  // Auto : jusqu'à rife_factor, et pas au-delà de ce que l'écran (ou le plafond choisi) affiche.
-  const int ceiling = core::auto_ceiling(core::auto_limit_hz(display_hz, settings.auto_cap), source_fps);
-  // Rapide : le warp et l'anneau suivent l'écran, pas le facteur demandé (6 à 165 Hz sur 23,976 i/s).
-  if (settings.auto_free) return std::max(ceiling, 1);
-  return std::clamp(ceiling, 1, settings.rife_factor);
-}
-
-static_assert(kMaxRingSlots >= 8);
-
-std::uint32_t ring_depth(const PlaySettings& settings, Factor factor) {
-  if (settings.auto_free && settings.rife_auto) return 8U;
-  const int den = std::max(factor.den, 1);
-  return factor.num >= 5 * den ? 8U : factor.num >= 3 * den ? 6U : 4U;
-}
-
 namespace {
 
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
                                                                        const PlaySettings& settings);
 
-}  // namespace
+// La forme de l'ouverture (chain_shape.h) : l'anneau de ces réglages et l'ordre du warp que les moteurs
+// chargés ont pris (c.top_factor), avec l'écran et la source d'où ils viennent.
+void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings) {
+  c.opened = {.display_hz = display_refresh_hz(p.screen.window()),
+              .source_fps = fps_of(p.video.frame_rate),
+              .output_height = c.work.height * kSpanFactor,
+              .span = c.engine != nullptr,
+              .rife_loaded = c.interpolates()};
+  c.opened.shape = {
+      .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}),
+      .warp_after_span =
+          c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.top_factor)};
+}
 
-std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings) {
+std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_tiers(Player& p,
+                                                                        const PlaySettings& settings) {
   auto chain = prepare_chain_once(p, settings);
   if (chain || (settings.span_precision == PrecisionTier::Balanced &&
                 settings.motion_precision == PrecisionTier::Balanced))
@@ -184,6 +179,14 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   PlaySettings balanced = settings;
   balanced.span_precision = balanced.motion_precision = PrecisionTier::Balanced;
   return prepare_chain_once(p, balanced);
+}
+
+}  // namespace
+
+std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings) {
+  auto chain = prepare_chain_tiers(p, settings);
+  if (chain && *chain) note_opened(**chain, p, settings);
+  return chain;
 }
 
 namespace {
@@ -239,7 +242,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   take_trials(c, p.options);
-  const bool span = span_runs(settings.upscale, settings.restore_lines, video.height, settings.work_height);
+  const bool span = span_runs(settings, video.height);
   if (settings.upscale && !span)
     log_channel("app")->info("restaurer les traits coupé : source {}p gardée telle quelle, sans SPAN",
                              video.height);
@@ -250,7 +253,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   }
   c.factor = c.model ? kSpanFactor : 1;
   c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
-  c.work = work_size(video.width, video.height, settings.upscale && !span ? 0 : settings.work_height);
+  c.work = chain_work_size(settings, video.width, video.height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)

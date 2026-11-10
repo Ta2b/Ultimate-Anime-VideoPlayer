@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <random>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -157,10 +158,10 @@ TEST_CASE("free rate : le pas suit le temps de service mesuré avec 10 % de marg
   fast.set_min_gap(6'000);
   fast.cost(4, 4 * 2'000, now);
   CHECK(fast.step_us(now) == 6'000);
-  // Une image seule ne dit rien.
+  // Une image interpolée seule se mesure aussi (A12-12, free_starved_test.cpp).
   FreeRate lone;
   lone.cost(1, 50'000, now);
-  CHECK(lone.step_us(now) == 0);
+  CHECK(lone.step_us(now) == 55'000);
 }
 
 TEST_CASE("free rate : monte vite, descend lentement", "[free]") {
@@ -472,4 +473,55 @@ TEST_CASE("free grid vsync : la source tombée près d'un vsync s'y montre telle
     }
   }
   CHECK(sources >= 12);  // une source sur deux au moins tombe à moins d'une demi-période d'un vsync
+}
+
+TEST_CASE("A12-03 : des instants quelconques ne font jamais une phase", "[free][vsync]") {
+  // Des présentations à heure arbitraire (niveau Open, écart de plusieurs vsyncs : l'heure suit la
+  // soumission, pas l'écran) : la phase reste inconnue. Le tirage est rng() % kVsync : la suite de
+  // std::mt19937 est fixée par la norme, celle de std::uniform_int_distribution ne l'est pas (libc++ et
+  // libstdc++ ne tirent pas les mêmes nombres, et le test ne disait pas la même chose sur macOS).
+  const auto fooled = [](unsigned seed, int notes) {
+    std::mt19937 rng(seed);
+    VsyncPhase phase;
+    phase.set_period(kVsync);
+    int known = 0;
+    for (int k = 0; k < notes; ++k) {
+      phase.note(k * 7 * kVsync + static_cast<std::int64_t>(rng() % kVsync));
+      if (phase.known()) ++known;
+    }
+    CHECK(phase.nearest(123'456) == 123'456);  // inconnue : l'instant demandé, sans calage
+    return known;
+  };
+  // Dix minutes, cinq tirages.
+  for (const unsigned seed : {1U, 2U, 3U, 4U, 5U}) {
+    INFO("tirage " << seed);
+    CHECK(fooled(seed, 14'400) == 0);
+  }
+  // Le départ, où la moyenne pèse le moins : 2 000 tirages. Avec kMinNotes à 8, quatre d'entre eux (dont
+  // le 147) donnaient une phase pour un ou deux instants.
+  int total = 0;
+  for (unsigned seed = 1; seed <= 2'000; ++seed) total += fooled(seed, 200);
+  CHECK(total == 0);
+}
+
+TEST_CASE("A12-03 : la phase se connaît après quelques vsyncs qui s'accordent, pas avant", "[free][vsync]") {
+  VsyncPhase phase;
+  phase.set_period(kVsync);
+  const std::int64_t offset = 4'321;
+  for (int k = 0; k < VsyncPhase::kMinNotes - 1; ++k) {
+    phase.note(offset + k * 5 * kVsync);
+    CHECK_FALSE(phase.known());
+  }
+  phase.note(offset + 40 * kVsync);
+  REQUIRE(phase.known());
+  CHECK(std::abs(phase.nearest(100 * kVsync + offset + 900) - (100 * kVsync + offset)) <= 1);
+  // Autour de zéro (la phase passe la couture du cercle) : pas de saut d'une demi-période.
+  VsyncPhase seam;
+  seam.set_period(kVsync);
+  for (int k = 0; k < 50; ++k) seam.note(k * kVsync + (k % 2 == 0 ? 150 : -150) + 10 * kVsync);
+  REQUIRE(seam.known());
+  CHECK(std::abs(seam.nearest(200 * kVsync + 400) - 200 * kVsync) <= 160);
+  // Une autre période : tout repart.
+  seam.set_period(kVsync + 100);
+  CHECK_FALSE(seam.known());
 }

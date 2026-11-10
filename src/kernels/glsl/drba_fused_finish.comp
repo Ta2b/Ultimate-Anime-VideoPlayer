@@ -23,10 +23,6 @@ layout(push_constant) uniform Push {
   uint height;
   uint width;
   uint upscale;  // t
-  float step32_x;
-  float step16_x;
-  float step32_y;
-  float step16_y;
 } pc;
 
 float source_tap(uint which, uint p, FusedTap t) {
@@ -69,8 +65,7 @@ void main() {
   float rest = rounded(1.0 - sig);
   float warped[6];
   for (uint n = 0u; n < 2u; ++n) {
-    FusedTap t = grid_tap(drba_grid(x, flow[2u * n], pc.step32_x, pc.step16_x),
-                          drba_grid(yy, flow[2u * n + 1u], pc.step32_y, pc.step16_y), pc.width, pc.height);
+    FusedTap t = pixel_tap(x, yy, flow[2u * n], flow[2u * n + 1u], pc.width, pc.height);
     // n = 0 : l'image 1 (pair01[3..5]) ; n = 1 : l'image du côté choisi (pair01[0..2] ou pair12[3..5]).
     uint which = n == 0u ? 0u : (before ? 0u : 1u);
     uint first = n == 0u ? 3u : (before ? 0u : 3u);

@@ -139,6 +139,45 @@ EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& path
   return catalog;
 }
 
+// A25-01 : l'assistant relancé en lecture a écrit play.toml (langues, mises à jour, chaîne calibrée). La
+// vidéo se rouvre comme un fichier qu'on ouvre, au même endroit : réglages relus, préréglage rejoué, et
+// l'ancienne chaîne en mémoire ne réécrit plus ses choix (Reopen::settings_written).
+void follow_wizard(const EngineChange& request, Reopen& reopen, const std::filesystem::path& file) {
+  const auto* open = std::get_if<OpenEngineScreen>(&request);
+  if (open == nullptr || !open->wizard) return;
+  reopen.next_file = file;
+  reopen.next_start_us = reopen.position_us;
+  reopen.next_paused = reopen.paused;
+  reopen.settings_written = true;
+}
+
+// Avant une autre vidéo : la chaîne en cours dans play.toml, sans les raccourcis de séance (A08-04).
+void save_before_next(const Player& player, const Reopen& reopen, const PlaySettings& settings,
+                      const PlayOptions& file_options) {
+  if (reopen.settings_written) return;
+  const PlaySettings kept = with_kept_choices(player.kept, settings);
+  if (auto written = save_settings(player.settings_path,
+                                   settings_to_save(kept, player.from_file, player.started, file_options));
+      !written)
+    log_channel("app")->warn("{}", written.error().detail);
+}
+
+// La machine à laquelle une calibration se compare (A25-02, A07-05). Le moteur qui jouera SPAN et RIFE : la
+// bibliothèque déjà ouverte si le choix n'a pas bougé depuis (opened_for), sinon le préféré s'il est
+// installé.
+CalibrationHost calibration_host(const GpuFacts& here, int display_height, const BackendLibrary* library,
+                                 const std::optional<core::EngineId>& opened_for,
+                                 const core::Settings& engines, const EngineCatalog& catalog,
+                                 const PlayerPaths& paths) {
+  const std::optional<core::EngineId> preferred =
+      engines.preferred[static_cast<std::size_t>(core::Usage::Upscale)];
+  const bool tensorrt =
+      library != nullptr && preferred == opened_for
+          ? engine_of_library(library->path()) == core::EngineId::TensorRt
+          : preferred == core::EngineId::TensorRt && tensorrt_backend_present(catalog, paths);
+  return {.gpu = here.name, .display_height = display_height, .tensorrt = tensorrt, .driver = here.driver};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -212,8 +251,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         log->warn("mise à jour : {}", started.error().detail);
     }
   }
-  // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.
-  load_user_keys(paths::user_keys(settings_path.parent_path()));
+  load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] seul
   const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -237,6 +275,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
+  note_ignored_keys((*ui)->controls());
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
   class Release {
    public:
@@ -400,19 +439,20 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et ce pilote, et pas pour un
     // essai.
     const GpuFacts here = gpu_facts(**screen);
+    const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
+                                                  library_wanted, *engines, catalog, paths);
     const bool explored = measured_tier && !file_options.bench_level && measured_tier->gpu == here.name &&
                           measured_tier->driver == here.driver;
-    chosen = apply_preset(chosen,
-                          Machine{.tier = tier,
-                                  .display_height = display_height((*screen)->window()),
-                                  .display_hz = display_refresh_hz((*screen)->window()),
-                                  .explored_work_height = explored ? measured_tier->work_height : 0,
-                                  .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
-                                  .calibrated = file_options.bench_level
-                                                    ? std::nullopt
-                                                    : calibrated_chain(settings_path.parent_path(), here.name,
-                                                                       display_height((*screen)->window()))},
-                          source);
+    chosen = apply_preset(
+        chosen,
+        Machine{.tier = tier,
+                .display_height = display_height((*screen)->window()),
+                .display_hz = display_refresh_hz((*screen)->window()),
+                .explored_work_height = explored ? measured_tier->work_height : 0,
+                .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
+                .calibrated = file_options.bench_level ? std::nullopt
+                                                       : calibrated_chain(settings_path.parent_path(), host)},
+        source);
     PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
@@ -547,6 +587,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           player.quit = true;
           break;
         }
+        follow_wizard(*request, **outcome, file);  // A25-01 : réglages de l'assistant relus
       }
       if (const std::optional<ExportJob>& job = (*outcome)->export_job) {
         const ExportOutcome exported = run_export(player, *job);
@@ -572,10 +613,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       start_paused = (*outcome)->paused;
       player.details = settings.stats.all;
       if ((*outcome)->next_file) {
-        if (auto written = save_settings(
-                settings_path, settings_to_save(settings, player.from_file, player.started, file_options));
-            !written)
-          log->warn("{}", written.error().detail);
+        save_before_next(player, **outcome, settings, file_options);
         player.unsaved.reset();
         next_file = (*outcome)->next_file;
         forced_start = (*outcome)->next_start_us;

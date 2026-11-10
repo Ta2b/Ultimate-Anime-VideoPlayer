@@ -33,9 +33,10 @@ régénère toutes les tables avec `python3 tools/vk/presets_from_cache.py`. Une
 famille reprend alors ces choix à sa première construction au lieu de tout mesurer ; chaque choix
 repris est vérifié une fois contre le noyau direct.
 
-Déjà relevé : NVIDIA Ada (RTX 4070 Ti, pilote 615.78.08), SPAN en 720p et RIFE 4.25 en mouvement.
-Deux lectures ont tranché 13 couches sur 29 différemment, à des temps voisins : une troisième lecture
-départagerait.
+Aucune table n'est livrée aujourd'hui. Celle de NVIDIA Ada (RTX 4070 Ti, pilote 615.78.08, SPAN en 720p et
+RIFE 4.25 en mouvement) datait des candidats `c5` et donnait 28 couches sur 29 en sommes float16 sans mesure
+d'image : retirée avec ses deux relevés (C05, A45-01, A46-11). Un choix à précision réduite lu dans une table
+est de toute façon remesuré (`docs/moteurs.md`).
 
 Reste à relever (P2.46) : RDNA4 (RX 9070 XT, sous le pilote AMD puis RADV), RDNA3 et Intel Arc. Depuis
 novembre, les unités matricielles ne dépendent plus d'une liste de familles permises mais des tuiles que le
@@ -362,7 +363,7 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   `data/calibration/calibration.mkv`, `ajp play … --snapshot=A.ppm --snapshot-at=S` sans et avec
   `--ring-rgb10a2` (`B.ppm`), et `tools/ring/banding.py --compare A.ppm B.ppm` ≤ 1,10. VRAM de l'anneau −50 %
   (`--stats`), export P010 ≥ 50 dB contre RGBA16. Si tout passe, RGB10A2 devient le défaut sous TensorRT
-  (ADR 0008).
+  (ADR 0008) ; d'ici là le défaut est RGBA16 (point 6 de l'ADR).
 
 ## Plan NVIDIA, chantier 2a : passes du grade fondues (novembre, vérifié sur lavapipe)
 

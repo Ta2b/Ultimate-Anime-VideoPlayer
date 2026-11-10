@@ -162,7 +162,8 @@ class LocationWalker {
     if (!reader.ok()) return malformed("métadonnées de poids ONNX malformées");
     if (kind == Kind::Model && !graph) return malformed("graphe ONNX absent");
     if (kind == Kind::Tensor && (external || metadata)) {
-      if (location.empty() || location.find('\0') != std::string::npos) {
+      // Un emplacement qui n'est pas de l'UTF-8 ferait lever path_from_utf8 sous Windows (A04-01).
+      if (location.empty() || location.find('\0') != std::string::npos || !is_utf8(location)) {
         return malformed("emplacement de poids absent ou invalide");
       }
       found_.insert(location);
@@ -291,6 +292,7 @@ std::expected<OnnxSummary, Refusal> scan_onnx(Bytes model) {
 }
 
 bool is_safe_location(const std::string& location) {
+  if (!is_utf8(location)) return false;  // path_from_utf8 lèverait sous Windows (A04-01)
   const std::filesystem::path relative = path_from_utf8(location);
   // has_root_path : sous Windows, « /etc/passwd » n'est pas absolu (pas de lecteur) mais part de
   // la racine du lecteur courant ; « C:poids.bin » a un lecteur sans racine.

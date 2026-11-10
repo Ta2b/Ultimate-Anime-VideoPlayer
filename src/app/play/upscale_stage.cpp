@@ -21,9 +21,10 @@ namespace ajp::app::play {
 namespace {
 
 constexpr std::uint64_t kDisagreementsLogged = 100;
-// Un facteur de l'Auto hors de la liste des facteurs réglables : son dénominateur reste petit (la granularité
-// fine de l'Auto est core::kFineGranularity, 24), 64 borne l'accumulateur de cadence.
-constexpr std::int64_t kLiveFactorMaxDen = 64;
+// Un facteur de l'Auto hors de la liste des facteurs réglables : palier / granularité (24 au plus,
+// core::kFineGranularity), ou sur écran fixe la fraction exacte d'un palier calé (11011/3200 à 165 Hz,
+// core::AutoLimits::exact), dont les termes tiennent dans ceux de l'accumulateur de cadence.
+constexpr std::int64_t kLiveFactorMaxDen = core::limits::kRatioTerm.hi;
 // L'écart d'une paire mesurée qui donne une période : de 125 à 5 images par seconde. Hors de là (seek, pause,
 // image en double), la paire ne dit rien de la cadence.
 constexpr std::int64_t kPairGapMinUs = 8'000;
@@ -405,7 +406,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     // 8.7 : les plans de la pré-analyse décident quand ils couvrent la paire ; RIFE ne fait que signaler.
     if (setup_.live && previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts) {
       facts.known_cut = setup_.live->cuts().cut_between(previous_->pts_us, frame.pts_us);
-      if (facts.known_cut && *facts.known_cut != kernels::is_scene_cut(scores->scene_score)) {
+      if (facts.known_cut && *facts.known_cut != measured_cut(facts)) {
         // Les premiers au journal : de quoi juger à l'image qui a raison.
         if (++cut_disagreements_ <= kDisagreementsLogged)
           log_channel("gpu")->info(
@@ -516,7 +517,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // Une seule entrée par paire (P2.10) : une seconde, au même identifiant, masquait le drapeau heavy.
   const bool free_counted = free_mode && facts.same_epoch;
   if (auto_measured || free_counted)
-    setup_.live->auto_expect(frame.id.value, written, lead_us, free_counted && heavy_pair_);
+    expect_pair(frame.id.value, written, lead_us, free_counted, steady, runs);
   if (free_counted && written > 0) setup_.live->free_produced(written, host_now_us());
   if (intermediates_ > 0) mid_ ^= 1U;
   if (intermediates_ > 0 && !copy_pair_ && (setup_.rife != nullptr || by_motion())) {

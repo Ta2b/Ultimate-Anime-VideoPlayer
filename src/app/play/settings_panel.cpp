@@ -84,8 +84,9 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
 
 void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<Input>& /*actions*/) {
   // Tri de l'ADR 0012 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds,
-  // qui suivent la scène (le curseur est leur maximum, en scène très claire), et le look : la LUT de base et
-  // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de référence).
+  // qui suivent l'épisode (le curseur est leur maximum, dans un épisode très clair : A38-16), et le look : la
+  // LUT de base et « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de
+  // référence).
   section(i18n::tr("Color grading"));
   render::GradeSettings& g = d.grade_values;
   ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, 0, 200, "%d %%",
@@ -99,7 +100,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<
     ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d",
                      ImGuiSliderFlags_AlwaysClamp);
     grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
-    panel::tip(i18n::tr("The maximum, reached in very bright scenes; it fades out in very dark scenes."));
+    panel::tip(i18n::tr("The maximum, reached in a very bright episode; it fades out in a very dark one."));
   }
   if (ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;
@@ -249,8 +250,12 @@ void level_section(PlaySettings& d, const SettingsChoices& choices) {
         next.preset = preset;
         d = apply_preset(
             next,
-            Machine{
-                .tier = detected, .display_height = choices.display_height, .display_hz = choices.display_hz},
+            Machine{.tier = detected,
+                    .display_height = choices.display_height,
+                    .display_hz = choices.display_hz,
+                    .explored_work_height = choices.explored_work_height,
+                    .explored_rife_model = choices.explored_rife_model,
+                    .calibrated = choices.calibrated},
             core::SourceInfo{
                 .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
       }
@@ -274,6 +279,7 @@ void sharpness_section(PlaySettings& d) {
 // Général > À propos : ce que le lecteur sait de la machine, l'assistant à refaire.
 void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("This machine"));
+  panel::wrapped(choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   ImGui::TextWrapped("%s",
                      choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));
@@ -570,17 +576,17 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::EndDisabled();
     // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
     if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
-        preset_chain_differs(before, draft_))
+        preset_chain_differs(before, draft_, choices.calibrated.has_value()))
       draft_.preset = Preset::Custom;
     ImGui::PopItemWidth();
 
     // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
-    PlaySettings live = live_part(running, draft_, choices.rife_loaded);
+    PlaySettings live = live_part(running, draft_, choices.rife_loaded, choices.chain());
     // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
     // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
     if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
     if (live != running) result.live = live;
-    const Change pending = change_between(live, draft_, choices.rife_loaded);
+    const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
     pending_shown_ = pending.cost == ChangeCost::Reopen;
     if (pending.cost == ChangeCost::Reopen) {
       ImGui::Spacing();

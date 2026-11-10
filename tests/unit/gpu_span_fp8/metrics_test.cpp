@@ -2,6 +2,7 @@
 #include "gpu/span_fp8/metrics.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -76,6 +77,29 @@ TEST_CASE("le quantile de l'erreur absolue se prend au rang, sur tout ou sur le 
   CHECK(abs_error_quantile(ref, got, 1.0) == Catch::Approx(0.3).margin(1e-6));
   const std::vector<float> bright(6, 0.9F);
   CHECK(dark_abs_error_quantile(2, 1, bright, got, 1.0) == 0.0);  // aucun pixel sombre
+}
+
+TEST_CASE("un échantillon non fini donne la pire note à chaque mesure (A02-01)", "[span_fp8][metrics]") {
+  const int w = 32, h = 32;
+  const std::vector<float> a(static_cast<std::size_t>(3 * w * h), 0.5F);
+  for (const float bad : {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(),
+                          -std::numeric_limits<float>::infinity()}) {
+    std::vector<float> b = a;
+    b[static_cast<std::size_t>(w * 16 + 16)] = bad;  // un seul échantillon, au milieu du plan rouge
+    CHECK(psnr(a, b) == 0.0);                        // avant : std::min(99, NaN) rendait 99 dB
+    CHECK(psnr(b, a) == 0.0);
+    CHECK(ssim(w, h, a, b) == 0.0);
+    CHECK(ssim(w, h, b, a) == 0.0);
+    // Un seul échantillon sur 3072 : sous tout quantile, donc invisible sans la règle.
+    CHECK(abs_error_quantile(a, b, 0.5) == kNotFiniteError);
+    CHECK(abs_error_quantile(a, b, 0.999) == kNotFiniteError);
+    // La référence est claire (0,5 au-dessus du seuil sombre) : le pixel non fini compte quand même.
+    CHECK(dark_abs_error_quantile(w, h, a, b, 0.999) == kNotFiniteError);
+    CHECK(dark_abs_error_quantile(w, h, b, a, 0.999) == kNotFiniteError);
+  }
+  // Des images finies gardent leurs notes.
+  CHECK(psnr(a, a) == Catch::Approx(99.0));
+  CHECK(abs_error_quantile(a, a, 0.999) == 0.0);
 }
 
 }  // namespace ajp::gpu::span_fp8

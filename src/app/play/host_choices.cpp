@@ -9,6 +9,7 @@
 #include "app/play/engine_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
+#include "app/play/machine_calibration.h"
 #include "app/play/paths.h"
 #include "app/play/placebo_screen.h"
 #include "audio/devices.h"
@@ -25,9 +26,19 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);
   choices.machine_tier = static_cast<int>(effective_tier(machine, measured));
-  choices.bench_text = measured && measured->gpu == machine.name && measured->driver == machine.driver
-                           ? i18n::tr_format("Last optimization: {}", measured->date)
-                           : std::string();
+  const bool explored = measured && measured->gpu == machine.name && measured->driver == machine.driver;
+  choices.bench_text = explored ? i18n::tr_format("Last optimization: {}", measured->date) : std::string();
+  // La machine que le lecteur passe à apply_preset à l'ouverture d'une vidéo (player.cpp), pour que « Auto »
+  // choisi au panneau donne la même chaîne (A23-03).
+  choices.explored_work_height = explored ? measured->work_height : 0;
+  choices.explored_rife_model = explored ? measured->rife_model : std::string();
+  // Le moteur en service : celui de la bibliothèque chargée, ou à l'accueil le préféré s'il est installé.
+  choices.calibration_host = {.gpu = machine.name,
+                              .display_height = display_height(screen.window()),
+                              .tensorrt = choices.engine_in_use == core::EngineId::TensorRt &&
+                                          tensorrt_backend_present(catalog, paths),
+                              .driver = machine.driver};
+  choices.calibrated = calibrated_chain(settings_dir, choices.calibration_host);
   choices.gpu_name = machine.name;
   choices.gpus = screen.device_names();
   choices.nvidia = vendor_from_pci(screen.device_facts().pci_vendor) == GpuVendor::Nvidia;

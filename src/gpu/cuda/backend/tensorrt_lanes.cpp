@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/cuda/backend/trt_engine.h"
 
@@ -50,6 +51,15 @@ std::expected<void, Refusal> TensorRtBackend::create_lanes() {
   stream_ = streams_[lane_index(lane_)];
   tune_pool();
   return {};
+}
+
+void TensorRtBackend::drain() {
+  // Une passe SPAN ou d'interpolation enfilée par le thread gpu juste avant son arrêt tourne encore : ses
+  // moteurs, leurs graphes et leurs poids ne sont libérés qu'après elle (A30-01). Au plus une image.
+  if (auto bound = bind(); !bound) return;
+  for (cudaStream_t stream : streams_) {
+    if (stream != nullptr) cuda_warn(cudaStreamSynchronize(stream), "cudaStreamSynchronize (drain)");
+  }
 }
 
 void TensorRtBackend::destroy_lanes() {

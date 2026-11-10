@@ -80,23 +80,16 @@ std::vector<Plane> accumulated_flow(const RifeFusedState& s, int blocks) {
   return flow;
 }
 
-// GridSample (coins alignés, bords répétés) d'un plan h × w par le flot (pixels), la grille normalisée étant
-// celle de l'entrée (plans 7 à 10 : maillage et pas).
+// GridSample (coins alignés, bords répétés) d'un plan h × w par le flot (pixels). La grille normalisée du
+// graphe, maillage + flot × pas ramenée par (g + 1) / 2 × (n - 1), vaut exactement x + flot : elle se calcule
+// ainsi, sans lire les plans 7 à 10 de l'entrée, que le FP16 de l'entrée v1 arrondit (A03-20).
 Plane warp(const RifeFusedState& s, const double* plane, const Plane& flow_x, const Plane& flow_y) {
   const std::size_t area = static_cast<std::size_t>(s.height) * static_cast<std::size_t>(s.width);
-  const double* mesh_x = s.input.data() + 7 * area;
-  const double* mesh_y = s.input.data() + 8 * area;
-  const double* step_x = s.input.data() + 9 * area;
-  const double* step_y = s.input.data() + 10 * area;
   Plane out(area);
   for (int y = 0; y < s.height; ++y) {
     for (int x = 0; x < s.width; ++x) {
       const std::size_t i = at(y, x, s.width);
-      const double gx = mesh_x[i] + flow_x[i] * step_x[i];
-      const double gy = mesh_y[i] + flow_y[i] * step_y[i];
-      const double ix = (gx + 1.0) * 0.5 * (s.width - 1);
-      const double iy = (gy + 1.0) * 0.5 * (s.height - 1);
-      out[i] = sample(plane, s.height, s.width, iy, ix);
+      out[i] = sample(plane, s.height, s.width, y + flow_y[i], x + flow_x[i]);
     }
   }
   return out;

@@ -136,6 +136,23 @@ TEST_CASE("Sous-titres externes : en concurrence avec le conteneur, à leur lang
   std::filesystem::remove(srt);
 }
 
+// A13-01 : un index externe gardé d'une autre ouverture (fichier glissé d'ailleurs, épisode
+// précédent) n'existe plus ici ; l'ouverture l'oublie au lieu de déréférencer une piste absente.
+TEST_CASE("Sous-titres externes : un index gardé qui n'existe plus est oublié (A13-01)", "[app][pipeline]") {
+  SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+  REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+  {
+    auto opened =
+        Pipeline::open(PipelineConfig{.file = clip(),
+                                      .decoder = {.attempts = {media::HwApi::Software}},
+                                      .subtitle_track = std::optional<int>(kExternalSubtitleBase + 5)},
+                       [](VideoStageInit init) { return test::PassthroughStage::start(std::move(init), 4); });
+    REQUIRE(opened);
+    CHECK((*opened)->tracks().subtitle_selected != kExternalSubtitleBase + 5);
+  }
+  SDL_QuitSubSystem(SDL_INIT_AUDIO);
+}
+
 TEST_CASE("Seek en cours de lecture : nouvelle époque, images de la cible", "[app][pipeline]") {
   Playing playing;
   REQUIRE(playing.run([&] { return playing.session->stats().new_frames >= 5; }));

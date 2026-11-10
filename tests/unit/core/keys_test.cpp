@@ -1,5 +1,6 @@
 #include "core/keys.h"
 
+#include <algorithm>
 #include <string>
 #include <variant>
 
@@ -154,6 +155,58 @@ TEST_CASE("Raccourcis : un conflit, une action ou une touche inconnue sont refus
   CHECK(keys_refusal("[keys]\npause = 3\n") == RefusalCode::FieldType);
   CHECK(keys_refusal("keys = 1\n") == RefusalCode::FieldType);
   CHECK(keys_refusal("[keys\n") == RefusalCode::ProfileUnreadable);
+}
+
+TEST_CASE("Raccourcis : la lecture tolérante ne perd que l'entrée fautive (A24-07)", "[keys]") {
+  const KeysRead read = read_keys(R"(
+[keys]
+toggle_osd = "F1"
+zoom = "Z"
+pause = "Ctrl+Nope"
+seek_forward = 3
+toggle_grade = "Space"
+)");
+  // Avant : une seule de ces fautes rendait tous les raccourcis par défaut, F1 compris.
+  CHECK(read.map.chord(Action::ToggleOsd) == Chord{.key = Key::F1});
+  CHECK(read.map.action_for(key(Key::Space)) == Action::TogglePause);
+  CHECK(read.map.chord(Action::SeekForward) == KeyMap::defaults().chord(Action::SeekForward));
+  // Le conflit : toggle_grade reprend son raccourci par défaut, resté libre.
+  CHECK(read.map.chord(Action::ToggleGrade) == ctrl(Key::G));
+  REQUIRE(read.ignored.size() == 4);
+  const auto named = [&](std::string_view what) {
+    return std::ranges::any_of(read.ignored, [&](const std::string& e) { return e.contains(what); });
+  };
+  CHECK(named("zoom"));
+  CHECK(named("Ctrl+Nope"));
+  CHECK(named("seek_forward"));
+  CHECK(named("toggle_grade"));
+
+  // Un échange reste un échange, sans rien d'ignoré ; un fichier sain se lit comme avec parse_keys.
+  const KeysRead swapped = read_keys("[keys]\nseek_backward = \"Right\"\nseek_forward = \"Left\"\n");
+  CHECK(swapped.ignored.empty());
+  CHECK(swapped.map == *parse_keys("[keys]\nseek_backward = \"Right\"\nseek_forward = \"Left\"\n"));
+  CHECK(read_keys("version = 5\n").map == KeyMap::defaults());
+
+  // Illisible : les raccourcis par défaut, et la raison.
+  const KeysRead broken = read_keys("[keys\n");
+  CHECK(broken.map == KeyMap::defaults());
+  CHECK(broken.ignored.size() == 1);
+}
+
+TEST_CASE("Raccourcis : une touche gardée par le lecteur n'est pas donnée à une action (A24-06)", "[keys]") {
+  // Avant : « pause = "M" » était accepté, puis M coupait le son et la pause n'avait plus de touche.
+  const KeysRead read =
+      read_keys("[keys]\npause = \"M\"\ntoggle_osd = \"Shift+N\"\nstep_forward = \"Ctrl+M\"\n");
+  CHECK(read.map.chord(Action::TogglePause) == KeyMap::defaults().chord(Action::TogglePause));
+  CHECK(read.map.chord(Action::ToggleOsd) == KeyMap::defaults().chord(Action::ToggleOsd));
+  CHECK(read.map.chord(Action::StepForward) == ctrl(Key::M));  // avec Ctrl, la touche est libre
+  REQUIRE(read.ignored.size() == 2);
+  CHECK(read.ignored[0].contains("(fixed)"));
+  // Aucun raccourci par défaut n'est sur une touche gardée.
+  for (std::size_t a = 0; a < kActionCount; ++a) {
+    const auto chord = KeyMap::defaults().chord(static_cast<Action>(a));
+    if (chord && !chord->ctrl && !chord->alt && !chord->meta) CHECK_FALSE(fixed_key(chord->key));
+  }
 }
 
 TEST_CASE("Raccourcis : rebind refuse de prendre la touche d'une autre action", "[keys]") {

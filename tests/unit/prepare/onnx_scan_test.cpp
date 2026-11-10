@@ -63,6 +63,13 @@ TEST_CASE("scan_onnx : refus d'un ONNX malformé", "[prepare][onnx]") {
   CHECK(test::refusal(scan_onnx(test::as_bytes(no_location))) == RefusalCode::ModelUnreadable);
 }
 
+// A04-01 : sous Windows, un emplacement qui n'est pas de l'UTF-8 levait une exception non rattrapée.
+TEST_CASE("onnx_external_locations : un emplacement qui n'est pas de l'UTF-8 est refusé", "[prepare][onnx]") {
+  const std::string model = test::onnx({.external = {"\xff"}});
+  CHECK(test::refusal(onnx_external_locations(test::as_bytes(model))) == RefusalCode::ModelUnreadable);
+  CHECK(test::refusal(scan_onnx(test::as_bytes(model))) == RefusalCode::ModelUnreadable);
+}
+
 TEST_CASE("is_safe_location : un poids reste sous le dossier du modèle", "[prepare][onnx]") {
   CHECK(is_safe_location("poids/a.bin"));
   CHECK(is_safe_location("a.bin"));
@@ -72,4 +79,5 @@ TEST_CASE("is_safe_location : un poids reste sous le dossier du modèle", "[prep
   CHECK_FALSE(is_safe_location("poids/../../voisin.bin"));
   CHECK_FALSE(is_safe_location("C:poids.bin"));
   CHECK_FALSE(is_safe_location("poids\\a.bin"));
+  CHECK_FALSE(is_safe_location("\xff.bin"));  // pas de l'UTF-8 : refusé, jamais une exception (A04-01)
 }

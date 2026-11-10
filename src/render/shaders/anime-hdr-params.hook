@@ -120,6 +120,13 @@
 //!MAXIMUM 2.0
 1.0
 
+//!PARAM an_late
+//!DESC 1 = la montee des emetteurs part dans l'alpha, la derniere passe l'applique apres la pile de LUT
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
 //!PARAM video_fps
 //!DESC Images video distinctes par seconde a l'ecran (source x interpolation) : les lissages sont en secondes
 //!TYPE float

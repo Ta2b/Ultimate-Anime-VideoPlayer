@@ -36,6 +36,7 @@ double psnr(std::span<const float> a, std::span<const float> b) {
     sum += d * d;
   }
   const double mse = sum / static_cast<double>(a.size());
+  if (!std::isfinite(mse)) return 0.0;  // un NaN ou un infini : la pire note, pas 99 dB (A02-01)
   return mse <= 1e-10 ? 99.0 : std::min(99.0, 10.0 * std::log10(1.0 / mse));
 }
 
@@ -94,7 +95,8 @@ double ssim(int width, int height, std::span<const float> a, std::span<const flo
       total += ((2 * mx * my + kC1) * (2 * vxy + kC2)) / ((mx * mx + my * my + kC1) * (vxx + vyy + kC2));
     }
   }
-  return total / static_cast<double>(out_w * out_h);
+  const double mean = total / static_cast<double>(out_w * out_h);
+  return std::isfinite(mean) ? mean : 0.0;  // un échantillon non fini : la pire note (A02-01)
 }
 
 namespace {
@@ -112,7 +114,10 @@ double quantile_of(std::vector<float>& errors, double q) {
 double abs_error_quantile(std::span<const float> a, std::span<const float> b, double q) {
   if (a.size() != b.size() || a.empty()) return 0.0;
   std::vector<float> errors(a.size());
-  for (std::size_t i = 0; i < a.size(); ++i) errors[i] = std::abs(a[i] - b[i]);
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    errors[i] = std::abs(a[i] - b[i]);
+    if (!std::isfinite(errors[i])) return kNotFiniteError;
+  }
   return quantile_of(errors, q);
 }
 
@@ -125,6 +130,9 @@ double dark_abs_error_quantile(int width, int height, std::span<const float> a, 
   std::vector<float> errors;
   for (std::size_t i = 0; i < plane; ++i) {
     const double luma = 0.2126 * a[i] + 0.7152 * a[plane + i] + 0.0722 * a[2 * plane + i];
+    // Un échantillon non fini, où qu'il soit : un pixel jugé « clair » à cause d'un NaN ne s'échappe pas.
+    for (std::size_t c = 0; c < 3; ++c)
+      if (!std::isfinite(a[c * plane + i] - b[c * plane + i])) return kNotFiniteError;
     if (luma >= dark) continue;
     for (std::size_t c = 0; c < 3; ++c) errors.push_back(std::abs(a[c * plane + i] - b[c * plane + i]));
   }

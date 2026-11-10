@@ -58,8 +58,8 @@ float creeping_fraction(float reported, double seconds_since_change) {
   return std::min(0.97F, reported + static_cast<float>(extra));
 }
 
-int calibration_minutes(int display_height, bool builds_engines, bool laptop) {
-  const auto sizes = static_cast<double>(calibration_heights(display_height).size());
+int calibration_minutes(bool builds_engines, bool laptop) {
+  const auto sizes = static_cast<double>(calibration_heights().size());
   // Les essais : chaque palier de SPAN seul, deux ou trois de SPAN + RIFE, un rejeu sur deux ; chacun la
   // durée de l'essai et une quinzaine de secondes d'ouverture.
   const double trials = (sizes + 3.0) * 1.5;
@@ -78,16 +78,36 @@ bool needs_second_run(const CandidateTrial& trial) {
   return lossy || slow;
 }
 
-std::vector<int> calibration_heights(int display_height) {
-  const int top = std::max(display_height / 2, kCalibrationHeights.front());
-  std::vector<int> out;
-  for (const int height : kCalibrationHeights)
-    if (height <= top) out.insert(out.begin(), height);
-  return out;
+double credited_fps(const BenchReading& reading) {
+  if (reading.interval_mean_us <= 0) return 0.0;
+  const double fps = 1e6 / static_cast<double>(reading.interval_mean_us);
+  if (reading.new_frames <= 0) return fps;
+  return fps * static_cast<double>(reading.new_frames + reading.uninterpolated) /
+         static_cast<double>(reading.new_frames);
 }
 
-std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int display_height) {
-  const std::vector<int> heavy_first = calibration_heights(display_height);
+double trial_target_fps(const ChainCandidate& chain, std::int64_t period_us) {
+  const auto source = static_cast<double>(media::BenchClipSpec{}.fps);
+  if (!chain.rife) return source;
+  const double display = period_us > 0 ? 1e6 / static_cast<double>(period_us) : 0.0;
+  return display > source ? std::min(2.0 * source, display) : 2.0 * source;
+}
+
+bool trial_holds(const ChainCandidate& chain, const BenchReading& reading, double target_fps) {
+  if (!holds(reading.run)) return false;
+  return !chain.rife || credited_fps(reading) >= kMinRifeShare * target_fps;
+}
+
+std::vector<int> calibration_heights() {
+  return {kCalibrationHeights.rbegin(), kCalibrationHeights.rend()};
+}
+
+CalibrationModels calibration_models(Tier tier) {
+  return {.span = std::string(level_span_model(tier)), .rife = std::string(level_rife_model(tier))};
+}
+
+std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried) {
+  const std::vector<int> heavy_first = calibration_heights();
   // 1. SPAN seul, en montant, jusqu'au premier palier qui ne tient pas.
   int span_top = 0;
   for (auto it = heavy_first.rbegin(); it != heavy_first.rend(); ++it) {
@@ -135,35 +155,43 @@ ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
   return ChainCandidate{.span = false, .rife = false, .height = 0};
 }
 
-PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base, bool span_fp8) {
+PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
+                                const CalibrationModels& models) {
   base.preset = Preset::Custom;
   base.upscale = chain.span;
-  base.model = span_fp8 ? std::string(kCalibrationSpanFp8) : std::string();
-  base.span_precision = span_fp8 ? PrecisionTier::Performance : PrecisionTier::Balanced;
+  base.restore_lines = true;
+  base.model = models.span;
+  base.span_precision = PrecisionTier::Balanced;
+  base.span_order = SpanOrder::Auto;
   base.work_height = chain.span ? chain.height : 0;
   base.downscale = Downscale::Hermite;
   base.motion_engine = MotionEngine::Rife;
-  base.rife_model = std::string(kCalibrationRife);
+  base.motion_precision = PrecisionTier::Balanced;
+  base.rife_model = models.rife.empty() ? std::string(kLightRifeModel) : models.rife;
   base.rife_auto = chain.rife;
   base.auto_free = chain.rife;  // le mode auto Rapide, le seul que la calibration essaie
   base.rife_factor = chain.rife ? 2 : 0;
   base.rife_factor_den = 1;
+  base.keep_poses = true;
   return base;
 }
 
 std::string describe(const ChainCandidate& chain) {
   std::string out = chain.span ? std::format("{}p · SPAN", chain.height) : std::string(i18n::tr("SPAN off"));
-  out += chain.rife ? i18n::tr(" · RIFE 4.22 lite (auto Fast)") : i18n::tr(" · no interpolation");
+  out += chain.rife ? i18n::tr(" · RIFE (auto Fast)") : i18n::tr(" · no interpolation");
   return out;
 }
 
 std::string format_calibration(const MachineCalibration& c) {
   toml::table root;
-  root.insert("version", 1);
+  root.insert("version", static_cast<std::int64_t>(c.version));
   root.insert("gpu", c.gpu);
   root.insert("date", c.date);
   root.insert("display_height", static_cast<std::int64_t>(c.display_height));
-  root.insert("span_fp8", c.span_fp8);
+  root.insert("span_model", c.models.span);
+  root.insert("rife_model", c.models.rife);
+  root.insert("engine", c.engine);
+  root.insert("driver", c.driver);
   root.insert("on_battery", c.on_battery);
   const auto chain_table = [](const ChainCandidate& chain) {
     toml::table t;
@@ -205,7 +233,13 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
   out.gpu = root["gpu"].value_or(std::string());
   out.date = root["date"].value_or(std::string());
   out.display_height = static_cast<int>(root["display_height"].value_or(std::int64_t{0}));
-  out.span_fp8 = root["span_fp8"].value_or(false);
+  // Sans version : un fichier d'avant elle (1). « span_fp8 » des fichiers de version 1 est ignoré.
+  out.version =
+      static_cast<int>(std::clamp<std::int64_t>(root["version"].value_or(std::int64_t{1}), 1, 1000));
+  out.models = {.span = root["span_model"].value_or(std::string()),
+                .rife = root["rife_model"].value_or(std::string())};
+  out.engine = root["engine"].value_or(std::string());
+  out.driver = root["driver"].value_or(std::string());
   out.on_battery = root["on_battery"].value_or(false);
   if (const toml::table* chosen = root["chosen"].as_table()) out.chosen = chain_of(*chosen);
   if (const toml::array* trials = root["trials"].as_array()) {
@@ -237,19 +271,35 @@ std::expected<MachineCalibration, Refusal> load_calibration(const std::filesyste
   return parse_calibration(text.str());
 }
 
-std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir, std::string_view gpu,
-                                                int display_height) {
+CalibrationUse calibration_use(const MachineCalibration& calibration, const CalibrationHost& host) {
+  // D'une version plus ancienne : ses bornes (moitié de l'écran, RIFE 4.22 lite, RIFE coupé par le Rapide
+  // compté comme tenu) sont sous ou à côté de ce que l'Auto estimé donne aujourd'hui (A49-02, A07-02).
+  if (calibration.version < kCalibrationVersion) return CalibrationUse::OldVersion;
+  // Sur batterie : l'Auto estimé vaut mieux que les bornes d'une carte bridée (P3.12).
+  if (calibration.on_battery) return CalibrationUse::OnBattery;
+  if (calibration.gpu != host.gpu ||
+      (host.display_height > 0 && calibration.display_height != host.display_height))
+    return CalibrationUse::OtherMachine;
+  // Les bornes de Vulkan sous TensorRT brident la carte, celles de TensorRT sous Vulkan la débordent
+  // (A25-02, A07-05).
+  if ((calibration.engine == "tensorrt") != host.tensorrt) return CalibrationUse::OtherEngine;
+  return CalibrationUse::Followed;
+}
+
+bool calibration_driver_changed(const MachineCalibration& calibration, const CalibrationHost& host) {
+  return !calibration.driver.empty() && !host.driver.empty() && calibration.driver != host.driver;
+}
+
+std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir,
+                                                const CalibrationHost& host) {
   auto calibration = load_calibration(calibration_file(data_dir));
-  // Mesurée sur batterie : l'Auto estimé vaut mieux que des bornes d'une carte bridée (P3.12).
-  if (!calibration || calibration->on_battery || calibration->gpu != gpu ||
-      (display_height > 0 && calibration->display_height != display_height))
-    return std::nullopt;
+  if (!calibration || calibration_use(*calibration, host) != CalibrationUse::Followed) return std::nullopt;
   const ChainCandidate& chosen = calibration->chosen;
-  return CalibratedChain{
-      .span = chosen.span,
-      .rife = chosen.rife,
-      .height = chosen.height,
-      .span_model = calibration->span_fp8 && chosen.span ? std::string(kCalibrationSpanFp8) : std::string()};
+  return CalibratedChain{.span = chosen.span,
+                         .rife = chosen.rife,
+                         .height = chosen.height,
+                         .span_model = chosen.span ? calibration->models.span : std::string(),
+                         .rife_model = calibration->models.rife};
 }
 
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
@@ -257,43 +307,20 @@ std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
   return core::write_text_atomically(file, format_calibration(calibration));
 }
 
-std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& plan, const PlaySettings& base,
-                                                             int display_height, const std::stop_token& stop,
-                                                             const std::function<void(float)>& fraction) {
+std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlayer& play,
+                                                                 const std::stop_token& stop,
+                                                                 const std::function<void(float)>& fraction) {
   const auto log = log_channel("app");
-  MachineCalibration out;
-  out.display_height = display_height;
-  out.date = std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
-  std::error_code error;
-  std::filesystem::create_directories(plan.work_dir, error);
-  if (fraction) fraction(0.02F);
-  if (!std::filesystem::is_regular_file(plan.video, error)) {
-    if (auto written = media::write_bench_clip(plan.video); !written)
-      return std::unexpected(std::move(written.error()));
-  }
+  CalibrationTrials out;
   // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
-  const auto most = static_cast<float>(2 * calibration_heights(display_height).size() + 1);
+  const auto most = static_cast<float>(2 * calibration_heights().size() + 1);
   int index = 0;
-  // SPAN en FP8 d'abord ; le premier essai SPAN à kFp8JudgeHeight ou plus dit si la carte l'a pris, sinon
-  // la suite passe au FP16.
-  out.span_fp8 = true;
-  bool fp8_known = false;
   std::optional<ChainCandidate> retried;  // la chaîne déjà rejouée une fois
   std::optional<ChainCandidate> rebuilt;  // la chaîne rejouée avec le délai d'une construction
-  out.on_battery = on_battery();
-  if (out.on_battery)
-    log->warn("calibration de la machine : sur batterie, mesure sous-estimée (à refaire sur secteur)");
-  while (const auto chain = next_candidate(out.tried, display_height)) {
+  while (const auto chain = next_candidate(out.tried)) {
     if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
-    const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
-    if (auto written = save_settings(settings, candidate_settings(*chain, base, out.span_fp8)); !written)
-      return std::unexpected(std::move(written.error()));
-    const Variant variant{.name = describe(*chain), .settings = settings};
-    // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps (le
-    // FP16 aussi, après un essai FP8 que la carte n'a pas pris).
-    auto reading =
-        play_variant(plan, variant, index, stop,
-                     out.tried.empty() || rebuilt == *chain ? plan.first_allowance : plan.build_allowance);
+    // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps.
+    auto reading = play(*chain, index, out.tried.empty() || rebuilt == *chain);
     if (stop.stop_requested())
       return std::unexpected(Refusal{RefusalCode::Cancelled, i18n::tr("evaluation cancelled")});
     // Délai dépassé (P3.12) : un moteur long à construire (un portable) n'est pas une machine lente ; l'essai
@@ -305,37 +332,14 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
       ++index;
       continue;
     }
-    // Le FP8 se juge à partir de kFp8JudgeHeight : plus bas, la porte de qualité le refuse souvent (erreur
-    // relative plus forte sur une petite image) et le lecteur y joue Balanced en FP16, bon marché à cette
-    // taille ; ce refus ne dit rien de la carte.
-    const bool judges_fp8 = chain->span && !fp8_known && chain->height >= kFp8JudgeHeight;
-    if (!reading && chain->span && !fp8_known) {
-      // Le premier essai en FP8 n'a rien rendu (préparation du FP8 ratée…) : le FP16 avant de conclure.
-      log->warn("calibration de la machine : essai SPAN FP8 sans mesure ({}), essais en FP16",
-                reading.error().detail);
-      fp8_known = true;
-      out.span_fp8 = false;
-      ++index;
-      continue;
-    }
     if (!reading && out.tried.empty()) return std::unexpected(std::move(reading.error()));
-    if (judges_fp8 && reading) {
-      fp8_known = true;
-      if (reading->span_variant != kCalibrationFp8Variant) {
-        // La carte ne prend pas le FP8 (ou le modèle Balanced manque) : l'essai se refait en FP16.
-        log->info("calibration de la machine : SPAN FP8 non pris ({}), essais en FP16",
-                  reading->span_variant.empty() ? "variante inconnue" : reading->span_variant);
-        out.span_fp8 = false;
-        ++index;
-        continue;
-      }
-    }
-    CandidateTrial trial{
-        .chain = *chain,
-        .target_fps = static_cast<double>(media::BenchClipSpec{}.fps) * (chain->rife ? 2.0 : 1.0)};
+    CandidateTrial trial{.chain = *chain,
+                         .target_fps = trial_target_fps(*chain, reading ? reading->run.period_us : 0)};
     if (reading) {
       out.gpu = reading->gpu;
-      trial.holds = holds(reading->run);
+      out.driver = reading->driver;
+      out.engine = reading->engine;
+      trial.holds = trial_holds(*chain, *reading, trial.target_fps);
       const auto presents = std::max<std::int64_t>(reading->run.presents, 1);
       trial.lost_percent = 100.0 * static_cast<double>(reading->run.dropped + reading->run.missing) /
                            static_cast<double>(presents);
@@ -346,18 +350,58 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
     // moteur à froid et perd quelques images au démarrage), et un essai qui tient de justesse (une mesure
     // chanceuse) ; le second passage décide.
     if (reading && needs_second_run(trial) && retried != *chain) {
-      log->info("calibration de la machine : {} {} ({:.1f} % perdues), rejoué une fois", describe(*chain),
-                trial.holds ? "tient de justesse" : "ne tient pas", trial.lost_percent);
+      log->info("calibration de la machine : {} {} ({:.1f} % perdues, {:.1f} i/s pour {:.0f}), rejoué",
+                describe(*chain), trial.holds ? "tient de justesse" : "ne tient pas", trial.lost_percent,
+                trial.fps, trial.target_fps);
       retried = *chain;
       ++index;
       continue;
     }
-    log->info("calibration de la machine : {} {}", describe(*chain), trial.holds ? "tient" : "ne tient pas");
+    log->info("calibration de la machine : {} {} ({:.1f} i/s pour {:.0f})", describe(*chain),
+              trial.holds ? "tient" : "ne tient pas", trial.fps, trial.target_fps);
     out.tried.push_back(trial);
     ++index;
   }
+  return out;
+}
+
+std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& plan, const PlaySettings& base,
+                                                             int display_height, Tier tier,
+                                                             const std::stop_token& stop,
+                                                             const std::function<void(float)>& fraction) {
+  const auto log = log_channel("app");
+  MachineCalibration out;
+  out.display_height = display_height;
+  out.models = calibration_models(tier);
+  out.date = std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
+  std::error_code error;
+  std::filesystem::create_directories(plan.work_dir, error);
+  if (fraction) fraction(0.02F);
+  if (!std::filesystem::is_regular_file(plan.video, error)) {
+    if (auto written = media::write_bench_clip(plan.video); !written)
+      return std::unexpected(std::move(written.error()));
+  }
+  log->info("calibration de la machine : SPAN {}, RIFE {}, en FP16",
+            out.models.span.empty() ? std::string(kDefaultModelFile) : out.models.span, out.models.rife);
+  out.on_battery = on_battery();
+  if (out.on_battery)
+    log->warn("calibration de la machine : sur batterie, mesure sous-estimée (à refaire sur secteur)");
+  const TrialPlayer play = [&](const ChainCandidate& chain, int index,
+                               bool first) -> std::expected<BenchReading, Refusal> {
+    const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
+    if (auto written = save_settings(settings, candidate_settings(chain, base, out.models)); !written)
+      return std::unexpected(std::move(written.error()));
+    return play_variant(plan, Variant{.name = describe(chain), .settings = settings}, index, stop,
+                        first ? plan.first_allowance : plan.build_allowance);
+  };
+  auto trials = run_calibration_trials(play, stop, fraction);
+  if (!trials) return std::unexpected(std::move(trials.error()));
+  out.tried = std::move(trials->tried);
+  out.gpu = std::move(trials->gpu);
+  out.driver = std::move(trials->driver);
+  out.engine = std::move(trials->engine);
   out.chosen = best_candidate(out.tried);
-  log->info("calibration de la machine : recommandé {}", describe(out.chosen));
+  log->info("calibration de la machine : recommandé {} (moteur {})", describe(out.chosen), out.engine);
   std::filesystem::remove_all(plan.work_dir, error);
   if (!plan.data.empty()) {
     if (auto saved = save_calibration(calibration_file(plan.data), out); !saved)

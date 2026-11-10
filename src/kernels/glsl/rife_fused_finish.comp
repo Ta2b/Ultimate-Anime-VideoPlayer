@@ -53,15 +53,9 @@ void main() {
     mask.v[i] = AJP_TENSOR(sig);
     return;
   }
-  float gx0 = float(input_planes.v[7u * plane + i]);
-  float gy0 = float(input_planes.v[8u * plane + i]);
-  float sx = float(input_planes.v[9u * plane + i]);
-  float sy = float(input_planes.v[10u * plane + i]);
   float warped[6];
   for (uint n = 0u; n < 2u; ++n) {
-    precise float gx = gx0 + fl[2u * n] * sx;
-    precise float gy = gy0 + fl[2u * n + 1u] * sy;
-    FusedTap tap = grid_tap(gx, gy, pc.width, pc.height);
+    FusedTap tap = pixel_tap(x, y, fl[2u * n], fl[2u * n + 1u], pc.width, pc.height);
     for (uint ch = 0u; ch < 3u; ++ch) warped[3u * n + ch] = rounded(plane_tap(3u * n + ch, tap));
   }
   float rest = rounded(1.0 - sig);

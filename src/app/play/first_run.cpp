@@ -28,7 +28,7 @@ constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
 
 void note(const std::string& text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-  ImGui::TextWrapped("%s", text.c_str());
+  panel::wrapped(text.c_str());
   ImGui::PopStyleColor();
 }
 
@@ -372,8 +372,15 @@ std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
   std::uint64_t bytes = 0;
   std::vector<std::string> refused;
   for (const EngineRow& row : rows) {
-    if (!row.chosen || !row.usable) continue;
     const std::string_view label = engine_label(row.offer.id);
+    // Le moteur recommandé pour cette carte reste décoché (sa licence ne se coche jamais d'office) : la
+    // calibration mesurerait l'autre sans le dire (A25-02).
+    if (row.usable && !row.chosen && std::ranges::contains(row.offer.badges, core::Badge::Recommended) &&
+        row.offer.id != core::EngineId::Vulkan)
+      refused.push_back(i18n::tr_format(
+          "{}: recommended for this card but not selected. The calibration will measure a slower engine.",
+          label));
+    if (!row.chosen || !row.usable) continue;
     if (row.download && !row.license.empty() && !row.license_accepted) {
       refused.push_back(i18n::tr_format("{}: licence not accepted, it will not be installed", label));
       continue;
@@ -405,7 +412,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
   switch (current(wizard)) {
     case WizardStep::Welcome:
       section(i18n::tr("Welcome"));
-      ImGui::TextWrapped("%s", view.gpu.c_str());
+      panel::wrapped(view.gpu.c_str());
       note(view.tier_line);
       if (!view.display_line.empty()) note(view.display_line);
       note(i18n::tr(

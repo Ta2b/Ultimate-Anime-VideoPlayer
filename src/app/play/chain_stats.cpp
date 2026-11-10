@@ -85,7 +85,7 @@ std::string auto_factor_text(int centi) {
 
 std::string auto_status_text(const core::AutoInfo& info, double source_fps) {
   const int g = std::max(info.granularity, 1);
-  const int centi = info.step * 100 / g;
+  const int centi = info.centi;
   std::string text = i18n::tr_format("Auto ×{} ({:.0f} fps) · display limit ×{}", auto_factor_text(centi),
                                      source_fps * centi / 100.0, auto_factor_text(info.ceiling * 100 / g));
   if (info.predicted > 0)
@@ -223,6 +223,14 @@ void ChainStats::start_sampler() {
     // Sans thread, les relevés restent vides : l'OSD n'affiche alors ni mémoire ni charge du GPU.
     if (started) sampler_ = std::move(*started);
   });
+}
+
+void ChainStats::stop() {
+  std::call_once(sampler_started_, [] {});  // un appel de l'OSD après stop() ne relance pas le fil
+  if (sampler_.joinable()) {
+    sampler_.request_stop();
+    sampler_.join();
+  }
 }
 
 std::optional<std::string> ChainStats::memory() {

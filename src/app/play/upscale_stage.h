@@ -191,6 +191,9 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> copy_out(const gpu::Tensor& image, const Target& out) const;
   // L'instant se rend sans passe : le côté de la paire qu'il regarde est un dessin tenu.
   bool drba_side_held(const kernels::DrbaCall& call) const;
+  // Une coupe entre deux images mesurées hors de la paire courante (b et after, le pont, l'avance du Smooth)
+  // : le jugement de pair_cut, plans de la pré-analyse et score rapporté à la zone hors bandes noires.
+  bool cut_measured(const gpu::PairScores& scores, std::int64_t left_pts_us, std::int64_t right_pts_us) const;
   // Mesures en avance (upscale_ahead.cpp) : quand l'image suivante attend déjà derrière celle-ci,
   // elle est ingérée et mesurée contre elle avant le travail de la paire en cours. À son arrivée,
   // l'image n'attend alors que cette mesure, finie depuis longtemps, et non toute la file du GPU :
@@ -384,6 +387,12 @@ class UpscaleStage final : public RingStage {
     std::optional<std::uint64_t> after_ticket;
     SourceId ticket_left;
     SourceId ticket_right;
+    // Les dates de la paire mesurée (b, after) et de celle du pont : la coupe se juge comme pour (a, b), avec
+    // les plans de la pré-analyse (A09-01).
+    std::int64_t left_pts_us = kNoPts;
+    std::int64_t right_pts_us = kNoPts;
+    std::int64_t bridge_left_pts_us = kNoPts;
+    std::int64_t bridge_right_pts_us = kNoPts;
     // Image sautée en retard (passed) : déjà ingérée comme after, elle reste l'image d'avant de la
     // paire qui suit la reprise (D3). bridge : à mesurer contre l'image de reprise ; bridge_ticket : cette
     // mesure, relue à l'arrivée de l'image d'après.
@@ -482,6 +491,9 @@ class UpscaleStage final : public RingStage {
   std::uint64_t smoothed_holds_ = 0;
   // L'instant de la sortie serait passé quand une image soumise maintenant paraîtrait.
   bool instant_late(const DecodedFrame& frame, std::uint32_t output) const;
+  // Annonce la paire en cours au compte du mode auto ou du Rapide (`free`), avec ce qu'elle vaut si elle
+  // n'a qu'une image (LonePair, A12-12). `runs` : l'interpolation tourne sur cette paire.
+  void expect_pair(std::uint32_t id, int written, std::int64_t lead_us, bool free, bool steady, bool runs);
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
   // Warp après SPAN : deux images sources agrandies (span_of_), et l'image intermédiaire (une par
   // instant à tour de rôle, comme middles_).

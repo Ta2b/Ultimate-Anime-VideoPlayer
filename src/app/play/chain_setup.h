@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "app/play/backend_library.h"
+#include "app/play/chain_shape.h"
 #include "app/play/live_settings.h"
 #include "app/play/model_choice.h"
 #include "app/play/options.h"
@@ -63,14 +64,28 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
 
 // Ordre de déclaration = ordre inverse de destruction : les moteurs partent avant leur backend.
 struct ChainEngines {
+  ChainEngines() = default;
+  ChainEngines(ChainEngines&&) noexcept = default;
+  ChainEngines& operator=(ChainEngines&&) noexcept = default;
+  ChainEngines(const ChainEngines&) = delete;
+  ChainEngines& operator=(const ChainEngines&) = delete;
+  // Le travail encore enfilé (une dernière passe du thread gpu arrêté) finit avant que les moteurs, leurs
+  // graphes et leurs poids partent, sur tous les chemins : lecture, export, sortie anticipée (A30-01).
+  ~ChainEngines() {
+    if (backend) backend->drain();
+  }
+
   BackendLibrary::Instance backend;
   std::string backend_name;           // « tensorrt », « vulkan »
   std::optional<ModelChoice> model;   // SPAN ; rien : sans agrandissement
   std::optional<SpanInt8> span_int8;  // sa variante INT8, construite à sa place (span_int8.h)
   int factor = 1;                     // kSpanFactor avec SPAN
   int top_factor = 1;                 // le plus haut facteur d'interpolation que la lecture peut prendre
-  WorkSize work;                      // entrée des moteurs pour la vidéo de la lecture
-  std::string reduce;                 // « 1920x1080 → Area 1280x720 », ou « 1920x1080 »
+  // La forme de cette ouverture (anneau, ordre du warp) et ses mesures : ce qu'un réglage changé en direct
+  // doit retrouver, sinon la chaîne se rouvre (chain_shape.h).
+  OpenedChain opened;
+  WorkSize work;       // entrée des moteurs pour la vidéo de la lecture
+  std::string reduce;  // « 1920x1080 → Area 1280x720 », ou « 1920x1080 »
   // RIFE cherché même sans interpolation : le menu peut l'allumer.
   std::optional<ModelChoice> rife_choice;
   std::optional<std::filesystem::path> rife_model;
@@ -114,20 +129,13 @@ struct ChainEngines {
                        std::vector<RingSlotDesc> slots) const;
 };
 
-// Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
-// fermée pendant une préparation. Refus : modèle introuvable, backend ou moteur refusés.
-// Le plus haut facteur d'interpolation que la lecture peut prendre : celui choisi à la main, ou en Auto le
-// palier entier le plus haut que l'écran affiche (core/auto_ceiling), jusqu'à rife_factor ; 1 sans
-// interpolation ou écran inconnu en Auto. Décide le warp après SPAN dès ×3 (D5).
-int top_factor(const PlaySettings& settings, double display_hz, double source_fps);
 // Le Rapide est demandé : choisi dans les réglages et pas replié pour cette séance.
 constexpr bool free_requested(const PlaySettings& settings, bool fallback) {
   return settings.auto_free && !fallback;
 }
-// Emplacements du ring : 4 images, 6 de ×3 à ×4, 8 au-delà, et toujours 8 en Rapide (le facteur suit
-// l'écran).
-std::uint32_t ring_depth(const PlaySettings& settings, Factor factor);
 
+// Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
+// fermée pendant une préparation. Refus : modèle introuvable, backend ou moteur refusés.
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings);
 
 }  // namespace ajp::app::play

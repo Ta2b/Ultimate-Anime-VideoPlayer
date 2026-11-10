@@ -58,7 +58,7 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto sdr = parse({"épisode.mkv", "--sdr"});
   REQUIRE(sdr);
   CHECK(sdr->sdr);
-  CHECK(options->ring_rgb10a2);
+  CHECK_FALSE(options->ring_rgb10a2);  // RGBA16 tant que la porte de banding n'est pas mesurée (A49-04)
   const auto ten = parse({"épisode.mkv", "--ring-rgb10a2"});
   REQUIRE(ten);
   CHECK(ten->ring_rgb10a2);
@@ -171,6 +171,25 @@ TEST_CASE("ajp play : taille de travail, 720 lignes par défaut comme le profil 
   CHECK(work_size(1918, 1080, 720).width % 2 == 0);         // largeur paire
 }
 
+TEST_CASE("la taille de travail de la chaîne se calcule une seule fois (A08-15)", "[app][options]") {
+  // « Restaurer les traits » coupé, source 1080p, travail 720 : SPAN ne tourne pas et la source est gardée.
+  // L'anneau et l'étage reprenaient work_size sans cette exception et réduisaient à 720p.
+  CHECK(chain_work_size(true, false, 1920, 1080, 720) == WorkSize{1920, 1080});
+  CHECK(chain_work_size(true, true, 1920, 1080, 720) == WorkSize{1280, 720});  // avec : réduite, puis SPAN
+  CHECK(chain_work_size(true, false, 854, 480, 720) == WorkSize{854, 480});    // SPAN tourne, rien à réduire
+  CHECK(chain_work_size(false, false, 1920, 1080, 720) ==
+        WorkSize{1280, 720});  // sans SPAN : réduction voulue
+  CHECK(chain_work_size(true, false, 1920, 1080, 0) == WorkSize{1920, 1080});
+  PlaySettings s;
+  s.work_height = 720;
+  s.restore_lines = false;
+  CHECK_FALSE(span_runs(s, 1080));
+  CHECK(chain_work_size(s, 1920, 1080) == WorkSize{1920, 1080});
+  s.restore_lines = true;
+  CHECK(span_runs(s, 1080));
+  CHECK(chain_work_size(s, 1920, 1080) == WorkSize{1280, 720});
+}
+
 TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][options]") {
   CHECK(parse({"a.mkv"})->rife_factor == kDefaultRifeFactor);
   CHECK(parse({"a.mkv", "--rife=4"})->rife_factor == 4);
@@ -187,6 +206,8 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
   CHECK(parse({"a.mkv", "--rife=1.25"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(factor_text({.num = 3, .den = 2}) == "×1.5");  // en anglais, la langue par défaut
   CHECK(factor_text({.num = 3, .den = 1}) == "×3");
+  CHECK(factor_text({.num = 48, .den = 24}) == "×2");          // palier fin de l'Auto
+  CHECK(factor_text({.num = 11011, .den = 3200}) == "×3.44");  // palier calé à 165 Hz (A12-02)
   CHECK(default_rife_candidates("/home/x").front() ==
         std::filesystem::path(
             "/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.22_lite.onnx"));
@@ -237,6 +258,12 @@ TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", 
   CHECK(find_model(options, candidates).error().code == RefusalCode::ModelUnreadable);
   CHECK(find_model(PlayOptions{}, std::span(candidates).first(1)).error().code ==
         RefusalCode::ModelUnreadable);
+  // A18-18 : un nom seul (« --rife-model=rife_v4.25.onnx », ce que passe le banc) se trouve dans le dossier
+  // des candidats, d'où que le lecteur soit lancé ; un nom seul absent reste un refus.
+  options.rife_model = std::filesystem::path("present.onnx");
+  CHECK(find_rife_model(options, candidates) == present);
+  options.rife_model = std::filesystem::path("nulle-part.onnx");
+  CHECK(find_rife_model(options, candidates).error().code == RefusalCode::ModelUnreadable);
   // Les candidats par défaut sont l'installation d'AnimeJaNai, puis le dépôt mpv.
   const auto defaults = default_model_candidates("/home/x");
   REQUIRE(defaults.size() == 2);

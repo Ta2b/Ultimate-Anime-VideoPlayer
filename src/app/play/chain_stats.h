@@ -59,6 +59,9 @@ class ChainStats final : public StatsSource {
   std::int64_t output_period_us() const override;
   double output_fps() const override;
   bool uncapped() const override { return live_.free_active(); }
+  // Arrête et joint le fil de relevé, qui ne renaît plus : à appeler avant de détruire le backend dont il
+  // lit les noyaux (A08-02). Sans fil lancé, rien à attendre.
+  void stop();
   std::int64_t source_period_us() const override;
   std::uint64_t skipped() const override { return live_.skipped(); }
 
