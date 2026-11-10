@@ -55,7 +55,14 @@ constexpr std::uint32_t kTensorLocation = 14;
 constexpr std::int32_t kFloat32 = 1;
 constexpr std::int32_t kFloat16 = 10;
 constexpr std::int32_t kInt64 = 7;
-constexpr std::int64_t kElementCap = 1099511627776;  // 2^40 : le produit des dimensions ne déborde pas
+constexpr std::uint64_t kElementCap = 1099511627776;  // 2^40 : le produit des dimensions ne déborde pas
+
+// elements × dim, saturé à kElementCap avant de multiplier : le produit ne déborde jamais (A04-02, un
+// débordement signé était un comportement indéfini). Une dimension négative, lue en non signé, sature.
+std::uint64_t times_capped(std::uint64_t elements, std::uint64_t dim) {
+  if (elements == 0 || dim == 0) return 0;
+  return dim > kElementCap / elements ? kElementCap : std::min(elements * dim, kElementCap);
+}
 
 std::unexpected<Refusal> malformed(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::ModelUnreadable, std::move(detail)});
@@ -91,7 +98,7 @@ struct TensorValues {
 std::expected<TensorValues, Refusal> read_tensor(Bytes message) {
   TensorValues out;
   std::int32_t type = 0;
-  std::int64_t elements = 1;
+  std::uint64_t elements = 1;
   bool has_dims = false;
   Bytes raw;
   Bytes floats;
@@ -122,19 +129,17 @@ std::expected<TensorValues, Refusal> read_tensor(Bytes message) {
             shift += 7;
             if ((byte & 0x80U) == 0) break;
           }
-          elements *= static_cast<std::int64_t>(value);
-          elements = std::min(elements, kElementCap);
+          elements = times_capped(elements, value);
         }
       } else {
-        elements *= static_cast<std::int64_t>(field.scalar);
-        elements = std::min(elements, kElementCap);
+        elements = times_capped(elements, static_cast<std::uint64_t>(field.scalar));
       }
     }
   }
   if (!fields.ok()) return malformed("ONNX : tenseur malformé");
   if (!has_dims) elements = 1;  // scalaire
   out.floating = type == kFloat32 || type == kFloat16 || type == kInt64;
-  if (!out.floating || elements <= 0 || elements > static_cast<std::int64_t>(kMaxConstantElements))
+  if (!out.floating || elements == 0 || elements > static_cast<std::uint64_t>(kMaxConstantElements))
     return out;
   const auto count = static_cast<std::size_t>(elements);
   if (type == kFloat32 && raw.size() == count * 4) {

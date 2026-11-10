@@ -294,6 +294,24 @@ TEST_CASE("TrtexecBuilder : un poids externe qui sort du dossier par un lien sym
   CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
         RefusalCode::ModelMismatch);
 }
+
+TEST_CASE("TrtexecBuilder : le même lien est refusé pour un modèle nommé sans dossier (A04-05)",
+          "[prepare][builder]") {
+  Bench bench("ok", {.external = {"poids.bin"}});
+  Steps steps;
+  auto progress = steps.progress();
+  test::TempDir outside;
+  test::write_file(outside.path() / "secret.bin", "hors du dossier");
+  test::fs::create_symlink(outside.path() / "secret.bin", bench.model.onnx_path.parent_path() / "poids.bin");
+  // « --model=modele.onnx » : le chemin n'a pas de dossier, le dossier courant est celui du modèle.
+  ajp::gpu::ModelSpec bare = bench.model;
+  bare.onnx_path = bench.model.onnx_path.filename();
+  const test::fs::path previous = test::fs::current_path();
+  test::fs::current_path(bench.model.onnx_path.parent_path());
+  const auto built = TrtexecBuilder(bench.config).build(bare, kHd, progress);
+  test::fs::current_path(previous);
+  CHECK(test::refusal(built) == RefusalCode::ModelMismatch);
+}
 #endif
 
 TEST_CASE("TrtexecBuilder : la vérification du moteur peut refuser sa publication", "[prepare][builder]") {

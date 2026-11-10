@@ -34,6 +34,10 @@ struct TrtexecConfig {
   CudaDevice device;
   std::chrono::milliseconds timeout = std::chrono::minutes(20);
   std::string input_name = "input";  // nom de l'entrée des modèles livrés
+  // SHA-256 de trtexec relevé à l'ouverture du moteur : revérifié juste avant chaque lancement, pour
+  // qu'un trtexec remplacé depuis (mise à jour à moitié faite) ne construise rien (A05-05). Vide : pas
+  // de vérification (tests).
+  std::string trtexec_sha256;
 };
 
 // Vérifie un moteur avant sa publication, par exemple en le désérialisant.

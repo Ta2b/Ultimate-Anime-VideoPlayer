@@ -71,6 +71,14 @@ bool transient_rename_refusal([[maybe_unused]] const std::error_code& error) {
 #endif
 }
 
+std::string temp_suffix() {
+  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+  const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+  return std::format("{:x}-{:x}", ticks, thread);
+}
+
+}  // namespace
+
 std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to) {
   std::error_code error;
   auto pause = std::chrono::milliseconds(10);
@@ -82,14 +90,6 @@ std::error_code rename_retrying(const std::filesystem::path& from, const std::fi
     pause = std::min(pause * 2, std::chrono::milliseconds(250));
   }
 }
-
-std::string temp_suffix() {
-  const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-  const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
-  return std::format("{:x}-{:x}", ticks, thread);
-}
-
-}  // namespace
 
 std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
                                           std::span<const std::byte> bytes) {
