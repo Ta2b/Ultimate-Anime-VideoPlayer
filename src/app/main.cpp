@@ -46,6 +46,7 @@ extern "C" {
 #include "app/play/paths.h"
 #include "app/play/player.h"
 #include "app/play/problem_report.h"
+#include "app/play/pumped_task.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
 #include "app/play/updater.h"
@@ -625,6 +626,13 @@ int main(int argc, char** argv) {
   ajp::install_system_thread_names();  // Nsight, gdb et les vidages nomment chaque thread (A20-11)
   const int code = ajp::run_logged([&] { return run_player(argc, argv); });
   ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
+  // Une sonde de fichier bloquée sur un partage muet (run_pumped_for) : un instant pour finir, sinon le
+  // processus se termine sans elle, avant qu'elle ne journalise après close_log (A30-05).
+  if (!ajp::app::play::settle_abandoned_threads(std::chrono::seconds(2))) {
+    ajp::log_channel("app")->warn("sonde d'un fichier toujours bloquée : sortie sans l'attendre");
+    ajp::close_log();
+    std::quick_exit(code);
+  }
   ajp::close_log();
   return code;
 }

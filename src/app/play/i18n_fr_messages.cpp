@@ -175,10 +175,8 @@ constexpr std::array kMessages{
           "cochant « toujours »"},
     Entry{"{} installed", "{} installé"},
     Entry{"{} is available", "{} est disponible"},
-    Entry{"{} is not an NVIDIA RTX 40 (Ada) or RTX 50 (Blackwell) card, or the engine was built without "
-          "these kernels",
-          "{} n'est pas une carte NVIDIA RTX 40 (Ada) ou RTX 50 (Blackwell), ou le moteur a été construit "
-          "sans ces noyaux"},
+    Entry{"{} is not an NVIDIA RTX 40 (Ada) card, or the engine was built without these kernels",
+          "{} n'est pas une carte NVIDIA RTX 40 (Ada), ou le moteur a été construit sans ces noyaux"},
     Entry{"{} missing: only bundled engines are offered",
           "{} absent : seuls les moteurs livrés sont proposés"},
     Entry{"{}: package note", "{} : note du paquet"},

@@ -7,6 +7,7 @@
 #include <iterator>
 #include <system_error>
 
+#include "core/utf8_path.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "prepare/rife_split.h"
@@ -47,7 +48,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
                    .motion = manifest->output == prepare::RifeFusedOutput::Motion,
                    .plan = manifest->plan};
   for (std::size_t i = 0; i < count; ++i) {
-    const std::filesystem::path onnx = folder / manifest->pieces[i];
+    const std::filesystem::path onnx =
+        folder / core::path_from_utf8(manifest->pieces[i]);  // noms en UTF-8 (A04-04)
     auto sha = prepare::sha256_file_known(onnx);
     if (!sha) return std::unexpected(std::move(sha.error()));
     const ModelSpec piece{

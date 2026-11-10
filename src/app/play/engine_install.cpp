@@ -101,6 +101,10 @@ std::string cuda_arch_from_name(std::string_view gpu_name) {
            name[at + 5] <= '9';
   };
   if (has("h100") || has("h200")) return "sm90";
+  // Deux exceptions à la règle par série (A37-03) : la RTX 2050 portable est une Ampere (GA107), la
+  // RTX 3050 A Laptop une Ada (AD106).
+  if (has("rtx 2050")) return "sm86";
+  if (has("3050 a ")) return "sm89";
   if (has("a100")) return "sm80";
   if (has("blackwell")) return "sm120";
   // Les cartes pro : « RTX 5000 Ada Generation » est une Ada, « Quadro RTX 4000 » une Turing (P3.16).
@@ -111,6 +115,15 @@ std::string cuda_arch_from_name(std::string_view gpu_name) {
   if (series('3') || has("rtx a")) return "sm86";
   if (series('2') || has("gtx 16") || has("titan rtx")) return "sm75";
   return {};
+}
+
+bool fp8_presumed(std::string_view gpu_name) {
+  const std::string arch = cuda_arch_from_name(gpu_name);
+  return arch == "sm89" || arch == "sm90" || arch == "sm120";
+}
+
+bool span_fp8_presumed(std::string_view gpu_name) {
+  return cuda_arch_from_name(gpu_name) == "sm89";
 }
 
 std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_name) {

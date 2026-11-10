@@ -319,6 +319,11 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
     return direct();
   };
   if (pick.step == GraphStep::Replay) return replay();
+  // Un emplacement repris par un autre jeu d'adresses (registre plein, GraphBook) garde l'ancien graphe.
+  if (exec != nullptr) {
+    cuda_warn(cudaGraphExecDestroy(exec), "cudaGraphExecDestroy");
+    exec = nullptr;
+  }
   cudaGraph_t captured = nullptr;
   bool queued = false;
   cudaError_t error = cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal);

@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 
+#include "core/utf8_path.h"
 #include "gpu/vulkan/backend/rife_fused_engine.h"
 #include "gpu/vulkan/backend/vulkan_backend.h"
 #include "gpu/vulkan/compute/refuse.h"
@@ -38,7 +39,8 @@ std::expected<Artifact, Refusal> VulkanBackend::build_rife_fused(const ModelSpec
                    .motion = manifest->output == prepare::RifeFusedOutput::Motion,
                    .plan = manifest->plan};
   for (std::size_t i = 0; i < count; ++i) {
-    const std::filesystem::path onnx = folder / manifest->pieces[i];
+    const std::filesystem::path onnx =
+        folder / core::path_from_utf8(manifest->pieces[i]);  // noms en UTF-8 (A04-04)
     auto sha = prepare::sha256_file_known(onnx);
     if (!sha) return std::unexpected(std::move(sha.error()));
     const ModelSpec piece{

@@ -7,6 +7,7 @@
 // travail marqué, puis publication par renommage atomique.
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -16,6 +17,7 @@
 #include <string_view>
 
 #include "core/types.h"
+#include "prepare/key_lock.h"
 
 namespace ajp::prepare {
 
@@ -27,6 +29,9 @@ enum class Production : std::uint8_t {
 struct CacheEntry {
   std::filesystem::path destination;  // fichier final, publié par renommage
   std::string kind = "engine";        // propriétaire des dossiers : « <kind>:<nom du fichier> »
+  // Attente maximale du verrou de la clé : au moins tout ce que le détenteur peut y passer (attente du GPU
+  // puis construction), sans quoi un second lecteur abandonne alors que rien n'est figé (A05-02).
+  std::chrono::milliseconds max_wait = kMaxLockWait;
 
   std::filesystem::path lock_file() const;  // « <destination>.key-lock », jamais supprimé
   // « <destination>.sha256 » : l'empreinte écrite à la publication, revérifiée à chaque reprise (P2.31).

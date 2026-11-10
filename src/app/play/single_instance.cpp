@@ -1,5 +1,6 @@
 #include "app/play/single_instance.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -130,6 +131,8 @@ std::vector<std::string> instance_message_files(std::string_view message) {
 
 namespace {
 
+constexpr auto kReadLimit = std::chrono::seconds(2);  // le message d'un client, comme sous Linux
+
 std::wstring pipe_name(std::string_view key) {
   std::wstring name = L"\\\\.\\pipe\\";
   for (const char c : key) name += static_cast<wchar_t>(c);  // ASCII : « ajp- » et des chiffres
@@ -182,12 +185,7 @@ class InstanceListener {
       }
       last_error_ = 0;
       if (stop.stop_requested()) break;
-      std::string message;
-      std::array<char, 4096> chunk{};
-      DWORD read = 0;
-      while (!message_complete(message) &&
-             ReadFile(pipe_, chunk.data(), static_cast<DWORD>(chunk.size()), &read, nullptr) != 0 && read > 0)
-        message.append(chunk.data(), read);
+      const std::string message = read_message(stop);
       const auto files = instance_message_files(message);
       const auto log = log_channel("app");
       log->info("instance : {} fichier(s) reçu(s) d'un autre lancement", files.size());
@@ -201,6 +199,28 @@ class InstanceListener {
       });
       if (!replied) DisconnectNamedPipe(pipe_);
     }
+  }
+
+  // Le message d'un client, lu sans ReadFile bloquant : seulement ce que PeekNamedPipe dit disponible, au
+  // plus kReadLimit, comme sous Linux. Un client connecté qui se tait ne bloque plus ce thread, ni la
+  // destruction qui le joint (A30-06).
+  std::string read_message(const std::stop_token& stop) const {
+    std::string message;
+    std::array<char, 4096> chunk{};
+    const auto until = std::chrono::steady_clock::now() + kReadLimit;
+    while (!message_complete(message) && !stop.stop_requested() && std::chrono::steady_clock::now() < until) {
+      DWORD available = 0;
+      if (PeekNamedPipe(pipe_, nullptr, 0, nullptr, &available, nullptr) == 0) break;  // client parti
+      if (available == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        continue;
+      }
+      DWORD read = 0;
+      const DWORD wanted = std::min(available, static_cast<DWORD>(chunk.size()));
+      if (ReadFile(pipe_, chunk.data(), wanted, &read, nullptr) == 0 || read == 0) break;
+      message.append(chunk.data(), read);
+    }
+    return message;
   }
 
   HANDLE pipe_;
