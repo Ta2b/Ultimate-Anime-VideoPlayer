@@ -10,11 +10,7 @@
 #                  DistilDRBA v2 lite en fp16, converti par tools/drba/export_distil_drba.py depuis
 #                  routineLife1/DistilDRBA (db51bde, weights/v2_lite.pkl), depuis la release
 #                  models-drba-1 d'ajp-releases, sinon de la branche assets/distil-drba-v2-lite du
-#                  dépôt ; son demi-flot (échelle 0,5) depuis la release models-interp-1 ; DistilDRBA est
-#                  sous licence MIT
-#
-# Chaque fichier est épinglé ici par son SHA-256 : aucune empreinte n'est lue d'une release, qu'un envoi
-# --clobber pourrait changer (A28-06, A46-01).
+#                  dépôt ; DistilDRBA est sous licence MIT
 #
 #   tools/release/fetch-models.sh <dest> [dossier-de-cache]
 #
@@ -85,18 +81,22 @@ for entry in "${DRBA[@]}"; do
   check "$sha" "$DEST/rife/$name"
 done
 
-# Le demi-flot de DistilDRBA, exporté par export-interpolation-models.yml et joint à la release models-interp-1.
-# Seul ce nom est pris, à son empreinte : le DistilDRBA entier vient de models-drba-1 ci-dessus, et le reste de la
-# release (anciens graphes GMFSS, FP8 facultatifs) ne part jamais dans les paquets (A46-15).
+# Le demi-flot de DistilDRBA : exporté par le workflow export-interpolation-models.yml, joint à la release
+# models-interp-1 avec son SHA256SUMS. Facultatif : tant que la release n'existe pas, les paquets partent sans lui
+# (le lecteur le signale absent). Tout ce que son SHA256SUMS liste est pris, sauf les graphes de GMFSS (gmfss_*),
+# retiré du lecteur (0.10.0) ; les graphes FP8 de DistilDRBA, facultatifs (plus lents que le fusionné), sont dans
+# SHA256SUMS.facultatif et ne sont jamais téléchargés ici.
 INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/$RELEASE_REPO/releases/download/models-interp-1}"
-INTERP=(
-  "edbbb928572fd45efad2bbfa7010966b2b2f6771b01ad2bd8965ccbd6bfcb145 distil_drba_v2_lite_s05.onnx"
-)
-for entry in "${INTERP[@]}"; do
-  read -r sha name <<<"$entry"
-  curl -fsSL -o "$DEST/rife/$name" "$INTERP_URL/$name"
-  check "$sha" "$DEST/rife/$name"
-done
+if curl -fsSL -o "$CACHE/interp-SHA256SUMS" "$INTERP_URL/SHA256SUMS" 2>/dev/null; then
+  while read -r sha name; do
+    [ -n "${name:-}" ] || continue
+    case "$name" in gmfss_*) continue ;; esac
+    curl -fsSL -o "$DEST/rife/$name" "$INTERP_URL/$name"
+    check "$sha" "$DEST/rife/$name"
+  done < "$CACHE/interp-SHA256SUMS"
+else
+  echo "modèles d'interpolation (DRBA demi-flot) : release models-interp-1 absente, non joints" >&2
+fi
 
 cat > "$DEST/LICENCES.txt" <<'TXT'
 Modèles livrés avec le lecteur
