@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "app/play/links.h"
+#include "app/play/visible_error.h"
 #include "core/auto_rate.h"
 
 namespace ajp::app::play {
@@ -35,6 +36,16 @@ bool fits(const OpenedChain& opened, const PlaySettings& wanted) {
   if (wanted.rife_factor < 2) return true;
   const ChainShape shape = chain_shape(wanted, opened);
   return shape.ring <= opened.shape.ring && shape.warp_after_span == opened.shape.warp_after_span;
+}
+
+i18n::Translated fused_refusal_notice(const OpenedChain& opened) {
+  if (opened.drba_fused_refused)
+    return i18n::ui_tr_format("Fused DistilDRBA unavailable ({}): the whole network runs, slower",
+                              visible_error(Refusal{*opened.drba_fused_refused, ""}));
+  if (opened.rife_fused_refused)
+    return i18n::ui_tr_format("Fused RIFE unavailable ({}): the whole network runs, slower",
+                              visible_error(Refusal{*opened.rife_fused_refused, ""}));
+  return {};
 }
 
 }  // namespace ajp::app::play

@@ -181,6 +181,24 @@ TEST_CASE("Étage gpu : RIFE ×3, deux instants par paire, l'entrée remplie une
   CHECK(rig.backend.count("rife_time") == 2);   // puis l'instant seul
 }
 
+TEST_CASE("Étage gpu : RIFE à chaud, pas de reprise après une paire sans passe (A09-13)", "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.rife_warm = true;
+  rig.motion.offer_warm(true);
+  rig.backend.score(SourceId{3}, SourceId{4}, 0.0, 10);  // dessin tenu : aucune passe
+  rig.start(std::move(s));
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(14));
+  rig.stage.reset();
+  CHECK(rig.backend.count("engine rife_motion") == 4);  // (3,4), tenue, n'en a pas
+  // (1,2) n'a pas encore de mesure de mouvement ; (2,3), calme, reprend les blocs grossiers de (1,2) ;
+  // (4,5) ne reprend pas ceux de (2,3), vieux de deux sources, (3,4) n'ayant pas tourné ; (5,6) suit (4,5).
+  CHECK(rig.motion.warm_asked() == 2);
+}
+
 TEST_CASE("Étage gpu : RIFE mouvement, une passe au milieu tant que le mouvement est faible",
           "[app][stage]") {
   Rig rig;
