@@ -3,6 +3,8 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <future>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,3 +43,39 @@ TEST_CASE("Instance unique : un second lancement passe sa vidéo au premier, qui
   CHECK(shares_instance(plain));
   CHECK_FALSE(shares_instance(scripted));
 }
+
+TEST_CASE("Instance unique : deux lancements simultanés, un seul prend la place (A19-13)",
+          "[app][instance]") {
+  REQUIRE(SDL_Init(SDL_INIT_EVENTS));
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-race";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::string key = instance_key(dir);
+  auto a = std::async(std::launch::async, [&] { return claim_instance(dir, key, {"a.mkv"}); });
+  auto b = std::async(std::launch::async, [&] { return claim_instance(dir, key, {"b.mkv"}); });
+  InstanceClaim first = a.get();
+  InstanceClaim second = b.get();
+  const int listeners = (first.listener != nullptr ? 1 : 0) + (second.listener != nullptr ? 1 : 0);
+  CHECK(listeners == 1);
+  CHECK(first.forwarded != second.forwarded);
+  first.listener.reset();
+  second.listener.reset();
+  SDL_Quit();
+  std::filesystem::remove_all(dir);
+}
+
+#ifndef _WIN32
+TEST_CASE("Instance unique : un socket resté d'un lecteur arrêté net est repris (A19-13)",
+          "[app][instance]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-stale";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  std::ofstream(dir / "instance.sock") << "";  // ni socket ni lecteur derrière
+  const std::string key = instance_key(dir);
+  auto claim = claim_instance(dir, key, {"film.mkv"});
+  CHECK(claim.listener != nullptr);
+  CHECK_FALSE(claim.forwarded);
+  claim.listener.reset();
+  std::filesystem::remove_all(dir);
+}
+#endif

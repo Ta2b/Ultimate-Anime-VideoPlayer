@@ -236,9 +236,11 @@ TEST_CASE("Une migration coupée ne passe jamais pour finie : la copie recommenc
   std::ofstream(local / "engines.migration" / "span.plan") << "pla";
   CHECK(move_heavy_data(roaming, local) == 1);
   CHECK_FALSE(fs::exists(local / "engines.migration"));
-  std::ifstream span(local / "engines" / "span.plan");
   std::string text;
-  std::getline(span, text);
+  {
+    std::ifstream span(local / "engines" / "span.plan");  // refermé avant remove_all : Windows refuse sinon
+    std::getline(span, text);
+  }
   CHECK(text == "plan entier");
   CHECK(fs::is_regular_file(local / "engines" / "rife.plan"));
   fs::remove_all(root);

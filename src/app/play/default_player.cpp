@@ -418,7 +418,13 @@ void leave_lone_console() {
     if (err && freopen_s(&reopened, "CONOUT$", "w", stderr) == 0)
       SetStdHandle(STD_ERROR_HANDLE, reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stderr))));
   }
-  if (GetConsoleWindow() != nullptr) SetConsoleOutputCP(CP_UTF8);  // le journal est en UTF-8
+  // Le journal est en UTF-8. La page de code est celle de la console, que le terminal parent garde après
+  // nous : elle lui est rendue à la sortie (A19-11).
+  if (GetConsoleWindow() != nullptr) {
+    static UINT previous = GetConsoleOutputCP();
+    if (previous != CP_UTF8 && SetConsoleOutputCP(CP_UTF8) != 0)
+      std::atexit([] { SetConsoleOutputCP(previous); });
+  }
 #endif
 }
 
