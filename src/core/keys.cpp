@@ -262,4 +262,84 @@ std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml) {
   return map;
 }
 
+bool fixed_key(Key key) {
+  constexpr std::array fixed{Key::Q, Key::F,      Key::Escape,   Key::M,  Key::J,
+                             Key::Z, Key::X,      Key::A,        Key::P,  Key::N,
+                             Key::O, Key::PageUp, Key::PageDown, Key::Up, Key::Down};
+  return std::ranges::find(fixed, key) != fixed.end();
+}
+
+namespace {
+
+// Une entrée de [keys] : l'action et sa touche (aucune pour ""), ou le texte à dire si elle est ignorée.
+struct Entry {
+  Action action;
+  std::optional<Chord> chord;
+};
+std::expected<Entry, std::string> read_entry(std::string_view name, const toml::node& node) {
+  const std::optional<Action> action = parse_action(name);
+  const std::optional<std::string> text = node.value_exact<std::string>();
+  if (!text) return std::unexpected(std::string(name));
+  if (!action) return std::unexpected(std::format("{} = {}", name, *text));
+  if (text->empty()) return Entry{.action = *action, .chord = std::nullopt};
+  const auto chord = parse_chord(*text);
+  if (!chord) return std::unexpected(std::format("{} = {}", name, *text));
+  if (!chord->ctrl && !chord->alt && !chord->meta && fixed_key(chord->key))
+    return std::unexpected(std::format("{} = {} (fixed)", name, *text));  // A24-06
+  return Entry{.action = *action, .chord = *chord};
+}
+
+// L'autre action qui tient déjà cette touche.
+std::optional<Action> other_owner(const KeyMap& map, Action action, const Chord& chord) {
+  for (std::size_t other = 0; other < kActionCount; ++other)
+    if (other != index(action) && map.chord(static_cast<Action>(other)) == chord)
+      return static_cast<Action>(other);
+  return std::nullopt;
+}
+
+}  // namespace
+
+KeysRead read_keys(std::string_view profile_toml) {
+  KeysRead out{.map = KeyMap::defaults(), .ignored = {}};
+  auto root = fields::parse(profile_toml, RefusalCode::ProfileUnreadable, "profil");
+  if (!root) {
+    out.ignored.push_back(root.error().detail);
+    return out;
+  }
+  const toml::node* keys_node = root->get("keys");
+  if (keys_node == nullptr) return out;
+  const toml::table* keys = keys_node->as_table();
+  if (keys == nullptr) {
+    out.ignored.emplace_back("keys");
+    return out;
+  }
+  std::vector<Action> redefined;
+  for (const auto& [key, node] : *keys) {
+    if (key.str().starts_with("profile_")) continue;  // les profils retirés d'un ancien user.toml
+    auto entry = read_entry(key.str(), node);
+    if (!entry) {
+      out.ignored.push_back(std::move(entry.error()));
+      continue;
+    }
+    const Action action = entry->action;
+    out.map.chords_[index(action)] = entry->chord;
+    redefined.push_back(action);
+  }
+  // Les conflits après toutes les redéfinitions (échanger deux touches reste possible) : l'action en conflit
+  // reprend son raccourci par défaut s'il est libre, sinon aucun.
+  const KeyMap defaults = KeyMap::defaults();
+  for (const Action action : redefined) {
+    const std::optional<Chord> chord = out.map.chord(action);
+    const std::optional<Action> owner = chord ? other_owner(out.map, action, *chord) : std::nullopt;
+    if (!owner) continue;
+    // Sans langue : le texte va à l'écran. « toggle_grade = Space (pause) » nomme l'action qui tient la
+    // touche.
+    out.ignored.push_back(
+        std::format("{} = {} ({})", action_name(action), format_chord(*chord), action_name(*owner)));
+    const std::optional<Chord>& fallback = defaults.chord(action);
+    out.map.chords_[index(action)] = fallback && !out.map.action_for(*fallback) ? fallback : std::nullopt;
+  }
+  return out;
+}
+
 }  // namespace ajp::core
