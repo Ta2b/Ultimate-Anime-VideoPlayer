@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <system_error>
@@ -359,6 +360,19 @@ std::expected<std::string, Refusal> run_update_check(UpdateState& state, const s
   state.latest_version = checked->newer->version;
   state.notes_url = checked->newer->notes_url;
   return checked->message;
+}
+
+std::optional<std::expected<std::string, Refusal>> check_updates_in(
+    const fs::path& state_file, const std::stop_token& stop,
+    const std::function<bool(const UpdateState&)>& due) {
+  static std::mutex checking;
+  const std::scoped_lock lock(checking);
+  UpdateState state = load_update_state(state_file);
+  if (due && !due(state)) return std::nullopt;
+  auto message = run_update_check(state, stop);
+  if (auto kept = save_update_state(state_file, state); !kept && message)
+    return std::expected<std::string, Refusal>(std::unexpected(std::move(kept.error())));
+  return message;
 }
 
 }  // namespace ajp::app::play

@@ -1,6 +1,8 @@
 #include "app/play/span_int8.h"
 
 #include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -56,6 +58,28 @@ SpanInt8Lookup refused(std::string note) {
   return SpanInt8Lookup{.variant = std::nullopt, .note = std::move(note)};
 }
 
+// Un reçu ou un paquet abîmé (coupure pendant l'écriture : vide, tronqué) n'est pas un jugement de la porte :
+// il se refait comme un reçu périmé, sans bloquer la préparation automatique (A02-14).
+SpanInt8Lookup stale(std::string note) {
+  SpanInt8Lookup out = refused(std::move(note));
+  out.stale = true;
+  return out;
+}
+
+// Le reçu lu, avec un format ; sinon son refus, périmé (stale).
+std::expected<toml::table, SpanInt8Lookup> read_receipt(const std::filesystem::path& receipt_path,
+                                                        const std::string& where) {
+  std::ifstream in(receipt_path, std::ios::binary);  // pas parse_file : un chemin Unicode sous Windows
+  std::ostringstream text;
+  text << in.rdbuf();
+  toml::parse_result parsed = toml::parse(text.str());
+  if (!parsed)
+    return std::unexpected(stale(i18n::tr_format("{} unreadable: {}", where, parsed.error().description())));
+  if (parsed.table()["format"].value_or(std::string_view()).empty())
+    return std::unexpected(stale(i18n::tr_format("{} unreadable: {}", where, i18n::tr("empty receipt"))));
+  return std::move(parsed).table();
+}
+
 }  // namespace
 
 TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
@@ -106,12 +130,9 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   if (!std::filesystem::exists(receipt_path, error)) return {};
 
   const std::string where = prepare::utf8_path(receipt_path.filename());
-  std::ifstream in(receipt_path, std::ios::binary);  // pas parse_file : un chemin Unicode sous Windows
-  std::ostringstream text;
-  text << in.rdbuf();
-  toml::parse_result parsed = toml::parse(text.str());
-  if (!parsed) return refused(i18n::tr_format("{} unreadable: {}", where, parsed.error().description()));
-  const toml::table& receipt = parsed.table();
+  const std::expected<toml::table, SpanInt8Lookup> read = read_receipt(receipt_path, where);
+  if (!read) return read.error();
+  const toml::table& receipt = *read;
   const std::string_view format = receipt["format"].value_or(std::string_view());
   const bool v2 = kind == SpanVariantKind::Fp8Cutlass && format == gpu::span_fp8::kReceiptFormat;
   if (format != limits.receipt_format && !v2) return refused(i18n::tr_format("{}: unknown format", where));
@@ -128,11 +149,6 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   // Un refus d'une porte plus ancienne, ou d'une autre carte ou d'autres noyaux, se refait (stale).
   const bool old_gate =
       v2 && fp8 != nullptr && receipt["gate_version"].value_or(std::int64_t{1}) < gpu::span_fp8::kGateVersion;
-  const auto stale = [](std::string note) {
-    SpanInt8Lookup out = refused(std::move(note));
-    out.stale = true;
-    return out;
-  };
   const bool scores_pass = variant.psnr_mean_db >= limits.min_psnr_mean &&
                            variant.psnr_worst_db >= limits.min_psnr_worst &&
                            variant.ssim_worst >= limits.min_ssim_worst;
@@ -152,7 +168,7 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   auto model_sha = prepare::sha256_file_known(variant.onnx);
   if (!model_sha) return refused(model_sha.error().detail);
   if (receipt["model_sha256"].value_or(std::string_view()) != *model_sha)
-    return refused(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(onnx.filename())));
+    return stale(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(onnx.filename())));
   if (v2 && fp8 != nullptr) {
     // Étape 3.7b : le paquet ne vaut que pour l'appareil, les noyaux et les tailles où la porte l'a jugé.
     const std::string_view arch = receipt["gpu_arch"].value_or(std::string_view());

@@ -135,9 +135,10 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const std::vector<std::filesystem::path> places = motion_model_dirs(h.paths, rife);
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
-  // Sans moteur chargé, le FP8 se présume sur une RTX (le moteur TensorRT le calcule dès Ada) ; la chaîne
-  // retombe sur l'Équilibre au chargement si la carte ne le calcule pas.
-  const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia && gpu_facts(h.screen).tensor_cores;
+  // Sans moteur chargé, le FP8 se présume d'après le nom de la carte, avec la règle du moteur : TensorRT le
+  // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02). Le moteur le confirme à l'ouverture.
+  const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
+                          gpu_facts(h.screen).tensor_cores && fp8_presumed(gpu_facts(h.screen).name);
   // Le mode Performance de SPAN (noyaux CUTLASS) : une RTX 40 (Ada, 8.9, portable compris : le nom de la
   // carte le dit, « RTX 4050 Laptop GPU » comme « RTX 4070 Ti ») et le module TensorRT ; le moteur le
   // confirme à l'ouverture d'une vidéo.
@@ -146,7 +147,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .gpu_name = gpu_facts(h.screen).name,
       .tensorrt_present = tensorrt_backend_present(h.catalog, h.paths),
       .capability = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
-                    cuda_arch_from_name(gpu_facts(h.screen).name) == "sm89" &&
+                    span_fp8_presumed(gpu_facts(h.screen).name) &&
                     tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = window_display(h.screen.window());

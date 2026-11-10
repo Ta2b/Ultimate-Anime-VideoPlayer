@@ -102,4 +102,12 @@ std::expected<std::string, Refusal> run_update_check(UpdateState& state, const s
 std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop,
                                                      const UpdateFetch& fetch, std::int64_t now_unix);
 
+// run_update_check sur update.toml : relu, vérifié puis réécrit sous un verrou du processus. Le thread
+// « updates » et le bouton « Check now » ne vérifient plus en même temps, et le second relit le résultat
+// du premier au lieu de l'écraser (A30-03). due, s'il est donné, juge l'état relu : faux, rien n'est fait
+// (nullopt). Un état non réécrit rend son refus.
+std::optional<std::expected<std::string, Refusal>> check_updates_in(
+    const std::filesystem::path& state_file, const std::stop_token& stop,
+    const std::function<bool(const UpdateState&)>& due = {});
+
 }  // namespace ajp::app::play

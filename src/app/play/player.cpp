@@ -191,6 +191,17 @@ CalibrationHost calibration_host(const GpuFacts& here, int display_height, const
   return {.gpu = here.name, .display_height = display_height, .tensorrt = tensorrt, .driver = here.driver};
 }
 
+// Une vérification du thread des mises à jour, si elle est due, sous le verrou de check_updates_in (A30-03).
+void check_updates_logged(const std::filesystem::path& update_file, const std::stop_token& stop,
+                          UpdateMode mode, UpdateFrequency frequency) {
+  const std::int64_t now =
+      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+          .count();
+  const auto message = check_updates_in(
+      update_file, stop, [&](const UpdateState& state) { return update_due(state, mode, frequency, now); });
+  if (message) log_channel("app")->info("mise à jour : {}", *message ? **message : message->error().detail);
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -232,30 +243,22 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   }
   if (!options.bench_out && !options.data_dir) {
     if (saved->update_mode != UpdateMode::Never) {
-      auto started = start_thread(
-          "updates", ThreadReport([](const Refusal& refused) {
-            log_channel("app")->warn("mise à jour : {}", refused.detail);
-          }),
-          [=, &playing, mode = saved->update_mode, frequency = saved->update_frequency](
-              const std::stop_token& stop, const ThreadReport&) {
-            std::mutex mutex;
-            std::condition_variable_any wake;
-            for (bool first = true; !stop.stop_requested(); first = false) {
-              const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
-                                           std::chrono::system_clock::now().time_since_epoch())
-                                           .count();
-              UpdateState state = load_update_state(update_file);
-              if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
-                const auto message = run_update_check(state, stop);
-                if (const auto kept = save_update_state(update_file, state); !kept)
-                  log_channel("app")->warn("update.toml : {}", kept.error().detail);
-                log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
-              }
-              if (frequency == UpdateFrequency::Launch) return;
-              std::unique_lock lock(mutex);
-              wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
-            }
-          });
+      auto started =
+          start_thread("updates", ThreadReport([](const Refusal& refused) {
+                         log_channel("app")->warn("mise à jour : {}", refused.detail);
+                       }),
+                       [=, &playing, mode = saved->update_mode, frequency = saved->update_frequency](
+                           const std::stop_token& stop, const ThreadReport&) {
+                         std::mutex mutex;
+                         std::condition_variable_any wake;
+                         for (bool first = true; !stop.stop_requested(); first = false) {
+                           if (first || !playing.load())
+                             check_updates_logged(update_file, stop, mode, frequency);
+                           if (frequency == UpdateFrequency::Launch) return;
+                           std::unique_lock lock(mutex);
+                           wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
+                         }
+                       });
       if (started)
         update_check = std::move(*started);
       else

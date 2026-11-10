@@ -6,6 +6,7 @@
 #include <chrono>
 #include <expected>
 #include <format>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -32,10 +33,21 @@ std::expected<T, Refusal> run_pumped(std::string_view name, Fn fn) {
   return task->get();
 }
 
+// Les threads que run_pumped_for laisse à leur sort, gardés plutôt que détachés (A30-05) : finished dit
+// s'il a rendu la main. Au-delà de kMaxAbandonedThreads encore bloqués, une nouvelle sonde est refusée
+// tout de suite au lieu d'ajouter un thread et un descripteur bloqués de plus (A33-07).
+inline constexpr std::size_t kMaxAbandonedThreads = 2;
+void abandon_thread(std::jthread thread, std::function<bool()> finished);
+std::size_t abandoned_running();
+// À la sortie du processus : attend au plus grace que les threads abandonnés finissent, et les joint.
+// Faux si l'un reste bloqué : il pourrait journaliser après close_log ou toucher SDL après SDL_Quit, et
+// l'appelant termine alors par std::quick_exit, ses fichiers déjà écrits (A30-05).
+bool settle_abandoned_threads(std::chrono::milliseconds grace);
+
 // run_pumped borné à limit (P2.15) : un partage réseau muet bloque read() dans le noyau, hors de portée du
-// rappel d'interruption de FFmpeg. Passé limit, le thread est laissé à son sort (détaché, il finira ou
-// restera bloqué sans retenir la fermeture) et le refus dit IoFailed. pump : pomper la fenêtre (faux avant
-// qu'elle n'existe).
+// rappel d'interruption de FFmpeg. Passé limit, le thread est laissé à son sort (abandon_thread : il finira
+// ou restera bloqué sans retenir la fermeture) et le refus dit IoFailed. pump : pomper la fenêtre (faux
+// avant qu'elle n'existe).
 template <class T, class Fn>
 std::expected<T, Refusal> run_pumped_for(std::string_view name, std::chrono::milliseconds limit, bool pump,
                                          Fn fn) {
@@ -43,6 +55,11 @@ std::expected<T, Refusal> run_pumped_for(std::string_view name, std::chrono::mil
     std::mutex mutex;
     std::optional<std::expected<T, Refusal>> result;
   };
+  if (const std::size_t stuck = abandoned_running(); stuck >= kMaxAbandonedThreads) {
+    std::string detail = std::format("{} : {} essais précédents ne répondent toujours pas",  // i18n-ok
+                                     name, stuck);
+    return std::unexpected(Refusal{RefusalCode::IoFailed, std::move(detail)});
+  }
   auto shared = std::make_shared<Shared>();
   auto started =
       start_thread(name, ThreadReport([shared](const Refusal& refusal) {
@@ -55,7 +72,6 @@ std::expected<T, Refusal> run_pumped_for(std::string_view name, std::chrono::mil
                      shared->result = std::move(done);
                    });
   if (!started) return std::unexpected(std::move(started.error()));
-  started->detach();
   constexpr auto kSlice = std::chrono::milliseconds(16);
   const auto until = std::chrono::steady_clock::now() + limit;
   while (std::chrono::steady_clock::now() < until) {
@@ -66,6 +82,10 @@ std::expected<T, Refusal> run_pumped_for(std::string_view name, std::chrono::mil
     if (pump) pump_window_events();
     std::this_thread::sleep_for(kSlice);
   }
+  abandon_thread(std::move(*started), [shared] {
+    const std::scoped_lock lock(shared->mutex);
+    return shared->result.has_value();
+  });
   const auto seconds = limit.count() / 1000;
   std::string detail = std::format("{} : pas de réponse en {} s", name, seconds);  // i18n-ok : journal
   return std::unexpected(Refusal{RefusalCode::IoFailed, std::move(detail)});

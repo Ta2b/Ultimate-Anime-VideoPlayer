@@ -5,6 +5,8 @@
 #include <ctime>
 #include <expected>
 #include <format>
+#include <string>
+#include <utility>
 
 #include <SDL3/SDL_misc.h>
 #include <SDL3/SDL_video.h>
@@ -156,11 +158,9 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (ImGui::Button(i18n::tr("Check now"))) {
     result.pending = start_task<std::string>(
         "settings", [state_file, stop = result.stop] -> std::expected<std::string, Refusal> {
-          UpdateState current = load_update_state(state_file);
-          auto message = run_update_check(current, stop->get_token());
-          if (const auto kept = save_update_state(state_file, current); !kept && message)
-            return std::unexpected(kept.error());
-          return message;
+          auto checked = check_updates_in(state_file, stop->get_token());  // sans due : toujours fait
+          if (!checked) return std::unexpected(Refusal{RefusalCode::Cancelled, std::string()});
+          return std::move(*checked);
         });
     result.text.clear();
     result.refused = false;

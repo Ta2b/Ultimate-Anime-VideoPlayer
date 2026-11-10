@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <variant>
@@ -99,6 +100,11 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
                                                 core::EngineId::OpenVino, core::EngineId::Metal};
   return std::ranges::any_of(networks,
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
+}
+
+// « Laptop GPU » depuis les RTX 30, « with Max-Q Design » sur les portables RTX 20 (A37-04).
+bool laptop_gpu(std::string_view name) {
+  return name.find("Laptop") != std::string_view::npos || name.find("Max-Q") != std::string_view::npos;
 }
 
 }  // namespace
@@ -220,7 +226,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
-    view.laptop = gpu.name.find("Laptop") != std::string::npos;
+    view.laptop = laptop_gpu(gpu.name);
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).

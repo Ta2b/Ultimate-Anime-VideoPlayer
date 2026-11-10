@@ -20,11 +20,15 @@ rules = [
   { vendor = "nvidia", contains = ["rtx 3080", "laptop"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 3070", "laptop"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 2080", "laptop"], tier = 2 },
+  # Les portables RTX 20 ne portent pas « Laptop » : « GeForce RTX 2080 with Max-Q Design » (A37-04). Ceux sans
+  # suffixe gardent le nom du bureau ; la calibration les corrige.
+  { vendor = "nvidia", contains = ["rtx 2080", "max-q"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 3050", "laptop"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx 2050"], tier = 1 },
   # Les autres RTX portables (4060, 4050, 3060, 5060, 2070, 2060, RTX A… Laptop) : une tranche sous la règle
   # générale de leur famille, plus bas dans la table (A07-08).
   { vendor = "nvidia", contains = ["rtx", "laptop"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx", "max-q"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx 5090"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 5080"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 4090"], tier = 4 },
