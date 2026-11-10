@@ -170,9 +170,9 @@ jobs:
         with:
           persist-credentials: false
       # L'image du runner (donc la version de MSVC) entre dans la clé : vcpkg range ses paquets par une
-      # empreinte qui la contient, et un cache d'une autre image, restauré à l'identique, ne servait plus à
-      # rien (15 min de Configuration avec le cache, 38 sans). Une clé stable par image, manifeste et ports,
-      # sans github.run_id : une entrée par combinaison au lieu d'une par exécution, que sccache évinçait.
+      # empreinte qui la contient : le cache d'une autre image, restauré, ne sert plus. Une clé stable par
+      # image, manifeste et ports, sans github.run_id : une entrée par combinaison au lieu d'une par
+      # exécution, que sccache évinçait du quota du dépôt.
       - id: runner-image
         shell: pwsh
         run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
