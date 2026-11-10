@@ -23,5 +23,6 @@ int manifest(const std::uint8_t* data, std::size_t size);      // manifeste de m
 int options(const std::uint8_t* data, std::size_t size);       // ligne de commande
 int engine_index(const std::uint8_t* data, std::size_t size);  // engines.lock, engines-nvidia.lock
 int update_state(const std::uint8_t* data, std::size_t size);  // update.toml
+int prepare_onnx(const std::uint8_t* data, std::size_t size);  // lecteurs ONNX de prepare/ (A04-08)
 
 }  // namespace ajp::fuzz

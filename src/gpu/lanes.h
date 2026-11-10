@@ -70,6 +70,7 @@ class LaneHazards {
       state.written = op.mark;
       state.read = {};
     }
+    if (states_.size() > prune_above_) prune();
     return op;
   }
 
@@ -79,8 +80,16 @@ class LaneHazards {
     const std::size_t self = lane_index(lane);
     std::array<std::uint64_t, kLanes> need = marks_;
     need[self] = 0;
-    return settle(self, need);
+    Op op = settle(self, need);
+    prune();
+    return op;
   }
+
+  // Une mémoire rendue (libérée derrière toutes les voies) : son adresse n'a plus d'histoire. Reprise par
+  // un autre tampon, elle n'hérite pas des lectures de l'ancien (A21-09).
+  void forget(std::uintptr_t resource) { states_.erase(resource); }
+
+  std::size_t tracked() const { return states_.size(); }  // adresses suivies (tests)
 
   // Rang de la dernière opération de lane ; 0 si aucune.
   std::uint64_t last(Lane lane) const { return marks_[lane_index(lane)]; }
@@ -97,6 +106,25 @@ class LaneHazards {
       need[state.writer] = std::max(need[state.writer], state.written);
   }
 
+  // Une adresse dont chaque accès est déjà attendu par toutes les autres voies n'imposera plus aucune
+  // attente : l'oublier ne change aucun résultat. Sans cela la table gardait toutes les adresses vues
+  // (tampons libérés, anciennes générations de l'anneau) pour toute la vie du backend (A21-09).
+  bool settled(const State& state) const {
+    for (std::size_t other = 0; other < kLanes; ++other) {
+      if (state.written != 0 && other != state.writer && waited_[other][state.writer] < state.written)
+        return false;
+      for (std::size_t reader = 0; reader < kLanes; ++reader) {
+        if (other != reader && waited_[other][reader] < state.read[reader]) return false;
+      }
+    }
+    return true;
+  }
+  void prune() {
+    std::erase_if(states_, [this](const auto& entry) { return settled(entry.second); });
+    // Ce qui reste est encore utile : le seuil suit, pour ne pas tout reparcourir à chaque accès.
+    prune_above_ = std::max(kPruneAbove, states_.size() * 2);
+  }
+
   Op settle(std::size_t self, const std::array<std::uint64_t, kLanes>& need) {
     Op op{.mark = ++marks_[self], .waits = {}};
     for (std::size_t other = 0; other < kLanes; ++other) {
@@ -110,9 +138,11 @@ class LaneHazards {
   std::array<std::uint64_t, kLanes> marks_{};
   // waited_[a][b] : rang de b que la file de a attend déjà.
   std::array<std::array<std::uint64_t, kLanes>, kLanes> waited_{};
-  // Les adresses que le backend a vues ; une mémoire libérée puis rendue à la même adresse ne
-  // coûte que des attentes de trop.
+  // Les adresses que le backend a vues et qui peuvent encore imposer une attente (prune) ; une mémoire
+  // libérée puis rendue à la même adresse ne coûte que des attentes de trop.
   std::unordered_map<std::uintptr_t, State> states_;
+  static constexpr std::size_t kPruneAbove = 256;
+  std::size_t prune_above_ = kPruneAbove;
 };
 
 }  // namespace ajp::gpu

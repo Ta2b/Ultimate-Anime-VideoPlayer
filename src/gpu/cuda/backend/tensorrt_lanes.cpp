@@ -74,6 +74,12 @@ void TensorRtBackend::destroy_lanes() {
     streams_[lane] = nullptr;
   }
   stream_ = nullptr;
+  // A33-01 : la réserve CUDA garde son sommet pendant la lecture (tune_pool) ; à la fermeture de la chaîne,
+  // ce qu'elle ne prête plus revient au pilote (accueil, calibration et trtexec ont la mémoire vidéo).
+  cudaMemPool_t pool = nullptr;
+  if (cudaDeviceSynchronize() == cudaSuccess && cudaDeviceGetDefaultMemPool(&pool, device_) == cudaSuccess)
+    cudaMemPoolTrimTo(pool, 0);
+  static_cast<void>(clear_error());
 }
 
 void TensorRtBackend::use_lane(Lane lane) {

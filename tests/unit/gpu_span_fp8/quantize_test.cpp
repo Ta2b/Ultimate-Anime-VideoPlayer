@@ -8,6 +8,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/span_fp8/derive.h"  // les deux ensemble : une seule kE4m3Max (A02-09)
+
 using namespace ajp::gpu::span_fp8;
 
 TEST_CASE("E4M3 sur l'hôte : valeurs exactes, arrondi pair, saturation", "[span_fp8][quantize]") {
@@ -64,4 +66,10 @@ TEST_CASE("par canal, l'erreur de reconstruction ne dépasse jamais celle par te
   const std::vector<float> scales = channel_scales(zero, 2);
   CHECK(scales[0] == 1.0F);
   CHECK(scales[1] == 0.5F / kE4m3Max);
+}
+
+TEST_CASE("derive.h et quantize.h se lisent ensemble, une seule borne E4M3 (A02-09)",
+          "[span_fp8][quantize]") {
+  STATIC_CHECK(kE4m3Max == 448.0F);
+  CHECK(e4m3_round(kE4m3Max * 2.0F) == kE4m3Max);
 }

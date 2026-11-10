@@ -215,7 +215,7 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   // Un autre pilote : suivie, mais le tableau le dit (A36-02). Un pilote inconnu ne dit rien.
   CHECK_FALSE(calibration_driver_changed(c, host));
   CalibrationHost updated = host;
-  updated.driver = "590";
+  updated.driver = std::to_string((590U << 22U) | (10U << 14U));
   CHECK(calibration_use(c, updated) == CalibrationUse::Followed);
   CHECK(calibration_driver_changed(c, updated));
   updated.driver.clear();
@@ -226,6 +226,38 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   CHECK(load_calibration(calibration_file(dir))->on_battery);
   CHECK(calibration_use(c, host) == CalibrationUse::OnBattery);
   CHECK_FALSE(calibrated_chain(dir, host));
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("une calibration par hauteur d'écran, l'ancien fichier unique relu (A37-10)",
+          "[calibration-machine]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-ecrans";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  MachineCalibration desk{.chosen = {.span = true, .rife = true, .height = 720},
+                          .tried = {{.chain = {.span = true, .rife = true, .height = 720}, .holds = true}},
+                          .gpu = "RTX 4070 Ti",
+                          .display_height = 1440,
+                          .models = calibration_models(Tier::Fast),
+                          .engine = "tensorrt"};
+  const CalibrationHost at_desk{.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true};
+  const CalibrationHost at_tv{.gpu = "RTX 4070 Ti", .display_height = 2160, .tensorrt = true};
+  // L'ancien calibration.toml (1440p) sert encore au bureau, pas à la télé.
+  REQUIRE(save_calibration(calibration_file(dir), desk));
+  CHECK(calibrated_chain(dir, at_desk));
+  CHECK_FALSE(calibrated_chain(dir, at_tv));
+  // Calibrer la télé écrit son propre fichier : le bureau garde le sien.
+  MachineCalibration tv = desk;
+  tv.display_height = 2160;
+  tv.chosen.height = 1080;
+  REQUIRE(save_calibration(calibration_file(dir, 2160), tv));
+  CHECK(calibration_file(dir, 2160).filename() == "calibration-2160p.toml");
+  REQUIRE(calibrated_chain(dir, at_tv));
+  CHECK(calibrated_chain(dir, at_tv)->height == 1080);
+  REQUIRE(calibrated_chain(dir, at_desk));
+  CHECK(calibrated_chain(dir, at_desk)->height == 720);
+  CHECK(load_calibration_at(dir, 2160)->display_height == 2160);
+  CHECK(load_calibration_at(dir, 1440)->display_height == 1440);
   std::filesystem::remove_all(dir);
 }
 

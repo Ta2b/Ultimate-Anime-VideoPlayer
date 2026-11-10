@@ -91,9 +91,10 @@ std::expected<void, Refusal> sync_file(const fs::path& file) {
 
 std::expected<void, Refusal> publish_file(const fs::path& staged, const fs::path& destination) {
   if (auto synced = sync_file(staged); !synced) return synced;
-  std::error_code error;
-  fs::rename(staged, destination, error);
-  if (error) return std::unexpected(io_refusal("publication", destination, error));
+  // Sous Windows, Defender ou l'indexeur ouvre le moteur juste écrit : le renommage se réessaie un
+  // instant au lieu de jeter la construction entière (A05-04).
+  if (const std::error_code error = core::rename_retrying(staged, destination))
+    return std::unexpected(io_refusal("publication", destination, error));
   sync_directory(destination.parent_path());
   return {};
 }

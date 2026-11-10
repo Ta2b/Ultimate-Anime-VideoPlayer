@@ -263,7 +263,8 @@ void level_section(PlaySettings& d, const SettingsChoices& choices) {
                     .display_hz = choices.display_hz,
                     .explored_work_height = choices.explored_work_height,
                     .explored_rife_model = choices.explored_rife_model,
-                    .calibrated = choices.calibrated},
+                    .calibrated = choices.calibrated,
+                    .display_width = choices.display_width},
             core::SourceInfo{
                 .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
       }

@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "core/utf8_path.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -49,10 +51,14 @@ void BackendLibrary::keep_open(std::shared_ptr<BackendLibrary> library) {
 std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     std::span<const std::filesystem::path> candidates) {
   std::string tried;
+  // Un module sans point d'entrée ou d'une autre ABI n'arrête pas la recherche : le candidat suivant
+  // s'essaie (A21-05). Sans aucun module valable, AbiMismatch l'emporte, pour que la réinstallation d'un
+  // module périmé reste proposée.
+  RefusalCode code = RefusalCode::LibraryUnavailable;
   for (const auto& path : candidates) {
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error)) {
-      tried += std::format("\n  {} : absent", path.string());
+      tried += std::format("\n  {} : absent", core::to_utf8(path));
       continue;
     }
     {
@@ -77,15 +83,21 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     library->create_ = symbol<gpu::BackendCreateFn>(handle, "ajp_backend_create");
     library->destroy_ = symbol<gpu::BackendDestroyFn>(handle, "ajp_backend_destroy");
     if (abi == nullptr || layout == nullptr || library->create_ == nullptr || library->destroy_ == nullptr) {
-      return refuse(RefusalCode::LibraryUnavailable,
-                    std::format("{} : point d'entrée absent", path.string()));
+      tried += std::format("\n  {} : point d'entrée absent", core::to_utf8(path));
+      continue;
     }
     if (auto ok = gpu::check_backend_abi(abi(), layout()); !ok) {
-      return refuse(RefusalCode::AbiMismatch, std::format("{} : {}", path.string(), ok.error().detail));
+      tried += std::format("\n  {} : {}", core::to_utf8(path), ok.error().detail);
+      code = RefusalCode::AbiMismatch;
+      continue;
     }
     return library;
   }
-  return refuse(RefusalCode::LibraryUnavailable, std::format("aucune bibliothèque de backend :{}", tried));
+  if (candidates.size() == 1 && tried.size() > 3) {
+    // Un seul candidat : son refus tel quel, sans l'en-tête de la liste.
+    return refuse(code, tried.substr(3));
+  }
+  return refuse(code, std::format("aucune bibliothèque de backend :{}", tried));
 }
 
 BackendLibrary::~BackendLibrary() = default;
@@ -110,7 +122,8 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
       continue;
     }
     if (auto probe = create(*library, init); !probe) {
-      tried += std::format("\n  {} : {} ({})", path.string(), probe.error().detail, name(probe.error().code));
+      tried += std::format("\n  {} : {} ({})", core::to_utf8(path), probe.error().detail,
+                           name(probe.error().code));
       continue;
     }
     (*library)->passed_over_ = std::move(tried);

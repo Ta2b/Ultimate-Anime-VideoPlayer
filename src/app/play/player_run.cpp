@@ -171,6 +171,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
+  const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)
   auto prepared = prepare_chain(p, settings, p.options.bench_out ? nullptr : p.stages);
   if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
     // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
@@ -405,7 +406,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   double known_hz = display_refresh_hz(out.window());
   std::int64_t known_period_us = display_period_us(out.window());
   SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
-  const int opened_height = display_height(out.window());
+  const DisplayMove opened{display_height(out.window()), known_hz, fps_of(video.frame_rate)};
   const GrowingFile opened_file =
       GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
   double session_hz_seen = known_hz;
@@ -637,7 +638,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (fullscreen != vrr_fullscreen || display_changed) {
         if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
         if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
-            display_moves_chain(chain.running.preset, opened_height, display_height(out.window())))
+            display_moves_chain(chain.running.preset, opened.now(display_height(out.window()), known_hz)))
           chain.reopen = chain.running;  // A29-03 : la chaîne, pas le lecteur ; pistes et sous-titres gardés
         vrr_fullscreen = fullscreen;
         session.set_composited(!fullscreen);
@@ -767,8 +768,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
-  // Ordre d'arrêt : les slots rendus, les threads arrêtés, le moteur avant son backend, le
-  // backend (et ses imports du ring) avant l'écran qui possède le ring.
+  // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
   p.stopped_at_us = std::max<std::int64_t>(session.view().position_us, 0);
   session.end();
   out.flush();

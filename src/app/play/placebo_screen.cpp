@@ -40,9 +40,6 @@ namespace {
 // Blanc de l'interface dans une sortie HDR : le blanc de référence (BT.2408), comme le SDR.
 constexpr float kUiWhiteNits = 203.0F;
 
-// Images gardées pour le profil GPU du grade (une heure à 165 Hz tient en dessous).
-constexpr std::size_t kMaxGradeSamples = 1 << 20;
-
 }  // namespace
 
 PlaceboScreen::PlaceboScreen(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -78,6 +75,14 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboScreen::create_ring(int
                                                                              bool external,
                                                                              RingFormat format) {
   return impl_->ring.create(impl_->vk->gpu, width, height, count, external, format);
+}
+
+void PlaceboScreen::release_ring() {
+  Impl& s = *impl_;
+  s.ring.clear(s.vk->gpu);
+  pl_tex_destroy(s.vk->gpu, &s.composed);
+  s.composed_key.reset();
+  if (s.renderer != nullptr) pl_renderer_flush_cache(s.renderer);
 }
 
 bool PlaceboScreen::hdr_output() const {
@@ -191,8 +196,8 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   if (!pl_render_image(renderer, image, &target, &params)) {
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image a échoué"});
   }
-  if (graded_now && image != nullptr && grade_frame_ns > 0 && grade_gpu_us.size() < kMaxGradeSamples)
-    grade_gpu_us.push_back(static_cast<std::uint32_t>(grade_frame_ns / 1000));
+  if (graded_now && image != nullptr && grade_frame_ns > 0)
+    grade_gpu_us.add(static_cast<std::uint32_t>(grade_frame_ns / 1000));
   return {};
 }
 

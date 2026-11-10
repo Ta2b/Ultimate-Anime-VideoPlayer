@@ -63,6 +63,25 @@ TEST_CASE("la résolution de travail suit l'écran et la tranche", "[auto_config
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 60.0, sd).work_height == 480);
 }
 
+TEST_CASE("la résolution de travail suit l'image dans l'écran, arrondie vers le bas (A37-06)",
+          "[auto_config]") {
+  // Écran 16:10 de portable : une vidéo 16:9 n'en occupe que 1080 lignes, 540p suffit.
+  Machine laptop{Tier::Normal, 1200, 60.0};
+  laptop.display_width = 1920;
+  CHECK(apply_preset(with(Preset::Auto), laptop, k1080p24).work_height == 540);
+  // Sans la largeur, la hauteur de l'écran : 600 s'arrondit vers le bas, comme la calibration.
+  CHECK(applied(Preset::Auto, Tier::Normal, 1200, 60.0).work_height == 540);
+  // Ultra-large 3440 × 1440 : l'image 16:9 prend toute la hauteur.
+  Machine wide{Tier::Normal, 1440, 60.0};
+  wide.display_width = 3440;
+  CHECK(apply_preset(with(Preset::Auto), wide, k1080p24).work_height == 720);
+  // Une source 4:3 sur un écran 16:9 garde toute la hauteur.
+  Machine screen{Tier::Normal, 1440, 60.0};
+  screen.display_width = 2560;
+  const core::SourceInfo dvd{.width = 1440, .height = 1080, .fps = 23.976};
+  CHECK(apply_preset(with(Preset::Auto), screen, dvd).work_height == 720);
+}
+
 TEST_CASE("Qualité et Ultra gardent la source 1080p sur tout écran, avec le SPAN b8f64 (A49-01, A49-02)",
           "[auto_config]") {
   for (const Tier tier : {Tier::Fast, Tier::Ultra}) {
@@ -265,8 +284,29 @@ TEST_CASE("DistilDRBA attend sa porte de qualité", "[auto_config]") {
 }
 
 TEST_CASE("un autre écran rouvre la chaîne d'un préréglage (P3.21)", "[auto_config]") {
-  CHECK(display_moves_chain(Preset::Auto, 1080, 2160));
-  CHECK_FALSE(display_moves_chain(Preset::Auto, 1440, 1440));
-  CHECK_FALSE(display_moves_chain(Preset::Custom, 1080, 2160));
-  CHECK_FALSE(display_moves_chain(Preset::Auto, 0, 2160));
+  CHECK(display_moves_chain(Preset::Auto, {.opened_height = 1080, .now_height = 2160}));
+  CHECK_FALSE(display_moves_chain(Preset::Auto, {.opened_height = 1440, .now_height = 1440}));
+  CHECK_FALSE(display_moves_chain(Preset::Custom, {.opened_height = 1080, .now_height = 2160}));
+  CHECK_FALSE(display_moves_chain(Preset::Auto, {.opened_height = 0, .now_height = 2160}));
+}
+
+TEST_CASE("un écran d'une autre fréquence rouvre la chaîne quand le multiplicateur change (A37-07)",
+          "[auto_config]") {
+  // Deux écrans 1440p, 60 Hz puis 165 Hz, source 24 i/s : ×2 puis ×6 voulu.
+  CHECK(display_moves_chain(
+      Preset::Auto,
+      {.opened_height = 1440, .opened_hz = 60.0, .source_fps = 23.976, .now_height = 1440, .now_hz = 165.0}));
+  // 144 et 165 Hz demandent tous deux ×6 : rien à rouvrir.
+  CHECK_FALSE(display_moves_chain(Preset::Auto, {.opened_height = 1440,
+                                                 .opened_hz = 144.0,
+                                                 .source_fps = 23.976,
+                                                 .now_height = 1440,
+                                                 .now_hz = 165.0}));
+  // Source 30 i/s ouverte sur une télé à 50 Hz (×1, pas d'interpolation), puis écran 144 Hz : ×4.
+  CHECK(display_moves_chain(
+      Preset::Normal,
+      {.opened_height = 1080, .opened_hz = 50.0, .source_fps = 30.0, .now_height = 1080, .now_hz = 144.0}));
+  CHECK_FALSE(display_moves_chain(
+      Preset::Custom,
+      {.opened_height = 1080, .opened_hz = 50.0, .source_fps = 30.0, .now_height = 1080, .now_hz = 144.0}));
 }

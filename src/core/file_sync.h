@@ -22,6 +22,11 @@ std::error_code sync_file(const std::filesystem::path& file);
 // Les entrées du dossier (un renommage) sur le disque, au mieux : rien sous Windows.
 void sync_directory(const std::filesystem::path& folder);
 
+// rename(from, to), réessayé environ 1,5 s sous Windows tant que le refus est passager (antivirus,
+// indexeur qui tient l'un des deux fichiers ouvert sans partage de suppression) ; ailleurs, un seul
+// essai : rename(2) remplace même un fichier ouvert (A20-01, A05-04).
+std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to);
+
 // La seule écriture atomique du projet (P5.11) : un temporaire au nom unique dans le même dossier
 // (« .<nom>.<instant>-<fil>.tmp »), écrit sur le disque, puis renommé sur path, et le dossier écrit à son
 // tour. Un lecteur voit l'ancien fichier entier ou le nouveau entier ; une coupure ne laisse pas un

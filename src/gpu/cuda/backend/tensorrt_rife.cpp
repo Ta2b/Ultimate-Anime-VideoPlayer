@@ -169,15 +169,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
   const std::uint64_t ticket = pair_tickets_ + 1;
   PairRead& slot = pair_reads_[ticket % pair_reads_.size()];
   std::expected<void, Refusal> ready = bind();
-  if (ready && slot.device == nullptr) {
-    ready = cuda_check(cudaMalloc(reinterpret_cast<void**>(&slot.device), sizeof(PairSums)), "cudaMalloc");
-    if (ready) {
-      ready = cuda_check(cudaMallocHost(reinterpret_cast<void**>(&slot.host), sizeof(PairSums)),
-                         "cudaMallocHost");
-    }
-    if (ready)
-      ready = cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
-  }
+  if (ready) ready = reserve_readback(slot, sizeof(PairSums));
   // Le flux ordonne les emplacements : un ticket périmé n'est plus relu, rien n'est à attendre.
   if (ready) ready = order({a.handle, b.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready)

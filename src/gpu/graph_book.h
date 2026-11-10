@@ -45,23 +45,42 @@ class GraphBook {
 
   Pick next(const Key& key) {
     if (off_) return {};
+    ++tick_;
     auto found = std::ranges::find(entries_, key, &Entry::key);
     if (found == entries_.end()) {
       if (entries_.size() >= capacity_) {
-        ++counters_.overflow;
-        if (!overflow_said_) {
-          overflow_said_ = true;
-          notice_ = std::format("graphes CUDA : plus de place pour un {}e jeu d'adresses, lancements directs",
-                                capacity_ + 1);
+        // Plein : une entrée qui n'a plus servi depuis kStaleAfter × capacité tirages (adresses d'une
+        // génération d'anneau passée) laisse sa place ; un jeu d'adresses vivant n'est jamais chassé, un
+        // cycle plus large que le registre resterait sinon en captures sans fin (A21-08).
+        const auto oldest = std::ranges::min_element(entries_, {}, &Entry::used);
+        if (tick_ - oldest->used <= kStaleAfter * capacity_) {
+          ++counters_.overflow;
+          if (!overflow_said_) {
+            overflow_said_ = true;
+            notice_ = std::format(
+                "graphes CUDA : plus de place pour un {}e jeu d'adresses, lancements directs", capacity_ + 1);
+          }
+          return {.step = GraphStep::Overflow};
         }
-        return {.step = GraphStep::Overflow};
+        // L'appelant détruit le graphe de cet emplacement à la capture qui suit (Capture sur un index
+        // qui en a déjà un).
+        *oldest = Entry{.key = key};
+        found = oldest;
+      } else {
+        entries_.push_back(Entry{.key = key});
+        found = entries_.end() - 1;
       }
-      entries_.push_back(Entry{.key = key});
-      found = entries_.end() - 1;
     }
+    found->used = tick_;
     const std::size_t index = static_cast<std::size_t>(found - entries_.begin());
     if (found->ready) {
       ++counters_.replays;
+      // Assez de rejeux de suite sans refus : les échecs passés (un retour de veille, des heures plus tôt)
+      // ne comptent plus pour couper les graphes (A21-08).
+      if (++healthy_ >= kHealAfterReplays) {
+        capture_streak_ = 0;
+        launch_streak_ = 0;
+      }
       return {.step = GraphStep::Replay, .index = index};
     }
     last_ = index;
@@ -81,24 +100,28 @@ class GraphBook {
       return;
     }
     ++counters_.capture_failures;
-    if (static_cast<int>(counters_.capture_failures) >= attempts_) {
+    healthy_ = 0;
+    if (++capture_streak_ >= attempts_) {
       off_ = true;
       notice_ = std::format("graphes CUDA coupés : capture refusée {} fois, dernière erreur : {}",
-                            counters_.capture_failures, reason);
+                            capture_streak_, reason);
     }
   }
 
   // Un rejeu ou un lancement qui échoue sans erreur collante : compté ; le graphe de cet emplacement est
   // oublié (l'appelant le détruit et lance en direct), il se recapture au passage suivant. Après
-  // kMaxLaunchFailures échecs, les graphes se coupent avec une notice.
+  // kMaxLaunchFailures échecs sans kHealAfterReplays rejeux réussis entre eux, les graphes se coupent avec
+  // une notice.
   static constexpr int kMaxLaunchFailures = 3;
+  static constexpr std::uint64_t kHealAfterReplays = 1000;  // une quarantaine de secondes à 24 i/s
+  static constexpr std::uint64_t kStaleAfter = 64;          // tirages par place du registre
   void launch_failed(std::size_t index) {
     ++counters_.launch_failures;
+    healthy_ = 0;
     if (index < entries_.size()) entries_[index].ready = false;
-    if (static_cast<int>(counters_.launch_failures) >= kMaxLaunchFailures && !off_) {
+    if (++launch_streak_ >= kMaxLaunchFailures && !off_) {
       off_ = true;
-      notice_ = std::format("graphes CUDA coupés : rejeu refusé {} fois, lancements directs",
-                            counters_.launch_failures);
+      notice_ = std::format("graphes CUDA coupés : rejeu refusé {} fois, lancements directs", launch_streak_);
     }
   }
 
@@ -107,10 +130,15 @@ class GraphBook {
   std::size_t size() const { return entries_.size(); }
   // Le mot pour le journal du backend, une fois ; vide sinon.
   std::string take_notice() { return std::exchange(notice_, std::string()); }
-  // Oublie tous les graphes (les adresses ont changé) ; les compteurs restent.
+  // Oublie tous les graphes (les adresses ont changé) ; les compteurs restent, les séries d'échecs repartent
+  // de zéro et des graphes coupés se réessaient (A21-08).
   void clear() {
     entries_.clear();
     overflow_said_ = false;
+    capture_streak_ = 0;
+    launch_streak_ = 0;
+    healthy_ = 0;
+    off_ = false;
   }
 
  private:
@@ -118,6 +146,7 @@ class GraphBook {
     Key key;
     bool warmed = false;
     bool ready = false;
+    std::uint64_t used = 0;  // tick_ du dernier tirage
   };
   std::size_t capacity_;
   int attempts_;
@@ -126,6 +155,10 @@ class GraphBook {
   GraphCounters counters_;
   bool off_ = false;
   bool overflow_said_ = false;
+  std::uint64_t tick_ = 0;
+  std::uint64_t healthy_ = 0;  // rejeux de suite sans refus
+  int capture_streak_ = 0;     // refus de capture depuis la dernière remise à zéro
+  int launch_streak_ = 0;      // refus de rejeu depuis la dernière remise à zéro
   std::string notice_;
 };
 

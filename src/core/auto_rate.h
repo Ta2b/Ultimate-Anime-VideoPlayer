@@ -56,7 +56,8 @@ std::vector<int> locked_steps(double display_hz, double source_fps, int granular
 
 // Les bornes du mode Stable pour un écran : au fps près en VRR armé (kFineGranularity) ; à fréquence fixe,
 // seulement les paliers calés (P3.33). Plafond : l'écran, et le niveau (P3.36, ×2, ×3, ×4 : level_factor ; en
-// demi-paliers, un de plus, ×2,5 à 60 Hz pour un niveau à ×2 ; < 2 : aucun).
+// demi-paliers, un de plus, ×2,5 à 60 Hz pour un niveau à ×2 ; < 2 : aucun). À fréquence fixe, le palier calé
+// juste au-dessus reste permis s'il ne dépasse le niveau que d'un multiplicateur (A37-14).
 //
 // À fréquence fixe, un palier calé est un facteur display_hz / (k · source_fps) : chaque image tient k
 // rafraîchissements. Quand ce facteur n'est pas un demi-palier (×3,44 pour 23,976 i/s à 165 Hz, ×2,40 pour

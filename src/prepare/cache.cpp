@@ -44,11 +44,14 @@ void store_digest(const CacheEntry& entry, const std::string& digest) {
 }
 
 // L'entrée publiée a-t-elle encore les octets de sa publication (P2.31) ? Une entrée d'avant l'empreinte
-// la reçoit ici.
-std::expected<bool, Refusal> intact(const CacheEntry& entry) {
+// la reçoit ici, sous le verrou de la clé seulement (locked) : sans lui, un processus qui lit l'ancienne
+// entrée pouvait écrire son empreinte après celle du remplaçant qu'un autre venait de publier (A05-06).
+// Sans verrou, une empreinte manquante rend false : l'appelant passe par le chemin verrouillé.
+std::expected<bool, Refusal> intact(const CacheEntry& entry, bool locked) {
+  const std::string stored = stored_digest(entry);
+  if (stored.empty() && !locked) return false;
   auto digest = sha256_file_known(entry.destination);
   if (!digest) return std::unexpected(digest.error());
-  const std::string stored = stored_digest(entry);
   if (stored.empty()) {
     store_digest(entry, *digest);
     return true;
@@ -59,7 +62,13 @@ std::expected<bool, Refusal> intact(const CacheEntry& entry) {
 // L'entrée publiée se reprend si elle est intacte (son empreinte revérifiée, P2.31).
 std::expected<bool, Refusal> reusable(const CacheEntry& entry) {
   if (!is_published(entry.destination)) return false;
-  return intact(entry);
+  return intact(entry, true);  // sous le verrou de la clé
+}
+
+// Un moteur repris rafraîchit la date de son empreinte : la purge du cache (cache_purge.h) sait ce qui sert.
+void mark_used(const CacheEntry& entry) {
+  std::error_code error;
+  fs::last_write_time(entry.digest_file(), fs::file_time_type::clock::now(), error);
 }
 
 }  // namespace
@@ -88,14 +97,17 @@ bool is_published(const fs::path& file) {
 std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const Producer& produce,
                                                 const std::stop_token& stop) {
   if (is_published(entry.destination)) {
-    if (auto whole = intact(entry); whole && *whole) return Production::Reused;
+    if (auto whole = intact(entry, false); whole && *whole) {
+      mark_used(entry);
+      return Production::Reused;
+    }
   }
   const fs::path parent = entry.destination.parent_path();
   std::error_code error;
   fs::create_directories(parent, error);
   if (error) return std::unexpected(io_refusal("création du cache", parent, error));
 
-  auto lock = KeyLock::acquire(entry.lock_file(), stop);
+  auto lock = KeyLock::acquire(entry.lock_file(), stop, LockWait::Block, entry.max_wait);
   if (!lock) return std::unexpected(lock.error());
   if (auto recovered = recover_owned_stages(parent, kStagePrefix, entry.owner()); !recovered) {
     return std::unexpected(recovered.error());
@@ -103,7 +115,10 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
   // Un autre processus a pu publier pendant l'attente du verrou : on la reprend.
   auto reuse = reusable(entry);
   if (!reuse) return std::unexpected(reuse.error());
-  if (*reuse) return Production::Reused;
+  if (*reuse) {
+    mark_used(entry);
+    return Production::Reused;
+  }
 
   auto folder = reserve_stage(parent, kStagePrefix, entry.owner());
   if (!folder) return std::unexpected(folder.error());

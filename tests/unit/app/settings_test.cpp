@@ -272,6 +272,35 @@ TEST_CASE("Une option d'essai n'entre pas dans play.toml, un changement du menu 
   CHECK(saved.volume == 0.4F);
 }
 
+TEST_CASE(
+    "Options de moteur : --rife-model et --motion, le menu montre le moteur chargé, play.toml n'en garde "
+    "rien (A18-17, A18-09)",
+    "[app][settings]") {
+  PlaySettings file;
+  file.motion_engine = MotionEngine::DistilDrba;
+  file.rife_model = "rife_v4.25.onnx";
+  const std::array<std::string_view, 2> rife{"film.mkv", "--rife-model=/opt/ajp/models/rife_v4.22_lite.onnx"};
+  const auto options = parse_play_options(rife);
+  REQUIRE(options);
+  const PlaySettings started = settings_for(file, *options);
+  CHECK(started.rife_model == "rife_v4.22_lite.onnx");
+  CHECK(started.motion_engine == MotionEngine::Rife);
+  const PlaySettings saved = settings_to_save(started, file, started, *options);
+  CHECK(saved.rife_model == "rife_v4.25.onnx");
+  CHECK(saved.motion_engine == MotionEngine::DistilDrba);
+
+  const std::array<std::string_view, 2> drba{"film.mkv", "--motion=drba"};
+  const auto chosen = parse_play_options(drba);
+  REQUIRE(chosen);
+  PlaySettings rife_file;
+  CHECK(settings_for(rife_file, *chosen).motion_engine == MotionEngine::DistilDrba);
+  CHECK(
+      settings_to_save(settings_for(rife_file, *chosen), rife_file, settings_for(rife_file, *chosen), *chosen)
+          .motion_engine == MotionEngine::Rife);
+  const std::array<std::string_view, 2> wrong{"film.mkv", "--motion=gmfss"};
+  CHECK_FALSE(parse_play_options(wrong));
+}
+
 TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'appliquer", "[app][settings]") {
   const PlaySettings running;
   CHECK(change_between(running, running, true).cost == ChangeCost::None);

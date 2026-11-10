@@ -20,6 +20,8 @@ inline constexpr int kWarpSize = 32;
 
 // Combine value sur tout le bloc (op associative, identity neutre) ; le résultat vaut dans le fil 0.
 // Chaque fil du bloc doit l'appeler, y compris hors de l'image (avec identity).
+// Réentrante : la barrière finale garde warps tant que les fils de tête le lisent, deux appels de
+// suite dans un même noyau (somme puis maximum) ne se marchent pas dessus (A01-07).
 template <typename Op>
 __device__ float block_reduce(float value, float identity, Op op) {
   __shared__ float warps[kPixelThreads / kWarpSize];
@@ -34,6 +36,7 @@ __device__ float block_reduce(float value, float identity, Op op) {
     for (int offset = kWarpSize / 2; offset > 0; offset /= 2)
       value = op(value, __shfl_down_sync(0xFFFFFFFFU, value, offset));
   }
+  __syncthreads();
   return value;
 }
 

@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <format>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -210,8 +212,37 @@ std::expected<void, Refusal> save_reading(const std::filesystem::path& file, con
   return core::write_text_atomically(file, format_reading(reading));
 }
 
+namespace {
+
+// La majeure d'un driverVersion écrit en décimal ; rien s'il ne se lit pas.
+std::optional<std::uint32_t> driver_major(std::string_view driver) {
+  if (driver.empty() || driver.size() > 10) return std::nullopt;
+  std::uint64_t raw = 0;
+  for (const char c : driver) {
+    if (c < '0' || c > '9') return std::nullopt;
+    raw = (raw * 10) + static_cast<std::uint64_t>(c - '0');
+  }
+  if (raw > 0xffffffffULL) return std::nullopt;
+  return static_cast<std::uint32_t>(raw >> 22U);
+}
+
+}  // namespace
+
+bool driver_branch_changed(std::string_view measured, std::string_view now) {
+  if (measured.empty() || now.empty() || measured == now) return false;
+  const auto before = driver_major(measured);
+  const auto after = driver_major(now);
+  // Illisible d'un côté : seule l'égalité des textes dit que c'est le même.
+  if (!before || !after) return true;
+  return *before != *after;
+}
+
+bool measured_here(const BenchResult& measured, const GpuFacts& gpu) {
+  return measured.gpu == gpu.name && !driver_branch_changed(measured.driver, gpu.driver);
+}
+
 Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured) {
-  if (measured && measured->gpu == gpu.name && measured->driver == gpu.driver) return measured->level;
+  if (measured && measured_here(*measured, gpu)) return measured->level;
   return estimate_tier(gpu).tier;
 }
 

@@ -131,7 +131,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
   bool applied = false;
   if (!bench.read) {
     bench.read = true;
-    if (auto loaded = load_calibration(calibration_file(choices.settings_dir)))
+    if (auto loaded = load_calibration_at(choices.settings_dir, choices.calibration_host.display_height))
       bench.result = std::move(*loaded);
   }
   if (bench.pending && bench.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {

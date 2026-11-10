@@ -576,6 +576,22 @@ TEST_CASE("A12-02 : à 144 Hz fixe, le 29,97 est interpolé ; les écrans d'avan
   CHECK(locked_factors(auto_limits(120.0, kFilm, false, 8)) == std::vector<double>{1.0, 5.0 / 3.0, 2.5, 5.0});
 }
 
+TEST_CASE("A37-14 : en Stable, le plafond du niveau laisse le palier calé juste au-dessus", "[auto_rate]") {
+  using ajp::core::auto_limits;
+  // 120 Hz, 23,976 i/s, niveau ×4 : ×5 (une image par deux rafraîchissements) au lieu de ×2,5.
+  const ajp::core::AutoLimits tv = auto_limits(120.0, kFilm, false, 4);
+  CHECK(tv.ceiling == 10);
+  CHECK(locked_factors(tv).back() == 5.0);
+  // 240 Hz, même source : ×5 aussi.
+  CHECK(auto_limits(240.0, kFilm, false, 4).ceiling == 10);
+  // ×6,88 à 165 Hz dépasse ×4 de plus d'un multiplicateur : le plafond reste ×4,5.
+  CHECK(auto_limits(165.0, kFilm, false, 4).ceiling == 9);
+  // Niveau ×2 à 120 Hz : ×5 reste hors d'atteinte.
+  CHECK(auto_limits(120.0, kFilm, false, 2).ceiling == 5);
+  // VRR : aucun palier calé, rien ne change.
+  CHECK(auto_limits(240.0, kFilm, true, 4).ceiling == 4 * ajp::core::kFineGranularity);
+}
+
 TEST_CASE("A12-02 : le palier courant rend son facteur exact", "[auto_rate]") {
   ajp::core::AutoLimits limits = ajp::core::auto_limits(165.0, kFilm, false, 4);
   ajp::core::AutoRate rate;

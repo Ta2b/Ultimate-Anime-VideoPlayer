@@ -120,8 +120,20 @@ TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
                      .tensor_cores = true};
   CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}) ==
         Tier::Ultra);
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2300", .level = Tier::Ultra}) ==
+  // Pilotes illisibles qui diffèrent : la mesure ne vaut plus.
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "v2300", .level = Tier::Ultra}) ==
         Tier::Fast);
+  // A37-09 : 580.82 puis 580.95 garde la mesure ; 590.10 la jette, comme la calibration.
+  GpuFacts updated = gpu;
+  updated.driver = std::to_string((580U << 22U) | (95U << 14U));
+  const std::string before = std::to_string((580U << 22U) | (82U << 14U));
+  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra}) ==
+        Tier::Ultra);
+  updated.driver = std::to_string((590U << 22U) | (10U << 14U));
+  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra}) ==
+        Tier::Fast);
+  CHECK(driver_branch_changed(before, updated.driver));
+  CHECK_FALSE(driver_branch_changed(before, ""));
   const auto read =
       parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Light}));
   REQUIRE(read);

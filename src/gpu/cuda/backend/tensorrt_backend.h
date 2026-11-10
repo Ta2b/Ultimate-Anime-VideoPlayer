@@ -153,7 +153,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> apply(const LaneHazards::Op& op);
   std::expected<void, Refusal> record(std::size_t lane);  // l'événement en attente de lane
   std::expected<void, Refusal> create_lanes();
-  void destroy_lanes();
+  void destroy_lanes();  // et rend au pilote ce que la réserve CUDA ne prête plus (A33-01)
   // Attente hôte d'un événement : interrogé quelques centaines de µs d'abord, puis attendu (le
   // contexte en attente bloquante réveille le thread 50 à 200 µs après l'événement, T14).
   static std::expected<void, Refusal> wait_event(cudaEvent_t event);
@@ -200,11 +200,19 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   void log(BackendLogLevel level, std::string_view message) const;
   std::expected<void, Refusal> hold(const DecodedFrame& frame);
+  // Après l'ingestion enfilée : l'image hôte rendue à son tampon, l'image GPU tenue (hold).
+  std::expected<void, Refusal> release_source(bool host, const DecodedFrame& frame);
   std::expected<ImportedSlot*, Refusal> slot(const RingSlotDesc& desc);
   // Écriture d'un slot : protocole vérifié, voies ordonnées (rgb lu, scratch écrit s'il n'est pas
   // nul), slot importé, attente de wait_value enfilée.
   std::expected<ImportedSlot*, Refusal> begin_write(const Tensor& rgb, const RingSlotDesc& desc,
                                                     const RingWrite& sync, std::uintptr_t scratch = 0);
+  // bind(), puis la jointure des voies quand desc ouvre une nouvelle génération du ring : avant order()
+  // de toute opération qui finit par begin_slot (A01-02). desc nul : bind() seul.
+  std::expected<void, Refusal> bind_joined(const RingSlotDesc* desc);
+  std::expected<void, Refusal> bind_joined(const RingTarget* ring) {
+    return bind_joined(ring != nullptr ? ring->slot : nullptr);
+  }
   // La partie de begin_write propre au slot : protocole, import, attente de wait_value. Les voies
   // sont ordonnées par l'appelant.
   std::expected<ImportedSlot*, Refusal> begin_slot(const RingSlotDesc& desc, const RingWrite& sync);
@@ -259,6 +267,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   int driver_version_ = 0;
   std::filesystem::path cache_dir_;
   std::filesystem::path trtexec_;
+  std::string trtexec_sha256_;  // relevé à create (A05-05)
   BackendLog log_;
   cudaStream_t stream_ = nullptr;  // la file de la voie courante, l'une de streams_
  public:

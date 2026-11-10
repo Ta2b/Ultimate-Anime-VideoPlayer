@@ -33,7 +33,10 @@ OnnxType onnx_type(gpu::TensorType type) {
 
 // Un poids externe dont le chemin, une fois les liens symboliques suivis, sort du dossier du modèle.
 // Une résolution impossible n'est pas un refus : le fichier manquant échoue plus loin, à la lecture.
-bool escapes_folder(const std::filesystem::path& folder, const std::string& location) {
+// Un modèle nommé sans dossier (« --model=modele.onnx ») a un parent vide : c'est le dossier courant,
+// pas une racine vide que weakly_canonical laisse vide et à laquelle tout chemin ressemble (A04-05).
+bool escapes_folder(const std::filesystem::path& model_folder, const std::string& location) {
+  const std::filesystem::path folder = model_folder.empty() ? std::filesystem::path(".") : model_folder;
   std::error_code root_error;
   std::error_code file_error;
   const std::filesystem::path root = std::filesystem::weakly_canonical(folder, root_error);

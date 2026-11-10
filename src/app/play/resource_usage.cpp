@@ -1,0 +1,113 @@
+#include "app/play/resource_usage.h"
+
+#include <chrono>
+#include <condition_variable>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <iterator>
+#include <mutex>
+#include <stop_token>
+#include <string_view>
+#include <system_error>
+
+#include "core/log.h"
+#include "core/thread.h"
+
+#ifdef _WIN32
+#include <windows.h>
+// windows.h d'abord : psapi.h en dépend.
+#include <psapi.h>
+#include <tlhelp32.h>
+#endif
+
+namespace ajp::app::play {
+
+namespace {
+
+#ifdef __linux__
+// « VmRSS:   812345 kB » : la valeur en octets ; rien si le champ manque.
+std::optional<std::uint64_t> status_kib(std::string_view text, std::string_view field) {
+  const auto at = text.find(field);
+  if (at == std::string_view::npos) return std::nullopt;
+  std::uint64_t value = 0;
+  bool digits = false;
+  for (std::size_t i = at + field.size(); i < text.size() && text[i] != '\n'; ++i) {
+    if (text[i] < '0' || text[i] > '9') {
+      if (digits) break;
+      continue;
+    }
+    digits = true;
+    value = value * 10 + static_cast<std::uint64_t>(text[i] - '0');
+  }
+  if (!digits) return std::nullopt;
+  return value;
+}
+#endif
+
+}  // namespace
+
+ProcessResources process_resources() {
+  ProcessResources out;
+#ifdef __linux__
+  std::ifstream in("/proc/self/status");
+  const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  if (const auto rss = status_kib(text, "VmRSS:")) out.resident_bytes = *rss * 1024;
+  if (const auto threads = status_kib(text, "Threads:")) out.threads = static_cast<int>(*threads);
+  std::error_code error;
+  int fds = 0;
+  for (std::filesystem::directory_iterator it("/proc/self/fd", error), end; !error && it != end;
+       it.increment(error))
+    ++fds;
+  if (!error) out.handles = fds;
+#elif defined(_WIN32)
+  PROCESS_MEMORY_COUNTERS counters{};
+  if (K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
+    out.resident_bytes = counters.WorkingSetSize;
+  DWORD handles = 0;
+  if (GetProcessHandleCount(GetCurrentProcess(), &handles)) out.handles = static_cast<int>(handles);
+  const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+  if (snapshot != INVALID_HANDLE_VALUE) {
+    THREADENTRY32 entry{.dwSize = sizeof(THREADENTRY32)};
+    int threads = 0;
+    for (BOOL more = Thread32First(snapshot, &entry); more; more = Thread32Next(snapshot, &entry))
+      if (entry.th32OwnerProcessID == GetCurrentProcessId()) ++threads;
+    CloseHandle(snapshot);
+    out.threads = threads;
+  }
+#endif
+  return out;
+}
+
+std::string describe(const ProcessResources& resources) {
+  std::string out;
+  const auto add = [&](const std::string& part) { out += out.empty() ? part : ", " + part; };
+  constexpr double kMib = 1024.0 * 1024.0;
+  if (resources.resident_bytes)
+    add(std::format("mémoire {:.0f} Mio", static_cast<double>(*resources.resident_bytes) / kMib));  // i18n-ok
+  if (resources.threads) add(std::format("{} threads", *resources.threads));
+  if (resources.handles) add(std::format("{} descripteurs", *resources.handles));  // i18n-ok : journal
+  return out.empty() ? std::string("inconnues") : out;                             // i18n-ok : journal
+}
+
+std::jthread start_resource_log() {
+  auto started = start_thread(
+      "resources", ThreadReport([](const Refusal& refused) {
+        log_channel("app")->warn("ressources : {}", refused.detail);  // i18n-ok : journal
+      }),
+      [](const std::stop_token& stop, const ThreadReport&) {
+        std::mutex mutex;
+        std::condition_variable_any wake;
+        while (true) {
+          std::unique_lock lock(mutex);
+          if (wake.wait_for(lock, stop, std::chrono::minutes(5), [] { return false; }) ||
+              stop.stop_requested())
+            return;
+          log_channel("app")->info("ressources : {}", describe(process_resources()));  // i18n-ok : journal
+        }
+      });
+  if (started) return std::move(*started);
+  return {};
+}
+
+}  // namespace ajp::app::play

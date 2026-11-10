@@ -15,6 +15,7 @@
 #include <windows.h>
 #endif
 
+#include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
@@ -25,6 +26,7 @@
 #include "prepare/drba_split.h"
 #include "prepare/identity.h"
 #include "prepare/rife_split.h"
+#include "prepare/sha256.h"
 
 namespace ajp::gpu::cuda {
 namespace {
@@ -136,6 +138,16 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->log_ = init.log;
   backend->cache_dir_ = init.cache_dir;
   backend->trtexec_ = std::move(trtexec);
+  if (!backend->trtexec_.empty()) {
+    // Son empreinte d'ouverture, revérifiée avant chaque construction (A05-05).
+    if (auto sha = prepare::sha256_file_known(backend->trtexec_)) backend->trtexec_sha256_ = std::move(*sha);
+    if (backend->trtexec_ == std::filesystem::path(AJP_TRTEXEC_PATH)) {
+      backend->log(BackendLogLevel::Warn,
+                   std::format("trtexec du paquet absent ou d'empreinte inattendue : celui du poste de "
+                               "développement ({}) construit les moteurs",
+                               core::to_utf8(backend->trtexec_)));
+    }
+  }
   int count = 0;
   if (auto ok = cuda_check(cudaGetDeviceCount(&count), "cudaGetDeviceCount"); !ok) {
     return refuse(RefusalCode::LibraryUnavailable, ok.error().detail);
@@ -256,7 +268,7 @@ TensorRtBackend::~TensorRtBackend() {
   for (cudaEvent_t fence : fences_) {
     if (fence != nullptr) cudaEventDestroy(fence);
   }
-  destroy_lanes();
+  destroy_lanes();  // et rend la réserve CUDA au pilote (A33-01)
 }
 
 std::expected<void, Refusal> TensorRtBackend::bind() const {
@@ -308,6 +320,7 @@ prepare::TrtexecConfig TensorRtBackend::trtexec_config() const {
                  .sm_major = properties_.major,
                  .sm_minor = properties_.minor,
                  .uuid = uuid_},
+      .trtexec_sha256 = trtexec_sha256_,
   };
 }
 
@@ -368,6 +381,7 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_ten
 
 void TensorRtBackend::free_after_lanes(void* memory) {
   if (memory == nullptr) return;
+  hazards_.forget(reinterpret_cast<std::uintptr_t>(memory));  // libérée derrière toutes les voies (A21-09)
   cudaStream_t free_on = stream_;
   bool ordered = free_on != nullptr;
   for (cudaStream_t lane : streams_) {
@@ -381,7 +395,7 @@ void TensorRtBackend::free_after_lanes(void* memory) {
   }
   if (ordered && cudaFreeAsync(memory, free_on) == cudaSuccess) return;
   static_cast<void>(clear_error());
-  cudaFree(memory);  // repli : la libération synchrone d'avant
+  cuda_warn(cudaFree(memory), "cudaFree");  // repli : la libération synchrone d'avant
 }
 
 void TensorRtBackend::tune_pool() const {
