@@ -245,7 +245,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool
   if (s.grade && source_hdr && !s.grade_values.grade_native_hdr)
     text += i18n::tr(" · grade off: HDR source");
   else if (s.grade)
-    text += i18n::tr(" · grade");
+    text += screen.has_grade() ? i18n::tr(" · grade") : i18n::tr(" · grade unavailable");  // A41-12
   return text;
 }
 

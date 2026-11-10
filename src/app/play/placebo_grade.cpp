@@ -222,7 +222,11 @@ void PlaceboScreen::Impl::match_kwin() {
   if (match != kwin_applied) ++grade_serial;
   kwin_applied = match;
   grade->set_kwin_match(match);
-  const double max_nits = on ? hint.max_content_nits : 0.0;
+  // A41-08 : sans grade sur une sortie HDR10 (source déjà HDR, ou grade coupé), rien n'était annoncé :
+  // libplacebo croyait la cible à 10 000 nits et laissait l'écran écrêter une source masterisée plus haut que
+  // lui. Le pic du contrat d'écran est annoncé, libplacebo ramène la source à ce pic.
+  const bool bare = !on && kwin_metadata() && hdr_output && grade_loaded_pq != true && contract.has_value();
+  const double max_nits = on ? hint.max_content_nits : bare ? contract->content_peak_nits() : 0.0;
   // MaxFALL (P3.59, A41-02) : celui du contrat d'écran quand il le connaît (le plein écran du limiteur),
   // sinon la moyenne réelle d'une image toute blanche : le blanc des surfaces que la dernière passe rend, en
   // unités du contenu (au relèvement fixe, pas celui du plan : l'annonce ne bouge pas à chaque coupe).
@@ -236,11 +240,11 @@ void PlaceboScreen::Impl::match_kwin() {
   hinted_max_nits = max_nits;
   hinted_max_fall = max_fall;
   pl_color_space space = pl_color_space_hdr10;
-  if (on) {
+  if (max_nits > 0.0) {
     space.hdr.max_luma = static_cast<float>(max_nits);
     space.hdr.min_luma = 0.0001F;
     space.hdr.max_cll = static_cast<float>(max_nits);
-    space.hdr.max_fall = static_cast<float>(max_fall);
+    space.hdr.max_fall = static_cast<float>(max_fall);  // 0 sans grade : inconnu, non annoncé
   }
   pl_swapchain_colorspace_hint(swapchain, &space);
   channel->info("--hdr-metadata : maximum annoncé {:.0f} nits, MaxFALL {:.0f} (pic {:.0f}, blanc SDR {:.0f})",
