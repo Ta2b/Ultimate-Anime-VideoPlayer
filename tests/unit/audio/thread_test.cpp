@@ -121,10 +121,19 @@ TEST_CASE("AudioThread : borne des paquets atteinte, un crédit revient quand un
   CHECK(sent >= 4);
   CHECK(sent < 12);
 
+  // Pendant la pause, le thread décode un paquet et peut rendre un crédit alors que la boucle remplit encore
+  // la borne : ce crédit est déjà consommé. Le producteur réessaie à chaque crédit (un crédit de trop ne
+  // coûte qu'un essai) ; un crédit rendu après la lecture doit laisser passer le paquet.
   REQUIRE((*thread)->post(Command{cmd::Play{}}));
-  REQUIRE(eventually([&] { return credits.load() > 0; }));
-  AudioPacket next = clip.packets[sent];
-  CHECK((*thread)->push_packet(std::move(next)));
+  int seen = 0;
+  bool pushed = false;
+  for (int tries = 0; tries < 8 && !pushed; ++tries) {
+    REQUIRE(eventually([&] { return credits.load() > seen; }));
+    seen = credits.load();
+    AudioPacket next = clip.packets[sent];
+    pushed = (*thread)->push_packet(std::move(next));
+  }
+  CHECK(pushed);
 }
 
 TEST_CASE("AudioThread : réglages refusés hors bornes, signalés à l'OSD", "[audio][thread][sdl]") {
