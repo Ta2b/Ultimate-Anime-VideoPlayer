@@ -9,12 +9,8 @@
 //   chosen = ["vulkan", "tensorrt"]
 //   installed = ["vulkan", "tensorrt"]
 //   preferred = { upscale = "tensorrt", interpolate = "tensorrt" }
-//   [languages]
-//   audio = ["ja", "en"]
-//   subtitles = ["fr", "en"]
 //   [playback]
 //   resume_position = true
-//   audio_delay_ms = 0
 #pragma once
 
 #include <array>
@@ -39,11 +35,6 @@ inline constexpr std::size_t kUsageCount = 2;
 
 inline constexpr int kSettingsVersion = 1;
 
-namespace limits {
-inline constexpr Range<std::int64_t> kAudioDelayMs{-10'000, 10'000};
-inline constexpr std::size_t kMaxLanguages = 8;
-}  // namespace limits
-
 struct Settings {
   bool first_run_done = false;
   int first_run_step = 0;  // le dernier écran de l'assistant vu (0 : aucun), pour reprendre en route
@@ -52,10 +43,7 @@ struct Settings {
   std::vector<EngineId> chosen_engines{EngineId::Vulkan};     // cochés dans l'écran « Moteurs »
   std::vector<EngineId> installed_engines{EngineId::Vulkan};  // présents et vérifiés
   std::array<std::optional<EngineId>, kUsageCount> preferred{EngineId::Vulkan, EngineId::Vulkan};
-  std::vector<std::string> audio_languages;  // étiquettes BCP 47, par priorité : « ja », « pt-BR »
-  std::vector<std::string> subtitle_languages;
   bool resume_position = true;  // reprendre une vidéo là où elle s'est arrêtée
-  std::int64_t audio_delay_ms = 0;
   friend bool operator==(const Settings&, const Settings&) = default;
 };
 

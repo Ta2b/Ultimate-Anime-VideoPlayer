@@ -606,6 +606,9 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
   std::string text = format_settings(settings);
+  // Mis en forme et lu une seule fois : la fusion et la base de la suivante partent de la même table
+  // (A22-16).
+  toml::parse_result fresh = toml::parse(text);
   // Les clés d'une version plus récente restent (P2.22) : revenir à celle-ci ne les efface plus.
   std::ostringstream existing;
   bool exists = false;
@@ -617,7 +620,6 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   }
   if (exists) {
     toml::parse_result old = toml::parse(existing.str());
-    toml::parse_result fresh = toml::parse(text);
     if (old && fresh) {
       toml::table merged = fresh.table();
       // Le fichier lu comme au chargement : une valeur qu'il ne connaît pas (version plus récente) est
@@ -648,8 +650,7 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   // La base de la fusion suivante ne change qu'une fois l'écriture faite : refusée, la suivante reporte
   // encore ce changement (A22-02).
   if (!written) return written;
-  if (toml::parse_result ours = toml::parse(format_settings(settings)); ours)
-    remember(path, std::move(ours).table());
+  if (fresh) remember(path, std::move(fresh).table());
   return written;
 }
 

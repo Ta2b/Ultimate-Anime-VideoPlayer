@@ -88,7 +88,7 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
   };
   std::vector<std::string> out;
   out.push_back(wizard.calibrate
-                    ? i18n::tr("Machine calibration: with \"Optimise now\", the best settings this "
+                    ? i18n::tr("Machine calibration: with \"Calibrate now\", the best settings this "
                                "machine sustains (Video > Post-processing)")
                     : i18n::tr("Machine calibration: skipped, Auto preset (Video > Post-processing)"));
   if (has(WizardStep::Languages))

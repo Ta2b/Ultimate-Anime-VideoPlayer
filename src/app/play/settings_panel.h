@@ -78,7 +78,7 @@ struct SettingsChoices {
   std::string black_status;                     // seuils du vrai noir en cours
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
-      2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
+      2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Calibrer cette machine »
   int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
   int display_width = 0;   // sa largeur ; 0 : inconnue (16:9 supposé)
   // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo
@@ -208,7 +208,7 @@ class SettingsPanel {
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
   UpdateNote updates_;                    // Général > Application : la vérification en cours ou son résultat
-  BenchNote bench_;                       // « Évaluer ma machine » : l'essai en cours ou son rapport
+  BenchNote bench_;                       // « Calibrer cette machine » : l'essai en cours ou son rapport
   std::unique_ptr<MachineNote> machine_;  // Vidéo > Post-traitement : les résultats du bench
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };
