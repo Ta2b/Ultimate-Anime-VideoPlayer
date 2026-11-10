@@ -21,6 +21,7 @@
 #include <libplacebo/swapchain.h>
 #include <libplacebo/vulkan.h>
 
+#include "app/play/i18n.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "core/clock.h"
@@ -64,7 +65,11 @@ SDL_Window* PlaceboScreen::window() const {
 }
 
 std::string PlaceboScreen::output_description() const {
-  return impl_->hdr_output ? "sortie HDR10 (PQ BT.2020)" : "sortie SDR";
+  return impl_->hdr_output ? i18n::tr("HDR10 output (PQ BT.2020)") : i18n::tr("SDR output");
+}
+
+bool PlaceboScreen::has_grade() const {
+  return impl_->grade.has_value();
 }
 
 std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboScreen::create_ring(int width, int height,
@@ -154,10 +159,12 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   }();
   if (deband && !frame_debanded)
     params.deband_params = graded_now ? &kQuietDeband : &pl_deband_default_params;
-  // La netteté sur MAIN d'abord, puis les passes du grade sur OUTPUT.
+  // La netteté sur SCALED d'abord, puis les passes du grade sur OUTPUT. Une source SDR lui arrive en lumière
+  // linéaire, une source HDR encodée (A41-06).
   std::array<const pl_hook*, 16> hooks{};
   std::size_t count = 0;
-  if (sharpen && sharpen->hook() != nullptr) hooks[count++] = sharpen->hook();
+  const bool sdr_source = image == nullptr || !pl_color_space_is_hdr(&image->color);
+  if (sharpen && sharpen->hook(sdr_source) != nullptr) hooks[count++] = sharpen->hook(sdr_source);
   if (graded_now) {
     for (const pl_hook* hook : grade->hooks()) {
       if (count < hooks.size()) hooks[count++] = hook;
@@ -473,7 +480,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     if (++s.snapshot_index >= s.snapshot_count) s.snapshot.reset();
     if (auto saved = s.save_snapshot(frame != nullptr ? &image : nullptr, target, out, request.ui, path);
         !saved) {
-      s.channel->warn("instantané {} : {}", core::to_utf8(path), saved.error().detail);
+      s.channel->warn("instantané {} : {}", core::to_utf8(path.filename()), saved.error().detail);
     }
   }
   if (s.offscreen) {
