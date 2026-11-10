@@ -20,7 +20,7 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
 
 La phase 5 a livré ses contrôles de CI (complexité avec `tools/ci/complexity-baseline.txt`, graphe des modules,
 utilitaires réécrits, `path::string()`, commentaires, version unique), le code mort, les options fantômes, les
-utilitaires communs (`core/text.h`, `core/av_error.h`, `ajp::refuse`), les seuils nommés, le module de chemins
+utilitaires communs (`core/text.h`, `av/av_error.h`, `ajp::refuse`), les seuils nommés, le module de chemins
 (`paths.h`), l'état du menu hors des `static`, les en-têtes précompilés (`AJP_PCH`), clang-tidy sur TensorRT et
 Core ML, et l'empreinte de la frontière des moteurs (`cmake/BoundaryHash.cmake`). Les journaux restent en français
 (P5.40). Restent, chacun une PR à lui :
