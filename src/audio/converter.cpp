@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstddef>
 #include <format>
 
 extern "C" {
@@ -42,6 +44,16 @@ std::string describe(const AVFrame& frame) {
   av_channel_layout_uninit(&layout);
   const char* format = av_get_sample_fmt_name(static_cast<AVSampleFormat>(frame.format));
   return std::format("{} {} Hz {}", format != nullptr ? format : "?", frame.sample_rate, text.data());
+}
+
+// Sous le coude, l'échantillon passe tel quel ; au-delà, il tend vers 1 sans jamais l'atteindre, avec une
+// pente continue au coude : les crêtes d'un mixage 5.1 vers stéréo s'arrondissent au lieu d'être écrêtées.
+float soft_limit(float sample) {
+  constexpr float kKnee = 0.8F;
+  const float size = std::abs(sample);
+  if (size <= kKnee) return sample;
+  const float limited = kKnee + ((1.0F - kKnee) * std::tanh((size - kKnee) / (1.0F - kKnee)));
+  return std::copysign(limited, sample);
 }
 
 }  // namespace
@@ -129,10 +141,10 @@ std::expected<void, Refusal> PcmConverter::configure(const AVFrame& frame) {
   av_channel_layout_uninit(&in_layout);
   av_channel_layout_uninit(&out_layout);
   swr_.reset(swr);
-  // P3.79 : un downmix (5.1 vers stéréo) somme les canaux ; en flottant, libswresample ne normalise pas la
-  // matrice et la sortie dépasse 1, que SDL écrête. La matrice est bornée à 1.
-  if (error >= 0 && frame.ch_layout.nb_channels > output_.channels)
-    error = av_opt_set_double(swr, "rematrix_maxval", 1.0, 0);
+  // A16-08 : un downmix (5.1 vers stéréo) garde les niveaux de libswresample (centre et surround à −3 dB),
+  // sans normaliser la matrice, qui mettait les dialogues à −10,7 dB (comme mpv, audio-normalize-downmix=no).
+  // Ce qui dépasse le seuil passe par le limiteur doux de append, au lieu de l'écrêtage de SDL (P3.79).
+  downmix_ = frame.ch_layout.nb_channels > output_.channels;
   if (error >= 0) error = swr_init(swr_.get());
   if (error < 0) {
     swr_.reset();
@@ -156,6 +168,9 @@ int PcmConverter::append(PcmBlock& block, const AVFrame* frame) {
   const std::uint8_t* const* in = frame != nullptr ? frame->extended_data : nullptr;
   const int converted = swr_convert(swr_.get(), out.data(), capacity, in, in_frames);
   block.samples.resize(start + static_cast<std::size_t>(std::max(converted, 0)) * channels);
+  if (downmix_)
+    std::for_each(block.samples.begin() + static_cast<std::ptrdiff_t>(start), block.samples.end(),
+                  [](float& sample) { sample = soft_limit(sample); });
   return converted;
 }
 

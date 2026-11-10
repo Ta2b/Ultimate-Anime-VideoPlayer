@@ -139,6 +139,25 @@ jobs:
       - name: Tests sautés
         if: matrix.tests
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" ${{ matrix.name }}
+      # Les moteurs fusionnés Vulkan (RIFE, DistilDRBA) contre le réseau entier et contre l'interpréteur en
+      # float, sur les modèles livrés (A45-11). La nuit et à la demande seulement : les modèles (322 Mo,
+      # jamais versionnés) se téléchargent et restent en cache, les deux tests prennent quelques minutes sur
+      # lavapipe. Ailleurs ces tests restent cachés, et sautés sans modèle.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: matrix.name == 'lavapipe' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        with:
+          path: ~/.cache/ajp-release-models
+          key: modeles-${{ hashFiles('tools/release/fetch-models.sh') }}
+      - name: Moteurs fusionnés sur les modèles livrés
+        if: matrix.name == 'lavapipe' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          sudo apt-get install -y -qq --no-install-recommends p7zip-full
+          tools/release/fetch-models.sh "$HOME/ajp/models"
+          # Sans modèle, les tests se sauteraient en silence : leur présence se vérifie ici.
+          for model in rife_v4.22_lite.onnx rife_v4.25.onnx distil_drba_v2_lite.onnx; do
+            test -f "$HOME/ajp/models/rife/$model" || { echo "modèle absent : $model" >&2; exit 1; }
+          done
+          xvfb-run -a build/linux-prefix/tests/unit/vk_backend/ajp_vk_backend_tests "[.rife_fused],[.drba_fused]"
       # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
       # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.
       - name: clang-tidy sur src/

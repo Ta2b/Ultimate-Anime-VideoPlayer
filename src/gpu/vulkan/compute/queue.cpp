@@ -46,11 +46,15 @@ Done VkContext::queue_submit(std::span<const VkSubmitInfo> infos, std::size_t la
   // Les files des voies en plus ne sont qu'à nous : seule la principale passe par le verrou.
   const bool main = lane == 0;
   if (lost()) return refuse(RefusalCode::DeviceLost, "vkQueueSubmit : appareil perdu plus tôt, à relancer");
-  if (main && lock_queue_) lock_queue_();
-  const VkResult result =
-      device_fn_.vkQueueSubmit(main ? queue_ : lane_queues_[lane - 1],
-                               static_cast<std::uint32_t>(infos.size()), infos.data(), VK_NULL_HANDLE);
-  if (main && unlock_queue_) unlock_queue_();
+  VkResult result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+  if (failing_submits_ > 0) {
+    --failing_submits_;  // tests : fail_next_submits
+  } else {
+    if (main && lock_queue_) lock_queue_();
+    result = device_fn_.vkQueueSubmit(main ? queue_ : lane_queues_[lane - 1],
+                                      static_cast<std::uint32_t>(infos.size()), infos.data(), VK_NULL_HANDLE);
+    if (main && unlock_queue_) unlock_queue_();
+  }
   ++queue_submits_;
   submit_infos_ += infos.size();
   if (result == VK_SUCCESS && !infos.empty() && infos.back().signalSemaphoreCount > 0) {
@@ -327,16 +331,45 @@ Done VkContext::flush() {
     std::size_t end = g + 1;
     while (end < groups && batch_groups_[end].lane == batch_groups_[g].lane) ++end;
     ok = queue_submit(std::span(batch_infos_).subspan(g, end - g), batch_groups_[g].lane);
-    if (!ok) {
-      // Rien n'est parti depuis ce groupe : ses enregistrements et les suivants n'attendront pas
-      // des exécutions jamais soumises.
-      for (std::size_t k = batch_groups_[g].entry; k < count; ++k) {
-        if (batch_[k].recording != nullptr) --batch_[k].recording->submitted_;
-      }
-    }
+    if (!ok) recover_signals(g, groups, count);
     g = end;
   }
   return ok;
+}
+
+void VkContext::recover_signals(std::size_t first, std::size_t groups, std::size_t count) {
+  // Un vkQueueSubmit refusé ne signale rien (hors appareil perdu), mais les valeurs de ce groupe et des
+  // suivants sont déjà promises : voies du backend, exécutions des enregistrements, sémaphores des
+  // images décodées. Sans elles, toute soumission suivante attendrait pour de bon (A45-05). Les mêmes
+  // attentes et les mêmes signaux repartent donc sans command buffer : le travail de ce lot est perdu,
+  // ce que le refus dit à l'appelant, mais l'ordre des timelines tient et la suite n'est pas figée.
+  if (!lost()) {
+    for (std::size_t g = first; g < groups; ++g) {
+      batch_infos_[g].commandBufferCount = 0;
+      batch_infos_[g].pCommandBuffers = nullptr;
+    }
+    Done sent;
+    for (std::size_t g = first; g < groups && sent;) {
+      std::size_t end = g + 1;
+      while (end < groups && batch_groups_[end].lane == batch_groups_[g].lane) ++end;
+      sent = queue_submit(std::span(batch_infos_).subspan(g, end - g), batch_groups_[g].lane);
+      g = end;
+    }
+    if (sent) {
+      log().error("soumission refusée : {} enregistrements perdus, leurs signaux envoyés sans eux",
+                  count - batch_groups_[first].entry);
+      return;
+    }
+    // Même les signaux seuls ne partent pas : plus rien ne les enverra. Le contexte est tenu pour perdu,
+    // chaque soumission suivante est refusée tout de suite au lieu d'attendre une valeur jamais signalée.
+    mark_lost();
+    log().error("soumission refusée, signaux de rattrapage refusés aussi : contexte Vulkan tenu pour perdu");
+  }
+  // Rien n'est parti depuis ce groupe : ses enregistrements et les suivants n'attendront pas des
+  // exécutions jamais soumises.
+  for (std::size_t k = batch_groups_[first].entry; k < count; ++k) {
+    if (batch_[k].recording != nullptr) --batch_[k].recording->submitted_;
+  }
 }
 
 Done VkContext::wait_on_host(const TimelinePoint& point, std::chrono::nanoseconds timeout) {

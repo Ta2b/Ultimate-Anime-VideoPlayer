@@ -1,13 +1,15 @@
 #include "gpu/vulkan/backend/net_build.h"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <fstream>
-#include <random>
 #include <set>
 #include <system_error>
 
 #include "ajp_vk_backend_spirv.h"
+#include "core/file_sync.h"
+#include "core/utf8_path.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/import.h"
 #include "gpu/ir/ops.h"
@@ -201,30 +203,28 @@ std::uint64_t artifact_key(const BuildRequest& request, const DeviceProfile& pro
 }
 
 std::expected<void, Refusal> write_file(const std::filesystem::path& path, std::span<const std::byte> bytes) {
-  std::error_code error;
-  std::filesystem::create_directories(path.parent_path(), error);
-  if (error)
-    return refuse(RefusalCode::CacheIo, std::format("{} : {}", path.parent_path().string(), error.message()));
-  // Un nom de travail propre à cet écrivain : le lecteur et un export qui compilent le même
-  // réseau en même temps ne mêlent pas leurs octets ; le renommage publie un fichier entier.
-  std::random_device random;
-  const std::filesystem::path temporary = std::format("{}.tmp-{}-{}", path.string(), random(), random());
-  {
-    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    out.close();
-    if (!out) {
-      std::filesystem::remove(temporary, error);
-      return refuse(RefusalCode::CacheIo, std::format("écriture de {}", temporary.string()));
-    }
-  }
-  std::filesystem::rename(temporary, path, error);
-  if (error) {
-    const std::string why = error.message();
-    std::filesystem::remove(temporary, error);
-    return refuse(RefusalCode::CacheIo, std::format("{} : {}", path.string(), why));
-  }
+  // L'écriture atomique du projet : temporaire au nom propre à cet écrivain (le lecteur et un export qui
+  // compilent le même réseau ne mêlent pas leurs octets), écrit sur le disque avant le renommage (A45-07).
+  if (auto done = core::write_atomic(path, bytes); !done)
+    return refuse(RefusalCode::CacheIo, done.error().detail);
   return {};
+}
+
+int purge_stale_temporaries(const std::filesystem::path& folder, std::chrono::seconds older_than) {
+  std::error_code error;
+  int removed = 0;
+  const auto limit = std::filesystem::file_time_type::clock::now() - older_than;
+  for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error)) {
+    if (!it->is_regular_file(error)) continue;
+    const std::string name = core::to_utf8(it->path().filename());
+    // « .<nom>.<instant>-<fil>.tmp » de core::write_atomic, « <nom>.tmp-<n>-<n> » d'avant novembre 2026.
+    const bool temporary = (name.starts_with('.') && name.ends_with(".tmp")) || name.contains(".tmp-");
+    if (!temporary) continue;
+    const auto written = it->last_write_time(error);
+    if (error || written > limit) continue;  // récent : un autre écrivain y travaille peut-être
+    if (std::filesystem::remove(it->path(), error)) ++removed;
+  }
+  return removed;
 }
 
 std::expected<std::vector<std::byte>, Refusal> read_file(const std::filesystem::path& path) {

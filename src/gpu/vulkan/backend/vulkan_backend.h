@@ -40,7 +40,7 @@ struct HostViews;  // vulkan_backend_detail.h
 // Réglages hors contrat, pour les tests et le banc.
 struct BackendOptions {
   bool autotune = true;  // false : le premier candidat de chaque nœud, sans mesure
-  // Profil des dispatchs des réseaux (net_profile.h) : BackendOptions::profile_dispatches. Un tableau
+  // Profil des dispatchs des réseaux (net_profile.h) : aussi par BackendInit::profile_dispatches. Un tableau
   // par shader au journal quand le réseau se décharge.
   bool profile_dispatches = false;
   net::TunerOptions tuner;
