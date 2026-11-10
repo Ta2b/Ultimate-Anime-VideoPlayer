@@ -16,6 +16,7 @@ import mesures  # noqa: E402
 import modeles  # noqa: E402
 import rapport  # noqa: E402
 import sources  # noqa: E402
+import chroma444  # noqa: E402
 import travail  # noqa: E402
 
 F16 = TensorProto.FLOAT16
@@ -220,6 +221,25 @@ class Travail(unittest.TestCase):
         self.assertEqual(travail.width_of(540), 960)
         self.assertEqual(travail.width_of(360), 640)
         self.assertEqual(travail.width_of(270), 480)
+
+
+class Chroma444(unittest.TestCase):
+    def test_aller_retour_des_couleurs(self):
+        rgb = picture(3, 54, 96)
+        back = chroma444.to_rgb(*chroma444.to_yuv10(rgb).astype(np.float32))
+        self.assertLess(float(np.abs(back - rgb).max()), 2.0 / 876.0)  # l'arrondi à 10 bits, pas plus
+
+    def test_remontee_a_sa_place(self):
+        # Une rampe de chroma lue une colonne sur deux (chroma à gauche) retrouve la rampe ; lue au centre en
+        # hauteur (moyenne de deux lignes), elle la retrouve aussi.
+        ramp = np.broadcast_to(np.arange(96, dtype=np.float64), (54, 96))
+        wide = chroma444.up_axis(ramp[:, ::2], 1, 0.0)
+        self.assertLess(float(np.abs(wide - ramp)[:, 6:-6].max()), 1e-6)
+        rows = np.broadcast_to(np.arange(54, dtype=np.float64)[:, None], (54, 96))
+        tall = chroma444.up_axis(rows.reshape(27, 2, 96).mean(1), 0, 0.5)
+        self.assertLess(float(np.abs(tall - rows)[6:-6].max()), 1e-6)
+        flat = np.full((27, 48), 512.0)
+        self.assertLess(float(np.abs(chroma444.up_axis(flat, 0, 0.5) - 512.0).max()), 1e-9)  # bords compris
 
 
 if __name__ == "__main__":

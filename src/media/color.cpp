@@ -369,7 +369,7 @@ std::optional<Refusal> unreadable_video(const TrackInfo& track) {
   if (format == AV_PIX_FMT_NONE) return std::nullopt;  // le conteneur ne le dit pas : la première image dira
   auto mapped = map_pixel_format(format);
   if (!mapped) {
-    // Le YUV planaire que la chaîne ne lit pas se convertit en 4:2:0 (to_chain_yuv) ; le reste est refusé.
+    // Le YUV planaire que la chaîne ne lit pas se convertit (to_chain_yuv) ; le reste est refusé.
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
     const bool convertible =
         desc != nullptr &&

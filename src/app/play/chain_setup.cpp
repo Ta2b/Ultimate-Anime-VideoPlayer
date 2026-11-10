@@ -83,6 +83,9 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
           .render_luid = render.luid,
           .devices = shared,
           .download = !tensorrt,
+          // L'ingestion Vulkan lit Yuv444p16 et P016 en mémoire hôte ; celle de TensorRT ne lit pas le
+          // 4:4:4 et n'a pas été vue sur la carte avec du P016 hôte (A15-07, A-CONFIRMER).
+          .full_host_formats = !tensorrt,
           .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
 }
 
