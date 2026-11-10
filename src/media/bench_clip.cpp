@@ -8,6 +8,7 @@
 #include <system_error>
 #include <vector>
 
+#include "core/utf8_path.h"
 #include "media/av_util.h"
 
 namespace ajp::media {
@@ -140,7 +141,7 @@ std::expected<void, Refusal> write_clip_to(const std::filesystem::path& file, co
   const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MPEG2VIDEO);
   if (codec == nullptr) return refuse(RefusalCode::LibraryUnavailable, "encodeur MPEG-2 absent de FFmpeg");
   AVFormatContext* raw = nullptr;
-  const std::string path = file.string();
+  const std::string path = core::to_utf8(file);
   if (const int err = avformat_alloc_output_context2(&raw, nullptr, "matroska", path.c_str());
       err < 0 || raw == nullptr)
     return refuse_av(RefusalCode::LibraryUnavailable, "conteneur matroska", err);
@@ -230,7 +231,8 @@ std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
     written = refuse(RefusalCode::FileUnwritable, "clip de calibration vide");
   if (written) std::filesystem::rename(partial, file, error);
   if (written && error)
-    written = refuse(RefusalCode::FileUnwritable, std::format("{} : {}", file.string(), error.message()));
+    written =
+        refuse(RefusalCode::FileUnwritable, std::format("{} : {}", core::to_utf8(file), error.message()));
   if (!written) std::filesystem::remove(partial, error);
   return written;
 }

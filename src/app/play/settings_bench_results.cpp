@@ -36,13 +36,14 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
   bench.problem.clear();
   const std::filesystem::path data = choices.settings_dir;
   std::error_code error;
-  const BenchPlan plan{.executable = choices.place.executable,
-                       .video = data / "bench-clip-v4.mkv",
-                       .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
-                       .data = data,
-                       .display_width = choices.display_height * 16 / 9,
-                       .display_height = choices.display_height,
-                       .display_hdr = choices.hdr_output};
+  const BenchPlan plan{
+      .executable = choices.place.executable,
+      .video = data / "bench-clip-v4.mkv",
+      .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
+      .data = data,
+      .display_width = choices.display_width > 0 ? choices.display_width : choices.display_height * 16 / 9,
+      .display_height = choices.display_height,
+      .display_hdr = choices.hdr_output};
   const int height = choices.display_height > 0 ? choices.display_height : 1080;
   const auto tier = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1));
   bench.pending = start_task<MachineCalibration>(

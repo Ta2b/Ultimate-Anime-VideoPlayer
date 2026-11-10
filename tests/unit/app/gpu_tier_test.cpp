@@ -61,6 +61,24 @@ TEST_CASE("les iGPU sont signalés", "[gpu_tier]") {
   CHECK_FALSE(of("NVIDIA GeForce RTX 4070 Ti", GpuVendor::Nvidia, 12, true).integrated);
 }
 
+TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bureau (A07-08)", "[gpu_tier]") {
+  ajp::app::play::FrenchUi french;
+  const auto nvidia = [](std::string name) { return of(std::move(name), GpuVendor::Nvidia, 8, true).tier; };
+  CHECK(nvidia("NVIDIA GeForce RTX 4060") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 4060 Laptop GPU") == Tier::Light);
+  CHECK(nvidia("NVIDIA GeForce RTX 4050 Laptop GPU") == Tier::Light);
+  CHECK(nvidia("NVIDIA GeForce RTX 3060 Laptop GPU") == Tier::Light);
+  CHECK(nvidia("NVIDIA GeForce RTX 2070 Laptop GPU") == Tier::Light);
+  CHECK(nvidia("NVIDIA GeForce RTX 4070 Laptop GPU") == Tier::Normal);  // sa règle nommée reste devant
+  CHECK(nvidia("NVIDIA GeForce RTX 4090 Laptop GPU") == Tier::Fast);
+  // La Quadro RTX 6000 (Turing) n'est pas la RTX 6000 Ada ; la RTX A400 n'est pas une RTX A4000.
+  CHECK(nvidia("NVIDIA Quadro RTX 6000") == Tier::Fast);
+  CHECK(nvidia("NVIDIA RTX 6000 Ada Generation") == Tier::Ultra);
+  CHECK(nvidia("NVIDIA RTX A400") == Tier::Economy);
+  CHECK(nvidia("NVIDIA RTX A4000") == Tier::Normal);
+  CHECK(nvidia("NVIDIA RTX A4500") == Tier::Fast);
+}
+
 TEST_CASE("une carte inconnue reçoit une estimation par ses faits", "[gpu_tier]") {
   ajp::app::play::FrenchUi french;
   const TierEstimate rtx = of("NVIDIA GeForce RTX 9999", GpuVendor::Nvidia, 32, true);
