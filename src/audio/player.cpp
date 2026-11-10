@@ -21,6 +21,11 @@ constexpr std::int64_t kMinQueueTargetUs = 20'000;
 constexpr std::int64_t kMaxQueueTargetUs = 2'000'000;
 constexpr std::int64_t kMinResyncUs = 10'000;
 constexpr std::int64_t kMaxResyncUs = 1'000'000;
+// A16-10 : un trou des horodatages audio, sous audio maître, se comble d'un silence daté : l'horloge avance
+// au pas du son au lieu de sauter, et l'image montre le trou. Sous le seuil, la gigue des paquets ; au-delà
+// de la borne, un saut voulu du flux (changement de programme) que l'horloge suit.
+constexpr std::int64_t kGapFillUs = 100'000;
+constexpr std::int64_t kMaxGapFillUs = 10'000'000;
 
 bool positive(double value) {
   return std::isfinite(value) && value > 0.0;
@@ -68,6 +73,11 @@ void AudioPlayer::handle(AudioPacket&& packet) {
 }
 
 void AudioPlayer::handle(const AudioTrack& track) {
+  if (track.from_epoch > epoch_) {  // l'ancienne piste finit son époque ; celle-ci s'ouvre avec la sienne
+    pending_track_ = track;
+    return;
+  }
+  pending_track_.reset();
   track_ = track;
   open_decoder(track);
   pump();
@@ -141,6 +151,7 @@ void AudioPlayer::handle(const DeviceRemoved& /*removed*/) {
     report(back.error());
     return;
   }
+  pushed_end_us_.reset();
   ready_.insert(ready_.begin(), std::make_move_iterator(back->begin()), std::make_move_iterator(back->end()));
   aligning_ = master_ != nullptr;
   regulator_.restart();
@@ -148,6 +159,10 @@ void AudioPlayer::handle(const DeviceRemoved& /*removed*/) {
   restart_pll();
   if (!paused_) output_->resume();
   log_->warn("sortie audio retirée : le son passe sur la sortie par défaut du système");
+  if (config_.fallback_delay_us && *config_.fallback_delay_us != output_->delay_us()) {
+    log_->info("délai audio de la sortie du système : {} ms", *config_.fallback_delay_us / 1000);
+    set_delay(*config_.fallback_delay_us);
+  }
   report(Refusal{RefusalCode::AudioDeviceUnavailable, "sortie audio retirée, son sur la sortie par défaut"});
   pump();
 }
@@ -170,8 +185,14 @@ void AudioPlayer::start_epoch(std::uint32_t epoch) {
   held_.clear();
   ready_.clear();
   if (decoder_) decoder_->flush();
+  if (pending_track_ && epoch >= pending_track_->from_epoch) {
+    track_ = std::move(*pending_track_);
+    pending_track_.reset();
+    open_decoder(*track_);
+  }
   output_->clear();
   trim_before_us_.reset();
+  pushed_end_us_.reset();
   end_pending_ = false;
   ended_ = false;
   aligning_ = master_ != nullptr;
@@ -227,10 +248,12 @@ bool AudioPlayer::push(PcmBlock& block) {
   if (block.frames() == 0) return true;  // entièrement avant la cible du seek : rien à caler
   if (aligning_ && !align(block)) return false;
   if (block.frames() == 0) return true;
+  fill_gap(block.pts_us);
   if (auto pushed = output_->push(block.pts_us, block.samples); !pushed) {
     report(pushed.error());
     return true;
   }
+  pushed_end_us_ = block.pts_us + frames_to_us(block.frames(), output_->format().sample_rate);
   // Premières trames de l'époque : la position est connue avant d'être entendue.
   if (!clock_->snapshot().valid) {
     clock_->publish({.media_us = block.pts_us + output_->delay_us(),
@@ -239,6 +262,16 @@ bool AudioPlayer::push(PcmBlock& block) {
                      .valid = true});
   }
   return true;
+}
+
+void AudioPlayer::fill_gap(std::int64_t pts_us) {
+  if (master_ || !pushed_end_us_) return;  // l'écran maître : align() cale déjà chaque bloc
+  const std::int64_t gap_us = pts_us - *pushed_end_us_;
+  if (gap_us <= kGapFillUs || gap_us > kMaxGapFillUs) return;
+  log_->info("trou de {} ms dans l'audio : comblé d'un silence", gap_us / 1000);
+  const int rate = output_->format().sample_rate;
+  if (auto silence = output_->push_silence(us_to_frames(gap_us, rate), pushed_end_us_); !silence)
+    report(silence.error());
 }
 
 // Coupe le début du bloc ou le fait précéder d'un silence, pour qu'il soit
@@ -270,12 +303,12 @@ bool AudioPlayer::align(PcmBlock& block) {
 void AudioPlayer::publish(std::int64_t heard_us, const DeviceReading& reading) {
   const bool starving = reading.consumed_frames >= output_->pushed_frames();
   if (starving && ended_) {
-    // Fin de piste : plus rien ne viendra, l'horloge continue sur l'hôte. Si
-    // elle s'était arrêtée (manque de trames avant la fin, pause), elle repart
-    // d'où elle était ; sinon elle continue déjà.
+    // Fin de piste : plus rien ne viendra, l'horloge continue sur l'hôte, à la vitesse 1. Si elle s'était
+    // arrêtée (manque de trames avant la fin, pause), elle repart d'où elle était ; si elle courait à la
+    // vitesse corrigée par la PLL, elle garde sa position et reprend la vitesse de l'hôte.
     const ClockSnapshot now = clock_->snapshot();
-    if (now.valid && now.rate == 0.0) {
-      clock_->publish({.media_us = now.media_us,
+    if (now.valid && now.rate != 1.0) {
+      clock_->publish({.media_us = now.media_at(reading.host_us),
                        .host_us = reading.host_us,
                        .rate = 1.0,
                        .epoch = epoch_,
@@ -320,6 +353,7 @@ void AudioPlayer::follow(std::int64_t heard_us, const DeviceReading& reading) {
 // L'audio pas encore consommé revient en tête, pour se caler avec le reste.
 void AudioPlayer::realign() {
   std::vector<PcmBlock> back = output_->take_back();
+  pushed_end_us_.reset();
   ready_.insert(ready_.begin(), std::make_move_iterator(back.begin()), std::make_move_iterator(back.end()));
   aligning_ = true;
   regulator_.restart();
@@ -358,6 +392,9 @@ void AudioPlayer::set_delay(std::int64_t delay_us) {
     return;
   }
   ClockSnapshot now = clock_->snapshot();  // l'audio maître décale l'horloge, tout de suite
+  // La PLL repart de la mesure suivante, qui porte déjà le nouveau délai : filtrée, elle reculerait de
+  // presque tout le pas pour le rattraper ensuite, et l'horloge maîtresse ne serait plus monotone (A16-09).
+  restart_pll();
   if (!now.valid) return;
   now.media_us += delay_us - before;
   clock_->publish(now);

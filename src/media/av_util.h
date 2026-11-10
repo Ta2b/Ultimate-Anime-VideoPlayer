@@ -15,7 +15,7 @@ extern "C" {
 #include <libavutil/frame.h>
 }
 
-#include "core/av_error.h"
+#include "av/av_error.h"
 #include "core/types.h"
 #include "media/track.h"
 
@@ -45,8 +45,8 @@ using BufferPtr = std::unique_ptr<AVBufferRef, BufferUnref>;
 
 inline constexpr AVRational kMicroseconds{1, 1'000'000};
 
-// Texte de av_strerror pour un code AVERROR (core/av_error.h).
-using core::av_error_text;
+// Texte de av_strerror pour un code AVERROR (av/av_error.h).
+using av::av_error_text;
 
 // Refus nommé : « où : texte FFmpeg ».
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error);

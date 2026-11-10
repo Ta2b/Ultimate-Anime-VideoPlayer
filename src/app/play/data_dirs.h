@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <span>
 #include <string>
 
 namespace ajp::app::play {
@@ -17,6 +18,15 @@ std::filesystem::path local_data(const std::filesystem::path& roaming);
 // déplacées. D'un volume à l'autre, la copie se fait dans « <nom>.migration », renommé une fois entier ; un
 // « .migration » laissé par une copie coupée est retiré et la copie recommence (A19-01).
 int move_heavy_data(const std::filesystem::path& from, const std::filesystem::path& to,
+                    const std::function<void(const std::string&)>& said = {});
+
+// Le dossier des caches qui se refont seuls (moteurs construits, modèles dérivés, plans, cache des shaders).
+// Sous Linux, <home>/.cache/ajp : les outils de sauvegarde l'excluent, pas ~/.local/share (A36-08) ;
+// $XDG_CACHE_HOME n'est pas lu (aucune variable d'environnement). Ailleurs, et sans dossier personnel :
+// heavy.
+std::filesystem::path cache_data(const std::filesystem::path& home, const std::filesystem::path& heavy);
+// Comme move_heavy_data, pour les seules entrées de cache : de heavy vers le dossier de cache_data.
+int move_cache_data(const std::filesystem::path& from, const std::filesystem::path& to,
                     const std::function<void(const std::string&)>& said = {});
 
 // P3.70 : les fichiers qu'une version d'avant écrivait par erreur dans le dossier parent des données

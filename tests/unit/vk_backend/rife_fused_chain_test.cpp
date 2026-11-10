@@ -1,7 +1,9 @@
 // RIFE fusionné de bout en bout sur le backend Vulkan, en test caché (un vrai RIFE lu en place, quelques
 // secondes sur un GPU, des minutes sur lavapipe) : le manifeste dérivé (prepare/rife_split.h) construit et
 // chargé, contre le RIFE entier sur le même backend, sur une paire d'images synthétiques décalées : PSNR de
-// l'image d'au moins 50 dB ; la variante mouvement, un flot borné.
+// l'image d'au moins 50 dB, et d'au moins 55 dB contre l'interpréteur en float, qui ne partage aucun noyau
+// avec le moteur (A45-11) ; la variante mouvement, un flot borné. La CI le lance la nuit et à la demande, sur
+// les modèles téléchargés (ci.yml) ; sans modèle il est sauté.
 //   ajp_vk_backend_tests "[.rife_fused]"
 #include <algorithm>
 #include <array>
@@ -14,6 +16,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "backend_rig.h"
+#include "fused_reference.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
@@ -123,6 +126,14 @@ void compare_chain(const std::string& file, bool motion) {
   const double psnr = mse == 0.0 ? 200.0 : 10.0 * std::log10(1.0 / mse);
   WARN(file << " : PSNR " << psnr << " dB contre le RIFE entier, écart maximal " << worst);
   CHECK(psnr >= 50.0);
+  // Contre une référence qui ne passe par aucun noyau Vulkan : l'interpréteur, en float, sur l'entrée
+  // telle que rife_input l'a écrite (A45-11).
+  const auto fed =
+      planes_from(read_tensor(*backend, (*input)->tensor(), static_cast<std::size_t>(11 * h * w * 2)), w, h,
+                  11, TensorType::F16);
+  const double fidelity = planes_psnr(got, interpreter_planes(onnx, {fed}, h, w, 3));
+  WARN(file << " : PSNR " << fidelity << " dB contre l'interpréteur en float");
+  CHECK(fidelity >= 55.0);
 }
 
 }  // namespace

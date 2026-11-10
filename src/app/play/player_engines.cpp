@@ -11,6 +11,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include "app/play/apple_model.h"
+#include "app/play/chain_setup.h"
 #include "app/play/controls.h"
 #include "app/play/drba_fused_choice.h"
 #include "app/play/engine_build.h"
@@ -363,6 +364,19 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
                   .width = g.padded_width,
                   .height = g.padded_height},
       gpu::Lane::Interpolate);
+}
+
+// La lecture du fichier : décodeur du moteur, langues, sortie audio et pistes gardées d'une réouverture.
+PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
+                               const std::string& backend_name) {
+  return {.file = file,
+          .decoder = decoder_options(backend_name, p.screen.device(), p.screen.shared_devices()),
+          .languages = {.presets = settings.language_presets},
+          .audio_device = settings.audio_device,
+          .audio_fallback_delay_us = audio_fallback_delay_us(settings),
+          .audio_pll = p.options.audio_pll,
+          .audio_track = p.audio_track,
+          .subtitle_track = p.subtitle_track};
 }
 
 }  // namespace ajp::app::play

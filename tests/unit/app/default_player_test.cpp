@@ -129,6 +129,14 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
   CHECK(written == desktop_entry(place.executable).value());
   CHECK_FALSE(fs::exists(fs::path(file.string() + ".tmp")));
 
+  CHECK_FALSE(refresh_registration(place));  // à sa place : rien à refaire
+  const PlayerPlace moved{.executable = "/home/moi/Jeux/ajp-linux-x64/ajp", .home = home};
+  CHECK(refresh_registration(moved));  // le dossier a bougé : la fiche suit (A19-06)
+  {
+    std::ifstream again_in(file, std::ios::binary);
+    const std::string rewritten{std::istreambuf_iterator<char>(again_in), std::istreambuf_iterator<char>()};
+    CHECK(rewritten == desktop_entry(moved.executable).value());
+  }
   CHECK(register_player(place));  // une seconde inscription remplace la première
   const auto removed = unregister_player(place);
   REQUIRE(removed);
@@ -138,6 +146,8 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
   CHECK(again->contains("rien à retirer"));
   fs::remove_all(home, error);
 
+  CHECK_FALSE(refresh_registration(place));  // jamais inscrit (ou retiré) : rien n'est écrit
+  CHECK_FALSE(fs::exists(file));
   const auto nowhere = register_player(PlayerPlace{.executable = place.executable});
   REQUIRE_FALSE(nowhere);
   CHECK(nowhere.error().code == RefusalCode::FieldMissing);
@@ -179,6 +189,13 @@ TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_pla
   CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop"));
   CHECK_FALSE(default_handler_is_ajp("mpv.desktop\n"));
   CHECK_FALSE(default_handler_is_ajp(""));
+  // La question ne bloque jamais l'appelant (A19-04) : xdg-mime répond sur un fil à lui.
+  const auto asked = std::chrono::steady_clock::now();
+  static_cast<void>(is_default_player(PlayerPlace{}));
+  CHECK(std::chrono::steady_clock::now() - asked < std::chrono::milliseconds(200));
+  CHECK(user_choice_is_ajp("AJP.Video"));
+  CHECK_FALSE(user_choice_is_ajp("VLC.mkv"));
+  CHECK_FALSE(user_choice_is_ajp(""));
 }
 
 TEST_CASE("Lecteur par défaut : la mise à jour et l'inscription ne lisent pas le même dossier",
@@ -287,4 +304,43 @@ TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[epis
   }
   CHECK(opened.grew(file));
   std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp, le reste reste (A36-08)",
+          "[app]") {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "ajp-cache-data";
+  fs::remove_all(root);
+  const fs::path home = root / "home";
+  const fs::path heavy = home / ".local" / "share" / "ajp" / "ajp";
+  const fs::path cache = ajp::app::play::cache_data(home, heavy);
+#ifdef __linux__
+  CHECK(cache == home / ".cache" / "ajp");
+#else
+  CHECK(cache == heavy);
+#endif
+  CHECK(ajp::app::play::cache_data({}, heavy) == heavy);
+  for (const char* name : {"engines", "modeles", "plans", "backends", "models", "luts", "downloads"})
+    fs::create_directories(heavy / name);
+  {
+    std::ofstream(heavy / "shaders.cache") << "cache";
+  }
+  {
+    std::ofstream(heavy / "engines" / "span.plan") << "plan";
+  }
+  const int moved = ajp::app::play::move_cache_data(heavy, cache);
+#ifdef __linux__
+  CHECK(moved == 4);
+  CHECK(fs::is_regular_file(cache / "engines" / "span.plan"));
+  CHECK(fs::is_regular_file(cache / "shaders.cache"));
+  CHECK(fs::is_directory(cache / "plans"));
+  CHECK(fs::is_directory(cache / "modeles"));
+  CHECK_FALSE(fs::exists(heavy / "engines"));
+#else
+  CHECK(moved == 0);
+#endif
+  // Les paquets, modèles téléchargés, LUT et téléchargements restent avec les données.
+  for (const char* name : {"backends", "models", "luts", "downloads"}) CHECK(fs::is_directory(heavy / name));
+  CHECK(ajp::app::play::move_cache_data(heavy, cache) == 0);  // une fois
+  fs::remove_all(root);
 }

@@ -40,7 +40,9 @@ int remove_other_versions(const EngineCatalog& catalog, const core::EnginePackag
 
 // Une installation coupée entre ses deux renommages (A06-08) : la version manque, mais « .partiel » est
 // complet (il a sa note, écrite en dernier) ou « .ancien » garde la précédente. Remet en place la copie
-// complète, la nouvelle d'abord. Rend vrai si une copie a été remise.
+// complète, la nouvelle d'abord. Si la version est là avec un « .partiel » complet, le remplacement que
+// Windows avait refusé (une DLL encore ouverte, A06-09) se fait maintenant, avant tout chargement. Rend vrai
+// si une copie a été remise.
 bool recover_interrupted_install(const EngineCatalog& catalog, const core::EnginePackage& package);
 
 }  // namespace ajp::app::play

@@ -127,13 +127,13 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 28> kTrialOptions{
-    "--rife-image",   "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",    "--no-hdr-metadata",
-    "--probe-nvdec",  "--no-probe-nvdec",  "--shot-cuts",       "--no-shot-cuts",    "--one-lane",
-    "--skip-held",    "--anime-shots",     "--no-anime-shots",  "--fast-steady",     "--smooth-drawings",
-    "--ring-watcher", "--no-ring-watcher", "--precise-wait",    "--no-precise-wait", "--audio-pll",
-    "--no-audio-pll", "--vsync-index",     "--no-vsync-index",  "--present",         "--no-present",
-    "--no-vrr",       "--rife-calm-model", "--rife-warm"};
+constexpr std::array<std::string_view, 29> kTrialOptions{
+    "--rife-image",   "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",      "--no-hdr-metadata",
+    "--probe-nvdec",  "--no-probe-nvdec",  "--shot-cuts",       "--no-shot-cuts",      "--one-lane",
+    "--skip-held",    "--anime-shots",     "--no-anime-shots",  "--fast-steady",       "--smooth-drawings",
+    "--ring-watcher", "--no-ring-watcher", "--precise-wait",    "--no-precise-wait",   "--audio-pll",
+    "--no-audio-pll", "--vsync-index",     "--no-vsync-index",  "--present",           "--no-present",
+    "--no-vrr",       "--rife-calm-model", "--rife-warm",       "--profile-dispatches"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -155,9 +155,10 @@ struct Flag {
 };
 
 // Les drapeaux d'essai sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 14> kFlags{{
+constexpr std::array<Flag, 15> kFlags{{
     {"--no-vrr", &PlayOptions::no_vrr, true},
     {"--one-lane", &PlayOptions::one_lane, true},
+    {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--skip-held", &PlayOptions::skip_held, true},
     {"--fast-steady", &PlayOptions::fast_steady, true},
@@ -551,6 +552,8 @@ std::string play_usage(bool debug) {
          "                         shots decide, RIFE when they do not cover the pair)\n"
          "  --one-lane             a single compute queue: slower, but the GPU profile gives each\n"
          "                         engine's own cost\n"
+         "  --profile-dispatches   Vulkan engine: GPU time and dispatch count per shader of each network,\n"
+         "                         logged when the network is unloaded\n"
          "  --skip-held            playback: an instant identical to the shown frame is neither computed "
          "nor\n"
          "                         written (trial; off by default)\n"

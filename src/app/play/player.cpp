@@ -200,14 +200,7 @@ std::jthread start_update_check(const std::filesystem::path& settings_path, cons
           const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
                                        std::chrono::system_clock::now().time_since_epoch())
                                        .count();
-          UpdateState state = load_update_state(update_file);
-          if (mode != UpdateMode::Never && (first || !playing.load()) &&
-              update_due(state, mode, frequency, now)) {
-            const auto message = run_update_check(state, stop);
-            if (const auto kept = save_update_state(update_file, state); !kept)
-              log_channel("app")->warn("update.toml : {}", kept.error().detail);
-            log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
-          }
+          check_updates_if_due(update_file, mode, frequency, first || !playing.load(), now, stop);
           if (frequency == UpdateFrequency::Launch) return;
           std::unique_lock lock(mutex);
           wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });

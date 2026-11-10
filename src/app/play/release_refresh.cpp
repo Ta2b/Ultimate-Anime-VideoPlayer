@@ -15,7 +15,7 @@ namespace ajp::app::play {
 
 ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPaths& paths,
                                      const PlaySettings& saved) {
-  ReleaseRefresh refresh{.cache = paths.engines.parent_path() / "engines-nvidia.lock"};
+  ReleaseRefresh refresh{.cache = paths::data_root(paths) / "engines-nvidia.lock"};
   refresh.before = read_release_index(refresh.cache);
   const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
   if (!online || release_repo().empty() || !release_index_due(refresh.cache)) return refresh;
@@ -40,7 +40,7 @@ ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPat
 
 EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved, ReleaseRefresh& refresh) {
   EngineCatalog catalog = load_catalog(
-      paths.engine_index, paths.engines.parent_path(),
+      paths.engine_index, paths::data_root(paths),
       saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
   ReleaseIndexCopy copy = std::move(refresh.before);
   if (refresh.done) {

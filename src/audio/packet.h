@@ -38,9 +38,12 @@ struct AudioPacket {
   std::optional<std::int64_t> discard_before_us;
 };
 
-// Ouvre le décodeur d'une piste : au premier flux, puis à chaque changement de piste.
+// Ouvre le décodeur d'une piste : au premier flux, puis à chaque changement de piste. from_epoch : la piste
+// vaut à partir de cette époque, posée avant le Flush du seek qui l'ouvre ; ses paquets ne passent jamais par
+// le décodeur de l'ancienne piste (A16-06). 0 : tout de suite.
 struct AudioTrack {
   AudioCodecInfo codec;
+  std::uint32_t from_epoch = 0;
 };
 
 // Fin de la piste : le décodeur rend ses dernières trames, puis l'horloge

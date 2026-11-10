@@ -13,7 +13,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "core/log.h"
-#include "core/user_overlay.h"
+#include "core/text_file.h"
 #include "core/utf8_path.h"
 #include "media/bench_clip.h"
 
@@ -264,6 +264,12 @@ std::filesystem::path calibration_file(const std::filesystem::path& data_dir) {
   return data_dir / "calibration.toml";
 }
 
+std::filesystem::path calibration_work_dir(const std::filesystem::path& data_dir) {
+  if (data_dir.empty()) return {};
+  const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+  return data_dir / std::format("calibration-essais-{:x}", static_cast<unsigned long long>(stamp));
+}
+
 std::expected<MachineCalibration, Refusal> load_calibration(const std::filesystem::path& file) {
   std::ifstream in(file, std::ios::binary);
   if (!in) return std::unexpected(Refusal{RefusalCode::FileUnreadable, core::to_utf8(file)});
@@ -376,7 +382,18 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   out.models = calibration_models(tier);
   out.date = std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
   std::error_code error;
+  // Jamais dans le dossier courant (A25-11) ; le dossier part à la sortie, essais finis ou refusés.
+  if (plan.work_dir.empty() || !plan.work_dir.is_absolute())
+    return std::unexpected(
+        Refusal{RefusalCode::FileUnreadable, "calibration : pas de dossier pour les essais"});
   std::filesystem::create_directories(plan.work_dir, error);
+  struct Cleanup {
+    std::filesystem::path dir;
+    ~Cleanup() {
+      std::error_code ignored;
+      std::filesystem::remove_all(dir, ignored);
+    }
+  } const cleanup{plan.work_dir};
   if (fraction) fraction(0.02F);
   if (!std::filesystem::is_regular_file(plan.video, error)) {
     if (auto written = media::write_bench_clip(plan.video); !written)
@@ -408,7 +425,6 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   out.engine = std::move(trials->engine);
   out.chosen = best_candidate(out.tried);
   log->info("calibration de la machine : recommandé {} (moteur {})", describe(out.chosen), out.engine);
-  std::filesystem::remove_all(plan.work_dir, error);
   if (!plan.data.empty()) {
     if (auto saved = save_calibration(calibration_file(plan.data), out); !saved)
       log->warn("calibration.toml : {}", saved.error().detail);

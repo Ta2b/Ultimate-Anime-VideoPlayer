@@ -10,6 +10,7 @@
 
 #include "prepare/process.h"
 #include "prepare/sha256.h"
+#include "prepare/utf8.h"
 
 namespace ajp::prepare {
 namespace {
@@ -133,15 +134,16 @@ std::filesystem::path layer_info_for(const std::filesystem::path& engine) {
 }
 
 std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings) {
-  std::vector<std::string> args{"--onnx=" + utf8_path(paths.onnx), "--saveEngine=" + utf8_path(paths.engine)};
+  std::vector<std::string> args{"--onnx=" + ansi_safe_path(paths.onnx),
+                                "--saveEngine=" + ansi_safe_path(paths.engine)};
   for (auto&& word : std::views::split(command_settings, ' ')) {
     if (!word.empty()) args.emplace_back(word.begin(), word.end());
   }
   if (!paths.layer_info.empty()) {
     args.emplace_back("--profilingVerbosity=detailed");
-    args.push_back("--exportLayerInfo=" + utf8_path(paths.layer_info));
+    args.push_back("--exportLayerInfo=" + ansi_safe_path(paths.layer_info));
   }
-  args.push_back("--timingCacheFile=" + utf8_path(paths.timing_cache));
+  args.push_back("--timingCacheFile=" + ansi_safe_path(paths.timing_cache));
   return args;
 }
 
