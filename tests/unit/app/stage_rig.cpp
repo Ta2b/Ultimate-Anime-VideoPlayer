@@ -161,6 +161,8 @@ std::vector<YuvWritten> FakeBackend::yuv_written() const {
 gpu::PairScores FakeBackend::scores_of(const gpu::Tensor& a, const gpu::Tensor& b) {
   const auto left = ingested_.find(a.handle);
   const auto right = ingested_.find(b.handle);
+  for (const gpu::Tensor* side : {&a, &b})
+    scored_heights_.push_back(side->shape.dims.size() == 4 ? static_cast<int>(side->shape.dims[2]) : 0);
   gpu::PairScores scores{.scene_score = 0.0, .worst_block = 1000, .identical = false};
   if (left == ingested_.end() || right == ingested_.end()) return scores;
   scores.left = left->second;
