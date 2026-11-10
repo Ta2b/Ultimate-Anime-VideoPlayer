@@ -263,3 +263,18 @@ TEST_CASE("track_color : la couleur du flux, devinée comme celle d'une image", 
   CHECK_FALSE(track_color(TrackInfo{.kind = TrackKind::Audio}));
   CHECK_FALSE(track_color(TrackInfo{.kind = TrackKind::Video}));
 }
+
+TEST_CASE("color : sans matrice, des primaires BT.2020 ou un transfert PQ ou HLG donnent BT.2020 (A15-08)",
+          "[media][color]") {
+  const auto matrix = [](AVColorPrimaries primaries, AVColorTransferCharacteristic transfer) {
+    FramePtr f = frame(3840, 2160, AV_PIX_FMT_YUV420P10LE);
+    f->color_primaries = primaries;
+    f->color_trc = transfer;
+    return color_info(*f, AV_PIX_FMT_YUV420P10LE).value().matrix;
+  };
+  CHECK(matrix(AVCOL_PRI_BT2020, AVCOL_TRC_SMPTE2084) == ColorMatrix::Bt2020Ncl);
+  CHECK(matrix(AVCOL_PRI_BT2020, AVCOL_TRC_UNSPECIFIED) == ColorMatrix::Bt2020Ncl);
+  CHECK(matrix(AVCOL_PRI_UNSPECIFIED, AVCOL_TRC_ARIB_STD_B67) == ColorMatrix::Bt2020Ncl);
+  CHECK(matrix(AVCOL_PRI_BT709, AVCOL_TRC_BT709) == ColorMatrix::Bt709);
+  CHECK(matrix(AVCOL_PRI_UNSPECIFIED, AVCOL_TRC_UNSPECIFIED) == ColorMatrix::Bt709);
+}

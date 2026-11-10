@@ -35,7 +35,7 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
   Quand le dernier moteur à lire l'entrée est la chaîne fusionnée, `rife_time` n'écrit plus qu'un demi-flottant au lieu
   d'un plan entier ; un moteur TensorRT entier ou DistilDRBA fusionné qui lit la même adresse ramène l'écriture du plan
   entier. Les plans 0 à 5 restent copiés (l'encodeur les veut remplis au multiple de 64). Le chemin Vulkan ne change pas.
-- Repli sur le RIFE entier : réglage éteint, autre backend, cran de précision hors Équilibre, entrée v2 (7 plans),
+- Repli sur le RIFE entier : réglage éteint, autre backend, graphe `_fp8` ou `_fp32` chargé (un cran dont le graphe manque garde la chaîne), entrée v2 (7 plans),
   structure inconnue, taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne
   passe trois fois sur une image de zéros (exécution à froid, capture du graphe, rejeu) avec synchronisation : une
   erreur CUDA se voit là, avant la première image. Une erreur plus tard en lecture n'est pas rattrapée (pas de bascule

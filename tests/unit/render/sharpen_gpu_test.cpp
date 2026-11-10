@@ -1,5 +1,6 @@
 // La netteté sur le GPU (render/sharpen.h) : le hook embarqué rendu par libplacebo sur une marche
 // synthétique, cible identique à la source. Lavapipe suffit ; sans appareil Vulkan, le test se saute.
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -29,8 +30,10 @@ std::vector<std::uint16_t> step(double dark, double light) {
   return pixels;
 }
 
-// La ligne du milieu, en valeurs de 0 à 1 (canal rouge), après le hook (ou sans hook).
-std::vector<double> rendered(Gpu& gpu, const std::vector<std::uint16_t>& source, const pl_hook* hook) {
+// La ligne du milieu, en valeurs de 0 à 1 (canal rouge), après le hook (ou sans hook), sur une cible de
+// `side` pixels de côté (celle de la source par défaut).
+std::vector<double> rendered(Gpu& gpu, const std::vector<std::uint16_t>& source, const pl_hook* hook,
+                             int side = kSide) {
   const pl_gpu g = gpu.vk->gpu;
   pl_tex_params tex_params{};
   tex_params.w = kSide;
@@ -45,6 +48,8 @@ std::vector<double> rendered(Gpu& gpu, const std::vector<std::uint16_t>& source,
   tex_params.host_writable = false;
   tex_params.renderable = true;
   tex_params.host_readable = true;
+  tex_params.w = side;
+  tex_params.h = side;
   pl_tex out = pl_tex_create(g, &tex_params);
   REQUIRE(in != nullptr);
   REQUIRE(out != nullptr);
@@ -55,19 +60,19 @@ std::vector<double> rendered(Gpu& gpu, const std::vector<std::uint16_t>& source,
     render.num_hooks = 1;
   }
   const pl_frame image = frame_of(in, true);
-  const pl_frame target = frame_of(out, true);
+  pl_frame target = frame_of(out, true);
+  target.crop = {0, 0, static_cast<float>(side), static_cast<float>(side)};
   REQUIRE(pl_render_image(gpu.renderer, &image, &target, &render));
-  std::vector<std::uint16_t> pixels(source.size());
+  const auto width = static_cast<std::size_t>(side);
+  std::vector<std::uint16_t> pixels(width * width * 4);
   pl_tex_transfer_params download{};
   download.tex = out;
   download.ptr = pixels.data();
   REQUIRE(pl_tex_download(g, &download));
   pl_tex_destroy(g, &in);
   pl_tex_destroy(g, &out);
-  std::vector<double> row(kSide);
-  for (int x = 0; x < kSide; ++x)
-    row[static_cast<std::size_t>(x)] =
-        pixels[(static_cast<std::size_t>(kSide / 2) * kSide + static_cast<std::size_t>(x)) * 4] / 65535.0;
+  std::vector<double> row(width);
+  for (std::size_t x = 0; x < width; ++x) row[x] = pixels[((width / 2) * width + x) * 4] / 65535.0;
   return row;
 }
 
@@ -109,6 +114,30 @@ TEST_CASE("netteté : rien à 0, un bord plus franc sans halo, les aplats intact
   const std::vector<double> grain_sharp = rendered(gpu, grain, sharpen->hook());
   CHECK(grain_sharp[100] == Catch::Approx(grain_plain[100]).margin(2e-4));
   CHECK(grain_sharp[101] == Catch::Approx(grain_plain[101]).margin(2e-4));
+}
+
+// A41-06 : le liseré se mesure en valeurs encodées quelle que soit la taille de la fenêtre. Avant, une image
+// réduite ou agrandie arrivait au hook en lumière linéaire : le quart de l'écart local y valait bien plus
+// une fois encodé, et le côté sombre d'un bord plongeait.
+TEST_CASE("netteté : le même liseré borné en fenêtre réduite ou agrandie", "[render][gpu][sharpen]") {
+  Gpu gpu;
+  require_device(gpu);
+  auto sharpen = Sharpen::create(gpu.vk->gpu);
+  REQUIRE(sharpen);
+  sharpen->set_strength(1.0);
+  const std::vector<std::uint16_t> source = step(0.3, 0.6);
+  for (const int side : {kSide / 2, kSide, kSide * 2}) {
+    CAPTURE(side);
+    const std::vector<double> plain = rendered(gpu, source, nullptr, side);
+    const std::vector<double> sharp = rendered(gpu, source, sharpen->hook(), side);
+    const auto [plain_low, plain_high] = std::ranges::minmax(plain);
+    const auto [low, high] = std::ranges::minmax(sharp);
+    INFO("sans netteté " << plain_low << " à " << plain_high << ", avec " << low << " à " << high);
+    // Le filtre de mise à l'échelle a ses propres lobes : la netteté n'y ajoute que son quart de l'écart.
+    CHECK(low >= plain_low - 0.25 * 0.3 - 0.004);
+    CHECK(high <= plain_high + 0.25 * 0.3 + 0.004);
+    CHECK(high - low > plain_high - plain_low + 0.01);  // et elle agit
+  }
 }
 
 }  // namespace

@@ -20,13 +20,10 @@ TEST_CASE("DistilDRBA fusionné : essayé par défaut avec DistilDRBA, avec la r
   CHECK(drba_fused_declined(off, true) == "réglage éteint");
   // Un moteur qui ne le fait pas (Vulkan, Core ML…) : le DistilDRBA entier, sans erreur.
   CHECK(drba_fused_declined(drba, false) == "ce moteur ne le fait pas");
-  // Les crans FP8 et FP32 chargent un autre graphe (« _fp8 », « _fp32 ») que la découpe ne connaît pas.
+  // Le cran ne se juge plus ici mais sur le modèle trouvé (drba_tier).
   PlaySettings fast = drba;
   fast.motion_precision = PrecisionTier::Performance;
-  CHECK_FALSE(drba_fused_declined(fast, true).empty());
-  PlaySettings quality = drba;
-  quality.motion_precision = PrecisionTier::Quality;
-  CHECK_FALSE(drba_fused_declined(quality, true).empty());
+  CHECK(drba_fused_declined(fast, true).empty());
   // Les autres moteurs du mouvement ne sont pas coupés ici.
   PlaySettings rife;
   rife.motion_engine = MotionEngine::Rife;
@@ -34,6 +31,39 @@ TEST_CASE("DistilDRBA fusionné : essayé par défaut avec DistilDRBA, avec la r
   PlaySettings gmfss;
   gmfss.motion_engine = MotionEngine::Gmfss;
   CHECK_FALSE(drba_fused_declined(gmfss, true).empty());
+}
+
+TEST_CASE("DistilDRBA : le cran rendu décide du graphe et du fusionné", "[app][drba_fused]") {
+  const TierSupport none{};
+  const TierSupport both{.performance = true, .quality = true};
+  // Équilibre : le modèle livré, fusionné s'il s'essaie, sans un mot.
+  CHECK(drba_tier(PrecisionTier::Balanced, true, both).fused);
+  CHECK(drba_tier(PrecisionTier::Balanced, true, both).tier == PrecisionTier::Balanced);
+  CHECK(drba_tier(PrecisionTier::Balanced, true, both).why.empty());
+  CHECK_FALSE(drba_tier(PrecisionTier::Balanced, false, both).fused);
+  // A31-06 : Performance sans graphe FP8 ou sans moteur FP8 (toujours sous Windows), Qualité sans graphe FP32
+  // : le modèle livré, donc fusionné, au lieu du moteur entier plus lent qu'Équilibre.
+  for (const PrecisionTier asked : {PrecisionTier::Performance, PrecisionTier::Quality}) {
+    const DrbaTier plan = drba_tier(asked, true, none);
+    CHECK(plan.tier == PrecisionTier::Balanced);
+    CHECK(plan.fused);
+    CHECK_FALSE(plan.why.empty());
+  }
+  // A31-07 : Performance avec le graphe FP8 présent : la chaîne fusionnée FP16 d'abord, plus rapide et plus
+  // juste.
+  const DrbaTier fast = drba_tier(PrecisionTier::Performance, true, both);
+  CHECK(fast.tier == PrecisionTier::Balanced);
+  CHECK(fast.fused);
+  // Sans chaîne fusionnée (réglage éteint, moteur qui ne la fait pas), le graphe FP8 sert.
+  const DrbaTier whole = drba_tier(PrecisionTier::Performance, false, both);
+  CHECK(whole.tier == PrecisionTier::Performance);
+  CHECK_FALSE(whole.fused);
+  CHECK(whole.why.empty());
+  // Qualité avec son graphe : le FP32 entier, jamais la chaîne coupée du modèle FP16.
+  const DrbaTier best = drba_tier(PrecisionTier::Quality, true, both);
+  CHECK(best.tier == PrecisionTier::Quality);
+  CHECK_FALSE(best.fused);
+  CHECK(drba_tier(PrecisionTier::Quality, false, none).tier == PrecisionTier::Balanced);
 }
 
 TEST_CASE("DistilDRBA fusionné : le réglage voyage dans play.toml et recharge la lecture",
