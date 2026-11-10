@@ -81,6 +81,8 @@ class SubsBridge final : public media::PacketSink {
 
   // Depuis main : la piste dont les paquets passent ; rien : aucune.
   void select(std::optional<int> track) { track_.store(track.value_or(kNone)); }
+  // Avant le départ des threads : les pistes mov_text, dont le texte suit une longueur (A18-15).
+  void mov_text(int track) { mov_text_.push_back(track); }
   bool try_push(media::Packet&& packet) override;
   bool take_refused() { return refused_.exchange(false); }
 
@@ -89,6 +91,10 @@ class SubsBridge final : public media::PacketSink {
   std::shared_ptr<subs::SubsInbox> inbox_;
   std::atomic<int> track_;
   std::atomic<bool> refused_{false};
+  std::vector<int> mov_text_;  // écrit avant les threads, lu ensuite seulement
 };
+
+// Le texte d'un paquet mov_text (tx3g) : ce qui suit sa longueur, sans les boîtes de style.
+std::span<const std::byte> mov_text_payload(std::span<const std::byte> packet);
 
 }  // namespace ajp::app::play

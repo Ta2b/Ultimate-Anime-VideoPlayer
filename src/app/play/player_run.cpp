@@ -145,6 +145,14 @@ std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, Player
   return std::nullopt;
 }
 
+// Le nouvel écran : son contrat (P3.40, A11-01), puis son pic, ses soins OLED et son vrai noir tout de suite,
+// en SDR aussi (A08-07).
+void adopt_display(Player& p, ContractWatch& watch, Chain& chain, const std::optional<DisplayFacts>& display,
+                   SDL_Window* window) {
+  watch.set_display(p.display = display);
+  follow_display(chain, content_peak_nits(window));
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -335,7 +343,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
               .anime_shots = p.options.anime_shots};
-  chain.stages = p.stages;
+  carry_session(chain, p.stages, p.dropped_subtitles, p.subtitle_track);
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -634,11 +642,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
         if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
             display_moves_chain(chain.running.preset, opened_height, display_height(out.window())))
-          actions.emplace_back(PlayFile{p.options.file, session.view().position_us, session.paused()});
+          chain.reopen = chain.running;  // A29-03 : la chaîne, pas le lecteur ; pistes et sous-titres gardés
         vrr_fullscreen = fullscreen;
         session.set_composited(!fullscreen);
         if (const auto display = window_display(out.window())) {
-          if (display_changed) contract_watch.set_display(p.display = display);  // P3.40, A11-01
+          if (display_changed) adopt_display(p, contract_watch, chain, display, out.window());
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
@@ -736,7 +744,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   if (!chain.reopen && !failure && !session.quit_asked() && opened_file.grew(p.options.file)) {
     log->info("le fichier grandit encore : relu au même endroit");
-    apply(Input{PlayFile{p.options.file, session.view().position_us, false}}, chain, host_now_us());
+    chain.reopen = chain.running;  // A29-03 : comme une réouverture de la chaîne, pistes gardées
   }
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&

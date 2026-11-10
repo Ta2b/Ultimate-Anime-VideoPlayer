@@ -82,6 +82,10 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place);
 // Inscrit le lecteur et en fait celui des vidéos là où le système le permet (Linux : xdg-mime),
 // sinon ouvre la page du système qui le fait (Windows) ou dit comment faire (macOS).
 std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place);
+// La seconde moitié de choose_as_default, pour qui vient d'inscrire le lecteur (A25-07) : l'assistant ne
+// relance pas update-desktop-database (15 s au plus) juste après l'avoir lancé. registered : ce que
+// register_player a rendu, repris là où le système ne laisse rien faire de plus.
+std::expected<std::string, Refusal> default_once_registered(const std::string& registered);
 
 // La sortie de « xdg-mime query default <type> » désigne-t-elle ce lecteur ?
 bool default_handler_is_ajp(std::string_view query_output);
