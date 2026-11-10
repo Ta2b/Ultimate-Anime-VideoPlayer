@@ -1,8 +1,8 @@
 #pragma once
 
-// Le texte d'un code AVERROR, un seul pour tous les modules (P5.13). En-tête seul : core ne lie pas FFmpeg,
-// les modules qui l'incluent le lient déjà. av_err2str est une macro C99 (littéral composé), inutilisable en
-// C++.
+// Le texte d'un code AVERROR, un seul pour tous les modules (P5.13). En-tête seul, module av : core ne lie
+// pas FFmpeg (A20-12), les modules qui l'incluent le lient déjà. av_err2str est une macro C99 (littéral
+// composé), inutilisable en C++.
 
 #include <array>
 #include <cerrno>
@@ -13,7 +13,7 @@ extern "C" {
 #include <libavutil/error.h>
 }
 
-namespace ajp::core {
+namespace ajp::av {
 
 inline std::string av_error_text(int error) {
   // Les refus qu'on voit le plus à l'ouverture d'un fichier, en français (le reste garde le texte de FFmpeg).
@@ -34,4 +34,4 @@ inline std::string av_error_text(int error) {
   return text.data();
 }
 
-}  // namespace ajp::core
+}  // namespace ajp::av

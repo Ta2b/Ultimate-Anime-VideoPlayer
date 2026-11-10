@@ -5,9 +5,12 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
+#include "app/play/i18n.h"
 #include "app/play/options.h"
 #include "app/play/settings.h"
+#include "core/types.h"
 
 namespace ajp::app::play {
 
@@ -40,7 +43,14 @@ struct OpenedChain {
   bool drba_fused = false;          // ses quatre moteurs fusionnés tournent
   bool drba_motion = false;         // la variante mouvement (un SPAN par image source)
   bool drba_fused_capable = false;  // le backend sait le fusionner
+  // Un moteur fusionné demandé, essayé, puis refusé (A03-21) : le réseau entier tourne à sa place, plus
+  // lent. Le code du refus, pour le dire à l'écran et au panneau ; le détail est au journal.
+  std::optional<RefusalCode> drba_fused_refused;
+  std::optional<RefusalCode> rife_fused_refused;
 };
+
+// L'avis de l'ouverture quand un moteur fusionné a été refusé ; vide sinon.
+i18n::Translated fused_refusal_notice(const OpenedChain& opened);
 
 // La forme que ces réglages demandent pour l'écran et la source de at.
 ChainShape chain_shape(const PlaySettings& settings, const OpenedChain& at);

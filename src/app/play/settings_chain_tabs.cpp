@@ -10,6 +10,7 @@
 #include "app/play/drba_model.h"
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
+#include "app/play/visible_error.h"
 
 namespace ajp::app::play {
 
@@ -87,9 +88,25 @@ void drba_state_notes(const PlaySettings& d, const SettingsChoices& choices) {
     note(i18n::tr("Not fused: this engine cannot run it fused."));
   } else if (d.motion_precision != PrecisionTier::Balanced) {
     note(i18n::tr("Not fused: fused engines need Balanced precision."));
+  } else if (chain->drba_fused_refused) {
+    note(i18n::tr_format("Not fused: the fused engines were refused ({}); details in the log.",
+                         visible_error(Refusal{*chain->drba_fused_refused, ""})));
   } else {
     note(i18n::tr("Not fused: the fused engines were refused (see the log)."));
   }
+}
+
+// RIFE fusionné demandé puis refusé (A03-21) : la case reste cochée, le panneau dit ce qui tourne.
+void rife_state_notes(const PlaySettings& d, const SettingsChoices& choices) {
+  const OpenedChain* chain = choices.chain();
+  if (chain == nullptr || !d.rife_fused || !chain->rife_fused_refused) return;
+  note(i18n::tr_format("RIFE is not fused: the fused engines were refused ({}); details in the log.",
+                       visible_error(Refusal{*chain->rife_fused_refused, ""})));
+}
+
+void fused_state_notes(const PlaySettings& d, const SettingsChoices& choices) {
+  drba_state_notes(d, choices);
+  rife_state_notes(d, choices);
 }
 
 // Le modèle SPAN, en FP16 et, quand la carte le permet, en FP8.
@@ -381,7 +398,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     note(i18n::tr_format("DistilDRBA model not found in {} ({}); RIFE is used instead.", choices.rife_folder,
                          kDistilDrbaFile));
   }
-  drba_state_notes(d, choices);
+  fused_state_notes(d, choices);
   if (d.motion_engine == MotionEngine::DistilDrba && now.num > 5 * now.den) {
     note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter."));
   }

@@ -21,6 +21,7 @@
 #include "app/play/engine_install.h"
 #include "app/play/i18n.h"
 #include "app/play/model_choice.h"
+#include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
@@ -162,6 +163,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife
 struct DrbaFusedUse {
   bool used = false;
   std::string declined;
+  std::optional<RefusalCode> refused;  // le fusionné a été essayé et refusé : le code de ce refus (A03-21)
 };
 // DistilDRBA pour des images de travail work_width × work_height : son graphe, trouvé dans le
 // premier de dirs qui l'a, fixé à la taille remplie de RIFE, construit puis chargé. Rien si
@@ -186,5 +188,10 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
 // 15.4, puce ou taille refusées).
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_apple(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, int work_width, int work_height);
+
+// La lecture du fichier : décodeur du moteur, langues, sortie audio (A16-02) et pistes gardées d'une
+// réouverture.
+PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
+                               const std::string& backend_name);
 
 }  // namespace ajp::app::play

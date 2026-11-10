@@ -8,6 +8,7 @@
 #include <format>
 #include <fstream>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -113,6 +114,50 @@ TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seul
   });
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::FieldMissing);
+}
+
+TEST_CASE("Dérivés à la taille fixée : source remplacée retirée, les dernières tailles gardées (A09-11)",
+          "[app][model_choice]") {
+  const FakeHome fake("sized");
+  const std::filesystem::path dir = fake.home / "modeles";
+  std::filesystem::create_directories(dir);
+  const std::string now = "0123456789abcdef";
+  const std::string old = "fedcba9876543210";
+  const auto file = [&](const std::string& name, int age_hours) {
+    std::ofstream(dir / name) << "x";
+    std::filesystem::last_write_time(
+        dir / name, std::filesystem::file_time_type::clock::now() - std::chrono::hours(age_hours));
+    return dir / name;
+  };
+  // Cinq tailles de la source présente, de la plus ancienne (1) à la plus récente (5).
+  for (int i = 1; i <= 5; ++i) file(std::format("drba-{}x{}-t2-{}.onnx", 100 * i, 64 * i, now), 60 - 10 * i);
+  file(std::format("drba-800x448-t2-{}.onnx", old), 1);                // source remplacée
+  file(std::format("drba-mouvement-t2-{}.onnx", now), 500);            // pas une taille : hors de la purge
+  file(std::format("drba-fusion1-448x800-{}-encode.onnx", old), 500);  // autre famille
+  file(std::format("autre-100x64-t2-{}.onnx", old), 500);              // autre modèle
+  // La plus ancienne vient de servir : elle reste, et c'est la deuxième qui sort.
+  const std::filesystem::path used = dir / std::format("drba-100x64-t2-{}.onnx", now);
+  CHECK(purge_sized_derivatives(dir, "drba-", used, 4) == 2);
+  CHECK(std::filesystem::exists(used));
+  CHECK_FALSE(std::filesystem::exists(dir / std::format("drba-200x128-t2-{}.onnx", now)));
+  CHECK_FALSE(std::filesystem::exists(dir / std::format("drba-800x448-t2-{}.onnx", old)));
+  for (int i = 3; i <= 5; ++i)
+    CHECK(std::filesystem::exists(dir / std::format("drba-{}x{}-t2-{}.onnx", 100 * i, 64 * i, now)));
+  CHECK(std::filesystem::exists(dir / std::format("drba-mouvement-t2-{}.onnx", now)));
+  CHECK(std::filesystem::exists(dir / std::format("drba-fusion1-448x800-{}-encode.onnx", old)));
+  CHECK(std::filesystem::exists(dir / std::format("autre-100x64-t2-{}.onnx", old)));
+
+  // Les morceaux d'une taille du fusionné partent ensemble ; le manifeste servi garde les siens.
+  for (const char* size : {"64x100", "128x200"}) {
+    file(std::format("drba-fusion1-{}-{}-encode.onnx", size, now), 5);
+    file(std::format("drba-fusion1-{}-{}-bloc0.onnx", size, now), 5);
+    file(std::format("drba-fusion1-{}-{}.drbafused", size, now), 5);
+  }
+  CHECK(purge_sized_derivatives(dir, "drba-fusion1-",
+                                dir / std::format("drba-fusion1-64x100-{}.drbafused", now), 1) == 4);
+  CHECK(std::filesystem::exists(dir / std::format("drba-fusion1-64x100-{}-bloc0.onnx", now)));
+  CHECK_FALSE(std::filesystem::exists(dir / std::format("drba-fusion1-128x200-{}.drbafused", now)));
+  CHECK_FALSE(std::filesystem::exists(dir / std::format("drba-fusion1-448x800-{}-encode.onnx", old)));
 }
 
 TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autre", "[app][model_choice]") {

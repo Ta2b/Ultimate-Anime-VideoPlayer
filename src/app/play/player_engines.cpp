@@ -11,7 +11,9 @@
 #include <SDL3/SDL_timer.h>
 
 #include "app/play/apple_model.h"
+#include "app/play/chain_setup.h"
 #include "app/play/controls.h"
+#include "app/play/derived_model.h"
 #include "app/play/drba_fused_choice.h"
 #include "app/play/engine_build.h"
 #include "app/play/home_screen.h"
@@ -20,6 +22,7 @@
 #include "app/play/paths.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
+#include "core/utf8_path.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/rife.h"
 #include "prepare/drba_split.h"
@@ -303,6 +306,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
                                                g.padded_width);
     if (!manifest) {
       fused->declined = manifest.error().detail;
+      fused->refused = manifest.error().code;
     } else {
       auto engine = prepare_engine(p, init, backend, *manifest, shape,
                                    EngineLabel{.name = i18n::tr("Fused DistilDRBA"),
@@ -313,10 +317,16 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
       if (!engine && watch_now(engine.error())) return engine;  // A31-15 : aucun repli sur l'entier
       if (!engine) {
         fused->declined = engine.error().detail;
+        fused->refused = engine.error().code;
       } else if (!*engine) {
         return std::nullopt;  // fenêtre fermée pendant la construction
       } else {
         fused->used = true;
+        // Cinq fichiers par taille : seules les dernières tailles servies restent (A09-11).
+        purge_sized_derivatives(
+            paths::derived_models(p.paths),
+            std::format("{}-{}-", core::to_utf8(found->path.stem()), prepare::kDrbaFusedDerivation),
+            *manifest);
         return engine;
       }
     }
@@ -363,6 +373,19 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
                   .width = g.padded_width,
                   .height = g.padded_height},
       gpu::Lane::Interpolate);
+}
+
+// La lecture du fichier : décodeur du moteur, langues, sortie audio et pistes gardées d'une réouverture.
+PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
+                               const std::string& backend_name) {
+  return {.file = file,
+          .decoder = decoder_options(backend_name, p.screen.device(), p.screen.shared_devices()),
+          .languages = {.presets = settings.language_presets},
+          .audio_device = settings.audio_device,
+          .audio_fallback_delay_us = audio_fallback_delay_us(settings),
+          .audio_pll = p.options.audio_pll,
+          .audio_track = p.audio_track,
+          .subtitle_track = p.subtitle_track};
 }
 
 }  // namespace ajp::app::play

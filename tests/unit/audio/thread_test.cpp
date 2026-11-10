@@ -1,12 +1,14 @@
 // Le thread audio de bout en bout, sur le pilote SDL « dummy » qui consomme en temps réel.
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "audio/audio_thread.h"
 #include "core/clock.h"
+#include "core/clock_pll.h"
 #include "dummy_audio.h"
 #include "sine.h"
 
@@ -57,7 +59,8 @@ TEST_CASE("AudioThread : un sinus joue, l'horloge avance au rythme du périphér
   REQUIRE((*thread)->post(Command{cmd::Play{}}));
   std::this_thread::sleep_for(400ms);
   const ClockSnapshot playing = clock->snapshot();
-  CHECK(playing.rate == 1.0);
+  // La PLL du produit corrige la vitesse publiée d'au plus ±0,05 % (core/clock_pll.h).
+  CHECK(std::abs(playing.rate - 1.0) <= ajp::core::ClockPll::kMaxSpeed + 1e-9);
   const std::int64_t elapsed = host_now_us() - start;
   const std::int64_t advanced = playing.media_at(host_now_us()) - 1'000'000;
   CHECK(advanced > elapsed - 150'000);  // démarrage du périphérique et son tampon

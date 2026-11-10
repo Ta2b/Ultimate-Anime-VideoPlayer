@@ -3,18 +3,22 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <stop_token>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include "app/play/i18n.h"
 #include "core/file_sync.h"
+#include "core/utf8_path.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
@@ -260,14 +264,35 @@ std::vector<RegistryValue> registry_shared_values() {
 namespace {
 // P4.11 : xdg-mime ne se lance qu'une fois par processus (et après une inscription ou un retrait), plus à
 // chaque ouverture de chaîne, « Appliquer » ou épisode.
-std::mutex g_default_mutex;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-std::optional<bool> g_default_known;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+// A19-04 : la question part sur un fil à elle (xdg-mime peut prendre 10 s, deux fois) ; tant qu'elle n'a
+// pas de réponse, le lecteur n'est pas dit « par défaut ». generation écarte la réponse d'une question
+// posée avant une inscription ou un retrait.
+std::mutex g_default_mutex;              // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::optional<bool> g_default_known;     // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+bool g_default_asking = false;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::uint64_t g_default_generation = 0;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 void forget_default_player() {
   const std::scoped_lock lock(g_default_mutex);
   g_default_known.reset();
+  g_default_asking = false;
+  ++g_default_generation;
 }
 }  // namespace
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+namespace {
+// Dans un AppImage l'exécutable est monté à un endroit provisoire : la fiche pointe sur le fichier
+// .AppImage lui-même (variable APPIMAGE posée par son lanceur).
+std::filesystem::path launcher_of(const PlayerPlace& place) {
+  std::filesystem::path launcher = place.executable;
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
+  const char* image = std::getenv("APPIMAGE");  // env: lanceur
+  if (image != nullptr && *image != '\0') launcher = image;
+  return launcher;
+}
+}  // namespace
+#endif
 
 std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
   forget_default_player();
@@ -286,13 +311,7 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 #else
   if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, i18n::tr("default player: home folder unknown"));
-  // Dans un AppImage l'exécutable est monté à un endroit provisoire : la fiche pointe sur le fichier
-  // .AppImage lui-même (variable APPIMAGE posée par son lanceur).
-  std::filesystem::path launcher = place.executable;
-  // NOLINTNEXTLINE(concurrency-mt-unsafe)
-  const char* image = std::getenv("APPIMAGE");  // env: lanceur
-  if (image != nullptr && *image != '\0') launcher = image;
-  auto text = desktop_entry(launcher);
+  auto text = desktop_entry(launcher_of(place));
   if (!text) return std::unexpected(std::move(text.error()));
   const std::filesystem::path file = desktop_file(place);
   if (auto written = core::write_text_atomically(file, *text); !written)
@@ -302,6 +321,41 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
       "AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in Settings > "
       "General > Application, or xdg-mime default {}{}",
       prepare::utf8_path(file), kDesktopId, mime_list());
+#endif
+}
+
+bool refresh_registration(const PlayerPlace& place) {
+#if defined(_WIN32)
+  // Inscrit si le ProgId a sa commande ; à refaire si elle nomme un autre exécutable.
+  const std::vector<RegistryValue> values = registry_values(prepare::utf8_path(place.executable));
+  const auto command = std::ranges::find_if(values, [](const RegistryValue& value) {
+    return value.key.ends_with("AJP.Video\\shell\\open\\command");
+  });
+  if (command == values.end()) return false;
+  const std::wstring key = wide(command->key);
+  std::array<wchar_t, 2048> data{};
+  DWORD size = static_cast<DWORD>(data.size() * sizeof(wchar_t));
+  if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), nullptr, RRF_RT_REG_SZ, nullptr, data.data(), &size) !=
+      ERROR_SUCCESS)
+    return false;
+  if (core::to_utf8(std::filesystem::path(std::wstring(data.data()))) == command->data) return false;
+  return write_registry(values).has_value();
+#elif defined(__APPLE__)
+  static_cast<void>(place);
+  return false;  // l'Info.plist suit AJP.app où qu'il soit
+#else
+  // Inscrit si la fiche existe ; à refaire si elle n'est plus celle de cet exécutable.
+  const std::filesystem::path file = desktop_file(place);
+  std::error_code error;
+  if ((place.home.empty() && place.data.empty()) || !std::filesystem::is_regular_file(file, error))
+    return false;
+  const auto wanted = desktop_entry(launcher_of(place));
+  std::ifstream in(file, std::ios::binary);
+  const std::string current{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  if (!wanted || current == *wanted) return false;
+  if (!core::write_text_atomically(file, *wanted)) return false;
+  refresh_desktop_database(file.parent_path());
+  return true;
 #endif
 }
 
@@ -334,6 +388,10 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
 std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place) {
   auto registered = register_player(place);
   if (!registered) return registered;
+  return default_once_registered(*registered);
+}
+
+std::expected<std::string, Refusal> default_once_registered([[maybe_unused]] const std::string& registered) {
 #if defined(_WIN32)
   // Windows 11 ouvre la page du lecteur, avec « Définir par défaut » pour tous ses types ; Windows 10
   // ouvre la liste des applications par défaut.
@@ -374,30 +432,83 @@ bool default_handler_is_ajp(std::string_view query_output) {
 }
 
 namespace {
+
+// Les deux conteneurs que l'on ouvre le plus : AJP est le lecteur par défaut s'il l'est pour les deux. La
+// seconde question ne part que si la première dit oui (A19-05).
+#if defined(_WIN32)
+constexpr std::array<std::string_view, 2> kAskedExtensions{".mkv", ".mp4"};
+
+// Le choix de l'utilisateur, que Windows garde sous FileExts\<extension>\UserChoice (ProgId).
+std::string user_choice(std::string_view extension) {
+  const std::wstring key = wide(std::format(
+      "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\{}\\UserChoice", extension));
+  std::array<wchar_t, 256> data{};
+  DWORD size = static_cast<DWORD>(data.size() * sizeof(wchar_t));
+  if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), L"ProgId", RRF_RT_REG_SZ, nullptr, data.data(), &size) !=
+      ERROR_SUCCESS)
+    return {};
+  return core::to_utf8(std::filesystem::path(std::wstring(data.data())));
+}
+#elif !defined(__APPLE__)
+constexpr std::array<std::string_view, 2> kAskedMimes{"video/x-matroska", "video/mp4"};
+
+bool xdg_default_is_ajp(const char* tool, std::string_view mime) {
+  const prepare::ProcessSpec spec{
+      .program = tool, .args = {"query", "default", std::string(mime)}, .timeout = std::chrono::seconds(10)};
+  std::string out;
+  auto run = prepare::run_process(spec, [&](std::string_view line) { out = line; }, std::stop_token());
+  return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && default_handler_is_ajp(out);
+}
+#endif
+
 bool query_default_player() {
-#if defined(_WIN32) || defined(__APPLE__)
-  return false;  // Windows ne le dit qu'au registre de l'utilisateur (UserChoice) : la case suffit
+#if defined(_WIN32)
+  return std::ranges::all_of(kAskedExtensions, [](std::string_view extension) {
+    return user_choice_is_ajp(user_choice(extension));
+  });
+#elif defined(__APPLE__)
+  return false;  // le Finder ne le dit pas sans LaunchServices : la case suffit
 #else
   for (const char* tool : {"/usr/bin/xdg-mime", "/usr/local/bin/xdg-mime", "/bin/xdg-mime"}) {
     std::error_code error;
     if (!std::filesystem::exists(tool, error)) continue;
-    const prepare::ProcessSpec spec{.program = tool,
-                                    .args = {"query", "default", "video/x-matroska"},
-                                    .timeout = std::chrono::seconds(10)};
-    std::string out;
-    auto run = prepare::run_process(spec, [&](std::string_view line) { out = line; }, std::stop_token());
-    return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && default_handler_is_ajp(out);
+    return std::ranges::all_of(kAskedMimes,
+                               [tool](std::string_view mime) { return xdg_default_is_ajp(tool, mime); });
   }
   return false;
 #endif
 }
 }  // namespace
 
+bool user_choice_is_ajp(std::string_view prog_id) {
+  return prog_id == kProgId;
+}
+
 bool is_default_player(const PlayerPlace& place) {
   static_cast<void>(place);
   const std::scoped_lock lock(g_default_mutex);
-  if (!g_default_known) g_default_known = query_default_player();
-  return *g_default_known;
+  if (g_default_known) return *g_default_known;
+  if (!g_default_asking) {
+    g_default_asking = true;
+    const std::uint64_t generation = g_default_generation;
+    try {
+      std::thread([generation] {
+        bool answer = false;
+        try {
+          answer = query_default_player();
+        } catch (...) {  // NOLINT(bugprone-empty-catch) : sans réponse, pas par défaut
+        }
+        const std::scoped_lock done(g_default_mutex);
+        if (generation != g_default_generation) return;
+        g_default_known = answer;
+        g_default_asking = false;
+      }).detach();
+    } catch (...) {  // pas de fil : la question n'est pas posée, le lecteur n'est pas dit par défaut
+      g_default_known = false;
+      g_default_asking = false;
+    }
+  }
+  return false;
 }
 
 void leave_lone_console() {

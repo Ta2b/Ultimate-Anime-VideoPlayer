@@ -137,6 +137,9 @@ struct PlayOptions {
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
+  // --profile-dispatches : temps GPU et nombre de dispatchs par shader des réseaux Vulkan, au journal
+  // quand un réseau se décharge (BackendInit::profile_dispatches).
+  bool profile_dispatches = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;

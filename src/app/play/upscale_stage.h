@@ -103,7 +103,7 @@ struct UpscaleSetup {
   bool warp_after_span = false;
   // Rapide à pas constant (chantier 7.6) : chaque instant est comparé à l'horloge prédite juste avant son
   // calcul ; passé, il n'est ni calculé ni écrit (Fate::Late). Une source en retard garde son SPAN quand la
-  // paire suivante le lit. Sans DistilDRBA ni copie de b (poses gardées).
+  // paire suivante le lit. Sans copie de b (poses gardées) ; DistilDRBA compris (A09-07).
   bool late_fate = false;
   // --smooth-drawings (chantier 7.9, essai) : un dessin tenu deux sources, suivi d'un dessin nouveau déjà
   // ingéré, se fond en un seul mouvement (rife_plan.h, smooth_hold_u) au lieu de rester figé puis de sauter.
@@ -175,6 +175,9 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> drba_arrive(const DecodedFrame& frame, const gpu::IngestSpec& spec);
   // L'image sautée, gardée comme image d'avant (D3).
   void keep_skipped(const DecodedFrame& frame);
+  // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
+  // mouvement.
+  void count_measured(const PairFacts& facts);
   // Où DistilDRBA estime : la taille de RIFE.
   kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
@@ -321,12 +324,12 @@ class UpscaleStage final : public RingStage {
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées
   bool uninterpolated_ = false;      // la paire courante, laissée sans interpolation à dessein
-  // Débandage avant SPAN (KernelOps::deband) : voulu quand le grade tourne, avec SPAN, hors DistilDRBA ;
-  // deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
+  // Débandage avant SPAN (KernelOps::deband) : voulu quand le grade tourne, avec SPAN, DistilDRBA compris
+  // (A09-07) ; deband_op_ tombe si le backend ne l'a pas, et l'écran garde alors le sien.
   bool deband_op_ = true;
   bool debanded_ = false;  // l'image en cours a été débandée
   bool wants_deband() const {
-    return deband_op_ && setup_.engine != nullptr && !drba() && setup_.live && setup_.live->deband_source();
+    return deband_op_ && setup_.engine != nullptr && setup_.live && setup_.live->deband_source();
   }
   // Débande l'image ingérée dans rgb si wants_deband() ; vrai si elle l'est.
   std::expected<bool, Refusal> deband_source(const gpu::Tensor& rgb);
@@ -387,6 +390,7 @@ class UpscaleStage final : public RingStage {
     bool after_held = false;  // (b, after) est un dessin tenu : les instants après ½ sont b
     bool continuous = false;  // la paire en cours suit la précédente sans coupe, mesures prises
     std::optional<SourceId> after_id;
+    bool after_debanded = false;  // l'image d'après, ingérée en avance, a été débandée (A09-07)
     std::uint32_t after_epoch = 0;
     std::optional<gpu::PairScores> after_scores;  // mesures de (b, after), si prises
     // Mesure de (b, after) lancée sans attente (scores_start) : relue à la première sortie qui

@@ -1,16 +1,18 @@
-# libplacebo v7.360.1, la version du fork. Les sous-modules dont la
+# libplacebo v7.387.0, la version du fork. Les sous-modules dont la
 # construction a besoin (jinja, markupsafe, fast_float) sont épinglés aux
 # commits que référence ce tag ; glad et Vulkan-Headers ne servent pas ici
 # (OpenGL coupé, registre Vulkan fourni par vulkan-headers).
 vcpkg_from_git(
   OUT_SOURCE_PATH SOURCE_PATH
   URL https://github.com/haasn/libplacebo.git
-  REF cee9b076f2c63104ccfd497fa79c39a867293ec4
-  FETCH_REF v7.360.1
+  REF 275f7dea27924cdd34ab2e6c20e448b6bc4fab65
+  FETCH_REF v7.387.0
   # Présentation en boucle fermée (chantier 6.1, docs/adr/0011-presentation-en-boucle-fermee.md) :
   # drapeaux et chaîne de création de la swapchain, VkPresentId2KHR et VkPresentTimingsInfoEXT à la
   # présentation, swapchain courante et recréations, QUEUE_FULL sans fence attendue à l'infini. Sans
-  # present_flags ni pl_vulkan_swapchain_submit, libplacebo se comporte comme avant.
+  # present_flags ni pl_vulkan_swapchain_submit, libplacebo se comporte comme avant. Le verrou « recording »
+  # tenu du vol de la commande à sa soumission, que le correctif ajoutait sur 7.360.1, n'y est plus : l'amont
+  # soumet désormais par CMD_BEGIN et CMD_SUBMIT, qui tiennent ce verrou d'un bout à l'autre.
   PATCHES 0001-ajp-present-timing.patch
 )
 
