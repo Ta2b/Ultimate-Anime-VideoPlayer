@@ -156,6 +156,28 @@ TEST_CASE("Étage gpu : DistilDRBA mouvement, un SPAN par source et le warp apr�
   CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
 }
 
+TEST_CASE("Étage gpu : DistilDRBA débande avant SPAN comme RIFE, l'écran ne redébande pas (A09-07)",
+          "[app][stage]") {
+  for (const bool wanted : {false, true}) {
+    Rig rig;
+    rig.backend.offer_deband_on_ingest(true);
+    UpscaleSetup s = rig.setup(true);
+    s.rife = nullptr;
+    s.distil_drba = &rig.drba_motion;
+    s.drba_motion = true;
+    s.warp_after_span = true;
+    rig.live->set_deband_source(wanted);
+    rig.start(std::move(s));
+    rig.feed(1, 4);
+    REQUIRE(rig.collect(5));
+    rig.stage.reset();
+    const std::vector<RingFrame> frames = rig.sink.frames();
+    REQUIRE(frames.size() == 5);
+    // Les sources, ingérées en avance ou non, et les images créées entre elles.
+    for (const RingFrame& frame : frames) CHECK(frame.debanded == wanted);
+  }
+}
+
 TEST_CASE("Étage gpu : DistilDRBA mouvement estimé plus petit que le travail, sur des copies réduites",
           "[app][stage]") {
   Rig rig;

@@ -85,12 +85,16 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
       drba_.small_taken = true;
     }
     drba_.after_id.reset();
+    debanded_ = drba_.after_debanded;
     return {};
   }
   drba_.after_id.reset();
   drba_.after_scores.reset();
   drba_.after_ticket.reset();
-  return setup_.backend->kernels()->ingest(frame, spec, rgb_[current_]->tensor());
+  auto debanded = ingest_source(frame, spec, rgb_[current_]->tensor());
+  if (!debanded) return std::unexpected(std::move(debanded.error()));
+  debanded_ = *debanded;
+  return {};
 }
 
 void UpscaleStage::keep_scores_wait(std::int64_t waited_us) {
@@ -165,7 +169,9 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   // image courante, et son refus SourceResized rouvre la chaîne.
   if (after == nullptr || after->width != setup_.source_width || after->height != setup_.source_height)
     return {};
-  if (auto ok = ops.ingest(*after, spec, drba_.after->tensor()); !ok) return ok;
+  auto debanded = ingest_source(*after, spec, drba_.after->tensor());
+  if (!debanded) return std::unexpected(std::move(debanded.error()));
+  drba_.after_debanded = *debanded;
   if (drba_.small_after) {
     if (auto ok = ops.ingest(*after, gpu::IngestSpec{}, drba_.small_after->tensor()); !ok) return ok;
   }

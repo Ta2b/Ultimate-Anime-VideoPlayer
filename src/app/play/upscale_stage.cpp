@@ -302,7 +302,6 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   const bool ingested = looks_ahead() && take_ahead(frame, spec);  // déjà, derrière la précédente
   if (drba()) {
     if (auto ok = drba_arrive(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
-    debanded_ = false;
   } else if (!ingested) {
     auto debanded = ingest_source(frame, spec, rgb_[current_]->tensor());
     if (!debanded) return std::unexpected(std::move(debanded.error()));
@@ -504,8 +503,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                before_ == PairMotion::Still && intermediates_ > 0;
   copy_written_ = false;
   b_shown_ = false;
-  late_fate_now_ =
-      (setup_.late_fate || steady) && free_mode && !drba() && !copy_pair_ && setup_.clock != nullptr;
+  late_fate_now_ = (setup_.late_fate || steady) && free_mode && !copy_pair_ && setup_.clock != nullptr;
   // Dessin tenu qui reprend l'agrandissement de la précédente, dont l'image est à l'écran : la source
   // est bit à bit celle qui est affichée, ni écrite ni présentée.
   held_same_ = setup_.skip_held && runs == false && outputs_ == 1 && reuse_span_ && shown_source_;
@@ -582,8 +580,10 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
 
 RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t output) {
   if (held_same_) return Fate::Same;
-  if (setup_.skip_held && drba()) return drba_fate(output);
+  // A09-07 : DistilDRBA aussi laisse un instant déjà passé, avant de juger son côté tenu ; une passe jetée
+  // ne s'amortit sur aucun autre instant.
   if (late_fate_now_ && instant_late(frame, output)) return Fate::Late;
+  if (setup_.skip_held && drba()) return drba_fate(output);
   if (!copy_pair_) return Fate::Write;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   if (poses_copy(true, true, instant.t) == PoseCopy::Before) return Fate::Same;
