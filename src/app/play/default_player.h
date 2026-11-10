@@ -71,6 +71,10 @@ std::vector<RegistryValue> registry_values(std::string_view executable);
 std::vector<std::string> registry_trees(std::string_view executable);
 std::vector<RegistryValue> registry_shared_values();
 
+// Au lancement : un lecteur déjà inscrit dont l'exécutable a bougé (dossier portable déplacé, AppImage
+// renommé) se réinscrit à sa nouvelle place, sans rien demander (A19-06). Rend vrai s'il l'a fait ; rien
+// n'est écrit pour un lecteur jamais inscrit.
+bool refresh_registration(const PlayerPlace& place);
 // Inscrit le lecteur ; rend ce qui a été fait et ce qui reste à faire soi-même.
 std::expected<std::string, Refusal> register_player(const PlayerPlace& place);
 // Retire l'inscription (rien à retirer n'est pas une erreur).

@@ -325,22 +325,24 @@ struct DataPlaces {
   std::filesystem::path cache;
 };
 
-DataPlaces settle_data(const std::filesystem::path& data, const std::filesystem::path& home,
+DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::PlayerPlace& place,
                        bool purge_updates) {
   const auto said = [](const std::string& line) { ajp::log_channel("app")->info("données : {}", line); };
   // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois. Sous
   // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/ajp (A36-08).
   DataPlaces places{.heavy = ajp::app::play::local_data(data)};
   ajp::app::play::move_heavy_data(data, places.heavy, said);
-  places.cache = ajp::app::play::cache_data(home, places.heavy);
+  places.cache = ajp::app::play::cache_data(place.home, places.heavy);
   ajp::app::play::move_cache_data(places.heavy, places.cache, said);
   ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), said);
   // La mise à jour n'est plus qu'une notification : les archives préparées et la copie
   // de l'ancienne installation qu'avaient laissées les versions qui s'appliquaient elles-mêmes se retirent
   // (A26-06).
-  if (purge_updates)
-    ajp::app::play::purge_update_leftovers(
-        data, [](const std::string& line) { ajp::log_channel("app")->info("mise à jour : {}", line); });
+  if (!purge_updates) return places;  // --data-dir, banc : ni le dossier de l'utilisateur ni son bureau
+  ajp::app::play::purge_update_leftovers(
+      data, [](const std::string& line) { ajp::log_channel("app")->info("mise à jour : {}", line); });
+  // Un lecteur inscrit dont le dossier a bougé suit sa nouvelle place (A19-06).
+  if (ajp::app::play::refresh_registration(place)) said("inscription refaite à la nouvelle place du lecteur");
   return places;
 }
 
@@ -499,7 +501,7 @@ int run_player(int argc, char** argv) {
   // démarrer.
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
-  const DataPlaces places = settle_data(data, place.home, !options->data_dir && !options->bench_out);
+  const DataPlaces places = settle_data(data, place, !options->data_dir && !options->bench_out);
   const std::filesystem::path& heavy = places.heavy;
   const std::filesystem::path& cache = places.cache;
   bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())

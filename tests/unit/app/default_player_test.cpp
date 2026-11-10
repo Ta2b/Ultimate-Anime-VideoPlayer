@@ -129,6 +129,14 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
   CHECK(written == desktop_entry(place.executable).value());
   CHECK_FALSE(fs::exists(fs::path(file.string() + ".tmp")));
 
+  CHECK_FALSE(refresh_registration(place));  // à sa place : rien à refaire
+  const PlayerPlace moved{.executable = "/home/moi/Jeux/ajp-linux-x64/ajp", .home = home};
+  CHECK(refresh_registration(moved));  // le dossier a bougé : la fiche suit (A19-06)
+  {
+    std::ifstream again_in(file, std::ios::binary);
+    const std::string rewritten{std::istreambuf_iterator<char>(again_in), std::istreambuf_iterator<char>()};
+    CHECK(rewritten == desktop_entry(moved.executable).value());
+  }
   CHECK(register_player(place));  // une seconde inscription remplace la première
   const auto removed = unregister_player(place);
   REQUIRE(removed);
@@ -138,6 +146,8 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
   CHECK(again->contains("rien à retirer"));
   fs::remove_all(home, error);
 
+  CHECK_FALSE(refresh_registration(place));  // jamais inscrit (ou retiré) : rien n'est écrit
+  CHECK_FALSE(fs::exists(file));
   const auto nowhere = register_player(PlayerPlace{.executable = place.executable});
   REQUIRE_FALSE(nowhere);
   CHECK(nowhere.error().code == RefusalCode::FieldMissing);

@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <optional>
 #include <stop_token>
@@ -279,6 +280,20 @@ void forget_default_player() {
 }
 }  // namespace
 
+#if !defined(_WIN32) && !defined(__APPLE__)
+namespace {
+// Dans un AppImage l'exécutable est monté à un endroit provisoire : la fiche pointe sur le fichier
+// .AppImage lui-même (variable APPIMAGE posée par son lanceur).
+std::filesystem::path launcher_of(const PlayerPlace& place) {
+  std::filesystem::path launcher = place.executable;
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
+  const char* image = std::getenv("APPIMAGE");  // env: lanceur
+  if (image != nullptr && *image != '\0') launcher = image;
+  return launcher;
+}
+}  // namespace
+#endif
+
 std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
   forget_default_player();
 #if defined(_WIN32)
@@ -296,13 +311,7 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 #else
   if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, i18n::tr("default player: home folder unknown"));
-  // Dans un AppImage l'exécutable est monté à un endroit provisoire : la fiche pointe sur le fichier
-  // .AppImage lui-même (variable APPIMAGE posée par son lanceur).
-  std::filesystem::path launcher = place.executable;
-  // NOLINTNEXTLINE(concurrency-mt-unsafe)
-  const char* image = std::getenv("APPIMAGE");  // env: lanceur
-  if (image != nullptr && *image != '\0') launcher = image;
-  auto text = desktop_entry(launcher);
+  auto text = desktop_entry(launcher_of(place));
   if (!text) return std::unexpected(std::move(text.error()));
   const std::filesystem::path file = desktop_file(place);
   if (auto written = core::write_text_atomically(file, *text); !written)
@@ -312,6 +321,41 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
       "AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in Settings > "
       "General > Application, or xdg-mime default {}{}",
       prepare::utf8_path(file), kDesktopId, mime_list());
+#endif
+}
+
+bool refresh_registration(const PlayerPlace& place) {
+#if defined(_WIN32)
+  // Inscrit si le ProgId a sa commande ; à refaire si elle nomme un autre exécutable.
+  const std::vector<RegistryValue> values = registry_values(prepare::utf8_path(place.executable));
+  const auto command = std::ranges::find_if(values, [](const RegistryValue& value) {
+    return value.key.ends_with("AJP.Video\\shell\\open\\command");
+  });
+  if (command == values.end()) return false;
+  const std::wstring key = wide(command->key);
+  std::array<wchar_t, 2048> data{};
+  DWORD size = static_cast<DWORD>(data.size() * sizeof(wchar_t));
+  if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), nullptr, RRF_RT_REG_SZ, nullptr, data.data(), &size) !=
+      ERROR_SUCCESS)
+    return false;
+  if (core::to_utf8(std::filesystem::path(std::wstring(data.data()))) == command->data) return false;
+  return write_registry(values).has_value();
+#elif defined(__APPLE__)
+  static_cast<void>(place);
+  return false;  // l'Info.plist suit AJP.app où qu'il soit
+#else
+  // Inscrit si la fiche existe ; à refaire si elle n'est plus celle de cet exécutable.
+  const std::filesystem::path file = desktop_file(place);
+  std::error_code error;
+  if ((place.home.empty() && place.data.empty()) || !std::filesystem::is_regular_file(file, error))
+    return false;
+  const auto wanted = desktop_entry(launcher_of(place));
+  std::ifstream in(file, std::ios::binary);
+  const std::string current{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  if (!wanted || current == *wanted) return false;
+  if (!core::write_text_atomically(file, *wanted)) return false;
+  refresh_desktop_database(file.parent_path());
+  return true;
 #endif
 }
 
