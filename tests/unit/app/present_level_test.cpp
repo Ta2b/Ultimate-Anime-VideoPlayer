@@ -84,4 +84,26 @@ TEST_CASE("présentation : l'état VRR lu par present timing", "[app][present]")
   CHECK(vrr_state(6'068'740, 12'137'480) == RefreshState::Unknown);  // ni l'un ni l'autre : l'ioctl décide
 }
 
+TEST_CASE("Horloge hôte vue par Vulkan : les tics du compteur de Windows deviennent des ns (A10-07)",
+          "[app][present]") {
+  using ajp::app::play::host_ticks_to_ns;
+  // Linux : CLOCK_MONOTONIC, déjà en ns.
+  CHECK(host_ticks_to_ns(123'456'789'012ULL, 1'000'000'000ULL) == 123'456'789'012ULL);
+  // Windows : 10 MHz le plus souvent, un tic vaut 100 ns.
+  CHECK(host_ticks_to_ns(10'000'000ULL, 10'000'000ULL) == 1'000'000'000ULL);
+  CHECK(host_ticks_to_ns(12'345'678ULL, 10'000'000ULL) == 1'234'567'800ULL);
+  // Un vieux compteur à 3 579 545 Hz, après trente jours : pas de débordement, à la ns près.
+  const std::uint64_t month = 3'579'545ULL * 86'400ULL * 30ULL;
+  CHECK(host_ticks_to_ns(month, 3'579'545ULL) == 86'400ULL * 30ULL * 1'000'000'000ULL);
+  CHECK(host_ticks_to_ns(month + 1, 3'579'545ULL) == 86'400ULL * 30ULL * 1'000'000'000ULL + 279ULL);
+  CHECK(host_ticks_to_ns(42, 0) == 42);  // fréquence illisible : tel quel
+}
 }  // namespace ajp::app::play
+
+TEST_CASE("Instantané : l'espace de la fenêtre SDR, sRGB seulement pour une fenêtre HDR (A10-18)",
+          "[app][present]") {
+  using ajp::app::play::snapshot_keeps_target;
+  CHECK(snapshot_keeps_target(false, false));       // fenêtre SDR : son espace, avant c'était sRGB
+  CHECK_FALSE(snapshot_keeps_target(false, true));  // fenêtre HDR, fichier .ppm : sRGB
+  CHECK(snapshot_keeps_target(true, true));         // fenêtre HDR, fichier .pq.ppm : PQ tel quel
+}

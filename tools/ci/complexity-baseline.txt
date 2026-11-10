@@ -11,7 +11,7 @@ src/app/play/engine_install.cpp	ajp::app::play::fetch_vendor_file	27	114
 src/app/play/engine_install.cpp	ajp::app::play::install_steps	30	169
 src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	46	106
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
-src/app/play/home_screen.cpp	ajp::app::play::run_home	29	114
+src/app/play/home_screen.cpp	ajp::app::play::run_home	28	117
 src/app/play/input.cpp	ajp::app::play::input_of	49	62
 src/app/play/options.cpp	ajp::app::play::parse_play_options	95	192
 src/app/play/pipeline.cpp	ajp::app::play::Pipeline::open	58	208
@@ -31,7 +31,6 @@ src/app/play/settings_system.cpp	ajp::app::play::updates_page	26	90
 src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	57	224
 src/app/play/span_derive.cpp	ajp::app::play::derive_span_fp8	18	126
 src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	31	96
-src/app/play/ui.cpp	ajp::app::play::PlayerUi::handle	26	77
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	41	104
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	169	260
@@ -99,6 +98,6 @@ src/prepare/rife_split.cpp	ajp::prepare::parse_manifest	31	66
 src/render/cube_lut.cpp	ajp::render::fill_unreachable	28	56
 src/render/cube_lut.cpp	ajp::render::parse_cube	36	82
 src/render/cube_lut.cpp	ajp::render::read_float	32	43
-src/subs/subtitle_renderer.cpp	ajp::subs::SubtitleRenderer::render_at	27	69
+src/subs/subtitle_renderer.cpp	ajp::subs::SubtitleRenderer::render_at	27	67
 src/subs/text_encoding.cpp	ajp::subs::guessed	32	29
 src/subs/text_encoding.cpp	ajp::subs::hinted	37	16

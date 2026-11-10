@@ -5,6 +5,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/home_screen.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -44,6 +46,21 @@ TEST_CASE("Accueil : un événement rend le rythme plein aussitôt", "[app][home
   const int moved = frames_in_a_minute({30'000'000}, false);
   CHECK(moved > 705);
   CHECK(moved < 705 + 130);
+}
+
+TEST_CASE("Accueil : un fichier glissé se trie par son extension, sans lire le disque (A24-15)",
+          "[app][home]") {
+  CHECK(drop_kind("/nulle/part/Épisode 01.MKV") == DropKind::Video);
+  CHECK(drop_kind("episode.mp4") == DropKind::Video);
+  CHECK(drop_kind("episode.fr.ASS") == DropKind::Subtitles);
+  CHECK(drop_kind("episode.srt") == DropKind::Subtitles);
+  CHECK(drop_kind("affiche.png") == DropKind::Other);
+  CHECK(drop_kind("dossier") == DropKind::Other);
+  // Un autre événement qu'un fichier glissé : rien, et la fenêtre n'est pas touchée.
+  SDL_Event other{};
+  other.type = SDL_EVENT_KEY_DOWN;
+  CHECK_FALSE(dropped(other));
+  raise_for_forwarded(other);
 }
 
 }  // namespace ajp::app::play

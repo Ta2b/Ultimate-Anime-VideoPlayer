@@ -52,11 +52,16 @@ struct RenderTarget {
   std::optional<VideoMatrix> video_matrix;  // nullopt : inconnue, couleurs du script telles quelles
   // Échelle des polices (ass_set_font_scale, comme sub-scale de mpv) : kMinFontScale à kMaxFontScale.
   float font_scale = 1.0F;
+  // Part de la hauteur (0 à kMaxLineLift) dont les dialogues du bas montent, pour passer au-dessus de la
+  // barre du lecteur (ass_set_line_position, comme sub-pos de mpv) : libass ne déplace que les événements
+  // sans position explicite, chacun en entier. Un panneau \pos ou \move reste sur son enseigne (A24-19).
+  float line_lift = 0.0F;
   friend bool operator==(const RenderTarget&, const RenderTarget&) = default;
 };
 
 inline constexpr float kMinFontScale = 0.25F;
 inline constexpr float kMaxFontScale = 4.0F;
+inline constexpr float kMaxLineLift = 0.5F;
 
 struct RenderRequest {
   std::int64_t pts_us = 0;

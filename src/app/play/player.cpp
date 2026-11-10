@@ -598,7 +598,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     i18n::Translated aside = i18n::Translated::data(std::exchange(set_aside_notes, {}));
     announce_first(player.notice, aside);
     if (player.display) {
-      log->info("écran {} : {}", player.display->connector, describe(*player.display));
+      log->info("écran {} : {}", player.display->connector, describe_for_log(*player.display));
     } else {
       log->info("écran : EDID illisible, OLED inconnu");
     }
