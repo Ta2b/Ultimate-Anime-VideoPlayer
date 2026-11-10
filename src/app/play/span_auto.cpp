@@ -20,8 +20,7 @@ std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
     return i18n::tr("TensorRT is not installed: install it in Settings > General > Engines");
   }
   return i18n::tr_format(
-      "{} is not an NVIDIA RTX 40 (Ada) or RTX 50 (Blackwell) card, or the engine was built without these "
-      "kernels",
+      "{} is not an NVIDIA RTX 40 (Ada) card, or the engine was built without these kernels",
       facts.gpu_name.empty() ? std::string(i18n::tr("this card")) : facts.gpu_name);
 }
 

@@ -1,7 +1,7 @@
 # fichier	fonction	CCN	lignes : fonctions au-delà de CCN 25 ou 120 lignes, qui ne peuvent que baisser (check-complexity.py)
-src/app/main.cpp	run_player	49	213
+src/app/main.cpp	run_player	45	204
 src/app/play/auto_bench_run.cpp	ajp::app::play::run_bench	34	104
-src/app/play/auto_config.cpp	ajp::app::play::apply_preset	28	80
+src/app/play/auto_config.cpp	ajp::app::play::apply_preset	28	79
 src/app/play/chain.cpp	ajp::app::play::apply	30	170
 src/app/play/chain.cpp	ajp::app::play::apply_live	39	92
 src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	106	256
@@ -13,11 +13,11 @@ src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	36	86
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
 src/app/play/home_screen.cpp	ajp::app::play::run_home	28	117
 src/app/play/input.cpp	ajp::app::play::input_of	49	62
-src/app/play/options.cpp	ajp::app::play::parse_play_options	95	192
+src/app/play/options.cpp	ajp::app::play::parse_play_options	89	173
 src/app/play/placebo_open.cpp	ajp::app::play::PlaceboScreen::open	49	222
 src/app/play/placebo_ring.cpp	ajp::app::play::PlaceboRing::create	28	112
 src/app/play/placebo_screen.cpp	ajp::app::play::PlaceboScreen::show	33	132
-src/app/play/player.cpp	ajp::app::play::play	128	468
+src/app/play/player.cpp	ajp::app::play::play	122	455
 src/app/play/player_run.cpp	ajp::app::play::run_chain	189	633
 src/app/play/ring_stage.cpp	ajp::app::play::RingStage::emit	30	100
 src/app/play/session.cpp	ajp::app::play::Session::tick	42	90
@@ -28,7 +28,7 @@ src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	146
 src/app/play/settings_system.cpp	ajp::app::play::updates_page	26	90
 src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	56	223
 src/app/play/span_derive.cpp	ajp::app::play::derive_span_fp8	18	126
-src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	31	96
+src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	31	88
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	41	104
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	163	246
@@ -42,7 +42,7 @@ src/gpu/coreml/coreml_measure.cpp	ajp::gpu::coreml_rt::direct_error	29	113
 src/gpu/cuda/backend/drba_fused_engine.cpp	ajp::gpu::cuda::DrbaFusedEngine::enqueue_chain	32	83
 src/gpu/cuda/backend/rife_fused_engine.cpp	ajp::gpu::cuda::RifeFusedEngine::enqueue	40	96
 src/gpu/cuda/backend/ring_slot.cpp	ajp::gpu::cuda::ImportedSlot::import	27	115
-src/gpu/cuda/backend/span_fp8_run.cpp	main	36	119
+src/gpu/cuda/backend/span_fp8_run.cpp	main	34	107
 src/gpu/cuda/backend/tensorrt_backend.cpp	ajp::gpu::cuda::TensorRtBackend::~TensorRtBackend	32	60
 src/gpu/cuda/backend/tensorrt_kernels.cpp	ajp::gpu::cuda::TensorRtBackend::ingest	48	128
 src/gpu/cuda/backend/tensorrt_span_derive.cpp	ajp::gpu::cuda::TensorRtBackend::derive_span_fp8	74	229
@@ -57,7 +57,7 @@ src/gpu/ir/op_sample.cpp	ajp::gpu::ir::detail::resize_plan	30	59
 src/gpu/ir/op_window.cpp	ajp::gpu::ir::detail::eval_conv	26	62
 src/gpu/ir/pass_layout.cpp	ajp::gpu::ir::accepts_nhwc	27	35
 src/gpu/ir/pass_transpose.cpp	ajp::gpu::ir::rewrite	49	120
-src/gpu/span_fp8/onnx_weights.cpp	ajp::gpu::span_fp8::package_from_onnx	60	154
+src/gpu/span_fp8/onnx_weights.cpp	ajp::gpu::span_fp8::package_from_onnx	60	153
 src/gpu/span_fp8/package.cpp	ajp::gpu::span_fp8::parse	29	55
 src/gpu/vulkan/backend/drba_fused_engine.cpp	ajp::gpu::vk::DrbaFusedEngine::enqueue	29	79
 src/gpu/vulkan/backend/kernel_frames.cpp	ajp::gpu::vk::VulkanKernelOps::staging_for	26	67
@@ -84,7 +84,7 @@ src/prepare/drba_split.cpp	ajp::prepare::parse_drba_manifest	26	57
 src/prepare/onnx_scan.cpp	ajp::prepare::child_kind	28	32
 src/prepare/onnx_split.cpp	ajp::prepare::extract_subgraph	46	116
 src/prepare/onnx_split.cpp	ajp::prepare::read_onnx_graph	36	62
-src/prepare/onnx_split.cpp	ajp::prepare::read_tensor	38	76
+src/prepare/onnx_split.cpp	ajp::prepare::read_tensor	38	74
 src/prepare/process_win.cpp	ajp::prepare::run_process	31	109
 src/prepare/rife_split.cpp	ajp::prepare::analyze_rife	93	147
 src/prepare/rife_split.cpp	ajp::prepare::parse_manifest	31	66

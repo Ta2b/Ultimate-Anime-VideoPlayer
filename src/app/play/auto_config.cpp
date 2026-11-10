@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 
 #include "app/play/i18n.h"
 #include "app/play/model_choice.h"
@@ -42,6 +43,23 @@ constexpr std::array<int, 5> kWorkHeights{480, 540, 720, 900, 1080};
 int step_of(int height) {
   const auto at = std::ranges::lower_bound(kWorkHeights, height);
   return static_cast<int>(at - kWorkHeights.begin());
+}
+
+// Le palier au plus égal à height (le plus petit si height est en dessous) : la calibration arrondit vers le
+// bas, l'Auto estimé aussi (A37-06).
+int step_below(int height) {
+  const auto at = std::ranges::upper_bound(kWorkHeights, height);
+  return std::max(0, static_cast<int>(at - kWorkHeights.begin()) - 1);
+}
+
+// La hauteur de l'image dans l'écran, pas celle de l'écran : une vidéo 16:9 sur un écran 1920 × 1200 n'en
+// occupe que 1080 lignes (A37-06). Largeur ou source inconnues : toute la hauteur.
+int image_height(int display_height, int display_width, const core::SourceInfo& source) {
+  if (display_height <= 0 || display_width <= 0 || source.width <= 0 || source.height <= 0)
+    return display_height;
+  const auto fitted =
+      static_cast<int>(static_cast<std::int64_t>(display_width) * source.height / source.width);
+  return std::min(display_height, fitted);
 }
 
 // La plus grande résolution de travail que la tranche tient. Qualité et Ultra tiennent la 1080p (A49-02) :
@@ -89,11 +107,17 @@ int level_work_height(Tier level, Priority priority, int display_height) {
   if (keeps_source(level)) return priority == Priority::Fluidity ? 720 : kWorkCap[at];
   const int ideal =
       std::clamp((display_height > 0 ? display_height : 1080) / 2, kWorkHeights.front(), kWorkHeights.back());
-  int step = std::clamp(step_of(ideal) + kWorkOffset[at], 0, step_of(kWorkCap[at]));
+  int step = std::clamp(step_below(ideal) + kWorkOffset[at], 0, step_of(kWorkCap[at]));
   if (priority == Priority::Fluidity) step = std::max(0, step - 1);
   if (priority == Priority::Image) step = std::min(step + 1, step_of(kWorkCap[at]) + 1);
   step = std::min(step, static_cast<int>(kWorkHeights.size()) - 1);
   return kWorkHeights[static_cast<std::size_t>(step)];
+}
+
+// Le multiplicateur que la fréquence demande, arrondi avec 1 % de tolérance (P3.14) : 59,94 Hz sur une source
+// à 30 i/s vaut ×2, pas ×1.
+int wanted_factor(double display_hz, double fps) {
+  return static_cast<int>(std::floor((display_hz / fps) + 0.01));
 }
 
 }  // namespace
@@ -160,7 +184,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   PlaySettings out = settings;
   const double display_hz = machine.display_hz > 0.0 ? machine.display_hz : 60.0;
 
-  int work = level_work_height(*level, settings.priority, machine.display_height);
+  int work = level_work_height(*level, settings.priority,
+                               image_height(machine.display_height, machine.display_width, source));
   if (settings.preset == Preset::Auto && machine.explored_work_height > 0)
     work = std::max(work,
                     machine.explored_work_height);  // l'exploration a trouvé que la machine tient plus haut
@@ -177,9 +202,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   int cap = kFactorCap[at];
   if (cap > 0 && settings.priority == Priority::Fluidity) cap = std::min(cap + 1, 6);
   if (cap > 0 && settings.priority == Priority::Image) cap = std::max(2, cap - 1);
-  // Arrondi avec 1 % de tolérance (P3.14) : 59,94 Hz sur une source à 30 i/s vaut ×2, pas ×1.
-  const int wanted = static_cast<int>(std::floor((display_hz / fps) + 0.01));
-  const int factor = std::min(cap, wanted);
+  const int factor = std::min(cap, wanted_factor(display_hz, fps));
   out.rife_auto = factor >= 2;
   out.rife_factor = factor >= 2 ? factor : 0;
   out.rife_factor_den = 1;
@@ -241,8 +264,11 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
          a.motion_engine != b.motion_engine;
 }
 
-bool display_moves_chain(Preset preset, int opened_height, int now_height) {
-  return preset != Preset::Custom && opened_height > 0 && now_height > 0 && opened_height != now_height;
+bool display_moves_chain(Preset preset, const DisplayMove& move) {
+  if (preset == Preset::Custom) return false;
+  if (move.opened_height > 0 && move.now_height > 0 && move.opened_height != move.now_height) return true;
+  if (move.opened_hz <= 0.0 || move.now_hz <= 0.0 || move.source_fps <= 0.0) return false;
+  return wanted_factor(move.opened_hz, move.source_fps) != wanted_factor(move.now_hz, move.source_fps);
 }
 
 }  // namespace ajp::app::play

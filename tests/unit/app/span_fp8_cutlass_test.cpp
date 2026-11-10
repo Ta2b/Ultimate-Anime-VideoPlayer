@@ -144,6 +144,31 @@ TEST_CASE("SPAN FP8 CUTLASS : reçu d'un autre format, d'un autre modèle ou paq
   CHECK(edited.note.find("modifié depuis son reçu") != std::string::npos);
 }
 
+TEST_CASE("SPAN FP8 CUTLASS : un reçu vide ou illisible et un paquet tronqué se refont (A02-14)",
+          "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
+  const Folder f;
+  Folder::write(f.dir() / (f.stem + ".toml"), "");  // coupure : le reçu est resté vide sous son nom
+  const SpanInt8Lookup empty = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
+  CHECK_FALSE(empty.variant);
+  CHECK(empty.stale);
+  CHECK(empty.note.find("reçu vide") != std::string::npos);
+
+  Folder::write(f.dir() / (f.stem + ".toml"), "format = \"ajp-span");  // coupé au milieu d'une ligne
+  const SpanInt8Lookup cut = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
+  CHECK_FALSE(cut.variant);
+  CHECK(cut.stale);
+
+  f.receipt(52.0, 49.0, 0.9967);
+  Folder::write(f.package(), "");  // le paquet est resté vide : son SHA n'est plus celui du reçu
+  const SpanInt8Lookup truncated = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
+  CHECK_FALSE(truncated.variant);
+  CHECK(truncated.stale);
+
+  f.receipt(52.0, 49.0, 0.9967, "ajp-span-fp8-v1");  // un vrai autre format reste un refus
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).stale);
+}
+
 TEST_CASE("SPAN FP8 CUTLASS : le cran Performance demande le moteur qui sait le paquet",
           "[app][int8][fp8c]") {
   ajp::app::play::FrenchUi french;

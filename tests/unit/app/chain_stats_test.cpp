@@ -16,8 +16,13 @@ using namespace std::chrono_literals;
 class CountingKernels final : public gpu::KernelOps {
  public:
   std::atomic<int> reads{0};
+  std::atomic<bool> reading{false};   // un relevé en cours
+  std::chrono::milliseconds slow{0};  // durée d'un relevé (cudaMemGetInfo qui attend le verrou du contexte)
   std::optional<DeviceMemory> device_memory() override {
+    reading = true;
+    std::this_thread::sleep_for(slow);
     ++reads;
+    reading = false;
     return DeviceMemory{.used = 1, .total = 2};
   }
   std::expected<void, Refusal> ingest(const DecodedFrame&, const gpu::IngestSpec&,
@@ -55,14 +60,31 @@ TEST_CASE("ChainStats : après stop(), plus aucun relevé ne lit les noyaux, mê
   CHECK(kernels.reads.load() == seen);
 }
 
+// A30-07 : un relevé lent en vol quand la chaîne s'arrête. stop() doit l'attendre : le backend est détruit
+// juste après, et le relevé lirait des noyaux rendus.
+TEST_CASE("ChainStats : stop() attend le relevé en vol avant de rendre les noyaux (A30-07)", "[app][stats]") {
+  const LiveSettings live;
+  CountingKernels kernels;
+  kernels.slow = 300ms;
+  ChainStats stats(live, kernels, false, "RIFE", 24.0);
+  static_cast<void>(stats.memory());
+  for (int i = 0; i < 200 && !kernels.reading.load(); ++i) std::this_thread::sleep_for(2ms);
+  REQUIRE(kernels.reading.load());
+  stats.stop();
+  CHECK_FALSE(kernels.reading.load());
+  CHECK(kernels.reads.load() >= 1);
+}
+
 TEST_CASE("ChainStats : stop() sans relevé lancé ne démarre rien", "[app][stats]") {
   const LiveSettings live;
   CountingKernels kernels;
-  ChainStats stats(live, kernels, false, "RIFE", 24.0);
-  stats.stop();
+  ChainStats stats(live, kernels, false, "RIFE", 24.0);  // une lecture à l'ouverture (A32-10)
+  stats.stop();                                          // une à la fermeture, pour le journal (A33-08)
+  const int seen = kernels.reads.load();
+  CHECK(seen == 2);
   static_cast<void>(stats.memory());
   std::this_thread::sleep_for(50ms);
-  CHECK(kernels.reads.load() == 0);
+  CHECK(kernels.reads.load() == seen);  // aucun fil de relevé
 }
 
 }  // namespace

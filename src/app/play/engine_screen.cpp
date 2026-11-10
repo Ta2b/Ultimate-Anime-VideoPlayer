@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <variant>
@@ -129,6 +130,11 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
 }
 
+// « Laptop GPU » depuis les RTX 30, « with Max-Q Design » sur les portables RTX 20 (A37-04).
+bool laptop_gpu(std::string_view name) {
+  return name.find("Laptop") != std::string_view::npos || name.find("Max-Q") != std::string_view::npos;
+}
+
 }  // namespace
 
 // La calibration de la machine de l'assistant (machine_calibration.h) sur son thread : l'utilisateur ne voit
@@ -230,7 +236,7 @@ namespace {
 
 // Ce que l'assistant dit de cet hôte : un portable (construction des moteurs deux fois plus longue, A25-03).
 void host_notes(FirstRunView& view, const GpuFacts& gpu, SDL_Window* window) {
-  view.laptop = gpu.name.find("Laptop") != std::string::npos;
+  view.laptop = laptop_gpu(gpu.name);
   const int height = display_height(window);
   if (height > 0)
     view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, display_refresh_hz(window));
@@ -471,10 +477,15 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   return true;
 }
 
-std::string fallback_note(const core::Settings& engines, const std::filesystem::path& library) {
+std::string fallback_note(const core::Settings& engines, const std::filesystem::path& library,
+                          const GpuFacts& gpu) {
   const std::optional<core::EngineId> preferred = engines.preferred[usage(core::Usage::Upscale)];
   const std::optional<core::EngineId> in_use = engine_of_library(library);
   if (!preferred || !in_use || preferred == in_use) return {};
+  if (*preferred == core::EngineId::TensorRt) {
+    if (const std::string problem = tensorrt_driver_problem(gpu); !problem.empty())
+      return i18n::tr_format("{}: {} replaces it.", problem, engine_label(*in_use));
+  }
   return i18n::tr_format("{} is chosen but does not open on this GPU (see log): {} replaces it.",
                          engine_label(*preferred), engine_label(*in_use));
 }

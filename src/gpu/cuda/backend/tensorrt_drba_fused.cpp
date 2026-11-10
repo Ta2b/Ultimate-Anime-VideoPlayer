@@ -7,6 +7,7 @@
 #include <iterator>
 #include <system_error>
 
+#include "core/utf8_path.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "prepare/drba_split.h"
@@ -45,7 +46,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSp
   const int t = manifest->plan.tail;
   DrbaFusedKey key{.height = h, .width = w, .plan = manifest->plan};
   for (std::size_t i = 0; i < count; ++i) {
-    const std::filesystem::path onnx = folder / manifest->pieces[i];
+    const std::filesystem::path onnx =
+        folder / core::path_from_utf8(manifest->pieces[i]);  // noms en UTF-8 (A04-04)
     auto sha = prepare::sha256_file_known(onnx);
     if (!sha) return std::unexpected(std::move(sha.error()));
     const ModelSpec piece{

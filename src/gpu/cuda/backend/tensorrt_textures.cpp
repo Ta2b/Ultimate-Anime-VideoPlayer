@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 
 namespace ajp::gpu::cuda {
@@ -40,8 +41,9 @@ cudaTextureObject_t TensorRtBackend::texture(const Tensor& tensor) {
     description.filterMode = cudaFilterModeLinear;
     description.readMode = cudaReadModeElementType;
     description.normalizedCoords = 0;
-    if (cudaCreateTextureObject(&object, &resource, &description, nullptr) != cudaSuccess) {
-      cudaGetLastError();  // l'erreur ne doit pas remonter au lancement suivant
+    if (const cudaError_t made = cudaCreateTextureObject(&object, &resource, &description, nullptr);
+        made != cudaSuccess) {
+      cuda_warn(made, "cudaCreateTextureObject");  // effacée : elle ne remonte pas au lancement suivant
       object = 0;
       log(BackendLogLevel::Warn,
           std::format("objet texture refusé pour un tenseur {}x{} : lecture exacte", width, rows));
@@ -65,11 +67,13 @@ void TensorRtBackend::trim_textures() {
   for (cudaStream_t lane : streams_) {
     if (lane == nullptr) continue;
     cudaEvent_t event = nullptr;
-    if (cudaEventCreateWithFlags(&event, cudaEventDisableTiming) != cudaSuccess ||
-        cudaEventRecord(event, lane) != cudaSuccess) {
-      cudaGetLastError();  // repli : cette voie se vide, comme avant
+    cudaError_t marked = cudaEventCreateWithFlags(&event, cudaEventDisableTiming);
+    if (marked == cudaSuccess) marked = cudaEventRecord(event, lane);
+    if (marked != cudaSuccess) {
+      // Repli : cette voie se vide, comme avant ; l'échec et l'attente sont dits au journal.
+      cuda_warn(marked, "événement de retrait des textures");
       if (event != nullptr) cudaEventDestroy(event);
-      cudaStreamSynchronize(lane);
+      cuda_warn(cudaStreamSynchronize(lane), "cudaStreamSynchronize (textures)");
       continue;
     }
     batch.events.push_back(event);
@@ -81,9 +85,10 @@ void TensorRtBackend::reap_textures(bool wait) {
   std::erase_if(retired_textures_, [wait](RetiredTextures& batch) {
     for (cudaEvent_t event : batch.events) {
       if (wait) {
-        cudaEventSynchronize(event);
-      } else if (cudaEventQuery(event) != cudaSuccess) {
-        cudaGetLastError();  // cudaErrorNotReady ne doit pas remonter au lancement suivant
+        cuda_warn(cudaEventSynchronize(event), "cudaEventSynchronize (textures)");
+      } else if (const cudaError_t state = cudaEventQuery(event); state != cudaSuccess) {
+        // Pas encore atteint : rien à effacer. Une vraie erreur est dite et effacée, elle seule (A01-06).
+        if (state != cudaErrorNotReady) cuda_warn(state, "cudaEventQuery (textures)");
         return false;
       }
     }

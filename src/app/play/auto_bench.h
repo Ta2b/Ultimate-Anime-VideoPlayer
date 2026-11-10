@@ -101,7 +101,14 @@ std::expected<BenchResult, Refusal> load_bench(
     const std::filesystem::path& file);  // absent ou illisible : refus FileUnreadable
 std::expected<void, Refusal> save_bench(const std::filesystem::path& file, const BenchResult& result);
 
-// La tranche à appliquer : la mesure si elle est de cette carte et de ce pilote, sinon l'estimation.
+// A37-09 : une seule règle pour bench.toml et calibration.toml. Une mesure vaut à travers une mise à jour
+// mineure du pilote et se marque « à refaire » quand sa branche change : la majeure de driverVersion, codée
+// au bit 22 par NVIDIA (580.82) comme par Mesa (25.2.4). Pilote inconnu d'un côté : rien n'a changé.
+bool driver_branch_changed(std::string_view measured, std::string_view now);
+// La mesure est-elle de cette carte et de cette branche de pilote ?
+bool measured_here(const BenchResult& measured, const GpuFacts& gpu);
+// La tranche à appliquer : la mesure si elle est de cette carte et de cette branche de pilote, sinon
+// l'estimation.
 Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured);
 
 }  // namespace ajp::app::play

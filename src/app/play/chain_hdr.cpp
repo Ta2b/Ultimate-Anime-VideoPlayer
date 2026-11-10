@@ -162,19 +162,15 @@ struct LookLoader::State {
   std::optional<LoadedLooks> done;                                        // sous mutex
   std::uint64_t asked = 0;                                                // sous mutex : demandes reçues
   std::uint64_t finished = 0;  // sous mutex : la demande dont done est le résultat
-  bool busy = false;           // sous mutex : une lecture en cours
 };
 
 LookLoader::~LookLoader() {
+  // Le fil est joint, jamais détaché : détaché, il journalisait après close_log et appelait SDL après
+  // SDL_Quit, d'où un plantage à la sortie (A30-02). Une lecture en cours est bornée (fichiers locaux de
+  // 16 Mo au plus, cube_lut.h) ; une demande pas encore commencée ne l'est plus après l'arrêt.
   if (!thread_.joinable()) return;
   thread_.request_stop();
-  bool busy = false;
-  {
-    const std::scoped_lock lock(state_->mutex);
-    busy = state_->busy;
-  }
-  // Une lecture en cours finit seule (le fil garde l'état) : la fermeture de la chaîne ne l'attend pas.
-  if (busy) thread_.detach();
+  thread_.join();
 }
 
 void LookLoader::request(const PlaySettings& s, const std::filesystem::path& luts_dir) {
@@ -192,14 +188,13 @@ void LookLoader::request(const PlaySettings& s, const std::filesystem::path& lut
       [state = state_](const std::stop_token& stop, const ThreadReport&) {
         std::unique_lock lock(state->mutex);
         while (state->wake.wait(lock, stop, [&] { return state->pending.has_value(); })) {
+          if (stop.stop_requested()) break;  // la demande vue avec l'arrêt ne se lit plus
           auto [settings, dir] = std::move(*state->pending);
           state->pending.reset();
           const std::uint64_t asked = state->asked;
-          state->busy = true;
           lock.unlock();
           LoadedLooks looks = load_looks(settings, dir);
           lock.lock();
-          state->busy = false;
           state->done.emplace(std::move(looks));
           state->finished = asked;
         }
