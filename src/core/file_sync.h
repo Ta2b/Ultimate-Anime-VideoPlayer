@@ -27,6 +27,8 @@ void sync_directory(const std::filesystem::path& folder);
 // tour. Un lecteur voit l'ancien fichier entier ou le nouveau entier ; une coupure ne laisse pas un
 // fichier vide. Le dossier est créé au besoin ; le temporaire est retiré en cas d'échec. Sous Windows, un
 // renommage refusé parce qu'un autre processus tient le fichier ouvert se réessaie environ 1,5 s (A20-01).
+// Un lien symbolique reste un lien : le fichier qu'il nomme est remplacé. Après l'écriture, les temporaires
+// du même nom laissés depuis plus d'une heure par un arrêt brutal sont retirés (A20-08).
 std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
                                           std::span<const std::byte> bytes);
 // Moins de needed octets libres sous dir (ou son premier parent qui existe) : le refus InsufficientSpace qui

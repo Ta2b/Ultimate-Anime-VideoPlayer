@@ -144,6 +144,14 @@ std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, Player
   return std::nullopt;
 }
 
+// Le nouvel écran : son contrat (P3.40, A11-01), puis son pic, ses soins OLED et son vrai noir tout de suite,
+// en SDR aussi (A08-07).
+void adopt_display(Player& p, ContractWatch& watch, Chain& chain, const std::optional<DisplayFacts>& display,
+                   SDL_Window* window) {
+  watch.set_display(p.display = display);
+  follow_display(chain, content_peak_nits(window));
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -334,9 +342,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
               .anime_shots = p.options.anime_shots};
-  chain.stages = p.stages;
-  chain.dropped_subtitles = &p.dropped_subtitles;
-  restore_dropped_subtitles(chain, p.subtitle_track);
+  carry_session(chain, p.stages, p.dropped_subtitles, p.subtitle_track);
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -639,10 +645,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         vrr_fullscreen = fullscreen;
         session.set_composited(!fullscreen);
         if (const auto display = window_display(out.window())) {
-          if (display_changed) {
-            contract_watch.set_display(p.display = display);         // P3.40, A11-01
-            follow_display(chain, content_peak_nits(out.window()));  // A08-07 : en SDR aussi
-          }
+          if (display_changed) adopt_display(p, contract_watch, chain, display, out.window());
           p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
           const bool armed =
               !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);

@@ -188,8 +188,10 @@ void apply(const Input& input, Chain& to, std::int64_t now_us);
 void write_record(std::ofstream& stats, const PresentRecord& record);
 void log_summary(const Session& session);
 
-// Les sous-titres glissés pendant la vidéo, rajoutés à la chaîne rouverte (A29-03) ; wanted : la piste
-// choisie avant la réouverture, reprise si c'est l'un d'eux.
-void restore_dropped_subtitles(Chain& to, std::optional<std::optional<int>> wanted);
+// Ce que la séance garde d'une chaîne à l'autre : les étages refusés (stages) et les sous-titres glissés
+// pendant la vidéo (dropped), rajoutés à la chaîne rouverte (A29-03) ; wanted : la piste choisie avant la
+// réouverture, reprise si c'est l'un d'eux.
+void carry_session(Chain& to, StageMemory* stages, std::vector<std::filesystem::path>& dropped,
+                   std::optional<std::optional<int>> wanted);
 
 }  // namespace ajp::app::play

@@ -259,8 +259,10 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
   to.ui.controls().notify(i18n::ui_tr_format("Not a video or subtitles: {}", name), now_us);
 }
 
-void restore_dropped_subtitles(Chain& to, std::optional<std::optional<int>> wanted) {
-  if (to.dropped_subtitles == nullptr) return;
+void carry_session(Chain& to, StageMemory* stages, std::vector<std::filesystem::path>& dropped,
+                   std::optional<std::optional<int>> wanted) {
+  to.stages = stages;
+  to.dropped_subtitles = &dropped;
   std::erase_if(*to.dropped_subtitles, [&](const std::filesystem::path& file) {
     auto added = to.pipeline.add_subtitle_file(file);
     if (!added) {

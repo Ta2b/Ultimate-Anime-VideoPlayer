@@ -1,5 +1,5 @@
-// Profil TOML v5 : neuf profils, un profil de démarrage, des règles par
-// nombre de pixels et fps. Lu en un seul endroit, profile.cpp.
+// Ce qui reste du profil TOML v5, retiré du lecteur (ADR 0012) : les types et les plages que les réglages
+// (play.toml), la cadence et les modèles partagent encore.
 #pragma once
 
 #include <array>
@@ -14,9 +14,6 @@
 
 namespace ajp::core {
 
-enum class Policy : std::uint8_t { Quality, Fast, Refine };
-enum class Pacing : std::uint8_t { Source, Smooth, KeepPoses };
-enum class StepKind : std::uint8_t { Downscale, Upscale, Interpolate };
 // Filtres de la réduction : Area et Spline36 (ceux d'AnimeJaNai), puis ceux du menu du lecteur.
 enum class DownscaleFilter : std::uint8_t {
   Area,
@@ -39,47 +36,6 @@ struct Ratio {
   friend bool operator==(const Ratio&, const Ratio&) = default;
 };
 
-struct Step {
-  StepKind kind = StepKind::Upscale;
-  ModelId model;                                   // Upscale, Interpolate
-  Ratio factor;                                    // Upscale : entier ; Interpolate : rationnel
-  Policy policy = Policy::Quality;                 // Interpolate
-  Pacing pacing = Pacing::Source;                  // Interpolate
-  DownscaleFilter filter = DownscaleFilter::Area;  // Downscale
-  int height = 0;                                  // Downscale : hauteur cible
-  friend bool operator==(const Step&, const Step&) = default;
-};
-
-// Bornes incluses. La première règle qui correspond gagne.
-struct Rule {
-  std::int64_t min_pixels = 0;
-  std::int64_t max_pixels = 0;
-  double min_fps = 0.0;
-  double max_fps = 0.0;
-  std::vector<Step> steps;
-  friend bool operator==(const Rule&, const Rule&) = default;
-};
-
-struct Profile {
-  std::string name;
-  HdrMode hdr = HdrMode::Off;
-  // Version 6 (constat 8 de l'audit du grade) : faux, le profil coupe le grade le temps qu'il est actif
-  // (« Source » : l'image telle quelle) ; vrai, le grade reste celui des réglages. Absent : vrai.
-  bool grade = true;
-  std::vector<Rule> rules;
-  friend bool operator==(const Profile&, const Profile&) = default;
-};
-
-inline constexpr int kProfileVersion = 6;
-inline constexpr int kProfileOldestVersion = 5;  // lue telle quelle : grade absent, donc vrai
-inline constexpr std::size_t kProfileSlots = 9;
-
-struct ProfileFile {
-  int start_profile = 1;                                       // 1 à 9
-  std::array<std::optional<Profile>, kProfileSlots> profiles;  // index = numéro - 1
-  friend bool operator==(const ProfileFile&, const ProfileFile&) = default;
-};
-
 // Plages de chaque champ. Une valeur hors plage est refusée, jamais corrigée.
 template <class T>
 struct Range {
@@ -99,11 +55,5 @@ inline constexpr Range<std::int64_t> kDownscaleHeight{144, 4320};
 inline constexpr std::size_t kMaxSteps = 16;
 inline constexpr double kMaxFactorProduct = 16.0;
 }  // namespace limits
-
-std::expected<ProfileFile, Refusal> parse_profile(std::string_view toml_text);
-
-// Texte TOML v5 de file, que parse_profile relit à l'identique. Chaque profil
-// écrit son nom et son mode HDR ; les bornes et le rythme par défaut sont omis.
-std::string format_profile(const ProfileFile& file);
 
 }  // namespace ajp::core

@@ -7,7 +7,7 @@
 #include <sstream>
 #include <utility>
 
-#include "core/user_overlay.h"
+#include "core/text_file.h"
 #include "core/utf8_path.h"
 
 #ifndef TOML_EXCEPTIONS

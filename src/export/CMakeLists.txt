@@ -3,4 +3,4 @@
 ajp_add_module(export
   SOURCES av_handles.cpp container.cpp encoder_choice.cpp export_writer.cpp muxer.cpp video_encoder.cpp
   DEPS ajp::core_types ajp::kernels
-  PRIVATE_DEPS ajp::dep::ffmpeg ajp::dep::vulkan ajp::core_log)
+  PRIVATE_DEPS ajp::av ajp::dep::ffmpeg ajp::dep::vulkan ajp::core_log)

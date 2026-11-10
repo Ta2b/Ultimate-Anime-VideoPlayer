@@ -80,6 +80,28 @@ jobs:
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}
 
+  # Le cœur avec le compilateur d'Arch (celui de CachyOS, le poste du propriétaire), en -Werror : un GCC plus
+  # récent que celui de la CI apporte des avertissements que rien d'autre ne voit avant lui. Arch avance en
+  # continu : la tâche signale sans bloquer (continue-on-error), à lire quand elle passe au rouge.
+  arch:
+    name: Cœur (GCC d'Arch)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    container: archlinux:latest
+    env:
+      AJP_DEPS_PREFIX: /opt/ajp-deps
+      CCACHE_DIR: /tmp/ccache
+    steps:
+      - run: pacman -Syu --noconfirm --needed base-devel git cmake ninja ccache pkgconf python
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: gcc --version | head -n 1
+      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" /tmp/deps-src
+      - run: cmake --preset linux-prefix-core
+      - run: cmake --build --preset linux-prefix-core
+      - run: ctest --preset linux-prefix-core
+
   # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
   # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
   # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous TSan. Sous
@@ -139,6 +161,25 @@ jobs:
       - name: Tests sautés
         if: matrix.tests
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" ${{ matrix.name }}
+      # Les moteurs fusionnés Vulkan (RIFE, DistilDRBA) contre le réseau entier et contre l'interpréteur en
+      # float, sur les modèles livrés (A45-11). La nuit et à la demande seulement : les modèles (322 Mo,
+      # jamais versionnés) se téléchargent et restent en cache, les deux tests prennent quelques minutes sur
+      # lavapipe. Ailleurs ces tests restent cachés, et sautés sans modèle.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: matrix.name == 'lavapipe' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        with:
+          path: ~/.cache/ajp-release-models
+          key: modeles-${{ hashFiles('tools/release/fetch-models.sh') }}
+      - name: Moteurs fusionnés sur les modèles livrés
+        if: matrix.name == 'lavapipe' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          sudo apt-get install -y -qq --no-install-recommends p7zip-full
+          tools/release/fetch-models.sh "$HOME/ajp/models"
+          # Sans modèle, les tests se sauteraient en silence : leur présence se vérifie ici.
+          for model in rife_v4.22_lite.onnx rife_v4.25.onnx distil_drba_v2_lite.onnx; do
+            test -f "$HOME/ajp/models/rife/$model" || { echo "modèle absent : $model" >&2; exit 1; }
+          done
+          xvfb-run -a build/linux-prefix/tests/unit/vk_backend/ajp_vk_backend_tests "[.rife_fused],[.drba_fused]"
       # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
       # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.
       - name: clang-tidy sur src/
@@ -232,7 +273,9 @@ jobs:
 
   # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque pull request (P1.17) : le kit
   # CUDA et TensorRT viennent de NVIDIA (tools/deps/linux-tensorrt.sh) et ne sortent pas de la tâche.
-  # Construction seule, pour sm_89 (linux-prefix-cuda) : les tests TensorRT demandent un GPU NVIDIA.
+  # Construction seule (linux-prefix-cuda), pour toutes les architectures livrées et pas sm_89 seule : un
+  # noyau qui déborde sur sm_75 ou emploie un intrinsèque absent de Turing cassait le paquet TensorRT le jour
+  # de la release, sans que la pull request l'ait vu. Les tests TensorRT demandent un GPU NVIDIA.
   cuda:
     name: Lecteur Linux (CUDA et TensorRT)
     if: github.event_name != 'push'
@@ -266,7 +309,9 @@ jobs:
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: CUDA et TensorRT
         run: tools/deps/linux-tensorrt.sh "$RUNNER_TEMP/nvidia"
-      - run: cmake --preset linux-prefix-cuda "-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"
+      - run: >-
+          cmake --preset linux-prefix-cuda "-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"
+          "-DAJP_CUDA_ARCHITECTURES=75-real;86-real;89-real;120-real;120-virtual"
       - run: cmake --build --preset linux-prefix-cuda
       # P5.8 : le backend TensorRT, que la tâche clang-tidy de Linux ne compile pas (ses .cpp ; nvcc garde les .cu).
       - name: clang-tidy sur le backend TensorRT
