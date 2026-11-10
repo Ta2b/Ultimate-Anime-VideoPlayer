@@ -248,6 +248,11 @@ InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePacka
   return space;
 }
 
+InstallSpace install_space_in(const EngineCatalog& catalog, const core::EnginePackage& package,
+                              std::string_view arch, const std::filesystem::path& installed_dir) {
+  return install_space(catalog, package, arch, directory_bytes(installed_dir), installed_dir.parent_path());
+}
+
 std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
                                          const std::filesystem::path& where) {
   if (available >= space.peak) return {};
@@ -553,8 +558,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
   // installation recommencée.
   const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
-  const InstallSpace space = install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir),
-                                           target_dir.parent_path());
+  const InstallSpace space = install_space_in(catalog, package, progress.cuda_arch, target_dir);
   log_channel("app")->info(
       "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})",
       name,  // i18n-ok : journal

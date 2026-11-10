@@ -57,6 +57,9 @@ struct InstallSpace {
 InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePackage& package,
                            std::string_view arch, std::uint64_t existing = 0,
                            const std::filesystem::path& engines_root = {});
+// Pour le moteur installé (ou à installer) dans installed_dir : ses octets, et ses voisins pour les reprises.
+InstallSpace install_space_in(const EngineCatalog& catalog, const core::EnginePackage& package,
+                              std::string_view arch, const std::filesystem::path& installed_dir);
 // Refus InsufficientSpace, avec les chiffres, si available est sous space.peak.
 std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
                                          const std::filesystem::path& where);

@@ -23,6 +23,7 @@
 #include "app/play/engine_tools.h"
 #include "app/play/i18n.h"
 #include "core/file_sync.h"
+#include "core/log.h"
 #include "core/text.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
@@ -242,6 +243,26 @@ std::expected<void, Refusal> change_update_state(const fs::path& file,
   change(state);
   if (state == before) return {};
   return save_update_state(file, state);
+}
+
+void check_updates_if_due(const fs::path& file, UpdateMode mode, UpdateFrequency frequency, bool may_check,
+                          std::int64_t now_unix, const std::stop_token& stop) {
+  std::optional<std::expected<std::string, Refusal>> message;
+  const auto kept = change_update_state(file, [&](UpdateState& state) {
+    if (may_check && update_due(state, mode, frequency, now_unix)) message = run_update_check(state, stop);
+  });
+  if (!kept) log_channel("app")->warn("update.toml : {}", kept.error().detail);
+  if (!message) return;
+  log_channel("app")->info("mise à jour : {}",  // i18n-ok : journal
+                           *message ? **message : message->error().detail);
+}
+
+std::expected<std::string, Refusal> check_updates_now(const fs::path& file, const std::stop_token& stop) {
+  std::expected<std::string, Refusal> message = std::unexpected(Refusal{});
+  const auto kept =
+      change_update_state(file, [&](UpdateState& state) { message = run_update_check(state, stop); });
+  if (!kept && message) return std::unexpected(kept.error());
+  return message;
 }
 
 bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequency, std::int64_t now_unix) {

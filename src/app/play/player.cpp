@@ -244,14 +244,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
               const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
                                            std::chrono::system_clock::now().time_since_epoch())
                                            .count();
-              std::optional<std::expected<std::string, Refusal>> message;
-              const auto kept = change_update_state(update_file, [&](UpdateState& state) {
-                if ((first || !playing.load()) && update_due(state, mode, frequency, now))
-                  message = run_update_check(state, stop);
-              });
-              if (!kept) log_channel("app")->warn("update.toml : {}", kept.error().detail);
-              if (message)
-                log_channel("app")->info("mise à jour : {}", *message ? **message : message->error().detail);
+              check_updates_if_due(update_file, mode, frequency, first || !playing.load(), now, stop);
               if (frequency == UpdateFrequency::Launch) return;
               std::unique_lock lock(mutex);
               wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });

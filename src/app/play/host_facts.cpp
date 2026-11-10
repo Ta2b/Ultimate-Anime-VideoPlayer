@@ -340,10 +340,7 @@ EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& path
         .id = package.engine,
         .installed = installed(catalog, package),
         .bytes = download_bytes(catalog, package, arch),
-        .needed =
-            install_space(catalog, package, arch, directory_bytes(core::engine_dir(catalog.layout, package)),
-                          core::engine_dir(catalog.layout, package).parent_path())
-                .peak,
+        .needed = install_space_in(catalog, package, arch, core::engine_dir(catalog.layout, package)).peak,
         .available = free_bytes(catalog.layout.engines),
         .license = package.license});
   }

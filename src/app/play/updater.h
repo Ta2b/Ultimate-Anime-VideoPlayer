@@ -60,6 +60,14 @@ std::string merge_update_state(std::string_view previous, const UpdateState& sta
 // lecture et l'écriture (A26-10) : le fil des mises à jour et le bouton « Check now » passent par là.
 std::expected<void, Refusal> change_update_state(const std::filesystem::path& file,
                                                  const std::function<void(UpdateState&)>& change);
+// Le fil des mises à jour : une vérification si may_check (premier tour, ou rien ne joue) et si elle est due,
+// gardée dans file et journalisée.
+void check_updates_if_due(const std::filesystem::path& file, UpdateMode mode, UpdateFrequency frequency,
+                          bool may_check, std::int64_t now_unix, const std::stop_token& stop);
+// « Check now » : une vérification tout de suite, gardée dans file ; le refus d'écriture compte après
+// une vérification réussie.
+std::expected<std::string, Refusal> check_updates_now(const std::filesystem::path& file,
+                                                      const std::stop_token& stop);
 
 // Après une tentative sans réponse du serveur (pas de réseau), la suivante attend au moins ce délai, pas
 // toute la période choisie (A26-07).
