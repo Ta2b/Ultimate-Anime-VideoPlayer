@@ -280,6 +280,16 @@ std::expected<void, Refusal> DrbaFusedEngine::run(cudaStream_t stream,
                     "drba_finish<<<>>>");
 }
 
+bool DrbaFusedEngine::graph_cache_full() {
+  if (graphs_.size() < kMaxGraphs) return false;
+  // A03-09 : dit une fois, au lieu de tourner en lancements directs pour toujours sans un mot.
+  if (!std::exchange(graphs_full_, true))
+    notice_ =
+        std::format("cache de graphes CUDA plein ({} jeux d'adresses) : lancements directs pour les suivants",
+                    kMaxGraphs);
+  return true;
+}
+
 std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
@@ -341,7 +351,7 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
            g.generation == arena->generation() && g.times_only == times_only;
   });
   if (found == graphs_.end()) {
-    if (graphs_.size() >= kMaxGraphs) return run(stream, arena, inputs, outputs, times_only);
+    if (graph_cache_full()) return run(stream, arena, inputs, outputs, times_only);
     graphs_.push_back(Graph{.addresses = addresses,
                             .zone = reinterpret_cast<std::uintptr_t>(arena->data()),
                             .generation = arena->generation(),
