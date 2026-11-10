@@ -28,7 +28,8 @@ bool on_event(void* context, SDL_Event* event) {
 }  // namespace
 
 render::DisplayContract contract_of(const DisplayFacts& facts, const std::optional<KwinOutput>& kwin,
-                                    double headroom, const std::optional<MeasuredAbl>& abl) {
+                                    double headroom, const std::optional<MeasuredAbl>& abl,
+                                    double sdr_white_nits) {
   render::DisplayContract out;
   out.oled = facts.oled;
   out.reference_nits = kwin && kwin->reference ? *kwin->reference : render::kContentReferenceNits;
@@ -38,7 +39,7 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
     out.panel_peak_nits = *kwin->peak_override;
     out.peak_source = render::DisplayContract::PeakSource::Compositor;
   } else if (headroom > 1.0) {
-    out.panel_peak_nits = headroom * out.reference_nits;
+    out.panel_peak_nits = headroom * (sdr_white_nits > 0.0 ? sdr_white_nits : out.reference_nits);
     out.peak_source = render::DisplayContract::PeakSource::Headroom;
   } else if (facts.peak_nits) {
     out.panel_peak_nits = *facts.peak_nits;
@@ -85,12 +86,20 @@ ContractWatch::~ContractWatch() {
 render::DisplayContract ContractWatch::read() const {
   const DisplayFacts facts = facts_.value_or(DisplayFacts{});
   float headroom = 1.0F;
+  float white = 0.0F;
   if (window_ != nullptr) {
     const SDL_PropertiesID props = SDL_GetWindowProperties(window_);
     headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0F);
+    white = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F);
   }
+#if defined(_WIN32)
+  constexpr bool kWindows = true;
+#else
+  constexpr bool kWindows = false;
+#endif
   const std::string edid = kwin_edid_key(facts.manufacturer, facts.product);
-  return contract_of(facts, read_kwin_output(facts.connector, edid), headroom, std::nullopt);
+  return contract_of(facts, read_kwin_output(facts.connector, edid), headroom, std::nullopt,
+                     sdr_white_nits_of(white, kWindows));
 }
 
 std::optional<render::DisplayContract> ContractWatch::tick() {

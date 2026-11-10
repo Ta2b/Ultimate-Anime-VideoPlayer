@@ -37,6 +37,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/latest_writer.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
 #include "app/play/scripted_input.h"
@@ -199,7 +200,8 @@ bool home_busy(const HomeScreen& h, const HomeView& view) {
 // L'écran des moteurs depuis l'accueil, ou l'assistant en entier pour « Relancer l'assistant » (A24-24 :
 // avant, l'accueil n'ouvrait que les moteurs). L'assistant écrit play.toml : st.saved le relit, sans quoi
 // l'accueil réécrirait par-dessus ses réglages d'avant. Rend faux quand la fenêtre se ferme.
-bool home_engines(const HomeScreen& h, HomeState& st, bool wizard) {
+bool home_engines(const HomeScreen& h, HomeState& st, bool wizard, LatestWriter& writer) {
+  writer.flush();  // l'écran qui s'ouvre lit et écrit play.toml : la dernière écriture de l'accueil d'abord
   const EngineScreen screen{.screen = h.screen,
                             .ui = h.ui,
                             .options = h.options,
@@ -223,30 +225,39 @@ std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
   return std::move(drop->path);
 }
 
+void raise_for_forwarded(const SDL_Event& event) {
+  if (event.type != SDL_EVENT_DROP_FILE || event.drop.source == nullptr) return;
+  if (std::string_view(event.drop.source) != kForwardedDrop) return;
+  int count = 0;
+  SDL_Window** windows = SDL_GetWindows(&count);
+  if (windows == nullptr) return;
+  if (count > 0) {
+    if ((SDL_GetWindowFlags(windows[0]) & SDL_WINDOW_MINIMIZED) != 0) SDL_RestoreWindow(windows[0]);
+    SDL_RaiseWindow(windows[0]);
+  }
+  SDL_free(static_cast<void*>(windows));
+}
+
+DropKind drop_kind(const std::filesystem::path& path) {
+  std::string extension = prepare::utf8_path(path.extension());
+  std::ranges::transform(extension, extension.begin(),
+                         [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c); });
+  if (std::ranges::find(video_extensions(), extension) != video_extensions().end()) return DropKind::Video;
+  if (extension == ".ass" || extension == ".ssa" || extension == ".srt") return DropKind::Subtitles;
+  return DropKind::Other;
+}
+
+// A24-15 : les trois gestes sont séparés et nommés (la fenêtre qui passe devant, la lecture du disque, le
+// tri par extension). Le disque reste lu une fois par fichier glissé : c'est ce qui écarte un dossier.
 std::optional<Dropped> dropped(const SDL_Event& event) {
   if (event.type != SDL_EVENT_DROP_FILE || event.drop.data == nullptr) return std::nullopt;
-  // Un fichier ouvert par un autre lancement (single_instance.h) : la fenêtre passe devant.
-  if (event.drop.source != nullptr && std::string_view(event.drop.source) == kForwardedDrop) {
-    int count = 0;
-    if (SDL_Window** windows = SDL_GetWindows(&count); windows != nullptr) {
-      if (count > 0) {
-        if ((SDL_GetWindowFlags(windows[0]) & SDL_WINDOW_MINIMIZED) != 0) SDL_RestoreWindow(windows[0]);
-        SDL_RaiseWindow(windows[0]);
-      }
-      SDL_free(static_cast<void*>(windows));
-    }
-  }
+  raise_for_forwarded(event);
   std::filesystem::path path = prepare::path_from_utf8(event.drop.data);
   // Un dossier ou un fichier qui n'est pas une vidéo (image, texte, PDF) ne ferme pas la lecture en cours :
   // il ne se lirait pas, et la vidéo serait perdue pour rien.
   std::error_code error;
   if (!std::filesystem::is_regular_file(path, error) || error) return std::nullopt;
-  std::string extension = prepare::utf8_path(path.extension());
-  std::ranges::transform(extension, extension.begin(),
-                         [](char c) { return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c); });
-  DropKind kind = DropKind::Other;
-  if (std::ranges::find(video_extensions(), extension) != video_extensions().end()) kind = DropKind::Video;
-  if (extension == ".ass" || extension == ".ssa" || extension == ".srt") kind = DropKind::Subtitles;
+  const DropKind kind = drop_kind(path);
   return Dropped{.path = std::move(path), .kind = kind};
 }
 
@@ -266,10 +277,13 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   HomeView view{.problem = problem};
   bool dirty = false;
   std::int64_t saved_at = host_now_us();
+  // A24-16 : play.toml s'écrit hors du thread de l'interface, comme en lecture (une écriture lente, disque
+  // qui dort ou partage réseau, ne fige plus l'accueil). La sortie de la fonction attend la dernière.
+  LatestWriter writer;
   const auto save = [&] {
     st.saved = settings_to_save(running, from_file, started, h.options);
-    if (auto written = save_settings(h.settings_path, st.saved); !written)
-      log->warn("{}", written.error().detail);
+    writer.post("play.toml",
+                [path = h.settings_path, saved = st.saved] { return save_settings(path, saved); });
     dirty = false;
     saved_at = host_now_us();
   };
@@ -333,7 +347,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                             },
                             [&](const OpenEngineScreen& open) {
                               if (open.wizard) save();  // l'assistant part des réglages à jour
-                              quit = !home_engines(h, st, open.wizard);
+                              quit = !home_engines(h, st, open.wizard, writer);
                               if (open.wizard) {  // et l'accueil repart de ce qu'il a écrit
                                 from_file = st.saved;
                                 started = running = home_settings(h, st.saved);

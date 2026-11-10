@@ -112,6 +112,15 @@ void draw_title(const Pen& pen, std::string_view title, float width) {
   pen.list->PopClipRect();
 }
 
+// Où s'arrête le texte de préparation : au bord droit, ou avant le bouton « Annuler et regarder » qui tient
+// la fin de la même ligne (sa largeur, plus un écart).
+float preparing_text_limit(float x0, float x1, bool button, float scale) {
+  if (!button) return x1;
+  const float taken = ImGui::CalcTextSize(i18n::tr("Cancel and watch")).x +
+                      ImGui::GetStyle().FramePadding.x * 2.0F + kPad * scale;
+  return std::max(x0, x1 - taken);
+}
+
 void draw_toast(const Controls& controls, float width, float scale, std::int64_t now_us) {
   const auto text = controls.toast(now_us);
   if (!text) return;
@@ -376,14 +385,20 @@ void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t 
   }
   const float cy = height - pad - kRow * s * 0.5F;
   const ImVec2 size = ImGui::CalcTextSize(text.c_str());
+  // A24-11 : le texte s'arrête avant « Annuler et regarder » et au bord de la fenêtre, au lieu de passer
+  // sous le bouton ou de sortir à 1 280 px.
+  list->PushClipRect({x0, 0.0F}, {preparing_text_limit(x0, x1, view.watch_now != nullptr, s), height});
   list->AddText({x0, cy - size.y * 0.5F}, white(0.95F), text.c_str());
+  list->PopClipRect();
   if (view.show_details && !view.details.empty()) {
     const float line = ImGui::GetTextLineHeightWithSpacing();
     float y = bar_y - 14.0F * s - line * static_cast<float>(view.details.size());
+    list->PushClipRect({x0, 0.0F}, {x1, height});
     for (const std::string& detail : view.details) {
       list->AddText({x0, y}, white(0.7F), detail.c_str());
       y += line;
     }
+    list->PopClipRect();
   }
   // P3.10 : « Annuler et regarder » à droite de la ligne du texte : la vidéo part sans ce moteur.
   if (view.watch_now != nullptr) {

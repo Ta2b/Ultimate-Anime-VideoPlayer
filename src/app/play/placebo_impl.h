@@ -219,7 +219,12 @@ struct PlaceboScreen::Impl {
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
-  std::expected<void, Refusal> submit(const pl_vulkan_present* present) const;  // placebo_screen.cpp
+  std::expected<void, Refusal> submit(const pl_vulkan_present* present);  // placebo_screen.cpp
+  // A10-08 : l'image de la swapchain acquise par start_frame et pas encore soumise. Une sortie de show sur
+  // une erreur (texture, overlays, rendu) la laissait acquise pour toujours ; au tour suivant elle est
+  // soumise telle quelle avant d'en acquérir une autre, sans quoi la swapchain finit sans image libre.
+  bool start_frame(pl_swapchain_frame* frame);
+  bool frame_pending = false;
   void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
