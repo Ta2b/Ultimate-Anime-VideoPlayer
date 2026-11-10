@@ -5,9 +5,24 @@
 #include <utility>
 
 #include "app/play/bench_events.h"
+#include "core/file_sync.h"
 #include "core/thread.h"
 
 namespace ajp::app::play {
+
+std::expected<gpu::Artifact, Refusal> with_space_reason(std::expected<gpu::Artifact, Refusal> outcome,
+                                                        const std::filesystem::path& cache_dir,
+                                                        std::uintmax_t needed) {
+  if (outcome) return outcome;
+  const RefusalCode code = outcome.error().code;
+  if (code != RefusalCode::BuilderFailed && code != RefusalCode::CacheIo &&
+      code != RefusalCode::FileUnwritable && code != RefusalCode::IoFailed)
+    return outcome;
+  std::optional<Refusal> full = core::lacking_space(cache_dir, needed);
+  if (!full) return outcome;
+  full->detail += std::format(" ; {}", outcome.error().detail);
+  return std::unexpected(std::move(*full));
+}
 
 std::expected<std::unique_ptr<EngineBuild>, Refusal> EngineBuild::start(EngineRequest request) {
   std::unique_ptr<EngineBuild> build(new EngineBuild());
@@ -50,7 +65,8 @@ void EngineBuild::run(const std::stop_token& stop, const EngineRequest& request)
                                stage_ = stage;
                              },
                          .stop = stop};
-  finish((*backend)->build(request.model, request.shapes, progress));
+  finish(
+      with_space_reason((*backend)->build(request.model, request.shapes, progress), request.init.cache_dir));
 }
 
 std::optional<std::expected<gpu::Artifact, Refusal>> EngineBuild::result() {

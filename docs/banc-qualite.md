@@ -164,6 +164,36 @@ Ce que cette mesure ne dit pas : un seul extrait ; **les poses tenues et les cou
 fenêtre dont le dessin du milieu est tenu est écartée, et une coupe entre k et k+2 n'est pas détectée). Les poses
 tenues sont l'argument de DistilDRBA.
 
+## Chroma d'une source 4:4:4
+
+`tools/bench/qualite/chroma444.py` mesure ce que perd une source 4:4:4 réduite en 4:2:0 avant SPAN (audits A15-07
+et A49-13). Même échelle ½ : la moitié d'un plan 1080p de `calibration.mkv` tient lieu de source 4:4:4 10 bits.
+La réduction est celle de swscale lui-même, la remontée Spline36 celle de l'ingestion.
+
+```sh
+python3 -I tools/bench/qualite/chroma444.py --modeles ~/.cache/ajp-release-models/modeles --md chroma444.md
+```
+
+Six plans, SPAN b8f64 FP16, ONNX Runtime 1.29 sur processeur.
+
+| Mesure | Chemin | PSNR (dB) | Pire plan (dB) | SSIM | ΔE_ITP p99,9 |
+|---|---|---:|---:|---:|---:|
+| ingestion, contre la source | 4:2:0 d'avant | 44,44 | 35,74 | 1,0000 | 22,76 |
+| ingestion, contre la source | 4:2:0 spline | 47,39 | 39,83 | 1,0000 | 12,72 |
+| ingestion, contre la source | 4:4:4 | identique | identique | 1,0000 | 0,00 |
+| après SPAN ×2, contre le plan | 4:2:0 d'avant | 40,17 | 34,90 | 0,9869 | 31,90 |
+| après SPAN ×2, contre le plan | 4:2:0 spline | 41,01 | 36,18 | 0,9874 | 27,73 |
+| après SPAN ×2, contre le plan | 4:4:4 | 41,37 | 36,30 | 0,9874 | 27,09 |
+
+- « 4:2:0 d'avant » est le lecteur avant la correction : swscale réduisait la chroma en bilinéaire et la posait
+  au centre en largeur, alors que l'image l'annonçait à gauche et que l'ingestion la lisait là.
+- « 4:2:0 spline » est ce que garde l'ingestion TensorRT, qui ne lit pas le 4:4:4 en mémoire hôte : réduction
+  en spline, arrondi exact, chroma posée à gauche. 0,84 dB de mieux après SPAN.
+- « 4:4:4 » est le chemin Vulkan (et Core ML) après la correction : la chroma entière arrive à l'ingestion.
+  1,20 dB de mieux après SPAN, et l'ingestion rend la source au code près.
+
+Le SSIM se lit sur la luma, que ces chemins ne touchent pas avant SPAN.
+
 ## Hauteur de travail et modèle de SPAN
 
 `tools/bench/qualite/travail.py` mesure ce que coûte une source réduite avant SPAN, et ce que gagne le modèle

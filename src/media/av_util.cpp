@@ -8,6 +8,7 @@
 extern "C" {
 #include <libavutil/error.h>
 #include <libavutil/mathematics.h>
+#include <libavutil/pixdesc.h>
 }
 
 namespace ajp::media {
@@ -48,6 +49,21 @@ std::int64_t from_us(std::int64_t us, AVRational time_base, std::int64_t start_u
 std::int64_t duration_to_us(std::int64_t duration, AVRational time_base) {
   if (duration == AV_NOPTS_VALUE || duration <= 0) return 0;
   return av_rescale_q(duration, time_base, kMicroseconds);
+}
+
+bool chroma_beyond_420(const AVCodecParameters& av) {
+  if (const AVPixFmtDescriptor* format = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(av.format)))
+    return format->nb_components >= 3 && (format->log2_chroma_w != 1 || format->log2_chroma_h != 1);
+  switch (av.codec_id) {
+    case AV_CODEC_ID_HEVC:
+      return av.profile == AV_PROFILE_HEVC_REXT;
+    case AV_CODEC_ID_VP9:
+      return av.profile == AV_PROFILE_VP9_1 || av.profile == AV_PROFILE_VP9_3;
+    case AV_CODEC_ID_AV1:
+      return av.profile == AV_PROFILE_AV1_HIGH || av.profile == AV_PROFILE_AV1_PROFESSIONAL;
+    default:
+      return false;
+  }
 }
 
 }  // namespace ajp::media

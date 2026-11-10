@@ -25,8 +25,11 @@ struct ReadyEvent {
 // pts_us et duration_us viennent du décodeur, qui comble les trous ; kNoPts si inconnu.
 // Refus : appareil ou format hors de core/frame.h, image retournée, image Vulkan à
 // plusieurs VkImage (une attente par image, hors du contrat de FrameData).
+// full_host_formats (DecoderOptions) : une image hôte 4:4:4 sort en Yuv444p16 et une 4:2:0 de plus de 10 bits
+// en P016, au lieu du 4:2:0 8 ou 10 bits.
 std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64_t pts_us,
-                                                      std::int64_t duration_us, ReadyEvent ready = {});
+                                                      std::int64_t duration_us, ReadyEvent ready = {},
+                                                      bool full_host_formats = false);
 
 // AVFrame tenu par une image de ce module, nullptr pour un autre FrameData.
 // Pour les tests et le diagnostic : le chemin de lecture s'en tient à FrameData.
