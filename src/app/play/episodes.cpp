@@ -39,12 +39,37 @@ std::vector<std::string> words_of(std::string_view name) {
   return words;
 }
 
+bool pure_number(const std::string& word) {
+  return !word.empty() && std::ranges::all_of(word, digit);
+}
+
+// Un numéro d'épisode : un nombre seul qui n'est ni une année (« (2008) »), ni le rang d'un volume ou d'un
+// disque (« Vol 1 Menu », « BD 2 Menu »).
+bool episode_number(const std::vector<std::string>& words, std::size_t i) {
+  const std::string& word = words[i];
+  if (!pure_number(word)) return false;
+  if (word.size() == 4 && (word.starts_with("19") || word.starts_with("20"))) return false;
+  if (i == 0) return true;
+  const std::string& before = words[i - 1];
+  return before != "VOL" && before != "VOLUME" && before != "DISC" && before != "DISK" && before != "BD" &&
+         before != "DVD";
+}
+
 // Un bonus et pas un épisode (P3.81) : générique sans texte (NCOP, NCED), bande-annonce, publicité, menu.
+// NCOP, NCED et CREDITLESS le disent partout. Les autres mots sont aussi des mots de titre (« Soma - 05 - The
+// Menu ») : ils ne comptent que si aucun numéro d'épisode ne les précède (A13-03).
 bool extra(std::string_view stem) {
-  return std::ranges::any_of(words_of(stem), [](const std::string& w) {
-    return w.starts_with("NCOP") || w.starts_with("NCED") || w == "CREDITLESS" || w == "PV" || w == "CM" ||
-           w == "MENU" || w == "TRAILER" || w == "TEASER" || w == "PREVIEW";
-  });
+  const std::vector<std::string> words = words_of(stem);
+  bool numbered = false;
+  for (std::size_t i = 0; i < words.size(); ++i) {
+    const std::string& w = words[i];
+    if (w.starts_with("NCOP") || w.starts_with("NCED") || w == "CREDITLESS") return true;
+    if (!numbered &&
+        (w == "PV" || w == "CM" || w == "MENU" || w == "TRAILER" || w == "TEASER" || w == "PREVIEW"))
+      return true;
+    numbered = numbered || episode_number(words, i);
+  }
+  return false;
 }
 
 // Le nom sans sa version (« 01v2 » donne « 01 ») et la version (1 sans marque) : deux versions d'un même
@@ -71,23 +96,50 @@ std::pair<std::string, int> without_version(std::string_view stem) {
 
 }  // namespace
 
+namespace {
+
+// Le chiffre qui commence en `i` (ASCII, ou pleine chasse U+FF10 à U+FF19 des noms japonais, EF BC 90..99
+// en UTF-8) et sa longueur en octets, ou -1 (A13-04).
+int digit_at(std::string_view s, std::size_t i, std::size_t& length) {
+  if (digit(s[i])) {
+    length = 1;
+    return s[i] - '0';
+  }
+  if (i + 2 < s.size() && static_cast<unsigned char>(s[i]) == 0xEF &&
+      static_cast<unsigned char>(s[i + 1]) == 0xBC) {
+    const auto third = static_cast<unsigned char>(s[i + 2]);
+    if (third >= 0x90 && third <= 0x99) {
+      length = 3;
+      return third - 0x90;
+    }
+  }
+  return -1;
+}
+
+// Les chiffres qui commencent en `i`, sans les zéros de tête ; `i` avance après eux.
+std::string number_at(std::string_view s, std::size_t& i) {
+  std::string value;
+  std::size_t length = 0;
+  for (int d = digit_at(s, i, length); d >= 0; d = i < s.size() ? digit_at(s, i, length) : -1) {
+    if (!value.empty() || d != 0)
+      value.push_back(static_cast<char>('0' + d));  // les zéros de tête ne comptent pas
+    i += length;
+  }
+  return value;
+}
+
+}  // namespace
+
 int natural_compare(std::string_view a, std::string_view b) {
   std::size_t i = 0;
   std::size_t j = 0;
+  std::size_t length = 0;
   while (i < a.size() && j < b.size()) {
-    if (digit(a[i]) && digit(b[j])) {
-      std::size_t ia = i;
-      std::size_t jb = j;
-      while (ia < a.size() && a[ia] == '0') ++ia;  // les zéros de tête ne comptent pas
-      while (jb < b.size() && b[jb] == '0') ++jb;
-      std::size_t ea = ia;
-      std::size_t eb = jb;
-      while (ea < a.size() && digit(a[ea])) ++ea;
-      while (eb < b.size() && digit(b[eb])) ++eb;
-      if (ea - ia != eb - jb) return ea - ia < eb - jb ? -1 : 1;
-      if (const int order = a.substr(ia, ea - ia).compare(b.substr(jb, eb - jb)); order != 0) return order;
-      i = ea;
-      j = eb;
+    if (digit_at(a, i, length) >= 0 && digit_at(b, j, length) >= 0) {
+      const std::string na = number_at(a, i);
+      const std::string nb = number_at(b, j);
+      if (na.size() != nb.size()) return na.size() < nb.size() ? -1 : 1;
+      if (const int order = na.compare(nb); order != 0) return order < 0 ? -1 : 1;
       continue;
     }
     if (folded(a[i]) != folded(b[j])) return folded(a[i]) < folded(b[j]) ? -1 : 1;
@@ -113,7 +165,7 @@ std::optional<std::filesystem::path> sibling_episode(const std::filesystem::path
   std::vector<Video> videos;
   for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
     if (!it->is_regular_file(error)) continue;  // un lien cassé n'est pas un fichier : sauté
-    std::string extension = it->path().extension().string();
+    std::string extension = prepare::utf8_path(it->path().extension());
     std::ranges::transform(extension, extension.begin(), folded);
     if (std::ranges::find(video_extensions(), extension) == video_extensions().end()) continue;
     const std::string stem = prepare::utf8_path(it->path().stem());

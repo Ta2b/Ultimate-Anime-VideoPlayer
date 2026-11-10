@@ -169,7 +169,12 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
-  if (grade && grade->adopt()) ++grade_serial;  // une pile composée en tâche de fond (P4.9)
+  if (grade && grade->adopt()) {  // une pile composée en tâche de fond (P4.9)
+    ++grade_serial;
+    // A41-04 : un hook composé refusé ne laissait aucune trace, et l'image restait sans look.
+    if (const Refusal* refused = grade->look_refusal(); refused != nullptr && channel)
+      channel->warn("look : la pile composée ne se lit pas ({}), l'image passe sans look", refused->detail);
+  }
   if (grade && params) {
     if (*params != grade->params()) {
       grade->set_params(*params);
@@ -196,9 +201,9 @@ double PlaceboScreen::Impl::sdr_reference() const {
 #endif
 }
 
-// La passe « kwin » (compression vers le pic de l'écran) et les métadonnées : partout où la sortie est en
-// PQ, sauf --no-hdr-metadata. Sans elle, la LUT demande environ 6 000 nits pour un blanc et tout compositeur
-// qui ne compresse pas lui-même (GNOME, Hyprland) écrête au-delà de 75 % du code.
+// La dernière passe (compression vers le pic de l'écran, puis les éclats) et les métadonnées : partout où la
+// sortie est en PQ, sauf --no-hdr-metadata. Sans elle, la LUT demande environ 6 000 nits pour un blanc et
+// tout compositeur qui ne compresse pas lui-même (GNOME, Hyprland) écrête au-delà de 75 % du code.
 bool PlaceboScreen::Impl::kwin_metadata() const {
   return kde_sdr_auto || kde_sdr_nits.has_value();
 }
@@ -224,11 +229,14 @@ void PlaceboScreen::Impl::match_kwin() {
   kwin_applied = match;
   grade->set_kwin_match(match);
   const double max_nits = on ? hint.max_content_nits : 0.0;
-  // MaxFALL (P3.59) : celui du contrat d'écran quand il le connaît (le plein écran du limiteur), sinon le
-  // niveau des surfaces blanches du grade (blanc × relèvement fixe, pas celui du plan : l'annonce ne bouge
-  // pas à chaque coupe), la moyenne d'une image toute blanche.
+  // MaxFALL (P3.59, A41-02) : celui du contrat d'écran quand il le connaît (le plein écran du limiteur),
+  // sinon la moyenne réelle d'une image toute blanche : le blanc des surfaces que la dernière passe rend, en
+  // unités du contenu (au relèvement fixe, pas celui du plan : l'annonce ne bouge pas à chaque coupe).
+  // Avant, 233 nits étaient annoncés pour un blanc rendu à 695.
   const double contract_fall = contract ? render::contract_metadata(*contract).max_fall : 0.0;
-  const double surfaces = grade->params().sdr_white * render::kAnimeLift;
+  const std::optional<render::OutputTune> tune = grade->output();
+  const double surfaces = tune ? tune->white * render::kContentReferenceNits / reference
+                               : grade->params().sdr_white * render::kAnimeLift;
   const double max_fall = on ? std::min(max_nits, contract_fall > 0.0 ? contract_fall : surfaces) : 0.0;
   if (max_nits == hinted_max_nits && max_fall == hinted_max_fall) return;
   hinted_max_nits = max_nits;
@@ -249,6 +257,15 @@ bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
   return grade && grade_loaded_pq == pq && (pq || sdr_gamma(target).has_value());
 }
+
+namespace {
+// Les nits d'un code SDR lu en sortie de la rampe. Sortie SDR de la méthode anime : le vrai noir travaille
+// sur l'image en PQ, que la dernière passe divise par tm_white ; un code y vaut donc code^gamma × tm_white
+// (A41-07 : le pic HDR servait d'échelle).
+double sdr_code_nits(const render::GradeParams& params, double code) {
+  return std::pow(code, params.sdr_gamma) * (params.sdr_tm > 0.5 ? params.tm_white : params.peak);
+}
+}  // namespace
 
 std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<const float> levels) {
   Impl& s = *impl_;
@@ -345,7 +362,7 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
     const std::size_t at = (middle + i * kBand + kBand / 2) * 4;
     const std::uint16_t peak = std::max({pixels[at], pixels[at + 1], pixels[at + 2]});
     const double code = peak / 65535.0;
-    nits.push_back(s.hdr_output ? pq_nits(code) : std::pow(code, params.sdr_gamma) * params.peak);
+    nits.push_back(s.hdr_output ? pq_nits(code) : sdr_code_nits(params, code));
   }
   s.last_ramp = Impl::RampMeasure{.params = params,
                                   .levels = {levels.begin(), levels.end()},

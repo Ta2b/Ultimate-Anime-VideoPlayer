@@ -84,8 +84,9 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
 
 void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<Input>& /*actions*/) {
   // Tri de l'ADR 0012 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds,
-  // qui suivent la scène (le curseur est leur maximum, en scène très claire), et le look : la LUT de base et
-  // « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de référence).
+  // qui suivent l'épisode (le curseur est leur maximum, dans un épisode très clair : A38-16), et le look : la
+  // LUT de base et « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de
+  // référence).
   section(i18n::tr("Color grading"));
   render::GradeSettings& g = d.grade_values;
   ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, 0, 200, "%d %%",
@@ -99,7 +100,7 @@ void grade_tab(PlaySettings& d, const SettingsChoices& /*choices*/, std::vector<
     ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d",
                      ImGuiSliderFlags_AlwaysClamp);
     grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
-    panel::tip(i18n::tr("The maximum, reached in very bright scenes; it fades out in very dark scenes."));
+    panel::tip(i18n::tr("The maximum, reached in a very bright episode; it fades out in a very dark one."));
   }
   if (ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;

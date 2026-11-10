@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -13,6 +14,15 @@
 
 #include "core/text.h"
 #include "core/user_overlay.h"
+#include "core/utf8_path.h"
+#include "prepare/key_lock.h"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace ajp::app::play {
 namespace {
@@ -30,14 +40,22 @@ std::optional<Entry> identify(const std::filesystem::path& file) {
   if (error) return std::nullopt;
   const std::uintmax_t size = std::filesystem::file_size(absolute, error);
   if (error) return std::nullopt;
-  std::string path = absolute.string();
+  std::string path =
+      core::to_utf8(absolute);  // jamais path::string() : un nom japonais sous Windows (A13-11)
   if (path.find_first_of("\t\n\r") != std::string::npos) return std::nullopt;
   return Entry{.size = size, .path = std::move(path)};
 }
 
-// Deux chemins retenus désignent-ils le même fichier ? Sous Windows et macOS, sans égard à la casse.
+// Deux chemins retenus désignent-ils le même fichier ? Sous Windows et macOS, sans égard à la casse. Sous
+// Windows, la casse de tout Unicode, comme NTFS (« Épisode » et « épisode », A13-12).
 bool same_path(std::string_view a, std::string_view b) {
-#if defined(_WIN32) || defined(__APPLE__)
+#if defined(_WIN32)
+  if (core::iequal(a, b)) return true;
+  const std::wstring wa = core::path_from_utf8(a).wstring();
+  const std::wstring wb = core::path_from_utf8(b).wstring();
+  return CompareStringOrdinal(wa.data(), static_cast<int>(wa.size()), wb.data(), static_cast<int>(wb.size()),
+                              TRUE) == CSTR_EQUAL;
+#elif defined(__APPLE__)
   return core::iequal(a, b);
 #else
   return a == b;
@@ -109,6 +127,13 @@ std::expected<void, Refusal> remember_position(const std::filesystem::path& stor
                                                std::int64_t duration_us) {
   std::optional<Entry> entry = identify(file);
   if (!entry) return {};  // fichier disparu, ou chemin qu'une ligne ne sait pas porter
+  // A13-10 : deux lecteurs ouverts relisent puis réécrivent le même fichier. Sous verrou, chacun relit ce que
+  // l'autre vient d'écrire et le garde. Un verrou impossible (dossier en lecture seule, autre lecteur figé)
+  // n'empêche pas d'écrire, comme avant : l'écriture reste atomique.
+  std::filesystem::path lock_file = store;
+  lock_file += ".lock";
+  const auto lock =
+      prepare::KeyLock::acquire(lock_file, {}, prepare::LockWait::Block, std::chrono::seconds(2));
   std::vector<Entry> entries = load(store);
   const std::size_t before = entries.size();
   std::erase_if(entries, [&](const Entry& e) {
