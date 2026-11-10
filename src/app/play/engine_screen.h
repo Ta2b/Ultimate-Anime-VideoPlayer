@@ -42,6 +42,10 @@ struct EngineScreen {
 std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Settings& engines, bool revisit,
                                                std::size_t& next_key, SnapshotPlan& snapshot);
 
+// L'attente entre deux images de l'écran de bienvenue (A25-15) : 16 ms tant qu'un événement vient d'arriver
+// ou qu'un essai (--keys, --snapshot) attend son heure, 250 ms après une seconde sans événement.
+std::int32_t welcome_wait_ms(std::int64_t since_event_us, bool scripted);
+
 // La calibration de la machine sur cette fenêtre, une barre de chargement et « Annuler et regarder » : les
 // réglages calibrés, base tel quel si elle échoue ou s'annule, rien si la fenêtre se ferme.
 std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,

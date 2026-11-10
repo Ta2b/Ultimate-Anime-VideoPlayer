@@ -105,6 +105,10 @@ void press(const std::string& name, SDL_Window* window) {
   }
   log_channel("app")->info("--keys : {}", name);
   SDL_PushEvent(&event);
+  // La touche relâchée suit : sans elle, l'assistant au clavier (A25-14) la verrait tenue et la répéterait.
+  event.type = SDL_EVENT_KEY_UP;
+  event.key.down = false;
+  SDL_PushEvent(&event);
 }
 
 std::optional<ExportJob> scripted_export(std::string_view name, const PlaySettings& running,
