@@ -85,6 +85,46 @@ std::expected<void, Refusal> TensorRtBackend::hold(const DecodedFrame& frame) {
   return cuda_check(cudaEventRecord(free->done, stream_), "cudaEventRecord");
 }
 
+// Un tampon de l'ingestion porté à bytes octets. Toutes les voies peuvent encore lire l'ancien : il part en
+// retrait, libéré quand elles l'ont quitté, sans arrêter l'appareil en cours de lecture.
+std::expected<void, Refusal> TensorRtBackend::grow_ingest(float*& buffer, std::size_t& size,
+                                                          std::size_t bytes) {
+  if (bytes <= size) return {};
+  if (buffer != nullptr) free_after_lanes(buffer);
+  buffer = nullptr;
+  size = 0;
+  if (auto ok =
+          cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&buffer), bytes, stream_), "cudaMallocAsync");
+      !ok)
+    return ok;
+  size = bytes;
+  return {};
+}
+
+// Les tampons de l'ingestion : les lignes du filtre étiré, et celles de la chroma Spline36
+// (IngestSpec::chroma, le contrat de la chaîne ; A03-01) avec ses phases. Dimension impaire : la chroma
+// reste bilinéaire.
+std::expected<void, Refusal> TensorRtBackend::reserve_ingest(const DecodedFrame& frame,
+                                                             const IngestSpec& spec, IngestParams& params) {
+  if (auto ok = grow_ingest(ingest_rows_, ingest_rows_size_, ingest_rows_bytes(params)); !ok) return ok;
+  params.rows = ingest_rows_;
+  if (spec.chroma != kernels::Filter::Spline36 || !ingest_chroma_spline(frame.width, frame.height)) return {};
+  if (auto ok =
+          grow_ingest(ingest_chroma_, ingest_chroma_size_, ingest_chroma_bytes(frame.width, frame.height));
+      !ok)
+    return ok;
+  params.chroma_rows = ingest_chroma_;
+  const kernels::ChromaShift shift =
+      kernels::chroma_shift_up(frame.color.siting == ChromaSiting::Center    ? kernels::Siting::Center
+                               : frame.color.siting == ChromaSiting::TopLeft ? kernels::Siting::TopLeft
+                                                                             : kernels::Siting::Left);
+  for (int parity = 0; parity < 2; ++parity) {
+    params.chroma_wx[parity] = kernels::chroma_up_phase(parity, shift.x);
+    params.chroma_wy[parity] = kernels::chroma_up_phase(parity, shift.y);
+  }
+  return {};
+}
+
 std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, const IngestSpec& spec,
                                                      const Tensor& rgb) {
   const bool host = frame.data && frame.data->memory() == FrameMemory::Host;
@@ -153,20 +193,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     if (!layout) return refuse(RefusalCode::FormatUnsupported, "ingestion hôte : format sans disposition");
   }
   if (auto ok = bind(); !ok) return ok;
-  const std::size_t rows = ingest_rows_bytes(params);
-  if (rows > ingest_rows_size_) {
-    // Toutes les voies peuvent encore lire l'ancien tampon : il part en retrait, libéré quand elles
-    // l'ont quitté, sans arrêter l'appareil en cours de lecture.
-    if (ingest_rows_ != nullptr) free_after_lanes(ingest_rows_);
-    ingest_rows_ = nullptr;
-    ingest_rows_size_ = 0;
-    if (auto ok = cuda_check(cudaMallocAsync(reinterpret_cast<void**>(&ingest_rows_), rows, stream_),
-                             "cudaMallocAsync");
-        !ok)
-      return ok;
-    ingest_rows_size_ = rows;
-  }
-  params.rows = ingest_rows_;
+  if (auto ok = reserve_ingest(frame, spec, params); !ok) return ok;
   // Débandage : à même taille, dans l'ingestion elle-même (étape 5.4) ; réduite, l'ingestion écrit dans le
   // tampon de travail et le débandage dans rgb.
   const bool same_size = out_width == frame.width && out_height == frame.height;
@@ -178,11 +205,12 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     if (auto ok = reserve_deband(deband_bytes); !ok) return ok;
     params.rgb = deband_out_;
   }
-  const std::array<std::uintptr_t, 3> writes{rgb.handle, reinterpret_cast<std::uintptr_t>(&ingest_rows_),
+  const std::array<std::uintptr_t, 4> writes{rgb.handle, reinterpret_cast<std::uintptr_t>(&ingest_rows_),
+                                             reinterpret_cast<std::uintptr_t>(&ingest_chroma_),
                                              reinterpret_cast<std::uintptr_t>(&deband_out_)};
   const std::array<std::uintptr_t, 1> reads{reinterpret_cast<std::uintptr_t>(&deband_out_)};
   if (auto ok =
-          order(std::span(reads).first(deband_pass ? 1 : 0), std::span(writes).first(deband_pass ? 3 : 2));
+          order(std::span(reads).first(deband_pass ? 1 : 0), std::span(writes).first(deband_pass ? 4 : 3));
       !ok)
     return ok;
   if (host) {

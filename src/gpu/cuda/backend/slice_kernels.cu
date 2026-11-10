@@ -21,7 +21,7 @@ __device__ int clamp_index(int i, int n) {
 }
 
 // Chroma bilinéaire au point (cx, cy) du plan de chroma, bords répétés ; c vaut 0 (Cb) ou 1 (Cr).
-__device__ float chroma_at(const IngestParams& p, float cx, float cy, int c) {
+__device__ float chroma_bilinear(const IngestParams& p, float cx, float cy, int c) {
   const int cw = (p.width + 1) / 2;
   const int ch = (p.height + 1) / 2;
   const float fx = floorf(cx);
@@ -44,13 +44,28 @@ __device__ float chroma_at(const IngestParams& p, float cx, float cy, int c) {
   return top * (1.0F - ay) + bottom * ay;
 }
 
+// Chroma du pixel de luma (x, y), en codes bruts ; c vaut 0 (Cb) ou 1 (Cr). Spline36 : la somme verticale de
+// kernels::chroma_up_at sur les lignes déjà filtrées en largeur (chroma_rows) ; sinon le bilinéaire.
+__device__ float chroma_at(const IngestParams& p, int x, int y, int c) {
+  if (p.chroma_rows == nullptr) {
+    return chroma_bilinear(p, (static_cast<float>(x) - p.chroma_x) * 0.5F,
+                           (static_cast<float>(y) - p.chroma_y) * 0.5F, c);
+  }
+  const int ch = p.height / 2;
+  const float* column =
+      p.chroma_rows +
+      static_cast<std::size_t>(c) * static_cast<std::size_t>(ch) * static_cast<std::size_t>(p.width) +
+      static_cast<std::size_t>(x);
+  const std::size_t pitch = static_cast<std::size_t>(p.width);
+  return kernels::chroma_up_at(p.chroma_wy[y & 1], y, ch,
+                               [=](int k) { return column[static_cast<std::size_t>(k) * pitch]; });
+}
+
 // RGB du pixel (x, y) de l'image décodée.
 __device__ float3 rgb_at(const IngestParams& p, int x, int y) {
-  const float cx = (static_cast<float>(x) - p.chroma_x) * 0.5F;
-  const float cy = (static_cast<float>(y) - p.chroma_y) * 0.5F;
   const float luma = (sample(p.luma, p.luma_pitch, x, y, p.sixteen_bits) - p.yoff) / p.yscale;
-  const float cb = (chroma_at(p, cx, cy, 0) - p.coff) / p.cscale;
-  const float cr = (chroma_at(p, cx, cy, 1) - p.coff) / p.cscale;
+  const float cb = (chroma_at(p, x, y, 0) - p.coff) / p.cscale;
+  const float cr = (chroma_at(p, x, y, 1) - p.coff) / p.cscale;
   const float kg = 1.0F - p.kr - p.kb;
   return make_float3(luma + 2.0F * (1.0F - p.kr) * cr,
                      luma - (2.0F * p.kb * (1.0F - p.kb) * cb + 2.0F * p.kr * (1.0F - p.kr) * cr) / kg,
@@ -281,6 +296,29 @@ __global__ void __launch_bounds__(kTileWidth* kTileThreadsY) ingest_tiled(Ingest
   }
 }
 
+// Passe horizontale de la chroma Spline36 : la ligne y du plan de chroma (codes bruts), portée à la largeur
+// de l'image, Cb et Cr, dans chroma_rows. Bords en miroir (kernels::chroma_up_at).
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) chroma_rows_kernel(IngestParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  const int cw = p.width / 2;
+  const int ch = p.height / 2;
+  if (x >= p.width || y >= ch) return;
+  const bool planar = p.chroma_v != nullptr;
+  const int stride = planar ? 1 : 2;
+  const std::size_t plane_size = static_cast<std::size_t>(ch) * static_cast<std::size_t>(p.width);
+  const std::size_t at =
+      static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
+#pragma unroll 1
+  for (int c = 0; c < 2; ++c) {
+    const void* plane = planar && c == 1 ? p.chroma_v : p.chroma;
+    const int lane = planar ? 0 : c;
+    p.chroma_rows[static_cast<std::size_t>(c) * plane_size + at] = kernels::chroma_up_at(
+        p.chroma_wx[x & 1], x, cw,
+        [=](int k) { return sample(plane, p.chroma_pitch, stride * k + lane, y, p.sixteen_bits); });
+  }
+}
+
 // À la taille de l'image : la conversion seule, le cas courant (registres de ce seul chemin).
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest(IngestParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
@@ -355,6 +393,16 @@ std::size_t tile_bytes(const IngestParams& p) {
 
 }  // namespace
 
+bool ingest_chroma_spline(int width, int height) {
+  return width >= 2 && height >= 2 && width % 2 == 0 && height % 2 == 0;
+}
+
+std::size_t ingest_chroma_bytes(int width, int height) {
+  if (!ingest_chroma_spline(width, height)) return 0;
+  return std::size_t{2} * static_cast<std::size_t>(height / 2) * static_cast<std::size_t>(width) *
+         sizeof(float);
+}
+
 std::size_t ingest_rows_bytes(const IngestParams& params) {
   const bool same = params.out_width == params.width && params.out_height == params.height;
   if (same || params.reduce_kind == kReduceArea) return 0;
@@ -365,6 +413,12 @@ std::size_t ingest_rows_bytes(const IngestParams& params) {
 
 cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream) {
   const dim3 block(kBlock, kBlock);
+  if (params.chroma_rows != nullptr) {
+    // Jamais avec une dimension impaire : chroma_at et la passe supposent un plan de chroma de moitié exacte.
+    if (!ingest_chroma_spline(params.width, params.height)) return cudaErrorInvalidValue;
+    chroma_rows_kernel<<<grid_for(params.width, params.height / 2), block, 0, stream>>>(params);
+    if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
+  }
   const dim3 out = grid_for(params.out_width, params.out_height);
   if (params.out_width == params.width && params.out_height == params.height) {
     if (params.deband) {

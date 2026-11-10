@@ -242,7 +242,7 @@ TensorRtBackend::~TensorRtBackend() {
     if (read.host != nullptr) cudaFreeHost(read.host);
     if (read.done != nullptr) cudaEventDestroy(read.done);
   }
-  if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
+  for (float* buffer : {ingest_rows_, ingest_chroma_}) cudaFree(buffer);  // nul : sans effet
   if (deband_out_ != nullptr) cudaFree(deband_out_);
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();

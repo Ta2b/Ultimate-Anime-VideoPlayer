@@ -74,9 +74,9 @@ __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
   return tp;
 }
 
-// Les trois canaux du pixel (x, y) de la sortie : mouvement lu dans la fenêtre, puis les deux
-// images déformées et mélangées.
-template <typename S>
+// Les trois canaux du pixel (x, y) de la sortie : mouvement lu dans la fenêtre (par S), puis les deux
+// images déformées (lues par I) et mélangées.
+template <typename S, typename I = S>
 __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   const Planes flow = motion_planes(p, p.flow, p.textures.flow);
   const Planes mask = motion_planes(p, p.mask, p.textures.mask);
@@ -118,18 +118,20 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   const float fx = static_cast<float>(x);
   const float fy = static_cast<float>(y);
   for (int c = 0; c < 3; ++c) {
-    const float va = S::sample(a, c, fx + sx * ax, fy + sy * ay);
-    const float vb = S::sample(b, c, fx + sx * bx, fy + sy * by);
+    const float va = I::sample(a, c, fx + sx * ax, fy + sy * ay);
+    const float vb = I::sample(b, c, fx + sx * bx, fy + sy * by);
     rgb[c] = va * weight + vb * (1.0F - weight);
   }
 }
 
-__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(WarpBlendParams p) {
+// Un pixel par fil, écrit dans out ou dans l'emplacement de l'anneau ; I lit les images.
+template <typename I>
+__device__ void warp_one(const WarpBlendParams& p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
   float rgb[3];
-  warp_pixel<Exact>(p, x, y, rgb);
+  warp_pixel<Exact, I>(p, x, y, rgb);
   if (p.surface.object != 0) {
     store_ring(p.surface, x, y, __float2half_rn(rgb[0]), __float2half_rn(rgb[1]), __float2half_rn(rgb[2]));
     return;
@@ -139,6 +141,16 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(W
   const std::size_t i =
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
   for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * plane + i] = __float2half_rn(rgb[c]);
+}
+
+__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(WarpBlendParams p) {
+  warp_one<Exact>(p);
+}
+
+// Les images lues en bicubique (A49-06) : 96 chargements par pixel pour les deux images au lieu de 24. Sans
+// borne de blocs par SM : son coût se mesure sur la carte (docs/audits/A-CONFIRMER.md).
+__global__ void __launch_bounds__(kPixelThreads) warp_blend_bicubic(WarpBlendParams p) {
+  warp_one<Bicubic>(p);
 }
 
 // Deux pixels voisins par fil, lus par les objets texture : un bloc 16 × 16 couvre 32 × 16 pixels.
@@ -202,8 +214,13 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(Flo
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream) {
   const WarpBlendParams::Textures& t = params.textures;
   const bool previous = params.keep_poses && params.previous_flow != nullptr;
-  if (t.a != 0 && t.b != 0 && t.flow != 0 && t.mask != 0 && (!previous || t.previous_flow != 0) &&
-      params.width % 2 == 0 && reinterpret_cast<std::uintptr_t>(params.out) % 4 == 0) {
+  // Soumis à la mesure du compromis C7 (docs/audits/A-CONFIRMER.md, A49-06) : pour revenir au bilinéaire,
+  // retirer cette branche.
+  if (kernels::warp_images(params.width, params.height, params.window_width, params.window_height) ==
+      kernels::WarpImages::Bicubic) {
+    warp_blend_bicubic<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);
+  } else if (t.a != 0 && t.b != 0 && t.flow != 0 && t.mask != 0 && (!previous || t.previous_flow != 0) &&
+             params.width % 2 == 0 && reinterpret_cast<std::uintptr_t>(params.out) % 4 == 0) {
     warp_blend_filtered<<<grid_for(params.width / 2, params.height), dim3(kBlock, kBlock), 0, stream>>>(
         params);
   } else {

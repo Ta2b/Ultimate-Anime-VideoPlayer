@@ -36,6 +36,7 @@ class IRuntime;
 
 namespace ajp::gpu::cuda {
 
+struct IngestParams;
 class TrtLog;
 class SharedActivations;
 class SpanFp8Engine;
@@ -222,6 +223,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   void release_retired();
   void push_launches();  // WDDM : envoie le lot de lancements (Windows seulement)
   std::expected<void, Refusal> reserve_deband(std::size_t bytes);
+  // Les tampons de l'ingestion (lignes filtrées, chroma Spline36) et leurs paramètres (tensorrt_kernels.cpp).
+  std::expected<void, Refusal> reserve_ingest(const DecodedFrame& frame, const IngestSpec& spec,
+                                              IngestParams& params);
+  std::expected<void, Refusal> grow_ingest(float*& buffer, std::size_t& size, std::size_t bytes);
   // warp_blend et warp_blend_poses : le même noyau, l'instant réglé ou non.
   struct Poses {
     bool keep = false;
@@ -353,6 +358,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   std::size_t ingest_rows_size_ = 0;
+  // Lignes de chroma filtrées en largeur, pour la chroma Spline36 (IngestParams::chroma_rows).
+  float* ingest_chroma_ = nullptr;
+  std::size_t ingest_chroma_size_ = 0;
   // Image ingérée avant son débandage (ingest avec IngestSpec::deband), à la taille de la plus grande vue.
   void* deband_out_ = nullptr;
   std::size_t deband_out_size_ = 0;

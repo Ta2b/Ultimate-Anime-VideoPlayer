@@ -11,6 +11,8 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
+#include "kernels/spec/warp_bicubic.h"
+
 namespace ajp::gpu::cuda {
 
 // La fenêtre fw × fh au coin (ox, oy) des plans plane_w × plane_h d'un tenseur
@@ -58,6 +60,22 @@ struct Filtered {
     y = fminf(fmaxf(y, 0.0F), static_cast<float>(t.fh - 1));
     return tex2D<float>(t.texture, static_cast<float>(t.ox) + x + 0.5F,
                         static_cast<float>(c * t.plane_h + t.oy) + y + 0.5F);
+  }
+};
+
+// La lecture bicubique des images du warp (kernels/spec/warp_bicubic.h) : seize chargements exacts, la
+// formule que l'hôte partage. Les objets texture n'y servent pas (leur filtre est bilinéaire).
+struct Bicubic {
+  __device__ static float sample(const Planes& t, int c, float x, float y) {
+    const __half* p =
+        t.data +
+        (static_cast<std::size_t>(c) * static_cast<std::size_t>(t.plane_h) + static_cast<std::size_t>(t.oy)) *
+            static_cast<std::size_t>(t.plane_w) +
+        static_cast<std::size_t>(t.ox);
+    const std::size_t pitch = static_cast<std::size_t>(t.plane_w);
+    return kernels::warp_bicubic_at(x, y, t.fw, t.fh, [=](int xx, int yy) {
+      return __half2float(p[static_cast<std::size_t>(yy) * pitch + static_cast<std::size_t>(xx)]);
+    });
   }
 };
 

@@ -4,10 +4,13 @@
 // que l'image (1080p vers 720p, une seule passe), et écriture RGB FP16 vers un slot RGBA16 UNORM
 // du ring importé de Vulkan.
 //
-// Provisoire : le socle CUDA (chantier pc/cuda-compute, src/gpu/cuda/compute) porte les noyaux
-// exacts de kernels/spec (chroma Spline36 en codes bruts). Ici la chroma est bilinéaire, avec
-// la position de chroma de la source ; l'écart reste sous un niveau 8 bits sur les aplats.
-// Ces noyaux disparaissent quand le socle est fusionné.
+// La chroma suit le contrat de la chaîne (IngestSpec::chroma, kChainChromaFilter) : Spline36 en codes
+// bruts, par une passe horizontale dans un tampon (chroma_rows) puis une somme verticale de six prises à
+// la conversion (kernels/spec/chroma_up.h, la formule que l'hôte et l'appareil partagent ; A03-01). Le
+// bilinéaire d'avant reste pour IngestSpec::chroma = Bilinear et pour une image de dimension impaire : il
+// suit la position de chroma de la source mais adoucit les bords de couleur, bien au-delà d'un niveau
+// 8 bits sur un trait rouge ou des cheveux sur fond uni. Le socle CUDA annoncé (pc/cuda-compute) n'existe
+// pas : ces noyaux sont ceux du lecteur.
 #pragma once
 
 #include <cstddef>
@@ -15,6 +18,7 @@
 #include <cuda_runtime_api.h>
 
 #include "gpu/cuda/backend/ring_surface.h"
+#include "kernels/spec/chroma_up.h"
 
 namespace ajp::gpu::cuda {
 
@@ -55,6 +59,13 @@ struct IngestParams {
   // Position de la chroma en pixels de luma : 0 pour la gauche, 0,5 au centre.
   float chroma_x = 0.0F;
   float chroma_y = 0.5F;
+  // Chroma Spline36 (kernels/spec/chroma_up.h) : les lignes de chroma filtrées vers la largeur de l'image
+  // par launch_ingest (2 × ⌈height / 2⌉ × width, FP32, Cb puis Cr, ingest_chroma_bytes octets), et les deux
+  // phases de chaque axe (chroma_up_phase, pour le décalage de la position de chroma). chroma_rows nul :
+  // chroma bilinéaire, sans tampon.
+  float* chroma_rows = nullptr;
+  kernels::ChromaUpPhase chroma_wx[2];
+  kernels::ChromaUpPhase chroma_wy[2];
   void* rgb = nullptr;  // 1 × 3 × height × width, FP16
   // Filtres étirés (triangle, cubique, Spline36) : deux passes séparables, la première convertit et
   // filtre les lignes dans rows (3 × height × out_width, FP32, ingest_rows_bytes octets), la
@@ -67,6 +78,11 @@ struct IngestParams {
   // l'image passe encore par launch_deband (recalculer la réduction aux 5 points coûterait ~5 passes).
   bool deband = false;  // posé par launch_ingest pour la passe tuilée (étape 5.3)
 };
+
+// La chroma Spline36 se fait-elle pour cette image ? Dimensions paires (rapport 2 exact), au moins 2.
+bool ingest_chroma_spline(int width, int height);
+// Octets de IngestParams::chroma_rows pour cette image.
+std::size_t ingest_chroma_bytes(int width, int height);
 
 // Octets de IngestParams::rows pour ces paramètres ; 0 sans filtre séparable (même taille, Area).
 std::size_t ingest_rows_bytes(const IngestParams& params);

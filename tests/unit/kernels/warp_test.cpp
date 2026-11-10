@@ -8,6 +8,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "kernels/spec.h"
+#include "kernels/spec/warp_bicubic.h"
 
 using namespace ajp::kernels;
 using Catch::Matchers::WithinAbs;
@@ -253,4 +254,66 @@ TEST_CASE("poses : instant et mouvements hors contrat refusés", "[warp][poses]"
   CHECK(pose_time(0.25F, 0.5F) == 0.25F);
   CHECK(pose_time(0.75F, 0.5F) == 0.75F);
   CHECK(pose_time(0.5F, 0.0F) == 1.0F);
+}
+
+TEST_CASE("warp bicubique : la formule partagée suit la référence en double", "[warp][bicubic]") {
+  // Un plan sans régularité, des traits durs compris : la borne aux quatre voisins y joue.
+  constexpr int w = 13;
+  constexpr int h = 9;
+  PlaneF plane(w, h);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x)
+      plane.at(x, y) =
+          x == 6 || y == 4 ? 0.05F : 0.5F + 0.4F * std::sin(0.9F * static_cast<float>(x * y + x));
+  }
+  const auto fetch = [&](int i, int j) { return plane.at(i, j); };
+  double worst = 0.0;
+  for (float y = -1.5F; y < static_cast<float>(h) + 1.0F; y += 0.37F) {
+    for (float x = -1.5F; x < static_cast<float>(w) + 1.0F; x += 0.29F) {
+      const auto want = ref::sample_bicubic(plane, x, y);
+      REQUIRE(want);
+      worst = std::max(worst, static_cast<double>(std::fabs(*want - warp_bicubic_at(x, y, w, h, fetch))));
+    }
+  }
+  CHECK(worst < 1e-6);  // la somme en float contre la somme en double
+  // Sur un entier, le pixel lui-même ; hors du plan, le bord ; NaN, l'origine.
+  CHECK(warp_bicubic_at(3.0F, 2.0F, w, h, fetch) == plane.at(3, 2));
+  CHECK(warp_bicubic_at(-4.0F, 99.0F, w, h, fetch) == plane.at(0, h - 1));
+  CHECK(warp_bicubic_at(std::numeric_limits<float>::quiet_NaN(), 0.0F, w, h, fetch) == plane.at(0, 0));
+}
+
+TEST_CASE("warp bicubique : une rampe reste une rampe, un trait ne rebondit pas", "[warp][bicubic]") {
+  float weights[4];
+  for (const float f : {0.0F, 0.25F, 0.5F, 0.9F}) {
+    warp_cubic_weights(f, weights);
+    CHECK_THAT(weights[0] + weights[1] + weights[2] + weights[3], WithinAbs(1.0, 1e-6));
+  }
+  PlaneF slope(12, 4);
+  PlaneF line(12, 4, 0.8F);
+  for (int y = 0; y < 4; ++y) {
+    for (int x = 0; x < 12; ++x) slope.at(x, y) = 0.05F * static_cast<float>(x);
+    line.at(5, y) = 0.1F;  // un trait sombre d'un pixel sur un aplat clair
+  }
+  CHECK_THAT(*ref::sample_bicubic(slope, 4.3F, 1.6F), WithinAbs(0.05 * 4.3, 1e-6));
+  // Sans la borne, Catmull-Rom dépasserait l'aplat à côté du trait (rebond clair) : ici jamais.
+  for (float x = 0.0F; x < 11.0F; x += 0.125F) {
+    const float v = *ref::sample_bicubic(line, x, 1.5F);
+    CHECK(v <= 0.8F);
+    CHECK(v >= 0.1F);
+  }
+  // Plus net que le bilinéaire à mi-chemin du trait : le creux reste plus profond.
+  CHECK(*ref::sample_bicubic(line, 5.25F, 1.5F) < *ref::sample(line, 5.25F, 1.5F));
+}
+
+TEST_CASE("warp bicubique : choisi quand les images dépassent la fenêtre du mouvement", "[warp][bicubic]") {
+  CHECK(warp_images(1920, 1080, 1920, 1080) == WarpImages::Bilinear);
+  CHECK(warp_images(3840, 2160, 1920, 1080) == WarpImages::Bicubic);
+  CHECK(warp_images(1920, 1080, 1280, 720) == WarpImages::Bicubic);
+  // Un mouvement entier : les deux lectures rendent la même image, celle déplacée.
+  const ref::Motion motion =
+      uniform_motion(12, 8, {.x = 2, .y = 2, .width = 8, .height = 4}, 1.0F, 0.0F, 1.0F);
+  const auto soft = ref::warp_blend(ramp(16, 8, 0.0F), ramp(16, 8, 0.0F), motion);
+  const auto sharp = ref::warp_blend(ramp(16, 8, 0.0F), ramp(16, 8, 0.0F), motion, WarpImages::Bicubic);
+  REQUIRE((soft && sharp));
+  for (int x = 0; x < 16; ++x) CHECK(sharp->planes[0].at(x, 3) == soft->planes[0].at(x, 3));
 }

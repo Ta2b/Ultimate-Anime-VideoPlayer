@@ -35,6 +35,39 @@ float bilinear_at(const PlaneF& p, float x, float y) {
   return bilinear_at(p, Window{.x = 0, .y = 0, .width = p.width, .height = p.height}, x, y);
 }
 
+// Le noyau cubique de Keys, a = −1/2 (Catmull-Rom), à la distance d.
+double keys(double d) {
+  d = std::fabs(d);
+  if (d < 1.0) return (1.5 * d - 2.5) * d * d + 1.0;
+  if (d < 2.0) return ((-0.5 * d + 2.5) * d - 4.0) * d + 2.0;
+  return 0.0;
+}
+
+// Lecture bicubique du plan (spec/warp_bicubic.h), en double : seize prises pesées par keys, bornée aux
+// quatre voisins du centre.
+float bicubic_at(const PlaneF& p, float x, float y) {
+  x = std::fmin(std::fmax(x, 0.0F), static_cast<float>(p.width - 1));
+  y = std::fmin(std::fmax(y, 0.0F), static_cast<float>(p.height - 1));
+  const int x0 = static_cast<int>(x);
+  const int y0 = static_cast<int>(y);
+  double sum = 0.0;
+  for (int j = y0 - 1; j <= y0 + 2; ++j) {
+    for (int i = x0 - 1; i <= x0 + 2; ++i) {
+      sum += keys(static_cast<double>(i) - static_cast<double>(x)) *
+             keys(static_cast<double>(j) - static_cast<double>(y)) *
+             static_cast<double>(p.at(std::clamp(i, 0, p.width - 1), std::clamp(j, 0, p.height - 1)));
+    }
+  }
+  const int x1 = std::min(x0 + 1, p.width - 1);
+  const int y1 = std::min(y0 + 1, p.height - 1);
+  const auto [low, high] = std::minmax({p.at(x0, y0), p.at(x1, y0), p.at(x0, y1), p.at(x1, y1)});
+  return std::clamp(static_cast<float>(sum), low, high);
+}
+
+float image_at(const PlaneF& p, float x, float y, WarpImages images) {
+  return images == WarpImages::Bicubic ? bicubic_at(p, x, y) : bilinear_at(p, x, y);
+}
+
 // Un plan conforme, et une fenêtre non vide incluse dans ce plan.
 Result<void> check_window(const PlaneF& p, const Window& a, std::string_view what) {
   if (auto ok = check_plane(p, what); !ok) return ok;
@@ -126,7 +159,7 @@ Displacement keeping_poses(const Motion& m, const Motion* previous, float u, flo
 }
 
 Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motion, const Motion* previous,
-                       float t, DisplacementAt at) {
+                       float t, DisplacementAt at, WarpImages images) {
   if (auto ok = check_same_size(a, b, "images à mélanger"); !ok) return std::unexpected(ok.error());
   if (auto ok = check_motion(motion); !ok) return std::unexpected(ok.error());
   const int w = a.width();
@@ -141,8 +174,8 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
       const float fy = static_cast<float>(y);
       const Displacement d = at(motion, previous, (fx + 0.5F) / sx - 0.5F, (fy + 0.5F) / sy - 0.5F, t);
       for (std::size_t c = 0; c < out.planes.size(); ++c) {
-        const float va = bilinear_at(a.planes[c], fx + sx * d.ax, fy + sy * d.ay);
-        const float vb = bilinear_at(b.planes[c], fx + sx * d.bx, fy + sy * d.by);
+        const float va = image_at(a.planes[c], fx + sx * d.ax, fy + sy * d.ay, images);
+        const float vb = image_at(b.planes[c], fx + sx * d.bx, fy + sy * d.by, images);
         out.planes[c].at(x, y) = va * d.weight + vb * (1.0F - d.weight);
       }
     }
@@ -155,6 +188,11 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
 Result<float> sample(const PlaneF& p, float x, float y) {
   if (auto ok = check_plane(p, "plan échantillonné"); !ok) return std::unexpected(ok.error());
   return bilinear_at(p, x, y);
+}
+
+Result<float> sample_bicubic(const PlaneF& p, float x, float y) {
+  if (auto ok = check_plane(p, "plan échantillonné"); !ok) return std::unexpected(ok.error());
+  return bicubic_at(p, x, y);
 }
 
 Result<float> sample(const PlaneF& p, const Window& area, float x, float y) {
@@ -170,19 +208,20 @@ Result<void> check_motion(const Motion& motion) {
   return check_window(motion.mask, motion.area, "plans du mouvement");
 }
 
-Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& motion) {
-  return blend(a, b, motion, nullptr, 0.5F, estimated);
+Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& motion, WarpImages images) {
+  return blend(a, b, motion, nullptr, 0.5F, estimated, images);
 }
 
-Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motion& motion, float t) {
+Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motion& motion, float t,
+                               WarpImages images) {
   if (!(t > 0.0F && t < 1.0F)) {
     return fail(ErrorCode::ParameterOutOfRange, std::format("instant {} hors de ]0, 1[", t));
   }
-  return blend(a, b, motion, nullptr, t, t == 0.5F ? estimated : from_middle);
+  return blend(a, b, motion, nullptr, t, t == 0.5F ? estimated : from_middle, images);
 }
 
 Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Motion& motion,
-                                  const Motion* previous, float t) {
+                                  const Motion* previous, float t, WarpImages images) {
   if (!(t > 0.0F && t < 1.0F)) {
     return fail(ErrorCode::ParameterOutOfRange, std::format("instant {} hors de ]0, 1[", t));
   }
@@ -195,7 +234,7 @@ Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Mo
     if (p.x != m.x || p.y != m.y || p.width != m.width || p.height != m.height)
       return fail(ErrorCode::SizeMismatch, "mouvements de deux paires : fenêtres différentes");
   }
-  return blend(a, b, motion, previous, t, keeping_poses);
+  return blend(a, b, motion, previous, t, keeping_poses, images);
 }
 
 Result<float> flow_max(const Motion& motion) {
