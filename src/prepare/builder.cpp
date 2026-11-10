@@ -3,6 +3,7 @@
 // de sortie et place libre dans le refus, aucun moteur incomplet publié.
 #include "prepare/builder.h"
 
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -36,6 +37,15 @@ std::string free_space(const fs::path& folder) {
   return error ? "inconnue" : std::format("{} octets", space.available);
 }
 
+// Sous ce seuil de place libre, un moteur ne s'écrit pas : l'échec de trtexec est un disque plein (A39-10).
+constexpr std::uintmax_t kMinFreeBytes = std::uintmax_t{512} * 1024 * 1024;
+
+bool disk_nearly_full(const fs::path& folder) {
+  std::error_code error;
+  const auto space = fs::space(folder, error);
+  return !error && space.available < kMinFreeBytes;
+}
+
 // Traduit la fin de trtexec en refus ; rien quand il a réussi.
 std::expected<void, Refusal> judge(const ProcessExit& exit, const TrtexecProgress& parsed,
                                    const BuildPlan& plan, std::chrono::milliseconds timeout) {
@@ -54,6 +64,14 @@ std::expected<void, Refusal> judge(const ProcessExit& exit, const TrtexecProgres
           Refusal{RefusalCode::BuilderCrashed, "trtexec : " + describe(exit) + error + where});
     case ExitKind::Exited:
       break;
+  }
+  if ((exit.code != 0 || parsed.failed()) && disk_nearly_full(plan.engine.parent_path())) {
+    return std::unexpected(Refusal{
+        RefusalCode::InsufficientSpace,
+        std::format(
+            "trtexec a échoué faute de place : {} libres dans le dossier du moteur, il en faut au moins "
+            "512 Mo{}{}",
+            free_space(plan.engine.parent_path()), error, where)});
   }
   if (exit.code != 0 || parsed.failed()) {
     return std::unexpected(Refusal{
@@ -230,7 +248,9 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   }
   log_file << "[ajp] trtexec : " << describe(*exit) << '\n';
   log_file.flush();
-  if (!log_file) log_->warn("journal {} illisible ou incomplet (disque plein ?)", utf8_path(plan.log_file));
+  if (!log_file)
+    log_->warn("journal {} illisible ou incomplet (droits ou disque plein, voir la place libre)",
+               utf8_path(plan.log_file));
   if (auto verdict = judge(*exit, parsed, plan, config_.timeout); !verdict) {
     log_file << "[ajp] " << verdict.error().detail << '\n';
     return verdict;

@@ -74,7 +74,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
     }
   }
   if (!file) return std::unexpected(Refusal{RefusalCode::IoFailed, "écriture de l'instantané"});
-  channel->info("instantané écrit : {}", core::to_utf8(path));
+  channel->info("instantané écrit : {}", core::to_utf8(path.filename()));
   return {};
 }
 

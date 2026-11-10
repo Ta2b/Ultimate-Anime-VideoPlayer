@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 
+#include "app/play/calibrated_chain.h"
 #include "app/play/gpu_tier.h"
 #include "app/play/settings.h"
 #include "core/display.h"
@@ -36,16 +37,19 @@ std::string_view key(Priority priority);    // « fluidity », « balance », «
 std::string_view label(Priority priority);  // « Fluidité », « Équilibre », « Image »
 std::optional<Priority> priority_from_key(std::string_view text);
 
-// La machine : sa tranche détectée et l'écran. display_height et display_hz à 0 : inconnus (1080p, 60 Hz).
-// Ce que la calibration de l'assistant a mesuré sur cette carte et cet écran (calibration.toml) : en Auto,
-// la chaîne garde ces bornes et s'adapte encore à chaque vidéo (source, cadence, écran).
-struct CalibratedChain {
-  bool span = true;
-  bool rife = true;
-  int height = 0;          // la plus haute résolution de travail que SPAN tient
-  std::string span_model;  // vide : le modèle par défaut (FP16) ; sinon celui joué en FP8
-};
+// Les modèles d'un niveau, en FP16 : le SPAN Balanced Sharp (b8f64) et RIFE 4.25 aux niveaux Qualité et Ultra
+// (Tier::Fast et Tier::Ultra), le SPAN par défaut (Performance Sharp, b5f48 ; rendu vide) et RIFE 4.22 lite
+// en dessous. La calibration joue ces mêmes modèles (machine_calibration.h) : calibrer ne fait plus baisser
+// le modèle (A49-01, A38-02). Le b8f64 FP16 est mesuré à 14,25 ms en 1088 × 1920 sur une RTX 4070 Ti
+// (docs/span-fp8-cutlass.md), pour un seul SPAN par image source (41,7 ms à 24 i/s).
+inline constexpr std::string_view kQualitySpanModel =
+    "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
+inline constexpr std::string_view kQualityRifeModel = "rife_v4.25.onnx";
+inline constexpr std::string_view kLightRifeModel = "rife_v4.22_lite.onnx";
+std::string_view level_span_model(Tier level);  // vide : le modèle par défaut du lecteur
+std::string_view level_rife_model(Tier level);
 
+// La machine : sa tranche détectée et l'écran. display_height et display_hz à 0 : inconnus (1080p, 60 Hz).
 struct Machine {
   Tier tier = Tier::Normal;
   int display_height = 0;

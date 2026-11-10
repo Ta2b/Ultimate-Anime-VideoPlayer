@@ -96,7 +96,13 @@ propre de chaque image : `fin vue − max(soumission, fin de l'image d'avant)`. 
 (avant la soumission) n'y compte pas, donc une file pleine ne gonfle pas le coût (l'écueil qu'avait déjà
 rencontré #123). Le coût de la paire (plus l'attente de ses mesures avant soumission) divisé par ses images
 donne le temps de service par image `s`, moyenne qui **monte vite** (×0,6 par mesure) et **descend lentement**
-(×0,12). Seules les paires de 2 images ou plus comptent. Point fixe : la paire coûte `a + b·n` ; avec le pas
+(×0,12). Comptent les paires de 2 images ou plus, et la paire d'une seule image quand cette image est
+interpolée. La source seule d'une coupe ou d'un dessin tenu ne dit rien du coût d'une image interpolée. Reste
+la paire que le pas a réduite à sa source (`FreeGrid::starved` : ni l'horloge prédite ni l'écart minimal
+n'empêchaient une image interpolée) : elle ne mesure rien, donc l'estimation redescend de 12 % par paire
+(`FreeRate::starved`) jusqu'à ce qu'une image interpolée la mesure de nouveau. Sans cela, un à-coup du GPU
+portait `s` au-dessus de l'écart des sources, plus aucune paire n'avait deux images et l'interpolation
+s'arrêtait pour la séance (A12-12, `tests/unit/core/free_starved_test.cpp`). Point fixe : la paire coûte `a + b·n` ; avec le pas
 `1,1·(a + b·n)/n`, `n` converge vers le `n` tel que la paire occupe 91 % de sa durée, sans oscillation (dérivée
 `a / (a + b·n) < 1`).
 

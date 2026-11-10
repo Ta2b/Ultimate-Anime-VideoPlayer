@@ -517,7 +517,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // Une seule entrée par paire (P2.10) : une seconde, au même identifiant, masquait le drapeau heavy.
   const bool free_counted = free_mode && facts.same_epoch;
   if (auto_measured || free_counted)
-    setup_.live->auto_expect(frame.id.value, written, lead_us, free_counted && heavy_pair_);
+    expect_pair(frame.id.value, written, lead_us, free_counted, steady, runs);
   if (free_counted && written > 0) setup_.live->free_produced(written, host_now_us());
   if (intermediates_ > 0) mid_ ^= 1U;
   if (intermediates_ > 0 && !copy_pair_ && (setup_.rife != nullptr || by_motion())) {

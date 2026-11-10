@@ -1,5 +1,7 @@
 #include "app/play/auto_config.h"
 
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/options.h"
@@ -43,7 +45,7 @@ TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
   const PlaySettings fast = applied(Preset::Auto, Tier::Fast, 1440, 144.0);
   CHECK(fast.motion_engine == MotionEngine::Rife);
   CHECK(fast.rife_model == "rife_v4.25.onnx");  // Qualité et Ultra : RIFE 4.25
-  CHECK(fast.work_height == 720);
+  CHECK(fast.work_height == 1080);              // et la source 1080p gardée (A49-02)
   const PlaySettings normal = applied(Preset::Auto, Tier::Normal, 1440, 144.0);
   CHECK(normal.motion_engine == MotionEngine::Rife);
   CHECK(normal.rife_model == "rife_v4.22_lite.onnx");
@@ -54,12 +56,80 @@ TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
 TEST_CASE("la résolution de travail suit l'écran et la tranche", "[auto_config]") {
   CHECK(applied(Preset::Auto, Tier::Normal, 1080, 60.0).work_height == 540);  // 540p -> 1080p
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 60.0).work_height == 720);  // 720p -> 1440p
-  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 60.0).work_height == 720);    // plafond de la tranche
   CHECK(applied(Preset::Auto, Tier::Light, 2160, 60.0).work_height == 540);   // la carte légère reste à 540p
   CHECK(applied(Preset::Auto, Tier::Normal, 0, 0.0).work_height == 540);      // écran inconnu : 1080p
   // Jamais plus que la source.
   const core::SourceInfo sd{.width = 640, .height = 480, .fps = 23.976};
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 60.0, sd).work_height == 480);
+}
+
+TEST_CASE("Qualité et Ultra gardent la source 1080p sur tout écran, avec le SPAN b8f64 (A49-01, A49-02)",
+          "[auto_config]") {
+  for (const Tier tier : {Tier::Fast, Tier::Ultra}) {
+    for (const int display : {1080, 1440, 2160, 0}) {
+      const PlaySettings s = applied(Preset::Auto, tier, display, 144.0);
+      CHECK(s.work_height == 1080);
+      CHECK(chain_work_size(s, 1920, 1080) == WorkSize{1920, 1080});  // rien n'est réduit avant SPAN
+      CHECK(s.model == kQualitySpanModel);
+      CHECK(s.model.find("b8f64") != std::string::npos);
+      CHECK(s.span_precision == PrecisionTier::Balanced);  // en FP16
+    }
+  }
+  // Les préréglages nommés suivent la même chaîne que le niveau.
+  CHECK(applied(Preset::Quality, Tier::Light, 1080, 60.0).work_height == 1080);
+  CHECK(applied(Preset::Ultra, Tier::Light, 1080, 60.0).model == kQualitySpanModel);
+  // Une source 4K est ramenée à 1080p (SPAN rend la 4K) ; une 720p reste en 720p.
+  const core::SourceInfo uhd{.width = 3840, .height = 2160, .fps = 23.976};
+  CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 60.0, uhd).work_height == 1080);
+  const core::SourceInfo hd{.width = 1280, .height = 720, .fps = 23.976};
+  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 60.0, hd).work_height == 720);
+  // La priorité Fluidité est le seul cas où Qualité réduit la source, et l'utilisateur l'a choisie.
+  CHECK(applied(Preset::Auto, Tier::Fast, 1440, 144.0, k1080p24, Priority::Fluidity).work_height == 720);
+  CHECK(applied(Preset::Auto, Tier::Fast, 1440, 144.0, k1080p24, Priority::Image).work_height == 1080);
+  // Léger et Normal gardent le SPAN par défaut (b5f48) : la calibration, qui mesure, peut monter.
+  CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).model.empty());
+  CHECK(applied(Preset::Auto, Tier::Light, 1080, 60.0).model.empty());
+}
+
+TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré, en FP16 (A49-03, A38-02, A07-11)",
+          "[auto_config]") {
+  const CalibratedChain measured{.span = true,
+                                 .rife = true,
+                                 .height = 1080,
+                                 .span_model = std::string(kQualitySpanModel),
+                                 .rife_model = "rife_v4.25.onnx"};
+  const Machine machine{
+      .tier = Tier::Ultra, .display_height = 1440, .display_hz = 144.0, .calibrated = measured};
+  const PlaySettings s = apply_preset(with(Preset::Auto), machine, k1080p24);
+  CHECK(s.upscale);
+  CHECK(s.work_height == 1080);  // calibrer ne fait plus baisser la hauteur sous l'Auto estimé
+  CHECK(s.model == kQualitySpanModel);
+  CHECK(s.span_precision == PrecisionTier::Balanced);  // jamais le FP8 (ADR 0007 suspendue)
+  CHECK(s.rife_model == "rife_v4.25.onnx");            // ni RIFE 4.22 lite imposé
+  CHECK(s.auto_free);
+  CHECK(s.rife_auto);
+  CHECK(apply_preset(s, machine, k1080p24) == s);  // idempotente
+  // La mesure borne la hauteur, la source aussi.
+  Machine low = machine;
+  low.calibrated->height = 540;
+  CHECK(apply_preset(with(Preset::Auto), low, k1080p24).work_height == 540);
+  const core::SourceInfo sd{.width = 640, .height = 480, .fps = 23.976};
+  CHECK(apply_preset(with(Preset::Auto), machine, sd).work_height == 480);
+  // Une calibration sans RIFE coupe l'interpolation ; sans SPAN, l'agrandissement.
+  Machine no_rife = machine;
+  no_rife.calibrated->rife = false;
+  const PlaySettings still = apply_preset(with(Preset::Auto), no_rife, k1080p24);
+  CHECK_FALSE(still.rife_auto);
+  CHECK(still.rife_factor == 0);
+  Machine no_span = machine;
+  no_span.calibrated->span = false;
+  CHECK_FALSE(apply_preset(with(Preset::Auto), no_span, k1080p24).upscale);
+  // Une carte estimée Économe que la calibration a vue tenir SPAN suit la mesure.
+  Machine economy = machine;
+  economy.tier = Tier::Economy;
+  CHECK(apply_preset(with(Preset::Auto), economy, k1080p24).upscale);
+  // La calibration ne vaut que pour Auto : un préréglage nommé garde sa chaîne.
+  CHECK(apply_preset(with(Preset::Normal), low, k1080p24).work_height == 720);
 }
 
 TEST_CASE("la priorité décale d'un cran", "[auto_config]") {

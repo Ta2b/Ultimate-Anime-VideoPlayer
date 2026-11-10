@@ -76,4 +76,28 @@ TEST_CASE("Rapide à pas constant (7.3) : le temps GPU de l'écran devient d, li
   CHECK(live.steady_info().display_us == 1'700);
 }
 
+TEST_CASE("Mode Rapide : une paire d'une image ne compte que si elle est interpolée (A12-12)",
+          "[app][free]") {
+  LiveSettings live;
+  live.set_free(true, 1000, 0);
+  std::int64_t now = 20'000'000;
+  std::uint32_t pair = 0;
+  const auto one = [&](LonePair lone, std::int64_t cost_us) {
+    ++pair;
+    live.auto_expect(pair, 1, 0, false, lone);
+    const std::int64_t submitted = now;
+    now += cost_us;
+    live.auto_written(lone == LonePair::Interpolated ? pair - 1 : pair, pair, submitted, now);
+  };
+  // Une image interpolée seule : son coût est le temps de service.
+  one(LonePair::Interpolated, 20'000);
+  CHECK(live.free_info(now).service_us == 20'000);
+  // La source d'une coupe ou d'un dessin tenu, bien moins chère : elle ne dit rien.
+  for (int i = 0; i < 20; ++i) one(LonePair::Source, 2'000);
+  CHECK(live.free_info(now).service_us == 20'000);
+  // La source d'une paire affamée par le pas : l'estimation redescend, sans mesure.
+  one(LonePair::Starved, 2'000);
+  CHECK(live.free_info(now).service_us == 17'600);
+}
+
 }  // namespace ajp::app::play

@@ -213,6 +213,10 @@ struct WorkSize {
 WorkSize work_size(int width, int height, int work_height);
 // SPAN tourne-t-il sur cette source (P3.19) ? Pas sans « Restaurer les traits » quand il faudrait la réduire.
 bool span_runs(bool upscale, bool restore_lines, int source_height, int work_height);
+// La taille de travail que la chaîne joue, la seule à lire (A08-15) : les moteurs, l'anneau, l'étage et
+// l'export la prennent ici. C'est work_size, sauf quand SPAN est demandé mais ne tourne pas faute de
+// « Restaurer les traits » : la source est alors gardée telle quelle, jamais réduite pour rien.
+WorkSize chain_work_size(bool upscale, bool restore_lines, int width, int height, int work_height);
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), ou une valeur
 // illisible ou hors plage (FieldOutOfRange), sont refusées ; sans fichier, l'écran d'accueil.

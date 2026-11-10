@@ -28,7 +28,8 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
 ## Ce qu'il fait
 
 - **Agrandissement ×2** par les modèles SPAN d'AnimeJaNai HD V3.1 : une source 720p ou 1080p devient
-  1440p ou 4K, traits nets et aplats propres.
+  1440p ou 4K, traits nets et aplats propres. Aux niveaux Qualité et Ultra, la source 1080p n'est pas
+  réduite avant SPAN et le modèle est le plus fin (Balanced, b8f64).
 - **Interpolation** par RIFE 4.22 lite, ou 4.25 aux niveaux Qualité et Ultra (DistilDRBA au choix). Le mode Auto vise la fréquence de votre écran et
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
@@ -36,7 +37,7 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
   seuls les éclats (ciels, lumières, effets) montent. Sur un écran SDR, le même grade s'applique en SDR : les
   surfaces gardent leur niveau jusqu'à 90 % du blanc, le blanc sort à 95 % et les éclats prennent les derniers
   5 %.
-- **Netteté** réglable après l'agrandissement, sans halo.
+- **Netteté** réglable après l'agrandissement, à halo limité.
 - **Export** : l'agrandissement et l'interpolation rejoués image par image vers un fichier MKV, MP4 ou MOV
   (sans le grade HDR, l'export reste en SDR).
 - Sous-titres (libass), choix des pistes par langue préférée, épisode suivant automatique, passage du générique.

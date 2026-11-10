@@ -158,10 +158,10 @@ TEST_CASE("free rate : le pas suit le temps de service mesuré avec 10 % de marg
   fast.set_min_gap(6'000);
   fast.cost(4, 4 * 2'000, now);
   CHECK(fast.step_us(now) == 6'000);
-  // Une image seule ne dit rien.
+  // Une image interpolée seule se mesure aussi (A12-12, free_starved_test.cpp).
   FreeRate lone;
   lone.cost(1, 50'000, now);
-  CHECK(lone.step_us(now) == 0);
+  CHECK(lone.step_us(now) == 55'000);
 }
 
 TEST_CASE("free rate : monte vite, descend lentement", "[free]") {

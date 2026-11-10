@@ -5,10 +5,9 @@
 #include <ctime>
 #include <expected>
 #include <format>
-#include <fstream>
-#include <iterator>
 
 #include <SDL3/SDL_misc.h>
+#include <SDL3/SDL_video.h>
 #include <imgui.h>
 
 #include "app/play/auto_bench.h"
@@ -17,11 +16,13 @@
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 #include "app/play/paths.h"
+#include "app/play/problem_report.h"
 #include "app/play/span_auto.h"
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
 #include "core/thread.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 
@@ -491,23 +492,25 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
 }
 
 void report_problem_section(const PlayerPlace& place, const std::string& gpu_name) {
-  // Le corps d'une issue tient en 65 536 caractères : la fin du journal, là où est la panne.
-  constexpr std::streamoff kLogTail = std::streamoff{48} * 1024;
+  constexpr const char* kIssueUrl =
+      "https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/issues/new?template=bug.yml";
+  // Ce que le dernier clic a donné, montré sous le bouton.
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) : le seul thread de l'interface
+  static std::string last;
   section(i18n::tr("Report a problem"));
   if (ImGui::Button(i18n::tr("Report a problem"))) {
-    std::string report = std::format("ajp {} · {}\n\n", installed_version(), gpu_name);
-    std::ifstream log(place.app_data / "ajp.log", std::ios::binary | std::ios::ate);
-    if (log) {
-      const std::streamoff size = log.tellg();
-      log.seekg(std::max<std::streamoff>(0, size - kLogTail));
-      report.append(std::istreambuf_iterator<char>(log), std::istreambuf_iterator<char>());
-    }
-    ImGui::SetClipboardText(report.c_str());
-    SDL_OpenURL("https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/issues/new?template=bug.yml");
+    if (!gpu_name.empty()) note_report_fact("GPU", gpu_name);
+    if (const char* driver = SDL_GetCurrentVideoDriver(); driver != nullptr)
+      note_report_fact("SDL video", driver);
+    ImGui::SetClipboardText(current_report(core::to_utf8(place.home)).c_str());
+    last = SDL_OpenURL(kIssueUrl) ? i18n::tr("Report copied. Paste it into the page that opened.")
+                                  : i18n::tr_format("Report copied. Open {} and paste it there.", kIssueUrl);
   }
-  panel::tip(
-      i18n::tr("Copies the version, the graphics card and the end of the log, without your user name "
-               "or the folders of your videos, then opens the report page. Paste the log there."));
+  if (!last.empty()) ImGui::TextWrapped("%s", last.c_str());
+  panel::tip(i18n::tr(
+      "Copies the version, the system, the graphics card, the preset and the end of the log (and the one "
+      "before it after a crash), with only the file names of your videos, then opens the report page. "
+      "Paste the report there."));
 }
 
 }  // namespace ajp::app::play
