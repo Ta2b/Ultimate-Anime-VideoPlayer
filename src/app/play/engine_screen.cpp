@@ -216,13 +216,9 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
 
 namespace {
 
-// Ce que l'assistant dit de cet hôte : un portable (construction des moteurs deux fois plus longue, A25-03),
-// et pourquoi « Automatique » ne pourrait rien installer ici (A25-05).
-void host_notes(FirstRunView& view, const GpuFacts& gpu, const PlayerPaths& paths) {
+// Ce que l'assistant dit de cet hôte : un portable (construction des moteurs deux fois plus longue, A25-03).
+void host_notes(FirstRunView& view, const GpuFacts& gpu) {
   view.laptop = gpu.name.find("Laptop") != std::string::npos;
-  view.managed_updates = update_managed_reason(
-      {.data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable});
-  view.facts.updates_managed = !view.managed_updates.empty();
 }
 
 // L'assistant part des réglages en place dès que play.toml existe : repris en route (P3.3), relancé par
@@ -291,7 +287,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
-    host_notes(view, gpu, s.paths);
+    host_notes(view, gpu);
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   if (wizard_mode) start_from_saved(view.wizard, play_path);

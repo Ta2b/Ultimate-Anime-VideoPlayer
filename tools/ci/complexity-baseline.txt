@@ -9,9 +9,9 @@ src/app/play/controls_draw.cpp	ajp::app::play::draw_controls	57	197
 src/app/play/display_edid.cpp	ajp::app::play::parse_edid	32	56
 src/app/play/engine_install.cpp	ajp::app::play::fetch_vendor_file	27	114
 src/app/play/engine_install.cpp	ajp::app::play::install_steps	30	171
-src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	46	106
+src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	38	88
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
-src/app/play/home_screen.cpp	ajp::app::play::run_home	29	120
+src/app/play/home_screen.cpp	ajp::app::play::run_home	29	114
 src/app/play/input.cpp	ajp::app::play::input_of	49	62
 src/app/play/options.cpp	ajp::app::play::parse_play_options	95	192
 src/app/play/pipeline.cpp	ajp::app::play::Pipeline::open	58	208
@@ -57,7 +57,6 @@ src/gpu/ir/memory_plan.cpp	ajp::gpu::ir::plan_memory	32	99
 src/gpu/ir/onnx_fp8.cpp	ajp::gpu::ir::onnx::fuse_fp8_quant_pairs	36	72
 src/gpu/ir/onnx_io_type.cpp	ajp::gpu::ir::onnx::copy_node_f32	28	54
 src/gpu/ir/onnx_io_type.cpp	ajp::gpu::ir::onnx::copy_tensor_f32	26	71
-src/gpu/ir/onnx_reader.cpp	ajp::gpu::ir::onnx::finish_tensor	26	64
 src/gpu/ir/onnx_unshuffle.cpp	ajp::gpu::ir::onnx::plan_of	30	68
 src/gpu/ir/op_sample.cpp	ajp::gpu::ir::detail::resize_plan	30	59
 src/gpu/ir/op_window.cpp	ajp::gpu::ir::detail::eval_conv	26	62
