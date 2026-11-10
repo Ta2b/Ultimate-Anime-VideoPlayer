@@ -14,7 +14,6 @@ ajp_add_module(vk_backend
     kernel_frames.cpp
     kernel_image.cpp
     kernel_ops.cpp
-    kernel_pair.cpp
     kernel_ring.cpp
     kernel_slice.cpp
     kernel_stats.cpp
@@ -38,7 +37,6 @@ ajp_add_module(vk_backend
     queue.cpp
     reduce_weights.cpp
     rife_fused_engine.cpp
-    shared_tensor.cpp
     vulkan_backend.cpp
     vulkan_backend_runtime.cpp
     vulkan_drba_fused.cpp

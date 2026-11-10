@@ -74,19 +74,11 @@ TEST_CASE("KernelOps : ingestion d'images hôte contre kernels/ref", "[vk_backen
       const k::YuvImage image = synthetic_yuv(f, 22, 14, static_cast<std::uint32_t>(n));
       const DecodedFrame frame = host_frame(image, color, static_cast<std::uint32_t>(n));
       auto rgb = rgb_tensor(*backend, 22, 14, type);
-      for (const bool rife : {false, true}) {
-        const IngestSpec spec{.rife_conversion = rife};
-        require_ok(ops.ingest(frame, spec, rgb->tensor()));
-        k::ref::ColorSpec want_color = ref_color(color);
-        k::Filter filter = spec.chroma;
-        if (rife) {
-          want_color = {.matrix = k::kRifeMatrix, .range = want_color.range, .siting = k::kRifeSiting};
-          filter = k::kRifeChromaFilter;
-        }
-        const auto want = k::ref::yuv_to_rgb(image, want_color, filter);
-        REQUIRE(want);
-        CHECK(max_abs_diff(download(*backend, *rgb, 22, 14), stored(*want, type)) <= k::tolerance::kRgbF16);
-      }
+      const IngestSpec spec;
+      require_ok(ops.ingest(frame, spec, rgb->tensor()));
+      const auto want = k::ref::yuv_to_rgb(image, ref_color(color), spec.chroma);
+      REQUIRE(want);
+      CHECK(max_abs_diff(download(*backend, *rgb, 22, 14), stored(*want, type)) <= k::tolerance::kRgbF16);
     }
   }
   // Le recadrage hôte n'alloue plus rien au deuxième passage : mêmes enregistrements. La lecture
@@ -149,10 +141,9 @@ TEST_CASE("KernelOps : refus nommés du contrat", "[vk_backend][kernels]") {
                  color_of(ColorMatrix::Bt709, ColorRange::Limited, ChromaSiting::Left), 3);
   // Plus petit, le tenseur demande une réduction ; plus grand, il est refusé.
   require_refusal(ops.ingest(frame, {}, big->tensor()), RefusalCode::ShapeInvalid);
-  CHECK_FALSE(ops.previous_scores());
 }
 
-TEST_CASE("KernelOps : rééchantillonnage, entrée et sortie de RIFE, warp", "[vk_backend][kernels]") {
+TEST_CASE("KernelOps : rééchantillonnage, sortie de RIFE, warp", "[vk_backend][kernels]") {
   TempDir dir("chaine");
   auto backend = make_backend(dir.path());
   KernelOps& ops = *backend->kernels();
@@ -171,17 +162,14 @@ TEST_CASE("KernelOps : rééchantillonnage, entrée et sortie de RIFE, warp", "[
       CHECK(max_abs_diff(download(*backend, *out, w, h), stored(*want, type)) <= k::tolerance::kRgbF16);
     }
 
-    // Entrée de RIFE : remplissage mod 64, conversion BT.709 ; puis le recadrage inverse.
+    // Sortie de RIFE : la fenêtre d'une image remplie mod 64 (ref::rife_prepare).
     const k::YuvImage yuv = synthetic_yuv(k::Format::Nv12, 70, 38, 6);
-    const DecodedFrame frame =
-        host_frame(yuv, color_of(ColorMatrix::Bt2020Ncl, ColorRange::Full, ChromaSiting::TopLeft), 6);
     const k::RifeGeometry g = k::rife_geometry(70, 38);
     auto padded = rgb_tensor(*backend, g.padded_width, g.padded_height, type);
-    require_ok(ops.rife_pad(frame, padded->tensor()));
     const auto prepared = k::ref::rife_prepare(yuv, k::Range::Full);
     REQUIRE(prepared);
-    const k::RgbImage got_padded = download(*backend, *padded, g.padded_width, g.padded_height);
-    CHECK(max_abs_diff(got_padded, stored(*prepared, type)) <= k::tolerance::kRgbF16);
+    const k::RgbImage got_padded = stored(*prepared, type);
+    write_tensor(*backend, padded->tensor(), rgb_bytes(got_padded, type));
     auto cropped = rgb_tensor(*backend, 70, 38, type);
     require_ok(ops.rife_crop(padded->tensor(), cropped->tensor()));
     const auto crop = k::ref::rife_crop(got_padded, g);
@@ -283,43 +271,6 @@ TEST_CASE("KernelOps : écriture d'un slot du ring", "[vk_backend][kernels]") {
   old.generation = 0;
   require_refusal(ops.write_ring(t->tensor(), old, {.wait_value = 4, .signal_value = 5}),
                   RefusalCode::FieldOutOfRange);
-}
-
-TEST_CASE("KernelOps : mesure d'une paire relue sans attente", "[vk_backend][kernels]") {
-  TempDir dir("mesure");
-  auto backend = make_backend(dir.path());
-  KernelOps& ops = *backend->kernels();
-  const ColorInfo color = color_of(ColorMatrix::Bt709, ColorRange::Limited, ChromaSiting::Left);
-  for (const k::Format f : {k::Format::Nv12, k::Format::P010}) {
-    const k::YuvImage a = synthetic_yuv(f, 70, 38, 31);
-    const k::YuvImage b = synthetic_yuv(f, 70, 38, 32);
-    require_ok(ops.measure(host_frame(a, color, 1), host_frame(b, color, 2)));
-    require_ok(backend->context().wait_on_host(backend->queue().last()));
-    const auto scores = ops.previous_scores();
-    REQUIRE(scores);
-    CHECK_FALSE(ops.previous_scores());  // une seule fois
-    CHECK(scores->left == SourceId{1});
-    CHECK(scores->right == SourceId{2});
-    const auto want = k::ref::scene_score(a.y, b.y, f, k::rife_geometry(70, 38));
-    REQUIRE(want);
-    CHECK(std::fabs(scores->scene_score - *want) <= k::tolerance::kSceneScoreRelative * *want);
-    const auto worst = k::ref::block_diff_max(a.y, b.y, f);
-    REQUIRE(worst);
-    CHECK(scores->worst_block == *worst);
-    CHECK_FALSE(scores->identical);
-
-    require_ok(ops.measure(host_frame(a, color, 3), host_frame(a, color, 4)));
-    require_ok(backend->context().wait_on_host(backend->queue().last()));
-    const auto same = ops.previous_scores();
-    REQUIRE(same);
-    CHECK(same->identical);
-    CHECK(same->scene_score == 0.0);
-    CHECK(same->worst_block == 0);
-  }
-  // Les images lues sont gardées jusqu'à la fin de leur lecture, puis rendues.
-  require_ok(backend->context().wait_on_host(backend->queue().last()));
-  (void)ops.previous_scores();
-  CHECK(dynamic_cast<vk::VulkanKernelOps&>(ops).retained_frames() == 0);
 }
 
 TEST_CASE("Voies : les dépendances d'une voie à l'autre se déduisent des tampons", "[vk_backend][kernels]") {

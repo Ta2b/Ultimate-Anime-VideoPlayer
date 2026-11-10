@@ -1,9 +1,9 @@
 # Plafond des tests sautés par tâche de ci.yml (check-skips.sh, P2.39). Sous lavapipe, sans carte NVIDIA ni
-# modèles : NVDEC (5), Vulkan Video (1), découpe des modèles du catalogue (3), runtimes du fabricant (1),
-# mémoire exportée que lavapipe ne mappe pas (2). Le relever demande une raison.
-lavapipe 12
-asan-ubsan 12
-tsan 12
+# modèles : NVDEC (5), Vulkan Video (1), découpe des modèles du catalogue (3), runtimes du fabricant (1).
+# L'interop de mémoire exportée (2) est retirée (C14, A45-10). Le relever demande une raison.
+lavapipe 10
+asan-ubsan 10
+tsan 10
 tsan-pr 0
 # Windows (MSVC) : le runner n'a ni GPU ni Vulkan logiciel, tous les tests qui ouvrent un appareil sautent (rendu,
 # anneau, NVDEC…) ; 37 sous Linux sans pilote Vulkan, le compte exact de la tâche à reporter ici (C14).

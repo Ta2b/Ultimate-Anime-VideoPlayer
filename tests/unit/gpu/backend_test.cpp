@@ -20,7 +20,7 @@ using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu;
 
-static_assert(kBackendAbi == 33);
+static_assert(kBackendAbi == 34);
 // Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
 // fonction extern "C" est un comportement indéfini chez l'appelant.
 static_assert(std::is_nothrow_invocable_r_v<int, BackendAbiFn>);
@@ -48,9 +48,6 @@ class NoKernels final : public KernelOps {
   std::expected<void, Refusal> resample(const Tensor&, ajp::kernels::Filter, const Tensor&) override {
     return refuse(RefusalCode::ShapeInvalid);
   }
-  std::expected<void, Refusal> rife_pad(const ajp::DecodedFrame&, const Tensor&) override {
-    return refuse(RefusalCode::ShapeInvalid);
-  }
   std::expected<void, Refusal> rife_crop(const Tensor&, const Tensor&) override {
     return refuse(RefusalCode::ShapeInvalid);
   }
@@ -62,10 +59,6 @@ class NoKernels final : public KernelOps {
                                           const RingWrite&) override {
     return refuse(RefusalCode::FormatUnsupported);
   }
-  std::expected<void, Refusal> measure(const ajp::DecodedFrame&, const ajp::DecodedFrame&) override {
-    return refuse(RefusalCode::FormatUnsupported);
-  }
-  std::optional<PairScores> previous_scores() override { return std::nullopt; }
 };
 
 class HostBuffer final : public TensorBuffer {
@@ -98,9 +91,6 @@ class StubBackend final : public Backend {
   }
   std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact&) override {
     return refuse(RefusalCode::ModelUnavailable);
-  }
-  std::expected<Tensor, Refusal> import(const ExternalImage&) override {
-    return refuse(RefusalCode::FormatUnsupported);
   }
   std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType type,
                                                                      const Shape& shape) override {
@@ -145,7 +135,6 @@ TEST_CASE("Backend : BackendInit et IngestSpec ne supposent rien", "[backend]") 
 
   const IngestSpec chain;
   CHECK(chain.chroma == ajp::kernels::kChainChromaFilter);
-  CHECK_FALSE(chain.rife_conversion);
   CHECK(RingWrite{}.wait_value == 0);
   CHECK_FALSE(PairScores{}.identical);
 }
@@ -172,7 +161,6 @@ TEST_CASE("Backend : un backend complet s'écrit contre l'interface", "[backend]
   KernelOps* ops = backend.kernels();
   REQUIRE(ops != nullptr);
   CHECK(ops->resample({}, ajp::kernels::Filter::Area, {}).error().code == RefusalCode::ShapeInvalid);
-  CHECK_FALSE(ops->previous_scores());
   // Un backend qui ne connaît pas les voies : une seule, et use_lane ne change rien.
   CHECK(backend.capabilities().lanes == 1);
   backend.use_lane(Lane::Interpolate);
@@ -245,9 +233,8 @@ TEST_CASE("GuardedBackend : une exception du backend devient un refus", "[backen
       throw std::runtime_error("build");
     }
     std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact&) override { throw std::bad_alloc(); }
-    std::expected<Tensor, Refusal> import(const ExternalImage&) override { throw 7; }
     std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType, const Shape&) override {
-      throw std::runtime_error("alloc");
+      throw 7;
     }
     KernelOps* kernels() override { return nullptr; }
     std::expected<void, Refusal> enqueue(Engine&, std::span<const Tensor>, std::span<Tensor>) override {
@@ -268,8 +255,8 @@ TEST_CASE("GuardedBackend : une exception du backend devient un refus", "[backen
   REQUIRE_FALSE(signalled);
   CHECK(signalled.error().code == RefusalCode::VendorCallFailed);
   CHECK(signalled.error().detail == "signal : signal");
-  const auto imported = guarded.import(ExternalImage{});
-  REQUIRE_FALSE(imported);
-  CHECK(imported.error().detail == "import : exception inconnue");
+  const auto allocated = guarded.alloc_tensor(TensorType::F16, Shape{{1, 3, 8, 8}});
+  REQUIRE_FALSE(allocated);
+  CHECK(allocated.error().detail == "alloc_tensor : exception inconnue");
   CHECK_FALSE(guarded.load(Artifact{}));
 }

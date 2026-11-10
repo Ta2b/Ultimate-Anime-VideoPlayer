@@ -34,11 +34,8 @@ namespace ajp::gpu::vk {
 
 class BackendQueue {
  public:
-  // exports : types de descripteurs vers lesquels la timeline s'exporte (interop d'un runtime).
   // lanes : voies sur plusieurs files quand le contexte en a (sinon une seule).
-  static std::expected<BackendQueue, Refusal> create(VkContext& context,
-                                                     VkExternalSemaphoreHandleTypeFlags exports = 0,
-                                                     bool lanes = false);
+  static std::expected<BackendQueue, Refusal> create(VkContext& context, bool lanes = false);
 
   // Voies qui se recouvrent vraiment (BackendCaps::lanes) : 1, 2 ou 3.
   int lanes() const { return files_; }
@@ -75,19 +72,14 @@ class BackendQueue {
   // Soumet le lot : last() devient attendable par une autre file ou une autre API.
   Done flush() { return context_->flush(); }
 
-  // Une étape d'une autre API sur la timeline (un réseau MIGraphX par HIP) : elle attend wait
-  // (last() à cet instant) et signale signal, que la prochaine soumission attend. Aucune s'il
-  // reste des attentes de wait(), sur des sémaphores que l'autre API ne voit pas. Une seule
-  // voie avec un runtime.
+  // Une étape d'un runtime (Core ML), faite par l'hôte sur son propre fil : elle attend wait
+  // par wait_elsewhere et signale signal par signal_on_host. Les attentes de wait() restent à
+  // la prochaine soumission : l'étape ne lit que du travail déjà soumis, que flush() a fait
+  // partir.
   struct Step {
     std::uint64_t wait = 0;
     std::uint64_t signal = 0;
   };
-  std::optional<Step> external_step();
-  // Une étape faite par l'hôte (un runtime sans interop, sur son propre fil) : elle attend wait
-  // par wait_elsewhere et signale signal par signal_on_host. Les attentes de wait() restent à
-  // la prochaine soumission : l'étape ne lit que du travail déjà soumis, que flush() a fait
-  // partir.
   Step host_step();
   // Signal d'une étape par l'hôte, quand l'autre API ne l'a pas mise en file. Appelable depuis
   // un autre fil que celui du contexte.

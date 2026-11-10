@@ -57,7 +57,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<Artifact, Refusal> build(const ModelSpec& model, const ShapeSet& shapes,
                                          Progress& progress) override;
   std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact& artifact) override;
-  std::expected<Tensor, Refusal> import(const ExternalImage& image) override;
   std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType type,
                                                                      const Shape& shape) override;
   KernelOps* kernels() override { return this; }
@@ -79,15 +78,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> ingest(const DecodedFrame& frame, const IngestSpec& spec,
                                       const Tensor& rgb) override;
   std::expected<void, Refusal> resample(const Tensor& in, kernels::Filter filter, const Tensor& out) override;
-  std::expected<void, Refusal> rife_pad(const DecodedFrame& frame, const Tensor& padded) override;
   std::expected<void, Refusal> rife_crop(const Tensor& padded, const Tensor& out) override;
   std::expected<void, Refusal> warp_blend(const Tensor& a, const Tensor& b, const Motion& motion, float t,
                                           const Tensor& out) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
-  std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
-  std::optional<PairScores> previous_scores() override { return std::nullopt; }
-  // Extensions de la tranche verticale (tensorrt_rife.cpp) : entrée de RIFE et mesures immédiates.
+  // Entrée de RIFE et mesures d'une paire (tensorrt_rife.cpp).
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
   std::expected<void, Refusal> rife_time(const Tensor& input, float t) override;

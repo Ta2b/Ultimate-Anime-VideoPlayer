@@ -209,20 +209,6 @@ std::string pci_text(const PciAddress& pci) {
   return std::format("{:04x}:{:02x}:{:02x}.{:x}", pci.domain, pci.bus, pci.device, pci.function);
 }
 
-std::optional<std::size_t> match_device(std::span<const DeviceIdentity> others, const DeviceCaps& caps) {
-  for (std::size_t i = 0; i < others.size(); ++i) {
-    if (others[i].uuid == caps.uuid) return i;
-  }
-  if (!caps.pci) return std::nullopt;
-  const PciAddress& wanted = *caps.pci;
-  for (std::size_t i = 0; i < others.size(); ++i) {
-    const std::optional<PciAddress>& pci = others[i].pci;
-    if (pci && pci->domain == wanted.domain && pci->bus == wanted.bus && pci->device == wanted.device)
-      return i;
-  }
-  return std::nullopt;
-}
-
 std::string describe(const DeviceCaps& caps) {
   const Features& f = caps.enabled;
   const auto flag = [](bool on, const char* name) { return on ? std::format(", {}", name) : std::string{}; };

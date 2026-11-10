@@ -44,8 +44,7 @@ struct BackendOptions {
   // par shader au journal quand le réseau se décharge.
   bool profile_dispatches = false;
   net::TunerOptions tuner;
-  // Les réseaux par un autre runtime (net_runtime.h), créé à l'ouverture de l'appareil :
-  // ajp_backend_migraphx, ajp_backend_openvino.
+  // Les réseaux par un autre runtime (net_runtime.h), créé à l'ouverture de l'appareil : ajp_backend_coreml.
   net::RuntimeFactory runtime;
   // Couche de validation Vulkan sur l'appareil que le backend crée lui-même (sans appareil de
   // rendu) : ses messages vont au journal et à validation_sink (tests : chaque erreur en échec).
@@ -91,7 +90,6 @@ class VulkanBackend final : public Backend {
   std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact& artifact) override;
   // Le backend lit les images décodées par KernelOps::ingest et écrit le ring par write_ring :
   // aucune image ne devient tenseur sans copie. Refus FormatUnsupported, toujours.
-  std::expected<Tensor, Refusal> import(const ExternalImage& image) override;
   std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType type,
                                                                      const Shape& shape) override;
   KernelOps* kernels() override { return kernels_.get(); }
@@ -138,8 +136,6 @@ class VulkanBackend final : public Backend {
                                                                              const Shape& shape);
   std::expected<void, Refusal> enqueue_runtime(Engine& engine, std::span<const Tensor> inputs,
                                                std::span<Tensor> outputs);
-  // Donne la timeline de la file au runtime ; sans succès, ses réseaux attendent sur l'hôte.
-  void import_timeline(BackendQueue& queue);
   // Fin d'une étape faite par le runtime sur son propre fil (RuntimeNet::run_deferred) : son
   // échec éventuel est gardé pour le prochain enqueue, et l'étape est signalée quoi qu'il
   // arrive, sans quoi la file attendrait sans fin.
@@ -157,16 +153,9 @@ class VulkanBackend final : public Backend {
   std::unique_ptr<VulkanKernelOps> kernels_;
   std::shared_ptr<net::Runtime> runtime_;
   std::shared_ptr<HostViews> host_views_;  // projections des tenseurs d'un runtime
-  // interop : tenseurs du runtime en mémoire exportée ; lu par le préparateur (build_runtime),
-  // éteint par le fil du GPU (alloc_runtime_tensor) si l'import échoue.
-  std::atomic<bool> shared_memory_ = false;
-  bool shared_checked_ = false;  // un premier tenseur partagé vérifié (shared_tensor)
   // Alignement des mémoires hôte du runtime que Vulkan importe (GPU intégré) ; 0 : sans import.
   std::uint64_t host_alignment_ = 0;
   bool host_import_checked_ = false;  // le GPU a relu un premier import (host_imported_tensor)
-  // La timeline de queue_ vue du runtime (interop) : ses réseaux s'ordonnent côté GPU. Rendue
-  // avant le runtime et la file.
-  std::unique_ptr<net::ImportedSemaphore> imported_timeline_;
   // Le premier échec d'une étape différée, écrit par le fil du runtime, rendu au prochain enqueue.
   std::mutex runtime_mutex_;
   std::optional<Refusal> runtime_failure_;  // figé après kMaxStepFailures échecs de suite

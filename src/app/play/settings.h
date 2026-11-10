@@ -242,7 +242,7 @@ struct PlaySettings {
   // Langue de l'interface : « en » ou « fr », celle du système par défaut (default_interface_language) ;
   // prise en direct (app/play/i18n.h).
   std::string language = default_interface_language();
-  // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
+  // Le dossier où s'installent les moteurs téléchargés (TensorRT) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.
   std::string engines_dir;
