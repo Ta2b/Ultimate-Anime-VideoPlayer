@@ -102,7 +102,9 @@ struct FirstRunView {
   WizardFacts facts;
   std::string tier_line;     // « Niveau estimé : Rapide »
   std::string display_line;  // « Écran 3840×2160 · 165 Hz »
-  bool laptop = false;       // un portable : la construction des moteurs y dure le double (A25-03)
+  // Pourquoi « Automatique » ne peut rien installer ici (update_managed_reason) ; vide : il le peut.
+  std::string managed_updates;
+  bool laptop = false;  // un portable : la construction des moteurs y dure le double (A25-03)
 };
 
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,

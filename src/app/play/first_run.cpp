@@ -123,13 +123,13 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     // reste.
     row.status =
         download->needed == 0
-            ? i18n::tr_format("to download ({})", format_size(download->bytes))
-            : i18n::tr_format("to download ({}) · needs {} of space, {} free", format_size(download->bytes),
-                              format_size(download->needed), format_size(download->available));
+            ? i18n::tr_format("to download ({})", shown_size(download->bytes))
+            : i18n::tr_format("to download ({}) · needs {} of space, {} free", shown_size(download->bytes),
+                              shown_size(download->needed), shown_size(download->available));
     if (!fits)
       row.status = i18n::tr_format("not enough disk space: {} needed ({} to download), {} left",
-                                   format_size(download->needed), format_size(download->bytes),
-                                   format_size(download->available));
+                                   shown_size(download->needed), shown_size(download->bytes),
+                                   shown_size(download->available));
   } else {
     row.status = i18n::tr("not published for this version yet");
   }
@@ -201,16 +201,17 @@ std::string rebar_text(const GpuFacts& gpu) {
   const bool wide = gpu.host_visible_vram_bytes >= gpu.vram_bytes / 4 * 3;
   const double size = static_cast<double>(gpu.host_visible_vram_bytes);
   const std::string text = gpu.host_visible_vram_bytes >= kGiB
-                               ? std::format("{} Go", std::lround(size / static_cast<double>(kGiB)))
-                               : std::format("{} Mo", std::lround(size / (1024.0 * 1024.0)));
-  return std::format("{}, {}", wide ? "actif" : "inactif", text);
+                               ? i18n::tr_format("{} GB", std::lround(size / static_cast<double>(kGiB)))
+                               : i18n::tr_format("{} MB", std::lround(size / (1024.0 * 1024.0)));
+  return std::format("{}, {}", wide ? i18n::tr("active") : i18n::tr("inactive"), text);
 }
 
 std::string gpu_line(const GpuFacts& gpu) {
   std::string line = gpu.name.empty() ? std::string(i18n::tr("Unknown GPU")) : gpu.name;
   if (gpu.vram_bytes > 0) {
-    line += std::format(" · {} Go", static_cast<int>(std::lround(static_cast<double>(gpu.vram_bytes) /
-                                                                 static_cast<double>(kGiB))));
+    line +=
+        " · " + i18n::tr_format("{} GB", static_cast<int>(std::lround(static_cast<double>(gpu.vram_bytes) /
+                                                                      static_cast<double>(kGiB))));
   }
   if (const std::string rebar = rebar_text(gpu); !rebar.empty()) line += " · Resizable BAR " + rebar;
   if (gpu.tensor_cores) line += i18n::tr(" · Tensor cores");
@@ -390,7 +391,7 @@ std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
     if (row.download) bytes += row.bytes;
   }
   std::vector<std::string> out;
-  out.push_back(bytes > 0 ? i18n::tr_format("Engines: {} ({} to download)", kept, format_size(bytes))
+  out.push_back(bytes > 0 ? i18n::tr_format("Engines: {} ({} to download)", kept, shown_size(bytes))
                           : i18n::tr_format("Engines: {}", kept));
   out.insert(out.end(), refused.begin(), refused.end());
   return out;
