@@ -102,6 +102,22 @@ TEST_CASE("Demuxer : chapitres et durée en microsecondes", "[media][demuxer]") 
   CHECK(demuxer.track(42) == nullptr);
 }
 
+TEST_CASE("Demuxer : chapitres répétés écartés, au plus mille gardés (A35-02)", "[media][demuxer]") {
+  test::ClipSpec spec{.name = "chapitres-nombreux.mkv", .frames = 5};
+  for (int i = 0; i < 1500; ++i) spec.chapters.push_back({.start_ms = i, .end_ms = i + 1, .title = "c"});
+  spec.chapters.push_back({.start_ms = 3, .end_ms = 4, .title = "c"});  // un doublon
+  Demuxer demuxer = open_clip(spec);
+  CHECK(demuxer.chapters().size() == 1000);
+}
+
+TEST_CASE("Demuxer : une taille de vidéo hors de toute source est refusée à l'ouverture (A35-06)",
+          "[media][demuxer]") {
+  const auto opened =
+      Demuxer::open(test::require_clip({.name = "trop-large.mkv", .width = 8320, .height = 16, .frames = 1}));
+  REQUIRE_FALSE(opened);
+  CHECK(opened.error().code == RefusalCode::FormatUnsupported);
+}
+
 TEST_CASE("Demuxer : paquets horodatés en microsecondes, piste par piste", "[media][demuxer]") {
   Demuxer demuxer = open_clip(test::full_clip());
   const std::vector<Packet> packets = read_all(demuxer);

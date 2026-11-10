@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <deque>
 #include <format>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -93,6 +95,11 @@ Rational frame_rate_of(const AVStream& stream) {
   return {rate.num, rate.den};
 }
 
+// Les bornes d'une vidéo lisible (A35-06) et le nombre de chapitres gardés (A35-02).
+constexpr int kMaxVideoSide = 8192;
+constexpr int kMaxVideoAspect = 8;
+constexpr std::size_t kMaxChapters = 1000;
+
 std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kind) {
   const AVCodecParameters& par = *stream.codecpar;
   auto parameters = CodecParameters::copy_of(par);
@@ -111,6 +118,17 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
       .parameters = std::move(*parameters),
   };
   if (info.language == "und") info.language.clear();  // « indéterminée » : absente
+  if (kind == TrackKind::Video && !info.attached_picture) {
+    // Une taille annoncée hors de tout épisode (16384×4, 16384×16384) ferait construire des moteurs de cette
+    // forme pendant des minutes, gardés en cache, puis refusés faute de mémoire vidéo (A35-06).
+    const int longest = std::max(par.width, par.height);
+    const int shortest = std::min(par.width, par.height);
+    if (longest > kMaxVideoSide || (shortest > 0 && longest > kMaxVideoAspect * shortest))
+      return std::unexpected(
+          Refusal{RefusalCode::FormatUnsupported,
+                  std::format("vidéo de {}×{} : au-delà de {} de côté ou d'un rapport de 1:{}", par.width,
+                              par.height, kMaxVideoSide, kMaxVideoAspect)});
+  }
   if (kind == TrackKind::Video) {
     // Comme les images décodées (core/frame.h) : la chaîne se prépare pour la taille qu'elle recevra.
     info.width = chain_dimension(par.width);
@@ -187,17 +205,19 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path)
     if (!info) return std::unexpected(info.error());
     state->tracks.push_back(std::move(*info));
   }
-  for (unsigned i = 0; i < raw->nb_chapters; ++i) {
+  // Plusieurs éditions Matroska (ou un chapitre répété) donnent le même chapitre plusieurs fois : un
+  // ensemble les écarte en O(n log n), et au plus kMaxChapters sont gardés (A35-02 : 100 000 chapitres
+  // prenaient 7 s par ouverture).
+  std::set<std::pair<std::int64_t, std::string>> seen;
+  for (unsigned i = 0; i < raw->nb_chapters && state->chapters.size() < kMaxChapters; ++i) {
     const AVChapter& chapter = *raw->chapters[i];
     Chapter next{.start_us = to_us(chapter.start, chapter.time_base, state->start_us),
                  .end_us = to_us(chapter.end, chapter.time_base, state->start_us),
                  .title = tag(chapter.metadata, "title")};
-    // Plusieurs éditions Matroska (ou un chapitre répété) donnent le même chapitre plusieurs fois.
-    const bool again = std::ranges::any_of(state->chapters, [&](const Chapter& known) {
-      return known.start_us == next.start_us && known.title == next.title;
-    });
-    if (!again) state->chapters.push_back(std::move(next));
+    if (seen.emplace(next.start_us, next.title).second) state->chapters.push_back(std::move(next));
   }
+  if (raw->nb_chapters > kMaxChapters && state->chapters.size() == kMaxChapters)
+    state->log->info("{} : {} chapitres, {} gardés", where, raw->nb_chapters, kMaxChapters);
   state->scratch.reset(av_packet_alloc());
   if (!state->scratch) return refuse(RefusalCode::MediaUnreadable, where + " : mémoire insuffisante");
   state->log->debug("{} : {} pistes, {} chapitres, {} µs", where, state->tracks.size(),

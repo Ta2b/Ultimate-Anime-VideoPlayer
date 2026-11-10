@@ -207,3 +207,19 @@ TEST_CASE("Dolby Vision 5 et audio seul : dits en clair à l'ouverture (P3.26, P
   audio.key = std::string(ajp::app::play::kAudioOnlyKey);
   CHECK(ajp::app::play::visible_error(audio).contains("que du son"));
 }
+
+TEST_CASE("Les familles de refus ont chacune une phrase traduite (A20-09, A24-09)", "[i18n]") {
+  const ajp::app::play::FrenchUi french;
+  using ajp::RefusalCode;
+  for (const RefusalCode code :
+       {RefusalCode::HashMismatch, RefusalCode::ModelUnavailable, RefusalCode::SeekFailed,
+        RefusalCode::LibassFailed, RefusalCode::CacheBusy, RefusalCode::BuilderTimeout,
+        RefusalCode::LibraryUnavailable, RefusalCode::VendorCallFailed, RefusalCode::FieldOutOfRange,
+        RefusalCode::EncodeFailed}) {
+    const std::string text = ajp::app::play::visible_error(ajp::Refusal{code, "x"});
+    INFO(text);
+    CHECK_FALSE(text.contains("error "));
+    CHECK_FALSE(text.contains("erreur "));
+  }
+  CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::HdrUnavailable, "x"}).contains("HDR"));
+}

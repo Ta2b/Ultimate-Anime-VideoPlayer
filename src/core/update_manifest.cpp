@@ -23,7 +23,12 @@ std::optional<Version> parse_version(std::string_view text) {
   const std::size_t dash = text.find('-');
   if (dash != std::string_view::npos) {
     out.pre = std::string(text.substr(dash + 1));
-    if (out.pre.empty()) return std::nullopt;
+    // Préversion au sens de SemVer : lettres, chiffres, « . » et « - », bornée (A35-03) ; un saut de ligne ou
+    // un texte de mille signes ne s'affiche pas dans la notification.
+    const auto semver = [](char c) {
+      return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '.' || c == '-';
+    };
+    if (out.pre.empty() || out.pre.size() > 64 || !std::ranges::all_of(out.pre, semver)) return std::nullopt;
     text = text.substr(0, dash);
   }
   for (std::size_t i = 0; i < 3; ++i) {

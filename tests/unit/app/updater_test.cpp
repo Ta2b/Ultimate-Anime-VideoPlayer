@@ -94,6 +94,20 @@ TEST_CASE("mises à jour : l'update.toml d'une version qui s'appliquait elle-mê
   CHECK(state->revoked_keys == std::vector<std::string>{"cd"});
 }
 
+TEST_CASE("mises à jour : l'update.toml d'une version future se relit sans perdre les révocations (A36-09)",
+          "[updater]") {
+  // Un champ, un type et une table inconnus : les clés connues restent, les clés révoquées surtout.
+  const auto state = parse_update_state(
+      "last_check_unix = 1800000000\nrevoked_keys = [\"ef\"]\nchannel_hint = \"stable\"\nretries = [1, 2]\n"
+      "[futur]\nmirror = \"https://m\"\n");
+  REQUIRE(state);
+  CHECK(state->last_check_unix == 1800000000);
+  CHECK(state->revoked_keys == std::vector<std::string>{"ef"});
+  const auto reread = parse_update_state(format_update_state(*state));
+  REQUIRE(reread);
+  CHECK(*reread == *state);
+}
+
 TEST_CASE("mises à jour : un seul manifeste, celui de la dernière release", "[updater]") {
   CHECK(manifest_url("a/b") == "https://github.com/a/b/releases/latest/download/manifest.toml");
   CHECK(releases_page("a/b") == "https://github.com/a/b/releases/latest");
