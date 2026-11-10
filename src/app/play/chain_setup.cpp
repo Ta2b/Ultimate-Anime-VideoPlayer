@@ -155,6 +155,24 @@ namespace {
 using Prepared = std::expected<std::optional<ChainEngines>, StageFailure>;
 
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings);
+gpu::BackendInit chain_backend_init(Player& p);
+
+// Une instance pour toutes les constructions d'une préparation, replis compris (A08-10), détruite à la fin de
+// celle-ci, la fenêtre pompée (release_builder).
+class SharedBuilder {
+ public:
+  explicit SharedBuilder(Player& p) : p_(p) {
+    p_.builder = std::make_shared<BuildBackend>([library = p.library, init = chain_backend_init(p)] {
+      return BackendLibrary::create(library, init);
+    });
+  }
+  SharedBuilder(const SharedBuilder&) = delete;
+  SharedBuilder& operator=(const SharedBuilder&) = delete;
+  ~SharedBuilder() { release_builder(p_); }
+
+ private:
+  Player& p_;
+};
 
 // La forme de l'ouverture (chain_shape.h) : l'anneau de ces réglages et l'ordre du warp que les moteurs
 // chargés ont pris (c.top_factor), avec l'écran et la source d'où ils viennent.
@@ -190,6 +208,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
   constexpr int kAttempts = 5;
   std::optional<StageFailure> last;
+  const SharedBuilder shared_builder(p);
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
     std::optional<StagePlan> plan =
         plan_stages(settings, refused, width, height, library, p.options.file, memory != nullptr);

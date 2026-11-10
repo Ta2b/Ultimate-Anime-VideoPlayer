@@ -20,6 +20,7 @@
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/paths.h"
+#include "app/play/pumped_task.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -153,6 +154,18 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label) {
     log_channel("app")->warn("préparation : {}", shown.error().detail);
 }
 
+void release_builder(Player& p) {
+  if (!p.builder) return;
+  std::shared_ptr<BuildBackend> builder = std::exchange(p.builder, nullptr);
+  if (auto released = run_pumped<bool>("builder",
+                                       [held = std::move(builder)]() mutable {
+                                         held.reset();
+                                         return true;
+                                       });
+      !released)
+    log_channel("app")->warn("instance de construction : {}", released.error().detail);
+}
+
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
@@ -162,7 +175,9 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
       EngineRequest{.library = p.library,
                     .init = init,
                     .model = {.id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha256},
-                    .shapes = {.min = shape, .opt = shape, .max = shape}});
+                    .shapes = {.min = shape, .opt = shape, .max = shape},
+                    .builder = p.builder,
+                    .pump_on_close = true});
   if (!build) return std::unexpected(std::move(build.error()));
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
@@ -171,9 +186,15 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
-  backend.use_lane(lane);
-  auto loaded = backend.load(**artifact);
-  backend.use_lane(gpu::Lane::Upscale);
+  // La désérialisation (plusieurs secondes pour un RIFE fusionné et ses six moteurs) sur un thread, la
+  // fenêtre pompée : Windows ne la marque plus « Ne répond pas » (A29-06).
+  const gpu::Artifact& ready = **artifact;
+  auto loaded = run_pumped<std::unique_ptr<gpu::Engine>>("load", [&] {
+    backend.use_lane(lane);
+    auto engine = backend.load(ready);
+    backend.use_lane(gpu::Lane::Upscale);
+    return engine;
+  });
   if (!loaded) return std::unexpected(std::move(loaded.error()));
   return std::optional(std::move(*loaded));
 }

@@ -16,6 +16,7 @@
 #include <thread>
 
 #include "app/play/backend_library.h"
+#include "app/play/build_backend.h"
 #include "core/types.h"
 #include "gpu/backend.h"
 
@@ -26,6 +27,10 @@ struct EngineRequest {
   gpu::BackendInit init;  // render, cache_dir et log ; render vit plus longtemps que la construction
   gpu::ModelSpec model;
   gpu::ShapeSet shapes;
+  // L'instance de la préparation (build_backend.h) ; nulle : une instance à cette construction.
+  std::shared_ptr<BuildBackend> builder;
+  // Détruite depuis le thread de la fenêtre : la fermeture pompe ses événements en attendant la fin (A05-10).
+  bool pump_on_close = false;
 };
 
 // A31-11 : une construction refusée à l'écriture (BuilderFailed, CacheIo, FileUnwritable, IoFailed) alors que
@@ -39,7 +44,9 @@ std::expected<gpu::Artifact, Refusal> with_space_reason(std::expected<gpu::Artif
 class EngineBuild {
  public:
   static std::expected<std::unique_ptr<EngineBuild>, Refusal> start(EngineRequest request);
-  ~EngineBuild();  // demande l'arrêt : trtexec est interrompu, la construction refusée (Cancelled)
+  // Demande l'arrêt : trtexec est interrompu, la construction refusée (Cancelled). Avec pump_on_close, la
+  // fenêtre est pompée jusqu'à la fin du thread (lecture de l'ONNX, désérialisation de contrôle).
+  ~EngineBuild();
   EngineBuild(const EngineBuild&) = delete;
   EngineBuild& operator=(const EngineBuild&) = delete;
 
@@ -60,6 +67,8 @@ class EngineBuild {
 
   mutable std::mutex mutex_;
   std::atomic<bool> told_build_{false};  // l'événement « build » du banc, dit une fois
+  std::atomic<bool> done_{false};        // run est fini, son instance détruite
+  bool pump_on_close_ = false;           // EngineRequest::pump_on_close
   std::optional<std::expected<gpu::Artifact, Refusal>> result_;
   float fraction_ = 0.0F;
   std::string stage_ = "démarrage";

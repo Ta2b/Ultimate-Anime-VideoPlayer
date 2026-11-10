@@ -109,13 +109,15 @@ bool peak_due(ContractWatch& watch, std::int64_t polled_at) {
 }
 
 // Les réglages d'une réouverture demandée, écrits une fois la chaîne rouverte (Player::unsaved), sans les
-// raccourcis de séance (A08-04).
-void save_reopened(Player& p) {
+// raccourcis de séance (A08-04), sur le thread de l'écrivain : la première image n'attend pas le disque
+// (A08-13).
+void save_reopened(Player& p, LatestWriter& writer) {
   if (!p.unsaved) return;
   const PlaySettings kept = with_kept_choices(p.kept, *p.unsaved);
-  if (auto saved = save_settings(p.settings_path, settings_to_save(kept, p.from_file, p.started, p.options));
-      !saved)
-    log_channel("app")->warn("{}", saved.error().detail);
+  writer.post("play.toml",
+              [path = p.settings_path, saved = settings_to_save(kept, p.from_file, p.started, p.options)] {
+                return save_settings(path, saved);
+              });
   p.unsaved.reset();
 }
 
@@ -355,7 +357,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;  // vidée à chaque tour en s'appliquant (la 0.10.0 la rejouait sans fin)
   session.begin(host_now_us());
-  save_reopened(p);
   if (p.resumed) {
     p.ui.controls().notify(
         i18n::ui_tr_format("Resumed at {}", format_clock(start_us, session.view().duration_us)),
@@ -373,6 +374,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.shots != nullptr) p.shots->writer = &writer;  // le cache des plans aussi
   const std::unique_ptr<ShotWork, void (*)(ShotWork*)> shots_writer(
       p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });
+  save_reopened(p, writer);
   // Ce que play.toml garde.
   const auto saved_settings = [&] {
     return settings_to_save(with_kept_choices(chain, chain.running), p.from_file, p.started, p.options);
