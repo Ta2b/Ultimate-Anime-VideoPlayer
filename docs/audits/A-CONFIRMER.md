@@ -254,3 +254,20 @@ Le fil C01 a corrigé ces défauts sans la machine ; la manipulation de la table
 | A20-06 | fond sous Windows en `THREAD_MODE_BACKGROUND_BEGIN` (processeur, E/S et mémoire) | la manipulation de la table ci-dessus : moins d'images perdues avec la pré-analyse. |
 | A20-07 | `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)` au démarrage, et le dossier de chaque bibliothèque ouverte ajouté par `AddDllDirectory` | la manipulation de la table ci-dessus : aucun dossier du `PATH` sondé, **et TensorRT s'ouvre toujours** (c'est le risque du changement). |
 | A28-10 | `nvidia-package.sh` refuse un TensorRT ou une série CUDA du poste autres que ceux de `versions.env` | sur le poste NVIDIA, lancer `nvidia-package.sh` : il passe, ou dit quelle version diffère. |
+
+### C01, suite : corrigé dans le code, la mesure décide de la fusion
+
+Ces correctifs sont testés dans le cloud (Linux, et la CI Windows et macOS pour ce qui s'y compile). La
+dernière colonne dit ce qu'il faut voir sur la machine pour garder la correction ; si la mesure échoue, le
+commit se retire seul.
+
+| ID | Correction | La mesure qui décide |
+|---|---|---|
+| A05-11, A06-02, A20-02 | `prepare::ansi_safe_path` : un chemin que la page ANSI ne sait pas écrire passe à trtexec, curl et tar par le nom court 8.3 de sa partie existante | compte Windows local « Юля » (ou un dossier de données renommé en cyrillique), locale française : installer TensorRT puis construire un moteur. `ajp.log` sans « ? » dans les chemins, moteur construit. Vérifier aussi `fsutil 8dot3name query C:` : sans noms courts, rien ne change. |
+| A06-09 | version de TensorRT tenue par une DLL ouverte : la nouvelle attend dans `.partiel`, échangée au lancement suivant avant tout chargement | sous Windows, installer le module d'une version N-1, lancer la version N et accepter la mise à jour du moteur : le message dit « au prochain lancement » ; relancer : journal « nouvelle version mise en place au lancement », un seul dossier sous `backends/tensorrt/`. |
+| A19-04 | `is_default_player` interroge xdg-mime sur un fil à lui ; faux tant qu'il n'a pas répondu | sous KDE, ouvrir Paramètres > Général deux fois de suite au premier lancement : aucune fenêtre figée ; la case « par défaut » est juste à la seconde ouverture. |
+| A19-05 | lecteur par défaut lu pour MKV et MP4 : UserChoice sous Windows, xdg-mime sous Linux | sous Windows 11, choisir AJP pour .mkv et .mp4 dans Applications par défaut : la case de Paramètres > Général est cochée ; VLC pour .mp4 : décochée. |
+| A19-06 | au lancement, une fiche `.desktop` ou une commande de ProgId qui nomme un autre exécutable est réécrite | déplacer le dossier portable (Linux et Windows), lancer une fois, double-cliquer une vidéo : elle s'ouvre dans AJP. |
+| A19-08 | `SDL_FlashWindow` après `SDL_RaiseWindow` pour un fichier transmis | sous la session Wayland de Tatoub, la fenêtre d'AJP derrière une autre, double-cliquer une vidéo : l'icône clignote dans la barre des tâches (la fenêtre ne passe pas devant sans jeton d'activation). |
+| A20-11 | threads nommés pour le système, plages NVTX `span`, `rife.pair`, `rife.scores`, `drba.pair`, `drba.ingest` | build `linux-release` avec CUDA : `nsys profile -t cuda,nvtx,osrt -o drba ajp --seconds=30 ep01.mkv`, une fois en DistilDRBA, une fois en RIFE 4.22 lite ; les threads portent leur nom et chaque paire sa plage. `--no-cuda-graphs` reste à porter dans le backend TensorRT : il n'existe plus que dans l'audit. |
+| A36-08 | sous Linux, moteurs construits, modèles dérivés, plans et cache des shaders dans `~/.cache/ajp`, déplacés une fois | sous CachyOS, lancer une fois : `~/.cache/ajp/engines` a les moteurs, `~/.local/share/ajp/ajp` n'en a plus, aucune reconstruction de TensorRT. |
