@@ -8,10 +8,12 @@
 #include <utility>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 extern "C" {
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vulkan.h>
+#include <libavutil/pixdesc.h>
 }
 
 #include "media/frame_data.h"
@@ -132,4 +134,81 @@ TEST_CASE("frame_data : l'accès Vulkan suit l'état de l'AVVkFrame sous son ver
   data.end_vulkan_access(VulkanImageState{.layout = VK_IMAGE_LAYOUT_UNDEFINED}, false);
   CHECK(image->sem_value[0] == before + 1);
   CHECK(image->layout[0] == VK_IMAGE_LAYOUT_GENERAL);
+}
+
+namespace {
+
+// Une image hôte de 64x32 : luma en dégradé, Cb en bandes de deux colonnes (0 puis plein), Cr constant.
+FramePtr host_frame(AVPixelFormat format, int bits) {
+  FramePtr f(av_frame_alloc());
+  f->width = 64;
+  f->height = 32;
+  f->format = format;
+  REQUIRE(av_frame_get_buffer(f.get(), 0) == 0);
+  const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
+  const int top = (1 << bits) - 1;
+  for (int plane = 0; plane < 3; ++plane) {
+    const int w = plane == 0 ? 64 : AV_CEIL_RSHIFT(64, desc->log2_chroma_w);
+    const int h = plane == 0 ? 32 : AV_CEIL_RSHIFT(32, desc->log2_chroma_h);
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) {
+        const int value = plane == 0 ? (x * top) / 63 : plane == 1 ? ((x / 2) % 2 == 0 ? 0 : top) : top / 2;
+        if (bits > 8) {
+          reinterpret_cast<std::uint16_t*>(f->data[plane] + y * f->linesize[plane])[x] =
+              static_cast<std::uint16_t>(value);
+        } else {
+          f->data[plane][y * f->linesize[plane] + x] = static_cast<std::uint8_t>(value);
+        }
+      }
+  }
+  return f;
+}
+
+}  // namespace
+
+TEST_CASE("frame_data : 4:4:4, 4:2:2 et 12 bits deviennent du 4:2:0 que la chaîne lit (A15-13)",
+          "[media][frame_data]") {
+  struct Case {
+    AVPixelFormat from;
+    int bits;
+    ajp::PixelFormat to;
+  };
+  const Case c = GENERATE(Case{AV_PIX_FMT_YUV444P, 8, ajp::PixelFormat::Yuv420p},
+                          Case{AV_PIX_FMT_YUV444P10LE, 10, ajp::PixelFormat::Yuv420p10},
+                          Case{AV_PIX_FMT_YUV422P10LE, 10, ajp::PixelFormat::Yuv420p10},
+                          Case{AV_PIX_FMT_YUV420P12LE, 12, ajp::PixelFormat::Yuv420p10});
+  CAPTURE(av_get_pix_fmt_name(c.from));
+  for (int round = 0; round < 3; ++round) {  // le pool resert d'une image à l'autre
+    FramePtr frame = host_frame(c.from, c.bits);
+    frame->chroma_location = AVCHROMA_LOC_TOPLEFT;
+    auto decoded = to_decoded_frame(std::move(frame), 1000, 40'000, {});
+    REQUIRE(decoded);
+    CHECK(decoded->format == c.to);
+    CHECK(decoded->pts_us == 1000);
+    const AVFrame* out = av_frame_of(*decoded->data);
+    REQUIRE(out != nullptr);
+    CHECK(out->width == 64);
+    CHECK(out->height == 32);
+    // 12 bits en 4:2:0 : la chroma n'est pas rééchantillonnée, sa position reste (A15-07).
+    CHECK(out->chroma_location ==
+          (c.from == AV_PIX_FMT_YUV420P12LE ? AVCHROMA_LOC_TOPLEFT : AVCHROMA_LOC_LEFT));
+    const int out_bits = c.to == ajp::PixelFormat::Yuv420p ? 8 : 10;
+    const auto luma = [&](int x) {
+      return out_bits > 8 ? reinterpret_cast<const std::uint16_t*>(out->data[0] + 5 * out->linesize[0])[x]
+                          : out->data[0][5 * out->linesize[0] + x];
+    };
+    CHECK(luma(0) == 0);
+    CHECK(luma(63) == (1 << out_bits) - 1);
+  }
+}
+
+TEST_CASE("frame_data : yuvj444p (plage pleine) sort en plage limitée", "[media][frame_data]") {
+  FramePtr frame = host_frame(AV_PIX_FMT_YUVJ444P, 8);
+  auto decoded = to_decoded_frame(std::move(frame), 0, 40'000, {});
+  REQUIRE(decoded);
+  CHECK(decoded->format == ajp::PixelFormat::Yuv420p);
+  CHECK(decoded->color.range == ajp::ColorRange::Limited);
+  const AVFrame* out = av_frame_of(*decoded->data);
+  CHECK(out->data[0][5 * out->linesize[0]] == 16);
+  CHECK(out->data[0][5 * out->linesize[0] + 63] == 235);
 }

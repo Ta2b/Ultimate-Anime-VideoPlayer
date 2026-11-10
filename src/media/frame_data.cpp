@@ -1,5 +1,6 @@
 #include "media/frame_data.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -12,9 +13,11 @@ extern "C" {
 #include <libswscale/swscale.h>
 
 #include <libavutil/buffer.h>
+#include <libavutil/cpu.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vulkan.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 }
 
@@ -240,6 +243,61 @@ struct SwsFree {
   void operator()(SwsContext* context) const { sws_freeContext(context); }
 };
 
+struct PoolFree {
+  void operator()(AVBufferPool* pool) const { av_buffer_pool_uninit(&pool); }
+};
+
+// Threads de swscale pour une image : la conversion tient sur le thread source, qui décode aussi (A15-06).
+constexpr int kConvertThreads = 4;
+constexpr int kConvertAlign = 64;
+
+// Le contexte de conversion et le pool des images converties, gardés d'une image à l'autre tant que la
+// taille et les formats ne changent pas : une image 4K 4:4:4 n'alloue plus 25 Mo neufs à chaque fois
+// (A15-06). Un seul thread source convertit.
+struct Converter {
+  std::unique_ptr<SwsContext, SwsFree> context;
+  std::unique_ptr<AVBufferPool, PoolFree> pool;
+  int width = 0;
+  int height = 0;
+  AVPixelFormat from = AV_PIX_FMT_NONE;
+  AVPixelFormat to = AV_PIX_FMT_NONE;
+  int bytes = 0;
+
+  bool ready_for(const AVFrame& frame, AVPixelFormat format, AVPixelFormat target) const {
+    return context && pool && width == frame.width && height == frame.height && from == format &&
+           to == target;
+  }
+
+  std::expected<void, Refusal> prepare(const AVFrame& frame, AVPixelFormat format, AVPixelFormat target) {
+    if (ready_for(frame, format, target)) return {};
+    pool.reset();
+    context.reset(sws_alloc_context());
+    if (!context) return refuse(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : mémoire insuffisante");
+    SwsContext* ctx = context.get();
+    const bool set = av_opt_set_int(ctx, "srcw", frame.width, 0) >= 0 &&
+                     av_opt_set_int(ctx, "srch", frame.height, 0) >= 0 &&
+                     av_opt_set_int(ctx, "src_format", format, 0) >= 0 &&
+                     av_opt_set_int(ctx, "dstw", frame.width, 0) >= 0 &&
+                     av_opt_set_int(ctx, "dsth", frame.height, 0) >= 0 &&
+                     av_opt_set_int(ctx, "dst_format", target, 0) >= 0 &&
+                     av_opt_set_int(ctx, "sws_flags", SWS_BILINEAR, 0) >= 0 &&
+                     av_opt_set_int(ctx, "threads", std::min(av_cpu_count(), kConvertThreads), 0) >= 0;
+    if (!set || sws_init_context(ctx, nullptr, nullptr) < 0) {
+      context.reset();
+      return refuse(RefusalCode::FormatUnsupported, "conversion vers 4:2:0 : contexte swscale refusé");
+    }
+    bytes = av_image_get_buffer_size(target, frame.width, frame.height, kConvertAlign);
+    if (bytes <= 0) return refuse(RefusalCode::FormatUnsupported, "conversion vers 4:2:0 : taille d'image");
+    pool.reset(av_buffer_pool_init(static_cast<std::size_t>(bytes), nullptr));
+    if (!pool) return refuse(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : mémoire insuffisante");
+    width = frame.width;
+    height = frame.height;
+    from = format;
+    to = target;
+    return {};
+  }
+};
+
 // Une image hôte YUV que la chaîne ne lit pas (4:2:2, 4:4:4, 12 bits : H.264 High 4:4:4, VP9 profils 1
 // et 3, ProRes) devient du 4:2:0 de même profondeur ou moins : 8 bits en yuv420p, au-delà en
 // yuv420p10. Même matrice et même plage, seule la chroma est réduite. Rend nullptr si l'image n'est
@@ -251,26 +309,32 @@ std::expected<FramePtr, Refusal> to_chain_yuv(const AVFrame& frame, AVPixelForma
       desc->nb_components < 3)
     return FramePtr{};
   const AVPixelFormat target = desc->comp[0].depth > 8 ? AV_PIX_FMT_YUV420P10LE : AV_PIX_FMT_YUV420P;
-  // Un seul thread source convertit : le contexte se garde d'une image à l'autre.
-  thread_local std::unique_ptr<SwsContext, SwsFree> context;
-  context.reset(sws_getCachedContext(context.release(), frame.width, frame.height, format, frame.width,
-                                     frame.height, target, SWS_BILINEAR, nullptr, nullptr, nullptr));
-  if (!context) return refuse(RefusalCode::FormatUnsupported, "conversion vers 4:2:0 : sws_getCachedContext");
+  thread_local Converter converter;
+  if (auto prepared = converter.prepare(frame, format, target); !prepared)
+    return std::unexpected(prepared.error());
   FramePtr out(av_frame_alloc());
   if (!out) return refuse(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : mémoire insuffisante");
   out->format = target;
   out->width = frame.width;
   out->height = frame.height;
-  if (const int err = av_frame_get_buffer(out.get(), 0); err < 0)
+  out->buf[0] = av_buffer_pool_get(converter.pool.get());
+  if (out->buf[0] == nullptr) return refuse(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : tampon");
+  if (const int err = av_image_fill_arrays(out->data, out->linesize, out->buf[0]->data, target, frame.width,
+                                           frame.height, kConvertAlign);
+      err < 0)
     return refuse_av(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : tampon", err);
+  out->extended_data = out->data;
   if (const int err = av_frame_copy_props(out.get(), &frame); err < 0)
     return refuse_av(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : propriétés", err);
-  out->chroma_location = AVCHROMA_LOC_LEFT;  // celle que swscale produit en 4:2:0
+  // Déjà en 4:2:0 (12 bits ramenés à 10), la chroma n'est pas rééchantillonnée : elle garde sa position.
+  // Sinon, celle que swscale produit (A15-07).
+  const bool subsampled = desc->log2_chroma_w == 1 && desc->log2_chroma_h == 1;
+  if (!subsampled) out->chroma_location = AVCHROMA_LOC_LEFT;
   // Les formats yuvj (plage pleine) sortent en plage limitée : swscale la convertit.
   if (std::string_view(desc->name).starts_with("yuvj")) out->color_range = AVCOL_RANGE_MPEG;
-  const int rows =
-      sws_scale(context.get(), frame.data, frame.linesize, 0, frame.height, out->data, out->linesize);
-  if (rows != frame.height) return refuse(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : sws_scale");
+  // L'interface par images : la seule où swscale découpe la conversion entre ses threads.
+  if (const int err = sws_scale_frame(converter.context.get(), out.get(), &frame); err < 0)
+    return refuse_av(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : sws_scale_frame", err);
   return out;
 }
 

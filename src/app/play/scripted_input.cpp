@@ -117,7 +117,7 @@ std::optional<ExportJob> scripted_export(std::string_view name, const PlaySettin
   job.output = name.size() > kExport.size() + 1
                    ? prepare::path_from_utf8(name.substr(kExport.size() + 1))
                    : default_export_path(source, size, export_rate(video.frame_rate, factor_of(job.chain)));
-  log_channel("app")->info("--keys : export vers {}", prepare::utf8_path(job.output));
+  log_channel("app")->info("--keys : export vers {}", prepare::utf8_path(job.output.filename()));
   return job;
 }
 

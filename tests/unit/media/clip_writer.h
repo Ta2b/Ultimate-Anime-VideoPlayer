@@ -10,6 +10,7 @@
 #include <vector>
 
 extern "C" {
+#include <libavcodec/defs.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
 }
@@ -69,6 +70,7 @@ struct ClipSpec {
   int frames = 30;
   AVRational frame_rate{25, 1};
   int gop = 10;
+  AVFieldOrder field_order = AV_FIELD_UNKNOWN;  // ce que le conteneur dit des champs (FieldOrder Matroska)
   int b_frames = 0;
   int video_delay = 0;  // pts de la première image vidéo, en images ; l'audio part de 0
   ColorSpec color;
