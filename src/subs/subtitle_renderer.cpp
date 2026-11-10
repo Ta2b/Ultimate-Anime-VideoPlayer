@@ -9,6 +9,7 @@
 
 #include <ass/ass.h>
 
+#include "core/utf8_path.h"
 #include "subs/atlas_packer.h"
 #include "subs/timebase.h"
 
@@ -114,7 +115,7 @@ std::expected<SubtitleRenderer::Handle, Refusal> SubtitleRenderer::make(ass_libr
   Handle renderer(ass_renderer_init(library));
   if (renderer == nullptr) return refuse(RefusalCode::LibassFailed, "ass_renderer_init");
 
-  const std::string default_font = options.default_font.string();
+  const std::string default_font = core::to_utf8(options.default_font);
   const int provider =
       options.fonts == FontProvider::System ? ASS_FONTPROVIDER_AUTODETECT : ASS_FONTPROVIDER_NONE;
   ass_set_fonts(renderer.get(), default_font.empty() ? nullptr : default_font.c_str(),
@@ -185,6 +186,14 @@ RenderTarget SubtitleRenderer::shrunk(RenderTarget target, int shrink) {
   return target;
 }
 
+bool SubtitleRenderer::fits_unshrunk() const {
+  std::vector<PackSize> sizes;
+  sizes.reserve(pieces_.size());
+  for (const ass_image* image : pieces_)
+    sizes.push_back({.width = image->w * shrink_, .height = image->h * shrink_});
+  return pieces_.size() <= kMaxRectsPerFrame && pack(sizes, kMaxAtlasSide).has_value();
+}
+
 std::unexpected<Refusal> SubtitleRenderer::refuse_content(Refusal refusal) {
   in_sync_ = true;  // libass comparera l'image suivante à ce contenu refusé
   refused_ = true;
@@ -202,12 +211,14 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
   // reste sur l'image, où ses auteurs l'ont placée.
   const bool use_margins = track.kind() == TrackKind::Text;
   if (!target_ || shrunk(request.target, shrink_) != *target_) shrink_ = 1;  // demande neuve
+  bool may_grow = true;  // A17-01 : un contenu neuf retente la pleine taille, une fois par demande
   while (true) {
-    auto outcome = render_at(track, request, pool, use_margins);
+    auto outcome = render_at(track, request, pool, use_margins, may_grow);
     if (outcome || outcome.error().code != RefusalCode::SubtitleAtlasFull || shrink_ >= kMaxShrink)
       return outcome;
     shrink_ *= 2;
     refused_ = false;
+    may_grow = false;
   }
 }
 
@@ -224,7 +235,8 @@ SubtitleFrame placed(const RenderRequest& request, const RenderTarget& target) {
 
 std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const SubtitleTrack& track,
                                                                   const RenderRequest& request,
-                                                                  AtlasPool& pool, bool use_margins) {
+                                                                  AtlasPool& pool, bool use_margins,
+                                                                  bool may_grow) {
   const RenderTarget target = shrunk(request.target, shrink_);
   if (target_ != target || use_margins != use_margins_) configure(target, use_margins);
   if (const bool vsfilter = vsfilter_converts(track.script_matrix(), request.target.video_matrix);
@@ -251,27 +263,14 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
   // Les rectangles sont placés pour la taille rendue : l'affichage les étire à la sienne.
   SubtitleFrame frame = placed(request, target);
   if (pieces_.empty()) {
-    forget();
-    if (shrink_ != 1) {  // l'instant lourd est passé : le prochain sous-titre en pleine taille
-      shrink_ = 1;
-      configure(request.target, use_margins);
-    }
-    in_sync_ = true;  // libass compare l'image suivante à une liste vide, et nous aussi
-    // Le calme dure jusqu'au début du prochain événement, si aucun n'est en cours (un fondu encore
-    // transparent l'est).
-    long long next = std::numeric_limits<long long>::max();
-    bool active = false;
-    for (int i = 0; i < events->n_events && !active; ++i) {
-      const ASS_Event& e = events->events[i];
-      if (e.Start <= now_ms && now_ms < e.Start + e.Duration) active = true;
-      if (e.Start > now_ms) next = std::min(next, e.Start);
-    }
-    if (!active) {
-      quiet_from_ms_ = now_ms;
-      quiet_until_ms_ = next;
-      quiet_events_ = events->n_events;
-    }
+    clear_screen(request.target, use_margins, *events, now_ms);
     return frame;
+  }
+  // A17-01 : un contenu neuf rendu réduit (le dessin lourd fini, la réplique reste) revient à la
+  // pleine taille si ses pièces, agrandies, tiennent dans l'atlas.
+  if (may_grow && change == 2 && shrink_ > 1 && fits_unshrunk()) {
+    shrink_ = 1;
+    return render_at(track, request, pool, use_margins, false);
   }
   // change 0 : mêmes images ; 1 : mêmes couvertures, déplacées ; 2 : contenu neuf.
   const bool unchanged = in_sync_ && change < 2;
@@ -288,6 +287,30 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
   frame.atlas = current_;
   frame.rects = rects_;
   return frame;
+}
+
+void SubtitleRenderer::clear_screen(const RenderTarget& full, bool use_margins, const ass_track& events,
+                                    long long now_ms) {
+  forget();
+  if (shrink_ != 1) {  // l'instant lourd est passé : le prochain sous-titre en pleine taille
+    shrink_ = 1;
+    configure(full, use_margins);
+  }
+  in_sync_ = true;  // libass compare l'image suivante à une liste vide, et nous aussi
+  // Le calme dure jusqu'au début du prochain événement, si aucun n'est en cours (un fondu encore
+  // transparent l'est).
+  long long next = std::numeric_limits<long long>::max();
+  bool active = false;
+  for (int i = 0; i < events.n_events && !active; ++i) {
+    const ASS_Event& e = events.events[i];
+    if (e.Start <= now_ms && now_ms < e.Start + e.Duration) active = true;
+    if (e.Start > now_ms) next = std::min(next, e.Start);
+  }
+  if (!active) {
+    quiet_from_ms_ = now_ms;
+    quiet_until_ms_ = next;
+    quiet_events_ = events.n_events;
+  }
 }
 
 std::expected<RenderOutcome, Refusal> SubtitleRenderer::build(SubtitleFrame frame, AtlasPool& pool) {

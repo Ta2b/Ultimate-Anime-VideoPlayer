@@ -7,10 +7,12 @@
 
 namespace ajp::subs {
 
-// UTF-8 tel quel (BOM retiré) ; UTF-16 reconnu à son BOM (little ou big endian). Sinon (P3.74), un
-// encodage hérité : celui que dit `hint` (la langue ou l'encodage du nom de fichier : « ja », « chs »,
-// « cp1251 »…), à défaut celui que suggère la forme des octets (Shift-JIS, GBK, Big5, CP1251), décodé par
-// le système ; le repli reste le Windows-1252 des SRT d'Europe de l'Ouest.
+// UTF-8 tel quel (BOM retiré) ; UTF-16 reconnu à son BOM ou, sans BOM, à ses octets nuls alternés (une
+// demi-paire seule donne U+FFFD). Sinon (P3.74), un encodage hérité : `hint` porte les suffixes du nom de
+// fichier (« ja », « chs&jpn.forced », « zh_TW »…), lus du dernier au premier ; une langue propose ses
+// encodages, entre lesquels la forme des octets choisit (Shift-JIS, EUC-JP, GBK, Big5, EUC-KR, CP1251), et
+// un indice qui ne décode pas laisse la forme des octets décider. Le repli reste le Windows-1252 des SRT
+// d'Europe de l'Ouest.
 std::string to_utf8(std::string_view bytes, std::string_view hint = {});
 
 }  // namespace ajp::subs

@@ -62,8 +62,17 @@ class AudioBridge final : public media::PacketSink {
 // Refus TrackUnavailable pour un format que subs ne lit pas (PGS, VobSub).
 std::expected<subs::SelectTrack, Refusal> subtitle_track(const media::TrackInfo& track, std::uint32_t id);
 
-// Les polices jointes du fichier, à envoyer avant SelectTrack.
-std::vector<subs::AttachFont> attached_fonts(std::span<const media::TrackInfo> tracks);
+// Plafond total des polices jointes (A17-09) : chacune existe en deux copies au moins (FFmpeg, libass).
+inline constexpr std::size_t kMaxAttachedFontBytes = std::size_t{512} << 20;
+
+struct AttachedFonts {
+  std::vector<subs::AttachFont> fonts;
+  std::size_t dropped = 0;  // polices écartées au-delà de kMaxAttachedFontBytes
+};
+
+// Les polices jointes du fichier, à envoyer avant SelectTrack, dans l'ordre du fichier jusqu'au plafond.
+AttachedFonts attached_fonts(std::span<const media::TrackInfo> tracks,
+                             std::size_t max_bytes = kMaxAttachedFontBytes);
 
 // Identifiant de piste de subs (SelectTrack, TrackPacket) d'un flux du conteneur : jamais 0.
 inline std::uint32_t subs_track_id(int stream_index) {

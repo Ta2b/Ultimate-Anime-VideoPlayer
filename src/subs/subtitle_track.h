@@ -25,6 +25,10 @@ namespace ajp::subs {
 inline constexpr std::size_t kMaxScriptBytes = std::size_t{64} << 20;
 // Taille maximale d'un paquet.
 inline constexpr std::size_t kMaxPacketBytes = std::size_t{1} << 20;
+// Plafonds cumulés d'une piste de conteneur (A17-14) : autant de texte qu'un script externe, et un
+// million d'événements, bien au-delà d'un film à karaoké. Au-delà, les paquets sont écartés.
+inline constexpr std::size_t kMaxTrackBytes = kMaxScriptBytes;
+inline constexpr int kMaxTrackEvents = 1 << 20;
 
 enum class TrackKind : std::uint8_t {
   Ass,   // paquets Matroska « ReadOrder,Layer,Style,Name,MarginL,MarginR,MarginV,Effect,Text »
@@ -54,7 +58,8 @@ class SubtitleTrack {
                                                     const std::filesystem::path& path);
 
   // Ajoute un paquet ; un doublon, revu après un seek, est ignoré.
-  // Refus : horodatage, durée ou taille hors de leurs bornes.
+  // Refus : horodatage, durée ou taille hors de leurs bornes ; piste pleine (kMaxTrackBytes,
+  // kMaxTrackEvents), dit une fois, les paquets suivants écartés sans un mot.
   std::expected<void, Refusal> add_packet(const SubtitlePacket& packet);
 
   TrackKind kind() const { return kind_; }
@@ -80,6 +85,8 @@ class SubtitleTrack {
   // Paquets texte déjà vus (début, durée, texte) : libass ne déduplique que par
   // ReadOrder, que le texte n'a pas.
   std::set<std::tuple<std::int64_t, std::int64_t, std::string>> seen_text_;
+  std::size_t bytes_ = 0;  // texte des paquets retenus
+  bool full_ = false;      // un plafond cumulé atteint, déjà dit
 };
 
 }  // namespace ajp::subs

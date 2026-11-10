@@ -116,14 +116,20 @@ std::span<const std::byte> mov_text_payload(std::span<const std::byte> packet) {
   return packet.subspan(2, std::min(length, packet.size() - 2));
 }
 
-std::vector<subs::AttachFont> attached_fonts(std::span<const media::TrackInfo> tracks) {
-  std::vector<subs::AttachFont> fonts;
+AttachedFonts attached_fonts(std::span<const media::TrackInfo> tracks, std::size_t max_bytes) {
+  AttachedFonts out;
+  std::size_t total = 0;
   for (const media::TrackInfo& track : tracks) {
     if (!media::is_font(track) || !track.parameters) continue;
     const auto extra = track.parameters->extradata();
-    fonts.push_back(subs::AttachFont{.name = track.filename, .data = {extra.begin(), extra.end()}});
+    if (extra.size() > max_bytes - total) {
+      ++out.dropped;
+      continue;
+    }
+    total += extra.size();
+    out.fonts.push_back(subs::AttachFont{.name = track.filename, .data = {extra.begin(), extra.end()}});
   }
-  return fonts;
+  return out;
 }
 
 bool SubsBridge::try_push(media::Packet&& packet) {
