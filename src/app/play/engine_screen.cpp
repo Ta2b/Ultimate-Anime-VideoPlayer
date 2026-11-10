@@ -42,8 +42,12 @@
 namespace ajp::app::play {
 namespace {
 
-// L'écran des moteurs suit la souris : ~60 images par seconde.
+// L'écran des moteurs suit la souris : ~60 images par seconde tant qu'un événement vient d'arriver. Sans
+// événement depuis une seconde (une licence qu'on lit), quatre images par seconde suffisent au texte et ne
+// tiennent pas la carte éveillée (A25-15).
 constexpr std::int32_t kWelcomeFrameMs = 16;
+constexpr std::int32_t kWelcomeIdleFrameMs = 250;
+constexpr std::int64_t kWelcomeIdleAfterUs = 1'000'000;
 
 constexpr std::size_t usage(core::Usage u) {
   return static_cast<std::size_t>(u);
@@ -58,6 +62,7 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(
   const std::int64_t started = host_now_us();
   std::vector<Input> actions;
   std::size_t at = view.wizard.at;
+  std::int64_t last_event_us = started;
   while (!view.done && !view.cancelled) {
     // P3.3 : chaque « Suivant », « Passer » ou « Précédent » enregistre les choix faits jusque-là.
     if (view.wizard.at != at) {
@@ -69,7 +74,8 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(
       press(options.keys[next_key].second, screen.window());
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      if (ui.handle(event, host_now_us(), actions)) continue;
+      last_event_us = host_now_us();
+      if (ui.handle(event, last_event_us, actions)) continue;
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
     for (const Input& input : actions) {
@@ -88,11 +94,20 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(
     snapshot.maybe(screen, started);
     if (auto shown = screen.show(ShowRequest{.ui = ui.welcome(host_now_us(), view)}); !shown)
       return std::unexpected(std::move(shown.error()));
-    // Une image toutes les 16 ms, plus tôt si un événement arrive.
-    (void)SDL_WaitEventTimeout(nullptr, kWelcomeFrameMs);
+    // Une image toutes les 16 ms (250 ms au repos), plus tôt si un événement arrive.
+    const bool scripted = next_key < options.keys.size() || snapshot.path.has_value();
+    (void)SDL_WaitEventTimeout(nullptr, welcome_wait_ms(host_now_us() - last_event_us, scripted));
   }
   return view;
 }
+
+}  // namespace
+
+std::int32_t welcome_wait_ms(std::int64_t since_event_us, bool scripted) {
+  return scripted || since_event_us < kWelcomeIdleAfterUs ? kWelcomeFrameMs : kWelcomeIdleFrameMs;
+}
+
+namespace {
 
 // Un moteur des réseaux ajouté entre before et after.
 bool network_added(const core::Settings& before, const core::Settings& after) {
@@ -219,6 +234,39 @@ void start_from_saved(Wizard& wizard, const std::filesystem::path& play_path) {
   if (auto play = load_settings(play_path)) resume_choices(wizard, *play);
 }
 
+// Le choix des moteurs écrit avant leur téléchargement (A25-10) : la fenêtre fermée pendant les 650 Mo de
+// TensorRT, l'assistant reprend avec la case cochée et la licence acceptée (first_run_view), au lieu de
+// calibrer sous Vulkan. first_run_done garde sa valeur : l'assistant n'est pas fini.
+void save_choice_before_download(const std::filesystem::path& engines_path, core::Settings chosen_engines,
+                                 bool first_run_done) {
+  chosen_engines.first_run_done = first_run_done;
+  if (auto written = core::save_settings(engines_path, chosen_engines); !written)
+    log_channel("app")->warn("{}", written.error().detail);
+}
+
+// « Ouvrir avec » et le lecteur par défaut, sur un thread, la fenêtre pompée (A25-07) : sous Linux
+// update-desktop-database et xdg-mime prennent jusqu'à des dizaines de secondes sur un disque lent, et KDE
+// proposait de tuer la fenêtre figée.
+void integrate(const PlayerPaths& paths, const Wizard& wizard, core::Settings& engines) {
+  const auto log = log_channel("app");
+  const PlayerPlace place = place_of(paths);
+  // Une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
+  if (!engines.open_with_registered) {
+    if (auto registered = run_pumped<std::string>("open-with", [&place] { return register_player(place); })) {
+      engines.open_with_registered = true;
+      log->info("Ouvrir avec : {}", *registered);
+    } else {
+      log->warn("Ouvrir avec : {}", registered.error().detail);
+    }
+  }
+  // Lecteur par défaut demandé à l'écran Intégration (P3.18).
+  if (!make_default_requested(wizard)) return;
+  if (auto made = run_pumped<std::string>("default-player", [&place] { return choose_as_default(place); }))
+    log->info("lecteur par défaut : {}", *made);
+  else
+    log->warn("lecteur par défaut : {}", made.error().detail);
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -273,6 +321,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   if ((*chosen_view)->cancelled) return true;
   const core::Settings before = engines;
   engines = settings_after(**chosen_view, engines);
+  if (!revisit) save_choice_before_download(s.engines_path, engines, before.first_run_done);
   auto downloaded = install_chosen(s.screen, s.ui, s.catalog, **chosen_view, engines);
   if (!downloaded) return std::unexpected(std::move(downloaded.error()));
   if (!*downloaded) return false;
@@ -288,23 +337,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     PlaySettings chosen_play;
     if (play) chosen_play = std::move(*play);
     chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
-    // « Ouvrir avec » : une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
-    if (!engines.open_with_registered) {
-      const PlayerPlace place = place_of(s.paths);
-      if (auto registered = register_player(place)) {
-        engines.open_with_registered = true;
-        log->info("Ouvrir avec : {}", *registered);
-      } else {
-        log->warn("Ouvrir avec : {}", registered.error().detail);
-      }
-    }
-    // Lecteur par défaut demandé à l'écran Intégration (P3.18).
-    if (make_default_requested(wizard)) {
-      if (auto made = choose_as_default(place_of(s.paths)))
-        log->info("lecteur par défaut : {}", *made);
-      else
-        log->warn("lecteur par défaut : {}", made.error().detail);
-    }
+    integrate(s.paths, wizard, engines);
     for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
     // P3.2 : play.toml, settings.toml et l'inscription s'écrivent avant la calibration ; la fenêtre fermée
     // pendant qu'elle tourne ne perd plus les choix (seule la chaîne calibrée manque, Auto la remplace).
