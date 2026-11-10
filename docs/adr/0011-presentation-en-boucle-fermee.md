@@ -10,7 +10,7 @@ présentation, et n'expose pas la `VkSwapchainKHR` courante. Deux voies étaient
   libplacebo à refaire).
 
 ## Décision
-1. **Un correctif du port** (`ports/libplacebo/0001-ajp-present-timing.patch`, sur v7.360.1, cee9b076). Le
+1. **Un correctif du port** (`ports/libplacebo/0001-ajp-present-timing.patch`, sur v7.387.0, 275f7dea ; écrit sur v7.360.1, rebasé en novembre 2026). Le
    port vcpkg (`PATCHES`, port-version 1) et `tools/deps/linux-from-source.sh` appliquent le même correctif.
    Il ajoute :
    - `pl_vulkan_swapchain_params` gagne `present_flags` (drapeaux de création), `create_pnext` (chaîne de

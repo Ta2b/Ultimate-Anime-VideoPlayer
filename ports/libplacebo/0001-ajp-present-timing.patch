@@ -1,8 +1,8 @@
 diff --git a/src/include/libplacebo/vulkan.h b/src/include/libplacebo/vulkan.h
-index f873f54..02d6ae7 100644
+index c5b3a1d..6ae4ebb 100644
 --- a/src/include/libplacebo/vulkan.h
 +++ b/src/include/libplacebo/vulkan.h
-@@ -368,6 +368,21 @@ struct pl_vulkan_swapchain_params {
+@@ -376,6 +376,21 @@ struct pl_vulkan_swapchain_params {
      // be used to prefer formats with higher color bit depth. This is a hint,
      // if no matching format is found, lower bit depths will be accepted.
      uint8_t color_bits;
@@ -24,7 +24,7 @@ index f873f54..02d6ae7 100644
  };
  
  #define pl_vulkan_swapchain_params(...) (&(struct pl_vulkan_swapchain_params) { __VA_ARGS__ })
-@@ -384,6 +399,37 @@ PL_API pl_swapchain pl_vulkan_create_swapchain(pl_vulkan vk,
+@@ -392,6 +407,37 @@ PL_API pl_swapchain pl_vulkan_create_swapchain(pl_vulkan vk,
  // who have `params->allow_suboptimal` enabled.
  PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);
  
@@ -62,63 +62,8 @@ index f873f54..02d6ae7 100644
  // Vulkan interop API, for sharing a single VkDevice (and associated vulkan
  // resources) directly with the API user. The use of this API is a bit sketchy
  // and requires careful communication of Vulkan API state.
-diff --git a/src/vulkan/gpu.c b/src/vulkan/gpu.c
-index e541582..d7f06ee 100644
---- a/src/vulkan/gpu.c
-+++ b/src/vulkan/gpu.c
-@@ -772,6 +772,16 @@ static bool vk_gpu_is_failed(pl_gpu gpu)
- }
- 
- struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu)
-+{
-+    struct vk_cmd *cmd = pl_vk_steal_cmd_locked(gpu);
-+    pl_vk_unlock_recording(gpu);
-+    return cmd;
-+}
-+
-+// AJP present timing patch: the same, but `recording` stays held until
-+// pl_vk_unlock_recording(), so that no other thread records or submits on the
-+// queue between the theft and the caller's vk_cmd_submit (vk_sw_submit_ex).
-+struct vk_cmd *pl_vk_steal_cmd_locked(pl_gpu gpu)
- {
-     struct pl_vk *p = PL_PRIV(gpu);
-     struct vk_ctx *vk = p->vk;
-@@ -779,7 +789,6 @@ struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu)
-     pl_mutex_lock(&p->recording);
-     struct vk_cmd *cmd = p->cmd;
-     p->cmd = NULL;
--    pl_mutex_unlock(&p->recording);
- 
-     struct vk_cmdpool *pool = vk->pool_graphics;
-     if (!cmd || cmd->pool != pool) {
-@@ -790,6 +799,12 @@ struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu)
-     return cmd;
- }
- 
-+void pl_vk_unlock_recording(pl_gpu gpu)
-+{
-+    struct pl_vk *p = PL_PRIV(gpu);
-+    pl_mutex_unlock(&p->recording);
-+}
-+
- void pl_vk_print_heap(pl_gpu gpu, enum pl_log_level lev)
- {
-     struct pl_vk *p = PL_PRIV(gpu);
-diff --git a/src/vulkan/gpu.h b/src/vulkan/gpu.h
-index dfcee56..113ab48 100644
---- a/src/vulkan/gpu.h
-+++ b/src/vulkan/gpu.h
-@@ -33,6 +33,8 @@ pl_gpu pl_gpu_create_vk(struct vk_ctx *vk);
- // GPU, so the caller can do custom vk_cmd_ calls on it. The caller should
- // submit it as well.
- struct vk_cmd *pl_vk_steal_cmd(pl_gpu gpu);
-+struct vk_cmd *pl_vk_steal_cmd_locked(pl_gpu gpu);
-+void pl_vk_unlock_recording(pl_gpu gpu);
- 
- // Print memory usage statistics
- void pl_vk_print_heap(pl_gpu, enum pl_log_level);
 diff --git a/src/vulkan/swapchain.c b/src/vulkan/swapchain.c
-index fa38e9c..ebce630 100644
+index c4b6952..fd9f400 100644
 --- a/src/vulkan/swapchain.c
 +++ b/src/vulkan/swapchain.c
 @@ -31,6 +31,7 @@ struct vk_swapchain {
@@ -138,7 +83,7 @@ index fa38e9c..ebce630 100644
  };
  
  static const struct pl_sw_fns vulkan_swapchain;
-@@ -389,7 +392,8 @@ pl_swapchain pl_vulkan_create_swapchain(pl_vulkan plvk,
+@@ -406,7 +409,8 @@ pl_swapchain pl_vulkan_create_swapchain(pl_vulkan plvk,
                                                : VK_SHARING_MODE_EXCLUSIVE,
          .queueFamilyIndexCount = vk->pools.num,
          .pQueueFamilyIndices = p->queue_families,
@@ -148,7 +93,7 @@ index fa38e9c..ebce630 100644
          .presentMode = params->present_mode,
          .clipped = true,
      };
-@@ -462,8 +466,19 @@ static bool swapchain_destroy(pl_swapchain sw, struct vk_swapchain **ptr,
+@@ -479,8 +483,19 @@ static bool swapchain_destroy(pl_swapchain sw, struct vk_swapchain **ptr,
          return true;
  
      if (vk_sw->fences_out.num > 0) {
@@ -170,7 +115,7 @@ index fa38e9c..ebce630 100644
          if (res == VK_NOT_READY || res == VK_TIMEOUT)
              return false;
          for (int i = 0; i < vk_sw->fences_out.num; i++)
-@@ -512,6 +527,8 @@ static void vk_sw_destroy(pl_swapchain sw)
+@@ -529,6 +544,8 @@ static void vk_sw_destroy(pl_swapchain sw)
  
      cleanup_retired_swapchains(sw, UINT64_MAX);
      swapchain_destroy(sw, &p->current, UINT64_MAX);
@@ -179,9 +124,9 @@ index fa38e9c..ebce630 100644
  
      pl_mutex_destroy(&p->lock);
      pl_free((void *) sw);
-@@ -747,6 +764,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
-     if (use_deferred_alloc)
-         sinfo.flags |= VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR;
+@@ -782,6 +799,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
+     p->cur_width = sinfo.imageExtent.width;
+     p->cur_height = sinfo.imageExtent.height;
  
 +    sinfo.flags |= p->params.present_flags;
 +    vk_link_struct(&sinfo, p->params.create_pnext);
@@ -189,7 +134,7 @@ index fa38e9c..ebce630 100644
      PL_DEBUG(sw, "(Re)creating swapchain of size %dx%d",
               sinfo.imageExtent.width,
               sinfo.imageExtent.height);
-@@ -807,7 +827,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
+@@ -842,7 +862,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
          snprintf(name, sizeof(name), "present fence #%d", i);
          PL_VK_NAME(FENCE, fence, name);
          PL_ARRAY_APPEND(current, current->fences_out, fence);
@@ -199,7 +144,7 @@ index fa38e9c..ebce630 100644
  
      // Note: `p->color_space.hdr` is (re-)applied by `set_hdr_metadata`
      map_color_space(sinfo.imageColorSpace, &p->color_space);
-@@ -866,8 +888,24 @@ static bool vk_sw_start_frame(pl_swapchain sw,
+@@ -901,8 +923,24 @@ static bool vk_sw_start_frame(pl_swapchain sw,
              p->current->last_imgidx = imgidx;
              if (p->current->fences_out.num > 0) {
                  VkFence *pfence = &p->current->fences_out.elem[imgidx];
@@ -226,7 +171,7 @@ index fa38e9c..ebce630 100644
              }
              if (!vk_sw_image_init(sw, imgidx))
                  goto error;
-@@ -915,7 +953,16 @@ static void present_cb(struct priv *p, void *arg)
+@@ -950,7 +988,16 @@ static void present_cb(struct priv *p, void *arg)
  
  VK_CB_FUNC_DEF(present_cb);
  
@@ -243,30 +188,7 @@ index fa38e9c..ebce630 100644
  {
      pl_gpu gpu = sw->gpu;
      struct priv *p = PL_PRIV(sw);
-@@ -940,15 +987,20 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
-         return false;
-     }
- 
--    struct vk_cmd *cmd = pl_vk_steal_cmd(gpu);
-+    // `recording` held from the theft to the submission: another thread's
-+    // CMD_SUBMIT would otherwise race this vk_cmd_submit on the same queue.
-+    struct vk_cmd *cmd = pl_vk_steal_cmd_locked(gpu);
-     if (!cmd) {
-+        pl_vk_unlock_recording(gpu);
-         pl_mutex_unlock(&p->lock);
-         return false;
-     }
- 
-     pl_rc_ref(&p->frames_in_flight);
-     vk_cmd_callback(cmd, VK_CB_FUNC(present_cb), p, NULL);
--    if (!vk_cmd_submit(&cmd)) {
-+    bool submitted = vk_cmd_submit(&cmd);
-+    pl_vk_unlock_recording(gpu);
-+    if (!submitted) {
-         pl_mutex_unlock(&p->lock);
-         return false;
-     }
-@@ -978,13 +1030,45 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
+@@ -1013,13 +1060,45 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
      if (current->fences_out.num > 0) {
          VkFence *pfence = &current->fences_out.elem[idx];
          fenceInfo.pFences = pfence;
@@ -313,7 +235,7 @@ index fa38e9c..ebce630 100644
      pl_mutex_unlock(&p->lock);
  
      switch (res) {
-@@ -1058,6 +1142,22 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
+@@ -1105,6 +1184,22 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
      return p->suboptimal;
  }
  

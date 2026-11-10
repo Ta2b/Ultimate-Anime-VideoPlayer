@@ -66,7 +66,7 @@ DEPS=(
   "imgui https://github.com/ocornut/imgui v1.93.0 c1aaac65e896a45f81f47a4d68f9959e0f86c859"
   "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2 946fcce07b6dcd0331c8cc609192aeff5e1924f8"
   "sdl3 https://github.com/libsdl-org/SDL release-3.4.20 f00dc919ca35b9756316e86c4777392de442f9b2"
-  "libplacebo https://github.com/haasn/libplacebo v7.360.1 cee9b076f2c63104ccfd497fa79c39a867293ec4"
+  "libplacebo https://github.com/haasn/libplacebo v7.387.0 275f7dea27924cdd34ab2e6c20e448b6bc4fab65"
   "libunibreak https://github.com/adah1972/libunibreak libunibreak_7_0 3ce4bfa3129ff3738046a44a6db533d2ce25af2b"
   "libass https://github.com/libass/libass 0.17.5 4a05d8127f525943ebf45fdc6497c9e665947f0d"
 )
@@ -150,7 +150,7 @@ fi
 
 if ! done_marker imgui "$(ref_of imgui)"; then
   mkdir -p "$PREFIX/share/imgui"
-  cp -r "$WORK/imgui/"*.h "$WORK/imgui/"*.cpp "$WORK/imgui/backends" "$PREFIX/share/imgui/"
+  cp "$WORK/imgui/"*.h "$WORK/imgui/"*.cpp "$PREFIX/share/imgui/"
   mark imgui "$(ref_of imgui)"
 fi
 
@@ -168,8 +168,9 @@ if ! done_marker ffmpeg "$signature"; then
 fi
 
 PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
-  --buildtype=release -Dvulkan=enabled -Dshaderc=enabled -Dlcms=enabled
-  -Dopengl=disabled -Dd3d11=disabled -Ddemos=false -Dtests=false
+  --buildtype=release -Dvulkan=enabled -Dshaderc=enabled -Dglslang=disabled -Dlcms=enabled
+  -Dopengl=disabled -Dd3d11=disabled -Dlibdovi=disabled -Dunwind=disabled -Dxxhash=disabled
+  -Ddemos=false -Dtests=false
   -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml")
 # Le registre Vulkan vient de vulkan-headers, la libvulkan liée de vulkan-loader : une autre version de l'un
 # ou de l'autre rebâtit libplacebo (une copie liée à celle de Homebrew ne se charge plus).
