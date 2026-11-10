@@ -45,11 +45,25 @@ std::expected<void, Refusal> read_string(const Field& field, std::string& out) {
   return {};
 }
 
+// A44-04 : un entier empaqueté sur un octet en coûte huit en mémoire, une chaîne vide de deux octets en coûte
+// trente-deux. Sans borne, un fichier hostile proche de 2 Gio demandait 16 à 32 Gio et finissait en bad_alloc
+// au lieu d'un refus. Aucun modèle réel n'approche ces bornes : au-delà, les valeurs sont en raw_data.
+constexpr std::size_t kMaxTypedInts = std::size_t{1} << 24U;
+constexpr std::size_t kMaxStrings = std::size_t{1} << 20U;
+
 std::expected<void, Refusal> push_string(const Field& field, std::vector<std::string>& out) {
+  if (out.size() >= kMaxStrings) return proto::malformed("trop de chaînes dans une liste");
   auto value = proto::as_string(field);
   if (!value) return std::unexpected(value.error());
   out.push_back(std::move(*value));
   return {};
+}
+
+// Un champ empaqueté tient au plus un entier par octet : la borne se vérifie avant de le lire.
+std::expected<void, Refusal> append_ints(const Field& field, std::vector<std::int64_t>& out) {
+  const std::size_t more = field.wire == proto::WireType::Length ? field.bytes.size() : 1;
+  if (out.size() + more > kMaxTypedInts) return proto::malformed("trop de valeurs entières typées");
+  return proto::append_int64s(field, out);
 }
 
 std::uint32_t le32(Bytes bytes, std::size_t at) {
@@ -138,6 +152,17 @@ std::expected<void, Refusal> decode_e4m3_words(Tensor& tensor, const std::vector
   return {};
 }
 
+// INT32 en int32_data : des varints de 64 bits, à refuser hors de la plage plutôt qu'à tronquer plus loin
+// (A44-07).
+std::expected<void, Refusal> check_int32_words(const Tensor& tensor, const std::vector<std::int64_t>& words) {
+  for (const std::int64_t word : words) {
+    if (word < std::numeric_limits<std::int32_t>::min() || word > std::numeric_limits<std::int32_t>::max()) {
+      return proto::malformed(std::format("tenseur {} : valeur INT32 {} hors plage", tensor.name, word));
+    }
+  }
+  return {};
+}
+
 // FLOAT16 en int32_data : un motif binaire de 16 bits par élément.
 std::expected<void, Refusal> decode_half_words(Tensor& tensor, const std::vector<std::int64_t>& words) {
   for (const std::int64_t word : words) {
@@ -147,6 +172,16 @@ std::expected<void, Refusal> decode_half_words(Tensor& tensor, const std::vector
     }
     tensor.floats.push_back(kernels::ref::half_to_float(static_cast<std::uint16_t>(word)));
   }
+  return {};
+}
+
+// int32_data selon le type du tenseur : motifs FLOAT16 ou FLOAT8E4M3FN, ou valeurs INT32.
+std::expected<void, Refusal> decode_int32_data(Tensor& tensor, std::vector<std::int64_t>& words) {
+  if (tensor.data_type == kFloat16) return decode_half_words(tensor, words);
+  if (tensor.data_type == kFloat8E4M3Fn) return decode_e4m3_words(tensor, words);
+  if (tensor.data_type != kInt32) return {};
+  if (auto ok = check_int32_words(tensor, words); !ok) return ok;
+  tensor.ints = std::move(words);
   return {};
 }
 
@@ -200,13 +235,7 @@ std::expected<Tensor, Refusal> finish_tensor(RawTensor raw) {
   if (!placed)
     return proto::malformed(std::format("tenseur {} : valeurs dans le champ d'un autre type", tensor.name));
 
-  if (tensor.data_type == kFloat16) {
-    if (auto ok = decode_half_words(tensor, raw.int32_data); !ok) return std::unexpected(ok.error());
-  } else if (tensor.data_type == kFloat8E4M3Fn) {
-    if (auto ok = decode_e4m3_words(tensor, raw.int32_data); !ok) return std::unexpected(ok.error());
-  } else if (tensor.data_type == kInt32) {
-    tensor.ints = std::move(raw.int32_data);
-  }
+  if (auto ok = decode_int32_data(tensor, raw.int32_data); !ok) return std::unexpected(ok.error());
   const std::size_t present = tensor.floats.size() + tensor.ints.size();
   if (present != count) {
     return proto::malformed(
@@ -233,9 +262,9 @@ std::expected<Tensor, Refusal> read_tensor(Bytes bytes) {
       case 4:
         return proto::append_floats(field, raw.tensor.floats);
       case 5:
-        return proto::append_int64s(field, raw.int32_data);
+        return append_ints(field, raw.int32_data);
       case 7:
-        return proto::append_int64s(field, raw.tensor.ints);
+        return append_ints(field, raw.tensor.ints);
       case 8:
         return read_string(field, raw.tensor.name);
       case 9:
@@ -291,7 +320,7 @@ std::expected<void, Refusal> read_attribute_field(const Field& field, Attribute&
     case 7:
       return proto::append_floats(field, attr.floats);
     case 8:
-      return proto::append_int64s(field, attr.ints);
+      return append_ints(field, attr.ints);
     case 9:
       return push_string(field, attr.strings);
     case 20: {

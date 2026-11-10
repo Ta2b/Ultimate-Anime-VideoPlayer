@@ -1,9 +1,9 @@
 // Index haché des modèles (models.lock) et des paquets de moteurs (engines.lock).
 //
-// Aucun binaire n'entre dans le dépôt : chaque modèle et chaque moteur se
-// télécharge depuis l'URL de son index, puis se vérifie par sa taille et son
-// SHA-256 avant d'être installé sous le dossier de données de l'utilisateur.
-// Ce dossier est passé par app ; rien ici ne lit l'environnement.
+// Les modèles sont livrés avec le lecteur (tools/release/fetch-models.sh les épingle) ; les paquets de
+// moteurs (TensorRT) et les fichiers de NVIDIA se téléchargent depuis l'URL de leur index, puis se
+// vérifient par leur taille et leur SHA-256 avant d'être installés sous le dossier de données de
+// l'utilisateur (A20-14). Ce dossier est passé par app ; rien ici ne lit l'environnement.
 #pragma once
 
 #include <array>

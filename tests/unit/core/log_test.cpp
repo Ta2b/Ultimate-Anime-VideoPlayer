@@ -94,6 +94,22 @@ TEST_CASE("Journal nettoyé : le dossier personnel devient ~ sous ses deux sépa
   ajp::set_log_home("");
 }
 
+TEST_CASE("Journal nettoyé : frontière de composant, disques montés, casse sous Windows (A20-03)", "[log]") {
+  ajp::set_log_home("/home/al");
+  CHECK(ajp::redact_log_text("cache : /home/alice/.cache/ajp") == "cache : /home/alice/.cache/ajp");
+  CHECK(ajp::redact_log_text("cache : /home/al/.cache, et /home/al") == "cache : ~/.cache, et ~");
+  CHECK(ajp::redact_log_text("vidéo : /run/media/al/Données SSD/a.mkv") ==
+        "vidéo : /run/media/<user>/Données SSD/a.mkv");
+  CHECK(ajp::redact_log_text("/media/al/x et /media/alice/y") == "/media/<user>/x et /media/alice/y");
+  ajp::set_log_home("C:\\Users\\Jean");
+#ifdef _WIN32
+  CHECK(ajp::redact_log_text("c:\\users\\jean\\a.mkv") == "~\\a.mkv");
+#else
+  CHECK(ajp::redact_log_text("c:\\users\\jean\\a.mkv") == "c:\\users\\jean\\a.mkv");
+#endif
+  ajp::set_log_home("");
+}
+
 TEST_CASE("Journal : une exception sortie du corps est journalisée et vaut 1", "[log]") {
   Capture capture;
   ajp::install_log_sinks({capture.sink()}, spdlog::level::info);

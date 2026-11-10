@@ -135,7 +135,7 @@ Une correction n'arrive chez personne tant que le canal Stable se croit à jour 
 | 89 | A36-09 | Mineur | `tests/unit/app/settings_test.cpp:620-645` | Aucun test de passage entre versions hors des clés inconnues |  |
 | 90 | A05-11 | Mineur | `src/prepare/process_win.cpp:128` | `trtexec.exe` relit sa ligne de commande en page ANSI : compte non ANSI, TensorRT inutilisable | A20-02 (même cause) |
 | 91 | A08-17 | Mineur | `src/app/play/player.cpp:162` | Treize `path::string()` (dette) | A20-02 (même cause) |
-| 92 | A24-09 | Mineur | `src/app/play/visible_error.h:44-45` | 56 codes sur 71 affichés par leur nom anglais | Corrigé : chaque code de refus a une phrase traduite, suivie de son nom (test sur les 71 codes) |
+| 92 | A24-09 | Mineur | `src/app/play/visible_error.h:44-45` | 56 codes sur 71 affichés par leur nom anglais | Corrigé : chaque code de refus a une phrase traduite (table des familles de C01, complétée des six codes qu'elle laissait ; test sur les 71 codes) |
 | 93 | A26-09 | Mineur | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` ignoré : compté comme un plantage | A20-01 (même cause) |
 
 <a id="c02"></a>

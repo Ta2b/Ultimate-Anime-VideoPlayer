@@ -27,7 +27,11 @@ std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesyste
   }
 #ifdef _WIN32
   (void)scope;  // Windows n'a qu'un espace de symboles par module
-  // Les dépendances se cherchent à côté de la DLL, puis dans les dossiers du système.
+  // Les dépendances se cherchent à côté de la DLL, puis dans les dossiers du système. Son dossier s'ajoute
+  // aussi à la recherche du processus : une DLL qu'elle charge plus tard par son nom s'y trouve, alors que le
+  // PATH n'est plus lu (SetDefaultDllDirectories dans main.cpp, A20-07). Jamais retiré : la bibliothèque peut
+  // charger jusqu'à sa fermeture, et un dossier du lecteur n'apporte rien d'étranger.
+  AddDllDirectory(path.parent_path().c_str());
   HMODULE module = LoadLibraryExW(path.c_str(), nullptr,
                                   LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   if (module == nullptr) {

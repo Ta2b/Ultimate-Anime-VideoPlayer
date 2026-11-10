@@ -1,10 +1,12 @@
-# Le paquet TensorRT Linux construit par la CI (P1.19), sur un runner jetable, à la place du poste
-# personnel : notre module (le kit CUDA compile sans carte) et trtexec, sorti de l'archive Linux de
-# TensorRT à l'empreinte épinglée (tools/deps/linux-tensorrt.sh --trtexec). Rien de NVIDIA d'autre
-# dans l'archive (package-linux.sh, lien direct). Le paquet part en artefact avec son empreinte, et
-# se compare à celui de la release « trt-<empreinte> » s'il existe. Avec « publier », il est joint à
-# cette release (attach-nvidia-linux.sh --publish, secret AJP_RELEASE_TOKEN), que Release Linux lit pour
-# toutes les étiquettes de la même empreinte. Les tests sur GPU restent au poste NVIDIA (P7.3).
+# Le paquet TensorRT Linux construit par la CI (P1.19), sur un runner jetable : notre module (le kit CUDA compile sans
+# carte) et trtexec, sorti de l'archive Linux de TensorRT à l'empreinte épinglée (tools/deps/linux-tensorrt.sh
+# --trtexec). Rien de NVIDIA d'autre dans l'archive (package-linux.sh, lien direct). Le paquet part en artefact avec
+# son empreinte. Avec « publier », il est joint à la release « trt-<empreinte> » (attach-nvidia-linux.sh --publish,
+# secret AJP_RELEASE_TOKEN), que Release Linux lit pour toutes les étiquettes de la même empreinte.
+#
+# Appelé par release-linux.yml avant chaque paquet du lecteur (A28-01) : si la release de l'empreinte a déjà son
+# paquet, rien ne se construit ; sinon il se construit et se publie, et la release Linux le reprend. Lancé à la main,
+# il compare aussi sa construction à celle déjà publiée. Les tests sur GPU restent au poste NVIDIA (P7.3).
 name: Paquet TensorRT Linux
 
 on:
@@ -14,6 +16,15 @@ on:
         description: Joindre le paquet à la release trt-<empreinte> si elle ne l'a pas encore
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      publier:
+        type: boolean
+        default: true
+      seulement-si-absent:
+        description: Ne rien construire si la release trt-<empreinte> a déjà son paquet
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -29,61 +40,84 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Empreinte et paquet publié
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ONLY_IF_MISSING: ${{ inputs.seulement-si-absent }}
+        run: |
+          source tools/release/versions.env
+          fp="$(tools/release/trt-fingerprint.sh)"
+          echo "FP=$fp" >>"$GITHUB_ENV"
+          echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
+          if gh release view "trt-$fp" -R "$AJP_RELEASE_REPO" --json assets -q '.assets[].name' 2>/dev/null \
+             | grep -qx engines-nvidia.lock; then
+            echo "PUBLISHED=1" >>"$GITHUB_ENV"
+            echo "paquet TensorRT Linux de l'empreinte $fp déjà publié (trt-$fp)" | tee -a "$GITHUB_STEP_SUMMARY"
+            [ "$ONLY_IF_MISSING" = true ] && echo "SKIP=1" >>"$GITHUB_ENV"
+          fi
+          true
       - name: Place sur le disque
+        if: env.SKIP != '1'
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - name: Paquets système
+        if: env.SKIP != '1'
         run: |
           source tools/release/versions.env
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE zstd
           pip install --user "meson==$MESON_VERSION"
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: env.SKIP != '1'
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh') }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
-      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - if: env.SKIP != '1'
+        run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: CUDA, TensorRT et trtexec
+        if: env.SKIP != '1'
         run: tools/deps/linux-tensorrt.sh --trtexec "$RUNNER_TEMP/nvidia"
       - name: Paquet
+        if: env.SKIP != '1'
         env:
           AJP_WITH_CUDA: "ON"
           AJP_WITHOUT_MODELS: "1"
           AJP_PACKAGE_NVIDIA: "1"
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
           export LD_LIBRARY_PATH="$AJP_TENSORRT_ROOT/lib:${LD_LIBRARY_PATH:-}"
-          fp="$(tools/release/trt-fingerprint.sh)"
           # Les liens de l'index nomment la release fixe de l'empreinte, celle que lit Release Linux.
-          AJP_RELEASE_TAG="trt-$fp" tools/release/package-linux.sh "$RUNNER_TEMP/out"
+          AJP_RELEASE_TAG="trt-$FP" tools/release/package-linux.sh "$RUNNER_TEMP/out"
           archive="$RUNNER_TEMP/out/ajp-engine-tensorrt-linux-x64.tar.gz"
+          # Un paquet sans module ni trtexec ne sert à rien : refusé ici plutôt que chez l'utilisateur (TRT-04).
+          tar -tzf "$archive" | tee -a "$GITHUB_STEP_SUMMARY" | grep -q 'ajp_backend_tensorrt\.so$' \
+            || { echo "::error::module TensorRT absent de l'archive"; exit 1; }
+          tar -tzf "$archive" | grep -q '/trtexec$\|^trtexec$' \
+            || { echo "::error::trtexec absent de l'archive"; exit 1; }
           sha="$(sha256sum "$archive" | cut -d' ' -f1)"
-          tar -tzf "$archive" | tee -a "$GITHUB_STEP_SUMMARY"
-          { echo; echo "empreinte des entrées : $fp ; archive : $sha"; } | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "FP=$fp" >>"$GITHUB_ENV"
+          { echo; echo "empreinte des entrées : $FP ; archive : $sha"; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "SHA=$sha" >>"$GITHUB_ENV"
       - name: Comparaison avec la release trt-${{ env.FP }}
+        if: env.SKIP != '1' && env.PUBLISHED == '1'
         env:
           GH_TOKEN: ${{ github.token }}
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
-          if gh release download "trt-$FP" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP/rel" 2>/dev/null; then
-            published="$(grep -A4 'id = "tensorrt"' "$RUNNER_TEMP/rel/engines-nvidia.lock" | sed -n 's/^sha256 = "\(.*\)"/\1/p' | head -1)"
-            echo "publiée : $published ; CI : $SHA" | tee -a "$GITHUB_STEP_SUMMARY"
-            [ "$published" = "$SHA" ] || echo "::warning::archive différente de la release trt-$FP (construction non reproductible, ou autre trtexec)"
-            echo "PUBLISHED=1" >>"$GITHUB_ENV"
-          else
-            echo "pas de release trt-$FP : rien à comparer" | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
+          gh release download "trt-$FP" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP/rel"
+          published="$(grep -A4 'id = "tensorrt"' "$RUNNER_TEMP/rel/engines-nvidia.lock" | sed -n 's/^sha256 = "\(.*\)"/\1/p' | head -1)"
+          echo "publiée : $published ; CI : $SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$published" = "$SHA" ] || echo "::warning::archive différente de la release trt-$FP (construction non reproductible, ou autre trtexec)"
       - name: Publication dans trt-${{ env.FP }}
-        if: inputs.publier && env.PUBLISHED != '1'
+        if: env.SKIP != '1' && inputs.publier && env.PUBLISHED != '1'
         env:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
         run: |
           tools/release/attach-nvidia-linux.sh "$RUNNER_TEMP/out" "trt-$FP" --publish | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: env.SKIP != '1'
+        continue-on-error: true
         with:
+          retention-days: 7
           name: ajp-engine-tensorrt-linux-x64-${{ env.FP }}
           path: |
             ${{ runner.temp }}/out/ajp-engine-tensorrt-linux-x64.tar.gz

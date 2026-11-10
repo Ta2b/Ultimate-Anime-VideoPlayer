@@ -115,6 +115,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "drba_fused_choice.cpp",
                                         "rife_fused_choice.cpp",
                                         "engine_install.cpp",
+                                        "engine_versions.cpp",
                                         "engine_online.cpp",
                                         "engine_tools.cpp",
                                         "engine_build.h",
@@ -209,23 +210,38 @@ TEST_CASE("Dolby Vision 5 et audio seul : dits en clair à l'ouverture (P3.26, P
   CHECK(ajp::app::play::visible_error(audio).contains("que du son"));
 }
 
+TEST_CASE("Les familles de refus ont chacune une phrase traduite (A20-09, A24-09)", "[i18n]") {
+  const ajp::app::play::FrenchUi french;
+  using ajp::RefusalCode;
+  for (const RefusalCode code :
+       {RefusalCode::HashMismatch, RefusalCode::ModelUnavailable, RefusalCode::SeekFailed,
+        RefusalCode::LibassFailed, RefusalCode::CacheBusy, RefusalCode::BuilderTimeout,
+        RefusalCode::LibraryUnavailable, RefusalCode::VendorCallFailed, RefusalCode::FieldOutOfRange,
+        RefusalCode::EncodeFailed}) {
+    const std::string text = ajp::app::play::visible_error(ajp::Refusal{code, "x"});
+    INFO(text);
+    CHECK_FALSE(text.contains("error "));
+    CHECK_FALSE(text.contains("erreur "));
+  }
+  CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::HdrUnavailable, "x"}).contains("HDR"));
+}
+
 TEST_CASE("Erreurs visibles : chaque code de refus a une phrase, pas son seul nom anglais (A24-09)",
           "[i18n]") {
-  // Avant : 56 codes sur 71 donnaient « erreur NomDuCode (détails au journal) ».
+  // Avant : 56 codes sur 71 donnaient « erreur NomDuCode (détails au journal) » ; la table des familles en
+  // laissait encore six (SourceResized, SourceUnknown, LookaheadMissing, SequenceOrder, InputMismatch,
+  // PacketBacklog).
   int by_name = 0;
   for (int value = 0; value <= static_cast<int>(ajp::RefusalCode::EncodeFailed); ++value) {
     const auto code = static_cast<ajp::RefusalCode>(value);
     for (const bool french : {false, true}) {
       std::optional<ajp::app::play::FrenchUi> ui;  // construit sur place : FrenchUi ne se copie pas
       if (french) ui.emplace();
-      const std::string shown = ajp::app::play::visible_error(ajp::Refusal{code, "détail"});
+      const std::string shown = ajp::app::play::visible_error(ajp::Refusal{code, "texte-brut"});
       INFO(name(code) << " : " << shown);
       if (shown.starts_with("error ") || shown.starts_with("erreur ")) ++by_name;
-      CHECK_FALSE(shown.contains("détail"));  // le détail technique reste au journal
+      CHECK_FALSE(shown.contains("texte-brut"));  // le détail technique reste au journal
     }
   }
   CHECK(by_name == 0);
-  const ajp::app::play::FrenchUi french;
-  CHECK(ajp::app::play::visible_error(ajp::Refusal{ajp::RefusalCode::OnnxExternalData, "x"}) ==
-        "un modèle manque, est abîmé ou n'est pas pris en charge (OnnxExternalData)");
 }

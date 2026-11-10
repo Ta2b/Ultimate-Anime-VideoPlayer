@@ -1,5 +1,7 @@
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -135,6 +137,28 @@ TEST_CASE("onnx : INT64 et INT32 bruts ou typés", "[gpu_ir][onnx]") {
   auto i32_typed = read_initializer(words);
   REQUIRE(i32_typed);
   CHECK(i32_typed->ints == std::vector<std::int64_t>{4, -9});
+
+  // A44-07 : une valeur typée hors de 32 bits est refusée, pas tronquée plus loin.
+  for (const std::int64_t beyond : {std::int64_t{1} << 31, -(std::int64_t{1} << 31) - 1}) {
+    ProtoWriter wide32 = test::tensor_header("w", onnx::kInt32, std::vector<std::int64_t>{1});
+    wide32.varint(5, beyond);
+    auto refused = read_initializer(wide32);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::OnnxMalformed);
+  }
+}
+
+TEST_CASE("onnx : une liste d'entiers typés démesurée est refusée avant d'être lue", "[gpu_ir][onnx]") {
+  // A44-04 : 2^24 + 1 entiers d'un octet. Lus, ils coûteraient huit fois la taille du champ.
+  const std::vector<std::int64_t> zeros((std::size_t{1} << 24U) + 1, 0);
+  auto refused = read_initializer(
+      test::tensor_i64("w", {static_cast<std::int64_t>(zeros.size())}, std::span<const std::int64_t>(zeros)));
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::OnnxMalformed);
+  CHECK(refused.error().detail.contains("trop de valeurs"));
+  // Juste sous la borne, la liste se lit.
+  const std::vector<std::int64_t> fits(1024, 3);
+  CHECK(read_initializer(test::tensor_i64("w", {1024}, std::span<const std::int64_t>(fits))));
 }
 
 TEST_CASE("onnx : poids externes refusés avec leur propre refus", "[gpu_ir][onnx]") {

@@ -32,12 +32,20 @@ struct Named {
   Target run;
 };
 constexpr std::array kTargets{
-    Named{"settings", &ajp::fuzz::settings}, Named{"play_settings", &ajp::fuzz::play_settings},
-    Named{"edid", &ajp::fuzz::edid},         Named{"build_log", &ajp::fuzz::build_log},
-    Named{"resume", &ajp::fuzz::resume},     Named{"osd_script", &ajp::fuzz::osd_script},
-    Named{"onnx", &ajp::fuzz::onnx},         Named{"srt", &ajp::fuzz::srt},
-    Named{"cube", &ajp::fuzz::cube},         Named{"inflate", &ajp::fuzz::inflate},
-    Named{"manifest", &ajp::fuzz::manifest}, Named{"options", &ajp::fuzz::options},
+    Named{"settings", &ajp::fuzz::settings},
+    Named{"play_settings", &ajp::fuzz::play_settings},
+    Named{"edid", &ajp::fuzz::edid},
+    Named{"build_log", &ajp::fuzz::build_log},
+    Named{"resume", &ajp::fuzz::resume},
+    Named{"osd_script", &ajp::fuzz::osd_script},
+    Named{"onnx", &ajp::fuzz::onnx},
+    Named{"srt", &ajp::fuzz::srt},
+    Named{"cube", &ajp::fuzz::cube},
+    Named{"inflate", &ajp::fuzz::inflate},
+    Named{"manifest", &ajp::fuzz::manifest},
+    Named{"options", &ajp::fuzz::options},
+    Named{"engine_index", &ajp::fuzz::engine_index},
+    Named{"update_state", &ajp::fuzz::update_state},
 };
 
 using Bytes = std::vector<std::uint8_t>;

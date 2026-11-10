@@ -56,7 +56,7 @@ Write-Host "release      : $repo $Tag"
 if (-not $Publish) { Write-Host "Contrôle seulement. Pour joindre : relancer avec -Publish, puis pousser l'étiquette $Tag."; exit 0 }
 gh release view $Tag -R $repo *> $null
 # Une préversion pour l'instant : la CI de l'étiquette en fait une vraie release (sans « - ») et y met les notes.
-if ($LASTEXITCODE -ne 0) { gh release create $Tag -R $repo --prerelease --title $Tag --notes $Tag }
+if ($LASTEXITCODE -ne 0) { gh release create $Tag -R $repo --prerelease --latest=false --title $Tag --notes $Tag }
 # Les moteurs d'un autre système déjà joints à cette release (poste Linux) restent dans l'index : le lecteur relit
 # engines-nvidia.lock de sa release au lancement (src/app/play/engine_online.h), un paquet joint après coup compris.
 $previous = Join-Path ([System.IO.Path]::GetTempPath()) "ajp-engines-nvidia-$([guid]::NewGuid()).lock"
@@ -68,4 +68,4 @@ if ($LASTEXITCODE -eq 0 -and (Test-Path $previous)) {
   Remove-Item $previous
 }
 gh release upload $Tag -R $repo --clobber $archive $out
-Write-Host "Joint à $repo $Tag. Pousser maintenant l'étiquette : git tag $Tag; git push origin $Tag"
+Write-Host "Joint à $repo $Tag. Pousser maintenant l'étiquette (ou relancer Release si elle existe : le lecteur ne croit engines-nvidia.lock que signé) : git tag $Tag; git push origin $Tag"
