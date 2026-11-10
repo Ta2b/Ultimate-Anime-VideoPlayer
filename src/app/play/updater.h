@@ -51,7 +51,23 @@ std::string format_update_state(const UpdateState& state);
 std::expected<UpdateState, Refusal> parse_update_state(std::string_view toml_text);
 // Absent : l'état vide.
 UpdateState load_update_state(const std::filesystem::path& file);
+// Réécrit le fichier : les champs de state, plus les clés inconnues d'une version plus récente (A36-05).
 std::expected<void, Refusal> save_update_state(const std::filesystem::path& file, const UpdateState& state);
+// Le texte à écrire : state, puis les clés de previous que cette version ne connaît pas (hors les champs des
+// versions qui s'appliquaient elles-mêmes).
+std::string merge_update_state(std::string_view previous, const UpdateState& state);
+// Lire, changer, réécrire si quelque chose a changé, sans qu'un autre fil du processus s'intercale entre la
+// lecture et l'écriture (A26-10) : le fil des mises à jour et le bouton « Check now » passent par là.
+std::expected<void, Refusal> change_update_state(const std::filesystem::path& file,
+                                                 const std::function<void(UpdateState&)>& change);
+// Le fil des mises à jour : une vérification si may_check (premier tour, ou rien ne joue) et si elle est due,
+// gardée dans file et journalisée.
+void check_updates_if_due(const std::filesystem::path& file, UpdateMode mode, UpdateFrequency frequency,
+                          bool may_check, std::int64_t now_unix, const std::stop_token& stop);
+// « Check now » : une vérification tout de suite, gardée dans file ; le refus d'écriture compte après
+// une vérification réussie.
+std::expected<std::string, Refusal> check_updates_now(const std::filesystem::path& file,
+                                                      const std::stop_token& stop);
 
 // Après une tentative sans réponse du serveur (pas de réseau), la suivante attend au moins ce délai, pas
 // toute la période choisie (A26-07).

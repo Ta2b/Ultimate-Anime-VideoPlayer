@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "app/play/upscale_stage.h"
+#include "core/trace.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/resample.h"
@@ -149,6 +150,7 @@ kernels::RifeGeometry UpscaleStage::drba_geometry() const {
 
 std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                                      bool measure) {
+  AJP_TRACE("drba.ingest");
   drba_.after_ok = false;
   drba_.after_held = false;
   drba_.after_ticket.reset();
@@ -212,6 +214,7 @@ void UpscaleStage::keep_skipped(const DecodedFrame& frame) {
 
 std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& call,
                                                     std::span<gpu::Tensor> results) {
+  AJP_TRACE("drba.pair");
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // Les copies réduites quand le mouvement s'estime plus petit que le travail (variante mouvement).
   const bool small = small_[0] != nullptr;

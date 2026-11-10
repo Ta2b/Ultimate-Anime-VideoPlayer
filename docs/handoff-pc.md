@@ -144,13 +144,13 @@ Sans GPU NVIDIA ils se sautent (SKIP) ou n'existent pas dans la CI ; `[.]` et `[
   Balanced pour le profil 6), sinon
   `~/Documents/mpv-AnimeJaNai-HDR/BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/onnx/`.
 - RIFE 4.26 : `~/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.26.onnx` ; variante
-  mouvement dérivée : `~/.local/share/ajp/ajp/modeles/rife_v4.26-mouvement-fd6b06538898c9a9.onnx`.
+  mouvement dérivée : `~/.cache/ajp/modeles/rife_v4.26-mouvement-fd6b06538898c9a9.onnx`.
   RIFE 4.25, 4.13 et 4.6 vont à côté (`rife_v4.25.onnx`, `rife_v4.13.onnx`, `rife_v4.6.onnx`) :
   les fichiers v1 de vs-mlrt, convertis en FP16 par `tools/convert_rife_fp16.py`
   d'animejanai-inference-rtx. Le menu grise ceux qui manquent.
 - GMFSS Fortuna : `gmfss_fortuna_base_pair.onnx` et `gmfss_fortuna_base_fusion.onnx` dans le même
   dossier, exportés par `tools/gmfss/export_gmfss.py` (mode d'emploi en tête du script).
-- Moteurs TensorRT construits : `~/.local/share/ajp/ajp/engines/aji-v3-*.engine` (+ journaux de
+- Moteurs TensorRT construits : `~/.cache/ajp/engines/aji-v3-*.engine` (+ journaux de
   construction, caches de minutage).
 - Maxine VideoFX : source `/usr/local/VideoFX`, copie importée `~/.local/share/ajp/ajp/sdk/`.
 - TensorRT 11.3.0.99 et trtexec : `~/ajp-sdk/tensorrt`. Dépendances (FFmpeg, libplacebo 7.387, SDL3,

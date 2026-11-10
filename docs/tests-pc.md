@@ -342,7 +342,7 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
 ## Plan NVIDIA, chantier 10 : basse précision pour toute RTX
 
 - **10.1** (sur une RTX 30 et une RTX 20, si l'occasion se présente) : `python3 -I tools/span/quantize_span.py SPAN.onnx
-  --corpus IMAGES --out ~/.local/share/ajp/ajp/modeles`, puis `tools/fp8/abab_trt.sh SPAN.onnx SPAN-int8.onnx
+  --corpus IMAGES --out ~/.cache/ajp/modeles`, puis `tools/fp8/abab_trt.sh SPAN.onnx SPAN-int8.onnx
   "input:1x3x720x1280" 3`. Le rapport décide de 10.4 à 10.6.
 - **10.2** : la construction passe avec `120` dans les architectures (pas de débordement de registres au ptxas) ;
   sur une RTX 50 seulement, les vérifications de `span-fp8-cutlass.md`.

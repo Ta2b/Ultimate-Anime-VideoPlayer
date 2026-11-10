@@ -17,8 +17,8 @@ ajp_add_module(core_os
 
 # core : réglages, cadence, choix des moteurs, raccourcis, écritures atomiques.
 ajp_add_module(core
-  SOURCES cadence.cpp debug_flags.cpp drawings.cpp engines.cpp moving_area.cpp
-          keys.cpp model_index.cpp sha256_blocks.cpp pacing.cpp profile.cpp
-          auto_rate.cpp cost_model.cpp steady_rate.cpp steady_grid.cpp free_rate.cpp free_grid.cpp vsync_phase.cpp auto_memory.cpp vblank_clock.cpp present_ledger.cpp file_sync.cpp inflate.cpp settings.cpp update_manifest.cpp user_overlay.cpp
+  SOURCES cadence.cpp engines.cpp moving_area.cpp
+          keys.cpp model_index.cpp sha256_blocks.cpp pacing.cpp
+          auto_rate.cpp cost_model.cpp steady_rate.cpp steady_grid.cpp free_rate.cpp free_grid.cpp vsync_phase.cpp auto_memory.cpp vblank_clock.cpp present_ledger.cpp file_sync.cpp inflate.cpp settings.cpp update_manifest.cpp text_file.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::dep::toml ajp::dep::zlib)

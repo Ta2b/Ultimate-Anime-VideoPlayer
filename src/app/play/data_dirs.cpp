@@ -81,8 +81,14 @@ std::filesystem::path local_data(const std::filesystem::path& roaming) {
   return roaming;
 }
 
-int move_heavy_data(const std::filesystem::path& from, const std::filesystem::path& to,
-                    const std::function<void(const std::string&)>& said) {
+namespace {
+
+// Les entrées que l'on refait sans rien perdre : elles vont dans le dossier des caches.
+constexpr std::array<std::string_view, 4> kCaches{"engines", "modeles", "plans", "shaders.cache"};
+
+int move_entries(const std::filesystem::path& from, const std::filesystem::path& to,
+                 std::span<const std::string_view> names,
+                 const std::function<void(const std::string&)>& said) {
   namespace fs = std::filesystem;
   if (from.empty() || to.empty()) return 0;
   std::error_code same;
@@ -91,7 +97,7 @@ int move_heavy_data(const std::filesystem::path& from, const std::filesystem::pa
     if (said) said(line);
   };
   int moved = 0;
-  for (const std::string_view name : kHeavy) {
+  for (const std::string_view name : names) {
     const fs::path source = from / name;
     const fs::path target = to / name;
     fs::path staging = target;
@@ -124,6 +130,26 @@ int move_heavy_data(const std::filesystem::path& from, const std::filesystem::pa
     say(std::format(kMoved, core::to_utf8(source), core::to_utf8(target)));
   }
   return moved;
+}
+
+}  // namespace
+
+int move_heavy_data(const std::filesystem::path& from, const std::filesystem::path& to,
+                    const std::function<void(const std::string&)>& said) {
+  return move_entries(from, to, kHeavy, said);
+}
+
+int move_cache_data(const std::filesystem::path& from, const std::filesystem::path& to,
+                    const std::function<void(const std::string&)>& said) {
+  return move_entries(from, to, kCaches, said);
+}
+
+std::filesystem::path cache_data([[maybe_unused]] const std::filesystem::path& home,
+                                 const std::filesystem::path& heavy) {
+#if defined(__linux__)
+  if (!home.empty()) return home / ".cache" / "ajp";
+#endif
+  return heavy;
 }
 
 int purge_misplaced(const std::filesystem::path& shared,

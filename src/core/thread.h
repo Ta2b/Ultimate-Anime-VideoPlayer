@@ -9,6 +9,7 @@
 // Fait partie de core_types : aucune dépendance hors bibliothèque standard.
 #pragma once
 
+#include <atomic>
 #include <concepts>
 #include <exception>
 #include <expected>
@@ -66,12 +67,22 @@ class ThreadReport {
   std::function<void(const Refusal&)> sink_;
 };
 
+// Le nom d'un thread donné au système (Nsight, gdb, vidages de plantage) : core_os installe celui de la
+// plateforme (install_system_thread_names, thread_role.h), le cœur ne dépend d'aucun en-tête du système
+// (A20-11). Nul : les threads restent anonymes.
+using ThreadNamer = void (*)(const char* name) noexcept;
+inline std::atomic<ThreadNamer>& thread_namer() noexcept {
+  static std::atomic<ThreadNamer> namer{nullptr};
+  return namer;
+}
+
 // Le corps d'un thread : il tourne jusqu'à la demande d'arrêt ou sa propre fin.
 template <class Body>
 concept ThreadBody =
     std::move_constructible<Body> && std::invocable<Body&, const std::stop_token&, const ThreadReport&>;
 
-// Lance body(stop, report) sur un std::jthread nommé name (« source », « audio »…).
+// Lance body(stop, report) sur un std::jthread nommé name (« source », « audio »…), nom donné au système
+// quand thread_namer est posé.
 // Refus : rapporteur absent (FieldMissing), thread refusé par le système (ThreadUnavailable).
 // Un refus de démarrage détruit body sans l'avoir appelé.
 template <ThreadBody Body>
@@ -82,8 +93,10 @@ std::expected<std::jthread, Refusal> start_thread(std::string_view name, ThreadR
       return std::unexpected(
           Refusal{RefusalCode::FieldMissing, std::format("thread {} : rapporteur absent", name)});
     }
-    return std::jthread([where = std::format("thread {}", name), report = std::move(report),
+    return std::jthread([label = std::string(name), where = std::format("thread {}", name),
+                         report = std::move(report),
                          body = std::move(body)](const std::stop_token& stop) mutable noexcept {
+      if (const ThreadNamer namer = thread_namer().load(std::memory_order_acquire)) namer(label.c_str());
       try {
         body(stop, std::as_const(report));
       } catch (...) {

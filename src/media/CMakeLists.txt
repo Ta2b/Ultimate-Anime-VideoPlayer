@@ -7,7 +7,7 @@ ajp_add_module(media
     language.cpp packet.cpp packet_reserve.cpp selection.cpp source.cpp source_loop.cpp
     track.cpp track_language.cpp video_decoder.cpp deinterlace.cpp mkv_chapters.cpp
   DEPS ajp::core_types ajp::kernels
-  PRIVATE_DEPS ajp::dep::ffmpeg ajp::core_log ajp::core_os ajp::dep::vulkan ${CMAKE_DL_LIBS})
+  PRIVATE_DEPS ajp::av ajp::dep::ffmpeg ajp::core_log ajp::core_os ajp::dep::vulkan ${CMAKE_DL_LIBS})
 
 if(WIN32)
   target_link_libraries(ajp_media PRIVATE dxgi)

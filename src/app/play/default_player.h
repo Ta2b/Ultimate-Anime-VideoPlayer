@@ -71,6 +71,10 @@ std::vector<RegistryValue> registry_values(std::string_view executable);
 std::vector<std::string> registry_trees(std::string_view executable);
 std::vector<RegistryValue> registry_shared_values();
 
+// Au lancement : un lecteur déjà inscrit dont l'exécutable a bougé (dossier portable déplacé, AppImage
+// renommé) se réinscrit à sa nouvelle place, sans rien demander (A19-06). Rend vrai s'il l'a fait ; rien
+// n'est écrit pour un lecteur jamais inscrit.
+bool refresh_registration(const PlayerPlace& place);
 // Inscrit le lecteur ; rend ce qui a été fait et ce qui reste à faire soi-même.
 std::expected<std::string, Refusal> register_player(const PlayerPlace& place);
 // Retire l'inscription (rien à retirer n'est pas une erreur).
@@ -79,9 +83,13 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place);
 // sinon ouvre la page du système qui le fait (Windows) ou dit comment faire (macOS).
 std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place);
 
-// La sortie de « xdg-mime query default video/x-matroska » désigne-t-elle ce lecteur ?
+// La sortie de « xdg-mime query default <type> » désigne-t-elle ce lecteur ?
 bool default_handler_is_ajp(std::string_view query_output);
-// Ce lecteur est-il déjà celui des vidéos ? Linux : xdg-mime ; ailleurs on ne sait pas (faux).
+// Windows : le ProgId de UserChoice (FileExts\.mkv\UserChoice) désigne AJP (A19-05).
+bool user_choice_is_ajp(std::string_view prog_id);
+// Ce lecteur est-il déjà celui des vidéos, pour MKV et MP4 ? Linux : xdg-mime ; Windows : UserChoice ;
+// macOS : on ne sait pas (faux). Ne bloque jamais : la première fois, la question part sur un fil à elle et
+// la réponse vaut faux jusqu'à ce qu'elle arrive (A19-04).
 bool is_default_player(const PlayerPlace& place);
 
 // Windows : ajp.exe n'a pas de console à lui (sous-système fenêtré) ; lancé d'un terminal, il écrit dans la

@@ -15,7 +15,7 @@ extern "C" {
 #include <libavutil/hwcontext_vulkan.h>
 }
 
-#include "core/av_error.h"
+#include "av/av_error.h"
 
 namespace ajp::app::play {
 namespace {
@@ -126,7 +126,7 @@ std::expected<std::unique_ptr<VulkanShare>, Refusal> VulkanShare::create(pl_vk_i
   if (hw->nb_qf == 0) return refuse(RefusalCode::VendorCallFailed, "aucune file de libplacebo à partager");
   if (const int err = av_hwdevice_ctx_init(ref); err < 0)
     return refuse(RefusalCode::VendorCallFailed,
-                  std::format("av_hwdevice_ctx_init : {}", core::av_error_text(err)));
+                  std::format("av_hwdevice_ctx_init : {}", av::av_error_text(err)));
   return share;
 }
 
