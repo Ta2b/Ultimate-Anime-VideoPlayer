@@ -1,5 +1,6 @@
 // Les versions installées d'un moteur : paquet remplacé à version égale (A26-01), nouvelle version de
-// TensorRT (A06-01), anciennes versions retirées, installation coupée entre ses deux renommages (A06-08).
+// TensorRT (A06-01), anciennes versions retirées, installation coupée entre ses deux renommages (A06-08),
+// remplacement remis au lancement suivant (A06-09).
 #include "app/play/engine_versions.h"
 
 #include <filesystem>
@@ -127,11 +128,19 @@ TEST_CASE("Versions : une installation coupée reprend sa copie complète (A06-0
     CHECK(installed_state(f.catalog, v11).state == PackageState::Current);
     CHECK_FALSE(fs::exists(aside));
   }
-  SECTION("la version en place : rien ne bouge") {
+  SECTION("la version en place et un « .partiel » sans note : rien ne bouge") {
     f.install(v11);
-    f.install(v11, staging);
+    f.install(v11, staging, false);
     CHECK_FALSE(recover_interrupted_install(f.catalog, v11));
     CHECK(fs::exists(staging));
+  }
+  SECTION("un remplacement que Windows a refusé se fait au lancement suivant (A06-09)") {
+    f.install(f.package("11", 'a'));  // le paquet d'avant, dont une DLL était chargée
+    f.install(v11, staging);          // le nouveau, entier et noté
+    CHECK(recover_interrupted_install(f.catalog, v11));
+    CHECK(installed_state(f.catalog, v11).state == PackageState::Current);
+    CHECK_FALSE(fs::exists(staging));
+    CHECK_FALSE(fs::exists(aside));
   }
   SECTION("les copies de remplacement ne sont jamais une autre version") {
     f.install(v11, staging);

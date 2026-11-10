@@ -137,6 +137,8 @@ constexpr std::array kMessages{
     Entry{"registry: HKCU\\{} (error {})", "registre : HKCU\\{} (erreur {})"},
     Entry{"registry: HKCU\\{} : {} (error {})", "registre : HKCU\\{} : {} (erreur {})"},
     Entry{"replacing the installed version", "remplacement de la version installée"},
+    Entry{"the new version is ready: it replaces the installed one at the next launch",
+          "la nouvelle version est prête : elle remplace l'installée au prochain lancement"},
     Entry{"searching for a finer picture ({})", "recherche d'une image plus fine ({})"},
     Entry{"secure connection failed (certificate or proxy)",
           "la connexion sécurisée a échoué (certificat ou proxy)"},

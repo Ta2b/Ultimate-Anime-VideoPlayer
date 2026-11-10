@@ -501,6 +501,15 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
 
 namespace {
 
+std::unexpected<Refusal> deferred_swap(const std::filesystem::path& target, const std::error_code& error) {
+  log_channel("app")->warn(
+      "{} tenu ({}) : la nouvelle version attend le prochain lancement",  // i18n-ok : journal
+      core::to_utf8(target), error.message());
+  return std::unexpected(
+      Refusal{RefusalCode::FileUnwritable,
+              i18n::tr("the new version is ready: it replaces the installed one at the next launch")});
+}
+
 // Les étapes de l'installation ; `step` dit où elle en est, pour le journal si elle échoue. Une seule
 // progression globale (octets tirés, archive et fichiers tiers) au lieu d'une barre par fichier.
 // Chaque fichier d'un dossier extrait, sur le disque : FlushFileBuffers sous Windows, fsync ailleurs.
@@ -684,11 +693,9 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   if (replaced) {
     error.clear();
     std::filesystem::rename(target, aside, error);
-    if (error) {
-      const std::string reason = error.message();
-      std::filesystem::remove_all(staging, error);
-      return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
-    }
+    // Windows : une DLL de la version en place est encore chargée. La nouvelle, entière et notée, attend
+    // dans « .partiel » : recover_interrupted_install l'échange au lancement suivant (A06-09).
+    if (error) return deferred_swap(target, error);
   }
   error.clear();
   std::filesystem::rename(staging, target, error);
