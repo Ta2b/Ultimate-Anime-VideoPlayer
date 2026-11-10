@@ -170,6 +170,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
+  const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)
   auto prepared = prepare_chain(p, settings, p.options.bench_out ? nullptr : p.stages);
   if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
     // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
@@ -766,8 +767,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
-  // Ordre d'arrêt : les slots rendus, les threads arrêtés, le moteur avant son backend, le
-  // backend (et ses imports du ring) avant l'écran qui possède le ring.
+  // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
   p.stopped_at_us = std::max<std::int64_t>(session.view().position_us, 0);
   session.end();
   out.flush();

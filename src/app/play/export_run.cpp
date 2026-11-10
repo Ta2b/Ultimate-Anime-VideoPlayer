@@ -36,6 +36,7 @@ extern "C" {
 #include "app/play/live_settings.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_export.h"
+#include "app/play/placebo_screen.h"
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -167,6 +168,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   std::vector<std::string> unavailable;
   const PlaySettings settings = within_engines(export_chain(job.chain), p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
+  const RingRelease ring_release(p.screen);             // après le backend de l'export (A33-01)
   auto prepared = prepare_chain(p, settings, nullptr);  // l'export rejoue la chaîne demandée, ou rien
   if (!prepared) return stopped(prepared.error());
   if (!*prepared) return {.end = ExportEnd::Quit};
@@ -188,8 +190,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     log->info("export : renommé {} (ce que les moteurs font)", prepare::utf8_path(out_path.filename()));
   }
   p.screen.set_source_color(ColorInfo{});  // les images du ring, comme à la lecture
-  // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies de calcul le
-  // permettent (export_depth.h).
+  // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies le permettent.
   const ExportDepth depth = export_depth(c.one_lane ? 1 : c.backend->capabilities().lanes);
   show_loading(p.screen, p.ui, i18n::ui_tr("Opening the export"));
 

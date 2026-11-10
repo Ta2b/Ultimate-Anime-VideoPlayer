@@ -49,7 +49,7 @@ void GpuTiming::collect() {
     float ms = 0.0F;
     if (cudaEventElapsedTime(&ms, start_[read_ % kPairs], stop_[read_ % kPairs]) == cudaSuccess) {
       if (report_) samples_.push_back(ms);
-      if (all_.size() < kMaxAll) all_.push_back(ms);
+      all_.add(ms);
     }
     ++read_;
   }
@@ -64,15 +64,23 @@ void GpuTiming::collect() {
 
 namespace {
 
-std::string summary_of(const std::string& label, const std::vector<float>& all) {
+std::string summary_of(const std::string& label, const core::SampleReservoir<float>& all) {
   if (all.empty()) return {};
-  std::vector<float> sorted = all;
+  std::vector<float> sorted = all.kept();
   std::ranges::sort(sorted);
-  double total = 0.0;
-  for (const float ms : sorted) total += ms;
-  return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms, total {:.0f} ms ({} mesures)",
+  const std::string kept =
+      sorted.size() < all.seen() ? std::format(", centiles sur {} gardées", sorted.size()) : std::string();
+  return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms, total {:.0f} ms ({} mesures{})",
                      label, sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], sorted.front(),
-                     total, sorted.size());
+                     all.total(), all.seen(), kept);
+}
+
+// Le résumé pour le .gpu.tsv : centiles de l'échantillon, nombre et total de toutes les mesures.
+GpuStageSummary profile_of(const std::string& label, const core::SampleReservoir<float>& all) {
+  GpuStageSummary out = summarize(label, all.kept());
+  out.count = static_cast<std::size_t>(all.seen());
+  out.total_ms = all.total();
+  return out;
 }
 
 }  // namespace
@@ -84,7 +92,7 @@ std::string GpuTiming::summary() {
 
 GpuStageSummary GpuTiming::profile() {
   collect();
-  return summarize(label_, all_);
+  return profile_of(label_, all_);
 }
 
 GpuSpan::GpuSpan(std::string label) : label_(std::move(label)) {
@@ -136,8 +144,7 @@ void GpuSpan::collect() {
   for (Pair& pair : pairs_) {
     if (pair.state != Pair::State::Finished || cudaEventQuery(pair.stop) != cudaSuccess) continue;
     float ms = 0.0F;
-    if (cudaEventElapsedTime(&ms, pair.start, pair.stop) == cudaSuccess && all_.size() < kMaxAll)
-      all_.push_back(ms);
+    if (cudaEventElapsedTime(&ms, pair.start, pair.stop) == cudaSuccess) all_.add(ms);
     pair.state = Pair::State::Free;
   }
 }
@@ -149,7 +156,7 @@ std::string GpuSpan::summary() {
 
 GpuStageSummary GpuSpan::profile() {
   collect();
-  return summarize(label_, all_);
+  return profile_of(label_, all_);
 }
 
 }  // namespace ajp::gpu::cuda

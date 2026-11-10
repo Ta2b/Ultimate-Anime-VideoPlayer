@@ -9,6 +9,8 @@ namespace {
 constexpr std::array kStatsTexts{
     Entry{" (+ {} cuts and held drawings)", " (+ {} coupes et dessins tenus)"},
     Entry{" fused", " fusionné"},
+    Entry{" · full: the driver may spill into system memory",
+          " · pleine : le pilote peut déborder en mémoire système"},
     Entry{" · heavy scene", " · scène lourde"},
     Entry{" · locked to the display {:+.3f} %", " · calée sur l'écran {:+.3f} %"},
     Entry{" · predicted ×{}", " · prédit ×{}"},

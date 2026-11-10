@@ -20,6 +20,7 @@ extern "C" {
 #ifdef _WIN32
 #include <process.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 #include <cstdio>
@@ -29,6 +30,7 @@ extern "C" {
 #include <format>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -107,9 +109,64 @@ std::vector<std::filesystem::path> module_dirs(const std::filesystem::path& base
 
 constexpr int kKeptLogs = 3;  // ajp.log.1 à ajp.log.3
 
+// Le journal est ouvert : un refus s'y écrit (A18-10).
+bool& log_open() {
+  static bool open = false;
+  return open;
+}
+
+// Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal, la relance
+// n'efface plus celui qui en garde la trace. Les parts d'une séance trop longue (ajp.1.log, ajp.2.log)
+// tournent avec leur journal (A33-06) : ajp.1.log.1 est de la même séance que ajp.log.1.
+void rotate_logs(const std::filesystem::path& log_file) {
+  std::error_code kept;
+  for (const std::string_view part : {"", ".1", ".2"}) {
+    std::filesystem::path base = log_file;
+    if (!part.empty()) base.replace_filename(std::format("ajp{}.log", part));
+    for (int i = kKeptLogs - 1; i >= 0; --i) {
+      std::filesystem::path from = base;
+      if (i > 0) from += std::format(".{}", i);
+      std::filesystem::path to = base;
+      to += std::format(".{}", i + 1);
+      if (std::filesystem::exists(from, kept)) {
+        std::filesystem::rename(from, to, kept);
+      } else if (i == 0) {
+        std::filesystem::remove(to, kept);  // ajp.1.log.1 d'une séance plus ancienne que ajp.log.1
+      }
+    }
+  }
+}
+
 int fail(const ajp::Refusal& refusal) {
-  std::fprintf(stderr, "ajp : %s %s\n", std::string(ajp::name(refusal.code)).c_str(), refusal.detail.c_str());
+  if (log_open()) {
+    ajp::log_channel("app")->error("{} {}", ajp::name(refusal.code), refusal.detail);  // stderr compris
+  } else {
+    std::fprintf(stderr, "ajp : %s %s\n", std::string(ajp::name(refusal.code)).c_str(),
+                 refusal.detail.c_str());
+  }
   return 1;
+}
+
+// Un refus avant toute fenêtre, lancé par un double-clic : sans console, personne ne lit stderr, une boîte le
+// dit (A18-07, A18-10). SDL_ShowSimpleMessageBox se passe de SDL_Init. Pas de boîte pendant un essai scripté
+// (--keys, --snapshot, banc, fenêtre cachée), qui doit finir seul.
+int fail_shown(const ajp::Refusal& refusal, const ajp::app::play::PlayOptions& options) {
+  const int code = fail(refusal);
+  if (!options.keys.empty() || options.snapshot || options.bench_out || options.hidden) return code;
+  const std::string text = "ajp : " + refusal.detail;
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+  return code;
+}
+
+// --report=FICHIER de bench et compare : un dossier absent ou protégé rend 1 avec le chemin (A18-11).
+int write_report(const std::optional<std::filesystem::path>& file, const std::string& report) {
+  if (!file) return 0;
+  std::ofstream out(*file, std::ios::binary);
+  out << report;
+  out.flush();
+  if (out) return 0;
+  return fail({ajp::RefusalCode::FileUnwritable,
+               std::format("--report : {} ne s'écrit pas", ajp::prepare::utf8_path(*file))});
 }
 
 // Le diagnostic d'une séance : un plantage laisse un minidump à côté du journal sous Windows (P2.2), et le
@@ -162,6 +219,13 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
   pointers.push_back(nullptr);
   return _spawnv(_P_NOWAIT, program.c_str(), pointers.data()) == -1 ? 1 : 0;
 #else
+  // A18-12 : rien d'ouvert ne passe au lecteur relancé (pilote NVIDIA, socket, fichiers) : un contexte CUDA
+  // gardé par un descripteur hérité retiendrait sa mémoire vidéo.
+  const long open_max = sysconf(_SC_OPEN_MAX);
+  for (int fd = 3; fd < (open_max > 0 && open_max < 65536 ? open_max : 65536); ++fd) {
+    const int flags = fcntl(fd, F_GETFD);
+    if (flags >= 0) fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+  }
   std::vector<char*> arguments{const_cast<char*>(executable.c_str())};
   for (int i = 1; i < argc; ++i) arguments.push_back(argv[i]);
   arguments.push_back(nullptr);
@@ -204,11 +268,7 @@ int run_compare_command(const std::vector<std::string_view>& args) {
   if (!outcome) return fail(outcome.error());
   const std::string report = play::format_compare_report(*outcome);
   std::fputs(report.c_str(), stdout);
-  if (options->report) {
-    std::ofstream out(*options->report, std::ios::binary);
-    out << report;
-  }
-  return 0;
+  return write_report(options->report, report);
 }
 
 // « ajp bench <fichier> » : les essais sont des processus « ajp play » ; celui-ci n'ouvre ni fenêtre ni SDL.
@@ -244,11 +304,7 @@ int run_bench_command(const std::vector<std::string_view>& args) {
   std::filesystem::remove_all(work, error);
   if (!report) return fail(report.error());
   std::fputs(report->report.c_str(), stdout);
-  if (options->report) {
-    std::ofstream out(*options->report, std::ios::binary);
-    out << report->report;
-  }
-  return 0;
+  return write_report(options->report, report->report);
 }
 
 // « ajp calibrate [--display-height=N] [--tier=N] [--visible] » : le bench de la page « Résultats du bench »,
@@ -274,9 +330,9 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
       // from_chars et une plage (P2.35) : « abc » ou « 99999 » ne donnent plus 0 ou une hauteur absurde.
       const std::string_view text = arg.substr(17);
       const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), display_height);
-      if (error != std::errc{} || end != text.data() + text.size() || display_height < 240 ||
+      if (error != std::errc{} || end != text.data() + text.size() || display_height < 360 ||
           display_height > 4320) {
-        std::fputs("ajp calibrate : --display-height=N, N de 240 à 4320\n", stderr);
+        std::fputs("ajp calibrate : --display-height=N, N de 360 à 4320\n", stderr);
         return 2;
       }
     } else if (arg == "--visible") {
@@ -286,7 +342,6 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
       return 2;
     }
   }
-  if (display_height < 360) display_height = 2160;
   const auto base = sdl_path(SDL_GetBasePath());
   char* pref = SDL_GetPrefPath("ajp", "ajp");
   // Le dossier des réglages du lecteur (settings.toml, moteurs choisis), comme le panneau du bench.
@@ -319,6 +374,16 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
+// --register, --unregister : l'inscription auprès du système, puis la sortie.
+int run_registration(ajp::app::play::Registration registration, const ajp::app::play::PlayerPlace& place) {
+  const auto done = registration == ajp::app::play::Registration::Register
+                        ? ajp::app::play::register_player(place)
+                        : ajp::app::play::unregister_player(place);
+  if (!done) return fail(done.error());
+  std::fprintf(stdout, "%s\n", done->c_str());
+  return 0;
+}
+
 // Où vivent les données lourdes et les caches, une fois déplacés ceux d'une version d'avant.
 struct DataPlaces {
   std::filesystem::path heavy;
@@ -335,12 +400,12 @@ DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::
   places.cache = ajp::app::play::cache_data(place.home, places.heavy);
   ajp::app::play::move_cache_data(places.heavy, places.cache, said);
   ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), said);
-  // La mise à jour n'est plus qu'une notification : les archives préparées et la copie
-  // de l'ancienne installation qu'avaient laissées les versions qui s'appliquaient elles-mêmes se retirent
-  // (A26-06).
+  // La mise à jour n'est plus qu'une notification : les archives préparées et la copie de l'ancienne
+  // installation des versions qui s'appliquaient elles-mêmes se retirent (A26-06) ; le cache des moteurs
+  // TensorRT est borné (A33-04).
   if (!purge_updates) return places;  // --data-dir, banc : ni le dossier de l'utilisateur ni son bureau
-  ajp::app::play::purge_update_leftovers(
-      data, [](const std::string& line) { ajp::log_channel("app")->info("mise à jour : {}", line); });
+  ajp::app::play::tidy_at_launch(data, places.cache / "engines",
+                                 [](const std::string& line) { ajp::log_channel("app")->info("{}", line); });
   // Un lecteur inscrit dont le dossier a bougé suit sa nouvelle place (A19-06).
   if (ajp::app::play::refresh_registration(place)) said("inscription refaite à la nouvelle place du lecteur");
   return places;
@@ -402,6 +467,10 @@ int run_player(int argc, char** argv) {
   char* pref = SDL_GetPrefPath("ajp", "ajp");  // avant SDL_Init comme permis : l'inscription s'en sert
   const auto data = sdl_path(pref);
   SDL_free(pref);
+  if (data.empty())  // A18-07 : sans dossier de données, play.toml et engines/ iraient dans le dossier
+                     // courant
+    return fail_shown({ajp::RefusalCode::FileUnwritable, std::string("SDL_GetPrefPath : ") + SDL_GetError()},
+                      *options);
   const ajp::app::play::PlayerPlace place{.executable = base / std::string(kExecutable),
                                           .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
                                           .data = ajp::app::play::user_data(data),
@@ -409,14 +478,8 @@ int run_player(int argc, char** argv) {
   // La langue du système, avant tout réglage : les langues préférées par défaut la prennent.
   ajp::app::play::set_system_language(
       ajp::app::play::pick_menu_language(ajp::app::play::system_locales(place.home)));
-  if (options->registration != ajp::app::play::Registration::None) {
-    const auto done = options->registration == ajp::app::play::Registration::Register
-                          ? ajp::app::play::register_player(place)
-                          : ajp::app::play::unregister_player(place);
-    if (!done) return fail(done.error());
-    std::fprintf(stdout, "%s\n", done->c_str());
-    return 0;
-  }
+  if (options->registration != ajp::app::play::Registration::None)
+    return run_registration(options->registration, place);
   // Un seul lecteur (P2.13) : un double-clic sur une vidéo l'ouvre dans la fenêtre déjà là ; rendu avant
   // chaque relance.
   std::shared_ptr<ajp::app::play::InstanceListener> instance;
@@ -447,16 +510,7 @@ int run_player(int argc, char** argv) {
   const std::filesystem::path log_file =
       settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
   if (!log_file.empty()) {
-    // Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal,
-    // la relance n'efface plus celui qui en garde la trace.
-    std::error_code kept;
-    for (int i = kKeptLogs - 1; i >= 0; --i) {
-      std::filesystem::path from = log_file;
-      if (i > 0) from += std::format(".{}", i);
-      std::filesystem::path to = log_file;
-      to += std::format(".{}", i + 1);
-      if (std::filesystem::exists(from, kept)) std::filesystem::rename(from, to, kept);
-    }
+    rotate_logs(log_file);
     // Borné pendant la séance (P2.43) : passé 32 Mo, ajp.log devient ajp.1.log (puis ajp.2.log), une soirée
     // de lecture ne remplit plus le disque.
     constexpr std::size_t kLogBytes = std::size_t{32} * 1024 * 1024;
@@ -470,6 +524,7 @@ int run_player(int argc, char** argv) {
   }
   const bool logs_to_file = sinks.size() > 1;
   ajp::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
+  log_open() = true;
   if (logs_to_file) {
     spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
     ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
@@ -478,15 +533,16 @@ int run_player(int argc, char** argv) {
   start_diagnostics(settings_dir, log_file);
   if (options->bake_looks) {
     const auto baked = ajp::app::play::bake_looks(ajp::app::play::paths::play_settings(settings_dir),
-                                                  data / "luts", *options->bake_looks);
+                                                  ajp::app::play::local_data(data) / "luts",  // A18-06
+                                                  *options->bake_looks);
     if (!baked) return fail(baked.error());
     return 0;
   }
   ajp::media::route_ffmpeg_log_to_journal();  // les erreurs de FFmpeg vont au journal, ses avertissements de
                                               // sonde sont du bruit
-  if (!SDL_Init(SDL_INIT_VIDEO)) {
-    return fail({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()});
-  }
+  if (!SDL_Init(SDL_INIT_VIDEO))
+    return fail_shown({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()},
+                      *options);
   // Linux : le thread principal et ceux de la lecture passent devant les travaux de fond (rtkit au besoin).
   {
     const bool raised = ajp::set_thread_priority_raiser(

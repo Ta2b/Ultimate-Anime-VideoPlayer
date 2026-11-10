@@ -32,6 +32,7 @@
 #include "app/play/vulkan_share.h"
 #include "core/gpu_device.h"
 #include "core/ring.h"
+#include "core/sample_reservoir.h"
 #include "render/grade.h"
 #include "render/sharpen.h"
 #include "subs/subtitle_frame.h"
@@ -71,6 +72,9 @@ class PlaceboRing {
     // Poignée exportée du sémaphore (descripteur, ou HANDLE sous Windows) ; fermée avec le ring.
     std::optional<std::uintptr_t> semaphore_export;
     std::uint64_t placebo_value = 0;  // ready_value que libplacebo attend ; 0 : tenu par CUDA
+    // La plus haute valeur lue du sémaphore (A32-07) : un sémaphore à compteur ne fait que monter, une image
+    // vue prête le reste sans rappeler le pilote.
+    mutable std::uint64_t seen_value = 0;
   };
   std::expected<pl_tex, Refusal> slot_of(const RingFrame& frame);
   std::uint32_t family() const;
@@ -263,7 +267,8 @@ struct PlaceboScreen::Impl {
   std::vector<render::CubeLut> ramp_looks;  // la pile posée sur ramp_grade (size 0 : aucune)
   mutable std::uint64_t grade_frame_ns = 0;
   mutable std::uint64_t display_frame_ns = 0;  // toutes les passes de l'affichage, de la dernière composition
-  mutable std::vector<std::uint32_t> grade_gpu_us;
+  // Le profil GPU du grade : un échantillon uniforme sur toute la lecture au-delà de 2^20 images (A33-05).
+  mutable core::SampleReservoir<std::uint32_t> grade_gpu_us{std::size_t{1} << 20};
 };
 
 }  // namespace ajp::app::play
