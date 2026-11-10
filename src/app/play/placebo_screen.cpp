@@ -355,8 +355,8 @@ void note_feedback(ScreenTiming& timing, const PresentFeedback& feedback) {
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-// La présentation part. Aucun autre thread n'ouvre de commande sur le pl_gpu pendant ce temps : le thread
-// qui compose le look (render::Grade) n'écrit que du texte, Grade::adopt crée la texture sur ce thread-ci.
+// La présentation part. Aucun autre thread n'ouvre de commande sur le pl_gpu pendant ce temps (une commande
+// ouverte entre la prise de la swapchain et sa soumission fait échouer vk_cmd_submit dans libplacebo).
 std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present* present) const {
   if (present == nullptr) {
     if (pl_swapchain_submit_frame(swapchain)) return {};

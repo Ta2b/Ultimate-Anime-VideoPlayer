@@ -7,6 +7,7 @@
 
 #include "core/dir_entries.h"
 #include "core/log.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -85,6 +86,13 @@ std::filesystem::path tier_variant(const std::filesystem::path& model, Precision
                            model.extension().string());
   std::error_code error;
   return std::filesystem::is_regular_file(variant, error) ? variant : model;
+}
+
+PrecisionTier model_tier(const std::optional<std::filesystem::path>& model) {
+  if (!model) return PrecisionTier::Balanced;
+  const std::string stem = core::to_utf8(model->stem());
+  if (stem.ends_with("_fp8")) return PrecisionTier::Performance;
+  return stem.ends_with("_fp32") ? PrecisionTier::Quality : PrecisionTier::Balanced;
 }
 
 TierSupport sibling_tiers(const std::filesystem::path& model, bool fp8_engine) {

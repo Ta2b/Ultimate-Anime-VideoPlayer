@@ -13,14 +13,34 @@
 
 using namespace ajp::app::play;
 
-TEST_CASE("le look est la recette HDR anime", "[app][look]") {
+TEST_CASE("le look est la pile HDR anime, une LUT par emplacement", "[app][look]") {
   PlaySettings s;
-  REQUIRE(look_slots(s).size() == 1);
-  CHECK(look_slots(s).front().key == anime_look_key(0, 0));
-  s.look_contrast = -40;
-  s.look_highlight = 25;
-  CHECK(look_slots(s).front().key == anime_look_key(-40, 25));
-  CHECK(ajp::render::look_is_pq(look_slots(s).front().key, ""));
+  const std::vector<LookLayer> pile = look_slots(s);
+  const std::vector<LookLayer> reference{
+      {std::string(kAnimeLookBase), 1.0},      {std::string(kAnimeLookContrast), 1.0},
+      {std::string(kAnimeLookContrast), 1.0},  {std::string(kAnimeLookContrast), 1.0},
+      {std::string(kAnimeLookHighlight), 1.0}, {std::string(kAnimeLookHighlight), 0.5},
+      {std::string(kAnimeLookSkin), 1.0},      {std::string(kAnimeLookContrast), 1.0},
+      {std::string(kAnimeLookContrast), 1.0},  {std::string(kAnimeLookContrast), 1.0},
+      {std::string(kAnimeLookContrast), 1.0}};
+  CHECK(pile == reference);
+  CHECK(ajp::render::look_is_pq(pile.front().key, ""));
+  // Les curseurs au maximum tiennent dans les emplacements du grade ; au minimum, la base et « skin fix ».
+  s.look_contrast = 100;
+  s.look_highlight = 100;
+  CHECK(look_slots(s).size() == 19);
+  CHECK(look_slots(s).size() <= ajp::render::kLookSlots);
+  s.look_contrast = -100;
+  s.look_highlight = -100;
+  CHECK(look_slots(s).size() == 2);
+  // Un curseur qui ne change que des intensités garde les mêmes fichiers : rien n'est relu.
+  PlaySettings a;
+  PlaySettings b;
+  a.look_highlight = 10;
+  b.look_highlight = 20;
+  CHECK(same_look_files(a, b));
+  b.look_highlight = 100;
+  CHECK_FALSE(same_look_files(a, b));
 }
 
 TEST_CASE("look HDR anime : les intensités en LUT entières puis une partielle", "[app][look]") {
@@ -31,28 +51,12 @@ TEST_CASE("look HDR anime : les intensités en LUT entières puis une partielle"
   CHECK(c.size() == 6);
 }
 
-TEST_CASE("look HDR anime à 0 et 0 : la pile de référence", "[app][look]") {
+TEST_CASE("look HDR anime : chaque fichier de la pile se lit", "[app][look]") {
   const std::filesystem::path luts = std::string(AJP_APP_SOURCE_DIR) + "/../../data/luts";
-  const auto recipe = anime_look(0, 0, luts);
-  REQUIRE(recipe);
-  std::vector<ajp::render::CubeLut> files;
-  const std::vector<std::pair<std::string, double>> stack{
-      {std::string(kAnimeLookBase), 1.0},      {std::string(kAnimeLookContrast), 1.0},
-      {std::string(kAnimeLookContrast), 1.0},  {std::string(kAnimeLookContrast), 1.0},
-      {std::string(kAnimeLookHighlight), 1.0}, {std::string(kAnimeLookHighlight), 0.5},
-      {std::string(kAnimeLookSkin), 1.0},      {std::string(kAnimeLookContrast), 1.0},
-      {std::string(kAnimeLookContrast), 1.0},  {std::string(kAnimeLookContrast), 1.0},
-      {std::string(kAnimeLookContrast), 1.0}};
-  std::vector<double> mixes;
-  for (const auto& [name, mix] : stack) {
-    auto lut = load_look(name, luts);
+  for (const LookLayer& layer : look_slots(PlaySettings{})) {
+    const auto lut = load_look(layer.key, luts);
+    INFO(layer.key);
     REQUIRE(lut);
-    files.push_back(std::move(*lut));
-    mixes.push_back(mix);
+    CHECK(lut->size >= ajp::render::kLutMinSize);
   }
-  std::vector<const ajp::render::CubeLut*> pointers;
-  for (const auto& f : files) pointers.push_back(&f);
-  const ajp::render::CubeLut direct = ajp::render::compose_luts(pointers, mixes);
-  REQUIRE(direct.rgb.size() == recipe->rgb.size());
-  CHECK(direct.rgb == recipe->rgb);
 }

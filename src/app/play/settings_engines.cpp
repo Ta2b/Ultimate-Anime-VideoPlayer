@@ -2,13 +2,16 @@
 
 #include <array>
 #include <cstdio>
+#include <filesystem>
 #include <format>
 #include <string>
+#include <system_error>
 
 #include <imgui.h>
 
 #include "app/play/first_run.h"
 #include "app/play/panel_style.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
 
@@ -33,11 +36,11 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
     }
     if (draft && draft != in_use) {
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      ImGui::TextWrapped(
-          "%s", i18n::tr_format(i18n::tr("To apply: playback reopens at the same spot with {}; its engines "
-                                         "are built the first time for each model and size."),
-                                engine_label(*draft))
-                    .c_str());
+      panel::wrapped(
+          i18n::tr_format(i18n::tr("To apply: playback reopens at the same spot with {}; its engines "
+                                   "are built the first time for each model and size."),
+                          engine_label(*draft))
+              .c_str());
       ImGui::PopStyleColor();
       if (ImGui::Button(i18n::tr("Use this engine"))) {
         actions.emplace_back(UseEngine{.id = *draft});
@@ -49,20 +52,20 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
   }
 
   section(i18n::tr("Installed engines"));
-  ImGui::TextWrapped("%s", choices.chosen_engines.c_str());
+  panel::wrapped(choices.chosen_engines.c_str());
   if (ImGui::Button(i18n::tr("Install more engines…"))) actions.emplace_back(OpenEngineScreen{});
   note(i18n::tr("Reopens the engines screen; playback resumes at the same spot."));
 
   section(i18n::tr("Built engines"));
   if (choices.engines.empty()) note(i18n::tr("No engine built yet."));
   for (const EngineBadge& engine : choices.engines) {
-    ImGui::TextWrapped("%s", engine.name.c_str());  // un nom long passe à la ligne, il ne déborde pas
+    panel::wrapped(engine.name.c_str());  // un nom long passe à la ligne, il ne déborde pas
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
     ImGui::TextUnformatted(engine.loaded ? i18n::tr("· loaded") : i18n::tr("· cached"));
     ImGui::PopStyleColor();
     ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-    ImGui::TextWrapped("%s", engine.detail.c_str());
+    panel::wrapped(engine.detail.c_str());
     ImGui::PopStyleColor();
     ImGui::Spacing();
   }
@@ -72,20 +75,43 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
   // Un moteur téléchargé (TensorRT : 1,3 Go installés pour une RTX 4070 Ti) et ses téléchargements
   // s'installent ici ; l'espace libre se vérifie AVANT chaque téléchargement. Vide : le dossier des données
   // du lecteur.
-  if (!folder.read) {
+  // Le champ reprend le réglage quand il a changé ailleurs (Annuler, Rétablir, Tout réinitialiser, A23-16).
+  if (!folder.read || folder.committed != engines_dir) {
     std::snprintf(folder.text.data(), folder.text.size(), "%s", engines_dir.c_str());
+    folder.committed = engines_dir;
+    folder.problem.clear();
     folder.read = true;
   }
   const ImGuiStyle& style = ImGui::GetStyle();
   ImGui::SetNextItemWidth(
       -(ImGui::CalcTextSize(i18n::tr("Default")).x + 2.0F * style.FramePadding.x + style.ItemSpacing.x));
-  if (ImGui::InputTextWithHint("##moteurs", i18n::tr("Default folder"), folder.text.data(),
-                               folder.text.size()))
-    engines_dir = folder.text.data();
+  // Le dossier est pris à la fin de la saisie (Entrée ou clic ailleurs), une fois vérifié : pas à chaque
+  // frappe, où play.toml se réécrivait avec un chemin à moitié tapé (A22-09).
+  ImGui::InputTextWithHint("##moteurs", i18n::tr("Default folder"), folder.text.data(), folder.text.size());
+  if (ImGui::IsItemDeactivatedAfterEdit()) {
+    const std::string typed = folder.text.data();
+    std::error_code error;
+    const std::filesystem::path path = prepare::path_from_utf8(typed);
+    if (typed.empty() || std::filesystem::is_directory(path, error) ||
+        (path.has_parent_path() && std::filesystem::is_directory(path.parent_path(), error))) {
+      engines_dir = typed;
+      folder.committed = typed;
+      folder.problem.clear();
+    } else {
+      folder.problem = i18n::tr("This folder does not exist.");
+    }
+  }
   ImGui::SameLine();
   if (ImGui::Button(i18n::tr("Default##moteurs"))) {
     engines_dir.clear();
+    folder.committed.clear();
+    folder.problem.clear();
     folder.text[0] = '\0';
+  }
+  if (!folder.problem.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    panel::wrapped(folder.problem.c_str());
+    ImGui::PopStyleColor();
   }
   note(i18n::tr_format("Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
                        choices.engines_dir_default, choices.engines_dir_free));

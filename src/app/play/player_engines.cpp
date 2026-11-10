@@ -12,6 +12,7 @@
 
 #include "app/play/apple_model.h"
 #include "app/play/controls.h"
+#include "app/play/drba_fused_choice.h"
 #include "app/play/engine_build.h"
 #include "app/play/home_screen.h"
 #include "app/play/i18n.h"
@@ -253,16 +254,15 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
     PrecisionTier tier, DrbaFusedUse* fused, bool* motion, bool image_elsewhere) {
   std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
   if (found && tier != PrecisionTier::Balanced) {
-    if (tier == PrecisionTier::Performance && !backend.capabilities().fp8) {
-      log_channel("app")->info(
-          "DistilDRBA Performance (FP8) : ce moteur ne le calcule pas, Équilibre à la place");
-    } else if (const std::filesystem::path variant = tier_variant(found->path, tier);
-               variant != found->path) {
-      log_channel("app")->info("DistilDRBA {} : {}", label(tier), variant.filename().string());
-      found->path = variant;
-    } else {
-      log_channel("app")->info("DistilDRBA {} : {} manque, Équilibre à la place", label(tier),
-                               variant.filename().string());
+    // Le cran rendu décide du fusionné, pas le cran demandé (A31-06, A31-07 : drba_fused_choice.h).
+    const DrbaTier plan =
+        drba_tier(tier, fused != nullptr, sibling_tiers(found->path, backend.capabilities().fp8));
+    if (plan.tier != PrecisionTier::Balanced) found->path = tier_variant(found->path, plan.tier);
+    log_channel("app")->info("DistilDRBA {} : {}", label(tier),
+                             plan.why.empty() ? found->path.filename().string() : plan.why);
+    if (!plan.fused && fused != nullptr) {
+      fused->declined = "cran de précision hors Équilibre";
+      fused = nullptr;
     }
   }
   if (!found) {
