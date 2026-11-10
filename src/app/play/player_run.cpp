@@ -216,6 +216,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                    c.upscale(settings, live, clock, width, height, std::move(*slots)));
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
+  if ((*pipeline)->chapters_flattened() && p.notice.empty())
+    p.notice = i18n::ui_tr("Ordered chapters are not supported: playing in file order");
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
