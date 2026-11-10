@@ -61,6 +61,11 @@ TEST_CASE("Export : la sortie de la chaîne est la taille de travail, doublée p
   CHECK(chain_output(s, 720, 480) == ExportSize{.width = 1440, .height = 960});  // sous 720 : telle quelle
   s.upscale = false;
   CHECK(chain_output(s, 1920, 1080) == ExportSize{.width = 1280, .height = 720});
+  // A08-15 : « Restaurer les traits » coupé, SPAN ne tourne pas sur une 1080p et la source est gardée.
+  s.upscale = true;
+  s.restore_lines = false;
+  CHECK(chain_output(s, 1920, 1080) == ExportSize{.width = 1920, .height = 1080});
+  CHECK(chain_output(s, 720, 480) == ExportSize{.width = 1440, .height = 960});  // SPAN tourne
 }
 
 TEST_CASE("Export : taille encodée de la chaîne, de la source ou d'une hauteur fixe, paire",

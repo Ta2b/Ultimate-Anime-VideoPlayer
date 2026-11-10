@@ -16,6 +16,7 @@ import mesures  # noqa: E402
 import modeles  # noqa: E402
 import rapport  # noqa: E402
 import sources  # noqa: E402
+import travail  # noqa: E402
 
 F16 = TensorProto.FLOAT16
 
@@ -194,6 +195,31 @@ class Seuils(unittest.TestCase):
             other = self.report(psnr=10.0)
             other["config"]["taille"] = "640x360"
             self.assertEqual(rapport.check_gates(path, other), [])
+
+
+class Travail(unittest.TestCase):
+    def test_reechantillonnage(self):
+        flat = np.full((3, 54, 96), 0.25, np.float32)
+        for size in ((64, 36), (96, 54), (144, 81), (192, 108)):
+            out = travail.resize(flat, size, travail.hermite, 1)
+            self.assertEqual(out.shape, (3, size[1], size[0]))
+            self.assertLess(float(np.abs(out - 0.25).max()), 1e-6)  # un aplat reste un aplat, bords compris
+        img = picture(3, 54, 96)
+        self.assertIs(travail.resize(img, (96, 54), travail.hermite, 1), img)  # même taille : rien
+        # Une rampe horizontale réduite de moitié reste la même rampe (centres demi-pixel, pas de décalage).
+        ramp = np.broadcast_to(np.linspace(0.0, 1.0, 96, dtype=np.float32), (3, 54, 96)).copy()
+        half = travail.resize(ramp, (48, 27), travail.hermite, 1)
+        want = ramp.reshape(3, 27, 2, 48, 2).mean((2, 4))
+        self.assertLess(float(np.abs(half - want)[:, :, 2:-2].max()), 1e-3)
+        # Vers le haut, Lanczos rend l'image de départ une fois ramenée par moyenne : aucune dérive de phase.
+        up = travail.to_screen(ramp, (192, 108))
+        back = up.reshape(3, 54, 2, 96, 2).mean((2, 4))
+        self.assertLess(float(np.abs(back - ramp)[:, :, 4:-4].max()), 2e-3)
+
+    def test_largeur_paire(self):
+        self.assertEqual(travail.width_of(540), 960)
+        self.assertEqual(travail.width_of(360), 640)
+        self.assertEqual(travail.width_of(270), 480)
 
 
 if __name__ == "__main__":

@@ -44,13 +44,19 @@ int step_of(int height) {
   return static_cast<int>(at - kWorkHeights.begin());
 }
 
-// La plus grande résolution de travail que la tranche tient.
-constexpr std::array<int, kTierCount> kWorkCap{720, 540, 720, 720, 1080};
-// Pas de résolution par rapport à l'idéal de l'écran (la moitié de sa hauteur) : chaque niveau
-// travaille plus haut que le précédent (480p, 540p, 720p, 900p sur un écran 1080p). Qualité et Ultra
-// interpolent en plus avec RIFE 4.25 : les quatre niveaux donnent quatre chaînes différentes en
-// 1080p, 1440p et 4K, même quand le plafond de Qualité rejoint Normal.
-constexpr std::array<int, kTierCount> kWorkOffset{0, -1, 0, 1, 2};
+// La plus grande résolution de travail que la tranche tient. Qualité et Ultra tiennent la 1080p (A49-02) :
+// le b8f64 FP16 y prend 14,25 ms sur une RTX 4070 Ti pour 41,7 ms par image source.
+constexpr std::array<int, kTierCount> kWorkCap{720, 540, 720, 1080, 1080};
+// Pas de résolution par rapport à l'idéal de l'écran (la moitié de sa hauteur), pour Léger et Normal : chaque
+// niveau travaille plus haut que le précédent (480p, 540p sur un écran 1080p). Qualité et Ultra ne suivent
+// pas l'écran : voir keeps_source.
+constexpr std::array<int, kTierCount> kWorkOffset{0, -1, 0, 0, 0};
+// Qualité et Ultra gardent la source jusqu'à 1080p sur tout écran (A49-02, compromis C2 de la synthèse des
+// audits) : réduire une source 1080p à la moitié de l'écran jette plus de la moitié de ses pixels avant le
+// réseau, sans mesure qui le justifie. Sur un écran plus petit que la sortie de SPAN, libplacebo réduit.
+constexpr bool keeps_source(Tier level) {
+  return level == Tier::Fast || level == Tier::Ultra;
+}
 // Le plus grand multiplicateur ×k du mode auto.
 constexpr std::array<int, kTierCount> kFactorCap{0, 2, 3, 4, 4};
 
@@ -64,17 +70,40 @@ void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& ma
     out.rife_model = machine.explored_rife_model;
 }
 
-// SPAN de la tranche : rien en Économe (sauf le modèle léger s'il est admis, P6.7), SPAN Sharp (performance),
-// le modèle du lecteur, au-dessus ; le modèle léger, s'il est admis, dans les deux tranches du bas.
+// SPAN de la tranche : rien en Économe (sauf le modèle léger s'il est admis, P6.7), le modèle du niveau
+// au-dessus (level_span_model) ; le modèle léger, s'il est admis, dans les deux tranches du bas.
 void set_span(PlaySettings& out, Tier level, int work) {
   const bool economy = level == Tier::Economy;
   out.upscale = !economy || kLightSpanInAuto;
   out.work_height = economy && !kLightSpanInAuto ? 0 : work;
-  out.model.clear();
+  out.model = std::string(level_span_model(level));
   if (kLightSpanInAuto && (economy || level == Tier::Light)) out.model = std::string(kLightSpanModel);
 }
 
+// La résolution de travail du niveau, avant l'exploration et la source. Qualité et Ultra : la source telle
+// quelle jusqu'à 1080p, sur tout écran (keeps_source) ; la priorité Fluidité descend à 720p. Léger et Normal
+// : SPAN double, la sortie vise l'écran (écran 1080p : 540p ; 1440p et 4K : 720p), jamais plus que la tranche
+// ne tient ; la calibration, qui mesure, monte plus haut quand la carte tient. Écran inconnu (0) : 1080p.
+int level_work_height(Tier level, Priority priority, int display_height) {
+  const auto at = static_cast<std::size_t>(level);
+  if (keeps_source(level)) return priority == Priority::Fluidity ? 720 : kWorkCap[at];
+  const int ideal =
+      std::clamp((display_height > 0 ? display_height : 1080) / 2, kWorkHeights.front(), kWorkHeights.back());
+  int step = std::clamp(step_of(ideal) + kWorkOffset[at], 0, step_of(kWorkCap[at]));
+  if (priority == Priority::Fluidity) step = std::max(0, step - 1);
+  if (priority == Priority::Image) step = std::min(step + 1, step_of(kWorkCap[at]) + 1);
+  step = std::min(step, static_cast<int>(kWorkHeights.size()) - 1);
+  return kWorkHeights[static_cast<std::size_t>(step)];
+}
+
 }  // namespace
+
+std::string_view level_span_model(Tier level) {
+  return keeps_source(level) ? kQualitySpanModel : std::string_view{};
+}
+std::string_view level_rife_model(Tier level) {
+  return keeps_source(level) ? kQualityRifeModel : kLightRifeModel;
+}
 
 std::string_view key(Preset preset) {
   return kPresets[static_cast<std::size_t>(preset)].key;
@@ -129,18 +158,9 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   if (settings.preset == Preset::Auto && machine.calibrated && *level == Tier::Economy) level = Tier::Light;
   const auto at = static_cast<std::size_t>(*level);
   PlaySettings out = settings;
-  const int display_height = machine.display_height > 0 ? machine.display_height : 1080;
   const double display_hz = machine.display_hz > 0.0 ? machine.display_hz : 60.0;
 
-  // Résolution : SPAN double, la sortie vise l'écran. Écran 1080p : 540p ; 1440p : 720p ; 4K : 720p
-  // (puis la mise à l'échelle finale), jamais plus que la tranche ne tient, jamais plus que la source.
-  const int ideal = std::clamp(display_height / 2, kWorkHeights.front(), kWorkHeights.back());
-  int step = std::clamp(step_of(ideal) + kWorkOffset[at], 0, step_of(kWorkCap[at]));
-  int work = kWorkHeights[static_cast<std::size_t>(step)];
-  if (settings.priority == Priority::Fluidity) step = std::max(0, step - 1);
-  if (settings.priority == Priority::Image) step = std::min(step + 1, step_of(kWorkCap[at]) + 1);
-  step = std::min(step, static_cast<int>(kWorkHeights.size()) - 1);
-  work = kWorkHeights[static_cast<std::size_t>(step)];
+  int work = level_work_height(*level, settings.priority, machine.display_height);
   if (settings.preset == Preset::Auto && machine.explored_work_height > 0)
     work = std::max(work,
                     machine.explored_work_height);  // l'exploration a trouvé que la machine tient plus haut
@@ -176,21 +196,21 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       break;
     case Tier::Light:
     case Tier::Normal:
-      use_rife(out, settings, machine, "rife_v4.22_lite.onnx");
+      use_rife(out, settings, machine, level_rife_model(*level));
       break;
     case Tier::Fast:
     case Tier::Ultra:
-      if (settings.preset == Preset::Auto && machine.calibrated) break;  // la calibration a choisi
       // DistilDRBA y rentre quand sa porte de qualité est passée (kDistilDrbaInAuto).
       if (kDistilDrbaInAuto) {
         out.motion_engine = MotionEngine::DistilDrba;
       } else {
-        use_rife(out, settings, machine, "rife_v4.25.onnx");
+        use_rife(out, settings, machine, level_rife_model(*level));
       }
       break;
   }
-  // Auto calibré : la chaîne mesurée (SPAN, sa hauteur, son modèle ; RIFE lite en mode Rapide ou rien),
-  // adaptée à la source et à la cadence de cette vidéo comme le reste d'Auto.
+  // Auto calibré : la chaîne mesurée (SPAN, sa hauteur, son modèle en FP16 ; RIFE en mode Rapide ou rien,
+  // avec le modèle mesuré), adaptée à la source et à la cadence de cette vidéo comme le reste d'Auto. Le FP8
+  // n'y est plus posé (A49-03, ADR 0007 suspendue).
   if (settings.preset == Preset::Auto && machine.calibrated) {
     const CalibratedChain& cal = *machine.calibrated;
     out.upscale = cal.span;
@@ -199,9 +219,9 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
                             ? std::min(cal.height, std::max(source.height, kWorkHeights.front()))
                             : cal.height;
     out.model = cal.span_model;
-    out.span_precision = cal.span_model.empty() ? PrecisionTier::Balanced : PrecisionTier::Performance;
+    out.span_precision = PrecisionTier::Balanced;
     out.motion_engine = MotionEngine::Rife;
-    out.rife_model = "rife_v4.22_lite.onnx";  // celui que la calibration a mesuré
+    out.rife_model = cal.rife_model.empty() ? std::string(kLightRifeModel) : cal.rife_model;
     out.auto_free = cal.rife;
     if (!cal.rife) {
       out.rife_auto = false;

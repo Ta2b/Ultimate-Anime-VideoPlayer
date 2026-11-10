@@ -7,19 +7,19 @@ namespace {
 
 // Pages de réglages : (clé anglaise, français).
 constexpr std::array kSettingsPages{
-    Entry{" · RIFE 4.22 lite (auto Fast)", " · RIFE 4.22 lite (auto Rapide)"},
+    Entry{" · RIFE (auto Fast)", " · RIFE (auto Rapide)"},
     Entry{" · no interpolation", " · sans interpolation"},
     Entry{"Display peak", "Pic de l'écran"},
     Entry{"SPAN off", "SPAN coupé"},
     Entry{"Apply", "Appliquer"},
     Entry{"Bench results", "Résultats du bench"},
     Entry{"Cancel##calibration", "Annuler##calibration"},
-    Entry{
-        "Interpolation is always RIFE 4.22 lite in Auto Fast mode. The working resolution stops at half the "
-        "display: SPAN doubles it.",
-        "L'interpolation est toujours RIFE 4.22 lite en mode auto Rapide. La résolution de travail s'arrête "
-        "à "
-        "la moitié de l'écran : SPAN la double."},
+    Entry{"Interpolation runs in Auto Fast mode. The working resolution goes up to the 1080p of the test "
+          "sequence; SPAN doubles it.",
+          "L'interpolation tourne en mode auto Rapide. La résolution de travail monte jusqu'à la 1080p de la "
+          "séquence d'essai ; SPAN la double."},
+    Entry{"Measured by an older version: Auto keeps its estimate. Run the bench again.",
+          "Mesuré par une version plus ancienne : Auto garde son estimation. Refaites le bench."},
     Entry{"No bench yet: the settings are an estimate from the card.",
           "Pas encore de bench : les réglages sont estimés d'après la carte."},
     Entry{"Measured on battery: Auto keeps its estimate. Run the bench again plugged in.",
@@ -29,9 +29,7 @@ constexpr std::array kSettingsPages{
     Entry{"Result", "Résultat"},
     Entry{"Run the bench", "Lancer le bench"},
     Entry{"Run the bench again", "Refaire le bench"},
-    Entry{"SPAN: Balanced Sharp in FP8.", "SPAN : Balanced Sharp en FP8."},
-    Entry{"SPAN: Performance Sharp in FP16 (no FP8 on this card).",
-          "SPAN : Performance Sharp en FP16 (pas de FP8 sur cette carte)."},
+    Entry{"SPAN: {} in FP16 · RIFE: {}", "SPAN : {} en FP16 · RIFE : {}"},
     Entry{"Testing settings on a very demanding sequence: a few minutes.",
           "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
     Entry{"The bench failed: {}", "Le bench a échoué : {}"},

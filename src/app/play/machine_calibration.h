@@ -3,17 +3,19 @@
 // (media/bench_clip.h) et recommande la meilleure que la machine tient. L'utilisateur ne voit qu'une barre de
 // chargement.
 //
-// Les hauteurs de travail essayées s'arrêtent à la moitié de l'écran : SPAN double l'image, au-delà sa sortie
-// dépasserait l'écran (1080p : 540p au plus, 1440p : 720p, 4K : 1080p). Deux familles, dans l'ordre (choix de
-// jugé à l'œil) :
+// Les hauteurs de travail essayées montent jusqu'à celle de la séquence (1080p), sur tout écran : une source
+// 1080p que la carte tient n'est plus réduite à la moitié de l'écran (A49-02). Deux familles, dans l'ordre
+// (choix jugé à l'œil) :
 //   1. SPAN seul, du palier le plus léger au plus lourd, jusqu'au premier qui ne tient pas ;
-//   2. SPAN + RIFE 4.22 lite en mode auto Rapide, du plus haut palier que SPAN seul a tenu vers le bas,
-//      jusqu'au premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas
-//      ne se tient pas avec RIFE.
-// SPAN est le Balanced Sharp en FP8 quand la carte le prend (FP8 CUTLASS), sinon le Performance Sharp en
-// FP16. Sans palier SPAN qui tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas
-// essayé. Ici la recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants,
-// auto_bench_run.h) dans le .cpp.
+//   2. SPAN + RIFE en mode auto Rapide, du plus haut palier que SPAN seul a tenu vers le bas, jusqu'au
+//      premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas ne se
+//      tient pas avec RIFE.
+// Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.25
+// en Qualité et Ultra, SPAN Performance Sharp et RIFE 4.22 lite en dessous), SPAN toujours en FP16 : le FP8
+// n'est plus essayé tant que sa porte n'est pas rejugée (A49-03, ADR 0007 suspendue). Sans palier SPAN qui
+// tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas essayé (décision 8 des audits). Ici la
+// recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants, auto_bench_run.h) dans
+// le .cpp.
 #pragma once
 
 #include <array>
@@ -32,18 +34,23 @@
 
 namespace ajp::app::play {
 
-inline constexpr std::string_view kCalibrationRife = "rife_v4.22_lite.onnx";
-// SPAN des essais : le Balanced Sharp en FP8 (précision Performance), sinon le modèle par défaut du lecteur,
-// le Performance Sharp, en FP16 (précision Équilibre).
-inline constexpr std::string_view kCalibrationSpanFp8 =
-    "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
-// Ce que l'essai d'un SPAN FP8 doit avoir joué (BenchReading::span_variant) pour que la recherche le garde.
-inline constexpr std::string_view kCalibrationFp8Variant = "FP8 CUTLASS";
-// Les hauteurs de travail possibles, de la plus légère à la plus lourde.
-inline constexpr std::array<int, 6> kCalibrationHeights{360, 480, 540, 720, 900, 1080};
+// Les hauteurs de travail possibles, de la plus légère à la plus lourde, jusqu'à celle de la séquence
+// (media/bench_clip.h : 1080p). 900p n'y est pas : un essai et un moteur de plus pour une réduction de la
+// source 1080p qu'aucun écran n'appelle.
+inline constexpr std::array<int, 5> kCalibrationHeights{360, 480, 540, 720, 1080};
+// La version de calibration.toml. 2 : hauteurs jusqu'à 1080p sur tout écran, modèles du niveau en FP16. Un
+// fichier plus ancien (essais bornés à la moitié de l'écran, SPAN FP8, RIFE 4.22 lite) se relit pour le
+// tableau mais l'Auto ne le suit plus : il borne la chaîne plus bas que la carte ne tient.
+inline constexpr int kCalibrationVersion = 2;
 
-// La hauteur de travail à partir de laquelle un essai SPAN dit si la carte prend le FP8.
-inline constexpr int kFp8JudgeHeight = 720;
+// Les modèles joués par les essais ; vides : ceux par défaut (SPAN Performance Sharp, RIFE 4.22 lite).
+struct CalibrationModels {
+  std::string span;
+  std::string rife;
+  bool operator==(const CalibrationModels&) const = default;
+};
+// Ceux du niveau estimé de la carte (level_span_model, level_rife_model).
+CalibrationModels calibration_models(Tier tier);
 
 struct ChainCandidate {
   bool span = true;
@@ -61,21 +68,22 @@ struct CandidateTrial {
   double target_fps = 0.0;     // celles visées : la séquence (24 i/s), doublée par RIFE
 };
 
-// Les hauteurs essayées pour un écran de cette hauteur, de la plus lourde à la plus légère : au plus la
-// moitié de l'écran, au moins la plus légère (360p).
-std::vector<int> calibration_heights(int display_height);
+// Les hauteurs essayées, de la plus lourde à la plus légère : toutes jusqu'à celle de la séquence.
+std::vector<int> calibration_heights();
 
 // Le prochain essai après ceux déjà faits ; rien quand la recherche est finie.
-std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int display_height);
+std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried);
 // La chaîne recommandée, la fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent
 // ensemble ; sinon le plus haut SPAN seul ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni RIFE si rien
 // ne tient. Les autres paliers restent au tableau, au choix de l'utilisateur.
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
-// Personnalisé, réduction Hermite, RIFE 4.22 lite en mode auto Rapide ; span_fp8 : SPAN Balanced Sharp en
-// précision Performance (FP8), sinon le SPAN par défaut en FP16.
-PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base, bool span_fp8 = false);
-// « 720p · SPAN · RIFE 4.22 lite (auto Rapide) » ; pour le tableau et le journal.
+// Personnalisé, et pour le reste ce que l'Auto calibré écrira (apply_preset, A07-01) : réduction Hermite,
+// SPAN et RIFE de models en FP16, RIFE en mode auto Rapide, ordre de SPAN en Auto, poses gardées,
+// « Restaurer les traits » actif (sans lui un essai SPAN sous 1080p jouerait la source sans SPAN, A07-06).
+PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
+                                const CalibrationModels& models = {});
+// « 720p · SPAN · RIFE (auto Rapide) » ; pour le tableau et le journal.
 std::string describe(const ChainCandidate& chain);
 
 struct MachineCalibration {
@@ -84,17 +92,18 @@ struct MachineCalibration {
   std::string gpu;
   std::string date;  // AAAA-MM-JJ
   int display_height = 0;
-  bool span_fp8 = false;    // les essais SPAN ont joué le Balanced Sharp en FP8
+  int version = kCalibrationVersion;  // celle du fichier relu ; sous kCalibrationVersion : pas suivie
+  CalibrationModels models;           // les modèles joués par les essais
   bool on_battery = false;  // mesurée sur batterie (P3.12) : gardée au tableau, pas suivie par l'Auto
 };
 
 // La barre de la calibration (P3.13) : l'avancement dit par calibrate_machine, plus une avance lente pendant
 // un essai qui dure (une construction de moteur), au plus 8 points : elle ne reste plus figée des minutes.
 float creeping_fraction(float reported, double seconds_since_change);
-// La durée annoncée avant la calibration (P3.13), en minutes : les essais pour cet écran, rejeux compris,
-// et les constructions de TensorRT (une par taille essayée) quand ses moteurs ne sont pas encore construits,
-// plus longues sur un portable.
-int calibration_minutes(int display_height, bool builds_engines, bool laptop);
+// La durée annoncée avant la calibration (P3.13), en minutes : les essais, rejeux compris, et les
+// constructions de TensorRT (une par taille essayée) quand ses moteurs ne sont pas encore construits, plus
+// longues sur un portable.
+int calibration_minutes(bool builds_engines, bool laptop);
 
 // Un essai se rejoue une fois (P3.12) : quand il ne tient pas, ou qu'il tient de justesse.
 bool needs_second_run(const CandidateTrial& trial);
@@ -105,18 +114,20 @@ std::filesystem::path calibration_file(const std::filesystem::path& data_dir);
 std::string format_calibration(const MachineCalibration& calibration);
 std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view text);
 std::expected<MachineCalibration, Refusal> load_calibration(const std::filesystem::path& file);
-// La chaîne de calibration.toml (dossier data_dir) si elle a été mesurée sur cette carte et à cette
-// hauteur d'écran : les bornes de l'Auto calibré. std::nullopt sinon.
+// La chaîne de calibration.toml (dossier data_dir) si elle a été mesurée sur cette carte, à cette hauteur
+// d'écran et par cette version de la calibration : les bornes de l'Auto calibré. std::nullopt sinon.
 std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir, std::string_view gpu,
                                                 int display_height);
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
                                               const MachineCalibration& calibration);
 
-// Les essais, l'un après l'autre (au plus une dizaine) : base porte les réglages de l'utilisateur, fraction
-// reçoit l'avancement (0 à 1). La séquence du bench s'écrit dans plan.video si elle manque. Refus : Cancelled
-// sur demande d'arrêt, DecodeFailed si le premier essai ne rend rien.
+// Les essais, l'un après l'autre (au plus une dizaine) : base porte les réglages de l'utilisateur, tier le
+// niveau estimé de la carte (ses modèles : calibration_models), fraction reçoit l'avancement (0 à 1). La
+// séquence du bench s'écrit dans plan.video si elle manque. Refus : Cancelled sur demande d'arrêt,
+// DecodeFailed si le premier essai ne rend rien.
 std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& plan, const PlaySettings& base,
-                                                             int display_height, const std::stop_token& stop,
+                                                             int display_height, Tier tier,
+                                                             const std::stop_token& stop,
                                                              const std::function<void(float)>& fraction);
 
 }  // namespace ajp::app::play
