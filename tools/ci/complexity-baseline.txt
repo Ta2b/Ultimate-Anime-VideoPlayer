@@ -11,7 +11,7 @@ src/app/play/engine_install.cpp	ajp::app::play::fetch_vendor_file	27	114
 src/app/play/engine_install.cpp	ajp::app::play::install_steps	30	171
 src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	46	106
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
-src/app/play/home_screen.cpp	ajp::app::play::run_home	29	114
+src/app/play/home_screen.cpp	ajp::app::play::run_home	28	117
 src/app/play/input.cpp	ajp::app::play::input_of	49	62
 src/app/play/options.cpp	ajp::app::play::parse_play_options	95	192
 src/app/play/pipeline.cpp	ajp::app::play::Pipeline::open	58	208
