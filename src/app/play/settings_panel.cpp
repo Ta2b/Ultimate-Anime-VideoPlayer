@@ -449,6 +449,130 @@ void draw_tree(int& current, int shown_page, std::array<bool, 8>& opened, bool a
 
 }  // namespace
 
+void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices& choices,
+                              std::vector<Input>& actions, Result& result, bool& delay_held,
+                              bool& sub_delay_held) {
+  switch (kPages[static_cast<std::size_t>(page_)].id) {
+    case Page::PostProcessing: {
+      level_section(draft_, choices);
+      image_tab(draft_, choices);
+      sharpness_section(draft_);
+      fluidity_tab(draft_, choices);
+      if (advanced_) {
+        span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
+        // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
+        // demandé.
+        if (!machine_) machine_ = std::make_unique<MachineNote>();
+        if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
+          result.reopen = draft_;
+      }
+      break;
+    }
+    case Page::Colors: {
+      hdr_tab(draft_, choices);
+      grade_tab(draft_, choices, actions);
+      break;
+    }
+    case Page::Display: {
+      composition_section(draft_);
+      if (advanced_) oled_sections(draft_, choices);
+      break;
+    }
+    case Page::Sound: {
+      delay_held = sound_tab(draft_, choices);
+      break;
+    }
+    case Page::Playback: {
+      languages_tab(draft_);
+      sub_delay_held = subtitles_tab(draft_);
+      episodes_section(draft_);
+      break;
+    }
+    case Page::Application: {
+      language_section(draft_);
+      gpu_section(draft_, choices.gpus);
+      updates_page(draft_, choices.place, updates_);
+      default_player_page(choices.place, system_, choices.default_player_is_ajp);
+      break;
+    }
+    case Page::Engines: {
+      engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_);
+      break;
+    }
+    case Page::Export: {
+      export_tab(*export_, running, choices, actions);
+      break;
+    }
+    case Page::Statistics: {
+      stats_tab(draft_);
+      break;
+    }
+    case Page::About: {
+      about_page(choices, actions);
+      if (reset_page(draft_)) result.reopen = draft_;
+      break;
+    }
+  }
+}
+
+void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoices& choices,
+                                const PlaySettings& before, bool delay_held, bool sub_delay_held,
+                                Result& result) {
+  ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
+  // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
+  // compte pour un seul changement).
+  if (!ImGui::IsAnyItemActive() && draft_ != stable_) {
+    undo_.push_back(stable_);
+    if (undo_.size() > 100) undo_.erase(undo_.begin());
+    redo_.clear();
+    stable_ = draft_;
+  }
+  ImGui::SameLine();
+  ImGui::BeginDisabled(undo_.empty());
+  if (ImGui::Button(i18n::tr("Undo"))) {
+    redo_.push_back(draft_);
+    draft_ = undo_.back();
+    undo_.pop_back();
+    stable_ = draft_;
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(redo_.empty());
+  if (ImGui::Button(i18n::tr("Redo"))) {
+    undo_.push_back(draft_);
+    draft_ = redo_.back();
+    redo_.pop_back();
+    stable_ = draft_;
+  }
+  ImGui::EndDisabled();
+  // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
+  if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
+      preset_chain_differs(before, draft_, choices.calibrated.has_value()))
+    draft_.preset = Preset::Custom;
+  ImGui::PopItemWidth();
+
+  // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
+  PlaySettings live = live_part(running, draft_, choices.rife_loaded, choices.chain());
+  // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
+  // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
+  if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
+  if (sub_delay_held) live.subtitle_delay_ms = running.subtitle_delay_ms;
+  if (live != running) result.live = live;
+  const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
+  pending_shown_ = pending.cost == ChangeCost::Reopen;
+  if (pending.cost == ChangeCost::Reopen) {
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    panel::wrapped(
+        i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason).c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;
+    ImGui::SameLine();
+    if (ImGui::Button(i18n::tr("Discard changes"))) draft_ = live;
+  }
+}
+
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
@@ -505,125 +629,11 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::SameLine();
     ImGui::BeginChild("##page", ImVec2(0, -footer));
     panel::begin_page();
-    {
-      switch (kPages[static_cast<std::size_t>(page_)].id) {
-        case Page::PostProcessing: {
-          level_section(draft_, choices);
-          image_tab(draft_, choices);
-          sharpness_section(draft_);
-          fluidity_tab(draft_, choices);
-          if (advanced_) {
-            span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
-            // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
-            // demandé.
-            if (!machine_) machine_ = std::make_unique<MachineNote>();
-            if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
-              result.reopen = draft_;
-          }
-          break;
-        }
-        case Page::Colors: {
-          hdr_tab(draft_, choices);
-          grade_tab(draft_, choices, actions);
-          break;
-        }
-        case Page::Display: {
-          composition_section(draft_);
-          if (advanced_) oled_sections(draft_, choices);
-          break;
-        }
-        case Page::Sound: {
-          delay_held = sound_tab(draft_, choices);
-          break;
-        }
-        case Page::Playback: {
-          languages_tab(draft_);
-          sub_delay_held = subtitles_tab(draft_);
-          episodes_section(draft_);
-          break;
-        }
-        case Page::Application: {
-          language_section(draft_);
-          gpu_section(draft_, choices.gpus);
-          updates_page(draft_, choices.place, updates_);
-          default_player_page(choices.place, system_, choices.default_player_is_ajp);
-          break;
-        }
-        case Page::Engines: {
-          engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_);
-          break;
-        }
-        case Page::Export: {
-          export_tab(*export_, running, choices, actions);
-          break;
-        }
-        case Page::Statistics: {
-          stats_tab(draft_);
-          break;
-        }
-        case Page::About: {
-          about_page(choices, actions);
-          if (reset_page(draft_)) result.reopen = draft_;
-          break;
-        }
-      }
-    }
+    draw_page(running, choices, actions, result, delay_held, sub_delay_held);
     panel::end_page();
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
-    ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
-    // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
-    // compte pour un seul changement).
-    if (!ImGui::IsAnyItemActive() && draft_ != stable_) {
-      undo_.push_back(stable_);
-      if (undo_.size() > 100) undo_.erase(undo_.begin());
-      redo_.clear();
-      stable_ = draft_;
-    }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(undo_.empty());
-    if (ImGui::Button(i18n::tr("Undo"))) {
-      redo_.push_back(draft_);
-      draft_ = undo_.back();
-      undo_.pop_back();
-      stable_ = draft_;
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::BeginDisabled(redo_.empty());
-    if (ImGui::Button(i18n::tr("Redo"))) {
-      undo_.push_back(draft_);
-      draft_ = redo_.back();
-      redo_.pop_back();
-      stable_ = draft_;
-    }
-    ImGui::EndDisabled();
-    // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
-    if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
-        preset_chain_differs(before, draft_, choices.calibrated.has_value()))
-      draft_.preset = Preset::Custom;
-    ImGui::PopItemWidth();
-
-    // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
-    PlaySettings live = live_part(running, draft_, choices.rife_loaded, choices.chain());
-    // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
-    // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
-    if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
-    if (sub_delay_held) live.subtitle_delay_ms = running.subtitle_delay_ms;
-    if (live != running) result.live = live;
-    const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
-    pending_shown_ = pending.cost == ChangeCost::Reopen;
-    if (pending.cost == ChangeCost::Reopen) {
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      panel::wrapped(
-          i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason).c_str());
-      ImGui::PopStyleColor();
-      if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;
-      ImGui::SameLine();
-      if (ImGui::Button(i18n::tr("Discard changes"))) draft_ = live;
-    }
+    draw_footer(running, choices, before, delay_held, sub_delay_held, result);
   }
   ImGui::End();
   if (!keep) open_ = false;
