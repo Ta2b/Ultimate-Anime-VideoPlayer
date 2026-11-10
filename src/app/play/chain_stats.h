@@ -13,6 +13,7 @@
 #include "app/play/gpu_telemetry.h"
 #include "app/play/live_settings.h"
 #include "app/play/options.h"
+#include "app/play/sample_demand.h"
 #include "app/play/session.h"
 #include "app/play/settings_panel.h"
 #include "core/auto_rate.h"
@@ -81,6 +82,7 @@ class ChainStats final : public StatsSource {
   std::optional<std::string> memory_text_;
   std::optional<std::string> gpu_text_;
   std::once_flag sampler_started_;
+  SampleDemand demand_;  // le relevé dort quand l'OSD ne le lit plus
   // En dernier : arrêté et joint avant que les membres qu'il lit ne partent.
   std::jthread sampler_;
 };

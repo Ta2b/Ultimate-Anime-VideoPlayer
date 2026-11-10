@@ -122,21 +122,28 @@ inline void tip(const std::string& text) {
 
 // Une pastille : le texte sur un rectangle arrondi teinté, sur la ligne du dernier élément. Vert recommandé,
 // bleu rapide, violet fin, ambre lourd, rouge expérimental.
+// Les mesures suivent la taille de la police, donc l'échelle de l'interface (A24-13 : marges en pixels fixes
+// avant), et une pastille qui ne tient pas au bout de la ligne passe à la suivante au lieu d'être coupée par
+// le bord du panneau (« Recommenc… »).
 inline void badge(const char* text, ImVec4 color) {
-  ImGui::SameLine();
-  ImVec2 at = ImGui::GetCursorScreenPos();
   const ImVec2 size = ImGui::CalcTextSize(text);
+  const float unit = ImGui::GetFontSize() / 16.0F;
+  const float pad = 5.0F * unit;
+  const float rim = 1.0F * unit;
+  const ImVec2 box{size.x + 2.0F * pad, size.y + 2.0F * rim};
+  ImGui::SameLine();
+  if (ImGui::GetContentRegionAvail().x < box.x) ImGui::NewLine();
+  ImVec2 at = ImGui::GetCursorScreenPos();
   // Centrée sur la hauteur d'un champ (case, liste) : la pastille suit le milieu du libellé, pas le haut de
   // la ligne.
-  at.y += std::max(0.0F, (ImGui::GetFrameHeight() - (size.y + 2.0F)) * 0.5F);
-  const float pad = 5.0F;
+  at.y += std::max(0.0F, (ImGui::GetFrameHeight() - box.y) * 0.5F);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   ImVec4 fill = color;
   fill.w = 0.28F;
-  draw->AddRectFilled(at, ImVec2(at.x + size.x + 2 * pad, at.y + size.y + 2),
-                      ImGui::ColorConvertFloat4ToU32(fill), 4.0F);
-  draw->AddText(ImVec2(at.x + pad, at.y + 1), ImGui::ColorConvertFloat4ToU32(color), text);
-  ImGui::Dummy(ImVec2(size.x + 2 * pad, size.y + 2));
+  draw->AddRectFilled(at, ImVec2(at.x + box.x, at.y + box.y), ImGui::ColorConvertFloat4ToU32(fill),
+                      4.0F * unit);
+  draw->AddText(ImVec2(at.x + pad, at.y + rim), ImGui::ColorConvertFloat4ToU32(color), text);
+  ImGui::Dummy(box);
 }
 
 }  // namespace ajp::app::play::panel

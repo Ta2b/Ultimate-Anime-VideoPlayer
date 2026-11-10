@@ -130,4 +130,19 @@ constexpr RefreshState vrr_state(std::uint64_t duration_ns, std::uint64_t interv
   return RefreshState::Unknown;
 }
 
+// Un relevé de l'horloge hôte rendu par Vulkan, en nanosecondes (A10-07). Sous Linux le domaine
+// CLOCK_MONOTONIC est déjà en ns (per_second = 1e9). Sous Windows ce domaine n'existe pas : l'horloge de
+// host_now_us y est le compteur de performance (VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER), rendu en tics.
+// Sans débordement : la partie entière et le reste sont convertis à part.
+constexpr std::uint64_t host_ticks_to_ns(std::uint64_t ticks, std::uint64_t per_second) {
+  if (per_second == 0 || per_second == 1'000'000'000ULL) return ticks;
+  return (ticks / per_second) * 1'000'000'000ULL + (ticks % per_second) * 1'000'000'000ULL / per_second;
+}
+
+// L'instantané garde l'espace de couleur de la fenêtre (A10-18) : toujours pour « .pq.ppm » sur une sortie
+// PQ, et pour toute fenêtre SDR. Une fenêtre HDR photographiée en SDR passe par sRGB.
+constexpr bool snapshot_keeps_target(bool pq_file, bool target_hdr) {
+  return pq_file || !target_hdr;
+}
+
 }  // namespace ajp::app::play

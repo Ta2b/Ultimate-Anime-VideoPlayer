@@ -32,6 +32,17 @@ int display_height(SDL_Window* window);
 int display_width(SDL_Window* window);
 // Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
 std::optional<double> content_peak_nits(SDL_Window* window);
+// Ce que le système dit de l'écran quand il n'a pas de pic calibré (system_peak.h), et la crête qui s'en
+// déduit : la règle de content_peak_nits, sans fenêtre ni système, pour qu'un test la tienne (A11-12).
+struct PeakFacts {
+  bool windows = false;
+  bool sdl_hdr = false;             // SDL dit le HDR actif, avec une marge au-dessus de 1
+  double headroom = 1.0;            // la marge HDR de SDL
+  double sdr_white_nits = 203.0;    // Windows : le curseur « luminosité du contenu SDR »
+  bool system_hdr_active = false;   // Windows : « Utiliser le HDR », que SDL ne voit pas toujours
+  std::optional<double> edid_peak;  // la crête que l'EDID annonce
+};
+std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts);
 // La crête « automatique » du grade : celle de l'écran bornée à 200-2000 nits (un écran HDR de 310 nits ne
 // reçoit pas une cible de 400) ; 1000 si inconnue.
 int auto_peak_nits(std::optional<double> detected);
