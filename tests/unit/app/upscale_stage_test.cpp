@@ -18,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "app/play/links.h"
 #include "app/play/live_settings.h"
 #include "app/play/options.h"
 #include "core/clock.h"
@@ -672,7 +673,7 @@ TEST_CASE("Étage gpu : une image refusée arrête la vidéo, les suivantes rend
   CHECK(rig.credits.load() == 5);
   const std::vector<Refusal> reported = rig.reported();
   REQUIRE(reported.size() == 1);
-  CHECK(reported[0].code == RefusalCode::ThreadFailed);
+  CHECK(reported[0].key == kFatalStageKey);
   CHECK(reported[0].detail.contains("image 3 refusée"));
 }
 

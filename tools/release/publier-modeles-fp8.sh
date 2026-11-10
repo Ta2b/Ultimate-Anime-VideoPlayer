@@ -17,7 +17,7 @@ set -euo pipefail
 OUT="${1:?dossier de sortie de build_interp_fp8.sh}"
 PUBLISH=0
 [ "${2:-}" = "--publier" ] && PUBLISH=1
-REPO="${AJP_RELEASE_REPO:-Ta2b/ajp-releases}"
+REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"
 TAG=models-interp-1
 MODELS="$OUT/models"
 OPTIONAL=(distil_drba_v2_lite_fp8.onnx distil_drba_v2_lite_s05_fp8.onnx)

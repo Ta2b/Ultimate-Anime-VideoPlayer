@@ -422,7 +422,6 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.gpu =
       wanted.gpu;  // vaut au prochain lancement (le panneau le dit) : il s'enregistre tout de suite (A22-01)
   s.update_mode = wanted.update_mode;
-  s.update_channel = wanted.update_channel;
   s.update_frequency = wanted.update_frequency;
   s.language = wanted.language;
   s.audio_delay_ms = wanted.audio_delay_ms;

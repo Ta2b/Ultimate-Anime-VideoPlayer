@@ -366,6 +366,10 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
                       ExportedHandle, RingTarget, YuvTarget>(),
     shape_fingerprint<SpanStill, SpanFp8Request, SpanFp8ImageScore, SpanFp8Derivation,
                       std::expected<SpanFp8Derivation, Refusal>>(),
+    // Ce que KernelOps rend au lecteur (A21-01) : les statistiques du grade et la mémoire de l'appareil.
+    shape_fingerprint<kernels::FrameStats, std::optional<kernels::FrameStats>,
+                      std::expected<std::optional<kernels::FrameStats>, Refusal>, KernelOps::DeviceMemory,
+                      GpuStageSummary, std::vector<GpuStageSummary>>(),
 });
 
 // Ce que le chargeur vérifie avant ajp_backend_create, avec ajp_backend_abi() et

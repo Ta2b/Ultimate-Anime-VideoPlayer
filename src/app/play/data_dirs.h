@@ -14,7 +14,8 @@ std::filesystem::path local_data(const std::filesystem::path& roaming);
 
 // Déplace vers `to` les données lourdes laissées dans `from` par une version d'avant, une à une, quand `to`
 // ne les a pas déjà ; `said` reçoit une ligne par entrée déplacée ou refusée. Rend le nombre d'entrées
-// déplacées.
+// déplacées. D'un volume à l'autre, la copie se fait dans « <nom>.migration », renommé une fois entier ; un
+// « .migration » laissé par une copie coupée est retiré et la copie recommence (A19-01).
 int move_heavy_data(const std::filesystem::path& from, const std::filesystem::path& to,
                     const std::function<void(const std::string&)>& said = {});
 
@@ -25,5 +26,12 @@ int move_heavy_data(const std::filesystem::path& from, const std::filesystem::pa
 // engines-relaunched. Rend le nombre d'entrées retirées.
 int purge_misplaced(const std::filesystem::path& shared,
                     const std::function<void(const std::string&)>& said = {});
+
+// Le dossier <données>/updates des versions qui se mettaient à jour elles-mêmes (archives préparées, extract,
+// copie previous de l'ancienne installation) : la mise à jour n'est plus qu'une notification, il se retire au
+// lancement. Rien ne part s'il contient autre chose que des versions, extract et previous. Rend 1 s'il est
+// retiré.
+int purge_update_leftovers(const std::filesystem::path& data,
+                           const std::function<void(const std::string&)>& said = {});
 
 }  // namespace ajp::app::play

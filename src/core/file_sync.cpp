@@ -1,5 +1,6 @@
 #include "core/file_sync.h"
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <fstream>
@@ -7,6 +8,8 @@
 #include <ios>
 #include <string>
 #include <thread>
+
+#include "core/utf8_path.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -52,6 +55,34 @@ void sync_directory([[maybe_unused]] const std::filesystem::path& folder) {
 
 namespace {
 
+// 10, 20, 40, 80, 160 puis 250 ms : environ 1,5 s en tout avant le refus.
+constexpr int kRenameAttempts = 10;
+
+// Sous Windows, le renommage échoue tant qu'un autre processus (antivirus, indexeur, sauvegarde) tient la
+// destination ou le temporaire ouvert sans partage de suppression : refus passagers, réessayés pendant un peu
+// plus d'une seconde (A20-01). Ailleurs, rename(2) remplace même un fichier ouvert : un refus est définitif.
+bool transient_rename_refusal([[maybe_unused]] const std::error_code& error) {
+#ifdef _WIN32
+  if (error.category() != std::system_category()) return false;
+  const int code = error.value();
+  return code == ERROR_ACCESS_DENIED || code == ERROR_SHARING_VIOLATION || code == ERROR_LOCK_VIOLATION;
+#else
+  return false;
+#endif
+}
+
+std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to) {
+  std::error_code error;
+  auto pause = std::chrono::milliseconds(10);
+  for (int attempt = 0;; ++attempt) {
+    error.clear();
+    std::filesystem::rename(from, to, error);
+    if (!error || attempt == kRenameAttempts - 1 || !transient_rename_refusal(error)) return error;
+    std::this_thread::sleep_for(pause);
+    pause = std::min(pause * 2, std::chrono::milliseconds(250));
+  }
+}
+
 std::string temp_suffix() {
   const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
   const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
@@ -74,20 +105,19 @@ std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
     out.close();  // la fermeture vide le tampon : son échec compte aussi
     if (!out) {
       std::filesystem::remove(temp, error);
-      return std::unexpected(Refusal{RefusalCode::FileUnwritable, temp.string()});
+      return std::unexpected(Refusal{RefusalCode::FileUnwritable, to_utf8(temp)});
     }
   }
   // Sur le disque avant le renommage : une coupure juste après ne laisse pas un fichier vide.
   if (const std::error_code synced = sync_file(temp)) {
     std::filesystem::remove(temp, error);
     return std::unexpected(
-        Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", temp.string(), synced.message())});
+        Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", to_utf8(temp), synced.message())});
   }
-  std::filesystem::rename(temp, path, error);
-  if (error) {
-    const std::string why = error.message();
+  if (const std::error_code renamed = rename_retrying(temp, path)) {
     std::filesystem::remove(temp, error);
-    return std::unexpected(Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", path.string(), why)});
+    return std::unexpected(
+        Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", to_utf8(path), renamed.message())});
   }
   sync_directory(path.has_parent_path() ? path.parent_path() : std::filesystem::path("."));
   return {};

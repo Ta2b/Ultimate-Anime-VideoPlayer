@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 
+#include "core/auto_rate.h"
 #include "core/user_overlay.h"
 
 namespace ajp::core {
@@ -35,7 +36,8 @@ AutoMemory AutoMemory::parse(std::string_view text) {
       int centi = 0;
       const std::string_view number = line.substr(7);
       const auto [stop, error] = std::from_chars(number.data(), number.data() + number.size(), centi);
-      if (error == std::errc{} && stop == number.data() + number.size() && centi >= 100 && centi <= 600)
+      if (error == std::errc{} && stop == number.data() + number.size() && centi >= 100 &&
+          centi <= kAutoMaxStep * 100)  // jusqu'au plus haut palier de l'Auto (A07-07 : 600 jetait ×6,88)
         memory.put(key, centi);
       have_key = false;
     }

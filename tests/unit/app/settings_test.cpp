@@ -455,14 +455,17 @@ TEST_CASE("TierSupport : Équilibre toujours, les autres selon les graphes", "[a
   CHECK(label(PrecisionTier::Balanced) == "Balance");
 }
 
-TEST_CASE("mises à jour : mode, canal et fréquence lus et écrits par leur nom (P5.29)", "[settings]") {
+TEST_CASE("mises à jour : mode et fréquence lus et écrits par leur nom (P5.29)", "[settings]") {
+  // Un play.toml d'avant la simple notification : « auto » se lit « notify », le canal est ignoré.
   const auto read =
       parse_settings("[updates]\nmode = \"auto\"\nchannel = \"preview\"\nfrequency = \"weekly\"\n");
   REQUIRE(read);
-  CHECK(read->update_mode == UpdateMode::Auto);
-  CHECK(read->update_channel == UpdateChannel::Preview);
+  CHECK(read->update_mode == UpdateMode::Notify);
   CHECK(read->update_frequency == UpdateFrequency::Weekly);
-  CHECK(parse_settings(format_settings(*read))->update_frequency == UpdateFrequency::Weekly);
+  const std::string written = format_settings(*read);
+  CHECK(written.find("channel") == std::string::npos);
+  CHECK(parse_settings(written)->update_frequency == UpdateFrequency::Weekly);
+  CHECK(parse_settings("[updates]\nmode = \"never\"\n")->update_mode == UpdateMode::Never);
   CHECK_FALSE(parse_settings("[updates]\nfrequency = \"hourly\"\n"));
 }
 

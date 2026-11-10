@@ -19,4 +19,9 @@ namespace ajp::app::play {
 void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
                  std::vector<Input>& actions, std::string& engines_dir, FolderField& folder);
 
+// En tête de Vidéo > Post-traitement : les étages que la chaîne joue sans eux (SPAN, interpolation refusés ou
+// annulés, cran ramené à Équilibre) et « Réessayer », qui pousse RetryStages. Rien quand la chaîne demandée
+// tourne.
+void stages_note(const SettingsChoices& choices, std::vector<Input>& actions);
+
 }  // namespace ajp::app::play

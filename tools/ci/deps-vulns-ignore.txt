@@ -1,0 +1,4 @@
+# Avis de sécurité écartés par tools/ci/deps_vulns.py : « <identifiant> <raison> », un par ligne. Seulement ce que
+# la construction livrée ne contient pas : jamais un avis qu'on n'a pas encore le temps de corriger.
+CVE-2026-107675 FFmpeg : le protocole sftp demande libssh, que ni linux-from-source.sh ni le port vcpkg n'activent.
+CVE-2026-107677 FFmpeg : le démultiplexeur DASH demande libxml2, absent des deux constructions.

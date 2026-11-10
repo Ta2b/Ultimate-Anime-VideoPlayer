@@ -51,7 +51,10 @@ void set_thread_role(ThreadRole role) noexcept {
       break;
     }
     case ThreadRole::Background:
-      SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+      // Le mode de fond baisse aussi la priorité d'E/S et de mémoire du thread, comme le nice 10 de Linux
+      // (A20-06) ; sans lui (refusé), la priorité basse seule.
+      if (SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN) == 0)
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
       break;
   }
 #elif defined(__APPLE__)

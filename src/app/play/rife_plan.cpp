@@ -6,16 +6,27 @@
 
 namespace ajp::app::play {
 
+namespace {
+
+// Le score rapporté à la zone hors bandes noires : les bandes, identiques d'une image à l'autre, le diluent.
+double useful_score(const gpu::PairScores& scores, double useful_area) {
+  return scores.scene_score / std::clamp(useful_area, 0.25, 1.0);
+}
+
+}  // namespace
+
 bool measured_cut(const PairFacts& facts) {
-  return facts.scores &&
-         kernels::is_scene_cut(facts.scores->scene_score / std::clamp(facts.useful_area, 0.25, 1.0));
+  return facts.scores && kernels::is_scene_cut(useful_score(*facts.scores, facts.useful_area));
 }
 
 bool pair_cut(const PairFacts& facts) {
   const bool measured = measured_cut(facts);
   if (facts.known_cut && *facts.known_cut) {
+    if (!facts.scores) return true;
     // Une coupe des plans sur deux images presque identiques est un effet (éclair, fumée) : pas de coupe.
-    return !facts.scores || facts.scores->scene_score >= kPlanCutFloor;
+    // Le plancher se compare au score rapporté, comme la mesure, et ne défait jamais une coupe mesurée
+    // (A09-22).
+    return measured || useful_score(*facts.scores, facts.useful_area) >= kPlanCutFloor;
   }
   // P3.31 : « même plan » selon la pré-analyse ne l'emporte plus sur une coupe franche mesurée par RIFE.
   return measured;

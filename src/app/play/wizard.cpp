@@ -97,7 +97,6 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
                       : i18n::tr("Languages: chosen (Audio and playback > Playback)"));
   if (has(WizardStep::Updates)) {
     std::string_view mode = i18n::tr("notify me");
-    if (wizard.update_mode == UpdateMode::Auto) mode = i18n::tr("automatic");
     if (wizard.update_mode == UpdateMode::Never) mode = i18n::tr("never");
     out.push_back(i18n::tr_format("Updates: {} (General > Application)", mode));
     if (make_default_requested(wizard))
@@ -127,7 +126,6 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
   if (!wizard.interface_language.empty()) settings.language = wizard.interface_language;
   if (!skipped(WizardStep::Updates)) {
     settings.update_mode = wizard.update_mode;
-    settings.update_channel = wizard.update_channel;
   }
   if (!skipped(WizardStep::Languages)) {
     if (settings.language_presets.empty()) settings.language_presets.resize(1);
@@ -140,7 +138,6 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
 void resume_choices(Wizard& wizard, const PlaySettings& saved) {
   wizard.interface_language = saved.language;
   wizard.update_mode = saved.update_mode;
-  wizard.update_channel = saved.update_channel;
   if (!saved.language_presets.empty()) {
     wizard.audio_language = saved.language_presets[0].audio;
     wizard.subtitle_language = saved.language_presets[0].subtitles;

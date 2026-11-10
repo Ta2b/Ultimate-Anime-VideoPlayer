@@ -23,7 +23,8 @@ void sync_directory(const std::filesystem::path& folder);
 // La seule écriture atomique du projet (P5.11) : un temporaire au nom unique dans le même dossier
 // (« .<nom>.<instant>-<fil>.tmp »), écrit sur le disque, puis renommé sur path, et le dossier écrit à son
 // tour. Un lecteur voit l'ancien fichier entier ou le nouveau entier ; une coupure ne laisse pas un
-// fichier vide. Le dossier est créé au besoin ; le temporaire est retiré en cas d'échec.
+// fichier vide. Le dossier est créé au besoin ; le temporaire est retiré en cas d'échec. Sous Windows, un
+// renommage refusé parce qu'un autre processus tient le fichier ouvert se réessaie environ 1,5 s (A20-01).
 std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
                                           std::span<const std::byte> bytes);
 std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& path, std::string_view text);

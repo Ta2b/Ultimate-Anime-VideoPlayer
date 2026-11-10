@@ -97,9 +97,13 @@ TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seul
     return out;
   };
   const std::filesystem::path source = fake.rife / "rife_v4.26.onnx";
+  // Un dérivé d'une version d'avant (sans version de transformation) : refait, puis retiré (A36-04).
+  std::filesystem::create_directories(fake.home / "modeles");
+  std::ofstream(fake.home / "modeles" / "rife_v4.26-essai-0123456789abcdef.onnx") << "ancien";
   const auto made = derived_model(source, "essai", fake.home / "modeles", twice);
   REQUIRE(made);
-  CHECK(made->filename().string().starts_with("rife_v4.26-essai-"));
+  CHECK(made->filename().string().starts_with(std::format("rife_v4.26-essai-t{}-", kDerivedModelVersion)));
+  CHECK_FALSE(std::filesystem::exists(fake.home / "modeles" / "rife_v4.26-essai-0123456789abcdef.onnx"));
   CHECK(std::filesystem::file_size(*made) == 2);
   CHECK(*derived_model(source, "essai", fake.home / "modeles", twice) == *made);
   CHECK(calls == 1);
@@ -117,11 +121,19 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
   CHECK_FALSE(find_distil_drba(dirs));
   std::ofstream(fake.rife / kDistilDrbaFile) << "x";
   CHECK(find_distil_drba(dirs, true)->align == 64);  // pas de demi-flot : le graphe entier
+  CHECK(find_distil_drba(dirs, true)->fallback);     // et l'appelant le sait (A09-21)
+  CHECK_FALSE(find_distil_drba(dirs, false)->fallback);
   std::ofstream(fake.rife / kDistilDrbaHalfFile) << "x";
   CHECK(find_distil_drba(dirs, true)->path == fake.rife / kDistilDrbaHalfFile);
   CHECK(find_distil_drba(dirs, true)->align == 128);
+  CHECK_FALSE(find_distil_drba(dirs, true)->fallback);
   CHECK(find_distil_drba(dirs, false)->path == fake.rife / kDistilDrbaFile);
+  // Dans l'autre sens : il ne reste que le demi-flot, une lecture à 720p le prend et le dit.
+  std::filesystem::remove(fake.rife / kDistilDrbaFile);
+  CHECK(find_distil_drba(dirs, false)->path == fake.rife / kDistilDrbaHalfFile);
+  CHECK(find_distil_drba(dirs, false)->fallback);
   CHECK_FALSE(drba_half_flow(1080));
+  CHECK_FALSE(drba_half_flow(1440));  // A09-24 : plus de demi-flot à 1440 lignes
   CHECK(drba_half_flow(2160));
 }
 

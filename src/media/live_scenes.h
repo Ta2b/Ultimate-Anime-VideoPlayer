@@ -34,6 +34,10 @@ class LiveScenes {
   void push(std::int64_t pts_us, const kernels::FrameStats& stats);
   // La scène de l'image à pts_us : la dernière analysée à ou avant elle, à moins de max_gap_us.
   std::optional<LiveScene> at(std::int64_t pts_us, std::int64_t max_gap_us = 500'000) const;
+  // Une image source dont l'analyse a été perdue (relecture GPU en retard) : le limiteur en tient compte.
+  void missed(std::int64_t pts_us);
+  // Ce que le grade fait à la lumière de la source, pour le limiteur de flashs (flash_guard.h).
+  void set_flash_gain(double gain);
   void clear();
 
  private:

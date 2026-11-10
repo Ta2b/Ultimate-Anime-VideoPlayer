@@ -264,6 +264,9 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   s.grade_values.series_apl_nits = to.anime_series_apl;
   render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
   // Flashs dangereux (P3.51) : le grade HDR plafonne vers 250 nits, le plein champ d'un écran OLED.
+  // Le limiteur juge la lumière que l'écran montre (A42-08) : celle de la source fois le blanc du grade, pris
+  // avant le plafond (sinon le plafond relâcherait le limiteur, qui le reposerait aussitôt).
+  to.live.scenes().set_flash_gain(choice.pq ? flash_gain_of(choice.pq->peak) : 1.0);
   if (to.flash_limited && choice.pq) choice.pq->peak = std::min(choice.pq->peak, kFlashPeakNits);
   to.live.set_deband_source(wanted.deband);  // la case Débandage, sur tous les moteurs (P3.56)
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
@@ -331,16 +334,24 @@ void grade_tick(Chain& to, std::int64_t now_us) {
   // La scène : le plan de la pré-analyse (chain_shots.h) s'il est connu, sinon la scène vue à l'ingestion.
   feed_plan_shots(to);
   const std::optional<ShotScene> shot = next_shot(to, now_us);
-  const bool new_shot = shot && shot->serial != to.shot_serial;
+  // Le plan de la pré-analyse qui arrive sur une scène vue à l'ingestion n'est pas une coupe (A42-04) : le
+  // grade glisse de la mesure en direct aux valeurs du plan, il ne saute pas au milieu du plan.
+  const bool replaces_live = shot && shot->planned && (to.shot_serial & kLiveSerialBit) != 0;
+  const bool new_shot = shot && shot->serial != to.shot_serial && !replaces_live;
   to.shot_serial = shot ? shot->serial : 0;
-  if (const bool flashing = to.running.grade && next_flashing(to); flashing != to.flash_limited) {
+  // Le plafond ne joue que sur la sortie PQ (A42-19) : en SDR la sortie ne dépasse pas le blanc de l'écran,
+  // et le journal annonçait un plafond qui ne changeait rien à l'image.
+  if (const bool flashing = to.running.grade && to.screen.hdr_output() && next_flashing(to);
+      flashing != to.flash_limited) {
     to.flash_limited = flashing;
     if (flashing)
       log_channel("app")->info("flashs rapides : pic du grade plafonné à {:.0f} nits", kFlashPeakNits);
     if (!flashing) log_channel("app")->info("flashs finis : pic du grade rendu");
     set_grade(to, to.running, true);
   }
-  light_tick(to, shot ? shot : next_live(to), now_us, new_shot, shot.has_value());
+  // Seul un plan de la pré-analyse a des valeurs fixes : une scène en direct, dont la moyenne bouge à chaque
+  // image, garde le chemin ordinaire (pas de 3 %, un dixième de seconde), sans exposition par plan.
+  light_tick(to, shot ? shot : next_live(to), now_us, new_shot, shot && shot->planned);
 }
 
 void follow_display(Chain& to, std::optional<double> peak_nits) {
