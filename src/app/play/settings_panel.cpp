@@ -364,6 +364,91 @@ SettingsPanel::~SettingsPanel() {
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+namespace {
+
+// L'arbre des pages, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les
+// pages en retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
+void draw_tree(int& current, int shown_page, std::array<bool, 8>& opened, bool advanced, float scale) {
+  const auto visible = [&](std::size_t i) { return advanced || !kPages[i].advanced; };
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float row_height = ImGui::GetFontSize() + 12.0F * scale;
+  const float head_height = ImGui::GetFontSize() + 14.0F * scale;
+  const float indent = 26.0F * scale;
+  const ImU32 accent = ImGui::ColorConvertFloat4ToU32(panel::kAccent);
+  ImVec4 soft = panel::kAccent;
+  soft.w = 0.20F;
+  ImVec4 band = style.Colors[ImGuiCol_Header];
+  band.w = 0.14F;
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
+  std::string_view category;
+  const std::string_view page_category = kPages[static_cast<std::size_t>(current)].category;
+  std::string_view shown_category;
+  if (shown_page >= 0) shown_category = kPages[static_cast<std::size_t>(shown_page)].category;
+  int category_index = -1;
+  bool category_open = false;
+  for (std::size_t i = 0; i < kPages.size(); ++i) {
+    const SettingsPage& page = kPages[i];
+    if (!visible(i)) continue;
+    if (std::string_view(page.category) != category) {
+      category = page.category;
+      ++category_index;
+      const auto slot = static_cast<std::size_t>(category_index);
+      // Quand la page change de catégorie (clic, molette), la catégorie de la page s'ouvre et les autres
+      // se replient : l'arbre tient dans une fenêtre basse. Ensuite chaque catégorie garde l'état choisi
+      // à la main.
+      if (current != shown_page && shown_category != page_category) opened[slot] = category == page_category;
+      if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
+      const ImVec2 at = ImGui::GetCursorScreenPos();
+      const float row_width = ImGui::GetContentRegionAvail().x;
+      ImGui::PushID(category_index);
+      if (ImGui::InvisibleButton("##categorie", {row_width, head_height})) opened[slot] = !opened[slot];
+      ImGui::PopID();
+      const bool hovered = ImGui::IsItemHovered();
+      ImVec4 fill = band;
+      if (hovered) fill.w = 0.30F;
+      draw->AddRectFilled(at, {at.x + row_width, at.y + head_height}, ImGui::ColorConvertFloat4ToU32(fill),
+                          5.0F * scale);
+      // Le chevron : un triangle plein, à droite quand c'est replié, vers le bas quand c'est ouvert.
+      const float cx = at.x + 12.0F * scale;
+      const float cy = at.y + head_height * 0.5F;
+      const float r = 4.0F * scale;
+      if (opened[slot])
+        draw->AddTriangleFilled({cx - r, cy - r * 0.6F}, {cx + r, cy - r * 0.6F}, {cx, cy + r * 0.9F},
+                                accent);
+      else
+        draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
+                                accent);
+      draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
+                    i18n::tr(page.category));
+      category_open = opened[slot];
+    }
+    if (!category_open) continue;
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const float row_width = ImGui::GetContentRegionAvail().x;
+    ImGui::PushID(static_cast<int>(i));
+    const bool picked = ImGui::InvisibleButton("##page", {row_width, row_height});
+    ImGui::PopID();
+    if (picked) current = static_cast<int>(i);
+    const bool selected = static_cast<int>(i) == current;
+    if (selected) {
+      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                          ImGui::ColorConvertFloat4ToU32(soft), 5.0F * scale);
+      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y + 4.0F * scale},
+                          {at.x + indent - 5.0F * scale, at.y + row_height - 4.0F * scale}, accent,
+                          2.0F * scale);
+    } else if (ImGui::IsItemHovered()) {
+      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                          ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
+    }
+    draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
+                  ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled), i18n::tr(page.name));
+  }
+  ImGui::PopStyleVar();
+}
+
+}  // namespace
+
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
@@ -414,88 +499,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         }
       }
     }
-    // L'arbre, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les pages en
-    // retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
-    {
-      ImDrawList* draw = ImGui::GetWindowDrawList();
-      const ImGuiStyle& style = ImGui::GetStyle();
-      const float row_height = ImGui::GetFontSize() + 12.0F * scale;
-      const float head_height = ImGui::GetFontSize() + 14.0F * scale;
-      const float indent = 26.0F * scale;
-      const ImU32 accent = ImGui::ColorConvertFloat4ToU32(panel::kAccent);
-      ImVec4 soft = panel::kAccent;
-      soft.w = 0.20F;
-      ImVec4 band = style.Colors[ImGuiCol_Header];
-      band.w = 0.14F;
-      ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
-      std::string_view category;
-      const std::string_view page_category = kPages[static_cast<std::size_t>(page_)].category;
-      std::string_view shown_category;
-      if (shown_page_ >= 0) shown_category = kPages[static_cast<std::size_t>(shown_page_)].category;
-      int category_index = -1;
-      bool category_open = false;
-      for (std::size_t i = 0; i < kPages.size(); ++i) {
-        const SettingsPage& page = kPages[i];
-        if (!visible(i)) continue;
-        if (std::string_view(page.category) != category) {
-          category = page.category;
-          ++category_index;
-          const auto slot = static_cast<std::size_t>(category_index);
-          // Quand la page change de catégorie (clic, molette), la catégorie de la page s'ouvre et les autres
-          // se replient : l'arbre tient dans une fenêtre basse. Ensuite chaque catégorie garde l'état choisi
-          // à la main.
-          if (page_ != shown_page_ && shown_category != page_category)
-            category_open_[slot] = category == page_category;
-          if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
-          const ImVec2 at = ImGui::GetCursorScreenPos();
-          const float row_width = ImGui::GetContentRegionAvail().x;
-          ImGui::PushID(category_index);
-          if (ImGui::InvisibleButton("##categorie", {row_width, head_height}))
-            category_open_[slot] = !category_open_[slot];
-          ImGui::PopID();
-          const bool hovered = ImGui::IsItemHovered();
-          ImVec4 fill = band;
-          if (hovered) fill.w = 0.30F;
-          draw->AddRectFilled(at, {at.x + row_width, at.y + head_height},
-                              ImGui::ColorConvertFloat4ToU32(fill), 5.0F * scale);
-          // Le chevron : un triangle plein, à droite quand c'est replié, vers le bas quand c'est ouvert.
-          const float cx = at.x + 12.0F * scale;
-          const float cy = at.y + head_height * 0.5F;
-          const float r = 4.0F * scale;
-          if (category_open_[slot])
-            draw->AddTriangleFilled({cx - r, cy - r * 0.6F}, {cx + r, cy - r * 0.6F}, {cx, cy + r * 0.9F},
-                                    accent);
-          else
-            draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
-                                    accent);
-          draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
-                        i18n::tr(page.category));
-          category_open = category_open_[slot];
-        }
-        if (!category_open) continue;
-        const ImVec2 at = ImGui::GetCursorScreenPos();
-        const float row_width = ImGui::GetContentRegionAvail().x;
-        ImGui::PushID(static_cast<int>(i));
-        const bool picked = ImGui::InvisibleButton("##page", {row_width, row_height});
-        ImGui::PopID();
-        if (picked) page_ = static_cast<int>(i);
-        const bool selected = static_cast<int>(i) == page_;
-        if (selected) {
-          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
-                              ImGui::ColorConvertFloat4ToU32(soft), 5.0F * scale);
-          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y + 4.0F * scale},
-                              {at.x + indent - 5.0F * scale, at.y + row_height - 4.0F * scale}, accent,
-                              2.0F * scale);
-        } else if (ImGui::IsItemHovered()) {
-          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
-                              ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
-        }
-        draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
-                      ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled),
-                      i18n::tr(page.name));
-      }
-      ImGui::PopStyleVar();
-    }
+    draw_tree(page_, shown_page_, category_open_, advanced_, scale);
     shown_page_ = page_;
     ImGui::EndChild();
     ImGui::SameLine();

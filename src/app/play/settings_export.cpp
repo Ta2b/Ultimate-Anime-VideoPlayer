@@ -73,6 +73,25 @@ std::string path_problem(const std::filesystem::path& output, const std::filesys
   return {};
 }
 
+// Le verdict sur le chemin de sortie, recalculé au plus une fois par seconde ou quand il change.
+const ExportDraft::PathCheck& checked_path(ExportDraft& draft, const std::filesystem::path& output,
+                                           const std::filesystem::path& source, exporter::Codec codec) {
+  ExportDraft::PathCheck& seen = draft.check;
+  const auto now = std::chrono::steady_clock::now();
+  if (!seen.valid || seen.output != output || seen.source != source || seen.codec != codec ||
+      now - seen.at >= std::chrono::seconds(1)) {
+    std::error_code error;
+    seen.output = output;
+    seen.source = source;
+    seen.codec = codec;
+    seen.problem = path_problem(output, source, codec);
+    seen.exists = seen.problem.empty() && std::filesystem::exists(output, error);
+    seen.at = now;
+    seen.valid = true;
+  }
+  return seen;
+}
+
 }  // namespace
 
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,
@@ -188,19 +207,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   // P3.92 : un nom seul, ou un chemin relatif, se lit depuis le dossier de la source.
   std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
   if (!output.empty() && output.is_relative()) output = choices.source_file.parent_path() / output;
-  ExportDraft::PathCheck& seen = draft.check;
-  const auto now = std::chrono::steady_clock::now();
-  if (!seen.valid || seen.output != output || seen.source != choices.source_file || seen.codec != job.codec ||
-      now - seen.at >= std::chrono::seconds(1)) {
-    std::error_code error;
-    seen.output = output;
-    seen.source = choices.source_file;
-    seen.codec = job.codec;
-    seen.problem = path_problem(output, choices.source_file, job.codec);
-    seen.exists = seen.problem.empty() && std::filesystem::exists(output, error);
-    seen.at = now;
-    seen.valid = true;
-  }
+  const ExportDraft::PathCheck& seen = checked_path(draft, output, choices.source_file, job.codec);
   const std::string& problem = seen.problem;
   const exporter::Container container =
       exporter::container_of(output).value_or(exporter::Container::Matroska);
