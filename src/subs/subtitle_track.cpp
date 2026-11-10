@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
-#include <limits>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -25,7 +24,7 @@ char lower(char c) {
 }
 
 std::string lowercase_extension(const std::filesystem::path& path) {
-  std::string extension = path.extension().string();
+  std::string extension = core::to_utf8(path.extension());
   for (char& c : extension) c = lower(c);
   return extension;
 }
@@ -58,9 +57,10 @@ std::expected<std::string, Refusal> read_script(const std::filesystem::path& pat
                   std::format("{} : lecture", core::to_utf8(path.filename())));
   }
   text.resize(static_cast<std::size_t>(file.gcount()));
-  // L'indice d'encodage : le dernier suffixe du nom (« ep01.ja » donne « ja »).
-  const std::string stem = path.stem().string();
-  const std::size_t dot = stem.rfind('.');
+  // L'indice d'encodage : les suffixes du nom (« ep01.ja » donne « ja », « ep01.zh_TW.forced »
+  // donne « zh_TW.forced »), que to_utf8 lit du dernier au premier.
+  const std::string stem = core::to_utf8(path.stem());
+  const std::size_t dot = stem.find('.');
   return to_utf8(text,
                  dot == std::string::npos ? std::string_view{} : std::string_view(stem).substr(dot + 1));
 }
@@ -122,7 +122,10 @@ std::expected<SubtitleTrack, Refusal> SubtitleTrack::from_srt(const AssLibrary& 
   for (SrtCue& cue : *cues) {
     const SubtitlePacket packet{
         .start_us = cue.start_us, .duration_us = cue.end_us - cue.start_us, .data = std::move(cue.text)};
-    if (auto added = track->add_packet(packet); !added) return std::unexpected(std::move(added.error()));
+    // Une cue hors bornes (crédits de 30 h, texte de plus de 1 Mo) est écartée comme les cues mal
+    // formées, sans faire refuser le fichier (A17-07).
+    if (auto added = track->add_packet(packet); !added)
+      make_logger()->warn("cue de {} µs écartée : {}", cue.start_us, added.error().detail);
   }
   return track;
 }
@@ -146,19 +149,26 @@ std::expected<void, Refusal> SubtitleTrack::add_packet(const SubtitlePacket& pac
                   std::format("paquet de sous-titres : début {} µs, durée {} µs, {} octets", packet.start_us,
                               packet.duration_us, packet.data.size()));
   }
+  if (bytes_ >= kMaxTrackBytes || track_->n_events >= kMaxTrackEvents) {
+    if (full_) return {};
+    full_ = true;
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("piste de sous-titres pleine : {} événements, {} octets ; la suite est écartée",
+                              track_->n_events, bytes_));
+  }
   const std::int64_t start_ms = to_ms(packet.start_us);
   const std::int64_t duration_ms = to_ms(packet.start_us + packet.duration_us) - start_ms;
 
   if (kind_ == TrackKind::Ass) {
+    const int before = track_->n_events;
     ass_process_chunk(track_.get(), packet.data.data(), static_cast<int>(packet.data.size()), start_ms,
                       duration_ms);
+    if (track_->n_events > before) bytes_ += packet.data.size();  // libass écarte un ReadOrder revu
     return {};
   }
   // Texte : un ReadOrder par paquet distinct, et la ligne Matroska d'un événement Default.
-  if (seen_text_.size() >= static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-    return refuse(RefusalCode::FieldOutOfRange, "piste texte : trop d'événements");
-  }
   if (!seen_text_.emplace(packet.start_us, packet.duration_us, packet.data).second) return {};
+  bytes_ += packet.data.size();
   const std::string line =
       std::format("{},0,Default,,0,0,0,,{}", seen_text_.size() - 1, srt_text_to_ass(packet.data));
   ass_process_chunk(track_.get(), line.data(), static_cast<int>(line.size()), start_ms, duration_ms);

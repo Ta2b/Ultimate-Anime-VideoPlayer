@@ -2,8 +2,8 @@
 // virtuelle de Backend et de KernelOps passe par un try, et une exception levée dans la bibliothèque
 // devient un refus nommé (VendorCallFailed, qui cite l'appel) avant de traverser la frontière du module.
 // Les appels qui ne rendent pas de refus rendent la valeur prudente (Unknown, nullopt, false, vide).
-// Les moteurs ne sont pas enveloppés : le backend reconnaît les siens par dynamic_cast, et leurs
-// virtuelles ne font que rendre des noms.
+// Les moteurs ne sont pas enveloppés, le backend reconnaissant les siens par dynamic_cast : leurs virtuelles
+// (noms, next_times_only, next_warm) s'appellent sans ce filet.
 #pragma once
 
 #include <cstdint>
@@ -65,9 +65,6 @@ class GuardedKernelOps final : public KernelOps {
                                         const Tensor& out) override {
     return guarded_detail::call("resample", [&] { return in_->resample(in, filter, out); });
   }
-  std::expected<void, Refusal> rife_pad(const DecodedFrame& frame, const Tensor& padded) override {
-    return guarded_detail::call("rife_pad", [&] { return in_->rife_pad(frame, padded); });
-  }
   std::expected<void, Refusal> rife_crop(const Tensor& padded, const Tensor& out) override {
     return guarded_detail::call("rife_crop", [&] { return in_->rife_crop(padded, out); });
   }
@@ -78,12 +75,6 @@ class GuardedKernelOps final : public KernelOps {
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override {
     return guarded_detail::call("write_ring", [&] { return in_->write_ring(rgb, slot, sync); });
-  }
-  std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override {
-    return guarded_detail::call("measure", [&] { return in_->measure(a, b); });
-  }
-  std::optional<PairScores> previous_scores() override {
-    return guarded_detail::call("previous_scores", [&] { return in_->previous_scores(); });
   }
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override {
@@ -190,9 +181,6 @@ class GuardedBackend final : public Backend {
   }
   std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact& artifact) override {
     return guarded_detail::call("load", [&] { return in_->load(artifact); });
-  }
-  std::expected<Tensor, Refusal> import(const ExternalImage& image) override {
-    return guarded_detail::call("import", [&] { return in_->import(image); });
   }
   std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType type,
                                                                      const Shape& shape) override {

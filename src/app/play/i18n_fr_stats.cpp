@@ -34,7 +34,6 @@ constexpr std::array kStatsTexts{
     Entry{"Stop the export", "Arrêter l'export"},
     Entry{"Continue", "Continuer"},
     Entry{"Last optimization: {}", "Dernière optimisation : {}"},
-    Entry{"Light", "Léger"},
     Entry{"Open a video: the player prepares Performance mode on its frames.",
           "Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images."},
     Entry{"True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit).",

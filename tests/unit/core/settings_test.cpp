@@ -36,8 +36,8 @@ void write(const fs::path& path, const std::string& text) {
 Settings full() {
   Settings settings;
   settings.first_run_done = true;
-  settings.chosen_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::OpenVino};
-  settings.installed_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::OpenVino};
+  settings.chosen_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::Metal};
+  settings.installed_engines = {EngineId::Vulkan, EngineId::TensorRt, EngineId::Metal};
   settings.preferred = {EngineId::TensorRt, EngineId::Vulkan};
   settings.resume_position = false;
   return settings;
@@ -85,6 +85,22 @@ TEST_CASE("Réglages : les SDK de RTX HDR d'un ancien settings.toml sont oublié
   CHECK(text->find("truehdr") == std::string::npos);
 }
 
+TEST_CASE("Réglages : MIGraphX, OpenVINO et DirectML d'un ancien settings.toml sont oubliés sans bruit",
+          "[settings]") {
+  std::vector<std::string> skipped;
+  auto settings = parse_settings(
+      "version = 1\n[engines]\nchosen = [\"vulkan\", \"openvino\", \"migraphx\"]\n"
+      "installed = [\"vulkan\", \"tensorrt\", \"openvino\", \"directml\"]\n"
+      "preferred = { upscale = \"openvino\", interpolate = \"tensorrt\" }\n",
+      &skipped);
+  REQUIRE(settings);
+  CHECK(settings->chosen_engines == std::vector{EngineId::Vulkan});
+  CHECK(settings->installed_engines == std::vector{EngineId::Vulkan, EngineId::TensorRt});
+  CHECK_FALSE(settings->preferred[static_cast<std::size_t>(Usage::Upscale)].has_value());
+  CHECK(settings->preferred[static_cast<std::size_t>(Usage::Interpolate)] == EngineId::TensorRt);
+  CHECK(skipped.empty());
+}
+
 TEST_CASE("Réglages : écrire puis relire rend les mêmes valeurs", "[settings]") {
   auto text = format_settings(full());
   REQUIRE(text);
@@ -127,7 +143,8 @@ TEST_CASE("Réglages : une valeur fausse est écartée seule, le fichier vaut (P
   settings.installed_engines.push_back(EngineId::Vulkan);
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
   settings = full();
-  settings.preferred[static_cast<std::size_t>(Usage::Upscale)] = EngineId::MiGraphX;
+  settings.installed_engines = {EngineId::Vulkan, EngineId::TensorRt};
+  settings.preferred[static_cast<std::size_t>(Usage::Upscale)] = EngineId::Metal;
   CHECK(invalid(settings) == RefusalCode::FieldOutOfRange);
 }
 

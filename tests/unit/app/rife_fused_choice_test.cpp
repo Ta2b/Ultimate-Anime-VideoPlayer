@@ -44,9 +44,9 @@ TEST_CASE("RIFE fusionné : essayé par défaut, avec la raison de chaque renonc
   // Les exports v2 (7 plans) et les autres moteurs du mouvement ne sont pas coupés.
   CHECK(rife_fused_declined(defaults, true, kernels::kRifeV2InputChannels, defaults.motion_precision) ==
         "modèle à entrée v2");
-  PlaySettings gmfss;
-  gmfss.motion_engine = MotionEngine::Gmfss;
-  CHECK_FALSE(rife_fused_declined(gmfss, true, kernels::kRifeInputChannels, gmfss.motion_precision).empty());
+  PlaySettings apple;
+  apple.motion_engine = MotionEngine::Apple;
+  CHECK_FALSE(rife_fused_declined(apple, true, kernels::kRifeInputChannels, apple.motion_precision).empty());
 }
 
 TEST_CASE("RIFE fusionné : le réglage voyage dans play.toml et recharge la lecture",

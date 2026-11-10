@@ -251,6 +251,23 @@ struct PoolFree {
 constexpr int kConvertThreads = 4;
 constexpr int kConvertAlign = 64;
 
+// Où swscale pose la chroma qu'il réduit : à gauche en largeur, au centre en hauteur, ce que l'image
+// convertie annonce (AVCHROMA_LOC_LEFT). Laissé à lui-même, il la posait au centre en largeur : un quart de
+// point de chroma d'écart avec ce que l'ingestion lisait (A15-07). Une source déjà en 4:2:0 n'est pas
+// rééchantillonnée, rien n'est posé.
+bool place_chroma(SwsContext* ctx, AVPixelFormat from, AVPixelFormat to) {
+  const AVPixFmtDescriptor* src = av_pix_fmt_desc_get(from);
+  const AVPixFmtDescriptor* dst = av_pix_fmt_desc_get(to);
+  if (src == nullptr || dst == nullptr) return false;
+  const bool reduced = dst->log2_chroma_w > src->log2_chroma_w || dst->log2_chroma_h > src->log2_chroma_h;
+  if (!reduced) return true;
+  constexpr int kLeft = 0;
+  constexpr int kCenter = 128;  // en 256es de point de luma
+  return (src->log2_chroma_w == 0 || av_opt_set_int(ctx, "src_h_chr_pos", kLeft, 0) >= 0) &&
+         av_opt_set_int(ctx, "dst_h_chr_pos", kLeft, 0) >= 0 &&
+         av_opt_set_int(ctx, "dst_v_chr_pos", kCenter, 0) >= 0;
+}
+
 // Le contexte de conversion et le pool des images converties, gardés d'une image à l'autre tant que la
 // taille et les formats ne changent pas : une image 4K 4:4:4 n'alloue plus 25 Mo neufs à chaque fois
 // (A15-06). Un seul thread source convertit.
@@ -280,9 +297,11 @@ struct Converter {
                      av_opt_set_int(ctx, "dstw", frame.width, 0) >= 0 &&
                      av_opt_set_int(ctx, "dsth", frame.height, 0) >= 0 &&
                      av_opt_set_int(ctx, "dst_format", target, 0) >= 0 &&
-                     av_opt_set_int(ctx, "sws_flags", SWS_BILINEAR, 0) >= 0 &&
+                     // Spline et arrondi exact (A49-13) : quand la chroma est réduite (4:2:2, ou 4:4:4 sans
+                     // full_host_formats), le bilinéaire était le moins bon filtre de swscale.
+                     av_opt_set_int(ctx, "sws_flags", SWS_SPLINE | SWS_ACCURATE_RND, 0) >= 0 &&
                      av_opt_set_int(ctx, "threads", std::min(av_cpu_count(), kConvertThreads), 0) >= 0;
-    if (!set || sws_init_context(ctx, nullptr, nullptr) < 0) {
+    if (!set || !place_chroma(ctx, format, target) || sws_init_context(ctx, nullptr, nullptr) < 0) {
       context.reset();
       return refuse(RefusalCode::FormatUnsupported, "conversion vers 4:2:0 : contexte swscale refusé");
     }
@@ -298,17 +317,28 @@ struct Converter {
   }
 };
 
+// Le format que la chaîne lit pour une image hôte YUV qu'elle ne lit pas telle quelle. Sans full : du 4:2:0
+// de même profondeur ou moins, 8 bits en yuv420p, au-delà en yuv420p10. Avec full (la chaîne lit Yuv444p16
+// et P016 en mémoire hôte, A15-07 et A49-13) : le 4:4:4 garde sa chroma entière en 16 bits, et le 4:2:0 de
+// plus de 10 bits garde sa profondeur en P016 ; le 4:2:2 reste réduit en 4:2:0, comme avant.
+AVPixelFormat chain_target(const AVPixFmtDescriptor& desc, bool full) {
+  const bool whole_chroma = desc.log2_chroma_w == 0 && desc.log2_chroma_h == 0;
+  const bool quarter_chroma = desc.log2_chroma_w == 1 && desc.log2_chroma_h == 1;
+  if (full && whole_chroma) return AV_PIX_FMT_YUV444P16LE;
+  if (full && quarter_chroma && desc.comp[0].depth > 10) return AV_PIX_FMT_P016LE;
+  return desc.comp[0].depth > 8 ? AV_PIX_FMT_YUV420P10LE : AV_PIX_FMT_YUV420P;
+}
+
 // Une image hôte YUV que la chaîne ne lit pas (4:2:2, 4:4:4, 12 bits : H.264 High 4:4:4, VP9 profils 1
-// et 3, ProRes) devient du 4:2:0 de même profondeur ou moins : 8 bits en yuv420p, au-delà en
-// yuv420p10. Même matrice et même plage, seule la chroma est réduite. Rend nullptr si l'image n'est
-// pas de ce cas.
-std::expected<FramePtr, Refusal> to_chain_yuv(const AVFrame& frame, AVPixelFormat format) {
+// et 3, ProRes) devient un format qu'elle lit (chain_target). Même matrice et même plage. Rend nullptr si
+// l'image n'est pas de ce cas.
+std::expected<FramePtr, Refusal> to_chain_yuv(const AVFrame& frame, AVPixelFormat format, bool full) {
   const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
   if (desc == nullptr ||
       (desc->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_HWACCEL | AV_PIX_FMT_FLAG_PAL)) != 0 ||
       desc->nb_components < 3)
     return FramePtr{};
-  const AVPixelFormat target = desc->comp[0].depth > 8 ? AV_PIX_FMT_YUV420P10LE : AV_PIX_FMT_YUV420P;
+  const AVPixelFormat target = chain_target(*desc, full);
   thread_local Converter converter;
   if (auto prepared = converter.prepare(frame, format, target); !prepared)
     return std::unexpected(prepared.error());
@@ -326,8 +356,8 @@ std::expected<FramePtr, Refusal> to_chain_yuv(const AVFrame& frame, AVPixelForma
   out->extended_data = out->data;
   if (const int err = av_frame_copy_props(out.get(), &frame); err < 0)
     return refuse_av(RefusalCode::DecodeFailed, "conversion vers 4:2:0 : propriétés", err);
-  // Déjà en 4:2:0 (12 bits ramenés à 10), la chroma n'est pas rééchantillonnée : elle garde sa position.
-  // Sinon, celle que swscale produit (A15-07).
+  // Déjà en 4:2:0 (12 bits ramenés à 10 ou gardés en P016), la chroma n'est pas rééchantillonnée : elle
+  // garde sa position. Sinon, celle que swscale produit (A15-07) ; en 4:4:4 elle ne sert pas.
   const bool subsampled = desc->log2_chroma_w == 1 && desc->log2_chroma_h == 1;
   if (!subsampled) out->chroma_location = AVCHROMA_LOC_LEFT;
   // Les formats yuvj (plage pleine) sortent en plage limitée : swscale la convertit.
@@ -341,11 +371,12 @@ std::expected<FramePtr, Refusal> to_chain_yuv(const AVFrame& frame, AVPixelForma
 }  // namespace
 
 std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64_t pts_us,
-                                                      std::int64_t duration_us, ReadyEvent ready) {
+                                                      std::int64_t duration_us, ReadyEvent ready,
+                                                      bool full_host_formats) {
   const std::optional<FrameMemory> memory = memory_of(*frame);
   if (!memory) return refuse(RefusalCode::FormatUnsupported, "image d'un type d'appareil inconnu");
   if (*memory == FrameMemory::Host && !map_pixel_format(static_cast<AVPixelFormat>(frame->format))) {
-    auto converted = to_chain_yuv(*frame, static_cast<AVPixelFormat>(frame->format));
+    auto converted = to_chain_yuv(*frame, static_cast<AVPixelFormat>(frame->format), full_host_formats);
     if (!converted) return std::unexpected(converted.error());
     if (*converted) frame = std::move(*converted);
   }

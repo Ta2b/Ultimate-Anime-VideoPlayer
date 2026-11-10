@@ -124,8 +124,7 @@ namespace {
 
 // Un moteur des réseaux ajouté entre before et after.
 bool network_added(const core::Settings& before, const core::Settings& after) {
-  const std::vector<core::EngineId> networks = {core::EngineId::TensorRt, core::EngineId::MiGraphX,
-                                                core::EngineId::OpenVino, core::EngineId::Metal};
+  const std::vector<core::EngineId> networks = {core::EngineId::TensorRt, core::EngineId::Metal};
   return std::ranges::any_of(networks,
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
 }
@@ -263,17 +262,23 @@ void integrate(const PlayerPaths& paths, const Wizard& wizard, core::Settings& e
   const auto log = log_channel("app");
   const PlayerPlace place = place_of(paths);
   // Une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
+  std::optional<std::string> just_registered;
   if (!engines.open_with_registered) {
     if (auto registered = run_pumped<std::string>("open-with", [&place] { return register_player(place); })) {
       engines.open_with_registered = true;
       log->info("Ouvrir avec : {}", *registered);
+      just_registered = std::move(*registered);
     } else {
       log->warn("Ouvrir avec : {}", registered.error().detail);
     }
   }
   // Lecteur par défaut demandé à l'écran Intégration (P3.18).
   if (!make_default_requested(wizard)) return;
-  if (auto made = run_pumped<std::string>("default-player", [&place] { return choose_as_default(place); }))
+  // Inscrit à l'instant : le lecteur par défaut ne le réinscrit pas (A25-07).
+  const auto make_default = [&place, &just_registered] {
+    return just_registered ? default_once_registered(*just_registered) : choose_as_default(place);
+  };
+  if (auto made = run_pumped<std::string>("default-player", make_default))
     log->info("lecteur par défaut : {}", *made);
   else
     log->warn("lecteur par défaut : {}", made.error().detail);
@@ -373,8 +378,7 @@ std::vector<std::filesystem::path> backend_candidates(const EngineCatalog& catal
                                                       const PlayerPaths& paths) {
   std::vector<std::filesystem::path> out = installed_backends(catalog);
   for (const std::filesystem::path& backend : paths.backends) {
-    const std::optional<core::EngineId> id = engine_of_library(backend);
-    if (!id || core::engine_plugged(*id)) out.push_back(backend);  // MIGraphX, OpenVINO : débranchés
+    if (!retired_library(backend)) out.push_back(backend);  // MIGraphX, OpenVINO : retirés
   }
   return out;
 }

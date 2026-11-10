@@ -1,4 +1,4 @@
-// Index haché des modèles (models.lock) et des paquets de moteurs (engines.lock).
+// Index haché des paquets de moteurs (engines.lock).
 //
 // Les modèles sont livrés avec le lecteur (tools/release/fetch-models.sh les épingle) ; les paquets de
 // moteurs (TensorRT) et les fichiers de NVIDIA se téléchargent depuis l'URL de leur index, puis se
@@ -51,22 +51,15 @@ std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& pat
 
 // --- Noms stables, écrits dans les index, settings.toml et la ligne de commande. ---
 
-std::string_view engine_name(EngineId engine);  // « vulkan », « tensorrt », « rtx_video_sdk »…
+std::string_view engine_name(EngineId engine);  // « vulkan », « tensorrt », « metal »
 std::optional<EngineId> parse_engine(std::string_view name);
+// Un moteur retiré (« migraphx », « openvino », « directml », « rtx_video_sdk »…) : son nom est reconnu
+// dans un ancien fichier et écarté sans bruit (engines.h).
+bool retired_engine(std::string_view name);
 std::string_view os_name(Os os);  // « windows », « linux », « macos »
 std::optional<Os> parse_os(std::string_view name);
 
 // --- Index. ---
-
-struct ModelEntry {
-  ModelId id;          // nom de fichier sans extension : lettres, chiffres, « . », « _ », « - »
-  std::string url;     // https seulement
-  std::string sha256;  // 64 chiffres hexadécimaux minuscules
-  std::uint64_t size = 0;
-  std::string license;
-  std::vector<int> profiles;  // slots 1 à 9 qui l'utilisent
-  friend bool operator==(const ModelEntry&, const ModelEntry&) = default;
-};
 
 struct EnginePackage {
   EngineId engine = EngineId::Vulkan;
@@ -106,12 +99,6 @@ namespace limits {
 inline constexpr Range<std::int64_t> kDownloadSize{1, 64LL << 30};  // 64 Gio au plus
 }  // namespace limits
 
-// [[model]] id, url, sha256, size, license, profiles ; un id au plus une fois.
-std::expected<std::vector<ModelEntry>, Refusal> parse_models_lock(std::string_view toml_text);
-// [[engine]] id, platform, url, sha256, size, version, license (facultative) ; un couple (id, platform)
-// au plus une fois.
-std::expected<std::vector<EnginePackage>, Refusal> parse_engine_index(std::string_view toml_text);
-
 // L'index tel que le lecteur le lit : une entrée refusée (un moteur qu'il ne connaît pas encore,
 // publié par une release plus récente) est écartée seule, et les autres restent téléchargeables.
 // Refus : TOML illisible, version d'index inconnue, [[engine]] qui n'est pas un tableau.
@@ -127,11 +114,7 @@ std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text
 std::vector<VendorFile> vendor_files_for(std::span<const VendorFile> files, EngineId engine, Os platform,
                                          std::string_view arch);
 
-const ModelEntry* find_model(std::span<const ModelEntry> lock, std::string_view id);
 const EnginePackage* find_package(std::span<const EnginePackage> index, EngineId engine, Os platform);
-// Modèles à télécharger pour un profil, dans l'ordre de l'index.
-std::vector<ModelEntry> models_for_profile(std::span<const ModelEntry> lock, int slot);
-
 // Refus HashMismatch si la taille ou le SHA-256 du fichier diffèrent de l'attendu.
 std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std::uint64_t size,
                                          std::string_view sha256, const std::stop_token& stop = {});
@@ -140,13 +123,11 @@ std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std:
 
 struct InstallLayout {
   Os os = Os::Windows;
-  std::filesystem::path models;     // <données>/models/<id>.onnx
   std::filesystem::path engines;    // <données>/backends/<moteur>/<version>/ (engines/ : le cache)
   std::filesystem::path downloads;  // <données>/downloads/<sha256>.part, jamais lu comme installé
 };
 
 InstallLayout install_layout(Os os, const std::filesystem::path& user_data_dir);
-std::filesystem::path model_path(const InstallLayout& layout, const ModelEntry& model);
 std::filesystem::path engine_dir(const InstallLayout& layout, const EnginePackage& package);
 // Bibliothèque du backend dans engine_dir : ajp_backend_<nom>.dll sous Windows, .so ailleurs.
 std::filesystem::path backend_library(const InstallLayout& layout, const EnginePackage& package);

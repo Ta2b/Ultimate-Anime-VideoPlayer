@@ -52,8 +52,12 @@ UpscaleStage::~UpscaleStage() {
   if (setup_.rife_motion_calm != nullptr)
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
   if (setup_.rife_warm)
-    log_channel("gpu")->info("RIFE à chaud : {} passes sur {} sans les blocs grossiers", warm_runs_,
-                             rife_runs_);
+    log_channel("gpu")->info("RIFE à chaud : {} passes sur {} sans les blocs grossiers{}", warm_runs_,
+                             rife_runs_,
+                             warm_runs_ == 0 && rife_runs_ > 0
+                                 ? " (ce moteur ne reprend pas à chaud : l'essai est sans effet hors du RIFE "
+                                   "fusionné de Vulkan)"
+                                 : "");
   if (moving_.pairs > 0) {
     const auto pairs = static_cast<double>(moving_.pairs);
     log_channel("gpu")->info(
@@ -245,7 +249,8 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
 void UpscaleStage::analyze_source(const DecodedFrame& frame) {
   if (!frame_stats_ || !setup_.live) return;
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  // Les analyses finies passent aux scènes, dans l'ordre ; une analyse refusée coupe l'analyse.
+  // Les analyses finies passent aux scènes, dans l'ordre ; une analyse refusée est jetée et la suivante
+  // continue.
   while (!stats_pending_.empty()) {
     auto taken = ops.frame_stats_take(stats_pending_.front().ticket);
     if (!taken) {
@@ -298,7 +303,6 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   const bool ingested = looks_ahead() && take_ahead(frame, spec);  // déjà, derrière la précédente
   if (drba()) {
     if (auto ok = drba_arrive(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
-    debanded_ = false;
   } else if (!ingested) {
     auto debanded = ingest_source(frame, spec, rgb_[current_]->tensor());
     if (!debanded) return std::unexpected(std::move(debanded.error()));
@@ -419,22 +423,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
               *facts.known_cut ? "coupe" : "plan", *facts.known_cut ? "plan" : "coupe", scores->scene_score);
       }
     }
-    if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
-      ++pairs_;
-      if (setup_.live) setup_.live->count_pair();
-    }
-    if (pair_cut(facts)) {
-      forget_motion();
-      ++cuts_;
-      if (setup_.live) {
-        setup_.live->count_cut();
-        setup_.live->auto_cut(host_now_us());
-        setup_.live->free_cut(host_now_us());
-      }
-    } else if (kernels::is_held(scores->worst_block)) {
-      ++held_;
-      if (setup_.live) setup_.live->count_held();
-    }
+    count_measured(facts);
   }
   // Smooth : une tenue de deux sources fondue en un mouvement (upscale_smooth.cpp).
   smooth_second_ = std::exchange(smooth_first_, false) && facts.same_epoch;
@@ -448,6 +437,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   middle_rank_ = 0;
   instants_[0] = Instant{.t = 1.0F, .pts_us = frame.pts_us};
   const bool runs = on_grid && (smooth_first_ || rife_runs(facts));
+  // P6.15 : une paire sans passe (dessin tenu, coupe, hors grille) sépare la suivante de la dernière passe
+  // du milieu ; ses blocs grossiers, vieux de plusieurs sources, ne se reprennent pas (A09-13).
+  if (!runs) warm_from_ = nullptr;
   // Mode auto : seules les paires qui ont chargé le GPU disent s'il tient ; à ×1 rien ne tourne, le
   // temps seul compte. Coupe de scène ou dessin tenu : aucun verdict, mais le moteur vit.
   const bool auto_measured =
@@ -512,8 +504,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
                before_ == PairMotion::Still && intermediates_ > 0;
   copy_written_ = false;
   b_shown_ = false;
-  late_fate_now_ =
-      (setup_.late_fate || steady) && free_mode && !drba() && !copy_pair_ && setup_.clock != nullptr;
+  late_fate_now_ = (setup_.late_fate || steady) && free_mode && !copy_pair_ && setup_.clock != nullptr;
   // Dessin tenu qui reprend l'agrandissement de la précédente, dont l'image est à l'écran : la source
   // est bit à bit celle qui est affichée, ni écrite ni présentée.
   held_same_ = setup_.skip_held && runs == false && outputs_ == 1 && reuse_span_ && shown_source_;
@@ -590,8 +581,10 @@ bool UpscaleStage::passed(const DecodedFrame& frame, const DecodedFrame& next) {
 
 RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t output) {
   if (held_same_) return Fate::Same;
-  if (setup_.skip_held && drba()) return drba_fate(output);
+  // A09-07 : DistilDRBA aussi laisse un instant déjà passé, avant de juger son côté tenu ; une passe jetée
+  // ne s'amortit sur aucun autre instant.
   if (late_fate_now_ && instant_late(frame, output)) return Fate::Late;
+  if (setup_.skip_held && drba()) return drba_fate(output);
   if (!copy_pair_) return Fate::Write;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   if (poses_copy(true, true, instant.t) == PoseCopy::Before) return Fate::Same;

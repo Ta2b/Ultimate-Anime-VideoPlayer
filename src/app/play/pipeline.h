@@ -115,6 +115,8 @@ class Pipeline {
   const media::TrackInfo* track_info(int track) const;
   // Le SelectTrack d'une piste du menu : du conteneur, ou un fichier à côté de la vidéo.
   std::expected<subs::SelectTrack, Refusal> subtitle_select(int index) const;
+  // Les polices jointes vers subs, et l'annonce de celles qu'écarte le plafond (A17-09).
+  void send_fonts(AttachedFonts fonts);
   // Les étapes de open() : choix des pistes, audio, sous-titres.
   static media::TrackChoice choose(const PipelineConfig& config, const media::Demuxer& demuxer,
                                    const std::vector<ExternalSubtitle>& externals);
@@ -122,8 +124,7 @@ class Pipeline {
                   std::vector<media::PacketRoute>& routes);
   std::expected<void, Refusal> open_subtitles(const PipelineConfig& config, const media::Demuxer& demuxer,
                                               std::optional<int> subtitle,
-                                              std::vector<ExternalSubtitle> externals,
-                                              const std::vector<subs::AttachFont>& fonts,
+                                              std::vector<ExternalSubtitle> externals, AttachedFonts fonts,
                                               std::vector<media::PacketRoute>& routes);
 
   // Ordre de déclaration = ordre inverse de destruction : la source s'arrête la première,

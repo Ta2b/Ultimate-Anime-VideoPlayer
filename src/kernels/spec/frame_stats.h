@@ -8,7 +8,7 @@
 // kBarLuma, depuis chaque bord ; gardées entières si le reste fait moins du quart de la grille.
 //
 // Deux échelles :
-// - gamma, celle de gpu::KernelOps::SceneStats : luma BT.709 des canaux encodés, histogramme de
+// - gamma, celle de app::play::SceneStats : luma BT.709 des canaux encodés, histogramme de
 //   kLumaBins cases, grille kZones × kZones de lumas moyennes, bleu et chroma moyens ;
 // - linéaire : le signal décodé en cd/m² (SDR : BT.1886 γ 2,4 noir 0, blanc kSdrWhiteNits ;
 //   PQ : ST 2084 ; HLG : OETF inverse puis OOTF à kHlgPeakNits). maxRGB dans les primaires de la

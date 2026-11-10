@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "app/play/derived_model.h"
+#include "core/utf8_path.h"
 #include "prepare/drba_split.h"
 #include "prepare/onnx_dims.h"
 
@@ -39,7 +40,10 @@ std::expected<std::filesystem::path, Refusal> static_distil_drba(const std::file
                                                                  const std::filesystem::path& dir) {
   const std::vector<prepare::NamedDim> dims{{"H", padded_height}, {"W", padded_width}};
   const auto fix = [&](std::span<const std::byte> bytes) { return prepare::with_fixed_dims(bytes, dims); };
-  return derived_model(model, std::format("{}x{}", padded_width, padded_height), dir, fix);
+  auto fixed = derived_model(model, std::format("{}x{}", padded_width, padded_height), dir, fix);
+  // Une taille par définition de vidéo lue : les anciennes s'en vont (A09-11).
+  if (fixed) purge_sized_derivatives(dir, core::to_utf8(model.stem()) + "-", *fixed);
+  return fixed;
 }
 
 }  // namespace ajp::app::play
