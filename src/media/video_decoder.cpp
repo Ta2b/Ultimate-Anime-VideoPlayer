@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <deque>
 #include <format>
+#include <limits>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -25,6 +27,13 @@ namespace ajp::media {
 
 namespace {
 
+// pts + durée, kNoPts si l'un manque ou si la somme déborde (un fichier forgé, A15-10). La durée n'est
+// jamais négative.
+std::int64_t end_of(std::int64_t pts, std::int64_t duration) {
+  if (pts == kNoPts || duration > std::numeric_limits<std::int64_t>::max() - pts) return kNoPts;
+  return pts + duration;
+}
+
 // Threads du décodage logiciel : la valeur demandée, ou un par cœur
 // (affinité comprise) jusqu'à kAutoDecoderThreads. FFmpeg en prendrait
 // jusqu'à 16, soit 15 images de retard avant la première.
@@ -34,6 +43,14 @@ int software_threads(int requested) {
 }
 
 }  // namespace
+
+int background_decoder_threads() {
+#ifdef _WIN32
+  return 1;
+#else
+  return std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 4);
+#endif
+}
 
 struct VideoDecoder::State {
   // Paquets gardés au plus avant la première image, pour la réouverture en logiciel.
@@ -72,6 +89,10 @@ struct VideoDecoder::State {
   bool deinterlace_flushed = false;
   std::optional<std::int64_t> skip_before;  // VideoDecoder::skip_before
   FramePtr last_skipped;                    // la dernière image écartée, ressortie à la fin du flux
+  // A15-09 : chaque image attend la suivante, dont le pts donne sa vraie durée. Celle du paquet ne vaut pas
+  // mieux en VFR : le Matroska la tire de DefaultDuration, la période moyenne. Elle ne sert qu'en dernier
+  // recours (dernière image, pts inconnu).
+  FramePtr held;
   std::shared_ptr<spdlog::logger> log = make_logger();
 
   // Données abîmées : l'image en cause est perdue, le décodage continue.
@@ -86,6 +107,16 @@ struct VideoDecoder::State {
     rejected.push_back(
         {api, Refusal{RefusalCode::HwDecodeUnavailable, std::format("{} : {}", name(api), why)}});
     api = HwApi::Software;
+  }
+
+  // A15-03 : une erreur du décodeur matériel en cours de flux (pilote, pool, profil hors de ses moyens) le
+  // rouvre en logiciel, une fois, quand les essais le permettent. Vrai si rouvert.
+  bool recover(int err, std::string_view where) {
+    if (api == HwApi::Software || !software_allowed || err == AVERROR(EAGAIN) || err == AVERROR_INVALIDDATA ||
+        err == AVERROR_EOF)
+      return false;
+    fall_back(refuse_av(RefusalCode::DecodeFailed, where, err).error().detail);
+    return reopen_software();
   }
 
   // Choisit le format matériel s'il est proposé. extra_hw_frames se pose ici,
@@ -164,12 +195,13 @@ struct VideoDecoder::State {
   // jamais un 0 inventé.
   bool skipped(FramePtr& frame);
   std::expected<std::optional<DecodedFrame>, Refusal> deliver(FramePtr frame);
+  std::expected<std::optional<DecodedFrame>, Refusal> timed(FramePtr frame);
 
   std::expected<std::optional<DecodedFrame>, Refusal> finish(FramePtr frame) {
     const std::int64_t pts =
         frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
     const std::int64_t duration = frame->duration > 0 ? frame->duration : nominal_duration_us;
-    next_pts_us = pts == kNoPts ? kNoPts : pts + duration;
+    next_pts_us = end_of(pts, duration);
     ReadyEvent ready;
     if (hw.stream && frame->hw_frames_ctx != nullptr) {
       auto recorded = hw.stream->record();
@@ -229,7 +261,8 @@ struct VideoDecoder::State {
     api = attempt;
     hw = HwDevice{};
     direct = false;
-    extra_hw_frames = options.extra_hw_frames;
+    // Une surface de plus pour l'image que timed() retient jusqu'à la suivante (A15-09).
+    extra_hw_frames = options.extra_hw_frames + 1;
     if (attempt == HwApi::Software) {
       const AVCodec* decoder = avcodec_find_decoder(id);
       if (decoder == nullptr) {
@@ -313,6 +346,7 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   state->requested_threads = options.threads;
   state->software_allowed = std::ranges::contains(options.attempts, HwApi::Software);
   state->download = options.download;
+  if (track.inverse_telecine) state->deinterlacer = Deinterlacer(FieldMode::InverseTelecine);
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
     state->nominal_duration_us = av_rescale(1'000'000, track.frame_rate.den, track.frame_rate.num);
   }
@@ -401,6 +435,8 @@ std::expected<void, Refusal> VideoDecoder::send(const Packet& packet) {
     s.pending = packet;
   } else if (err == AVERROR_INVALIDDATA) {
     s.data_error(std::format("envoi du paquet à {} µs", packet.pts_us));
+  } else if (err < 0 && s.recover(err, "envoi d'un paquet")) {
+    return {};
   } else if (err < 0) {
     return refuse_av(RefusalCode::DecodeFailed, std::format("envoi du paquet à {} µs", packet.pts_us), err);
   }
@@ -432,6 +468,7 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
     if (err == AVERROR_INVALIDDATA) s.data_error("envoi d'un paquet en attente");
     if (err >= 0 || err == AVERROR_INVALIDDATA) s.pending.reset();
     if (err < 0 && err != AVERROR(EAGAIN) && err != AVERROR_INVALIDDATA) {
+      if (s.recover(err, "envoi d'un paquet en attente")) return std::nullopt;
       return refuse_av(RefusalCode::DecodeFailed, "envoi d'un paquet en attente", err);
     }
   }
@@ -454,6 +491,7 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   if (s.reopen && s.reopen_software()) return std::nullopt;
   if (err == AVERROR(EAGAIN)) return std::nullopt;
   if (err == AVERROR_EOF) {
+    if (s.held) return s.deliver(std::move(s.held));  // la dernière, à la période moyenne
     if (s.deinterlacer.active() && !s.deinterlace_flushed) {
       s.deinterlace_flushed = true;
       if (auto flushed = s.deinterlacer.flush(); !flushed) return std::unexpected(flushed.error());
@@ -467,8 +505,16 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
     s.drained = true;
     return std::nullopt;
   }
+  if (err < 0 && s.recover(err, "réception d'une image")) return std::nullopt;
   if (err < 0) return refuse_av(RefusalCode::DecodeFailed, "réception d'une image", err);
   if (frame->hw_frames_ctx == nullptr) s.fall_back("le décodeur a rendu une image logicielle");
+  // A15-02 : une image matérielle entrelacée (champ inconnu du conteneur) sortirait tissée, sans bwdif : le
+  // décodage passe en logiciel, où elle est désentrelacée.
+  if (frame->hw_frames_ctx != nullptr && (frame->flags & AV_FRAME_FLAG_INTERLACED) != 0 &&
+      s.software_allowed && (s.output || s.replayable)) {
+    s.fall_back("image entrelacée, désentrelacée en logiciel");
+    if (s.reopen_software()) return std::nullopt;
+  }
   if (!s.output) {
     s.output = true;
     s.sent.clear();
@@ -477,7 +523,19 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
 
   if (s.skipped(frame)) return std::nullopt;
   s.last_skipped.reset();
-  return s.deliver(std::move(frame));
+  return s.timed(std::move(frame));
+}
+
+// A15-09 : l'image sort quand la suivante arrive, avec l'écart de leurs pts pour durée.
+std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::State::timed(FramePtr frame) {
+  FramePtr previous = std::exchange(held, std::move(frame));
+  if (!previous) return std::nullopt;
+  const std::int64_t from = previous->best_effort_timestamp;
+  const std::int64_t to = held->best_effort_timestamp;
+  const bool known = from != AV_NOPTS_VALUE && to != AV_NOPTS_VALUE && to > from;
+  if (known && (from >= 0 || to <= std::numeric_limits<std::int64_t>::max() + from))
+    previous->duration = to - from;
+  return deliver(std::move(previous));
 }
 
 // Une image écartée par skip_before : son horodatage est fixé maintenant (le trou d'après se comble à partir
@@ -487,9 +545,10 @@ bool VideoDecoder::State::skipped(FramePtr& frame) {
   const std::int64_t pts =
       frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
   const std::int64_t duration = frame->duration > 0 ? frame->duration : nominal_duration_us;
-  if (pts == kNoPts || pts + std::max<std::int64_t>(duration, 1) > *skip_before) return false;
+  const std::int64_t end = end_of(pts, std::max<std::int64_t>(duration, 1));
+  if (end == kNoPts || end > *skip_before) return false;
   frame->best_effort_timestamp = pts;
-  next_pts_us = pts + duration;
+  next_pts_us = end_of(pts, duration);
   last_skipped = std::move(frame);
   return true;
 }
@@ -510,7 +569,10 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::State::deliver
   // P3.25 : une image entrelacée en mémoire hôte passe par bwdif, avec une image de retard.
   if (frame->hw_frames_ctx == nullptr &&
       (s.deinterlacer.active() || (frame->flags & AV_FRAME_FLAG_INTERLACED) != 0)) {
-    if (!s.deinterlacer.active()) s.log->info("images entrelacées : désentrelacement bwdif");
+    if (!s.deinterlacer.active())
+      s.log->info("images entrelacées : {}", s.opened.inverse_telecine
+                                                 ? "télécinéma inversé (fieldmatch, decimate)"
+                                                 : "désentrelacement bwdif");
     if (auto pushed = s.deinterlacer.push(std::move(frame)); !pushed) return std::unexpected(pushed.error());
     auto out = s.deinterlacer.pull();
     if (!out) return std::unexpected(out.error());
@@ -529,6 +591,7 @@ void VideoDecoder::flush() {
   State& s = *state_;
   s.skip_before.reset();
   s.last_skipped.reset();
+  s.held.reset();
   avcodec_flush_buffers(s.codec.get());
   s.pending.reset();
   s.replay.clear();
