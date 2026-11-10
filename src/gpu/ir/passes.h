@@ -85,7 +85,8 @@ int promote_grid_chains(Graph& graph);
 // phases (V3) : quand les prises nulles des phases dépassent 40 % de la Conv unique (noyau 4 × 4
 // de pas 2 : 4 prises utiles sur 9 par phase), s² Conv sans zéros, une par phase, de cout canaux
 // chacune (au plus max_channels), concaténées dans l'ordre DCR puis un DepthToSpace de bloc s ; le
-// DepthToSpace lecteur unique de la sortie reste alors à sa place.
+// DepthToSpace de bloc b lecteur unique de la sortie s'y fond aussi (A44-12) : chaque phase en b Conv
+// de cout / b canaux, et un seul DepthToSpace de bloc s × b.
 int transposes_as_convs(Graph& graph, std::int64_t max_channels, bool phases = false);
 
 struct PassStats {

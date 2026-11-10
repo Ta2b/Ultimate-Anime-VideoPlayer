@@ -91,16 +91,48 @@ TEST_CASE("ConvTranspose 4 × 4 de pas 2 : une Conv sans zéros par phase", "[gp
     Graph after;
     const PassStats stats = check(transpose_model(8, 4, 2, 1, mode), 256, after, true);
     CHECK(stats.transposes == 1);
-    CHECK(count_ops(after, OpKind::Conv) == 4);
+    // A44-12 : le pixel_shuffle qui suit se fond, chaque phase en deux Conv (une par ligne du bloc), et
+    // il ne reste qu'un réarrangement, de bloc 4.
+    CHECK(count_ops(after, OpKind::Conv) == (mode.empty() ? 4U : 8U));
     CHECK(count_ops(after, OpKind::Concat) == 1);
+    CHECK(count_ops(after, OpKind::DepthToSpace) == 1);
     for (const Node& node : after.nodes) {
       if (node.op == OpKind::Conv) CHECK(std::get<ConvAttrs>(node.attrs).kernel == Pair{2, 2});
+      if (node.op == OpKind::DepthToSpace)
+        CHECK(std::get<BlockAttrs>(node.attrs).blocksize == (mode.empty() ? 2 : 4));
     }
   }
   // Noyau 2 × 2 de pas 2 : une prise par phase, autant que la Conv 1 × 1 unique ; elle est gardée.
   Graph after;
   CHECK(check(transpose_model(8, 2, 2, 0, ""), 256, after, true).transposes == 1);
   CHECK(count_ops(after, OpKind::Conv) == 1);
+}
+
+// A44-12 : fondre les deux réarrangements ne change aucune somme. Le même modèle dont la sortie de la
+// ConvTranspose est aussi une sortie du graphe garde les deux DepthToSpace : les deux graphes rendent y au
+// bit près.
+TEST_CASE("ConvTranspose par phases : le pixel_shuffle fondu rend les mêmes bits que les deux réarrangements",
+          "[gpu_ir][passes]") {
+  for (const std::string mode : {"DCR", "CRD"}) {
+    INFO("pixel_shuffle " << mode);
+    ModelBuilder kept = transpose_model(8, 4, 2, 1, mode);
+    kept.output("t");
+    Graph merged = build(transpose_model(8, 4, 2, 1, mode));
+    Graph apart = build(kept);
+    REQUIRE(transposes_as_convs(merged, 256, true) == 1);
+    REQUIRE(transposes_as_convs(apart, 256, true) == 1);
+    CHECK(count_ops(merged, OpKind::DepthToSpace) == 1);
+    CHECK(count_ops(apart, OpKind::DepthToSpace) == 2);
+    const std::vector<NamedValue> inputs{{.name = "x", .value = random_floats({1, 8, 5, 6}, 43)}};
+    const std::vector<NamedValue> one = execute(merged, inputs);
+    const std::vector<NamedValue> two = execute(apart, inputs);
+    REQUIRE(one.size() == 1);
+    REQUIRE(two.size() == 2);
+    const auto y = std::ranges::find(two, "y", &NamedValue::name);
+    REQUIRE(y != two.end());
+    REQUIRE(one[0].value.dims == y->value.dims);
+    CHECK(one[0].value.f == y->value.f);
+  }
 }
 
 TEST_CASE("ConvTranspose gardée : trop de canaux, ou passe éteinte", "[gpu_ir][passes]") {
