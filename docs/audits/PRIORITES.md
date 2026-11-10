@@ -135,7 +135,7 @@ Une correction n'arrive chez personne tant que le canal Stable se croit à jour 
 | 89 | A36-09 | Mineur | `tests/unit/app/settings_test.cpp:620-645` | Aucun test de passage entre versions hors des clés inconnues |  |
 | 90 | A05-11 | Mineur | `src/prepare/process_win.cpp:128` | `trtexec.exe` relit sa ligne de commande en page ANSI : compte non ANSI, TensorRT inutilisable | A20-02 (même cause) |
 | 91 | A08-17 | Mineur | `src/app/play/player.cpp:162` | Treize `path::string()` (dette) | A20-02 (même cause) |
-| 92 | A24-09 | Mineur | `src/app/play/visible_error.h:44-45` | 56 codes sur 71 affichés par leur nom anglais | A20-09 (même cause) |
+| 92 | A24-09 | Mineur | `src/app/play/visible_error.h:44-45` | 56 codes sur 71 affichés par leur nom anglais | Corrigé : chaque code de refus a une phrase traduite, suivie de son nom (test sur les 71 codes) |
 | 93 | A26-09 | Mineur | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` ignoré : compté comme un plantage | A20-01 (même cause) |
 
 <a id="c02"></a>
@@ -518,12 +518,12 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 45 | A24-07 | Mineur | `src/app/play/user_keys.cpp:16-24` | Une entrée fautive de `[keys]` remet tous les raccourcis par défaut | Corrigé |
 | 46 | A24-08 | Mineur | `src/app/play/user_keys.cpp:32` | `path::string()` dans le journal (dette, voir A20-02) | Corrigé |
 | 47 | A24-10 | Mineur | `src/app/play/visible_error.h:28` | UX-17 : phrase d'erreur répétée | Corrigé |
-| 48 | A24-11 | Mineur | `src/app/play/controls_draw.cpp:354-371` | UX-15 : textes de préparation sans largeur maximale |  |
+| 48 | A24-11 | Mineur | `src/app/play/controls_draw.cpp:354-371` | UX-15 : textes de préparation sans largeur maximale | Corrigé d'après le code : le texte de préparation s'arrête avant « Annuler et regarder » et au bord de la fenêtre |
 | 49 | A24-12 | Mineur | `src/app/play/controls_draw.cpp:114-125` | Message bref sans retour à la ligne, avis collés | Corrigé |
-| 50 | A24-13 | Mineur | `src/app/play/panel_style.h:115-130` | UX-22 : badges qui ne suivent pas l'échelle |  |
-| 51 | A24-14 | Mineur | `src/app/play/ui.cpp:452` | UX-08 : Échap ferme tout le panneau et jette les changements |  |
-| 52 | A24-15 | Mineur | `src/app/play/home_screen.cpp:205-213` | `dropped()` passe la fenêtre au premier plan et interroge le disque |  |
-| 53 | A24-16 | Mineur | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface à l'accueil |  |
+| 50 | A24-13 | Mineur | `src/app/play/panel_style.h:115-130` | UX-22 : badges qui ne suivent pas l'échelle | Corrigé d'après le code : pastilles aux mesures de la police, à la ligne quand elles ne tiennent pas |
+| 51 | A24-14 | Mineur | `src/app/play/ui.cpp:452` | UX-08 : Échap ferme tout le panneau et jette les changements | Corrigé : Échap sur une liste ouverte ne ferme que la liste (vérifié sur capture, avant et après) |
+| 52 | A24-15 | Mineur | `src/app/play/home_screen.cpp:205-213` | `dropped()` passe la fenêtre au premier plan et interroge le disque | Corrigé en partie : tri par extension séparé et testé, fenêtre passée devant dans sa propre fonction ; le disque reste lu une fois par fichier glissé (c'est ce qui écarte un dossier) |
+| 53 | A24-16 | Mineur | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface à l'accueil | Corrigé : à l'accueil, play.toml s'écrit par le thread d'écriture (LatestWriter), comme en lecture |
 | 54 | A24-17 | Mineur | `src/app/play/home_screen.cpp:336-341` | Accueil redessiné toutes les 16 ms sans événement | Corrigé |
 | 55 | A24-18 | Mineur | `src/app/play/placebo_imgui.cpp:107-124` | Atlas des polices en RGBA32, renvoyé depuis l'origine |  |
 | 56 | A24-19 | Mineur | `src/app/play/placebo_overlays.cpp:63-76` | Barre visible : panneaux typographiés montés avec les dialogues |  |
