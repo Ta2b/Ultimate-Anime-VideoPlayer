@@ -31,8 +31,8 @@ tient dans six noyaux.
 - Les arrondis FP16 du graphe sont reproduits aux mêmes endroits (sorties de Resize, sigmoïde, mélange) ; les Resize et
   GridSample du graphe sont en FP32 entre deux Cast. La grille des warps fait exception : la colle lit la position en
   pixels `x + flot` en FP32 (`pixel_tap`, `tap_of`), égale à la grille normalisée `base + flot × pas` du graphe ramenée en
-  pixels, sans l'arrondi FP16 de la base ni de la somme (A46-04). Le graphe livré `models-drba-1` arrondit encore sa grille
-  en FP16 (A03-18) : la chaîne est plus juste que lui, jusqu'à ce que le graphe réexporté (`DRBA_GRID_OPS`) soit publié.
+  pixels, sans l'arrondi FP16 de la base ni de la somme (A46-04). Le graphe livré (`models-interp-1`, réexporté avec
+  `DRBA_GRID_OPS`) garde lui aussi sa grille en FP32 depuis le 10 novembre 2026 (A03-18).
 - Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran de précision hors Équilibre, structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur
   une paire de zéros (exécution à froid, capture du graphe, rejeu) avec synchronisation : une erreur CUDA se voit là, avant
@@ -62,9 +62,9 @@ Qualité de `out` contre ORT CPU FP16 du réseau entier (3 images d'anime réell
 cas à tau 1,25 de l'autre côté) : 57,9 à 67,1 dB (SSIM 0,99986 à 0,99996), le TensorRT FP16 entier faisant 59,2 à 68,7 dB
 (à 1,3 dB près de la chaîne). Le plancher de bruit du réseau était là : la grille de warp en FP16 (un ulp = 0,5 pixel à
 1920 de large), deux réalisations du même graphe s'écartent de 60 à 67 dB (ORT enchaîné contre ORT entier : 66,8 dB).
-Ces chiffres datent d'avant la grille en FP32 de la colle et sont à refaire sur la RTX. Le graphe seul, grille en FP32
-(reconverti par `convert_rife_fp16.py`, `DRBA_GRID_OPS`) : 77,5 dB de fidélité à son FP32 au banc de qualité, contre
-57,0 dB pour le graphe livré (`docs/banc-qualite.md`).
+Ces chiffres datent d'avant la grille en FP32 de la colle et sont à refaire sur la RTX. Le graphe livré, grille en FP32
+(`DRBA_GRID_OPS`) : 77,5 dB de fidélité à son FP32 au banc de qualité, contre 57,0 dB pour le graphe d'avant
+(`docs/banc-qualite.md`).
 
 Dans le lecteur : voir la section suivante.
 
