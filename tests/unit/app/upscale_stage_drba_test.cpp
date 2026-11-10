@@ -246,4 +246,27 @@ TEST_CASE("Étage gpu : refus de démarrage nommés", "[app][stage]") {
   CHECK(refused(std::move(none)) == RefusalCode::FieldMissing);
 }
 
+// A31-09 : une source qui change de taille (publicité 1440×1080 dans un enregistrement 1920×1080) n'est pas
+// ingérée comme image suivante de DistilDRBA : la paire finit, puis l'image rouvre la chaîne (SourceResized).
+TEST_CASE("Étage gpu : DistilDRBA n'ingère pas une suivante d'une autre taille, la chaîne se rouvre",
+          "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  rig.start(std::move(s));
+  rig.feed(1, 2);
+  for (std::uint32_t id = 3; id <= 4; ++id)  // la suite du flux à la nouvelle taille
+    REQUIRE(
+        rig.push(test::host_frame(id, kWidth * 3 / 4, kHeight, static_cast<std::int64_t>(id) * kPeriodUs)));
+  REQUIRE(rig.collect(3));  // 1, 1-2, 2 : la paire (2, 3) n'est pas calculée
+  for (int i = 0; i < 200 && rig.reported().empty(); ++i) std::this_thread::sleep_for(10ms);
+  const std::vector<Refusal> refused = rig.reported();
+  REQUIRE(refused.size() == 1);
+  CHECK(refused[0].code == RefusalCode::SourceResized);
+  rig.stage.reset();
+  CHECK(rig.backend.count("ingest 3") == 0);
+  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2"});
+}
+
 }  // namespace ajp::app::play

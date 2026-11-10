@@ -45,11 +45,17 @@ class FakeSink final : public AudioSink {
   void on_removed(std::function<void()> callback) override { removed_ = std::move(callback); }
   // Comme une file neuve sur la sortie par défaut : vide, en pause.
   std::expected<void, Refusal> reopen_default() override {
+    ++reopens_;
+    if (failed_reopens_ > 0) {  // aucune sortie par défaut (A16-01)
+      --failed_reopens_;
+      return std::unexpected(Refusal{RefusalCode::AudioDeviceUnavailable, "aucune sortie par défaut"});
+    }
     consumed_ = pushed_;
     paused_ = true;
-    ++reopens_;
     return {};
   }
+  // Les n réouvertures suivantes échouent : plus de sortie par défaut, puis le casque rebranché.
+  void fail_reopens(int n) { failed_reopens_ = n; }
   // Le casque débranché : SDL prévient depuis son thread.
   void remove() const {
     if (removed_) removed_();
@@ -89,6 +95,7 @@ class FakeSink final : public AudioSink {
   double ratio_ = 1.0;
   int clears_ = 0;
   int reopens_ = 0;
+  int failed_reopens_ = 0;
   std::function<void(const DeviceReading&)> demand_;
   std::function<void()> removed_;
 };
