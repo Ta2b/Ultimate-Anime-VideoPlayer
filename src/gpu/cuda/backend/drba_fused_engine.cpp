@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_kernels.h"
 
 namespace ajp::gpu::cuda {
@@ -179,8 +180,14 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   }
   // Une capture refusée pendant l'essai laisse la chaîne tourner sans graphe : ce n'est pas un refus. Les
   // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus.
+  // Remise à zéro complète (A03-10) : ni les rejeux refusés de l'essai, ni les adresses de ses tampons
+  // libérés (kept_), ni son plafond de graphes ne passent à la lecture.
   engine->drop_graphs();
   engine->capture_failures_ = 0;
+  engine->launch_failures_ = 0;
+  engine->graphs_full_ = false;
+  engine->kept_.reset();
+  engine->times_only_next_ = false;
   engine->notice_.clear();
   return engine;
 }
@@ -366,7 +373,7 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
     if (launched == cudaSuccess) return {};
     if (sticky(launched))
       return std::unexpected(cuda_refusal(launched, "DistilDRBA fusionné : cudaGraphLaunch"));
-    cudaGraphExecDestroy(graph.exec);
+    cuda_warn(cudaGraphExecDestroy(graph.exec), "cudaGraphExecDestroy");
     graph.exec = nullptr;
     if (++launch_failures_ >= kMaxLaunchFailures && !graphs_off_) {
       graphs_off_ = true;

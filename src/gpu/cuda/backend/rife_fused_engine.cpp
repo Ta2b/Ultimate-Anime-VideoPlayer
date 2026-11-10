@@ -194,8 +194,11 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   }
   // Une capture refusée pendant l'essai laisse la chaîne tourner sans graphe : ce n'est pas un refus. Les
   // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus.
+  // Remise à zéro complète, comme DistilDRBA fusionné (A03-10).
   engine->drop_graphs();
   engine->capture_failures_ = 0;
+  engine->launch_failures_ = 0;
+  engine->graphs_full_ = false;
   engine->notice_.clear();
   return engine;
 }
