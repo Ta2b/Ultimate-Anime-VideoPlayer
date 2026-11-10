@@ -29,6 +29,7 @@
 #include "audio/audio_thread.h"
 #include "core/clock.h"
 #include "core/thread.h"
+#include "media/demuxer.h"
 #include "media/hw_api.h"
 #include "media/selection.h"
 #include "media/source.h"
@@ -44,6 +45,8 @@ struct PipelineConfig {
   media::LanguagePriorities languages{.audio = {"jpn", "ja"}, .subtitles = {"fre", "fr", "eng", "en"}};
   bool audio = true;         // false : piste audio ignorée, horloge hôte
   std::string audio_device;  // appareil de sortie choisi (audio/devices.h) ; vide : celui du système
+  // Le délai mémorisé de la sortie du système, repris si l'appareil choisi disparaît (audio::PlayerConfig).
+  std::optional<std::int64_t> audio_fallback_delay_us;
   bool audio_pll = false;  // --audio-pll : l'horloge audio publiée filtrée par une PLL (audio::PlayerConfig)
   bool subtitles = true;   // false : aucune piste de sous-titres
   // Pistes choisies avant une réouverture de la chaîne : elles remplacent le choix par langue si
@@ -112,6 +115,16 @@ class Pipeline {
   const media::TrackInfo* track_info(int track) const;
   // Le SelectTrack d'une piste du menu : du conteneur, ou un fichier à côté de la vidéo.
   std::expected<subs::SelectTrack, Refusal> subtitle_select(int index) const;
+  // Les étapes de open() : choix des pistes, audio, sous-titres.
+  static media::TrackChoice choose(const PipelineConfig& config, const media::Demuxer& demuxer,
+                                   const std::vector<ExternalSubtitle>& externals);
+  void open_audio(const PipelineConfig& config, const media::Demuxer& demuxer, int audio_index,
+                  std::vector<media::PacketRoute>& routes);
+  std::expected<void, Refusal> open_subtitles(const PipelineConfig& config, const media::Demuxer& demuxer,
+                                              std::optional<int> subtitle,
+                                              std::vector<ExternalSubtitle> externals,
+                                              const std::vector<subs::AttachFont>& fonts,
+                                              std::vector<media::PacketRoute>& routes);
 
   // Ordre de déclaration = ordre inverse de destruction : la source s'arrête la première,
   // la boîte de main disparaît la dernière.

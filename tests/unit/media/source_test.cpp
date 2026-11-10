@@ -523,3 +523,45 @@ TEST_CASE("SourceThread : la réserve à mi-plafond retient la vidéo sans refus
   CHECK(frames < 30);  // retenue avant la fin, l'audio n'étant jamais retiré
   CHECK(source.listener.failure_count() == 0);
 }
+
+// A16-14 : les paquets audio d'après un seek portent l'instant où la lecture reprend vraiment. Seek exact
+// abouti : la cible. Seek refusé, la lecture revenue à la dernière image tenue : cette image, pas la cible
+// manquée, qui ferait jeter tout l'audio jusqu'à elle.
+TEST_CASE("SourceThread : l'audio d'après un seek est rogné là où la lecture reprend", "[media][source]") {
+  auto audio =
+      PacketQueue::create({.max_duration_us = kMaxQueueDurationUs, .max_bytes = kMaxQueueBytes}, [] {});
+  REQUIRE(audio.has_value());
+  Running source(seek_clip(), 4, 0, {{.track = 1, .sink = audio->get()}});
+  const auto trims_of = [&](std::uint32_t epoch) {
+    std::vector<std::optional<std::int64_t>> trims;
+    while (auto packet = (*audio)->try_pop())
+      if (packet->epoch == epoch) trims.push_back(packet->discard_before_us);
+    return trims;
+  };
+  play_count(source, 5);
+
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 1}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 17 * kFrameUs + 15'000, .exact = true}}));
+  REQUIRE(source.pop_epoch(1).pts_us == 17 * kFrameUs);
+  const auto exact = trims_of(1);
+  REQUIRE_FALSE(exact.empty());
+  for (const auto& trim : exact) CHECK(trim == 17 * kFrameUs + 15'000);
+
+  const std::int64_t shown = source.pop().pts_us;
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 2}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 3'600'000'000, .exact = true}}));
+  const DecodedFrame back = source.pop_epoch(2);
+  CHECK(back.pts_us <= shown + 2 * kFrameUs);
+  const auto recovered = trims_of(2);
+  REQUIRE_FALSE(recovered.empty());
+  for (const auto& trim : recovered) {
+    REQUIRE(trim.has_value());
+    CHECK(*trim < 3'600'000'000);
+    CHECK(*trim <= back.pts_us);
+  }
+
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 3}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 5 * kFrameUs, .exact = false}}));
+  std::ignore = source.pop_epoch(3);
+  for (const auto& trim : trims_of(3)) CHECK_FALSE(trim.has_value());  // seek rapide : rien à rogner
+}

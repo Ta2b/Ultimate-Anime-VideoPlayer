@@ -88,6 +88,7 @@ void SourceLoop::on_flush(const Flush& flush) {
   // Ce qui est tenu appartient à l'époque passée : rien d'ancien ne part après.
   epoch_ = flush.epoch;
   forget_position();
+  trim_before_.reset();
   awaiting_seek_ = true;
 }
 
@@ -110,6 +111,7 @@ void SourceLoop::on_seek(const cmd::Seek& seek) {
   media_.decoder.flush();
   forget_position();
   drop_before_ = seek.exact ? std::optional(seek.target_us) : std::nullopt;
+  trim_before_ = drop_before_;
   media_.decoder.skip_before(drop_before_);
   idle_ = false;
 }
@@ -118,6 +120,7 @@ void SourceLoop::recover_position() {
   media_.decoder.flush();
   forget_position();
   idle_ = true;  // sans position sûre, rien ne part avant le prochain seek abouti
+  trim_before_.reset();
   if (!last_pts_us_) return;
   const std::int64_t back_to = *last_pts_us_;
   if (auto back = media_.demuxer.seek(back_to, media_.video_track, SeekTarget::PreviousKeyframe); !back) {
@@ -131,6 +134,7 @@ void SourceLoop::recover_position() {
   media_.decoder.flush();
   forget_position();
   drop_before_ = back_to;
+  trim_before_ = back_to;
   media_.decoder.skip_before(drop_before_);
   idle_ = false;
 }
@@ -227,6 +231,7 @@ SourceLoop::Progress SourceLoop::route(Packet packet) {
   const auto it = std::ranges::find(links_.packets, packet.track, &PacketRoute::track);
   if (it == links_.packets.end()) return Progress::Moved;  // keep_only l'exclut déjà
   const auto index = static_cast<std::size_t>(it - links_.packets.begin());
+  packet.discard_before_us = trim_before_;
   if (auto kept = reserve_.route(index, std::move(packet), epoch_); !kept) {
     fail(kept.error());
     return Progress::Idle;
