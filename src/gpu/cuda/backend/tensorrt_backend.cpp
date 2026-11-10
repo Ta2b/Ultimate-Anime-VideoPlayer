@@ -407,8 +407,17 @@ void TensorRtBackend::tune_pool() const {
 GpuTiming& TensorRtBackend::stage(std::string_view name) {
   push_launches();
   auto found = stages_.find(name);
-  if (found == stages_.end())
-    found = stages_.emplace(std::string(name), std::make_unique<GpuTiming>(std::string(name), nullptr)).first;
+  if (found == stages_.end()) {
+    // A03-22 : chaque étape dit sa médiane une fois par minute, pour qu'un plantage ou une dérive tardive
+    // laisse au journal autre chose que les deux rôles. stages_ est vidé avant la fin du backend.
+    const GpuTiming::Report report = [this](std::string_view text) {
+      log(BackendLogLevel::Info, std::format("profil GPU · {}", text));
+    };
+    found = stages_
+                .emplace(std::string(name),
+                         std::make_unique<GpuTiming>(std::string(name), report, kStageReportPeriod))
+                .first;
+  }
   return *found->second;
 }
 

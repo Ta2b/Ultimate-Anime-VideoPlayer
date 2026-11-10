@@ -9,6 +9,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
@@ -305,6 +306,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, écriture), résumé au
   // journal à la destruction du backend.
   std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
+  static constexpr std::chrono::seconds kStageReportPeriod{60};
   // Étape 5.2 : entrées de RIFE (adresse du tenseur) que le dernier moteur à les lire était RIFE fusionné.
   // Ses noyaux calculent le maillage et lisent l'instant à l'élément 0 du plan 6 : rife_time n'y écrit qu'un
   // demi-flottant. Un moteur TensorRT ou DistilDRBA fusionné qui lit la même adresse la retire, et

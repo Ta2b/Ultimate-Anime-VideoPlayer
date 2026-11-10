@@ -8,8 +8,8 @@
 
 namespace ajp::gpu::cuda {
 
-GpuTiming::GpuTiming(std::string label, Report report)
-    : label_(std::move(label)), report_(std::move(report)) {
+GpuTiming::GpuTiming(std::string label, Report report, std::chrono::seconds every)
+    : label_(std::move(label)), report_(std::move(report)), every_(every) {
   for (std::size_t i = 0; i < kPairs; ++i) {
     cuda_warn(cudaEventCreate(&start_[i]), "cudaEventCreate");
     cuda_warn(cudaEventCreate(&stop_[i]), "cudaEventCreate");
@@ -48,12 +48,19 @@ void GpuTiming::collect() {
   while (read_ < ended_ && cudaEventQuery(stop_[read_ % kPairs]) == cudaSuccess) {
     float ms = 0.0F;
     if (cudaEventElapsedTime(&ms, start_[read_ % kPairs], stop_[read_ % kPairs]) == cudaSuccess) {
-      if (report_) samples_.push_back(ms);
-      if (all_.size() < kMaxAll) all_.push_back(ms);
+      if (report_ && samples_.size() < kMaxSamples) samples_.push_back(ms);
+      all_.add(ms);
     }
     ++read_;
   }
-  if (!report_ || samples_.size() < kReport) return;
+  if (!report_ || samples_.empty()) return;
+  if (every_.count() > 0) {
+    const auto now = std::chrono::steady_clock::now();
+    if (now - reported_ < every_) return;
+    reported_ = now;
+  } else if (samples_.size() < kReport) {
+    return;
+  }
   std::ranges::sort(samples_);
   const float median = samples_[samples_.size() / 2];
   const float p95 = samples_[samples_.size() * 95 / 100];
@@ -64,15 +71,16 @@ void GpuTiming::collect() {
 
 namespace {
 
-std::string summary_of(const std::string& label, const std::vector<float>& all) {
-  if (all.empty()) return {};
-  std::vector<float> sorted = all;
+std::string summary_of(const std::string& label, const StageSamples& all) {
+  if (all.count() == 0) return {};
+  std::vector<float> sorted = all.samples();
   std::ranges::sort(sorted);
-  double total = 0.0;
-  for (const float ms : sorted) total += ms;
-  return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms, total {:.0f} ms ({} mesures)",
-                     label, sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], sorted.front(),
-                     total, sorted.size());
+  // A03-22 : nombre, total et minimum de toute la séance ; passé le plafond, les centiles viennent d'un
+  // échantillon tiré sur toute la séance, et la ligne le dit.
+  return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms, total {:.0f} ms ({} mesures{})",
+                     label, sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], all.min_ms(),
+                     all.total_ms(), all.count(),
+                     all.sampled() ? std::format(", centiles sur {} tirées au sort", sorted.size()) : "");
 }
 
 }  // namespace
@@ -84,7 +92,7 @@ std::string GpuTiming::summary() {
 
 GpuStageSummary GpuTiming::profile() {
   collect();
-  return summarize(label_, all_);
+  return all_.summary(label_);
 }
 
 GpuSpan::GpuSpan(std::string label) : label_(std::move(label)) {
@@ -136,8 +144,7 @@ void GpuSpan::collect() {
   for (Pair& pair : pairs_) {
     if (pair.state != Pair::State::Finished || cudaEventQuery(pair.stop) != cudaSuccess) continue;
     float ms = 0.0F;
-    if (cudaEventElapsedTime(&ms, pair.start, pair.stop) == cudaSuccess && all_.size() < kMaxAll)
-      all_.push_back(ms);
+    if (cudaEventElapsedTime(&ms, pair.start, pair.stop) == cudaSuccess) all_.add(ms);
     pair.state = Pair::State::Free;
   }
 }
@@ -149,7 +156,7 @@ std::string GpuSpan::summary() {
 
 GpuStageSummary GpuSpan::profile() {
   collect();
-  return summarize(label_, all_);
+  return all_.summary(label_);
 }
 
 }  // namespace ajp::gpu::cuda
