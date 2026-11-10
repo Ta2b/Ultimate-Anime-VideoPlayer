@@ -67,34 +67,34 @@ TEST_CASE("sortie HDR : blanc des surfaces à la moitié du pic, limiteur en sc�
   CHECK(surface_white_target(600.0) == Approx(300.0));
   CHECK(surface_white_target(1000.0) == Approx(500.0));
   CHECK(surface_white_target(2000.0) == Approx(1000.0));
-  const CubeLut stack = gpu_test::default_stack();
+  const gpu_test::Pile stack;
   for (const double peak : {400.0, 600.0, 1000.0, 1500.0, 2000.0}) {
     GradeParams p = gpu_test::player_params(peak);
     p.fs_apl = 20.0;
-    const OutputTune dark = output_tune(p, &stack, 203.0, peak);
+    const OutputTune dark = output_tune(p, stack.luts, 203.0, peak);
     INFO("pic " << peak << " : blanc " << dark.white << ", sommet de la courbe " << dark.curve_peak);
     CHECK(dark.white == Approx(surface_white_target(peak)).epsilon(0.01));
     CHECK(dark.top == Approx(peak));
     p.fs_apl = 180.0;  // scène très claire : le plafond descend, sans rejoindre les surfaces
-    const OutputTune bright = output_tune(p, &stack, 203.0, peak);
+    const OutputTune bright = output_tune(p, stack.luts, 203.0, peak);
     CHECK(bright.white == Approx(dark.white));
     CHECK(bright.top == Approx(std::max(0.5 * peak, kEmitterMinRoom * dark.white)).epsilon(0.01));
   }
   // KDE à 300 nits de luminosité SDR : mêmes niveaux affichés.
   const GradeParams p = gpu_test::player_params(1000.0 * 203.0 / 300.0);
-  CHECK(output_tune(p, &stack, 300.0, 1000.0).white == Approx(500.0).epsilon(0.01));
+  CHECK(output_tune(p, stack.luts, 300.0, 1000.0).white == Approx(500.0).epsilon(0.01));
   // Sans pile (fichier .cube illisible, A41-04) : l'image n'est pas compressée, le blanc reste au relèvement.
-  const OutputTune bare = output_tune(gpu_test::player_params(1000.0), nullptr, 203.0, 1000.0);
+  const OutputTune bare = output_tune(gpu_test::player_params(1000.0), {}, 203.0, 1000.0);
   CHECK(bare.white == Approx(203.0 * kAnimeLift));
 }
 
 TEST_CASE("pied des noirs : vrai noir sous RVB 4, nuits gardées, courbe croissante (pile livrée)",
           "[render][tune]") {
-  const CubeLut stack = gpu_test::default_stack();
+  const gpu_test::Pile stack;
   const double white = 203.0 * kAnimeLift;
   const LookToe toe = look_toe(white);
   const auto level = [&](double code) {
-    return look_neutral(stack, toe, std::pow(code / 255.0, 2.4) * white);
+    return look_neutral(stack.chain(), toe, std::pow(code / 255.0, 2.4) * white);
   };
   // Le noir pur reste un vrai noir.
   CHECK(level(0.0) == 0.0);

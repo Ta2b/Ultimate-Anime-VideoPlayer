@@ -56,9 +56,9 @@ double toe_pile_share(const LookToe& toe, double m) {
   return smoothstep(std::log(toe.mid), std::log(toe.join), std::log(m));
 }
 
-double look_neutral(const CubeLut& stack, const LookToe& toe, double nits) {
+double look_neutral(const LookChain& chain, const LookToe& toe, double nits) {
   const auto code = static_cast<float>(pq::from_nits(nits));
-  const std::array<float, 3> out = sample_lut(stack, {code, code, code});
+  const std::array<float, 3> out = sample_chain(chain, {code, code, code});
   // La luminance BT.2020 de la sortie : la pile teinte à peine les gris.
   const double pile =
       0.2627 * pq::to_nits(out[0]) + 0.6780 * pq::to_nits(out[1]) + 0.0593 * pq::to_nits(out[2]);
@@ -96,13 +96,15 @@ double emitter_level(double m, double gain, double top) {
   return knee + room * (1.0 - std::exp(-(v - knee) / room));
 }
 
-OutputTune output_tune(const GradeParams& params, const CubeLut* stack, double reference, double panel_peak) {
+OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const> luts, double reference,
+                       double panel_peak) {
   // Le blanc d'une surface avant la pile : le blanc de la source au relèvement fixe (pas celui du plan : la
   // cible ne bouge pas à chaque coupe).
   const double source_white = params.adapt > 0.5 ? params.sdr_white : params.paper;
   const double lifted = source_white * kAnimeLift;
-  const bool pile = stack != nullptr && params.look_pq > 0.5;
-  const double pile_white = pile ? look_neutral(*stack, look_toe(lifted), lifted) : lifted;
+  const LookChain chain{.luts = luts, .mixes = params.look_mixes};
+  const bool pile = chain.active() && params.look_pq > 0.5;
+  const double pile_white = pile ? look_neutral(chain, look_toe(lifted), lifted) : lifted;
   OutputTune tune;
   tune.curve_peak = curve_peak_for(pile_white, surface_white_target(panel_peak), reference);
   tune.white = std::min(compress_neutral(pile_white, reference, tune.curve_peak), panel_peak);
