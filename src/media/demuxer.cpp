@@ -135,6 +135,12 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
     info.width = chain_dimension(par.width);
     info.height = chain_dimension(par.height);
     info.frame_rate = frame_rate_of(stream);
+    // A15-02 : 29,97 i/s entrelacé, le télécinéma d'un anime 23,976 : la chaîne reçoit les images d'origine.
+    const bool interlaced = par.field_order != AV_FIELD_UNKNOWN && par.field_order != AV_FIELD_PROGRESSIVE;
+    if (interlaced && std::int64_t{info.frame_rate.num} * 1001 == std::int64_t{info.frame_rate.den} * 30000) {
+      info.inverse_telecine = true;
+      info.frame_rate = {24000, 1001};
+    }
     const AVRational sar =
         stream.sample_aspect_ratio.num > 0 ? stream.sample_aspect_ratio : par.sample_aspect_ratio;
     if (sar.num > 0 && sar.den > 0) info.sample_aspect = {sar.num, sar.den};

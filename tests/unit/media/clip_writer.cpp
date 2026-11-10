@@ -210,6 +210,7 @@ class Writer {
     avcodec_parameters_from_context(video_->codecpar, out_.encoder);
     video_->time_base = out_.encoder->time_base;
     video_->avg_frame_rate = spec_.frame_rate;
+    video_->codecpar->field_order = spec_.field_order;
     video_->disposition = AV_DISPOSITION_DEFAULT;
     if (spec_.color.hdr10) add_hdr10(*video_->codecpar);
     return {};

@@ -66,6 +66,7 @@
 #include "core/utf8_path.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
+#include "media/track.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
@@ -114,6 +115,11 @@ std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path&
                     std::format("{} : Dolby Vision profil 5", core::to_utf8(file))};
     refusal.key = kDolbyVision5Key;
     return std::unexpected(std::move(refusal));
+  }
+  // A15-07 : un format ou une couleur que la chaîne refuserait se dit ici, avant de construire la chaîne.
+  if (std::optional<Refusal> unreadable = media::unreadable_video(video)) {
+    unreadable->detail = std::format("{} : {}", core::to_utf8(file.filename()), unreadable->detail);
+    return std::unexpected(std::move(*unreadable));
   }
   if (video.dolby_vision_profile > 0)
     log_channel("app")->info("Dolby Vision profil {} : lu par sa couche de base, sans RPU",

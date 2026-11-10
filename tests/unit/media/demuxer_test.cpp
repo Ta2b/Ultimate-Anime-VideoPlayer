@@ -301,3 +301,31 @@ TEST_CASE("Demuxer : un fichier absent ou illisible est refusé", "[media][demux
   // Le refus se lit en français : « introuvable », pas seulement le texte de FFmpeg.
   CHECK(missing.error().detail.find("introuvable") != std::string::npos);
 }
+
+TEST_CASE("Demuxer : une piste entrelacée à 29,97 sort à 23,976 par l'IVTC (A15-02)", "[media][demuxer]") {
+  struct Case {
+    const char* name;
+    AVRational rate;
+    AVFieldOrder order;
+    bool telecine;
+  };
+  const Case c = GENERATE(Case{"tff_2997.mkv", {30000, 1001}, AV_FIELD_TT, true},
+                          Case{"progressive_2997.mkv", {30000, 1001}, AV_FIELD_PROGRESSIVE, false},
+                          Case{"tff_25.mkv", {25, 1}, AV_FIELD_TT, false});
+  CAPTURE(c.name);
+  test::ClipSpec spec = test::seek_clip();
+  spec.name = c.name;
+  spec.subtitles.clear();
+  spec.frame_rate = c.rate;
+  spec.field_order = c.order;
+  Demuxer demuxer = open_clip(spec);
+  const TrackInfo* video = demuxer.track(0);
+  REQUIRE(video != nullptr);
+  CHECK(video->inverse_telecine == c.telecine);
+  if (c.telecine) {
+    CHECK(video->frame_rate == Rational{24000, 1001});
+  } else {
+    CHECK(std::int64_t{video->frame_rate.num} * c.rate.den ==
+          std::int64_t{video->frame_rate.den} * c.rate.num);
+  }
+}

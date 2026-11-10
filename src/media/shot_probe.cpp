@@ -162,14 +162,7 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   const int track = video->index;
   const std::array<int, 1> keep{track};
   if (auto ok = demuxer->keep_only(keep); !ok) return fail(std::move(ok.error()));
-#ifdef _WIN32
-  // Sous Windows, les threads de FFmpeg n'héritent pas de la priorité basse de celui-ci : le décodage reste
-  // sur ce thread, en arrière-plan, plutôt que de disputer les cœurs au rendu et à l'audio.
-  const int auto_threads = 1;
-#else
-  const int auto_threads = std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 4);
-#endif
-  const int threads = options_.threads > 0 ? options_.threads : auto_threads;
+  const int threads = options_.threads > 0 ? options_.threads : background_decoder_threads();
   auto decoder = VideoDecoder::open(
       *video, DecoderOptions{
                   .attempts = {HwApi::Software}, .threads = threads, .cuvid_resize = options_.cuvid_resize});

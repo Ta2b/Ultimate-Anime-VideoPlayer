@@ -77,7 +77,8 @@ std::vector<std::size_t> pick_stills(std::span<const Still> stills, const Stills
 
 // Décode spec.candidates images de la première piste vidéo de file (décodage logiciel, aucun GPU) et garde
 // les spec.count meilleures. progress reçoit la fraction faite. Refus : fichier illisible, pas de piste
-// vidéo, durée inconnue, vidéo HDR, Cancelled, ou moins de spec.minimum images exploitables.
+// vidéo, durée inconnue, vidéo HDR, Cancelled, ou moins de spec.minimum images exploitables. Le thread
+// appelant passe en fond (core/thread_role.h) : le décodage tourne pendant la lecture.
 std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem::path& file,
                                                           const StillsSpec& spec, const std::stop_token& stop,
                                                           const std::function<void(float)>& progress = {});
