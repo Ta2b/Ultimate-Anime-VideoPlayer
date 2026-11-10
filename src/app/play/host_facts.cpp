@@ -244,10 +244,10 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
   if (sdl_hdr) {
     // Le pic que Windows a calibré (application « Étalonnage HDR ») : MaxLuminance de la sortie DXGI de
     // l'écran de la fenêtre.
-    if (const auto display = read_display(display_name(window)))
-      if (const auto calibrated =
-              system_peak_nits(display->connector, headroom, monitor ? monitor->handle : nullptr))
-        return calibrated;
+    // Sous Windows le connecteur ne sert pas : demandé même sans EDID au registre (dock, écran virtuel,
+    // A11-07).
+    if (const auto calibrated = system_peak_nits({}, headroom, monitor ? monitor->handle : nullptr))
+      return calibrated;
     // La marge de SDL dépend du curseur « luminosité du contenu SDR » de Windows (écran à 800 nits, blanc SDR
     // à 400 : marge 2) : la crête que l'EDID annonce la borne par le bas, sans quoi le gris moyen (plafonné à
     // la moitié de la crête) n'a plus d'effet.

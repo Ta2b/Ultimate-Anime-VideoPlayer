@@ -6,6 +6,11 @@
 
 namespace ajp::gpu::span_fp8 {
 
+// Un échantillon qui n'est pas fini (NaN, infini) dans l'une des deux images donne à chaque mesure sa pire
+// note : 0 dB, un SSIM de 0, une erreur de kNotFiniteError (l'écart entier), quel que soit le quantile
+// demandé. Sans cela une image avec des NaN comptait 99 dB et passait la porte (A02-01).
+inline constexpr double kNotFiniteError = 1.0;
+
 // PSNR en dB (pic 1) de deux images planaires 3×H×W de valeurs dans [0, 1], plafonné à 99 dB.
 double psnr(std::span<const float> a, std::span<const float> b);
 
