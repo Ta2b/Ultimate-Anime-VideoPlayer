@@ -689,40 +689,40 @@ Mesurer avant de changer : toute accélération qui touche l'image passe par le 
 
 | Rang | ID | Gravité | Où | Défaut | Note |
 |---|---|---|---|---|---|
-| 1 | A18-02 | Majeur | `src/app/play/player.cpp:130-139` | `engines-nvidia.lock` téléchargé par curl sur le thread de la fenêtre à chaque lancement, jusqu'à 8 s figée |  |
-| 2 | A23-04 | Majeur | `src/app/play/settings_system.cpp:107-108` | Page Application : lecture d'`update.toml` et fichier d'essai créé et effacé à chaque image |  |
-| 3 | A32-01 | Majeur | `docs/auto-libre.md:142-143` | Le service de 13 à 16 ms date de la chaîne avec RTX HDR : à remesurer ; 1,7 à 2,7 ms de GPU estimés par image à 1440p |  |
-| 4 | A32-02 | Majeur | `src/gpu/cuda/backend/tensorrt_backend.cpp:407-498` | `gpu_profile` ne voit ni l'écran, ni les sémaphores, ni les attentes hôte |  |
-| 5 | A33-01 | Majeur | `src/app/play/placebo_ring.cpp:84` | Mémoire vidéo d'une chaîne fermée gardée (anneau, réserve CUDA) ; « Refaire le banc » mesure avec moins de mémoire (TRT-06 élargi) |  |
-| 6 | A33-04 | Majeur | `src/prepare/cache.cpp:81` | Cache des moteurs TensorRT sans aucune purge |  |
-| 7 | A34-02 | Majeur | `src/media/shot_probe.cpp:165-175` | Pré-analyse sur un thread sous Windows : grade et coupes privés sur les sources lourdes (à confirmer) | Réfuté en grande partie par 42 (NVDEC par défaut, seul le repli logiciel est touché) |
-| 8 | A46-07 | Majeur | `tools/upscale/models/2x_ArtCNN_C4F32_rgb_fp16.onnx` | ArtCNN « fp16 » calcule entièrement en FP32 (TRT-07, partie modèle) |  |
-| 9 | A18-03 | Mineur | `src/app/play/player.cpp:183-213` | Le thread des mises à jour part avant l'assistant avec l'ancien mode |  |
-| 10 | A18-04 | Mineur | `src/app/play/player.cpp:525-534` | « Annuler et regarder » finit écrit dans `play.toml` |  |
-| 11 | A18-05 | Mineur | `src/app/main.cpp:390-393` | Purge récursive des `*.old` dans tout le dossier d'installation |  |
-| 12 | A18-06 | Mineur | `src/app/main.cpp:452-454` | `--bake-looks` cherche les LUT dans l'ancien dossier |  |
-| 13 | A18-07 | Mineur | `src/app/main.cpp:337-343` | `SDL_GetPrefPath` en échec non arrêté |  |
-| 14 | A18-08 | Mineur | `src/app/play/options.cpp:466-508` | Aide fausse ou incomplète sur les options et touches |  |
-| 15 | A18-09 | Mineur | `src/app/play/options.cpp:236-243` | Aucune option pour choisir DistilDRBA en ligne de commande |  |
-| 16 | A18-10 | Mineur | `src/app/main.cpp:459-461` | Deux sorties sans trace au journal |  |
-| 17 | A18-11 | Mineur | `src/app/main.cpp:247-259` | `ajp calibrate --display-height` remplacé en silence |  |
-| 18 | A18-12 | Mineur | `src/app/main.cpp:147-150` | `execv` garde les descripteurs ouverts |  |
-| 19 | A18-13 | Mineur | `src/app/play/player.cpp:445-452` | Échec d'`open_backend` depuis l'accueil : le lecteur quitte |  |
-| 20 | A18-14 | Mineur | `src/app/play/mapped_file.cpp:229-247` | Police tronquée entre la taille lue et la projection |  |
-| 21 | A18-16 | Mineur | `src/app/main.cpp:371-401` | Ni minidump ni journal pendant l'application d'une mise à jour |  |
-| 22 | A18-17 | Mineur | `src/app/play/settings.cpp:326-343` | `--rife-model` absent de `settings.rife_model` : menu et `--bench-out` donnent le mauvais modèle |  |
-| 23 | A32-05 | Mineur | `src/render/grade.cpp:355` | Passes d'écran du grade à fusionner |  |
-| 24 | A32-06 | Mineur | `src/gpu/cuda/backend/warp_kernels.cu:100-170` | Warp en plans séparés : une vingtaine de lectures par pixel |  |
-| 25 | A32-07 | Mineur | `src/app/play/placebo_ring.cpp:214-218` | `ready()` interroge le pilote à chaque question |  |
-| 26 | A32-08 | Mineur | `src/core/free_rate.cpp:27-36` | Pas du mode Rapide calé sur un temps de service en temps de mur |  |
-| 27 | A32-10 | Mineur | `src/gpu/cuda/backend/trt_engine.cpp:140-165` | Mémoire vidéo pleine sous Windows : débordement en mémoire système ni refusé ni signalé |  |
-| 28 | A32-11 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:17-19` | Attente active au-delà de 200 µs : événements sans `cudaEventBlockingSync` |  |
-| 29 | A32-12 | Mineur | `src/app/play/upscale_drba.cpp:124-157` | DistilDRBA relit sa mesure dans la paire même : la file se vide à chaque paire |  |
-| 30 | A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) |  |
-| 31 | A33-05 | Mineur | `src/gpu/cuda/backend/gpu_timing.h:53` | Profil GPU de fin de lecture tronqué |  |
-| 32 | A33-06 | Mineur | `src/app/main.cpp:427-440` | Deux rotations du journal qui s'ignorent |  |
-| 33 | A33-08 | Mineur | `src/app/play/gpu_telemetry.cpp` | Aucun essai de durée ni relevé de ressources |  |
-| 34 | A26-08 | Mineur | `src/app/play/updater.cpp:490-497` | `update_managed_reason` crée et efface un fichier à chaque appel | A23-04 (même cause) |
+| 1 | A18-02 | Majeur | `src/app/play/player.cpp:130-139` | `engines-nvidia.lock` téléchargé par curl sur le thread de la fenêtre à chaque lancement, jusqu'à 8 s figée | Corrigé : index relu sur un fil parti avant la fenêtre, attendu (fenêtre pompée) seulement sans copie gardée ; panne réseau retenue 6 h (`release_refresh.h`) |
+| 2 | A23-04 | Majeur | `src/app/play/settings_system.cpp:107-108` | Page Application : lecture d'`update.toml` et fichier d'essai créé et effacé à chaque image | Corrigé : `update.toml` relu à l'ouverture, après « Vérifier », puis toutes les 2 s |
+| 3 | A32-01 | Majeur | `docs/auto-libre.md:142-143` | Le service de 13 à 16 ms date de la chaîne avec RTX HDR : à remesurer ; 1,7 à 2,7 ms de GPU estimés par image à 1440p | Tableau marqué historique (`docs/auto-libre.md`) ; remesure sur la RTX (A-CONFIRMER) |
+| 4 | A32-02 | Majeur | `src/gpu/cuda/backend/tensorrt_backend.cpp:407-498` | `gpu_profile` ne voit ni l'écran, ni les sémaphores, ni les attentes hôte | Non corrigé : les trois compteurs se conçoivent avec la remesure de A32-01 |
+| 5 | A33-01 | Majeur | `src/app/play/placebo_ring.cpp:84` | Mémoire vidéo d'une chaîne fermée gardée (anneau, réserve CUDA) ; « Refaire le banc » mesure avec moins de mémoire (TRT-06 élargi) | Corrigé : `release_ring` à la fermeture de la chaîne et de l'export, `cudaMemPoolTrimTo` à la destruction du backend TensorRT |
+| 6 | A33-04 | Majeur | `src/prepare/cache.cpp:81` | Cache des moteurs TensorRT sans aucune purge | Corrigé : purge au lancement (45 jours sans usage, 8 Gio au plus), date d'usage rafraîchie à chaque reprise (`prepare/cache_purge.h`) ; pas de bouton « Vider » |
+| 7 | A34-02 | Majeur | `src/media/shot_probe.cpp:165-175` | Pré-analyse sur un thread sous Windows : grade et coupes privés sur les sources lourdes (à confirmer) | Réfuté en grande partie par 42 (NVDEC par défaut, seul le repli logiciel est touché) ; le reste (`skip_loop_filter` du repli logiciel) attend la mesure de la frontière sous Windows |
+| 8 | A46-07 | Majeur | `tools/upscale/models/2x_ArtCNN_C4F32_rgb_fp16.onnx` | ArtCNN « fp16 » calcule entièrement en FP32 (TRT-07, partie modèle) | Non corrigé : ArtCNN en FP16 à valider au banc C03 et mesurer sous TensorRT |
+| 9 | A18-03 | Mineur | `src/app/play/player.cpp:183-213` | Le thread des mises à jour part avant l'assistant avec l'ancien mode | Corrigé : le fil part après l'assistant et relit mode et fréquence dans `play.toml` à chaque tour |
+| 10 | A18-04 | Mineur | `src/app/play/player.cpp:525-534` | « Annuler et regarder » finit écrit dans `play.toml` | Déjà corrigé (P3.10, `stage_fallback.h`) : « Annuler et regarder » ne touche plus aux réglages |
+| 11 | A18-05 | Mineur | `src/app/main.cpp:390-393` | Purge récursive des `*.old` dans tout le dossier d'installation | Sans objet depuis C01 : plus de purge des `*.old` |
+| 12 | A18-06 | Mineur | `src/app/main.cpp:452-454` | `--bake-looks` cherche les LUT dans l'ancien dossier | Corrigé : LUT lues dans le dossier local |
+| 13 | A18-07 | Mineur | `src/app/main.cpp:337-343` | `SDL_GetPrefPath` en échec non arrêté | Corrigé : refus avec une boîte |
+| 14 | A18-08 | Mineur | `src/app/play/options.cpp:466-508` | Aide fausse ou incomplète sur les options et touches | Corrigé : défauts « du préréglage », `b` retirée, délais des sous-titres et de l'audio, `--motion` |
+| 15 | A18-09 | Mineur | `src/app/play/options.cpp:236-243` | Aucune option pour choisir DistilDRBA en ligne de commande | Corrigé : `--motion=rife\|drba` |
+| 16 | A18-10 | Mineur | `src/app/main.cpp:459-461` | Deux sorties sans trace au journal | Corrigé : `fail()` écrit au journal une fois ouvert ; `SDL_Init` refusé montre une boîte. La partie mise à jour est sans objet (C01) |
+| 17 | A18-11 | Mineur | `src/app/main.cpp:247-259` | `ajp calibrate --display-height` remplacé en silence | Corrigé : 360 à 4320 refusé hors plage ; `--report` illisible rend 1 |
+| 18 | A18-12 | Mineur | `src/app/main.cpp:147-150` | `execv` garde les descripteurs ouverts | Corrigé : descripteurs en `FD_CLOEXEC` avant `execv` |
+| 19 | A18-13 | Mineur | `src/app/play/player.cpp:445-452` | Échec d'`open_backend` depuis l'accueil : le lecteur quitte | Corrigé : retour à l'accueil avec la raison ; une chaîne sans module reste à faire |
+| 20 | A18-14 | Mineur | `src/app/play/mapped_file.cpp:229-247` | Police tronquée entre la taille lue et la projection | Corrigé : taille prise sur le fichier ouvert (`fstat`, `GetFileSizeEx`) |
+| 21 | A18-16 | Mineur | `src/app/main.cpp:371-401` | Ni minidump ni journal pendant l'application d'une mise à jour | Sans objet depuis C01 : plus d'application de mise à jour au lancement |
+| 22 | A18-17 | Mineur | `src/app/play/settings.cpp:326-343` | `--rife-model` absent de `settings.rife_model` : menu et `--bench-out` donnent le mauvais modèle | Corrigé : `settings.rife_model` suit `--rife-model`, sans l'écrire dans `play.toml` |
+| 23 | A32-05 | Mineur | `src/render/grade.cpp:355` | Passes d'écran du grade à fusionner | Non corrigé : attend le temps par passe (A32-02) et le banc C03 |
+| 24 | A32-06 | Mineur | `src/gpu/cuda/backend/warp_kernels.cu:100-170` | Warp en plans séparés : une vingtaine de lectures par pixel | Non corrigé : l'audit demande de garder tel quel sous 0,05 ms de gain ; à mesurer |
+| 25 | A32-07 | Mineur | `src/app/play/placebo_ring.cpp:214-218` | `ready()` interroge le pilote à chaque question | Corrigé : dernière valeur lue gardée par emplacement |
+| 26 | A32-08 | Mineur | `src/core/free_rate.cpp:27-36` | Pas du mode Rapide calé sur un temps de service en temps de mur | Non corrigé : attend la mesure du service côté GPU (A32-02) |
+| 27 | A32-10 | Mineur | `src/gpu/cuda/backend/trt_engine.cpp:140-165` | Mémoire vidéo pleine sous Windows : débordement en mémoire système ni refusé ni signalé | Corrigé : avis au journal et dans l'OSD sous 256 Mio libres |
+| 28 | A32-11 | Mineur | `src/gpu/cuda/backend/tensorrt_lanes.cpp:17-19` | Attente active au-delà de 200 µs : événements sans `cudaEventBlockingSync` | Brouillon : `cudaEventBlockingSync`, à mesurer |
+| 29 | A32-12 | Mineur | `src/app/play/upscale_drba.cpp:124-157` | DistilDRBA relit sa mesure dans la paire même : la file se vide à chaque paire | Chronomètre (1) déjà là (A09-19) ; (2) et (3) attendent sa mesure |
+| 30 | A32-13 | Mineur | `src/render/shaders/anime-hdr-anime/3-anime.hook:27` | Quatre `pq_of` de constantes recalculés par pixel (environ 0,09 ms par présentation) | Brouillon : seuils sur l'hôte, `pq_of` scalaire, à passer au banc |
+| 31 | A33-05 | Mineur | `src/gpu/cuda/backend/gpu_timing.h:53` | Profil GPU de fin de lecture tronqué | Corrigé : échantillon réservoir, toutes les mesures comptées (`core/sample_reservoir.h`) |
+| 32 | A33-06 | Mineur | `src/app/main.cpp:427-440` | Deux rotations du journal qui s'ignorent | Corrigé : les parts de séance tournent avec leur journal |
+| 33 | A33-08 | Mineur | `src/app/play/gpu_telemetry.cpp` | Aucun essai de durée ni relevé de ressources | Corrigé : ligne « ressources » toutes les 5 min et à chaque fermeture de chaîne ; l'essai de durée en CI reste à faire |
+| 34 | A26-08 | Mineur | `src/app/play/updater.cpp:490-497` | `update_managed_reason` crée et efface un fichier à chaque appel | A23-04 (même cause) ; Sans objet depuis C01 |
 
 <a id="c12"></a>
 

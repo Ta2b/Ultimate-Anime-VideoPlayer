@@ -1,6 +1,7 @@
 #include "app/play/options.h"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <format>
@@ -48,6 +49,44 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
   }
   options.window_width = *width;
   options.window_height = *height;
+  return {};
+}
+
+// Les options à valeur, dans l'ordre où elles se cherchent (--snapshot-at avant --snapshot).
+constexpr std::array<std::string_view, 23> kValuedOptions{
+    "--model",       "--window",          "--start",           "--seconds",          "--fullscreen-after",
+    "--stats",       "--snapshot-at",     "--snapshot-frames", "--snapshot",         "--keys",
+    "--work-height", "--rife-model",      "--anime-contrast",  "--anime-saturation", "--anime-highlights",
+    "--rife",        "--truehdr-peak",    "--data-dir",        "--bake-looks",       "--bench-level",
+    "--bench-out",   "--rife-calm-model", "--motion"};
+
+// Les options qui ne donnent qu'un chemin.
+using PathMember = std::optional<std::filesystem::path> PlayOptions::*;
+std::optional<PathMember> path_option(std::string_view name) {
+  constexpr std::array<std::pair<std::string_view, PathMember>, 8> kPaths{{
+      {"--model", &PlayOptions::model},
+      {"--data-dir", &PlayOptions::data_dir},
+      {"--bake-looks", &PlayOptions::bake_looks},
+      {"--bench-out", &PlayOptions::bench_out},
+      {"--stats", &PlayOptions::stats},
+      {"--snapshot", &PlayOptions::snapshot},
+      {"--rife-model", &PlayOptions::rife_model},
+      {"--rife-calm-model", &PlayOptions::rife_calm_model},
+  }};
+  for (const auto& [option, member] : kPaths)
+    if (option == name) return member;
+  return std::nullopt;
+}
+
+std::expected<void, Refusal> motion(std::string_view text, PlayOptions& options) {
+  if (text == "rife") {
+    options.motion = MotionChoice::Rife;
+  } else if (text == "drba") {
+    options.motion = MotionChoice::DistilDrba;
+  } else {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("--motion: \"{}\" is neither rife nor drba", text));
+  }
   return {};
 }
 
@@ -234,38 +273,25 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else {
       std::expected<void, Refusal> applied;
       bool known = false;
-      for (const std::string_view name : {"--model",          "--window",           "--start",
-                                          "--seconds",        "--fullscreen-after", "--stats",
-                                          "--snapshot-at",    "--snapshot-frames",  "--snapshot",
-                                          "--keys",           "--work-height",      "--rife-model",
-                                          "--anime-contrast", "--anime-saturation", "--anime-highlights",
-                                          "--rife",           "--truehdr-peak",     "--data-dir",
-                                          "--bake-looks",     "--bench-level",      "--bench-out",
-                                          "--rife-calm-model"}) {
+      for (const std::string_view name : kValuedOptions) {
         auto value = valued(args, i, name);
         if (!value) return std::unexpected(std::move(value.error()));
         if (!*value) continue;
         known = true;
         options.given.emplace_back(name);
         const std::string_view text = **value;
-        if (name == "--model") {
-          options.model = std::filesystem::path(text);
+        if (const auto member = path_option(name)) {
+          options.*(*member) = std::filesystem::path(text);
+        } else if (name == "--motion") {
+          applied = motion(text, options);
         } else if (name == "--window") {
           applied = window(text, options);
-        } else if (name == "--data-dir") {
-          options.data_dir = std::filesystem::path(text);
-        } else if (name == "--bake-looks") {
-          options.bake_looks = std::filesystem::path(text);
-        } else if (name == "--bench-out") {
-          options.bench_out = std::filesystem::path(text);
         } else if (name == "--bench-level") {
           const auto level = text == "auto" ? std::optional<int>(-1) : number<int>(text);
           if (!level || *level < -1 || *level >= 5)
             return refuse(RefusalCode::FieldOutOfRange,
                           std::format("--bench-level: \"{}\" is neither auto nor 0 to 4", text));
           options.bench_level = level;
-        } else if (name == "--stats") {
-          options.stats = std::filesystem::path(text);
         } else if (name == "--keys") {
           applied = keys(text, options);
         } else if (name == "--snapshot-frames") {
@@ -274,8 +300,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
             return refuse(RefusalCode::FieldOutOfRange,
                           std::format("--snapshot-frames: \"{}\" outside 1 to {}", text, kMaxSnapshotFrames));
           options.snapshot_frames = *frames;
-        } else if (name == "--snapshot") {
-          options.snapshot = std::filesystem::path(text);
         } else if (name == "--truehdr-peak") {
           // Les bornes de play.toml (limits::), 0 pour « celui de l'écran ».
           const auto setting = number<int>(text);
@@ -295,10 +319,6 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
           if (name == "--anime-contrast") options.anime_contrast = *percent;
           if (name == "--anime-saturation") options.anime_saturation = *percent;
           if (name == "--anime-highlights") options.anime_highlights = *percent;
-        } else if (name == "--rife-model") {
-          options.rife_model = std::filesystem::path(text);
-        } else if (name == "--rife-calm-model") {
-          options.rife_calm_model = std::filesystem::path(text);
         } else if (name == "--rife") {
           const auto factor = parse_factor(text);
           if (!factor) {
@@ -501,18 +521,20 @@ std::string play_usage(bool debug) {
       "  --keys=S:key,…         keys pressed automatically (tests), e.g. 3:Right,5:Space;\n"
       "                         export or export=FILE.mkv (or .mp4, .mov) starts exporting\n"
       "                         the current chain\n"
-      "  --work-height=N        shrinks the source to N lines before SPAN (default 720; 0 never)\n"
-      "  --rife=N               ×N interpolation (1.5, 2 to 10; default {}; 0 none); order: Warp and SPAN,\n"
-      "                         Auto by default\n"
-      "  --rife-model=FILE      RIFE model (default: {})\n"
+      "  --work-height=N        shrinks the source to N lines before SPAN (default: the preset's; 0 never)\n"
+      "  --rife=N               ×N interpolation (1.5, 2 to 10; default: the preset's; 0 none); order:\n"
+      "                         Warp and SPAN, Auto by default\n"
+      "  --rife-model=FILE      RIFE model (default: the preset's, {} without one)\n"
+      "  --motion=rife|drba     interpolation engine, RIFE or DistilDRBA (default: the preset's)\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade (default: the screen's, else 1000)\n"
       "ajp --register           registers the player with the system (\"Open with\", default\n"
       "                         player); --unregister removes this registration\n"
       "Keys: space pause, ← → seek 5 s, ↑ ↓ volume, m mute, f full screen (Esc leaves it), q quit,\n"
       "  a next audio track, j next subtitles, n / Shift+n next / previous episode,\n"
-      "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, b faithful\n"
-      "  sound, p settings, Tab statistics, Ctrl+0 no processing, Ctrl+G grade, Ctrl+I interpolation.\n",
-      kDefaultModelFile, kDefaultRifeFactor, kDefaultRifeFile);
+      "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, z / x\n"
+      "  subtitle delay, Ctrl+- / Ctrl++ audio delay, p settings, Tab statistics, Ctrl+0 no processing,\n"
+      "  Ctrl+G grade, Ctrl+I interpolation.\n",
+      kDefaultModelFile, kDefaultRifeFile);
   if (!debug) return usage + "Trial options: ajp --debug --help\n";
   return usage +
          "Trial options, with --debug:\n"

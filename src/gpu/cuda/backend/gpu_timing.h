@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/sample_reservoir.h"
 #include "gpu/gpu_profile.h"
 
 namespace ajp::gpu::cuda {
@@ -49,8 +50,10 @@ class GpuTiming {
   std::size_t ended_ = 0;               // paires finies (second événement enregistré)
   std::size_t read_ = 0;                // paires relues
   std::vector<float> samples_;
-  std::vector<float> all_;  // toutes les mesures, pour summary() (kMaxAll au plus)
   static constexpr std::size_t kMaxAll = 1 << 18;
+  // Toutes les mesures, pour summary() : comptées toutes, un échantillon uniforme au-delà de kMaxAll
+  // (A33-05).
+  core::SampleReservoir<float> all_{kMaxAll};
 };
 
 // La latence d'une source, de son ingestion à la fin de son SPAN (0.2) : les deux bouts sont appariés par une
@@ -82,8 +85,8 @@ class GpuSpan {
   std::string label_;
   std::array<Pair, kOpen> pairs_{};
   std::size_t next_ = 0;  // la prochaine paire à prendre (tourne)
-  std::vector<float> all_;
   static constexpr std::size_t kMaxAll = 1 << 18;
+  core::SampleReservoir<float> all_{kMaxAll};
 };
 
 }  // namespace ajp::gpu::cuda

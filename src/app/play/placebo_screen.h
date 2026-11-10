@@ -115,6 +115,9 @@ class PlaceboScreen final : public Screen {
   std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count,
                                                                 bool external = true,
                                                                 RingFormat format = RingFormat::Rgba16Unorm);
+  // Détruit le ring et l'image composée gardée (A33-01) : à la fermeture d'une chaîne, après le backend qui
+  // importait le ring, pour que l'accueil, la calibration et trtexec retrouvent la mémoire vidéo.
+  void release_ring();
   // Couleur des images du ring : celle de la source (l'agrandissement ne la change pas).
   void set_source_color(const ColorInfo& color);
   // Forme du pixel de la vidéo (SAR, largeur / hauteur) : l'image s'affiche étirée de ce rapport.
@@ -178,6 +181,20 @@ class PlaceboScreen final : public Screen {
   struct Impl;
   explicit PlaceboScreen(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
+};
+
+// release_ring à la sortie de la portée : déclaré avant le backend d'une chaîne, il passe après lui.
+class RingRelease {
+ public:
+  explicit RingRelease(PlaceboScreen& screen) : screen_(screen) {}
+  RingRelease(const RingRelease&) = delete;
+  RingRelease& operator=(const RingRelease&) = delete;
+  RingRelease(RingRelease&&) = delete;
+  RingRelease& operator=(RingRelease&&) = delete;
+  ~RingRelease() { screen_.release_ring(); }
+
+ private:
+  PlaceboScreen& screen_;
 };
 
 // Le veilleur d'écriture le temps d'une portée (run_chain) : waker nul, aucun veilleur.

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <future>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@
 #include "app/play/default_player.h"
 #include "app/play/settings.h"
 #include "app/play/span_derive.h"
+#include "app/play/updater.h"
 
 namespace ajp::app::play {
 
@@ -98,6 +100,8 @@ struct UpdateNote {
   bool refused = false;
   std::shared_ptr<std::stop_source> stop = std::make_shared<std::stop_source>();
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;  // détruit avant stop
+  std::optional<UpdateState> state;  // update.toml lu par la page, relu au plus toutes les deux secondes
+  std::chrono::steady_clock::time_point read_at;
   UpdateNote() = default;
   ~UpdateNote() { stop->request_stop(); }
   UpdateNote(const UpdateNote&) = delete;

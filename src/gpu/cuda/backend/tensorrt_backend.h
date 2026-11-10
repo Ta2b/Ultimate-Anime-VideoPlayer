@@ -157,7 +157,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> apply(const LaneHazards::Op& op);
   std::expected<void, Refusal> record(std::size_t lane);  // l'événement en attente de lane
   std::expected<void, Refusal> create_lanes();
-  void destroy_lanes();
+  void destroy_lanes();  // et rend au pilote ce que la réserve CUDA ne prête plus (A33-01)
   // Attente hôte d'un événement : interrogé quelques centaines de µs d'abord, puis attendu (le
   // contexte en attente bloquante réveille le thread 50 à 200 µs après l'événement, T14).
   static std::expected<void, Refusal> wait_event(cudaEvent_t event);

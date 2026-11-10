@@ -68,6 +68,12 @@ std::expected<bool, Refusal> reusable(const CacheEntry& entry) {
   return *digest != entry.rejected_sha256;
 }
 
+// Un moteur repris rafraîchit la date de son empreinte : la purge du cache (cache_purge.h) sait ce qui sert.
+void mark_used(const CacheEntry& entry) {
+  std::error_code error;
+  fs::last_write_time(entry.digest_file(), fs::file_time_type::clock::now(), error);
+}
+
 }  // namespace
 
 fs::path CacheEntry::digest_file() const {
@@ -97,7 +103,10 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "rejected_sha256 n'est pas un SHA-256"});
   }
   if (entry.rejected_sha256.empty() && is_published(entry.destination)) {
-    if (auto whole = intact(entry); whole && *whole) return Production::Reused;
+    if (auto whole = intact(entry); whole && *whole) {
+      mark_used(entry);
+      return Production::Reused;
+    }
   }
   const fs::path parent = entry.destination.parent_path();
   std::error_code error;
@@ -112,7 +121,10 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
   // Un autre processus a pu publier pendant l'attente du verrou : on la reprend.
   auto reuse = reusable(entry);
   if (!reuse) return std::unexpected(reuse.error());
-  if (*reuse) return Production::Reused;
+  if (*reuse) {
+    mark_used(entry);
+    return Production::Reused;
+  }
 
   auto folder = reserve_stage(parent, kStagePrefix, entry.owner());
   if (!folder) return std::unexpected(folder.error());

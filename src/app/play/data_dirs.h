@@ -34,4 +34,9 @@ int purge_misplaced(const std::filesystem::path& shared,
 int purge_update_leftovers(const std::filesystem::path& data,
                            const std::function<void(const std::string&)>& said = {});
 
+// Au lancement, hors essai : purge_update_leftovers, puis le cache des moteurs TensorRT de engines borné
+// (A33-04, prepare/cache_purge.h) ; said reçoit ce qui part et la taille gardée.
+void tidy_at_launch(const std::filesystem::path& data, const std::filesystem::path& engines,
+                    const std::function<void(const std::string&)>& said = {});
+
 }  // namespace ajp::app::play

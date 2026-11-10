@@ -145,6 +145,12 @@ changent pas. Seul Apple (flux optique du système, instants imposés) reste en 
 
 ## 3. Vérification réelle
 
+> **Historique (A32-01).** Ces chiffres datent de la chaîne avec RTX HDR par image créée, retirée depuis :
+> le « service de 13 à 16 ms » et les cadences de 60 à 67 i/s ne décrivent plus le lecteur actuel. Ne pas
+> s'en servir pour décider d'une cadence ou d'un moteur. La remesure sur le binaire livré (`linux-release`,
+> par moteur, même scène) est demandée dans `docs/audits/A-CONFIRMER.md` (A32-01) ; son tableau remplacera
+> celui-ci.
+
 Re:Zero 4e saison ép. 18 à 960 s, 75 s, plein écran (QD-OLED 165 Hz VRR armé), RTX 4070 Ti, 1440p de sortie,
 RTX HDR, hauteur de travail 720p, `[auto] preset = 'custom'`, données de test à part (`--data-dir`), sous
 verrou GPU. Banc : `/tmp/claude-1000/pbt/cmp3.py`. Auto = la loi actuelle (`origin/auto-mesure`, #123).

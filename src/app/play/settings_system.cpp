@@ -93,6 +93,21 @@ void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
   note(i18n::tr("Applies at next launch."));
 }
 
+namespace {
+
+// A23-04 : update.toml relu à l'ouverture de la page, après une vérification, puis toutes les deux secondes
+// (le fil des mises à jour peut l'écrire), et non plus à chaque image.
+const UpdateState& page_state(UpdateNote& note, const std::filesystem::path& file) {
+  const auto now = std::chrono::steady_clock::now();
+  if (!note.state || now - note.read_at > std::chrono::seconds(2)) {
+    note.state = load_update_state(file);
+    note.read_at = now;
+  }
+  return *note.state;
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result) {
   const std::filesystem::path state_file = paths::update_state(place.app_data);
@@ -102,11 +117,11 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     result.pending.reset();
     result.text = done ? *done : visible_error(done.error());
     result.refused = !done;
+    result.state.reset();  // la vérification vient de réécrire update.toml
   }
-  const UpdateState state = load_update_state(state_file);
+  const UpdateState& state = page_state(result, state_file);
 
-  // Une simple notification (updater.h) : le lecteur dit qu'une version existe et où la prendre, il
-  // n'installe rien.
+  // Une simple notification (updater.h) : une version existe, et où la prendre ; rien ne s'installe.
   section(i18n::tr("Updates"));
   struct Mode {
     UpdateMode key;
