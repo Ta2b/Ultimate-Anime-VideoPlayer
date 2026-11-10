@@ -237,13 +237,13 @@ struct PlaySettings {
   int sharpness = 0;
   // À la fin de la vidéo, lire la suivante du dossier (ordre naturel des noms) ; vaut au prochain
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
-  // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto
-  // », « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
+  // Mises à jour du lecteur (updater.h) : une notification, « notify » (Me prévenir, le défaut) ou « never »
+  // ; la fréquence « launch », « daily », « weekly ».
   UpdateMode update_mode = UpdateMode::Notify;
-  UpdateChannel update_channel = UpdateChannel::Stable;
   UpdateFrequency update_frequency = UpdateFrequency::Daily;
-  // Langue de l'interface : « en » (le défaut, sans détection) ou « fr » ; prise en direct (app/play/i18n.h).
-  std::string language = "en";
+  // Langue de l'interface : « en » ou « fr », celle du système par défaut (default_interface_language) ;
+  // prise en direct (app/play/i18n.h).
+  std::string language = default_interface_language();
   // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.
@@ -301,6 +301,9 @@ inline constexpr std::size_t kMaxEnginesDirBytes = 4096;
 
 namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
+// Le curseur du délai audio va moins loin que la saisie au clavier (Ctrl+clic), qui va jusqu'à kAudioDelayMs.
+inline constexpr core::Range<int> kAudioDelaySlider{-1000, 1000};
+inline constexpr core::Range<int> kSubtitleDelaySlider{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};

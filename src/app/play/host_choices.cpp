@@ -38,6 +38,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
                               .tensorrt = choices.engine_in_use == core::EngineId::TensorRt &&
                                           tensorrt_backend_present(catalog, paths),
                               .driver = machine.driver};
+  choices.display_width = display_width(screen.window());  // un écran 21:9 se mesure à sa vraie taille
   choices.calibrated = calibrated_chain(settings_dir, choices.calibration_host);
   choices.gpu_name = machine.name;
   choices.gpus = screen.device_names();

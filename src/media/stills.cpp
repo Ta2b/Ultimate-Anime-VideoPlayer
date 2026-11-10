@@ -8,6 +8,7 @@
 #include <optional>
 #include <vector>
 
+#include "core/thread_role.h"
 #include "kernels/spec/resample.h"
 #include "media/demuxer.h"
 #include "media/video_decoder.h"
@@ -157,6 +158,46 @@ Still reduce_still(const Still& in, const StillReduce& to) {
   return out;
 }
 
+namespace {
+
+// A15-12 : la chroma rééchantillonnée en bilinéaire à sa position (siting), comme l'ingestion de la lecture
+// la prépare, et non prise au plus proche : les images de calibration n'ont pas de marches de chroma que SPAN
+// ne verrait jamais.
+struct BilinearChroma {
+  const yuv::Layout& layout;
+  int width;
+  int height;
+  double shift_x;
+  double shift_y;
+
+  BilinearChroma(const yuv::Layout& l, const DecodedFrame& frame)
+      : layout(l),
+        width((frame.width + 1) / 2),
+        height((frame.height + 1) / 2),
+        shift_x(frame.color.siting == ChromaSiting::Center ? 0.5 : 0.0),
+        shift_y(frame.color.siting == ChromaSiting::TopLeft ? 0.0 : 0.5) {}
+
+  // La chroma au pixel de luma (sx, sy).
+  double at(std::span<const std::byte> plane, std::size_t stride, int sx, int sy, int channel,
+            int channels) const {
+    const double fx = std::clamp((sx - shift_x) / 2.0, 0.0, width - 1.0);
+    const double fy = std::clamp((sy - shift_y) / 2.0, 0.0, height - 1.0);
+    const int ix = static_cast<int>(fx);
+    const int iy = static_cast<int>(fy);
+    const int nx = std::min(ix + 1, width - 1);
+    const int ny = std::min(iy + 1, height - 1);
+    const double ax = fx - ix;
+    const double ay = fy - iy;
+    const auto value = [&](int x, int y) {
+      return static_cast<double>(yuv::sample(plane, stride, x, y, layout, channel, channels));
+    };
+    return (((value(ix, iy) * (1.0 - ax)) + (value(nx, iy) * ax)) * (1.0 - ay)) +
+           (((value(ix, ny) * (1.0 - ax)) + (value(nx, ny) * ax)) * ay);
+  }
+};
+
+}  // namespace
+
 std::expected<Still, Refusal> still_from_frame(const DecodedFrame& frame, const StillsSpec& spec) {
   if (spec.reduce.width > 0 && spec.reduce.height > 0 &&
       (frame.width > spec.reduce.width || frame.height > spec.reduce.height)) {
@@ -215,6 +256,7 @@ std::expected<Still, Refusal> still_from_frame(const DecodedFrame& frame, const 
     v_stride = frame.data->host_stride(2);
   }
 
+  const BilinearChroma chroma{*layout, frame};
   Still still;
   still.width = width;
   still.height = height;
@@ -229,11 +271,11 @@ std::expected<Still, Refusal> still_from_frame(const DecodedFrame& frame, const 
       const double yy = (sample(luma, luma_stride, sx, sy, *layout) - y_off) / y_range;
       double cb = 0.0, cr = 0.0;
       if (layout->semi_planar) {
-        cb = sample(chroma_u, u_stride, sx / 2, sy / 2, *layout, 0, 2);
-        cr = sample(chroma_u, u_stride, sx / 2, sy / 2, *layout, 1, 2);
+        cb = chroma.at(chroma_u, u_stride, sx, sy, 0, 2);
+        cr = chroma.at(chroma_u, u_stride, sx, sy, 1, 2);
       } else {
-        cb = sample(chroma_u, u_stride, sx / 2, sy / 2, *layout);
-        cr = sample(chroma_v, v_stride, sx / 2, sy / 2, *layout);
+        cb = chroma.at(chroma_u, u_stride, sx, sy, 0, 1);
+        cr = chroma.at(chroma_v, v_stride, sx, sy, 0, 1);
       }
       cb = (cb - c_mid) / c_range;
       cr = (cr - c_mid) / c_range;
@@ -270,6 +312,18 @@ std::vector<std::size_t> pick_stills(std::span<const Still> stills, const Stills
   return usable;
 }
 
+namespace {
+
+// Le décodage logiciel seul : la préparation ne touche pas au GPU que la lecture occupe. Elle tourne pendant
+// la lecture : en fond, sur les threads de la pré-analyse (A15-11).
+std::expected<VideoDecoder, Refusal> open_background_decoder(const TrackInfo& video) {
+  set_thread_role(ThreadRole::Background);
+  return VideoDecoder::open(
+      video, DecoderOptions{.attempts = {HwApi::Software}, .threads = background_decoder_threads()});
+}
+
+}  // namespace
+
 std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem::path& file,
                                                           const StillsSpec& spec, const std::stop_token& stop,
                                                           const std::function<void(float)>& progress) {
@@ -291,8 +345,7 @@ std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem:
   if (duration <= 0) return refuse(RefusalCode::SeekFailed, "durée de la vidéo inconnue");
   const std::array<int, 1> keep{video->index};
   if (auto ok = demuxer->keep_only(keep); !ok) return std::unexpected(std::move(ok.error()));
-  // Le décodage logiciel seul : la préparation ne touche pas au GPU que la lecture occupe.
-  auto decoder = VideoDecoder::open(*video, DecoderOptions{.attempts = {HwApi::Software}});
+  auto decoder = open_background_decoder(*video);
   if (!decoder) return std::unexpected(std::move(decoder.error()));
 
   std::vector<Still> found;

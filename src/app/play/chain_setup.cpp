@@ -160,6 +160,10 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
               .output_height = c.work.height * kSpanFactor,
               .span = c.engine != nullptr,
               .rife_loaded = c.interpolates()};
+  c.opened.drba = c.drba != nullptr;
+  c.opened.drba_fused = c.opened.drba && c.drba_fused;
+  c.opened.drba_motion = c.opened.drba && c.drba_motion;
+  c.opened.drba_fused_capable = c.backend != nullptr && c.backend->capabilities().drba_fused;
   c.opened.shape = {
       .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}),
       .warp_after_span =
@@ -419,9 +423,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     }
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
-                                          : i18n::ui_tr("DistilDRBA unavailable"),
-                             host_now_us());
+      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
+                                        : i18n::ui_tr("DistilDRBA unavailable"),
+                           host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -449,9 +453,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     auto loaded = prepare_apple(p, init, *c.backend, c.work.width, c.work.height);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
-                                          : i18n::ui_tr("Apple interpolation unavailable"),
-                             host_now_us());
+      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
+                                        : i18n::ui_tr("Apple interpolation unavailable"),
+                           host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {

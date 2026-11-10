@@ -133,7 +133,7 @@ Général
   │                          (dernier résultat et date), carte et écran détectés (voir 4.7)
   ├ Lecture                  volume, épisode suivant, reprendre là où on s'est arrêté
   ├ Lecteur par défaut       bouton « Faire de ce lecteur le lecteur par défaut », Ouvrir avec  (voir 4.4)
-  └ Mises à jour             Automatique / Me prévenir / Jamais, canal, fréquence, version (voir 4.5)
+  └ Mises à jour             Me prévenir / Jamais, fréquence, version (voir 4.5)
 Image IA
   ├ Agrandissement           résolution de travail, SPAN (case, modèle) ; en Réglages avancés : « Préparer le
   │                          mode Performance (SPAN FP8) » et « Préparer en tâche de fond » (docs/span-fp8-cutlass.md)
@@ -264,29 +264,25 @@ registre. Ce serait une étape 6, après le reste.
 - Détecter « déjà par défaut » : `xdg-mime query default video/x-matroska` (Linux) ; Windows : lecture de
   `UserChoice` ; sinon la case suffit.
 
-### 4.5 Mise à jour automatique (configurable)
-Réglages, dans Général (le choix) et Avancé (le détail) :
-- **Mises à jour** : *Automatique* (télécharge, installe au prochain lancement), *Me prévenir* (notification,
-  l'utilisateur lance), *Jamais*.
-- Avancé : canal (*Stable* / *Préversions*), fréquence (au lancement, quotidienne, hebdomadaire), « Vérifier
-  maintenant », version installée, « Revenir à la version précédente », dernière vérification.
+### 4.5 Mise à jour : une simple notification
 
-Mécanique :
-1. **Vérification** : un fil d'arrière-plan lit la dernière release du dépôt des releases (`AJP_RELEASE_REPO`)
-   au plus une fois par jour, jamais pendant une lecture. Seule donnée envoyée : la requête HTTPS (pas de
-   télémétrie).
-2. **Intégrité** : le lien de la release est confirmé par SHA-256 (déjà dans `engines.lock`) et, en plus, une
-   **signature Ed25519** d'un manifeste (clé publique compilée dans le lecteur) : un hachage seul ne protège pas
-   d'une release remplacée.
-3. **Installation** : téléchargée à côté, appliquée **au prochain lancement** (jamais en pleine lecture) ;
-   l'ancienne version est gardée pour le retour arrière. Une mise à jour ratée laisse l'ancienne en place.
-4. **Selon l'installation** : tarball Linux et zip Windows/macOS : AJP se met à jour lui-même ; paquet de
-   distribution, Flatpak, AppImage : réglage grisé avec « mis à jour par votre gestionnaire de paquets »
-   (AppImage : AppImageUpdate à voir plus tard).
-5. **Moteurs et modèles** : déjà versionnés par leur index (`engines.lock`) ; la mise à jour du lecteur ne les
-   retélécharge que si le hachage change.
-6. Défaut proposé : **Me prévenir** (à confirmer, question 5), choisi sur l'écran du premier lancement (Sparkle
-   demande aussi une fois).
+Décision de Tatoub (9 novembre 2026, chantier C01 des audits) : le lecteur ne s'installe plus lui-même. Réglages,
+dans Général > Application :
+- **Mises à jour** : *Me prévenir* (le défaut) ou *Jamais* ; fréquence (au lancement, quotidienne, hebdomadaire),
+  « Vérifier maintenant », version installée, dernière vérification, et « Page de téléchargement » quand une
+  version plus récente existe.
+- Pas de canal Préversions : seul le manifeste de la dernière release est lu.
+
+Mécanique (`src/app/play/updater.h`) :
+1. **Vérification** : un fil d'arrière-plan lit `manifest.toml` de la dernière release du dépôt des releases
+   (`AJP_RELEASE_REPO`), jamais pendant une lecture. Seule donnée envoyée : la requête HTTPS. Sans réponse du
+   serveur, un nouvel essai vient au bout d'une heure.
+2. **Intégrité** : le manifeste porte une **signature Ed25519** (clé publique compilée dans le lecteur, signée par
+   la CI de release : `docs/signature-des-releases.md`). Une release sans manifeste se dit, jamais « à jour ».
+3. **Notification** : une notice à l'accueil et la page Application, avec le lien de la release. L'utilisateur
+   télécharge l'archive ou l'installeur lui-même.
+4. Un ancien `play.toml` en mode *Automatique* se lit *Me prévenir* ; les archives préparées et la copie
+   `updates/previous` des versions d'avant se retirent au lancement.
 
 ### 4.8 Assistant de premier démarrage (« first-run wizard »)
 

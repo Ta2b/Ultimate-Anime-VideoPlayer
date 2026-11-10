@@ -35,10 +35,15 @@ pack() {  # dossier-parent entrée archive.tar.gz : tar trié, propriétaire neu
   tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" -C "$1" -cf - "$2" | gzip -9n > "$3"
 }
 # Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
-BASE_URL="https://github.com/${AJP_RELEASE_REPO:-Ta2b/Ultimate-Anime-VideoPlayer}/releases/download/$TAG"
+# Le dépôt par défaut vient de versions.env, la seule source (A28-05) ; AJP_RELEASE_REPO posé l'emporte.
+AJP_RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
+BASE_URL="https://github.com/${AJP_RELEASE_REPO}/releases/download/$TAG"
 
+# Une étiquette de préversion (v0.11.0-rc.1) donne son suffixe au binaire : il dit la version de l'étiquette (A26-04).
+SUFFIX=""
+case "$TAG" in "v$VERSION"-*) SUFFIX="${TAG#"v$VERSION"}" ;; esac
 cmake --preset linux-release -S "$ROOT" \
-  -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" \
+  -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" -DAJP_VERSION_SUFFIX="$SUFFIX" \
   ${AJP_TENSORRT_ROOT:+-DAJP_TENSORRT_ROOT="$AJP_TENSORRT_ROOT"}
 cmake --build --preset linux-release
 BUILD="$ROOT/build/linux-release"
@@ -179,7 +184,9 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   dir="$OUT/engine-tensorrt"; rm -rf "$dir"; mkdir -p "$dir"
   cp "$TRT_MODULE" "$dir/"
   TRTEXEC="$(sed -n 's/^AJP_TRTEXEC_PACKAGED:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
-  [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] && cp "$TRTEXEC" "$dir/trtexec"
+  # Sans trtexec, le moteur ne construit aucun réseau : le paquet ne part pas (TRT-04).
+  [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] || { echo "trtexec introuvable (AJP_TRTEXEC_PACKAGED : « $TRTEXEC »)" >&2; exit 1; }
+  cp "$TRTEXEC" "$dir/trtexec"
   # Le module ne lance que le trtexec dont il garde l'empreinte : un paquet où elle manque ne construirait rien.
   if [ -f "$dir/trtexec" ] && ! strings "$dir/ajp_backend_tensorrt.so" |
       grep -qx "$(sha256sum "$dir/trtexec" | cut -d' ' -f1)"; then
@@ -187,14 +194,17 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
     exit 1
   fi
   copy_deps "$dir" "$dir"/*
-  TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
+  # La version entière de TensorRT (11.3.0.99), celle de versions.env que les [[vendor_file]] tirent : jamais le
+  # seul numéro majeur, ni la version du lecteur par défaut (A28-09). Elle nomme le dossier d'installation.
+  TRT_VERSION="$(sed -n 's/^TENSORRT_LIBS_VERSION=//p' "$ROOT/tools/release/versions.env")"
+  [ -n "$TRT_VERSION" ] || { echo "TENSORRT_LIBS_VERSION absent de versions.env" >&2; exit 1; }
   VENDOR="$ROOT/tools/release/nvidia-vendor/tensorrt-linux-x64.lock"
   if [ -z "${AJP_NVIDIA_BUNDLE:-}" ] && [ -f "$VENDOR" ]; then
     # Lien direct : le paquet ne porte que ce qui est à nous (module, trtexec). Les bibliothèques de
     # NVIDIA n'y entrent pas : le lecteur les tire des archives de NVIDIA elles-mêmes, après
     # l'acceptation de sa licence à l'écran (entrées [[vendor_file]], tools/release/vendor-index.py).
     rm -f "$dir"/libnvinfer* "$dir"/libnvonnxparser* "$dir"/libnvrtc* "$dir"/libcu*
-    engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
+    engine_package tensorrt "$TRT_VERSION" \
       "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
     { echo; cat "$VENDOR"; } >> "$LOCK"
   else
@@ -204,8 +214,7 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
       'libnvinfer_plugin.so.[0-9]*' 'libnvonnxparser.so.[0-9]*'
     for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
     check_portable "$dir" "$STAGE/lib"
-    TRT_VERSION="$(basename "$(ls "$dir"/libnvinfer.so.* | sort | tail -1)" | sed 's/^libnvinfer\.so\.//')"
-    engine_package tensorrt "${TRT_VERSION:-$VERSION}" \
+    engine_package tensorrt "$TRT_VERSION" \
       "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
   fi
 fi

@@ -1,37 +1,67 @@
-# Signer une release (mises à jour du lecteur)
+# Publier et signer une release
 
 Le lecteur ne croit un manifeste de mise à jour que s'il porte une signature Ed25519 valide pour la clé publique
 compilée dans `AJP_UPDATE_PUBKEY` (`src/app/CMakeLists.txt`).
 
 - **Clé publique** : `c50eeb3e63c327a087487cd3f485e66fbbf8ef2340a0b90d7ec99d4c2d3f0d58` (valeur par défaut de `AJP_UPDATE_PUBKEY`).
-- **Clé privée** : `~/.config/ajp-release/update-ed25519.pem` sur le PC de Tatoub, droits 600. Elle n'est **jamais** dans le
-  dépôt, ni dans un message, ni dans la CI : aucun secret CI n'existe pour l'instant, **la signature des releases se fait
-  donc localement sur le PC de Tatoub**.
+- **Clé privée** : dans le secret `AJP_UPDATE_KEY` de l'environnement protégé `release` du dépôt des sources (décision
+  de Tatoub, 9 novembre 2026). Elle n'est **jamais** dans le dépôt ni dans un message. Une copie de sauvegarde reste
+  chez Tatoub, chiffrée.
 
-## Procédure, pour chaque release
+## Une release, de bout en bout
 
-1. Construire et empaqueter (`tools/release/package-*.sh`), poser les archives (`ajp-linux-x64.tar.gz`,
-   `ajp-windows-x64.zip`, `ajp-macos-arm64.zip` selon ce qui existe) dans un dossier, par exemple `~/ajp-work/release/v0.5.0`.
-2. Signer, depuis ce PC :
+Une seule action : pousser l'étiquette `v<VERSION>` (ou `v<VERSION>-rc.N` pour une préversion), où `<VERSION>` est
+celle de `project()` dans `CMakeLists.txt`. Aucune étiquette ne se pose sans la demande de Tatoub. Le workflow
+`release.yml` fait le reste :
 
-   ```bash
-   AJP_UPDATE_KEY=~/.config/ajp-release/update-ed25519.pem \
-     tools/release/sign-manifest.sh 0.5.0 stable ~/ajp-work/release/v0.5.0 \
-     https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0 \
-     https://github.com/Ta2b/ajp-releases/releases/tag/v0.5.0
-   ```
+1. **Garde** (`release-guard.yml`) : le commit construit est celui de l'étiquette, l'étiquette dit la version de
+   `CMakeLists.txt` (`tools/ci/check-version.sh <étiquette>`), et `ci.yml` est vert sur ce commit.
+2. **Plateformes**, en parallèle (`release-linux.yml`, `release-windows.yml`, `release-macos.yml`) :
+   - Linux et Windows construisent d'abord leur **paquet TensorRT** s'il manque pour l'empreinte de ses entrées
+     (`tools/release/trt-fingerprint.sh`, `--windows`), et le publient dans la release fixe `trt-<empreinte>` ou
+     `trt-win-<empreinte>`. Une release finale sans paquet TensorRT Linux ou Windows échoue ;
+   - chacune joint ses archives à la release de l'étiquette, qui reste une **préversion** pendant ce temps
+     (`tools/release/attach-assets.sh`).
+3. **Publier** (job final de `release.yml`, environnement `release`) :
+   - `tools/release/check-release.sh` vérifie que les trois archives sont là et que les index de Linux et de Windows
+     nomment TensorRT ;
+   - pour une release finale, `tools/release/sign-manifest.sh` écrit et signe `manifest.toml` (canal `stable`),
+     `tools/release/verify-download.sh` le revérifie contre chaque archive, et les deux fichiers sont joints ;
+   - la release devient finale et « latest », sauf si une release plus récente l'est déjà (relance sur une ancienne
+     étiquette). Une préversion reste une préversion, sans manifeste.
 
-   Le script écrit `manifest.toml` (version, canal, adresses, SHA-256, tailles) et `manifest.toml.sig` (signature en
-   hexadécimal) à côté des archives.
-3. Joindre `manifest.toml` et `manifest.toml.sig` **à la release**, avec les archives. La version « stable » lue par le
-   lecteur est la dernière release du dépôt ; une préversion se publie sous le tag fixe `preview`
-   (`.../releases/download/preview/manifest.toml`), canal `preview`.
-4. Vérifier : lancer `ajp` d'une version plus ancienne, Paramètres > Général > Mises à jour > Vérifier maintenant.
+Relancer une étiquette : Actions > Release > Run workflow, avec l'étiquette. Une plateforme seule se relance aussi à
+la main (son workflow, avec l'étiquette) tant que la release est une préversion ; puis relancer Release pour publier.
 
-**Expiration.** Le manifeste porte `expires`, 120 jours après sa signature : au-delà, le lecteur le refuse
-(« le manifeste de mise à jour a expiré »), pour qu'un ancien manifeste signé ne se rejoue pas et ne gèle pas les
-mises à jour. Sans nouvelle release dans ces 120 jours, re-signer le manifeste de la dernière (même commande,
-mêmes archives) et remplacer `manifest.toml` et `manifest.toml.sig` dans la release.
+## Réglages du dépôt, une fois
+
+Ce qui suit se fait sur GitHub, sans le PC :
+
+1. **Environnement `release`** (Settings > Environments > New environment) : règle de déploiement « Selected branches
+   and tags », avec le motif d'étiquette `v*` et la branche `main` (pour la re-signature mensuelle).
+2. **Secret `AJP_UPDATE_KEY`** dans cet environnement : le contenu entier du fichier PEM de la clé privée
+   (`-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`).
+3. **Secret `AJP_RELEASE_TOKEN`** (déjà en place) : un jeton qui peut écrire les releases du dépôt
+   `AJP_RELEASE_REPO` de `tools/release/versions.env`.
+
+Le dépôt des releases est écrit à un seul endroit, `tools/release/versions.env` (`AJP_RELEASE_REPO`) : les workflows,
+les scripts de paquet et CMake le lisent.
+
+**Expiration.** Le manifeste porte `expires`, 120 jours après sa signature : au-delà, le lecteur le refuse, pour
+qu'un ancien manifeste signé ne se rejoue pas. Le workflow `resign-manifest.yml` re-signe chaque mois celui de la
+« latest » quand il lui reste moins de 45 jours ; il se lance aussi à la main.
+
+## Signer à la main (secours)
+
+Si la CI ne peut pas signer, depuis un poste qui a la clé :
+
+```bash
+gh release download v0.11.0 -R Ta2b/ajp-releases -D rel -p 'ajp-*'
+AJP_UPDATE_KEY=update-ed25519.pem tools/release/sign-manifest.sh 0.11.0 stable rel \
+  https://github.com/Ta2b/ajp-releases/releases/download/v0.11.0 \
+  https://github.com/Ta2b/ajp-releases/releases/tag/v0.11.0
+gh release upload v0.11.0 -R Ta2b/ajp-releases --clobber rel/manifest.toml rel/manifest.toml.sig
+```
 
 ## Changer ou perdre la clé
 
@@ -39,47 +69,26 @@ mêmes archives) et remplacer `manifest.toml` et `manifest.toml.sig` dans la rel
   `openssl pkey -in update-ed25519.pem -pubout -outform DER | tail -c 32 | xxd -p -c 64` donne la clé publique à mettre
   dans `AJP_UPDATE_PUBKEY`. Les lecteurs déjà installés avec l'ancienne clé ne reconnaîtront plus les manifestes : il faut
   une release manuelle.
-- Sauvegarder la clé privée (gestionnaire de mots de passe de Tatoub, disque chiffré) : sans elle, plus de mise à jour.
+- Sauvegarder la clé privée (copie chiffrée chez Tatoub) : sans elle, plus de mise à jour. Une nouvelle clé active
+  remplace le secret `AJP_UPDATE_KEY`.
 
 ### Clé de secours et révocation
 
 Le lecteur croit deux clés : l'active (`AJP_UPDATE_PUBKEY`) et celle de secours (`AJP_UPDATE_PUBKEY_BACKUP`, vide
 tant qu'elle n'est pas créée). Créer la paire de secours comme ci-dessus, compiler sa clé publique dans
-`AJP_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **ailleurs** que l'active (hors ligne). Le choix du support
-(YubiKey, HSM, KMS) est la décision P7.2 du plan.
+`AJP_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **hors ligne**, chez Tatoub, en sauvegarde chiffrée (décision du
+9 novembre 2026) : jamais dans la CI, pour qu'un vol du secret `AJP_UPDATE_KEY` reste révocable.
 
 Si l'active est perdue ou volée : signer le manifeste suivant avec la clé de secours
 (`AJP_UPDATE_KEY=<secours>.pem tools/release/sign-manifest.sh …`) et y ajouter la ligne
 `revoked_keys = ["<clé publique active>"]`. Les lecteurs le croient, retiennent la révocation dans `update.toml`, et ne
 croient plus aucun manifeste signé par l'ancienne clé. La release suivante compile une nouvelle clé de secours.
 
-## Canal « Préversions » et passage en release normale
+## Pas de canal Préversions
 
-Le lecteur lit son manifeste à deux adresses (`src/app/play/updater.cpp`, `manifest_url`) :
-
-| Canal (Général > Mises à jour) | Adresse | Champ `channel` du manifeste |
-|---|---|---|
-| Stable (défaut) | `https://github.com/<dépôt>/releases/latest/download/manifest.toml` | `stable` |
-| Préversions | `https://github.com/<dépôt>/releases/download/preview/manifest.toml` | `preview` |
-
-GitHub appelle « latest » la dernière release **qui n'est pas une pré-version** : tant que la dernière version est une pré-version
-(c'est le cas de la 0.5.0), l'adresse « Stable » ne trouve rien (404 : « aucune mise à jour »). Deux façons de les servir :
-
-1. **Canal Préversions** : une release `preview` du dépôt des releases porte le manifeste du canal `preview` (même version, mêmes
-   archives, `channel = "preview"`, signé à part : le champ est signé avec le reste). Un utilisateur qui choisit « Préversions » reçoit alors la 0.5.0.
-   ```bash
-   sed 's/^channel = "stable"$/channel = "preview"/' manifest.toml > preview/manifest.toml
-   openssl pkeyutl -sign -inkey ~/.config/ajp-release/update-ed25519.pem -rawin -in preview/manifest.toml -out sig.bin
-   xxd -p -c 256 sig.bin > preview/manifest.toml.sig
-   gh release create preview -R Ta2b/ajp-releases --prerelease --title "Canal préversions (manifeste des mises à jour)" \
-     --notes "Manifeste signé du canal Préversions." preview/manifest.toml preview/manifest.toml.sig
-   # les fois suivantes : gh release upload preview -R Ta2b/ajp-releases --clobber preview/manifest.toml preview/manifest.toml.sig
-   ```
-2. **Release normale** (quand la version est validée) : retirer la marque « pré-version » de la release
-   (`gh release edit v0.5.0 -R Ta2b/ajp-releases --prerelease=false --latest`) ; son `manifest.toml` (canal `stable`) est alors celui de
-   « latest » et le canal Stable fonctionne.
-
-Le canal du manifeste est vérifié par le lecteur : un manifeste `stable` servi à l'adresse `preview` (ou l'inverse) est refusé.
+Le canal Préversions est retiré (décision de Tatoub, 9 novembre 2026) : une préversion se publie sans manifeste, et
+le lecteur ne lit que `https://github.com/<dépôt>/releases/latest/download/manifest.toml`. GitHub appelle « latest » la
+dernière release qui n'est pas une préversion.
 
 ## Signature des exécutables et des archives (P7.1)
 

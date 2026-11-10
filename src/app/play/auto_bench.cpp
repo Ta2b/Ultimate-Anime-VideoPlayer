@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "core/user_overlay.h"
+#include "core/utf8_path.h"
 
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
@@ -106,7 +107,7 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
 
 std::expected<BenchResult, Refusal> load_bench(const std::filesystem::path& file) {
   std::ifstream in(file, std::ios::binary);
-  if (!in) return refuse(RefusalCode::FileUnreadable, file.string());
+  if (!in) return refuse(RefusalCode::FileUnreadable, core::to_utf8(file));
   std::ostringstream text;
   text << in.rdbuf();
   return parse_bench(text.str());
@@ -199,7 +200,7 @@ std::expected<BenchReading, Refusal> parse_reading(std::string_view text) {
 
 std::expected<BenchReading, Refusal> load_reading(const std::filesystem::path& file) {
   std::ifstream in(file, std::ios::binary);
-  if (!in) return refuse(RefusalCode::FileUnreadable, file.string());
+  if (!in) return refuse(RefusalCode::FileUnreadable, core::to_utf8(file));
   std::ostringstream text;
   text << in.rdbuf();
   return parse_reading(text.str());

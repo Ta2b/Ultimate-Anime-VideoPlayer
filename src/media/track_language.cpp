@@ -85,9 +85,13 @@ std::optional<Word> next_word(std::string_view text, std::size_t& from) {
   return Word{.at = start, .text = text.substr(start, from - start)};
 }
 
-}  // namespace
+// Sur une piste audio, « VOSTFR » et « VOSTA » disent la version originale (sous-titrée) : la langue de la
+// piste n'est pas celle des sous-titres (A14-05). Ces mots ne nomment alors aucune langue.
+bool original_version(std::string_view word) {
+  return word == "vostfr" || word == "vosta" || word == "vost" || word == "vo" || word == "vostf";
+}
 
-std::string_view language_from_title(std::string_view title) {
+std::string_view language_in(std::string_view title, bool audio) {
   const std::string text = folded(title);
   std::optional<std::size_t> best_at;
   std::string_view best;
@@ -101,6 +105,7 @@ std::string_view language_from_title(std::string_view title) {
   // collés à d'autres caractères (« 日本語字幕 »).
   std::size_t from = 0;
   while (const std::optional<Word> word = next_word(text, from)) {
+    if (audio && original_version(word->text)) continue;
     for (const Name& name : kNames) {
       if (word->text == name.word) keep(word->at, name.language);
     }
@@ -112,10 +117,21 @@ std::string_view language_from_title(std::string_view title) {
   return best;
 }
 
+}  // namespace
+
+std::string_view language_from_title(std::string_view title) {
+  return language_in(title, false);
+}
+
+std::string_view audio_language_from_title(std::string_view title) {
+  return language_in(title, true);
+}
+
 std::string track_language(const TrackInfo& track) {
   const std::string tag = folded(track.language);
   if (!tag.empty() && tag != "und" && tag != "mul" && tag != "zxx") return track.language;
-  return std::string(language_from_title(track.title));
+  return std::string(track.kind == TrackKind::Audio ? audio_language_from_title(track.title)
+                                                    : language_from_title(track.title));
 }
 
 }  // namespace ajp::media

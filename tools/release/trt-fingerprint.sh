@@ -1,25 +1,41 @@
 #!/usr/bin/env bash
-# L'empreinte des entrées du paquet TensorRT Linux (notre module + trtexec) : douze caractères qui ne changent que si
-# ce qui entre dans le module change. Le paquet se joint alors à une release fixe « trt-<empreinte> » (tools/release/
-# trt-package.sh) que release-linux.yml lit pour TOUTES les étiquettes : plus de paquet à reconstruire, ni de Release
-# Linux à relancer, tant que l'empreinte est la même.
+# L'empreinte des entrées du paquet TensorRT (notre module + trtexec) : douze caractères qui ne changent que si ce
+# qui entre dans le module change. Le paquet se joint alors à une release fixe, « trt-<empreinte> » pour Linux
+# (tools/release/trt-package.sh, .github/workflows/trt-package.yml), « trt-win-<empreinte> » pour Windows
+# (release-windows.yml), que les releases du lecteur lisent pour TOUTES les étiquettes : le paquet ne se reconstruit
+# que quand l'empreinte change, et la CI de release le construit elle-même s'il manque.
 #
-# Entrées : le code que le module lie (src/core, gpu, kernels, prepare), les définitions CMake (cmake/), la
-# recette des dépendances et de l'image (tools/deps/linux-from-source.sh, versions.env), l'empaquetage
-# (package-linux.sh) et l'index des fichiers NVIDIA. Le CMakeLists.txt racine n'y est pas : sa VERSION change à
-# chaque release sans toucher le module. Conservateur : une modification de src/core refait le paquet ; src/app,
-# src/audio, src/render, la documentation et les tests ne le refont pas.
+# Entrées communes : le code que le module lie (src/core, gpu, kernels, prepare), CUTLASS (noyaux SPAN FP8), les
+# définitions CMake (cmake/, le CMakeLists.txt racine sans sa ligne VERSION, qui change à chaque release sans
+# toucher le module, et CMakePresets.json, qui porte les options du préréglage de livraison) et versions.env.
+# Linux : la recette des dépendances, l'image du préflight, l'empaquetage et l'index des fichiers NVIDIA. Windows :
+# vcpkg, l'installation de CUDA et TensorRT, l'empaquetage et son index NVIDIA (A28-18). Conservateur : une
+# modification de src/core refait le paquet ; src/app, src/audio, src/render, la documentation et les tests ne le
+# refont pas.
 #
-#   tools/release/trt-fingerprint.sh [dépôt]      # défaut : le dépôt de ce script
+#   tools/release/trt-fingerprint.sh [--windows] [dépôt]      # défaut : Linux, le dépôt de ce script
 set -euo pipefail
 
+platform=linux
+[ "${1:-}" = "--windows" ] && { platform=windows; shift; }
 root="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"
 cd "$root"
-paths=(src/core src/gpu src/kernels src/prepare cmake
-  tools/deps/linux-from-source.sh tools/release/versions.env tools/release/package-linux.sh
-  tools/release/nvidia-vendor/tensorrt-linux-x64.lock)
+paths=(src/core src/gpu src/kernels src/prepare third_party/cutlass cmake CMakeLists.txt CMakePresets.json
+  tools/release/versions.env)
+if [ "$platform" = linux ]; then
+  paths+=(tools/deps/linux-from-source.sh tools/release/package-linux.sh tools/release/preflight/Dockerfile
+    tools/release/nvidia-vendor/tensorrt-linux-x64.lock)
+else
+  paths+=(vcpkg.json ports tools/deps/windows-tensorrt.ps1 tools/release/package-windows.ps1
+    tools/release/nvidia-vendor/tensorrt-windows-x64.lock)
+fi
 {
   git ls-files -- "${paths[@]}" | LC_ALL=C sort | while IFS= read -r file; do
-    printf '%s  %s\n' "$(sha256sum < "$file" | cut -d' ' -f1)" "$file"
+    # Fins de ligne ramenées à LF : l'empreinte est la même quel que soit le poste qui l'a extraite.
+    if [ "$file" = CMakeLists.txt ]; then
+      sed '/^  VERSION [0-9.]*$/d' "$file" | tr -d '\r' | sha256sum
+    else
+      tr -d '\r' < "$file" | sha256sum
+    fi | cut -d' ' -f1 | sed "s|\$|  $file|"
   done
 } | sha256sum | cut -c1-12

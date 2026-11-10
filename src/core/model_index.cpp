@@ -28,15 +28,27 @@ constexpr std::array<std::pair<std::string_view, EngineId>, 6> kEngineNames{{
 constexpr std::array<std::pair<std::string_view, Os>, 3> kOsNames{
     {{"windows", Os::Windows}, {"linux", Os::Linux}, {"macos", Os::MacOs}}};
 
+// Les noms de périphérique de Windows (CON, NUL, COM1…), avec ou sans extension, sans égard à la casse :
+// « backends/tensorrt/CON » y désigne la console (A35-04).
+bool windows_device_name(std::string_view text) {
+  std::string stem(text.substr(0, text.find('.')));
+  std::ranges::transform(stem, stem.begin(), [](char c) { return c >= 'a' && c <= 'z' ? char(c - 32) : c; });
+  for (const std::string_view name : {"CON", "PRN", "AUX", "NUL"})
+    if (stem == name) return true;
+  return stem.size() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem[3] >= '0' &&
+         stem[3] <= '9';
+}
+
 // Un identifiant devient un nom de fichier ou de dossier : ni séparateur ni « .. », ni point
-// final, que Windows retire en silence (« 11.3. » y deviendrait le dossier « 11.3 »).
+// final, que Windows retire en silence (« 11.3. » y deviendrait le dossier « 11.3 »), ni nom de
+// périphérique de Windows.
 bool safe_name(std::string_view text) {
   const auto allowed = [](char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' ||
            c == '_' || c == '-';
   };
   return !text.empty() && text.size() <= 128 && text.front() != '.' && text.back() != '.' &&
-         std::ranges::all_of(text, allowed);
+         std::ranges::all_of(text, allowed) && !windows_device_name(text);
 }
 
 bool hex_digest(std::string_view text) {

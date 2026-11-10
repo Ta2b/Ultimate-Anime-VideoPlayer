@@ -29,6 +29,7 @@ COPY --chown=runner tools/deps/linux-from-source.sh /home/runner/linux-from-sour
 # linux-from-source.sh cherche le correctif de libplacebo à <racine du dépôt>/ports/... avec la racine deux
 # dossiers au-dessus de lui : copié dans /home/runner il lit « //ports/... », qui n'existait pas dans l'image.
 COPY ports/libplacebo/0001-ajp-present-timing.patch /ports/libplacebo/0001-ajp-present-timing.patch
+COPY ports/libass/rendu-sur-plusieurs-fils.patch /ports/libass/rendu-sur-plusieurs-fils.patch
 RUN bash /home/runner/linux-from-source.sh "$AJP_DEPS_PREFIX" /home/runner/deps-src \
  && rm -rf /home/runner/deps-src
 

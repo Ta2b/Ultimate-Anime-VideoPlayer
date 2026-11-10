@@ -14,6 +14,7 @@
 #include "app/play/auto_config.h"
 #include "app/play/engine_install.h"
 #include "app/play/engine_switch.h"
+#include "app/play/machine_calibration.h"
 #include "app/play/panel_style.h"
 #include "core/engines.h"
 #include "core/text.h"
@@ -445,13 +446,10 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
     case WizardStep::Updates: {
       section(i18n::tr("Updates"));
       bool pick = false;
-      radio_note(i18n::tr("Notify me"), i18n::tr("A notification; you start the update yourself."),
+      radio_note(i18n::tr("Notify me"),
+                 i18n::tr("A notification with the link to the new version; you install it yourself."),
                  wizard.update_mode == UpdateMode::Notify, pick);
       if (pick) wizard.update_mode = UpdateMode::Notify;
-      pick = false;
-      radio_note(i18n::tr("Automatic"), i18n::tr("Downloaded, installed at next launch."),
-                 wizard.update_mode == UpdateMode::Auto, pick);
-      if (pick) wizard.update_mode = UpdateMode::Auto;
       pick = false;
       radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == UpdateMode::Never, pick);
       if (pick) wizard.update_mode = UpdateMode::Never;
@@ -470,8 +468,16 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                    "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
                    "machine sustains. Only a progress bar is shown; it takes a few minutes, longer the first "
                    "time (the engines are built once)."));
-      if (view.calibration_minutes > 0)
-        note(i18n::tr_format("Estimated for this machine: about {} minutes.", view.calibration_minutes));
+      // Calculée au moment de l'afficher, d'après les moteurs cochés maintenant : TensorRT choisi à l'écran
+      // des moteurs construit ses moteurs pendant l'essai (A25-03).
+      note(i18n::tr_format("Estimated for this machine: about {} minutes.",
+                           calibration_minutes(std::ranges::any_of(view.engines,
+                                                                   [](const EngineRow& row) {
+                                                                     return row.offer.id ==
+                                                                                core::EngineId::TensorRt &&
+                                                                            row.chosen && row.usable;
+                                                                   }),
+                                               view.laptop)));
       note(
           i18n::tr("\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
                    "Post-processing."));

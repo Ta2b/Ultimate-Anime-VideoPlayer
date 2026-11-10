@@ -17,7 +17,9 @@ std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path>
     for (const std::filesystem::path& dir : dirs) {
       std::filesystem::path found = dir / (half ? kDistilDrbaHalfFile : kDistilDrbaFile);
       if (std::filesystem::is_regular_file(found, error))
-        return DrbaModel{.path = std::move(found), .align = half ? kDistilDrbaHalfAlign : 64};
+        return DrbaModel{.path = std::move(found),
+                         .align = half ? kDistilDrbaHalfAlign : 64,
+                         .fallback = half != prefer_half};
     }
   }
   return std::nullopt;

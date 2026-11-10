@@ -104,15 +104,11 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
 }  // namespace
 
 // La calibration de la machine de l'assistant (machine_calibration.h) sur son thread : l'utilisateur ne voit
-// qu'une barre de chargement. Rien si la fenêtre se ferme ; une calibration qui échoue garde base (Auto).
+// qu'une barre de chargement. Rien si la fenêtre se ferme ; une calibration annulée ou qui échoue rend base
+// tel quel (A25-06) : l'Auto estimé au premier lancement, la chaîne Personnalisée de qui refait le banc.
 std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
                                                 const std::filesystem::path& data_dir, PlaySettings base) {
   const auto log = log_channel("app");
-  // Tout retour sans calibration est le préréglage Auto, comme le message le dit (P3.16).
-  const auto as_auto = [](PlaySettings settings) {
-    settings.preset = Preset::Auto;
-    return settings;
-  };
   struct Shared {
     std::mutex mutex;
     float fraction = 0.0F;
@@ -149,7 +145,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                    });
   if (!worker) {
     log->warn("calibration de la machine : {}", worker.error().detail);
-    return as_auto(std::move(base));
+    return base;
   }
   bool watch_now = false;
   std::vector<Input> ignored;
@@ -163,11 +159,12 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
       (void)ui.handle(event, host_now_us(), ignored);  // le bouton « Annuler et regarder »
     }
     ignored.clear();
-    // P3.10 : la calibration abandonnée garde les choix de l'assistant et le préréglage Auto.
+    // P3.10 : la calibration abandonnée garde les réglages d'avant (ceux de l'assistant au premier
+    // lancement).
     if (watch_now) {
       worker->request_stop();
-      log->info("calibration de la machine annulée : préréglage Auto");
-      return as_auto(std::move(base));
+      log->info("calibration de la machine annulée : réglages inchangés");
+      return base;
     }
     PrepareView view;
     {
@@ -189,9 +186,9 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   }
   const std::scoped_lock lock(shared->mutex);
   if (!*shared->result) {
-    log->warn("calibration de la machine : {} ; préréglage Auto", shared->result->error().detail);
-    ui.controls().defer(i18n::ui_tr("Machine calibration failed: Auto preset (see log)"));
-    return as_auto(std::move(base));
+    log->warn("calibration de la machine : {} ; réglages inchangés", shared->result->error().detail);
+    ui.controls().defer(i18n::ui_tr("Machine calibration failed: settings unchanged (see log)"));
+    return base;
   }
   // Auto calibré : le lecteur relit les bornes mesurées (calibration.toml) et refait la chaîne pour chaque
   // vidéo ; la chaîne mesurée, ses modèles compris, reste écrite pour qui repasse en Personnalisé.
@@ -223,10 +220,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
-    const bool tensorrt = std::ranges::any_of(view.engines, [](const EngineRow& row) {
-      return row.offer.id == core::EngineId::TensorRt && row.chosen && row.usable;
-    });
-    view.calibration_minutes = calibration_minutes(tensorrt, gpu.name.find("Laptop") != std::string::npos);
+    view.laptop = gpu.name.find("Laptop") != std::string::npos;
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
@@ -285,7 +279,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       }
     }
     // Lecteur par défaut demandé à l'écran Intégration (P3.18).
-    if (wizard.make_default) {
+    if (make_default_requested(wizard)) {
       if (auto made = choose_as_default(place_of(s.paths)))
         log->info("lecteur par défaut : {}", *made);
       else
@@ -343,7 +337,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
   // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
   if (library) note_engine_facts(core::to_utf8((*library)->path().filename()), (*library)->passed_over());
   if (library && !(*library)->passed_over().empty())
-    log_channel("app")->warn("moteurs : refus avant {} :{}", (*library)->path().string(),
+    log_channel("app")->warn("moteurs : refus avant {} :{}", core::to_utf8((*library)->path().filename()),
                              (*library)->passed_over());
   return library;
 }
@@ -391,14 +385,16 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
   }
   auto library = open_backend(p.catalog, p.paths, p.engines, probe);
   if (!library) {
-    log->warn("moteurs : {} ; {} reste en service", library.error().detail, p.library->path().string());
+    log->warn("moteurs : {} ; {} reste en service", library.error().detail,
+              core::to_utf8(p.library->path().filename()));
     p.notice = i18n::ui_tr("Engine unchanged: no other one opens (see log)");
     return true;
   }
   p.library = std::move(*library);
-  log->info("moteurs : {}", p.library->path().string());
+  log->info("moteurs : {}", core::to_utf8(p.library->path().filename()));
   const std::optional<core::EngineId> now = engine_of_library(p.library->path());
-  const std::string name = now ? std::string(engine_label(*now)) : p.library->path().filename().string();
+  const std::string name =
+      now ? std::string(engine_label(*now)) : core::to_utf8(p.library->path().filename());
   if (use != nullptr && now != use->id) {
     p.notice =
         i18n::ui_tr_format("{} does not open on this GPU: {} stays active", engine_label(use->id), name);

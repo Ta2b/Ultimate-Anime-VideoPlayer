@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -37,6 +38,13 @@ struct ShotProbeOptions {
   // --probe-nvdec (8.8) : les images décodées par NVDEC à cette taille (DecoderOptions::cuvid_resize) ;
   // vide : le décodeur logiciel en pleine taille.
   std::string cuvid_resize;
+  // Ce que le grade fait à la lumière de la source, pour les séquences de flashs que l'analyse marque dans la
+  // chronologie (media/flash_guard.h).
+  double flash_gain = 1.0;
+  // Sur le thread de l'analyse, avant elle : la part déjà connue de la vidéo (le cache). Vrai si la vidéo
+  // est connue entière : rien n'est analysé. La lecture du cache quitte ainsi le thread de la fenêtre
+  // (A42-14 : un disque en veille y retardait l'ouverture).
+  std::function<bool(ShotTimeline&)> preload;
 };
 inline constexpr const char* kProbeCuvidSize = "256x144";
 
@@ -62,6 +70,7 @@ class ShotProbe {
 
  private:
   ShotProbe(std::filesystem::path file, ShotTimeline& timeline, ShotProbeOptions options);
+  bool preloaded();
   void run(const std::stop_token& stop, std::int64_t start_us);
   void fail(Refusal refusal);
 

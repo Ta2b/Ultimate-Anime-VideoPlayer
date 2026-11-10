@@ -57,7 +57,9 @@ struct TrackInfo {
 
   int width = 0;  // vidéo, ramenée à une valeur paire comme les images (chain_dimension, core/frame.h)
   int height = 0;
-  Rational frame_rate;     // fréquence moyenne, {0, 1} si inconnue
+  Rational frame_rate;  // fréquence moyenne, {0, 1} si inconnue ; celle d'après l'IVTC si inverse_telecine
+  // A15-02 : entrelacé à 29,97 i/s, du télécinéma 3:2 qui sort à 23,976 (Deinterlacer, InverseTelecine).
+  bool inverse_telecine = false;
   Rational sample_aspect;  // forme du pixel (SAR) : celle du flux, sinon du conteneur ; {0, 1} si inconnue
   // Ce que le conteneur étiquette (codecpar) : rien si non renseigné, ou hors de ces trois valeurs.
   std::optional<ColorMatrix> color_matrix;
@@ -77,6 +79,11 @@ struct TrackInfo {
 // image décodée (mêmes règles) : connue avant la première image. Rien pour une piste qui n'est pas de
 // la vidéo, ou dont la couleur sort du vocabulaire de core/frame.h.
 std::optional<ColorInfo> track_color(const TrackInfo& track);
+
+// Pourquoi les images de la piste vidéo seraient refusées (format de pixel que rien ne convertit, gris, RGB
+// planaire, matrice ou transfert hors du vocabulaire), dit dès la sonde plutôt qu'à la première image, une
+// fois la chaîne construite (A15-07). Rien si elles se lisent, ou si le conteneur ne le dit pas.
+std::optional<Refusal> unreadable_video(const TrackInfo& track);
 
 struct Chapter {
   std::int64_t start_us = 0;

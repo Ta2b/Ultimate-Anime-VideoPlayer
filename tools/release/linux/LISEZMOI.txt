@@ -36,3 +36,9 @@ GPU de 4 Go (RX 6500, RX 6500M, RX 6400)
   Commencer par le profil 7 « Léger 1080p », puis essayer 720p si --stats laisse de la marge.
   Brancher l'écran sur la carte graphique. Avec un iGPU Intel activé, la vidéo est décodée
   par lui (VA-API), ce qui laisse la carte graphique à SPAN et RIFE.
+
+Désinstaller
+  ./ajp --unregister                       retire « Ouvrir avec » et le lecteur par défaut
+  puis supprimer ce dossier, et les données du lecteur si on ne les garde pas :
+  ~/.local/share/ajp/ajp/                  réglages, journaux, moteurs construits, paquet TensorRT, caches
+  (plusieurs Go possibles)

@@ -102,6 +102,22 @@ TEST_CASE("Demuxer : chapitres et durée en microsecondes", "[media][demuxer]") 
   CHECK(demuxer.track(42) == nullptr);
 }
 
+TEST_CASE("Demuxer : chapitres répétés écartés, au plus mille gardés (A35-02)", "[media][demuxer]") {
+  test::ClipSpec spec{.name = "chapitres-nombreux.mkv", .frames = 5};
+  for (int i = 0; i < 1500; ++i) spec.chapters.push_back({.start_ms = i, .end_ms = i + 1, .title = "c"});
+  spec.chapters.push_back({.start_ms = 3, .end_ms = 4, .title = "c"});  // un doublon
+  Demuxer demuxer = open_clip(spec);
+  CHECK(demuxer.chapters().size() == 1000);
+}
+
+TEST_CASE("Demuxer : une taille de vidéo hors de toute source est refusée à l'ouverture (A35-06)",
+          "[media][demuxer]") {
+  const auto opened =
+      Demuxer::open(test::require_clip({.name = "trop-large.mkv", .width = 8320, .height = 16, .frames = 1}));
+  REQUIRE_FALSE(opened);
+  CHECK(opened.error().code == RefusalCode::FormatUnsupported);
+}
+
 TEST_CASE("Demuxer : paquets horodatés en microsecondes, piste par piste", "[media][demuxer]") {
   Demuxer demuxer = open_clip(test::full_clip());
   const std::vector<Packet> packets = read_all(demuxer);
@@ -284,4 +300,32 @@ TEST_CASE("Demuxer : un fichier absent ou illisible est refusé", "[media][demux
   CHECK(missing.error().detail.find("clip.mkv") != std::string::npos);
   // Le refus se lit en français : « introuvable », pas seulement le texte de FFmpeg.
   CHECK(missing.error().detail.find("introuvable") != std::string::npos);
+}
+
+TEST_CASE("Demuxer : une piste entrelacée à 29,97 sort à 23,976 par l'IVTC (A15-02)", "[media][demuxer]") {
+  struct Case {
+    const char* name;
+    AVRational rate;
+    AVFieldOrder order;
+    bool telecine;
+  };
+  const Case c = GENERATE(Case{"tff_2997.mkv", {30000, 1001}, AV_FIELD_TT, true},
+                          Case{"progressive_2997.mkv", {30000, 1001}, AV_FIELD_PROGRESSIVE, false},
+                          Case{"tff_25.mkv", {25, 1}, AV_FIELD_TT, false});
+  CAPTURE(c.name);
+  test::ClipSpec spec = test::seek_clip();
+  spec.name = c.name;
+  spec.subtitles.clear();
+  spec.frame_rate = c.rate;
+  spec.field_order = c.order;
+  Demuxer demuxer = open_clip(spec);
+  const TrackInfo* video = demuxer.track(0);
+  REQUIRE(video != nullptr);
+  CHECK(video->inverse_telecine == c.telecine);
+  if (c.telecine) {
+    CHECK(video->frame_rate == Rational{24000, 1001});
+  } else {
+    CHECK(std::int64_t{video->frame_rate.num} * c.rate.den ==
+          std::int64_t{video->frame_rate.den} * c.rate.num);
+  }
 }

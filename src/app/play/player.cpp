@@ -63,8 +63,10 @@
 #include "core/log.h"
 #include "core/settings.h"
 #include "core/thread.h"
+#include "core/utf8_path.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
+#include "media/track.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
@@ -83,12 +85,14 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
   aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
   std::filesystem::rename(path, aside, error);
   if (error) {
-    log_channel("app")->warn("{} : mise de côté impossible ({})", path.string(), error.message());
+    log_channel("app")->warn("{} : mise de côté impossible ({})", core::to_utf8(path.filename()),
+                             error.message());
     return {};
   }
-  log_channel("app")->warn("{} mis de côté dans {}", path.string(), aside.string());
-  return i18n::tr_format("{} was invalid: copy kept as {}", path.filename().string(),
-                         aside.filename().string());
+  log_channel("app")->warn("{} mis de côté dans {}", core::to_utf8(path.filename()),
+                           core::to_utf8(aside.filename()));
+  return i18n::tr_format("{} was invalid: copy kept as {}", core::to_utf8(path.filename()),
+                         core::to_utf8(aside.filename()));
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
@@ -98,7 +102,8 @@ std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path&
   const media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), {});
   if (!choice.video) {
     // P3.28 : un fichier audio seul est dit tel quel, pas comme un fichier abîmé.
-    Refusal refusal{RefusalCode::TrackUnavailable, std::format("{} : aucune piste vidéo", file.string())};
+    Refusal refusal{RefusalCode::TrackUnavailable,
+                    std::format("{} : aucune piste vidéo", core::to_utf8(file))};
     if (choice.audio) refusal.key = kAudioOnlyKey;
     return std::unexpected(std::move(refusal));
   }
@@ -106,9 +111,15 @@ std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path&
   // P3.26 : le profil 5 n'a pas de couche de base HDR10 ou SDR (IPTPQc2) ; les profils 7 et 8 se lisent par
   // leur couche de base, sans les métadonnées dynamiques.
   if (video.dolby_vision_profile == 5) {
-    Refusal refusal{RefusalCode::FormatUnsupported, std::format("{} : Dolby Vision profil 5", file.string())};
+    Refusal refusal{RefusalCode::FormatUnsupported,
+                    std::format("{} : Dolby Vision profil 5", core::to_utf8(file))};
     refusal.key = kDolbyVision5Key;
     return std::unexpected(std::move(refusal));
+  }
+  // A15-07 : un format ou une couleur que la chaîne refuserait se dit ici, avant de construire la chaîne.
+  if (std::optional<Refusal> unreadable = media::unreadable_video(video)) {
+    unreadable->detail = std::format("{} : {}", core::to_utf8(file.filename()), unreadable->detail);
+    return std::unexpected(std::move(*unreadable));
   }
   if (video.dolby_vision_profile > 0)
     log_channel("app")->info("Dolby Vision profil {} : lu par sa couche de base, sans RPU",
@@ -134,7 +145,9 @@ EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& path
       saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
   const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
   add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
-                      installed_version(), online ? UpdateFetch(fetch_https) : UpdateFetch());
+                      installed_version(),
+                      update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),
+                      online ? UpdateFetch(fetch_https) : UpdateFetch());
   if (!catalog.problem.empty()) log_channel("app")->info("{}", catalog.problem);
   return catalog;
 }
@@ -198,7 +211,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
       // ne dirait rien. L'accueil s'ouvre avec la raison.
       log_channel("app")->warn("{}", video.error().detail);
-      unreadable = i18n::tr_format("\"{}\" cannot be read: {}", options.file.filename().string(),
+      unreadable = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(options.file.filename()),
                                    visible_error(video.error()));
     }
   }
@@ -208,12 +221,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::atomic<bool> playing{false};
   std::jthread update_check;
   const std::filesystem::path update_file = paths::update_state(paths.data);
-  const UpdatePaths update_paths{
-      .data = paths.data, .install = paths.executable.parent_path(), .executable = paths.executable};
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
-  if (saved) i18n::set_language(i18n::language_from_code(saved->language));
+  i18n::set_language(i18n::language_from_code(saved ? saved->language : default_interface_language()));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
     startup_notes.push_back(set_aside(settings_path, saved.error()));
@@ -225,8 +236,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           "updates", ThreadReport([](const Refusal& refused) {
             log_channel("app")->warn("mise à jour : {}", refused.detail);
           }),
-          [=, &playing, mode = saved->update_mode, channel = saved->update_channel,
-           frequency = saved->update_frequency](const std::stop_token& stop, const ThreadReport&) {
+          [=, &playing, mode = saved->update_mode, frequency = saved->update_frequency](
+              const std::stop_token& stop, const ThreadReport&) {
             std::mutex mutex;
             std::condition_variable_any wake;
             for (bool first = true; !stop.stop_requested(); first = false) {
@@ -235,7 +246,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                            .count();
               UpdateState state = load_update_state(update_file);
               if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
-                const auto message = run_update_check(update_paths, mode, name(channel), state, stop);
+                const auto message = run_update_check(state, stop);
                 if (const auto kept = save_update_state(update_file, state); !kept)
                   log_channel("app")->warn("update.toml : {}", kept.error().detail);
                 log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
@@ -252,7 +263,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     }
   }
   load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] seul
-  const std::string title = given ? std::format("ajp — {}", options.file.filename().string()) : "ajp";
+  const std::string title = given ? std::format("ajp — {}", core::to_utf8(options.file.filename())) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
       .width = options.hidden ? 16 : options.window_width,
@@ -273,7 +284,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
                                      : std::filesystem::path()});
   if (!screen) return std::unexpected(std::move(screen.error()));
-  auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
+  auto ui = PlayerUi::create((*screen)->window(), given ? core::to_utf8(options.file.filename()) : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
   note_ignored_keys((*ui)->controls());
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
@@ -367,8 +378,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
-  ShotWork shots{.cache_dir = paths::shot_cache(paths)};
-  if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
+  ShotWork shots = shot_work(paths::shot_cache(paths), options);
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
@@ -402,7 +412,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       auto probed = probe_video(file, true);
       if (!probed) {
         log->warn("{}", probed.error().detail);
-        problem = i18n::tr_format("\"{}\" cannot be read: {}", file.filename().string(),
+        problem = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(file.filename()),
                                   visible_error(probed.error()));
         file.clear();
         continue;
@@ -414,8 +424,9 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         saved = std::move(*reread);
         i18n::set_language(i18n::language_from_code(saved->language));
       }
-      SDL_SetWindowTitle((*screen)->window(), std::format("ajp — {}", file.filename().string()).c_str());
-      (*ui)->set_title(file.filename().string());
+      SDL_SetWindowTitle((*screen)->window(),
+                         std::format("ajp — {}", core::to_utf8(file.filename())).c_str());
+      (*ui)->set_title(core::to_utf8(file.filename()));
     }
     PlayOptions file_options = options;
     file_options.file = file;
@@ -506,7 +517,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .next_key = next_key,
                   .engines = std::move(*engines),
                   .display = window_display((*screen)->window())};
-    player.shots = &shots;
+    player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
       // lancement.
@@ -633,7 +644,8 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // pilotés (essais, banc, captures) gardent le code de sortie.
       if (scripted || player.quit) return result;
       log->error("{}", result.error().detail);
-      failed = i18n::tr_format("\"{}\" stopped: {}", file.filename().string(), visible_error(result.error()));
+      failed = i18n::tr_format("\"{}\" stopped: {}", core::to_utf8(file.filename()),
+                               visible_error(result.error()));
       log->error("{}", failed);
     }
     // Ce que la lecture a changé suit dans la vidéo suivante ou l'accueil.
@@ -688,8 +700,9 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
   std::ofstream file(out, std::ios::binary);
   file << render::write_cube(baked);
   if (!file)
-    return refuse(RefusalCode::FileUnreadable, std::format("--bake-looks : {} ne s'écrit pas", out.string()));
-  log_channel("app")->info("--bake-looks : {} écrit ({} points)", out.string(), baked.size);
+    return refuse(RefusalCode::FileUnreadable,
+                  std::format("--bake-looks : {} ne s'écrit pas", core::to_utf8(out)));
+  log_channel("app")->info("--bake-looks : {} écrit ({} points)", core::to_utf8(out.filename()), baked.size);
   return {};
 }
 

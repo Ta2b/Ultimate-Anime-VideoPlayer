@@ -80,6 +80,7 @@ struct SettingsChoices {
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
   int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
+  int display_width = 0;   // sa largeur ; 0 : inconnue (16:9 supposé)
   // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo
   // (A23-03) : choisir « Auto » au panneau doit donner la même chaîne. calibrated : Auto suit la calibration
   // de l'assistant (calibration.toml) sur cette carte et cet écran ; explored_* : ce que l'exploration du
@@ -179,6 +180,13 @@ class SettingsPanel {
               std::vector<Input>& actions);
 
  private:
+  // Le corps de la page choisie, puis le pied du panneau (case avancée, annuler, appliquer) : draw les
+  // assemble.
+  void draw_page(const PlaySettings& running, const SettingsChoices& choices, std::vector<Input>& actions,
+                 Result& result, bool& delay_held, bool& sub_delay_held);
+  void draw_footer(const PlaySettings& running, const SettingsChoices& choices, const PlaySettings& before,
+                   bool delay_held, bool sub_delay_held, Result& result);
+
   bool open_ = false;
   PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;   // running au tour précédent

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -22,6 +23,17 @@ struct ExportDraft {
   bool path_edited = false;       // tant qu'il ne l'est pas, le nom suit la taille et la fréquence
   std::string named_for;          // la taille et la fréquence du nom proposé
   std::filesystem::path source;   // la vidéo dont l'onglet a repris la chaîne et le nom
+  // Ce que le système de fichiers a dit du fichier de sortie (A23-13) : relu quand le chemin ou le codec
+  // changent, ou une fois par seconde, pas à chaque image du panneau.
+  struct PathCheck {
+    std::filesystem::path output;
+    std::filesystem::path source;
+    exporter::Codec codec = exporter::Codec::Lossless;
+    std::string problem;
+    bool exists = false;
+    std::chrono::steady_clock::time_point at{};
+    bool valid = false;
+  } check;
 };
 
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,

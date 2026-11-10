@@ -1,8 +1,8 @@
 // Les lecteurs de fichiers et de flux venus de l'extérieur (P1.29) : un modèle ONNX (le seul lecteur
 // protobuf du dépôt), un SRT et son encodage, une LUT .cube, un flux deflate (roues et zip
-// téléchargés), le manifeste de mise à jour, l'import d'un .ini d'AnimeJaNai, la ligne de commande.
-// Chacun lit des octets quelconques sans plantage ni lecture hors du tampon ; certains vérifient en
-// plus une propriété (fuzz_check.h).
+// téléchargés), le manifeste de mise à jour, l'index des moteurs, update.toml, l'import d'un .ini
+// d'AnimeJaNai, la ligne de commande. Chacun lit des octets quelconques sans plantage ni lecture hors du
+// tampon ; certains vérifient en plus une propriété (fuzz_check.h).
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -12,7 +12,9 @@
 #include <vector>
 
 #include "app/play/options.h"
+#include "app/play/updater.h"
 #include "core/inflate.h"
+#include "core/model_index.h"
 #include "core/update_manifest.h"
 #include "fuzz_check.h"
 #include "fuzz_targets.h"
@@ -75,7 +77,38 @@ int ajp::fuzz::inflate(const std::uint8_t* data, std::size_t size) {
 }
 
 int ajp::fuzz::manifest(const std::uint8_t* data, std::size_t size) {
-  (void)ajp::core::parse_update_manifest(text_of(data, size));
+  if (const auto manifest = ajp::core::parse_update_manifest(text_of(data, size))) {
+    // La version s'affiche et nomme des fichiers : rien qu'une ligne de SemVer (A35-03, A35-08).
+    ajp::fuzz::require(!manifest->version.empty() && std::ranges::all_of(manifest->version,
+                                                                         [](char c) {
+                                                                           return (c >= '0' && c <= '9') ||
+                                                                                  (c >= 'a' && c <= 'z') ||
+                                                                                  (c >= 'A' && c <= 'Z') ||
+                                                                                  c == '.' || c == '-';
+                                                                         }),
+                       "une version lue est une ligne de SemVer");
+  }
+  return 0;
+}
+
+int ajp::fuzz::engine_index(const std::uint8_t* data, std::size_t size) {
+  // engines.lock livré et engines-nvidia.lock relu en ligne (A35-08) : un paquet gardé a une adresse https et
+  // un SHA-256 entier.
+  if (const auto index = ajp::core::read_engine_index(text_of(data, size))) {
+    for (const auto& package : index->packages) {
+      ajp::fuzz::require(package.url.starts_with("https://"), "un paquet gardé a une adresse https");
+      ajp::fuzz::require(package.sha256.size() == 64, "un paquet gardé a un SHA-256 entier");
+    }
+  }
+  return 0;
+}
+
+int ajp::fuzz::update_state(const std::uint8_t* data, std::size_t size) {
+  // update.toml (A35-08) : un état lu se réécrit et se relit à l'identique.
+  if (const auto state = ajp::app::play::parse_update_state(text_of(data, size))) {
+    const auto reread = ajp::app::play::parse_update_state(ajp::app::play::format_update_state(*state));
+    ajp::fuzz::require(reread.has_value() && *reread == *state, "un update.toml lu se relit à l'identique");
+  }
   return 0;
 }
 
