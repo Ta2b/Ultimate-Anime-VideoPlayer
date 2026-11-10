@@ -41,9 +41,8 @@ constexpr std::array kSettingsPages{
     Entry{"Testing settings on a very demanding sequence: a few minutes.",
           "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
     Entry{"The calibration failed: {}", "La calibration a échoué : {}"},
-    Entry{
-        "The maximum, reached in very bright scenes; it fades out in very dark scenes.",
-        "Le maximum, atteint dans les scènes très claires ; l'effet s'efface dans les scènes très sombres."},
+    Entry{"The maximum, reached in a very bright episode; it fades out in a very dark one.",
+          "Le maximum, atteint dans un épisode très clair ; l'effet s'efface dans un épisode très sombre."},
     Entry{"holds", "tient"},
     Entry{"Downscale", "Downscale"},
     Entry{"Upscale", "Upscale"},

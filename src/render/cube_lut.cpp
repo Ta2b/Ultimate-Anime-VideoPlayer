@@ -284,6 +284,26 @@ std::array<float, 3> sample_lut(const CubeLut& lut, const std::array<float, 3>& 
   return out;
 }
 
+bool LookChain::active() const {
+  for (std::size_t slot = 0; slot < luts.size() && slot < mixes.size(); ++slot)
+    if (luts[slot] != nullptr && luts[slot]->size >= 2 && mixes[slot] > 0.0) return true;
+  return false;
+}
+
+std::array<float, 3> sample_chain(const LookChain& chain, std::array<float, 3> c) {
+  for (std::size_t slot = 0; slot < chain.luts.size() && slot < chain.mixes.size(); ++slot) {
+    const CubeLut* lut = chain.luts[slot];
+    if (lut == nullptr || lut->size < 2 || chain.mixes[slot] <= 0.0) continue;
+    const auto mix = static_cast<float>(std::min(chain.mixes[slot], 1.0));
+    const std::array<float, 3> looked = sample_lut(*lut, c);
+    for (std::size_t ch = 0; ch < 3; ++ch) {
+      const float in = std::clamp(c[ch], 0.0F, 1.0F);
+      c[ch] = in + ((std::clamp(looked[ch], 0.0F, 1.0F) - in) * mix);
+    }
+  }
+  return c;
+}
+
 CubeLut compose_luts(std::span<const CubeLut* const> luts, std::span<const double> mixes, int size) {
   CubeLut out;
   out.size = size;
@@ -297,15 +317,7 @@ CubeLut compose_luts(std::span<const CubeLut* const> luts, std::span<const doubl
       for (int r = 0; r < size; ++r) {
         std::array<float, 3> c{static_cast<float>(r) * step, static_cast<float>(g) * step,
                                static_cast<float>(b) * step};
-        for (std::size_t slot = 0; slot < luts.size() && slot < mixes.size(); ++slot) {
-          if (luts[slot] == nullptr || luts[slot]->size < 2 || mixes[slot] <= 0.0) continue;
-          const auto mix = static_cast<float>(std::min(mixes[slot], 1.0));
-          const std::array<float, 3> looked = sample_lut(*luts[slot], c);
-          for (std::size_t ch = 0; ch < 3; ++ch) {
-            const float in = std::clamp(c[ch], 0.0F, 1.0F);
-            c[ch] = in + ((std::clamp(looked[ch], 0.0F, 1.0F) - in) * mix);
-          }
-        }
+        c = sample_chain(LookChain{.luts = luts, .mixes = mixes}, c);
         for (const float v : c) out.rgb[i++] = std::clamp(v, 0.0F, 1.0F);
       }
     }

@@ -196,7 +196,7 @@ TEST_CASE("vrai noir : seuils tirés de la rampe mesurée") {
   CHECK_FALSE(black_thresholds(std::vector<double>{0.1}, 2.0));
 }
 
-TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du plan, sans vrai noir",
+TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du plan, vrai noir gardé",
           "[render]") {
   GradeParams p;
   p.peak = 800.0;
@@ -216,7 +216,9 @@ TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du p
   CHECK(p.look_pq == 0.0);
   CHECK(p.sdr_tm == 1.0);
   CHECK(p.sdr_out == 0.0);
-  CHECK(p.black_hi == 0.0);
+  // A41-07 : le vrai noir annoncé par le panneau s'applique aussi sur une sortie SDR.
+  CHECK(p.black_lo == 0.1);
+  CHECK(p.black_hi == 2.0);
   CHECK(p.tm_white == Approx(203.0 * 1.15));
   CHECK(p.tm_top == Approx(800.0));
   p.fs_apl = 203.0;  // scène très claire : la moitié du pic, comme 3-anime.hook

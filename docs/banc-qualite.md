@@ -63,7 +63,7 @@ mesure du gain de vitesse qui le justifie.
 | SPAN V3.1 Performance (b5f48) | 80,02 | 75,76 | 0,41 | 0,13 | 0,16 | 41,67 | 41,67 | 0,9892 |
 | RIFE 4.25 | 56,09 | 50,28 | 41,43 | 9,29 | 14,34 | 47,24 | 48,09 | 0,9958 |
 | RIFE 4.22 lite | 56,29 | 50,55 | 25,26 | 9,07 | 13,86 | 47,56 | 48,48 | 0,9969 |
-| DistilDRBA v2 lite | 57,01 | 51,98 | 20,10 | 7,33 | 10,69 | 35,72 | 35,76 | 0,9688 |
+| DistilDRBA v2 lite | 77,51 | 73,96 | 1,19 | 0,42 | 0,60 | 35,76 | 35,76 | 0,9691 |
 | Bicubique ×2 (repère de SPAN) | | | | | | 42,13 | | 0,9892 |
 
 En 1792 × 1024 (4 scènes), l'interpolation donne : RIFE 4.25 47,94 dB en FP16 contre 49,11 en FP32, RIFE 4.22
@@ -85,19 +85,21 @@ Ce que ces chiffres disent :
 
 ### DistilDRBA, grille en FP32 (C05, A03-18)
 
-Le graphe livré reconverti par `tools/rife/convert_rife_fp16.py` avec `DRBA_GRID_OPS` (la chaîne de la grille
-des dix GridSample en FP32), mêmes poids, mesuré avec `--reseau` :
+Le graphe publié jusqu'au 10 novembre 2026 (`models-drba-1`, SHA-256 7048367e…) arrondissait en FP16 la grille
+de ses dix GridSample. Le graphe livré depuis (`models-interp-1`, 40bda348…) est exporté avec `DRBA_GRID_OPS`,
+qui garde cette chaîne en FP32, mêmes poids :
 
 | réseau | fidélité dB | pire dB | pire écart | écart p99,9 | ΔE_ITP p99,9 | vérité dB | ms (processeur) |
 |---|---|---|---|---|---|---|---|
-| distil_drba_v2_lite (livré) | 57,01 | 51,98 | 20,10 | 7,33 | 10,69 | 35,72 | 189,0 |
-| le même, grille en FP32 | 77,51 | 73,96 | 1,19 | 0,42 | 0,60 | 35,76 | 180,5 |
+| distil_drba_v2_lite d'avant, grille en FP16 | 57,01 | 51,98 | 20,10 | 7,33 | 10,69 | 35,72 | 189,0 |
+| distil_drba_v2_lite livré, grille en FP32 | 77,51 | 73,96 | 1,19 | 0,42 | 0,60 | 35,76 | 180,5 |
 
 20 dB de fidélité gagnés, sans coût. La vérité ne bouge pas : sur ce mouvement de synthèse l'écart au vrai
 milieu vient du réseau, pas de son FP16. Sur l'extrait de la section « Mesure sur un épisode » (`--video`,
-60 fenêtres, 1280 × 720), le même graphe passe de 60,08 à 81,13 dB de fidélité, et son pire écart de 23,1 à
-2,3 codes ; la comparaison à RIFE sur cet extrait est dans cette section. `seuils.json` garde les chiffres du
-fichier livré tant que le graphe réexporté n'est pas publié ; à ce moment, `--ecrire-seuils`.
+60 fenêtres, 1280 × 720), le graphe passe de 60,08 à 81,13 dB de fidélité, et son pire écart de 23,1 à
+2,3 codes ; la comparaison à RIFE sur cet extrait est dans cette section. Le demi-flot (`_s05`) donne 77,43 dB
+en synthèse et 80,78 dB sur l'extrait. `seuils.json` porte les chiffres du graphe livré : un export qui
+remettrait la grille en FP16 ferait échouer la CI.
 
 ## Mesure sur un épisode
 
