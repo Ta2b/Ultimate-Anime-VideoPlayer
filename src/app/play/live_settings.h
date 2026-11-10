@@ -29,6 +29,13 @@
 
 namespace ajp::app::play {
 
+// Ce que vaut une paire du mode Rapide réduite à une image (core/free_rate.h).
+enum class LonePair : std::uint8_t {
+  Source,        // la source d'une paire sans interpolation (coupe, dessin tenu, copie) : ne dit rien
+  Interpolated,  // une image interpolée : son coût se mesure
+  Starved,       // la source d'une paire interpolée où l'écart n'a laissé qu'elle
+};
+
 struct RifeCounts {
   std::uint64_t pairs = 0;
   std::uint64_t interpolated = 0;
@@ -137,11 +144,13 @@ class LiveSettings {
   // gpu : la paire de l'image `id` crée `images` images ; `lead_us` : l'attente de ses mesures avant
   // soumission. main la retrouve par auto_written pour en tirer le coût de service.
   // `heavy` : une paire en mouvement fort (mode Rapide : son coût se mesure à part, core/free_rate.h).
-  void auto_expect(std::uint32_t id, int images, std::int64_t lead_us, bool heavy = false) {
+  // `lone` : ce que vaut la paire si elle n'a qu'une image (mode Rapide, A12-12).
+  void auto_expect(std::uint32_t id, int images, std::int64_t lead_us, bool heavy = false,
+                   LonePair lone = LonePair::Source) {
     const std::scoped_lock lock(mutex_);
     if (!auto_on_ && !free_on_) return;
     ledger_[ledger_next_++ % ledger_.size()] =
-        Expected{.id = id, .images = images, .lead_us = lead_us, .heavy = heavy};
+        Expected{.id = id, .images = images, .lead_us = lead_us, .heavy = heavy, .lone = lone};
   }
   // gpu : `count` images de la paire de l'image `id` ne seront pas écrites (déjà à l'écran). Si les autres
   // sont toutes vues, la paire se clôt ici.
@@ -411,6 +420,7 @@ class LiveSettings {
     int repeats = 0;           // dont des copies, sans calcul
     std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
     bool heavy = false;        // mouvement fort
+    LonePair lone = LonePair::Source;
   };
   // Clôt la mesure d'une paire : son coût de service, sans les copies. Sous le verrou.
   void close_expected(Expected& e, std::int64_t done_us) {
@@ -418,7 +428,16 @@ class LiveSettings {
     if (auto_on_) {
       auto_.cost(computed, core::service_cost_us(e.first_us, previous_done_us_, done_us, e.lead_us), done_us);
     }
-    if (free_on_) free_.cost(computed, e.busy_us + e.lead_us, done_us, e.heavy);
+    if (free_on_) {
+      // Une image seule ne se mesure que si elle est interpolée ; une paire affamée par l'écart fait
+      // redescendre l'estimation, que plus rien ne mesurerait (A12-12).
+      const int made = e.images - e.repeats;
+      if (made >= 2 || (made == 1 && e.lone == LonePair::Interpolated)) {
+        free_.cost(made, e.busy_us + e.lead_us, done_us, e.heavy);
+      } else if (e.lone == LonePair::Starved) {
+        free_.starved(done_us, e.heavy);
+      }
+    }
     if (free_on_ && steady_on_) steady_.pair_cost(computed, e.busy_us + e.lead_us, done_us);
     previous_done_us_ = done_us;
     e = Expected{};

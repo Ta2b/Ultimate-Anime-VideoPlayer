@@ -8,6 +8,9 @@
 //
 // - Temps de service : la durée GPU propre à une image créée (jamais l'attente d'un slot du ring), moyenne
 //   qui monte vite (une scène lourde) et descend lentement (elle ne s'emballe pas sur un coup de chance).
+//   Une paire réduite à une image interpolée se mesure aussi ; une paire que l'écart a réduite à sa seule
+//   source ne mesure rien et fait redescendre l'estimation (`starved`), sinon un à-coup du GPU la figerait
+//   au-dessus de l'écart des sources et plus aucune paire ne la corrigerait (A12-12).
 // - Contre-pression : une image sautée ou manquée à l'écran élargit l'écart tout de suite (× 1,12 par
 //   image perdue, au plus × 2) ; elle ne se relâche qu'après 1 s sans perte, puis lentement (3 s).
 // - Repli : 5 % d'images perdues ou plus sur 5 s (et au moins 10) rendent la main au mode Auto.
@@ -61,9 +64,17 @@ class FreeRate {
   void set_min_gap(std::int64_t us) { min_gap_us_ = us; }
   std::int64_t min_gap_us() const { return min_gap_us_; }
 
-  // Une paire de `images` (>= 2) images a occupé le GPU `busy_us` ; une image seule ne dit rien du coût
-  // d'une image interpolée. `heavy` : une paire en mouvement fort, mesurée à part.
+  // La part de l'estimation perdue par paire affamée : la pente d'une scène plus légère, vers zéro.
+  static constexpr double kStarvedDecay = 0.12;
+
+  // Une paire de `images` images calculées a occupé le GPU `busy_us`. Une image seule ne compte que si elle
+  // est interpolée : une source seule (coupe, dessin tenu) ne dit rien du coût d'une image interpolée, à
+  // l'appelant de ne pas la donner. `heavy` : une paire en mouvement fort, mesurée à part.
   void cost(int images, std::int64_t busy_us, std::int64_t now_us, bool heavy = false);
+  // Une paire interpolée où l'écart n'a laissé que la source : rien n'est mesuré, donc rien ne confirme
+  // l'estimation. Elle redescend de kStarvedDecay, jusqu'à ce qu'une paire porte de nouveau une image
+  // interpolée et la mesure. `heavy` : la paire était planifiée sur le temps du mouvement fort.
+  void starved(std::int64_t now_us, bool heavy = false);
   // `images` images planifiées par la paire qui vient d'être préparée.
   void produced(int images, std::int64_t now_us);
   // `lost` images sautées ou manquées à l'écran depuis le dernier appel.

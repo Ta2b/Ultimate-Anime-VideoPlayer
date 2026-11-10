@@ -251,14 +251,26 @@ int run_bench_command(const std::vector<std::string_view>& args) {
   return 0;
 }
 
-// « ajp calibrate [--display-height=N] [--visible] » : le bench de la page « Résultats du bench », en ligne
-// de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de l'utilisateur.
+// « ajp calibrate [--display-height=N] [--tier=N] [--visible] » : le bench de la page « Résultats du bench »,
+// en ligne de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de
+// l'utilisateur. --tier : le niveau de la carte (0 Économe à 4 Ultra), qui donne les modèles joués
+// (auto_config.h) ; cette commande n'ouvre pas la carte et ne peut pas l'estimer : sans --tier, 3 (Qualité),
+// le niveau de la RTX 4070 Ti du poste de mesure.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
   int display_height = 2160;
+  int tier = static_cast<int>(play::Tier::Fast);
   bool silent = true;
+  constexpr const char* kUsage = "ajp calibrate [--display-height=N] [--tier=N] [--visible]\n";
   for (const std::string_view arg : args) {
-    if (arg.starts_with("--display-height=")) {
+    if (arg.starts_with("--tier=")) {
+      const std::string_view text = arg.substr(7);
+      const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), tier);
+      if (error != std::errc{} || end != text.data() + text.size() || tier < 0 || tier >= play::kTierCount) {
+        std::fputs("ajp calibrate : --tier=N, N de 0 (Économe) à 4 (Ultra)\n", stderr);
+        return 2;
+      }
+    } else if (arg.starts_with("--display-height=")) {
       // from_chars et une plage (P2.35) : « abc » ou « 99999 » ne donnent plus 0 ou une hauteur absurde.
       const std::string_view text = arg.substr(17);
       const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), display_height);
@@ -270,7 +282,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
     } else if (arg == "--visible") {
       silent = false;
     } else {
-      std::fputs("ajp calibrate [--display-height=N] [--visible]\n", stderr);
+      std::fputs(kUsage, stderr);
       return 2;
     }
   }
@@ -289,13 +301,17 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
                              .display_width = display_height * 16 / 9,
                              .display_height = display_height};
   const auto base_settings = play::load_settings(data / "play.toml");
-  const auto done = play::calibrate_machine(plan, base_settings.value_or(play::PlaySettings{}),
-                                            display_height, std::stop_token{}, [](float fraction) {
-                                              std::fprintf(stdout, "%.0f %%\n", 100.0F * fraction);
-                                              std::fflush(stdout);
-                                            });
+  const auto done =
+      play::calibrate_machine(plan, base_settings.value_or(play::PlaySettings{}), display_height,
+                              static_cast<play::Tier>(tier), std::stop_token{}, [](float fraction) {
+                                std::fprintf(stdout, "%.0f %%\n", 100.0F * fraction);
+                                std::fflush(stdout);
+                              });
   if (!done) return fail(done.error());
-  std::fprintf(stdout, "SPAN %s\n", done->span_fp8 ? "Balanced Sharp FP8" : "Performance Sharp FP16");
+  std::fprintf(
+      stdout, "SPAN %s FP16, RIFE %s\n",
+      done->models.span.empty() ? std::string(play::kDefaultModelFile).c_str() : done->models.span.c_str(),
+      done->models.rife.c_str());
   for (const play::CandidateTrial& t : done->tried)
     std::fprintf(stdout, "%-48s %s  %.1f / %.0f i/s, 1 %% low %.1f, %.1f %% perdues%s\n",
                  play::describe(t.chain).c_str(), t.holds ? "tient     " : "ne tient pas", t.fps,

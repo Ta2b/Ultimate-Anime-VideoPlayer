@@ -314,6 +314,15 @@ inline Factor factor_of(const PlaySettings& s) {
   return {.num = s.rife_factor, .den = s.rife_factor_den};
 }
 
+// SPAN tourne-t-il, et à quelle taille la chaîne travaille-t-elle, pour une source de cette taille ? Les
+// deux seules lectures de work_height pour la chaîne (A08-15) : chain_setup, l'anneau, l'étage et l'export.
+inline bool span_runs(const PlaySettings& s, int source_height) {
+  return span_runs(s.upscale, s.restore_lines, source_height, s.work_height);
+}
+inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
+  return chain_work_size(s.upscale, s.restore_lines, width, height, s.work_height);
+}
+
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& settings);
 

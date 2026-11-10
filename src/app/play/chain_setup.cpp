@@ -111,7 +111,7 @@ std::string ChainEngines::span_label() const {
 UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr<LiveSettings> live,
                                    const MasterClock* clock, int width, int height,
                                    std::vector<RingSlotDesc> slots) const {
-  const WorkSize sized = work_size(width, height, settings.work_height);
+  const WorkSize sized = chain_work_size(settings, width, height);
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
@@ -239,7 +239,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   take_trials(c, p.options);
-  const bool span = span_runs(settings.upscale, settings.restore_lines, video.height, settings.work_height);
+  const bool span = span_runs(settings, video.height);
   if (settings.upscale && !span)
     log_channel("app")->info("restaurer les traits coupé : source {}p gardée telle quelle, sans SPAN",
                              video.height);
@@ -250,7 +250,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   }
   c.factor = c.model ? kSpanFactor : 1;
   c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
-  c.work = work_size(video.width, video.height, settings.upscale && !span ? 0 : settings.work_height);
+  c.work = chain_work_size(settings, video.width, video.height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)
