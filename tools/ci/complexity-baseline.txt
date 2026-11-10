@@ -84,9 +84,9 @@ src/gpu/vulkan/compute/spirv_access.cpp	ajp::gpu::vk::spirv_readonly_bindings	37
 src/kernels/ref/frame_stats.cpp	ajp::kernels::ref::frame_counts	30	84
 src/media/bench_clip.cpp	ajp::media::draw_frame	26	73
 src/media/bench_clip.cpp	ajp::media::write_clip_to	29	82
-src/media/shot_probe.cpp	ajp::media::ShotProbe::run	43	124
-src/media/stills.cpp	ajp::media::extract_stills	35	77
-src/media/video_decoder.cpp	ajp::media::VideoDecoder::receive	32	59
+src/media/shot_probe.cpp	ajp::media::ShotProbe::run	42	117
+src/media/stills.cpp	ajp::media::extract_stills	35	76
+src/media/video_decoder.cpp	ajp::media::VideoDecoder::receive	42	69
 src/prepare/drba_split.cpp	ajp::prepare::analyze_drba	63	105
 src/prepare/drba_split.cpp	ajp::prepare::drba_expected_wiring	6	158
 src/prepare/drba_split.cpp	ajp::prepare::parse_drba_manifest	26	57
