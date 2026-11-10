@@ -8,11 +8,13 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "app/play/backend_library.h"
 #include "app/play/chain.h"
 #include "app/play/engine_install.h"
+#include "app/play/first_run.h"
 #include "app/play/input.h"
 #include "app/play/options.h"
 #include "app/play/placebo_screen.h"
@@ -71,6 +73,8 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
 std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange& request);
 
 // La ligne de l'onglet quand le moteur préféré a refusé ce GPU et qu'un autre le remplace ; vide sinon.
-std::string fallback_note(const core::Settings& engines, const std::filesystem::path& library);
+// A37-08 : TensorRT refusé, le pilote relu dit pourquoi (trop ancien, ou NVK).
+std::string fallback_note(const core::Settings& engines, const std::filesystem::path& library,
+                          const GpuFacts& gpu);
 
 }  // namespace ajp::app::play

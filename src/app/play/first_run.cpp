@@ -225,7 +225,7 @@ std::string gpu_line(const GpuFacts& gpu) {
 }
 
 std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu) {
-  if (gpu.vendor != GpuVendor::Nvidia || gpu.driver.empty()) return std::nullopt;
+  if (gpu.vendor != GpuVendor::Nvidia || gpu.mesa_nvk || gpu.driver.empty()) return std::nullopt;
   std::uint64_t raw = 0;
   for (const char c : gpu.driver) {
     if (c < '0' || c > '9') return std::nullopt;
@@ -234,6 +234,17 @@ std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu) {
   }
   // NVIDIA code driverVersion en 10.8.8.6 bits : 580.82 vaut (580 << 22) | (82 << 14).
   return std::pair{static_cast<int>(raw >> 22U), static_cast<int>((raw >> 14U) & 0xffU)};
+}
+
+std::string tensorrt_driver_problem(const GpuFacts& gpu) {
+  if (gpu.vendor != GpuVendor::Nvidia) return {};
+  // A37-11 : NVK fait tourner Vulkan, pas CUDA ; TensorRT demande le pilote de NVIDIA.
+  if (gpu.mesa_nvk) return i18n::tr("TensorRT needs the NVIDIA driver (nvidia or nvidia-open)");
+  const auto version = nvidia_driver(gpu);
+  if (!version || *version >= kTensorRtDriverMinimum) return {};
+  return i18n::tr_format("NVIDIA driver {}.{:02} is too old: TensorRT needs {}.{:02} or newer",
+                         version->first, version->second, kTensorRtDriverMinimum.first,
+                         kTensorRtDriverMinimum.second);
 }
 
 FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const core::Settings& current) {
@@ -249,11 +260,10 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
         downloadable_row(row, here);
         // P3.6 : le pilote se lit avant 650 Mo de téléchargement ; trop ancien, la case reste verrouillée.
         if (offer.id == core::EngineId::TensorRt && row.download) {
-          if (const auto version = nvidia_driver(gpu); version && version->first < kTensorRtDriverMajor) {
+          if (std::string problem = tensorrt_driver_problem(gpu); !problem.empty()) {
             row.usable = false;
             row.download = false;
-            row.status = i18n::tr_format("NVIDIA driver {} or newer required, you have {}.{:02}",
-                                         kTensorRtDriverMajor, version->first, version->second);
+            row.status = std::move(problem);
           }
         }
         break;

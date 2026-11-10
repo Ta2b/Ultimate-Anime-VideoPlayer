@@ -20,6 +20,13 @@
 #include "fuzz_check.h"
 #include "fuzz_targets.h"
 #include "gpu/ir/import.h"
+#include "prepare/drba_split.h"
+#include "prepare/onnx_blend.h"
+#include "prepare/onnx_dims.h"
+#include "prepare/onnx_outputs.h"
+#include "prepare/onnx_scan.h"
+#include "prepare/onnx_split.h"
+#include "prepare/rife_split.h"
 #include "render/cube_lut.h"
 #include "subs/srt.h"
 #include "subs/text_encoding.h"
@@ -37,6 +44,41 @@ int ajp::fuzz::onnx(const std::uint8_t* data, std::size_t size) {
   const std::vector<std::byte> bytes(reinterpret_cast<const std::byte*>(data),
                                      reinterpret_cast<const std::byte*>(data) + size);
   (void)ajp::gpu::ir::load_onnx(bytes);
+  return 0;
+}
+
+namespace {
+
+// Les lecteurs ONNX de prepare/ sur un modèle : rien ne doit planter ni lire hors du tampon (SEC-21).
+void read_with_prepare(std::span<const std::byte> model) {
+  (void)ajp::prepare::scan_onnx(model);
+  (void)ajp::prepare::onnx_external_locations(model);
+  (void)ajp::prepare::read_onnx_graph(model);
+  (void)ajp::prepare::onnx_nodes(model);
+  (void)ajp::prepare::analyze_rife(model);
+  (void)ajp::prepare::analyze_drba(model);
+  (void)ajp::prepare::with_drba_motion_outputs(model);
+  const std::array<ajp::prepare::NamedDim, 2> dims{ajp::prepare::NamedDim{.name = "height", .value = 64},
+                                                   ajp::prepare::NamedDim{.name = "width", .value = 64}};
+  (void)ajp::prepare::with_fixed_dims(model, dims);
+}
+
+}  // namespace
+
+// A04-08 : les octets reçus, puis un vrai petit modèle (blend_model) qu'ils abîment : les deux premiers
+// octets disent où, le reste s'y mélange par ou exclusif ; un premier octet impair coupe le modèle là.
+int ajp::fuzz::prepare_onnx(const std::uint8_t* data, std::size_t size) {
+  const std::vector<std::byte> raw(reinterpret_cast<const std::byte*>(data),
+                                   reinterpret_cast<const std::byte*>(data) + size);
+  read_with_prepare(raw);
+  std::vector<std::byte> model = ajp::prepare::blend_model("ajp-fuzz", "1");
+  if (size >= 2 && !model.empty()) {
+    const std::size_t at = ((std::size_t{data[0]} << 8U) | data[1]) % model.size();
+    for (std::size_t i = 2; i < size && i < 66; ++i)
+      model[(at + i - 2) % model.size()] ^= static_cast<std::byte>(data[i]);
+    if ((data[0] & 1U) != 0U) model.resize(at);
+  }
+  read_with_prepare(model);
   return 0;
 }
 

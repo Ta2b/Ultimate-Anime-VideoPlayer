@@ -304,3 +304,23 @@ TEST_CASE("Pilote NVIDIA lu avant le téléchargement de TensorRT (P3.6)", "[app
   gpu.vendor = ajp::GpuVendor::Amd;
   CHECK_FALSE(nvidia_driver(gpu));
 }
+
+TEST_CASE("Pilote trop ancien ou NVK : TensorRT dit pourquoi (A37-08, A37-11)", "[app][first_run]") {
+  GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = ajp::GpuVendor::Nvidia};
+  gpu.driver = std::to_string((575U << 22U) | (64U << 14U));
+  CHECK(tensorrt_driver_problem(gpu).find("575.64") != std::string::npos);
+  gpu.driver = std::to_string((580U << 22U) | (82U << 14U));
+  CHECK(tensorrt_driver_problem(gpu).empty());
+#ifdef __linux__
+  // CUDA 13 demande 580.65 sous Linux : 580.40 ne suffit pas.
+  gpu.driver = std::to_string((580U << 22U) | (40U << 14U));
+  CHECK(tensorrt_driver_problem(gpu).find("580.65") != std::string::npos);
+#endif
+  // NVK : la version est celle de Mesa, elle ne se lit pas comme celle de NVIDIA.
+  gpu.mesa_nvk = true;
+  gpu.driver = std::to_string((25U << 22U) | (2U << 12U));
+  CHECK_FALSE(nvidia_driver(gpu));
+  CHECK(tensorrt_driver_problem(gpu).find("nvidia-open") != std::string::npos);
+  gpu.vendor = ajp::GpuVendor::Amd;
+  CHECK(tensorrt_driver_problem(gpu).empty());
+}

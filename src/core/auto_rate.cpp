@@ -80,8 +80,16 @@ AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level
     // Un facteur exact s'arrondit parfois au-dessus du plafond en demi-paliers (×6,88 : 14 pour 13).
     if (!out.locked.empty()) out.ceiling = std::max(out.ceiling, out.locked.back());
   }
-  if (level_factor >= 2)
+  if (level_factor >= 2) {
+    const int screen = out.ceiling;
     out.ceiling = std::min(out.ceiling, level_factor * out.granularity + (out.granularity == 2 ? 1 : 0));
+    // A37-14 : à fréquence fixe, le premier palier calé au-dessus du plafond du niveau reste permis s'il ne
+    // dépasse ce niveau que d'un multiplicateur (×5 pour ×4 à 120 et 240 Hz, en 23,976 i/s) : sans lui, le
+    // Stable tombe au palier d'en dessous (×2,5). Le coût mesuré redescend ensuite si ×5 ne tient pas.
+    const auto above = std::ranges::upper_bound(out.locked, out.ceiling);
+    if (above != out.locked.end() && *above <= std::min(screen, (level_factor + 1) * out.granularity))
+      out.ceiling = *above;
+  }
   return out;
 }
 

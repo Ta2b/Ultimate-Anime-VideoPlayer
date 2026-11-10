@@ -26,6 +26,16 @@ rules = [
   { vendor = "nvidia", contains = ["rtx 2080", "max-q"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 3050", "laptop"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx 2050"], tier = 1 },
+  # Les RTX PRO Blackwell (A37-12) : « NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition » ne prend
+  # pas la règle des portables Max-Q, et « rtx pro 6000 » ne contient pas « rtx 6000 ». Portables d'abord.
+  { vendor = "nvidia", contains = ["rtx pro 5000", "laptop"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx pro 4000", "laptop"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx pro", "laptop"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx pro 6000"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx pro 5000"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx pro 4500"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx pro 4000"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx pro"], tier = 2 },
   # Les autres RTX portables (4060, 4050, 3060, 5060, 2070, 2060, RTX A… Laptop) : une tranche sous la règle
   # générale de leur famille, plus bas dans la table (A07-08).
   { vendor = "nvidia", contains = ["rtx", "laptop"], tier = 1 },

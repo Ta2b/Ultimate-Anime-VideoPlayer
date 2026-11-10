@@ -260,8 +260,9 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
   return out;
 }
 
-std::filesystem::path calibration_file(const std::filesystem::path& data_dir) {
-  return data_dir / "calibration.toml";
+std::filesystem::path calibration_file(const std::filesystem::path& data_dir, int display_height) {
+  if (display_height <= 0) return data_dir / "calibration.toml";
+  return data_dir / std::format("calibration-{}p.toml", display_height);
 }
 
 std::filesystem::path calibration_work_dir(const std::filesystem::path& data_dir) {
@@ -276,6 +277,15 @@ std::expected<MachineCalibration, Refusal> load_calibration(const std::filesyste
   std::ostringstream text;
   text << in.rdbuf();
   return parse_calibration(text.str());
+}
+
+std::expected<MachineCalibration, Refusal> load_calibration_at(const std::filesystem::path& data_dir,
+                                                               int display_height) {
+  if (display_height > 0) {
+    auto here = load_calibration(calibration_file(data_dir, display_height));
+    if (here || here.error().code != RefusalCode::FileUnreadable) return here;
+  }
+  return load_calibration(calibration_file(data_dir));
 }
 
 CalibrationUse calibration_use(const MachineCalibration& calibration, const CalibrationHost& host) {
@@ -294,12 +304,12 @@ CalibrationUse calibration_use(const MachineCalibration& calibration, const Cali
 }
 
 bool calibration_driver_changed(const MachineCalibration& calibration, const CalibrationHost& host) {
-  return !calibration.driver.empty() && !host.driver.empty() && calibration.driver != host.driver;
+  return driver_branch_changed(calibration.driver, host.driver);
 }
 
 std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir,
                                                 const CalibrationHost& host) {
-  auto calibration = load_calibration(calibration_file(data_dir));
+  auto calibration = load_calibration_at(data_dir, host.display_height);
   if (!calibration || calibration_use(*calibration, host) != CalibrationUse::Followed) return std::nullopt;
   const ChainCandidate& chosen = calibration->chosen;
   return CalibratedChain{.span = chosen.span,
@@ -426,7 +436,7 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   out.chosen = best_candidate(out.tried);
   log->info("calibration de la machine : recommandé {} (moteur {})", describe(out.chosen), out.engine);
   if (!plan.data.empty()) {
-    if (auto saved = save_calibration(calibration_file(plan.data), out); !saved)
+    if (auto saved = save_calibration(calibration_file(plan.data, out.display_height), out); !saved)
       log->warn("calibration.toml : {}", saved.error().detail);
   }
   if (fraction) fraction(1.0F);

@@ -37,6 +37,7 @@ struct GpuFacts {
   std::uint64_t host_visible_vram_bytes = 0;  // tas VRAM visible de l'hôte : toute la VRAM avec Resizable BAR
   bool tensor_cores = false;                  // NVIDIA avec matrices coopératives Vulkan : une RTX
   bool wmma = false;                          // AMD RDNA3 ou RDNA4 avec matrices coopératives Vulkan
+  bool mesa_nvk = false;                      // A37-11 : carte NVIDIA sous NVK, sans le pilote de NVIDIA
 };
 
 // La carte AMD a-t-elle des unités matricielles (WMMA : RDNA3, RDNA4) ? Par le nom du pilote :
@@ -45,9 +46,19 @@ bool amd_matrix_cores(std::string_view gpu_name);
 
 core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
 // P3.6 : le pilote NVIDIA que demande le TensorRT livré (CUDA 13), et la version lue du pilote (majeure,
-// mineure) ; rien hors NVIDIA ou sans version lisible.
+// mineure) ; rien hors NVIDIA, sous NVK (version de Mesa, A37-11) ou sans version lisible.
 inline constexpr int kTensorRtDriverMajor = 580;
 std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu);
+// A37-08 : le minimum de CUDA 13 avec sa mineure : 580.65 sous Linux (notes de version de CUDA 13.0) ; la
+// mineure exigée sous Windows reste à confirmer (docs/audits/A-CONFIRMER.md), seule la majeure y compte.
+#ifdef __linux__
+inline constexpr std::pair<int, int> kTensorRtDriverMinimum{kTensorRtDriverMajor, 65};
+#else
+inline constexpr std::pair<int, int> kTensorRtDriverMinimum{kTensorRtDriverMajor, 0};
+#endif
+// A37-08, A37-11 : pourquoi le pilote empêche TensorRT (pilote NVIDIA trop ancien, ou NVK) ; vide sinon,
+// et hors NVIDIA.
+std::string tensorrt_driver_problem(const GpuFacts& gpu);
 // « NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor »
 std::string gpu_line(const GpuFacts& gpu);
 

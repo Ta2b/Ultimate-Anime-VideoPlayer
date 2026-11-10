@@ -246,14 +246,15 @@ struct Announced {
 // « Me prévenir » : une version plus récente vue par la dernière vérification. P3.11 : une calibration faite
 // sur une autre carte ne sert plus ; la refaire est proposé.
 void announce_once(Player& player, Announced& announced, const std::filesystem::path& update_file,
-                   UpdateMode mode, const std::string& gpu) {
+                   UpdateMode mode, const std::string& gpu, int display_height) {
   const UpdateState update = load_update_state(update_file);
   if (!announced.update && mode == UpdateMode::Notify && !update.latest_version.empty()) {
     announced.update = true;
     player.notice =
         i18n::ui_tr_format("Update {} available (Settings > General > Application)", update.latest_version);
   }
-  const auto calibration = load_calibration(calibration_file(player.settings_path.parent_path()));
+  // La calibration de cet écran (A37-10), sinon l'ancien calibration.toml.
+  const auto calibration = load_calibration_at(player.settings_path.parent_path(), display_height);
   if (!announced.calibration && calibration && !calibration->gpu.empty() && calibration->gpu != gpu) {
     announced.calibration = true;
     const i18n::Translated redo =
@@ -500,13 +501,12 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       chosen.preset = Preset::Auto;
       chosen.priority = Priority::Balance;
     }
-    // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et ce pilote, et pas pour un
-    // essai.
+    // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et cette branche de pilote
+    // (A37-09), et pas pour un essai.
     const GpuFacts here = gpu_facts(**screen);
     const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
                                                   library_wanted, *engines, catalog, paths);
-    const bool explored = measured_tier && !file_options.bench_level && measured_tier->gpu == here.name &&
-                          measured_tier->driver == here.driver;
+    const bool explored = measured_tier && !file_options.bench_level && measured_here(*measured_tier, here);
     chosen = apply_preset(
         chosen,
         Machine{.tier = tier,
@@ -515,7 +515,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                 .explored_work_height = explored ? measured_tier->work_height : 0,
                 .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
                 .calibrated = file_options.bench_level ? std::nullopt
-                                                       : calibrated_chain(settings_path.parent_path(), host)},
+                                                       : calibrated_chain(settings_path.parent_path(), host),
+                .display_width = display_width((*screen)->window())},
         source);
     PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
@@ -585,7 +586,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                   .display = window_display((*screen)->window())};
     player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     player.stages = &stage_memory;
-    announce_once(player, announced, update_file, saved->update_mode, here.name);
+    announce_once(player, announced, update_file, saved->update_mode, here.name, host.display_height);
     announce_first(player.notice, relaunch_note);
     announce_first(player.notice, engine_fallback);
     // Déjà traduites par set_aside() : montrées telles quelles.

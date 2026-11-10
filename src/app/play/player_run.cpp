@@ -406,7 +406,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   double known_hz = display_refresh_hz(out.window());
   std::int64_t known_period_us = display_period_us(out.window());
   SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
-  const int opened_height = display_height(out.window());
+  const DisplayMove opened{display_height(out.window()), known_hz, fps_of(video.frame_rate)};
   const GrowingFile opened_file =
       GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
   double session_hz_seen = known_hz;
@@ -637,7 +637,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (fullscreen != vrr_fullscreen || display_changed) {
         if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
         if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
-            display_moves_chain(chain.running.preset, opened_height, display_height(out.window())))
+            display_moves_chain(chain.running.preset, opened.now(display_height(out.window()), known_hz)))
           chain.reopen = chain.running;  // A29-03 : la chaîne, pas le lecteur ; pistes et sous-titres gardés
         vrr_fullscreen = fullscreen;
         session.set_composited(!fullscreen);

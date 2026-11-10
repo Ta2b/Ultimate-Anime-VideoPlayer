@@ -97,6 +97,8 @@ class PlaceboScreen final : public Screen {
     // la VRAM entière avec ; 0 si aucun type DEVICE_LOCAL | HOST_VISIBLE.
     std::uint64_t host_visible_vram_bytes = 0;
     bool cooperative_matrix = false;
+    // A37-11 : NVK, le pilote libre de Mesa (VK_DRIVER_ID_MESA_NVK) ; sa version n'a pas le codage de NVIDIA.
+    bool mesa_nvk = false;
   };
   DeviceFacts device_facts() const;
   // Les noms de toutes les cartes Vulkan du système, pour le choix de la carte (portables à deux cartes).

@@ -19,6 +19,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "core/model_index.h"
 #include "prepare/model_source.h"
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
@@ -496,6 +497,44 @@ TEST_CASE("Les RIFE du catalogue se coupent en six morceaux", "[prepare][onnx][r
     CHECK(nodes > 100);
   }
   if (!any) SKIP("modèles RIFE du lecteur absents (AJP_RIFE_MODEL_DIR)");
+}
+
+// A04-07 : un morceau dérivé déjà présent n'est jamais réécrit tant que kRifeFusedDerivation ne change pas.
+// Ce test hache les morceaux d'un graphe fabriqué : si la découpe produit autre chose (extract_subgraph,
+// l'analyse, value_info), il échoue jusqu'à ce que kRifeFusedDerivation monte, et l'empreinte attendue avec.
+// Sans cela, une installation existante garderait les anciens morceaux et une neuve aurait les nouveaux.
+TEST_CASE("Les morceaux RIFE ne changent pas sans que leur version monte (A04-07)", "[prepare][rife_fused]") {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "ajp-rife-empreinte";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const Bytes model = fake_rife(Fake{});
+  const fs::path source = dir / "modele.onnx";
+  {
+    std::ofstream out(source, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(model.data()), static_cast<std::streamsize>(model.size()));
+  }
+  const auto manifest = derive_rife_fused(source, dir / "modeles", 128, 256, RifeFusedOutput::Image);
+  REQUIRE(manifest);
+  std::string content;
+  {
+    std::ifstream text(*manifest);
+    content.assign(std::istreambuf_iterator<char>(text), std::istreambuf_iterator<char>());
+  }
+  const auto parsed = parse_manifest(content);
+  REQUIRE(parsed);
+  std::string hashes;
+  for (const std::string& piece : parsed->pieces) {
+    const auto sha = core::sha256_file(manifest->parent_path() / piece);
+    REQUIRE(sha);
+    hashes += *sha;
+  }
+  const std::string fingerprint = core::sha256_hex(hashes);
+  INFO("empreinte des morceaux : " << fingerprint);
+  CHECK(std::string(kRifeFusedDerivation) == "fusion1");
+  CHECK(fingerprint == "365dad8330605751fc2366423b3b3f66b88bf2a5b6485ef5101ff107b3a8cef9");
+  std::error_code ignored;
+  fs::remove_all(dir, ignored);
 }
 
 }  // namespace
