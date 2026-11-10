@@ -21,6 +21,7 @@
 #include "app/play/ring_stage.h"
 #include "app/play/settings.h"
 #include "app/play/span_int8.h"
+#include "app/play/stage_fallback.h"
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
 #include "core/gpu_device.h"
@@ -111,6 +112,10 @@ struct ChainEngines {
   bool drba_motion = false;  // drba rend flot et masque (variante mouvement, warp après SPAN)
   WorkSize drba_size;        // où DistilDRBA estime : rife_size en variante mouvement, sinon work
   bool apple = false;
+  // Les réglages que la chaîne joue vraiment : ceux demandés, sans les étages refusés et avec les crans
+  // ramenés à Équilibre (stage_fallback.h) ; stage_notes dit ce qui a changé.
+  PlaySettings played;
+  std::vector<StageNote> stage_notes;
 
   bool use_drba() const { return drba != nullptr; }
   bool use_apple() const { return apple && rife != nullptr; }
@@ -135,7 +140,11 @@ constexpr bool free_requested(const PlaySettings& settings, bool fallback) {
 }
 
 // Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
-// fermée pendant une préparation. Refus : modèle introuvable, backend ou moteur refusés.
-std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings);
+// fermée pendant une préparation. Un étage refusé ou annulé (SPAN, interpolation) est retenu dans memory et
+// la chaîne se prépare sans lui (ChainEngines::played, stage_notes) ; un cran FP8 ou FP32 refusé ne ramène
+// que son étage à Équilibre. memory nullptr (export, banc) : les crans retombent encore, mais un étage refusé
+// reste un refus. Refus : backend refusé, ou étage refusé sans mémoire.
+std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings,
+                                                                  StageMemory* memory);
 
 }  // namespace ajp::app::play

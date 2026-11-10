@@ -54,7 +54,9 @@ class PlaceboRing {
   // Cède le slot à CUDA après le dernier rendu qui l'a lu (signal de ready_value + 1).
   SlotFree retire(pl_gpu gpu, const RingFrame& frame);
   // Le sémaphore du slot a atteint ready_value : l'image est écrite. Lu sans attendre.
+  // A31-13 : l'appareil perdu à la lecture du sémaphore rend faux (l'image n'est pas prise) et le retient.
   bool ready(const RingFrame& frame) const;
+  bool lost() const { return lost_; }
   void clear(pl_gpu gpu);
   // Le sémaphore du slot d'un RingFrame du ring courant, sinon VK_NULL_HANDLE.
   VkSemaphore semaphore_of(const RingFrame& frame) const;
@@ -79,6 +81,7 @@ class PlaceboRing {
   VkDevice device_ = VK_NULL_HANDLE;
   PFN_vkGetSemaphoreCounterValue counter_ = nullptr;
   RingWatcher* watcher_ = nullptr;
+  mutable bool lost_ = false;  // vkGetSemaphoreCounterValue a rendu VK_ERROR_DEVICE_LOST
 };
 
 // Sous-titres et OSD en calques monochromes, au-dessus de l'image, en pixels de la sortie.
@@ -149,6 +152,9 @@ struct PlaceboScreen::Impl {
   void draw_ui(const ImDrawData* ui, const pl_frame& target);
   std::expected<void, Refusal> save_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                                              const ImDrawData* ui, const std::filesystem::path& path);
+  // L'instantané demandé (--snapshot), numéroté s'il y en a plusieurs ; un refus est écrit au journal.
+  void take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
+                     const ImDrawData* drawn_ui);
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
   pl_log log = nullptr;
@@ -213,7 +219,12 @@ struct PlaceboScreen::Impl {
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
-  std::expected<void, Refusal> submit(const pl_vulkan_present* present) const;  // placebo_screen.cpp
+  std::expected<void, Refusal> submit(const pl_vulkan_present* present);  // placebo_screen.cpp
+  // A10-08 : l'image de la swapchain acquise par start_frame et pas encore soumise. Une sortie de show sur
+  // une erreur (texture, overlays, rendu) la laissait acquise pour toujours ; au tour suivant elle est
+  // soumise telle quelle avant d'en acquérir une autre, sans quoi la swapchain finit sans image libre.
+  bool start_frame(pl_swapchain_frame* frame);
+  bool frame_pending = false;
   void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;

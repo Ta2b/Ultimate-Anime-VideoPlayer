@@ -9,6 +9,14 @@ TEST_CASE("CUDA : une erreur collante est un appareil perdu, les autres un appel
   CHECK(sticky(cudaErrorIllegalAddress));
   CHECK(sticky(cudaErrorLaunchFailure));
   CHECK(sticky(cudaErrorLaunchTimeout));
+  // A01-01 : TDR de Windows, Xid 79.
+  CHECK(sticky(cudaErrorUnknown));
+  CHECK(sticky(cudaErrorDevicesUnavailable));
+  CHECK(sticky(cudaErrorExternalDevice));
+  CHECK(cuda_refusal(cudaErrorUnknown, "cudaStreamQuery").code == RefusalCode::DeviceLost);
+  CHECK(lost_refusal(cudaErrorInvalidValue, "cudaStreamQuery").code == RefusalCode::DeviceLost);
+  // A31-08 : la mémoire vidéo pleine a sa phrase.
+  CHECK(cuda_refusal(cudaErrorMemoryAllocation, "cudaMalloc").code == RefusalCode::GpuMemoryExhausted);
   CHECK_FALSE(sticky(cudaSuccess));
   CHECK_FALSE(sticky(cudaErrorMemoryAllocation));
   CHECK_FALSE(sticky(cudaErrorInvalidValue));

@@ -284,6 +284,16 @@ void sharpness_section(PlaySettings& d) {
       i18n::tr("Crisper line art after upscaling, without halos. 0: untouched. Live, no effect on export."));
 }
 
+// Vidéo > Post-traitement, la chaîne : les étages joués sans eux (« Réessayer »), le niveau, l'image, la
+// netteté et la fluidité.
+void chain_sections(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
+  stages_note(choices, actions);
+  level_section(d, choices);
+  image_tab(d, choices);
+  sharpness_section(d);
+  fluidity_tab(d, choices);
+}
+
 // Général > À propos : ce que le lecteur sait de la machine, l'assistant à refaire.
 void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("This machine"));
@@ -455,10 +465,7 @@ void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices
                               bool& sub_delay_held) {
   switch (kPages[static_cast<std::size_t>(page_)].id) {
     case Page::PostProcessing: {
-      level_section(draft_, choices);
-      image_tab(draft_, choices);
-      sharpness_section(draft_);
-      fluidity_tab(draft_, choices);
+      chain_sections(draft_, choices, actions);
       if (advanced_) {
         span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
         // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
