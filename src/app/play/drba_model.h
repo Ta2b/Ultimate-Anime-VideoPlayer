@@ -31,7 +31,13 @@ struct DrbaModel {
 std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path> dirs,
                                           bool prefer_half = false);
 
-// Le flot à l'échelle 0,5 pour cette hauteur de travail : à partir de 1440p (la 4K).
+// Le flot à l'échelle 0,5 pour cette hauteur d'estimation : à partir de 2160 lignes, le conseil de l'auteur
+// de DistilDRBA. Le seuil était à 1440 lignes sans mesure (A09-24). Mesuré au banc de qualité
+// (docs/banc-qualite.md, « DistilDRBA, demi-flot ») : le demi-flot fait quatre fois moins d'opérations et
+// 34 à 41 % de temps en moins sur processeur, pour 3,8 à 4,4 dB de moins sur un mouvement simple et autant
+// que le flot entier sur un extrait d'action. À 1440 lignes le flot entier reste léger : la perte n'y est pas
+// justifiée.
+inline constexpr int kDrbaHalfFlowHeight = 2160;
 bool drba_half_flow(int work_height);
 
 // La variante « mouvement » de model (prepare::with_drba_motion_outputs) : flot et masque au lieu de l'image,
