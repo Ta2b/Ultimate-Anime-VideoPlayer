@@ -10,6 +10,7 @@
 #pragma once
 
 #include <array>
+#include <span>
 
 #include "render/cube_lut.h"
 #include "render/grade_params.h"
@@ -45,8 +46,8 @@ LookToe look_toe(double white);
 // Le niveau du pied pour un maximum RVB `m`, et la part de la pile (0 : le pied seul, 1 : la pile seule).
 double toe_level(const LookToe& toe, double m);
 double toe_pile_share(const LookToe& toe, double m);
-// Un gris de `nits` passé par la pile `stack` (codes PQ, lecture trilinéaire) et le pied : ses nits.
-double look_neutral(const CubeLut& stack, const LookToe& toe, double nits);
+// Un gris de `nits` passé par la pile (codes PQ, chaque LUT lue en trilinéaire) et le pied : ses nits.
+double look_neutral(const LookChain& chain, const LookToe& toe, double nits);
 
 // La compression de la dernière passe sur un gris : `content_nits` (signal PQ) rendu en nits affichés, pour
 // le blanc de référence `reference` du compositeur et le sommet `curve_peak` de la courbe (nits affichés).
@@ -59,13 +60,15 @@ double curve_peak_for(double content_nits, double target, double reference);
 // Le niveau d'un émetteur à l'écran : la surface `m` (nits affichés) montée de `gain`, sous le plafond `top`.
 double emitter_level(double m, double gain, double top);
 
-// Les réglages de la dernière passe pour un grade, sa pile composée (nullptr : aucune) et l'écran.
+// Les réglages de la dernière passe pour un grade, les LUT de sa pile (leurs intensités sont dans
+// params.look_mixes ; aucune : pas de pile) et l'écran.
 struct OutputTune {
   double curve_peak = 1000.0;  // sommet de la courbe de compression, nits affichés
   double white = 500.0;        // blanc d'une surface à l'écran, nits affichés
   double top = 1000.0;         // plafond des éclats, nits affichés
   friend bool operator==(const OutputTune&, const OutputTune&) = default;
 };
-OutputTune output_tune(const GradeParams& params, const CubeLut* stack, double reference, double panel_peak);
+OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const> luts, double reference,
+                       double panel_peak);
 
 }  // namespace ajp::render

@@ -8,10 +8,13 @@
 //   - ce qui dépasse le blanc (éclats HDR) ne passe pas par la LUT : la couleur est divisée par son maximum quand
 //     celui-ci dépasse 1, passe par la LUT, puis est remultipliée. La teinte du look s'applique, l'éclat reste ;
 //   - l'entrée de la LUT est encodée par le gamma `look_gamma` (2,4 : BT.1886) ;
-//   - jusqu'à quinze LUT s'enchaînent dans cet ordre (comme les nœuds de Resolve), chacune mélangée à son entrée par
-//     sa propre intensité (look_mix, look_mix2 ... look_mix15 ; 0 : la LUT est sautée) ; toutes à 0 : passe sautée,
-//     image identique octet pour octet. Une seule LUT d'HDR (look_pq) met toute la chaîne en codes PQ.
-// Le bloc de texture AJG_LUT est ajouté derrière ce texte à l'exécution (cube_lut.h) ; sans LUT, une identité 2x2x2.
+//   - jusqu'à vingt LUT s'enchaînent dans cet ordre (comme les nœuds de Resolve), chacune lue telle quelle et
+//     mélangée à son entrée par sa propre intensité (look_mix, look_mix2 ... look_mix20 ; 0 : la LUT est sautée) ;
+//     toutes à 0 : passe sautée (look_on), image identique octet pour octet. Une seule LUT d'HDR (look_pq) met
+//     toute la chaîne en codes PQ. La pile n'est pas réduite à une table : entre deux points, une table
+//     interpole la pile entière au lieu de la parcourir (audit A41-01).
+// Les intensités, les textures et la chaîne sont écrites à l'exécution aux marques LOOK (render/grade.cpp) ; les
+// blocs de texture AJG_LUT suivent ce texte, un par LUT distincte.
 
 //!PARAM look_mix
 //!DESC Intensité du look (0 = aucun, 1 = entier)
@@ -21,6 +24,13 @@
 0.0
 
 //@LOOK_PARAMS@
+
+//!PARAM look_on
+//!DESC 1 = une LUT au moins s'applique (posé par le lecteur ; l'expression de WHEN ne tient pas vingt intensités)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
 
 //!PARAM look_white
 //!DESC Blanc de référence de la LUT (nits)
@@ -81,7 +91,7 @@
 //!HOOK OUTPUT
 //!BIND HOOKED
 //@LOOK_BINDS@
-//@LOOK_WHEN@
+//!WHEN look_on
 //!COMPONENTS 4
 //!DESC AnimeJaNai HDR - look (LUT 3D)
 
