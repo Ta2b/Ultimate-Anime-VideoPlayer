@@ -278,6 +278,7 @@ void sharpness_section(PlaySettings& d) {
 // Général > À propos : ce que le lecteur sait de la machine, l'assistant à refaire.
 void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("This machine"));
+  panel::wrapped(choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   ImGui::TextWrapped("%s",
                      choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));

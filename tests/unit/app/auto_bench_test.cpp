@@ -244,7 +244,7 @@ TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[
   outcome.reading_b = BenchReading{.gpu = "g", .run = run(Tier::Normal, 600), .interval_p95_us = 30000};
   CHECK(format_compare_report(outcome).contains("Seule « A » tient"));
   outcome.reading_b.run = run(Tier::Normal);
-  CHECK(format_compare_report(outcome).contains("« A » est plus légère de 10.0 ms"));
+  CHECK(format_compare_report(outcome).contains("« A » est plus légère de 10,0 ms"));
 }
 
 TEST_CASE("l'exploration monte la hauteur de travail palier par palier, jamais au-dessus de la source",
