@@ -196,7 +196,9 @@ std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVa
   std::vector<SpanVariantKind> order;
   if (tier == PrecisionTier::Performance && caps.cutlass) order.push_back(SpanVariantKind::Fp8Cutlass);
   if (tier == PrecisionTier::Performance && caps.fp8 && !strict) order.push_back(SpanVariantKind::Fp8);
-  if (tier != PrecisionTier::Quality && caps.int8) order.push_back(SpanVariantKind::Int8);
+  // L'INT8 au cran Performance seulement : l'Équilibre, annoncé FP16, joue le FP16 même quand un reçu INT8
+  // traîne d'un essai du cran Performance (A49-07).
+  if (tier == PrecisionTier::Performance && caps.int8) order.push_back(SpanVariantKind::Int8);
   if (tier == PrecisionTier::Quality) order.push_back(SpanVariantKind::Fp32);
   return order;
 }

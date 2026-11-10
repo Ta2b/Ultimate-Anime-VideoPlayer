@@ -57,8 +57,14 @@ Verdict judge(std::span<const ImageScore> scores, double min_psnr_mean, double m
     verdict.ssim_worst = std::min(verdict.ssim_worst, score.ssim);
   }
   verdict.psnr_mean_db = sum / static_cast<double>(scores.size());
-  verdict.passed = verdict.psnr_mean_db >= min_psnr_mean && verdict.psnr_worst_db >= min_psnr_worst &&
-                   verdict.ssim_worst >= min_ssim_worst;
+  // Un score non fini refuse, où qu'il soit dans la liste : std::min et std::max l'ignorent quand il n'est
+  // pas le premier (A02-01).
+  const bool finite = std::ranges::all_of(scores, [](const ImageScore& score) {
+    return std::isfinite(score.psnr_db) && std::isfinite(score.ssim) && std::isfinite(score.error_p999) &&
+           std::isfinite(score.dark_error_p999);
+  });
+  verdict.passed = finite && verdict.psnr_mean_db >= min_psnr_mean &&
+                   verdict.psnr_worst_db >= min_psnr_worst && verdict.ssim_worst >= min_ssim_worst;
   return verdict;
 }
 

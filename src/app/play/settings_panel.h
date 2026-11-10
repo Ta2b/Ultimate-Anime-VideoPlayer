@@ -179,6 +179,13 @@ class SettingsPanel {
               std::vector<Input>& actions);
 
  private:
+  // Le corps de la page choisie, puis le pied du panneau (case avancée, annuler, appliquer) : draw les
+  // assemble.
+  void draw_page(const PlaySettings& running, const SettingsChoices& choices, std::vector<Input>& actions,
+                 Result& result, bool& delay_held, bool& sub_delay_held);
+  void draw_footer(const PlaySettings& running, const SettingsChoices& choices, const PlaySettings& before,
+                   bool delay_held, bool sub_delay_held, Result& result);
+
   bool open_ = false;
   PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;   // running au tour précédent

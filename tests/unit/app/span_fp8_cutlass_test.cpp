@@ -98,7 +98,9 @@ TEST_CASE("l'ordre des variantes de SPAN : la plus basse précision qui passe la
   CHECK(span_variant_order(PrecisionTier::Performance, ada, false) == std::vector{Fp8Cutlass, Fp8, Int8});
   // Un préréglage : sans le FP8 par Q/DQ et ses seuils lâches.
   CHECK(span_variant_order(PrecisionTier::Performance, ada, true) == std::vector{Fp8Cutlass, Int8});
-  CHECK(span_variant_order(PrecisionTier::Balanced, ada, true) == std::vector{Int8});
+  // L'Équilibre joue le FP16 livré, même avec un reçu INT8 sur le disque (A49-07).
+  CHECK(span_variant_order(PrecisionTier::Balanced, ada, true).empty());
+  CHECK(span_variant_order(PrecisionTier::Balanced, ada, false).empty());
   CHECK(span_variant_order(PrecisionTier::Quality, ada, true) == std::vector{Fp32});
   const SpanVariantCaps turing{.cutlass = false, .fp8 = false, .int8 = true};
   CHECK(span_variant_order(PrecisionTier::Performance, turing, true) == std::vector{Int8});
