@@ -355,9 +355,20 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
   };
   auto gated = net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target);
   if (!gated) return to_reference(std::format("porte de bout en bout non jouée ({})", gated.error().detail));
+  if (!gated->unjudged.empty()) {
+    log(BackendLogLevel::Warn,
+        std::format("{} : porte jugée sans le calcul en float ({}), contre les noyaux de "
+                    "référence",
+                    model.id, gated->unjudged));
+  }
   if (gated->fallback.empty()) {
     log(BackendLogLevel::Info,
-        std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
+        gated->against_float
+            ? std::format(
+                  "{} : porte de bout en bout passée ({:.1f} dB contre le calcul en float, {:.1f} dB aux "
+                  "noyaux de référence)",
+                  model.id, gated->db, gated->floor_db)
+            : std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
     return {};
   }
   auto program = net::lower(data.graph, gated->choices, profile_.target);

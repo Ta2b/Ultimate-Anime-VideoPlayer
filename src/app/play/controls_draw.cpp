@@ -1,6 +1,7 @@
 #include "app/play/controls_draw.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <format>
 #include <optional>
@@ -116,12 +117,19 @@ void draw_toast(const Controls& controls, float width, float scale, std::int64_t
   if (!text) return;
   const float opacity = controls.toast_opacity(now_us);
   ImDrawList* list = ImGui::GetForegroundDrawList();
-  const ImVec2 size = ImGui::CalcTextSize(text->data(), text->data() + text->size());
   const ImVec2 pad{16.0F * scale, 8.0F * scale};
+  // Un message long revient à la ligne au lieu de sortir de la fenêtre par la gauche (A24-12) : au plus
+  // 60 % de la largeur, et chaque avis différé a sa ligne.
+  const float wrap = std::max(width * 0.6F - 2.0F * pad.x, 200.0F * scale);
+  ImFont* font = ImGui::GetFont();
+  const float font_size = ImGui::GetFontSize();
+  const ImVec2 size =
+      font->CalcTextSizeA(font_size, FLT_MAX, wrap, text->data(), text->data() + text->size());
   const ImVec2 p0{width - size.x - 2.0F * pad.x - kPad * scale, kPad * scale};  // en haut à droite
   list->AddRectFilled(p0, {p0.x + size.x + 2.0F * pad.x, p0.y + size.y + 2.0F * pad.y},
-                      black(0.72F * opacity), (size.y + 2.0F * pad.y) * 0.5F);
-  list->AddText({p0.x + pad.x, p0.y + pad.y}, white(opacity), text->data(), text->data() + text->size());
+                      black(0.72F * opacity), (font_size + 2.0F * pad.y) * 0.5F);
+  list->AddText(font, font_size, {p0.x + pad.x, p0.y + pad.y}, white(opacity), text->data(),
+                text->data() + text->size(), wrap);
 }
 
 }  // namespace

@@ -10,6 +10,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/span_fp8/metrics.h"
+
 namespace ajp::gpu::span_fp8 {
 
 TEST_CASE("les échelles sont le maximum observé sur 448", "[span_fp8][derive]") {
@@ -90,6 +92,31 @@ TEST_CASE("la porte durcie tient au 99,9e centile, au sombre et aux cas durs (3.
   CHECK(relaxed.hard_error_p999_worst == Catch::Approx(125.0 / 255.0));
   CHECK(relaxed.error_p999_worst == Catch::Approx(3.0 / 255.0));  // celui des vraies images
   CHECK_FALSE(judge_hardened({}, hard).passed);                   // sans validation, rien ne passe
+}
+
+TEST_CASE("un score non fini refuse, où qu'il soit dans la liste (A02-01)", "[span_fp8][derive]") {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const ImageScore good{50.0, 0.995, 2.0 / 255.0, 1.0 / 255.0};
+  CHECK(judge_hardened(std::vector<ImageScore>{good, good, good}, {}).passed);
+  // std::min et std::max ignorent un NaN qui n'est pas le premier : chaque champ, à chaque rang.
+  for (std::size_t at = 0; at < 3; ++at) {
+    for (int field = 0; field < 4; ++field) {
+      std::vector<ImageScore> scores{good, good, good};
+      (field == 0   ? scores[at].psnr_db
+       : field == 1 ? scores[at].ssim
+       : field == 2 ? scores[at].error_p999
+                    : scores[at].dark_error_p999) = nan;
+      CAPTURE(at, field);
+      CHECK_FALSE(judge(scores).passed);
+      CHECK_FALSE(judge_hardened(scores, {}).passed);
+    }
+  }
+  // L'image du rapport : deux bonnes et une dont les mesures voient maintenant le NaN (0 dB, SSIM 0, erreur
+  // 1).
+  const std::vector<ImageScore> with_nan{good, good, {0.0, 0.0, kNotFiniteError, kNotFiniteError}};
+  CHECK_FALSE(judge_hardened(with_nan, {}).passed);
+  CHECK_FALSE(keep_acc16(judge_hardened(std::vector<ImageScore>{good, good, good}, {}),
+                         judge_hardened(with_nan, {})));
 }
 
 TEST_CASE("l'accumulateur f16 n'est gardé qu'à 0,3 dB de PSNR moyen du f32, porte passée (3.5a)",
