@@ -40,7 +40,7 @@ struct ExportSize {
   friend bool operator==(const ExportSize&, const ExportSize&) = default;
 };
 
-// La sortie de la chaîne pour une source : la taille de travail (work_size), doublée par SPAN.
+// La sortie de la chaîne pour une source : la taille de travail (chain_work_size), doublée quand SPAN tourne.
 ExportSize chain_output(const PlaySettings& chain, int source_width, int source_height);
 
 // La taille encodée : la sortie de la chaîne (kExportChainHeight), la source (kExportSourceHeight),

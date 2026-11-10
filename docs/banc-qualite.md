@@ -114,6 +114,56 @@ Ce que cette mesure ne dit pas : un seul extrait ; **les poses tenues et les cou
 fenêtre dont le dessin du milieu est tenu est écartée, et une coupe entre k et k+2 n'est pas détectée). Les poses
 tenues sont l'argument de DistilDRBA.
 
+## Hauteur de travail et modèle de SPAN
+
+`tools/bench/qualite/travail.py` mesure ce que coûte une source réduite avant SPAN, et ce que gagne le modèle
+b8f64 sur le b5f48 (audits A49-01 et A49-02). Il joue tout à l'échelle ½, comme la mesure « vérité,
+agrandissement » : un plan 1080p de `calibration.mkv` est la vérité, sa moitié tient lieu de source 1080p.
+Chaque chaîne réduit la source à une hauteur de travail (Hermite), l'agrandit par SPAN, puis la ramène à l'écran
+comme libplacebo par défaut (Lanczos vers le haut, Hermite vers le bas). Les hauteurs sont dites à l'échelle du
+lecteur.
+
+```sh
+python3 -I tools/bench/qualite/travail.py --modeles ~/.cache/ajp-release-models/modeles --md travail.md
+```
+
+Six plans, modèles Sharp1 en FP16, ONNX Runtime 1.29 sur processeur. PSNR contre la vérité de l'écran.
+
+| Écran | Travail | SPAN | PSNR (dB) | Pire plan (dB) | SSIM | ΔE_ITP p99,9 |
+|---|---|---|---:|---:|---:|---:|
+| 2160p | 1080p | b8f64 | 41,39 | 36,30 | 0,9875 | 27,09 |
+| 2160p | 1080p | b5f48 | 41,24 | 36,52 | 0,9873 | 28,34 |
+| 2160p | 720p | b8f64 | 39,09 | 33,31 | 0,9798 | 37,53 |
+| 2160p | 720p | b5f48 | 38,82 | 33,16 | 0,9789 | 38,68 |
+| 2160p | 540p | b8f64 | 36,59 | 31,15 | 0,9655 | 50,21 |
+| 2160p | 540p | b5f48 | 36,26 | 31,02 | 0,9646 | 52,34 |
+| 1440p | 1080p | b8f64 | 45,28 | 40,25 | 0,9959 | 16,34 |
+| 1440p | 1080p | b5f48 | 44,99 | 40,46 | 0,9956 | 17,39 |
+| 1440p | 720p | b8f64 | 41,94 | 35,94 | 0,9896 | 26,35 |
+| 1440p | 720p | b5f48 | 41,68 | 35,91 | 0,9893 | 27,38 |
+| 1440p | 540p | b8f64 | 38,72 | 33,21 | 0,9800 | 39,39 |
+| 1440p | 540p | b5f48 | 38,32 | 32,49 | 0,9797 | 41,89 |
+| 1080p | 1080p | b8f64 | 45,56 | 42,57 | 0,9977 | 14,39 |
+| 1080p | 1080p | b5f48 | 45,38 | 42,41 | 0,9974 | 14,73 |
+| 1080p | 720p | b8f64 | 40,49 | 35,67 | 0,9903 | 30,33 |
+| 1080p | 720p | b5f48 | 40,21 | 35,47 | 0,9897 | 31,54 |
+| 1080p | 540p | b8f64 | 38,16 | 32,52 | 0,9812 | 40,40 |
+| 1080p | 540p | b5f48 | 37,75 | 31,80 | 0,9808 | 43,17 |
+
+Ce que ces chiffres disent :
+
+- **Réduire la source 1080p avant SPAN coûte cher.** Garder la 1080p plutôt que travailler en 720p rend 2,3 dB
+  sur un écran 4K, 3,3 dB sur un écran 1440p et 5,1 dB sur un écran 1080p. Contre un travail en 540p : 4,8, 6,6
+  et 7,4 dB. C'est la raison de la source gardée aux niveaux Qualité et Ultra, et des essais de la calibration
+  jusqu'à 1080p.
+- **Le b8f64 gagne peu sur le b5f48** : 0,15 à 0,41 dB, davantage quand la source est réduite, et un ΔE_ITP au
+  p99,9 plus bas partout. Sur un des six plans à 1080p, le b5f48 est devant de 0,2 dB.
+- Sans SPAN, la source portée à l'écran par libplacebo donne 42,74 dB (4K) et 48,70 dB (1440p) : au-dessus de
+  SPAN, pour la raison dite plus haut (SPAN renforce les traits, la moyenne 2 × 2 n'est pas la dégradation qu'il
+  a apprise). Ce banc classe des chaînes avec SPAN entre elles ; il ne dit pas s'il faut SPAN.
+
+Le temps de ces chaînes ne se mesure que sur la carte : voir `docs/audits/A-CONFIRMER.md` (A49-01, A49-02).
+
 ## Limites
 
 - Sur processeur, ONNX Runtime range les tenseurs FP16 en demi-précision mais fait les sommes de chaque couche

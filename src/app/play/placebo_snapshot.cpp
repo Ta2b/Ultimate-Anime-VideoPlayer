@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "app/play/placebo_impl.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 
@@ -73,7 +74,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
     }
   }
   if (!file) return std::unexpected(Refusal{RefusalCode::IoFailed, "écriture de l'instantané"});
-  channel->info("instantané écrit : {}", path.string());
+  channel->info("instantané écrit : {}", core::to_utf8(path.filename()));
   return {};
 }
 

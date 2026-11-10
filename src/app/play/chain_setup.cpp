@@ -5,6 +5,7 @@
 #include <span>
 #include <utility>
 
+#include "app/play/auto_config.h"
 #include "app/play/drba_fused_choice.h"
 #include "app/play/drba_model.h"
 #include "app/play/first_run.h"
@@ -13,6 +14,7 @@
 #include "app/play/i18n.h"
 #include "app/play/motion_model.h"
 #include "app/play/paths.h"
+#include "app/play/problem_report.h"
 #include "app/play/rife_fused_choice.h"
 #include "core/auto_rate.h"
 #include "core/clock.h"
@@ -25,6 +27,19 @@ namespace {
 
 // Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K).
 constexpr int kRifeMotionHeight = 720;
+
+// Ce que le rapport « Signaler un problème » dit de la carte et du préréglage joué (A39-02).
+void note_gpu_facts(const GpuFacts& gpu, const PlaySettings& settings, const GpuDevice& device) {
+  note_report_fact("GPU", gpu_line(gpu));
+  note_report_fact("Préréglage", label(settings.preset));
+  if (device.vendor() == GpuVendor::Nvidia) note_report_fact("Pilote NVIDIA", device.driver_version);
+}
+
+// Le cran de précision voulu n'est pas tenu : le journal et le rapport le disent (A39-07).
+void warn_span_fallback(spdlog::logger& log, PrecisionTier tier) {
+  log.warn("SPAN {} : aucune variante utilisable, FP16 à la place", label(tier));
+  note_report_fact("Précision SPAN", std::string("FP16 à la place de ") + std::string(label(tier)));
+}
 
 }  // namespace
 
@@ -88,15 +103,15 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
 
 std::string ChainEngines::span_label() const {
   if (!model) return i18n::tr_format("no upscaling · {}", reduce);
-  return std::format("SPAN ×{} · {}{} · {} · {} → {}x{}", factor, model->path.stem().string(),
-                     span_int8 ? std::format(" {}", variant_text(span_int8->kind)) : std::string(),
+  return std::format("SPAN ×{} · {} {} · {} · {} → {}x{}", factor, model->path.stem().string(),
+                     span_int8 ? std::string(variant_text(span_int8->kind)) : std::string("FP16"),
                      backend_name, reduce, work.width * factor, work.height * factor);
 }
 
 UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr<LiveSettings> live,
                                    const MasterClock* clock, int width, int height,
                                    std::vector<RingSlotDesc> slots) const {
-  const WorkSize sized = work_size(width, height, settings.work_height);
+  const WorkSize sized = chain_work_size(settings, width, height);
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
@@ -224,7 +239,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   take_trials(c, p.options);
-  const bool span = span_runs(settings.upscale, settings.restore_lines, video.height, settings.work_height);
+  const bool span = span_runs(settings, video.height);
   if (settings.upscale && !span)
     log_channel("app")->info("restaurer les traits coupé : source {}p gardée telle quelle, sans SPAN",
                              video.height);
@@ -235,7 +250,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   }
   c.factor = c.model ? kSpanFactor : 1;
   c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
-  c.work = work_size(video.width, video.height, settings.upscale && !span ? 0 : settings.work_height);
+  c.work = chain_work_size(settings, video.width, video.height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)
@@ -250,6 +265,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
         video.width, video.height, c.work.width, c.work.height);
   const GpuFacts gpu = gpu_facts(p.screen);
   log->info("GPU : {}", gpu_line(gpu));
+  note_gpu_facts(gpu, settings, p.screen.device());
   if (p.screen.device().vendor() == GpuVendor::Nvidia) {
     const std::string& driver = p.screen.device().driver_version;
     if (settings.smooth_motion && nvidia_driver_older_than(driver, 580, 82, 7))
@@ -349,8 +365,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       c.span_int8.reset();
       loaded.reset();
     }
-    if (!c.span_int8 && tier != PrecisionTier::Balanced)
-      log->info("SPAN {} : aucune variante utilisable, FP16 à la place", label(tier));
+    if (!c.span_int8 && tier != PrecisionTier::Balanced) warn_span_fallback(*log, tier);
     if (!loaded) loaded = prepare_span();
     if (!*loaded) return std::unexpected(std::move(loaded->error()));
     if (!**loaded) return std::nullopt;

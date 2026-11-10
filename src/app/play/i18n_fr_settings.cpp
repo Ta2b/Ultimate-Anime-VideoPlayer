@@ -7,19 +7,19 @@ namespace {
 
 // Pages de réglages : (clé anglaise, français).
 constexpr std::array kSettingsPages{
-    Entry{" · RIFE 4.22 lite (auto Fast)", " · RIFE 4.22 lite (auto Rapide)"},
+    Entry{" · RIFE (auto Fast)", " · RIFE (auto Rapide)"},
     Entry{" · no interpolation", " · sans interpolation"},
     Entry{"Display peak", "Pic de l'écran"},
     Entry{"SPAN off", "SPAN coupé"},
     Entry{"Apply", "Appliquer"},
     Entry{"Bench results", "Résultats du bench"},
     Entry{"Cancel##calibration", "Annuler##calibration"},
-    Entry{
-        "Interpolation is always RIFE 4.22 lite in Auto Fast mode. The working resolution stops at half the "
-        "display: SPAN doubles it.",
-        "L'interpolation est toujours RIFE 4.22 lite en mode auto Rapide. La résolution de travail s'arrête "
-        "à "
-        "la moitié de l'écran : SPAN la double."},
+    Entry{"Interpolation runs in Auto Fast mode. The working resolution goes up to the 1080p of the test "
+          "sequence; SPAN doubles it.",
+          "L'interpolation tourne en mode auto Rapide. La résolution de travail monte jusqu'à la 1080p de la "
+          "séquence d'essai ; SPAN la double."},
+    Entry{"Measured by an older version: Auto keeps its estimate. Run the bench again.",
+          "Mesuré par une version plus ancienne : Auto garde son estimation. Refaites le bench."},
     Entry{"No bench yet: the settings are an estimate from the card.",
           "Pas encore de bench : les réglages sont estimés d'après la carte."},
     Entry{"Measured on battery: Auto keeps its estimate. Run the bench again plugged in.",
@@ -29,9 +29,7 @@ constexpr std::array kSettingsPages{
     Entry{"Result", "Résultat"},
     Entry{"Run the bench", "Lancer le bench"},
     Entry{"Run the bench again", "Refaire le bench"},
-    Entry{"SPAN: Balanced Sharp in FP8.", "SPAN : Balanced Sharp en FP8."},
-    Entry{"SPAN: Performance Sharp in FP16 (no FP8 on this card).",
-          "SPAN : Performance Sharp en FP16 (pas de FP8 sur cette carte)."},
+    Entry{"SPAN: {} in FP16 · RIFE: {}", "SPAN : {} en FP16 · RIFE : {}"},
     Entry{"Testing settings on a very demanding sequence: a few minutes.",
           "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
     Entry{"The bench failed: {}", "Le bench a échoué : {}"},
@@ -219,12 +217,15 @@ constexpr std::array kSettingsPages{
           "Remet le profil actif (Ctrl+1 à Ctrl+9) à zéro ; les autres profils ne bougent pas."},
     Entry{"Run the wizard again", "Relancer l'assistant"},
     Entry{"Report a problem", "Signaler un problème"},
-    Entry{
-        "Copies the version, the graphics card and the end of the log, without your user name or the folders "
-        "of your videos, then opens the report page. Paste the log there.",
-        "Copie la version, la carte graphique et la fin du journal, sans votre nom d'utilisateur ni les "
-        "dossiers "
-        "de vos vidéos, puis ouvre la page de signalement. Collez-y le journal."},
+    Entry{"Copies the version, the system, the graphics card, the preset and the end of the log (and the one "
+          "before it after a crash), with only the file names of your videos, then opens the report page. "
+          "Paste the report there.",
+          "Copie la version, le système, la carte graphique, le préréglage et la fin du journal (et celui "
+          "d'avant après un plantage), avec le seul nom des fichiers de vos vidéos, puis ouvre la page de "
+          "signalement. Collez-y le rapport."},
+    Entry{"Report copied. Paste it into the page that opened.",
+          "Rapport copié. Collez-le dans la page qui s'est ouverte."},
+    Entry{"Report copied. Open {} and paste it there.", "Rapport copié. Ouvrez {} et collez-le."},
     Entry{"SDR", "SDR"},
     Entry{"SDR display: a stack with an HDR LUT is turned off (the LUTs are made for HDR).",
           "Écran SDR : une pile qui contient une LUT d'HDR est coupée (ces LUT sont faites pour le HDR)."},
