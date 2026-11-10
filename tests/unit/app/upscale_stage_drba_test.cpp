@@ -1,11 +1,15 @@
 // DistilDRBA dans l'étage gpu (upscale_stage.h) sur le banc sans GPU (upscale_rig.h) : l'image suivante
 // attendue, les côtés tenus rendus sans passe, et la variante mouvement (SPAN par source, warp après).
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "media/shot_cutter.h"
 #include "upscale_rig.h"
 
 namespace ajp::app::play {
@@ -46,6 +50,43 @@ TEST_CASE("Étage gpu : DistilDRBA rend b sans passe quand (b, après) est un de
         std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "3-4", "4", "5"});
   // 3-4 à ½ est centrée sur 4, dont la paire suivante (4, 5) est tenue : l'image 4 telle quelle.
   CHECK(rig.backend.count("engine drba") == 2);
+}
+
+TEST_CASE("Étage gpu : DistilDRBA ne lit pas l'image d'après une coupe que seuls les plans connaissent",
+          "[app][stage]") {
+  // A09-01 : la coupe entre 3 et 4 est connue de la pré-analyse, et son score (0,10) passe le plancher des
+  // plans sans atteindre le seuil brut. (a, b) la voyait déjà ; (b, après) la jugeait sur le score brut et
+  // lisait 4.
+  for (const bool known : {true, false}) {
+    Rig rig;
+    rig.backend.score(SourceId{3}, SourceId{4}, 0.10, 255);
+    if (known) {
+      media::Shot first;
+      first.end_us = 140'000;
+      first.cut_before = false;
+      media::Shot second;
+      second.start_us = 140'000;
+      second.end_us = 400'000;
+      const std::vector<media::Shot> shots{first, second};
+      rig.live->cuts().set_shots(shots);
+    }
+    UpscaleSetup s = rig.setup(true);
+    s.rife = nullptr;
+    s.distil_drba = &rig.drba;
+    rig.start(std::move(s));
+    rig.feed(1, 5);
+    REQUIRE(rig.collect(5));
+    rig.stage.reset();
+
+    const std::vector<std::string> shape = shape_of(rig.sink.frames());
+    REQUIRE(shape.size() >= 5);
+    CHECK(shape[3] == "2-3");
+    // L'image entre 2 et 3, centrée sur 3 : (2, 3) puis (3, après). Après une coupe connue, 3 tient lieu
+    // d'après.
+    const auto pairs = rig.backend.rife_pairs();
+    const bool read_next = std::ranges::count(pairs, std::pair<std::uint32_t, std::uint32_t>{3, 4}) > 0;
+    CHECK(read_next == !known);
+  }
 }
 
 TEST_CASE("Étage gpu : en lecture, DistilDRBA écrit b une fois quand (b, après) est tenu, sans la source",
