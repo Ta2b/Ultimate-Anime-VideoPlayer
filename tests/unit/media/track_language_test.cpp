@@ -70,3 +70,21 @@ TEST_CASE("choix : les pistes sans balise suivent leur titre", "[media][language
   CHECK(english.audio == 1);
   CHECK(english.subtitle == 5);
 }
+
+// A14-05 : sur une piste audio, « VOSTFR » et « VOSTA » disent la version originale, pas le français ni
+// l'anglais ; sur une piste de sous-titres, ils gardent leur sens.
+TEST_CASE("langue : « VOSTFR » sur une piste audio ne la dit pas française", "[media][language]") {
+  CHECK(track_language(track(0, TrackKind::Audio, "", "VOSTFR")).empty());
+  CHECK(track_language(track(0, TrackKind::Audio, "", "VOSTA")).empty());
+  CHECK(track_language(track(0, TrackKind::Audio, "", "VOSTFR Japonais")) == "jpn");
+  CHECK(track_language(track(0, TrackKind::Subtitle, "", "VOSTFR")) == "fre");
+  CHECK(track_language(track(0, TrackKind::Subtitle, "", "VOSTA")) == "eng");
+}
+
+TEST_CASE("choix : la VF demandée l'emporte sur une piste audio « VOSTFR » placée avant",
+          "[media][language]") {
+  const std::vector<TrackInfo> tracks{track(0, TrackKind::Video, "", ""),
+                                      track(1, TrackKind::Audio, "", "VOSTFR"),
+                                      track(2, TrackKind::Audio, "", "VF")};
+  CHECK(choose_tracks(tracks, LanguagePriorities{.audio = {"fre"}}).audio == 2);
+}

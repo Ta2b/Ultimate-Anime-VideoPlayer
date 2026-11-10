@@ -84,10 +84,12 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
   aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
   std::filesystem::rename(path, aside, error);
   if (error) {
-    log_channel("app")->warn("{} : mise de côté impossible ({})", core::to_utf8(path), error.message());
+    log_channel("app")->warn("{} : mise de côté impossible ({})", core::to_utf8(path.filename()),
+                             error.message());
     return {};
   }
-  log_channel("app")->warn("{} mis de côté dans {}", core::to_utf8(path), core::to_utf8(aside));
+  log_channel("app")->warn("{} mis de côté dans {}", core::to_utf8(path.filename()),
+                           core::to_utf8(aside.filename()));
   return i18n::tr_format("{} was invalid: copy kept as {}", core::to_utf8(path.filename()),
                          core::to_utf8(aside.filename()));
 }
@@ -695,7 +697,7 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
   if (!file)
     return refuse(RefusalCode::FileUnreadable,
                   std::format("--bake-looks : {} ne s'écrit pas", core::to_utf8(out)));
-  log_channel("app")->info("--bake-looks : {} écrit ({} points)", core::to_utf8(out), baked.size);
+  log_channel("app")->info("--bake-looks : {} écrit ({} points)", core::to_utf8(out.filename()), baked.size);
   return {};
 }
 

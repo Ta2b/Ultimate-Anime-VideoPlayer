@@ -6,6 +6,8 @@
 #include <variant>
 #include <vector>
 
+#include "media/log.h"
+
 namespace ajp::media {
 namespace {
 
@@ -18,6 +20,8 @@ struct Overloaded : F... {
 // qui finissent avant. Sans durée connue, on jette celles qui commencent avant.
 // Une image sans horodatage ne peut pas être visible à la cible : jetée aussi.
 // Si la fin du flux arrive avant la cible, la dernière image jetée est livrée.
+// Au plus tant d'images sans horodatage jetées de suite (environ 5 s à 24 i/s), A14-10.
+constexpr int kMaxUntimedDrops = 120;
 bool ends_before(const DecodedFrame& frame, std::int64_t target_us) {
   if (frame.pts_us == kNoPts) return true;
   const std::int64_t end = frame.pts_us + std::max<std::int64_t>(frame.duration_us, 1);
@@ -88,22 +92,25 @@ void SourceLoop::on_flush(const Flush& flush) {
 }
 
 void SourceLoop::on_seek(const cmd::Seek& seek) {
-  awaiting_seek_ = false;
+  const bool flushed = std::exchange(awaiting_seek_, false);  // le Flush a jeté l'image et les paquets tenus
   const SeekTarget where = seek.exact ? SeekTarget::PreviousKeyframe : SeekTarget::NearestKeyframe;
   const std::uint32_t file_seeks = media_.demuxer.file_seeks();
   if (auto moved = media_.demuxer.seek(seek.target_us, media_.video_track, where); !moved) {
     Refusal refused = moved.error();
     refused.recoverable = true;  // la lecture reprend où elle était
     links_.listener->failed(refused);
-    // Refusé sans toucher au fichier (cible hors bornes) : la lecture reprend où elle était. Le
-    // fichier a bougé (une lecture a échoué après le repositionnement) : le décodeur ne tient plus
-    // sa position, on revient à la dernière image tenue plutôt que de livrer des images corrompues.
-    if (media_.demuxer.file_seeks() != file_seeks) recover_position();
+    // Le fichier a bougé (une lecture a échoué après le repositionnement) : le décodeur ne tient plus sa
+    // position, on revient à la dernière image tenue plutôt que de livrer des images corrompues. Refusé sans
+    // toucher au fichier (cible hors bornes) : le Flush a déjà jeté l'image tenue et la réserve, la lecture
+    // reprend donc elle aussi à la dernière image tenue, sans trou (A14-04). Sans Flush, ou sans image tenue
+    // encore, le décodeur repart où il était.
+    if (media_.demuxer.file_seeks() != file_seeks || (flushed && last_pts_us_)) recover_position();
     return;
   }
   media_.decoder.flush();
   forget_position();
   drop_before_ = seek.exact ? std::optional(seek.target_us) : std::nullopt;
+  media_.decoder.skip_before(drop_before_);
   idle_ = false;
 }
 
@@ -113,11 +120,18 @@ void SourceLoop::recover_position() {
   idle_ = true;  // sans position sûre, rien ne part avant le prochain seek abouti
   if (!last_pts_us_) return;
   const std::int64_t back_to = *last_pts_us_;
-  if (auto back = media_.demuxer.seek(back_to, media_.video_track, SeekTarget::PreviousKeyframe); !back)
+  if (auto back = media_.demuxer.seek(back_to, media_.video_track, SeekTarget::PreviousKeyframe); !back) {
+    // Plus de position sûre : rien ne part avant un autre seek, que la session rejoue (A13-08).
+    Refusal lost = back.error();
+    lost.detail = std::format("position perdue : {}", lost.detail);
+    lost.recoverable = true;
+    links_.listener->failed(lost);
     return;
+  }
   media_.decoder.flush();
   forget_position();
   drop_before_ = back_to;
+  media_.decoder.skip_before(drop_before_);
   idle_ = false;
 }
 
@@ -143,8 +157,11 @@ SourceLoop::Progress SourceLoop::advance() {
     primed_ = true;
     return Progress::Moved;
   }
-  // Amorcée, l'époque reprend la contre-pression des files annexes.
-  if (!side_clear && primed_) return Progress::Blocked;
+  // Amorcée, l'époque reprend la contre-pression des files annexes, mais pas aussitôt : une file annexe
+  // pleine laisse la vidéo avancer jusqu'à ce que gpu refuse une image (held_frame_ ci-dessus) ou que la
+  // réserve atteigne la moitié de son plafond. Un fichier mal entrelacé (l'audio des secondes en avance) ne
+  // prive plus la vidéo de paquets (A14-06).
+  if (!side_clear && primed_ && reserve_.bytes() >= links_.reserve_bytes / 2) return Progress::Blocked;
   if (idle_) return Progress::Idle;
   return decode();
 }
@@ -156,10 +173,18 @@ SourceLoop::Progress SourceLoop::decode() {
     return Progress::Idle;
   }
   if (*frame) {
-    if (drop_before_ && ends_before(**frame, *drop_before_)) {
+    // A14-10 : une image sans horodatage ne peut être jugée ; passé kMaxUntimedDrops de suite, la cible ne
+    // serait jamais atteinte (le reste du fichier jeté) : la lecture reprend sur elle.
+    const bool untimed = (*frame)->pts_us == kNoPts;
+    untimed_drops_ = untimed ? untimed_drops_ + 1 : 0;
+    if (drop_before_ && ends_before(**frame, *drop_before_) && untimed_drops_ <= kMaxUntimedDrops) {
       last_dropped_ = std::move(**frame);
       return Progress::Moved;
     }
+    if (drop_before_ && untimed_drops_ > kMaxUntimedDrops)
+      make_logger()->warn(
+          "seek exact : {} images sans horodatage de suite, la lecture reprend avant la cible",
+          untimed_drops_);
     keep(std::move(**frame));
     return Progress::Moved;
   }
@@ -211,6 +236,8 @@ SourceLoop::Progress SourceLoop::route(Packet packet) {
 
 void SourceLoop::keep(DecodedFrame frame) {
   drop_before_.reset();
+  media_.decoder.skip_before(std::nullopt);
+  untimed_drops_ = 0;
   last_dropped_.reset();
   held_frame_ = std::move(frame);
   if (held_frame_->pts_us != kNoPts) last_pts_us_ = held_frame_->pts_us;

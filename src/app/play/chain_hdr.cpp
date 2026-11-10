@@ -118,6 +118,7 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
       out.luts.at(i) = *read;
       continue;
     }
+    if (std::ranges::find(out.failed, keys[i].key) != out.failed.end()) continue;  // déjà refusé, déjà dit
     auto lut = load_look(keys[i].key, luts_dir);
     if (!lut) {
       log_channel("app")->warn("look : {}", lut.error().detail);
@@ -126,6 +127,12 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
     }
     log_channel("app")->info("look : {} ({} points)", keys[i].key, lut->size);
     out.luts.at(i).emplace(std::move(*lut));
+  }
+  // La pile est un tout : sans l'un de ses fichiers, les autres donneraient une autre image. Aucun look.
+  if (!out.failed.empty()) {
+    for (std::optional<render::CubeLut>& lut : out.luts) lut.reset();
+    log_channel("app")->warn("look : pile incomplète ({} fichier(s) manquant(s)), image sans look",
+                             out.failed.size());
   }
   return out;
 }
@@ -238,7 +245,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool
   if (s.grade && source_hdr && !s.grade_values.grade_native_hdr)
     text += i18n::tr(" · grade off: HDR source");
   else if (s.grade)
-    text += i18n::tr(" · grade");
+    text += screen.has_grade() ? i18n::tr(" · grade") : i18n::tr(" · grade unavailable");  // A41-12
   return text;
 }
 

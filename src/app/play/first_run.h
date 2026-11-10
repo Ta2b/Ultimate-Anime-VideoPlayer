@@ -100,9 +100,9 @@ struct FirstRunView {
   // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
   Wizard wizard;
   WizardFacts facts;
-  std::string tier_line;        // « Niveau estimé : Rapide »
-  std::string display_line;     // « Écran 3840×2160 · 165 Hz »
-  int calibration_minutes = 0;  // la durée annoncée de « Optimiser maintenant » (P3.13) ; 0 : inconnue
+  std::string tier_line;     // « Niveau estimé : Rapide »
+  std::string display_line;  // « Écran 3840×2160 · 165 Hz »
+  bool laptop = false;       // un portable : la construction des moteurs y dure le double (A25-03)
 };
 
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,

@@ -66,3 +66,12 @@ TEST_CASE("l'assistant repris en route retrouve ses choix (P3.3)", "[wizard]") {
   CHECK(wizard.audio_language == "fra");
   CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == UpdateMode::Never);
 }
+
+TEST_CASE("Lecteur par défaut : pas demandé quand l'écran Intégration est passé (A25-04)", "[wizard]") {
+  Wizard wizard = begin_wizard({.engine_choice = true}, 0);
+  CHECK_FALSE(make_default_requested(wizard));
+  wizard.make_default = true;
+  CHECK(make_default_requested(wizard));
+  wizard.skipped.push_back(WizardStep::Updates);
+  CHECK_FALSE(make_default_requested(wizard));
+}
