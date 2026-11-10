@@ -1,12 +1,18 @@
 // Lanceur de processus, avec l'exécutable d'aide (helper.cpp) comme enfant.
 #include "prepare/process.h"
 
+#include <array>
 #include <chrono>
 #include <csignal>
 #include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifdef __linux__
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -170,6 +176,64 @@ TEST_CASE("run_process : l'annulation tue aussi les petits-enfants", "[prepare][
     if (running) std::this_thread::sleep_for(20ms);
   }
   CHECK_FALSE(running);
+}
+
+// Un lecteur lancé sans 0, 1 ni 2 (service, lanceur qui les ferme) : le tube de sortie tomberait sur 1, et
+// l'enfant perdrait sa sortie.
+TEST_CASE("run_process : la sortie arrive même quand le lecteur n'a ni stdin, ni stdout, ni stderr",
+          "[prepare][process]") {
+  const pid_t player = ::fork();
+  REQUIRE(player >= 0);
+  if (player == 0) {
+    ::close(STDIN_FILENO);
+    ::close(STDOUT_FILENO);
+    ::close(STDERR_FILENO);
+    bool seen = false;
+    const auto exit = run_process({.program = "/bin/sh", .args = {"-c", "echo vu"}, .timeout = 10s},
+                                  [&](std::string_view line) { seen = seen || line == "vu"; }, {});
+    ::_exit(exit && exit->code == 0 && seen ? 0 : 1);
+  }
+  int status = 0;
+  REQUIRE(::waitpid(player, &status, 0) == player);
+  CHECK(WIFEXITED(status));
+  CHECK(WEXITSTATUS(status) == 0);
+}
+
+// A05-01 : un lecteur tué (plantage, kill -9) ne laisse pas trtexec tourner seul.
+TEST_CASE("run_process : l'enfant meurt avec le lecteur", "[prepare][process]") {
+  std::array<int, 2> report{};
+  REQUIRE(::pipe(report.data()) == 0);
+  const pid_t player = ::fork();
+  REQUIRE(player >= 0);
+  if (player == 0) {  // le « lecteur » : lance l'enfant, dit son pid, et attend
+    ::close(report[0]);
+    (void)run_process({.program = "/bin/sh", .args = {"-c", "echo $$; exec sleep 30"}, .timeout = 30s},
+                      [&](std::string_view line) {
+                        const std::string text = std::string(line) + "\n";
+                        (void)!::write(report[1], text.data(), text.size());
+                      },
+                      {});
+    ::_exit(0);
+  }
+  ::close(report[1]);
+  std::string child;
+  char c = 0;
+  while (::read(report[0], &c, 1) == 1 && c != '\n') child += c;
+  ::close(report[0]);
+  REQUIRE_FALSE(child.empty());
+  ::kill(player, SIGKILL);
+  int status = 0;
+  ::waitpid(player, &status, 0);
+  const auto proc = std::filesystem::path("/proc") / child / "stat";
+  bool running = true;
+  for (int i = 0; i < 100 && running; ++i) {
+    const std::string stat = test::read_file(proc);
+    const auto state = stat.find(") ");
+    running = !stat.empty() && state != std::string::npos && stat[state + 2] != 'Z';
+    if (running) std::this_thread::sleep_for(20ms);
+  }
+  CHECK_FALSE(running);
+  if (running) ::kill(std::stoi(child), SIGKILL);
 }
 #endif
 

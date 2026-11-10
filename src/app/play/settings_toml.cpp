@@ -507,6 +507,11 @@ std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view tom
                               parsed.error().description()));
   }
   toml::table root = std::move(parsed).table();
+  return read_settings_lenient(root, dropped);
+}
+
+std::expected<PlaySettings, Refusal> read_settings_lenient(toml::table& root,
+                                                           std::vector<std::string>* dropped) {
   // Une valeur fautive est écartée seule (le défaut la remplace) : le reste du fichier reste en vigueur.
   constexpr int kMaxDropped = 64;
   for (int attempt = 0; attempt <= kMaxDropped; ++attempt) {
@@ -607,23 +612,37 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
     toml::parse_result fresh = toml::parse(text);
     if (old && fresh) {
       toml::table merged = fresh.table();
+      // Le fichier lu comme au chargement : une valeur qu'il ne connaît pas (version plus récente) est
+      // écartée, sans faire échouer la base de keep_unknown_keys (A36-01).
+      toml::table pruned = old.table();
+      const auto on_disk = read_settings_lenient(pruned, nullptr);
+      toml::parse_result disk = on_disk ? toml::parse(format_settings(*on_disk)) : toml::parse_result{};
       // Réécrit entre-temps par un autre lancement (P2.14) : ses clés restent, seules les nôtres changent.
-      const auto before = remembered(path);
-      if (const auto on_disk = parse_settings_lenient(existing.str(), nullptr); before && on_disk) {
-        if (toml::parse_result disk = toml::parse(format_settings(*on_disk)); disk) {
-          merged = std::move(disk).table();
-          apply_own_changes(merged, *before, fresh.table());
-        }
+      if (const auto before = remembered(path); before && disk) {
+        merged = disk.table();
+        apply_own_changes(merged, *before, fresh.table());
       }
-      keep_unknown_keys(merged, old.table(), settings_from_table);
+      if (on_disk) {
+        keep_unknown_keys(merged, pruned, settings_from_table);
+        // La valeur écartée revient telle quelle tant que ce processus ne l'a pas changée (A22-06).
+        if (disk) keep_rejected_values(merged, old.table(), pruned, disk.table());
+      }
+      // Jamais abaissée : la version récente, relancée, sait qu'un lecteur plus ancien est passé (A36-01).
+      if (const auto version = old.table()["version"].value<std::int64_t>();
+          version && *version > kSettingsVersion)
+        merged.insert_or_assign("version", *version);
       std::ostringstream out;
       out << "# Réglages de « ajp play », écrits par le menu des paramètres.\n" << merged << '\n';
       text = out.str();
     }
   }
+  auto written = core::write_text_atomically(path, text);
+  // La base de la fusion suivante ne change qu'une fois l'écriture faite : refusée, la suivante reporte
+  // encore ce changement (A22-02).
+  if (!written) return written;
   if (toml::parse_result ours = toml::parse(format_settings(settings)); ours)
     remember(path, std::move(ours).table());
-  return core::write_text_atomically(path, text);
+  return written;
 }
 
 }  // namespace ajp::app::play

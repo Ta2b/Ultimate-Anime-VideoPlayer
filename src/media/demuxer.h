@@ -33,6 +33,9 @@ struct ReadFault {
   std::uint64_t after_packets = 0;
   int count = 0;
   int error = 0;
+  // Vrai : l'erreur est posée dans l'AVIOContext et la lecture rend AVERROR_EOF, comme le fait
+  // un démultiplexeur MP4 après une erreur d'E/S (A14-01).
+  bool sticky_eof = false;
 };
 
 class Demuxer {

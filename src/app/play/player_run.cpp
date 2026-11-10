@@ -92,6 +92,17 @@ constexpr std::int64_t kHdrPollUs = 2'000'000;
 constexpr std::int64_t kResizeWindowUs = 60'000'000;
 constexpr std::size_t kResizesRefused = 4;
 
+// Les réglages d'une réouverture demandée, écrits une fois la chaîne rouverte (Player::unsaved), sans les
+// raccourcis de séance (A08-04).
+void save_reopened(Player& p) {
+  if (!p.unsaved) return;
+  const PlaySettings kept = with_kept_choices(p.kept, *p.unsaved);
+  if (auto saved = save_settings(p.settings_path, settings_to_save(kept, p.from_file, p.started, p.options));
+      !saved)
+    log_channel("app")->warn("{}", saved.error().detail);
+  p.unsaved.reset();
+}
+
 // Pourquoi le mode Rapide (core/free_grid.h) ne peut pas tourner : il lui faut un moteur qui calcule à un
 // instant libre et la fréquence de l'écran (ou un VRR armé). Vide : il le peut ; sinon l'Auto Stable le
 // remplace.
@@ -313,6 +324,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .running = settings,
               .opened = c.opened,
               .auto_peak = auto_peak,
+              .kept = p.kept,
               .file = p.options.file,
               .display = p.display,
               .header_text =
@@ -338,13 +350,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;  // vidée à chaque tour en s'appliquant (la 0.10.0 la rejouait sans fin)
   session.begin(host_now_us());
-  if (p.unsaved) {
-    if (auto saved =
-            save_settings(p.settings_path, settings_to_save(*p.unsaved, p.from_file, p.started, p.options));
-        !saved)
-      log->warn("{}", saved.error().detail);
-    p.unsaved.reset();
-  }
+  save_reopened(p);
   if (p.resumed) {
     p.ui.controls().notify(
         i18n::ui_tr_format("Resumed at {}", format_clock(start_us, session.view().duration_us)),
@@ -743,6 +749,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     .next_start_us = chain.next_start_us,
                     .next_paused = chain.next_paused};
     reopen->settings.volume = p.ui.controls().volume();
+    p.kept = chain.kept;  // la chaîne rouverte garde les raccourcis de séance (A08-04)
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
@@ -750,6 +757,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // backend (et ses imports du ring) avant l'écran qui possède le ring.
   session.end();
   out.flush();
+  chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
   if (c.backend)
     keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2

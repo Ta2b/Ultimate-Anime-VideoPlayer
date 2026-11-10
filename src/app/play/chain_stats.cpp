@@ -225,6 +225,14 @@ void ChainStats::start_sampler() {
   });
 }
 
+void ChainStats::stop() {
+  std::call_once(sampler_started_, [] {});  // un appel de l'OSD après stop() ne relance pas le fil
+  if (sampler_.joinable()) {
+    sampler_.request_stop();
+    sampler_.join();
+  }
+}
+
 std::optional<std::string> ChainStats::memory() {
   start_sampler();
   const std::scoped_lock lock(sampled_mutex_);

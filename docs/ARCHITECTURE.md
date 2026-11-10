@@ -115,6 +115,14 @@ profils 1 et 3) : un repli avant la première image rouvre le décodeur en logic
 sur tous ses threads et rejoue les paquets déjà envoyés, et le backend envoie ces
 images par un tampon épinglé sur une file de transfert (`host_upload.h`).
 
+### Départ de la lecture (`app/play/session.cpp`)
+
+Au démarrage et après chaque seek, la session choisit la première image de l'époque puis la rend ; l'horloge
+(`Stages::play`) ne part de son pts qu'une fois ce rendu fait (`Session::shown_at`). Le premier rendu compile
+les shaders de libplacebo et du pilote : plus d'une seconde sous lavapipe sans cache, pendant laquelle une horloge
+déjà partie aurait fait sauter autant d'images. `--seconds=S` compte depuis ce même instant, et quitte : c'est
+un arrêt demandé, l'épisode suivant du dossier ne s'enchaîne pas (A13-14).
+
 ### Appareil de rendu (`core/gpu_device.h`)
 
 `app` crée l'appareil de rendu (la swapchain est celle de libplacebo, `placebo_open.cpp`) et le décrit par

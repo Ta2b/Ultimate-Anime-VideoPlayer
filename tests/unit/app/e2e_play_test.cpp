@@ -174,6 +174,8 @@ TEST_CASE("Bout en bout : une source 853×480 se lit", "[.e2e][app]") {
   INFO(run.output);
   CHECK(run.code == 0);
   CHECK(read_stats(stats).fresh >= 3);
+  // --seconds quitte : les autres clips du dossier ne s'enchaînent pas (ils récrivaient stats.tsv).
+  CHECK(run.output.find("épisode suivant") == std::string::npos);
 }
 
 // Une touche, une action (0.10.0 : la file des actions n'était plus vidée, chaque tour de boucle rejouait la
@@ -247,6 +249,7 @@ TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sa
       3;
   CHECK(picture.rgb[center + 1] > picture.rgb[center] + 20);      // vert au-dessus du rouge
   CHECK(picture.rgb[center + 1] > picture.rgb[center + 2] + 20);  // et du bleu
+  CHECK(output.find("épisode suivant") == std::string::npos);     // --seconds quitte, sans enchaîner
   const Presented presented = read_stats(stats);
   // 50 images en 2 s. Sur le runner de la CI, lavapipe met environ 40 ms par image et en saute une partie
   // (25 neuves, 11 sautées le 07/11/2026) : la cadence n'est pas jugée ici, seulement que la lecture avance
