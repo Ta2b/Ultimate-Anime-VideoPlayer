@@ -239,11 +239,32 @@ class Session {
     shown_once_ = true;
     shown_at_us_ = at_us;
     if (!start_pts_) return;
-    if (!paused_) stages_.play(epoch_, *start_pts_);
+    if (!paused_) send_play(epoch_, *start_pts_);
     if (!playing_since_us_) playing_since_us_ = at_us;
     start_pts_.reset();
   }
   void watch_clock(const ClockSnapshot& now, std::int64_t host_now);
+  // Play et Pause à l'horloge ; refusés (boîte audio pleine), redits par retry_clock à chaque tour (A13-06).
+  void send_play(std::uint32_t epoch, std::int64_t media_us);
+  void send_pause();
+  void retry_clock();
+  struct ClockRetry {
+    bool play = false;
+    std::uint32_t epoch = 0;
+    std::int64_t media_us = 0;
+  };
+  std::optional<ClockRetry> clock_retry_;
+  // Le dernier pas vers l'avant : l'image d'où il partait et sa cible (A13-05).
+  struct StepMark {
+    std::int64_t from_pts_us = 0;
+    std::int64_t target_us = 0;
+  };
+  std::optional<StepMark> last_step_;
+  bool stepped_in_queue_ = false;  // P3.42 : un pas pris dans la file, l'audio resté à la pause (A13-07)
+  // Seek refusé par la source sans position retrouvée : l'instant où il est rejoué, et le délai suivant
+  // (A13-08).
+  std::optional<std::int64_t> seek_lost_at_us_;
+  std::int64_t seek_lost_wait_us_ = 2'000'000;
 
   SessionConfig config_;
   Stages& stages_;
