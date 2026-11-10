@@ -531,7 +531,8 @@ TEST_CASE("SourceThread : l'audio d'après un seek est rogné là où la lecture
   auto audio =
       PacketQueue::create({.max_duration_us = kMaxQueueDurationUs, .max_bytes = kMaxQueueBytes}, [] {});
   REQUIRE(audio.has_value());
-  Running source(seek_clip(), 4, 0, {{.track = 1, .sink = audio->get()}});
+  constexpr std::int64_t kSinkCapacity = 4;
+  Running source(seek_clip(), kSinkCapacity, 0, {{.track = 1, .sink = audio->get()}});
   const auto trims_of = [&](std::uint32_t epoch) {
     std::vector<std::optional<std::int64_t>> trims;
     while (auto packet = (*audio)->try_pop())
@@ -551,7 +552,10 @@ TEST_CASE("SourceThread : l'audio d'après un seek est rogné là où la lecture
   REQUIRE(source.inbox.try_push(Flush{.epoch = 2}));
   REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 3'600'000'000, .exact = true}}));
   const DecodedFrame back = source.pop_epoch(2);
-  CHECK(back.pts_us <= shown + 2 * kFrameUs);
+  // La dernière image tenue est la dernière décodée, pas celle que le test a retirée : la source a pu remplir
+  // le puits (4 places) et décoder une image de plus, en attente d'une place.
+  CHECK(back.pts_us >= shown);
+  CHECK(back.pts_us <= shown + (kSinkCapacity + 1) * kFrameUs);
   const auto recovered = trims_of(2);
   REQUIRE_FALSE(recovered.empty());
   for (const auto& trim : recovered) {
