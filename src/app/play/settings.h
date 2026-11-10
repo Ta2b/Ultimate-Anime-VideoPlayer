@@ -183,9 +183,10 @@ struct PlaySettings {
   Downscale downscale = Downscale::Hermite;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
-  // Mode auto : le multiplicateur ×k (entier, jusqu'à rife_factor) suit ce que le GPU tient
-  // (core/auto_rate.h) ; en direct. Par défaut (v0.6) : l'interpolation est en Auto, pour tous les profils et
-  // après le benchmark ; un multiplicateur choisi à la main (liste du menu) la coupe.
+  // Mode auto : le multiplicateur ×k suit ce que le GPU tient (core/auto_rate.h) ; en direct. En Stable,
+  // jusqu'à rife_factor ; en Rapide (auto_free, le défaut), rife_factor ne plafonne rien : le facteur suit
+  // la cadence de l'écran (top_factor, chain_shape.cpp) et seul auto_cap le borne (A22-10). L'Auto est le
+  // défaut ; un multiplicateur choisi à la main (liste du menu) le coupe.
   bool rife_auto = true;
   // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
   int auto_cap = 0;
@@ -308,9 +309,9 @@ inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
 inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
-// Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66) : un pic réglable fait
-// toujours une sortie HDR.
 inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
+// Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66 ; tenu par un static_assert de
+// host_facts.cpp) : un pic réglable fait toujours une sortie HDR.
 inline constexpr core::Range<int> kTrueHdrPeak{350, 2000};  // ou 0 : automatique
 inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits

@@ -73,6 +73,13 @@ Extrait de référence choisi par Tatoub : Re:Zero saison 4 épisode 18, 16:00 �
 fenêtre 1280x720 (2560x1440 pixels), verrou GPU, bureau chargé (~40 % de GPU hors lecture). Les
 mesures prises avec RTX HDR ne se publient pas (licence de NVIDIA) : elles restent sur le PC.
 
+> **Temps historiques** (A32-09) : chaque chiffre vient d'une chaîne d'octobre 2026 qui n'existe plus (RIFE
+> 4.26 entier, grade fusionné, warp d'avant l'ADR 0002, anneau d'avant l'ADR 0008). Ils ne s'additionnent
+> pas entre eux et ne disent pas le budget de la chaîne actuelle, qui n'a pas encore de tableau mesuré d'un
+> seul tenant (RIFE 4.22 lite, le moteur de l'Auto calibré, n'a aucun temps publié à 720p). Ce tableau se
+> refait sur la RTX 4070 Ti avec `ajp play --stats` sur le binaire `linux-release` (voir
+> `docs/audits/A-CONFIRMER.md`).
+
 GPU par appel (médiane) : RIFE 4.26 à 720p 7,6 ms ; SPAN 720p → 1440p 4,1 ms ; SPAN 1080p → 2160p
 11,5 ms ; warp et mélange 0,06 ms ; ingestion + Area 0,40 ms ;
 grade HDR 0,44 ms par image présentée en 2560x1440 ; attente hôte des mesures de paire 0,5 ms.

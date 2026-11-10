@@ -1,4 +1,4 @@
-// File SDL3 : un SDL_AudioStream lié au périphérique de sortie par défaut.
+// File SDL3 : un SDL_AudioStream lié au périphérique de sortie choisi (celui du système par défaut).
 //
 // La position jouée se mesure sans course : SDL appelle on_device_request
 // verrou du flux tenu, juste avant de tirer des trames, et pushed_ ne change

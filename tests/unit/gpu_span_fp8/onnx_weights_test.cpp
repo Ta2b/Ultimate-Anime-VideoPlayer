@@ -159,6 +159,12 @@ TEST_CASE("un graphe dont le dégroupage ou le DepthToSpace diffèrent est refus
   CHECK(absent.error().detail.find("/block_5/act1_1/Relu_output_0") != std::string::npos);
 }
 
+TEST_CASE("un SPAN à un seul bloc est refusé à la lecture, comme par les noyaux (A02-10)",
+          "[span_fp8][onnx]") {
+  CHECK_FALSE(package_from_onnx(synthetic_model(kChannels, 1)));
+  CHECK(package_from_onnx(synthetic_model(kChannels, 2)));
+}
+
 TEST_CASE("un SPAN b5f48 se range en 64 canaux remplis de zéros (3.2b)", "[span_fp8][onnx]") {
   Model model = synthetic_model(48, 5);
   // conv_cat : chaque colonne porte son numéro, pour suivre où elle est rangée.

@@ -1,5 +1,5 @@
-// AudioPlayer sur un périphérique simulé, audio maître (VRR) : file, époques,
-// seek, réglages et horloge publiée. L'écran maître est dans sync_test.cpp.
+// AudioPlayer sur un périphérique simulé, audio maître (le cas courant) : file, époques,
+// seek, réglages et horloge publiée. L'hôte maître (calage) est dans sync_test.cpp.
 #include "audio/player.h"
 
 #include <cmath>

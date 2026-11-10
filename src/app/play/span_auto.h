@@ -1,10 +1,10 @@
 // La préparation automatique du mode Performance de SPAN (FP8, noyaux CUTLASS ; span_derive.h). Le cran
 // « Performance » de la précision de SPAN se choisit comme les autres : au premier démarrage avec ce cran
 // (ou dès qu'on le choisit), le lecteur fabrique lui-même le paquet « .span8 » adapté à la vidéo (une minute
-// environ), pendant que la lecture reste en FP16 ; à la fin, la chaîne se rouvre et l'utilise. Si c'est
-// impossible, une phrase dit pourquoi et ce qu'il faut faire.
+// environ), pendant que la lecture reste en FP16 ; à la fin, la lecture continue sans coupure et le paquet
+// sert dès la vidéo suivante (P3.24). Si c'est impossible, une phrase dit pourquoi et ce qu'il faut faire.
 //
-// Ici : la logique (quand démarrer, que dire, quand rouvrir) et la tâche partagée entre la boucle du lecteur
+// Ici : la logique (quand démarrer, que dire) et la tâche partagée entre la boucle du lecteur
 // et le panneau des réglages (qui la montre et sait la refaire). Rien ne dépend du panneau ouvert.
 #pragma once
 

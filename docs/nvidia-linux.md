@@ -49,7 +49,7 @@ changer `AJP_CUDA_ARCHITECTURES` (`89-real` pour la 4070 Ti).
 | Famille | Voie | État |
 |---|---|---|
 | RTX 40 (Ada, sm 8.9) | FP8 CUTLASS | codé, à mesurer sur la 4070 Ti |
-| RTX 50 (Blackwell, sm 12.0) | FP8 CUTLASS, mêmes noyaux compilés pour 120 | codé, jamais lancé : vérifications de `span-fp8-cutlass.md` |
+| RTX 50 (Blackwell, sm 12.0) | FP8 CUTLASS, mêmes noyaux compilés pour 120 | refusé par `supported_device` tant qu'il n'a pas tourné sur une RTX 50 (A37-01) : vérifications de `span-fp8-cutlass.md` |
 | RTX 30 (Ampere, sm 8.6) | INT8 TensorRT déjà branché ; INT8 CUTLASS (10.5) seulement s'il ne tient pas ≤ 0,75 × FP16 | à mesurer (10.1) |
 | RTX 20 (Turing, sm 7.5) | INT8 TensorRT ; noyaux Turing (10.6) seulement s'il ne tient pas ≤ 0,80 × FP16 | à mesurer (10.1) |
 
