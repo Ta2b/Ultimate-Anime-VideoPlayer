@@ -22,6 +22,8 @@ inline constexpr int kDistilDrbaHalfAlign = 128;
 struct DrbaModel {
   std::filesystem::path path;
   int align = 64;  // multiple des plans remplis : 128 pour le flot à l'échelle 0,5
+  // Le graphe préféré manquait : c'est l'autre (A09-21). À dire au journal, le repli joue dans les deux sens.
+  bool fallback = false;
 };
 
 // Le graphe du premier de ces dossiers qui l'a : celui du flot à l'échelle 0,5 d'abord si prefer_half,
