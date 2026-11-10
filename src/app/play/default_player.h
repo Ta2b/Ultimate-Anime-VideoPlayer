@@ -79,9 +79,12 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place);
 // sinon ouvre la page du système qui le fait (Windows) ou dit comment faire (macOS).
 std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place);
 
-// La sortie de « xdg-mime query default video/x-matroska » désigne-t-elle ce lecteur ?
+// La sortie de « xdg-mime query default <type> » désigne-t-elle ce lecteur ?
 bool default_handler_is_ajp(std::string_view query_output);
-// Ce lecteur est-il déjà celui des vidéos ? Linux : xdg-mime ; ailleurs on ne sait pas (faux).
+// Windows : le ProgId de UserChoice (FileExts\.mkv\UserChoice) désigne AJP (A19-05).
+bool user_choice_is_ajp(std::string_view prog_id);
+// Ce lecteur est-il déjà celui des vidéos, pour MKV et MP4 ? Linux : xdg-mime ; Windows : UserChoice ;
+// macOS : on ne sait pas (faux).
 bool is_default_player(const PlayerPlace& place);
 
 // Windows : ajp.exe n'a pas de console à lui (sous-système fenêtré) ; lancé d'un terminal, il écrit dans la

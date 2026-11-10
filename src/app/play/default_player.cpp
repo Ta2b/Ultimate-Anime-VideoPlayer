@@ -15,6 +15,7 @@
 
 #include "app/play/i18n.h"
 #include "core/file_sync.h"
+#include "core/utf8_path.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
@@ -374,24 +375,57 @@ bool default_handler_is_ajp(std::string_view query_output) {
 }
 
 namespace {
+
+// Les deux conteneurs que l'on ouvre le plus : AJP est le lecteur par défaut s'il l'est pour les deux. La
+// seconde question ne part que si la première dit oui (A19-05).
+#if defined(_WIN32)
+constexpr std::array<std::string_view, 2> kAskedExtensions{".mkv", ".mp4"};
+
+// Le choix de l'utilisateur, que Windows garde sous FileExts\<extension>\UserChoice (ProgId).
+std::string user_choice(std::string_view extension) {
+  const std::wstring key = wide(std::format(
+      "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\{}\\UserChoice", extension));
+  std::array<wchar_t, 256> data{};
+  DWORD size = static_cast<DWORD>(data.size() * sizeof(wchar_t));
+  if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), L"ProgId", RRF_RT_REG_SZ, nullptr, data.data(), &size) !=
+      ERROR_SUCCESS)
+    return {};
+  return core::to_utf8(std::filesystem::path(std::wstring(data.data())));
+}
+#elif !defined(__APPLE__)
+constexpr std::array<std::string_view, 2> kAskedMimes{"video/x-matroska", "video/mp4"};
+
+bool xdg_default_is_ajp(const char* tool, std::string_view mime) {
+  const prepare::ProcessSpec spec{
+      .program = tool, .args = {"query", "default", std::string(mime)}, .timeout = std::chrono::seconds(10)};
+  std::string out;
+  auto run = prepare::run_process(spec, [&](std::string_view line) { out = line; }, std::stop_token());
+  return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && default_handler_is_ajp(out);
+}
+#endif
+
 bool query_default_player() {
-#if defined(_WIN32) || defined(__APPLE__)
-  return false;  // Windows ne le dit qu'au registre de l'utilisateur (UserChoice) : la case suffit
+#if defined(_WIN32)
+  return std::ranges::all_of(kAskedExtensions, [](std::string_view extension) {
+    return user_choice_is_ajp(user_choice(extension));
+  });
+#elif defined(__APPLE__)
+  return false;  // le Finder ne le dit pas sans LaunchServices : la case suffit
 #else
   for (const char* tool : {"/usr/bin/xdg-mime", "/usr/local/bin/xdg-mime", "/bin/xdg-mime"}) {
     std::error_code error;
     if (!std::filesystem::exists(tool, error)) continue;
-    const prepare::ProcessSpec spec{.program = tool,
-                                    .args = {"query", "default", "video/x-matroska"},
-                                    .timeout = std::chrono::seconds(10)};
-    std::string out;
-    auto run = prepare::run_process(spec, [&](std::string_view line) { out = line; }, std::stop_token());
-    return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && default_handler_is_ajp(out);
+    return std::ranges::all_of(kAskedMimes,
+                               [tool](std::string_view mime) { return xdg_default_is_ajp(tool, mime); });
   }
   return false;
 #endif
 }
 }  // namespace
+
+bool user_choice_is_ajp(std::string_view prog_id) {
+  return prog_id == kProgId;
+}
 
 bool is_default_player(const PlayerPlace& place) {
   static_cast<void>(place);
