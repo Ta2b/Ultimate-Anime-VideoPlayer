@@ -258,8 +258,8 @@ Le fil C01 a corrigé ces défauts sans la machine ; la manipulation de la table
 ### C01, suite : corrigé dans le code, la mesure décide de la fusion
 
 Ces correctifs sont testés dans le cloud (Linux, et la CI Windows et macOS pour ce qui s'y compile). La
-dernière colonne dit ce qu'il faut voir sur la machine pour garder la correction ; si la mesure échoue, le
-commit se retire seul.
+dernière colonne dit ce qu'il faut voir sur la machine pour garder la correction ; chaque correctif est un
+commit à part, qu'on retire seul si la mesure échoue.
 
 | ID | Correction | La mesure qui décide |
 |---|---|---|
