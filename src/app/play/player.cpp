@@ -144,6 +144,29 @@ EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& path
   return catalog;
 }
 
+// A25-01 : l'assistant relancé en lecture a écrit play.toml (langues, mises à jour, chaîne calibrée). La
+// vidéo se rouvre comme un fichier qu'on ouvre, au même endroit : réglages relus, préréglage rejoué, et
+// l'ancienne chaîne en mémoire ne réécrit plus ses choix (Reopen::settings_written).
+void follow_wizard(const EngineChange& request, Reopen& reopen, const std::filesystem::path& file) {
+  const auto* open = std::get_if<OpenEngineScreen>(&request);
+  if (open == nullptr || !open->wizard) return;
+  reopen.next_file = file;
+  reopen.next_start_us = reopen.position_us;
+  reopen.next_paused = reopen.paused;
+  reopen.settings_written = true;
+}
+
+// Avant une autre vidéo : la chaîne en cours dans play.toml, sans les raccourcis de séance (A08-04).
+void save_before_next(const Player& player, const Reopen& reopen, const PlaySettings& settings,
+                      const PlayOptions& file_options) {
+  if (reopen.settings_written) return;
+  const PlaySettings kept = with_kept_choices(player.kept, settings);
+  if (auto written = save_settings(player.settings_path,
+                                   settings_to_save(kept, player.from_file, player.started, file_options));
+      !written)
+    log_channel("app")->warn("{}", written.error().detail);
+}
+
 // La machine à laquelle une calibration se compare (A25-02, A07-05). Le moteur qui jouera SPAN et RIFE : la
 // bibliothèque déjà ouverte si le choix n'a pas bougé depuis (opened_for), sinon le préféré s'il est
 // installé.
@@ -231,8 +254,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         log->warn("mise à jour : {}", started.error().detail);
     }
   }
-  // Les raccourcis du clavier de user.toml ([keys]) ; les profils qu'il gardait avant ne sont plus lus.
-  load_user_keys(paths::user_keys(settings_path.parent_path()));
+  load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] seul
   const std::string title = given ? std::format("ajp — {}", core::to_utf8(options.file.filename())) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
@@ -256,6 +278,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   if (!screen) return std::unexpected(std::move(screen.error()));
   auto ui = PlayerUi::create((*screen)->window(), given ? core::to_utf8(options.file.filename()) : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
+  note_ignored_keys((*ui)->controls());
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
   class Release {
    public:
@@ -568,6 +591,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           player.quit = true;
           break;
         }
+        follow_wizard(*request, **outcome, file);  // A25-01 : réglages de l'assistant relus
       }
       if (const std::optional<ExportJob>& job = (*outcome)->export_job) {
         const ExportOutcome exported = run_export(player, *job);
@@ -593,10 +617,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       start_paused = (*outcome)->paused;
       player.details = settings.stats.all;
       if ((*outcome)->next_file) {
-        if (auto written = save_settings(
-                settings_path, settings_to_save(settings, player.from_file, player.started, file_options));
-            !written)
-          log->warn("{}", written.error().detail);
+        save_before_next(player, **outcome, settings, file_options);
         player.unsaved.reset();
         next_file = (*outcome)->next_file;
         forced_start = (*outcome)->next_start_us;

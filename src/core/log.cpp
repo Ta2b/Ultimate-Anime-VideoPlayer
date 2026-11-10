@@ -1,5 +1,6 @@
 #include "core/log.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -7,6 +8,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <spdlog/async.h>
 #include <spdlog/sinks/dist_sink.h>
@@ -61,7 +63,7 @@ void new_generation() {
   ++cache.generation;
 }
 
-std::shared_ptr<spdlog::logger> make_channel(std::string_view module) {
+std::shared_ptr<spdlog::logger> make_channel(std::string_view module, const spdlog::logger* source) {
   {
     ModuleHub& routed = module_hub();
     const std::scoped_lock lock(routed.mutex);
@@ -74,6 +76,9 @@ std::shared_ptr<spdlog::logger> make_channel(std::string_view module) {
   // Les puits du journal par défaut ne changent jamais en place (install_log_sinks remplace le
   // journal, ou le contenu de son répartiteur sous son verrou) et son niveau est atomique : le
   // copier pendant qu'un autre thread s'en sert est sûr.
+  // Après close_log, plus de journal par défaut : un canal sans puits, qui ne dit rien et ne
+  // plante pas (un thread détaché qui journalise après la fermeture, A18-01).
+  if (source == nullptr) return std::make_shared<spdlog::logger>(std::string(module));
   return spdlog::default_logger()->clone(std::string(module));
 }
 
@@ -87,7 +92,7 @@ std::shared_ptr<spdlog::logger> log_channel(std::string_view module) {
   if (found != cache.channels.end() && found->second.generation == cache.generation &&
       found->second.source == source.get())
     return found->second.logger;
-  std::shared_ptr<spdlog::logger> channel = make_channel(module);
+  std::shared_ptr<spdlog::logger> channel = make_channel(module, source.get());
   cache.channels.insert_or_assign(
       std::string(module),
       ChannelCache::Entry{.logger = channel, .generation = cache.generation, .source = source.get()});
@@ -109,7 +114,8 @@ void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level
       routed = std::make_shared<spdlog::logger>(current->name(), hub);
     }
     routed->set_level(level);
-    routed->flush_on(current->flush_level());
+    // Une erreur part tout de suite dans le fichier : un arrêt brutal juste après ne la perd pas.
+    routed->flush_on(std::min(current->flush_level(), spdlog::level::err));
     spdlog::set_default_logger(std::move(routed));
   } else {
     current->set_level(level);
@@ -161,7 +167,28 @@ int run_logged(const std::function<int()>& body) {
 }
 
 void close_log() {
+  // spdlog::shutdown ne vide aucun puits : le fichier reste tenu par les canaux du cache, son tampon
+  // ne part qu'à un exit() normal, jamais avant abort() ni execv() (A18-01). Les puits sont retenus,
+  // la file asynchrone vidée par shutdown (le pool écrit tout avant de s'arrêter), puis eux.
+  std::vector<spdlog::sink_ptr> sinks;
+  if (const std::shared_ptr<spdlog::logger> current = spdlog::default_logger()) sinks = current->sinks();
+  {
+    ModuleHub& routed = module_hub();
+    const std::scoped_lock lock(routed.mutex);
+    if (routed.hub != nullptr) sinks.push_back(routed.hub);
+  }
   spdlog::shutdown();
+  for (const spdlog::sink_ptr& sink : sinks) {
+    try {
+      sink->flush();
+    } catch (...) {  // NOLINT(bugprone-empty-catch) : un puits qui ne se vide pas n'arrête pas la fermeture
+    }
+  }
+  // Les canaux gardés lâchent les puits ; les suivants sont sans puits (make_channel).
+  ChannelCache& cache = channel_cache();
+  const std::scoped_lock lock(cache.mutex);
+  cache.channels.clear();
+  ++cache.generation;
 }
 
 void install_terminate_flush() {

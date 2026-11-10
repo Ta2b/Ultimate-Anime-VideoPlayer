@@ -64,6 +64,17 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
 
 // Ordre de déclaration = ordre inverse de destruction : les moteurs partent avant leur backend.
 struct ChainEngines {
+  ChainEngines() = default;
+  ChainEngines(ChainEngines&&) noexcept = default;
+  ChainEngines& operator=(ChainEngines&&) noexcept = default;
+  ChainEngines(const ChainEngines&) = delete;
+  ChainEngines& operator=(const ChainEngines&) = delete;
+  // Le travail encore enfilé (une dernière passe du thread gpu arrêté) finit avant que les moteurs, leurs
+  // graphes et leurs poids partent, sur tous les chemins : lecture, export, sortie anticipée (A30-01).
+  ~ChainEngines() {
+    if (backend) backend->drain();
+  }
+
   BackendLibrary::Instance backend;
   std::string backend_name;           // « tensorrt », « vulkan »
   std::optional<ModelChoice> model;   // SPAN ; rien : sans agrandissement

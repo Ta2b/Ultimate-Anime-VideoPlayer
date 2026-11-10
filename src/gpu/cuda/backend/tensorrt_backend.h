@@ -66,6 +66,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<Fence, Refusal> signal() override;
   std::expected<void, Refusal> wait(const Fence& fence) override;
   void use_lane(Lane lane) override;  // tensorrt_lanes.cpp
+  void drain() override;              // tensorrt_lanes.cpp
   // Dérivation du paquet « .span8 » (tensorrt_span_derive.cpp).
   std::expected<SpanFp8Derivation, Refusal> derive_span_fp8(const SpanFp8Request& request,
                                                             Progress& progress) override;

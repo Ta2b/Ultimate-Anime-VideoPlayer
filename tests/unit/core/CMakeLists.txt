@@ -7,3 +7,9 @@ ajp_add_unit_tests(core
 
 # Le répartiteur d'un backend (install_module_log_sinks) vaut pour tout son binaire : à part.
 ajp_add_unit_tests(core_log SOURCES log_module_test.cpp)
+
+# close_log ferme spdlog pour tout le binaire : à part (le module reste core_log).
+add_executable(ajp_core_log_close_tests log_close_test.cpp)
+target_link_libraries(ajp_core_log_close_tests PRIVATE ajp::core_log Catch2::Catch2WithMain)
+ajp_set_warnings(ajp_core_log_close_tests)
+catch_discover_tests(ajp_core_log_close_tests TEST_PREFIX "core_log_close: " DISCOVERY_MODE PRE_TEST)

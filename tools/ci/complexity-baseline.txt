@@ -96,7 +96,6 @@ src/prepare/onnx_scan.cpp	ajp::prepare::child_kind	28	32
 src/prepare/onnx_split.cpp	ajp::prepare::extract_subgraph	46	116
 src/prepare/onnx_split.cpp	ajp::prepare::read_onnx_graph	36	62
 src/prepare/onnx_split.cpp	ajp::prepare::read_tensor	38	76
-src/prepare/process_posix.cpp	ajp::prepare::run_process	27	65
 src/prepare/process_win.cpp	ajp::prepare::run_process	31	109
 src/prepare/receipt.cpp	ajp::prepare::check	30	29
 src/prepare/rife_split.cpp	ajp::prepare::analyze_rife	93	147

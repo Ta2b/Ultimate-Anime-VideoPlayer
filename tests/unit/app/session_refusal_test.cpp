@@ -61,5 +61,26 @@ TEST_CASE("Un changement de taille de la source arrête la session et demande la
   CHECK_FALSE(rig.session.failure().has_value());  // une réouverture, pas un échec
 }
 
+// A13-02 : la source abandonne la lecture (NAS débranché) par un refus recoverable, puis rend la fin
+// du flux. Ce n'est pas la fin de la vidéo : un échec, qui n'enchaîne pas l'épisode suivant.
+TEST_CASE("Une fin de flux après abandon de lecture est un échec, pas une fin d'épisode", "[app][session]") {
+  Rig rig;
+  Refusal lost{RefusalCode::DecodeFailed, "lecture d'un paquet, après 6 essais"};
+  lost.recoverable = true;
+  rig.session.handle(StageRefusal{.stage = "source", .refusal = lost});
+  CHECK_FALSE(rig.session.failure().has_value());  // les images déjà décodées passent encore
+  rig.session.handle(StreamEnded{.epoch = rig.session.epoch()});
+  REQUIRE(rig.session.failure().has_value());
+  CHECK(rig.session.failure()->code == RefusalCode::DecodeFailed);
+  CHECK(rig.session.failure()->detail == "source : lecture d'un paquet, après 6 essais");
+}
+
+TEST_CASE("Une vraie fin de flux reste une fin d'épisode", "[app][session]") {
+  Rig rig;
+  rig.session.handle(StageRefusal{.stage = "audio", .refusal = {RefusalCode::AudioDecodeFailed, "paquet"}});
+  rig.session.handle(StreamEnded{.epoch = rig.session.epoch()});
+  CHECK_FALSE(rig.session.failure().has_value());
+}
+
 }  // namespace
 }  // namespace ajp::app::play

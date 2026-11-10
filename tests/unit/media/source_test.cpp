@@ -413,6 +413,30 @@ TEST_CASE("SourceThread : une erreur de lecture qui dure finit le flux propremen
   CHECK(failures.front().recoverable);
 }
 
+// A14-01 : un démultiplexeur MP4 rend AVERROR_EOF après une erreur d'E/S, l'erreur restant dans
+// l'AVIOContext. Ce n'est pas une fin : nouveaux essais, puis un refus qui se dit.
+TEST_CASE("SourceThread : une fin de fichier sur erreur d'E/S collée est retentée", "[media][source]") {
+  Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
+                 ReadFault{.after_packets = 60, .count = 3, .error = AVERROR(EIO), .sticky_eof = true});
+  const std::vector<std::int64_t> pts = play_count(source, 100);
+  CHECK(source.listener.wait_end(0));
+  REQUIRE(pts.size() == 100);
+  CHECK(pts.back() == 99 * kFrameUs);
+  CHECK(source.listener.failure_count() == 0);
+}
+
+TEST_CASE("SourceThread : une fin de fichier sur erreur d'E/S qui dure se dit", "[media][source]") {
+  Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
+                 ReadFault{.after_packets = 60, .count = 1000, .error = AVERROR(EIO), .sticky_eof = true});
+  const std::vector<std::int64_t> pts = play_to_end(source);
+  CHECK(source.listener.wait_end(0));
+  CHECK(pts.size() < 100);
+  const auto failures = source.listener.failures();
+  REQUIRE(failures.size() == 1);
+  CHECK(failures.front().code == RefusalCode::DecodeFailed);
+  CHECK(failures.front().recoverable);
+}
+
 TEST_CASE("SourceThread : après une fin sur erreur, un seek relit le fichier", "[media][source]") {
   Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
                  ReadFault{.after_packets = 60, .count = 70, .error = AVERROR_INVALIDDATA});

@@ -32,6 +32,43 @@ Pour en rebrancher un : l'historique git garde `src/gpu/migraphx`, `src/gpu/open
 
 DirectML n'a jamais eu de backend.
 
+## Vulkan : la précision des noyaux
+
+Le moteur Vulkan range ses tenseurs en float16. Chaque couche a plusieurs noyaux candidats, que l'autotuner
+mesure à la première construction (`src/gpu/vulkan/backend/net_autotune.cpp`). Certains font aussi leurs
+**sommes** en float16 (`direct_f16p`, `winograd_f16p`, `coopmat_acc16`) : plus rapides sur certaines cartes,
+moins justes. Trois règles tiennent la qualité (C05, A45-01, A45-02) :
+
+- à moins de 5 % de temps d'écart, les sommes en float gagnent (`kPrecisionTie`) ;
+- un choix à précision réduite ne se reprend jamais sans mesure, ni d'une table pré-réglée ni d'un autre
+  pilote. La table `NvidiaAda`, relevée avant la règle des 5 % et qui donnait 28 couches sur 29 en sommes
+  float16, est retirée ; `tools/vk/presets_from_cache.py` refuse déjà les relevés d'avant `c7` ;
+- la porte de bout en bout (`net_gate.h`) rejoue le réseau choisi contre son jumeau calculé tout en float, sur
+  un dessin (aplats sombres, traits fins ; deux images décalées et leur grille pour un réseau d'interpolation).
+  Les choix passent s'ils perdent au plus 3 dB sous les noyaux de référence (`kGateLossDb`). Sinon les sommes
+  repassent en float, puis tout le réseau reprend les noyaux de référence. Le journal donne les deux PSNR.
+
+Avant, la porte comparait à un autre réseau en float16, sur du bruit, à 1 % d'écart quadratique (2 % en
+précision réduite, soit 39 dB). Sur du bruit un réseau d'interpolation diverge : RIFE 4.25 entier y montrait
+49 % d'écart pour des sommes float16 qui ne lui coûtent que 0,15 dB sur un dessin. La porte refusait donc ce
+qui était juste, sans mesurer ce qui se voit : l'écart au calcul exact sur une image.
+
+Mesure (`ajp_vk_backend_tests "[.sommes]"`, lavapipe, PSNR contre le calcul en float, dessin de la porte) :
+
+| réseau | noyaux de référence | `direct_f16p` | `winograd_f16p` |
+|---|---|---|---|
+| SPAN b5f48, 640 × 360 | 81,6 dB | 74,3 dB (−7,3) | 71,0 dB (−10,6) |
+| RIFE 4.25, 640 × 384 | 77,9 dB | 77,8 dB (−0,15) | 77,2 dB (−0,75) |
+| RIFE 4.22 lite, 640 × 384 | 77,7 dB | 76,6 dB (−1,1) | 71,4 dB (−6,3) |
+
+Sur une vraie image (plan de `calibration.mkv`, sorties comparées à ONNX Runtime en FP32) : SPAN 75,2 dB aux
+noyaux de référence et 70,3 dB en sommes float16 (−4,8 dB, pire écart 1,0/255 contre 0,4/255) ; RIFE 4.25
+72,6 et 72,5 dB. Le moteur Vulkan en float rend ONNX Runtime FP32 à 107 dB (RIFE) et 133 dB (SPAN) : le jumeau
+est une vraie référence. SPAN repasse donc en sommes float quand tout son réseau était en float16 ; RIFE garde
+ses choix. `coopmat_acc16` ne se mesure que sur une carte à Tensor Cores (`docs/audits/A-CONFIRMER.md`).
+
+Quand le jumeau en float ne peut pas être joué (mémoire), la porte d'avant juge et le journal le dit.
+
 ## TensorRT : comment le module arrive
 
 - Chaque release a un paquet TensorRT pour Linux et pour Windows (décision de Tatoub) : `release.yml` échoue sur une

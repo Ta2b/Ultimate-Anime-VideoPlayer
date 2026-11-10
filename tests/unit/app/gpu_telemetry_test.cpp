@@ -95,6 +95,19 @@ TEST_CASE("Ligne de l'OSD avec la mémoire vidéo", "[app][telemetry]") {
   CHECK(telemetry_line(s) == "GPU 2900 / 2900 MHz · 0 °C · 50 % · VRAM 7,2 / 16,0 Go");
 }
 
+TEST_CASE("Ligne de l'OSD en anglais : unité, point décimal et chaleur traduits (A11-10, A11-14)",
+          "[app][telemetry]") {
+  const GpuSample s{.sm_mhz = 2900,
+                    .sm_max_mhz = 2900,
+                    .gpu_percent = 50,
+                    .vram_used_mib = 7373,
+                    .vram_total_mib = 16384,
+                    .throttle = 0x20};  // ralentissement thermique logiciel
+  CHECK(telemetry_line(s) == "GPU 2900 / 2900 MHz · 0 °C · 50 % · VRAM 7.2 / 16.0 GB · heat");
+  ajp::app::play::FrenchUi french;
+  CHECK(telemetry_line(s) == "GPU 2900 / 2900 MHz · 0 °C · 50 % · VRAM 7,2 / 16,0 Go · chaleur");
+}
+
 }  // namespace ajp::app::play
 
 TEST_CASE("Énergie : millijoules par image neuve, compteur absent ou qui recule ignoré", "[app][telemetry]") {
