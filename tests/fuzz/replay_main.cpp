@@ -46,6 +46,7 @@ constexpr std::array kTargets{
     Named{"options", &ajp::fuzz::options},
     Named{"engine_index", &ajp::fuzz::engine_index},
     Named{"update_state", &ajp::fuzz::update_state},
+    Named{"prepare_onnx", &ajp::fuzz::prepare_onnx},
 };
 
 using Bytes = std::vector<std::uint8_t>;

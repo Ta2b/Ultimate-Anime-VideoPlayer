@@ -15,14 +15,14 @@ option(AJP_FUZZ_LIBFUZZER "Cibles libFuzzer en plus du rejeu (Clang : -fsanitize
 
 set(ajp_fuzz_targets settings play_settings edid build_log resume osd_script)
 # Les lecteurs de fichiers et de flux (P1.29) : une source pour toutes, fuzz_parsers.cpp.
-set(ajp_fuzz_parser_targets onnx srt cube inflate manifest options engine_index update_state)
+set(ajp_fuzz_parser_targets onnx srt cube inflate manifest options engine_index update_state prepare_onnx)
 set(ajp_fuzz_sources)
 foreach(name IN LISTS ajp_fuzz_targets)
   list(APPEND ajp_fuzz_sources fuzz_${name}.cpp)
 endforeach()
 
 add_executable(ajp_fuzz_replay replay_main.cpp ${ajp_fuzz_sources} fuzz_parsers.cpp)
-target_link_libraries(ajp_fuzz_replay PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::render ajp::subs)
+target_link_libraries(ajp_fuzz_replay PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::prepare ajp::render ajp::subs)
 ajp_set_warnings(ajp_fuzz_replay)
 # La reprise écrit et relit un fichier par entrée : moins de mutations, pour quelques secondes.
 set(ajp_fuzz_mutations_resume 300)
@@ -39,7 +39,7 @@ if(AJP_FUZZ_LIBFUZZER)
     else()
       add_executable(ajp_fuzz_${name} libfuzzer_entry.cpp fuzz_${name}.cpp)
     endif()
-    target_link_libraries(ajp_fuzz_${name} PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::render ajp::subs)
+    target_link_libraries(ajp_fuzz_${name} PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::prepare ajp::render ajp::subs)
     target_compile_definitions(ajp_fuzz_${name} PRIVATE AJP_FUZZ_TARGET=${name})
     target_compile_options(ajp_fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
     target_link_options(ajp_fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined)
