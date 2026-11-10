@@ -1,5 +1,6 @@
 #include "gpu/cuda/backend/span_fp8_engine.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstring>
@@ -8,6 +9,7 @@
 #include <system_error>
 #include <vector>
 
+#include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/span_fp8/package.h"
 
@@ -54,11 +56,13 @@ std::expected<void, Refusal> smoke_test(SpanFp8Net& net, int height, int width) 
   if (cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess) return failed(e, "exécution");
   // La dernière ligne de la sortie : 0xFFFF (NaN) tant que rien n'y a écrit, des demi-flottants finis
   // ensuite.
-  constexpr std::size_t kProbe = 4096;
-  std::vector<std::uint16_t> probe(kProbe);
-  if (cudaError_t e =
-          cudaMemcpy(probe.data(), static_cast<const std::uint8_t*>(scratch.output) + out_bytes - kProbe * 2,
-                     kProbe * 2, cudaMemcpyDeviceToHost);
+  // Bornée à la moitié de la sortie : une petite image (moins de 342 pixels) en a moins de 8 192 octets
+  // (A02-04).
+  const std::size_t probe_count = std::min<std::size_t>(4096, out_bytes / 4);
+  std::vector<std::uint16_t> probe(probe_count);
+  if (cudaError_t e = cudaMemcpy(
+          probe.data(), static_cast<const std::uint8_t*>(scratch.output) + out_bytes - probe_count * 2,
+          probe_count * 2, cudaMemcpyDeviceToHost);
       e != cudaSuccess)
     return failed(e, "cudaMemcpy");
   for (const std::uint16_t bits : probe)
@@ -69,37 +73,19 @@ std::expected<void, Refusal> smoke_test(SpanFp8Net& net, int height, int width) 
 
 }  // namespace
 
-// Les pointeurs du paquet, pour create().
-SpanFp8Weights span_fp8_view(const span_fp8::Package& package) {
-  const auto view = [](const span_fp8::Conv& conv) {
-    return SpanFp8ConvView{.weights = conv.weights.data(), .bias = conv.bias.data()};
-  };
-  SpanFp8Weights weights;
-  weights.blocks = static_cast<int>(package.blocks.size());
-  weights.scales = package.scales.data();
-  weights.first = view(package.first);
-  for (std::size_t b = 0; b < package.blocks.size(); ++b) {
-    for (std::size_t i = 0; i < 3; ++i) weights.conv[b][i] = view(package.blocks[b].conv[i]);
-    weights.attention[b] = view(package.blocks[b].attention);
-  }
-  weights.concat = view(package.concat);
-  weights.pixel = view(package.pixel);
-  weights.acc16 = package.acc16;
-  return weights;
-}
-
 std::expected<std::vector<std::byte>, Refusal> read_span_fp8_package(const std::filesystem::path& path) {
   std::error_code error;
   const std::uintmax_t size =
       std::filesystem::is_regular_file(path, error) ? std::filesystem::file_size(path, error) : 0;
   if (error || size == 0 || size > span_fp8::kMaxPackageBytes)
-    return refuse(RefusalCode::FileUnreadable, std::format("paquet SPAN FP8 {} illisible", path.string()));
+    return refuse(RefusalCode::FileUnreadable,
+                  std::format("paquet SPAN FP8 {} illisible", core::to_utf8(path)));
   std::vector<std::byte> bytes(static_cast<std::size_t>(size));
   std::ifstream file(path, std::ios::binary);
   file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size));
   if (!file || file.gcount() != static_cast<std::streamsize>(size))
     return refuse(RefusalCode::FileUnreadable,
-                  std::format("paquet SPAN FP8 {} tronqué pendant sa lecture", path.string()));
+                  std::format("paquet SPAN FP8 {} tronqué pendant sa lecture", core::to_utf8(path)));
   return bytes;
 }
 
@@ -161,6 +147,17 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   engine->output_ = Shape{.dims = {1, 3, 2 * std::int64_t{height}, 2 * std::int64_t{width}}};
   if (!shared) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : zone d'activation absente");
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
+  // L'essai tourne dans la zone d'activation partagée de la voie, sur un flux à lui : le travail encore
+  // en vol sur les voies finit avant, et la zone est marquée à ce moteur, pour que DistilDRBA fusionné
+  // (qui y garde ses tampons d'une image à l'autre) les refasse au lieu de lire ceux que l'essai a
+  // écrasés (A02-03).
+  if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    return refuse(
+        RefusalCode::VendorCallFailed,
+        std::format("SPAN FP8 : essai au chargement (cudaDeviceSynchronize) : {}", cudaGetErrorString(e)));
+  }
+  shared->set_last_user(engine.get());
   if (auto ok = smoke_test(*engine->net_, height, width); !ok) return std::unexpected(std::move(ok.error()));
   return engine;
 }
@@ -230,6 +227,11 @@ std::expected<void, Refusal> SpanFp8Engine::body(cudaStream_t stream, const void
   if (execs_.size() <= pick.index) execs_.resize(pick.index + 1, nullptr);
   cudaGraphExec_t& exec = execs_[pick.index];
   if (pick.step == GraphStep::Capture) {
+    // Un emplacement repris par un autre jeu d'adresses (registre plein, GraphBook) garde l'ancien graphe.
+    if (exec != nullptr) {
+      cudaGraphExecDestroy(exec);
+      exec = nullptr;
+    }
     cudaGraph_t captured = nullptr;
     std::string why;
     bool queued = false;

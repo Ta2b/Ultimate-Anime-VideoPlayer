@@ -167,6 +167,10 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
     return failed(e, "cudaMemset");
   if (cudaError_t e = cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking); e != cudaSuccess)
     return failed(e, "cudaStreamCreate");
+  // L'essai écrit dans la zone d'activation partagée de la voie, sur un flux à lui : le travail encore
+  // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue nomme ce moteur
+  // dernier utilisateur de la zone : celui qui y gardait ses tampons les refait.
+  if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
   const Tensor inputs[]{
       tensor_of(reinterpret_cast<std::uintptr_t>(scratch.input01), 0, kernels::kDrbaFusedInputPlanes, h, w),
       tensor_of(reinterpret_cast<std::uintptr_t>(scratch.input12), 0, kernels::kDrbaFusedInputPlanes, h, w)};

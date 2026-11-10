@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "core/types.h"
+#include "gpu/span_fp8/e4m3.h"
 
 namespace ajp::gpu::span_fp8 {
 

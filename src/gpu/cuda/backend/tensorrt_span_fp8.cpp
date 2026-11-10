@@ -67,7 +67,7 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
                                                                std::span<const Tensor> inputs,
                                                                std::span<Tensor> outputs,
                                                                const RingTarget* ring) {
-  if (auto ok = bind(); !ok) return ok;
+  if (auto ok = bind_joined(ring); !ok) return ok;
   // Les noyaux lisent l'entrée, écrivent la sortie et leur zone d'activation.
   const std::shared_ptr<SharedActivations>& zone = arena();
   std::vector<std::uintptr_t> reads;

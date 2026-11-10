@@ -248,7 +248,7 @@ void TensorRtBackend::unmap_fences(std::span<std::byte> block) {
   if (bind()) {
     // Les écritures de signaux encore en vol visent ce bloc : attendues sur chaque voie.
     for (cudaStream_t stream : streams_) {
-      if (stream != nullptr) cudaStreamSynchronize(stream);
+      if (stream != nullptr) cuda_warn(cudaStreamSynchronize(stream), "cudaStreamSynchronize (signaux)");
     }
   }
   cuda_warn(cudaHostUnregister(it->host), "cudaHostUnregister");

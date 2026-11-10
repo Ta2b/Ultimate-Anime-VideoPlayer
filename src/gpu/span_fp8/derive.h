@@ -14,8 +14,6 @@
 
 namespace ajp::gpu::span_fp8 {
 
-inline constexpr float kE4m3Max = 448.0F;  // le plus grand E4M3 fini
-
 // Format du reçu et seuils : ceux de l'INT8 (app/play/span_int8.cpp), pas ceux, lâches, du FP8 par Q/DQ.
 inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7b
 // La version de la porte (judge_hardened) : un refus d'une porte plus ancienne se refait. 2 : les cas durs
