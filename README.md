@@ -36,7 +36,7 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
   seuls les éclats (ciels, lumières, effets) montent. Sur un écran SDR, le même grade s'applique en SDR : les
   surfaces gardent leur niveau jusqu'à 90 % du blanc, le blanc sort à 95 % et les éclats prennent les derniers
   5 %.
-- **Netteté** réglable après l'agrandissement, sans halo.
+- **Netteté** réglable après l'agrandissement, à halo limité.
 - **Export** : l'agrandissement et l'interpolation rejoués image par image vers un fichier MKV, MP4 ou MOV
   (sans le grade HDR, l'export reste en SDR).
 - Sous-titres (libass), choix des pistes par langue préférée, épisode suivant automatique, passage du générique.

@@ -20,8 +20,9 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rife_triplets import frames, session  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "qualite"))
+from modeles import session  # noqa: E402
+from sources import bicubic2, frames  # noqa: E402
 
 
 def held_pairs(images, count, level=0.7 / 255.0):
@@ -32,28 +33,6 @@ def held_pairs(images, count, level=0.7 / 255.0):
             cand.append(k)
     step = max(1, len(cand) // count) if cand else 1
     return cand[::step][:count]
-
-
-def cubic_weights(x, a=-0.5):
-    x = np.abs(x)
-    return np.where(x <= 1, (a + 2) * x**3 - (a + 3) * x**2 + 1,
-                    np.where(x < 2, a * x**3 - 5 * a * x**2 + 8 * a * x - 4 * a, 0.0))
-
-
-def bicubic2(img):
-    """×2 bicubique séparable, centres demi-pixel, bords répétés."""
-    def axis(n):
-        out_pos = (np.arange(2 * n) + 0.5) / 2 - 0.5
-        base = np.floor(out_pos).astype(int)
-        frac = out_pos - base
-        idx = [np.clip(base + o, 0, n - 1) for o in (-1, 0, 1, 2)]
-        w = [cubic_weights(frac - o) for o in (-1, 0, 1, 2)]
-        return idx, w
-
-    _, h, wd = img.shape
-    (iy, wy), (ix, wx) = axis(h), axis(wd)
-    rows = sum(img[:, i, :] * w[None, :, None] for i, w in zip(iy, wy))
-    return sum(rows[:, :, i] * w[None, None, :] for i, w in zip(ix, wx))
 
 
 def upscale(sess, img):

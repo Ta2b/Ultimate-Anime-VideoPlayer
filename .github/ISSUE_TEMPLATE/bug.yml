@@ -1,5 +1,6 @@
 # Les champs que demande P1.33. Le journal vient du bouton « Report a problem » du menu (Général),
-# qui le copie nettoyé : dossier personnel remplacé par ~, noms de fichiers seuls.
+# qui le copie nettoyé : version, système, carte, pilote et préréglage en tête, chemins réduits au nom du fichier.
+# Après un plantage, le rapport joint aussi la séance d'avant.
 name: Bug report / Problème
 description: Something does not work as expected. / Quelque chose ne marche pas comme prévu.
 labels: [bug]
@@ -55,7 +56,16 @@ body:
     id: level
     attributes:
       label: Quality level / Niveau
-      options: [Auto, Fast / Rapide, Normal, Quality / Qualité, Ultra, "Don't know / Je ne sais pas"]
+      options: [Auto, Economy / Économe, Fast / Rapide, Normal, Quality / Qualité, Ultra, Custom / Personnalisé, "Don't know / Je ne sais pas"]
+  - type: input
+    id: crash
+    attributes:
+      label: Crash? / Plantage ?
+      description: >-
+        If the player crashed, the report holds the previous session. Windows: keep the .dmp of the crashes folder
+        (it may hold paths), we will ask for it privately. Linux: coredumpctl info ajp. / Si le lecteur a planté, le
+        rapport contient la séance d'avant. Windows : gardez le .dmp du dossier crashes (il peut contenir des
+        chemins), nous le demanderons en privé. Linux : coredumpctl info ajp.
   - type: textarea
     id: log
     attributes:

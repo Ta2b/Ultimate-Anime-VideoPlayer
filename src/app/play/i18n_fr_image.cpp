@@ -29,9 +29,10 @@ constexpr std::array kImageTabs{
         "des images sont sautées."},
     Entry{
         "After SPAN upscales each source frame once, then warps it: faster. Before SPAN also cleans each "
-        "in-between frame. Auto picks After above 1080p. Reloads playback.",
+        "in-between frame. Auto picks After from ×3 or above 1080p. Reloads playback.",
         "Après SPAN agrandit chaque image source une fois, puis la déforme : plus rapide. Avant SPAN nettoie "
-        "aussi chaque image intermédiaire. Auto choisit Après au-dessus de 1080p. Recharge la lecture."},
+        "aussi chaque image intermédiaire. Auto choisit Après dès ×3 ou au-dessus de 1080p. Recharge la "
+        "lecture."},
     Entry{"Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.",
           "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4+), sans modèle à télécharger. Moteur "
@@ -111,9 +112,9 @@ constexpr std::array kImageTabs{
           "Coupe RIFE en petits moteurs TensorRT : environ trois fois plus rapide. TensorRT seulement. "
           "Recharge la lecture ; construit à la première utilisation pour cette taille."},
     Entry{"Stable", "Stable"},
-    Entry{"Stable follows what the GPU can hold in steps (×1 to ×6). Fast has no steps and falls back to "
+    Entry{"Stable follows what the GPU can hold in steps (×1 to ×8). Fast has no steps and falls back to "
           "Stable if too many frames are lost. Playback only.",
-          "Stable suit ce que le GPU tient par paliers (×1 à ×6). Rapide n'a pas de palier et repasse sur "
+          "Stable suit ce que le GPU tient par paliers (×1 à ×8). Rapide n'a pas de palier et repasse sur "
           "Stable si trop d'images sont perdues. Lecture seulement."},
     Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch.",
           "Le pilote NVIDIA (RTX 40 et 50) ajoute une image entre deux images affichées. Vaut au prochain "

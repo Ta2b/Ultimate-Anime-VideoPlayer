@@ -2,16 +2,30 @@
 
 #include <algorithm>
 #include <iterator>
+#include <string>
 #include <system_error>
 #include <vector>
+
+#include "core/utf8_path.h"
 
 #ifdef _WIN32
 #include <windows.h>
 // dbghelp.h après windows.h, qui le précède forcément.
 #include <array>
 #include <csignal>
+#include <cstdio>
 #include <cwchar>
 #include <dbghelp.h>
+#else
+#include <array>
+#include <cstring>
+#include <fcntl.h>
+#include <signal.h>
+#include <unistd.h>
+#if __has_include(<execinfo.h>)
+#include <execinfo.h>
+#define AJP_HAS_BACKTRACE 1
+#endif
 #endif
 
 namespace ajp::app::play {
@@ -33,8 +47,24 @@ void prune(const fs::path& dir, int keep) {
     fs::remove(dumps[i].second, error);
 }
 
-// Le dossier, fixé à l'installation : le gestionnaire n'alloue rien.
+// Le dossier et le journal, fixés à l'installation : le gestionnaire n'alloue rien.
 std::array<wchar_t, 1024> g_dir{};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::array<wchar_t, 1100> g_log{};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+// Une ligne ajoutée à ajp.log : la séance s'arrête, le journal doit le dire (A39-04). Le fichier est ouvert
+// ici, sans attendre la file du journal, qui ne vide plus.
+void note_crash(unsigned long code, const char* dump_name) {
+  if (g_log[0] == L'\0') return;
+  const HANDLE out = CreateFileW(g_log.data(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (out == INVALID_HANDLE_VALUE) return;
+  std::array<char, 200> line{};
+  const int length = std::snprintf(line.data(), line.size(),
+                                   "[critical] plantage : code 0x%08lX, minidump %s\n", code, dump_name);
+  DWORD written = 0;
+  if (length > 0) WriteFile(out, line.data(), static_cast<DWORD>(length), &written, nullptr);
+  CloseHandle(out);
+}
 
 bool dump(const wchar_t* file, EXCEPTION_POINTERS* info) {
   const HANDLE out =
@@ -44,8 +74,11 @@ bool dump(const wchar_t* file, EXCEPTION_POINTERS* info) {
   exception.ThreadId = GetCurrentThreadId();
   exception.ExceptionPointers = info;
   exception.ClientPointers = FALSE;
-  const auto type = static_cast<MINIDUMP_TYPE>(MiniDumpWithIndirectlyReferencedMemory |
-                                               MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
+  // Sans MiniDumpWithIndirectlyReferencedMemory : cette option emporte la mémoire pointée par les piles
+  // (chemins complets, texte des sous-titres, nom d'utilisateur), et le vidage se joint à une issue publique
+  // (A39-04).
+  const auto type =
+      static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
   const BOOL written = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), out, type,
                                          info != nullptr ? &exception : nullptr, nullptr, nullptr);
   CloseHandle(out);
@@ -54,6 +87,7 @@ bool dump(const wchar_t* file, EXCEPTION_POINTERS* info) {
 
 void dump_to_dir(EXCEPTION_POINTERS* info) {
   if (g_dir[0] == L'\0') return;
+  const unsigned long code = info != nullptr ? info->ExceptionRecord->ExceptionCode : 0;
   SYSTEMTIME now{};
   GetLocalTime(&now);
   std::array<wchar_t, 1100> file{};
@@ -62,7 +96,14 @@ void dump_to_dir(EXCEPTION_POINTERS* info) {
       static_cast<unsigned>(now.wYear), static_cast<unsigned>(now.wMonth), static_cast<unsigned>(now.wDay),
       static_cast<unsigned>(now.wHour), static_cast<unsigned>(now.wMinute),
       static_cast<unsigned>(now.wSecond), static_cast<unsigned long>(GetCurrentProcessId()));
-  if (length > 0) dump(file.data(), info);
+  if (length <= 0 || !dump(file.data(), info)) return;
+  std::array<char, 64> name{};
+  std::snprintf(name.data(), name.size(), "ajp-%04u%02u%02u-%02u%02u%02u-%lu.dmp",
+                static_cast<unsigned>(now.wYear), static_cast<unsigned>(now.wMonth),
+                static_cast<unsigned>(now.wDay), static_cast<unsigned>(now.wHour),
+                static_cast<unsigned>(now.wMinute), static_cast<unsigned>(now.wSecond),
+                static_cast<unsigned long>(GetCurrentProcessId()));
+  note_crash(code, name.data());
 }
 
 LONG WINAPI on_unhandled(EXCEPTION_POINTERS* info) {
@@ -72,6 +113,69 @@ LONG WINAPI on_unhandled(EXCEPTION_POINTERS* info) {
 
 void on_abort(int /*signal*/) {
   dump_to_dir(nullptr);
+}
+#else
+// Un signal fatal : une ligne (et la pile, quand la libc en donne une) dans ajp.log, puis la fin normale du
+// signal, pour que le système garde son core (systemd-coredump sous CachyOS). Rien n'est alloué dans le
+// gestionnaire : le chemin, le tampon et la pile de secours sont fixés à l'installation, et write(2) est de
+// ceux qu'un gestionnaire peut appeler (A39-04).
+std::array<char, 1100> g_log_path{};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+constexpr std::array<int, 5> kFatalSignals{SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
+
+void put(int fd, const char* text) {
+  const ssize_t ignored = write(fd, text, std::strlen(text));
+  static_cast<void>(ignored);
+}
+
+void put_number(int fd, long value) {
+  std::array<char, 24> digits{};
+  std::size_t at = digits.size();
+  const bool negative = value < 0;
+  unsigned long magnitude =
+      negative ? 0UL - static_cast<unsigned long>(value) : static_cast<unsigned long>(value);
+  do {
+    digits[--at] = static_cast<char>('0' + magnitude % 10);
+    magnitude /= 10;
+  } while (magnitude != 0 && at > 1);
+  if (negative) digits[--at] = '-';
+  const ssize_t ignored = write(fd, digits.data() + at, digits.size() - at);
+  static_cast<void>(ignored);
+}
+
+const char* signal_name(int signo) {
+  switch (signo) {
+    case SIGSEGV:
+      return "SIGSEGV";
+    case SIGBUS:
+      return "SIGBUS";
+    case SIGFPE:
+      return "SIGFPE";
+    case SIGILL:
+      return "SIGILL";
+    case SIGABRT:
+      return "SIGABRT";
+    default:
+      return "?";
+  }
+}
+
+void on_fatal_signal(int signo) {
+  const int fd = open(g_log_path.data(), O_WRONLY | O_APPEND | O_CLOEXEC);
+  if (fd >= 0) {
+    put(fd, "[critical] plantage : signal ");
+    put_number(fd, signo);
+    put(fd, " (");
+    put(fd, signal_name(signo));
+    put(fd, ")\n");
+#ifdef AJP_HAS_BACKTRACE
+    std::array<void*, 48> frames{};
+    const int count = backtrace(frames.data(), static_cast<int>(frames.size()));
+    backtrace_symbols_fd(frames.data(), count, fd);
+#endif
+    close(fd);
+  }
+  // SA_RESETHAND a remis l'action par défaut : le même signal, et le système fait son travail.
+  raise(signo);
 }
 #endif
 
@@ -86,8 +190,35 @@ void install_crash_dumps([[maybe_unused]] const fs::path& dir) {
   prune(dir, kKeptCrashDumps);
   std::ranges::copy(wide, g_dir.begin());
   g_dir[wide.size()] = L'\0';
+  const std::wstring log = (dir.parent_path() / "ajp.log").wstring();
+  if (log.size() < g_log.size()) {
+    std::ranges::copy(log, g_log.begin());
+    g_log[log.size()] = L'\0';
+  }
   SetUnhandledExceptionFilter(on_unhandled);
   std::signal(SIGABRT, on_abort);
+#else
+  const std::string log = core::to_utf8(dir.parent_path() / "ajp.log");
+  if (log.size() >= g_log_path.size()) return;
+  std::ranges::copy(log, g_log_path.begin());
+  g_log_path[log.size()] = '\0';
+  // Une pile de secours : un débordement de pile ne laisse pas de place au gestionnaire sur la sienne.
+  static std::array<char, std::size_t{64} * 1024> spare{};
+  stack_t stack{};
+  stack.ss_sp = spare.data();
+  stack.ss_size = spare.size();
+  sigaltstack(&stack, nullptr);
+#ifdef AJP_HAS_BACKTRACE
+  std::array<void*, 1> warm{};
+  backtrace(warm.data(), 1);  // le premier appel charge la libc de pile : pas dans le gestionnaire
+#endif
+  for (const int signo : kFatalSignals) {
+    struct sigaction action{};
+    action.sa_handler = on_fatal_signal;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = static_cast<int>(SA_RESETHAND | SA_ONSTACK);
+    sigaction(signo, &action, nullptr);
+  }
 #endif
 }
 

@@ -467,7 +467,7 @@ std::string play_usage(bool debug) {
   const std::string usage = std::format(
       "ajp play [file] [options]   (without a file: home screen, Open a video)\n"
       "  --model=FILE.onnx      SPAN ×2 model (default: {})\n"
-      "  --no-upscale           source picture as is\n"
+      "  --no-upscale           source picture, reduced only to the working resolution\n"
       "  --no-restore-lines     a source above the working resolution keeps its detail, no SPAN\n"
       "  --window=WxH           window size (default 1280x720)\n"
       "  --fullscreen           full screen from the start\n"
@@ -496,7 +496,8 @@ std::string play_usage(bool debug) {
       "                         export or export=FILE.mkv (or .mp4, .mov) starts exporting\n"
       "                         the current chain\n"
       "  --work-height=N        shrinks the source to N lines before SPAN (default 720; 0 never)\n"
-      "  --rife=N               ×N interpolation before SPAN (1.5, 2 to 10; default {}; 0 none)\n"
+      "  --rife=N               ×N interpolation (1.5, 2 to 10; default {}; 0 none); order: Warp and SPAN,\n"
+      "                         Auto by default\n"
       "  --rife-model=FILE      RIFE model (default: {})\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade (default: the screen's, else 1000)\n"
       "ajp --register           registers the player with the system (\"Open with\", default\n"

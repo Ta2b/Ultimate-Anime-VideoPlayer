@@ -29,6 +29,12 @@ i18n::Translated volume_text(const Controls& controls) {
   return i18n::ui_tr_format("Volume {} %", std::lround(controls.volume() * 100.0F));
 }
 
+// Un fichier dans le journal : son nom seul, le rapport public ne dit ni le dossier ni l'utilisateur
+// (A39-03).
+std::string file_for_log(const std::filesystem::path& file) {
+  return file.empty() ? std::string("l'accueil") : prepare::utf8_path(file.filename());
+}
+
 std::string label_of(const std::vector<TrackEntry>& entries, int track) {
   const auto found = std::ranges::find(entries, track, &TrackEntry::index);
   return found != entries.end() ? found->label : i18n::tr_format("track {}", track);
@@ -348,13 +354,12 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               return;
             }
             log_channel("app")->info("épisode {} : {}", step.direction > 0 ? "suivant" : "précédent",
-                                     prepare::utf8_path(*neighbour));
+                                     file_for_log(*neighbour));
             to.next_file = *neighbour;
             to.reopen = to.running;
           },
           [&](const PlayFile& play) {
-            log_channel("app")->info("lecture de {}", play.file.empty() ? std::string("l'accueil")
-                                                                        : prepare::utf8_path(play.file));
+            log_channel("app")->info("lecture de {}", file_for_log(play.file));
             to.next_file = play.file;
             to.next_start_us = play.start_us;
             to.next_paused = play.paused;

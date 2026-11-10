@@ -6,6 +6,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <format>
+#include <mutex>
 #include <utility>
 
 #include "app/play/build_progress.h"
@@ -164,12 +165,29 @@ std::int64_t ChainStats::output_period_us() const {
   return rate > 0.0 ? static_cast<std::int64_t>(std::llround(1e6 / rate)) : 0;
 }
 
+namespace {
+
+// Un avertissement de la carte (écrêtage thermique ou de puissance, horloges basses) qui change : une ligne
+// dans le journal, pas une par relevé (A39-06). Le rapport montre ainsi à quel moment la carte a bridé.
+void log_gpu_warning(const std::string& warning, const std::string& line) {
+  static std::mutex mutex;
+  static std::string last;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) : sous mutex
+  const std::scoped_lock lock(mutex);
+  if (warning == last) return;
+  last = warning;
+  if (!warning.empty()) log_channel("app")->warn("GPU : {} ({})", warning, line);
+}
+
+}  // namespace
+
 std::optional<std::string> ChainStats::read_gpu() const {
   if (telemetry_ == nullptr) return std::nullopt;
   const std::optional<GpuSample> sample = telemetry_->sample(host_now_us());
   if (!sample) return std::nullopt;
   std::string line = telemetry_line(*sample);
-  if (const std::string warning = telemetry_warning(*sample); !warning.empty()) line += " · " + warning;
+  const std::string warning = telemetry_warning(*sample);
+  log_gpu_warning(warning, line);
+  if (!warning.empty()) line += " · " + warning;
   return line;
 }
 
