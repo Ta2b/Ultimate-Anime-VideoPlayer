@@ -220,6 +220,7 @@ class UpscaleStage final : public RingStage {
     std::int64_t pts_us = 0;
   };
   std::vector<PendingStats> stats_pending_;
+  std::uint64_t stats_dropped_ = 0;  // relectures abandonnées (A42-18), journalisées une fois
   void analyze_source(const DecodedFrame& frame);
   bool looks_ahead() const { return interpolates() && !drba(); }
   // Retard mesuré des images de sortie (FrameLatency) ; 0 sans mesure.

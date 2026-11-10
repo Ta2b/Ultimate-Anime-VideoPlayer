@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
 
 namespace ajp::media {
 namespace {
@@ -46,10 +47,21 @@ void ShotTimeline::add(const Shot& found) {
     }
   }
   if (shot.end_us <= shot.start_us) return;
-  // Un plan coupé par un départ en cours de vidéo ne remplace pas un plan entier déjà trouvé ; un plan
-  // entier remplace ceux qu'il recouvre (la même zone, analysée à nouveau après un saut).
-  const bool covered = std::ranges::any_of(shots_, [&](const Shot& s) { return overlaps(s, shot); });
-  if (covered && !shot.cut_before) return;
+  // Un plan coupé par un départ en cours de vidéo ne remplace pas un plan entier déjà trouvé : il n'en garde
+  // que la part qui ne recouvre rien (A42-03 : jeté entier, il laissait pour toujours le trou d'un plan clos
+  // à la frontière d'un saut). Un plan entier remplace ceux qu'il recouvre (la même zone, analysée à
+  // nouveau après un saut).
+  if (!shot.cut_before) {
+    for (const Shot& s : shots_) {
+      if (!overlaps(s, shot)) continue;
+      if (s.start_us <= shot.start_us) {
+        shot.start_us = s.end_us;
+      } else {
+        shot.end_us = s.start_us;
+      }
+      if (shot.end_us <= shot.start_us) return;
+    }
+  }
   for (std::size_t i = shots_.size(); i-- > 0;) {
     if (overlaps(shots_.at(i), shot)) {
       shots_.erase(shots_.begin() + static_cast<std::ptrdiff_t>(i));
@@ -60,6 +72,38 @@ void ShotTimeline::add(const Shot& found) {
   const auto index = at - shots_.begin();
   shots_.insert(at, shot);
   serials_.insert(serials_.begin() + index, next_serial_++);
+  ++version_;
+}
+
+void ShotTimeline::add_flash(FlashSpan span) {
+  if (span.until_us <= span.from_us) return;
+  const std::scoped_lock lock(mutex_);
+  for (std::size_t i = flashes_.size(); i-- > 0;) {
+    const FlashSpan& known = flashes_.at(i);
+    if (known.until_us < span.from_us || span.until_us < known.from_us) continue;
+    if (known.from_us <= span.from_us && known.until_us >= span.until_us) return;  // déjà connue
+    span = {.from_us = std::min(span.from_us, known.from_us),
+            .until_us = std::max(span.until_us, known.until_us)};
+    flashes_.erase(flashes_.begin() + static_cast<std::ptrdiff_t>(i));
+  }
+  flashes_.insert(std::ranges::upper_bound(flashes_, span.from_us, {}, &FlashSpan::from_us), span);
+  ++version_;
+}
+
+bool ShotTimeline::flashing(std::int64_t pts_us) const {
+  const std::scoped_lock lock(mutex_);
+  const auto after = std::ranges::upper_bound(flashes_, pts_us, {}, &FlashSpan::from_us);
+  return after != flashes_.begin() && pts_us < std::prev(after)->until_us;
+}
+
+std::vector<FlashSpan> ShotTimeline::flashes() const {
+  const std::scoped_lock lock(mutex_);
+  return flashes_;
+}
+
+std::uint64_t ShotTimeline::version() const {
+  const std::scoped_lock lock(mutex_);
+  return version_;
 }
 
 std::optional<ShotAt> ShotTimeline::at(std::int64_t pts_us) const {
@@ -131,6 +175,8 @@ void ShotTimeline::clear() {
   const std::scoped_lock lock(mutex_);
   shots_.clear();
   serials_.clear();
+  flashes_.clear();
+  ++version_;
 }
 
 }  // namespace ajp::media
