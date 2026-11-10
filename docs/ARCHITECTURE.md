@@ -319,7 +319,7 @@ se trouvent sans `LD_LIBRARY_PATH`.
   `jthread` et initialiseurs désignés. Modules C++, `generator`, `stacktrace`,
   `flat_map`, `mdspan`, `move_only_function` interdits. `.cu` en C++20.
 - Un fichier vise moins de 500 lignes ; la CI échoue au-delà de 800.
-- Aucun `getenv` : toute option vient du profil ou de `DebugFlags`.
+- Aucun `getenv` : toute option vient de `play.toml` ou de la ligne de commande (`src/app/play/options.cpp`).
 - Erreurs : `std::expected<T, Refusal>` ; une exception ne traverse jamais un
   module ni la boucle d'un thread. Une valeur hors plage est refusée, jamais
   corrigée en silence.

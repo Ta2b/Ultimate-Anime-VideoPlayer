@@ -9,7 +9,7 @@
 
 #include "core/model_index.h"
 #include "core/toml_fields.h"
-#include "core/user_overlay.h"
+#include "core/text_file.h"
 
 namespace ajp::core {
 namespace {

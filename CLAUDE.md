@@ -57,7 +57,7 @@ Voir l'interface sans écran : `xvfb-run ajp --software-gpu --mute --no-upscale 
 
 - `clang-format-20` sur tous les `.cpp` et `.h` (`--dry-run --Werror`) ;
 - un fichier vise moins de 500 lignes, la CI échoue au-delà de 800 ;
-- aucun `getenv` : une option vient du profil, des options ou de `DebugFlags` ;
+- aucun `getenv` : une option vient de `play.toml` ou de la ligne de commande (`options.cpp`) ;
 - les `path::string()` de `src/` ne peuvent que diminuer : un chemin passe par `core::to_utf8` (`src/core/utf8_path.h`) ;
 - les shaders se compilent ; la construction est en `-Werror`.
 
