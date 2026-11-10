@@ -176,6 +176,34 @@ TEST_CASE("Message bref : visible puis effacé en fondu", "[app][controls]") {
   CHECK_FALSE(controls.toast(kS + kToastUs));
 }
 
+TEST_CASE("Avis à lire : mis à la suite, jamais remplacés par le suivant (A24-01)", "[app][controls]") {
+  Controls controls;
+  controls.warn(i18n::Translated::data("DistilDRBA unavailable: using RIFE"), kS);
+  controls.warn(i18n::Translated::data("Instant mode: too many frames lost, back to Stable"), kS + 100'000);
+  // Le premier reste lisible bien plus qu'un message bref, le second vient quand il finit.
+  REQUIRE(controls.toast(kS + kToastUs + 500'000));
+  CHECK(*controls.toast(kS + kToastUs + 500'000) == "DistilDRBA unavailable: using RIFE");
+  const std::int64_t first_ends = kS + kNoticeUs;
+  REQUIRE(controls.toast(first_ends + 1));
+  CHECK(*controls.toast(first_ends + 1) == "Instant mode: too many frames lost, back to Stable");
+  CHECK_FALSE(controls.toast(kS + 2 * kNoticeMaxUs));
+  // Le même avis redit coup sur coup ne s'empile pas.
+  Controls again;
+  again.warn(i18n::Translated::data("Same"), kS);
+  again.warn(i18n::Translated::data("Same"), kS + 1);
+  CHECK_FALSE(again.toast(kS + 2 * kNoticeUs + 1));
+}
+
+TEST_CASE("Un message bref passe devant un avis, qui reprend ensuite", "[app][controls]") {
+  Controls controls;
+  controls.warn(i18n::Translated::data("Quality lost"), kS);
+  controls.notify(i18n::Translated::data("Volume 80 %"), kS + 1'000'000);
+  CHECK(*controls.toast(kS + 1'500'000) == "Volume 80 %");
+  const std::int64_t after = kS + 1'000'000 + kToastUs;
+  REQUIRE(controls.toast(after + 1));
+  CHECK(*controls.toast(after + 1) == "Quality lost");
+}
+
 TEST_CASE("L'interface se recompose seulement quand elle change", "[app][controls]") {
   Controls controls;
   ControlsView view{.position_us = 10 * kS, .duration_us = 100 * kS};
