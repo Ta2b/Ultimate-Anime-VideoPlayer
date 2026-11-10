@@ -110,13 +110,21 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
   LoadedLooks out;
   for (std::size_t i = 0; i < render::kLookSlots; ++i) {
     if (i >= keys.size() || keys[i].key.empty()) continue;
+    // La pile répète ses fichiers (le contraste y est sept fois) : chacun n'est lu qu'une fois.
+    const std::optional<render::CubeLut>* read = nullptr;
+    for (std::size_t j = 0; j < i && read == nullptr; ++j)
+      if (keys[j].key == keys[i].key && out.luts.at(j).has_value()) read = &out.luts.at(j);
+    if (read != nullptr) {
+      out.luts.at(i) = *read;
+      continue;
+    }
     auto lut = load_look(keys[i].key, luts_dir);
     if (!lut) {
       log_channel("app")->warn("look : {}", lut.error().detail);
       out.failed.push_back(keys[i].key);
       continue;
     }
-    log_channel("app")->info("look {} : {} ({} points)", i + 1, keys[i].key, lut->size);
+    log_channel("app")->info("look : {} ({} points)", keys[i].key, lut->size);
     out.luts.at(i).emplace(std::move(*lut));
   }
   return out;

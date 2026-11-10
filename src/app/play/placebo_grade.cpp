@@ -169,12 +169,6 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
-  if (grade && grade->adopt()) {  // une pile composée en tâche de fond (P4.9)
-    ++grade_serial;
-    // A41-04 : un hook composé refusé ne laissait aucune trace, et l'image restait sans look.
-    if (const Refusal* refused = grade->look_refusal(); refused != nullptr && channel)
-      channel->warn("look : la pile composée ne se lit pas ({}), l'image passe sans look", refused->detail);
-  }
   if (grade && params) {
     if (*params != grade->params()) {
       grade->set_params(*params);
@@ -259,6 +253,23 @@ bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
 }
 
 namespace {
+// Les LUT posées sur le grade, copiées pour la rampe : une LUT vide (size 0) pour un emplacement sans LUT.
+std::vector<render::CubeLut> copy_looks(
+    const std::array<const render::CubeLut*, render::kLookSlots>& placed) {
+  std::vector<render::CubeLut> looks(render::kLookSlots);
+  for (std::size_t i = 0; i < render::kLookSlots; ++i)
+    if (placed.at(i) != nullptr) looks[i] = *placed.at(i);
+  return looks;
+}
+
+std::array<const render::CubeLut*, render::kLookSlots> look_slots_of(
+    const std::vector<render::CubeLut>& looks) {
+  std::array<const render::CubeLut*, render::kLookSlots> slots{};
+  for (std::size_t i = 0; i < slots.size() && i < looks.size(); ++i)
+    slots.at(i) = looks[i].size > 0 ? &looks[i] : nullptr;
+  return slots;
+}
+
 // Les nits d'un code SDR lu en sortie de la rampe. Sortie SDR de la méthode anime : le vrai noir travaille
 // sur l'image en PQ, que la dernière passe divise par tm_white ; un code y vaut donc code^gamma × tm_white
 // (A41-07 : le pic HDR servait d'échelle).
@@ -282,18 +293,14 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   params.black_lo = 0.0;  // le vrai noir se cale sur ce qui sort sans lui
   params.black_hi = 0.0;
   // P3.61 : la rampe passe aussi par la pile de LUT, que le vrai noir suit à l'écran ; mesurée sans elle, ses
-  // seuils écrasaient une seconde fois les huit premières marches. La pile composée, à pleine intensité.
-  const render::CubeLut* stack = s.grade->look_stack();
-  std::optional<render::CubeLut> looks = stack != nullptr ? std::optional(*stack) : std::nullopt;
-  params.look_mixes.fill(0.0);
-  params.look_mixes[0] = looks ? 1.0 : 0.0;
+  // seuils écrasaient une seconde fois les huit premières marches. Les mêmes LUT, aux mêmes intensités.
+  std::vector<render::CubeLut> looks = copy_looks(s.grade->looks());
   if (s.last_ramp && s.last_ramp->params == params && s.last_ramp->hdr == s.hdr_output &&
       std::ranges::equal(s.last_ramp->levels, levels) && s.last_ramp->looks == looks)
     return s.last_ramp->nits;
   if (s.ramp_looks != looks) {
-    std::array<const render::CubeLut*, render::kLookSlots> slots{};
-    slots[0] = looks ? &*looks : nullptr;
-    if (auto set = s.ramp_grade->set_looks(slots); !set) return std::unexpected(std::move(set.error()));
+    if (auto set = s.ramp_grade->set_looks(look_slots_of(looks)); !set)
+      return std::unexpected(std::move(set.error()));
     s.ramp_looks = looks;
   }
   s.ramp_grade->set_params(params);
