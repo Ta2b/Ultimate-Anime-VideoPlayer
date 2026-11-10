@@ -155,7 +155,9 @@ jobs:
   windows:
     name: Windows (MSVC)
     # Chaque pull request, la nuit et à la demande (P1.17) : une rupture de MSVC se voit avant la fusion.
-    if: github.event_name != 'push'
+    # Aussi chaque poussée sur main : une PR ne lit que ses propres caches et ceux de main, et c'est ainsi
+    # que le cache vcpkg d'un manifeste ou de ports changés existe pour les PR suivantes sans attendre la nuit.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     runs-on: windows-2025
     env:
       SCCACHE_GHA_ENABLED: "true"
