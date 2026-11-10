@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/messages.h"
 #include "core/types.h"
@@ -148,6 +149,7 @@ class KeyMap {
 
   friend bool operator==(const KeyMap&, const KeyMap&) = default;
   friend std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml);
+  friend struct KeysRead read_keys(std::string_view profile_toml);
 
  private:
   std::array<std::optional<Chord>, kActionCount> chords_{};
@@ -159,5 +161,21 @@ class KeyMap {
 //   pause = ""          # sans raccourci
 // Les actions profile_1 à profile_9 (les profils, retirés) sont ignorées.
 std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml);
+
+// Les touches que le lecteur garde pour lui (quitter, plein écran, son, pistes, menu, épisode, chapitre,
+// volume), lues avant [keys] quand ni Ctrl, ni Alt, ni Meta ne sont tenus : une action de [keys] posée dessus
+// ne répondrait jamais (A24-06). read_keys l'ignore et le dit.
+bool fixed_key(Key key);
+
+// La même lecture, tolérante (A24-07) : une entrée fautive (action ou touche inconnue, type, conflit) est
+// laissée de côté et nommée dans `ignored`, les autres redéfinitions tiennent. Une action dont la touche est
+// en conflit garde son raccourci par défaut s'il est libre, sinon aucun. Un fichier illisible : les
+// raccourcis par défaut, et le refus dans `ignored`.
+struct KeysRead {
+  KeyMap map;
+  // Sans langue : « zoom = Z », « pause = . (step_forward) » pour un conflit, « pause = M (fixed) ».
+  std::vector<std::string> ignored;
+};
+KeysRead read_keys(std::string_view profile_toml);
 
 }  // namespace ajp::core

@@ -80,21 +80,38 @@ bool hdr_on(std::string_view object) {
   return value != std::string_view::npos && object.substr(value).starts_with("true");
 }
 
+// « "edidIdentifier": "MSI 15066 …" » de l'objet commence par la clé de l'écran branché.
+bool same_screen(std::string_view object, std::string_view edid) {
+  if (edid.empty()) return false;
+  const std::size_t at = object.find("\"edidIdentifier\"");
+  const std::size_t colon = at == std::string_view::npos ? at : object.find(':', at);
+  const std::size_t quote = colon == std::string_view::npos ? colon : object.find('"', colon);
+  if (quote == std::string_view::npos) return false;
+  const std::string_view value = object.substr(quote + 1);
+  return value.starts_with(edid) && value.size() > edid.size() && value[edid.size()] == ' ';
+}
+
 }  // namespace
 
-std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_view connector) {
+std::string kwin_edid_key(std::string_view manufacturer, std::uint16_t product) {
+  return manufacturer.empty() ? std::string() : std::format("{} {}", manufacturer, product);
+}
+
+std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_view connector,
+                                            std::string_view edid) {
   if (connector.empty()) return std::nullopt;
-  // KWin garde une entrée par écran déjà branché : plusieurs peuvent porter le même connecteur. Celle où le
-  // HDR est actif l'emporte, sinon la première.
+  // KWin garde une entrée par écran déjà branché : plusieurs peuvent porter le même connecteur. Celle de
+  // l'écran branché l'emporte (A11-04) ; sans elle, celle où le HDR est actif, sinon la première.
   std::optional<KwinOutput> first;
+  std::optional<KwinOutput> hdr;
   for (std::size_t from = 0;;) {
     const std::size_t at = json.find("\"connectorName\"", from);
-    if (at == std::string_view::npos) return first;
+    if (at == std::string_view::npos) break;
     from = at + 1;
     const std::size_t colon = json.find(':', at);
     const std::size_t q1 = colon == std::string_view::npos ? colon : json.find('"', colon);
     const std::size_t q2 = q1 == std::string_view::npos ? q1 : json.find('"', q1 + 1);
-    if (q2 == std::string_view::npos) return first;
+    if (q2 == std::string_view::npos) break;
     if (json.substr(q1 + 1, q2 - q1 - 1) != connector) continue;
     const std::string_view object = enclosing_object(json, at);
     if (object.empty()) continue;
@@ -102,9 +119,11 @@ std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_v
     out.peak_override = number_after(object, "maxPeakBrightnessOverride");
     out.reference = number_after(object, "sdrBrightness");
     if (!out.reference) out.reference = number_after(object, "referenceLuminance");
-    if (hdr_on(object)) return out;
+    if (same_screen(object, edid)) return out;
+    if (!hdr && hdr_on(object)) hdr = out;
     if (!first) first = out;
   }
+  return hdr ? hdr : first;
 }
 
 namespace {
@@ -198,7 +217,8 @@ namespace {
 
 }  // namespace
 
-std::optional<KwinOutput> read_kwin_output(std::string_view connector) {
+std::optional<KwinOutput> read_kwin_output(std::string_view connector,
+                                           [[maybe_unused]] std::string_view edid) {
 #ifdef __linux__
   std::string_view port = connector;
   if (port.starts_with("card")) {
@@ -209,7 +229,7 @@ std::optional<KwinOutput> read_kwin_output(std::string_view connector) {
   std::ifstream in(*path, std::ios::binary);
   if (!in) return std::nullopt;
   const std::string json{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-  return parse_kwin_output(json, port);
+  return parse_kwin_output(json, port, edid);
 #else
   (void)connector;
   return std::nullopt;

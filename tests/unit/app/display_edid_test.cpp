@@ -2,13 +2,16 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <spdlog/spdlog.h>
 
 #include "app/play/display_contract.h"
+#include "app/play/system_peak.h"
 #include "french_ui.h"
 
 using namespace ajp::app::play;
@@ -165,6 +168,68 @@ TEST_CASE("Contrat d'écran : KWin, puis la marge de SDL, puis l'EDID", "[app][d
   CHECK(defaults.find("référence 203 nits (par défaut") != std::string::npos);
   CHECK(defaults.find("pic 1000 nits (par défaut") != std::string::npos);
   CHECK(describe(bare).find("nits (EDID") != std::string::npos);
+}
+
+TEST_CASE("DisplayID 2.0 : une luminance infinie ou absurde n'est pas retenue (A11-05)", "[app][display]") {
+  std::vector<std::uint8_t> edid = oled_edid();
+  edid[133 + 0x1A] = 0x00;  // pic : demi-flottant 0x7C00, l'infini
+  edid[133 + 0x1B] = 0x7C;
+  const DisplayFacts d = parse_edid(edid);
+  CHECK_FALSE(d.peak_nits.has_value());  // avant : un pic infini, et la sortie restait en SDR sous Windows
+  REQUIRE(d.min_nits);                   // le noir, plausible, reste lu
+  edid[133 + 0x1A] = 0xFF;               // 0x7BFF : 65 504 nits, au-delà du PQ
+  edid[133 + 0x1B] = 0x7B;
+  CHECK_FALSE(parse_edid(edid).peak_nits.has_value());
+  edid[133 + 0x1A] = 0xD0;  // 0x63D0 : 1 000 nits
+  edid[133 + 0x1B] = 0x63;
+  REQUIRE(parse_edid(edid).peak_nits);
+  CHECK(*parse_edid(edid).peak_nits == 1000.0);
+}
+
+TEST_CASE("KWin : l'entrée de l'écran branché passe devant celle d'un ancien écran du port (A11-04)",
+          "[app][display]") {
+  // Deux écrans ont connu DP-1 : l'ancien, HDR actif, pic réglé à 1500 ; celui qui y est branché, à 400.
+  const std::string json = R"([{"name":"outputs","data":[
+    {"connectorName":"DP-1","edidIdentifier":"SAM 29187 0 12 2022 0","highDynamicRange":true,
+     "maxPeakBrightnessOverride":1500,"sdrBrightness":250},
+    {"connectorName":"DP-1","edidIdentifier":"MSI 15066 16843009 30 2023 0","highDynamicRange":false,
+     "maxPeakBrightnessOverride":400,"sdrBrightness":180}]}])";
+  CHECK(kwin_edid_key("MSI", 0x3ADA) == "MSI 15066");
+  CHECK(kwin_edid_key("", 1).empty());
+  const auto mine = parse_kwin_output(json, "DP-1", "MSI 15066");
+  REQUIRE(mine);
+  CHECK(mine->peak_override == 400.0);
+  CHECK(mine->reference == 180.0);
+  // Sans clé, ou clé inconnue de KWin : la règle d'avant (HDR actif, sinon la première).
+  CHECK(parse_kwin_output(json, "DP-1")->peak_override == 1500.0);
+  CHECK(parse_kwin_output(json, "DP-1", "GSM 1")->peak_override == 1500.0);
+  // « MSI 1506 » n'est pas « MSI 15066 ».
+  CHECK(parse_kwin_output(json, "DP-1", "MSI 1506")->peak_override == 1500.0);
+  CHECK_FALSE(parse_kwin_output(json, "DP-2", "MSI 15066"));
+}
+
+TEST_CASE("Contrat d'écran : la fenêtre change d'écran, le contrat suit le nouvel EDID (A11-01)",
+          "[app][display]") {
+  DisplayFacts oled = parse_edid(kQdOledEdid);
+  oled.connector.clear();  // aucun connecteur : KWin n'est pas lu, le test ne dépend pas du poste
+  DisplayFacts lcd;
+  lcd.peak_nits = 600.0;
+  lcd.oled = false;
+  ContractWatch watch(nullptr, oled, spdlog::default_logger());
+  const auto first = watch.tick();
+  REQUIRE(first);
+  CHECK(first->oled);
+  CHECK(first->panel_peak_nits == oled.peak_nits.value_or(1000.0));
+  CHECK_FALSE(watch.tick());  // rien n'a changé
+  watch.set_display(lcd);
+  const auto moved = watch.tick();
+  REQUIRE(moved);  // avant : le même contrat, celui de l'écran d'ouverture
+  CHECK_FALSE(moved->oled);
+  CHECK(moved->panel_peak_nits == 600.0);
+  CHECK_FALSE(moved->primaries.has_value());
+  // A11-02 : le changement d'écran demande aussi de relire le pic du système, une fois.
+  CHECK(watch.take_peak_change());
+  CHECK_FALSE(watch.take_peak_change());
 }
 
 namespace {
