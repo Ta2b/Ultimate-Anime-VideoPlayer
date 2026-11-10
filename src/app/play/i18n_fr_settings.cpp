@@ -296,6 +296,8 @@ constexpr std::array kSettingsPages{
     Entry{"the RIFE model loads (built the first time for this size)",
           "le modèle RIFE est chargé (construit la première fois pour cette taille)"},
     Entry{"the interpolation engine changes", "le moteur d'interpolation change"},
+    Entry{"the frame ring grows for this interpolation",
+          "l'anneau d'images s'agrandit pour cette interpolation"},
     Entry{"the interpolation engine loads (built the first time for this size)",
           "le moteur d'interpolation est chargé (construit la première fois pour cette taille)"},
     Entry{"the output device changes", "l'appareil de sortie change"},

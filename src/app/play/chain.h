@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "app/play/anime_shots.h"
+#include "app/play/chain_shape.h"
 #include "app/play/display_edid.h"
 #include "app/play/input.h"
 #include "app/play/live_settings.h"
@@ -74,7 +75,9 @@ struct Chain {
   Pipeline& pipeline;
   LiveSettings& live;
   PlaySettings& running;  // réglages en cours, gardés dans play.toml
-  bool rife_loaded = false;
+  // La forme de cette ouverture et ses mesures (chain_shape.h) : un réglage qui en sort rouvre ;
+  // opened.rife_loaded : un moteur d'interpolation est chargé.
+  OpenedChain opened;
   int auto_peak = 0;   // pic automatique de l'écran, en nits
   bool dirty = false;  // play.toml à réécrire
   // Raccourcis du clavier (Ctrl+G, interpolation, tout couper) : valables pour la séance, pas écrits dans

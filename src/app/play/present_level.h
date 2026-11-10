@@ -16,8 +16,8 @@ namespace ajp::app::play {
 
 enum class PresentLevel : std::uint8_t { Open, Wayland, Wait, Timing, TimingAbsolute };
 
-// --present=… : auto choisit le meilleur niveau disponible ; un niveau nommé est pris s'il est disponible,
-// sinon le meilleur en dessous. open est la présentation d'aujourd'hui (le défaut, jusqu'aux mesures 6.11).
+// --present=… : auto choisit le meilleur niveau disponible ; un niveau nommé n'est jamais dépassé, et
+// retombe sur le meilleur en dessous. wait est le défaut (options.h) ; open est la présentation d'avant.
 enum class PresentWanted : std::uint8_t { Open, Auto, Wayland, Wait, Timing };
 
 // Ce que l'appareil (fonctionnalités activées) et la surface (capacités) offrent.
@@ -73,27 +73,39 @@ constexpr bool available(PresentLevel level, const PresentCaps& caps) {
   return false;
 }
 
-// Le niveau retenu : jamais au-dessus de ce qui est demandé ni de ce qui est offert. Open reste Open.
+// wp_presentation s'ouvre pour toute demande autre qu'open : c'est le niveau daté où retombent wait (le
+// défaut), auto et timing quand present timing manque ou ne rend rien (A10-02).
+constexpr bool wants_wayland(PresentWanted wanted) {
+  return wanted != PresentWanted::Open;
+}
+
+// Le niveau retenu : jamais au-dessus de ce qui est demandé ni de ce qui est offert. Open reste Open. Un
+// niveau qui date l'affichage passe devant celui qui ne fait que sonder : Wayland devant Wait, y compris à
+// --present=wait, où Wait ne reste que sans wp_presentation (A10-02 : sans date, pas de grille des vblanks).
 constexpr PresentLevel choose_present_level(const PresentCaps& caps, PresentWanted wanted) {
-  PresentLevel top = PresentLevel::TimingAbsolute;
-  switch (wanted) {
-    case PresentWanted::Open:
-      return PresentLevel::Open;
-    case PresentWanted::Auto:
-    case PresentWanted::Timing:
-      top = PresentLevel::TimingAbsolute;
-      break;
-    case PresentWanted::Wait:
-      top = PresentLevel::Wait;
-      break;
-    case PresentWanted::Wayland:
-      top = PresentLevel::Wayland;
-      break;
+  using enum PresentLevel;
+  if (wanted == PresentWanted::Open) return Open;
+  if (wanted == PresentWanted::Wayland) return available(Wayland, caps) ? Wayland : Open;
+  if (wanted != PresentWanted::Wait) {
+    if (available(TimingAbsolute, caps)) return TimingAbsolute;
+    if (available(Timing, caps)) return Timing;
   }
-  for (auto level = static_cast<int>(top); level > 0; --level) {
-    if (available(static_cast<PresentLevel>(level), caps)) return static_cast<PresentLevel>(level);
-  }
-  return PresentLevel::Open;
+  if (available(Wayland, caps)) return Wayland;
+  return available(Wait, caps) ? Wait : Open;
+}
+
+constexpr bool timing_level(PresentLevel level) {
+  return level == PresentLevel::Timing || level == PresentLevel::TimingAbsolute;
+}
+
+// Present timing reste muet (A10-06) : kSilentPresents présentations parties, aucune date revenue. Le niveau
+// retombe alors sur fallback_level : wp_presentation s'il est ouvert, sinon le sondage.
+inline constexpr std::uint64_t kSilentPresents = 120;
+constexpr bool feedback_silent(std::uint64_t issued, std::uint64_t returned) {
+  return returned == 0 && issued >= kSilentPresents;
+}
+constexpr PresentLevel fallback_level(bool wayland_open) {
+  return wayland_open ? PresentLevel::Wayland : PresentLevel::Wait;
 }
 
 // Swapchain hors Open : 4 images, 2 en vol (une image visée d'avance, une à l'écran) ; Open garde celle

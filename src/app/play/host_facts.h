@@ -42,14 +42,9 @@ int auto_peak_nits(std::optional<double> detected);
 inline constexpr double kMinHdrPeakNits = 350.0;
 bool system_hdr(std::optional<double> peak_nits);
 
-// Un portable débranché (SDL_GetPowerInfo) : la carte y est bridée (P3.12), et l'Auto n'y dépasse pas
-// kBatteryAutoHz (P4.1).
+// Un portable débranché (SDL_GetPowerInfo) : la carte y est bridée (P3.12), le banc le note. L'Auto n'y est
+// pas plafonné : son plafond reste le maximum de l'écran (décision 11).
 bool on_battery();
-inline constexpr int kBatteryAutoHz = 60;
-// Le plafond de l'Auto (PlaySettings::auto_cap, 0 : l'écran) borné à kBatteryAutoHz sur batterie.
-inline int power_auto_cap(int cap, bool battery) {
-  return battery ? (cap > 0 ? std::min(cap, kBatteryAutoHz) : kBatteryAutoHz) : cap;
-}
 // Ce que SDL (et, sous Windows, la configuration d'affichage) dit du HDR de l'écran de la fenêtre, pour le
 // journal : de quoi comprendre pourquoi un écran HDR est vu en SDR.
 std::string describe_hdr(SDL_Window* window);

@@ -106,7 +106,7 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     auto_on_ = on;
     auto_.set_ceiling(limits.ceiling, limits.granularity);
-    auto_.set_locked(std::move(limits.locked));
+    auto_.set_locked(std::move(limits.locked), std::move(limits.exact));
   }
   bool auto_active() const {
     const std::scoped_lock lock(mutex_);
@@ -214,7 +214,10 @@ class LiveSettings {
   // Le facteur à appliquer maintenant : le palier auto, ou le facteur réglé.
   Factor factor_now() const {
     const std::scoped_lock lock(mutex_);
-    return auto_on_ ? Factor{.num = auto_.step(), .den = auto_.granularity()} : rife_factor();
+    if (!auto_on_) return rife_factor();
+    // À fréquence fixe, la fraction exacte du palier calé (11011/3200 à 165 Hz, core::AutoLimits::exact).
+    const core::Ratio exact = auto_.factor();
+    return Factor{.num = static_cast<int>(exact.num), .den = static_cast<int>(exact.den)};
   }
 
   // mode Rapide (core/free_rate.h, core/free_grid.h) : à la place du mode auto, jamais avec lui. `min_gap_us`
@@ -236,7 +239,7 @@ class LiveSettings {
   void set_steady(bool on, const core::FreeDisplay& display, double source_fps, core::CostLine prior = {}) {
     const std::scoped_lock lock(mutex_);
     if (on && (!steady_on_ || display.vrr != steady_display_.vrr || display.hz != steady_display_.hz ||
-               source_fps != steady_fps_)) {
+               display.cap_hz != steady_display_.cap_hz || source_fps != steady_fps_)) {
       steady_.configure({}, display, source_fps);
       if (prior.a > 0.0 || prior.b > 0.0) steady_.prior(prior);
       steady_display_ = display;
@@ -297,10 +300,12 @@ class LiveSettings {
   // phase estimée des présentations.
   // `display_gpu_us` (7.3) : le temps GPU de toutes les passes de l'écran pour cette image (0 : inconnu),
   // le d du Rapide à pas constant, lissé à 0,1 (core/steady_rate.h).
-  void vsync_note(std::int64_t present_us, std::optional<core::VblankGrid> measured = std::nullopt,
+  // `vsync_us` : un vsync vu à cette présentation (ScreenTiming::vsync_us) ; 0 : aucun, la phase estimée ne
+  // bouge pas.
+  void vsync_note(std::int64_t vsync_us, std::optional<core::VblankGrid> measured = std::nullopt,
                   std::int64_t display_gpu_us = 0) {
     const std::scoped_lock lock(mutex_);
-    if (free_on_) vsync_.note(present_us);
+    if (free_on_ && vsync_us > 0) vsync_.note(vsync_us);
     measured_ = measured;
     if (steady_on_ && display_gpu_us > 0) steady_.display_cost(display_gpu_us);
   }

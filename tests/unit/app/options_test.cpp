@@ -206,6 +206,8 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
   CHECK(parse({"a.mkv", "--rife=1.25"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(factor_text({.num = 3, .den = 2}) == "×1.5");  // en anglais, la langue par défaut
   CHECK(factor_text({.num = 3, .den = 1}) == "×3");
+  CHECK(factor_text({.num = 48, .den = 24}) == "×2");          // palier fin de l'Auto
+  CHECK(factor_text({.num = 11011, .den = 3200}) == "×3.44");  // palier calé à 165 Hz (A12-02)
   CHECK(default_rife_candidates("/home/x").front() ==
         std::filesystem::path(
             "/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.22_lite.onnx"));
