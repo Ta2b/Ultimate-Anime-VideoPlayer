@@ -67,6 +67,23 @@ TEST_CASE("l'assistant repris en route retrouve ses choix (P3.3)", "[wizard]") {
   CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == UpdateMode::Never);
 }
 
+TEST_CASE("l'assistant relancé part des réglages en place et ne les efface pas (A25-09)", "[wizard]") {
+  PlaySettings saved;
+  saved.update_mode = UpdateMode::Never;
+  saved.language = "fr";
+  saved.language_presets = {{.audio = "fra", .subtitles = "eng"}};
+  // --first-run : depuis le premier écran, avec les choix du poste ; « Suivant » sur Bienvenue récrit
+  // play.toml avec les écrans pas encore vus, qui gardent donc ce qui était réglé.
+  Wizard wizard = begin_wizard(WizardFacts{}, 0);
+  resume_choices(wizard, saved);
+  const PlaySettings written = wizard_play_settings(wizard, saved);
+  CHECK(written.update_mode == UpdateMode::Never);
+  CHECK(written.language == "fr");
+  REQUIRE(written.language_presets.size() == 1);
+  CHECK(written.language_presets[0].audio == "fra");
+  CHECK(written.language_presets[0].subtitles == "eng");
+}
+
 TEST_CASE("Lecteur par défaut : pas demandé quand l'écran Intégration est passé (A25-04)", "[wizard]") {
   Wizard wizard = begin_wizard({.engine_choice = true}, 0);
   CHECK_FALSE(make_default_requested(wizard));

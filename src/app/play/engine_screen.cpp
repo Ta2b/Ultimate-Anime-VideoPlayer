@@ -210,6 +210,15 @@ void host_notes(FirstRunView& view, const GpuFacts& gpu, const PlayerPaths& path
   view.facts.updates_managed = !view.managed_updates.empty();
 }
 
+// L'assistant part des réglages en place dès que play.toml existe : repris en route (P3.3), relancé par
+// --first-run ou depuis les paramètres (A25-09). Chaque « Suivant » récrit play.toml avec les écrans pas
+// encore vus : partis des défauts, ils effaçaient « Jamais » ou la langue audio d'un poste déjà réglé.
+void start_from_saved(Wizard& wizard, const std::filesystem::path& play_path) {
+  std::error_code missing;
+  if (!std::filesystem::exists(play_path, missing)) return;
+  if (auto play = load_settings(play_path)) resume_choices(wizard, *play);
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -237,10 +246,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     host_notes(view, gpu, s.paths);
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
-  // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
-  if (wizard_mode && !revisit && engines.first_run_step > 0 && !s.options.first_run && !s.restart_wizard) {
-    if (auto play = load_settings(play_path)) resume_choices(view.wizard, *play);
-  }
+  if (wizard_mode) start_from_saved(view.wizard, play_path);
   const auto on_step = [&](const Wizard& wizard) {
     if (!wizard_mode || revisit) return;
     PlaySettings saved;
