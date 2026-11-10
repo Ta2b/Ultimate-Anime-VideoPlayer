@@ -179,6 +179,13 @@ std::string format_size(std::uint64_t bytes) {
   return std::format("{} Mo", static_cast<std::uint64_t>(std::lround(mib)));
 }
 
+std::string shown_size(std::uint64_t bytes) {
+  constexpr double kMiB = 1048576.0;
+  const double mib = static_cast<double>(bytes) / kMiB;
+  if (mib >= 1024.0) return i18n::tr_format("{:.1f} GB", mib / 1024.0);
+  return i18n::tr_format("{} MB", static_cast<std::uint64_t>(std::lround(mib)));
+}
+
 std::uint64_t free_bytes(const std::filesystem::path& where) {
   std::error_code error;
   std::filesystem::path probe = where;

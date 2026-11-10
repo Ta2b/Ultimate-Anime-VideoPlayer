@@ -9,7 +9,7 @@ src/app/play/controls_draw.cpp	ajp::app::play::draw_controls	57	197
 src/app/play/display_edid.cpp	ajp::app::play::parse_edid	32	56
 src/app/play/engine_install.cpp	ajp::app::play::fetch_vendor_file	27	114
 src/app/play/engine_install.cpp	ajp::app::play::install_steps	30	169
-src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	46	106
+src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	36	86
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
 src/app/play/home_screen.cpp	ajp::app::play::run_home	28	117
 src/app/play/input.cpp	ajp::app::play::input_of	49	62

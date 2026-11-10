@@ -294,7 +294,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   std::error_code error;
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
                              .video = data / "bench-clip-v4.mkv",
-                             .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
+                             .work_dir = play::calibration_work_dir(data),
                              .data = data,
                              .silent = silent,
                              .display_width = display_height * 16 / 9,
