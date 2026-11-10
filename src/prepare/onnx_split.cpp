@@ -132,7 +132,7 @@ std::expected<TensorValues, Refusal> read_tensor(Bytes message) {
           elements = times_capped(elements, value);
         }
       } else {
-        elements = times_capped(elements, static_cast<std::uint64_t>(field.scalar));
+        elements = times_capped(elements, field.scalar);
       }
     }
   }
