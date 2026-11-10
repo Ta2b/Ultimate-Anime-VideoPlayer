@@ -126,9 +126,14 @@ int calibration_minutes(bool builds_engines, bool laptop);
 // Un essai se rejoue une fois (P3.12) : quand il ne tient pas, ou qu'il tient de justesse.
 bool needs_second_run(const CandidateTrial& trial);
 
-// Le fichier des résultats (calibration.toml, à côté de play.toml), que calibrate_machine écrit quand
-// plan.data est donné.
-std::filesystem::path calibration_file(const std::filesystem::path& data_dir);
+// Le fichier des résultats, à côté de play.toml, que calibrate_machine écrit quand plan.data est donné : un
+// par hauteur d'écran (calibration-1440p.toml, A37-10), pour qu'un écran 1440p et une télé 4K gardent
+// chacun le leur. display_height ≤ 0 : calibration.toml, l'ancien fichier unique.
+std::filesystem::path calibration_file(const std::filesystem::path& data_dir, int display_height = 0);
+// La calibration de cet écran : son fichier, sinon l'ancien calibration.toml (relu tel quel ; calibration_use
+// dit s'il est d'une autre hauteur).
+std::expected<MachineCalibration, Refusal> load_calibration_at(const std::filesystem::path& data_dir,
+                                                               int display_height);
 // Le dossier jetable des essais (BenchPlan::work_dir) : propre à ce lancement, sous le dossier de données de
 // l'utilisateur (A25-11 : un nom fixe dans /tmp appartenait au premier compte qui calibrait, et un dossier
 // temporaire introuvable donnait un chemin relatif au dossier courant). data_dir vide : chemin vide, et

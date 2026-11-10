@@ -229,6 +229,38 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("une calibration par hauteur d'écran, l'ancien fichier unique relu (A37-10)",
+          "[calibration-machine]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-ecrans";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  MachineCalibration desk{.chosen = {.span = true, .rife = true, .height = 720},
+                          .tried = {{.chain = {.span = true, .rife = true, .height = 720}, .holds = true}},
+                          .gpu = "RTX 4070 Ti",
+                          .display_height = 1440,
+                          .models = calibration_models(Tier::Fast),
+                          .engine = "tensorrt"};
+  const CalibrationHost at_desk{.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true};
+  const CalibrationHost at_tv{.gpu = "RTX 4070 Ti", .display_height = 2160, .tensorrt = true};
+  // L'ancien calibration.toml (1440p) sert encore au bureau, pas à la télé.
+  REQUIRE(save_calibration(calibration_file(dir), desk));
+  CHECK(calibrated_chain(dir, at_desk));
+  CHECK_FALSE(calibrated_chain(dir, at_tv));
+  // Calibrer la télé écrit son propre fichier : le bureau garde le sien.
+  MachineCalibration tv = desk;
+  tv.display_height = 2160;
+  tv.chosen.height = 1080;
+  REQUIRE(save_calibration(calibration_file(dir, 2160), tv));
+  CHECK(calibration_file(dir, 2160).filename() == "calibration-2160p.toml");
+  REQUIRE(calibrated_chain(dir, at_tv));
+  CHECK(calibrated_chain(dir, at_tv)->height == 1080);
+  REQUIRE(calibrated_chain(dir, at_desk));
+  CHECK(calibrated_chain(dir, at_desk)->height == 720);
+  CHECK(load_calibration_at(dir, 2160)->display_height == 2160);
+  CHECK(load_calibration_at(dir, 1440)->display_height == 1440);
+  std::filesystem::remove_all(dir);
+}
+
 TEST_CASE("un calibration.toml d'avant la version 2 se relit mais l'Auto ne le suit plus",
           "[calibration-machine]") {
   // Tel qu'écrit par la 0.10 : essais bornés à la moitié de l'écran, SPAN FP8, RIFE 4.22 lite.

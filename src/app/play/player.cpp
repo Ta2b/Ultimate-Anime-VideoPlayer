@@ -579,7 +579,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     {
       // P3.11 : une calibration faite sur une autre carte ne sert plus ; la refaire est proposé une fois par
       // lancement.
-      const auto calibration = load_calibration(calibration_file(settings_path.parent_path()));
+      const auto calibration =
+          load_calibration_at(settings_path.parent_path(), display_height((*screen)->window()));
       if (!calibration_told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
         calibration_told = true;
         const i18n::Translated redo =
