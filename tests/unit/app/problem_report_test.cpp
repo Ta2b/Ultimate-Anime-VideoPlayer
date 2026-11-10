@@ -98,13 +98,17 @@ TEST_CASE("Rapport : en-tête de faits, séance d'avant, minidump et bornes", "[
   CHECK(small.size() <= 2000);
   CHECK(small.starts_with("ajp : 0.10.3"));
   CHECK(small.find("premiere ligne") == std::string::npos);
+  CHECK(small.find("début du journal omis") != std::string::npos);
 }
 
 TEST_CASE("Rapport : la fin d'un journal commence à une ligne entière", "[app][report]") {
   const fs::path dir = fresh_dir("ajp-report-tail");
   write(dir / "ajp.log", "aaaa\nbbbb\ncccc\n");
   CHECK(read_tail(dir / "ajp.log", 100) == "aaaa\nbbbb\ncccc\n");
-  CHECK(read_tail(dir / "ajp.log", 8) == "cccc\n");
+  const std::string cut = read_tail(dir / "ajp.log", 8);
+  CHECK(cut.ends_with("\ncccc\n"));
+  CHECK(cut.find("début du journal omis") != std::string::npos);  // le rapport le dit (A23-14)
+  CHECK(read_tail(dir / "ajp.log", 100).find("omis") == std::string::npos);
   CHECK(read_tail(dir / "absent.log", 8).empty());
 }
 

@@ -21,6 +21,8 @@ jobs:
         run: tools/ci/check-version.sh
       - name: Chemins en UTF-8
         run: tools/ci/check-path-string.sh
+      - name: Journal sans chemin complet
+        run: tools/ci/check-log-paths.sh
       - name: Commentaires sans nom ni date
         run: tools/ci/check-comments.sh
       - name: Actions épinglées

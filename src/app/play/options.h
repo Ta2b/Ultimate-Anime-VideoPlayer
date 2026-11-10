@@ -174,7 +174,8 @@ struct PlayOptions {
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
   // : le peps du grade HDR anime, à régler à l'œil (render::GradeSettings::anime_contrast…).
   // --bake-looks=FICHIER.cube : la pile de LUT de play.toml, intensités comprises, composée en une seule LUT
-  // (render::compose_luts, 65 points : la même image que la pile) et écrite là ; le lecteur s'arrête.
+  // (render::compose_luts, 65 points : une approximation de la pile, que le lecteur parcourt LUT par LUT) et
+  // écrite là ; le lecteur s'arrête.
   std::optional<std::filesystem::path> bake_looks;
   int anime_contrast = 100;
   int anime_saturation = 100;

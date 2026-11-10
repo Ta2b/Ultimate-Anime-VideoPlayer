@@ -13,6 +13,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "app/play/chapters.h"
 #include "app/play/i18n.h"
@@ -26,10 +27,14 @@ inline constexpr std::int64_t kHideAfterUs = 2'000'000;    // inactivité avant 
 inline constexpr std::int64_t kPausedHideUs = 20'000'000;  // OLED : en pause, inactivité avant l'effacement
 inline constexpr std::int64_t kFadeUs = 200'000;           // durée du fondu
 inline constexpr std::int64_t kToastUs = 1'600'000;        // durée d'un message bref
-inline constexpr std::int64_t kDragSeekUs = 120'000;       // seeks au plus à ce rythme pendant le glissement
-inline constexpr std::int64_t kUiFrameUs = 16'000;         // interface recomposée au plus à ~60 Hz
-inline constexpr std::int64_t kPositionStepUs = 100'000;   // la position affichée avance par pas de 0,1 s
-inline constexpr float kMaxVolume = 1.5F;                  // 150 % ; cmd::SetVolume accepte jusqu'à 2
+inline constexpr std::int64_t kNoticeUs = 4'000'000;       // durée d'un avis à lire (qualité perdue, repli)
+inline constexpr std::int64_t kNoticeCharUs = 70'000;      // un long avis dure davantage, 70 ms par caractère
+inline constexpr std::int64_t kNoticeMaxUs = 8'000'000;
+inline constexpr std::size_t kNoticesKept = 6;
+inline constexpr std::int64_t kDragSeekUs = 120'000;      // seeks au plus à ce rythme pendant le glissement
+inline constexpr std::int64_t kUiFrameUs = 16'000;        // interface recomposée au plus à ~60 Hz
+inline constexpr std::int64_t kPositionStepUs = 100'000;  // la position affichée avance par pas de 0,1 s
+inline constexpr float kMaxVolume = 1.5F;                 // 150 % ; cmd::SetVolume accepte jusqu'à 2
 inline constexpr float kVolumeStep = 0.05F;
 
 // Ce que la session montre, lu par le dessin à chaque image de l'interface.
@@ -99,7 +104,12 @@ class Controls {
 
   // Message bref (volume, piste, réglage), en haut de l'écran.
   void notify(const i18n::Translated& text, std::int64_t now_us);
-  // Message d'avant la lecture (installation, repli) : mis de côté, montré à la première image.
+  // Avis à lire (qualité perdue, repli d'un moteur, A24-01) : montré plus longtemps qu'un message bref, et à
+  // la suite de ceux qui attendent au lieu de les remplacer. Un message bref passe devant le temps de
+  // s'afficher, puis l'avis reprend.
+  void warn(const i18n::Translated& text, std::int64_t now_us);
+  // Message d'avant la lecture (installation, repli) : mis de côté, montré à la première image, comme des
+  // avis.
   void defer(const i18n::Translated& text);
   void show_deferred(std::int64_t now_us);
   std::optional<std::string_view> toast(std::int64_t now_us) const;
@@ -129,8 +139,17 @@ class Controls {
   double drag_fraction_ = 0.0;
   std::optional<std::int64_t> drag_seek_at_;
   std::int64_t drag_target_us_ = -1;
+  struct Notice {
+    std::string text;
+    std::int64_t at_us = 0;
+    std::int64_t duration_us = kNoticeUs;
+  };
+  bool brief_shown(std::int64_t now_us) const;
+  const Notice* notice_at(std::int64_t now_us) const;
+
   std::string toast_;
-  std::string deferred_;
+  std::vector<std::string> deferred_;
+  std::vector<Notice> notices_;  // dans l'ordre : chacun commence quand le précédent finit
   std::int64_t toast_at_us_ = 0;
   std::optional<std::int64_t> framed_at_;
   std::int64_t framed_position_step_ = -1;

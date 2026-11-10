@@ -187,6 +187,7 @@ std::optional<std::string> ChainStats::read_gpu() const {
   std::string line = telemetry_line(*sample);
   const std::string warning = telemetry_warning(*sample);
   log_gpu_warning(warning, line);
+  note_gpu_range(*sample);
   if (!warning.empty()) line += " · " + warning;
   return line;
 }

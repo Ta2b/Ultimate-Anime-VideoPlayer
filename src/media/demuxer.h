@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/types.h"
+#include "media/mkv_chapters.h"
 #include "media/packet.h"
 #include "media/track.h"
 
@@ -49,6 +50,8 @@ class Demuxer {
   // Pistes vidéo, audio, sous-titres et pièces jointes ; les flux de données sont omis.
   const std::vector<TrackInfo>& tracks() const;
   const std::vector<Chapter>& chapters() const;
+  // Matroska : une édition ordonnée ou des chapitres liés, que chapters() aplatit (A14-03).
+  ChapterLayout chapter_layout() const;
   const TrackInfo* track(int index) const;  // nullptr si absente
   std::int64_t duration_us() const;         // 0 si inconnue
 

@@ -33,7 +33,8 @@ tient dans six noyaux.
   pixels `x + flot` en FP32 (`pixel_tap`, `tap_of`), égale à la grille normalisée `base + flot × pas` du graphe ramenée en
   pixels, sans l'arrondi FP16 de la base ni de la somme (A46-04). Le graphe livré (`models-interp-1`, réexporté avec
   `DRBA_GRID_OPS`) garde lui aussi sa grille en FP32 depuis le 10 novembre 2026 (A03-18).
-- Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran de précision hors Équilibre, structure inconnue,
+- Repli sur le DistilDRBA entier : réglage éteint, autre backend, cran Qualité avec son graphe `_fp32` (un cran dont
+  le graphe manque garde la chaîne, et Performance la préfère au graphe `_fp8` : `drba_tier`), structure inconnue,
   taille refusée, échec de construction ou de chargement, essai raté. À chaque chargement la chaîne passe trois fois sur
   une paire de zéros (exécution à froid, capture du graphe, rejeu) avec synchronisation : une erreur CUDA se voit là, avant
   la première image. Une erreur plus tard en lecture n'est pas rattrapée (pas de bascule à chaud : reconstruire le moteur

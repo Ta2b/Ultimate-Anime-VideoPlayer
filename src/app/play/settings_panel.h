@@ -140,7 +140,10 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 // Le champ « Dossier d'installation » de l'onglet Moteurs : le texte en cours de saisie, repris du réglage à
 // chaque ouverture du menu (P5.27 : à SettingsPanel, plus un tampon statique).
 struct FolderField {
-  std::array<char, 512> text{};
+  std::array<char, 4096>
+      text{};             // la longueur d'un chemin (kMaxEnginesDirBytes) : rien n'est coupé en silence
+  std::string committed;  // la valeur du réglage que le champ a reprise ou validée en dernier
+  std::string problem;    // pourquoi la saisie n'a pas été prise ; vide : rien à dire
   bool read = false;
 };
 

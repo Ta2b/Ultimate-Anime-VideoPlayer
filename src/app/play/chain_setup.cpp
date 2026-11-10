@@ -419,9 +419,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     }
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
-                                          : i18n::ui_tr("DistilDRBA unavailable"),
-                             host_now_us());
+      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
+                                        : i18n::ui_tr("DistilDRBA unavailable"),
+                           host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -449,9 +449,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     auto loaded = prepare_apple(p, init, *c.backend, c.work.width, c.work.height);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().notify(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
-                                          : i18n::ui_tr("Apple interpolation unavailable"),
-                             host_now_us());
+      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
+                                        : i18n::ui_tr("Apple interpolation unavailable"),
+                           host_now_us());
     } else if (!*loaded) {
       return std::nullopt;
     } else {
@@ -469,13 +469,13 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     if (!planes) return std::unexpected(std::move(planes.error()));
     c.rife_planes = *planes;
   }
-  // RIFE fusionné (kernels/spec/rife_fused.h) : six petits moteurs et des noyaux de colle à la place du
-  // moteur entier, quand le backend le sait, que le réglage le veut, que le cran est Équilibre (le modèle tel
-  // que livré) et que le modèle se coupe ; tout échec garde le RIFE entier, tel qu'il est chargé plus bas.
+  // RIFE fusionné (kernels/spec/rife_fused.h) à la place du moteur entier quand rife_fused_choice.h le veut
+  // et que le modèle se coupe ; tout échec garde le RIFE entier, tel qu'il est chargé plus bas.
   const std::filesystem::path models_dir = paths::derived_models(p.paths);
-  const std::string fused_declined =
-      use_rife ? rife_fused_declined(settings, c.backend->capabilities().rife_fused, c.rife_planes)
-               : i18n::tr("no RIFE");
+  const std::string fused_declined = use_rife
+                                         ? rife_fused_declined(settings, c.backend->capabilities().rife_fused,
+                                                               c.rife_planes, model_tier(c.rife_model))
+                                         : i18n::tr("no RIFE");
   const bool fused_wanted = fused_declined.empty();
   if (use_rife && settings.rife_fused && !fused_wanted)
     log->info("RIFE fusionné non utilisé : {}", fused_declined);

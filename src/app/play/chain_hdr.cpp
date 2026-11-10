@@ -110,14 +110,29 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
   LoadedLooks out;
   for (std::size_t i = 0; i < render::kLookSlots; ++i) {
     if (i >= keys.size() || keys[i].key.empty()) continue;
+    // La pile répète ses fichiers (le contraste y est sept fois) : chacun n'est lu qu'une fois.
+    const std::optional<render::CubeLut>* read = nullptr;
+    for (std::size_t j = 0; j < i && read == nullptr; ++j)
+      if (keys[j].key == keys[i].key && out.luts.at(j).has_value()) read = &out.luts.at(j);
+    if (read != nullptr) {
+      out.luts.at(i) = *read;
+      continue;
+    }
+    if (std::ranges::find(out.failed, keys[i].key) != out.failed.end()) continue;  // déjà refusé, déjà dit
     auto lut = load_look(keys[i].key, luts_dir);
     if (!lut) {
       log_channel("app")->warn("look : {}", lut.error().detail);
       out.failed.push_back(keys[i].key);
       continue;
     }
-    log_channel("app")->info("look {} : {} ({} points)", i + 1, keys[i].key, lut->size);
+    log_channel("app")->info("look : {} ({} points)", keys[i].key, lut->size);
     out.luts.at(i).emplace(std::move(*lut));
+  }
+  // La pile est un tout : sans l'un de ses fichiers, les autres donneraient une autre image. Aucun look.
+  if (!out.failed.empty()) {
+    for (std::optional<render::CubeLut>& lut : out.luts) lut.reset();
+    log_channel("app")->warn("look : pile incomplète ({} fichier(s) manquant(s)), image sans look",
+                             out.failed.size());
   }
   return out;
 }
@@ -230,7 +245,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool
   if (s.grade && source_hdr && !s.grade_values.grade_native_hdr)
     text += i18n::tr(" · grade off: HDR source");
   else if (s.grade)
-    text += i18n::tr(" · grade");
+    text += screen.has_grade() ? i18n::tr(" · grade") : i18n::tr(" · grade unavailable");  // A41-12
   return text;
 }
 

@@ -89,6 +89,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   for (const media::Chapter& chapter : demuxer->chapters())
     p->chapters_.push_back({.start_us = chapter.start_us, .title = chapter.title});
   std::ranges::sort(p->chapters_, {}, &ChapterMark::start_us);
+  p->chapters_flattened_ = !demuxer->chapter_layout().plain();
   const std::vector<subs::AttachFont> fonts = attached_fonts(demuxer->tracks());
   std::vector<media::PacketRoute> routes;
 

@@ -14,6 +14,7 @@
 #include <system_error>
 #include <utility>
 
+#include <SDL3/SDL_clipboard.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
@@ -247,6 +248,21 @@ int mouse_button(Uint8 button) {
 }
 
 // Les touches dont une saisie dans l'interface a besoin.
+// Le presse-papiers du système (A24-03) : sans ces deux fonctions, Dear ImGui garde le texte copié dans un
+// tampon à lui hors Windows, et « Signaler un problème » ne copie rien pour les autres programmes.
+void set_clipboard(ImGuiContext* /*context*/, const char* text) {
+  if (!SDL_SetClipboardText(text)) log_channel("app")->warn("presse-papiers : {}", SDL_GetError());
+}
+
+const char* get_clipboard(ImGuiContext* /*context*/) {
+  // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) : le seul thread de l'interface
+  static std::string held;
+  char* text = SDL_GetClipboardText();
+  held = text != nullptr ? text : "";
+  SDL_free(text);
+  return held.c_str();
+}
+
 ImGuiKey imgui_key(SDL_Keycode key) {
   if (key >= SDLK_A && key <= SDLK_Z)
     return static_cast<ImGuiKey>(ImGuiKey_A + static_cast<int>(key - SDLK_A));
@@ -335,6 +351,9 @@ std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* w
   io.LogFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
   io.BackendPlatformName = "ajp_play_sdl3";
+  ImGuiPlatformIO& platform = ImGui::GetPlatformIO();
+  platform.Platform_SetClipboardTextFn = set_clipboard;
+  platform.Platform_GetClipboardTextFn = get_clipboard;
   ImGuiLayer::configure(io);
   ui->fonts_ = fonts.take();
   load_fonts(*io.Fonts, ui->fonts_);
