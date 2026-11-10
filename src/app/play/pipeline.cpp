@@ -78,6 +78,15 @@ audio::OutputRequest output_request(const media::TrackInfo& track, const std::st
   return {.sample_rate = rate, .channels = channels, .device = name};
 }
 
+// Les langues de sous-titres voulues, préréglages d'abord : l'ordre des fichiers externes (A17-11).
+std::vector<std::string> wanted_subtitles(const media::LanguagePriorities& languages) {
+  std::vector<std::string> wanted;
+  for (const media::LanguagePreset& preset : languages.presets)
+    if (!preset.subtitles.empty()) wanted.push_back(preset.subtitles);
+  wanted.insert(wanted.end(), languages.subtitles.begin(), languages.subtitles.end());
+  return wanted;
+}
+
 }  // namespace
 
 std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
@@ -88,7 +97,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   // P3.73 : les sous-titres à côté de la vidéo concourent avec ceux du conteneur, à leur langue lue dans le
   // nom (« Épisode 01.fr.ass »).
   std::vector<ExternalSubtitle> externals =
-      config.subtitles ? find_external_subtitles(config.file) : std::vector<ExternalSubtitle>{};
+      config.subtitles ? find_external_subtitles(config.file, wanted_subtitles(config.languages))
+                       : std::vector<ExternalSubtitle>{};
   media::TrackChoice choice = choose(config, *demuxer, externals);
   if (!choice.video) {
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable,
@@ -100,7 +110,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     p->chapters_.push_back({.start_us = chapter.start_us, .title = chapter.title});
   std::ranges::sort(p->chapters_, {}, &ChapterMark::start_us);
   p->chapters_flattened_ = !demuxer->chapter_layout().plain();
-  const std::vector<subs::AttachFont> fonts = attached_fonts(demuxer->tracks());
+  AttachedFonts fonts = attached_fonts(demuxer->tracks());
   std::vector<media::PacketRoute> routes;
 
   // Toutes les pistes audio et de sous-titres lisibles sont routées : la barre de lecture en
@@ -113,8 +123,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   }
 
   if (config.subtitles) {
-    if (auto opened =
-            p->open_subtitles(config, *demuxer, choice.subtitle, std::move(externals), fonts, routes);
+    if (auto opened = p->open_subtitles(config, *demuxer, choice.subtitle, std::move(externals),
+                                        std::move(fonts), routes);
         !opened)
       return std::unexpected(std::move(opened.error()));
   }
@@ -230,12 +240,9 @@ void Pipeline::open_audio(const PipelineConfig& config, const media::Demuxer& de
 
 // Les sous-titres : menu, fichiers externes, thread subs (lancé même sans piste : un fichier glissé
 // pendant la lecture s'y ajoute, P3.85), polices et piste choisie.
-std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& config,
-                                                      const media::Demuxer& demuxer,
-                                                      std::optional<int> subtitle,
-                                                      std::vector<ExternalSubtitle> externals,
-                                                      const std::vector<subs::AttachFont>& fonts,
-                                                      std::vector<media::PacketRoute>& routes) {
+std::expected<void, Refusal> Pipeline::open_subtitles(
+    const PipelineConfig& config, const media::Demuxer& demuxer, std::optional<int> subtitle,
+    std::vector<ExternalSubtitle> externals, AttachedFonts fonts, std::vector<media::PacketRoute>& routes) {
   for (const media::TrackInfo& track : demuxer.tracks()) {
     if (track.kind != media::TrackKind::Subtitle || !subtitle_track(track, subs_track_id(track.index)))
       continue;
@@ -267,18 +274,7 @@ std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& conf
   auto thread = subs::SubsThread::start(config.subs, mail_, subs_inbox_);
   if (!thread) return std::unexpected(std::move(thread.error()));
   subs_thread_ = std::move(*thread);
-  for (const subs::AttachFont& font : fonts) {
-    // La boîte tient 64 polices à la fois : au-delà, on laisse au thread subs le temps d'en
-    // prendre (une seconde au plus) avant d'en écarter une.
-    bool pushed = subs_inbox_->try_push(subs::AttachFont{font});
-    for (int wait = 0; !pushed && wait < 1000; ++wait) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      pushed = subs_inbox_->try_push(subs::AttachFont{font});
-    }
-    if (!pushed) {
-      mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("font {} dropped", font.name)}, false);
-    }
-  }
+  send_fonts(std::move(fonts));
   std::optional<int> chosen;
   if (subtitle && std::ranges::contains(menu_.subtitles, *subtitle, &TrackEntry::index)) {
     chosen = subtitle;
@@ -300,6 +296,28 @@ std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& conf
 }
 
 Pipeline::~Pipeline() = default;
+
+void Pipeline::send_fonts(AttachedFonts fonts) {
+  if (fonts.dropped > 0) {
+    mail_.report("subs",
+                 {RefusalCode::FieldOutOfRange, std::format("{} fonts dropped: attachments over {} MiB",
+                                                            fonts.dropped, kMaxAttachedFontBytes >> 20)},
+                 false);
+  }
+  for (subs::AttachFont& font : fonts.fonts) {
+    // La boîte tient 64 polices à la fois : au-delà, on laisse au thread subs le temps d'en
+    // prendre (une seconde au plus) avant d'en écarter une. try_push ne prend la police que s'il
+    // réussit : elle n'est pas recopiée à chaque essai (A17-09).
+    const std::string name = font.name;
+    bool pushed = subs_inbox_->try_push(std::move(font));
+    for (int wait = 0; !pushed && wait < 1000; ++wait) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      pushed = subs_inbox_->try_push(std::move(font));  // NOLINT(bugprone-use-after-move) : rendue intacte
+    }
+    if (!pushed)
+      mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("font {} dropped", name)}, false);
+  }
+}
 
 const audio::AudioCodecInfo* Pipeline::audio_codec(int track) const {
   const auto found = std::ranges::find(audio_codecs_, track, &std::pair<int, audio::AudioCodecInfo>::first);

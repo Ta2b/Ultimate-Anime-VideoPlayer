@@ -97,6 +97,3 @@ src/prepare/rife_split.cpp	ajp::prepare::parse_manifest	31	66
 src/render/cube_lut.cpp	ajp::render::fill_unreachable	28	56
 src/render/cube_lut.cpp	ajp::render::parse_cube	36	82
 src/render/cube_lut.cpp	ajp::render::read_float	32	43
-src/subs/subtitle_renderer.cpp	ajp::subs::SubtitleRenderer::render_at	27	67
-src/subs/text_encoding.cpp	ajp::subs::guessed	32	29
-src/subs/text_encoding.cpp	ajp::subs::hinted	37	16

@@ -11,6 +11,8 @@
 #include "app/play/i18n.h"
 #include "app/play/tracks.h"
 #include "core/text.h"
+#include "core/utf8_path.h"
+#include "media/language.h"
 
 namespace ajp::app::play {
 namespace {
@@ -37,7 +39,7 @@ std::pair<std::string, std::string> language_of(std::string_view tags) {
 }
 
 bool is_subtitle(const std::filesystem::path& path) {
-  const std::string extension = core::ascii_lower(path.extension().string());
+  const std::string extension = core::ascii_lower(core::to_utf8(path.extension()));
   return extension == ".ass" || extension == ".ssa" || extension == ".srt";
 }
 
@@ -72,11 +74,12 @@ std::optional<std::string> tags_after(const std::string& name, const std::string
 
 void add(std::vector<ExternalSubtitle>& found, const std::filesystem::path& path, std::string_view tags) {
   const auto [tag, language] = language_of(tags);
-  found.push_back({.path = path,
-                   .label = language.empty()
-                                ? i18n::tr_format("External · {}", path.filename().string())
-                                : i18n::tr_format("External · {} · {}", language, path.filename().string()),
-                   .language = tag});
+  found.push_back(
+      {.path = path,
+       .label = language.empty()
+                    ? i18n::tr_format("External · {}", core::to_utf8(path.filename()))
+                    : i18n::tr_format("External · {} · {}", language, core::to_utf8(path.filename())),
+       .language = tag});
 }
 
 bool is_subs_dir(const std::string& name) {
@@ -85,18 +88,19 @@ bool is_subs_dir(const std::string& name) {
 
 }  // namespace
 
-std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::path& video) {
+std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::path& video,
+                                                      std::span<const std::string> wanted) {
   std::vector<ExternalSubtitle> found;
   const std::filesystem::path dir =
       video.has_parent_path() ? video.parent_path() : std::filesystem::path(".");
-  const std::string stem = core::ascii_lower(video.stem().string());
+  const std::string stem = core::ascii_lower(core::to_utf8(video.stem()));
   if (stem.empty()) return found;
   // Le dossier de la vidéo, puis ses dossiers Subs/ (P3.80) : un fichier au nom de la vidéo, ou tout fichier
   // d'un sous-dossier Subs/<nom de la vidéo>/ (« Subs/Episode 01/2_English.srt »).
   std::vector<std::filesystem::path> dirs{dir};
   std::error_code error;
   for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
-    if (it->is_directory(error) && is_subs_dir(core::ascii_lower(it->path().filename().string())))
+    if (it->is_directory(error) && is_subs_dir(core::ascii_lower(core::to_utf8(it->path().filename()))))
       dirs.push_back(it->path());
   }
   for (std::size_t d = 0; d < dirs.size(); ++d) {
@@ -104,14 +108,14 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
     for (std::filesystem::directory_iterator it(dirs[d], error), end; !error && it != end;
          it.increment(error)) {
       const std::filesystem::path& path = it->path();
-      const std::string name = core::ascii_lower(path.stem().string());
+      const std::string name = core::ascii_lower(core::to_utf8(path.stem()));
       if (d > 0 && it->is_directory(error)) {
-        if (tags_after(core::ascii_lower(path.filename().string()), stem)) {
+        if (tags_after(core::ascii_lower(core::to_utf8(path.filename())), stem)) {
           std::error_code inner;
           for (std::filesystem::directory_iterator sub(path, inner), stop; !inner && sub != stop;
                sub.increment(inner)) {
             if (sub->is_regular_file(inner) && is_subtitle(sub->path()))
-              add(found, sub->path(), core::ascii_lower(sub->path().stem().string()));
+              add(found, sub->path(), core::ascii_lower(core::to_utf8(sub->path().stem())));
           }
         }
         continue;
@@ -120,7 +124,10 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
       if (const auto rest = tags_after(name, stem)) add(found, path, *rest);
     }
   }
-  std::ranges::sort(found, {}, [](const ExternalSubtitle& s) { return s.path.filename().string(); });
+  // La langue voulue d'abord : la coupe à kMaxExternalSubtitles ne doit pas la laisser de côté.
+  std::ranges::sort(found, {}, [&](const ExternalSubtitle& s) {
+    return std::pair(-media::language_score(wanted, s.language), core::to_utf8(s.path.filename()));
+  });
   if (found.size() > kMaxExternalSubtitles) found.resize(kMaxExternalSubtitles);
   return found;
 }
