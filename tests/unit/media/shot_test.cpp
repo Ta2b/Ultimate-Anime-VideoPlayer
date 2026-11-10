@@ -110,6 +110,77 @@ TEST_CASE("plans : un éclair d'une image n'est pas une coupe", "[media][shots]"
   REQUIRE(cut(frames).size() == 1);
 }
 
+TEST_CASE("plans : un éclair tenu deux ou trois images n'est pas une coupe (A42-02)", "[media][shots]") {
+  for (const int held : {2, 3}) {
+    CAPTURE(held);
+    std::vector<ShotFrame> frames;
+    for (int i = 0; i < 60; ++i) frames.push_back(flat(i, i >= 30 && i < 30 + held ? 0.95F : 0.15F));
+    REQUIRE(cut(frames).size() == 1);
+  }
+  // Quatre images : un plan court, pas un éclair.
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 60; ++i) frames.push_back(flat(i, i >= 30 && i < 34 ? 0.95F : 0.15F));
+  const std::vector<Shot> shots = cut(frames);
+  REQUIRE(shots.size() == 3);
+  CHECK(shots.at(1).start_us == 30 * kFrame);
+  CHECK(shots.at(1).end_us == 34 * kFrame);
+}
+
+// Un décor qui défile sur la grille : `speed` colonnes par dessin vu, chaque dessin tenu `held` images.
+std::vector<ShotFrame> pan(int count, float speed, int held, int first = 0) {
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < count; ++i) {
+    ShotFrame f = flat(first + i, 0.4F);
+    const float position = speed * static_cast<float>(i / held * held);
+    for (std::size_t cell = 0; cell < f.grid.size(); ++cell) {
+      const float x = (static_cast<float>(cell % kShotGrid) + position) / static_cast<float>(kShotGrid);
+      f.grid.at(cell) = 0.25F + 0.3F * std::abs(2.0F * (x - std::floor(x)) - 1.0F);
+    }
+    frames.push_back(f);
+  }
+  return frames;
+}
+
+TEST_CASE("plans : un panoramique animé en uns, en deux ou en trois reste un plan (A42-01)",
+          "[media][shots]") {
+  for (const float speed : {0.25F, 0.35F}) {
+    for (const int held : {1, 2, 3}) {
+      CAPTURE(speed, held);
+      CHECK(cut(pan(96, speed, held)).size() == 1);
+    }
+  }
+}
+
+TEST_CASE("plans : une coupe franche dans une animation tenue reste une coupe, à l'image près",
+          "[media][shots]") {
+  std::vector<ShotFrame> frames = pan(48, 0.25F, 3);
+  for (int i = 48; i < 96; ++i) frames.push_back(flat(i, 0.85F, 1));
+  const std::vector<Shot> shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.at(0).end_us == 48 * kFrame);
+  CHECK(shots.at(1).start_us == 48 * kFrame);
+}
+
+TEST_CASE("plans : un plan fixe oublie le seuil du panoramique d'avant", "[media][shots]") {
+  // Deux secondes de plan fixe après un panoramique rapide, puis une coupe modeste (0,3 à 0,34 de distance) :
+  // le seuil monté par le panoramique ne la cache plus.
+  std::vector<ShotFrame> frames = pan(48, 0.35F, 1);
+  const ShotFrame still = frames.back();
+  for (int i = 48; i < 96; ++i) {
+    ShotFrame f = still;
+    f.pts_us = i * kFrame;
+    frames.push_back(f);
+  }
+  for (int i = 96; i < 144; ++i) {
+    ShotFrame f = still;
+    f.pts_us = i * kFrame;
+    for (float& cell : f.grid) cell += 0.13F;
+    frames.push_back(f);
+  }
+  CHECK(frame_distance(frames.at(95), frames.at(96)) < 0.35F);
+  REQUIRE(cut(frames).size() == 2);
+}
+
 TEST_CASE("plans : un fondu au noir reste un plan, suivi du début à la fin", "[media][shots]") {
   std::vector<ShotFrame> frames;
   for (int i = 0; i < 72; ++i) frames.push_back(flat(i, 0.6F * (1.0F - static_cast<float>(i) / 72.0F)));

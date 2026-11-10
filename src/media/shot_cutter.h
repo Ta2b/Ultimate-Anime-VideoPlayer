@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <vector>
 
@@ -99,20 +100,52 @@ class ShotCutter {
   explicit ShotCutter(bool starts_at_cut = true) : starts_at_cut_(starts_at_cut) {}
 
   // Une image de plus, dans l'ordre de présentation. Rend le plan qui vient de finir, s'il y en a un.
-  // Une image décide avec une image de retard : un éclair d'une image n'est pas une coupe.
+  // Un saut attend jusqu'à trois images pour être jugé : un éclair de une à trois images (tenu deux images
+  // en animation sur deux) n'est pas une coupe.
   std::optional<Shot> push(const ShotFrame& frame);
   // Fin de la vidéo (ou de l'analyse) à end_us : rend le plan en cours.
   std::optional<Shot> finish(std::int64_t end_us);
 
  private:
+  // Les sommes d'un plan (ou d'un de ses bords) : le plan en cours ne garde pas ses images, un flux sans
+  // coupe de deux heures tenait 88 Mo.
+  struct Totals {
+    std::size_t count = 0;
+    std::array<double, kShotBins> histogram{};
+    double mean = 0.0, blue = 0.0, chroma = 0.0;
+    std::array<double, kernels::frame_stats::kPercentiles.size()> maxrgb{};
+    double apl = 0.0, maxrgb_mean = 0.0, bright = 0.0, highlights = 0.0, skin = 0.0;
+    std::array<double, kShotLumBins> lum_hist{};
+    float apl_min = 0.0F, apl_max = 0.0F, max_scl = 0.0F;
+    void add(const ShotFrame& frame);
+    ShotStats stats() const;
+    ShotMeta meta() const;
+  };
+  struct Motion {
+    std::int64_t pts_us = 0;
+    float distance = 0.0F;
+  };
+
+  std::optional<Shot> judge(const ShotFrame& frame);
+  void keep(const ShotFrame& frame);
+  float limit(std::int64_t pts_us);
   std::optional<Shot> close_shot(std::int64_t end_us);
 
   bool starts_at_cut_ = true;
   bool first_shot_ = true;
-  std::vector<ShotFrame> frames_;     // le plan en cours
-  std::optional<ShotFrame> anchor_;   // la dernière image du plan qui n'est pas un éclair
-  std::optional<ShotFrame> pending_;  // l'image qui attend la suivante pour être jugée
-  std::vector<float> recent_;         // les dernières distances, pour un seuil qui suit le mouvement
+  // Le plan en cours : ses sommes, son début, et ses premières et dernières images (les bords d'un fondu).
+  Totals totals_;
+  std::int64_t start_us_ = 0;
+  std::vector<ShotFrame> head_;
+  std::deque<ShotFrame> tail_;
+  std::optional<ShotFrame> anchor_;  // la dernière image du plan qui n'est pas un éclair
+  // Les images qui ont sauté loin de l'ancre et attendent d'être jugées : coupe ou éclair.
+  std::vector<ShotFrame> jumped_;
+  float jump_ = 0.0F;  // le saut de la première, et le seuil qu'il a dépassé
+  float jump_limit_ = 0.0F;
+  bool jump_moves_ =
+      false;  // le saut ne change que la place de la lumière : peut-être un départ de mouvement
+  std::deque<Motion> recent_;  // les dernières distances entre dessins distincts, pour le seuil
 };
 
 }  // namespace ajp::media

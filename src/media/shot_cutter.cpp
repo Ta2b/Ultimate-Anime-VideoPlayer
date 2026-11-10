@@ -3,18 +3,31 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <span>
+#include <utility>
+#include <vector>
 
 namespace ajp::media {
 namespace {
 
 // Seuils mesurés sur la vidéo de calibration et des épisodes d'anime : une coupe franche dépasse 0,35,
-// un panoramique rapide reste sous 0,2. Le seuil monte avec le mouvement récent (2,5 fois la médiane
-// des 24 dernières distances), sans dépasser 0,6.
+// un panoramique rapide reste sous 0,2 d'une image à l'autre. Le seuil monte avec le mouvement récent
+// (2,5 fois la médiane des dernières distances), sans dépasser 0,6.
+//
+// La médiane ne compte que les distances entre dessins distincts (A42-01) : en animation tenue sur deux ou
+// trois images, deux distances sur trois sont presque nulles, la médiane valait 0 et chaque dessin d'un
+// panoramique ouvrait un plan (24 plans sur 96 images). Elle oublie aussi un mouvement vieux de plus d'une
+// seconde et demie : un plan fixe ne garde pas le seuil du panoramique d'avant.
 constexpr float kCutBase = 0.28F;
 constexpr float kCutCap = 0.6F;
 constexpr float kCutMotion = 2.5F;
 constexpr std::size_t kRecent = 24;
+constexpr std::int64_t kRecentUs = 1'500'000;
+constexpr float kHeldDrawing = 0.02F;  // sous cette distance, le même dessin tenu
+// Un éclair dure au plus trois images (A42-02) : tenu deux images en animation sur deux, il ouvrait un plan
+// à l'entrée et un autre à la sortie.
+constexpr std::size_t kFlashFrames = 3;
+// Les bords d'un plan gardés pour juger un fondu : le sixième du plan, au plus deux secondes à 24 i/s.
+constexpr std::size_t kEdgeKept = 48;
 // Un plan dont la luminance moyenne change de plus de 0,08 entre son début et sa fin (sur au moins une
 // seconde à 24 images par seconde) est suivi image par image.
 constexpr float kFadeDelta = 0.08F;
@@ -46,53 +59,6 @@ float share_beyond(const std::array<float, kShotBins>& histogram, float at, bool
     sum += histogram.at(static_cast<std::size_t>(i)) * (below ? under : 1.0F - under);
   }
   return sum;
-}
-
-ShotStats average(std::span<const ShotFrame> frames) {
-  std::array<float, kShotBins> histogram{};
-  float mean = 0.0F, blue = 0.0F, chroma = 0.0F, apl = 0.0F;
-  for (const ShotFrame& f : frames) {
-    for (std::size_t i = 0; i < histogram.size(); ++i) histogram.at(i) += f.histogram.at(i);
-    apl += f.light.apl_nits;
-    mean += f.mean;
-    blue += f.blue;
-    chroma += f.chroma;
-  }
-  const auto n = static_cast<float>(std::max<std::size_t>(frames.size(), 1));
-  for (float& part : histogram) part /= n;
-  ShotStats stats = stats_of(histogram, mean / n, blue / n, chroma / n);
-  stats.apl_nits = apl / n;
-  return stats;
-}
-
-ShotMeta meta_of(std::span<const ShotFrame> frames) {
-  ShotMeta meta;
-  if (frames.empty()) return meta;
-  meta.apl_min_nits = frames.front().light.apl_nits;
-  ShotLight& m = meta.mean;
-  for (const ShotFrame& f : frames) {
-    const ShotLight& l = f.light;
-    meta.apl_min_nits = std::min(meta.apl_min_nits, l.apl_nits);
-    meta.apl_max_nits = std::max(meta.apl_max_nits, l.apl_nits);
-    meta.max_scl_nits = std::max(meta.max_scl_nits, l.maxrgb_nits.back());
-    for (std::size_t i = 0; i < m.maxrgb_nits.size(); ++i) m.maxrgb_nits.at(i) += l.maxrgb_nits.at(i);
-    m.apl_nits += l.apl_nits;
-    m.maxrgb_mean_nits += l.maxrgb_mean_nits;
-    m.bright += l.bright;
-    m.highlights += l.highlights;
-    m.skin += l.skin;
-    for (std::size_t i = 0; i < m.lum_hist.size(); ++i) m.lum_hist.at(i) += l.lum_hist.at(i);
-  }
-  const auto n = static_cast<float>(frames.size());
-  for (float& v : m.maxrgb_nits) v /= n;
-  m.apl_nits /= n;
-  m.maxrgb_mean_nits /= n;
-  m.bright /= n;
-  m.highlights /= n;
-  m.skin /= n;
-  for (float& part : m.lum_hist) part /= n;
-  meta.apl_mean_nits = m.apl_nits;
-  return meta;
 }
 
 float median(std::vector<float> values) {
@@ -139,7 +105,17 @@ ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats) {
   return out;
 }
 
-float frame_distance(const ShotFrame& a, const ShotFrame& b) {
+namespace {
+
+// Ce qui change entre deux images : la lumière (histogramme), sa place (grille), la couleur. De 0 à 1.
+struct Change {
+  float light = 0.0F;
+  float place = 0.0F;
+  float colour = 0.0F;
+  float distance() const { return std::max({light, place, colour}); }
+};
+
+Change change_between(const ShotFrame& a, const ShotFrame& b) {
   float histogram = 0.0F;
   for (std::size_t i = 0; i < a.histogram.size(); ++i)
     histogram += std::abs(a.histogram.at(i) - b.histogram.at(i));
@@ -149,75 +125,181 @@ float frame_distance(const ShotFrame& a, const ShotFrame& b) {
   // L'histogramme dit que la lumière a changé ; la grille, qu'elle a changé de place (deux plans de même
   // luminosité, cadrés autrement) ; la couleur (P3.31), un champ-contrechamp de même luminosité.
   const float colour = std::abs(a.blue - b.blue) + std::abs(a.chroma - b.chroma);
-  return std::max(
-      {std::min(0.5F * histogram, 1.0F), std::min(2.5F * grid, 1.0F), std::min(3.0F * colour, 1.0F)});
+  return Change{.light = std::min(0.5F * histogram, 1.0F),
+                .place = std::min(2.5F * grid, 1.0F),
+                .colour = std::min(3.0F * colour, 1.0F)};
+}
+
+}  // namespace
+
+float frame_distance(const ShotFrame& a, const ShotFrame& b) {
+  return change_between(a, b).distance();
+}
+
+void ShotCutter::Totals::add(const ShotFrame& f) {
+  const ShotLight& l = f.light;
+  apl_min = count == 0 ? l.apl_nits : std::min(apl_min, l.apl_nits);
+  apl_max = std::max(apl_max, l.apl_nits);
+  max_scl = std::max(max_scl, l.maxrgb_nits.back());
+  ++count;
+  for (std::size_t i = 0; i < histogram.size(); ++i) histogram.at(i) += f.histogram.at(i);
+  mean += f.mean;
+  blue += f.blue;
+  chroma += f.chroma;
+  for (std::size_t i = 0; i < maxrgb.size(); ++i) maxrgb.at(i) += l.maxrgb_nits.at(i);
+  apl += l.apl_nits;
+  maxrgb_mean += l.maxrgb_mean_nits;
+  bright += l.bright;
+  highlights += l.highlights;
+  skin += l.skin;
+  for (std::size_t i = 0; i < lum_hist.size(); ++i) lum_hist.at(i) += l.lum_hist.at(i);
+}
+
+ShotStats ShotCutter::Totals::stats() const {
+  const auto n = static_cast<double>(std::max<std::size_t>(count, 1));
+  std::array<float, kShotBins> parts{};
+  for (std::size_t i = 0; i < parts.size(); ++i) parts.at(i) = static_cast<float>(histogram.at(i) / n);
+  ShotStats out = stats_of(parts, static_cast<float>(mean / n), static_cast<float>(blue / n),
+                           static_cast<float>(chroma / n));
+  out.apl_nits = static_cast<float>(apl / n);
+  return out;
+}
+
+ShotMeta ShotCutter::Totals::meta() const {
+  ShotMeta out;
+  if (count == 0) return out;
+  const auto n = static_cast<double>(count);
+  out.apl_min_nits = apl_min;
+  out.apl_max_nits = apl_max;
+  out.max_scl_nits = max_scl;
+  ShotLight& m = out.mean;
+  for (std::size_t i = 0; i < maxrgb.size(); ++i) m.maxrgb_nits.at(i) = static_cast<float>(maxrgb.at(i) / n);
+  m.apl_nits = static_cast<float>(apl / n);
+  m.maxrgb_mean_nits = static_cast<float>(maxrgb_mean / n);
+  m.bright = static_cast<float>(bright / n);
+  m.highlights = static_cast<float>(highlights / n);
+  m.skin = static_cast<float>(skin / n);
+  for (std::size_t i = 0; i < lum_hist.size(); ++i) m.lum_hist.at(i) = static_cast<float>(lum_hist.at(i) / n);
+  out.apl_mean_nits = m.apl_nits;
+  return out;
+}
+
+void ShotCutter::keep(const ShotFrame& frame) {
+  if (totals_.count == 0) start_us_ = frame.pts_us;
+  totals_.add(frame);
+  if (head_.size() < kEdgeKept) head_.push_back(frame);
+  tail_.push_back(frame);
+  if (tail_.size() > kEdgeKept) tail_.pop_front();
+}
+
+float ShotCutter::limit(std::int64_t pts_us) {
+  while (!recent_.empty() && (recent_.size() > kRecent || recent_.front().pts_us < pts_us - kRecentUs))
+    recent_.pop_front();
+  std::vector<float> distances;
+  distances.reserve(recent_.size());
+  for (const Motion& m : recent_) distances.push_back(m.distance);
+  return std::min(std::max(kCutBase, kCutMotion * median(std::move(distances))), kCutCap);
 }
 
 std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
-  std::optional<Shot> closed;
-  if (pending_ && anchor_) {
-    // L'image d'avant l'image en attente, éclairs écartés.
-    const ShotFrame before = *anchor_;
-    const ShotFrame held = *pending_;  // copie : close_shot() ne laisse pas suivre l'optional
-    const float jump = frame_distance(before, held);
-    const float limit = std::min(std::max(kCutBase, kCutMotion * median(recent_)), kCutCap);
-    bool cut = jump > limit;
-    // Un éclair : l'image d'après ressemble à celle d'avant, l'image en attente reste dans le plan sans
-    // servir de référence à la suivante.
-    const bool flash = cut && frame_distance(before, frame) < std::min(0.5F * jump, limit);
-    if (flash) cut = false;
-    if (cut) {
-      closed = close_shot(held.pts_us);
-      frames_.clear();
-    }
-    frames_.push_back(held);
-    if (!flash) {
-      anchor_ = held;
-      recent_.push_back(jump);
-      if (recent_.size() > kRecent) recent_.erase(recent_.begin());
-    }
-  } else if (pending_) {
-    frames_.push_back(*pending_);
-    anchor_ = *pending_;
+  if (!anchor_) {
+    keep(frame);
+    anchor_ = frame;
+    return std::nullopt;
   }
-  pending_ = frame;
+  if (jumped_.empty()) return judge(frame);
+  // Un saut attend : l'image qui revient près de l'ancre en fait un éclair, gardé dans le plan sans servir
+  // de référence ; après kFlashFrames images sans retour, c'était une coupe, à la première image du saut.
+  if (frame_distance(*anchor_, frame) < std::min(0.5F * jump_, jump_limit_)) {
+    for (const ShotFrame& f : jumped_) keep(f);
+    jumped_.clear();
+    return judge(frame);
+  }
+  // Le départ d'un mouvement rapide (A42-01) : la lumière et la couleur n'ont pas changé, seule leur place,
+  // et le dessin suivant s'éloigne encore d'autant. Le saut suit alors la règle du mouvement récent, jugée
+  // sur le mouvement qui vient : sans cela, le premier dessin d'un panoramique en trois ouvrait un plan.
+  const float step = frame_distance(jumped_.back(), frame);
+  jumped_.push_back(frame);
+  if (jump_moves_ && step >= kHeldDrawing && jump_ <= kCutMotion * step) {
+    recent_.push_back({.pts_us = jumped_.front().pts_us, .distance = jump_});
+    recent_.push_back({.pts_us = frame.pts_us, .distance = step});
+    for (const ShotFrame& f : jumped_) keep(f);
+    jumped_.clear();
+    anchor_ = frame;
+    return std::nullopt;
+  }
+  if (step >= kHeldDrawing) jump_moves_ = false;  // un autre dessin, trop proche : pas ce mouvement-là
+  if (jumped_.size() <= kFlashFrames) return std::nullopt;
+  const std::vector<ShotFrame> after = std::move(jumped_);
+  jumped_.clear();
+  std::optional<Shot> closed = close_shot(after.front().pts_us);
+  recent_.push_back({.pts_us = after.front().pts_us, .distance = jump_});
+  keep(after.front());
+  anchor_ = after.front();
+  // Les images d'après la coupe repassent une à une : aucune n'a pu ouvrir un autre plan en si peu d'images
+  // sans que la première coupe soit elle-même un éclair.
+  for (std::size_t i = 1; i < after.size(); ++i) {
+    if (auto again = push(after.at(i)); again && !closed) closed = again;
+  }
   return closed;
 }
 
-std::optional<Shot> ShotCutter::finish(std::int64_t end_us) {
-  if (pending_) {
-    frames_.push_back(*pending_);
-    pending_.reset();
+// L'image face à l'ancre : dans le plan, ou mise en attente si elle saute plus loin que le seuil.
+std::optional<Shot> ShotCutter::judge(const ShotFrame& frame) {
+  const Change change = change_between(*anchor_, frame);
+  const float jump = change.distance();
+  const float threshold = limit(frame.pts_us);
+  if (jump > threshold) {
+    jumped_.push_back(frame);
+    jump_ = jump;
+    jump_limit_ = threshold;
+    jump_moves_ = jump <= kCutCap && std::max(change.light, change.colour) < 0.5F * kCutBase;
+    return std::nullopt;
   }
+  keep(frame);
+  anchor_ = frame;
+  if (jump >= kHeldDrawing) recent_.push_back({.pts_us = frame.pts_us, .distance = jump});
+  return std::nullopt;
+}
+
+std::optional<Shot> ShotCutter::finish(std::int64_t end_us) {
+  // Un saut encore en attente à la fin (trois images au plus) reste dans le dernier plan.
+  for (const ShotFrame& f : jumped_) keep(f);
+  jumped_.clear();
   std::optional<Shot> closed = close_shot(end_us);
-  frames_.clear();
   recent_.clear();
   anchor_.reset();
   return closed;
 }
 
 std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
-  if (frames_.empty()) return std::nullopt;
+  if (totals_.count == 0) return std::nullopt;
   Shot shot;
-  shot.start_us = frames_.front().pts_us;
+  shot.start_us = start_us_;
   shot.end_us = std::max(end_us, shot.start_us + 1);
   shot.cut_before = first_shot_ ? starts_at_cut_ : true;
   first_shot_ = false;
-  const std::span<const ShotFrame> all(frames_);
-  shot.meta = meta_of(all);
-  if (frames_.size() >= 2 * kFadeFrames) {
-    const std::size_t edge = std::max(frames_.size() / 6, std::size_t{4});
-    const ShotStats first = average(all.first(edge));
-    const ShotStats last = average(all.last(edge));
-    if (std::abs(first.mean - last.mean) > kFadeDelta) {
-      shot.first = first;
-      shot.last = last;
+  shot.meta = totals_.meta();
+  shot.first = totals_.stats();
+  shot.last = shot.first;
+  if (totals_.count >= 2 * kFadeFrames) {
+    const std::size_t edge = std::clamp(totals_.count / 6, std::size_t{4}, kEdgeKept);
+    Totals first, last;
+    for (std::size_t i = 0; i < edge; ++i) {
+      first.add(head_.at(i));
+      last.add(tail_.at(tail_.size() - edge + i));
+    }
+    const ShotStats begin = first.stats();
+    const ShotStats end = last.stats();
+    if (std::abs(begin.mean - end.mean) > kFadeDelta) {
+      shot.first = begin;
+      shot.last = end;
       shot.fade = true;
-      return shot;
     }
   }
-  shot.first = average(all);
-  shot.last = shot.first;
+  totals_ = {};
+  head_.clear();
+  tail_.clear();
   return shot;
 }
 
