@@ -9,6 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "audio/player.h"
+#include "core/clock_pll.h"
 #include "rig.h"
 
 using ajp::Command;
@@ -184,6 +185,6 @@ TEST_CASE("AudioPlayer : retour à l'audio maître, le rapport revient à 1 sans
   CHECK(rig.fake->clears() == clears);
   const DeviceReading reading = rig.fake->play(1'024, t0 + 21 * 21'333);
   rig.player->handle(reading);
-  CHECK(rig.clock().rate == 1.0);
+  CHECK(std::abs(rig.clock().rate - 1.0) <= ajp::core::ClockPll::kMaxSpeed + 1e-9);  // PLL du produit
   CHECK(rig.clock().host_us == reading.host_us);
 }

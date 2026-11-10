@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/utf8_path.h"
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/drba_fused_engine.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
@@ -144,7 +145,14 @@ std::expected<AdoptedDevice, Refusal> adopted_device(const GpuDevice& render) {
 }
 
 VulkanBackend::VulkanBackend(const BackendInit& init, BackendOptions options)
-    : log_(init.log), cache_dir_(init.cache_dir), options_(std::move(options)) {}
+    : log_(init.log), cache_dir_(init.cache_dir), options_(std::move(options)) {
+  // Le lecteur le demande par BackendInit (--profile-dispatches), les tests par BackendOptions (A45-08).
+  options_.profile_dispatches = options_.profile_dispatches || init.profile_dispatches;
+  // Les temporaires d'une écriture coupée (lecteur tué pendant une construction) ne s'accumulent pas.
+  if (cache_dir_.empty()) return;
+  if (const int purged = net::purge_stale_temporaries(cache_dir_ / "vulkan"); purged > 0)
+    log(BackendLogLevel::Info, std::format("cache Vulkan : {} fichiers temporaires anciens retirés", purged));
+}
 
 VulkanBackend::~VulkanBackend() {
   kernels_.reset();                                           // attend la file, rend images et vues
@@ -401,6 +409,16 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
                                            artifact.path.filename().string()));
     data->dispatches = program->dispatches;
     data->shaders = std::move(shaders);
+    // Un programme que la porte n'a jamais vu ne sert pas sans elle (A45-13) : elle rejoue comme à la
+    // construction, et son repli éventuel (noyaux de référence) donne le programme chargé.
+    if (options_.autotune) {
+      if (auto ok = gate(ModelSpec{.id = core::to_utf8(artifact.path.stem())}, *data); !ok)
+        return std::unexpected(ok.error());
+      if (data->dispatches != program->dispatches) {
+        program = net::lower(data->graph, data->choices, profile_.target);
+        if (!program) return std::unexpected(program.error());
+      }
+    }
     if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
       log(BackendLogLevel::Warn, ok.error().detail);
   }

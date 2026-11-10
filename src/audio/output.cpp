@@ -38,12 +38,13 @@ std::expected<void, Refusal> AudioOutput::push(std::int64_t pts_us, std::span<co
   return {};
 }
 
-std::expected<void, Refusal> AudioOutput::push_silence(std::int64_t frames) {
+std::expected<void, Refusal> AudioOutput::push_silence(std::int64_t frames,
+                                                       std::optional<std::int64_t> pts_us) {
   if (frames <= 0) return {};
   const std::vector<float> silence(static_cast<std::size_t>(frames * format_.channels), 0.0F);
   const std::int64_t start = sink_->pushed_frames();
   if (auto queued = sink_->put(silence); !queued) return queued;
-  timeline_.append(start, sink_->pushed_frames() - start, std::nullopt);
+  timeline_.append(start, sink_->pushed_frames() - start, pts_us);
   return {};
 }
 

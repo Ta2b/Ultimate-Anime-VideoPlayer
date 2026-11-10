@@ -26,7 +26,9 @@ struct Packet {
   std::int64_t dts_us = kNoPts;
   std::int64_t duration_us = 0;
   bool keyframe = false;
-  std::uint32_t epoch = 0;             // posé à la livraison, comme DecodedFrame::epoch
+  std::uint32_t epoch = 0;  // posé à la livraison, comme DecodedFrame::epoch
+  // Paquet annexe après un seek : ce qui précède cet instant, où la lecture reprend, est jeté après décodage.
+  std::optional<std::int64_t> discard_before_us;
   std::shared_ptr<const AVPacket> av;  // pour avcodec_send_packet
 
   std::span<const std::byte> data() const;

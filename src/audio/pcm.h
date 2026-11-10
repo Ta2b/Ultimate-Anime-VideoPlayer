@@ -20,9 +20,13 @@ inline constexpr int kMaxSampleRate = 384'000;
 inline constexpr float kMinVolume = 0.0F;
 inline constexpr float kMaxVolume = 2.0F;
 inline constexpr std::int64_t kMaxDelayUs = 10'000'000;  // délai audio, dans les deux sens
-// Correction de dérive quand l'écran est maître : 0,125 %, comme
-// video-sync-max-audio-change de mpv. Couvre le rapport 1,001 des cadences NTSC.
-inline constexpr double kMaxDriftCorrection = 0.00125;
+// Correction de dérive quand l'écran est maître : le plus grand calage de vitesse
+// (core::pacing::kMaxSpeedChange, 0,125 %, comme video-sync-max-audio-change de mpv), plus 0,05 % pour
+// l'écart propre de l'horloge de la carte son à l'hôte (couramment 20 à 100 ppm). Au ras du calage,
+// l'intégrale saturait et l'audio se recalait franchement toutes les quelques dizaines de minutes (A16-05).
+// Le lien entre les deux est vérifié là où les deux modules se rencontrent (app/play/pipeline.cpp).
+inline constexpr double kMaxSpeedChangeCovered = 0.00125;
+inline constexpr double kMaxDriftCorrection = kMaxSpeedChangeCovered + 0.0005;
 }  // namespace limits
 
 // Format de la file : float32 entrelacé, canaux dans l'ordre de SDL3.
