@@ -423,7 +423,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         .width = video.width, .height = video.height, .fps = fps_of(video.frame_rate)};
 
     PlaySettings chosen = *saved;
-    // La tranche mesurée par « Évaluer ma machine » (bench.toml), si elle est de cette carte.
+    // La tranche mesurée par « Calibrer cette machine » (bench.toml), si elle est de cette carte.
     std::optional<BenchResult> measured_tier;
     if (auto bench = load_bench(paths::bench(settings_path.parent_path()))) measured_tier = std::move(*bench);
     // Le préréglage (Auto, Rapide…) refait la chaîne pour cette carte, cet écran et cette vidéo ;
@@ -524,7 +524,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       if (!calibration_told && calibration && !calibration->gpu.empty() && calibration->gpu != here.name) {
         calibration_told = true;
         const i18n::Translated redo =
-            i18n::ui_tr("New graphics card: optimise for this PC again (Video > Post-processing)");
+            i18n::ui_tr("New graphics card: calibrate this PC again (Video > Post-processing)");
         player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
       }
     }

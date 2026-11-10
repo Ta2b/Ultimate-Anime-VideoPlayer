@@ -37,7 +37,7 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
   CHECK(current(begin_wizard(facts, 8)) == WizardStep::Summary);  // rang d'une version d'avant
 }
 
-TEST_CASE("Prêt : Optimiser maintenant ou Régler moi-même ; un écran sauté n'écrase rien", "[wizard]") {
+TEST_CASE("Prêt : Calibrer maintenant ou Régler moi-même ; un écran sauté n'écrase rien", "[wizard]") {
   ajp::app::play::FrenchUi french;
   Wizard wizard = begin_wizard({.engine_choice = true}, 0);
   wizard.update_mode = UpdateMode::Auto;

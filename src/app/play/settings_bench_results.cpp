@@ -101,20 +101,22 @@ void measure_notes(const MachineCalibration& r, const CalibrationHost& host) {
                        rife_label(r.models.rife.empty() ? std::string(kLightRifeModel) : r.models.rife)));
   switch (calibration_use(r, host)) {
     case CalibrationUse::OldVersion:
-      note(i18n::tr("Measured by an older version: Auto keeps its estimate. Run the bench again."));
+      note(i18n::tr("Measured by an older version: Auto keeps its estimate. Run the calibration again."));
       break;
     case CalibrationUse::OnBattery:
-      note(i18n::tr("Measured on battery: Auto keeps its estimate. Run the bench again plugged in."));
+      note(i18n::tr("Measured on battery: Auto keeps its estimate. Run the calibration again plugged in."));
       break;
     case CalibrationUse::OtherEngine:
-      note(i18n::tr("Measured with another engine: Auto keeps its estimate. Run the bench again."));
+      note(i18n::tr("Measured with another engine: Auto keeps its estimate. Run the calibration again."));
       break;
     case CalibrationUse::OtherMachine:
-      note(i18n::tr("Measured on another card or display: Auto keeps its estimate. Run the bench again."));
+      note(i18n::tr(
+          "Measured on another card or display: Auto keeps its estimate. Run the calibration again."));
       break;
     case CalibrationUse::Followed:
       if (calibration_driver_changed(r, host))
-        note(i18n::tr("The graphics driver changed since this measure: run the bench again to refresh it."));
+        note(i18n::tr(
+            "The graphics driver changed since this measure: run the calibration again to refresh it."));
       break;
   }
 }
@@ -124,7 +126,7 @@ void measure_notes(const MachineCalibration& r, const CalibrationHost& host) {
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, MachineNote& bench,
                            std::vector<Input>& actions) {
-  section(i18n::tr("Bench results"));
+  section(i18n::tr("Calibration results"));
   bool applied = false;
   if (!bench.read) {
     bench.read = true;
@@ -147,9 +149,9 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     if (ImGui::Button(i18n::tr("Cancel##calibration"))) bench.stop->request_stop();
     return false;
   }
-  if (!bench.problem.empty()) note(i18n::tr_format("The bench failed: {}", bench.problem));
+  if (!bench.problem.empty()) note(i18n::tr_format("The calibration failed: {}", bench.problem));
   if (!bench.result) {
-    note(i18n::tr("No bench yet: the settings are an estimate from the card."));
+    note(i18n::tr("No calibration yet: the settings are an estimate from the card."));
   } else {
     const MachineCalibration& r = *bench.result;
     note(i18n::tr_format("{} · {} · display {}p", r.gpu.empty() ? i18n::tr("Unknown graphics card") : r.gpu,
@@ -202,7 +204,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
         "Interpolation runs in Auto Instant mode. The working resolution goes up to the 1080p of the "
         "test sequence; SPAN doubles it."));
   }
-  if (ImGui::Button(bench.result ? i18n::tr("Run the bench again") : i18n::tr("Run the bench"))) {
+  if (ImGui::Button(bench.result ? i18n::tr("Run the calibration again") : i18n::tr("Run the calibration"))) {
     if (choices.source_file.empty()) {
       start_bench(choices, d, bench);
     } else {
@@ -211,7 +213,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
       bench.read = false;  // calibration.toml relu au retour
     }
   }
-  panel::tip(i18n::tr("Playback closes during the bench, then resumes at the same spot."));
+  panel::tip(i18n::tr("Playback closes during the calibration, then resumes at the same spot."));
   return applied;
 }
 

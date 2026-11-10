@@ -109,7 +109,7 @@ constexpr std::array kSystemPages{
     Entry{"Open a video: the export uses its settings and is named next to it.",
           "Ouvrez une vidéo : l'export reprend ses réglages et se nomme à côté d'elle."},
     Entry{"Optimization cancelled: nothing changed.", "Optimisation annulée : rien n'a changé."},
-    Entry{"Optimize for this machine", "Optimiser pour ma machine"},
+    Entry{"Calibrate this machine", "Calibrer cette machine"},
     Entry{"Playback output · {}x{}", "Sortie de la lecture · {}x{}"},
     Entry{"Prepare again for this video", "Refaire la préparation pour cette vidéo"},
     Entry{"Previews", "Préversions"},

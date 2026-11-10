@@ -379,7 +379,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   BenchEvent event = BenchEvent::None;
   if (!bench.state) bench.state = std::make_shared<BenchState>();
   BenchState& state = *bench.state;
-  section(i18n::tr("Optimize for this machine"));
+  section(i18n::tr("Calibrate this machine"));
   panel::wrapped(i18n::tr(
       "The player tries a few seconds of video with its recommended settings, lightest to heaviest, "
       "keeps "
@@ -417,7 +417,7 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   }
   const bool measuring = state.pending != nullptr;
   ImGui::BeginDisabled(measuring || place.executable.empty());
-  if (ImGui::Button(i18n::tr("Optimize for this machine"))) {
+  if (ImGui::Button(i18n::tr("Calibrate this machine"))) {
     state.undo = capture_undo(paths::bench(context.data_dir), draft);
     state.progress = std::make_shared<BenchProgress>();
     state.span_progress = std::make_shared<SpanDeriveProgress>();
