@@ -70,6 +70,7 @@ int purge_sized_derivatives(const std::filesystem::path& dir, std::string_view f
     group.files.push_back(it->path());
   }
   std::vector<const SizedGroup*> order;
+  order.reserve(groups.size());
   for (const auto& [size, group] : groups) order.push_back(&group);
   std::ranges::sort(order, [](const SizedGroup* a, const SizedGroup* b) { return a->served > b->served; });
   for (std::size_t i = static_cast<std::size_t>(std::max(keep, 1)); i < order.size(); ++i)
