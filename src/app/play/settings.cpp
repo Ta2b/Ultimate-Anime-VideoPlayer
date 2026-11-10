@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "app/play/chain_shape.h"
+#include "core/utf8_path.h"
 #include "render/cube_lut.h"
 
 namespace ajp::app::play {
@@ -318,6 +319,10 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                                      std::pair{"grade.anime_highlights", s.grade_values.anime_highlights}}) {
     if (auto in = check(field, value, core::Range<int>{0, 200}); !in) return std::unexpected(in.error());
   }
+  // Un dossier d'installation sans retour à la ligne ni octet nul, d'une longueur de chemin (A22-09).
+  if (s.engines_dir.size() > kMaxEnginesDirBytes ||
+      s.engines_dir.find_first_of(std::string_view("\0\n\r", 3)) != std::string::npos)
+    return refuse_key(RefusalCode::FieldOutOfRange, "engines.install_dir", " : pas un chemin de dossier");
   if (s.model.find('/') != std::string::npos || s.model.find('\\') != std::string::npos)
     return refuse_key(RefusalCode::FieldOutOfRange, "image.model",
                       std::format(" : « {} » n'est pas un nom de fichier", s.model));
@@ -329,7 +334,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
   if (options.mute) s.volume = 0.0F;
   if (options.was_given("--no-upscale")) s.upscale = false;
   if (options.was_given("--no-restore-lines")) s.restore_lines = false;
-  if (options.was_given("--model") && options.model) s.model = options.model->filename().string();
+  if (options.was_given("--model") && options.model) s.model = core::to_utf8(options.model->filename());
   if (options.was_given("--work-height")) s.work_height = options.work_height;
   if (options.was_given("--rife")) {
     s.rife_factor = options.rife_factor;
@@ -356,6 +361,7 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--work-height", &PlaySettings::work_height);
   keep("--rife", &PlaySettings::rife_factor);
   keep("--rife", &PlaySettings::rife_factor_den);
+  keep("--rife", &PlaySettings::rife_auto);  // l'option la coupe pour cette lecture seulement (A22-05)
   keep("--truehdr-peak", &PlaySettings::true_hdr_peak);
   // Les peps de l'anime vivent dans grade_values : une option donnée à la main n'est pas enregistrée.
   const auto keep_grade = [&](std::string_view option, int render::GradeSettings::* member) {
@@ -400,6 +406,9 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.rife_model = wanted.rife_model;
     s.span_order = wanted.span_order;
     s.motion_precision = wanted.motion_precision;
+    s.rife_fused =
+        wanted.rife_fused;  // sans interpolation, rien à recharger : le réglage s'enregistre (A22-01)
+    s.drba_fused = wanted.drba_fused;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -410,6 +419,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.sharpness = wanted.sharpness;
   s.autoplay_next = wanted.autoplay_next;
   s.engines_dir = wanted.engines_dir;
+  s.gpu =
+      wanted.gpu;  // vaut au prochain lancement (le panneau le dit) : il s'enregistre tout de suite (A22-01)
   s.update_mode = wanted.update_mode;
   s.update_channel = wanted.update_channel;
   s.update_frequency = wanted.update_frequency;
@@ -460,6 +471,8 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::rife_model);
   keep(&PlaySettings::span_order);
   keep(&PlaySettings::motion_precision);
+  keep(&PlaySettings::rife_fused);
+  keep(&PlaySettings::drba_fused);
   keep(&PlaySettings::span_precision);
   return s;
 }
@@ -493,7 +506,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
                       const OpenedChain* opened) {
   std::vector<std::string> reopen;
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
-      running.work_height != wanted.work_height)
+      running.work_height != wanted.work_height || running.restore_lines != wanted.restore_lines)
     reopen.emplace_back(i18n::tr("SPAN reloads (built the first time for this size)"));
   if (running.audio_device != wanted.audio_device) reopen.emplace_back(i18n::tr("the output device changes"));
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
