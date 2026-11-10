@@ -150,8 +150,8 @@ jobs:
   # MSVC et vcpkg, sans GPU : la construction avec /WX (une rupture de MSVC ou d'un port paraît ici
   # et non au moment de livrer), puis les tests des modules qui n'ouvrent pas d'appareil
   # (préréglage de test windows-ci). Mêmes chemins courts, triplet et cache de ports que
-  # release-windows.yml ; restauration et sauvegarde séparées, pour garder les ports compilés
-  # même quand la construction échoue plus loin.
+  # release-windows.yml ; restauration et sauvegarde séparées, la sauvegarde juste après une
+  # installation de vcpkg complète, pour garder les ports compilés même quand la construction échoue.
   windows:
     name: Windows (MSVC)
     # Chaque pull request, la nuit et à la demande (P1.17) : une rupture de MSVC se voit avant la fusion.
@@ -167,15 +167,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      # L'image du runner (donc la version de MSVC) entre dans la clé : vcpkg range ses paquets par une
+      # empreinte qui la contient, et un cache d'une autre image, restauré à l'identique, ne servait plus à
+      # rien (15 min de Configuration avec le cache, 38 sans). Une clé stable par image, manifeste et ports,
+      # sans github.run_id : une entrée par combinaison au lieu d'une par exécution, que sccache évinçait.
+      - id: runner-image
+        shell: pwsh
+        run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
       - id: vcpkg-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\vc
-          key: vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
+          key: vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-${{ hashFiles('vcpkg.json', 'ports/**') }}
+          # Même image, autres ports : les paquets dont l'empreinte n'a pas changé resservent.
           restore-keys: |
-            vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-
-            vcpkg-windows-x64-ci-
-            vcpkg-windows-x64-release-
+            vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-
       - name: vcpkg à la référence du manifeste
         shell: pwsh
         run: |
@@ -189,6 +195,7 @@ jobs:
       # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       - name: Configuration
+        id: configure
         shell: pwsh
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
@@ -198,6 +205,14 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           if ($LASTEXITCODE -ne 0) { throw "configuration" }
+      # Sauvé dès que vcpkg a tout installé (la Configuration a réussi), même si la construction échoue
+      # ensuite ; jamais un cache partiel d'une installation coupée, que la clé stable garderait pour de bon.
+      # Rien à sauver quand la clé exacte vient d'être restaurée.
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        with:
+          path: C:\vc
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       - name: Construction
         shell: pwsh
         run: |
@@ -212,11 +227,6 @@ jobs:
             ctest --preset windows-ci --rerun-failed --output-on-failure -j1
             throw "tests"
           }
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: always()
-        with:
-          path: C:\vc
-          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
   # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque pull request (P1.17) : le kit
   # CUDA et TensorRT viennent de NVIDIA (tools/deps/linux-tensorrt.sh) et ne sortent pas de la tâche.

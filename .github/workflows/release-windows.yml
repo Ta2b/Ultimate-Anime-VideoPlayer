@@ -100,13 +100,15 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - id: runner-image
+        shell: pwsh
+        run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\vc
-          key: vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
+          key: vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-${{ hashFiles('vcpkg.json', 'ports/**') }}
           restore-keys: |
-            vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
-            vcpkg-windows-x64-release-
+            vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-
       - name: vcpkg à la référence du manifeste
         shell: pwsh
         run: |
@@ -196,18 +198,18 @@ jobs:
             echo "::error::pas de paquet TensorRT Windows pour l'empreinte $FP : une release finale en a toujours un (A28-01)"
             exit 1
           fi
-      # Restauration et sauvegarde séparées : les ports déjà compilés restent en cache même quand
-      # la construction échoue plus loin.
+      # Le même cache que ci.yml (même triplet) : une clé stable par image du runner, manifeste et ports
+      # (voir ci.yml). Sauvé seulement après un paquet construit : jamais une installation coupée.
+      - id: runner-image
+        shell: pwsh
+        run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
       - id: vcpkg-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\vc
-          key: vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
+          key: vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-${{ hashFiles('vcpkg.json', 'ports/**') }}
           restore-keys: |
-            vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
-            vcpkg-windows-x64-release-
-            vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-
-            vcpkg-windows-x64-ci-
+            vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-
       - name: vcpkg à la référence du manifeste
         shell: pwsh
         run: |
@@ -220,6 +222,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
       # AMD et Intel passent par Vulkan (docs/moteurs.md).
       - name: Paquet
+        id: package
         shell: pwsh
         env:
           # Signature Authenticode (P7.1) : vide tant que le compte Trusted Signing n'existe pas.
@@ -269,7 +272,7 @@ jobs:
           ctest --preset windows-release
           if ($LASTEXITCODE -ne 0) { throw "tests" }
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: always()
+        if: always() && steps.package.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         with:
           path: C:\vc
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
