@@ -11,6 +11,7 @@
 #include <spdlog/spdlog.h>
 
 #include "app/play/display_contract.h"
+#include "app/play/host_facts.h"
 #include "app/play/system_peak.h"
 #include "french_ui.h"
 
@@ -308,4 +309,84 @@ TEST_CASE("VRR : la capacité vient de l'EDID, jamais d'une plage fixe", "[app][
     edid[at + 8 + 4] = 0x01;
     CHECK(parse_edid(edid).vrr_range == DisplayFacts::VrrRange{.min_hz = 30, .max_hz = 320});
   }
+}
+
+TEST_CASE("Écran de la fenêtre : deux écrans du même modèle ne se confondent plus (A11-03)", "[app][edid]") {
+  using ajp::app::play::DisplayFacts;
+  using ajp::app::play::pick_display;
+  DisplayFacts left;
+  left.connector = "card1-DP-1";
+  left.name = "MAG 272U";
+  left.peak_nits = 1000.0;
+  left.vrr_armed = true;
+  DisplayFacts right = left;
+  right.connector = "card1-DP-2";
+  right.vrr_armed = false;
+  DisplayFacts tv;
+  tv.connector = "card1-HDMI-A-1";
+  tv.name = "LG TV";
+  tv.peak_nits = 800.0;
+  const std::vector<DisplayFacts> found{left, right, tv};
+
+  // Le nom du modèle seul : avant, le premier (DP-1) gagnait, avec son VRR armé, même pour la fenêtre sur
+  // DP-2. L'EDID commun reste, la sortie est inconnue.
+  const auto same = pick_display(found, "MAG 272U 27\"");
+  REQUIRE(same);
+  CHECK(same->peak_nits == 1000.0);
+  CHECK(same->connector.empty());
+  CHECK_FALSE(same->vrr_armed);
+  // Le connecteur nommé tranche.
+  CHECK(pick_display(found, "DP-2")->connector == "card1-DP-2");
+  CHECK(pick_display(found, "MAG 272U (DP-2)")->vrr_armed == false);
+  CHECK(pick_display(found, "DP-1")->connector == "card1-DP-1");
+  // « DP-1 » ne se lit pas dans « DP-10 » : aucun nom reconnu, le premier comme avant.
+  CHECK(pick_display({left, tv}, "DP-10")->connector == "card1-DP-1");
+  // Un modèle unique : son connecteur et son état, comme avant.
+  CHECK(pick_display(found, "LG TV")->connector == "card1-HDMI-A-1");
+  CHECK(pick_display({tv}, "n'importe quoi")->connector == "card1-HDMI-A-1");
+  CHECK_FALSE(pick_display({}, "DP-1"));
+}
+
+TEST_CASE("Contrat d'écran : sous Windows le pic suit le blanc SDR du système, pas 203 (A11-06)",
+          "[app][edid]") {
+  using ajp::app::play::contract_of;
+  using ajp::app::play::DisplayFacts;
+  using ajp::app::play::sdr_white_nits_of;
+  // Écran de 800 nits, curseur SDR de Windows à 400 nits : SDL dit une marge de 2 et un blanc de 5,0
+  // (400 / 80). Avant : 2 × 203 = 406 nits, la moitié du pic de l'écran.
+  const double white = sdr_white_nits_of(5.0F, true);
+  CHECK(white == 400.0);
+  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt, white).panel_peak_nits == 800.0);
+  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt).panel_peak_nits == 406.0);
+  // Hors de Windows la propriété n'a pas ce sens : inconnue, la référence du contenu comme avant.
+  CHECK(sdr_white_nits_of(5.0F, false) == 0.0);
+  CHECK(sdr_white_nits_of(0.0F, true) == 0.0);
+  // KDE garde la main : sa référence et son pic passent devant.
+  const auto kde =
+      contract_of(DisplayFacts{}, ajp::app::play::KwinOutput{.reference = 100.0}, 3.0, std::nullopt, 0.0);
+  CHECK(kde.panel_peak_nits == 300.0);
+}
+
+TEST_CASE("Pic de contenu sans pic calibré : la règle de chaque système (A11-12)", "[app][edid]") {
+  using ajp::app::play::PeakFacts;
+  using ajp::app::play::uncalibrated_peak_nits;
+  // Hors Windows : la marge × 203, rien sans HDR.
+  CHECK_FALSE(uncalibrated_peak_nits({.sdl_hdr = false, .headroom = 4.0}));
+  CHECK(uncalibrated_peak_nits({.sdl_hdr = true, .headroom = 4.0}) == Catch::Approx(812.0));
+  // Windows, HDR vu par SDL : la marge × le blanc SDR du curseur (écran à 800 nits, blanc à 400 : marge 2),
+  // bornée par le bas par la crête de l'EDID.
+  CHECK(
+      uncalibrated_peak_nits({.windows = true, .sdl_hdr = true, .headroom = 2.0, .sdr_white_nits = 400.0}) ==
+      Catch::Approx(800.0));
+  CHECK(uncalibrated_peak_nits({.windows = true,
+                                .sdl_hdr = true,
+                                .headroom = 2.0,
+                                .sdr_white_nits = 200.0,
+                                .edid_peak = 1000.0}) == Catch::Approx(1000.0));
+  // Windows, HDR que SDL ne voit pas (marge de 1,00 avec Vulkan) : l'EDID, sinon 600 ; rien si Windows ne
+  // dit pas le HDR actif, même avec un EDID qui annonce une crête.
+  CHECK(uncalibrated_peak_nits({.windows = true, .system_hdr_active = true, .edid_peak = 1000.0}) ==
+        Catch::Approx(1000.0));
+  CHECK(uncalibrated_peak_nits({.windows = true, .system_hdr_active = true}) == Catch::Approx(600.0));
+  CHECK_FALSE(uncalibrated_peak_nits({.windows = true, .edid_peak = 1000.0}));
 }

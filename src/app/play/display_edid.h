@@ -14,6 +14,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "render/display_model.h"
 
@@ -75,6 +76,12 @@ std::string describe(const DisplayFacts& display);
 // hors Linux ou si le système ne le dit pas.
 std::optional<bool> vrr_armed_now(std::string_view connector);
 
+// L'écran de `found` que nomme `wanted` (le nom que SDL donne à l'écran de la fenêtre). Pur (A11-03).
+// Dans l'ordre : le connecteur nommé en toutes lettres (« DP-2 » pour « card1-DP-2 »), puis le nom de
+// l'EDID. Deux écrans du même modèle portent le même nom : avant, le premier gagnait et son connecteur
+// passait pour celui de la fenêtre (VRR armé et réglages KWin de l'autre écran). L'EDID commun est rendu,
+// sans connecteur ni état propre à une sortie : inconnu plutôt que faux. Sans aucun nom reconnu, le premier.
+std::optional<DisplayFacts> pick_display(const std::vector<DisplayFacts>& found, std::string_view wanted);
 std::optional<DisplayFacts> read_display(std::string_view wanted);
 
 }  // namespace ajp::app::play

@@ -426,14 +426,36 @@ std::vector<DisplayFacts> connected_displays() {
 
 }  // namespace
 
-std::optional<DisplayFacts> read_display(std::string_view wanted) {
-  const std::vector<DisplayFacts> found = connected_displays();
+std::optional<DisplayFacts> pick_display(const std::vector<DisplayFacts>& found, std::string_view wanted) {
   if (found.empty()) return std::nullopt;
   if (found.size() == 1) return found.front();
+  // « card1-DP-2 » : le nom de la sortie est ce qui suit le premier tiret.
   for (const DisplayFacts& facts : found) {
-    if (!facts.name.empty() && wanted.find(facts.name) != std::string_view::npos) return facts;
+    const std::size_t dash = facts.connector.find('-');
+    if (dash == std::string::npos || dash + 1 >= facts.connector.size()) continue;
+    const std::string_view output = std::string_view(facts.connector).substr(dash + 1);
+    const std::size_t at = wanted.find(output);
+    if (at == std::string_view::npos) continue;
+    // « DP-1 » ne doit pas se reconnaître dans « DP-10 ».
+    const std::size_t end = at + output.size();
+    if (end < wanted.size() && wanted[end] >= '0' && wanted[end] <= '9') continue;
+    return facts;
   }
-  return found.front();
+  std::optional<DisplayFacts> named;
+  for (const DisplayFacts& facts : found) {
+    if (facts.name.empty() || wanted.find(facts.name) == std::string_view::npos) continue;
+    if (!named) {
+      named = facts;
+      continue;
+    }
+    named->connector.clear();  // un second écran du même nom : quelle sortie porte la fenêtre, inconnu
+    named->vrr_armed.reset();
+  }
+  return named ? named : found.front();
+}
+
+std::optional<DisplayFacts> read_display(std::string_view wanted) {
+  return pick_display(connected_displays(), wanted);
 }
 
 std::optional<bool> vrr_armed_now([[maybe_unused]] std::string_view connector) {

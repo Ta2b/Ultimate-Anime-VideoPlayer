@@ -493,17 +493,17 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 20 | A10-15 | Mineur | `src/app/play/placebo_screen.cpp:328` | Présentation plafonnée vers 127 i/s à 165 Hz, RIFE comme DistilDRBA, cause à mesurer | Non corrigé : la cause n'est pas lisible dans le code, il faut la mesure |
 | 21 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre | Corrigé : l'instantané d'une fenêtre SDR est rendu dans l'espace de la fenêtre, plus toujours en sRGB ; une fenêtre HDR sans « .pq.ppm » reste en sRGB (même image qu'avant sous lavapipe, surface sRGB) |
 | 22 | A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu | Corrigé |
-| 23 | A11-03 | Mineur | `src/app/play/display_edid.cpp:421-429` | Écran choisi par sous-chaîne du nom : deux écrans du même modèle confondus |  |
+| 23 | A11-03 | Mineur | `src/app/play/display_edid.cpp:421-429` | Écran choisi par sous-chaîne du nom : deux écrans du même modèle confondus | Corrigé : l'écran se choisit par le connecteur entier (« DP-2 » ne prend plus « DP-10 »), puis par le nom EDID ; deux écrans du même nom ne donnent plus le connecteur du premier (connecteur vidé, VRR non armé), test `pick_display` |
 | 24 | A11-04 | Mineur | `src/app/play/system_peak.cpp:85-108` | Entrée KWin choisie par le seul connecteur | Corrigé |
 | 25 | A11-05 | Mineur | `src/app/play/display_edid.cpp:56-63` | Demi-flottant infini retenu comme pic | Corrigé |
-| 26 | A11-06 | Mineur | `src/app/play/display_contract.cpp:24-42` | Hors KDE, blanc de référence fixé à 203 et marge mal rapportée sous Windows |  |
+| 26 | A11-06 | Mineur | `src/app/play/display_contract.cpp:24-42` | Hors KDE, blanc de référence fixé à 203 et marge mal rapportée sous Windows | Corrigé d'après le code : sous Windows le contrat d'écran prend la marge × le blanc SDR que SDL rapporte (niveau × 80 nits), plus 203 fixe ; hors Windows et hors KDE, SDL ne donne pas ce blanc et 203 reste, test |
 | 27 | A11-07 | Mineur | `src/app/play/host_facts.cpp:247-250` | Windows : pic DXGI demandé seulement si un EDID a été lu | Corrigé |
 | 28 | A11-08 | Mineur | `src/app/play/gpu_telemetry.cpp:311-372` | `GpuTelemetry::sample` écrit sans verrou depuis deux threads (GPU-09) | Corrigé |
 | 29 | A11-09 | Mineur | `src/app/play/host_facts.cpp:378-380` | `on_battery()` sans cache sur le thread de la boucle | Corrigé par A31-10 : on_battery n'est plus appelé par la boucle ; Corrigé (plus d'appel dans la boucle : le plafond de batterie est retiré) |
 | 30 | A11-10 | Mineur | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur dans l'OSD anglais | Corrigé |
 | 31 | A11-11 | Mineur | `src/app/play/display_edid.cpp:139-147` | Pic et noir dépendent de l'ordre des blocs EDID | Corrigé en partie : taille des descripteurs Adaptive-Sync ; le choix d'une seule source par grandeur change le pic ou le noir de l'écran cible, il attend une décision |
-| 32 | A11-12 | Mineur | `tests/unit/app/` | Aucun test du contrat d'écran, du multi-écran ni du pic de contenu |  |
-| 33 | A11-13 | Mineur | `src/app/play/host_facts.cpp:39-81` | Quatre copies de l'énumération `QueryDisplayConfig` |  |
+| 32 | A11-12 | Mineur | `tests/unit/app/` | Aucun test du contrat d'écran, du multi-écran ni du pic de contenu | Corrigé : tests du choix d'écran (`pick_display`), du contrat avec le blanc SDR du système, et de la règle du pic de contenu sortie de `content_peak_nits` (`uncalibrated_peak_nits`, Windows et ailleurs) ; la lecture des propriétés SDL elles-mêmes reste sans test |
+| 33 | A11-13 | Mineur | `src/app/play/host_facts.cpp:39-81` | Quatre copies de l'énumération `QueryDisplayConfig` | Corrigé d'après le code : une seule énumération `active_paths()` pour les quatre usages, qui recommence si la configuration change pendant la lecture (ERROR_INSUFFICIENT_BUFFER) ; code Windows, construit par la CI MSVC seulement |
 | 34 | A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Corrigé |
 | 35 | A12-04 | Mineur | `src/core/auto_rate.cpp:293-301` | Paliers calés sur le plafond passé comme fréquence d'écran | Corrigé |
 | 36 | A12-05 | Mineur | `src/core/auto_rate.cpp:599-608` | Réarmement toutes les 8 s même sans palier calé | Corrigé |
