@@ -211,7 +211,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
       // ne dirait rien. L'accueil s'ouvre avec la raison.
       log_channel("app")->warn("{}", video.error().detail);
-      unreadable = i18n::tr_format("\"{}\" cannot be read: {}", core::to_utf8(options.file.filename()),
+      unreadable = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(options.file.filename()),
                                    visible_error(video.error()));
     }
   }
@@ -412,7 +412,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       auto probed = probe_video(file, true);
       if (!probed) {
         log->warn("{}", probed.error().detail);
-        problem = i18n::tr_format("\"{}\" cannot be read: {}", core::to_utf8(file.filename()),
+        problem = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(file.filename()),
                                   visible_error(probed.error()));
         file.clear();
         continue;

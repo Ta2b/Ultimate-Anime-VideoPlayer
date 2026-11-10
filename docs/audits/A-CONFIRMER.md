@@ -161,7 +161,7 @@
 | A12-06 | Mineur | C08 | Calage de vitesse sur une fréquence fausse, jamais sur la phase | Corrigé d'après le code (C08), effet à confirmer : `--stats` une heure sur écran fixe, compter les `interval_us` qui sortent du motif ; et relever ce que SDL annonce sous Windows pour un mode 59,94 Hz. |
 | A24-08 | Mineur | C08 | `path::string()` dans le journal (dette, voir A20-02) | Corrigé d'après le code (C08), effet à confirmer : sur Windows. |
 | A24-16 | Mineur | C08 | `save_settings` synchrone sur le thread de l'interface à l'accueil | Lu ; durée à confirmer. |
-| A24-17 | Mineur | C08 | Accueil redessiné toutes les 16 ms sans événement | charge GPU sur l'accueil immobile. |
+| A24-17 | Mineur | C08 | Accueil redessiné toutes les 16 ms sans événement | Corrigé d'après le code (C08), effet à confirmer : charge GPU sur l'accueil immobile. |
 | A24-18 | Mineur | C08 | Atlas des polices en RGBA32, renvoyé depuis l'origine | (`AJP_TRACE` autour de `update_texture`). |
 | A24-20 | Mineur | C08 | Sous-titres étirés à la nouvelle taille jusqu'au rendu suivant | Lu ; durée à confirmer. |
 | A24-21 | Mineur | C08 | Une passe de dessin par commande ImGui | `--stats`, temps de rendu avec et sans le menu ouvert. |
