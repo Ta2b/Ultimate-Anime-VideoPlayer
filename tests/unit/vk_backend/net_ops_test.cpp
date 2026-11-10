@@ -4,6 +4,7 @@
 // internes en Nhwc16 quand l'opération le permet.
 #include <algorithm>
 #include <functional>
+#include <ios>
 #include <optional>
 #include <string>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "gpu/vulkan/backend/net_engine.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/compute/buffer.h"
+#include "kernels/ref/half.h"
 #include "net_rig.h"
 
 using namespace ajp::gpu;
@@ -255,6 +257,45 @@ TEST_CASE("Réseau : Cast vers float16 et calcul en float16", "[vk_backend][net]
   const std::vector<ir::NamedValue> inputs{
       {"x", test_values(ir::DataType::F32, {1, 3, 5, 7}, 8, -4.0F, 4.0F)}};
   check_graph(rig, graph, inputs, kFp16);
+}
+
+TEST_CASE("Réseau : le rangement en float16 arrondit au pair, bit pour bit (A45-15)", "[vk_backend][net]") {
+  // Égalités (à mi-chemin de deux float16), voisins de la moitié d'un pas, et sous-normaux : un pilote qui
+  // arrondit vers zéro, ou qui met les sous-normaux à zéro, passait les tests à un pas près.
+  NetRig rig = make_net_rig();
+  require_f16(rig);
+  const vk::DeviceCaps& caps = rig.context->caps();
+  if (!caps.round_rte_f16) SKIP("arrondi float16 laissé au pilote sur " << caps.device_name);
+  std::vector<float> values;
+  for (int k = 0; k < 64; ++k) {
+    const float tie = 1.0F + static_cast<float>(2 * k + 1) * 0x1p-11F;  // pas de 2^-10 autour de 1
+    values.insert(values.end(), {tie, tie - 0x1p-20F, tie + 0x1p-20F, 37.0F * tie, 0.001F * tie});
+  }
+  const std::size_t normal = values.size();
+  for (int k = 0; k < 40; ++k) {
+    const float step = static_cast<float>(k) * 0x1p-24F;  // le pas des sous-normaux float16
+    values.insert(values.end(), {step, step + 0x1p-25F, step + 0x1.8p-25F, step + 0x1p-26F});
+  }
+  const std::int64_t count = static_cast<std::int64_t>(values.size());
+  ModelBuilder m;
+  m.input("x", {1, 1, 1, count});
+  m.node("Relu", {"x"}, {"a"});
+  m.node("Cast", {"a"}, {"h"}, {attr_int("to", ir::onnx::kFloat16)});
+  m.node("Relu", {"h"}, {"r"});
+  m.node("Cast", {"r"}, {"y"}, {attr_int("to", ir::onnx::kFloat)});
+  m.output("y");
+  const ir::Graph graph = build(m);
+  const std::vector<ir::NamedValue> inputs{
+      {"x", ir::Value{.type = ir::DataType::F32, .dims = {1, 1, 1, count}, .f = values}}};
+  const std::vector<ir::Value> got = run_on_device(rig, graph, inputs);
+  REQUIRE(got.size() == 1);
+  REQUIRE(got[0].f.size() == values.size());
+  const std::size_t checked = caps.denorm_preserve_f16 ? values.size() : normal;
+  if (!caps.denorm_preserve_f16) WARN("sous-normaux float16 laissés au pilote sur " << caps.device_name);
+  for (std::size_t i = 0; i < checked; ++i) {
+    INFO("valeur " << i << " : " << std::hexfloat << values[i]);
+    CHECK(got[0].f[i] == ajp::kernels::ref::round_to_half(values[i]));
+  }
 }
 
 TEST_CASE("Réseau : opérateur sans noyau refusé à l'abaissement", "[vk_backend][net]") {

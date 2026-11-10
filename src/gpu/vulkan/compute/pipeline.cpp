@@ -118,11 +118,16 @@ std::expected<VkSampler, Refusal> PipelineCache::sampler() {
 std::expected<VkShaderModule, Refusal> PipelineCache::module(std::string_view shader,
                                                              std::span<const std::uint32_t> spirv) {
   if (const auto found = modules_.find(shader); found != modules_.end()) return found->second;
-  const std::span<const std::uint32_t> words = spirv.empty() ? spirv::words(shader) : spirv;
+  std::span<const std::uint32_t> words = spirv.empty() ? spirv::words(shader) : spirv;
   if (words.empty()) {
     return refuse(RefusalCode::FeatureUnavailable,
                   std::format("shader {} absent du SPIR-V embarqué", shader));
   }
+  // A45-15 : l'arrondi et les sous-normaux du float 16 bits sont exigés du pilote quand il sait les tenir.
+  const DeviceCaps& caps = context_.caps();
+  const std::vector<std::uint32_t> controlled =
+      spirv_with_float16_controls(words, caps.round_rte_f16, caps.denorm_preserve_f16);
+  if (!controlled.empty()) words = controlled;
   const VkShaderModuleCreateInfo info{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                                       .codeSize = words.size_bytes(),
                                       .pCode = words.data()};

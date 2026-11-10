@@ -123,8 +123,11 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
       .pNext = has_pci ? &pci : nullptr};
   VkPhysicalDeviceDriverProperties driver{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
                                           .pNext = api >= VK_API_VERSION_1_3 ? &sizes : nullptr};
-  VkPhysicalDeviceSubgroupProperties subgroup{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
-                                              .pNext = &driver};
+  VkPhysicalDeviceFloatControlsProperties floats{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES, .pNext = &driver};
+  VkPhysicalDeviceSubgroupProperties subgroup{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
+      .pNext = api >= VK_API_VERSION_1_2 ? static_cast<void*>(&floats) : static_cast<void*>(&driver)};
   VkPhysicalDeviceIDProperties ids{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
                                    .pNext = &subgroup};
   VkPhysicalDeviceProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
@@ -164,6 +167,10 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
     caps.max_subgroup_size = sizes.maxSubgroupSize;
   }
   caps.cooperative_matrix = has_extension(extensions, "VK_KHR_cooperative_matrix");
+  caps.round_rte_f16 = floats.shaderRoundingModeRTEFloat16 == VK_TRUE &&
+                       floats.roundingModeIndependence == VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL;
+  caps.denorm_preserve_f16 = floats.shaderDenormPreserveFloat16 == VK_TRUE &&
+                             floats.denormBehaviorIndependence == VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL;
   return caps;
 }
 
@@ -228,7 +235,7 @@ std::string describe(const DeviceCaps& caps) {
   const auto flag = [](bool on, const char* name) { return on ? std::format(", {}", name) : std::string{}; };
   return std::format(
       "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} invocations, "
-      "partagée {} o, tampon {} o{}",
+      "partagée {} o, tampon {} o{}, fp16 : arrondi {}, sous-normaux {}",
       caps.device_name, caps.driver_name, caps.driver_info, version_text(caps.api_version),
       uuid_text(caps.uuid), caps.pci ? std::format(", PCI {}", pci_text(*caps.pci)) : std::string{},
       flag(f.timeline_semaphore, "timeline"), flag(f.storage_buffer_16bit, "stockage 16 bits"),
@@ -236,7 +243,9 @@ std::string describe(const DeviceCaps& caps) {
       flag(f.subgroup_size_control, "contrôle des sous-groupes"),
       flag(f.compute_full_subgroups, "sous-groupes pleins"), flag(f.float_atomic_add, "atomiques float"),
       caps.subgroup_size, caps.max_push_constants, caps.max_workgroup_invocations, caps.max_shared_memory,
-      caps.max_storage_buffer_range, flag(caps.cooperative_matrix, "VK_KHR_cooperative_matrix présent"));
+      caps.max_storage_buffer_range, flag(caps.cooperative_matrix, "VK_KHR_cooperative_matrix présent"),
+      caps.round_rte_f16 ? "au pair exigé" : "laissé au pilote",
+      caps.denorm_preserve_f16 ? "gardés" : "laissés au pilote");
 }
 
 }  // namespace ajp::gpu::vk

@@ -1,7 +1,7 @@
 // Arrondi fp16 des tenseurs des réseaux : les ports écrivent leurs plans RGB en binary16 par
-// __float2half (CUDA), la conversion float16_t(x) (GLSL, dont le mode d'arrondi est celui de
-// l'implémentation : au plus proche en pratique, sans décoration RTE) ou half (Metal),
-// au plus proche, égalités au pair.
+// __float2half (CUDA), la conversion float16_t(x) (GLSL : le backend Vulkan déclare RoundingModeRTE et
+// DenormPreserve pour le float 16 bits quand l'appareil les annonce, spirv_with_float16_controls ; sinon le
+// mode est celui du pilote, et le journal le dit) ou half (Metal), au plus proche, égalités au pair.
 // La référence calcule en float ; ces fonctions reproduisent l'arrondi d'un port pour qu'un
 // golden compare des valeurs comparables. Tests : tests/unit/kernels/half_test.cpp.
 #pragma once
