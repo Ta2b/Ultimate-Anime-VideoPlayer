@@ -5,6 +5,13 @@
 // entier par rapport au premier, et une régression linéaire sur les 256 dernières donne la phase
 // et la période de la grille. De là : la fréquence réelle (164,78 Hz et non 165), et la latence
 // de sortie, c'est-à-dire l'écart médian entre l'instant visé et l'instant affiché.
+//
+// Le pas qui numérote les vblanks est la période annoncée de l'écran (set_nominal_period : la durée de
+// rafraîchissement de la swapchain ou du compositeur), jamais le plus petit écart vu : un lecteur qui ne
+// présente qu'à l'image neuve (23,976 i/s sur 144 Hz, tous les 6 ou 7 vblanks) n'a aucun écart d'un seul
+// vblank, et la grille apprenait alors la cadence du contenu (A12-01). Une date qui ne tombe pas près d'un
+// multiple entier de la période est écartée. Sans période annoncée, l'ancienne estimation par le plus petit
+// écart reste, et repart de zéro quand un écart plus court la dément.
 #pragma once
 
 #include <cstddef>
@@ -28,6 +35,21 @@ class VblankClock {
   static constexpr std::size_t kWindow = 256;
   static constexpr std::size_t kMinSamples = 8;
 
+  // Une date plus loin que cela d'un multiple entier de la période (en périodes) n'est pas un vblank.
+  static constexpr double kOffGrid = 0.3;
+  // La régression ne remplace la période annoncée pour numéroter que si elle en reste à 2 % près.
+  static constexpr double kNominalTolerance = 0.02;
+  // Autant de dates écartées de suite : c'est la dernière gardée qui était fausse, la grille repart.
+  static constexpr int kMaxRejects = 8;
+  // Un trou plus long (pause, fenêtre cachée) : le numéro du vblank ne se compte plus sûrement, la grille
+  // repart.
+  static constexpr std::int64_t kMaxGapUs = 5'000'000;
+
+  // La période annoncée de l'écran, en µs (0 : inconnue). Changée de plus de 0,5 % (autre mode, autre
+  // écran) : la grille repart.
+  void set_nominal_period(double period_us);
+  double nominal_period_us() const { return nominal_us_; }
+
   // visible_us : date où l'image est apparue ; target_us : date visée (0 : inconnue).
   void observe(std::int64_t visible_us, std::uint64_t id, std::int64_t target_us);
 
@@ -45,13 +67,15 @@ class VblankClock {
     std::int64_t visible_us;
     std::int64_t k;  // numéro de vblank depuis la première observation
   };
+  void restart(std::int64_t visible_us);  // la grille repart de cette date
+  void push(std::int64_t visible_us, std::int64_t steps);
   std::deque<Sample> times_;
   std::deque<std::int64_t> latencies_;
-  double period_guess_us_ = 0.0;
-  std::int64_t first_us_ = 0;
+  double nominal_us_ = 0.0;
+  double period_guess_us_ = 0.0;  // sans période annoncée : le plus petit écart vu, affiné par la régression
   std::int64_t last_k_ = 0;
   std::int64_t last_us_ = 0;
-  std::uint64_t last_id_ = 0;
+  int rejects_ = 0;
   bool have_last_ = false;
 };
 

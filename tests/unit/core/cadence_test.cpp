@@ -1,5 +1,6 @@
 #include "core/cadence.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -405,4 +406,45 @@ TEST_CASE("cadence : retarget refuse un facteur invalide et ne change rien", "[c
   CHECK_FALSE(accumulator.retarget(Ratio{.num = 1, .den = 1}));
   CHECK(accumulator.factor().num == 3);
   CHECK(accumulator.retarget(Ratio{.num = 3, .den = 2}));
+}
+
+TEST_CASE("A12-07 : retarget garde les termes dans leurs bornes", "[cadence][auto]") {
+  auto accumulator = make(Ratio{.num = 11011, .den = 6400});
+  // 11011/3200 (deux rafraîchissements par image à 165 Hz) : × 64, les termes sortaient de kRatioTerm.
+  REQUIRE(accumulator.retarget(Ratio{.num = 11011, .den = 3200}));
+  const Ratio factor = accumulator.factor();
+  CHECK(limits::kRatioTerm.contains(factor.num));
+  CHECK(limits::kRatioTerm.contains(factor.den));
+  CHECK(factor.num * 3200 == factor.den * 11011);
+  // Un petit facteur garde l'échelle fine d'avant.
+  REQUIRE(accumulator.retarget(Ratio{.num = 5, .den = 2}));
+  CHECK(accumulator.factor() == Ratio{.num = 5 * 64, .den = 2 * 64});
+}
+
+TEST_CASE("A12-10 : une heure à 11011/3200, chaque image sur un vsync sur deux à 165 Hz, sans dérive",
+          "[cadence][auto]") {
+  // 23,976 i/s × 11011/3200 = 82,5 i/s : une image tous les deux rafraîchissements d'un écran à 165 Hz.
+  auto accumulator = make(Ratio{.num = 11011, .den = 3200});
+  const double vsync = 1e6 / 165.0;
+  std::int64_t outputs = 0;
+  std::int64_t previous = -1;
+  double worst = 0.0;
+  const std::int64_t sources = 3600LL * 24000 / 1001;  // une heure
+  for (std::int64_t k = 0; k <= sources; ++k) {
+    const CadenceStep step = accumulator.push(stamp(static_cast<std::uint32_t>(k + 1), ntsc_pts(k)));
+    for (const OutputInstant& at : step.instants()) {
+      REQUIRE(at.pts_us);
+      if (previous >= 0) {
+        REQUIRE(*at.pts_us > previous);
+        // L'image n tombe sur le vsync 2n, aux arrondis des horodatages près (1 µs par source et par
+        // instant).
+        const double expected = 2.0 * vsync * static_cast<double>(outputs);
+        worst = std::max(worst, std::abs(static_cast<double>(*at.pts_us) - expected));
+      }
+      previous = *at.pts_us;
+      ++outputs;
+    }
+  }
+  CHECK(outputs == sources * 11011 / 3200 + 1);
+  CHECK(worst < 3.0);  // µs, après une heure : aucune dérive
 }

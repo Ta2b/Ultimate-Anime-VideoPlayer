@@ -26,6 +26,7 @@
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/paths.h"
+#include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
@@ -35,6 +36,7 @@
 #include "core/keys.h"
 #include "core/log.h"
 #include "core/thread.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -130,20 +132,21 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   plan.shown = &shared->progress;  // vit autant que shared, que le thread garde
   shared->changed_us = host_now_us();
   const int height = plan.display_height;
-  auto worker = start_thread("calibration", ThreadReport([shared](const Refusal& refusal) {
-                               const std::scoped_lock lock(shared->mutex);
-                               if (!shared->result) shared->result = std::unexpected(refusal);
-                             }),
-                             [shared, plan, base, height](const std::stop_token& stop, const ThreadReport&) {
-                               auto done =
-                                   calibrate_machine(plan, base, height, stop, [shared](float fraction) {
-                                     const std::scoped_lock lock(shared->mutex);
-                                     shared->fraction = fraction;
-                                     shared->changed_us = host_now_us();
-                                   });
-                               const std::scoped_lock lock(shared->mutex);
-                               shared->result = std::move(done);
-                             });
+  const Tier tier = estimate_tier(gpu_facts(screen)).tier;
+  auto worker =
+      start_thread("calibration", ThreadReport([shared](const Refusal& refusal) {
+                     const std::scoped_lock lock(shared->mutex);
+                     if (!shared->result) shared->result = std::unexpected(refusal);
+                   }),
+                   [shared, plan, base, height, tier](const std::stop_token& stop, const ThreadReport&) {
+                     auto done = calibrate_machine(plan, base, height, tier, stop, [shared](float fraction) {
+                       const std::scoped_lock lock(shared->mutex);
+                       shared->fraction = fraction;
+                       shared->changed_us = host_now_us();
+                     });
+                     const std::scoped_lock lock(shared->mutex);
+                     shared->result = std::move(done);
+                   });
   if (!worker) {
     log->warn("calibration de la machine : {}", worker.error().detail);
     return as_auto(std::move(base));
@@ -191,9 +194,9 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     return as_auto(std::move(base));
   }
   // Auto calibré : le lecteur relit les bornes mesurées (calibration.toml) et refait la chaîne pour chaque
-  // vidéo ; la chaîne mesurée, SPAN FP8 compris, reste écrite pour qui repasse en Personnalisé.
+  // vidéo ; la chaîne mesurée, ses modèles compris, reste écrite pour qui repasse en Personnalisé.
   PlaySettings calibrated =
-      candidate_settings((*shared->result)->chosen, std::move(base), (*shared->result)->span_fp8);
+      candidate_settings((*shared->result)->chosen, std::move(base), (*shared->result)->models);
   calibrated.preset = Preset::Auto;
   return calibrated;
 }
@@ -223,8 +226,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const bool tensorrt = std::ranges::any_of(view.engines, [](const EngineRow& row) {
       return row.offer.id == core::EngineId::TensorRt && row.chosen && row.usable;
     });
-    view.calibration_minutes = calibration_minutes(height > 0 ? height : 1080, tensorrt,
-                                                   gpu.name.find("Laptop") != std::string::npos);
+    view.calibration_minutes = calibration_minutes(tensorrt, gpu.name.find("Laptop") != std::string::npos);
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
@@ -339,6 +341,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
   auto library = run_pumped<std::shared_ptr<BackendLibrary>>(
       "backend", [&] { return BackendLibrary::choose(backends_within(candidates, engines), probe); });
   // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
+  if (library) note_engine_facts(core::to_utf8((*library)->path().filename()), (*library)->passed_over());
   if (library && !(*library)->passed_over().empty())
     log_channel("app")->warn("moteurs : refus avant {} :{}", (*library)->path().string(),
                              (*library)->passed_over());

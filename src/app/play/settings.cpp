@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/chain_shape.h"
 #include "render/cube_lut.h"
 
 namespace ajp::app::play {
@@ -380,7 +381,8 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
   return out;
 }
 
-PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded) {
+PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
+                       const OpenedChain* opened) {
   PlaySettings s = running;
   s.preset = wanted.preset;
   s.priority = wanted.priority;
@@ -429,6 +431,15 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.oled_care = wanted.oled_care;
   s.steady_cadence = wanted.steady_cadence;
   s.stats = wanted.stats;
+  // Ce qui demande un autre anneau ou un autre ordre du warp attend la réouverture, d'un bloc : la cadence
+  // en cours reste celle pour laquelle la chaîne a été ouverte.
+  if (opened != nullptr && !fits(*opened, s)) {
+    s.rife_auto = running.rife_auto;
+    s.auto_cap = running.auto_cap;
+    s.auto_free = running.auto_free;
+    s.rife_factor = running.rife_factor;
+    s.rife_factor_den = running.rife_factor_den;
+  }
   return s;
 }
 
@@ -441,6 +452,9 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   };
   keep(&PlaySettings::rife_factor);
   keep(&PlaySettings::rife_factor_den);
+  keep(&PlaySettings::rife_auto);
+  keep(&PlaySettings::auto_cap);
+  keep(&PlaySettings::auto_free);
   keep(&PlaySettings::motion_engine);
   keep(&PlaySettings::rife_model);
   keep(&PlaySettings::span_order);
@@ -449,7 +463,33 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   return s;
 }
 
-Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded) {
+namespace {
+
+// La forme tirée à l'ouverture (A08-03, A22-04) : ce que wanted demande et que la chaîne ouverte n'a pas.
+// L'ordre du warp n'est dit que si le réglage span_order ne le dit pas déjà. opened nullptr : aucune chaîne.
+void add_shape_reasons(std::vector<std::string>& reopen, const PlaySettings& running,
+                       const PlaySettings& wanted, const OpenedChain* opened) {
+  if (opened == nullptr || fits(*opened, wanted)) return;
+  const ChainShape shape = chain_shape(wanted, *opened);
+  if (shape.ring > opened->shape.ring)
+    reopen.emplace_back(i18n::tr("the frame ring grows for this interpolation"));
+  if (shape.warp_after_span != opened->shape.warp_after_span && running.span_order == wanted.span_order)
+    reopen.emplace_back(shape.warp_after_span ? i18n::tr("warp runs after SPAN")
+                                              : i18n::tr("warp runs before SPAN"));
+}
+
+// La réouverture et ses raisons, jointes pour l'encadré du panneau.
+Change reopen_for(const std::vector<std::string>& reasons) {
+  std::string reason;
+  for (const std::string& part : reasons) reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
+  return Change{.cost = ChangeCost::Reopen,
+                .reason = reason + i18n::tr(" ; playback resumes at the same spot")};
+}
+
+}  // namespace
+
+Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
+                      const OpenedChain* opened) {
   std::vector<std::string> reopen;
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
       running.work_height != wanted.work_height)
@@ -487,12 +527,8 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
                                         label(wanted.motion_engine),
                                         precision_text(wanted.motion_precision)));
   }
-  if (!reopen.empty()) {
-    std::string reason;
-    for (const std::string& part : reopen) reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
-    return Change{.cost = ChangeCost::Reopen,
-                  .reason = reason + i18n::tr(" ; playback resumes at the same spot")};
-  }
+  add_shape_reasons(reopen, running, wanted, opened);
+  if (!reopen.empty()) return reopen_for(reopen);
   if (running == wanted) return {};
   return Change{.cost = ChangeCost::Live};
 }

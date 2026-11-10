@@ -144,6 +144,22 @@ EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& path
   return catalog;
 }
 
+// La machine à laquelle une calibration se compare (A25-02, A07-05). Le moteur qui jouera SPAN et RIFE : la
+// bibliothèque déjà ouverte si le choix n'a pas bougé depuis (opened_for), sinon le préféré s'il est
+// installé.
+CalibrationHost calibration_host(const GpuFacts& here, int display_height, const BackendLibrary* library,
+                                 const std::optional<core::EngineId>& opened_for,
+                                 const core::Settings& engines, const EngineCatalog& catalog,
+                                 const PlayerPaths& paths) {
+  const std::optional<core::EngineId> preferred =
+      engines.preferred[static_cast<std::size_t>(core::Usage::Upscale)];
+  const bool tensorrt =
+      library != nullptr && preferred == opened_for
+          ? engine_of_library(library->path()) == core::EngineId::TensorRt
+          : preferred == core::EngineId::TensorRt && tensorrt_backend_present(catalog, paths);
+  return {.gpu = here.name, .display_height = display_height, .tensorrt = tensorrt, .driver = here.driver};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -177,7 +193,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_settings(settings_path);
-  // Sans réglage lisible, la langue du système (A19-03).
   i18n::set_language(i18n::language_from_code(saved ? saved->language : default_interface_language()));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
@@ -405,19 +420,20 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et ce pilote, et pas pour un
     // essai.
     const GpuFacts here = gpu_facts(**screen);
+    const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
+                                                  library_wanted, *engines, catalog, paths);
     const bool explored = measured_tier && !file_options.bench_level && measured_tier->gpu == here.name &&
                           measured_tier->driver == here.driver;
-    chosen = apply_preset(chosen,
-                          Machine{.tier = tier,
-                                  .display_height = display_height((*screen)->window()),
-                                  .display_hz = display_refresh_hz((*screen)->window()),
-                                  .explored_work_height = explored ? measured_tier->work_height : 0,
-                                  .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
-                                  .calibrated = file_options.bench_level
-                                                    ? std::nullopt
-                                                    : calibrated_chain(settings_path.parent_path(), here.name,
-                                                                       display_height((*screen)->window()))},
-                          source);
+    chosen = apply_preset(
+        chosen,
+        Machine{.tier = tier,
+                .display_height = display_height((*screen)->window()),
+                .display_hz = display_refresh_hz((*screen)->window()),
+                .explored_work_height = explored ? measured_tier->work_height : 0,
+                .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
+                .calibrated = file_options.bench_level ? std::nullopt
+                                                       : calibrated_chain(settings_path.parent_path(), host)},
+        source);
     PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));

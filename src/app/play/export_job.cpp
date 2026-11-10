@@ -59,8 +59,8 @@ PlaySettings export_chain(const PlaySettings& s) {
 }
 
 ExportSize chain_output(const PlaySettings& chain, int source_width, int source_height) {
-  const WorkSize work = work_size(source_width, source_height, chain.work_height);
-  const int factor = chain.upscale ? kSpanFactor : 1;
+  const WorkSize work = chain_work_size(chain, source_width, source_height);
+  const int factor = span_runs(chain, source_height) ? kSpanFactor : 1;
   return {.width = work.width * factor, .height = work.height * factor};
 }
 

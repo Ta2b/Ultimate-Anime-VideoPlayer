@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "app/play/calibrated_chain.h"
+#include "app/play/chain_shape.h"
 #include "app/play/default_player.h"
 #include "app/play/input.h"
 #include "app/play/precision.h"
@@ -49,11 +51,15 @@ struct SettingsChoices {
   bool rife_available = false;      // une interpolation possible : RIFE, DistilDRBA, Apple (Mac)
   // Les crans de précision (precision.h) que le poste rend : Équilibre toujours ; Performance (FP8) et
   // Qualité (FP32) selon les graphes installés.
-  TierSupport span_tiers;                // pour le modèle SPAN en cours (span_int8.h)
-  TierSupport rife_tiers;                // les graphes « _fp8 » et « _fp32 » du modèle RIFE en cours
-  TierSupport drba_tiers;                // ceux de DistilDRBA
-  bool distil_drba_available = false;    // le graphe de DistilDRBA
-  bool rife_loaded = false;              // moteur RIFE chargé : ×N en direct
+  TierSupport span_tiers;              // pour le modèle SPAN en cours (span_int8.h)
+  TierSupport rife_tiers;              // les graphes « _fp8 » et « _fp32 » du modèle RIFE en cours
+  TierSupport drba_tiers;              // ceux de DistilDRBA
+  bool distil_drba_available = false;  // le graphe de DistilDRBA
+  bool rife_loaded = false;            // moteur RIFE chargé : ×N en direct
+  // La chaîne ouverte (chain_shape.h) : un facteur, Auto ou Rapide qui demandent un autre anneau ou un autre
+  // ordre du warp attendent « Appliquer ». Rien : à l'accueil, aucune chaîne.
+  std::optional<OpenedChain> opened;
+  const OpenedChain* chain() const { return opened ? &*opened : nullptr; }
   std::vector<std::string> rife_models;  // fichiers RIFE du dossier du modèle par défaut
   std::string default_rife_model;        // celui qu'un nom vide désigne
   std::string rife_folder;               // le dossier des modèles RIFE (et de DistilDRBA)
@@ -73,9 +79,16 @@ struct SettingsChoices {
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
-  int display_height = 0;   // hauteur de l'écran en pixels ; 0 : inconnue
-  bool calibrated = false;  // Auto suit la calibration de l'assistant (calibration.toml) sur cette carte
-  std::string gpu_name;     // la carte
+  int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
+  // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo
+  // (A23-03) : choisir « Auto » au panneau doit donner la même chaîne. calibrated : Auto suit la calibration
+  // de l'assistant (calibration.toml) sur cette carte et cet écran ; explored_* : ce que l'exploration du
+  // benchmark a trouvé (bench.toml), pour cette carte et ce pilote.
+  std::optional<CalibratedChain> calibrated;
+  CalibrationHost calibration_host;  // la machine à laquelle le tableau du banc compare sa mesure
+  int explored_work_height = 0;
+  std::string explored_rife_model;
+  std::string gpu_name;           // la carte
   std::vector<std::string> gpus;  // toutes les cartes du système : le choix n'est montré qu'à partir de deux
   struct AudioOut {
     std::string name;

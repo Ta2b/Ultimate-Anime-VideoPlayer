@@ -68,6 +68,16 @@ int assign_layout(Graph& graph);
 // graphe obtenu peuvent s'écarter d'un arrondi float16. Renvoie le nombre de Cast retirés.
 int fold_float_casts(Graph& graph);
 
+// La grille de chaque GridSample en float : sa somme base + flot × pas, les Cast qui arrondissent ses
+// termes et tout ce qui la porte jusqu'à GridSample (Cast, Transpose, Concat) quittent le float16. Une
+// coordonnée normalisée dans [-1, 1] n'y a que 11 bits : un pas de 0,31 pixel à 1280 de large, de 0,47 à
+// 1920, sur la moitié extérieure de l'image. Le graphe FP16 de DistilDRBA exporté avant novembre 2026
+// garde cette somme en float16 (A03-18, A44-01) ; ceux de RIFE et le DistilDRBA réexporté l'ont déjà en
+// float (tools/rife/convert_rife_fp16.py), la passe n'y change rien. Le flot reste une donnée float16.
+// Après infer_shapes (les types des activations) et avant optimize : le pliage des constantes
+// arrondirait sinon la base à travers son Cast. Renvoie le nombre de tenseurs passés en float.
+int promote_grid_chains(Graph& graph);
+
 // ConvTranspose de pas s ≥ 2 sans groupe, dont la sortie fait s fois l'entrée : Conv de pas 1 aux
 // s² × cout canaux (au plus max_channels) suivie d'un DepthToSpace, où se fond un DepthToSpace
 // lecteur unique de la sortie. Pour un moteur dont seules les Conv passent par les matrices

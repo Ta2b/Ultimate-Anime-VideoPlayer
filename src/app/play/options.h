@@ -109,9 +109,10 @@ struct PlayOptions {
   bool software_gpu = false;
   // --sdr : sortie SDR même sur un écran HDR (la swapchain ne demande pas HDR10), pour les essais.
   bool sdr = false;
-  // Anneau en RGB10A2 UNORM sous TensorRT (moitié moins de mémoire, étape 5.5a), par défaut ;
-  // --no-ring-rgb10a2 : RGBA16. Repli silencieux sur RGBA16 si l'appareil ne le prend pas.
-  bool ring_rgb10a2 = true;
+  // --ring-rgb10a2 : anneau en RGB10A2 UNORM sous TensorRT (moitié moins de mémoire, étape 5.5a), repli
+  // silencieux sur RGBA16 si l'appareil ne le prend pas. Éteint par défaut (RGBA16) : la porte de banding de
+  // l'ADR 0008 n'a pas été mesurée, et le grade HDR étire les paliers de 10 bits (A21-03, A49-04).
+  bool ring_rgb10a2 = false;
   // --hdr-metadata[=NITS] : la sortie HDR10 porte ses métadonnées (son vrai maximum), et le grade fait la
   // compression que KWin faisait sans elles ; NITS, la luminosité SDR de KDE (kDefaultKdeSdrNits sans
   // valeur). Pour comparer à l'œil avec la sortie d'aujourd'hui, sans métadonnées.
@@ -165,9 +166,10 @@ struct PlayOptions {
   // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
   bool vsync_index = true;
   // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
-  // wait (le défaut) : present_wait2, ou le meilleur niveau en dessous si l'appareil ne l'offre pas ; auto et
-  // timing ne rendent aucun retour sur NVIDIA 615 / KDE Wayland (mesuré : 0 revenue) ; --no-present
-  // ou --present=open : la présentation d'avant.
+  // wait (le défaut) : wp_presentation quand le compositeur l'offre (il date l'affichage, d'où la grille des
+  // vblanks), sinon present_wait2, sinon open ; auto et timing ne rendent aucun retour sur NVIDIA 615 / KDE
+  // Wayland (mesuré : 0 revenue) et retombent alors seuls (present_level.h : feedback_silent) ;
+  // --no-present ou --present=open : la présentation d'avant.
   PresentWanted present = PresentWanted::Wait;
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)
   // : le peps du grade HDR anime, à régler à l'œil (render::GradeSettings::anime_contrast…).
@@ -212,6 +214,10 @@ struct WorkSize {
 WorkSize work_size(int width, int height, int work_height);
 // SPAN tourne-t-il sur cette source (P3.19) ? Pas sans « Restaurer les traits » quand il faudrait la réduire.
 bool span_runs(bool upscale, bool restore_lines, int source_height, int work_height);
+// La taille de travail que la chaîne joue, la seule à lire (A08-15) : les moteurs, l'anneau, l'étage et
+// l'export la prennent ici. C'est work_size, sauf quand SPAN est demandé mais ne tourne pas faute de
+// « Restaurer les traits » : la source est alors gardée telle quelle, jamais réduite pour rien.
+WorkSize chain_work_size(bool upscale, bool restore_lines, int width, int height, int work_height);
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), ou une valeur
 // illisible ou hors plage (FieldOutOfRange), sont refusées ; sans fichier, l'écran d'accueil.

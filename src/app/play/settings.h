@@ -314,6 +314,15 @@ inline Factor factor_of(const PlaySettings& s) {
   return {.num = s.rife_factor, .den = s.rife_factor_den};
 }
 
+// SPAN tourne-t-il, et à quelle taille la chaîne travaille-t-elle, pour une source de cette taille ? Les
+// deux seules lectures de work_height pour la chaîne (A08-15) : chain_setup, l'anneau, l'étage et l'export.
+inline bool span_runs(const PlaySettings& s, int source_height) {
+  return span_runs(s.upscale, s.restore_lines, source_height, s.work_height);
+}
+inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
+  return chain_work_size(s.upscale, s.restore_lines, width, height, s.work_height);
+}
+
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& settings);
 
@@ -349,10 +358,16 @@ struct Change {
   ChangeCost cost = ChangeCost::None;
   std::string reason;  // pour Reopen : ce qui sera reconstruit ou rechargé, affiché avant d'appliquer
 };
+struct OpenedChain;  // chain_shape.h
 // rife_loaded : un moteur RIFE est chargé (passer de 0 à ×N se fait alors en direct).
-Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded);
-// La part de wanted qui s'applique en direct : running, avec les réglages directs de wanted.
-PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded);
+// opened : la chaîne ouverte ; un facteur, Auto, Rapide ou plafond qui demandent un anneau plus profond ou un
+// autre ordre du warp la rouvrent (A08-03). nullptr : aucune chaîne ouverte, rien à comparer.
+Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
+                      const OpenedChain* opened = nullptr);
+// La part de wanted qui s'applique en direct : running, avec les réglages directs de wanted. Avec opened, le
+// facteur, Auto, Rapide et le plafond de wanted ne passent que si la chaîne ouverte leur convient.
+PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
+                       const OpenedChain* opened = nullptr);
 // Le brouillon du panneau quand running a changé ailleurs (seen : running vu avant) : il prend les réglages
 // directs de running, sans perdre un choix qui attend « Appliquer » (×8 choisi sans RIFE chargé, un moteur du
 // mouvement changé sans interpolation) : un tel réglage ne suit running que si running l'a lui-même changé.

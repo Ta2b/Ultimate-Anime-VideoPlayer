@@ -362,7 +362,7 @@ Rien de ce chantier n'a été compilé avec CUDA : construire d'abord avec `AJP_
   `data/calibration/calibration.mkv`, `ajp play … --snapshot=A.ppm --snapshot-at=S` sans et avec
   `--ring-rgb10a2` (`B.ppm`), et `tools/ring/banding.py --compare A.ppm B.ppm` ≤ 1,10. VRAM de l'anneau −50 %
   (`--stats`), export P010 ≥ 50 dB contre RGBA16. Si tout passe, RGB10A2 devient le défaut sous TensorRT
-  (ADR 0008).
+  (ADR 0008) ; d'ici là le défaut est RGBA16 (point 6 de l'ADR).
 
 ## Plan NVIDIA, chantier 2a : passes du grade fondues (novembre, vérifié sur lavapipe)
 

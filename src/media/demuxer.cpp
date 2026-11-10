@@ -178,8 +178,9 @@ Demuxer::~Demuxer() = default;
 std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path) {
   auto state = std::make_unique<State>();
   const std::string where = utf8_path(path);
+  const std::string shown = utf8_path(path.filename());  // le journal n'a que le nom du fichier (A39-03)
   AVFormatContext* raw = avformat_alloc_context();
-  if (raw == nullptr) return refuse(RefusalCode::MediaUnreadable, where + " : mémoire insuffisante");
+  if (raw == nullptr) return refuse(RefusalCode::MediaUnreadable, shown + " : mémoire insuffisante");
   // Le rappel d'interruption lit le drapeau de l'état, qui garde son adresse quand le Demuxer bouge.
   raw->interrupt_callback = {
       .callback = [](void* opaque) { return static_cast<State*>(opaque)->interrupted.load() ? 1 : 0; },
@@ -189,10 +190,10 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path)
   av_dict_set(&options, "rw_timeout", "30000000", 0);
   const int opened = avformat_open_input(&raw, where.c_str(), nullptr, &options);
   av_dict_free(&options);
-  if (opened < 0) return refuse_av(RefusalCode::MediaUnreadable, where, opened);
+  if (opened < 0) return refuse_av(RefusalCode::MediaUnreadable, shown, opened);
   state->format.reset(raw);
   if (const int err = avformat_find_stream_info(raw, nullptr); err < 0) {
-    return refuse_av(RefusalCode::MediaUnreadable, where, err);
+    return refuse_av(RefusalCode::MediaUnreadable, shown, err);
   }
   state->start_us = raw->start_time == AV_NOPTS_VALUE ? 0 : raw->start_time;
   state->duration_us = raw->duration == AV_NOPTS_VALUE || raw->duration < 0 ? 0 : raw->duration;
@@ -219,8 +220,8 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path)
   if (raw->nb_chapters > kMaxChapters && state->chapters.size() == kMaxChapters)
     state->log->info("{} : {} chapitres, {} gardés", where, raw->nb_chapters, kMaxChapters);
   state->scratch.reset(av_packet_alloc());
-  if (!state->scratch) return refuse(RefusalCode::MediaUnreadable, where + " : mémoire insuffisante");
-  state->log->debug("{} : {} pistes, {} chapitres, {} µs", where, state->tracks.size(),
+  if (!state->scratch) return refuse(RefusalCode::MediaUnreadable, shown + " : mémoire insuffisante");
+  state->log->debug("{} : {} pistes, {} chapitres, {} µs", shown, state->tracks.size(),
                     state->chapters.size(), state->duration_us);
   return Demuxer(std::move(state));
 }

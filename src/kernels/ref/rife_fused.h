@@ -13,8 +13,9 @@
 
 namespace ajp::kernels::ref {
 
-// Ce que la colle lit : l'entrée de RIFE (11 plans h × w), l'encodage (8 plans) et les sorties Y_k des blocs
-// déjà calculés (52 canaux à la moitié de la résolution d'entrée du bloc), dans l'ordre des blocs.
+// Ce que la colle lit : l'entrée de RIFE (11 plans h × w, dont les plans 7 à 10, le maillage, ne sont pas
+// lus : la grille des warps vient de la position en pixels), l'encodage (8 plans) et les sorties Y_k des
+// blocs déjà calculés (52 canaux à la moitié de la résolution d'entrée du bloc), dans l'ordre des blocs.
 struct RifeFusedState {
   RifeFusedPlan plan;
   int height = 0;

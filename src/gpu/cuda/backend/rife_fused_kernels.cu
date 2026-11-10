@@ -13,19 +13,6 @@
 namespace ajp::gpu::cuda {
 namespace {
 
-// Maillage de RIFE v1 au pixel (x, y) d'une entrée w × h, calculé au lieu d'être lu dans les plans 7 à 10
-// (étape 5.2) : mêmes expressions et même arrondi __float2half_rn que rife_input (rife_kernels.cu), donc les
-// valeurs que le noyau d'entrée y écrit, au bit près.
-struct Mesh {
-  float gx0, gy0, sx, sy;
-};
-__device__ __forceinline__ Mesh mesh_at(int x, int y, int w, int h) {
-  return {__half2float(__float2half_rn(2.0F * static_cast<float>(x) / static_cast<float>(w - 1) - 1.0F)),
-          __half2float(__float2half_rn(2.0F * static_cast<float>(y) / static_cast<float>(h - 1) - 1.0F)),
-          __half2float(__float2half_rn(2.0F / static_cast<float>(w - 1))),
-          __half2float(__float2half_rn(2.0F / static_cast<float>(h - 1)))};
-}
-
 __device__ __forceinline__ float rounded(float v) {
   return __half2float(__float2half_rn(v));
 }
@@ -66,15 +53,19 @@ __device__ __forceinline__ void enlarge(const FusedFlowSource& f, int c0, int px
   }
 }
 
-// GridSample (coins alignés, bords répétés) : coordonnées depuis la grille normalisée.
+// GridSample (coins alignés, bords répétés) depuis la position en pixels. La grille normalisée du graphe,
+// base + flot × pas ramenée par (g + 1) / 2 × (n - 1), vaut exactement x + flot : calculée ainsi, en FP32,
+// elle ne passe pas par le maillage de l'entrée v1 (plans 7 à 10), que le FP16 arrondit jusqu'à 0,16 px à
+// 1280 de large et 0,23 px à 1920 (A03-20). Le fusionné s'écarte donc exprès du moteur entier v1, dont la
+// grille reste celle de son entrée FP16.
 struct Tap {
   int x0, x1, y0, y1;
   float wx, wy;
 };
 
-__device__ __forceinline__ Tap grid_tap(float gx, float gy, int w, int h) {
-  float ix = (gx + 1.0F) * 0.5F * static_cast<float>(w - 1);
-  float iy = (gy + 1.0F) * 0.5F * static_cast<float>(h - 1);
+__device__ __forceinline__ Tap pixel_tap(int x, int y, float flow_x, float flow_y, int w, int h) {
+  float ix = __fadd_rn(static_cast<float>(x), flow_x);
+  float iy = __fadd_rn(static_cast<float>(y), flow_y);
   ix = fminf(fmaxf(ix, 0.0F), static_cast<float>(w - 1));
   iy = fminf(fmaxf(iy, 0.0F), static_cast<float>(h - 1));
   Tap t;
@@ -186,12 +177,9 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
       }
 
       // Warp des deux images (7 canaux chacune : 3 de l'image, 4 de l'encodage).
-      const Mesh m = mesh_at(px, py, p.width, p.height);
 #pragma unroll
       for (int n = 0; n < 2; ++n) {
-        const float gx = __fadd_rn(m.gx0, __fmul_rn(fl[2 * n], m.sx));
-        const float gy = __fadd_rn(m.gy0, __fmul_rn(fl[2 * n + 1], m.sy));
-        const Tap tap = grid_tap(gx, gy, p.width, p.height);
+        const Tap tap = pixel_tap(px, py, fl[2 * n], fl[2 * n + 1], p.width, p.height);
 #pragma unroll
         for (int ch = 0; ch < 7; ++ch) {
           const __half* src = ch < 3 ? input + static_cast<std::size_t>(3 * n + ch) * plane
@@ -247,13 +235,10 @@ __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
     out_mask[i] = __float2half_rn(sig);
     return;
   }
-  const Mesh m = mesh_at(x, y, p.width, p.height);
   float warped[2][3];
 #pragma unroll
   for (int n = 0; n < 2; ++n) {
-    const float gx = __fadd_rn(m.gx0, __fmul_rn(fl[2 * n], m.sx));
-    const float gy = __fadd_rn(m.gy0, __fmul_rn(fl[2 * n + 1], m.sy));
-    const Tap tap = grid_tap(gx, gy, p.width, p.height);
+    const Tap tap = pixel_tap(x, y, fl[2 * n], fl[2 * n + 1], p.width, p.height);
 #pragma unroll
     for (int ch = 0; ch < 3; ++ch)
       warped[n][ch] = rounded(bilinear(input + static_cast<std::size_t>(3 * n + ch) * plane, tap, p.width));

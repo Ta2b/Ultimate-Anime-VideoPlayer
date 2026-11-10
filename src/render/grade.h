@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -58,6 +59,12 @@ class Grade {
   // Le hook du look composé en tâche de fond, s'il est prêt : vrai quand il remplace l'ancien (les hooks
   // ont changé).
   bool adopt();
+  // À tenir pendant la soumission d'une présentation (pl_swapchain_submit_frame). libplacebo enregistre les
+  // commandes d'un pl_gpu sous verrou, sauf celle que la swapchain prend pour présenter (pl_vk_steal_cmd) :
+  // une texture de look créée par le thread de fond entre cette prise et sa soumission désordonne le
+  // sémaphore de la file (assertion de vk_cmd_submit, « pool->sync[…].value == cmd->sync.value », 4
+  // lancements sur 120 sous lavapipe). Le thread de fond tient le même verrou pendant qu'il lit son hook.
+  std::unique_lock<std::mutex> gpu_guard();
 
   // Dans l'ordre d'exécution : la passe du grade (ses trois passes dans un hook), le look, puis le vrai noir.
   std::span<const pl_hook* const> hooks() const;

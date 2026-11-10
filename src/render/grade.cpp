@@ -190,15 +190,20 @@ const CubeLut& neutral_lut() {
   return kNeutral;
 }
 
-// Le hook du look : le bloc de la texture de la LUT (ou d'une identité 2x2x2), puis le texte embarqué.
-std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu,
-                                              const std::array<const CubeLut*, kLookSlots>& luts) {
+// Le texte du hook du look : le texte embarqué, puis le bloc de la texture de chaque LUT (ou d'une identité
+// 2x2x2). Sans GPU : 4,4 Mo et une dizaine de millisecondes pour une pile de 65 points.
+std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
   const CubeLut& kNeutral = neutral_lut();
   // Le corps d'une texture court jusqu'à la prochaine directive //! : le bloc va donc après le texte du hook.
   std::string text = look_source();
   text += '\n';
   for (std::size_t i = 0; i < kLookSlots; ++i)
     text += lut_texture_block(luts[i] != nullptr ? *luts[i] : kNeutral, slot_name("AJG_LUT", i));
+  return text;
+}
+
+// Le hook du look lu par libplacebo, qui crée la texture de chaque LUT sur le pl_gpu.
+std::expected<ParsedHook, Refusal> parse_look_text(pl_gpu gpu, const std::string& text) {
   auto parsed = parse(gpu, text, "anime-hdr-look.hook", kLookParams);
   if (!parsed) return parsed;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
@@ -210,6 +215,11 @@ std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu,
     }
   }
   return parsed;
+}
+
+std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu,
+                                              const std::array<const CubeLut*, kLookSlots>& luts) {
+  return parse_look_text(gpu, look_text(luts));
 }
 
 }  // namespace
@@ -251,6 +261,7 @@ struct Grade::Impl {
   bool background = false;
   std::optional<std::array<double, kLookSlots>> requested_for;
   std::mutex job_mutex;
+  std::mutex gpu_mutex;  // tenu par le thread pendant qu'il lit un hook sur le pl_gpu (Grade::gpu_guard)
   std::condition_variable_any job_ready;
   std::optional<Job> job;
   std::optional<Composed> done;
@@ -290,7 +301,11 @@ void Grade::Impl::run(const std::stop_token& stop) {
     if (out.active) out.stack = compose_luts(luts, next.mixes);
     std::array<const CubeLut*, kLookSlots> slots{};
     if (out.active) slots[0] = &out.stack;
-    out.hook = parse_look(gpu, slots);
+    const std::string text = look_text(slots);  // hors du verrou : le texte ne touche pas le GPU
+    {
+      const std::scoped_lock on_gpu(gpu_mutex);  // gpu_guard : jamais pendant que la fenêtre présente
+      out.hook = parse_look_text(gpu, text);
+    }
     const std::scoped_lock lock(job_mutex);
     if (done && done->hook) pl_mpv_user_shader_destroy(&done->hook->hook);  // jamais adopté, dépassé
     done = std::move(out);
@@ -403,6 +418,10 @@ void Grade::Impl::write_params() {
 
 void Grade::set_background(bool on) {
   impl_->background = on;
+}
+
+std::unique_lock<std::mutex> Grade::gpu_guard() {
+  return std::unique_lock(impl_->gpu_mutex);
 }
 
 bool Grade::adopt() {

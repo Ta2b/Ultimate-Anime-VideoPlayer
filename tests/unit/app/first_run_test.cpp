@@ -233,6 +233,16 @@ TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est
   const auto refused = engines_summary({vulkan, trt});
   REQUIRE(refused.size() == 2);
   CHECK(refused[0].find("TensorRT") == std::string::npos);
+  // Le moteur recommandé pour la carte laissé décoché : dit, la calibration mesurerait l'autre (A25-02).
+  trt.chosen = false;
+  CHECK(engines_summary({vulkan, trt}).size() == 1);  // sans badge Recommandé : rien à dire
+  trt.offer.badges = {ajp::core::Badge::Recommended};
+  const auto unchecked = engines_summary({vulkan, trt});
+  REQUIRE(unchecked.size() == 2);
+  CHECK(unchecked[0].find("TensorRT") == std::string::npos);
+  CHECK(unchecked[1].find("TensorRT") != std::string::npos);
+  trt.usable = false;  // pas installable ici : rien à cocher
+  CHECK(engines_summary({vulkan, trt}).size() == 1);
 }
 
 TEST_CASE("Pilote NVIDIA lu avant le téléchargement de TensorRT (P3.6)", "[app][first_run]") {

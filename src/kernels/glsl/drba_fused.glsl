@@ -1,16 +1,9 @@
 // Colle de DistilDRBA fusionné (kernels/spec/drba_fused.h), commune aux noyaux drba_fused_pre, _post, _glue
 // et _finish : portage des noyaux CUDA (gpu/cuda/backend/drba_fused_kernels.cu), formules et arrondis FP16
-// aux mêmes endroits. S'inclut après tensor.glsl et rife_fused.glsl (rounded, grid_tap, mix4).
+// aux mêmes endroits, la grille des warps exceptée (rife_fused.glsl, pixel_tap : en FP32, depuis la position
+// en pixels). S'inclut après tensor.glsl et rife_fused.glsl (rounded, pixel_tap, mix4).
 #ifndef AJP_DRBA_FUSED_GLSL
 #define AJP_DRBA_FUSED_GLSL
-
-// Grille normalisée du graphe : base FP16 (i × 2/(n-1) - 1) + flot FP16 × (2/(n-1) arrondi FP16), deux
-// sommes FP16. step32 et step16 : le pas de l'axe en FP32 et arrondi FP16.
-float drba_grid(uint i, float flow, float step32, float step16) {
-  precise float base = float(i) * step32 - 1.0;
-  precise float sum = rounded(base) + rounded(flow * step16);
-  return rounded(sum);
-}
 
 // Le côté choisi du graphe : vrai si tau < 1 (image 0), faux sinon (image 2) ; tau = 2 × plan 6 de pair01.
 bool drba_before(float half_tau) {

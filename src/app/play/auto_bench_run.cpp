@@ -107,6 +107,17 @@ void prefer_tensorrt(const std::filesystem::path& file) {
   }
 }
 
+// Les réglages de l'essai n'ont pas pu se copier dans son dossier jetable (disque plein, fichier verrouillé)
+// : l'essai ne se joue pas, il aurait mesuré les réglages par défaut sous le nom de la chaîne demandée
+// (A07-10).
+Trial unprepared(const std::string& what, const std::error_code& error) {
+  const auto log = log_channel("app");
+  log->warn("essai {} : réglages non copiés ({})", what, error.message());
+  Trial trial;
+  trial.why = i18n::tr_format("Test {} could not start: {}", what, error.message());
+  return trial;
+}
+
 // Un essai : l'enfant joue, rend sa lecture ; une lecture absente est un essai vide (ne tient pas), dit en
 // une phrase (what : « des réglages « Rapide » »). allowance : le délai de plus que la durée de l'essai.
 Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Variant* variant, int index,
@@ -124,13 +135,16 @@ Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Va
   std::filesystem::create_directories(dir / "reglages", error);
   if (!plan.data.empty() && std::filesystem::exists(plan.data / "settings.toml", error)) {
     std::filesystem::copy_file(plan.data / "settings.toml", dir / "reglages" / "settings.toml", error);
+    if (error) return unprepared(what, error);
     prefer_tensorrt(dir / "reglages" / "settings.toml");
   } else {
     std::ofstream(dir / "reglages" / "settings.toml")
         << "version = 1\nfirst_run_done = true\nfirst_run_step = 8\n";
   }
-  if (variant != nullptr && !variant->settings.empty())
+  if (variant != nullptr && !variant->settings.empty()) {
     std::filesystem::copy_file(variant->settings, dir / "reglages" / "play.toml", error);
+    if (error) return unprepared(what, error);
+  }
   const std::chrono::seconds limit = std::chrono::seconds(plan.seconds) + allowance;
   prepare::ProcessSpec spec{.program = plan.executable,
                             .args = variant != nullptr
@@ -195,6 +209,14 @@ BenchReading worse(const BenchReading& x, const BenchReading& y) {
   out.interval_p95_us = std::max(x.interval_p95_us, y.interval_p95_us);
   out.render_median_us = std::max(x.render_median_us, y.render_median_us);
   return out;
+}
+
+// Un essai de l'exploration tient-il ? Un essai qui n'a rien rendu (modèle introuvable, refus) se dit dans
+// les notes du rapport : sans cela la recherche s'arrête en silence et l'Auto garde la chaîne du niveau sans
+// que rien ne l'explique (A18-18).
+bool explore_held(const Trial& trial, std::vector<std::string>& notes) {
+  if (!trial.reading && !trial.why.empty()) notes.push_back(trial.why);
+  return trial.reading && holds(trial.reading->run);
 }
 
 }  // namespace
@@ -351,7 +373,7 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
           cancelled = true;
           return false;
         }
-        return trial.reading && holds(trial.reading->run);
+        return explore_held(trial, outcome.notes);
       };
       int height = base->work_height;
       while (const auto next = next_work_height(height, kExplorationSourceHeight)) {

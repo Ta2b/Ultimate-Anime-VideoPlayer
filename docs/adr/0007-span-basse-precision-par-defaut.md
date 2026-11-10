@@ -40,3 +40,9 @@ main dans la liste des modèles (« … · FP8 ») tant que la porte ci-dessus n
 de novembre (constat F6) relevait l'écart entre cette page et le défaut. Pour reprendre la décision : calibrer
 les échelles sur un corpus fixe d'anime plutôt que sur la vidéo ouverte, et juger la porte en ΔE_ITP après le
 grade (≤ 1 au p99,9 sur `tools/grade/shots30.tsv`).
+
+L'Auto calibré posait encore le FP8 (b8f64 au cran Performance) dès que la calibration l'avait vu tourner,
+contre ce statut (audit A49-03). Depuis le chantier C04 des audits, la calibration joue les modèles du niveau
+de la carte en FP16 (`machine_calibration.h`) et l'Auto calibré ne pose plus que l'Équilibre. Le FP8 reviendra
+dans la calibration quand la porte sera rejugée, et seulement s'il fait tenir un palier que le FP16 ne tient
+pas ; jamais sur RTX 50 sans mesure (décision 14 de `docs/audits/SYNTHESE.md`).

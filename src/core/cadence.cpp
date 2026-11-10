@@ -52,10 +52,12 @@ std::expected<void, Refusal> CadenceAccumulator::retarget(Ratio factor) {
   // Même facteur (à l'échelle près) : rien à faire.
   if (made->num_ * den_ == made->den_ * num_) return {};
   // La grille se compte en 1 / num de période : à un facteur réduit (5/1), le pas serait d'un cinquième de
-  // période et la phase arrondie de loin. Les termes sont mis à l'échelle (même facteur, grille plus fine).
+  // période et la phase arrondie de loin. Les termes sont mis à l'échelle (même facteur, grille plus fine),
+  // sans sortir de kRatioTerm : une fraction exacte (11011/3200 à 165 Hz) est déjà fine (A12-07).
   constexpr std::int64_t kScale = 64;
-  const std::int64_t new_num = made->num_ * kScale;
-  const std::int64_t new_den = made->den_ * kScale;
+  const std::int64_t scale = std::clamp<std::int64_t>(limits::kRatioTerm.hi / made->num_, 1, kScale);
+  const std::int64_t new_num = made->num_ * scale;
+  const std::int64_t new_den = made->den_ * scale;
   // Positions en périodes source depuis le début de la paire suivante : le dernier point émis est à
   // (acc - den) / num (<= 0), le suivant un pas du nouveau facteur plus loin, arrondi à 1 / new_num.
   const double last = (static_cast<double>(acc_) - static_cast<double>(den_)) / static_cast<double>(num_);
