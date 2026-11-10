@@ -241,9 +241,10 @@
 | A23-13 | Mineur | C12 | Page Export : quatre appels au système de fichiers par image | page Export ouverte sur une vidéo d'un partage SMB. **Corrigé d'après le code (C12)** : le panneau relit le fichier de sortie une fois par seconde au plus, pas à chaque image. Reste l'essai sur un partage SMB. |
 | A43-06 | Mineur | C12 | Qualité : le coût en précision du FP8 n'est jamais dit ; « Balanced » nomme deux choses | la mesure de la perte (dB) du FP8 que l'Auto retient. |
 | A38-15 | Mineur | C13 | Netteté promise « sans halo » | Lu ; effet à confirmer. |
-| A16-11 | Mineur | C14 | Code mort, appareils désignés par leur seul nom | sous Windows avec deux sorties HDMI de même modèle. |
-| A34-06 | Mineur | C14 | `hide_is_reliable*` morts | la même chaîne en `ajp bench` puis en lecture plein écran, sur les deux systèmes. |
-| A46-06 | Mineur | C14 | Commentaire faux sur l'origine des RIFE FP16 livrés | Lu (graphes inspectés) ; NaN à confirmer. |
+| A16-11 | Mineur | C14 | Code mort, appareils désignés par leur seul nom | sous Windows avec deux sorties HDMI de même modèle. **Code mort retiré (C14)** (`devices.cpp`) ; la désignation par le nom reste, à corriger après la manipulation. |
+| A34-06 | Mineur | C14 | `hide_is_reliable*` morts | la même chaîne en `ajp bench` puis en lecture plein écran, sur les deux systèmes. **Retirés (C14)** : le banc ne cachait déjà rien d'après eux ; la manipulation reste pour juger si le banc caché mesure comme la lecture. |
+| A46-06 | Mineur | C14 | Commentaire faux sur l'origine des RIFE FP16 livrés | Lu (graphes inspectés) ; NaN à confirmer. **Commentaire corrigé (C14)** (`model_choice.h`) ; reste `--stats` sur la RTX, RIFE 4.25 TensorRT FP16, sans image noire ni NaN au journal. |
+| C14 | Mineur | C14 | Tests de rendu sautés sous Windows (libplacebo de vcpkg sans `vk-proc-addr`) | **Corrigé (C14)** : les tests donnent le chargeur Vulkan à libplacebo. Sous Windows sur la RTX : `ctest --preset windows-release -R "^render: "` doit les jouer, aucun « pas d'appareil Vulkan ». |
 
 ## C01 : corrigé dans le code, à confirmer sur la machine
 

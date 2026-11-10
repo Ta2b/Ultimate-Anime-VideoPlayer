@@ -109,6 +109,18 @@ def main():
                 files.add(header)
         if not mod["sources"]:
             files = {os.path.join(mod["dir"], f) for f in os.listdir(mod["dir"]) if f.endswith(".h")}
+        # Les en-têtes internes du module sans source à eux (prepare/protobuf_fields.h) : leurs
+        # inclusions comptent aussi, suivies d'en-tête en en-tête.
+        pending = list(files)
+        while pending:
+            path = pending.pop()
+            if not os.path.exists(path):
+                continue
+            for inc in re.findall(r'^#include "([^"]+)"', open(path, encoding="utf-8").read(), re.M):
+                target = os.path.normpath(os.path.join(SRC, inc))
+                if target not in files and os.path.exists(target) and owner_of(target, mods) == name:
+                    files.add(target)
+                    pending.append(target)
         used = set()
         visible = reachable(name, mods)
         for path in sorted(files):

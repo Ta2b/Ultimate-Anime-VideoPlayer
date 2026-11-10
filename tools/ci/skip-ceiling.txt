@@ -5,3 +5,6 @@ lavapipe 12
 asan-ubsan 12
 tsan 12
 tsan-pr 0
+# Windows (MSVC) : le runner n'a ni GPU ni Vulkan logiciel, tous les tests qui ouvrent un appareil sautent (rendu,
+# anneau, NVDEC…) ; 37 sous Linux sans pilote Vulkan, le compte exact de la tâche à reporter ici (C14).
+windows 40

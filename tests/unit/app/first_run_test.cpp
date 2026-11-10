@@ -55,8 +55,7 @@ TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
   CHECK(vulkan->chosen);
   CHECK(tensorrt->chosen);
   CHECK(std::ranges::contains(tensorrt->offer.badges, core::Badge::Recommended));
-  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);  // débranché : AMD passe par Vulkan
-  CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);  // Windows seulement
+  CHECK(view.engines.size() == 2);  // Vulkan et TensorRT seulement
 }
 
 TEST_CASE("Sous Windows, TensorRT coché, sans offre DirectML", "[app][first_run]") {
@@ -67,7 +66,7 @@ TEST_CASE("Sous Windows, TensorRT coché, sans offre DirectML", "[app][first_run
   const EngineRow* tensorrt = row_of(view, core::EngineId::TensorRt);
   REQUIRE(tensorrt != nullptr);
   CHECK(tensorrt->chosen);
-  CHECK(row_of(view, core::EngineId::DirectMl) == nullptr);
+  CHECK(view.engines.size() == 2);
 }
 
 TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[app][first_run]") {
@@ -79,7 +78,7 @@ TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[
   CHECK(coreml->usable);
   CHECK(coreml->chosen);
   CHECK(row_of(view, core::EngineId::TensorRt) == nullptr);
-  CHECK(row_of(view, core::EngineId::MiGraphX) == nullptr);
+  CHECK(view.engines.size() == 2);  // Vulkan et Core ML
 
   // Un paquet sans le backend Core ML ne le coche pas.
   const FirstRunView bare = first_run_view(m2, EnginesHere{.os = core::Os::MacOs});

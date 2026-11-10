@@ -56,16 +56,10 @@ std::expected<bool, Refusal> intact(const CacheEntry& entry) {
   return stored == *digest;
 }
 
-// L'entrée publiée se reprend, sauf si ce sont exactement les octets refusés
-// (aji_trt.cpp:775-786) : un remplaçant publié par un autre processus se reprend.
+// L'entrée publiée se reprend si elle est intacte (son empreinte revérifiée, P2.31).
 std::expected<bool, Refusal> reusable(const CacheEntry& entry) {
   if (!is_published(entry.destination)) return false;
-  auto whole = intact(entry);
-  if (!whole || !*whole) return whole;
-  if (entry.rejected_sha256.empty()) return true;
-  auto digest = sha256_file_known(entry.destination);
-  if (!digest) return std::unexpected(digest.error());
-  return *digest != entry.rejected_sha256;
+  return intact(entry);
 }
 
 }  // namespace
@@ -93,10 +87,7 @@ bool is_published(const fs::path& file) {
 
 std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const Producer& produce,
                                                 const std::stop_token& stop) {
-  if (!entry.rejected_sha256.empty() && !is_sha256_hex(entry.rejected_sha256)) {
-    return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "rejected_sha256 n'est pas un SHA-256"});
-  }
-  if (entry.rejected_sha256.empty() && is_published(entry.destination)) {
+  if (is_published(entry.destination)) {
     if (auto whole = intact(entry); whole && *whole) return Production::Reused;
   }
   const fs::path parent = entry.destination.parent_path();

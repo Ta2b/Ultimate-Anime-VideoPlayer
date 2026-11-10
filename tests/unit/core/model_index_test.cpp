@@ -28,28 +28,12 @@ void write_file(const fs::path& path, const std::string& bytes) {
 
 const std::string kSha = std::string(64, 'a');
 
-std::string model(const std::string& fields) {
-  return "version = 1\n[[model]]\n" + fields + "\n";
-}
-
-std::string valid_model_fields() {
-  std::string text =
-      "id = \"2x_AnimeJaNai_HD_V3.1_Balanced\"\nurl = \"https://models.example/hd.onnx\"\n"
-      "sha256 = \"" +
-      kSha + "\"\nsize = 1024\nlicense = \"CC-BY-NC-SA-4.0\"\nprofiles = [1, 2]\n";
-  return text;
-}
-
-RefusalCode lock_refusal(const std::string& text) {
-  auto lock = parse_models_lock(text);
-  REQUIRE_FALSE(lock);
-  return lock.error().code;
-}
-
+// Le refus de la dernière entrée de l'index, écartée seule à la lecture.
 RefusalCode index_refusal(const std::string& text) {
-  auto index = parse_engine_index(text);
-  REQUIRE_FALSE(index);
-  return index.error().code;
+  auto index = read_engine_index(text);
+  REQUIRE(index);
+  REQUIRE_FALSE(index->skipped.empty());
+  return index->skipped.back().code;
 }
 
 }  // namespace
@@ -112,60 +96,13 @@ TEST_CASE("Téléchargement : un fichier se vérifie par sa taille et son SHA-25
   CHECK(missing.error().code == RefusalCode::FileUnreadable);
 }
 
-TEST_CASE("models.lock : chaque modèle porte url, hachage, taille, licence et profils", "[model_index]") {
-  auto lock = parse_models_lock(model(valid_model_fields()) +
-                                "[[model]]\nid = \"rife-4.26\"\nurl = \"https://models.example/rife.onnx\"\n"
-                                "sha256 = \"" +
-                                std::string(64, 'b') + "\"\nsize = 9\nlicense = \"MIT\"\nprofiles = [2]\n");
-  REQUIRE(lock);
-  REQUIRE(lock->size() == 2);
-  const ModelEntry& first = lock->front();
-  CHECK(first.id == "2x_AnimeJaNai_HD_V3.1_Balanced");
-  CHECK(first.size == 1024);
-  CHECK(first.license == "CC-BY-NC-SA-4.0");
-  CHECK(first.profiles == std::vector<int>{1, 2});
-
-  CHECK(find_model(*lock, "rife-4.26") == &(*lock)[1]);
-  CHECK(find_model(*lock, "absent") == nullptr);
-  CHECK(models_for_profile(*lock, 2).size() == 2);
-  CHECK(models_for_profile(*lock, 1).size() == 1);
-  CHECK(models_for_profile(*lock, 3).empty());
-}
-
-TEST_CASE("models.lock : une entrée fausse est un refus nommé", "[model_index]") {
-  CHECK(lock_refusal("version = 2\n") == RefusalCode::FormatVersion);
-  CHECK(lock_refusal("[[model]]\n") == RefusalCode::FieldMissing);
-  CHECK(lock_refusal("version = 1\n[[model]\n") == RefusalCode::FileUnreadable);
-  CHECK(lock_refusal("version = 1\nmodel = 3\n") == RefusalCode::FieldType);
-
-  const auto with = [](const std::string& key, const std::string& value) {
-    std::string fields = valid_model_fields();
-    const std::size_t start = fields.find(key + " = ");
-    const std::size_t end = fields.find('\n', start);
-    return model(fields.replace(start, end - start, key + " = " + value));
-  };
-  CHECK(lock_refusal(with("url", "\"http://models.example/hd.onnx\"")) == RefusalCode::FieldOutOfRange);
-  CHECK(lock_refusal(with("sha256", "\"ABC\"")) == RefusalCode::FieldType);
-  CHECK(lock_refusal(with("sha256", "\"" + std::string(64, 'G') + "\"")) == RefusalCode::FieldType);
-  CHECK(lock_refusal(with("size", "0")) == RefusalCode::FieldOutOfRange);
-  CHECK(lock_refusal(with("size", "\"1024\"")) == RefusalCode::FieldType);
-  CHECK(lock_refusal(with("id", "\"../evil\"")) == RefusalCode::FieldType);
-  CHECK(lock_refusal(with("id", "\"a/b\"")) == RefusalCode::FieldType);
-  CHECK(lock_refusal(with("license", "\"\"")) == RefusalCode::FieldMissing);
-  CHECK(lock_refusal(with("profiles", "[10]")) == RefusalCode::FieldOutOfRange);
-  CHECK(lock_refusal(with("profiles", "[1, 1]")) == RefusalCode::FieldOutOfRange);
-  CHECK(lock_refusal(with("profiles", "[\"1\"]")) == RefusalCode::FieldType);
-  CHECK(lock_refusal(model(valid_model_fields()) + "[[model]]\n" + valid_model_fields()) ==
-        RefusalCode::FieldOutOfRange);
-}
-
 TEST_CASE("Index des moteurs : un paquet par moteur et par plateforme", "[model_index]") {
   const std::string package = "url = \"https://engines.example/trt.zip\"\nsha256 = \"" + kSha +
                               "\"\nsize = 2048\nversion = \"11.3.0\"\n";
-  auto index =
-      parse_engine_index("version = 1\n[[engine]]\nid = \"tensorrt\"\nplatform = \"windows\"\n" + package +
-                         "[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n" + package);
-  REQUIRE(index);
+  auto read = read_engine_index("version = 1\n[[engine]]\nid = \"tensorrt\"\nplatform = \"windows\"\n" +
+                                package + "[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n" + package);
+  REQUIRE(read);
+  const std::vector<EnginePackage>* index = &read->packages;
   REQUIRE(index->size() == 2);
   CHECK((*index)[0].engine == EngineId::TensorRt);
   CHECK((*index)[0].version == "11.3.0");
@@ -174,39 +111,37 @@ TEST_CASE("Index des moteurs : un paquet par moteur et par plateforme", "[model_
 
   CHECK(index_refusal("version = 1\n[[engine]]\nid = \"cuda\"\nplatform = \"linux\"\n" + package) ==
         RefusalCode::FieldOutOfRange);
-  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"beos\"\n" + package) ==
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"tensorrt\"\nplatform = \"beos\"\n" + package) ==
         RefusalCode::FieldOutOfRange);
-  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" + package +
-                      "[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" + package) ==
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n" + package +
+                      "[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n" + package) ==
         RefusalCode::FieldOutOfRange);
-  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" +
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n" +
                       std::string(package).replace(package.find("11.3.0"), 6, "../11")) ==
         RefusalCode::FieldType);
   // Windows retire le point final d'un nom de dossier : « 11.3. » y deviendrait « 11.3 ».
-  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n" +
+  CHECK(index_refusal("version = 1\n[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n" +
                       std::string(package).replace(package.find("11.3.0"), 6, "11.3.")) ==
         RefusalCode::FieldType);
 }
 
 TEST_CASE("Index des moteurs : seuls les moteurs téléchargés y figurent", "[model_index]") {
-  // Vulkan et Metal sont livrés ; les SDK de RTX HDR ont un paquet quand la release en publie un.
+  // Vulkan et Metal sont livrés ; MIGraphX, OpenVINO et DirectML sont retirés (A06-11).
   const std::string package = "platform = \"windows\"\nurl = \"https://engines.example/x.zip\"\nsha256 = \"" +
                               kSha + "\"\nsize = 1\nversion = \"1\"\n";
-  for (const char* id : {"vulkan", "metal"}) {
+  for (const char* id : {"vulkan", "metal", "migraphx", "openvino", "directml"}) {
     INFO(id);
     CHECK(index_refusal(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)) ==
           RefusalCode::FieldOutOfRange);
   }
-  for (const char* id : {"tensorrt", "migraphx", "openvino", "directml"}) {
-    INFO(id);
-    CHECK(parse_engine_index(std::format("version = 1\n[[engine]]\nid = \"{}\"\n{}", id, package)));
-  }
+  CHECK(read_engine_index(std::format("version = 1\n[[engine]]\nid = \"tensorrt\"\n{}", package))
+            ->packages.size() == 1);
 }
 
 TEST_CASE("Index des moteurs : celui de la release Linux, tel que package-linux.sh l'écrit",
           "[model_index]") {
-  // engines.lock de linux-v0.1.0-preview.2 (adresses raccourcies) : son entrée RTX HDR (retiré depuis) est
-  // écartée seule, TensorRT reste.
+  // engines.lock de linux-v0.1.0-preview.2 (adresses raccourcies) : ses entrées MIGraphX, OpenVINO et RTX HDR
+  // (retirés depuis) sont écartées seules, TensorRT reste.
   const std::string lock =
       "version = 1\n\n"
       "[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n"
@@ -232,11 +167,10 @@ TEST_CASE("Index des moteurs : celui de la release Linux, tel que package-linux.
       "version = \"1.3.0.0\"\n"
       "license = \"https://www.nvidia.com/en-us/agreements/enterprise-software/"
       "nvidia-software-license-agreement/\"\n";
-  CHECK_FALSE(parse_engine_index(lock));
   auto index = read_engine_index(lock);
   REQUIRE(index);
-  CHECK(index->skipped.size() == 1);
-  CHECK(index->packages.size() == 3);
+  CHECK(index->skipped.size() == 3);
+  CHECK(index->packages.size() == 1);
   const EnginePackage* trt = find_package(index->packages, EngineId::TensorRt, Os::Linux);
   REQUIRE(trt != nullptr);
   CHECK(trt->size == 1215541550U);
@@ -250,14 +184,13 @@ TEST_CASE("Index des moteurs : une entrée inconnue est écartée seule à la le
   const std::string lock = "version = 1\n[[engine]]\nid = \"tensorrt\"\n" + package +
                            "[[engine]]\nid = \"moteur_futur\"\n" + package +
                            "[[engine]]\nid = \"openvino\"\n" + package;
-  CHECK(index_refusal(lock) == RefusalCode::FieldOutOfRange);  // l'outil de release reste strict
   auto index = read_engine_index(lock);
   REQUIRE(index);
-  REQUIRE(index->packages.size() == 2);
+  REQUIRE(index->packages.size() == 1);
   CHECK(index->packages[0].engine == EngineId::TensorRt);
-  CHECK(index->packages[1].engine == EngineId::OpenVino);
-  REQUIRE(index->skipped.size() == 1);
+  REQUIRE(index->skipped.size() == 2);
   CHECK(index->skipped[0].detail.contains("moteur_futur"));
+  CHECK(index->skipped[1].detail.contains("openvino"));
   // Le fichier lui-même reste refusé : TOML illisible, version inconnue.
   CHECK_FALSE(read_engine_index("version = 1\n[[engine]\n"));
   CHECK_FALSE(read_engine_index("version = 9\n"));
@@ -319,9 +252,13 @@ TEST_CASE("Index des moteurs : un nom de périphérique de Windows est écarté 
 }
 
 TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]") {
-  for (const EngineId id : {EngineId::Vulkan, EngineId::TensorRt, EngineId::MiGraphX, EngineId::OpenVino,
-                            EngineId::DirectMl, EngineId::Metal}) {
+  for (const EngineId id : {EngineId::Vulkan, EngineId::TensorRt, EngineId::Metal}) {
     CHECK(parse_engine(engine_name(id)) == id);
+    CHECK_FALSE(retired_engine(engine_name(id)));
+  }
+  for (const char* retired : {"migraphx", "openvino", "directml", "rtx_video_sdk", "maxine_vfx"}) {
+    CHECK_FALSE(parse_engine(retired));
+    CHECK(retired_engine(retired));
   }
   CHECK(engine_name(EngineId::TensorRt) == "tensorrt");
   CHECK_FALSE(parse_engine("TensorRT"));
@@ -331,10 +268,8 @@ TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]
 TEST_CASE("Installation : chemins sous le dossier de données passé par app", "[model_index]") {
   const fs::path data = fs::path("donnees") / "ajp";
   const EnginePackage trt{.engine = EngineId::TensorRt, .version = "11.3.0"};
-  const ModelEntry hd{.id = "2x_HD"};
 
   const InstallLayout windows = install_layout(Os::Windows, data);
-  CHECK(model_path(windows, hd) == data / "models" / "2x_HD.onnx");
   CHECK(engine_dir(windows, trt) == data / "backends" / "tensorrt" / "11.3.0");
   CHECK(backend_library(windows, trt).filename() == "ajp_backend_tensorrt.dll");
   CHECK(backend_library(install_layout(Os::Linux, data), trt).filename() == "ajp_backend_tensorrt.so");

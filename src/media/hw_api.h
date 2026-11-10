@@ -48,7 +48,8 @@ struct DecoderOptions {
   // VP9), sur la file vidéo du GPU. Les décodeurs Vulkan par compute shaders de
   // FFmpeg (ffv1, prores, prores_raw, dpx, apv) ne s'essaient que si ceci est vrai :
   // ils prennent le calcul que gpu réserve à l'upscaling et à l'interpolation, et
-  // leur échec ne se voit qu'au premier point clé, après l'ouverture.
+  // leur échec ne se voit qu'au premier point clé, après l'ouverture. Le lecteur ne le pose jamais : tests
+  // seulement (A15-14).
   bool vulkan_compute = false;
   // Chaque image matérielle copiée en mémoire hôte (av_hwframe_transfer_data) : le décodeur
   // matériel décharge le CPU même pour un backend qui n'importe pas ses surfaces (Vulkan avec
@@ -77,7 +78,8 @@ inline constexpr std::int64_t kMaxDirectSurfacePixels = std::int64_t{2560} * 144
 inline constexpr int kMaxDecoderThreads = 64;
 inline constexpr int kAutoDecoderThreads = 8;
 
-// Ordre d'essai par défaut de la plateforme, logiciel en dernier.
+// Ordre d'essai par défaut de la plateforme, logiciel en dernier. Tests seulement : le lecteur compose sa
+// liste selon le moteur et la carte (decoder_attempts, app/play/chain_setup.cpp).
 std::vector<HwApi> default_attempts();
 
 // Un essai écarté et pourquoi.

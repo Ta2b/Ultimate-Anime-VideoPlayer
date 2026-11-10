@@ -1,7 +1,7 @@
-// L'écran de bienvenue du premier lancement : le GPU vu par Vulkan, les moteurs que
-// core::recommend_engines propose pour lui (Vulkan toujours, les autres au choix, avec badges et
-// présélection). « Commencer » écrit settings.toml (moteurs choisis, first_run_done) ; --first-run
-// remontre l'écran, comme le bouton de l'onglet Moteurs pendant la lecture.
+// L'assistant du premier lancement (wizard.h : Bienvenue, Langues, Intégration, Moteur, Prêt) : le GPU vu
+// par Vulkan, les moteurs que core::recommend_engines propose pour lui (Vulkan toujours, les autres au
+// choix, avec badges et présélection). Sa fin écrit settings.toml (moteurs choisis, first_run_done) ;
+// --first-run le remontre, comme le bouton de l'onglet Moteurs pendant la lecture.
 //
 // SPAN et RIFE passent par TensorRT sur une carte NVIDIA qui l'a choisi, sinon par le backend
 // Vulkan. Ce qui change se dit au journal.
@@ -119,8 +119,8 @@ core::Settings without_engine(core::Settings settings, core::EngineId id);
 // id fait partie des moteurs choisis à l'écran de bienvenue.
 bool chosen(const core::Settings& settings, core::EngineId id);
 
-// Les bibliothèques de backend à essayer, dans l'ordre : celles de TensorRT, MIGraphX et OpenVINO
-// seulement si leur moteur a été choisi, Vulkan restant le recours.
+// Les bibliothèques de backend à essayer, dans l'ordre : celles de TensorRT et de Core ML seulement si
+// leur moteur a été choisi, Vulkan restant le recours.
 std::vector<std::filesystem::path> backends_within(std::span<const std::filesystem::path> candidates,
                                                    const core::Settings& engines);
 

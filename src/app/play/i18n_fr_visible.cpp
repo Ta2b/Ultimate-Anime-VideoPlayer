@@ -77,7 +77,6 @@ constexpr std::array kVisibleTexts{
     Entry{"calibration", "calibration"},
     Entry{"cancelled", "annulé"},
     Entry{"cost above the period", "coût au-dessus de la période"},
-    Entry{"curl, tar or bash not found", "curl, tar ou bash introuvables"},
     Entry{"display limit", "plafond de l'écran"},
     Entry{"done", "terminé"},
     Entry{"elapsed {} · expected ~{}", "écoulé {} · prévu ~{}"},

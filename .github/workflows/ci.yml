@@ -223,12 +223,18 @@ jobs:
       - name: Tests sans GPU
         shell: pwsh
         run: |
-          ctest --preset windows-ci
+          ctest --preset windows-ci --output-junit "$env:GITHUB_WORKSPACE/junit.xml"
           if ($LASTEXITCODE -ne 0) {
             # Les échecs seuls, relancés à la fin du journal : leur sortie se lit sans fouiller 4 000 lignes.
             ctest --preset windows-ci --rerun-failed --output-on-failure -j1
             throw "tests"
           }
+      # Le runner n'a pas de GPU : les tests de rendu sautent. Un saut ne passe pas pour une réussite (C14) :
+      # la liste s'écrit au résumé de la tâche, et leur nombre ne dépasse pas le plafond de skip-ceiling.txt.
+      - name: Tests sautés
+        if: always() && hashFiles('junit.xml') != ''
+        shell: bash
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" windows | tee -a "$GITHUB_STEP_SUMMARY"
 
   # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque pull request (P1.17) : le kit
   # CUDA et TensorRT viennent de NVIDIA (tools/deps/linux-tensorrt.sh) et ne sortent pas de la tâche.

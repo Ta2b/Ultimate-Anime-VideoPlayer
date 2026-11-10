@@ -48,22 +48,19 @@ std::string rife_label(const std::string& file);
 // poses), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
 // entraîné à imiter DRBA, les poses gardées par le réseau lui-même, une image de retard), ou
 // l'interpolation d'Apple (VTFrameRateConversion de VideoToolbox, macOS 15.4, sous le backend Core
-// ML : gpu/system_interpolator.h). Gmfss et GmfssUnion ne restent que pour lire un ancien play.toml : GMFSS
-// Fortuna est retiré des sources (0.10.0), et la chaîne prend RIFE à sa place.
-enum class MotionEngine : std::uint8_t { Rife, Gmfss, GmfssUnion, DistilDrba, Apple };
-inline constexpr int kMotionEngineCount = 5;
-constexpr bool is_gmfss(MotionEngine engine) {
-  return engine == MotionEngine::Gmfss || engine == MotionEngine::GmfssUnion;
-}
+// ML : gpu/system_interpolator.h). GMFSS Fortuna est retiré des sources (0.10.0) : un ancien play.toml qui
+// le nomme (« gmfss », « gmfss_union ») se lit en RIFE (settings_toml.cpp). La valeur numérique n'est
+// écrite nulle part : play.toml porte le nom.
+enum class MotionEngine : std::uint8_t { Rife, DistilDrba, Apple };
+inline constexpr int kMotionEngineCount = 3;
 // Proposé sur ce système : l'interpolation d'Apple sur un Mac seulement. play.toml garde le choix
-// partout ; ailleurs, la chaîne reprend RIFE. GMFSS n'est jamais proposé.
+// partout ; ailleurs, la chaîne reprend RIFE.
 #if defined(__APPLE__)
 inline constexpr bool kAppleOffered = true;
 #else
 inline constexpr bool kAppleOffered = false;
 #endif
 constexpr bool offered(MotionEngine engine) {
-  if (is_gmfss(engine)) return false;
   return kAppleOffered || engine != MotionEngine::Apple;
 }
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml

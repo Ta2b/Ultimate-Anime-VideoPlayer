@@ -29,7 +29,7 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
                                                       std::int64_t duration_us, ReadyEvent ready = {});
 
 // AVFrame tenu par une image de ce module, nullptr pour un autre FrameData.
-// Pour les tests et le diagnostic : le chemin de lecture s'en tient à FrameData.
+// Tests seulement : le chemin de lecture s'en tient à FrameData.
 const AVFrame* av_frame_of(const FrameData& data);
 
 }  // namespace ajp::media

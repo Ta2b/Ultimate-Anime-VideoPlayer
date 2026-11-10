@@ -17,7 +17,6 @@ constexpr std::array kImageTabs{
         "détail "
         "(grain, textures), sans SPAN."},
     Entry{" (recommended)", " (recommandé)"},
-    Entry{" · suggested for this card", " · conseillé pour cette carte"},
     Entry{"4K output: RIFE estimates motion on a lighter 720p copy.",
           "Sortie 4K : RIFE estime le mouvement sur une copie 720p, plus légère."},
     Entry{"4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything.",

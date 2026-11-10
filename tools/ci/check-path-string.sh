@@ -4,7 +4,7 @@
 # appels qui restent dans src/ ne peuvent que diminuer : baisser kMax quand on en retire.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-readonly kMax=158
+readonly kMax=148
 count="$(git grep -h '\.string()' -- 'src/*.cpp' 'src/*.h' | wc -l)"
 if ((count > kMax)); then
   echo "path::string() : $count lignes dans src/, $kMax au plus ; écrire core::to_utf8(chemin) (src/core/utf8_path.h)" >&2

@@ -5,7 +5,7 @@
 # ou de moteurs, déjà réduits à leur nom par le rapport) ne peuvent que diminuer : baisser kMax.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-readonly kMax=7
+readonly kMax=6
 hits="$(git ls-files -z -- 'src/*.cpp' | xargs -0 perl -0777 -ne '
   while (/(?:->|\.)(?:info|warn|error|critical)\((?:[^;"]|"(?:\\.|[^"\\])*")*;/g) {
     my $call = $&;
