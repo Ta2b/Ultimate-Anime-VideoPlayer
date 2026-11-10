@@ -4,7 +4,9 @@
 #
 # C'est la source des dépendances Linux de la CI et du paquet Linux, et celle des
 # postes de développement. vcpkg (vcpkg.json, ports/) ne sert qu'à Windows : les
-# versions des deux se suivent à la main.
+# versions des deux se suivent à la main, et tools/ci/check-deps-versions.sh refuse un écart
+# pour ce que DEPS fixe. Ce qui vient d'apt (dav1d, lcms2, shaderc, FriBidi, FreeType,
+# HarfBuzz) suit la distribution, pas la baseline de vcpkg.
 #
 #   tools/deps/linux-from-source.sh [--core] <prefixe> [dossier-de-travail]
 #   AJP_DEPS_PREFIX=<prefixe> cmake --preset linux-prefix
@@ -34,7 +36,7 @@ DEPS=(
   "nv-codec-headers https://github.com/FFmpeg/nv-codec-headers n13.0.19.0 e844e5b26f46bb77479f063029595293aa8f812d"
   "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2 946fcce07b6dcd0331c8cc609192aeff5e1924f8"
   "sdl3 https://github.com/libsdl-org/SDL release-3.4.20 f00dc919ca35b9756316e86c4777392de442f9b2"
-  "libplacebo https://github.com/haasn/libplacebo v7.360.1 cee9b076f2c63104ccfd497fa79c39a867293ec4"
+  "libplacebo https://github.com/haasn/libplacebo v7.387.0 275f7dea27924cdd34ab2e6c20e448b6bc4fab65"
   "libunibreak https://github.com/adah1972/libunibreak libunibreak_7_0 3ce4bfa3129ff3738046a44a6db533d2ce25af2b"
   "libass https://github.com/libass/libass 0.17.5 4a05d8127f525943ebf45fdc6497c9e665947f0d"
 )
@@ -62,8 +64,17 @@ ref_of() {  # nom : sa référence dans DEPS (bash 3 de macOS : pas de tableau a
     if [[ "$name" == "$1" ]]; then echo "$ref"; return; fi
   done
 }
-done_marker() { [[ -f "$PREFIX/.built-$1" && "$(<"$PREFIX/.built-$1")" == "$2" ]]; }
-mark() { printf '%s\n' "$2" >"$PREFIX/.built-$1"; }
+# Toute signature porte aussi le compilateur : un préfixe du cache construit par un autre GCC se refait.
+# system_libs donne la version des bibliothèques du système qu'une dépendance lie (dav1d, shaderc, lcms2…) :
+# quand l'image du runner ou la distribution les monte, la dépendance se relie au lieu de garder l'ancienne.
+COMPILER="$("${CC:-cc}" -dumpfullversion 2>/dev/null || echo inconnu)"
+system_libs() {  # modules pkg-config...
+  local module out=""
+  for module in "$@"; do out+=" $module=$(pkg-config --modversion "$module" 2>/dev/null || echo absent)"; done
+  echo "$out"
+}
+done_marker() { [[ -f "$PREFIX/.built-$1" && "$(<"$PREFIX/.built-$1")" == "$2 cc $COMPILER" ]]; }
+mark() { printf '%s\n' "$2 cc $COMPILER" >"$PREFIX/.built-$1"; }
 
 cmake_dep() {  # nom [options...]
   local name="$1"; shift
@@ -102,14 +113,15 @@ if ! done_marker nanobench "$(ref_of nanobench)"; then
 fi
 
 # imgui n'a pas de système de construction : on installe ses sources, que
-# cmake/Dependencies.cmake compile avec les backends SDL3 et Vulkan.
-if ! done_marker imgui "$(ref_of imgui)"; then
+# cmake/Dependencies.cmake compile, sans backend (le lecteur n'en appelle aucun).
+if ! done_marker imgui "$(ref_of imgui) sans-backends"; then
+  rm -rf "$PREFIX/share/imgui"
   mkdir -p "$PREFIX/share/imgui"
-  cp -r "$WORK/imgui/"*.h "$WORK/imgui/"*.cpp "$WORK/imgui/backends" "$PREFIX/share/imgui/"
+  cp "$WORK/imgui/"*.h "$WORK/imgui/"*.cpp "$PREFIX/share/imgui/"
   # Le chargeur FreeType : stb_truetype ne lit pas les polices OpenType à contours CFF2 (Noto Sans CJK variable de Fedora).
   mkdir -p "$PREFIX/share/imgui/misc/freetype"
   cp "$WORK/imgui/misc/freetype/"imgui_freetype.* "$PREFIX/share/imgui/misc/freetype/"
-  mark imgui "$(ref_of imgui)"
+  mark imgui "$(ref_of imgui) sans-backends"
 fi
 
 if ! done_marker nv-codec-headers "$(ref_of nv-codec-headers)"; then
@@ -126,20 +138,25 @@ FFMPEG_OPTS=(--prefix="$PREFIX" --enable-shared --disable-static
   --enable-ffnvcodec --enable-nvdec --enable-cuvid
   --enable-vulkan --enable-vaapi --enable-libdav1d --enable-libsvtav1
   --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib")
-signature="$(ref_of ffmpeg) ${FFMPEG_OPTS[*]} nv-codec-headers $(ref_of nv-codec-headers)"
+signature="$(ref_of ffmpeg) ${FFMPEG_OPTS[*]} nv-codec-headers $(ref_of nv-codec-headers)$(system_libs dav1d SvtAv1Enc libva)"
 if ! done_marker ffmpeg "$signature"; then
   (cd "$WORK/ffmpeg" && ./configure "${FFMPEG_OPTS[@]}" && make -j "$JOBS" && make install)
   mark ffmpeg "$signature"
 fi
 
+# Les mêmes options que le port vcpkg (ports/libplacebo/portfile.cmake), fixées : laissées en « auto », elles
+# suivaient ce que la machine avait d'installé (glslang, xxhash, libunwind, libdovi), et le libplacebo d'un
+# poste n'était pas celui du paquet. Une différence voulue : vk-proc-addr reste allumé ici, les tests de rendu
+# ouvrent Vulkan par le chargeur de libplacebo (sans lui ils se sautent tous, « pas d'appareil Vulkan »).
 PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
-  --buildtype=release -Dvulkan=enabled -Dshaderc=enabled -Dlcms=enabled
-  -Dopengl=disabled -Dd3d11=disabled -Ddemos=false -Dtests=false
+  --buildtype=release -Dvulkan=enabled -Dvk-proc-addr=enabled -Dshaderc=enabled -Dglslang=disabled
+  -Dlcms=enabled -Dopengl=disabled -Dd3d11=disabled -Dlibdovi=disabled -Dunwind=disabled
+  -Dxxhash=disabled -Ddemos=false -Dtests=false
   -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml")
 # Le registre Vulkan vient de vulkan-headers : une autre version rebâtit libplacebo.
 # Le correctif de présentation (chantier 6.1), le même que le port vcpkg : sa somme entre dans la signature.
 placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
-signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(sha256sum "$placebo_patch" | cut -c1-16)"
+signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(sha256sum "$placebo_patch" | cut -c1-16)$(system_libs shaderc lcms2)"
 if ! done_marker libplacebo "$signature"; then
   git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
   # Appliqué une fois : déjà là (une construction interrompue), rien à refaire.
@@ -165,7 +182,7 @@ fi
 # eux, configure passe outre avec un simple avertissement, et le rendu des sous-titres perd ses routines SIMD, la
 # coupure Unicode ou ses fils.
 LIBASS_PATCH="$ROOT/ports/libass/rendu-sur-plusieurs-fils.patch"
-signature="$(ref_of libass) $(sha256sum "$LIBASS_PATCH" | cut -c1-16) asm libunibreak threads $(ref_of libunibreak)"
+signature="$(ref_of libass) $(sha256sum "$LIBASS_PATCH" | cut -c1-16) asm libunibreak threads $(ref_of libunibreak)$(system_libs freetype2 fribidi harfbuzz fontconfig)"
 if ! done_marker libass "$signature"; then
   git -C "$WORK/libass" apply --reverse --check "$LIBASS_PATCH" 2>/dev/null \
     || git -C "$WORK/libass" apply "$LIBASS_PATCH"

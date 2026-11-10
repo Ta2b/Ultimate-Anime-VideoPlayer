@@ -1,8 +1,10 @@
 #include "subs/text_encoding.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 
 #ifdef _WIN32
@@ -92,16 +94,35 @@ std::string from_utf16(std::string_view bytes, bool big_endian) {
   };
   for (std::size_t i = 0; i + 1 < bytes.size(); i += 2) {
     char32_t code = unit(i);
-    if (code >= 0xD800 && code <= 0xDBFF && i + 3 < bytes.size()) {
-      const char32_t low = unit(i + 2);
-      if (low >= 0xDC00 && low <= 0xDFFF) {
+    if (code >= 0xD800 && code <= 0xDFFF) {
+      // Une demi-paire seule (fichier coupé, éditeur fautif) n'a pas d'UTF-8 : U+FFFD (A17-04).
+      const char32_t low = i + 3 < bytes.size() ? unit(i + 2) : 0;
+      if (code <= 0xDBFF && low >= 0xDC00 && low <= 0xDFFF) {
         code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
         i += 2;
+      } else {
+        code = 0xFFFD;
       }
     }
     append(out, code);
   }
   return out;
+}
+
+// UTF-16 sans BOM (A17-04), reconnu à ses zéros alternés sur les 512 premiers octets : un texte de
+// sous-titres a toujours ses horodatages et ses retours à la ligne en ASCII, donc un octet nul sur deux.
+// Rend l'ordre des octets, big endian si vrai.
+std::optional<bool> utf16_without_bom(std::string_view bytes) {
+  const std::size_t units = std::min<std::size_t>(bytes.size(), 512) / 2;
+  std::size_t zero_even = 0, zero_odd = 0;
+  for (std::size_t u = 0; u < units; ++u) {
+    zero_even += bytes[2 * u] == '\0' ? 1U : 0U;
+    zero_odd += bytes[2 * u + 1] == '\0' ? 1U : 0U;
+  }
+  if (units < 4) return std::nullopt;
+  if (zero_odd * 10 >= units * 3 && zero_even * 20 < units) return false;
+  if (zero_even * 10 >= units * 3 && zero_odd * 20 < units) return true;
+  return std::nullopt;
 }
 
 // Un encodage hérité à double octet ou cyrillique, décodé par le système (MultiByteToWideChar, iconv).
@@ -116,6 +137,12 @@ constexpr Legacy kGbk{936, "GBK"};
 // l'iconv du système ne connaît pas CP950.
 constexpr Legacy kBig5{950, "CP950", "BIG5"};
 constexpr Legacy kCp1251{1251, "CP1251"};
+constexpr Legacy kEucKr{949, "CP949"};  // CP949 contient l'EUC-KR
+constexpr Legacy kEucJp{20932, "EUC-JP"};
+
+bool same(Legacy a, Legacy b) {
+  return a.code_page == b.code_page;
+}
 
 #ifndef _WIN32
 // Le texte décodé par l'iconv du système depuis l'encodage name, ou rien : nom inconnu, octets refusés.
@@ -159,34 +186,88 @@ std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) 
 #endif
 }
 
-// L'encodage dit par le nom du fichier : « ep01.ja.srt », « ep01.chs.ass », « ep01.cp1251.srt ».
-std::optional<Legacy> hinted(std::string_view hint) {
+// Ce que dit un mot du nom de fichier : « ja », « chs », « zh-tw », « cp1251 ». Une langue donne son
+// encodage habituel et, s'il y en a un autre courant, celui-là ; un nom d'encodage n'en donne qu'un.
+struct Hint {
+  Legacy first;
+  std::optional<Legacy> second;
+};
+
+std::optional<Hint> hint_word(std::string_view word) {
   std::string h;
-  for (const char c : hint) h.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c + 32) : c);
-  if (h == "ja" || h == "jp" || h == "jpn" || h == "sjis" || h == "shift-jis" || h == "cp932")
-    return kShiftJis;
-  if (h == "zh-hant" || h == "zh-tw" || h == "zh-hk" || h == "cht" || h == "tc" || h == "big5" ||
-      h == "cp950")
-    return kBig5;
-  if (h == "zh" || h == "zh-hans" || h == "zh-cn" || h == "chi" || h == "zho" || h == "chs" || h == "sc" ||
-      h == "gbk" || h == "gb2312" || h == "cp936")
-    return kGbk;
-  if (h == "ru" || h == "rus" || h == "uk" || h == "ukr" || h == "bg" || h == "bul" || h == "sr" ||
-      h == "be" || h == "cp1251" || h == "windows-1251")
-    return kCp1251;
+  for (const char c : word)
+    h.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c + 32) : c == '_' ? '-' : c);
+  const auto any = [&h](std::initializer_list<std::string_view> names) {
+    return std::ranges::find(names, std::string_view(h)) != names.end();
+  };
+  if (any({"ja", "jp", "jpn"})) return Hint{kShiftJis, kEucJp};
+  if (any({"sjis", "shift-jis", "cp932"})) return Hint{kShiftJis, {}};
+  if (any({"euc-jp", "eucjp"})) return Hint{kEucJp, {}};
+  if (any({"zh-hant", "zh-tw", "zh-hk", "cht", "tc"})) return Hint{kBig5, kGbk};
+  if (any({"big5", "cp950"})) return Hint{kBig5, {}};
+  if (any({"zh", "zh-hans", "zh-cn", "chi", "zho", "chs", "sc"})) return Hint{kGbk, kBig5};
+  if (any({"gbk", "gb2312", "cp936"})) return Hint{kGbk, {}};
+  if (any({"ko", "kor", "kr", "euc-kr", "cp949", "uhc"})) return Hint{kEucKr, {}};
+  if (any({"ru", "rus", "uk", "ukr", "bg", "bul", "sr", "be", "cp1251", "windows-1251"}))
+    return Hint{kCp1251, {}};
+  return std::nullopt;
+}
+
+// Les suffixes du nom, du dernier au premier (« ep01.chs&jpn.forced ») : le premier mot reconnu.
+std::optional<Hint> hinted(std::string_view hint) {
+  while (!hint.empty()) {
+    const std::size_t dot = hint.rfind('.');
+    std::string_view suffix = dot == std::string_view::npos ? hint : hint.substr(dot + 1);
+    hint = dot == std::string_view::npos ? std::string_view{} : hint.substr(0, dot);
+    while (!suffix.empty()) {
+      const std::size_t cut = suffix.find_first_of("&+,");
+      if (auto found = hint_word(suffix.substr(0, cut))) return found;
+      suffix = cut == std::string_view::npos ? std::string_view{} : suffix.substr(cut + 1);
+    }
+  }
+  return std::nullopt;
+}
+
+// Les encodages EUC (A17-03), en paires d'octets de 0xA1 à 0xFE : l'EUC-JP à ses kana (lignes 0xA4 et
+// 0xA5, nombreuses en japonais, absentes du chinois), l'EUC-KR à ses syllabes (têtes de 0xB0 à 0xC8
+// seulement) séparées par des espaces, que le chinois n'a pas.
+std::optional<Legacy> guessed_euc(std::string_view bytes) {
+  std::size_t pairs = 0, kana = 0, hangul = 0, spaced = 0;
+  for (std::size_t i = 0; i < bytes.size(); ++i) {
+    const auto b = static_cast<unsigned char>(bytes[i]);
+    if (b < 0x80) {
+      if (b == ' ' && i > 0 && static_cast<unsigned char>(bytes[i - 1]) >= 0xA1) ++spaced;
+      continue;
+    }
+    if (b < 0xA1 || b == 0xFF || i + 1 >= bytes.size()) return std::nullopt;  // pas de l'EUC
+    const auto t = static_cast<unsigned char>(bytes[++i]);
+    if (t < 0xA1 || t == 0xFF) return std::nullopt;
+    ++pairs;
+    if ((b == 0xA4 || b == 0xA5) && t <= 0xF6) ++kana;
+    if (b >= 0xB0 && b <= 0xC8) ++hangul;
+  }
+  if (pairs < 4) return std::nullopt;
+  if (kana * 10 >= pairs * 3 && decode_legacy(bytes, kEucJp)) return kEucJp;
+  if (pairs >= 8 && hangul * 20 >= pairs * 19 && spaced * 10 >= pairs && decode_legacy(bytes, kEucKr))
+    return kEucKr;
   return std::nullopt;
 }
 
 // Sans indice, la forme des octets hauts : le kana de Shift-JIS (têtes 0x82 et 0x83), le cyrillique de
 // CP1251 (mots de lettres hautes, minuscules de 0xE0 à 0xFF), le chinois en lignes entières de paires. Un
 // texte d'Europe de l'Ouest (lettres hautes isolées) reste en Windows-1252.
-std::optional<Legacy> guessed(std::string_view bytes) {
+// Les octets hauts d'un texte, comptés selon leur forme.
+struct HighBytes {
   std::size_t high = 0, paired = 0, lower_cyr = 0, kana = 0, big5_trail = 0;
+};
+
+HighBytes count_high(std::string_view bytes) {
+  HighBytes n;
   for (std::size_t i = 0; i < bytes.size(); ++i) {
     const auto b = static_cast<unsigned char>(bytes[i]);
     if (b < 0x80) continue;
-    ++high;
-    if (b >= 0xE0) ++lower_cyr;
+    ++n.high;
+    if (b >= 0xE0) ++n.lower_cyr;
     const bool prev_high = i > 0 && static_cast<unsigned char>(bytes[i - 1]) >= 0x80;
     const bool next_high = i + 1 < bytes.size() && static_cast<unsigned char>(bytes[i + 1]) >= 0x80;
     // Une tête sous 0xE0 suivie d'un ASCII de 0x40 à 0x7E : une paire Big5 ou Shift-JIS. Les accents
@@ -194,19 +275,42 @@ std::optional<Legacy> guessed(std::string_view bytes) {
     const bool ascii_trail = b < 0xE0 && i + 1 < bytes.size() &&
                              static_cast<unsigned char>(bytes[i + 1]) >= 0x40 &&
                              static_cast<unsigned char>(bytes[i + 1]) <= 0x7E;  // Shift-JIS, Big5, GBK
-    if (prev_high || next_high || ascii_trail) ++paired;
+    if (prev_high || next_high || ascii_trail) ++n.paired;
     if (i + 1 < bytes.size()) {
       const auto t = static_cast<unsigned char>(bytes[i + 1]);
-      if ((b == 0x82 && t >= 0x9F && t <= 0xF1) || (b == 0x83 && t >= 0x40 && t <= 0x96)) ++kana;
-      if (b >= 0xA1 && t >= 0x40 && t <= 0x7E) ++big5_trail;
+      if ((b == 0x82 && t >= 0x9F && t <= 0xF1) || (b == 0x83 && t >= 0x40 && t <= 0x96)) ++n.kana;
+      if (b >= 0xA1 && t >= 0x40 && t <= 0x7E) ++n.big5_trail;
     }
   }
-  if (high < 4 || paired * 2 < high) return std::nullopt;  // lettres isolées : Europe de l'Ouest
-  if (kana * 10 >= high && decode_legacy(bytes, kShiftJis)) return kShiftJis;
-  if (lower_cyr * 10 >= high * 6 && decode_legacy(bytes, kCp1251)) return kCp1251;
-  if (big5_trail > 0 && decode_legacy(bytes, kBig5)) return kBig5;
+  return n;
+}
+
+std::optional<Legacy> guessed(std::string_view bytes) {
+  const HighBytes n = count_high(bytes);
+  if (n.high < 4 || n.paired * 2 < n.high) return std::nullopt;  // lettres isolées : Europe de l'Ouest
+  if (n.kana * 10 >= n.high && decode_legacy(bytes, kShiftJis)) return kShiftJis;
+  if (auto euc = guessed_euc(bytes)) return euc;
+  if (n.lower_cyr * 10 >= n.high * 6 && decode_legacy(bytes, kCp1251)) return kCp1251;
+  if (n.big5_trail > 0 && decode_legacy(bytes, kBig5)) return kBig5;
   if (decode_legacy(bytes, kGbk)) return kGbk;
   if (decode_legacy(bytes, kBig5)) return kBig5;
+  return std::nullopt;
+}
+
+// L'indice choisit entre ses encodages celui que la forme des octets suggère ; un indice qui ne décode pas
+// laisse la forme des octets décider (A17-03), pas le Windows-1252.
+std::optional<std::string> decode_guessed(std::string_view bytes, std::string_view hint) {
+  const std::optional<Legacy> guess = guessed(bytes);
+  if (const std::optional<Hint> h = hinted(hint)) {
+    const bool agrees = guess && (same(*guess, h->first) || (h->second && same(*guess, *h->second)));
+    if (!agrees) {
+      if (auto text = decode_legacy(bytes, h->first)) return text;
+      if (h->second) {
+        if (auto text = decode_legacy(bytes, *h->second)) return text;
+      }
+    }
+  }
+  if (guess) return decode_legacy(bytes, *guess);
   return std::nullopt;
 }
 
@@ -221,12 +325,10 @@ std::string to_utf8(std::string_view bytes, std::string_view hint) {
       static_cast<unsigned char>(bytes[1]) == 0xFF) {
     return from_utf16(bytes.substr(2), true);
   }
+  if (const std::optional<bool> big_endian = utf16_without_bom(bytes)) return from_utf16(bytes, *big_endian);
   if (bytes.size() >= 3 && bytes.substr(0, 3) == "\xEF\xBB\xBF") bytes.remove_prefix(3);
   if (valid_utf8(bytes)) return std::string(bytes);
-  const std::optional<Legacy> legacy = hinted(hint) ? hinted(hint) : guessed(bytes);
-  if (legacy) {
-    if (auto text = decode_legacy(bytes, *legacy)) return *std::move(text);
-  }
+  if (auto text = decode_guessed(bytes, hint)) return *std::move(text);
   return from_cp1252(bytes);
 }
 

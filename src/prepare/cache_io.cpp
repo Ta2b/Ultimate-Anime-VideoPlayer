@@ -91,32 +91,12 @@ std::expected<void, Refusal> sync_file(const fs::path& file) {
 
 std::expected<void, Refusal> publish_file(const fs::path& staged, const fs::path& destination) {
   if (auto synced = sync_file(staged); !synced) return synced;
-  std::error_code error;
-  fs::rename(staged, destination, error);
-  if (error) return std::unexpected(io_refusal("publication", destination, error));
+  // Sous Windows, Defender ou l'indexeur ouvre le moteur juste écrit : le renommage se réessaie un
+  // instant au lieu de jeter la construction entière (A05-04).
+  if (const std::error_code error = core::rename_retrying(staged, destination))
+    return std::unexpected(io_refusal("publication", destination, error));
   sync_directory(destination.parent_path());
   return {};
-}
-
-std::expected<void, Refusal> write_atomic(const fs::path& destination, std::string_view bytes) {
-  fs::path temporary = destination;
-  temporary += ".tmp-" + random_suffix();
-  {
-    std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-    file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    file.close();
-    if (!file) {
-      std::error_code ignored;
-      fs::remove(temporary, ignored);
-      return std::unexpected(io_refusal("écriture du temporaire", temporary, {}));
-    }
-  }
-  auto published = publish_file(temporary, destination);
-  if (!published) {
-    std::error_code ignored;
-    fs::remove(temporary, ignored);
-  }
-  return published;
 }
 
 std::expected<fs::path, Refusal> reserve_stage(const fs::path& parent, std::string_view prefix,
@@ -146,16 +126,6 @@ bool owns_stage(const fs::path& folder, std::string_view owner) {
   std::string extra;
   return std::getline(file, version) && version == kOwnerVersion && std::getline(file, stored) &&
          stored == owner && !std::getline(file, extra) && file.eof() && !file.bad();
-}
-
-bool has_owned_stages(const fs::path& parent, std::string_view prefix, std::string_view owner) {
-  bool found = false;
-  // Un dossier illisible ne contient rien qu'on puisse reprendre : son erreur ne change rien.
-  std::ignore = for_each_entry(parent, [&](const fs::path& entry) {
-    found = starts_with(entry, prefix) && owns_stage(entry, owner);
-    return !found;
-  });
-  return found;
 }
 
 std::expected<void, Refusal> recover_owned_stages(const fs::path& parent, std::string_view prefix,

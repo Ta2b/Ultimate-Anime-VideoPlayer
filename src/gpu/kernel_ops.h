@@ -7,7 +7,7 @@
 // contrat rend un refus nommé (FormatUnsupported, ShapeInvalid, FieldOutOfRange) avant toute soumission,
 // jamais une conversion silencieuse.
 //
-// Une opération qui lit une DecodedFrame (ingest, rife_pad, measure) en garde une copie de
+// Une opération qui lit une DecodedFrame (ingest) en garde une copie de
 // frame.data jusqu'à ce que sa lecture soit achevée côté GPU, constaté sans attente hôte à un
 // appel suivant, et toutes à la destruction du backend : l'appelant peut relâcher la sienne
 // au retour, l'image ne revient au pool du décodeur qu'après la lecture. Une image Vulkan se
@@ -34,7 +34,7 @@
 namespace ajp::gpu {
 
 // Ingestion d'une image décodée : quelle conversion, selon l'étage qui la lit.
-// Filtre de la réduction fusionnée à l'ingestion (extension de la tranche verticale) : boîte
+// Filtre de la réduction fusionnée à l'ingestion : boîte
 // (Area), triangle (bilinéaire étiré), cubique de Mitchell-Netravali (B, C) ou Spline36 (rayon 3),
 // étirés à l'échelle de la réduction, en codes de la source.
 enum class ReduceKind : std::uint8_t { Area, Triangle, Cubic, Spline36 };
@@ -46,12 +46,10 @@ struct Reduction {
 };
 
 struct IngestSpec {
-  // Chaîne d'agrandissement : kChainChromaFilter, matrice, plage et siting de la source.
-  // RIFE : kRifeChromaFilter et kRifeMatrix, siting gauche (rife_cuda.py), quelle que soit
-  // l'étiquette de la source.
+  // Matrice, plage et siting de la source, chroma par ce filtre. L'entrée de RIFE ne passe pas par ici :
+  // rife_input et rife_pair la font depuis les tenseurs RGB de la chaîne.
   kernels::Filter chroma = kernels::kChainChromaFilter;
-  bool rife_conversion = false;
-  Reduction reduce;  // tenseur plus petit que l'image (extension de la tranche verticale)
+  Reduction reduce;  // tenseur plus petit que l'image
   // Débande à l'ingestion, sans copie : seulement si debands_on_ingest(), sinon ignoré.
   bool deband = false;
 };
@@ -130,10 +128,6 @@ class KernelOps {
   virtual std::expected<void, Refusal> resample(const Tensor& in, kernels::Filter filter,
                                                 const Tensor& out) = 0;
 
-  // Entrée de RIFE : remplissage mod-64 centré en noir studio, en YUV, puis la conversion de
-  // RIFE (ref::rife_pad puis ref::rife_prepare). out mesure rife_geometry(w, h) rempli.
-  virtual std::expected<void, Refusal> rife_pad(const DecodedFrame& frame, const Tensor& padded) = 0;
-
   // Sortie de RIFE : la fenêtre de rife_geometry(w, h), w × h étant la taille de out
   // (ref::rife_crop sur RGB).
   virtual std::expected<void, Refusal> rife_crop(const Tensor& padded, const Tensor& out) = 0;
@@ -150,17 +144,8 @@ class KernelOps {
   virtual std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                                   const RingWrite& sync) = 0;
 
-  // Lance la mesure de coupe de scène et de pire bloc entre deux sources de même format et de
-  // même taille. Le résultat est relu sans attente, comme k_flow_max : il sert à la paire
-  // suivante, par previous_scores().
-  virtual std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) = 0;
-
-  // La dernière mesure terminée, une seule fois ; rien si aucune n'a fini depuis l'appel
-  // précédent. N'attend jamais côté hôte.
-  virtual std::optional<PairScores> previous_scores() = 0;
-
-  // Extensions de la tranche verticale (pc/vertical-slice), à reprendre dans le contrat à
-  // l'intégration ; un backend qui ne les a pas les refuse par son nom.
+  // Les opérations qui suivent ont un défaut qui refuse par son nom : un backend qui ne les a pas les
+  // laisse.
   //
   // Entrée de RIFE depuis deux images RGB déjà ingérées, de même taille w × h : les 11 plans de
   // kernels/spec/rife.h (7 pour un modèle v2, selon input) dans rife_geometry(w, h), noir de studio
@@ -273,19 +258,6 @@ class KernelOps {
   // attend les écritures en vol et rend le bloc ; à appeler avant de le libérer.
   virtual bool map_fences(std::span<std::byte> /*block*/) { return false; }
   virtual void unmap_fences(std::span<std::byte> /*block*/) {}
-  // Statistiques de luminance d'une image (0 à 1, pondération BT.709 des canaux) : moyenne, centiles et parts
-  // de noir et de clair. La pré-analyse des plans les mesure (media/shot_cutter.h).
-  struct SceneStats {
-    float mean = 0.0F;
-    float p05 = 0.0F;
-    float p50 = 0.0F;
-    float p95 = 0.0F;
-    float p995 = 0.0F;    // le pic de la scène
-    float dark = 0.0F;    // part des points sous 10 % de luminance
-    float bright = 0.0F;  // part des points au-dessus de 80 %
-    float blue = 0.0F;    // moyenne de max(0, B - max(R, V)) : ciel, eau, aplats bleus saturés
-    float chroma = 0.0F;  // moyenne de max(R, V, B) - min(R, V, B)
-  };
 };
 
 }  // namespace ajp::gpu

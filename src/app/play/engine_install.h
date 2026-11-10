@@ -51,9 +51,15 @@ struct InstallSpace {
 };
 // arch : l'architecture du GPU (« sm89 ») pour les fichiers tiers ; existing : octets déjà installés dans le
 // dossier de ce moteur (gardés jusqu'à la fin). Le pic suit l'ordre d'installation : fichiers tiers un à un,
-// chacun avec son téléchargement et sa copie.
+// chacun avec son téléchargement et sa copie. engines_root (le dossier des versions du moteur) : un fichier
+// tiers de même nom et de même taille qui s'y trouve sera repris par un lien dur, il ne compte ni au
+// téléchargement ni au pic (A06-06).
 InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePackage& package,
-                           std::string_view arch, std::uint64_t existing = 0);
+                           std::string_view arch, std::uint64_t existing = 0,
+                           const std::filesystem::path& engines_root = {});
+// Pour le moteur installé (ou à installer) dans installed_dir : ses octets, et ses voisins pour les reprises.
+InstallSpace install_space_in(const EngineCatalog& catalog, const core::EnginePackage& package,
+                              std::string_view arch, const std::filesystem::path& installed_dir);
 // Refus InsufficientSpace, avec les chiffres, si available est sous space.peak.
 std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
                                          const std::filesystem::path& where);
@@ -98,6 +104,11 @@ std::string detect_cuda_arch(std::string_view gpu_name = {});
 // L'architecture déduite du nom de la carte (« NVIDIA GeForce RTX 4050 Laptop GPU » : sm89) ; vide si
 // inconnue.
 std::string cuda_arch_from_name(std::string_view gpu_name);
+// Présomption de l'accueil, sans moteur chargé, avec la règle du moteur (A37-02) : le FP8 de TensorRT dès
+// sm 8.9 (Ada, Hopper, Blackwell), les noyaux CUTLASS de SPAN sur Ada seulement
+// (SpanFp8Net::supported_device).
+bool fp8_presumed(std::string_view gpu_name);
+bool span_fp8_presumed(std::string_view gpu_name);
 // Celle qu'on installe : lue par nvidia-smi, sinon d'après le nom, sinon « ptx » (aucun fichier propre à une
 // architecture). Jamais vide : une architecture inconnue ne fait plus tirer celles de toutes les cartes
 // (0.5.0 : 2 Go tirés, 3,3 écrits).

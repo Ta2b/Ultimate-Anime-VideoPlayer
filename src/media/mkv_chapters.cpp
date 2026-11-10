@@ -23,6 +23,12 @@ constexpr std::uint32_t kEditionFlagOrdered = 0x45DD;
 constexpr std::uint32_t kChapterAtom = 0xB6;
 constexpr std::uint32_t kChapterSegmentUid = 0x6E67;
 constexpr std::uint32_t kChapterSegmentEditionUid = 0x6EBC;
+constexpr std::uint32_t kEditionFlagDefault = 0x45DB;
+constexpr std::uint32_t kChapterTimeStart = 0x91;
+constexpr std::uint32_t kChapterTimeEnd = 0x92;
+constexpr std::uint32_t kChapterFlagEnabled = 0x4598;
+constexpr std::uint64_t kNsPerUs = 1000;
+constexpr std::size_t kMaxParts = 1024;
 constexpr std::uint64_t kUnknownSize = ~std::uint64_t{0};
 constexpr std::uint64_t kMaxChaptersBytes = std::uint64_t{16} << 20U;  // bien au-delà de mille chapitres
 constexpr int kMaxTopElements = 64;                                    // avant le premier Cluster
@@ -139,17 +145,51 @@ void read_atom(Block atom, ChapterLayout& layout, int depth) {
   }
 }
 
+// Un chapitre de premier niveau d'une édition ordonnée : une partie, s'il est activé et dans ce fichier.
+std::optional<ChapterPart> part_of(Block atom) {
+  ChapterPart part;
+  bool enabled = true;
+  bool elsewhere = false;
+  while (const auto e = atom.next()) {
+    if (e->id == kChapterTimeStart) part.start_us = static_cast<std::int64_t>(atom.uint(*e) / kNsPerUs);
+    if (e->id == kChapterTimeEnd) part.end_us = static_cast<std::int64_t>(atom.uint(*e) / kNsPerUs);
+    if (e->id == kChapterFlagEnabled) enabled = atom.uint(*e) != 0;
+    if (e->id == kChapterSegmentUid || e->id == kChapterSegmentEditionUid) elsewhere = true;
+  }
+  if (!enabled || elsewhere || part.end_us <= part.start_us) return std::nullopt;
+  return part;
+}
+
+struct Edition {
+  bool ordered = false;
+  bool by_default = false;
+  std::vector<ChapterPart> parts;
+};
+
+Edition read_edition(Block entry, ChapterLayout& layout) {
+  Edition edition;
+  while (const auto e = entry.next()) {
+    if (e->id == kEditionFlagOrdered) edition.ordered = entry.uint(*e) != 0;
+    if (e->id == kEditionFlagDefault) edition.by_default = entry.uint(*e) != 0;
+    if (e->id != kChapterAtom) continue;
+    read_atom(entry.inside(*e), layout, 0);
+    if (const auto part = part_of(entry.inside(*e)); part && edition.parts.size() < kMaxParts)
+      edition.parts.push_back(*part);
+  }
+  return edition;
+}
+
 ChapterLayout read_chapters(const std::vector<std::uint8_t>& bytes) {
   ChapterLayout layout;
+  std::optional<Edition> played;
   Block chapters(bytes);
-  while (const auto edition = chapters.next()) {
-    if (edition->id != kEditionEntry) continue;
-    Block entry = chapters.inside(*edition);
-    while (const auto e = entry.next()) {
-      if (e->id == kEditionFlagOrdered && entry.uint(*e) != 0) layout.ordered = true;
-      if (e->id == kChapterAtom) read_atom(entry.inside(*e), layout, 0);
-    }
+  while (const auto element = chapters.next()) {
+    if (element->id != kEditionEntry) continue;
+    Edition edition = read_edition(chapters.inside(*element), layout);
+    layout.ordered = layout.ordered || edition.ordered;
+    if (!played || (edition.by_default && !played->by_default)) played = std::move(edition);
   }
+  if (played && played->ordered) layout.parts = std::move(played->parts);
   return layout;
 }
 

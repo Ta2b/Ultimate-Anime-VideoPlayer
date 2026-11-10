@@ -15,7 +15,7 @@ extern "C" {
 #include <libavutil/frame.h>
 }
 
-#include "core/av_error.h"
+#include "av/av_error.h"
 #include "core/types.h"
 #include "media/track.h"
 
@@ -45,8 +45,8 @@ using BufferPtr = std::unique_ptr<AVBufferRef, BufferUnref>;
 
 inline constexpr AVRational kMicroseconds{1, 1'000'000};
 
-// Texte de av_strerror pour un code AVERROR (core/av_error.h).
-using core::av_error_text;
+// Texte de av_strerror pour un code AVERROR (av/av_error.h).
+using av::av_error_text;
 
 // Refus nommé : « où : texte FFmpeg ».
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error);
@@ -59,5 +59,11 @@ std::int64_t to_us(std::int64_t ts, AVRational time_base, std::int64_t start_us)
 std::int64_t from_us(std::int64_t us, AVRational time_base, std::int64_t start_us);
 // Durée d'un flux en microsecondes, 0 si inconnue ou négative.
 std::int64_t duration_to_us(std::int64_t duration, AVRational time_base);
+
+// A15-01 : une piste dont la chroma n'est pas en 4:2:0 (HEVC RExt 4:4:4, VP9 profils 1 et 3, AV1 High et
+// Professional, et sur RTX 50 la HEVC 4:2:2) : NVDEC la décode en yuv444p, p210 ou nv16, que l'ingestion
+// TensorRT ne prend pas en mémoire CUDA (NV12, P010, P016 seulement). Le décodage logiciel la convertit. Le
+// format de la piste fait foi ; inconnu, le profil.
+bool chroma_beyond_420(const AVCodecParameters& av);
 
 }  // namespace ajp::media

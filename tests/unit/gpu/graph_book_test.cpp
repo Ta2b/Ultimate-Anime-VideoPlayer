@@ -1,5 +1,6 @@
 #include "gpu/graph_book.h"
 
+#include <cstdint>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -55,6 +56,54 @@ TEST_CASE("Graphes : un rejeu refusé repasse en direct, puis se recapture", "[g
   CHECK(book.off());  // trois échecs : graphes coupés
   CHECK(book.next(1).step == GraphStep::Direct);
   CHECK(book.take_notice().find("rejeu refusé") != std::string::npos);
+}
+
+TEST_CASE("Graphes : des refus espacés par assez de rejeux ne coupent plus les graphes (A21-08)",
+          "[gpu][graphs]") {
+  GraphBook<int> book(4, 3);
+  static_cast<void>(book.next(1));  // chaud
+  REQUIRE(book.next(1).step == GraphStep::Capture);
+  book.captured(true);
+  for (int failure = 0; failure < 5; ++failure) {
+    const auto replay = book.next(1);
+    REQUIRE(replay.step == GraphStep::Replay);
+    book.launch_failed(replay.index);
+    REQUIRE(book.next(1).step == GraphStep::Capture);
+    book.captured(true);
+    for (std::uint64_t i = 0; i < GraphBook<int>::kHealAfterReplays; ++i) {
+      REQUIRE(book.next(1).step == GraphStep::Replay);
+    }
+  }
+  CHECK_FALSE(book.off());
+  CHECK(book.counters().launch_failures == 5);  // le total reste au journal
+}
+
+TEST_CASE("Graphes : clear remet à zéro les séries d'échecs et rouvre les graphes (A21-08)",
+          "[gpu][graphs]") {
+  GraphBook<int> book(4, 3);
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    static_cast<void>(book.next(7));
+    if (attempt > 0) book.captured(false, "refusée");
+  }
+  REQUIRE(book.off());
+  book.clear();  // les adresses ont changé
+  CHECK_FALSE(book.off());
+  CHECK(book.next(7).step == GraphStep::Warm);
+  CHECK(book.counters().capture_failures == 3);
+}
+
+TEST_CASE("Graphes : registre plein, une entrée qui ne sert plus laisse sa place (A21-08)", "[gpu][graphs]") {
+  GraphBook<int> book(2, 3);
+  static_cast<void>(book.next(1));
+  static_cast<void>(book.next(2));
+  CHECK(book.next(3).step == GraphStep::Overflow);  // 1 et 2 viennent de servir
+  // La clé 1 reste vivante, la clé 2 ne revient plus (ancienne génération de l'anneau).
+  for (std::uint64_t i = 0; i <= GraphBook<int>::kStaleAfter * 2; ++i) static_cast<void>(book.next(1));
+  const auto taken = book.next(3);
+  CHECK(taken.step == GraphStep::Warm);
+  CHECK(taken.index == 1);  // la place de la clé 2
+  CHECK(book.size() == 2);
+  CHECK(book.next(1).step != GraphStep::Overflow);  // la clé vivante n'a pas été chassée
 }
 
 }  // namespace ajp::gpu

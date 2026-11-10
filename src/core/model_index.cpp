@@ -9,6 +9,7 @@
 
 #include "core/sha256_blocks.h"
 #include "core/toml_fields.h"
+#include "core/utf8_path.h"
 
 namespace ajp::core {
 namespace {
@@ -17,14 +18,14 @@ namespace {
 
 // --- Index. ---
 
-constexpr std::array<std::pair<std::string_view, EngineId>, 6> kEngineNames{{
+constexpr std::array<std::pair<std::string_view, EngineId>, 3> kEngineNames{{
     {"vulkan", EngineId::Vulkan},
     {"tensorrt", EngineId::TensorRt},
-    {"migraphx", EngineId::MiGraphX},
-    {"openvino", EngineId::OpenVino},
-    {"directml", EngineId::DirectMl},
     {"metal", EngineId::Metal},
 }};
+// Les moteurs retirés (engines.h), et les SDK de RTX HDR, retiré : un ancien fichier les nomme encore.
+constexpr std::array<std::string_view, 5> kRetiredEngines{"migraphx", "openvino", "directml", "rtx_video_sdk",
+                                                          "maxine_vfx"};
 constexpr std::array<std::pair<std::string_view, Os>, 3> kOsNames{
     {{"windows", Os::Windows}, {"linux", Os::Linux}, {"macos", Os::MacOs}}};
 
@@ -108,51 +109,9 @@ std::expected<std::vector<Entry>, Refusal> parse_entries(std::string_view text, 
   return entries;
 }
 
-std::expected<ModelEntry, Refusal> parse_model(const toml::table& table, const std::string& where,
-                                               const std::vector<ModelEntry>& previous) {
-  auto id = fields::required<std::string>(table, "id", where);
-  if (!id) return std::unexpected(id.error());
-  if (!safe_name(*id)) return refuse(RefusalCode::FieldType, std::format("{}.id = « {} »", where, *id));
-  if (find_model(previous, *id) != nullptr)
-    return refuse(RefusalCode::FieldOutOfRange, where + ".id (déjà défini)");
-  auto download = parse_download(table, where);
-  if (!download) return std::unexpected(download.error());
-  auto license = fields::required<std::string>(table, "license", where);
-  if (!license) return std::unexpected(license.error());
-  if (license->empty()) return refuse(RefusalCode::FieldMissing, where + ".license");
-
-  ModelEntry model{.id = *id,
-                   .url = download->url,
-                   .sha256 = download->sha256,
-                   .size = download->size,
-                   .license = *license};
-  auto profiles = fields::array(table, "profiles", where);
-  if (!profiles) return std::unexpected(profiles.error());
-  for (std::size_t i = 0; i < (*profiles)->size(); ++i) {
-    const std::string slot_where = std::format("{}.profiles[{}]", where, i);
-    const std::optional<std::int64_t> slot = (*profiles)->get(i)->value_exact<std::int64_t>();
-    if (!slot) return refuse(RefusalCode::FieldType, slot_where);
-    if (auto r = fields::in_range(*slot, limits::kStartProfile, slot_where); !r)
-      return std::unexpected(r.error());
-    if (std::ranges::contains(model.profiles, *slot)) return refuse(RefusalCode::FieldOutOfRange, slot_where);
-    model.profiles.push_back(static_cast<int>(*slot));
-  }
-  return model;
-}
-
 // Vulkan et Metal sont livrés avec le lecteur, jamais téléchargés.
 bool downloadable(EngineId engine) {
-  switch (engine) {
-    case EngineId::TensorRt:
-    case EngineId::MiGraphX:
-    case EngineId::OpenVino:
-    case EngineId::DirectMl:
-      return true;
-    case EngineId::Vulkan:
-    case EngineId::Metal:
-      return false;
-  }
-  return false;
+  return engine == EngineId::TensorRt;
 }
 
 std::expected<EnginePackage, Refusal> parse_package(const toml::table& table, const std::string& where,
@@ -335,16 +294,16 @@ std::string sha256_hex(std::string_view data) {
 std::expected<std::string, Refusal> sha256_file(const std::filesystem::path& path,
                                                 const std::stop_token& stop) {
   std::ifstream in(path, std::ios::binary);
-  if (!in) return refuse(RefusalCode::FileUnreadable, path.string());
+  if (!in) return refuse(RefusalCode::FileUnreadable, to_utf8(path));
   Sha256 hash;
   std::vector<char> buffer(std::size_t{1} << 16);
   while (in) {
-    if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, path.string());
+    if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, to_utf8(path));
     in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
     const auto count = static_cast<std::size_t>(in.gcount());
     hash.update(std::as_bytes(std::span(buffer.data(), count)));
   }
-  if (in.bad()) return refuse(RefusalCode::FileUnreadable, path.string());
+  if (in.bad()) return refuse(RefusalCode::FileUnreadable, to_utf8(path));
   return to_hex(hash.finish());
 }
 
@@ -356,6 +315,9 @@ std::string_view engine_name(EngineId engine) {
 std::optional<EngineId> parse_engine(std::string_view name) {
   return find_value(name, kEngineNames);
 }
+bool retired_engine(std::string_view name) {
+  return std::ranges::contains(kRetiredEngines, name);
+}
 std::string_view os_name(Os os) {
   return find_name(os, kOsNames);
 }
@@ -364,14 +326,6 @@ std::optional<Os> parse_os(std::string_view name) {
 }
 
 // --- Index. ---
-
-std::expected<std::vector<ModelEntry>, Refusal> parse_models_lock(std::string_view toml_text) {
-  return parse_entries<ModelEntry>(toml_text, "models.lock", "model", parse_model);
-}
-
-std::expected<std::vector<EnginePackage>, Refusal> parse_engine_index(std::string_view toml_text) {
-  return parse_entries<EnginePackage>(toml_text, "engines.lock", "engine", parse_package);
-}
 
 std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text) {
   EngineIndex index;
@@ -399,39 +353,26 @@ std::vector<VendorFile> vendor_files_for(std::span<const VendorFile> files, Engi
   return out;
 }
 
-const ModelEntry* find_model(std::span<const ModelEntry> lock, std::string_view id) {
-  const auto found = std::ranges::find(lock, id, &ModelEntry::id);
-  return found == lock.end() ? nullptr : &*found;
-}
-
 const EnginePackage* find_package(std::span<const EnginePackage> index, EngineId engine, Os platform) {
   const auto found = std::ranges::find_if(
       index, [&](const EnginePackage& p) { return p.engine == engine && p.platform == platform; });
   return found == index.end() ? nullptr : &*found;
 }
 
-std::vector<ModelEntry> models_for_profile(std::span<const ModelEntry> lock, int slot) {
-  std::vector<ModelEntry> models;
-  for (const ModelEntry& model : lock) {
-    if (std::ranges::contains(model.profiles, slot)) models.push_back(model);
-  }
-  return models;
-}
-
 std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std::uint64_t size,
                                          std::string_view sha256, const std::stop_token& stop) {
   std::error_code error;
   const std::uintmax_t actual_size = std::filesystem::file_size(path, error);
-  if (error) return refuse(RefusalCode::FileUnreadable, path.string());
+  if (error) return refuse(RefusalCode::FileUnreadable, to_utf8(path));
   if (actual_size != size) {
     return refuse(RefusalCode::HashMismatch,
-                  std::format("{} : {} octets, {} attendus", path.filename().string(), actual_size, size));
+                  std::format("{} : {} octets, {} attendus", to_utf8(path.filename()), actual_size, size));
   }
   auto actual = sha256_file(path, stop);
   if (!actual) return std::unexpected(actual.error());
   if (*actual != sha256) {
     return refuse(RefusalCode::HashMismatch,
-                  std::format("{} : SHA-256 {}, {} attendu", path.filename().string(), *actual, sha256));
+                  std::format("{} : SHA-256 {}, {} attendu", to_utf8(path.filename()), *actual, sha256));
   }
   return {};
 }
@@ -439,14 +380,8 @@ std::expected<void, Refusal> verify_file(const std::filesystem::path& path, std:
 // --- Installation. ---
 
 InstallLayout install_layout(Os os, const std::filesystem::path& user_data_dir) {
-  return InstallLayout{.os = os,
-                       .models = user_data_dir / "models",
-                       .engines = user_data_dir / "backends",
-                       .downloads = user_data_dir / "downloads"};
-}
-
-std::filesystem::path model_path(const InstallLayout& layout, const ModelEntry& model) {
-  return layout.models / (model.id + ".onnx");
+  return InstallLayout{
+      .os = os, .engines = user_data_dir / "backends", .downloads = user_data_dir / "downloads"};
 }
 
 std::filesystem::path engine_dir(const InstallLayout& layout, const EnginePackage& package) {

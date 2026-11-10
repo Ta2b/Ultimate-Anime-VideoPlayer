@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Aucune option ne vient de l'environnement : profil ou DebugFlags seulement. Interdit dans src/,
+# Aucune option ne vient de l'environnement : play.toml ou la ligne de commande seulement. Interdit dans src/,
 # hors commentaires et chaînes : lire une variable (getenv et ses variantes POSIX, Windows et SDL, appelées,
 # prises par adresse ou importées par using) ou tout le bloc (environ, _wenviron,
 # GetEnvironmentStrings, _NSGetEnviron). Seule exception, la ligne marquée « env: hérité » : le bloc

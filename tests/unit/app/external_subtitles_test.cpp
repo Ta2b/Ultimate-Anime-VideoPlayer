@@ -1,6 +1,9 @@
 #include "app/play/external_subtitles.h"
 
+#include <algorithm>
 #include <fstream>
+#include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -51,5 +54,27 @@ TEST_CASE("Sous-titres externes : dossiers Subs/ et noms proches (P3.80)", "[sub
   CHECK(found[0].path.filename() == "2_English.srt");
   CHECK(found[0].language == "eng");
   CHECK(found[1].language == "fr");
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("Sous-titres externes : la langue voulue passe avant la coupe à 16 (A17-11)", "[subtitles]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-external-subs-many";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir / "Subs" / "Episode 01");
+  touch(dir / "Episode 01.mkv");
+  // 30 fichiers : « 10_ » à « 19_ » se rangent avant « 2_ », le français (« 28_French ») après la coupe.
+  for (int i = 1; i <= 30; ++i) {
+    const std::string language = i == 28 ? "French" : i == 2 ? "English" : "Thai";
+    touch(dir / "Subs" / "Episode 01" / (std::to_string(i) + "_" + language + ".srt"));
+  }
+  const auto unordered = find_external_subtitles(dir / "Episode 01.mkv");
+  REQUIRE(unordered.size() == ajp::app::play::kMaxExternalSubtitles);
+  CHECK(std::ranges::none_of(unordered, [](const auto& s) { return s.language == "fr"; }));
+
+  const std::vector<std::string> wanted{"fre", "fr", "eng", "en"};
+  const auto found = find_external_subtitles(dir / "Episode 01.mkv", wanted);
+  REQUIRE(found.size() == ajp::app::play::kMaxExternalSubtitles);
+  CHECK(found[0].path.filename() == "28_French.srt");
+  CHECK(found[1].path.filename() == "2_English.srt");
   std::filesystem::remove_all(dir);
 }

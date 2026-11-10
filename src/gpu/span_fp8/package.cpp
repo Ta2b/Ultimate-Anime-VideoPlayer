@@ -133,11 +133,11 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
     return refuse(RefusalCode::FormatUnsupported,
                   std::format("paquet SPAN FP8 : drapeaux {:#x} inconnus", flags & ~kFlagAcc16));
   const std::uint32_t real = version == 1 ? (get_u32(head + 12) == 0 ? kChannels : 0U) : get_u32(head + 12);
-  const bool shape_ok =
-      get_u32(head + 8) == static_cast<std::uint32_t>(kChannels) &&
-      (version == 1 ? block_count == static_cast<std::uint32_t>(kBlocks)
-                    : block_count >= 1 && block_count <= static_cast<std::uint32_t>(kBlocks)) &&
-      (real == 48 || real == static_cast<std::uint32_t>(kChannels));
+  const bool shape_ok = get_u32(head + 8) == static_cast<std::uint32_t>(kChannels) &&
+                        (version == 1 ? block_count == static_cast<std::uint32_t>(kBlocks)
+                                      : block_count >= static_cast<std::uint32_t>(kMinBlocks) &&
+                                            block_count <= static_cast<std::uint32_t>(kBlocks)) &&
+                        (real == 48 || real == static_cast<std::uint32_t>(kChannels));
   if (!shape_ok)
     return refuse(RefusalCode::FormatUnsupported,
                   "paquet SPAN FP8 : 1 à 8 blocs rangés en 64 canaux (48 ou 64 réels) attendus");

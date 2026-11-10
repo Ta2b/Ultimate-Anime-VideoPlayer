@@ -39,16 +39,12 @@ struct SystemInfo {
 enum class EngineId : std::uint8_t {
   Vulkan,
   TensorRt,
-  MiGraphX,
-  OpenVino,
-  DirectMl,
   Metal,
 };
 
 enum class Delivery : std::uint8_t {
   Bundled,   // livré avec le lecteur, non désinstallable
   Download,  // téléchargé depuis l'index haché
-  Import,    // SDK propriétaire importé depuis un dossier choisi
 };
 
 enum class Badge : std::uint8_t {
@@ -62,13 +58,11 @@ enum class Badge : std::uint8_t {
   LinuxOnly,
 };
 
-// Les moteurs que le lecteur propose, installe et ouvre. MIGraphX et OpenVINO sont retirés des sources
-// (P5.1) : leurs noms restent lus dans un ancien play.toml ou un ancien index, et tout GPU qui n'est pas
-// NVIDIA passe par Vulkan, le seul chemin mesuré fiable et rapide sur AMD et Intel (docs/moteurs.md).
-// DirectML n'a jamais eu de backend.
-constexpr bool engine_plugged(EngineId id) {
-  return id != EngineId::MiGraphX && id != EngineId::OpenVino && id != EngineId::DirectMl;
-}
+// Les moteurs que le lecteur propose, installe et ouvre : Vulkan, TensorRT et Core ML. MIGraphX et OpenVINO
+// sont retirés des sources (P5.1, ADR 0012), DirectML n'a jamais eu de backend : leurs noms, encore écrits
+// dans un ancien settings.toml, un ancien index ou une ancienne bibliothèque, sont reconnus et écartés
+// sans bruit (retired_engine, model_index.h). Tout GPU qui n'est pas NVIDIA passe par Vulkan, le seul chemin
+// mesuré fiable et rapide sur AMD et Intel (docs/moteurs.md).
 
 // Pourquoi une ligne est présélectionnée, proposée ou grisée.
 enum class Reason : std::uint8_t {

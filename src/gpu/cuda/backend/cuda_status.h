@@ -1,6 +1,7 @@
 // Codes d'erreur CUDA en refus nommés qui citent l'appel.
 #pragma once
 
+#include <cstddef>
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <format>
@@ -76,5 +77,26 @@ inline std::expected<void, Refusal> cuda_check(cudaError_t error, std::string_vi
 // Événement que l'hôte attend (cudaEventSynchronize) : le fil dort au lieu de tourner dans le pilote
 // (A32-11). Les événements seulement interrogés ou attendus par un flux gardent cudaEventDisableTiming.
 constexpr unsigned kHostWaitedEvent = cudaEventDisableTiming | cudaEventBlockingSync;
+
+// Emplacement de relecture (device, host, done) : prend chaque morceau qui manque encore. Un échec
+// partiel (mémoire épinglée refusée une fois) laisse les morceaux pris et reprend les autres au ticket
+// suivant, au lieu de garder un emplacement à moitié prêt pour toute la séance (A01-04). Un emplacement
+// que l'hôte attend passe kHostWaitedEvent.
+template <typename Slot>
+std::expected<void, Refusal> reserve_readback(Slot& slot, std::size_t bytes,
+                                              unsigned event_flags = cudaEventDisableTiming) {
+  if (slot.device == nullptr) {
+    if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&slot.device), bytes), "cudaMalloc"); !ok)
+      return ok;
+  }
+  if (slot.host == nullptr) {
+    if (auto ok = cuda_check(cudaMallocHost(reinterpret_cast<void**>(&slot.host), bytes), "cudaMallocHost");
+        !ok)
+      return ok;
+  }
+  if (slot.done == nullptr)
+    return cuda_check(cudaEventCreateWithFlags(&slot.done, event_flags), "cudaEventCreate");
+  return {};
+}
 
 }  // namespace ajp::gpu::cuda

@@ -1,9 +1,8 @@
 // Le backend Vulkan dont les réseaux passent par un autre runtime (net_runtime.h) : construction
 // et chargement par le runtime, tenseurs en mémoire hôte visible (celle du runtime, importée, sur
-// un GPU intégré ; ou partagée, en interop), enqueue mis en file sur la timeline importée par le
-// runtime (interop : ni attente ni retour à l'hôte), sinon différé au fil du runtime
-// (run_deferred : l'attente des entrées et le signal de l'étape hors du fil du GPU) quand la file
-// n'est qu'au backend, sinon synchrone sur ce fil après l'attente de la file.
+// un GPU intégré), enqueue différé au fil du runtime (run_deferred : l'attente des entrées et le signal de
+// l'étape hors du fil du GPU) quand la file n'est qu'au backend, sinon synchrone sur ce fil après l'attente
+// de la file.
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -18,9 +17,9 @@
 #include <system_error>
 #include <vector>
 
+#include "gpu/vulkan/backend/host_tensor.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_artifact.h"
-#include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
@@ -148,7 +147,6 @@ std::expected<Artifact, Refusal> VulkanBackend::build_runtime(const ModelSpec& m
   std::string key_text = std::format("{}|{}|{}|{}|{}|{}", model.id, model.sha256,
                                      model.precision == TensorType::F16 ? "f16" : "f32", runtime_->version(),
                                      runtime_->device_name(), runtime_->name());
-  if (shared_memory_.load()) key_text += "|interop";  // programme compilé pour la mémoire de l'appareil
   if (const std::string_view recipe = runtime_->recipe(); !recipe.empty())
     key_text += std::format("|{}", recipe);
   for (const auto& input : inputs) {
@@ -198,52 +196,12 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_runtime(cons
                                          runtime_label(runtime_->name(), artifact.path), log_);
 }
 
-void VulkanBackend::import_timeline(BackendQueue& queue) {
-  auto fd = semaphore_fd(*context_, queue.semaphore());
-  if (!fd) {
-    log(BackendLogLevel::Warn,
-        std::format("timeline non exportée ({}) : attente par l'hôte", fd.error().detail));
-    return;
-  }
-  auto imported = runtime_->import_semaphore(*fd);
-  if (!imported) {
-#if !defined(_WIN32)
-    ::close(*fd);  // le runtime ne le prend qu'en cas de succès
-#endif
-    log(BackendLogLevel::Warn, std::format("{} n'importe pas la timeline ({}) : attente par l'hôte",
-                                           runtime_->name(), imported.error().detail));
-    return;
-  }
-  imported_timeline_ = std::move(*imported);
-}
-
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_runtime_tensor(
     TensorType type, const Shape& shape) {
   auto dense = detail::tensor_bytes(type, shape);
   if (!dense) return std::unexpected(dense.error());
-  if (shared_memory_.load()) {
-    auto shared = shared_tensor(*context_, *memory_, *runtime_, type, shape, (*dense + 3) / 4 * 4,
-                                host_views_, !shared_checked_);
-    if (shared || !runtime_->mixes_memory()) {
-      if (shared) shared_checked_ = true;
-      return shared;
-    }
-    // Le runtime lie aussi bien la mémoire de l'hôte : ce tenseur y passe, et tous les suivants
-    // si aucun import n'a encore réussi (pilote qui n'importe pas, vérification refusée) ; les
-    // réseaux construits ensuite le sont pour la mémoire de l'hôte, sous leur propre clé.
-    if (!shared_checked_) {
-      shared_memory_.store(false);
-      runtime_->use_device_memory(false);
-      log(BackendLogLevel::Info, std::format("tenseurs de {} par la mémoire du backend ({})",
-                                             runtime_->name(), shared.error().detail));
-    } else {
-      log(BackendLogLevel::Warn, std::format("un tenseur de {} par la mémoire du backend ({})",
-                                             runtime_->name(), shared.error().detail));
-    }
-  }
-  // GPU intégré : la mémoire hôte du runtime, importée par Vulkan : USM d'OpenVINO et IOSurface de
-  // Core ML, que le réseau lit et écrit sans copie ; mémoire épinglée de MIGraphX sous Windows, que
-  // HIP copie par DMA, sans passer par le CPU. Au premier refus, la mémoire hôte du backend pour la
+  // GPU intégré : la mémoire hôte du runtime, importée par Vulkan : IOSurface de Core ML, que le réseau lit
+  // et écrit sans copie. Au premier refus, la mémoire hôte du backend pour la
   // suite ; un refus pour ce tenseur seul (FormatUnsupported), pour lui seulement.
   if (host_alignment_ != 0) {
     auto imported = host_imported_tensor(*context_, *runtime_, type, shape, (*dense + 3) / 4 * 4,
@@ -288,19 +246,13 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
       const auto found = host_views_->views.find(t.handle);
       auto bytes = detail::tensor_bytes(t.type, t.shape);
       if (!bytes) return std::unexpected(bytes.error());
-      if (found == host_views_->views.end() ||
-          (found->second.data == nullptr && found->second.device == nullptr) ||
+      if (found == host_views_->views.end() || found->second.data == nullptr ||
           t.offset + *bytes > found->second.bytes) {
         return refuse_backend(RefusalCode::InputMismatch,
                               std::format("tenseur hors des tampons alloués pour {}", runtime_->name()));
       }
       const HostViews::View& v = found->second;
-      bindings.push_back(
-          {.data = v.data != nullptr ? v.data + t.offset : nullptr,
-           .bytes = *bytes,
-           .type = t.type,
-           .shape = t.shape,
-           .device = v.device != nullptr ? static_cast<std::byte*>(v.device) + t.offset : nullptr});
+      bindings.push_back({.data = v.data + t.offset, .bytes = *bytes, .type = t.type, .shape = t.shape});
       return {};
     };
     for (const Tensor& t : inputs) {
@@ -318,27 +270,6 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
   const std::span<const net::HostBinding> all(bindings);
   const auto ins = all.first(inputs.size());
   const auto outs = all.subspan(inputs.size());
-  // Ordonné côté GPU : le réseau attend la dernière soumission (partie avec le lot) et signale
-  // l'étape que la suivante attend. Le lot part d'abord : le runtime n'attend que du soumis.
-  std::optional<BackendQueue::Step> step;
-  if (imported_timeline_) {
-    if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());
-    step = queue_->external_step();
-  }
-  if (step) {
-    auto ordered =
-        runtime_engine->net().run_ordered(ins, outs, *imported_timeline_, step->wait, step->signal);
-    // Sur une file partagée avec l'affichage, la suite n'y part qu'une fois l'étape signalée : la
-    // soumission qui attendrait côté GPU le signal de l'autre API y retiendrait l'affichage.
-    if (ordered) return context_->shares_queue() ? context_->wait_on_host(queue_->at(step->signal)) : Done{};
-    if (ordered.error().code != RefusalCode::FeatureUnavailable) {
-      // Rien ne signalera l'étape : l'hôte le fait, une fois la précédente atteinte, sans quoi
-      // la file attendrait sans fin.
-      if (auto ok = context_->wait_on_host(queue_->at(step->wait)); !ok) return std::unexpected(ok.error());
-      if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
-      return ordered;
-    }
-  }
   // Par l'hôte, sans bloquer ce fil : le lot part, puis le runtime attend sur son propre fil que
   // les noyaux qui ont écrit les entrées soient finis (leurs écritures visibles de l'hôte par la
   // barrière de fin de chaque enregistrement), calcule, et signale l'étape ; ce fil enregistre
@@ -346,22 +277,19 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
   // des soumissions suivantes, qui commencent après le signal. Pas sur une file partagée avec
   // l'affichage : la suite y attendrait le signal de l'hôte et retiendrait chaque image affichée
   // pendant tout le calcul (les pilotes Mesa retiennent même la soumission sur l'hôte).
-  const bool by_host = !step;  // sans étape déjà prise par l'interop
-  if (by_host) {
-    if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());
-    step = queue_->host_step();
-  }
-  if (by_host && !context_->shares_queue()) {
+  if (auto ok = queue_->flush(); !ok) return std::unexpected(ok.error());
+  const BackendQueue::Step step = queue_->host_step();
+  if (!context_->shares_queue()) {
     // ready puis done, sur le fil du runtime, l'un après l'autre : la mesure va de l'un à l'autre.
     auto ready_at = std::make_shared<RuntimeTiming::Clock::time_point>();
     auto deferred = runtime_engine->net().run_deferred(
         ins, outs,
-        [this, wait = step->wait, ready_at] {
+        [this, wait = step.wait, ready_at] {
           auto ready = queue_->wait_elsewhere(wait);
           *ready_at = RuntimeTiming::Clock::now();
           return ready;
         },
-        [this, &queue = *queue_, signal = step->signal, ready_at,
+        [this, &queue = *queue_, signal = step.signal, ready_at,
          timing = runtime_engine->timing()](std::expected<void, Refusal> ran) {
           if (ran) timing->add(RuntimeTiming::Clock::now() - *ready_at);
           finish_host_step(queue, signal, std::move(ran));
@@ -372,16 +300,16 @@ std::expected<void, Refusal> VulkanBackend::enqueue_runtime(Engine& engine, std:
     const RefusalCode code = deferred.error().code;
     if (code != RefusalCode::FeatureUnavailable && code != RefusalCode::ThreadUnavailable) {
       // Rien n'a été lancé : l'étape se signale ici, sans quoi la file attendrait sans fin.
-      if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
+      if (auto ok = queue_->signal_on_host(step.signal); !ok) return std::unexpected(ok.error());
       return deferred;
     }
   }
   // Par l'hôte, sur ce fil : l'attente des entrées, le calcul, le signal de l'étape.
-  if (auto ok = context_->wait_on_host(queue_->at(step->wait)); !ok) return std::unexpected(ok.error());
+  if (auto ok = context_->wait_on_host(queue_->at(step.wait)); !ok) return std::unexpected(ok.error());
   const auto started = RuntimeTiming::Clock::now();
   auto ran = runtime_engine->net().run(ins, outs);
   if (ran) runtime_engine->timing()->add(RuntimeTiming::Clock::now() - started);
-  if (auto ok = queue_->signal_on_host(step->signal); !ok) return std::unexpected(ok.error());
+  if (auto ok = queue_->signal_on_host(step.signal); !ok) return std::unexpected(ok.error());
   return ran;
 }
 

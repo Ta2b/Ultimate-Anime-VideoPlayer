@@ -45,8 +45,8 @@ struct LoadedLooks {
   std::vector<std::string> failed;  // les clés illisibles
 };
 // Un seul fil de lecture des LUT, qui ne garde que la dernière demande (P2.9) : cent allers-retours du
-// curseur ne lancent plus cent fils, et le thread d'affichage n'en joint jamais un qui lit encore (il est
-// détaché).
+// curseur ne lancent plus cent fils. La destruction le joint (A30-02) : une lecture en cours, bornée,
+// finit avant.
 class LookLoader {
  public:
   LookLoader() = default;
@@ -61,7 +61,7 @@ class LookLoader {
   // Le résultat de la dernière demande, une fois ; rien tant qu'elle n'est pas lue.
   std::optional<LoadedLooks> take();
 
-  struct State;  // partagé avec le fil, qui lui survit s'il est détaché
+  struct State;  // partagé avec le fil
 
  private:
   std::shared_ptr<State> state_;
@@ -96,7 +96,8 @@ struct Chain {
   std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
   bool calibrate = false;               // « Refaire le banc » : à faire avant de rouvrir
-  StageMemory* stages = nullptr;        // les étages refusés de la séance, oubliés par « Réessayer »
+  std::vector<std::filesystem::path>* dropped_subtitles = nullptr;  // Player::dropped_subtitles
+  StageMemory* stages = nullptr;  // les étages refusés de la séance, oubliés par « Réessayer »
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
   std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
@@ -186,5 +187,11 @@ void apply(const Input& input, Chain& to, std::int64_t now_us);
 // --stats : une ligne par présentation ; le bilan de fin dans le journal.
 void write_record(std::ofstream& stats, const PresentRecord& record);
 void log_summary(const Session& session);
+
+// Ce que la séance garde d'une chaîne à l'autre : les étages refusés (stages) et les sous-titres glissés
+// pendant la vidéo (dropped), rajoutés à la chaîne rouverte (A29-03) ; wanted : la piste choisie avant la
+// réouverture, reprise si c'est l'un d'eux.
+void carry_session(Chain& to, StageMemory* stages, std::vector<std::filesystem::path>& dropped,
+                   std::optional<std::optional<int>> wanted);
 
 }  // namespace ajp::app::play

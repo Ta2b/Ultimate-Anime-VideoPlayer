@@ -77,10 +77,15 @@ const TrackInfo* find_track(std::span<const TrackInfo> tracks, std::optional<int
 }  // namespace
 
 bool subtitle_readable(std::string_view codec) {
-  // Codec inconnu (vide) : lisible, le refus éventuel vient plus loin. Les formats image (PGS,
-  // VobSub, DVB) et mov_text/WebVTT ne sont pas lus par le module de sous-titres.
+  // Codec inconnu (vide) : lisible, le refus éventuel vient plus loin. mov_text (MP4) et WebVTT passent en
+  // texte (A18-15) ; les formats image (PGS, VobSub, DVB) ne sont pas lus par le module de sous-titres.
   return codec.empty() || codec == "ass" || codec == "ssa" || codec == "subrip" || codec == "srt" ||
-         codec == "text";
+         codec == "text" || codec == "mov_text" || codec == "webvtt";
+}
+
+bool subtitle_image(std::string_view codec) {
+  return codec == "hdmv_pgs_subtitle" || codec == "dvd_subtitle" || codec == "dvb_subtitle" ||
+         codec == "xsub" || codec == "dvb_teletext";
 }
 
 namespace {

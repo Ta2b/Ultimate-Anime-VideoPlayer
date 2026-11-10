@@ -129,3 +129,55 @@ TEST_CASE("to_ms : milliseconde la plus proche, demie vers +∞", "[track]") {
   STATIC_REQUIRE(ajp::subs::to_ms(-501) == -1);
   STATIC_REQUIRE(ajp::subs::to_ms(-1500) == -1);
 }
+
+TEST_CASE("SubtitleTrack::from_srt : une cue hors bornes est écartée, pas le fichier (A17-07)", "[track]") {
+  auto library = AssLibrary::create();
+  REQUIRE(library);
+  const std::string srt =
+      "1\n00:00:01,000 --> 00:00:03,000\nPremière réplique\n\n"
+      "2\n00:00:00,000 --> 30:00:00,000\nsubs by Groupe\n\n"
+      "3\n00:00:05,000 --> 00:00:07,000\nTroisième réplique\n";
+  auto track = SubtitleTrack::from_srt(*library, srt);
+  REQUIRE(track);
+  CHECK(track->event_count() == 2);
+}
+
+TEST_CASE("SubtitleTrack : plafond cumulé des paquets, dit une fois (A17-14)", "[track]") {
+  auto library = AssLibrary::create();
+  REQUIRE(library);
+  auto track = SubtitleTrack::text(*library);
+  REQUIRE(track);
+  // Des paquets de 1 Mo, tous distincts : le plafond tombe après kMaxTrackBytes.
+  const std::size_t per_packet = ajp::subs::kMaxPacketBytes;
+  const std::size_t fill = ajp::subs::kMaxTrackBytes / per_packet;
+  for (std::size_t i = 0; i < fill; ++i) {
+    const SubtitlePacket packet{.start_us = static_cast<std::int64_t>(i) * 1'000'000,
+                                .duration_us = 500'000,
+                                .data = std::string(per_packet, 'a')};
+    REQUIRE(track->add_packet(packet));
+  }
+  const int kept = track->event_count();
+  CHECK(kept == static_cast<int>(fill));
+  const SubtitlePacket more{.start_us = 999'000'000, .duration_us = 500'000, .data = "encore"};
+  const auto refused = track->add_packet(more);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
+  const SubtitlePacket again{.start_us = 998'000'000, .duration_us = 500'000, .data = "toujours"};
+  CHECK(track->add_packet(again));  // déjà dit : écarté sans refus
+  CHECK(track->event_count() == kept);
+}
+
+TEST_CASE("SubtitleTrack : les doublons ASS revus après un seek ne remplissent pas la piste (A17-14)",
+          "[track]") {
+  auto library = AssLibrary::create();
+  REQUIRE(library);
+  auto track = SubtitleTrack::from_header(*library, codec_private());
+  REQUIRE(track);
+  const SubtitlePacket big{
+      .start_us = 1'000'000,
+      .duration_us = 1'000'000,
+      .data = "0,0,Default,,0,0,0,," + std::string(ajp::subs::kMaxPacketBytes - 64, 'a')};
+  for (std::size_t i = 0; i < 2 * ajp::subs::kMaxTrackBytes / ajp::subs::kMaxPacketBytes; ++i)
+    REQUIRE(track->add_packet(big));  // même ReadOrder : un seul événement, compté une fois
+  CHECK(track->event_count() == 1);
+}

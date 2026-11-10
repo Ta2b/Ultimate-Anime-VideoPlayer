@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "app/play/subtitle_lead.h"
+#include "app/play/visible_error.h"
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "core/log.h"
@@ -16,6 +18,7 @@
 #include "core/text.h"
 #include "kernels/spec/color.h"
 #include "media/demuxer.h"
+#include "media/selection.h"
 #include "media/video_decoder.h"
 #include "prepare/utf8.h"
 
@@ -51,6 +54,45 @@ void report_unreadable(const media::Demuxer& demuxer, int index, MainMail& mail)
   if (auto refused = subtitle_track(*track, 0); !refused) mail.report("subs", refused.error(), false);
 }
 
+// A17-02 : des pistes de sous-titres image (PGS, VobSub) et rien d'autre de choisi : dit une fois, au lieu
+// d'une lecture sans sous-titres et sans un mot.
+void note_image_subtitles(const media::Demuxer& demuxer, bool chosen, MainMail& mail) {
+  if (chosen) return;
+  std::string codecs;
+  for (const media::TrackInfo& track : demuxer.tracks()) {
+    if (track.kind != media::TrackKind::Subtitle || !media::subtitle_image(track.codec)) continue;
+    if (codecs.find(track.codec) == std::string::npos) codecs += (codecs.empty() ? "" : ", ") + track.codec;
+  }
+  if (codecs.empty()) return;
+  mail.report("subs",
+              Refusal{.code = RefusalCode::TrackUnavailable,
+                      .detail = std::format("sous-titres image ({}) non pris en charge", codecs),
+                      .key = std::string(kImageSubtitlesKey)},
+              false);
+}
+
+// Une piste de sous-titres que le lecteur sait lire. A17-02 : une piste image (PGS) que rien ne lit n'empêche
+// plus le fichier d'à côté.
+bool readable_subtitles(const media::Demuxer& demuxer) {
+  return std::ranges::any_of(demuxer.tracks(), [](const media::TrackInfo& t) {
+    return t.kind == media::TrackKind::Subtitle && media::subtitle_readable(t.codec);
+  });
+}
+
+// A18-15 : une piste mov_text (MP4) arrive avec sa longueur en tête, que le pont retire.
+void mark_mov_text(const media::Demuxer& demuxer, int index, SubsBridge& bridge, std::vector<int>& mov_text) {
+  if (const media::TrackInfo* track = demuxer.track(index); track && track->codec == "mov_text") {
+    bridge.mov_text(index);
+    mov_text.push_back(index);
+  }
+}
+
+// La piste que relit SubtitleLead : une piste du conteneur, pas un fichier externe.
+std::optional<int> container_track(std::optional<int> track) {
+  if (track && *track >= kExternalSubtitleBase) return std::nullopt;
+  return track;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -78,6 +120,15 @@ audio::OutputRequest output_request(const media::TrackInfo& track, const std::st
   return {.sample_rate = rate, .channels = channels, .device = name};
 }
 
+// Les langues de sous-titres voulues, préréglages d'abord : l'ordre des fichiers externes (A17-11).
+std::vector<std::string> wanted_subtitles(const media::LanguagePriorities& languages) {
+  std::vector<std::string> wanted;
+  for (const media::LanguagePreset& preset : languages.presets)
+    if (!preset.subtitles.empty()) wanted.push_back(preset.subtitles);
+  wanted.insert(wanted.end(), languages.subtitles.begin(), languages.subtitles.end());
+  return wanted;
+}
+
 }  // namespace
 
 std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
@@ -88,7 +139,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   // P3.73 : les sous-titres à côté de la vidéo concourent avec ceux du conteneur, à leur langue lue dans le
   // nom (« Épisode 01.fr.ass »).
   std::vector<ExternalSubtitle> externals =
-      config.subtitles ? find_external_subtitles(config.file) : std::vector<ExternalSubtitle>{};
+      config.subtitles ? find_external_subtitles(config.file, wanted_subtitles(config.languages))
+                       : std::vector<ExternalSubtitle>{};
   media::TrackChoice choice = choose(config, *demuxer, externals);
   if (!choice.video) {
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable,
@@ -99,8 +151,13 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   for (const media::Chapter& chapter : demuxer->chapters())
     p->chapters_.push_back({.start_us = chapter.start_us, .title = chapter.title});
   std::ranges::sort(p->chapters_, {}, &ChapterMark::start_us);
-  p->chapters_flattened_ = !demuxer->chapter_layout().plain();
-  const std::vector<subs::AttachFont> fonts = attached_fonts(demuxer->tracks());
+  // A14-03 : une édition ordonnée se joue dans son ordre ; seuls les chapitres liés à d'autres fichiers
+  // manquent.
+  const media::ChapterLayout layout = demuxer->chapter_layout();
+  p->chapters_flattened_ = layout.linked;
+  for (const media::ChapterPart& part : layout.parts)
+    p->parts_.push_back({.start_us = part.start_us, .end_us = part.end_us});
+  AttachedFonts fonts = attached_fonts(demuxer->tracks());
   std::vector<media::PacketRoute> routes;
 
   // Toutes les pistes audio et de sous-titres lisibles sont routées : la barre de lecture en
@@ -113,8 +170,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   }
 
   if (config.subtitles) {
-    if (auto opened =
-            p->open_subtitles(config, *demuxer, choice.subtitle, std::move(externals), fonts, routes);
+    if (auto opened = p->open_subtitles(config, *demuxer, choice.subtitle, std::move(externals),
+                                        std::move(fonts), routes);
         !opened)
       return std::unexpected(std::move(opened.error()));
   }
@@ -138,7 +195,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
                                                          .audio_bridge = p->audio_bridge_.get(),
                                                          .subs = p->subs_inbox_,
                                                          .host_clock = p->host_clock_,
-                                                         .lead = p->lead_.get()});
+                                                         .lead = p->lead_.get(),
+                                                         .subs_lead = p->subs_lead_.get()});
 
   auto source = media::SourceThread::start(
       std::move(*media),
@@ -230,12 +288,9 @@ void Pipeline::open_audio(const PipelineConfig& config, const media::Demuxer& de
 
 // Les sous-titres : menu, fichiers externes, thread subs (lancé même sans piste : un fichier glissé
 // pendant la lecture s'y ajoute, P3.85), polices et piste choisie.
-std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& config,
-                                                      const media::Demuxer& demuxer,
-                                                      std::optional<int> subtitle,
-                                                      std::vector<ExternalSubtitle> externals,
-                                                      const std::vector<subs::AttachFont>& fonts,
-                                                      std::vector<media::PacketRoute>& routes) {
+std::expected<void, Refusal> Pipeline::open_subtitles(
+    const PipelineConfig& config, const media::Demuxer& demuxer, std::optional<int> subtitle,
+    std::vector<ExternalSubtitle> externals, AttachedFonts fonts, std::vector<media::PacketRoute>& routes) {
   for (const media::TrackInfo& track : demuxer.tracks()) {
     if (track.kind != media::TrackKind::Subtitle || !subtitle_track(track, subs_track_id(track.index)))
       continue;
@@ -252,11 +307,9 @@ std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& conf
                        .codec = "externe",
                        .title = prepare::utf8_path(external_[k].path.filename())});
   }
-  if (!subtitle && !config.subtitle_track && !external_.empty() &&
-      std::ranges::none_of(demuxer.tracks(),
-                           [](const media::TrackInfo& t) { return t.kind == media::TrackKind::Subtitle; })) {
+  if (!subtitle && !config.subtitle_track && !external_.empty() && !readable_subtitles(demuxer))
     subtitle = kExternalSubtitleBase;
-  }
+  note_image_subtitles(demuxer, subtitle.has_value(), mail_);
   if (subtitle && !std::ranges::contains(menu_.subtitles, *subtitle, &TrackEntry::index)) {
     report_unreadable(demuxer, *subtitle, mail_);
     subtitle.reset();
@@ -267,18 +320,7 @@ std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& conf
   auto thread = subs::SubsThread::start(config.subs, mail_, subs_inbox_);
   if (!thread) return std::unexpected(std::move(thread.error()));
   subs_thread_ = std::move(*thread);
-  for (const subs::AttachFont& font : fonts) {
-    // La boîte tient 64 polices à la fois : au-delà, on laisse au thread subs le temps d'en
-    // prendre (une seconde au plus) avant d'en écarter une.
-    bool pushed = subs_inbox_->try_push(subs::AttachFont{font});
-    for (int wait = 0; !pushed && wait < 1000; ++wait) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      pushed = subs_inbox_->try_push(subs::AttachFont{font});
-    }
-    if (!pushed) {
-      mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("font {} dropped", font.name)}, false);
-    }
-  }
+  send_fonts(std::move(fonts));
   std::optional<int> chosen;
   if (subtitle && std::ranges::contains(menu_.subtitles, *subtitle, &TrackEntry::index)) {
     chosen = subtitle;
@@ -292,14 +334,48 @@ std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& conf
   }
   menu_.subtitle_selected = chosen;
   subs_bridge_ = std::make_unique<SubsBridge>(subs_inbox_, chosen);
+  std::vector<int> mov_text;
+  bool contained = false;
   for (const TrackEntry& entry : menu_.subtitles) {
-    if (entry.index < kExternalSubtitleBase)
-      routes.push_back({.track = entry.index, .sink = subs_bridge_.get()});
+    if (entry.index >= kExternalSubtitleBase) continue;
+    routes.push_back({.track = entry.index, .sink = subs_bridge_.get()});
+    mark_mov_text(demuxer, entry.index, *subs_bridge_, mov_text);
+    contained = true;
+  }
+  // A17-05, A17-06 : la piste choisie du conteneur, relue en avance au seek et pour un délai négatif.
+  if (contained) {
+    subs_lead_ = std::make_unique<SubtitleLead>(SubtitleLeadConfig{.file = config.file,
+                                                                   .reference = video_track_.index,
+                                                                   .mov_text = std::move(mov_text),
+                                                                   .inbox = subs_inbox_});
+    subs_lead_->select(container_track(chosen));
   }
   return {};
 }
 
 Pipeline::~Pipeline() = default;
+
+void Pipeline::send_fonts(AttachedFonts fonts) {
+  if (fonts.dropped > 0) {
+    mail_.report("subs",
+                 {RefusalCode::FieldOutOfRange, std::format("{} fonts dropped: attachments over {} MiB",
+                                                            fonts.dropped, kMaxAttachedFontBytes >> 20)},
+                 false);
+  }
+  for (subs::AttachFont& font : fonts.fonts) {
+    // La boîte tient 64 polices à la fois : au-delà, on laisse au thread subs le temps d'en
+    // prendre (une seconde au plus) avant d'en écarter une. try_push ne prend la police que s'il
+    // réussit : elle n'est pas recopiée à chaque essai (A17-09).
+    const std::string name = font.name;
+    bool pushed = subs_inbox_->try_push(std::move(font));
+    for (int wait = 0; !pushed && wait < 1000; ++wait) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      pushed = subs_inbox_->try_push(std::move(font));  // NOLINT(bugprone-use-after-move) : rendue intacte
+    }
+    if (!pushed)
+      mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("font {} dropped", name)}, false);
+  }
+}
 
 const audio::AudioCodecInfo* Pipeline::audio_codec(int track) const {
   const auto found = std::ranges::find(audio_codecs_, track, &std::pair<int, audio::AudioCodecInfo>::first);
@@ -352,6 +428,7 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "aucune piste de sous-titres lisible"});
   if (!track) {
     subs_bridge_->select(std::nullopt);
+    if (subs_lead_) subs_lead_->select(std::nullopt);
     menu_.subtitle_selected.reset();
     subtitle_track_.reset();
     return {};
@@ -365,6 +442,7 @@ std::expected<void, Refusal> Pipeline::select_subtitles(std::optional<int> track
   if (!subs_inbox_->try_push(std::move(*select)))
     return std::unexpected(Refusal{RefusalCode::SubtitleBacklog, "subtitle track: mailbox full"});
   subs_bridge_->select(track);
+  if (subs_lead_) subs_lead_->select(container_track(track));
   menu_.subtitle_selected = track;
   subtitle_track_ = *info;
   return {};
@@ -402,6 +480,7 @@ SessionConfig Pipeline::session_config() const {
                           ? audio_track_->duration_us
                           : 0,
       .chapters = chapters_,
+      .parts = parts_,
       .subtitles = subtitle_track_.has_value(),
       .video_width = video_track_.width,
       .video_height = video_track_.height,

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Une seule version (P5.35) : celle de project() dans CMakeLists.txt, recopiée dans vcpkg.json.
+# Une seule version (P5.35) : celle de project() dans CMakeLists.txt, recopiée dans vcpkg.json, dans le
+# badge du README et dans la première ligne de CHANGELOG.md (A38-08).
 #
 #   tools/ci/check-version.sh            # CMakeLists.txt et vcpkg.json d'accord
 #   tools/ci/check-version.sh v0.11.0    # et l'étiquette d'une release dit la même version (A28-04) :
@@ -10,6 +11,14 @@ cmake_version="$(sed -n '/^project(ajp/,/)/s/^ *VERSION \([0-9.]*\).*/\1/p' CMak
 vcpkg_version="$(sed -n 's/^ *"version-semver": "\([0-9.]*\)".*/\1/p' vcpkg.json)"
 if [[ -z "$cmake_version" || "$cmake_version" != "$vcpkg_version" ]]; then
   echo "version : CMakeLists.txt dit « $cmake_version », vcpkg.json « $vcpkg_version »" >&2
+  exit 1
+fi
+if ! grep -q "badge/version-$cmake_version-" README.md; then
+  echo "version : le badge de README.md ne dit pas $cmake_version" >&2
+  exit 1
+fi
+if ! grep -q "^| $cmake_version | " CHANGELOG.md; then
+  echo "version : CHANGELOG.md n'a pas de ligne pour $cmake_version" >&2
   exit 1
 fi
 if [ $# -ge 1 ]; then

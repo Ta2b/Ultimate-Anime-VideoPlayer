@@ -132,3 +132,16 @@ TEST_CASE("selection : deux préférences audio + sous-titres, la première enti
                                        track(2, TrackKind::Audio, "ger")};
   CHECK(choose_tracks(neither, jp_fr_then_fr).audio == 1);
 }
+
+// A17-02, A18-15 : mov_text et WebVTT se lisent en texte ; les sous-titres image ne se lisent pas, et se
+// reconnaissent pour être dits.
+TEST_CASE("selection : mov_text et WebVTT lisibles, PGS et VobSub image", "[media][selection]") {
+  using ajp::media::subtitle_image;
+  using ajp::media::subtitle_readable;
+  CHECK(subtitle_readable("mov_text"));
+  CHECK(subtitle_readable("webvtt"));
+  CHECK_FALSE(subtitle_readable("hdmv_pgs_subtitle"));
+  CHECK(subtitle_image("hdmv_pgs_subtitle"));
+  CHECK(subtitle_image("dvd_subtitle"));
+  CHECK_FALSE(subtitle_image("ass"));
+}

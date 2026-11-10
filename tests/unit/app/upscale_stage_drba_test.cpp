@@ -156,6 +156,28 @@ TEST_CASE("Étage gpu : DistilDRBA mouvement, un SPAN par source et le warp apr�
   CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
 }
 
+TEST_CASE("Étage gpu : DistilDRBA débande avant SPAN comme RIFE, l'écran ne redébande pas (A09-07)",
+          "[app][stage]") {
+  for (const bool wanted : {false, true}) {
+    Rig rig;
+    rig.backend.offer_deband_on_ingest(true);
+    UpscaleSetup s = rig.setup(true);
+    s.rife = nullptr;
+    s.distil_drba = &rig.drba_motion;
+    s.drba_motion = true;
+    s.warp_after_span = true;
+    rig.live->set_deband_source(wanted);
+    rig.start(std::move(s));
+    rig.feed(1, 4);
+    REQUIRE(rig.collect(5));
+    rig.stage.reset();
+    const std::vector<RingFrame> frames = rig.sink.frames();
+    REQUIRE(frames.size() == 5);
+    // Les sources, ingérées en avance ou non, et les images créées entre elles.
+    for (const RingFrame& frame : frames) CHECK(frame.debanded == wanted);
+  }
+}
+
 TEST_CASE("Étage gpu : DistilDRBA mouvement estimé plus petit que le travail, sur des copies réduites",
           "[app][stage]") {
   Rig rig;
@@ -177,6 +199,10 @@ TEST_CASE("Étage gpu : DistilDRBA mouvement estimé plus petit que le travail, 
   for (const char* entry : {"ingest 1", "ingest 2", "ingest 3", "ingest 4"})
     CHECK(rig.backend.count(entry) == 2);
   CHECK(rig.backend.count("warp_blend") + rig.backend.count("warp_blend_ring") == 2);
+  // A09-18 : les paires se mesurent sur les copies réduites, comme sous RIFE, jamais à la taille de travail.
+  const std::vector<int> heights = rig.backend.scored_heights();
+  REQUIRE_FALSE(heights.empty());
+  CHECK(std::ranges::all_of(heights, [](int height) { return height == kHeight / 2; }));
 }
 
 TEST_CASE("Étage gpu : DistilDRBA image refusé plus petit que le travail", "[app][stage]") {
@@ -218,6 +244,29 @@ TEST_CASE("Étage gpu : refus de démarrage nommés", "[app][stage]") {
   UpscaleSetup none = rig.setup(false);
   none.backend = nullptr;
   CHECK(refused(std::move(none)) == RefusalCode::FieldMissing);
+}
+
+// A31-09 : une source qui change de taille (publicité 1440×1080 dans un enregistrement 1920×1080) n'est pas
+// ingérée comme image suivante de DistilDRBA : la paire finit, puis l'image rouvre la chaîne (SourceResized).
+TEST_CASE("Étage gpu : DistilDRBA n'ingère pas une suivante d'une autre taille, la chaîne se rouvre",
+          "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  rig.start(std::move(s));
+  rig.feed(1, 2);
+  for (std::uint32_t id = 3; id <= 4; ++id)  // la suite du flux à la nouvelle taille
+    REQUIRE(
+        rig.push(test::host_frame(id, kWidth * 3 / 4, kHeight, static_cast<std::int64_t>(id) * kPeriodUs)));
+  REQUIRE(rig.collect(3));  // 1, 1-2, 2 : la paire (2, 3) n'est pas calculée
+  for (int i = 0; i < 200 && rig.reported().empty(); ++i) std::this_thread::sleep_for(10ms);
+  const std::vector<Refusal> refused = rig.reported();
+  REQUIRE(refused.size() == 1);
+  CHECK(refused[0].code == RefusalCode::SourceResized);
+  rig.stage.reset();
+  CHECK(rig.backend.count("ingest 3") == 0);
+  CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2"});
 }
 
 }  // namespace ajp::app::play

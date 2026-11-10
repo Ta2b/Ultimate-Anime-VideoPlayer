@@ -83,4 +83,31 @@ TEST_CASE("Voies : la jointure suit le dernier travail de chaque autre voie", "[
   CHECK(op(hazards, Lane::Upscale, {kFrame, kFlow}, {kSpan}).waits.empty());
 }
 
+TEST_CASE("Voies : une adresse que toutes les voies ont déjà attendue est oubliée (A21-09)", "[gpu][lanes]") {
+  LaneHazards hazards;
+  op(hazards, Lane::Measure, {}, {kFrame});
+  op(hazards, Lane::Interpolate, {}, {kFlow});
+  CHECK(hazards.tracked() == 2);
+  hazards.join(Lane::Upscale);    // l'agrandissement suit tout
+  CHECK(hazards.tracked() == 2);  // la mesure n'a pas attendu l'interpolation, ni l'inverse
+  hazards.join(Lane::Measure);
+  hazards.join(Lane::Interpolate);
+  CHECK(hazards.tracked() == 0);
+  // Oubliées sans rien changer : rien à attendre, comme avant l'oubli.
+  CHECK(op(hazards, Lane::Upscale, {kFrame, kFlow}, {kSpan}).waits.empty());
+}
+
+TEST_CASE("Voies : une mémoire rendue sort de la table (A21-09)", "[gpu][lanes]") {
+  LaneHazards hazards;
+  for (std::uintptr_t i = 0; i < 10000; ++i) {
+    const std::uintptr_t frame = 0x10000 + i * 0x100;
+    op(hazards, Lane::Measure, {}, {frame});
+    op(hazards, Lane::Upscale, {frame}, {kSpan});
+    op(hazards, Lane::Interpolate, {kSpan}, {kFlow});
+    op(hazards, Lane::Measure, {kFlow}, {});
+    hazards.forget(frame);  // l'image rendue au pool, derrière toutes les voies
+  }
+  CHECK(hazards.tracked() <= 2);
+}
+
 }  // namespace ajp::gpu

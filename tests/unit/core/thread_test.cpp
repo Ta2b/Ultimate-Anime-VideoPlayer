@@ -1,5 +1,6 @@
 #include "core/thread.h"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -13,6 +14,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/thread_role.h"
+
+#if defined(__linux__)
+#include <pthread.h>
+#endif
 
 using ajp::Refusal;
 using ajp::RefusalCode;
@@ -157,6 +162,25 @@ TEST_CASE("refusal_from_exception : le code demandé et le texte de l'exception"
 }
 
 #if defined(__linux__)
+TEST_CASE("start_thread : le système voit le nom du thread, coupé à 15 octets (A20-11)", "[thread][core]") {
+  ajp::install_system_thread_names();
+  const auto seen = [](std::string_view name) {
+    std::promise<std::string> named;
+    auto future = named.get_future();
+    auto thread = ajp::start_thread(name, ajp::ThreadReport([](const ajp::Refusal&) {}),
+                                    [&named](const std::stop_token&, const ajp::ThreadReport&) {
+                                      std::array<char, 16> got{};
+                                      pthread_getname_np(pthread_self(), got.data(), got.size());
+                                      named.set_value(got.data());
+                                    });
+    REQUIRE(thread);
+    return future.get();
+  };
+  CHECK(seen("source") == "source");
+  CHECK(seen("pre-analyse-des-plans") == "pre-analyse-des");
+  ajp::thread_namer().store(nullptr);
+}
+
 TEST_CASE("Priorité : le crochet relève la lecture et l'audio, pas le fond", "[thread][core]") {
   static std::atomic<int> raised{0};
   const bool accepted = ajp::set_thread_priority_raiser([]() noexcept {

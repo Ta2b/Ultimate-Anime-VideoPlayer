@@ -44,11 +44,14 @@ void store_digest(const CacheEntry& entry, const std::string& digest) {
 }
 
 // L'entrée publiée a-t-elle encore les octets de sa publication (P2.31) ? Une entrée d'avant l'empreinte
-// la reçoit ici.
-std::expected<bool, Refusal> intact(const CacheEntry& entry) {
+// la reçoit ici, sous le verrou de la clé seulement (locked) : sans lui, un processus qui lit l'ancienne
+// entrée pouvait écrire son empreinte après celle du remplaçant qu'un autre venait de publier (A05-06).
+// Sans verrou, une empreinte manquante rend false : l'appelant passe par le chemin verrouillé.
+std::expected<bool, Refusal> intact(const CacheEntry& entry, bool locked) {
+  const std::string stored = stored_digest(entry);
+  if (stored.empty() && !locked) return false;
   auto digest = sha256_file_known(entry.destination);
   if (!digest) return std::unexpected(digest.error());
-  const std::string stored = stored_digest(entry);
   if (stored.empty()) {
     store_digest(entry, *digest);
     return true;
@@ -56,16 +59,10 @@ std::expected<bool, Refusal> intact(const CacheEntry& entry) {
   return stored == *digest;
 }
 
-// L'entrée publiée se reprend, sauf si ce sont exactement les octets refusés
-// (aji_trt.cpp:775-786) : un remplaçant publié par un autre processus se reprend.
+// L'entrée publiée se reprend si elle est intacte (son empreinte revérifiée, P2.31).
 std::expected<bool, Refusal> reusable(const CacheEntry& entry) {
   if (!is_published(entry.destination)) return false;
-  auto whole = intact(entry);
-  if (!whole || !*whole) return whole;
-  if (entry.rejected_sha256.empty()) return true;
-  auto digest = sha256_file_known(entry.destination);
-  if (!digest) return std::unexpected(digest.error());
-  return *digest != entry.rejected_sha256;
+  return intact(entry, true);  // sous le verrou de la clé
 }
 
 }  // namespace
@@ -93,18 +90,15 @@ bool is_published(const fs::path& file) {
 
 std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const Producer& produce,
                                                 const std::stop_token& stop) {
-  if (!entry.rejected_sha256.empty() && !is_sha256_hex(entry.rejected_sha256)) {
-    return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "rejected_sha256 n'est pas un SHA-256"});
-  }
-  if (entry.rejected_sha256.empty() && is_published(entry.destination)) {
-    if (auto whole = intact(entry); whole && *whole) return Production::Reused;
+  if (is_published(entry.destination)) {
+    if (auto whole = intact(entry, false); whole && *whole) return Production::Reused;
   }
   const fs::path parent = entry.destination.parent_path();
   std::error_code error;
   fs::create_directories(parent, error);
   if (error) return std::unexpected(io_refusal("création du cache", parent, error));
 
-  auto lock = KeyLock::acquire(entry.lock_file(), stop);
+  auto lock = KeyLock::acquire(entry.lock_file(), stop, LockWait::Block, entry.max_wait);
   if (!lock) return std::unexpected(lock.error());
   if (auto recovered = recover_owned_stages(parent, kStagePrefix, entry.owner()); !recovered) {
     return std::unexpected(recovered.error());

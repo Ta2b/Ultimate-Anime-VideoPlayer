@@ -91,6 +91,11 @@ check_portable() {  # dossier des binaires vérifiés, [autres dossiers livrés 
       echo "$f demande $soname au système, un nom qui n'est pas le même partout : à livrer ou à retirer" >&2
       bad=1
     done < <(readelf -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+    # Aucun RUNPATH dans le paquet (voir origin) ; trtexec reste tel que la configuration l'a rangé.
+    if [ "$(basename "$f")" != trtexec ] && readelf -d "$f" | grep -q '(RUNPATH)'; then
+      echo "$f porte un RUNPATH, que LD_LIBRARY_PATH devance : patchelf --force-rpath" >&2
+      bad=1
+    fi
   done < <(find "$1" -maxdepth 1 -type f -exec sh -c 'file -b "$1" | grep -q ELF' _ {} \; -print)
   return "$bad"
 }
@@ -119,6 +124,9 @@ copy_beside() {  # dossier binaire nom-de-la-dépendance motifs…
   return 0
 }
 
+# --force-rpath partout : sans lui patchelf pose un DT_RUNPATH, que LD_LIBRARY_PATH devance. Le paquet
+# chargeait alors le libass ou le libplacebo d'un autre logiciel (sans nos correctifs) dès qu'un environnement
+# en exportait un. Un DT_RPATH passe avant LD_LIBRARY_PATH et vaut aussi pour les dépendances indirectes.
 origin() {  # rpath $ORIGIN (et $ORIGIN/$2) sur chaque fichier ELF du dossier $1
   local f
   for f in "$1"/*; do
@@ -126,7 +134,7 @@ origin() {  # rpath $ORIGIN (et $ORIGIN/$2) sur chaque fichier ELF du dossier $1
     # trtexec est déjà rangé par la configuration, et le module garde son empreinte : un octet changé et le
     # moteur le refuse (« trtexec absent du dossier du moteur, ou d'empreinte inattendue », 0.10.0).
     [ "$(basename "$f")" = trtexec ] && continue
-    patchelf --set-rpath "\$ORIGIN${2:+:\$ORIGIN/$2}" "$f"
+    patchelf --force-rpath --set-rpath "\$ORIGIN${2:+:\$ORIGIN/$2}" "$f"
   done
 }
 
@@ -137,7 +145,7 @@ mkdir -p "$STAGE/lib"
 cp "$BUILD/src/app/ajp" "$STAGE/"
 cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$STAGE/"
 copy_deps "$STAGE/lib" "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
-patchelf --set-rpath '$ORIGIN/lib' "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
+patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
 origin "$STAGE/lib"
 check_portable "$STAGE/lib"
 check_portable "$STAGE" "$STAGE/lib"

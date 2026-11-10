@@ -143,10 +143,10 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& paths,
                              const PlaySettings& saved) {
   EngineCatalog catalog = load_catalog(
-      paths.engine_index, paths.engines.parent_path(),
+      paths.engine_index, paths::data_root(paths),
       saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
   const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
-  add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
+  add_release_engines(catalog, paths::data_root(paths) / "engines-nvidia.lock", release_repo(),
                       installed_version(),
                       update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),
                       online ? UpdateFetch(fetch_https) : UpdateFetch());
@@ -213,13 +213,7 @@ std::jthread start_update_check(const PlaySettings& saved, const PlayerPaths& pa
           const std::int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
                                        std::chrono::system_clock::now().time_since_epoch())
                                        .count();
-          UpdateState state = load_update_state(update_file);
-          if ((first || !playing.load()) && update_due(state, mode, frequency, now)) {
-            const auto message = run_update_check(state, stop);
-            if (const auto kept = save_update_state(update_file, state); !kept)
-              log_channel("app")->warn("update.toml : {}", kept.error().detail);
-            log_channel("app")->info("mise à jour : {}", message ? *message : message.error().detail);
-          }
+          check_updates_if_due(update_file, mode, frequency, first || !playing.load(), now, stop);
           if (frequency == UpdateFrequency::Launch) return;
           std::unique_lock lock(mutex);
           wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
@@ -352,12 +346,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     startup_notes.push_back(set_aside(engines_path, engines.error()));
     engines = core::Settings{};
   }
-  // Un moteur débranché depuis (MIGraphX, OpenVINO) sort des choix : Vulkan prend sa place.
-  for (const core::EngineId id : {core::EngineId::MiGraphX, core::EngineId::OpenVino}) {
-    if (!chosen(*engines, id)) continue;
-    log->info("moteurs : {} débranché de ce lecteur, Vulkan à sa place", engine_label(id));
-    *engines = without_engine(std::move(*engines), id);
-  }
+  // Un moteur retiré (MIGraphX, OpenVINO) est écarté dès la lecture de settings.toml (core::retired_engine).
   const EngineCatalog catalog = engine_catalog(options, paths, *saved);
   const EngineScreen engine_screen{.screen = **screen,
                                    .ui = **ui,

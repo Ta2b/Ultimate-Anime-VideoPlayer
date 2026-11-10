@@ -31,3 +31,17 @@ TEST_CASE("Chemins : le dossier des données et celui des réglages", "[app][pat
   CHECK(paths::auto_memory(root).filename() == "auto_memory.toml");
   CHECK(paths::update_state(root) == root / "update.toml");
 }
+
+TEST_CASE("Chemins : les caches qui se refont seuls ont leur dossier (A36-08)", "[app][paths]") {
+  PlayerPaths p;
+  p.heavy = fs::path("local") / "ajp";
+  p.cache = fs::path("cache") / "ajp";
+  p.engines = p.cache / "engines";
+  CHECK(paths::data_root(p) == p.heavy);  // pas le parent des moteurs construits
+  CHECK(paths::luts(p) == p.heavy / "luts");
+  CHECK(paths::backends_install(p) == p.heavy / "backends");
+  CHECK(paths::cache_root(p) == p.cache);
+  CHECK(paths::derived_models(p) == p.cache / "modeles");
+  CHECK(paths::shader_cache(p) == p.cache / "shaders.cache");
+  CHECK(paths::shot_cache(p) == p.cache / "plans");
+}

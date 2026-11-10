@@ -34,7 +34,6 @@ ajp_add_unit_tests(vk_backend
     rife_fused_chain_test.cpp
     rife_fused_test.cpp
     runtime_queue_test.cpp
-    shared_tensor_test.cpp
     slice_ops_test.cpp
     test_models.cpp
     vendor_runtime_test.cpp

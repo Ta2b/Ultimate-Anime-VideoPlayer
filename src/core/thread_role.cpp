@@ -1,6 +1,10 @@
 #include "core/thread_role.h"
 
+#include <array>
 #include <atomic>
+#include <cstring>
+
+#include "core/thread.h"
 
 #if defined(_WIN32)
 // windows.h avant avrt.h, qui en dépend.
@@ -12,6 +16,7 @@
 #include <pthread.h>
 #include <sys/qos.h>
 #elif defined(__linux__)
+#include <pthread.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -77,6 +82,35 @@ void set_thread_role(ThreadRole role) noexcept {
 #else
   static_cast<void>(role);
 #endif
+}
+
+namespace {
+
+void name_for_system([[maybe_unused]] const char* name) noexcept {
+#if defined(_WIN32)
+  std::array<wchar_t, 64> wide{};
+  const int written =
+      MultiByteToWideChar(CP_UTF8, 0, name, -1, wide.data(), static_cast<int>(wide.size()) - 1);
+  // Pris dans kernel32 à l'exécution : SetThreadDescription n'existe que depuis Windows 10 1607.
+  using Describe = HRESULT(WINAPI*)(HANDLE, PCWSTR);
+  static const auto describe =
+      reinterpret_cast<Describe>(  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+          reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription")));
+  if (written > 0 && describe != nullptr) describe(GetCurrentThread(), wide.data());
+#elif defined(__APPLE__)
+  pthread_setname_np(name);
+#elif defined(__linux__)
+  // 16 octets, le zéro final compris : un nom plus long est refusé entier, il est donc coupé.
+  std::array<char, 16> cut{};
+  std::strncpy(cut.data(), name, cut.size() - 1);
+  pthread_setname_np(pthread_self(), cut.data());
+#endif
+}
+
+}  // namespace
+
+void install_system_thread_names() noexcept {
+  thread_namer().store(&name_for_system, std::memory_order_release);
 }
 
 }  // namespace ajp
