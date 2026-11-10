@@ -1,6 +1,5 @@
 #include "app/play/input.h"
 
-#include <algorithm>
 #include <array>
 #include <utility>
 #include <variant>
@@ -56,8 +55,10 @@ std::optional<core::Key> key_of(SDL_Keycode key) {
   if (key >= SDLK_A && key <= SDLK_Z) return offset(Key::A, key, SDLK_A);
   if (key >= SDLK_0 && key <= SDLK_9) return offset(Key::Digit0, key, SDLK_0);
   if (key >= SDLK_F1 && key <= SDLK_F12) return offset(Key::F1, key, SDLK_F1);
-  const auto* named = std::ranges::find(kNamedKeys, key, &NamedKey::sdl);
-  return named != kNamedKeys.end() ? std::optional(named->key) : std::nullopt;
+  // Une boucle, pas un itérateur : celui de std::array est un pointeur ici et une classe sous MSVC.
+  for (const NamedKey& named : kNamedKeys)
+    if (named.sdl == key) return named.key;
+  return std::nullopt;
 }
 
 namespace {

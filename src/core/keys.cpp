@@ -271,17 +271,22 @@ bool fixed_key(Key key) {
 
 namespace {
 
-// Une entrée de [keys] : la touche (aucune pour ""), ou le texte à dire si elle est ignorée.
-std::expected<std::optional<Chord>, std::string> read_entry(std::string_view name, const toml::node& node) {
+// Une entrée de [keys] : l'action et sa touche (aucune pour ""), ou le texte à dire si elle est ignorée.
+struct Entry {
+  Action action;
+  std::optional<Chord> chord;
+};
+std::expected<Entry, std::string> read_entry(std::string_view name, const toml::node& node) {
+  const std::optional<Action> action = parse_action(name);
   const std::optional<std::string> text = node.value_exact<std::string>();
-  if (!parse_action(name) || !text)
-    return std::unexpected(text ? std::format("{} = {}", name, *text) : std::string(name));
-  if (text->empty()) return std::nullopt;
+  if (!text) return std::unexpected(std::string(name));
+  if (!action) return std::unexpected(std::format("{} = {}", name, *text));
+  if (text->empty()) return Entry{.action = *action, .chord = std::nullopt};
   const auto chord = parse_chord(*text);
   if (!chord) return std::unexpected(std::format("{} = {}", name, *text));
   if (!chord->ctrl && !chord->alt && !chord->meta && fixed_key(chord->key))
     return std::unexpected(std::format("{} = {} (fixed)", name, *text));  // A24-06
-  return *chord;
+  return Entry{.action = *action, .chord = *chord};
 }
 
 // L'autre action qui tient déjà cette touche.
@@ -311,13 +316,13 @@ KeysRead read_keys(std::string_view profile_toml) {
   std::vector<Action> redefined;
   for (const auto& [key, node] : *keys) {
     if (key.str().starts_with("profile_")) continue;  // les profils retirés d'un ancien user.toml
-    auto chord = read_entry(key.str(), node);
-    if (!chord) {
-      out.ignored.push_back(std::move(chord.error()));
+    auto entry = read_entry(key.str(), node);
+    if (!entry) {
+      out.ignored.push_back(std::move(entry.error()));
       continue;
     }
-    const Action action = parse_action(key.str()).value();
-    out.map.chords_[index(action)] = *chord;
+    const Action action = entry->action;
+    out.map.chords_[index(action)] = entry->chord;
     redefined.push_back(action);
   }
   // Les conflits après toutes les redéfinitions (échanger deux touches reste possible) : l'action en conflit

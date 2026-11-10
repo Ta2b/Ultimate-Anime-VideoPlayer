@@ -30,7 +30,7 @@ void apply_user_keys(std::string_view user_toml) {
   core::KeysRead read = core::read_keys(user_toml);
   for (const std::string& entry : read.ignored)
     log_channel("app")->warn("user.toml [keys] : entrée ignorée : {}", entry);
-  key_slot() = std::move(read.map);
+  key_slot() = read.map;
   ignored_slot() = std::move(read.ignored);
 }
 
