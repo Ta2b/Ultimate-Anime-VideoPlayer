@@ -1,0 +1,14 @@
+version = 1
+
+[[engine]]
+id = "tensorrt"
+platform = "linux"
+url = "https://github.com/Ta2b/ajp-releases/releases/download/trt-abc/m.tar.gz"
+sha256 = "10310415f2767b2c42592c8c4aa4a0b69024bfa8da0225a0e4dc66632bcd7cb6"
+size = 1215541550
+version = "11.3.0"
+license = "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html"
+
+[[vendor_file]]
+engine = "tensorrt"
+platform = "linux"

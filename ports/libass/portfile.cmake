@@ -1,17 +1,25 @@
-# libass du fork the-database, commit 896614fa : libass 0.17.5 et la suite de master (fusionnée en
-# 4ff1609), plus le rendu sur plusieurs fils (ass_set_render_thread_count, seule fonction du fork
-# que le lecteur appelle) et des modes de rendu différé pour GPU, inutilisés ici. Revenir au
-# libass officiel le jour où il rend sur plusieurs fils ; d'ici là, rebaser le fork sur chaque
-# version de libass. Assembleur (NASM sur x64) et libunibreak exigés, comme le port officiel.
+# libass de l'amont (0.17.5), plus le rendu sur plusieurs fils du fork the-database/libass
+# (ass_set_render_thread_count, la seule fonction hors de l'amont que le lecteur appelle), en un correctif :
+# rendu-sur-plusieurs-fils.patch, le même que tools/deps/linux-from-source.sh. Un correctif de sécurité de
+# l'amont arrive donc en changeant REF (A35-01, tools/ci/deps_vulns.py le signale). Les modes de rendu différé
+# pour GPU du fork, inutilisés ici, n'y sont pas.
+#
+# Régénérer le correctif sur une nouvelle version de l'amont : cloner libass, partir de l'étiquette, y
+# appliquer le correctif actuel (ou, s'il ne s'applique plus, reprendre du fork les commits 8354eaf 7180665
+# 218cf48 4a32722 3b4f4b9 4e6e7d1 a26dc9a bc2e43e par git cherry-pick), puis « git diff <étiquette> HEAD »
+# sous l'en-tête du fichier.
+#
+# Assembleur (NASM sur x64), libunibreak et fils exigés, comme le port officiel.
 vcpkg_from_git(
   OUT_SOURCE_PATH SOURCE_PATH
-  URL https://github.com/the-database/libass.git
-  REF 896614fa263f9f64944f7b8650ff6806d5328c4d
+  URL https://github.com/libass/libass.git
+  REF 4a05d8127f525943ebf45fdc6497c9e665947f0d
+  PATCHES rendu-sur-plusieurs-fils.patch
 )
 
 if(VCPKG_TARGET_IS_WINDOWS)
   set(font_options -Dfontconfig=disabled -Ddirectwrite=enabled -Dcoretext=disabled)
-  # Le fork utilise <stdatomic.h> : MSVC le refuse sous gnu99 (le défaut du meson.build) et le
+  # Le rendu sur plusieurs fils utilise <stdatomic.h> : MSVC le refuse sous gnu99 (le défaut du meson.build) et le
   # garde derrière /experimental:c11atomics. Il déclare aussi une variable par fil en __thread
   # (GCC), que MSVC écrit __declspec(thread).
   set(std_options -Dc_std=c11)
@@ -31,7 +39,7 @@ endif()
 
 vcpkg_configure_meson(
   SOURCE_PATH "${SOURCE_PATH}"
-  OPTIONS ${font_options} ${std_options} -Dasm=enabled -Dtest=disabled -Dcompare=disabled -Dprofile=disabled -Dfuzz=disabled -Dcheckasm=disabled -Dlibunibreak=enabled
+  OPTIONS ${font_options} ${std_options} -Dasm=enabled -Dtest=disabled -Dcompare=disabled -Dprofile=disabled -Dfuzz=disabled -Dcheckasm=disabled -Dlibunibreak=enabled -Dthreads=enabled
 )
 vcpkg_install_meson()
 vcpkg_fixup_pkgconfig()

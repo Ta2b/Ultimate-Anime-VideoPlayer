@@ -63,7 +63,7 @@ if [ -z "$publish" ]; then
   echo "Contrôle seulement. Pour joindre : relancer avec --publish, puis pousser l'étiquette $tag."
   exit 0
 fi
-gh release view "$tag" -R "$repo" >/dev/null 2>&1 || gh release create "$tag" -R "$repo" --prerelease --title "$tag" --notes "$tag"
+gh release view "$tag" -R "$repo" >/dev/null 2>&1 || gh release create "$tag" -R "$repo" --prerelease --latest=false --title "$tag" --notes "$tag"
 # Les moteurs d'un autre système déjà joints à cette release (TensorRT Windows) restent dans l'index : le lecteur
 # relit engines-nvidia.lock de sa release au lancement (src/app/play/engine_online.h).
 previous="$(mktemp)"
@@ -80,5 +80,5 @@ rm -f "$previous"
 gh release upload "$tag" -R "$repo" --clobber "$archive" "$out"
 case "$tag" in
   trt-*) echo "Joint à $repo $tag : release fixe, lue par Release Linux pour toutes les étiquettes (pas d'étiquette à pousser)." ;;
-  *)     echo "Joint à $repo $tag. Pousser maintenant l'étiquette : git tag $tag && git push origin $tag" ;;
+  *)     echo "Joint à $repo $tag. Pousser maintenant l'étiquette (ou relancer Release si elle existe : le lecteur ne croit engines-nvidia.lock que signé) : git tag $tag && git push origin $tag" ;;
 esac
