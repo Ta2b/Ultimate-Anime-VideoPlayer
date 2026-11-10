@@ -36,7 +36,7 @@ constexpr std::array kVisibleTexts{
     Entry{"Performance mode rejected at {}: {}. Playback stays on TensorRT FP16 at this size.",
           "Mode Performance refusé en {} : {}. La lecture reste sur TensorRT FP16 à cette taille."},
     Entry{"Performance mode validated at {}: {}.", "Mode Performance validé en {} : {}."},
-    Entry{"\"{}\" cannot be read: {}", "« {} » ne se lit pas : {}"},
+    Entry{"\"{}\" could not be opened: {}", "« {} » ne s'ouvre pas : {}"},
     Entry{", average {:.0f}", ", moyenne {:.0f}"},
     Entry{", black {:.5f} nit", ", noir {:.5f} nit"},
     Entry{", peak {:.0f} nits", ", pic {:.0f} nits"},
