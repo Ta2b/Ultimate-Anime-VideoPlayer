@@ -117,3 +117,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_link_options(ajp_backend_vulkan PRIVATE "LINKER:--exclude-libs,ALL" "LINKER:--no-undefined")
 endif()
 ajp_set_warnings(ajp_backend_vulkan)
+
+# Inspection d'un modèle : opérateurs, formes et mémoire après les passes ; --vulkan décrit le graphe que
+# le moteur Vulkan abaisse (prepare_graph), d'où sa place ici plutôt que dans gpu_ir (A44-10).
+add_executable(ajp_onnx_info onnx_info_main.cpp)
+target_link_libraries(ajp_onnx_info PRIVATE ajp::vk_backend ajp::gpu_ir ajp::kernels)
+ajp_set_warnings(ajp_onnx_info)
