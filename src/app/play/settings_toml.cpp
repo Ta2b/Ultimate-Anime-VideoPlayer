@@ -155,6 +155,28 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
 
 namespace {
 
+// [updates], lu par son nom (P5.29) ; un nom inconnu refuse la clé.
+void read_updates(const toml::table& updates, PlaySettings& s,
+                  std::vector<std::expected<void, Refusal>>& reads) {
+  const auto choice = [&](std::string_view key, auto& value, const auto& names) {
+    std::string text(name(value));
+    reads.push_back(read(updates, "updates", key, text));
+    using Choice = std::remove_reference_t<decltype(value)>;
+    if (const auto known = choice_named<Choice>(names, text))
+      value = *known;
+    else
+      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, std::format("updates.{}", key),
+                                    std::format(" : « {} »", text)));
+  };
+  // « auto », d'avant la simple notification, se lit « notify » ; channel (canal Préversions retiré) est
+  // ignoré.
+  if (updates["mode"].value_or(std::string()) == "auto")
+    s.update_mode = UpdateMode::Notify;
+  else
+    choice("mode", s.update_mode, kUpdateModeNames);
+  choice("frequency", s.update_frequency, kUpdateFrequencyNames);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root) {
   PlaySettings s;
@@ -307,26 +329,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*engines, "engines", "install_dir", s.engines_dir));
     reads.push_back(read(*engines, "engines", "gpu", s.gpu));
   }
-  if (const toml::table* updates = section(root, "updates")) {
-    // Lus par leur nom (P5.29) ; un nom inconnu refuse la clé.
-    const auto choice = [&](std::string_view key, auto& value, const auto& names) {
-      std::string text(name(value));
-      reads.push_back(read(*updates, "updates", key, text));
-      using Choice = std::remove_reference_t<decltype(value)>;
-      if (const auto known = choice_named<Choice>(names, text))
-        value = *known;
-      else
-        reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, std::format("updates.{}", key),
-                                      std::format(" : « {} »", text)));
-    };
-    // « auto », d'avant la simple notification, se lit « notify » ; channel (canal Préversions retiré) est
-    // ignoré.
-    if ((*updates)["mode"].value_or(std::string()) == "auto")
-      s.update_mode = UpdateMode::Notify;
-    else
-      choice("mode", s.update_mode, kUpdateModeNames);
-    choice("frequency", s.update_frequency, kUpdateFrequencyNames);
-  }
+  if (const toml::table* updates = section(root, "updates")) read_updates(*updates, s, reads);
   // [span_prepare] background et [default_player] dismissed, d'avant 0.10, ne servaient à rien : ignorés.
   if (const toml::table* playlist = section(root, "playlist"))
     reads.push_back(read(*playlist, "playlist", "autoplay_next", s.autoplay_next));
