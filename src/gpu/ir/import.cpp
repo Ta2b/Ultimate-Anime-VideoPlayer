@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "gpu/ir/graph.h"
 #include "gpu/ir/import_attrs.h"
@@ -137,26 +139,56 @@ std::expected<Node, Refusal> import_node(Builder& b, const onnx::Node& source, s
   return node;
 }
 
-// Tri topologique stable : un nœud vient dès que toutes ses entrées existent.
+// Tri topologique stable : un nœud vient dès que toutes ses entrées existent. L'ordre rendu est celui de
+// passes répétées sur la liste (à chaque passe, dans l'ordre du fichier, les nœuds dont les entrées sont
+// prêtes), calculé en une fois : la passe d'un nœud est celle de ses producteurs, plus une quand le
+// producteur vient après lui dans le fichier. Les passes elles-mêmes coûtaient le carré du nombre de nœuds
+// sur un fichier en ordre inverse (A44-03 : 8,5 s pour 40 000 nœuds).
 std::expected<std::vector<Node>, Refusal> sort_nodes(const Graph& graph, std::vector<Node> nodes) {
-  std::vector<bool> ready(graph.tensors.size(), false);
-  for (std::size_t i = 0; i < graph.tensors.size(); ++i)
-    ready[i] = graph.tensors[i].kind != TensorKind::Activation;
-  std::vector<Node> sorted;
-  std::vector<bool> placed(nodes.size(), false);
-  while (sorted.size() < nodes.size()) {
-    const std::size_t before = sorted.size();
-    for (std::size_t n = 0; n < nodes.size(); ++n) {
-      if (placed[n]) continue;
-      const bool inputs_ready =
-          std::ranges::all_of(nodes[n].inputs, [&](TensorId id) { return id == kNoTensor || ready[id]; });
-      if (!inputs_ready) continue;
-      for (const TensorId id : nodes[n].outputs) ready[id] = true;
-      placed[n] = true;
-      sorted.push_back(std::move(nodes[n]));
-    }
-    if (sorted.size() == before) return invalid("le graphe contient un cycle");
+  constexpr std::size_t kNoNode = std::numeric_limits<std::size_t>::max();
+  std::vector<std::size_t> producer(graph.tensors.size(), kNoNode);
+  for (std::size_t n = 0; n < nodes.size(); ++n) {
+    for (const TensorId id : nodes[n].outputs) producer[id] = n;
   }
+  // Ce qu'un nœud attend : ses entrées qui sortent d'un nœud. Une activation sans producteur n'arrive jamais.
+  const auto waits_on = [&](TensorId id) {
+    return id != kNoTensor && graph.tensors[id].kind == TensorKind::Activation;
+  };
+  std::vector<std::size_t> waiting(nodes.size(), 0);
+  std::vector<std::vector<std::size_t>> users(nodes.size());
+  for (std::size_t n = 0; n < nodes.size(); ++n) {
+    for (const TensorId id : nodes[n].inputs) {
+      if (!waits_on(id)) continue;
+      ++waiting[n];
+      if (producer[id] != kNoNode) users[producer[id]].push_back(n);
+    }
+  }
+  std::vector<std::size_t> open;
+  for (std::size_t n = 0; n < nodes.size(); ++n) {
+    if (waiting[n] == 0) open.push_back(n);
+  }
+  std::vector<std::size_t> pass(nodes.size(), 0);
+  std::vector<std::size_t> order;
+  order.reserve(nodes.size());
+  while (!open.empty()) {
+    const std::size_t n = open.back();
+    open.pop_back();
+    for (const TensorId id : nodes[n].inputs) {
+      if (!waits_on(id)) continue;
+      const std::size_t from = producer[id];
+      pass[n] = std::max(pass[n], pass[from] + (from > n ? 1U : 0U));
+    }
+    order.push_back(n);
+    for (const std::size_t user : users[n]) {
+      if (--waiting[user] == 0) open.push_back(user);
+    }
+  }
+  if (order.size() < nodes.size()) return invalid("le graphe contient un cycle");
+  std::ranges::sort(
+      order, [&](std::size_t a, std::size_t b) { return pass[a] != pass[b] ? pass[a] < pass[b] : a < b; });
+  std::vector<Node> sorted;
+  sorted.reserve(nodes.size());
+  for (const std::size_t n : order) sorted.push_back(std::move(nodes[n]));
   return sorted;
 }
 

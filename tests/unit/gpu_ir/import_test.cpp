@@ -1,5 +1,7 @@
 // Import ONNX vers l'IR, puis inférence des formes.
+#include <chrono>
 #include <cstdint>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -106,6 +108,41 @@ TEST_CASE("import : une entrée doublée d'un initialiseur est un poids, comme o
   REQUIRE(graph.inputs.size() == 1);
   CHECK(graph.tensors[graph.inputs[0]].name == "x");
   CHECK(tensor_named(graph, "w").kind == TensorKind::Constant);
+}
+
+TEST_CASE("import : un fichier mélangé garde l'ordre des passes répétées, en temps linéaire",
+          "[gpu_ir][import]") {
+  // A44-03. L'ordre rendu est celui de l'ancien tri (passes répétées dans l'ordre du fichier) : passe 0
+  // « a » et « d » (d suit a dans le fichier), passe 1 « b », passe 2 « c » puis « y ».
+  ModelBuilder mixed;
+  mixed.input("x", {3})
+      .node("Relu", {"b"}, {"c"})
+      .node("Sigmoid", {"a"}, {"b"})
+      .node("Tanh", {"x"}, {"a"})
+      .node("Relu", {"a"}, {"d"})
+      .node("Add", {"c", "d"}, {"y"})
+      .output("y");
+  const Graph graph = build(mixed);
+  REQUIRE(graph.nodes.size() == 5);
+  std::vector<std::string> made;
+  for (const Node& node : graph.nodes) made.push_back(graph.tensors[node.outputs[0]].name);
+  CHECK(made == std::vector<std::string>{"a", "d", "b", "c", "y"});
+
+  // 20 000 Relu en ordre inverse : le tri par passes en faisait 20 000, soit 200 millions de visites.
+  constexpr int kCount = 20'000;
+  ModelBuilder reversed;
+  reversed.input("t0", {3});
+  for (int n = kCount; n >= 1; --n)
+    reversed.node("Relu", {std::format("t{}", n - 1)}, {std::format("t{}", n)});
+  reversed.output(std::format("t{}", kCount));
+  const auto started = std::chrono::steady_clock::now();
+  const Graph chain = build(reversed);
+  const auto spent = std::chrono::steady_clock::now() - started;
+  REQUIRE(chain.nodes.size() == kCount);
+  CHECK(chain.tensors[chain.nodes.front().outputs[0]].name == "t1");
+  CHECK(chain.tensors[chain.nodes.back().outputs[0]].name == std::format("t{}", kCount));
+  INFO("import : " << std::chrono::duration_cast<std::chrono::milliseconds>(spent).count() << " ms");
+  CHECK(spent < std::chrono::seconds(20));
 }
 
 TEST_CASE("import : ordre des nœuds rétabli, cycles et références absentes refusés", "[gpu_ir][import]") {
