@@ -17,7 +17,7 @@ void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats) {
     mean_ = blue_ = chroma_ = 0.0F;
   }
   if (jump) kept_.clear();
-  const bool flashing = flashes_.push(pts_us, stats.apl_nits);
+  const bool flashing = flashes_.push(pts_us, zone_nits_of(frame));
   previous_ = frame;
   // Moyenne cumulée de la scène : chaque image y entre avec le poids 1 / (images vues).
   ++frames_;
@@ -50,6 +50,16 @@ std::optional<LiveScene> LiveScenes::at(std::int64_t pts_us, std::int64_t max_ga
   const Entry& found = *std::prev(after);
   if (pts_us - found.pts_us > max_gap_us) return std::nullopt;
   return found.scene;
+}
+
+void LiveScenes::missed(std::int64_t pts_us) {
+  const std::scoped_lock lock(mutex_);
+  if (flashes_.missed(pts_us) && !kept_.empty()) kept_.back().scene.flashing = true;
+}
+
+void LiveScenes::set_flash_gain(double gain) {
+  const std::scoped_lock lock(mutex_);
+  flashes_.set_gain(gain);
 }
 
 void LiveScenes::clear() {

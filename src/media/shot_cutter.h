@@ -91,6 +91,17 @@ struct Shot {
 // Les mesures d'une image à pts_us, tirées de l'analyse (kernels/spec/frame_stats.h).
 ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats);
 
+// Les seize zones d'une image en cd/m², pour le limiteur de flashs (media/flash_guard.h) : la luma moyenne de
+// chaque zone passée en lumière (gamma 2,4), le tout ramené à la luminance moyenne mesurée de l'image.
+std::array<float, kShotGrid * kShotGrid> zone_nits_of(const ShotFrame& frame);
+
+// Une séquence de flashs dangereux trouvée par la pré-analyse : le plafond tient de from_us à until_us.
+struct FlashSpan {
+  std::int64_t from_us = 0;
+  std::int64_t until_us = 0;
+  friend bool operator==(const FlashSpan&, const FlashSpan&) = default;
+};
+
 // Différence entre deux images, de 0 (identiques) à 1 : histogramme et grille.
 float frame_distance(const ShotFrame& a, const ShotFrame& b);
 
@@ -126,7 +137,7 @@ class ShotCutter {
     float distance = 0.0F;
   };
 
-  std::optional<Shot> judge(const ShotFrame& frame);
+  std::optional<Shot> judge(const ShotFrame& anchor, const ShotFrame& frame);
   void keep(const ShotFrame& frame);
   float limit(std::int64_t pts_us);
   std::optional<Shot> close_shot(std::int64_t end_us);

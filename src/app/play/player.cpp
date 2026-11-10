@@ -367,8 +367,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
-  ShotWork shots{.cache_dir = paths::shot_cache(paths)};
-  if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
+  ShotWork shots = shot_work(paths::shot_cache(paths), options);
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
@@ -506,7 +505,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .next_key = next_key,
                   .engines = std::move(*engines),
                   .display = window_display((*screen)->window())};
-    player.shots = &shots;
+    player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
       // lancement.

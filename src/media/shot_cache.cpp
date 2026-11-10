@@ -17,8 +17,10 @@
 namespace ajp::media {
 namespace {
 
-// 2 : la lumière du plan (ShotMeta) ; 3 : son histogramme de I (lum_hist, 8.6). Un cache d'avant se refait.
-constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '3'};
+// 2 : la lumière du plan (ShotMeta) ; 3 : son histogramme de I (lum_hist, 8.6) ; 4 : la version de l'analyse,
+// le chemin de décodage et les séquences de flashs. Un cache d'avant se refait.
+constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '4'};
+constexpr std::uint32_t kMaxFlashes = 100'000;
 constexpr std::size_t kHeadBytes = 1 << 20;
 constexpr std::uint32_t kMaxShots = 200'000;
 constexpr const char* kExtension = ".shots";
@@ -78,6 +80,29 @@ bool take_meta(const std::string& in, std::size_t& at, ShotMeta& m) {
   return ok;
 }
 
+bool take_shot(const std::string& in, std::size_t& at, Shot& shot, std::int64_t& previous_end) {
+  std::uint8_t flags = 0;
+  if (!take(in, at, shot.start_us) || !take(in, at, shot.end_us) || !take_stats(in, at, shot.first) ||
+      !take_stats(in, at, shot.last) || !take_meta(in, at, shot.meta) || !take(in, at, flags))
+    return false;
+  if (shot.end_us <= shot.start_us || shot.start_us < previous_end) return false;
+  previous_end = shot.end_us;
+  shot.fade = (flags & 1) != 0;
+  shot.cut_before = (flags & 2) != 0;
+  return true;
+}
+
+std::optional<std::vector<FlashSpan>> take_flashes(const std::string& in, std::size_t& at) {
+  std::uint32_t count = 0;
+  if (!take(in, at, count) || count > kMaxFlashes) return std::nullopt;
+  std::vector<FlashSpan> flashes(count);
+  for (FlashSpan& span : flashes) {
+    if (!take(in, at, span.from_us) || !take(in, at, span.until_us) || span.until_us <= span.from_us)
+      return std::nullopt;
+  }
+  return flashes;
+}
+
 std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key) {
   return dir / (key + kExtension);
 }
@@ -118,9 +143,12 @@ std::string shot_cache_key(const std::filesystem::path& video) {
 }
 
 bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, std::span<const Shot> shots,
-                     bool complete, std::size_t keep) {
-  if (key.empty() || shots.empty() || shots.size() > kMaxShots) return false;
+                     bool complete, std::size_t keep, std::span<const FlashSpan> flashes,
+                     std::uint32_t variant) {
+  if (key.empty() || shots.empty() || shots.size() > kMaxShots || flashes.size() > kMaxFlashes) return false;
   std::string out(kMagic.begin(), kMagic.end());
+  put(out, kShotAnalysis);
+  put(out, variant);
   put(out, static_cast<std::uint32_t>(shots.size()));
   put(out, static_cast<std::uint8_t>(complete ? 1 : 0));
   for (const Shot& shot : shots) {
@@ -130,6 +158,11 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
     put_stats(out, shot.last);
     put_meta(out, shot.meta);
     put(out, static_cast<std::uint8_t>((shot.fade ? 1 : 0) | (shot.cut_before ? 2 : 0)));
+  }
+  put(out, static_cast<std::uint32_t>(flashes.size()));
+  for (const FlashSpan& span : flashes) {
+    put(out, span.from_us);
+    put(out, span.until_us);
   }
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
@@ -149,30 +182,30 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
   return true;
 }
 
-std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, const std::string& key) {
+std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, const std::string& key,
+                                           std::uint32_t variant) {
   if (key.empty()) return std::nullopt;
-  std::ifstream stream(file_of(dir, key), std::ios::binary);
+  const std::filesystem::path file = file_of(dir, key);
+  std::ifstream stream(file, std::ios::binary);
   if (!stream) return std::nullopt;
   const std::string in((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
   if (in.size() < kMagic.size() || !std::equal(kMagic.begin(), kMagic.end(), in.begin())) return std::nullopt;
   std::size_t at = kMagic.size();
+  std::uint32_t analysis = 0, decoded = 0;
+  if (!take(in, at, analysis) || !take(in, at, decoded) || analysis != kShotAnalysis || decoded != variant)
+    return std::nullopt;
   std::uint32_t count = 0;
   std::uint8_t complete = 0;
   if (!take(in, at, count) || count == 0 || count > kMaxShots || !take(in, at, complete)) return std::nullopt;
   std::vector<Shot> shots(count);
   std::int64_t previous_end = 0;
-  for (Shot& shot : shots) {
-    std::uint8_t flags = 0;
-    if (!take(in, at, shot.start_us) || !take(in, at, shot.end_us) || !take_stats(in, at, shot.first) ||
-        !take_stats(in, at, shot.last) || !take_meta(in, at, shot.meta) || !take(in, at, flags))
-      return std::nullopt;
-    if (shot.end_us <= shot.start_us || shot.start_us < previous_end) return std::nullopt;
-    previous_end = shot.end_us;
-    shot.fade = (flags & 1) != 0;
-    shot.cut_before = (flags & 2) != 0;
-  }
-  if (at != in.size()) return std::nullopt;
-  return CachedShots{.shots = std::move(shots), .complete = complete == 1};
+  for (Shot& shot : shots)
+    if (!take_shot(in, at, shot, previous_end)) return std::nullopt;
+  auto flashes = take_flashes(in, at);
+  if (!flashes || at != in.size()) return std::nullopt;
+  std::error_code ec;
+  std::filesystem::last_write_time(file, std::filesystem::file_time_type::clock::now(), ec);
+  return CachedShots{.shots = std::move(shots), .flashes = std::move(*flashes), .complete = complete == 1};
 }
 
 }  // namespace ajp::media

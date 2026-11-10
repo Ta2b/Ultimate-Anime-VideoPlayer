@@ -12,6 +12,7 @@
 #include "core/thread_role.h"
 #include "kernels/ref/frame_stats.h"
 #include "media/demuxer.h"
+#include "media/flash_guard.h"
 #include "media/log.h"
 #include "media/video_decoder.h"
 #include "media/yuv_sample.h"
@@ -63,12 +64,13 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
       }
       cb = (cb - c_mid) / c_range;
       cr = (cr - c_mid) / c_range;
-      const double r = std::clamp(yy + 2.0 * (1.0 - kr) * cr, 0.0, 1.0);
-      const double b = std::clamp(yy + 2.0 * (1.0 - kb) * cb, 0.0, 1.0);
-      const double g = std::clamp((yy - kr * r - kb * b) / kg, 0.0, 1.0);
-      rgb.planes[0].at(gx, gy) = static_cast<float>(r);
-      rgb.planes[1].at(gx, gy) = static_cast<float>(g);
-      rgb.planes[2].at(gx, gy) = static_cast<float>(b);
+      // V se calcule avant de borner R et B (A42-07) : un canal hors plage le faussait.
+      const double r = yy + 2.0 * (1.0 - kr) * cr;
+      const double b = yy + 2.0 * (1.0 - kb) * cb;
+      const double g = (yy - kr * r - kb * b) / kg;
+      rgb.planes[0].at(gx, gy) = static_cast<float>(std::clamp(r, 0.0, 1.0));
+      rgb.planes[1].at(gx, gy) = static_cast<float>(std::clamp(g, 0.0, 1.0));
+      rgb.planes[2].at(gx, gy) = static_cast<float>(std::clamp(b, 0.0, 1.0));
     }
   }
   const kernels::FrameTransfer transfer = frame.color.transfer == Transfer::Pq ? kernels::FrameTransfer::Pq
@@ -79,6 +81,42 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
   if (!counts) return refuse(RefusalCode::FormatUnsupported, counts.error().detail);
   return shot_frame_of(frame.pts_us, kernels::ref::frame_stats_of(*counts));
 }
+
+namespace {
+
+// La découpe et le limiteur de flashs d'une analyse, qui écrivent dans la chronologie. Les flashs dangereux
+// vus d'avance (A42-17) : le plafond du grade les prend dès leur première transition, au lieu d'attendre que
+// la lecture en ait montré une seconde.
+class Analysis {
+ public:
+  Analysis(ShotTimeline& timeline, double flash_gain, bool starts_at_cut)
+      : timeline_(timeline), cutter_(starts_at_cut) {
+    flashes_.set_gain(flash_gain);
+  }
+  void push(const ShotFrame& frame) {
+    if (flashes_.push(frame.pts_us, zone_nits_of(frame))) {
+      if (const auto from = flashes_.danger_from())
+        timeline_.add_flash({.from_us = *from, .until_us = flashes_.limited_until()});
+    }
+    if (auto shot = cutter_.push(frame)) timeline_.add(*shot);
+  }
+  // Le plan en cours est clos à end_us.
+  void finish(std::int64_t end_us) {
+    if (auto shot = cutter_.finish(end_us)) timeline_.add(*shot);
+  }
+  // Un nouveau découpage : son premier plan n'a de vraie coupe devant lui qu'au début de la vidéo.
+  void restart(bool starts_at_cut) {
+    cutter_ = ShotCutter(starts_at_cut);
+    flashes_.reset();
+  }
+
+ private:
+  ShotTimeline& timeline_;
+  ShotCutter cutter_;
+  FlashGuard flashes_;
+};
+
+}  // namespace
 
 ShotProbe::ShotProbe(std::filesystem::path file, ShotTimeline& timeline, ShotProbeOptions options)
     : file_(std::move(file)), timeline_(timeline), options_(std::move(options)) {}
@@ -96,6 +134,7 @@ std::unique_ptr<ShotProbe> ShotProbe::start(std::filesystem::path file, ShotTime
                                // Travail de fond : il ne doit jamais retarder le rendu, le calcul ni l'audio.
                                // Sous Linux, les threads de FFmpeg créés ensuite héritent de cette priorité.
                                set_thread_role(ThreadRole::Background);
+                               if (self->preloaded()) return;
                                self->run(stop, start_us);
                              });
   if (thread)
@@ -145,6 +184,15 @@ void ShotProbe::fail(Refusal refusal) {
   finished_.store(true, std::memory_order_release);
 }
 
+// La part déjà connue de la vidéo (le cache), lue ici plutôt que sur le thread de la fenêtre. Vrai : connue
+// entière, rien à analyser.
+bool ShotProbe::preloaded() {
+  if (!options_.preload || !options_.preload(timeline_)) return false;
+  finished_.store(true, std::memory_order_release);
+  return true;
+}
+
+// Le journal donne les threads du décodeur ouvert, pas ceux demandés : un seul sous NVDEC réduit (A42-06).
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   auto log = make_logger();
@@ -177,18 +225,18 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
 
   // Repart de at_us : le plan en cours est clos là, un nouveau découpage commence (son premier plan n'a pas
   // de vraie coupe devant lui).
-  ShotCutter cutter(start_us <= 0);
+  Analysis analysis(timeline_, options_.flash_gain, start_us <= 0);
   std::int64_t last_pts = start_us;
   std::int64_t last_duration = 0;
   const auto restart = [&](std::int64_t at_us) -> bool {
-    if (auto shot = cutter.finish(last_pts + last_duration)) timeline_.add(*shot);
+    analysis.finish(last_pts + last_duration);
     // La fin d'un plan (dernière image plus sa durée) peut dépasser d'une image la durée du conteneur, que le
     // démuxeur refuse : le saut se borne à cette durée.
     const std::int64_t duration = demuxer->duration_us();
     const std::int64_t target = duration > 0 ? std::min(at_us, duration) : at_us;
     if (!demuxer->seek(std::max<std::int64_t>(target, 0), track, SeekTarget::PreviousKeyframe)) return false;
     decoder->flush();
-    cutter = ShotCutter(at_us <= 0);
+    analysis.restart(at_us <= 0);
     finished_.store(false, std::memory_order_release);
     frontier_.store(at_us, std::memory_order_relaxed);
     last_pts = at_us;
@@ -196,7 +244,7 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   };
   if (start_us > 0 && !restart(start_us))
     return fail(Refusal{RefusalCode::SeekFailed, "saut de la pré-analyse"});
-  log->info("pré-analyse des plans : {} threads, depuis {:.1f} s", threads,
+  log->info("pré-analyse des plans : {} thread(s) de décodage, depuis {:.1f} s", decoder->threads(),
             static_cast<double>(start_us) / 1e6);
 
   const auto started = std::chrono::steady_clock::now();
@@ -241,11 +289,11 @@ void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
       last_duration = frame.duration_us;
       frontier_.store(frame.pts_us, std::memory_order_relaxed);
       ++frames;
-      if (auto shot = cutter.push(*measured)) timeline_.add(*shot);
+      analysis.push(*measured);
       continue;
     }
     if (decoder->drained()) {
-      if (auto shot = cutter.finish(last_pts + last_duration)) timeline_.add(*shot);
+      analysis.finish(last_pts + last_duration);
       // Un départ en cours de vidéo (une reprise, un saut) : le début reste à analyser, pour que la vidéo
       // soit connue entière (le cache, media/shot_cache.h). Chaque trou n'est repris qu'une fois.
       if (const std::int64_t gap = timeline_.first_gap_us(); gap < timeline_.end_us() && gap > filled_from) {

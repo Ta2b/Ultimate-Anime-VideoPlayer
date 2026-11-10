@@ -105,6 +105,18 @@ ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats) {
   return out;
 }
 
+auto zone_nits_of(const ShotFrame& frame) -> decltype(frame.grid) {
+  decltype(frame.grid) light{};
+  float sum = 0.0F;
+  for (std::size_t i = 0; i < light.size(); ++i) {
+    light.at(i) = std::pow(std::max(frame.grid.at(i), 0.0F), 2.4F);
+    sum += light.at(i);
+  }
+  const float mean = sum / static_cast<float>(light.size());
+  for (float& zone : light) zone = mean > 0.0F ? frame.light.apl_nits * zone / mean : frame.light.apl_nits;
+  return light;
+}
+
 namespace {
 
 // Ce qui change entre deux images : la lumière (histogramme), sa place (grille), la couleur. De 0 à 1.
@@ -207,13 +219,14 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
     anchor_ = frame;
     return std::nullopt;
   }
-  if (jumped_.empty()) return judge(frame);
+  const ShotFrame anchor = *anchor_;  // copie : l'ancre change en route
+  if (jumped_.empty()) return judge(anchor, frame);
   // Un saut attend : l'image qui revient près de l'ancre en fait un éclair, gardé dans le plan sans servir
   // de référence ; après kFlashFrames images sans retour, c'était une coupe, à la première image du saut.
-  if (frame_distance(*anchor_, frame) < std::min(0.5F * jump_, jump_limit_)) {
+  if (frame_distance(anchor, frame) < std::min(0.5F * jump_, jump_limit_)) {
     for (const ShotFrame& f : jumped_) keep(f);
     jumped_.clear();
-    return judge(frame);
+    return judge(anchor, frame);
   }
   // Le départ d'un mouvement rapide (A42-01) : la lumière et la couleur n'ont pas changé, seule leur place,
   // et le dessin suivant s'éloigne encore d'autant. Le saut suit alors la règle du mouvement récent, jugée
@@ -245,8 +258,8 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
 }
 
 // L'image face à l'ancre : dans le plan, ou mise en attente si elle saute plus loin que le seuil.
-std::optional<Shot> ShotCutter::judge(const ShotFrame& frame) {
-  const Change change = change_between(*anchor_, frame);
+std::optional<Shot> ShotCutter::judge(const ShotFrame& anchor, const ShotFrame& frame) {
+  const Change change = change_between(anchor, frame);
   const float jump = change.distance();
   const float threshold = limit(frame.pts_us);
   if (jump > threshold) {

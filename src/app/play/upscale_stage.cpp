@@ -257,7 +257,16 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
     setup_.live->scenes().push(stats_pending_.front().pts_us, **taken);
     stats_pending_.erase(stats_pending_.begin());
   }
-  if (stats_pending_.size() >= gpu::kPendingReadbacks) stats_pending_.erase(stats_pending_.begin());
+  // Deux relectures attendent encore : la plus ancienne est abandonnée. Son image manque aux scènes ; le
+  // limiteur de flashs l'apprend (A42-18), sinon une image claire perdue effaçait deux transitions.
+  if (stats_pending_.size() >= gpu::kPendingReadbacks) {
+    setup_.live->scenes().missed(stats_pending_.front().pts_us);
+    if (stats_dropped_++ == 0)
+      log_channel("gpu")->info(
+          "analyse des images : une relecture en retard abandonnée (les suivantes ne "
+          "sont plus journalisées)");
+    stats_pending_.erase(stats_pending_.begin());
+  }
   const kernels::FrameTransfer transfer = frame.color.transfer == Transfer::Pq ? kernels::FrameTransfer::Pq
                                           : frame.color.transfer == Transfer::Hlg
                                               ? kernels::FrameTransfer::Hlg

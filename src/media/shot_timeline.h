@@ -26,6 +26,13 @@ struct ShotAt {
 class ShotTimeline {
  public:
   void add(const Shot& found);
+  // Une séquence de flashs dangereux (media/flash_guard.h), fusionnée à celles qu'elle touche.
+  void add_flash(FlashSpan span);
+  // pts_us est dans une séquence de flashs dangereux connue.
+  bool flashing(std::int64_t pts_us) const;
+  std::vector<FlashSpan> flashes() const;
+  // Change à chaque ajout qui modifie la chronologie : un plan remplacé à nombre égal se voit (A42-11).
+  std::uint64_t version() const;
   // Le plan qui contient pts_us, s'il est déjà analysé.
   std::optional<ShotAt> at(std::int64_t pts_us) const;
   // Durée analysée, en microsecondes : la somme des plans.
@@ -46,7 +53,9 @@ class ShotTimeline {
   mutable std::mutex mutex_;
   std::vector<Shot> shots_;  // triés par début, sans chevauchement
   std::vector<std::uint64_t> serials_;
+  std::vector<FlashSpan> flashes_;  // triées, sans chevauchement
   std::uint64_t next_serial_ = 1;
+  std::uint64_t version_ = 0;
 };
 
 }  // namespace ajp::media

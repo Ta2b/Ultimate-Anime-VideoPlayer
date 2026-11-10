@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <string>
@@ -16,6 +18,7 @@
 
 #include "clips.h"
 #include "kernels/ref/frame_stats.h"
+#include "media/flash_guard.h"
 #include "media/live_scenes.h"
 #include "media/shot_cache.h"
 #include "media/shot_cutter.h"
@@ -213,6 +216,84 @@ TEST_CASE("plans : la chronologie rend le plan d'un instant, et interpole un fon
   CHECK(timeline.at(600'000)->start_us == 0);
 }
 
+TEST_CASE("plans : un plan repris après un saut comble le trou au lieu d'être jeté (A42-03)",
+          "[media][shots]") {
+  // La lecture saute pendant l'analyse : le plan en cours est clos à 210 s, qui n'est pas une coupe. Revenue
+  // là, l'analyse repart de l'image clé de 208 s et rend le plan [208, 215), sans coupe connue devant lui.
+  ShotTimeline timeline;
+  timeline.add(Shot{.start_us = 0, .end_us = 205'000'000});
+  timeline.add(Shot{.start_us = 205'000'000, .end_us = 210'000'000});
+  timeline.add(Shot{.start_us = 215'000'000, .end_us = 300'000'000});
+  REQUIRE(timeline.first_gap_us() == 210'000'000);
+  const std::uint64_t before = timeline.version();
+  timeline.add(Shot{.start_us = 208'000'000, .end_us = 215'000'000, .cut_before = false});
+  CHECK(timeline.first_gap_us() == 300'000'000);
+  REQUIRE(timeline.at(212'000'000));
+  CHECK(timeline.at(212'000'000)->start_us == 210'000'000);
+  CHECK_FALSE(timeline.at(212'000'000)->cut_before);
+  CHECK(timeline.at(209'000'000)->start_us == 205'000'000);  // le plan déjà connu reste entier
+  CHECK(timeline.version() != before);
+}
+
+TEST_CASE("plans : la version de la chronologie suit un remplacement à nombre égal (A42-11)",
+          "[media][shots]") {
+  ShotTimeline timeline;
+  timeline.add(Shot{.start_us = 0, .end_us = 1'000'000});
+  timeline.add(Shot{.start_us = 1'200'000, .end_us = 2'000'000, .cut_before = false});
+  const std::uint64_t before = timeline.version();
+  timeline.add(Shot{.start_us = 1'000'000, .end_us = 2'000'000});  // le plan entier remplace le partiel
+  CHECK(timeline.size() == 2);
+  CHECK(timeline.version() != before);
+  CHECK(timeline.at(1'500'000)->cut_before);
+}
+
+TEST_CASE("plans : les séquences de flashs de la chronologie se fusionnent", "[media][shots]") {
+  ShotTimeline timeline;
+  CHECK_FALSE(timeline.flashing(500'000));
+  timeline.add_flash({.from_us = 1'000'000, .until_us = 2'000'000});
+  timeline.add_flash({.from_us = 5'000'000, .until_us = 6'000'000});
+  timeline.add_flash({.from_us = 1'500'000, .until_us = 2'500'000});  // la même séquence, qui se prolonge
+  CHECK(timeline.flashes() == std::vector<FlashSpan>{{1'000'000, 2'500'000}, {5'000'000, 6'000'000}});
+  CHECK(timeline.flashing(1'000'000));
+  CHECK(timeline.flashing(2'400'000));
+  CHECK_FALSE(timeline.flashing(2'500'000));
+  CHECK_FALSE(timeline.flashing(900'000));
+  timeline.add_flash({.from_us = 3'000'000, .until_us = 3'000'000});  // vide : ignorée
+  CHECK(timeline.flashes().size() == 2);
+}
+
+TEST_CASE("plans : la pré-analyse marque une séquence de flashs dès sa première transition (A42-17)",
+          "[media][shots]") {
+  // Ce que fait ShotProbe image par image : le limiteur sur les zones de l'image, ses séquences dans la
+  // chronologie. Deux secondes calmes, une seconde d'alternance à 6 Hz, puis le calme.
+  ShotTimeline timeline;
+  FlashGuard guard;
+  for (int i = 0; i < 120; ++i) {
+    const bool storm = i >= 48 && i < 72;
+    ShotFrame frame = flat(i, 0.3F);
+    frame.light.apl_nits = storm && (i / 2) % 2 == 1 ? 180.0F : 30.0F;
+    if (guard.push(frame.pts_us, zone_nits_of(frame)))
+      if (const auto from = guard.danger_from())
+        timeline.add_flash({.from_us = *from, .until_us = guard.limited_until()});
+  }
+  REQUIRE(timeline.flashes().size() == 1);
+  CHECK(timeline.flashes().front().from_us <= 51 * kFrame);  // la première transition, pas la septième
+  CHECK(timeline.flashing(60 * kFrame));
+  CHECK_FALSE(timeline.flashing(40 * kFrame));
+  CHECK_FALSE(timeline.flashing(110 * kFrame));  // une seconde après la dernière transition, le plafond part
+}
+
+TEST_CASE("plans : les zones d'une image en cd/m² gardent sa luminance moyenne", "[media][shots]") {
+  ShotFrame frame = flat(0, 0.5F);
+  frame.light.apl_nits = 40.0F;
+  for (std::size_t i = 0; i < frame.grid.size(); ++i) frame.grid.at(i) = i < 4 ? 0.8F : 0.2F;
+  const auto zones = zone_nits_of(frame);
+  float sum = 0.0F;
+  for (const float z : zones) sum += z;
+  CHECK(sum / static_cast<float>(zones.size()) == Approx(40.0F));
+  CHECK(zones.at(0) > 10.0F * zones.at(15));  // le quart clair porte presque toute la lumière
+}
+
 TEST_CASE("plans : dix-huit plans fixes de 6 s se découpent en dix-huit plans", "[media][shots]") {
   const std::filesystem::path clip = test::require_clip(test::shots_clip());
   ShotTimeline timeline;
@@ -264,9 +345,13 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   shots.at(1).meta.max_scl_nits = 812.5F;
   shots.at(1).meta.mean.skin = 0.25F;
   shots.at(1).meta.mean.maxrgb_nits.back() = 640.0F;
-  REQUIRE(save_shot_cache(dir, key, shots, true));
-  const auto loaded = load_shot_cache(dir, key);
+  const std::vector<FlashSpan> flashes{{.from_us = 400'000, .until_us = 1'900'000}};
+  REQUIRE(save_shot_cache(dir, key, shots, true, kShotCacheKeep, flashes, 1));
+  // Un autre chemin de décodage (logiciel contre NVDEC réduit) ne mesure pas la même image : refait (A42-10).
+  CHECK_FALSE(load_shot_cache(dir, key));
+  const auto loaded = load_shot_cache(dir, key, 1);
   REQUIRE(loaded);
+  CHECK(loaded->flashes == flashes);
   CHECK(loaded->complete);
   REQUIRE(loaded->shots.size() == 2);
   CHECK(loaded->shots.at(0).first.p995 == 0.9F);
@@ -274,6 +359,25 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   CHECK(loaded->shots.at(1).last.mean == 0.4F);
   CHECK(loaded->shots.at(1).meta == shots.at(1).meta);
   CHECK(loaded->shots.at(1).end_us == 3'000'000);
+  {
+    // Un fichier d'une autre version de l'analyse (ou du format d'avant, sans version) se refait.
+    const std::filesystem::path file = dir / (key + ".shots");
+    std::string bytes;
+    {
+      std::ifstream in(file, std::ios::binary);
+      bytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    REQUIRE(bytes.size() > 16);
+    std::string other = bytes;
+    other.at(8) =
+        static_cast<char>(other.at(8) + 1);  // la version de l'analyse, après les huit octets de magie
+    std::ofstream(file, std::ios::binary | std::ios::trunc) << other;
+    CHECK_FALSE(load_shot_cache(dir, key, 1));
+    std::string old = bytes;
+    old.at(7) = '3';
+    std::ofstream(file, std::ios::binary | std::ios::trunc) << old;
+    CHECK_FALSE(load_shot_cache(dir, key, 1));
+  }
   // Une analyse arrêtée en route se garde aussi, marquée incomplète.
   REQUIRE(save_shot_cache(dir, key, shots, false));
   CHECK_FALSE(load_shot_cache(dir, key)->complete);
