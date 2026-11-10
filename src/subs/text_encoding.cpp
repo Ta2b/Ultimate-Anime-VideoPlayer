@@ -106,13 +106,36 @@ std::string from_utf16(std::string_view bytes, bool big_endian) {
 
 // Un encodage hérité à double octet ou cyrillique, décodé par le système (MultiByteToWideChar, iconv).
 struct Legacy {
-  unsigned code_page;  // Windows
-  const char* name;    // iconv
+  unsigned code_page;              // Windows
+  const char* name;                // iconv
+  const char* fallback = nullptr;  // iconv, quand le premier nom manque ou refuse le texte
 };
 constexpr Legacy kShiftJis{932, "CP932"};
 constexpr Legacy kGbk{936, "GBK"};
-constexpr Legacy kBig5{950, "BIG5"};
+// CP950 d'abord : la table de Windows, avec les extensions ETEN, pour décoder comme lui (A34-11) ; BIG5 quand
+// l'iconv du système ne connaît pas CP950.
+constexpr Legacy kBig5{950, "CP950", "BIG5"};
 constexpr Legacy kCp1251{1251, "CP1251"};
+
+#ifndef _WIN32
+// Le texte décodé par l'iconv du système depuis l'encodage name, ou rien : nom inconnu, octets refusés.
+std::optional<std::string> decode_iconv(std::string_view bytes, const char* name) {
+  iconv_t cd = iconv_open("UTF-8", name);
+  // L'échec d'iconv_open : (iconv_t)-1.
+  if (cd == reinterpret_cast<iconv_t>(-1)) return std::nullopt;  // NOLINT(performance-no-int-to-ptr)
+  std::string in(bytes);
+  std::string out(bytes.size() * 3 + 4, '\0');
+  char* src = in.data();
+  char* dst = out.data();
+  std::size_t left = in.size();
+  std::size_t room = out.size();
+  const std::size_t done = iconv(cd, &src, &left, &dst, &room);
+  iconv_close(cd);
+  if (done == static_cast<std::size_t>(-1) || left != 0) return std::nullopt;
+  out.resize(out.size() - room);
+  return out;
+}
+#endif
 
 std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) {
   if (bytes.empty()) return std::string{};
@@ -128,20 +151,11 @@ std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) 
   WideCharToMultiByte(CP_UTF8, 0, w.data(), wide, out.data(), narrow, nullptr, nullptr);
   return out;
 #else
-  iconv_t cd = iconv_open("UTF-8", legacy.name);
-  // L'échec d'iconv_open : (iconv_t)-1.
-  if (cd == reinterpret_cast<iconv_t>(-1)) return std::nullopt;  // NOLINT(performance-no-int-to-ptr)
-  std::string in(bytes);
-  std::string out(bytes.size() * 3 + 4, '\0');
-  char* src = in.data();
-  char* dst = out.data();
-  std::size_t left = in.size();
-  std::size_t room = out.size();
-  const std::size_t done = iconv(cd, &src, &left, &dst, &room);
-  iconv_close(cd);
-  if (done == static_cast<std::size_t>(-1) || left != 0) return std::nullopt;
-  out.resize(out.size() - room);
-  return out;
+  for (const char* name : {legacy.name, legacy.fallback}) {
+    if (name == nullptr) continue;
+    if (auto text = decode_iconv(bytes, name)) return text;
+  }
+  return std::nullopt;
 #endif
 }
 

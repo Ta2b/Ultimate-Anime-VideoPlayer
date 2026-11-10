@@ -380,4 +380,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
 PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen, const PlaySettings& running,
                             bool rife_loaded);
 
+// Le délai que la sortie du système reprend quand l'appareil choisi disparaît (A16-02) : celui mémorisé pour
+// elle, 0 sans mémoire. Rien quand on suit déjà le système : son délai est celui de la séance.
+std::optional<std::int64_t> audio_fallback_delay_us(const PlaySettings& settings);
+
 }  // namespace ajp::app::play
