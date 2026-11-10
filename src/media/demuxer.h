@@ -76,6 +76,10 @@ class Demuxer {
   // Une cible négative ou au-delà de la durée connue est refusée. Les paquets lus
   // pour vérifier le point clé sont rendus ensuite par read(), dans l'ordre.
   std::expected<void, Refusal> seek(std::int64_t target_us, int reference, SeekTarget where);
+  // Place le fichier avant target_us d'après l'index de la piste `reference`, sans lire de point clé :
+  // pour une lecture qui ne garde que des pistes annexes (keep_only), comme la pré-lecture des
+  // sous-titres (A17-05). La lecture reprend au plus tard à la cible ; une cible négative vaut 0.
+  std::expected<void, Refusal> seek_file(std::int64_t target_us, int reference);
   // Repositionnements du fichier (av_seek_frame) depuis l'ouverture : chacun coûte des lectures,
   // des allers-retours sur un partage réseau.
   std::uint32_t file_seeks() const;
