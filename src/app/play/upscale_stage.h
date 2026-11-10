@@ -178,6 +178,9 @@ class UpscaleStage final : public RingStage {
   // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
   // mouvement.
   void count_measured(const PairFacts& facts);
+  // La paire se passe-t-elle de la passe du milieu (RIFE à chaque instant) ? Seule image à faire hors du
+  // milieu (A09-05), ou mouvement fort sans poses ; elle entre alors dans les compteurs.
+  bool decide_direct(float t);
   // Où DistilDRBA estime : la taille de RIFE.
   kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
