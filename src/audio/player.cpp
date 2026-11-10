@@ -186,7 +186,8 @@ void AudioPlayer::start_epoch(std::uint32_t epoch) {
   ready_.clear();
   if (decoder_) decoder_->flush();
   if (pending_track_ && epoch >= pending_track_->from_epoch) {
-    track_ = std::exchange(pending_track_, std::nullopt);
+    track_ = std::move(*pending_track_);
+    pending_track_.reset();
     open_decoder(*track_);
   }
   output_->clear();
@@ -269,7 +270,7 @@ void AudioPlayer::fill_gap(std::int64_t pts_us) {
   if (gap_us <= kGapFillUs || gap_us > kMaxGapFillUs) return;
   log_->info("trou de {} ms dans l'audio : comblé d'un silence", gap_us / 1000);
   const int rate = output_->format().sample_rate;
-  if (auto silence = output_->push_silence(us_to_frames(gap_us, rate), *pushed_end_us_); !silence)
+  if (auto silence = output_->push_silence(us_to_frames(gap_us, rate), pushed_end_us_); !silence)
     report(silence.error());
 }
 
