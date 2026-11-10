@@ -199,22 +199,50 @@ std::uint64_t directory_bytes(const std::filesystem::path& dir) {
   return total;
 }
 
+namespace {
+
+// Un fichier tiers que reuse_vendor_file reprendra sans doute : même nom et même taille dans un dossier de
+// engines_root. Le SHA-256 n'est pas recalculé ici (1 Go à lire) : c'est une estimation de place, la
+// vérification se fait à l'installation.
+bool vendor_on_hand(const core::VendorFile& file, const std::filesystem::path& engines_root) {
+  if (engines_root.empty()) return false;
+  std::error_code error;
+  std::filesystem::directory_iterator it(engines_root, error);
+  for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+    std::error_code checked;
+    const std::filesystem::path candidate = it->path() / file.name;
+    if (std::filesystem::is_regular_file(candidate, checked) &&
+        std::filesystem::file_size(candidate, checked) == file.size && !checked)
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePackage& package,
-                           std::string_view arch, std::uint64_t existing) {
+                           std::string_view arch, std::uint64_t existing,
+                           const std::filesystem::path& engines_root) {
   InstallSpace space;
   space.download = package.size;
   // L'archive du moteur, puis son extraction (module et outils ; l'estimation vaut 3 fois l'archive).
   std::uint64_t staged = package.size * 3;
   std::uint64_t highest = package.size + staged;
+  std::uint64_t linked = 0;
   for (const core::VendorFile& file :
        core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch)) {
+    // Repris de la version en place par un lien dur : ni téléchargé ni écrit une seconde fois (A06-06).
+    if (vendor_on_hand(file, engines_root)) {
+      linked += file.size;
+      continue;
+    }
     space.download += file.packed_size;
     // Chaque fichier tiers : son téléchargement et sa copie décompressée coexistent avec ce qui est déjà
     // posé.
     highest = std::max(highest, package.size + staged + file.packed_size + file.size);
     staged += file.size;
   }
-  space.installed = staged;
+  space.installed = staged + linked;
   const std::uint64_t peak = std::max(highest, package.size + staged) + existing;
   space.peak = peak + peak / 20;  // 5 % de marge
   return space;
@@ -525,7 +553,8 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
   // installation recommencée.
   const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
-  const InstallSpace space = install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir));
+  const InstallSpace space = install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir),
+                                           target_dir.parent_path());
   log_channel("app")->info(
       "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})",
       name,  // i18n-ok : journal

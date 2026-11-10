@@ -341,7 +341,8 @@ EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& path
         .installed = installed(catalog, package),
         .bytes = download_bytes(catalog, package, arch),
         .needed =
-            install_space(catalog, package, arch, directory_bytes(core::engine_dir(catalog.layout, package)))
+            install_space(catalog, package, arch, directory_bytes(core::engine_dir(catalog.layout, package)),
+                          core::engine_dir(catalog.layout, package).parent_path())
                 .peak,
         .available = free_bytes(catalog.layout.engines),
         .license = package.license});

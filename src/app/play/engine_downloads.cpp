@@ -156,7 +156,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
             install_space(
                 catalog, package,
                 effective_cuda_arch(pumped_cuda_arch(screen.device_facts().name), screen.device_facts().name),
-                directory_bytes(found.dir)),
+                directory_bytes(found.dir), found.dir.parent_path()),
             free_bytes(catalog.layout.engines), catalog.layout.engines);
         !fits) {
       log->warn("{} non mis à jour : {}", label, fits.error().detail);
