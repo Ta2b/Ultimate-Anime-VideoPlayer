@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -206,4 +207,25 @@ TEST_CASE("Dolby Vision 5 et audio seul : dits en clair à l'ouverture (P3.26, P
   ajp::Refusal audio{ajp::RefusalCode::TrackUnavailable, "x"};
   audio.key = std::string(ajp::app::play::kAudioOnlyKey);
   CHECK(ajp::app::play::visible_error(audio).contains("que du son"));
+}
+
+TEST_CASE("Erreurs visibles : chaque code de refus a une phrase, pas son seul nom anglais (A24-09)",
+          "[i18n]") {
+  // Avant : 56 codes sur 71 donnaient « erreur NomDuCode (détails au journal) ».
+  int by_name = 0;
+  for (int value = 0; value <= static_cast<int>(ajp::RefusalCode::EncodeFailed); ++value) {
+    const auto code = static_cast<ajp::RefusalCode>(value);
+    for (const bool french : {false, true}) {
+      const std::optional<ajp::app::play::FrenchUi> ui =
+          french ? std::optional<ajp::app::play::FrenchUi>(std::in_place) : std::nullopt;
+      const std::string shown = ajp::app::play::visible_error(ajp::Refusal{code, "détail"});
+      INFO(name(code) << " : " << shown);
+      if (shown.starts_with("error ") || shown.starts_with("erreur ")) ++by_name;
+      CHECK_FALSE(shown.contains("détail"));  // le détail technique reste au journal
+    }
+  }
+  CHECK(by_name == 0);
+  const ajp::app::play::FrenchUi french;
+  CHECK(ajp::app::play::visible_error(ajp::Refusal{ajp::RefusalCode::OnnxExternalData, "x"}) ==
+        "un modèle manque, est abîmé ou n'est pas pris en charge (OnnxExternalData)");
 }
