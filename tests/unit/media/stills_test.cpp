@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "clips.h"
@@ -235,4 +236,30 @@ TEST_CASE("une vidéo HDR est refusée clairement", "[media][stills]") {
   const auto stills = extract_stills(test::require_clip(test::hdr_clip()), StillsSpec{}, std::stop_token{});
   REQUIRE_FALSE(stills);
   CHECK(stills.error().detail.find("HDR") != std::string::npos);
+}
+
+TEST_CASE("la chroma des images de calibration est bilinéaire, pas au plus proche (A15-12)",
+          "[media][stills]") {
+  // Luma grise, chroma Cr en marches de 32 d'un échantillon au suivant : au plus proche, deux pixels voisins
+  // partagent leur rouge puis sautent ; en bilinéaire (siting Left), le pixel impair tombe à mi-chemin.
+  constexpr std::size_t w = 256, h = 8;
+  std::vector<std::byte> y(w * h, static_cast<std::byte>(126)), u(w * h / 4, static_cast<std::byte>(128)),
+      v(w * h / 4);
+  for (std::size_t row = 0; row < h / 2; ++row)
+    for (std::size_t col = 0; col < w / 2; ++col)
+      v[row * (w / 2) + col] = static_cast<std::byte>(col % 2 == 0 ? 96 : 160);
+  DecodedFrame frame;
+  frame.width = static_cast<int>(w);
+  frame.height = static_cast<int>(h);
+  frame.format = PixelFormat::Yuv420p;
+  frame.data = std::make_shared<HostFrame>(std::vector<std::vector<std::byte>>{y, u, v},
+                                           std::vector<std::size_t>{w, w / 2, w / 2});
+  const auto still = still_from_frame(frame, narrow());
+  REQUIRE(still);
+  const int low = at(*still, 0, 40, 3);   // sur l'échantillon 20 (Cr 96)
+  const int mid = at(*still, 0, 41, 3);   // entre 20 et 21
+  const int high = at(*still, 0, 42, 3);  // sur l'échantillon 21 (Cr 160)
+  CHECK(low < mid);
+  CHECK(mid < high);
+  CHECK(mid == Catch::Approx((low + high) / 2.0).margin(2));
 }

@@ -67,9 +67,16 @@ void approximated(std::atomic<std::uint64_t>& warned, int value, const char* kin
     make_logger()->warn("{} {} lu comme {} : couleurs approchées", kind, name, used);
 }
 
-std::expected<ColorMatrix, Refusal> map_matrix(AVColorSpace space, AVColorPrimaries primaries, int width,
+// Sans matrice étiquetée, la taille la devine (comme mpv), sauf quand les primaires BT.2020 ou un transfert
+// PQ ou HLG disent un contenu BT.2020 : un HDR10 dont le VUI omet la matrice (A15-08).
+std::expected<ColorMatrix, Refusal> map_matrix(AVColorSpace space, AVColorPrimaries primaries,
+                                               AVColorTransferCharacteristic transfer, int width,
                                                int height) {
-  const ColorMatrix guessed = kernels::sd_size(width, height) ? ColorMatrix::Bt601 : ColorMatrix::Bt709;
+  const bool wide =
+      primaries == AVCOL_PRI_BT2020 || transfer == AVCOL_TRC_SMPTE2084 || transfer == AVCOL_TRC_ARIB_STD_B67;
+  const ColorMatrix guessed = wide                              ? ColorMatrix::Bt2020Ncl
+                              : kernels::sd_size(width, height) ? ColorMatrix::Bt601
+                                                                : ColorMatrix::Bt709;
   switch (space) {
     case AVCOL_SPC_BT709:
       return ColorMatrix::Bt709;
@@ -237,7 +244,8 @@ std::expected<ColorInfo, Refusal> color_info(const AVFrame& frame, AVPixelFormat
   if (rgb) {
     color.matrix = ColorMatrix::Rgb;  // des pixels RGB n'ont pas de matrice YUV
   } else {
-    auto matrix = map_matrix(frame.colorspace, frame.color_primaries, frame.width, frame.height);
+    auto matrix =
+        map_matrix(frame.colorspace, frame.color_primaries, frame.color_trc, frame.width, frame.height);
     if (!matrix) return std::unexpected(matrix.error());
     color.matrix = *matrix;
   }
@@ -314,11 +322,12 @@ std::expected<std::optional<HdrMetadata>, Refusal> hdr_metadata(const AVFrame& f
   return hdr;
 }
 
-std::optional<ColorInfo> track_color(const TrackInfo& track) {
-  if (track.kind != TrackKind::Video || !track.parameters) return std::nullopt;
-  const AVCodecParameters& par = track.parameters->av();
+namespace {
+
+// Une image vide qui porte la couleur de la piste, comme le décodeur la posera.
+FramePtr track_frame(const AVCodecParameters& par) {
   FramePtr frame(av_frame_alloc());
-  if (!frame) return std::nullopt;
+  if (!frame) return frame;
   frame->width = par.width;
   frame->height = par.height;
   frame->colorspace = par.color_space;
@@ -338,9 +347,40 @@ std::optional<ColorInfo> track_color(const TrackInfo& track) {
     if (AVFrameSideData* copy = av_frame_new_side_data(frame.get(), frame_type, data->size))
       std::memcpy(copy->data, data->data, data->size);
   }
+  return frame;
+}
+
+}  // namespace
+
+std::optional<ColorInfo> track_color(const TrackInfo& track) {
+  if (track.kind != TrackKind::Video || !track.parameters) return std::nullopt;
+  const AVCodecParameters& par = track.parameters->av();
+  const FramePtr frame = track_frame(par);
+  if (!frame) return std::nullopt;
   auto color = color_info(*frame, static_cast<AVPixelFormat>(par.format));
   if (!color) return std::nullopt;
   return *color;
+}
+
+std::optional<Refusal> unreadable_video(const TrackInfo& track) {
+  if (track.kind != TrackKind::Video || !track.parameters) return std::nullopt;
+  const AVCodecParameters& par = track.parameters->av();
+  const auto format = static_cast<AVPixelFormat>(par.format);
+  if (format == AV_PIX_FMT_NONE) return std::nullopt;  // le conteneur ne le dit pas : la première image dira
+  auto mapped = map_pixel_format(format);
+  if (!mapped) {
+    // Le YUV planaire que la chaîne ne lit pas se convertit en 4:2:0 (to_chain_yuv) ; le reste est refusé.
+    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
+    const bool convertible =
+        desc != nullptr &&
+        (desc->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_HWACCEL | AV_PIX_FMT_FLAG_PAL)) == 0 &&
+        desc->nb_components >= 3;
+    if (!convertible) return mapped.error();
+  }
+  const FramePtr frame = track_frame(par);
+  if (!frame) return std::nullopt;
+  if (auto color = color_info(*frame, format); !color) return color.error();
+  return std::nullopt;
 }
 
 }  // namespace ajp::media

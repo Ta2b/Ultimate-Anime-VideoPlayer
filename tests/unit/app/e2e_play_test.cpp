@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -42,11 +43,15 @@ Picture read_ppm(const fs::path& path) {
   return in ? picture : Picture{};
 }
 
-// La luma moyenne (BT.709, pleine plage) du quart central : loin du bord et de la barre de lecture.
-double central_luma(const Picture& p) {
+// La luma moyenne (BT.709, pleine plage) d'une bande au milieu de la largeur, entre 30 % et 45 % de la
+// hauteur. La barre de lecture, affichée pendant les premières secondes, assombrit le haut de la fenêtre sur
+// 96 px et le bas sur 185 px environ : dans une fenêtre de 360 lignes cette bande est la seule que rien ne
+// couvre. Le centre d'une fenêtre de 180 lignes était sous les deux dégradés (A40-06 : image jugée 38 % plus
+// sombre que la source, et la fourchette du test gravait cet écart).
+double clear_band_luma(const Picture& p) {
   double sum = 0;
   int count = 0;
-  for (int y = p.height * 3 / 8; y < p.height * 5 / 8; ++y) {
+  for (int y = p.height * 30 / 100; y < p.height * 45 / 100; ++y) {
     for (int x = p.width * 3 / 8; x < p.width * 5 / 8; ++x) {
       const std::size_t at =
           (static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x)) * 3;
@@ -229,7 +234,7 @@ TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sa
   const auto exit = ajp::prepare::run_process(
       {.program = player,
        .args = {"play", ajp::prepare::utf8_path(alone(*clip, dir)), "--software-gpu", "--mute",
-                "--no-upscale", "--rife=0", "--no-resume", "--window=320x180", "--seconds=2",
+                "--no-upscale", "--rife=0", "--no-resume", "--window=640x360", "--seconds=2",
                 "--data-dir=" + ajp::prepare::utf8_path(dir / "reglages"),
                 "--stats=" + ajp::prepare::utf8_path(stats),
                 "--snapshot=" + ajp::prepare::utf8_path(snapshot), "--snapshot-at=1.5"},
@@ -245,19 +250,21 @@ TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sa
   REQUIRE(exit->code == 0);
   const Picture picture = read_ppm(snapshot);
   REQUIRE(picture.width > 0);
-  // L'image gradée du clip (luma 200 en plage limitée, chroma du plan 0 : un vert pâle). Le grade SDR la
-  // rend vers 125 sur 255 au centre, mesuré le 07/11/2026 ; la fourchette tient ses réglages ordinaires, une
-  // image noire, délavée ou aux canaux permutés en sort.
-  const double luma = central_luma(picture);
-  CHECK(luma > 100.0);
-  CHECK(luma < 160.0);
-  const std::size_t center =
-      (static_cast<std::size_t>(picture.height / 2) * static_cast<std::size_t>(picture.width) +
+  // Le clip : luma 200 en plage limitée avec son dégradé de ±12, chroma du plan 0 (un vert pâle), soit RVB
+  // 155, 238, 151 en BT.709 au milieu du dégradé (luma 214 sur 255, ±14). La sortie SDR la rend telle quelle,
+  // grade compris (une image SDR claire et uniforme n'a rien à relever) : jugée contre la source, hors de la
+  // barre de lecture.
+  const double luma = clear_band_luma(picture);
+  CHECK(luma > 200.0);
+  CHECK(luma < 228.0);
+  const std::size_t probe =
+      (static_cast<std::size_t>(picture.height * 3 / 8) * static_cast<std::size_t>(picture.width) +
        static_cast<std::size_t>(picture.width / 2)) *
       3;
-  CHECK(picture.rgb[center + 1] > picture.rgb[center] + 20);      // vert au-dessus du rouge
-  CHECK(picture.rgb[center + 1] > picture.rgb[center + 2] + 20);  // et du bleu
-  CHECK(output.find("épisode suivant") == std::string::npos);     // --seconds quitte, sans enchaîner
+  CHECK(std::abs(picture.rgb[probe] - 155) <= 16);
+  CHECK(std::abs(picture.rgb[probe + 1] - 238) <= 16);
+  CHECK(std::abs(picture.rgb[probe + 2] - 151) <= 16);
+  CHECK(output.find("épisode suivant") == std::string::npos);  // --seconds quitte, sans enchaîner
   const Presented presented = read_stats(stats);
   // 50 images en 2 s. Sur le runner de la CI, lavapipe met environ 40 ms par image et en saute une partie
   // (25 neuves, 11 sautées le 07/11/2026) : la cadence n'est pas jugée ici, seulement que la lecture avance
