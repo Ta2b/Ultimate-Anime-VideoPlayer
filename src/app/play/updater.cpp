@@ -217,7 +217,7 @@ std::mutex& update_state_mutex() {
 }  // namespace
 
 std::string merge_update_state(std::string_view previous, const UpdateState& state) {
-  const std::string own = format_update_state(state);
+  std::string own = format_update_state(state);
   toml::parse_result before = toml::parse(previous);
   if (!before) return own;
   toml::table merged = toml::parse(own).table();
