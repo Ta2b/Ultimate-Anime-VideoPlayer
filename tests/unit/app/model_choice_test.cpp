@@ -129,6 +129,7 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
   CHECK(find_distil_drba(dirs, false)->path == fake.rife / kDistilDrbaHalfFile);
   CHECK(find_distil_drba(dirs, false)->fallback);
   CHECK_FALSE(drba_half_flow(1080));
+  CHECK_FALSE(drba_half_flow(1440));  // A09-24 : plus de demi-flot à 1440 lignes
   CHECK(drba_half_flow(2160));
 }
 
