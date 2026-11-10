@@ -132,15 +132,19 @@ AttachedFonts attached_fonts(std::span<const media::TrackInfo> tracks, std::size
   return out;
 }
 
-bool SubsBridge::try_push(media::Packet&& packet) {
-  if (packet.track != track_.load()) return true;  // piste non choisie : écartée
-  if (packet.pts_us == kNoPts) return true;        // sans instant, rien à afficher : écarté
+subs::TrackPacket subs_packet(const media::Packet& packet, bool mov_text) {
   auto bytes = packet.data();
-  if (std::ranges::contains(mov_text_, packet.track)) bytes = mov_text_payload(bytes);
+  if (mov_text) bytes = mov_text_payload(bytes);
   subs::TrackPacket out{.track = subs_track_id(packet.track),
                         .packet = {.start_us = packet.pts_us, .duration_us = packet.duration_us, .data = {}}};
   out.packet.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-  if (inbox_->try_push(std::move(out))) return true;
+  return out;
+}
+
+bool SubsBridge::try_push(media::Packet&& packet) {
+  if (packet.track != track_.load()) return true;  // piste non choisie : écartée
+  if (packet.pts_us == kNoPts) return true;        // sans instant, rien à afficher : écarté
+  if (inbox_->try_push(subs_packet(packet, std::ranges::contains(mov_text_, packet.track)))) return true;
   refused_.store(true);
   return false;
 }

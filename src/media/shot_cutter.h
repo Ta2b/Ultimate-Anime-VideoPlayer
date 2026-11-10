@@ -2,7 +2,7 @@
 // (media/shot_probe.h). Pur calcul, sans FFmpeg ni thread : les mesures entrent dans l'ordre de présentation,
 // les plans finis sortent avec leurs valeurs fixes.
 //
-// Mesures sur l'échelle de gpu::KernelOps::SceneStats (gpu/kernel_ops.h) : luminance
+// Mesures sur l'échelle de app::play::SceneStats (app/play/chain_shots.h) : luminance
 // BT.709 des canaux R, V, B encodés (0 à 1), hors bandes noires, histogramme de 64 cases.
 #pragma once
 

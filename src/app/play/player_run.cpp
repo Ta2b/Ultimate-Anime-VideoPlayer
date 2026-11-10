@@ -162,10 +162,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
-  if (is_gmfss(settings.motion_engine)) {  // débranché de la lecture (settings.h, offered)
-    log->info("interpolation {} : débranchée de la lecture, RIFE à sa place", label(settings.motion_engine));
-    settings.motion_engine = MotionEngine::Rife;
-  }
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
@@ -248,7 +244,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
   if ((*pipeline)->chapters_flattened() && p.notice.empty())
-    p.notice = i18n::ui_tr("Ordered chapters are not supported: playing in file order");
+    p.notice = i18n::ui_tr("Chapters stored in other files are not played (linked opening or ending)");
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 

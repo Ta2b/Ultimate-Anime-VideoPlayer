@@ -1,7 +1,6 @@
-// Les tenseurs d'un runtime dans sa propre mémoire hôte, importée par Vulkan (shared_tensor.h,
-// host_imported_tensor), sur l'appareil Vulkan du système (lavapipe en CI) : la vérification du
-// premier import passe sur une mémoire que le GPU voit vraiment, puis ce que le GPU écrit dans le
-// tenseur se lit à l'adresse du runtime.
+// Les tenseurs d'un runtime dans sa propre mémoire hôte, importée par Vulkan (host_tensor.h), sur l'appareil
+// Vulkan du système (lavapipe en CI) : la vérification du premier import passe sur une mémoire que le GPU
+// voit vraiment, puis ce que le GPU écrit dans le tenseur se lit à l'adresse du runtime.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -18,9 +17,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../../support/vulkan_validation.h"
+#include "gpu/vulkan/backend/host_tensor.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_runtime.h"
-#include "gpu/vulkan/backend/shared_tensor.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/context.h"
 #include "net_rig.h"
@@ -31,7 +30,7 @@ using namespace ajp::gpu::vk;
 
 namespace {
 
-// Une mémoire hôte alignée, comme un runtime la donnerait (USM d'OpenVINO, IOSurface de Core ML).
+// Une mémoire hôte alignée, comme un runtime la donnerait (IOSurface de Core ML).
 class AlignedMemory final : public net::HostMemory {
  public:
   AlignedMemory(std::uint64_t bytes, std::uint64_t alignment)

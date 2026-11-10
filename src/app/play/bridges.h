@@ -105,5 +105,7 @@ class SubsBridge final : public media::PacketSink {
 
 // Le texte d'un paquet mov_text (tx3g) : ce qui suit sa longueur, sans les boîtes de style.
 std::span<const std::byte> mov_text_payload(std::span<const std::byte> packet);
+// Le TrackPacket de subs d'un paquet du conteneur ; mov_text : le texte sans sa longueur.
+subs::TrackPacket subs_packet(const media::Packet& packet, bool mov_text);
 
 }  // namespace ajp::app::play

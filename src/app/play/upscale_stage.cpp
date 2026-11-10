@@ -249,7 +249,8 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
 void UpscaleStage::analyze_source(const DecodedFrame& frame) {
   if (!frame_stats_ || !setup_.live) return;
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  // Les analyses finies passent aux scènes, dans l'ordre ; une analyse refusée coupe l'analyse.
+  // Les analyses finies passent aux scènes, dans l'ordre ; une analyse refusée est jetée et la suivante
+  // continue.
   while (!stats_pending_.empty()) {
     auto taken = ops.frame_stats_take(stats_pending_.front().ticket);
     if (!taken) {

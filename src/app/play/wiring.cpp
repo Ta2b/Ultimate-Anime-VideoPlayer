@@ -3,6 +3,7 @@
 #include <tuple>
 #include <utility>
 
+#include "app/play/subtitle_lead.h"
 #include "core/log.h"
 
 namespace ajp::app::play {
@@ -101,6 +102,7 @@ bool ThreadStages::flush(std::uint32_t epoch) {
 }
 
 bool ThreadStages::seek(const cmd::Seek& seek) {
+  if (links_.subs_lead != nullptr) links_.subs_lead->seek(seek.target_us);
   return links_.source->try_push(Command{seek});
 }
 
@@ -155,6 +157,7 @@ bool ThreadStages::audio_lost(std::uint32_t epoch, std::int64_t media_us) {
 }
 
 bool ThreadStages::request_subtitles(const subs::RenderRequest& request) {
+  if (links_.subs_lead != nullptr) links_.subs_lead->follow(request.pts_us, request.delay_us);
   return links_.subs && links_.subs->try_push(subs::RenderRequest{request});
 }
 

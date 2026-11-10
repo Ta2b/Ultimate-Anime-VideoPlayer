@@ -1,9 +1,9 @@
 // Points d'entrée extern "C" d'une bibliothèque de backend bâtie sur VulkanBackend
-// (gpu/backend.h) : ajp_backend_vulkan, et ajp_backend_migraphx, ajp_backend_openvino dont les
-// réseaux passent par un autre runtime. Aucune exception ne traverse la frontière : le backend rendu est
-// enveloppé par GuardedBackend (gpu/guarded_backend.h), une exception interne devient un refus nommé. Les
-// canaux de la bibliothèque (core/log.h) vont au rappel BackendInit::log ; avec plusieurs backends créés, le
-// dernier rappel reçoit tout.
+// (gpu/backend.h) : ajp_backend_vulkan, et ajp_backend_coreml dont les réseaux passent par Core ML. Aucune
+// exception ne traverse la frontière : le backend rendu est enveloppé par GuardedBackend
+// (gpu/guarded_backend.h), une exception interne devient un refus nommé. Les canaux de la bibliothèque
+// (core/log.h) vont au rappel BackendInit::log ; avec plusieurs backends créés, le dernier rappel reçoit
+// tout.
 //
 // Inclus par un seul fichier de chaque bibliothèque, qui écrit :
 //   AJP_VULKAN_BACKEND_ENTRY_POINTS("Vulkan", options_function)

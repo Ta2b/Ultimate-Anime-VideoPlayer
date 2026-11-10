@@ -648,6 +648,7 @@ TEST_CASE("Durée de lecture et plein écran différé", "[app][session]") {
   rig.screen.now_us += 600'000;
   rig.tick();
   CHECK(rig.session.finished());
+  CHECK(rig.session.quit_asked());  // une demande de quitter : pas d'épisode suivant (A13-14)
 }
 
 TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]") {
