@@ -101,10 +101,6 @@ bool ThreadStages::flush(std::uint32_t epoch) {
 }
 
 bool ThreadStages::seek(const cmd::Seek& seek) {
-  if (links_.audio_bridge != nullptr) {
-    links_.audio_bridge->expect_seek(flushed_epoch_,
-                                     seek.exact ? std::optional(seek.target_us) : std::nullopt);
-  }
   return links_.source->try_push(Command{seek});
 }
 

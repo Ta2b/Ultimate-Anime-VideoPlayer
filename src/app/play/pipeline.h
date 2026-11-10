@@ -44,6 +44,8 @@ struct PipelineConfig {
   media::LanguagePriorities languages{.audio = {"jpn", "ja"}, .subtitles = {"fre", "fr", "eng", "en"}};
   bool audio = true;         // false : piste audio ignorée, horloge hôte
   std::string audio_device;  // appareil de sortie choisi (audio/devices.h) ; vide : celui du système
+  // Le délai mémorisé de la sortie du système, repris si l'appareil choisi disparaît (audio::PlayerConfig).
+  std::optional<std::int64_t> audio_fallback_delay_us;
   bool audio_pll = false;  // --audio-pll : l'horloge audio publiée filtrée par une PLL (audio::PlayerConfig)
   bool subtitles = true;   // false : aucune piste de sous-titres
   // Pistes choisies avant une réouverture de la chaîne : elles remplacent le choix par langue si

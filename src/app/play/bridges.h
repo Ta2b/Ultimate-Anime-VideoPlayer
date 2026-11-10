@@ -44,17 +44,11 @@ class AudioBridge final : public media::PacketSink {
   // La piste que garde un paquet de cette époque.
   int track_for(std::uint32_t epoch) const;
 
-  // Depuis main, avant le Flush d'un seek : sous l'époque epoch, les échantillons d'avant
-  // target_us sont jetés après décodage (seek exact) ; rien pour un seek rapide.
-  void expect_seek(std::uint32_t epoch, std::optional<std::int64_t> target_us);
-
   bool try_push(media::Packet&& packet) override;
 
  private:
   audio::AudioThread& audio_;
   mutable std::mutex mutex_;
-  std::uint32_t trim_epoch_ = 0;
-  std::optional<std::int64_t> trim_us_;
   int track_;
   int previous_;
   std::uint32_t switch_epoch_ = 0;

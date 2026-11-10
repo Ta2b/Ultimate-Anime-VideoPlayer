@@ -12,6 +12,7 @@
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "core/log.h"
+#include "core/pacing.h"
 #include "core/text.h"
 #include "kernels/spec/color.h"
 #include "media/demuxer.h"
@@ -53,6 +54,32 @@ void report_unreadable(const media::Demuxer& demuxer, int index, MainMail& mail)
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+namespace {
+
+// A16-05 : la correction de dérive de l'audio couvre tout calage de vitesse, avec de la marge.
+static_assert(audio::limits::kMaxSpeedChangeCovered == core::pacing::kMaxSpeedChange);
+
+// A16-07 : la sortie prend le format de l'appareil quand il est connu, et libswresample fait la seule
+// conversion de chaque piste vers lui : une piste 5.1 choisie après une 2.0 garde ses canaux sur un
+// ampli 5.1, une piste 44,1 kHz n'est pas rééchantillonnée deux fois. Un appareil stéréo reçoit de la stéréo
+// (libswresample mixe le surround). Sans format connu, celui de la piste, plafonné : au-delà de ce que SDL
+// ouvre, le périphérique choisit (0).
+audio::OutputRequest output_request(const media::TrackInfo& track, const std::string& name) {
+  const std::optional<audio::AudioDevice> device = audio::resolve_device(audio::playback_devices(), name);
+  const auto in_limits = [](int rate) {
+    return rate >= audio::limits::kMinSampleRate && rate <= audio::limits::kMaxSampleRate;
+  };
+  const int rate = device && in_limits(device->sample_rate) ? device->sample_rate
+                   : in_limits(track.sample_rate)           ? track.sample_rate
+                                                            : 0;
+  const bool stereo_device = !device || device->channels <= 2;
+  const int channels = stereo_device ? std::clamp(track.channels, 0, 2)
+                                     : std::clamp(device->channels, 1, audio::limits::kMaxChannels);
+  return {.sample_rate = rate, .channels = channels, .device = name};
+}
+
+}  // namespace
+
 std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
                                                                  const VideoStageFactory& make_video) {
   std::unique_ptr<Pipeline> p(new Pipeline());
@@ -115,25 +142,12 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
           Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} illisible", track.index)};
     }
     if (!audio_failure) {
-      // La sortie prend le format de la piste, plafonné : au-delà de ce que SDL ouvre, le
-      // périphérique choisit (0) et le décodeur remixe vers lui.
-      const bool rate_ok = track.sample_rate >= audio::limits::kMinSampleRate &&
-                           track.sample_rate <= audio::limits::kMaxSampleRate;
-      // Un appareil stéréo reçoit de la stéréo (libswresample mixe le surround) ; un appareil multicanal
-      // garde les canaux de la piste, SDL les adapte.
-      const std::optional<audio::AudioDevice> device =
-          audio::resolve_device(audio::playback_devices(), config.audio_device);
-      const bool stereo_device = !device || device->channels <= 2;
-      const int sink_channels = stereo_device ? std::clamp(track.channels, 0, 2)
-                                              : std::clamp(track.channels, 0, audio::limits::kMaxChannels);
-      auto output = audio::AudioOutput::open_sdl({.sample_rate = rate_ok ? track.sample_rate : 0,
-                                                  .channels = sink_channels,
-                                                  .device = config.audio_device});
+      auto output = audio::AudioOutput::open_sdl(output_request(track, config.audio_device));
       if (!output) {
         audio_failure = std::move(output.error());
       } else {
         audio::AudioThreadOptions options{
-            .player = {.pll = config.audio_pll},
+            .player = {.pll = config.audio_pll, .fallback_delay_us = config.audio_fallback_delay_us},
             .credit = [inbox = &p->source_inbox_](Credit credit) { std::ignore = inbox->try_push(credit); },
             .refused = [mail = &p->mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
         auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
@@ -280,16 +294,16 @@ std::expected<void, Refusal> Pipeline::select_audio(int track, std::uint32_t fro
   if (codec == nullptr || !audio_bridge_)
     return std::unexpected(
         Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} absente", track)});
-  // Ordre : les paquets de l'époque from_epoch sont de la nouvelle piste ; le seek pose le Flush
-  // dans la boîte d'audio, puis AudioTrack le suit (la boîte garde l'ordre) : l'ancien décodeur
-  // lit ses derniers paquets, le nouveau ceux de la nouvelle époque.
+  // Ordre : les paquets de l'époque from_epoch sont de la nouvelle piste. AudioTrack part avant le seek, qui
+  // pose le Flush : le thread audio sait déjà, quand les paquets de l'époque arrivent, qu'ils sont à elle, et
+  // l'ancien décodeur ne lit que les siens (A16-06).
   audio_bridge_->select(track, from_epoch);
-  seek();
-  if (!audio_->post(audio::AudioTrack{.codec = *codec})) {
-    // Le décodeur n'a pas changé : le pont garde la piste d'avant, comme le menu.
+  if (!audio_->post(audio::AudioTrack{.codec = *codec, .from_epoch = from_epoch})) {
+    // Le décodeur ne changera pas : le pont garde la piste d'avant, comme le menu, et rien n'est relu.
     audio_bridge_->undo_select();
     return std::unexpected(Refusal{RefusalCode::PacketBacklog, "audio track: audio mailbox full"});
   }
+  seek();
   menu_.audio_selected = track;
   if (const media::TrackInfo* info = track_info(track)) audio_track_ = *info;
   return {};
