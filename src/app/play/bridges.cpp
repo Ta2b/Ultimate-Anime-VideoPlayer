@@ -41,12 +41,6 @@ std::expected<audio::AudioCodecInfo, Refusal> audio_codec_info(const media::Trac
   return info;
 }
 
-void AudioBridge::expect_seek(std::uint32_t epoch, std::optional<std::int64_t> target_us) {
-  const std::scoped_lock lock(mutex_);
-  trim_epoch_ = epoch;
-  trim_us_ = target_us;
-}
-
 void AudioBridge::select(int track, std::uint32_t from_epoch) {
   const std::scoped_lock lock(mutex_);
   undo_track_ = track_;
@@ -86,10 +80,8 @@ bool AudioBridge::try_push(media::Packet&& packet) {
                                .bytes = std::vector<std::uint8_t>(side.data, side.data + side.size)});
     }
   }
-  {
-    const std::scoped_lock lock(mutex_);
-    if (trim_us_ && packet.epoch == trim_epoch_) out.discard_before_us = trim_us_;
-  }
+  // A16-14 : la source dit où la lecture reprend, même quand le seek a échoué et qu'elle revient en arrière.
+  out.discard_before_us = packet.discard_before_us;
   return audio_.push_packet(std::move(out));
 }
 

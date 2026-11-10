@@ -13,6 +13,7 @@
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "core/log.h"
+#include "core/pacing.h"
 #include "core/text.h"
 #include "kernels/spec/color.h"
 #include "media/demuxer.h"
@@ -86,6 +87,32 @@ void mark_mov_text(const media::Demuxer& demuxer, int index, SubsBridge& bridge)
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+namespace {
+
+// A16-05 : la correction de dérive de l'audio couvre tout calage de vitesse, avec de la marge.
+static_assert(audio::limits::kMaxSpeedChangeCovered == core::pacing::kMaxSpeedChange);
+
+// A16-07 : la sortie prend le format de l'appareil quand il est connu, et libswresample fait la seule
+// conversion de chaque piste vers lui : une piste 5.1 choisie après une 2.0 garde ses canaux sur un
+// ampli 5.1, une piste 44,1 kHz n'est pas rééchantillonnée deux fois. Un appareil stéréo reçoit de la stéréo
+// (libswresample mixe le surround). Sans format connu, celui de la piste, plafonné : au-delà de ce que SDL
+// ouvre, le périphérique choisit (0).
+audio::OutputRequest output_request(const media::TrackInfo& track, const std::string& name) {
+  const std::optional<audio::AudioDevice> device = audio::resolve_device(audio::playback_devices(), name);
+  const auto in_limits = [](int rate) {
+    return rate >= audio::limits::kMinSampleRate && rate <= audio::limits::kMaxSampleRate;
+  };
+  const int rate = device && in_limits(device->sample_rate) ? device->sample_rate
+                   : in_limits(track.sample_rate)           ? track.sample_rate
+                                                            : 0;
+  const bool stereo_device = !device || device->channels <= 2;
+  const int channels = stereo_device ? std::clamp(track.channels, 0, 2)
+                                     : std::clamp(device->channels, 1, audio::limits::kMaxChannels);
+  return {.sample_rate = rate, .channels = channels, .device = name};
+}
+
+}  // namespace
+
 std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
                                                                  const VideoStageFactory& make_video) {
   std::unique_ptr<Pipeline> p(new Pipeline());
@@ -95,24 +122,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   // nom (« Épisode 01.fr.ass »).
   std::vector<ExternalSubtitle> externals =
       config.subtitles ? find_external_subtitles(config.file) : std::vector<ExternalSubtitle>{};
-  std::vector<media::TrackInfo> candidates(demuxer->tracks().begin(), demuxer->tracks().end());
-  for (std::size_t k = 0; k < externals.size(); ++k) {
-    const std::string extension = core::ascii_lower(prepare::utf8_path(externals[k].path.extension()));
-    candidates.push_back({.index = kExternalSubtitleBase + static_cast<int>(k),
-                          .kind = media::TrackKind::Subtitle,
-                          .codec = extension == ".srt" ? "subrip" : "ass",
-                          .language = externals[k].language,
-                          .title = prepare::utf8_path(externals[k].path.filename())});
-  }
-  media::TrackChoice choice = media::choose_tracks(candidates, config.languages);
-  const auto kind_of = [&](int index) {
-    const media::TrackInfo* track = demuxer->track(index);
-    return track != nullptr ? std::optional(track->kind) : std::nullopt;
-  };
-  if (config.audio_track && kind_of(*config.audio_track) == media::TrackKind::Audio)
-    choice.audio = config.audio_track;
-  if (config.subtitle_track && subtitle_exists(*config.subtitle_track, *demuxer, externals.size()))
-    choice.subtitle = *config.subtitle_track;
+  media::TrackChoice choice = choose(config, *demuxer, externals);
   if (!choice.video) {
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable,
                                    std::format("{}: no video track", prepare::utf8_path(config.file))});
@@ -128,71 +138,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
 
   // Toutes les pistes audio et de sous-titres lisibles sont routées : la barre de lecture en
   // change pendant la lecture (les ponts ne gardent que la piste choisie).
-  if (config.audio && choice.audio) {
-    // Une piste audio illisible, ou une sortie qui ne s'ouvre pas, ne ferme plus la lecture : la
-    // vidéo joue sans son, sur l'horloge hôte, et le refus paraît à l'OSD.
-    std::optional<Refusal> audio_failure;
-    for (const media::TrackInfo& track : demuxer->tracks()) {
-      if (track.kind != media::TrackKind::Audio) continue;
-      auto info = audio_codec_info(track);
-      if (!info) {
-        if (track.index == *choice.audio) audio_failure = std::move(info.error());
-        continue;
-      }
-      p->audio_codecs_.emplace_back(track.index, std::move(*info));
-      p->menu_.audio.push_back({.index = track.index, .label = track_label(track)});
-    }
-    const media::TrackInfo& track = *demuxer->track(*choice.audio);
-    if (!audio_failure && p->audio_codec(track.index) == nullptr) {
-      audio_failure =
-          Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} illisible", track.index)};
-    }
-    if (!audio_failure) {
-      // La sortie prend le format de la piste, plafonné : au-delà de ce que SDL ouvre, le
-      // périphérique choisit (0) et le décodeur remixe vers lui.
-      const bool rate_ok = track.sample_rate >= audio::limits::kMinSampleRate &&
-                           track.sample_rate <= audio::limits::kMaxSampleRate;
-      // Un appareil stéréo reçoit de la stéréo (libswresample mixe le surround) ; un appareil multicanal
-      // garde les canaux de la piste, SDL les adapte.
-      const std::optional<audio::AudioDevice> device =
-          audio::resolve_device(audio::playback_devices(), config.audio_device);
-      const bool stereo_device = !device || device->channels <= 2;
-      const int sink_channels = stereo_device ? std::clamp(track.channels, 0, 2)
-                                              : std::clamp(track.channels, 0, audio::limits::kMaxChannels);
-      auto output = audio::AudioOutput::open_sdl({.sample_rate = rate_ok ? track.sample_rate : 0,
-                                                  .channels = sink_channels,
-                                                  .device = config.audio_device});
-      if (!output) {
-        audio_failure = std::move(output.error());
-      } else {
-        audio::AudioThreadOptions options{
-            .player = {.pll = config.audio_pll},
-            .credit = [inbox = &p->source_inbox_](Credit credit) { std::ignore = inbox->try_push(credit); },
-            .refused = [mail = &p->mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
-        auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
-        if (!thread) {
-          audio_failure = std::move(thread.error());
-        } else {
-          p->audio_ = std::move(*thread);
-        }
-      }
-    }
-    if (audio_failure) {
-      p->audio_codecs_.clear();
-      p->menu_.audio.clear();
-      p->mail_.report("audio", *audio_failure, false);
-    } else {
-      p->audio_->post(audio::AudioTrack{.codec = *p->audio_codec(track.index)});
-      p->audio_bridge_ = std::make_unique<AudioBridge>(*p->audio_, track.index);
-      p->lead_ = std::make_shared<LeadClock>(p->audio_->clock(), p->host_clock_);
-      p->clock_ = p->lead_.get();
-      p->mail_.attach_audio(p->audio_.get());
-      for (const auto& [index, codec] : p->audio_codecs_)
-        routes.push_back({.track = index, .sink = p->audio_bridge_.get()});
-      p->audio_track_ = track;
-      p->menu_.audio_selected = track.index;
-    }
-  }
+  if (config.audio && choice.audio) p->open_audio(config, *demuxer, *choice.audio, routes);
 
   for (const media::TrackInfo& track : demuxer->tracks()) {
     if (track.kind == media::TrackKind::Audio || track.kind == media::TrackKind::Subtitle)
@@ -200,67 +146,10 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   }
 
   if (config.subtitles) {
-    for (const media::TrackInfo& track : demuxer->tracks()) {
-      if (track.kind != media::TrackKind::Subtitle || !subtitle_track(track, subs_track_id(track.index)))
-        continue;
-      p->menu_.subtitles.push_back({.index = track.index, .label = track_label(track)});
-    }
-    // Les fichiers à côté de la vidéo : après les pistes du conteneur, choisis d'office seulement
-    // quand le conteneur n'en a aucune et qu'aucun choix n'a été fait.
-    p->external_ = std::move(externals);
-    for (std::size_t k = 0; k < p->external_.size(); ++k) {
-      const int index = kExternalSubtitleBase + static_cast<int>(k);
-      p->menu_.subtitles.push_back({.index = index, .label = p->external_[k].label});
-      p->tracks_.push_back({.index = index,
-                            .kind = media::TrackKind::Subtitle,
-                            .codec = "externe",
-                            .title = prepare::utf8_path(p->external_[k].path.filename())});
-    }
-    if (!choice.subtitle && !config.subtitle_track && !p->external_.empty() && !readable_subtitles(*demuxer))
-      choice.subtitle = kExternalSubtitleBase;
-    note_image_subtitles(*demuxer, choice.subtitle.has_value(), p->mail_);
-    if (choice.subtitle && !std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
-      report_unreadable(*demuxer, *choice.subtitle, p->mail_);
-      choice.subtitle.reset();
-    }
-  }
-  // Le fil des sous-titres tourne même sans piste : un fichier glissé pendant la lecture s'y ajoute (P3.85).
-  if (config.subtitles) {
-    p->subs_inbox_ = std::make_shared<subs::SubsInbox>(subs::kSubsInboxBounds);
-    auto thread = subs::SubsThread::start(config.subs, p->mail_, p->subs_inbox_);
-    if (!thread) return std::unexpected(std::move(thread.error()));
-    p->subs_thread_ = std::move(*thread);
-    for (const subs::AttachFont& font : fonts) {
-      // La boîte tient 64 polices à la fois : au-delà, on laisse au thread subs le temps d'en
-      // prendre (une seconde au plus) avant d'en écarter une.
-      bool pushed = p->subs_inbox_->try_push(subs::AttachFont{font});
-      for (int wait = 0; !pushed && wait < 1000; ++wait) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        pushed = p->subs_inbox_->try_push(subs::AttachFont{font});
-      }
-      if (!pushed) {
-        p->mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("font {} dropped", font.name)},
-                        false);
-      }
-    }
-    std::optional<int> chosen;
-    if (choice.subtitle && std::ranges::contains(p->menu_.subtitles, *choice.subtitle, &TrackEntry::index)) {
-      chosen = choice.subtitle;
-      if (auto select = p->subtitle_select(*chosen)) {
-        if (!p->subs_inbox_->try_push(std::move(*select)))  // P2.36 : un choix perdu se dit
-          log_channel("app")->warn("subtitles: track {} choice lost, inbox full", *chosen);
-        p->subtitle_track_ = *p->track_info(*chosen);
-      } else {
-        chosen.reset();
-      }
-    }
-    p->menu_.subtitle_selected = chosen;
-    p->subs_bridge_ = std::make_unique<SubsBridge>(p->subs_inbox_, chosen);
-    for (const TrackEntry& entry : p->menu_.subtitles) {
-      if (entry.index >= kExternalSubtitleBase) continue;
-      routes.push_back({.track = entry.index, .sink = p->subs_bridge_.get()});
-      mark_mov_text(*demuxer, entry.index, *p->subs_bridge_);
-    }
+    if (auto opened =
+            p->open_subtitles(config, *demuxer, choice.subtitle, std::move(externals), fonts, routes);
+        !opened)
+      return std::unexpected(std::move(opened.error()));
   }
 
   auto media = media::open_source(std::move(*demuxer), *choice.video, config.decoder);
@@ -293,6 +182,155 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   return p;
 }
 
+// Les pistes choisies : par langue, parmi celles du conteneur et les fichiers externes, ou celles d'avant
+// une réouverture si elles existent encore.
+media::TrackChoice Pipeline::choose(const PipelineConfig& config, const media::Demuxer& demuxer,
+                                    const std::vector<ExternalSubtitle>& externals) {
+  std::vector<media::TrackInfo> candidates(demuxer.tracks().begin(), demuxer.tracks().end());
+  for (std::size_t k = 0; k < externals.size(); ++k) {
+    const std::string extension = core::ascii_lower(prepare::utf8_path(externals[k].path.extension()));
+    candidates.push_back({.index = kExternalSubtitleBase + static_cast<int>(k),
+                          .kind = media::TrackKind::Subtitle,
+                          .codec = extension == ".srt" ? "subrip" : "ass",
+                          .language = externals[k].language,
+                          .title = prepare::utf8_path(externals[k].path.filename())});
+  }
+  media::TrackChoice choice = media::choose_tracks(candidates, config.languages);
+  const auto kind_of = [&](int index) {
+    const media::TrackInfo* track = demuxer.track(index);
+    return track != nullptr ? std::optional(track->kind) : std::nullopt;
+  };
+  if (config.audio_track && kind_of(*config.audio_track) == media::TrackKind::Audio)
+    choice.audio = config.audio_track;
+  if (config.subtitle_track && subtitle_exists(*config.subtitle_track, demuxer, externals.size()))
+    choice.subtitle = *config.subtitle_track;
+  return choice;
+}
+
+// L'audio : décodeurs des pistes lisibles, sortie, thread et horloge. Un échec ne ferme pas la lecture : la
+// vidéo joue sans son, sur l'horloge hôte, et le refus paraît à l'OSD.
+void Pipeline::open_audio(const PipelineConfig& config, const media::Demuxer& demuxer, int audio_index,
+                          std::vector<media::PacketRoute>& routes) {
+  std::optional<Refusal> audio_failure;
+  for (const media::TrackInfo& track : demuxer.tracks()) {
+    if (track.kind != media::TrackKind::Audio) continue;
+    auto info = audio_codec_info(track);
+    if (!info) {
+      if (track.index == audio_index) audio_failure = std::move(info.error());
+      continue;
+    }
+    audio_codecs_.emplace_back(track.index, std::move(*info));
+    menu_.audio.push_back({.index = track.index, .label = track_label(track)});
+  }
+  const media::TrackInfo& track = *demuxer.track(audio_index);
+  if (!audio_failure && audio_codec(track.index) == nullptr) {
+    audio_failure =
+        Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} illisible", track.index)};
+  }
+  if (!audio_failure) {
+    auto output = audio::AudioOutput::open_sdl(output_request(track, config.audio_device));
+    if (!output) {
+      audio_failure = std::move(output.error());
+    } else {
+      audio::AudioThreadOptions options{
+          .player = {.pll = config.audio_pll, .fallback_delay_us = config.audio_fallback_delay_us},
+          .credit = [inbox = &source_inbox_](Credit credit) { std::ignore = inbox->try_push(credit); },
+          .refused = [mail = &mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};
+      auto thread = audio::AudioThread::start(std::move(*output), std::move(options));
+      if (!thread) {
+        audio_failure = std::move(thread.error());
+      } else {
+        audio_ = std::move(*thread);
+      }
+    }
+  }
+  if (audio_failure) {
+    audio_codecs_.clear();
+    menu_.audio.clear();
+    mail_.report("audio", *audio_failure, false);
+  } else {
+    audio_->post(audio::AudioTrack{.codec = *audio_codec(track.index)});
+    audio_bridge_ = std::make_unique<AudioBridge>(*audio_, track.index);
+    lead_ = std::make_shared<LeadClock>(audio_->clock(), host_clock_);
+    clock_ = lead_.get();
+    mail_.attach_audio(audio_.get());
+    for (const auto& [index, codec] : audio_codecs_)
+      routes.push_back({.track = index, .sink = audio_bridge_.get()});
+    audio_track_ = track;
+    menu_.audio_selected = track.index;
+  }
+}
+
+// Les sous-titres : menu, fichiers externes, thread subs (lancé même sans piste : un fichier glissé
+// pendant la lecture s'y ajoute, P3.85), polices et piste choisie.
+std::expected<void, Refusal> Pipeline::open_subtitles(const PipelineConfig& config,
+                                                      const media::Demuxer& demuxer,
+                                                      std::optional<int> subtitle,
+                                                      std::vector<ExternalSubtitle> externals,
+                                                      const std::vector<subs::AttachFont>& fonts,
+                                                      std::vector<media::PacketRoute>& routes) {
+  for (const media::TrackInfo& track : demuxer.tracks()) {
+    if (track.kind != media::TrackKind::Subtitle || !subtitle_track(track, subs_track_id(track.index)))
+      continue;
+    menu_.subtitles.push_back({.index = track.index, .label = track_label(track)});
+  }
+  // Les fichiers à côté de la vidéo : après les pistes du conteneur, choisis d'office seulement
+  // quand le conteneur n'en a aucune et qu'aucun choix n'a été fait.
+  external_ = std::move(externals);
+  for (std::size_t k = 0; k < external_.size(); ++k) {
+    const int index = kExternalSubtitleBase + static_cast<int>(k);
+    menu_.subtitles.push_back({.index = index, .label = external_[k].label});
+    tracks_.push_back({.index = index,
+                       .kind = media::TrackKind::Subtitle,
+                       .codec = "externe",
+                       .title = prepare::utf8_path(external_[k].path.filename())});
+  }
+  if (!subtitle && !config.subtitle_track && !external_.empty() && !readable_subtitles(demuxer))
+    subtitle = kExternalSubtitleBase;
+  note_image_subtitles(demuxer, subtitle.has_value(), mail_);
+  if (subtitle && !std::ranges::contains(menu_.subtitles, *subtitle, &TrackEntry::index)) {
+    report_unreadable(demuxer, *subtitle, mail_);
+    subtitle.reset();
+  }
+
+  // Le fil des sous-titres tourne même sans piste : un fichier glissé pendant la lecture s'y ajoute (P3.85).
+  subs_inbox_ = std::make_shared<subs::SubsInbox>(subs::kSubsInboxBounds);
+  auto thread = subs::SubsThread::start(config.subs, mail_, subs_inbox_);
+  if (!thread) return std::unexpected(std::move(thread.error()));
+  subs_thread_ = std::move(*thread);
+  for (const subs::AttachFont& font : fonts) {
+    // La boîte tient 64 polices à la fois : au-delà, on laisse au thread subs le temps d'en
+    // prendre (une seconde au plus) avant d'en écarter une.
+    bool pushed = subs_inbox_->try_push(subs::AttachFont{font});
+    for (int wait = 0; !pushed && wait < 1000; ++wait) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      pushed = subs_inbox_->try_push(subs::AttachFont{font});
+    }
+    if (!pushed) {
+      mail_.report("subs", {RefusalCode::SubtitleBacklog, std::format("font {} dropped", font.name)}, false);
+    }
+  }
+  std::optional<int> chosen;
+  if (subtitle && std::ranges::contains(menu_.subtitles, *subtitle, &TrackEntry::index)) {
+    chosen = subtitle;
+    if (auto select = subtitle_select(*chosen)) {
+      if (!subs_inbox_->try_push(std::move(*select)))  // P2.36 : un choix perdu se dit
+        log_channel("app")->warn("subtitles: track {} choice lost, inbox full", *chosen);
+      subtitle_track_ = *track_info(*chosen);
+    } else {
+      chosen.reset();
+    }
+  }
+  menu_.subtitle_selected = chosen;
+  subs_bridge_ = std::make_unique<SubsBridge>(subs_inbox_, chosen);
+  for (const TrackEntry& entry : menu_.subtitles) {
+    if (entry.index >= kExternalSubtitleBase) continue;
+    routes.push_back({.track = entry.index, .sink = subs_bridge_.get()});
+    mark_mov_text(demuxer, entry.index, *subs_bridge_);
+  }
+  return {};
+}
+
 Pipeline::~Pipeline() = default;
 
 const audio::AudioCodecInfo* Pipeline::audio_codec(int track) const {
@@ -311,16 +349,16 @@ std::expected<void, Refusal> Pipeline::select_audio(int track, std::uint32_t fro
   if (codec == nullptr || !audio_bridge_)
     return std::unexpected(
         Refusal{RefusalCode::TrackUnavailable, std::format("piste audio {} absente", track)});
-  // Ordre : les paquets de l'époque from_epoch sont de la nouvelle piste ; le seek pose le Flush
-  // dans la boîte d'audio, puis AudioTrack le suit (la boîte garde l'ordre) : l'ancien décodeur
-  // lit ses derniers paquets, le nouveau ceux de la nouvelle époque.
+  // Ordre : les paquets de l'époque from_epoch sont de la nouvelle piste. AudioTrack part avant le seek, qui
+  // pose le Flush : le thread audio sait déjà, quand les paquets de l'époque arrivent, qu'ils sont à elle, et
+  // l'ancien décodeur ne lit que les siens (A16-06).
   audio_bridge_->select(track, from_epoch);
-  seek();
-  if (!audio_->post(audio::AudioTrack{.codec = *codec})) {
-    // Le décodeur n'a pas changé : le pont garde la piste d'avant, comme le menu.
+  if (!audio_->post(audio::AudioTrack{.codec = *codec, .from_epoch = from_epoch})) {
+    // Le décodeur ne changera pas : le pont garde la piste d'avant, comme le menu, et rien n'est relu.
     audio_bridge_->undo_select();
     return std::unexpected(Refusal{RefusalCode::PacketBacklog, "audio track: audio mailbox full"});
   }
+  seek();
   menu_.audio_selected = track;
   if (const media::TrackInfo* info = track_info(track)) audio_track_ = *info;
   return {};

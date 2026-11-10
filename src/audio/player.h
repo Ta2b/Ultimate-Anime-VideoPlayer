@@ -51,8 +51,12 @@ struct PlayerConfig {
   std::int64_t resync_us = 50'000;         // écart à l'écran au-delà duquel on recale franchement
   DriftGains drift;
   // L'horloge publiée filtrée par une PLL du second ordre (core/clock_pll.h, étape 6.9, essai --audio-pll) :
-  // la gigue des relevés du périphérique ne passe plus dans l'horloge maîtresse.
-  bool pll = false;
+  // la gigue des relevés du périphérique ne passe plus dans l'horloge maîtresse. Active par défaut, comme
+  // dans le produit (options.h, audio_pll) : les tests passent par le chemin livré (A16-13).
+  bool pll = true;
+  // Le délai mémorisé de la sortie du système, repris quand l'appareil choisi disparaît et que le son y passe
+  // (A16-02) : un casque Bluetooth éteint ne laisse pas son retard aux haut-parleurs. Absent : délai gardé.
+  std::optional<std::int64_t> fallback_delay_us;
   // Sortie retirée sans sortie par défaut pour la remplacer (A16-01) : la lecture continue sans son, et la
   // sortie par défaut est rouverte au plus toutes les reopen_retry_us.
   std::int64_t reopen_retry_us = 2'000'000;
@@ -101,6 +105,7 @@ class AudioPlayer {
   void queue(std::vector<PcmBlock>&& blocks);
   void finish_stream();
   bool push(PcmBlock& block);
+  void fill_gap(std::int64_t pts_us);
   bool align(PcmBlock& block);
   void publish(std::int64_t heard_us, const DeviceReading& reading);
   void follow(std::int64_t heard_us, const DeviceReading& reading);
@@ -124,11 +129,13 @@ class AudioPlayer {
   }
   DriftRegulator regulator_;
   std::optional<AudioDecoder> decoder_;
-  std::optional<AudioTrack> track_;  // la piste ouverte
-  std::deque<AudioPacket> held_;     // reçus, pas encore décodés : la file du périphérique est pleine
-  std::deque<PcmBlock> ready_;       // décodés, pas encore poussés
+  std::optional<AudioTrack> track_;          // la piste ouverte
+  std::optional<AudioTrack> pending_track_;  // la piste d'une époque à venir (AudioTrack::from_epoch)
+  std::deque<AudioPacket> held_;             // reçus, pas encore décodés : la file du périphérique est pleine
+  std::deque<PcmBlock> ready_;               // décodés, pas encore poussés
   std::optional<std::int64_t> trim_before_us_;
   std::optional<std::int64_t> output_retry_us_;  // sans sortie : l'instant du prochain essai
+  std::optional<std::int64_t> pushed_end_us_;    // fin du dernier bloc poussé, en temps média (A16-10)
   std::optional<std::int64_t> last_follow_us_;
   core::ClockPll pll_;                           // PlayerConfig::pll
   std::optional<std::int64_t> last_publish_us_;  // relevé précédent filtré par pll_

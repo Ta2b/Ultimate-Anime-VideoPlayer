@@ -59,6 +59,8 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
                                          const std::filesystem::path& where);
 // « 1,3 Go », « 742 Mo ».
 std::string format_size(std::uint64_t bytes);
+// La même taille pour l'interface, dans sa langue (« 1.5 GB », « 1,5 Go » ; A25-12).
+std::string shown_size(std::uint64_t bytes);
 // L'espace libre là où le moteur s'installe (le dossier qui existe le plus près de layout.engines).
 std::uint64_t free_bytes(const std::filesystem::path& where);
 // Octets d'un dossier, récursivement ; 0 s'il manque.

@@ -1,4 +1,4 @@
-// « ajp bench » et le bouton « Optimiser pour ma machine » : le lancement des essais de auto_bench.h. Chaque
+// « ajp bench » et le bouton « Calibrer cette machine » : le lancement des essais de auto_bench.h. Chaque
 // essai est un processus enfant court, « ajp play » avec son coupé, un dossier de réglages jetable
 // (--data-dir : ni play.toml ni user.toml ni journal de l'utilisateur n'y sont touchés) et le niveau forcé
 // (--bench-level) ; il écrit ses mesures dans un fichier (--bench-out) que le parent relit. Un enfant qui

@@ -356,3 +356,89 @@ TEST_CASE("AudioPlayer : casque débranché, le son reprend sur la sortie par d�
   rig.player->handle(rig.fake->play(4'800, t + 100'000));
   CHECK(rig.clock().media_us == heard + frames_to_us(4'800, 48'000));
 }
+
+TEST_CASE("AudioPlayer : avec la PLL, un petit pas de délai ne fait pas reculer l'horloge (A16-09)",
+          "[audio][player][clock]") {
+  Rig rig(PlayerConfig{.pll = true});
+  rig.feed(encode_sine({.seconds = 4.0, .start_us = 0}));
+  rig.player->handle(Command{cmd::Play{}});
+  const std::int64_t t0 = rig.now_us() + 100'000;
+  std::int64_t t = t0;
+  for (int k = 0; k < 100; ++k, t += 10'000) rig.player->handle(rig.fake->play(480, t));  // verrouillée
+  for (const std::int64_t step : {5'000, 3'000, 8'000}) {
+    CAPTURE(step);
+    const std::int64_t delay = rig.player->output().delay_us() + step;
+    rig.player->handle(Command{cmd::SetAudioDelay{.delay_us = delay}});
+    for (int k = 0; k < 20; ++k, t += 10'000) {
+      const std::int64_t expected = rig.clock().media_at(t);
+      rig.player->handle(rig.fake->play(480, t));
+      CHECK(rig.clock().media_at(t) >= expected - 100);
+    }
+  }
+}
+
+TEST_CASE("AudioPlayer : la nouvelle piste ne s'ouvre qu'avec son époque (A16-06)", "[audio][player]") {
+  Rig rig;
+  const EncodedClip clip = encode_sine({.seconds = 1.0});
+  rig.feed(clip);  // l'ancienne piste, époque 0
+  const std::int64_t queued = rig.queued_us();
+  REQUIRE(queued > 0);
+  // Posée avant le Flush : l'ancien décodeur garde ses paquets, la nouvelle piste attend l'époque 1.
+  rig.player->handle(AudioTrack{.codec = {.codec = "inexistant"}, .from_epoch = 1});
+  CHECK(rig.refusals.empty());
+  AudioPacket old = clip.packets.back();
+  old.epoch = 0;
+  rig.player->handle(std::move(old));
+  CHECK(rig.refusals.empty());
+  // Un paquet de l'époque 1 devance le Flush : il ouvre l'époque, et la nouvelle piste avec elle, avant tout
+  // décodage. Le décodeur refusé, le paquet n'est jamais lu par l'ancien.
+  AudioPacket fresh = clip.packets.front();
+  fresh.epoch = 1;
+  rig.player->handle(std::move(fresh));
+  REQUIRE(rig.refusals.size() == 1);
+  CHECK(rig.refusals[0].code == RefusalCode::AudioCodecUnavailable);
+  CHECK(rig.queued_us() == 0);
+}
+
+TEST_CASE(
+    "AudioPlayer : un trou dans les horodatages se comble d'un silence, l'horloge ne saute pas (A16-10)",
+    "[audio][player][clock]") {
+  Rig rig;
+  rig.feed(encode_sine({.seconds = 1.0, .start_us = 0}));
+  for (AudioPacket packet : encode_sine({.seconds = 1.0, .start_us = 2'000'000}).packets)  // 1 s manque
+    rig.player->handle(std::move(packet));
+  rig.player->handle(Command{cmd::Play{}});
+  std::int64_t t = rig.now_us() + 100'000;
+  std::optional<std::int64_t> previous;
+  std::int64_t worst_step = 0;
+  for (int k = 0; k < 250; ++k, t += 10'000) {  // 2,5 s lues, le trou compris
+    rig.player->handle(rig.fake->play(480, t));
+    const ClockSnapshot now = rig.clock();
+    if (!now.valid) continue;
+    const std::int64_t media = now.media_at(t);
+    if (previous) worst_step = std::max(worst_step, media - *previous);
+    previous = media;
+  }
+  CHECK(worst_step < 30'000);  // 10 ms par relevé, jamais le saut d'une seconde
+  REQUIRE(previous);
+  CHECK(*previous > 2'300'000);  // le son d'après le trou est bien joué, à son temps
+  CHECK(*previous < 2'600'000);
+}
+
+TEST_CASE("AudioPlayer : casque retiré, la sortie du système reprend son propre délai (A16-02)",
+          "[audio][player]") {
+  Rig rig(PlayerConfig{.fallback_delay_us = 20'000});
+  rig.feed(encode_sine({.seconds = 1.0}));
+  rig.player->handle(Command{cmd::Play{}});
+  rig.player->handle(Command{cmd::SetAudioDelay{.delay_us = 200'000}});  // celui du casque Bluetooth
+  rig.player->handle(rig.fake->play(4'800, rig.now_us() + 100'000));
+  REQUIRE(rig.player->output().delay_us() == 200'000);
+  rig.player->handle(DeviceRemoved{});
+  CHECK(rig.player->output().delay_us() == 20'000);
+
+  Rig kept;  // sans délai mémorisé (on suivait déjà le système) : le délai de la séance reste
+  kept.feed(encode_sine({.seconds = 1.0}));
+  kept.player->handle(Command{cmd::SetAudioDelay{.delay_us = 200'000}});
+  kept.player->handle(DeviceRemoved{});
+  CHECK(kept.player->output().delay_us() == 200'000);
+}
