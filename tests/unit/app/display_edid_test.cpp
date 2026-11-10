@@ -390,3 +390,31 @@ TEST_CASE("Pic de contenu sans pic calibré : la règle de chaque système (A11-
   CHECK(uncalibrated_peak_nits({.windows = true, .system_hdr_active = true}) == Catch::Approx(600.0));
   CHECK_FALSE(uncalibrated_peak_nits({.windows = true, .edid_peak = 1000.0}));
 }
+
+TEST_CASE("EDID à deux sources : le journal montre le pic et le noir de chaque bloc (A11-11)",
+          "[app][edid]") {
+  using ajp::app::play::luminance_sources;
+  // Un seul bloc parle : rien à ajouter au journal, mais sa valeur est gardée à part.
+  const DisplayFacts cta_only = parse_edid(kQdOledEdid);
+  REQUIRE(cta_only.cta_peak_nits);
+  CHECK(cta_only.cta_peak_nits == cta_only.peak_nits);
+  CHECK_FALSE(cta_only.displayid_peak_nits);
+  CHECK(luminance_sources(cta_only).empty());
+  const DisplayFacts displayid_only = parse_edid(oled_edid());
+  REQUIRE(displayid_only.displayid_min_nits);
+  CHECK(displayid_only.displayid_min_nits == displayid_only.min_nits);
+  CHECK(luminance_sources(displayid_only).empty());
+  // Les deux parlent, CTA puis DisplayID : aujourd'hui le pic du CTA et le noir de DisplayID.
+  const DisplayFacts both{.peak_nits = 1000.0,
+                          .min_nits = 0.0001,
+                          .cta_peak_nits = 1000.0,
+                          .cta_min_nits = 0.005,
+                          .displayid_peak_nits = 950.0,
+                          .displayid_min_nits = 0.0001};
+  const std::string line = luminance_sources(both);
+  CHECK(line.contains("pic CTA 1000 et DisplayID 950"));
+  CHECK(line.contains("noir CTA 0.00500 et DisplayID 0.00010"));
+  CHECK(line.contains("retenus pic 1000 et noir 0.00010"));
+  CHECK(line.contains("DisplayID d'abord donnerait pic 950 et noir 0.00010"));
+  CHECK(ajp::app::play::describe_for_log(both).ends_with(line));
+}

@@ -541,7 +541,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       set_aside_notes.clear();
     }
     if (player.display) {
-      log->info("écran {} : {}", player.display->connector, describe(*player.display));
+      log->info("écran {} : {}", player.display->connector, describe_for_log(*player.display));
     } else {
       log->info("écran : EDID illisible, OLED inconnu");
     }

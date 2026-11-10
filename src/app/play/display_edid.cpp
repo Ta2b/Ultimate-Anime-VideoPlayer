@@ -119,11 +119,12 @@ void read_cta(std::span<const std::uint8_t> block, DisplayFacts& out, VrrSources
     if (tag == kCtaExtended && length >= 3 && block[at + 1] == kCtaHdrStatic) {
       const std::span<const std::uint8_t> hdr = block.subspan(at + 2, length - 1);
       out.pq = (hdr[0] & 0x04U) != 0;
-      if (hdr.size() >= 3 && hdr[2] != 0) out.peak_nits = 50.0 * std::exp2(hdr[2] / 32.0);
+      if (hdr.size() >= 3 && hdr[2] != 0) out.peak_nits = out.cta_peak_nits = 50.0 * std::exp2(hdr[2] / 32.0);
       if (hdr.size() >= 4 && hdr[3] != 0) out.frame_average_nits = 50.0 * std::exp2(hdr[3] / 32.0);
       if (hdr.size() >= 5) {
         out.min_code = hdr[4];
-        if (out.peak_nits) out.min_nits = *out.peak_nits * std::pow(hdr[4] / 255.0, 2.0) / 100.0;
+        if (out.cta_peak_nits)
+          out.min_nits = out.cta_min_nits = *out.cta_peak_nits * std::pow(hdr[4] / 255.0, 2.0) / 100.0;
       }
     }
     at += 1 + length;
@@ -150,8 +151,12 @@ void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out, VrrS
       const auto nits = [&](std::size_t lo) {
         return half_to_double(static_cast<std::uint16_t>(params[lo] | (params[lo + 1] << 8U)));
       };
-      if (const double peak = nits(0x1A); plausible_nits(peak) && !out.peak_nits) out.peak_nits = peak;
-      if (const double black = nits(0x1C); plausible_nits(black)) out.min_nits = black;
+      if (const double peak = nits(0x1A); plausible_nits(peak)) {
+        out.displayid_peak_nits = peak;
+        if (!out.peak_nits) out.peak_nits = peak;
+      }
+      if (const double black = nits(0x1C); plausible_nits(black))
+        out.min_nits = out.displayid_min_nits = black;
     }
     at += 3 + length;
   }
@@ -272,6 +277,26 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
     out.source = OledSource::Heuristic;
   }
   return out;
+}
+
+std::string luminance_sources(const DisplayFacts& d) {
+  const bool cta = d.cta_peak_nits || d.cta_min_nits;
+  const bool displayid = d.displayid_peak_nits || d.displayid_min_nits;
+  if (!cta || !displayid) return {};
+  const auto nits = [](const std::optional<double>& value, int digits) {
+    return value ? std::format("{:.{}f}", *value, digits) : std::string("rien");
+  };
+  return std::format(
+      " ; EDID, deux sources : pic CTA {} et DisplayID {}, noir CTA {} et DisplayID {} ; "
+      "retenus pic {} et noir {} ; DisplayID d'abord donnerait pic {} et noir {}",
+      nits(d.cta_peak_nits, 0), nits(d.displayid_peak_nits, 0), nits(d.cta_min_nits, 5),
+      nits(d.displayid_min_nits, 5), nits(d.peak_nits, 0), nits(d.min_nits, 5),
+      nits(d.displayid_peak_nits ? d.displayid_peak_nits : d.cta_peak_nits, 0),
+      nits(d.displayid_min_nits ? d.displayid_min_nits : d.cta_min_nits, 5));
+}
+
+std::string describe_for_log(const DisplayFacts& d) {
+  return describe(d) + luminance_sources(d);
 }
 
 std::string describe(const DisplayFacts& d) {

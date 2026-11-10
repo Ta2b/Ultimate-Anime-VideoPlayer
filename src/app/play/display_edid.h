@@ -33,7 +33,13 @@ struct DisplayFacts {
   std::optional<double> frame_average_nits;  // moyenne d'image max (CTA)
   std::optional<double> min_nits;            // noir annoncé
   std::optional<int> min_code;               // octet du noir dans le bloc CTA (0 : noir parfait)
-  std::optional<bool> displayid_oled;        // bloc 0x21 lu : AMOLED ou non
+  // Ce que chaque bloc annonce, avant le choix ci-dessus (A11-11) : le journal les montre côte à côte quand
+  // les deux blocs parlent, pour décider d'une seule source par grandeur sur un écran réel.
+  std::optional<double> cta_peak_nits;
+  std::optional<double> cta_min_nits;
+  std::optional<double> displayid_peak_nits;
+  std::optional<double> displayid_min_nits;
+  std::optional<bool> displayid_oled;  // bloc 0x21 lu : AMOLED ou non
   bool oled = false;
   // Fréquence variable (VRR) utilisable : propriété DRM vrr_capable sous Linux (le compositeur
   // l'arme à son gré, KDE en plein écran) ; sous Windows, la plage VRR de l'EDID (vrr_range), jamais la
@@ -69,6 +75,12 @@ struct DisplayFacts {
 DisplayFacts parse_edid(std::span<const std::uint8_t> edid);
 // « MAG 272U E16 · HDR10, pic 1037 nits, moyenne 265, noir 0,00064 nit · OLED : non (EDID) »
 std::string describe(const DisplayFacts& display);
+// Pour le journal, à la suite de describe : vide tant qu'un seul bloc de l'EDID annonce le pic ou le noir ;
+// sinon ce que dit chacun, ce qui est retenu aujourd'hui (pic du CTA, noir de DisplayID s'il vient après), et
+// ce qu'une seule source par grandeur donnerait (DisplayID d'abord, comme pour l'OLED).
+std::string luminance_sources(const DisplayFacts& display);
+// La ligne du journal : describe, puis luminance_sources.
+std::string describe_for_log(const DisplayFacts& display);
 // L'écran branché (Linux : /sys/class/drm/*-*/status = connected ; Windows : présent) ; s'il y en a
 // plusieurs, celui dont le nom se retrouve dans wanted (nom de l'écran selon SDL). Rien si aucun
 // EDID ne se lit, et toujours rien sur macOS.
