@@ -155,6 +155,7 @@ TEST_CASE("A03-19 : DistilDRBA mouvement estime à la taille de travail jusqu'à
   const WorkSize wide = drba_motion_size(WorkSize{3440, 1440}, 3440, 1440);
   CHECK(wide.width == 2580);
   CHECK(wide.height == 1080);
+  CHECK(drba_motion_size(WorkSize{3840, 2160}, 3840, 2160, true).height == 2160);  // --rife-image
 }
 
 TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien sinon", "[app][chain]") {

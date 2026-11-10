@@ -38,8 +38,9 @@ bool fits(const OpenedChain& opened, const PlaySettings& wanted) {
   return shape.ring <= opened.shape.ring && shape.warp_after_span == opened.shape.warp_after_span;
 }
 
-WorkSize drba_motion_size(const WorkSize& work, int source_width, int source_height) {
-  return work.height > kDrbaMotionHeight ? work_size(source_width, source_height, kDrbaMotionHeight) : work;
+WorkSize drba_motion_size(const WorkSize& work, int source_width, int source_height, bool image) {
+  return !image && work.height > kDrbaMotionHeight ? work_size(source_width, source_height, kDrbaMotionHeight)
+                                                   : work;
 }
 
 i18n::Translated fused_refusal_notice(const OpenedChain& opened) {

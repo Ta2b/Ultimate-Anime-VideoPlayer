@@ -494,10 +494,8 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     // créée.
     bool motion =
         settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
-    // D4 et A03-19 : la variante mouvement estime à la taille de travail jusqu'à 1080 lignes, sur une copie
-    // réduite au-delà (drba_motion_size) ; sans variante mouvement, l'image se refait à la taille de travail.
-    const WorkSize drba_at =
-        p.options.rife_image ? c.work : drba_motion_size(c.work, video.width, video.height);
+    // D4 et A03-19 : variante mouvement estimée jusqu'à 1080 lignes (drba_motion_size), image au travail.
+    const WorkSize drba_at = drba_motion_size(c.work, video.width, video.height, p.options.rife_image);
     const bool smaller = motion && drba_at.height < c.work.height;
     const WorkSize at = smaller ? drba_at : c.work;
     auto loaded =
