@@ -178,7 +178,7 @@ PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
 
 std::string describe(const ChainCandidate& chain) {
   std::string out = chain.span ? std::format("{}p · SPAN", chain.height) : std::string(i18n::tr("SPAN off"));
-  out += chain.rife ? i18n::tr(" · RIFE (auto Fast)") : i18n::tr(" · no interpolation");
+  out += chain.rife ? i18n::tr(" · RIFE (auto Instant)") : i18n::tr(" · no interpolation");
   return out;
 }
 

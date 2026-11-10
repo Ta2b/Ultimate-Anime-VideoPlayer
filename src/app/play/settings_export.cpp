@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -70,6 +71,25 @@ std::string path_problem(const std::filesystem::path& output, const std::filesys
   if (std::filesystem::equivalent(output, source, error))
     return i18n::tr("This file is the video being played.");
   return {};
+}
+
+// Le verdict sur le chemin de sortie, recalculé au plus une fois par seconde ou quand il change.
+const ExportDraft::PathCheck& checked_path(ExportDraft& draft, const std::filesystem::path& output,
+                                           const std::filesystem::path& source, exporter::Codec codec) {
+  ExportDraft::PathCheck& seen = draft.check;
+  const auto now = std::chrono::steady_clock::now();
+  if (!seen.valid || seen.output != output || seen.source != source || seen.codec != codec ||
+      now - seen.at >= std::chrono::seconds(1)) {
+    std::error_code error;
+    seen.output = output;
+    seen.source = source;
+    seen.codec = codec;
+    seen.problem = path_problem(output, source, codec);
+    seen.exists = seen.problem.empty() && std::filesystem::exists(output, error);
+    seen.at = now;
+    seen.valid = true;
+  }
+  return seen;
 }
 
 }  // namespace
@@ -187,15 +207,15 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   // P3.92 : un nom seul, ou un chemin relatif, se lit depuis le dossier de la source.
   std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
   if (!output.empty() && output.is_relative()) output = choices.source_file.parent_path() / output;
-  const std::string problem = path_problem(output, choices.source_file, job.codec);
+  const ExportDraft::PathCheck& seen = checked_path(draft, output, choices.source_file, job.codec);
+  const std::string& problem = seen.problem;
   const exporter::Container container =
       exporter::container_of(output).value_or(exporter::Container::Matroska);
-  std::error_code error;
   if (!problem.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
     panel::wrapped(problem.c_str());
     ImGui::PopStyleColor();
-  } else if (std::filesystem::exists(output, error)) {
+  } else if (seen.exists) {
     note(i18n::tr("This file exists: it is replaced only when the export succeeds."));
   }
   if (container == exporter::Container::Matroska) {
@@ -213,8 +233,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   }
   ImGui::BeginDisabled(!problem.empty());
   // Un fichier existant n'est remplacé que sur un bouton qui le dit (P3.92).
-  if (ImGui::Button(std::filesystem::exists(output, error) ? i18n::tr("Replace the file and export")
-                                                           : i18n::tr("Export"))) {
+  if (ImGui::Button(seen.exists ? i18n::tr("Replace the file and export") : i18n::tr("Export"))) {
     ExportJob start = job;
     start.output = output;
     actions.emplace_back(StartExport{.job = std::move(start)});

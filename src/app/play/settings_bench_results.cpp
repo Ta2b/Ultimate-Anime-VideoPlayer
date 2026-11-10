@@ -198,9 +198,9 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     note(
         i18n::tr("Green: recommended, with margin. Orange: holds just barely, or misses a little. Red: this "
                  "machine cannot keep up."));
-    panel::tip(
-        i18n::tr("Interpolation runs in Auto Fast mode. The working resolution goes up to the 1080p of the "
-                 "test sequence; SPAN doubles it."));
+    panel::tip(i18n::tr(
+        "Interpolation runs in Auto Instant mode. The working resolution goes up to the 1080p of the "
+        "test sequence; SPAN doubles it."));
   }
   if (ImGui::Button(bench.result ? i18n::tr("Run the bench again") : i18n::tr("Run the bench"))) {
     if (choices.source_file.empty()) {

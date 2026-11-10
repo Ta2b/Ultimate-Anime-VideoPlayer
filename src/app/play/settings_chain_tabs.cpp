@@ -60,8 +60,8 @@ std::string motion_description(const InterpChoice& choice) {
   switch (choice.level) {
     case InterpLevel::VeryFast:
       return i18n::tr(
-          "DistilDRBA: the lightest; it keeps characters animated on twos on their rhythm. One frame of "
-          "delay.");
+          "DistilDRBA: the lightest up to ×5; it keeps characters animated on twos on their rhythm. One "
+          "frame of delay.");
     case InterpLevel::Fast:
       return i18n::tr("RIFE 4.22 lite: light and clean, for most graphics cards.");
     case InterpLevel::Balanced:
@@ -74,18 +74,26 @@ std::string motion_description(const InterpChoice& choice) {
   return {};
 }
 
-}  // namespace
+// L'état réel de DistilDRBA dans la chaîne ouverte (A23-07) : fusionné ou entier, variante mouvement, et
+// pourquoi il n'est pas fusionné quand la case est cochée.
+void drba_state_notes(const PlaySettings& d, const SettingsChoices& choices) {
+  const OpenedChain* chain = choices.chain();
+  if (chain == nullptr || !chain->drba) return;
+  note(chain->drba_fused ? i18n::tr("DistilDRBA is running: fused engines.")
+                         : i18n::tr("DistilDRBA is running: whole network."));
+  if (chain->drba_motion) note(i18n::tr("Motion variant: one SPAN pass per source frame."));
+  if (chain->drba_fused || !d.drba_fused) return;
+  if (!chain->drba_fused_capable) {
+    note(i18n::tr("Not fused: this engine cannot run it fused."));
+  } else if (d.motion_precision != PrecisionTier::Balanced) {
+    note(i18n::tr("Not fused: fused engines need Balanced precision."));
+  } else {
+    note(i18n::tr("Not fused: the fused engines were refused (see the log)."));
+  }
+}
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
-void image_tab(PlaySettings& d, const SettingsChoices& choices) {
-  section(i18n::tr("Upscaling"));
-  ImGui::Checkbox(i18n::tr("SPAN ×2 (AnimeJaNai)"), &d.upscale);
-  ImGui::BeginDisabled(!d.upscale);
-  ImGui::Checkbox(i18n::tr("Restore line art (reduce, then upscale)"), &d.restore_lines);
-  panel::tip(i18n::tr(
-      "A source sharper than the working resolution is reduced, then SPAN redraws its lines: cleaner "
-      "lines for a quarter of the work. Off: such a source keeps all its detail (grain, textures), "
-      "without SPAN."));
+// Le modèle SPAN, en FP16 et, quand la carte le permet, en FP8.
+void model_combo(PlaySettings& d, const SettingsChoices& choices) {
   const std::string current = d.model.empty() ? choices.default_model : d.model;
   // Chaque modèle en FP16 et, sur une carte qui calcule le SPAN FP8 (RTX 40 et plus), en FP8 : le FP8 se
   // prépare à la prochaine ouverture d'une vidéo, sur l'écran de chargement, comme un moteur (chain_setup).
@@ -114,9 +122,26 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip(fp8_offered ? i18n::tr("Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest. "
-                                    "FP8: prepared once on this PC, then faster.")
-                         : i18n::tr("Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest."));
+  panel::tip(
+      fp8_offered
+          ? i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest. "
+                     "FP8: prepared once on this PC, then faster, at the cost of some precision.")
+          : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest."));
+}
+
+}  // namespace
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void image_tab(PlaySettings& d, const SettingsChoices& choices) {
+  section(i18n::tr("Upscaling"));
+  ImGui::Checkbox(i18n::tr("SPAN ×2 (AnimeJaNai)"), &d.upscale);
+  ImGui::BeginDisabled(!d.upscale);
+  ImGui::Checkbox(i18n::tr("Restore line art (reduce, then upscale)"), &d.restore_lines);
+  panel::tip(i18n::tr(
+      "A source sharper than the working resolution is reduced, then SPAN redraws its lines: cleaner "
+      "lines for a quarter of the work. Off: such a source keeps all its detail (grain, textures), "
+      "without SPAN."));
+  model_combo(d, choices);
   if (choices.span_tiers.quality) {
     TierSupport tiers = choices.span_tiers;
     tiers.performance = false;  // le FP8 se choisit dans la liste des modèles
@@ -216,7 +241,7 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
     if (level_now == choice.level) shown = level_text(choice);
   }
   ImGui::BeginDisabled(!choices.rife_available);
-  if (ImGui::BeginCombo(i18n::tr("Level"), shown.c_str())) {
+  if (ImGui::BeginCombo(i18n::tr("Interpolation level"), shown.c_str())) {
     for (const InterpChoice& choice : kInterpLevels) {
       if (!present(choice)) continue;
       if (ImGui::Selectable(level_text(choice).c_str(), level_now == choice.level)) {
@@ -301,16 +326,21 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       ImGui::EndCombo();
     }
     panel::tip(i18n::tr("The highest frame rate Auto aims for. It still drops by itself on heavy scenes."));
+    // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
+    if (choices.display_hz > 0.0 && choices.source_fps > 0.0) {
+      note(i18n::tr_format("Here Auto goes up to ×{} ({:.0f} Hz display).",
+                           top_factor(d, choices.display_hz, choices.source_fps), choices.display_hz));
+    }
   }
   if (d.rife_auto && now.num > now.den && !exporting) {
     // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
     // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
     // Stable si trop d'images sont perdues.
     const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
-    const char* const shown = d.auto_free ? i18n::tr("Fast") : i18n::tr("Stable");
+    const char* const shown = d.auto_free ? i18n::tr("Instant") : i18n::tr("Stable");
     if (ImGui::BeginCombo(i18n::tr("Auto mode"), shown)) {
       if (ImGui::Selectable(i18n::tr("Stable"), !d.auto_free)) d.auto_free = false;
-      if (ImGui::Selectable(i18n::tr("Fast"), d.auto_free)) d.auto_free = true;
+      if (ImGui::Selectable(i18n::tr("Instant"), d.auto_free)) d.auto_free = true;
       if (vrr_armed) {
         panel::tip(i18n::tr("No steps: each frame is computed for the exact moment it is shown."));
       } else {
@@ -319,9 +349,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       }
       ImGui::EndCombo();
     }
-    panel::tip(
-        i18n::tr("Stable follows what the GPU can hold in steps (×1 to ×8). Fast has no steps and falls back "
-                 "to Stable if too many frames are lost. Playback only."));
+    panel::tip(i18n::tr(
+        "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps and falls back "
+        "to Stable if too many frames are lost. Playback only."));
   }
   if (d.rife_auto && now.num > now.den) {
     if (!choices.display_vrr) {
@@ -333,9 +363,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
   }
   if (choices.source_fps > 0.0 && choices.display_hz > 0.0) {
-    std::string fps = std::format("{:.3f}", choices.source_fps);
-    std::ranges::replace(fps, '.', ',');  // la virgule décimale du français : « 23,976 »
-    note(i18n::tr_format("Greyed out: above the display ({:.0f} Hz for {} fps).", choices.display_hz, fps));
+    note(i18n::tr_format("Greyed out: above the display ({:.0f} Hz for {:.3f} fps).", choices.display_hz,
+                         choices.source_fps));
   }
   if (exporting && now.num > now.den) {
     note(i18n::tr("Export skips no frames: each created frame costs a pass."));
@@ -351,6 +380,10 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (d.motion_engine == MotionEngine::DistilDrba && !choices.distil_drba_available) {
     note(i18n::tr_format("DistilDRBA model not found in {} ({}); RIFE is used instead.", choices.rife_folder,
                          kDistilDrbaFile));
+  }
+  drba_state_notes(d, choices);
+  if (d.motion_engine == MotionEngine::DistilDrba && now.num > 5 * now.den) {
+    note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter."));
   }
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
@@ -393,7 +426,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     if (d.motion_precision != PrecisionTier::Balanced && (d.rife_fused || d.drba_fused))
       note(i18n::tr("Fused engines only run at Balanced precision: the whole network is used instead."));
   }
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  // DistilDRBA aussi choisit sa variante (mouvement ou non) d'après l'ordre du warp : seuls les moteurs sans
+  // warp à ordonner grisent la liste (A23-02).
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && d.motion_engine != MotionEngine::DistilDrba);
   if (ImGui::BeginCombo(i18n::tr("Warp and SPAN"), std::string(label(d.span_order)).c_str())) {
     for (int i = 0; i < kSpanOrderCount; ++i) {
       const auto order = static_cast<SpanOrder>(i);
