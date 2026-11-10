@@ -221,6 +221,31 @@ TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier l
   fs::remove_all(root);
 }
 
+TEST_CASE("Une migration coupée ne passe jamais pour finie : la copie recommence (A19-01)", "[app]") {
+  namespace fs = std::filesystem;
+  using ajp::app::play::move_heavy_data;
+  const fs::path root = fs::temp_directory_path() / "ajp-local-cut";
+  fs::remove_all(root);
+  const fs::path roaming = root / "Roaming";
+  const fs::path local = root / "Local";
+  fs::create_directories(roaming / "engines");
+  std::ofstream(roaming / "engines" / "span.plan") << "plan entier";
+  std::ofstream(roaming / "engines" / "rife.plan") << "rife";
+  // La copie d'avant, coupée : un seul fichier, tronqué, sous le nom provisoire.
+  fs::create_directories(local / "engines.migration");
+  std::ofstream(local / "engines.migration" / "span.plan") << "pla";
+  CHECK(move_heavy_data(roaming, local) == 1);
+  CHECK_FALSE(fs::exists(local / "engines.migration"));
+  std::string text;
+  {
+    std::ifstream span(local / "engines" / "span.plan");  // refermé avant remove_all : Windows refuse sinon
+    std::getline(span, text);
+  }
+  CHECK(text == "plan entier");
+  CHECK(fs::is_regular_file(local / "engines" / "rife.plan"));
+  fs::remove_all(root);
+}
+
 TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux des autres restent (P3.70)",
           "[app]") {
   namespace fs = std::filesystem;

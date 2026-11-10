@@ -26,12 +26,12 @@ l'étiquette, s'il existe, et en reprend les moteurs dans l'`engines.lock` qu'el
 
 ## Sans poste Windows : par la CI
 
-`release-windows.yml` lancé à la main avec l'étiquette visée et la case `tensorrt` cochée (le propriétaire du dépôt
-accepte ainsi les licences du kit CUDA et de TensorRT) construit le module sur le runner et joint l'archive et
-`engines-nvidia.lock` à la release, après le même contrôle que `attach-nvidia-windows.ps1`. Le paquet du lecteur de ce
-lancement n'est pas joint. Pousser ensuite l'étiquette : la construction Windows de l'étiquette reprend l'index.
-Lancé après la release, rien d'autre à faire : les lecteurs de cette version (0.10.3 et suivantes) relisent
-`engines-nvidia.lock` de leur release au lancement et proposent TensorRT dans l'écran des moteurs.
+C'est le chemin normal. `release.yml` (une étiquette poussée) lance `release-windows.yml`, qui construit le paquet
+TensorRT Windows sur le runner s'il manque pour l'empreinte de ses entrées (`tools/release/trt-fingerprint.sh
+--windows`), le contrôle comme `attach-nvidia-windows.ps1` et le publie dans la release fixe `trt-win-<empreinte>`.
+Le paquet du lecteur de la même exécution reprend ensuite son index dans l'`engines.lock` du zip. Une release finale
+sans TensorRT Windows échoue. Pousser l'étiquette, c'est accepter les licences du kit CUDA et de TensorRT de NVIDIA
+pour cette construction. Lancé à la main sans étiquette, la case `tensorrt` construit le paquet en artefact seulement.
 
 ## À essayer sur le poste Windows (non fait : aucune machine Windows côté développement)
 

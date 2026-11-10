@@ -17,11 +17,14 @@
 #include <vector>
 
 #include "app/play/engine_tools.h"
+#include "app/play/engine_versions.h"
 #include "app/play/i18n.h"
 #include "core/dir_entries.h"
+#include "core/file_sync.h"
 #include "core/inflate.h"
 #include "core/log.h"
 #include "core/text.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 core::Os host_os() {
@@ -73,16 +76,7 @@ bool installed(const EngineCatalog& catalog, const core::EnginePackage& package)
 
 std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
                                                   const core::EnginePackage& package) {
-  std::ifstream in(core::engine_dir(catalog.layout, package) / std::string(kPackageNote));
-  if (!in) return std::nullopt;
-  InstalledPackage found;
-  std::string line;
-  while (std::getline(in, line)) {
-    if (line.starts_with("sha256=")) found.sha256 = line.substr(7);
-    if (line.starts_with("licence=")) found.license = line.substr(8);
-  }
-  if (found.sha256.empty()) return std::nullopt;
-  return found;
+  return read_package_note(core::engine_dir(catalog.layout, package));
 }
 
 std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catalog) {
@@ -240,44 +234,81 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
 bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
                        const std::filesystem::path& engines_root, const std::stop_token& stop) {
   std::error_code error;
-  for (const auto& entry : std::filesystem::directory_iterator(engines_root, error)) {
-    const std::filesystem::path candidate = entry.path() / file.name;
+  // Parcours sans exception (A06-10) : un dossier voisin illisible arrête la recherche, il ne fait pas
+  // échouer l'installation.
+  std::filesystem::directory_iterator it(engines_root, error);
+  for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+    const std::filesystem::path candidate = it->path() / file.name;
     if (candidate.parent_path() == dest.parent_path()) continue;
-    if (!std::filesystem::is_regular_file(candidate, error) ||
-        std::filesystem::file_size(candidate, error) != file.size)
+    std::error_code checked;
+    if (!std::filesystem::is_regular_file(candidate, checked) ||
+        std::filesystem::file_size(candidate, checked) != file.size || checked)
       continue;
     if (!core::verify_file(candidate, file.size, file.sha256, stop)) continue;
-    std::filesystem::create_directories(dest.parent_path(), error);
-    std::filesystem::remove(dest, error);
-    error.clear();
-    std::filesystem::create_hard_link(candidate, dest, error);
-    if (error) {
-      error.clear();
-      std::filesystem::copy_file(candidate, dest, std::filesystem::copy_options::overwrite_existing, error);
+    std::error_code placed;
+    std::filesystem::create_directories(dest.parent_path(), placed);
+    std::filesystem::remove(dest, placed);
+    placed.clear();
+    std::filesystem::create_hard_link(candidate, dest, placed);
+    if (placed) {
+      placed.clear();
+      std::filesystem::copy_file(candidate, dest, std::filesystem::copy_options::overwrite_existing, placed);
     }
-    if (!error) return true;
+    if (!placed) return true;
   }
   return false;
 }
 
-std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
-                                               const std::filesystem::path& dest,
-                                               const std::filesystem::path& scratch,
-                                               const InstallProgress& progress) {
-  const auto curl = system_tool("curl");
-  if (!curl) return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found on this system"));
+int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep) {
+  namespace fs = std::filesystem;
+  std::vector<std::string> known{std::string(keep)};
+  for (const core::EnginePackage& package : catalog.packages) known.push_back(package.sha256);
+  for (const core::VendorFile& file : catalog.vendor_files) known.push_back(file.sha256);
+  int removed = 0;
   std::error_code error;
-  std::filesystem::create_directories(scratch, error);
-  const std::filesystem::path packed = scratch / (file.name + ".part");
-  const std::filesystem::path chunk = scratch / (file.name + ".morceau");
-  const auto cleanup = [&] {
-    std::error_code ignored;
-    std::filesystem::remove(packed, ignored);
-    std::filesystem::remove(chunk, ignored);
-  };
-  if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + i18n::tr(": zero size"));
+  fs::directory_iterator it(catalog.layout.downloads, error);
+  for (; !error && it != fs::directory_iterator(); it.increment(error)) {
+    // « <sha256>.<suite> » : un paquet, un .part ou un morceau ; le reste n'est pas à nous.
+    const std::string name = core::to_utf8(it->path().filename());
+    const std::string sha = name.substr(0, name.find('.'));
+    if (sha.size() != 64 ||
+        !std::ranges::all_of(sha, [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }))
+      continue;
+    if (std::ranges::find(known, sha) != known.end()) continue;
+    std::error_code gone;
+    if (fs::remove_all(it->path(), gone) > 0 && !gone) ++removed;
+  }
+  return removed;
+}
+
+// La taille d'un fichier, 0 s'il n'existe pas ; `error` dit s'il ne se lit pas.
+std::uint64_t size_or_zero(const std::filesystem::path& path, std::error_code& error) {
+  return std::filesystem::exists(path, error) ? std::filesystem::file_size(path, error) : 0;
+}
+
+// Ajoute au .part le morceau reçu, même coupé. Faux si le morceau dépasse la plage demandée (`limit`
+// octets) : un serveur qui l'ignore rend la roue entière (200), le morceau est alors jeté (A06-07).
+bool append_chunk(const std::filesystem::path& chunk, const std::filesystem::path& packed,
+                  std::uint64_t limit) {
+  std::error_code error;
+  const std::uintmax_t size =
+      std::filesystem::exists(chunk, error) ? std::filesystem::file_size(chunk, error) : 0;
+  if (error) return true;  // rien de lisible : la reprise suivante le dira
+  if (size > limit) return false;
+  std::ifstream piece(chunk, std::ios::binary);
+  std::ofstream whole(packed, std::ios::binary | std::ios::app);
+  if (piece && whole) whole << piece.rdbuf();
+  return true;
+}
+
+// Tire les octets compressés de `file` dans `packed`, par plages, en reprenant un .part laissé (P3.7).
+std::expected<void, Refusal> pull_packed(const core::VendorFile& file, const std::filesystem::path& curl,
+                                         const std::filesystem::path& packed,
+                                         const std::filesystem::path& chunk,
+                                         const InstallProgress& progress) {
+  std::error_code error;
   // P3.7 : un .part laissé par un essai coupé se reprend par plage ; trop long, il repart de zéro.
-  std::uint64_t have = std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
+  std::uint64_t have = size_or_zero(packed, error);
   if (error || have > file.packed_size) {
     std::filesystem::remove(packed, error);
     have = 0;
@@ -289,29 +320,52 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   for (int attempt = 0; attempt < 4 && have < file.packed_size; ++attempt) {
     std::filesystem::remove(chunk, error);
     std::vector<std::string> args = curl_download_args();
-    args.insert(args.end(), {"--progress-bar", "--range", std::format("{}-{}", file.data_offset + have, last),
-                             "--output", chunk.string(), file.url});
+    // --max-filesize : un serveur ou un proxy qui ignore la plage et rend la roue entière (200) est arrêté
+    // tout de suite (A06-07).
+    args.insert(args.end(), {"--progress-bar", "--max-filesize", std::to_string(file.packed_size - have),
+                             "--range", std::format("{}-{}", file.data_offset + have, last), "--output",
+                             core::to_utf8(chunk), file.url});
     const double done = static_cast<double>(have) / static_cast<double>(file.packed_size);
     auto fetched = run_tool(
-        {.program = *curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
+        {.program = curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
         [&](std::string_view line) {
           if (const auto f = curl_percent(line); f && progress.report)
             progress.report(static_cast<float>(done + ((1.0 - done) * *f)) * 0.85F, file.name);
         },
         progress.stop, i18n::tr_format("downloading {}", file.name));
-    // Ce qui est arrivé, même coupé, s'ajoute au .part.
-    {
-      std::ifstream piece(chunk, std::ios::binary);
-      std::ofstream whole(packed, std::ios::binary | std::ios::app);
-      if (piece && whole) whole << piece.rdbuf();
-    }
+    // Ce qui est arrivé, même coupé, s'ajoute au .part ; un morceau plus long que la plage demandée n'est pas
+    // la plage (réponse 200 entière) : jeté (A06-07).
+    if (!append_chunk(chunk, packed, file.packed_size - have))
+      fetched = refuse(RefusalCode::HashMismatch,
+                       i18n::tr_format("{}: the server ignored the byte range", file.name));
     std::filesystem::remove(chunk, error);
-    have = std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
+    have = size_or_zero(packed, error);
     if (fetched) break;
     failure = fetched.error();
     if (failure->code == RefusalCode::Cancelled) return std::unexpected(*failure);
   }
   if (have < file.packed_size && failure) return std::unexpected(*failure);
+  return {};
+}
+
+std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
+                                               const std::filesystem::path& dest,
+                                               const std::filesystem::path& scratch,
+                                               const InstallProgress& progress) {
+  const auto curl = system_tool("curl");
+  if (!curl) return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found on this system"));
+  std::error_code error;
+  std::filesystem::create_directories(scratch, error);
+  // Nommés par l'empreinte du fichier (A06-04) : un .part d'une autre version au même nom ne se reprend pas.
+  const std::filesystem::path packed = scratch / (file.sha256 + ".part");
+  const std::filesystem::path chunk = scratch / (file.sha256 + ".morceau");
+  const auto cleanup = [&] {
+    std::error_code ignored;
+    std::filesystem::remove(packed, ignored);
+    std::filesystem::remove(chunk, ignored);
+  };
+  if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + i18n::tr(": zero size"));
+  if (auto pulled = pull_packed(file, *curl, packed, chunk, progress); !pulled) return pulled;
   const std::uintmax_t got = std::filesystem::file_size(packed, error);
   if (error || got != file.packed_size) {
     cleanup();
@@ -335,8 +389,15 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   core::Sha256 hash;
   std::uint64_t produced = 0;
   bool write_failed = false;
+  bool overflow = false;
   const auto sink = [&](std::span<const std::uint8_t> bytes) {
     if (progress.stop.stop_requested()) return false;
+    // Jamais plus que la taille de l'index : un flux deflate forgé peut produire mille fois sa taille
+    // (A06-05).
+    if (produced + bytes.size() > file.size) {
+      overflow = true;
+      return false;
+    }
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!out) {
       write_failed = true;
@@ -377,6 +438,11 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
     discard();
     return refuse(RefusalCode::FileUnwritable, partial.string());
   }
+  if (overflow) {
+    discard();
+    return refuse(RefusalCode::HashMismatch,
+                  std::format("{} : plus de {} octets décompressés, refusé", file.name, file.size));
+  }
   if (!result) {
     discard();
     return std::unexpected(result.error());
@@ -401,6 +467,36 @@ namespace {
 
 // Les étapes de l'installation ; `step` dit où elle en est, pour le journal si elle échoue. Une seule
 // progression globale (octets tirés, archive et fichiers tiers) au lieu d'une barre par fichier.
+// Chaque fichier d'un dossier extrait, sur le disque : FlushFileBuffers sous Windows, fsync ailleurs.
+std::expected<void, Refusal> sync_tree(const std::filesystem::path& root) {
+  std::error_code error;
+  std::filesystem::recursive_directory_iterator it(root, error);
+  for (; !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
+    std::error_code kind;
+    if (!it->is_regular_file(kind) || it->is_symlink(kind)) continue;
+    if (const std::error_code synced = core::sync_file(it->path()))
+      return refuse(RefusalCode::FileUnwritable,
+                    std::format("{} : {}", core::to_utf8(it->path()), synced.message()));
+  }
+  if (error)
+    return refuse(RefusalCode::FileUnreadable, std::format("{} : {}", core::to_utf8(root), error.message()));
+  return {};
+}
+
+// Chaque fichier extrait sur le disque, puis la note du paquet en dernier, avec son dossier (A36-03).
+std::expected<void, Refusal> seal_staging(const std::filesystem::path& staging,
+                                          const core::EnginePackage& package) {
+  if (auto synced = sync_tree(staging); !synced) return synced;
+  const std::filesystem::path path = staging / std::string(kPackageNote);
+  std::ofstream note(path, std::ios::trunc);
+  note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
+  note.close();
+  if (!note || core::sync_file(path))
+    return refuse(RefusalCode::FileUnwritable, i18n::tr_format("{}: package note", core::to_utf8(staging)));
+  core::sync_directory(staging);
+  return {};
+}
+
 std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog& catalog,
                                                             const core::EnginePackage& package,
                                                             const InstallProgress& progress,
@@ -536,13 +632,12 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     done_bytes += static_cast<double>(file.packed_size);
   }
   step = i18n::tr("replacing the installed version");
-  {
-    std::ofstream note(staging / std::string(kPackageNote), std::ios::trunc);
-    note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
-    if (!note.flush()) {
-      std::filesystem::remove_all(staging, error);
-      return refuse(RefusalCode::FileUnwritable, i18n::tr_format("{}: package note", staging.string()));
-    }
+  // Chaque fichier sur le disque, puis la note en dernier (A36-03) : après une coupure, un dossier de version
+  // (ou un « .partiel » qui a sa note, recover_interrupted_install) est entier, jamais fait de fichiers
+  // vides.
+  if (const auto sealed = seal_staging(staging, package); !sealed) {
+    std::filesystem::remove_all(staging, error);
+    return std::unexpected(sealed.error());
   }
   // L'ancien dossier est mis de côté avant d'être remplacé, puis effacé : si l'un de ses fichiers est
   // encore ouvert (Windows), il ne reste pas à moitié supprimé, et il est remis en place sur échec.
@@ -567,6 +662,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     if (replaced) std::filesystem::rename(aside, target, restore);
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
   }
+  core::sync_directory(target.parent_path());
   if (replaced) std::filesystem::remove_all(aside, error);
   error.clear();
   report(1.0F, i18n::tr_format("{} installed", name));
@@ -580,7 +676,9 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
                                                               const InstallProgress& progress) {
   const auto log = log_channel("app");
   const std::string name(core::engine_name(package.engine));
-  // Les restes d'un essai raté ou interrompu partent avant tout nouvel essai : ils ne s'accumulent pas.
+  // Une installation coupée entre ses deux renommages remet d'abord sa copie complète (A06-08) ; les restes
+  // d'un essai raté ou interrompu partent ensuite, avant tout nouvel essai : ils ne s'accumulent pas.
+  recover_interrupted_install(catalog, package);
   std::error_code error;
   for (const char* suffix : {".partiel", ".ancien"}) {
     std::filesystem::path leftover = core::engine_dir(catalog.layout, package);
@@ -590,6 +688,9 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
       std::filesystem::remove_all(leftover, error);
     }
   }
+  // Les téléchargements coupés que l'index ne nomme plus (une autre version) ne servent plus (A06-04).
+  if (const int purged = purge_stale_downloads(catalog, package.sha256); purged > 0)
+    log->info("téléchargements : {} reste(s) d'un autre index retiré(s)", purged);
   std::string step = i18n::tr("starting");
   const auto started = std::chrono::steady_clock::now();
   auto result = install_steps(catalog, package, progress, step);

@@ -37,8 +37,6 @@ out="$dir/manifest.toml"
   done
 } > "$out"
 
-openssl pkeyutl -sign -inkey "$key" -rawin -in "$out" -out "$out.sig.bin"
-xxd -p -c 256 "$out.sig.bin" > "$out.sig"
-rm -f "$out.sig.bin"
+"$(dirname "$0")/sign-file.sh" "$out"
 echo "manifeste : $out"
 echo "signature : $out.sig"
