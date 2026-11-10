@@ -56,6 +56,12 @@ std::string telemetry_line(const GpuSample& sample);
 // 70 % du maximum à plus de 80 % de charge) ; vide sinon. L'écrêtage se lit déjà dans la ligne.
 std::string telemetry_warning(const GpuSample& sample);
 
+// Les extrêmes des relevés d'une lecture (fréquence, température), pour la ligne de fin du journal (A39-06).
+// note_gpu_range retient un relevé ; take_gpu_range_text rend « GPU … » et repart de zéro ; vide : aucun
+// relevé.
+void note_gpu_range(const GpuSample& sample);
+std::string take_gpu_range_text();
+
 // Une ligne de pp_dpm_sclk ou pp_dpm_mclk du pilote amdgpu (« 0: 500Mhz \n1: 1900Mhz \n2: 2900Mhz * ») :
 // l'horloge courante (la ligne étoilée) et la plus haute, en MHz ; 0 et 0 si le texte ne se lit pas.
 struct DpmClocks {
