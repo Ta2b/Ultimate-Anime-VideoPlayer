@@ -44,6 +44,7 @@ class SourceLoop {
   std::optional<std::int64_t> drop_before_;   // seek exact en cours : cible en µs
   std::optional<std::int64_t> last_pts_us_;   // pts de la dernière image tenue : où revenir si un seek échoue
   std::optional<DecodedFrame> last_dropped_;  // seek exact : livrée si la fin vient avant la cible
+  int untimed_drops_ = 0;  // images sans horodatage jetées de suite par le seek exact (A14-10)
   std::uint32_t epoch_ = 0;
   std::uint32_t next_id_ = 1;   // 0 reste « aucune source »
   bool primed_ = false;         // gpu a accepté une image de l'époque à cette position

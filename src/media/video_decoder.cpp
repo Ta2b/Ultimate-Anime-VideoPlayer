@@ -70,6 +70,8 @@ struct VideoDecoder::State {
   bool wait_key = false;
   Deinterlacer deinterlacer;  // P3.25 : les images logicielles entrelacées, par bwdif
   bool deinterlace_flushed = false;
+  std::optional<std::int64_t> skip_before;  // VideoDecoder::skip_before
+  FramePtr last_skipped;                    // la dernière image écartée, ressortie à la fin du flux
   std::shared_ptr<spdlog::logger> log = make_logger();
 
   // Données abîmées : l'image en cause est perdue, le décodage continue.
@@ -160,6 +162,9 @@ struct VideoDecoder::State {
   // Horodatage et événement de fin de copie d'une image prête. Un trou d'horodatage se comble par l'image
   // précédente plus sa durée. Sans image précédente (début, ou après un flush), il reste inconnu : kNoPts,
   // jamais un 0 inventé.
+  bool skipped(FramePtr& frame);
+  std::expected<std::optional<DecodedFrame>, Refusal> deliver(FramePtr frame);
+
   std::expected<std::optional<DecodedFrame>, Refusal> finish(FramePtr frame) {
     const std::int64_t pts =
         frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
@@ -458,6 +463,7 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
         return s.finish(std::move(*last_frame));
       }
     }
+    if (s.last_skipped) return s.deliver(std::move(s.last_skipped));
     s.drained = true;
     return std::nullopt;
   }
@@ -469,6 +475,28 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
     s.sent.shrink_to_fit();
   }
 
+  if (s.skipped(frame)) return std::nullopt;
+  s.last_skipped.reset();
+  return s.deliver(std::move(frame));
+}
+
+// Une image écartée par skip_before : son horodatage est fixé maintenant (le trou d'après se comble à partir
+// d'elle), et elle reste la dernière écartée.
+bool VideoDecoder::State::skipped(FramePtr& frame) {
+  if (!skip_before || deinterlacer.active() || (frame->flags & AV_FRAME_FLAG_INTERLACED) != 0) return false;
+  const std::int64_t pts =
+      frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
+  const std::int64_t duration = frame->duration > 0 ? frame->duration : nominal_duration_us;
+  if (pts == kNoPts || pts + std::max<std::int64_t>(duration, 1) > *skip_before) return false;
+  frame->best_effort_timestamp = pts;
+  next_pts_us = pts + duration;
+  last_skipped = std::move(frame);
+  return true;
+}
+
+// La copie en mémoire hôte, le désentrelacement, puis l'horodatage.
+std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::State::deliver(FramePtr frame) {
+  State& s = *this;
   // Les images d'un appareil partagé restent sur le GPU : leur propriétaire les lit en place.
   if (s.download && !s.hw.shared && frame->hw_frames_ctx != nullptr) {
     FramePtr host(av_frame_alloc());
@@ -492,8 +520,15 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   return s.finish(std::move(frame));
 }
 
+void VideoDecoder::skip_before(std::optional<std::int64_t> target_us) {
+  state_->skip_before = target_us;
+  if (!target_us) state_->last_skipped.reset();
+}
+
 void VideoDecoder::flush() {
   State& s = *state_;
+  s.skip_before.reset();
+  s.last_skipped.reset();
   avcodec_flush_buffers(s.codec.get());
   s.pending.reset();
   s.replay.clear();
