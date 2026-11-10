@@ -685,6 +685,15 @@ PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {
     facts.pci_vendor = properties.vendorID;
     facts.driver = std::to_string(properties.driverVersion);
   }
+  const auto properties2_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
+      vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceProperties2"));
+  if (properties2_of != nullptr) {
+    VkPhysicalDeviceDriverProperties driver{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+    VkPhysicalDeviceProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                                           .pNext = &driver};
+    properties2_of(vk->phys_device, &properties);
+    facts.mesa_nvk = driver.driverID == VK_DRIVER_ID_MESA_NVK;
+  }
   const auto memory = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
       vk->get_proc_addr(vk->instance, "vkGetPhysicalDeviceMemoryProperties"));
   if (memory != nullptr) {

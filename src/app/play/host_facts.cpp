@@ -371,7 +371,8 @@ GpuFacts gpu_facts(const PlaceboScreen& screen) {
       .vram_bytes = facts.vram_bytes,
       .host_visible_vram_bytes = facts.host_visible_vram_bytes,
       .tensor_cores = vendor == GpuVendor::Nvidia && facts.cooperative_matrix,
-      .wmma = vendor == GpuVendor::Amd && facts.cooperative_matrix && amd_matrix_cores(facts.name)};
+      .wmma = vendor == GpuVendor::Amd && facts.cooperative_matrix && amd_matrix_cores(facts.name),
+      .mesa_nvk = vendor == GpuVendor::Nvidia && facts.mesa_nvk};
 }
 
 bool on_battery() {
