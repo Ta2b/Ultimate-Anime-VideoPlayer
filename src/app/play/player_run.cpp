@@ -358,7 +358,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.resumed = false;
   }
   if (!p.notice.empty()) {
-    p.ui.controls().notify(p.notice, host_now_us());
+    p.ui.controls().warn(p.notice, host_now_us());
     p.notice = {};
   }
   // play.toml, la position et la mémoire de l'Auto s'écrivent sur leur thread, sans attendre le disque.
@@ -598,7 +598,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         }
       }
       if (const auto notice = session.take_notice())
-        p.ui.controls().notify(
+        p.ui.controls().warn(
             i18n::ui_tr_format("Playback goes on after an error: {}", visible_error(*notice)), host_now_us());
       free_missing_seen = shown.missing;
       free_dropped_seen = shown.dropped;

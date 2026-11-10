@@ -223,10 +223,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     const int height = display_height(s.screen.window());
     const double hz = display_refresh_hz(s.screen.window());
     if (height > 0) view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, hz);
-    const bool tensorrt = std::ranges::any_of(view.engines, [](const EngineRow& row) {
-      return row.offer.id == core::EngineId::TensorRt && row.chosen && row.usable;
-    });
-    view.calibration_minutes = calibration_minutes(tensorrt, gpu.name.find("Laptop") != std::string::npos);
+    view.laptop = gpu.name.find("Laptop") != std::string::npos;
   }
   const std::filesystem::path play_path = paths::play_settings(s.engines_path.parent_path());
   // Repris en route : les choix enregistrés à chaque écran reviennent (P3.3).
@@ -285,7 +282,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
       }
     }
     // Lecteur par défaut demandé à l'écran Intégration (P3.18).
-    if (wizard.make_default) {
+    if (make_default_requested(wizard)) {
       if (auto made = choose_as_default(place_of(s.paths)))
         log->info("lecteur par défaut : {}", *made);
       else

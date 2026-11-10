@@ -125,33 +125,68 @@ cmd::Seek Controls::release(double fraction, std::int64_t duration_us) {
   return cmd::Seek{.target_us = time_at(fraction, duration_us), .exact = true};
 }
 
+bool Controls::brief_shown(std::int64_t now_us) const {
+  if (toast_.empty()) return false;
+  const std::int64_t age = now_us - toast_at_us_;
+  return age >= 0 && age < kToastUs;
+}
+
+const Controls::Notice* Controls::notice_at(std::int64_t now_us) const {
+  for (const Notice& notice : notices_) {
+    if (now_us >= notice.at_us && now_us < notice.at_us + notice.duration_us) return &notice;
+  }
+  return nullptr;
+}
+
 void Controls::notify(const i18n::Translated& text, std::int64_t now_us) {
   toast_ = text.str();
   toast_at_us_ = now_us;
+  // Les avis en attente repartent après ce message bref, dans leur ordre.
+  std::int64_t cursor = now_us + kToastUs;
+  for (Notice& notice : notices_) {
+    if (notice.at_us + notice.duration_us <= now_us) continue;
+    notice.at_us = cursor;
+    cursor += notice.duration_us;
+  }
+}
+
+void Controls::warn(const i18n::Translated& text, std::int64_t now_us) {
+  std::erase_if(notices_, [&](const Notice& n) { return n.at_us + n.duration_us <= now_us; });
+  if (!notices_.empty() && notices_.back().text == text.str()) return;
+  if (notices_.size() >= kNoticesKept) notices_.erase(notices_.begin());
+  std::int64_t start = brief_shown(now_us) ? toast_at_us_ + kToastUs : now_us;
+  if (!notices_.empty()) start = std::max(start, notices_.back().at_us + notices_.back().duration_us);
+  const std::int64_t duration = std::clamp<std::int64_t>(
+      static_cast<std::int64_t>(text.str().size()) * kNoticeCharUs, kNoticeUs, kNoticeMaxUs);
+  notices_.push_back(Notice{.text = text.str(), .at_us = start, .duration_us = duration});
 }
 
 void Controls::defer(const i18n::Translated& text) {
-  if (!deferred_.empty()) deferred_ += "  ·  ";
-  deferred_ += text.str();
+  if (std::ranges::find(deferred_, text.str()) == deferred_.end()) deferred_.push_back(text.str());
 }
 
 void Controls::show_deferred(std::int64_t now_us) {
-  if (deferred_.empty()) return;
-  toast_ = std::move(deferred_);
-  toast_at_us_ = now_us;
+  std::vector<std::string> waiting = std::move(deferred_);
   deferred_.clear();
+  for (const std::string& text : waiting) warn(i18n::Translated::data(text), now_us);
 }
 
 std::optional<std::string_view> Controls::toast(std::int64_t now_us) const {
-  if (toast_.empty() || toast_opacity(now_us) <= 0.0F) return std::nullopt;
-  return toast_;
+  if (brief_shown(now_us) && toast_opacity(now_us) > 0.0F) return toast_;
+  if (const Notice* notice = notice_at(now_us)) return notice->text;
+  return std::nullopt;
 }
 
 float Controls::toast_opacity(std::int64_t now_us) const {
-  if (toast_.empty()) return 0.0F;
-  const std::int64_t age = now_us - toast_at_us_;
-  if (age < 0 || age >= kToastUs) return 0.0F;
-  return 1.0F - ramp(age - (kToastUs - kFadeUs));
+  if (brief_shown(now_us)) {
+    const std::int64_t age = now_us - toast_at_us_;
+    return 1.0F - ramp(age - (kToastUs - kFadeUs));
+  }
+  if (const Notice* notice = notice_at(now_us)) {
+    const std::int64_t age = now_us - notice->at_us;
+    return 1.0F - ramp(age - (notice->duration_us - kFadeUs));
+  }
+  return 0.0F;
 }
 
 bool Controls::fading_in(std::int64_t now_us) const {
