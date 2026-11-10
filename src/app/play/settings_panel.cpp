@@ -286,7 +286,7 @@ void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
 
   section(i18n::tr("Setup wizard"));
   if (ImGui::Button(i18n::tr("Run the wizard again"))) actions.emplace_back(OpenEngineScreen{.wizard = true});
-  panel::tip(i18n::tr("Nothing changes until \"Finish\"."));
+  panel::tip(i18n::tr("Nothing changes until \"Start\"."));
   report_problem_section(choices.place, choices.gpu_name);
 }
 

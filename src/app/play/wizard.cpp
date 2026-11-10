@@ -100,11 +100,16 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
     if (wizard.update_mode == UpdateMode::Auto) mode = i18n::tr("automatic");
     if (wizard.update_mode == UpdateMode::Never) mode = i18n::tr("never");
     out.push_back(i18n::tr_format("Updates: {} (General > Application)", mode));
-    if (wizard.make_default && !skipped(WizardStep::Updates))
+    if (make_default_requested(wizard))
       out.push_back(
           i18n::tr("Default video player: asked at the end of the assistant (General > Application)"));
   }
   return out;
+}
+
+bool make_default_requested(const Wizard& wizard) {
+  return wizard.make_default &&
+         std::ranges::find(wizard.skipped, WizardStep::Updates) == wizard.skipped.end();
 }
 
 core::Settings wizard_settings([[maybe_unused]] const Wizard& wizard, core::Settings settings) {
