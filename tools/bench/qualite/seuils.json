@@ -37,9 +37,9 @@
    "verite_psnr_min": 47.26
   },
   "distil_drba_v2_lite.onnx": {
-   "fidelite_psnr_pire_min": 50.98,
-   "fidelite_ecart_pire_max": 25.62,
-   "verite_psnr_min": 35.42
+   "fidelite_psnr_pire_min": 72.96,
+   "fidelite_ecart_pire_max": 1.99,
+   "verite_psnr_min": 35.46
   }
  }
 }

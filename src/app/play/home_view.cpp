@@ -46,7 +46,7 @@ void draw_home(HomeView& view, float scale, bool settings_open) {
     if (!view.problem.empty()) {
       ImGui::Spacing();
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      ImGui::TextWrapped("%s", view.problem.c_str());
+      panel::wrapped(view.problem.c_str());
       ImGui::PopStyleColor();
     }
     ImGui::Spacing();

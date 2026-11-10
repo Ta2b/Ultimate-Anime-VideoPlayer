@@ -4,6 +4,59 @@ La méthode garde les surfaces à un relèvement fixe et ne fait monter que les 
 (`src/render/shaders/anime-hdr-anime/3-anime.hook`). Chaque étape ci-dessous est un essai en ligne de
 commande ; sans son drapeau, rien ne change.
 
+## Niveaux à l'écran (11/2026, décisions 16 et 17 de Tatoub)
+
+Ce que la chaîne complète rend sur une sortie HDR10 : la passe anime, la pile de LUT (`docs/luts.md`), puis
+la dernière passe (`anime-hdr-black.hook`, réglée par `src/render/output_tune.h`). Les audits 41 et 38 avaient
+mesuré un écart entre ce que le grade décidait et ce qui sortait (A41-02, A41-03) ; les règles sont
+maintenant celles-ci, et `tests/unit/render/grade_chain_gpu_test.cpp` les vérifie sur les LUT livrées.
+
+- **Blanc des surfaces : la moitié du pic de l'écran.** Il sortait vers 70 % du pic, si haut que les vrais
+  éclats ne s'en détachaient plus. La compression vers l'écran garde sa courbe (celle sous laquelle la pile a
+  été réglée à l'œil), mais son sommet est calculé pour poser le blanc d'une surface à la moitié du pic. Sur un
+  écran peu lumineux, le blanc ne descend pas sous 300 nits, sans dépasser 70 % du pic. Le gris moyen ne
+  bouge pas (RVB 128 reste vers 44 nits).
+- **Éclats appliqués en dernier.** La passe anime décide toujours quels pixels sont des lumières et de
+  combien elles montent, mais la montée n'est plus appliquée avant la pile, qui la divisait par deux : elle
+  voyage dans le canal alpha et la dernière passe l'applique après la pile. Un émetteur blanc sort ainsi un
+  demi-diaphragme au-dessus d'une surface blanche au réglage 100 % (0,2 avant), et le curseur Éclats agit
+  sur toute sa course.
+- **Limiteur de la scène.** Le plafond des éclats est le pic de l'écran en scène sombre ; il descend à la
+  moitié du pic en scène très claire (luminance moyenne de 30 à 70 % du blanc SDR), sans passer sous 1,25 fois
+  le blanc des surfaces. Les surfaces, elles, ne bougent pas avec la scène.
+- **MaxFALL annoncé** : le blanc des surfaces réellement rendu (une image toute blanche), ou la moyenne
+  plein écran du contrat d'écran quand il la connaît. 233 nits étaient annoncés pour un blanc rendu à 695.
+- **Noirs.** Le noir pur reste un vrai noir : 0 sous RVB 4. Au-dessus, la LUT de base rendait presque noir
+  tout ce qui était sous RVB 16 ; l'image suit maintenant un pied plus doux (pente 1,3 en log au lieu de 2),
+  et la pile reprend toute sa part entre RVB 32 et RVB 48.
+- **Sans pile** (fichier `.cube` illisible, ou les premières images avant sa lecture) : la dernière passe ne
+  compresse plus une image que la pile n'a pas montée (A41-04). Le blanc reste à 233 nits au lieu de 119.
+
+Mesuré sous lavapipe sur les shaders du lecteur (`ajp_render_tests "[.mesure]"`), source SDR au gamma 2,4,
+écran de 1 000 nits, nits affichés :
+
+| Code RVB 8 bits | Avant | Maintenant |
+|---|---|---|
+| 4 | 0 | 0 |
+| 8 | 0,015 | 0,016 |
+| 16 | 0,022 | 0,137 |
+| 24 | 0,158 | 0,484 |
+| 32 | 0,74 | 1,18 |
+| 48 | 3,97 | 3,97 |
+| 128 | 44,0 | 43,7 |
+| 160 | 106 | 103 |
+| 192 | 305 | 256 |
+| 224 | 538 | 403 |
+| 255 (blanc d'une surface) | 690 | 499 |
+| Émetteur blanc, Éclats 100 %, scène sombre | 793 | 693 |
+| Émetteur blanc, Éclats 100 %, scène très claire | 793 | 595 |
+| Émetteur blanc, Éclats 200 %, scène sombre | 899 | 975 |
+
+Blanc des surfaces selon le pic : 279 nits à 400 (320 avant), 499 à 1 000 (690), 997 à 2 000 (1 310).
+
+Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) reste dans
+`docs/audits/A-CONFIRMER.md`.
+
 | Étape | Drapeau | Ce qui change | État |
 | --- | --- | --- | --- |
 | A1 | `--hdr-anime` | La carte des émetteurs, portes tirées des gains réels de `decide_grade` | fait |
@@ -53,11 +106,16 @@ quelle : `--anime-contrast=N` (puissance de la luminance autour de 0,4 × le bla
 `--anime-highlights=N` (part de la montée des éclats, `an_spec`). Jamais écrits dans play.toml : les valeurs
 retenues à l'œil deviendront le défaut de la méthode.
 
-## Noirs profonds selon la scène (04/11)
+## Noirs profonds selon l'épisode (04/11, texte corrigé le 09/11 : A38-16)
 
-Sous la méthode HDR anime, le curseur « Noirs profonds » est le maximum, atteint en scène très claire
-(luminance moyenne ≥ 40 % du blanc SDR) ; l'effet descend en douceur jusqu'à 0 en scène très sombre (≤ 3 %),
-pour garder lisibles les détails des nuits. Sans mesure de la scène, le curseur s'applique tel quel.
+Sous la méthode HDR anime, le curseur « Noirs profonds » est le maximum, atteint dans un épisode très clair :
+la clé est la médiane des luminances moyennes des plans déjà analysés de l'épisode (`series_apl_of`,
+`src/app/play/anime_shots.cpp`), ≥ 40 % du blanc SDR. L'effet descend en douceur jusqu'à 0 dans un épisode
+très sombre (≤ 3 %). La clé est celle de l'épisode, pas celle du plan : elle ne bouge pas aux coupes, pour
+que les mêmes cheveux sombres sortent au même niveau d'un plan à l'autre (P3.52). Une scène de nuit dans un
+épisode clair reçoit donc l'effet entier ; ses détails sont gardés par le pied adouci de la pile (voir
+« Niveaux à l'écran »), pas par ce curseur. Tant que rien n'est analysé, la clé vaut 25 % du blanc SDR et
+l'effet 64 % du curseur.
 
 ## Sortie HDR ou SDR : elle suit le système (11/2026)
 

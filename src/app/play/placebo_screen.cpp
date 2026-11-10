@@ -348,10 +348,9 @@ void note_feedback(ScreenTiming& timing, const PresentFeedback& feedback) {
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-// La présentation part. Le thread qui compose le look (render::Grade) ne touche pas le pl_gpu pendant ce
-// temps : voir Grade::gpu_guard.
-std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present* present) {
-  const std::unique_lock<std::mutex> guard = grade ? grade->gpu_guard() : std::unique_lock<std::mutex>{};
+// La présentation part. Aucun autre thread n'ouvre de commande sur le pl_gpu pendant ce temps : le thread
+// qui compose le look (render::Grade) n'écrit que du texte, Grade::adopt crée la texture sur ce thread-ci.
+std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present* present) const {
   if (present == nullptr) {
     if (pl_swapchain_submit_frame(swapchain)) return {};
     return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
