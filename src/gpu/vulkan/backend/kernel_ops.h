@@ -141,6 +141,8 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> measure(const DecodedFrame& a, const DecodedFrame& b) override;
   std::optional<PairScores> previous_scores() override;
   std::expected<void, Refusal> health() override { return queue_.health(); }
+  // A45-14 : la mémoire de la carte pour les statistiques, lue du budget du pilote.
+  std::optional<DeviceMemory> device_memory() override;
 
   std::size_t recordings() const { return recordings_.size(); }
   std::size_t retained_frames() const { return retained_.size(); }

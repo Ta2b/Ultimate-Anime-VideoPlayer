@@ -218,3 +218,29 @@ TEST_CASE("Rendu : un contenu trop grand pour l'atlas est rendu plus petit, pas 
   REQUIRE(again.atlas != nullptr);
   CHECK(again.width == 1025);
 }
+
+TEST_CASE("Rendu : la réplique qui reste après un dessin trop lourd revient en pleine taille",
+          "[compat][render]") {
+  // A17-01 : le dessin plein écran force le rendu réduit ; une fois fini, la réplique qui dure
+  // encore est un contenu neuf qui tient dans l'atlas, rendu en pleine taille.
+  const std::string script =
+      "[Script Info]\nScriptType: v4.00+\nPlayResX: 100\nPlayResY: 100\n\n"
+      "[V4+ Styles]\n"
+      "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, "
+      "Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+      "Alignment, "
+      "MarginL, MarginR, MarginV, Encoding\n"
+      "Style: Default,DejaVu Sans,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,7,"
+      "0,0,0,1\n\n"
+      "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+      "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{\\pos(0,0)\\p1}m 0 0 l 100 0 100 100 0 100\n"
+      "Dialogue: 1,0:00:00.00,0:01:00.00,Default,,0,0,0,,{\\an2\\bord0\\fs6}Dialogue suivant\n";
+  Scene scene(script);
+  const ajp::subs::RenderTarget target{.width = 2050, .height = 2050};
+  CHECK(scene.frame(0.5, target).width == 1025);
+  const ajp::subs::SubtitleFrame after = scene.frame(30.0, target);
+  REQUIRE(after.atlas != nullptr);
+  CHECK(after.width == 2050);
+  CHECK(after.height == 2050);
+  CHECK(scene.frame(31.0, target).width == 2050);  // la suite reste en pleine taille
+}

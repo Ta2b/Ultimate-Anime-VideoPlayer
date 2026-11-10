@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "core/types.h"
@@ -43,6 +44,15 @@ struct MemoryLimits {
 // déjà), moins la même réserve, sans dépasser la règle des trois quarts ni descendre sous 1 Gio.
 // La réserve des blocs propres : un huitième du budget, au plus 1 Gio.
 MemoryLimits device_limits(const VkContext& context);
+
+// Le plus grand tas DEVICE_LOCAL vu par le pilote à cet instant (A45-14) : sa taille, et ce qui en est pris,
+// tous programmes confondus (la taille moins ce que le pilote dit encore disponible au processus). Rien sans
+// VK_EXT_memory_budget. Appelable depuis n'importe quel thread.
+struct HeapUse {
+  VkDeviceSize used = 0;
+  VkDeviceSize total = 0;
+};
+std::optional<HeapUse> device_heap_use(const VkContext& context);
 
 // Types de mémoire permis pour use, du préféré au dernier recours (à score égal, l'ordre du
 // pilote) : quand vkAllocateMemory est à court sur l'un (le BAR de 256 Mio sans ReBAR, sur une

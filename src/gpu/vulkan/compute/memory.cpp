@@ -68,6 +68,26 @@ std::vector<std::uint32_t> memory_candidates(const VkPhysicalDeviceMemoryPropert
   return types;
 }
 
+std::optional<HeapUse> device_heap_use(const VkContext& context) {
+  if (std::ranges::find(context.caps().extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) ==
+      context.caps().extensions.end())
+    return std::nullopt;
+  VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT};
+  VkPhysicalDeviceMemoryProperties2 properties{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+                                               .pNext = &budget};
+  context.instance_functions().vkGetPhysicalDeviceMemoryProperties2(context.physical_device(), &properties);
+  std::optional<HeapUse> use;
+  for (std::uint32_t i = 0; i < properties.memoryProperties.memoryHeapCount; ++i) {
+    const VkMemoryHeap& heap = properties.memoryProperties.memoryHeaps[i];
+    if ((heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == 0 || (use && heap.size <= use->total)) continue;
+    const VkDeviceSize left =
+        budget.heapBudget[i] > budget.heapUsage[i] ? budget.heapBudget[i] - budget.heapUsage[i] : 0;
+    use = HeapUse{.used = heap.size - std::min(heap.size, left), .total = heap.size};
+  }
+  return use;
+}
+
 MemoryLimits device_limits(const VkContext& context) {
   const bool budget_known =
       std::ranges::find(context.caps().extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) !=
