@@ -18,7 +18,7 @@ extern const std::string_view anime_hdr_look;
 extern const std::string_view anime_hdr_black;
 // Mire d'étalonnage du lecteur actuel : patchs en luminance absolue, encodés en PQ.
 extern const std::string_view anime_hdr_calibration;
-// La netteté (render/sharpen.h) : un masque flou adaptatif sur MAIN.
+// La netteté (render/sharpen.h) : un masque flou adaptatif sur SCALED.
 extern const std::string_view sharpen;
 
 }  // namespace ajp::render::shaders
