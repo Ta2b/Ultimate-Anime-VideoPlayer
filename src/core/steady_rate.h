@@ -34,8 +34,7 @@ namespace ajp::core {
 
 struct FreeParams {
   double margin = 0.15;
-  int half_steps = 20;                 // en VRR : N de 1 à 10,5 par demi-pas
-  std::int64_t vrr_floor_us = 18'939;  // l'écart le plus long que la plage VRR tient (52,8 Hz)
+  int half_steps = 20;  // en VRR : N de 1 à 10,5 par demi-pas
   int urgent_losses = 2;
   std::int64_t urgent_window_us = 1'000'000;
   int fit_pairs = 24;   // paires mesurées d'un plan avant de le réajuster

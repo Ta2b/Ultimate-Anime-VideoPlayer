@@ -30,4 +30,16 @@ std::expected<std::filesystem::path, Refusal> derived_model(const std::filesyste
                                                             const std::filesystem::path& dir,
                                                             const ModelTransform& transform);
 
+// Les tailles gardées par famille de dérivés à la taille fixée (A09-11) : une par définition de vidéo lue,
+// environ 10 Mo chacune pour DistilDRBA.
+inline constexpr int kDerivedSizesKept = 4;
+
+// Purge des dérivés à la taille fixée d'une famille : les fichiers de dir nommés
+// <family><l>x<h>-<reste>. used est celui qui vient de servir, son nom finit par l'empreinte de la
+// source (16 chiffres avant l'extension) et sa date est rafraîchie. Les fichiers dont le nom ne porte
+// pas cette empreinte (source remplacée) sont retirés ; des autres, seules les keep tailles servies
+// le plus récemment restent. Rend le nombre de fichiers retirés ; un échec de suppression est ignoré.
+int purge_sized_derivatives(const std::filesystem::path& dir, std::string_view family,
+                            const std::filesystem::path& used, int keep = kDerivedSizesKept);
+
 }  // namespace ajp::app::play

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/utf8_path.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/import_attrs.h"
 #include "gpu/ir/onnx_fp8.h"
@@ -266,18 +267,19 @@ std::expected<Graph, Refusal> load_onnx(std::span<const std::byte> bytes) {
 std::expected<Graph, Refusal> load_onnx_file(const std::filesystem::path& path) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file)
-    return std::unexpected(Refusal{RefusalCode::OnnxMalformed, std::format("{} illisible", path.string())});
+    return std::unexpected(
+        Refusal{RefusalCode::OnnxMalformed, std::format("{} illisible", core::to_utf8(path))});
   const std::streamoff size = file.tellg();
   // Un message protobuf ne dépasse pas 2 Gio.
   if (size < 0 || size > std::streamoff{0x7FFFFFFF}) {
-    return unsupported(std::format("{} : taille hors de [0, 2 Gio]", path.string()));
+    return unsupported(std::format("{} : taille hors de [0, 2 Gio]", core::to_utf8(path)));
   }
   std::vector<std::byte> bytes(static_cast<std::size_t>(size));
   file.seekg(0);
   file.read(reinterpret_cast<char*>(bytes.data()), size);
   if (!file)
     return std::unexpected(
-        Refusal{RefusalCode::OnnxMalformed, std::format("{} : lecture tronquée", path.string())});
+        Refusal{RefusalCode::OnnxMalformed, std::format("{} : lecture tronquée", core::to_utf8(path))});
   return load_onnx(bytes);
 }
 

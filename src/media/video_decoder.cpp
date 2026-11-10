@@ -63,8 +63,9 @@ struct VideoDecoder::State {
   HwApi api = HwApi::Software;
   bool software_allowed = false;
   bool download = false;
-  int extra_hw_frames = 0;  // de l'essai en cours
-  bool direct = false;      // NVDEC sans copie de sécurité (DecoderOptions::direct_surfaces)
+  bool full_host_formats = false;  // DecoderOptions::full_host_formats
+  int extra_hw_frames = 0;         // de l'essai en cours
+  bool direct = false;             // NVDEC sans copie de sécurité (DecoderOptions::direct_surfaces)
   std::vector<Attempt> rejected;
   std::optional<Packet> pending;  // refusé par EAGAIN, renvoyé au prochain receive()
   bool drained = false;
@@ -208,7 +209,7 @@ struct VideoDecoder::State {
       if (!recorded) return std::unexpected(recorded.error());
       ready = std::move(*recorded);
     }
-    return to_decoded_frame(std::move(frame), pts, duration, std::move(ready));
+    return to_decoded_frame(std::move(frame), pts, duration, std::move(ready), full_host_formats);
   }
 
   // Les paquets à rejouer, puis la fin du flux ; arrêté par EAGAIN, repris au receive() suivant.
@@ -346,6 +347,7 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   state->requested_threads = options.threads;
   state->software_allowed = std::ranges::contains(options.attempts, HwApi::Software);
   state->download = options.download;
+  state->full_host_formats = options.full_host_formats;
   if (track.inverse_telecine) state->deinterlacer = Deinterlacer(FieldMode::InverseTelecine);
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
     state->nominal_duration_us = av_rescale(1'000'000, track.frame_rate.den, track.frame_rate.num);
@@ -363,10 +365,17 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   // P3.25 : une piste entrelacée se décode en logiciel, où bwdif la désentrelace avant SPAN.
   const bool interlaced =
       state->software_allowed && av.field_order != AV_FIELD_UNKNOWN && av.field_order != AV_FIELD_PROGRESSIVE;
+  // A15-01 : NVDEC rendrait une chroma pleine ou 4:2:2 que l'ingestion CUDA ne prend pas.
+  const bool cuda_hopeless = state->software_allowed && chroma_beyond_420(av);
   for (const HwApi attempt : options.attempts) {
     if ((hardware_hopeless || interlaced) && attempt != HwApi::Software) {
       state->log->info("piste {} : {} sauté, {}", track.index, name(attempt),
                        interlaced ? "piste entrelacée" : "aucun décodeur matériel pour ce profil H.264");
+      continue;
+    }
+    if (cuda_hopeless && attempt == HwApi::Cuda) {
+      state->log->info("piste {} : NVDEC sauté, chroma au-delà du 4:2:0 (décodage logiciel, converti)",
+                       track.index);
       continue;
     }
     auto opened = state->try_attempt(attempt, track, options);

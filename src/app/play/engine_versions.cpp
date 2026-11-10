@@ -98,14 +98,46 @@ int remove_other_versions(const EngineCatalog& catalog, const core::EnginePackag
   return removed;
 }
 
+namespace {
+
+bool finish_deferred_swap(const fs::path& target, const fs::path& staging, const fs::path& aside) {
+  std::error_code error;
+  if (!read_package_note(staging) || !fs::is_directory(staging, error)) return false;
+  fs::remove_all(aside, error);
+  fs::rename(target, aside, error);
+  if (error) {
+    log_channel("app")->warn("moteurs : {} toujours tenu, remplacement remis : {}",
+                             core::to_utf8(target.filename()), error.message());
+    return false;
+  }
+  fs::rename(staging, target, error);
+  if (error) {
+    std::error_code restore;
+    fs::rename(aside, target, restore);
+    log_channel("app")->warn("moteurs : {} non mis en place : {}", core::to_utf8(staging.filename()),
+                             error.message());
+    return false;
+  }
+  fs::remove_all(aside, error);
+  log_channel("app")->info("moteurs : nouvelle version mise en place au lancement ({})",
+                           core::to_utf8(target.filename()));
+  return true;
+}
+
+}  // namespace
+
 bool recover_interrupted_install(const EngineCatalog& catalog, const core::EnginePackage& package) {
   const fs::path target = core::engine_dir(catalog.layout, package);
   std::error_code error;
-  if (fs::exists(target, error) || error) return false;
   fs::path staging = target;
   staging += ".partiel";
   fs::path aside = target;
   aside += ".ancien";
+  const bool present = fs::exists(target, error);
+  if (error) return false;
+  // Un remplacement remis au lancement suivant (A06-09) : la version en place tenait encore une DLL ouverte,
+  // la nouvelle attend entière dans « .partiel ». Rien n'est chargé encore : l'échange se fait maintenant.
+  if (present) return finish_deferred_swap(target, staging, aside);
   // La note s'écrit en dernier, après chaque fichier sur le disque : un « .partiel » qui l'a est complet.
   for (const fs::path& copy : {staging, aside}) {
     if (copy == staging && !read_package_note(copy)) continue;

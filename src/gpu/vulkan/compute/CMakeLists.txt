@@ -30,7 +30,7 @@ ajp_add_module(vk_compute
     spirv_access.cpp
     sync.cpp
     weights.cpp
-  DEPS ajp::core_types ajp::kernels ajp::dep::vulkan
+  DEPS ajp::core_types ajp::core_os ajp::kernels ajp::dep::vulkan
   PRIVATE_DEPS ajp::core_log ajp::dep::spdlog ${CMAKE_DL_LIBS})
 
 # Aucun prototype Vulkan, ici comme chez ceux qui incluent nos en-têtes.

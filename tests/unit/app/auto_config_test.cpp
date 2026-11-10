@@ -31,7 +31,7 @@ TEST_CASE("Personnalisé ne touche à rien", "[auto_config]") {
   PlaySettings s = with(Preset::Custom);
   s.work_height = 900;
   s.rife_factor = 5;
-  s.motion_engine = MotionEngine::Gmfss;
+  s.motion_engine = MotionEngine::Apple;
   CHECK(apply_preset(s, Machine{Tier::Ultra, 2160, 165.0}, k1080p24) == s);
   // Auto par défaut : un premier double-clic sur une vidéo, sans assistant, ne prend pas la chaîne lourde.
   CHECK(PlaySettings{}.preset == Preset::Auto);

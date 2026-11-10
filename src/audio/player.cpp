@@ -12,6 +12,7 @@
 #include <spdlog/spdlog.h>
 
 #include "audio/log.h"
+#include "core/clock.h"
 #include "core/types.h"
 
 namespace ajp::audio {
@@ -38,6 +39,10 @@ std::expected<PlayerConfig, Refusal> checked(const PlayerConfig& config) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("audio.queue_target_us = {}, attendu de {} à {}", config.queue_target_us,
                               kMinQueueTargetUs, kMaxQueueTargetUs));
+  }
+  if (config.reopen_retry_us < 0) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("audio.reopen_retry_us = {}, attendu positif", config.reopen_retry_us));
   }
   if (config.resync_us < kMinResyncUs || config.resync_us > kMaxResyncUs) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("audio.resync_us = {}, attendu de {} à {}",
@@ -148,7 +153,7 @@ void AudioPlayer::handle(const DeviceReading& reading) {
 void AudioPlayer::handle(const DeviceRemoved& /*removed*/) {
   auto back = output_->reopen_default();
   if (!back) {
-    report(back.error());
+    lose_output(back.error());
     return;
   }
   pushed_end_us_.reset();
@@ -202,8 +207,46 @@ void AudioPlayer::start_epoch(std::uint32_t epoch) {
   clock_->publish({.epoch = epoch, .valid = false});
 }
 
-// Garde la file du périphérique remplie jusqu'à sa cible, sans plus.
+void AudioPlayer::lose_output(const Refusal& why) {
+  output_retry_us_ = host_now_us() + config_.reopen_retry_us;
+  log_->warn("aucune sortie audio ({}) : lecture sans son, nouvel essai toutes les {} ms", why.detail,
+             config_.reopen_retry_us / 1000);
+  // Un refus, pas un par bloc : l'OSD le dit une fois (avant : une ligne par bloc, 47 par seconde).
+  if (events_.refused)
+    events_.refused(Refusal{RefusalCode::AudioDeviceUnavailable, "aucune sortie audio : lecture sans son"});
+  release(held_.size());
+  held_.clear();
+  ready_.clear();
+  clock_->publish({.epoch = epoch_, .valid = false});  // l'horloge hôte prend la main
+}
+
+bool AudioPlayer::output_back() {
+  if (!output_retry_us_) return true;
+  const std::int64_t now = host_now_us();
+  if (now < *output_retry_us_) return false;
+  if (!output_->reopen_default()) {
+    output_retry_us_ = now + config_.reopen_retry_us;
+    return false;
+  }
+  output_retry_us_.reset();
+  aligning_ = master_ != nullptr;
+  regulator_.restart();
+  last_follow_us_.reset();
+  restart_pll();
+  if (!paused_) output_->resume();
+  log_->info("sortie audio retrouvée : le son reprend sur la sortie par défaut");
+  return true;
+}
+
+// Garde la file du périphérique remplie jusqu'à sa cible, sans plus. Sans sortie, ce qui arrive part sans
+// être joué : le thread source n'attend pas une file que rien ne vide.
 void AudioPlayer::pump() {
+  if (!output_back()) {
+    release(held_.size());
+    held_.clear();
+    ready_.clear();
+    return;
+  }
   while (output_->queued_us() < config_.queue_target_us) {
     if (!ready_.empty()) {
       if (!push(ready_.front())) return;  // attend que l'horloge maître soit valide

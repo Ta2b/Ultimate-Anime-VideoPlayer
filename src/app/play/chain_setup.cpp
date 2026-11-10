@@ -83,6 +83,9 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
           .render_luid = render.luid,
           .devices = shared,
           .download = !tensorrt,
+          // L'ingestion Vulkan lit Yuv444p16 et P016 en mémoire hôte ; celle de TensorRT ne lit pas le
+          // 4:4:4 et n'a pas été vue sur la carte avec du P016 hôte (A15-07, A-CONFIRMER).
+          .full_host_formats = !tensorrt,
           .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
 }
 
@@ -165,6 +168,8 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
   c.opened.drba_fused = c.opened.drba && c.drba_fused;
   c.opened.drba_motion = c.opened.drba && c.drba_motion;
   c.opened.drba_fused_capable = c.backend != nullptr && c.backend->capabilities().drba_fused;
+  c.opened.drba_fused_refused = c.opened.drba ? c.drba_fused_refused : std::nullopt;
+  c.opened.rife_fused_refused = c.rife_fused ? std::nullopt : c.rife_fused_refused;
   c.opened.shape = {
       .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}),
       .warp_after_span =
@@ -200,6 +205,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       if (*chain) {
         ChainEngines& c = **chain;
         note_opened(c, p, plan->settings);
+        // A03-21 : le repli du fusionné vers le réseau entier se dit à l'écran, pas au journal seulement.
+        if (p.notice.empty()) p.notice = fused_refusal_notice(c.opened);
         c.played = std::move(plan->settings);
         c.stage_notes = std::move(plan->notes);
       }
@@ -228,6 +235,16 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
 }
 
 namespace {
+
+// Ce que DistilDRBA chargé a pris : le fusionné, ou l'entier après un refus du fusionné (A03-21).
+void note_drba_fused(ChainEngines& c, const DrbaFusedUse& fused, bool tried) {
+  c.drba_fused = fused.used;
+  c.drba_fused_refused = fused.refused;
+  if (fused.used)
+    log_channel("app")->info("DistilDRBA fusionné : quatre moteurs et noyaux de colle");
+  else if (tried)
+    log_channel("app")->warn("DistilDRBA fusionné indisponible ({}) : DistilDRBA entier", fused.declined);
+}
 
 // Les options d'essai que la chaîne porte telles quelles.
 void take_trials(ChainEngines& c, const PlayOptions& o) {
@@ -498,11 +515,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       log->info("DistilDRBA mouvement : estimé en {}x{}, warp en {}x{}", at.width, at.height, c.work.width,
                 c.work.height);
     if (loaded && *loaded) {
-      c.drba_fused = fused.used;
-      if (fused.used)
-        log->info("DistilDRBA fusionné : quatre moteurs et noyaux de colle");
-      else if (try_fused)
-        log->warn("DistilDRBA fusionné indisponible ({}) : DistilDRBA entier", fused.declined);
+      note_drba_fused(c, fused, try_fused);
     }
     // Annulée, la construction ne passe pas la main à RIFE : l'interpolation part, SPAN reste (A31-15).
     if (!loaded && watch_now(loaded.error()))
@@ -585,6 +598,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     }
     if (!fused) {
       log->warn("RIFE fusionné indisponible ({}) : RIFE entier", fused.error().detail);
+      c.rife_fused_refused = fused.error().code;
       return Fused::Declined;
     }
     if (!*fused) return Fused::Closed;

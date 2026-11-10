@@ -25,8 +25,11 @@
 #include "core/log.h"
 #include "core/text.h"
 #include "core/utf8_path.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
+
+using prepare::ansi_safe_path;  // curl et tar relisent leur ligne de commande en ANSI sous Windows
 core::Os host_os() {
   return core::kHostOs;
 }
@@ -219,25 +222,58 @@ std::uint64_t directory_bytes(const std::filesystem::path& dir) {
   return total;
 }
 
+namespace {
+
+// Un fichier tiers que reuse_vendor_file reprendra sans doute : même nom et même taille dans un dossier de
+// engines_root. Le SHA-256 n'est pas recalculé ici (1 Go à lire) : c'est une estimation de place, la
+// vérification se fait à l'installation.
+bool vendor_on_hand(const core::VendorFile& file, const std::filesystem::path& engines_root) {
+  if (engines_root.empty()) return false;
+  std::error_code error;
+  std::filesystem::directory_iterator it(engines_root, error);
+  for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+    std::error_code checked;
+    const std::filesystem::path candidate = it->path() / file.name;
+    if (std::filesystem::is_regular_file(candidate, checked) &&
+        std::filesystem::file_size(candidate, checked) == file.size && !checked)
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePackage& package,
-                           std::string_view arch, std::uint64_t existing) {
+                           std::string_view arch, std::uint64_t existing,
+                           const std::filesystem::path& engines_root) {
   InstallSpace space;
   space.download = package.size;
   // L'archive du moteur, puis son extraction (module et outils ; l'estimation vaut 3 fois l'archive).
   std::uint64_t staged = package.size * 3;
   std::uint64_t highest = package.size + staged;
+  std::uint64_t linked = 0;
   for (const core::VendorFile& file :
        core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch)) {
+    // Repris de la version en place par un lien dur : ni téléchargé ni écrit une seconde fois (A06-06).
+    if (vendor_on_hand(file, engines_root)) {
+      linked += file.size;
+      continue;
+    }
     space.download += file.packed_size;
     // Chaque fichier tiers : son téléchargement et sa copie décompressée coexistent avec ce qui est déjà
     // posé.
     highest = std::max(highest, package.size + staged + file.packed_size + file.size);
     staged += file.size;
   }
-  space.installed = staged;
+  space.installed = staged + linked;
   const std::uint64_t peak = std::max(highest, package.size + staged) + existing;
   space.peak = peak + peak / 20;  // 5 % de marge
   return space;
+}
+
+InstallSpace install_space_in(const EngineCatalog& catalog, const core::EnginePackage& package,
+                              std::string_view arch, const std::filesystem::path& installed_dir) {
+  return install_space(catalog, package, arch, directory_bytes(installed_dir), installed_dir.parent_path());
 }
 
 std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
@@ -344,7 +380,7 @@ std::expected<void, Refusal> pull_packed(const core::VendorFile& file, const std
     // tout de suite (A06-07).
     args.insert(args.end(), {"--progress-bar", "--max-filesize", std::to_string(file.packed_size - have),
                              "--range", std::format("{}-{}", file.data_offset + have, last), "--output",
-                             core::to_utf8(chunk), file.url});
+                             ansi_safe_path(chunk), file.url});
     const double done = static_cast<double>(have) / static_cast<double>(file.packed_size);
     auto fetched = run_tool(
         {.program = curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
@@ -485,6 +521,15 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
 
 namespace {
 
+std::unexpected<Refusal> deferred_swap(const std::filesystem::path& target, const std::error_code& error) {
+  log_channel("app")->warn(
+      "{} tenu ({}) : la nouvelle version attend le prochain lancement",  // i18n-ok : journal
+      core::to_utf8(target.filename()), error.message());
+  return std::unexpected(
+      Refusal{RefusalCode::FileUnwritable,
+              i18n::tr("the new version is ready: it replaces the installed one at the next launch")});
+}
+
 // Les étapes de l'installation ; `step` dit où elle en est, pour le journal si elle échoue. Une seule
 // progression globale (octets tirés, archive et fichiers tiers) au lieu d'une barre par fichier.
 // Chaque fichier d'un dossier extrait, sur le disque : FlushFileBuffers sous Windows, fsync ailleurs.
@@ -545,7 +590,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
   // installation recommencée.
   const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
-  const InstallSpace space = install_space(catalog, package, progress.cuda_arch, directory_bytes(target_dir));
+  const InstallSpace space = install_space_in(catalog, package, progress.cuda_arch, target_dir);
   log_channel("app")->info(
       "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})",
       name,  // i18n-ok : journal
@@ -574,8 +619,8 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
          .args =
              [&] {
                std::vector<std::string> args = curl_download_args();
-               args.insert(args.end(),
-                           {"--continue-at", "-", "--progress-bar", "--output", part.string(), package.url});
+               args.insert(args.end(), {"--continue-at", "-", "--progress-bar", "--output",
+                                        ansi_safe_path(part), package.url});
                return args;
              }(),
          .timeout = std::chrono::hours(4)},
@@ -606,7 +651,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   done_bytes = static_cast<double>(package.size);
   overall(0.0, i18n::tr_format("extracting {}", name));
   if (auto ok = run_tool({.program = *tar,
-                          .args = {"-xzf", part.string(), "-C", staging.string()},
+                          .args = {"-xzf", ansi_safe_path(part), "-C", ansi_safe_path(staging)},
                           .timeout = std::chrono::minutes(30)},
                          {}, progress.stop, i18n::tr_format("extracting {}", name));
       !ok) {
@@ -668,11 +713,9 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   if (replaced) {
     error.clear();
     std::filesystem::rename(target, aside, error);
-    if (error) {
-      const std::string reason = error.message();
-      std::filesystem::remove_all(staging, error);
-      return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
-    }
+    // Windows : une DLL de la version en place est encore chargée. La nouvelle, entière et notée, attend
+    // dans « .partiel » : recover_interrupted_install l'échange au lancement suivant (A06-09).
+    if (error) return deferred_swap(target, error);
   }
   error.clear();
   std::filesystem::rename(staging, target, error);

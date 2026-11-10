@@ -60,7 +60,7 @@ class AudioThread {
     return inbox_.try_push(std::forward<M>(message));
   }
 
-  // Horloge audio, maître quand l'écran est VRR.
+  // Horloge audio, maître sauf quand l'hôte mène (calage sur l'écran, host_must_lead de wiring.h).
   std::shared_ptr<const MasterClock> clock() const { return clock_; }
 
  private:

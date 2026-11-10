@@ -4,7 +4,7 @@
 
 #include "app/play/auto_bench.h"
 #include "core/log.h"
-#include "core/user_overlay.h"
+#include "core/text_file.h"
 
 namespace ajp::app::play {
 

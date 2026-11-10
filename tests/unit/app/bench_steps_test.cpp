@@ -175,16 +175,6 @@ TEST_CASE("défaire l'optimisation remet bench.toml comme il était, ou le retir
   fs::remove_all(dir);
 }
 
-TEST_CASE("la fenêtre des essais reste visible sous GNOME / Wayland, masquée ailleurs", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
-  CHECK_FALSE(hide_is_reliable("wayland", "GNOME"));
-  CHECK_FALSE(hide_is_reliable("wayland", "ubuntu:GNOME"));
-  CHECK_FALSE(hide_is_reliable("Wayland", "gnome"));
-  CHECK(hide_is_reliable("x11", "GNOME"));
-  CHECK(hide_is_reliable("wayland", "KDE"));
-  CHECK(hide_is_reliable("", ""));
-}
-
 #ifndef _WIN32
 
 namespace {

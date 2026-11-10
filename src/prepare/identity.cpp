@@ -25,10 +25,6 @@ std::string_view format_name(ProgramFormat format) {
       return "tensorrt-plan";
     case ProgramFormat::CoreMl:
       return "coreml-program";
-    case ProgramFormat::OrtProvider:
-      return "ort-provider-program";
-    case ProgramFormat::MiGraphX:
-      return "migraphx-program";
   }
   return "";
 }

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -20,8 +21,10 @@ inline constexpr std::size_t kMaxExternalSubtitles = 16;
 
 // .ass, .ssa et .srt du dossier de `video` (et de ses dossiers Subs/) dont le nom commence par celui de la
 // vidéo, au besoin sans les balises [ ] et ( ), suivi de rien ou d'un point (« .fr », « .eng.forced ») ; et
-// tout fichier d'un dossier Subs/<nom de la vidéo>/. Triés par nom, au plus kMaxExternalSubtitles ; vide si
-// le dossier ne se lit pas.
-std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::path& video);
+// tout fichier d'un dossier Subs/<nom de la vidéo>/. Triés par langue voulue (`wanted`, la plus voulue
+// d'abord), puis par nom, avant d'être coupés à kMaxExternalSubtitles (A17-11) ; vide si le dossier ne se
+// lit pas.
+std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::path& video,
+                                                      std::span<const std::string> wanted = {});
 
 }  // namespace ajp::app::play

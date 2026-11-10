@@ -26,7 +26,7 @@ enum class WizardStep : std::uint8_t {
 };
 inline constexpr int kWizardSteps = 5;
 
-std::string_view title(WizardStep step);  // « Bienvenue », « Moteur », « Image et fluidité »…
+std::string_view title(WizardStep step);  // « Bienvenue », « Langues », « Intégration », « Moteur », « Prêt »
 
 // Ce que la machine permet : les écrans sans objet sont sautés.
 struct WizardFacts {

@@ -176,13 +176,6 @@ TrtexecBuilder::TrtexecBuilder(TrtexecConfig config, EngineCheck check)
 std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec& model,
                                                             const gpu::ShapeSet& shapes,
                                                             gpu::Progress& progress) const {
-  return rebuild(model, shapes, progress, {});
-}
-
-std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSpec& model,
-                                                              const gpu::ShapeSet& shapes,
-                                                              gpu::Progress& progress,
-                                                              const std::string& rejected_sha256) const {
   if (config_.runtime.major < 11) {
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange,
                                    "TensorRT " + config_.runtime.token() + " : trtexec 11 ou plus attendu"});
@@ -204,7 +197,6 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSp
   // Le détenteur de la clé attend le GPU (kMaxLockWait au plus) puis lance trtexec (config_.timeout) :
   // une minute de plus pour la vérification et la publication (A05-02).
   const CacheEntry entry{.destination = plan->engine,
-                         .rejected_sha256 = rejected_sha256,
                          .max_wait = std::chrono::duration_cast<std::chrono::milliseconds>(
                              kMaxLockWait + config_.timeout + std::chrono::minutes(1))};
   auto produced = produce_once(

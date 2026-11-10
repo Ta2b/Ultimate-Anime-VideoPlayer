@@ -18,6 +18,7 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 | `core` | Cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8, écran et source (`display.h`) ; les types du profil v5 | main |
 | `core_types` | Contrats entre modules : `types.h`, `inbox.h`, `messages.h`, `frame.h`, `thread.h`, `gpu_device.h`, `ring.h` | aucun |
 | `core_log` | Canal de journal de chaque module, puits installés par `app` | aucun |
+| `av` | Le texte d'un code AVERROR de FFmpeg (`av_error.h`), en-tête seul : `core` ne lie pas FFmpeg | celui de l'appelant |
 | `media` | Démultiplexage, décodage matériel, horodatage | source |
 | `gpu` | Ring de sortie, backends chargés à l'exécution (`backend.h`, `kernel_ops.h`) | thread du lecteur qui les appelle |
 | `gpu_ir` | Représentation interne des réseaux ONNX, commune aux moteurs Vulkan et Metal | celui de l'appelant |
@@ -39,17 +40,18 @@ Une flèche va d'une cible vers ce qu'elle lie ; « privé » ne se propage pas.
 ```
 core_types ─────────────────────────────── (bibliothèque standard seulement)
 core_log ── spdlog
+av ──────── FFmpeg (en-tête seul)
 core ────── core_types · privé : toml++
 kernels ─── (feuille)
 subs ────── core_types · privé : libass, core_log
-audio ───── core_types · privé : FFmpeg, SDL3, core_log
-media ───── core_types, kernels · privé : FFmpeg, Vulkan, core_log
+audio ───── core_types · privé : av, FFmpeg, SDL3, core_log
+media ───── core_types, kernels · privé : av, FFmpeg, Vulkan, core_log
 gpu_ir ──── core_types · privé : kernels, core_log
 gpu_span_fp8 core_types
 gpu ─────── core, kernels
 prepare ─── core, gpu · privé : toml++, core_log
 render ──── core, subs
-export ──── core_types, kernels · privé : FFmpeg, Vulkan, core_log
+export ──── core_types, kernels · privé : av, FFmpeg, Vulkan, core_log
 app ─────── tout, dont core_log
 ```
 
@@ -317,7 +319,7 @@ se trouvent sans `LD_LIBRARY_PATH`.
   `jthread` et initialiseurs désignés. Modules C++, `generator`, `stacktrace`,
   `flat_map`, `mdspan`, `move_only_function` interdits. `.cu` en C++20.
 - Un fichier vise moins de 500 lignes ; la CI échoue au-delà de 800.
-- Aucun `getenv` : toute option vient du profil ou de `DebugFlags`.
+- Aucun `getenv` : toute option vient de `play.toml` ou de la ligne de commande (`src/app/play/options.cpp`).
 - Erreurs : `std::expected<T, Refusal>` ; une exception ne traverse jamais un
   module ni la boucle d'un thread. Une valeur hors plage est refusée, jamais
   corrigée en silence.

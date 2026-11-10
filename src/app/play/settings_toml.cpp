@@ -1,6 +1,7 @@
 // Le fichier play.toml des réglages : lecture (parse_settings, load_settings), écriture
 // (format_settings, save_settings). Les valeurs lues passent par validate() (settings.cpp).
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <format>
@@ -11,6 +12,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -20,7 +22,7 @@
 #include "app/play/settings.h"
 #include "app/play/settings_toml_lenient.h"
 #include "core/log.h"
-#include "core/user_overlay.h"
+#include "core/text_file.h"
 #include "core/utf8_path.h"
 
 #ifndef TOML_EXCEPTIONS
@@ -262,8 +264,10 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
                                     std::format(" : « {} »", order)));
     std::string engine(name(s.motion_engine));
     reads.push_back(read(*interpolation, "interpolation", "engine", engine));
-    // Le flux optique matériel des RTX a été retiré : RIFE le remplace, sans plainte.
-    bool engine_known = engine == "optical_flow";
+    // Le flux optique matériel des RTX et GMFSS (P5.2, 0.10.0) ont été retirés : RIFE les remplace, sans
+    // plainte.
+    constexpr std::array<std::string_view, 3> kRetiredMotion{"optical_flow", "gmfss", "gmfss_union"};
+    bool engine_known = std::ranges::contains(kRetiredMotion, engine);
     if (engine_known) s.motion_engine = MotionEngine::Rife;
     for (int i = 0; i < kMotionEngineCount; ++i) {
       if (name(static_cast<MotionEngine>(i)) == engine) {
@@ -271,9 +275,6 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
         engine_known = true;
       }
     }
-    // P5.2 : GMFSS est retiré (0.10.0) ; un ancien play.toml qui le nomme se lit en
-    // RIFE.
-    if (is_gmfss(s.motion_engine)) s.motion_engine = MotionEngine::Rife;
     if (!engine_known)
       reads.emplace_back(
           refuse_key(RefusalCode::FieldOutOfRange, "interpolation.engine", std::format(" : « {} »", engine)));
@@ -417,18 +418,17 @@ std::string format_settings(const PlaySettings& s) {
                                    {"work_height", s.work_height},
                                    {"downscale", std::string(name(s.downscale))},
                                    {"span_precision", std::string(name(s.span_precision))}});
-  toml::table interpolation{
-      {"engine", std::string(name(is_gmfss(s.motion_engine) ? MotionEngine::Rife : s.motion_engine))},
-      {"model", s.rife_model},
-      {"keep_poses", s.keep_poses},
-      {"rife_fused", s.rife_fused},
-      {"drba_fused", s.drba_fused},
-      {"motion_precision", std::string(name(s.motion_precision))},
-      {"auto", s.rife_auto},
-      {"auto_cap", s.auto_cap},
-      {"auto_mode", std::string(s.auto_free ? "libre" : "recommande")},
-      {"span_order", std::string(name(s.span_order))},
-      {"smooth_motion", s.smooth_motion}};
+  toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
+                            {"model", s.rife_model},
+                            {"keep_poses", s.keep_poses},
+                            {"rife_fused", s.rife_fused},
+                            {"drba_fused", s.drba_fused},
+                            {"motion_precision", std::string(name(s.motion_precision))},
+                            {"auto", s.rife_auto},
+                            {"auto_cap", s.auto_cap},
+                            {"auto_mode", std::string(s.auto_free ? "libre" : "recommande")},
+                            {"span_order", std::string(name(s.span_order))},
+                            {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {
     interpolation.insert("rife", static_cast<double>(s.rife_factor) / 2.0);
   } else {

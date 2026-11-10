@@ -294,7 +294,6 @@ BackendCaps TensorRtBackend::capabilities() const {
       .rife_fused = true,
       .drba_fused = true,
       .matrix_units = true,
-      .import_formats = {PixelFormat::Nv12, PixelFormat::P010, PixelFormat::P016},
       .lanes = lanes_,
       .ring_targets = true,
       .ring_rgb10a2 = true,
@@ -354,12 +353,6 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Arti
   auto engine = TrtEngine::load(*runtime_, artifact.path, arena());
   if (!engine) return std::unexpected(std::move(engine.error()));
   return std::unique_ptr<Engine>(std::move(*engine));
-}
-
-std::expected<Tensor, Refusal> TensorRtBackend::import(const ExternalImage& image) {
-  return refuse(
-      RefusalCode::FormatUnsupported,
-      std::format("import d'une image {}x{} : pas encore dans ce backend", image.width, image.height));
 }
 
 std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_tensor(TensorType type,

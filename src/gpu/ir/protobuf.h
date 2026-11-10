@@ -36,7 +36,7 @@ struct Field {
 
 // L'en-tête d'un champ au début de data : étiquette, puis valeur d'un Varint (scalar) ou longueur de
 // ce qui suit (payload : celle d'un Length, 8 ou 4 pour Fixed64 et Fixed32, 0 pour un Varint). size :
-// octets de l'en-tête. Sert aussi à parcourir un fichier sans le charger (prepare/onnx_metadata.cpp).
+// octets de l'en-tête.
 // Le seul décodeur du format filaire du dépôt (P1.31).
 struct FieldHeader {
   std::uint32_t number = 0;

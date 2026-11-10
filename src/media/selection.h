@@ -37,9 +37,11 @@ struct TrackChoice {
   std::optional<int> subtitle;
 };
 
-// Le module de sous-titres sait lire ce codec (ASS, SSA, SubRip, texte). Un codec inconnu (vide)
-// compte comme lisible. Les pistes illisibles ne sont jamais choisies automatiquement.
+// Le module de sous-titres sait lire ce codec (ASS, SSA, SubRip, texte, mov_text, WebVTT). Un codec inconnu
+// (vide) compte comme lisible. Les pistes illisibles ne sont jamais choisies automatiquement.
 bool subtitle_readable(std::string_view codec);
+// Sous-titres image (PGS, VobSub, DVB) : pas lus, dits à l'ouverture (A17-02).
+bool subtitle_image(std::string_view codec);
 
 // Vidéo : la piste par défaut, sinon la première, jamais une pochette.
 // La langue d'une piste : sa balise, sinon celle que nomme son titre (track_language.h).

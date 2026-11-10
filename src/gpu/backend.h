@@ -1,6 +1,6 @@
 // Interface d'un backend d'inférence. Chaque backend est une bibliothèque
 // chargée à l'exécution (ajp_backend_<nom>.so / .dll), installée seulement si
-// l'utilisateur l'a choisie : le lecteur démarre sans CUDA, ROCm ni TensorRT.
+// l'utilisateur l'a choisie : le lecteur démarre sans CUDA ni TensorRT.
 //
 // La frontière passe des types C++ (std::string, std::function, std::expected…) : un
 // backend se construit avec la même bibliothèque standard que le lecteur, ce que
@@ -80,7 +80,10 @@ namespace ajp::gpu {
 // 31 : Engine::next_warm (RIFE à chaud, P6.15) ; PairScores::moving (la zone qui bouge, P6.6 et P6.18).
 // 32 : Backend::drain (les files attendues avant la destruction des moteurs, A30-01).
 // 33 : BackendInit::profile_dispatches (--profile-dispatches atteint le backend, A45-08).
-inline constexpr int kBackendAbi = 33;
+// 34 : retirés, sans usage dans le lecteur (A21-10, A21-11) : Backend::import, ExternalImage,
+// BackendCaps::import_formats, KernelOps::rife_pad, measure, previous_scores, IngestSpec::rife_conversion ;
+// KernelOps::SceneStats passe au lecteur (chain_shots.h).
+inline constexpr int kBackendAbi = 34;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -128,8 +131,7 @@ struct BackendCaps {
   // DistilDRBA coupé en quatre moteurs TensorRT et noyaux de colle (manifeste « .drbafused » à la place de
   // l'ONNX, kernels/spec/drba_fused.h).
   bool drba_fused = false;
-  bool matrix_units = false;                // unités matricielles utilisées
-  std::vector<PixelFormat> import_formats;  // formats acceptés par import()
+  bool matrix_units = false;  // unités matricielles utilisées
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
   int lanes = 1;
   // Images intermédiaires écrites directement dans le slot (KernelOps::warp_blend_ring…).
@@ -233,16 +235,6 @@ class Engine {
   virtual bool next_warm() { return false; }
 };
 
-// Image d'un autre module (surface NVDEC copiée, VkImage du ring) à importer sans copie.
-struct ExternalImage {
-  FrameMemory memory = FrameMemory::Host;
-  PixelFormat format = PixelFormat::Rgba16Unorm;
-  int width = 0;
-  int height = 0;
-  std::uintptr_t handle = 0;  // CUdeviceptr, VkImage, mémoire exportée…
-  std::uintptr_t ready = 0;   // événement ou sémaphore à attendre
-};
-
 // Point de synchronisation sur la file du backend.
 struct Fence {
   std::uintptr_t handle = 0;  // CUevent, VkSemaphore timeline…
@@ -257,8 +249,6 @@ class Backend {
   virtual std::expected<Artifact, Refusal> build(const ModelSpec& model, const ShapeSet& shapes,
                                                  Progress& progress) = 0;
   virtual std::expected<std::unique_ptr<Engine>, Refusal> load(const Artifact& artifact) = 0;
-  // Refuse un format inattendu au lieu de le convertir en silence.
-  virtual std::expected<Tensor, Refusal> import(const ExternalImage& image) = 0;
   // Tenseur neuf sur l'appareil ; une dimension nulle, négative ou un total qui déborde est
   // refusé (ShapeInvalid), un type que le backend ne sait pas tenir aussi (FormatUnsupported).
   virtual std::expected<std::unique_ptr<TensorBuffer>, Refusal> alloc_tensor(TensorType type,
@@ -363,11 +353,11 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
                       std::expected<Artifact, Refusal>, std::expected<std::unique_ptr<Engine>, Refusal>,
                       std::expected<std::unique_ptr<TensorBuffer>, Refusal>, std::expected<Fence, Refusal>>(),
     shape_fingerprint<GpuDevice, VulkanDevice, QueueFamily, BackendInit, BackendCaps, ModelSpec, ShapeSet,
-                      Progress, Artifact, ExternalImage, Fence, Tensor, Shape>(),
+                      Progress, Artifact, Fence, Tensor, Shape>(),
     shape_fingerprint<DecodedFrame, ColorInfo, HdrMetadata, VulkanImageAccess,
                       std::expected<VulkanImageAccess, Refusal>>(),
-    shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, std::optional<PairScores>, RingSlotDesc,
-                      ExportedHandle, RingTarget, YuvTarget>(),
+    shape_fingerprint<IngestSpec, Motion, RingWrite, PairScores, RingSlotDesc, ExportedHandle, RingTarget,
+                      YuvTarget>(),
     shape_fingerprint<SpanStill, SpanFp8Request, SpanFp8ImageScore, SpanFp8Derivation,
                       std::expected<SpanFp8Derivation, Refusal>>(),
     // Ce que KernelOps rend au lecteur (A21-01) : les statistiques du grade et la mémoire de l'appareil.

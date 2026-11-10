@@ -10,6 +10,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -18,6 +19,7 @@
 #include <libplacebo/renderer.h>
 #include <libplacebo/vulkan.h>
 
+#include "core/dynamic_library.h"
 #include "render/grade.h"
 #include "vulkan_validation.h"
 
@@ -53,6 +55,22 @@ inline bool has_validation_layer(const pl_vk_inst_t& inst) {
 }
 
 // Un GPU Vulkan sans fenêtre, son renderer et le grade.
+// Le vkGetInstanceProcAddr du chargeur Vulkan, donné à pl_vk_inst_create comme le fait le lecteur
+// (placebo_open.cpp) : le port vcpkg de libplacebo, sous Windows, est construit sans lien au chargeur
+// (-Dvk-proc-addr=disabled), et sans lui l'instance échoue ; tous les tests de rendu sautaient alors,
+// même sur un PC à GPU (C14). Ailleurs, nullptr : libplacebo prend le chargeur auquel il est lié.
+inline PFN_vkGetInstanceProcAddr vulkan_loader() {
+#if defined(_WIN32)
+  static const auto library = ajp::DynamicLibrary::open_system("vulkan-1.dll");
+  if (!library) return nullptr;
+  const auto entry =
+      library->symbol<std::remove_pointer_t<PFN_vkGetInstanceProcAddr>>("vkGetInstanceProcAddr");
+  return entry ? *entry : nullptr;
+#else
+  return nullptr;
+#endif
+}
+
 struct Gpu {
   pl_log log = nullptr;
   pl_vk_inst inst = nullptr;
@@ -67,6 +85,7 @@ struct Gpu {
     log = pl_log_create(PL_API_VER, &log_params);
     const ajp::test::ValidationMode mode = ajp::test::validation_mode();
     pl_vk_inst_params inst_params{};
+    inst_params.get_proc_addr = vulkan_loader();
     inst_params.debug = mode != ajp::test::ValidationMode::Off;
     inst = pl_vk_inst_create(log, &inst_params);
     if (inst == nullptr) return;

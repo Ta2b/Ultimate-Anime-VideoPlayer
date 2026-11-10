@@ -48,13 +48,18 @@ struct DecoderOptions {
   // VP9), sur la file vidéo du GPU. Les décodeurs Vulkan par compute shaders de
   // FFmpeg (ffv1, prores, prores_raw, dpx, apv) ne s'essaient que si ceci est vrai :
   // ils prennent le calcul que gpu réserve à l'upscaling et à l'interpolation, et
-  // leur échec ne se voit qu'au premier point clé, après l'ouverture.
+  // leur échec ne se voit qu'au premier point clé, après l'ouverture. Le lecteur ne le pose jamais : tests
+  // seulement (A15-14).
   bool vulkan_compute = false;
   // Chaque image matérielle copiée en mémoire hôte (av_hwframe_transfer_data) : le décodeur
   // matériel décharge le CPU même pour un backend qui n'importe pas ses surfaces (Vulkan avec
   // VA-API). Quelques Mo par image sur le bus, contre le décodage logiciel d'une HEVC 10 bits.
   // Sauf les images d'un appareil partagé (devices), que son propriétaire lit en place.
   bool download = false;
+  // La chaîne lit en mémoire hôte le 4:4:4 16 bits (Yuv444p16) et le 4:2:0 16 bits (P016) : une source
+  // logicielle 4:4:4 garde sa chroma entière jusqu'à l'agrandissement et une source 12 bits ses 12 bits,
+  // au lieu du 4:2:0 10 bits (A15-07, A49-13). Faux : tout se ramène au 4:2:0 8 ou 10 bits.
+  bool full_host_formats = false;
   // Images décodées que l'aval tient à la fois (SourceLoop, l'étage gpu, le backend), [0, 32].
   // Non nul sous NVDEC : les surfaces sortent sans copie de sécurité
   // (AV_HWACCEL_FLAG_UNSAFE_OUTPUT) et extra_hw_frames monte à ce nombre au moins. Une image
@@ -77,7 +82,8 @@ inline constexpr std::int64_t kMaxDirectSurfacePixels = std::int64_t{2560} * 144
 inline constexpr int kMaxDecoderThreads = 64;
 inline constexpr int kAutoDecoderThreads = 8;
 
-// Ordre d'essai par défaut de la plateforme, logiciel en dernier.
+// Ordre d'essai par défaut de la plateforme, logiciel en dernier. Tests seulement : le lecteur compose sa
+// liste selon le moteur et la carte (decoder_attempts, app/play/chain_setup.cpp).
 std::vector<HwApi> default_attempts();
 
 // Un essai écarté et pourquoi.

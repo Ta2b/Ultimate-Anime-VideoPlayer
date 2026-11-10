@@ -52,7 +52,7 @@ class VideoDecoder {
   int data_errors() const;
   // Surfaces réservées par l'hwaccel (taille initiale du pool de son
   // AVHWFramesContext), extra_hw_frames compris ; 0 en logiciel ou avant la
-  // première image. Sous NVDEC, c'est ulNumDecodeSurfaces avant sa limite de 32.
+  // première image. Sous NVDEC, c'est ulNumDecodeSurfaces avant sa limite de 32. Tests seulement.
   int hw_surfaces() const;
   // Vrai si NVDEC rend ses surfaces sans copie (DecoderOptions::direct_surfaces).
   bool direct_surfaces() const;

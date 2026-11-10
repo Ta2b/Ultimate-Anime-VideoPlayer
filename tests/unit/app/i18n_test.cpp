@@ -98,6 +98,34 @@ TEST_CASE("i18n: chaque texte passé à tr() ou tr_format() a son français", "[
   CHECK(missing.empty());
 }
 
+// L'inverse (A43-01, A43-02) : chaque entrée de la table a son texte anglais quelque part dans le code de
+// l'interface, hors des tables elles-mêmes. Une entrée morte garde un texte que personne ne voit, et qu'un
+// retour de code ressusciterait faux.
+TEST_CASE("i18n: chaque entrée de la table sert encore", "[i18n]") {
+  const std::regex run(R"re(((?:"(?:\\.|[^"\\])*"\s*)+))re");
+  const std::regex piece(R"re("((?:\\.|[^"\\])*)")re");
+  std::set<std::string> literals;
+  for (const auto& file : interface_sources()) {
+    if (file.filename().string().starts_with("i18n_fr")) continue;
+    const std::string text = read_file(file);
+    for (std::sregex_iterator it(text.begin(), text.end(), run), end; it != end; ++it) {
+      const std::string joined = (*it)[1].str();
+      std::string key;
+      for (std::sregex_iterator part(joined.begin(), joined.end(), piece), last; part != last; ++part) {
+        literals.insert(unescape((*part)[1].str()));
+        key += unescape((*part)[1].str());
+      }
+      literals.insert(key);
+    }
+  }
+  std::vector<std::string_view> unused;
+  for (const i18n::Entry& entry : i18n::french_entries()) {
+    if (!literals.contains(std::string(entry.english))) unused.push_back(entry.english);
+  }
+  for (const std::string_view key : unused) UNSCOPED_INFO(key);
+  CHECK(unused.empty());
+}
+
 // Les fichiers dont les textes visibles sont tous passés par tr() : aucune phrase française en dur ne s'y
 // glisse (un littéral avec une lettre accentuée ou « « », hors journaux, commentaires et lignes « i18n-ok »).
 TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "[i18n]") {
@@ -110,6 +138,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "backend_library.cpp",
                                         "chain.cpp",
                                         "chain_hdr.cpp",
+                                        "chain_shots.cpp",
                                         "chain_setup.cpp",
                                         "chapters.cpp",
                                         "drba_fused_choice.cpp",
