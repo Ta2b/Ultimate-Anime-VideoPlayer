@@ -39,6 +39,8 @@
 
 namespace ajp::app::play {
 
+class SubtitleLead;
+
 struct PipelineConfig {
   std::filesystem::path file;
   media::DecoderOptions decoder;
@@ -88,7 +90,7 @@ class Pipeline {
   // RingFrame n'arrivera que celles déjà dans la boîte.
   bool video_idle() const { return video_->idle(); }
   const media::TrackInfo& video_track() const { return video_track_; }
-  // Matroska à édition ordonnée ou à segments liés : lu dans l'ordre du fichier, à annoncer (A14-03).
+  // Matroska à chapitres liés à d'autres fichiers : ces parties ne sont pas jouées, à annoncer (A14-03).
   bool chapters_flattened() const { return chapters_flattened_; }
   // Ce que la session doit savoir du fichier : durée, taille, sous-titres.
   SessionConfig session_config() const;
@@ -142,6 +144,7 @@ class Pipeline {
   std::shared_ptr<subs::SubsInbox> subs_inbox_;
   std::unique_ptr<subs::SubsThread> subs_thread_;
   std::unique_ptr<SubsBridge> subs_bridge_;
+  std::unique_ptr<SubtitleLead> subs_lead_;  // avant stages_, qui le suit : détruit après lui
   std::unique_ptr<VideoStage> video_;
   std::unique_ptr<ThreadStages> stages_;
   const MasterClock* clock_ = host_clock_.get();
@@ -153,6 +156,7 @@ class Pipeline {
   std::int64_t duration_us_ = 0;
   std::vector<ChapterMark> chapters_;
   bool chapters_flattened_ = false;
+  std::vector<PlayPart> parts_;  // édition ordonnée jouée dans son ordre (A14-03)
   std::string decoder_api_;
   TrackMenu menu_;
   std::vector<std::pair<int, audio::AudioCodecInfo>> audio_codecs_;  // pistes audio décodables
