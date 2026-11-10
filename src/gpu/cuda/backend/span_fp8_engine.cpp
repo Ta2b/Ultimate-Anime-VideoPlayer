@@ -251,7 +251,7 @@ std::expected<void, Refusal> SpanFp8Engine::body(cudaStream_t stream, const void
       // travail.
       exec = nullptr;
       if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(cuda_refusal(lost, "SPAN FP8 : capture du graphe"));
+        return std::unexpected(lost_refusal(lost, "SPAN FP8 : capture du graphe"));
       return direct();
     }
   }
@@ -264,7 +264,7 @@ std::expected<void, Refusal> SpanFp8Engine::body(cudaStream_t stream, const void
   exec = nullptr;
   book_.launch_failed(pick.index);
   if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-    return std::unexpected(cuda_refusal(lost, "SPAN FP8 : cudaGraphLaunch"));
+    return std::unexpected(lost_refusal(lost, "SPAN FP8 : cudaGraphLaunch"));
   return direct();
 }
 

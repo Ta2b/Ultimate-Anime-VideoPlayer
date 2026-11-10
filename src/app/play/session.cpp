@@ -551,7 +551,17 @@ void Session::follow_subtitles(std::int64_t host_now) {
   }
 }
 
+bool Session::refresh_osd(std::int64_t host_now) {
+  if (osd_at_us_ && host_now - *osd_at_us_ < kOsdPeriodUs) return false;
+  std::vector<std::string> lines = osd_lines();
+  const bool changed = lines != osd_;
+  osd_ = std::move(lines);
+  osd_at_us_ = host_now;
+  return changed;
+}
+
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
+  if (auto lost = screen_.device_lost()) return std::unexpected(std::move(*lost));  // relance, pas de gel
   fresh_ = std::exchange(stepped_, false);
   last_tick_us_ = host_now;
   retry_pending(host_now);
@@ -561,13 +571,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   choose(host_now);
   follow_subtitles(host_now);
   const bool fresh = fresh_;
-  bool osd_changed = false;
-  if (!osd_at_us_ || host_now - *osd_at_us_ >= kOsdPeriodUs) {
-    std::vector<std::string> lines = osd_lines();
-    osd_changed = lines != osd_;
-    osd_ = std::move(lines);
-    osd_at_us_ = host_now;
-  }
+  bool osd_changed = refresh_osd(host_now);  // overlay_due peut le lever
   const subs::SubtitleFrame* subtitles =
       current_ ? subtitles_for(held_subtitle_pts_.value_or(current_->pts_us)) : nullptr;
   SubtitleLook look = look_of(subtitles);

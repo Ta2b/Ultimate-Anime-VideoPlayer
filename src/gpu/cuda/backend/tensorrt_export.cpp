@@ -262,7 +262,9 @@ std::expected<void, Refusal> TensorRtBackend::health() {
     const cudaError_t state = cudaStreamQuery(stream);
     if (state == cudaSuccess || state == cudaErrorNotReady) continue;
     if (sticky(state)) return std::unexpected(cuda_refusal(state, "état de l'appareil (cudaStreamQuery)"));
-    static_cast<void>(clear_error());  // une erreur d'appel passée, pas un contexte perdu
+    // Une erreur d'appel passée s'efface ; une qui survit à sa lecture est un contexte perdu (A01-01).
+    if (const cudaError_t kept = clear_error(); kept != cudaSuccess)
+      return std::unexpected(lost_refusal(kept, "état de l'appareil (cudaStreamQuery)"));
   }
   return {};
 }

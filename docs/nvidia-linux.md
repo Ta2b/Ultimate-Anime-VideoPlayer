@@ -64,10 +64,11 @@ Sans effet sur l'export. Clés `play.toml` : `[picture] scaler`, `deband`.
 ## DistilDRBA en 4K : flot à l'échelle 0,5
 
 L'auteur de DistilDRBA conseille un flot de 0,5 au lieu de 1 en 4K. Le lecteur prend
-`distil_drba_v2_lite_s05.onnx` (plans remplis à un multiple de 128) dès que la hauteur de travail
-atteint 1440p, et le graphe entier sinon ; l'un sert de repli à l'autre. Aucune bascule dans
-l’environnement (règle du projet) : le seuil est dans `drba_half_flow`. **À mesurer** : PSNR/SSIM entre les deux
-sur un extrait en 2160p, et temps par paire (`--stats`).
+`distil_drba_v2_lite_s05.onnx` (plans remplis à un multiple de 128) dès que la hauteur d'estimation
+atteint 2160 lignes, et le graphe entier sinon ; l'un sert de repli à l'autre, et le journal le dit. Aucune
+bascule dans l’environnement (règle du projet) : le seuil est `kDrbaHalfFlowHeight`. Il était à 1440 lignes
+sans mesure ; la mesure sur processeur est dans `docs/banc-qualite.md` (« DistilDRBA, demi-flot »). **Reste à
+mesurer sur la RTX** : temps par paire des deux graphes à 1440 et 2160 lignes (`--stats`).
 
 Le demi-flot de DRBA s'exporte par le workflow `Exporter les modèles d'interpolation` (Actions), qui peut le
 joindre à la release `models-interp-1` ; `tools/release/fetch-models.sh` l'ajoute alors aux paquets. GMFSS

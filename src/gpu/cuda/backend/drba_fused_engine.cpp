@@ -368,7 +368,7 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
           std::format("graphes CUDA coupés : rejeu refusé {} fois, lancements directs", launch_failures_);
     }
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-      return std::unexpected(cuda_refusal(lost, "DistilDRBA fusionné : cudaGraphLaunch"));
+      return std::unexpected(lost_refusal(lost, "DistilDRBA fusionné : cudaGraphLaunch"));
     return run(stream, arena, inputs, outputs, times_only);
   };
   if (graph.exec != nullptr) return replay();
@@ -391,7 +391,7 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
     // travail.
     graph.exec = nullptr;
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-      return std::unexpected(cuda_refusal(lost, "DistilDRBA fusionné : capture du graphe"));
+      return std::unexpected(lost_refusal(lost, "DistilDRBA fusionné : capture du graphe"));
     ++capture_failures_;
     if (capture_failures_ >= kCaptureAttempts) {
       graphs_off_ = true;

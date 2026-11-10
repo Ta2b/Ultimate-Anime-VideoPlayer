@@ -17,6 +17,7 @@
 #include <utility>
 #include <variant>
 
+#include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
@@ -51,6 +52,7 @@
 #include "app/play/player_engines.h"
 #include "app/play/player_run.h"
 #include "app/play/pumped_task.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
@@ -202,11 +204,70 @@ void check_updates_logged(const std::filesystem::path& update_file, const std::s
   if (message) log_channel("app")->info("mise à jour : {}", *message ? **message : message->error().detail);
 }
 
+// Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur. Au
+// lancement si elle est due, puis relue toutes les 30 minutes tant que le lecteur reste ouvert (la
+// fréquence « au lancement » ne revérifie pas) ; pendant une lecture (playing), elle attend la fin de la
+// vidéo.
+std::jthread start_update_check(const PlaySettings& saved, const PlayerPaths& paths,
+                                std::atomic<bool>& playing) {
+  if (saved.update_mode == UpdateMode::Never) return {};
+  const std::filesystem::path update_file = paths::update_state(paths.data);
+  auto started = start_thread("updates", ThreadReport([](const Refusal& refused) {
+                                log_channel("app")->warn("mise à jour : {}", refused.detail);
+                              }),
+                              [=, &playing, mode = saved.update_mode, frequency = saved.update_frequency](
+                                  const std::stop_token& stop, const ThreadReport&) {
+                                std::mutex mutex;
+                                std::condition_variable_any wake;
+                                for (bool first = true; !stop.stop_requested(); first = false) {
+                                  if (first || !playing.load())
+                                    check_updates_logged(update_file, stop, mode, frequency);
+                                  if (frequency == UpdateFrequency::Launch) return;
+                                  std::unique_lock lock(mutex);
+                                  wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
+                                }
+                              });
+  if (started) return std::move(*started);
+  log_channel("app")->warn("mise à jour : {}", started.error().detail);
+  return {};
+}
+
+// Une relance du lecteur (perte du GPU, moteur mis à jour) rouvre la vidéo qui jouait : options.file devient
+// elle (relaunch_target.h). Rien pour un essai ou un banc.
+std::optional<RelaunchTarget> take_relaunch(PlayOptions& options, const PlayerPaths& paths,
+                                            std::int64_t now_s) {
+  if (options.bench_out || options.data_dir) return std::nullopt;
+  std::optional<RelaunchTarget> target = take_relaunch_target(relaunch_target_file(paths.data), now_s);
+  if (!target) return std::nullopt;
+  log_channel("app")->info("relance : {} à {}", prepare::utf8_path(target->file.filename()),
+                           format_position(target->start_us));
+  options.file = target->file;
+  return target;
+}
+
+// A33-02 : SDL coupe l'économiseur dès son ouverture ; l'accueil et l'assistant le laissent agir, la
+// lecture le coupe pendant qu'une vidéo avance (sleep_watch.h).
+void allow_screensaver() {
+  if (!SDL_EnableScreenSaver()) log_channel("app")->warn("économiseur d'écran : {}", SDL_GetError());
+}
+
+// Un avis de plus devant ceux de la vidéo qui s'ouvre, une fois : first est vidé.
+void announce_first(i18n::Translated& notice, i18n::Translated& first) {
+  if (first.empty()) return;
+  notice = notice.empty() ? first : first + i18n::Translated::data(" · ") + notice;
+  first = {};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
-std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths) {
+std::expected<void, Refusal> play(const PlayOptions& launch_options, const PlayerPaths& paths) {
   const auto log = log_channel("app");
+  // Une relance du lecteur (perte du GPU, moteur mis à jour) rouvre la vidéo qui jouait, à son instant
+  // (relaunch_target.h, A31-02, A29-04), à la place du fichier des arguments.
+  PlayOptions options = launch_options;
+  const std::int64_t launched_s = relaunch_now_s();
+  const std::optional<RelaunchTarget> reopened_after = take_relaunch(options, paths, launched_s);
   set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
   // Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
@@ -226,10 +287,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                                    visible_error(video.error()));
     }
   }
-  // Vérification des mises à jour, en arrière-plan et hors lecture : le fil s'arrête avec le lecteur. Au
-  // lancement si elle est due, puis relue toutes les 30 minutes tant que le lecteur reste ouvert (la
-  // fréquence « au lancement » ne revérifie pas) ; pendant une lecture, elle attend la fin de la vidéo.
-  std::atomic<bool> playing{false};
+  std::atomic<bool> playing{false};  // la vérification des mises à jour attend la fin de la vidéo
   std::jthread update_check;
   const std::filesystem::path update_file = paths::update_state(paths.data);
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
@@ -241,30 +299,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     startup_notes.push_back(set_aside(settings_path, saved.error()));
     saved = PlaySettings{};
   }
-  if (!options.bench_out && !options.data_dir) {
-    if (saved->update_mode != UpdateMode::Never) {
-      auto started =
-          start_thread("updates", ThreadReport([](const Refusal& refused) {
-                         log_channel("app")->warn("mise à jour : {}", refused.detail);
-                       }),
-                       [=, &playing, mode = saved->update_mode, frequency = saved->update_frequency](
-                           const std::stop_token& stop, const ThreadReport&) {
-                         std::mutex mutex;
-                         std::condition_variable_any wake;
-                         for (bool first = true; !stop.stop_requested(); first = false) {
-                           if (first || !playing.load())
-                             check_updates_logged(update_file, stop, mode, frequency);
-                           if (frequency == UpdateFrequency::Launch) return;
-                           std::unique_lock lock(mutex);
-                           wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
-                         }
-                       });
-      if (started)
-        update_check = std::move(*started);
-      else
-        log->warn("mise à jour : {}", started.error().detail);
-    }
-  }
+  if (!options.bench_out && !options.data_dir) update_check = start_update_check(*saved, paths, playing);
   load_user_keys(paths::user_keys(settings_path.parent_path()));  // [keys] seul
   const std::string title = given ? std::format("ajp — {}", core::to_utf8(options.file.filename())) : "ajp";
   auto screen = PlaceboScreen::open(ScreenOptions{
@@ -287,6 +322,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
                                      : std::filesystem::path()});
   if (!screen) return std::unexpected(std::move(screen.error()));
+  allow_screensaver();
   auto ui = PlayerUi::create((*screen)->window(), given ? core::to_utf8(options.file.filename()) : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
   note_ignored_keys((*ui)->controls());
@@ -366,7 +402,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
 
   // Lancé sans fichier, l'accueil choisit la vidéo, et il revient à la fin de chacune. Une vidéo
   // glissée sur la fenêtre pendant la lecture prend la place de celle en cours.
-  const bool from_home = !given;
+  const bool from_home = !given || (reopened_after && launch_options.file.empty());
   std::filesystem::path file = unreadable.empty() ? options.file : std::filesystem::path();
   std::string problem = unreadable;  // la vidéo choisie ne se lit pas : dit à l'accueil
   std::string set_aside_notes;       // play.toml ou settings.toml mis de côté
@@ -382,9 +418,23 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
   ShotWork shots = shot_work(paths::shot_cache(paths), options);
+  // P3.10, décisions 6 et 10 : un étage refusé ou annulé (« Annuler et regarder ») laisse la vidéo jouer sans
+  // lui ; le refus vaut pour la séance, l'annulation pour sa vidéo (stage_fallback.h). play.toml n'en garde
+  // rien.
+  StageMemory stage_memory;
+  i18n::Translated engine_fallback;  // le moteur choisi remplacé à l'ouverture : à dire sur la vidéo (A31-03)
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
+  i18n::Translated relaunch_note;  // dit sur la vidéo rouverte après une perte du GPU
+  if (reopened_after && given) {
+    forced_start = reopened_after->start_us;
+    forced_paused = reopened_after->paused;
+    if (reopened_after->reason == RelaunchReason::GpuLost)
+      relaunch_note = i18n::ui_tr("The graphics card stopped responding: the player restarted");
+  }
+  // Une seconde perte du GPU dans la minute de la relance ne relance plus : le message et l'accueil.
+  const bool lost_recently = reopened_after.has_value() && reopened_after->reason == RelaunchReason::GpuLost;
   // Annoncés une fois par lancement, pas à chaque vidéo : la mise à jour vue, la calibration d'une autre
   // carte.
   bool update_announced = false;
@@ -474,7 +524,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
     // recharge pas sous le même nom dans ce processus, le lecteur se relance sur cette vidéo.
     if (library && library->replaced_on_disk() && paths.relaunch != nullptr) {
       log->info("moteur mis à jour : le lecteur se relance");
-      *paths.relaunch = true;
+      ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
       return {};
     }
     // Un autre moteur choisi depuis (accueil, Paramètres) : la bibliothèque se rouvre sur lui, sinon le choix
@@ -493,7 +543,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       }
       if (stale_updated && paths.relaunch != nullptr) {
         log->info("moteurs mis à jour : le lecteur se relance");
-        *paths.relaunch = true;
+        ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
         return {};
       }
       show_loading(**screen, **ui, i18n::ui_tr("Loading"));
@@ -503,6 +553,13 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       if (!opened) return std::unexpected(std::move(opened.error()));
       library = std::move(*opened);
       library_wanted = wanted;
+      // A31-03 : le moteur choisi refuse ce GPU (pilote trop ancien, module abîmé) : un autre le remplace,
+      // plus lent ; dit à l'écran une fois, la raison au journal et dans Général > Moteurs.
+      if (const std::optional<core::EngineId> in_use = engine_of_library(library->path());
+          wanted && in_use && wanted != in_use)
+        engine_fallback =
+            i18n::ui_tr_format("{} unavailable: {} is used, slower (Settings > General > Engines)",
+                               engine_label(*wanted), engine_label(*in_use));
     }
 
     Player player{.options = file_options,
@@ -521,6 +578,7 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
                   .engines = std::move(*engines),
                   .display = window_display((*screen)->window())};
     player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
+    player.stages = &stage_memory;
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
       // lancement.
@@ -542,12 +600,11 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
         player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
       }
     }
-    if (!set_aside_notes.empty()) {
-      // Déjà traduites par set_aside() : montrées telles quelles.
-      const i18n::Translated notes = i18n::Translated::data(set_aside_notes);
-      player.notice = player.notice.empty() ? notes : notes + i18n::Translated::data(" · ") + player.notice;
-      set_aside_notes.clear();
-    }
+    announce_first(player.notice, relaunch_note);
+    announce_first(player.notice, engine_fallback);
+    // Déjà traduites par set_aside() : montrées telles quelles.
+    i18n::Translated aside = i18n::Translated::data(std::exchange(set_aside_notes, {}));
+    announce_first(player.notice, aside);
     if (player.display) {
       log->info("écran {} : {}", player.display->connector, describe(*player.display));
     } else {
@@ -574,18 +631,6 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       playing.store(true);
       auto outcome = run_chain(player, settings, start_us, start_paused);
       playing.store(false);
-      // P3.10 : « Annuler et regarder » pendant une construction : la même vidéo, sans agrandissement ni
-      // interpolation, le temps d'une lecture ; play.toml n'en garde rien.
-      if (!outcome && outcome.error().key == kWatchNowKey && (settings.upscale || settings.rife_factor > 0)) {
-        settings.upscale = false;
-        settings.rife_factor = 0;
-        settings.rife_auto = false;
-        file_options.given.emplace_back("--no-upscale");
-        file_options.given.emplace_back("--rife");
-        file_options.rife_factor = 0;
-        player.notice = i18n::ui_tr("Engine build cancelled: playing without upscaling or smoothing");
-        continue;
-      }
       if (!outcome) {
         result = std::unexpected(std::move(outcome.error()));
         break;
@@ -598,6 +643,10 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
           break;
         }
         if (!*handled) {
+          // Un moteur mis à jour relance le lecteur : sur cette vidéo, à cet instant (A29-04).
+          if (paths.relaunch != nullptr && *paths.relaunch)
+            ask_relaunch(paths, file, (*outcome)->position_us, (*outcome)->paused,
+                         RelaunchReason::EngineUpdated);
           player.quit = true;
           break;
         }
@@ -646,6 +695,15 @@ std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths&
       // P3.10 : ouvert par double-clic, l'échec ne ferme plus la fenêtre sans un mot ; seuls les lancements
       // pilotés (essais, banc, captures) gardent le code de sortie.
       if (scripted || player.quit) return result;
+      // A31-02, décision 9 : le GPU perdu (TDR, Xid, veille) ne revient pas dans ce processus ; le lecteur se
+      // relance une fois sur cette vidéo, à cet instant, et le dit. Une seconde perte dans la minute : le
+      // message et l'accueil.
+      if (result.error().code == RefusalCode::DeviceLost &&
+          !(lost_recently && relaunch_now_s() - launched_s < kRelaunchAgainS) &&
+          ask_relaunch(paths, file, player.stopped_at_us, false, RelaunchReason::GpuLost)) {
+        log->error("{} ; le lecteur se relance", result.error().detail);
+        return {};
+      }
       log->error("{}", result.error().detail);
       failed = i18n::tr_format("\"{}\" stopped: {}", core::to_utf8(file.filename()),
                                visible_error(result.error()));

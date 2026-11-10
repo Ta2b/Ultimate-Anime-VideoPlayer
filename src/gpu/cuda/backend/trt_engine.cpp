@@ -154,7 +154,7 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
     if (const cudaError_t made = cudaStreamCreateWithFlags(&aux, cudaStreamNonBlocking);
         made != cudaSuccess) {
       if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(cuda_refusal(lost, "cudaStreamCreateWithFlags (file auxiliaire)"));
+        return std::unexpected(lost_refusal(lost, "cudaStreamCreateWithFlags (file auxiliaire)"));
       return refuse(RefusalCode::VendorCallFailed, "cudaStreamCreateWithFlags (file auxiliaire)");
     }
     engine->aux_streams_.push_back(aux);
@@ -249,7 +249,7 @@ std::expected<void, Refusal> TrtEngine::match_aux_priority(cudaStream_t stream) 
   int priority = 0;
   if (cudaStreamGetPriority(stream, &priority) != cudaSuccess) {
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-      return std::unexpected(cuda_refusal(lost, "cudaStreamGetPriority"));
+      return std::unexpected(lost_refusal(lost, "cudaStreamGetPriority"));
     return {};  // priorité inconnue : les files gardent la leur
   }
   if (priority == aux_priority_) return {};
@@ -258,7 +258,7 @@ std::expected<void, Refusal> TrtEngine::match_aux_priority(cudaStream_t stream) 
     cudaStream_t fresh = nullptr;
     if (cudaStreamCreateWithPriority(&fresh, cudaStreamNonBlocking, priority) != cudaSuccess) {
       if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(cuda_refusal(lost, "cudaStreamCreateWithPriority (file auxiliaire)"));
+        return std::unexpected(lost_refusal(lost, "cudaStreamCreateWithPriority (file auxiliaire)"));
       return {};  // gardée telle quelle
     }
     cuda_warn(cudaStreamDestroy(aux), "cudaStreamDestroy");
@@ -315,7 +315,7 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
     exec = nullptr;
     book_.launch_failed(pick.index);
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-      return std::unexpected(cuda_refusal(lost, "cudaGraphLaunch"));
+      return std::unexpected(lost_refusal(lost, "cudaGraphLaunch"));
     return direct();
   };
   if (pick.step == GraphStep::Replay) return replay();
@@ -339,7 +339,7 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
     // registre coupe les graphes et le backend le dit dans le journal.
     exec = nullptr;
     if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-      return std::unexpected(cuda_refusal(lost, "capture du graphe"));
+      return std::unexpected(lost_refusal(lost, "capture du graphe"));
     book_.captured(false, !queued                ? "enqueueV3 a échoué pendant la capture"
                           : error != cudaSuccess ? cudaGetErrorString(error)
                                                  : "graphe vide");
