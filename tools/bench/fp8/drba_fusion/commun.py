@@ -2,7 +2,7 @@
 import numpy as np
 
 H, W = 1088, 1920
-MODELE = "/home/ta2b/.local/share/ajp/ajp/modeles/distil_drba_v2_lite-1920x1088-7048367e94f6c43d.onnx"
+MODELE = "/home/ta2b/.cache/ajp/modeles/distil_drba_v2_lite-1920x1088-7048367e94f6c43d.onnx"
 IMAGES = {n: f"/tmp/claude-1000/poses-A/{n}.ppm" for n in ("s5", "s9", "s14")}
 
 # Tenseurs aux coupes (graphe plié par plie.py).

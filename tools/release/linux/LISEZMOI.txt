@@ -40,5 +40,6 @@ GPU de 4 Go (RX 6500, RX 6500M, RX 6400)
 Désinstaller
   ./ajp --unregister                       retire « Ouvrir avec » et le lecteur par défaut
   puis supprimer ce dossier, et les données du lecteur si on ne les garde pas :
-  ~/.local/share/ajp/ajp/                  réglages, journaux, moteurs construits, paquet TensorRT, caches
-  (plusieurs Go possibles)
+  ~/.local/share/ajp/ajp/                  réglages, journaux, paquet TensorRT, modèles téléchargés
+  ~/.cache/ajp/                            moteurs construits, modèles dérivés, plans, cache des shaders
+  (plusieurs Go possibles ; ~/.cache/ajp se refait seul, les sauvegardes l'excluent d'ordinaire)

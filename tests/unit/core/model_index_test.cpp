@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <stop_token>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -110,6 +111,20 @@ TEST_CASE("Téléchargement : un fichier se vérifie par sa taille et son SHA-25
   auto missing = verify_file(dir / "absent.onnx", 1, sha);
   REQUIRE_FALSE(missing);
   CHECK(missing.error().code == RefusalCode::FileUnreadable);
+}
+
+TEST_CASE("Téléchargement : lecture annulée ou impossible, un refus nommé (A20-13)", "[model_index]") {
+  const fs::path dir = scratch("verify-refused");
+  write_file(dir / "model.onnx", std::string(100'000, 'z'));
+  std::stop_source stop;
+  stop.request_stop();
+  const auto cancelled = sha256_file(dir / "model.onnx", stop.get_token());
+  REQUIRE_FALSE(cancelled);
+  CHECK(cancelled.error().code == RefusalCode::Cancelled);
+  const auto absent = sha256_file(dir / "absent.onnx");
+  REQUIRE_FALSE(absent);
+  CHECK(absent.error().code == RefusalCode::FileUnreadable);
+  CHECK(absent.error().detail.contains("absent.onnx"));
 }
 
 TEST_CASE("models.lock : chaque modèle porte url, hachage, taille, licence et profils", "[model_index]") {
