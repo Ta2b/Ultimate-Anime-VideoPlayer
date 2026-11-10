@@ -88,7 +88,8 @@ int remove_other_versions(const EngineCatalog& catalog, const core::EnginePackag
     std::error_code error;
     fs::remove_all(dir, error);
     if (error) {
-      log_channel("app")->warn("moteurs : {} non retiré : {}", core::to_utf8(dir.filename()), error.message());
+      log_channel("app")->warn("moteurs : {} non retiré : {}", core::to_utf8(dir.filename()),
+                               error.message());
       continue;
     }
     ++removed;
@@ -111,10 +112,12 @@ bool recover_interrupted_install(const EngineCatalog& catalog, const core::Engin
     if (!fs::is_directory(copy, error)) continue;
     fs::rename(copy, target, error);
     if (error) {
-      log_channel("app")->warn("moteurs : {} non remis en place : {}", core::to_utf8(copy.filename()), error.message());
+      log_channel("app")->warn("moteurs : {} non remis en place : {}", core::to_utf8(copy.filename()),
+                               error.message());
       return false;
     }
-    log_channel("app")->info("moteurs : installation coupée, {} remis en place", core::to_utf8(copy.filename()));
+    log_channel("app")->info("moteurs : installation coupée, {} remis en place",
+                             core::to_utf8(copy.filename()));
     // La nouvelle version en place, la précédente mise de côté ne sert plus.
     if (copy == staging) fs::remove_all(aside, error);
     return true;
