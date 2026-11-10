@@ -34,8 +34,9 @@ class AudioOutput {
 
   // Pousse des trames entrelacées dont la première a le temps média pts_us.
   std::expected<void, Refusal> push(std::int64_t pts_us, std::span<const float> samples);
-  // Pousse un silence de calage : il n'a pas de temps média.
-  std::expected<void, Refusal> push_silence(std::int64_t frames);
+  // Pousse un silence. pts_us : il comble un trou des horodatages et porte son temps média (A16-10) ;
+  // absent, c'est un silence de calage, sans temps média.
+  std::expected<void, Refusal> push_silence(std::int64_t frames, std::optional<std::int64_t> pts_us = {});
   std::int64_t pushed_frames() const { return sink_->pushed_frames(); }
   std::int64_t queued_us() const;
   std::int64_t latency_us() const;

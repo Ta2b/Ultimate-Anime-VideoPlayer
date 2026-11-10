@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends clang-format-20 glslc spirv-tools
       - name: clang-format
         run: git ls-files -z -- '*.cpp' '*.h' '*.cu' '*.cuh' ':!third_party' | xargs -0 -r clang-format-20 --dry-run --Werror

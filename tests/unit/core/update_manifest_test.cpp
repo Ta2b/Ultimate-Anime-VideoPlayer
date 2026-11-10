@@ -1,5 +1,7 @@
 #include "core/update_manifest.h"
 
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
 
 using namespace ajp::core;
@@ -64,4 +66,9 @@ TEST_CASE("versions : ordre, préversions avant la finale", "[update]") {
   CHECK(compare_versions("1.0.0", "0.99.99") == 1);
   CHECK_FALSE(compare_versions("0.5", "0.5.0"));
   CHECK_FALSE(compare_versions("a.b.c", "0.5.0"));
+  // A35-03 : une préversion sur plusieurs lignes ou sans fin n'est pas une version.
+  CHECK_FALSE(compare_versions("0.5.0-preview\nVisitez http://x", "0.5.0"));
+  CHECK_FALSE(compare_versions("0.5.0-" + std::string(65, 'a'), "0.5.0"));
+  CHECK(compare_versions("0.5.0-rc-1.2", "0.5.0"));
+  CHECK_FALSE(parse_update_manifest(std::string(kManifest).replace(11, 5, "0.5.0-a b")));
 }

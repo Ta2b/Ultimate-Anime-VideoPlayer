@@ -40,8 +40,11 @@ class SourceLoop {
   SourceInbox& inbox_;
   PacketReserve reserve_;  // paquets annexes refusés, voir media/source.h
 
-  std::optional<DecodedFrame> held_frame_;    // décodée, pas encore acceptée
-  std::optional<std::int64_t> drop_before_;   // seek exact en cours : cible en µs
+  std::optional<DecodedFrame> held_frame_;   // décodée, pas encore acceptée
+  std::optional<std::int64_t> drop_before_;  // seek exact en cours : cible en µs
+  // Les paquets annexes de l'époque portent l'instant où la lecture reprend vraiment, la cible d'un seek
+  // exact ou la position retrouvée après un échec : l'audio jette ce qui le précède (A16-14).
+  std::optional<std::int64_t> trim_before_;
   std::optional<std::int64_t> last_pts_us_;   // pts de la dernière image tenue : où revenir si un seek échoue
   std::optional<DecodedFrame> last_dropped_;  // seek exact : livrée si la fin vient avant la cible
   int untimed_drops_ = 0;  // images sans horodatage jetées de suite par le seek exact (A14-10)

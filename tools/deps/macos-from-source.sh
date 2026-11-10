@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Dépendances du lecteur sur macOS (Apple Silicon), dans un préfixe local : les bibliothèques
 # système de Homebrew (MoltenVK, chargeur Vulkan, shaderc, dav1d, freetype…), puis celles dont
-# le lecteur fixe la version (FFmpeg, SDL3, libplacebo, libass du fork…), construites depuis
+# le lecteur fixe la version (FFmpeg, SDL3, libplacebo, libass…), construites depuis
 # leurs dépôts aux mêmes références que linux-from-source.sh.
 #
 #   tools/deps/macos-from-source.sh [--locked] <prefixe> [dossier-de-travail]
@@ -68,7 +68,7 @@ DEPS=(
   "sdl3 https://github.com/libsdl-org/SDL release-3.4.20 f00dc919ca35b9756316e86c4777392de442f9b2"
   "libplacebo https://github.com/haasn/libplacebo v7.387.0 275f7dea27924cdd34ab2e6c20e448b6bc4fab65"
   "libunibreak https://github.com/adah1972/libunibreak libunibreak_7_0 3ce4bfa3129ff3738046a44a6db533d2ce25af2b"
-  "libass https://github.com/the-database/libass 896614fa 896614fa263f9f64944f7b8650ff6806d5328c4d"
+  "libass https://github.com/libass/libass 0.17.5 4a05d8127f525943ebf45fdc6497c9e665947f0d"
 )
 
 fetch() {  # nom url ref commit
@@ -198,12 +198,16 @@ if ! done_marker libunibreak "$(ref_of libunibreak)"; then
   mark libunibreak "$(ref_of libunibreak)"
 fi
 
-# Assembleur et libunibreak exigés (P1.24) : sans eux, configure passe outre avec un simple
-# avertissement, et le rendu des sous-titres perd ses routines SIMD ou la coupure Unicode.
-signature="$(ref_of libass) asm libunibreak $(ref_of libunibreak)"
+# libass de l'amont, plus le rendu sur plusieurs fils (ports/libass/rendu-sur-plusieurs-fils.patch, comme
+# Linux et vcpkg), appliqué une fois sur le clone. Assembleur, libunibreak et fils exigés (P1.24) : sans eux,
+# configure passe outre avec un simple avertissement.
+LIBASS_PATCH="$ROOT/ports/libass/rendu-sur-plusieurs-fils.patch"
+signature="$(ref_of libass) $(shasum -a 256 "$LIBASS_PATCH" | cut -c1-16) asm libunibreak threads $(ref_of libunibreak)"
 if ! done_marker libass "$signature"; then
+  git -C "$WORK/libass" apply --reverse --check "$LIBASS_PATCH" 2>/dev/null \
+    || git -C "$WORK/libass" apply "$LIBASS_PATCH"
   (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
-    --enable-asm --enable-libunibreak && make -j "$JOBS" && make install)
+    --enable-asm --enable-libunibreak --enable-threads && make -j "$JOBS" && make install)
   mark libass "$signature"
 fi
 

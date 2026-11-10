@@ -77,10 +77,6 @@ std::vector<std::string> kde_locales(std::string_view plasma_localerc, std::stri
 
 std::vector<std::string> system_locales(const std::filesystem::path& home) {
   std::vector<std::string> out;
-  if (!home.empty()) {
-    const std::filesystem::path config = home / ".config";
-    out = kde_locales(read_text(config / "plasma-localerc"), read_text(config / "kdeglobals"));
-  }
   int count = 0;
   if (SDL_Locale** locales = SDL_GetPreferredLocales(&count); locales != nullptr) {
     for (int i = 0; i < count; ++i) {
@@ -90,6 +86,19 @@ std::vector<std::string> system_locales(const std::filesystem::path& home) {
       out.push_back(std::move(tag));
     }
     SDL_free(reinterpret_cast<void*>(locales));  // un seul bloc, pointeurs compris
+  }
+  // Les fichiers de KDE ne passent devant que si le système ne dit rien de plus précis que « C » ou
+  // l'anglais : un ancien plasma-localerc resté après un passage à une autre session ne l'emporte pas sur
+  // LANG (A19-12). Sous Plasma, LANG suit déjà la langue choisie dans ses réglages.
+  const bool vague = std::ranges::all_of(out, [](const std::string& tag) {
+    const std::string code = primary(tag);
+    return code.empty() || code == "c" || code == "posix" || code == "en";
+  });
+  if (vague && !home.empty()) {
+    const std::filesystem::path config = home / ".config";
+    std::vector<std::string> kde =
+        kde_locales(read_text(config / "plasma-localerc"), read_text(config / "kdeglobals"));
+    out.insert(out.begin(), kde.begin(), kde.end());
   }
   return out;
 }
@@ -111,6 +120,10 @@ void set_system_language(std::string code) {
 
 std::string_view system_language() {
   return g_system_language;
+}
+
+std::string default_interface_language() {
+  return g_system_language == "fre" ? "fr" : "en";
 }
 
 std::vector<media::LanguagePreset> default_language_presets() {

@@ -59,6 +59,8 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
                                          const std::filesystem::path& where);
 // « 1,3 Go », « 742 Mo ».
 std::string format_size(std::uint64_t bytes);
+// La même taille pour l'interface, dans sa langue (« 1.5 GB », « 1,5 Go » ; A25-12).
+std::string shown_size(std::uint64_t bytes);
 // L'espace libre là où le moteur s'installe (le dossier qui existe le plus près de layout.engines).
 std::uint64_t free_bytes(const std::filesystem::path& where);
 // Octets d'un dossier, récursivement ; 0 s'il manque.
@@ -111,6 +113,10 @@ std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePac
 // install_package.
 // P3.8 : un fichier tiers de même nom, taille et SHA-256 dans un autre dossier de engines_root (une autre
 // version installée du moteur) est lié en dur à dest (copié si le lien échoue) ; vrai s'il a servi.
+// Retire de downloads/ ce que le catalogue ne nomme plus (« <sha256>.part », « <sha256>.morceau ») : un
+// téléchargement coupé d'une version remplacée (A06-04). keep (le paquet en cours d'installation) reste
+// toujours. Rend le nombre d'entrées retirées.
+int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep = {});
 bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
                        const std::filesystem::path& engines_root, const std::stop_token& stop);
 std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,

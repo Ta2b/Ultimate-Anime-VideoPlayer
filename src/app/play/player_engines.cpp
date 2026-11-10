@@ -11,9 +11,11 @@
 #include <SDL3/SDL_timer.h>
 
 #include "app/play/apple_model.h"
+#include "app/play/chain_setup.h"
 #include "app/play/controls.h"
 #include "app/play/drba_fused_choice.h"
 #include "app/play/engine_build.h"
+#include "app/play/home_screen.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/paths.h"
@@ -24,6 +26,7 @@
 #include "prepare/drba_split.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
+#include "prepare/utf8.h"
 
 namespace ajp::app::play {
 namespace {
@@ -37,9 +40,25 @@ constexpr std::int32_t kBuildFrameMs = 100;
 // Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
 // superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
 // montre les détails (details, repris ensuite par les statistiques de la lecture).
-std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& build, PlaceboScreen& screen,
-                                                                 PlayerUi& ui, const EngineLabel& engine,
-                                                                 bool& details, SnapshotPlan& snapshot) {
+// Une vidéo glissée pendant une préparation : gardée pour la lecture, qui passe à elle (A08-08). Vrai si c'en
+// est une ; des sous-titres ou autre chose sont écartés au journal, la chaîne n'est pas encore ouverte.
+bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dropped_video) {
+  const std::optional<Dropped> drop = dropped(event);
+  if (!drop) return false;
+  if (drop->kind != DropKind::Video) {
+    log_channel("app")->info("fichier glissé pendant une construction, écarté : {}",
+                             prepare::utf8_path(drop->path.filename()));
+    return false;
+  }
+  log_channel("app")->info("vidéo glissée pendant une construction : {}",
+                           prepare::utf8_path(drop->path.filename()));
+  dropped_video = drop->path;
+  return true;
+}
+
+std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
+    EngineBuild& build, PlaceboScreen& screen, PlayerUi& ui, const EngineLabel& engine, bool& details,
+    SnapshotPlan& snapshot, std::optional<std::filesystem::path>& dropped_video) {
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   BuildProgress progress(engine.expected_s, started);
@@ -54,6 +73,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      if (keep_drop(event, dropped_video)) return std::unexpected(dropped_video_refusal());
       if (ui.handle(event, host_now_us(), actions)) continue;
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
@@ -100,6 +120,12 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(EngineBuild& bu
 
 }  // namespace
 
+Refusal dropped_video_refusal() {
+  return Refusal{.code = RefusalCode::Cancelled,
+                 .detail = "préparation arrêtée : une autre vidéo a été glissée",
+                 .key = std::string(kDroppedVideoKey)};
+}
+
 gpu::BackendLog backend_log() {
   return [channel = log_channel("backend")](gpu::BackendLogLevel level, std::string_view message) {
     switch (level) {
@@ -138,7 +164,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   if (!build) return std::unexpected(std::move(build.error()));
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
-  auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot);
+  auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video);
   if (!artifact) return std::unexpected(std::move(artifact.error()));
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
@@ -167,9 +193,19 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
   if (!start_span_prepare(prepare, note)) return false;
   const core::KeyMap& keys = configured_keys();
   std::vector<Input> actions;
+  bool watch_now = false;  // A08-08 : « Annuler et regarder » aussi pendant la préparation du FP8
   while (note.pending) {
+    if (watch_now) {
+      log->info("SPAN FP8 : préparation annulée, la vidéo part sans elle");
+      stop_and_wait(note);
+      return false;
+    }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      if (keep_drop(event, p.dropped_video)) {
+        stop_and_wait(note);
+        return std::nullopt;
+      }
       if (p.ui.handle(event, host_now_us(), actions)) continue;
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
@@ -185,7 +221,8 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
     const PrepareView view{.label = i18n::ui_tr_format("Preparing engine {}", "SPAN"),
                            .fraction = fraction,
                            .details = {stage, model.stem().string()},
-                           .show_details = p.details};
+                           .show_details = p.details,
+                           .watch_now = &watch_now};
     if (auto shown = p.screen.show(ShowRequest{.ui = p.ui.preparation(host_now_us(), view)}); !shown)
       log->warn("SPAN FP8 : {}", shown.error().detail);
     (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);
@@ -230,7 +267,7 @@ void note_drba_fallback(const std::optional<DrbaModel>& found, int work_height) 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
-    PrecisionTier tier, DrbaFusedUse* fused, bool* motion) {
+    PrecisionTier tier, DrbaFusedUse* fused, bool* motion, bool image_elsewhere) {
   std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
   note_drba_fallback(found, work_height);
   if (found && tier != PrecisionTier::Balanced) {
@@ -274,6 +311,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
                                                .width = g.padded_width,
                                                .height = g.padded_height},
                                    gpu::Lane::Interpolate);
+      if (!engine && watch_now(engine.error())) return engine;  // A31-15 : aucun repli sur l'entier
       if (!engine) {
         fused->declined = engine.error().detail;
       } else if (!*engine) {
@@ -295,6 +333,11 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
       *motion = false;
       log_channel("app")->warn("DistilDRBA mouvement indisponible ({}) : l'image du graphe",
                                derived.error().detail);
+      if (image_elsewhere) {
+        Refusal elsewhere{RefusalCode::FeatureUnavailable, derived.error().detail};
+        elsewhere.key = std::string(kDrbaImageElsewhereKey);
+        return std::unexpected(std::move(elsewhere));
+      }
     }
   }
   auto fixed = static_distil_drba(source, g.padded_width, g.padded_height, paths::derived_models(p.paths));
@@ -321,6 +364,19 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
                   .width = g.padded_width,
                   .height = g.padded_height},
       gpu::Lane::Interpolate);
+}
+
+// La lecture du fichier : décodeur du moteur, langues, sortie audio et pistes gardées d'une réouverture.
+PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
+                               const std::string& backend_name) {
+  return {.file = file,
+          .decoder = decoder_options(backend_name, p.screen.device(), p.screen.shared_devices()),
+          .languages = {.presets = settings.language_presets},
+          .audio_device = settings.audio_device,
+          .audio_fallback_delay_us = audio_fallback_delay_us(settings),
+          .audio_pll = p.options.audio_pll,
+          .audio_track = p.audio_track,
+          .subtitle_track = p.subtitle_track};
 }
 
 }  // namespace ajp::app::play

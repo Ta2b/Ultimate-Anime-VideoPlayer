@@ -97,9 +97,13 @@ TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seul
     return out;
   };
   const std::filesystem::path source = fake.rife / "rife_v4.26.onnx";
+  // Un dérivé d'une version d'avant (sans version de transformation) : refait, puis retiré (A36-04).
+  std::filesystem::create_directories(fake.home / "modeles");
+  std::ofstream(fake.home / "modeles" / "rife_v4.26-essai-0123456789abcdef.onnx") << "ancien";
   const auto made = derived_model(source, "essai", fake.home / "modeles", twice);
   REQUIRE(made);
-  CHECK(made->filename().string().starts_with("rife_v4.26-essai-"));
+  CHECK(made->filename().string().starts_with(std::format("rife_v4.26-essai-t{}-", kDerivedModelVersion)));
+  CHECK_FALSE(std::filesystem::exists(fake.home / "modeles" / "rife_v4.26-essai-0123456789abcdef.onnx"));
   CHECK(std::filesystem::file_size(*made) == 2);
   CHECK(*derived_model(source, "essai", fake.home / "modeles", twice) == *made);
   CHECK(calls == 1);
@@ -129,6 +133,7 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
   CHECK(find_distil_drba(dirs, false)->path == fake.rife / kDistilDrbaHalfFile);
   CHECK(find_distil_drba(dirs, false)->fallback);
   CHECK_FALSE(drba_half_flow(1080));
+  CHECK_FALSE(drba_half_flow(1440));  // A09-24 : plus de demi-flot à 1440 lignes
   CHECK(drba_half_flow(2160));
 }
 

@@ -17,6 +17,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/links.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -194,7 +196,8 @@ TEST_CASE("Ring : plus de sorties qu'une paire n'en tient arrête l'étage en le
   REQUIRE(stage.frames().try_push(frame(1)));
   REQUIRE(wait_for([&] { return !bench.reported().empty(); }));
   const std::vector<Refusal> refusals = bench.reported();
-  CHECK(refusals.front().code == RefusalCode::ThreadFailed);
+  CHECK(refusals.front().key == kFatalStageKey);  // fatal, son code gardé (A31-01)
+  CHECK(refusals.front().code != RefusalCode::ThreadFailed);
   CHECK(refusals.front().detail.find("11 sorties pour une image, au plus 10") != std::string::npos);
   CHECK(bench.ring.size() == 0);
 }
@@ -240,7 +243,9 @@ TEST_CASE(
   // 0,3 s sur un poste ; sur les machines virtuelles de la CI (CI définie), cinq fois plus.
   CHECK(std::chrono::steady_clock::now() - lost_at <= (std::getenv("CI") != nullptr ? 1500ms : 300ms));
   const std::vector<Refusal> refusals = bench.reported();
-  CHECK(refusals.front().code == RefusalCode::ThreadFailed);
+  // A31-01 : l'appareil perdu reste DeviceLost (« relancer le lecteur », relance), fatal par sa clé.
+  CHECK(refusals.front().code == RefusalCode::DeviceLost);
+  CHECK(refusals.front().key == kFatalStageKey);
   CHECK(refusals.front().detail.find("contexte perdu (sonde)") != std::string::npos);
   CHECK(bench.ring.size() == 1);
 }

@@ -237,13 +237,13 @@ struct PlaySettings {
   int sharpness = 0;
   // À la fin de la vidéo, lire la suivante du dossier (ordre naturel des noms) ; vaut au prochain
   // fichier. Sans effet depuis l'accueil, qui ramène à la liste.
-  // Mises à jour du lecteur (docs/ux-parametres.md, 4.5) : « notify » (Me prévenir, le défaut décidé), « auto
-  // », « never » ; le canal « stable » ou « preview » ; la fréquence « launch », « daily », « weekly ».
+  // Mises à jour du lecteur (updater.h) : une notification, « notify » (Me prévenir, le défaut) ou « never »
+  // ; la fréquence « launch », « daily », « weekly ».
   UpdateMode update_mode = UpdateMode::Notify;
-  UpdateChannel update_channel = UpdateChannel::Stable;
   UpdateFrequency update_frequency = UpdateFrequency::Daily;
-  // Langue de l'interface : « en » (le défaut, sans détection) ou « fr » ; prise en direct (app/play/i18n.h).
-  std::string language = "en";
+  // Langue de l'interface : « en » ou « fr », celle du système par défaut (default_interface_language) ;
+  // prise en direct (app/play/i18n.h).
+  std::string language = default_interface_language();
   // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.
@@ -379,5 +379,9 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
 // mouvement changé sans interpolation) : un tel réglage ne suit running que si running l'a lui-même changé.
 PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen, const PlaySettings& running,
                             bool rife_loaded);
+
+// Le délai que la sortie du système reprend quand l'appareil choisi disparaît (A16-02) : celui mémorisé pour
+// elle, 0 sans mémoire. Rien quand on suit déjà le système : son délai est celui de la séance.
+std::optional<std::int64_t> audio_fallback_delay_us(const PlaySettings& settings);
 
 }  // namespace ajp::app::play

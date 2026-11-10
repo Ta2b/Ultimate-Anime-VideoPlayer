@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "gpu/ir/describe.h"
+#include "gpu/ir/graph.h"
 #include "gpu/ir/memory_plan.h"
 #include "gpu/ir/passes.h"
 #include "test_util.h"
@@ -33,6 +34,7 @@ std::vector<std::byte> seed_model() {
       .weight("w", {8, 4, 3, 3}, sequence(288, -0.3F, 0.3F, 1))
       .initializer(tensor_f16("b", {8}, sequence(8, -0.1F, 0.1F, 2)))
       .weight("slope", {8, 1, 1}, sequence(8, 0.1F, 0.2F, 3))
+      .weight("wt", {8, 2, 4, 4}, sequence(256, -0.2F, 0.2F, 4))
       .weight("scales", {4}, {1, 1, 0.5F, 0.5F})
       .ints("shape", {1, 2, 6, 6});
   ProtoWriter typed = tensor_header("k", onnx::kFloat, std::vector<std::int64_t>{1});
@@ -43,7 +45,11 @@ std::vector<std::byte> seed_model() {
             {attr_ints("pads", {1, 1, 1, 1}), attr_ints("kernel_shape", {3, 3}), attr_int("group", 1)})
       .node("PRelu", {"c", "slope"}, {"p"})
       .node("DepthToSpace", {"p"}, {"d"}, {attr_int("blocksize", 2), attr_string("mode", "CRD")})
-      .node("Resize", {"d", "", "scales"}, {"r"}, {attr_string("mode", "linear")})
+      // Une ConvTranspose de pas 2 à côté : transposes_as_convs a de quoi réécrire (A44-11).
+      .node("ConvTranspose", {"p", "wt"}, {"t"},
+            {attr_ints("strides", {2, 2}), attr_ints("pads", {1, 1, 1, 1})})
+      .node("Add", {"d", "t"}, {"dt"})
+      .node("Resize", {"dt", "", "scales"}, {"r"}, {attr_string("mode", "linear")})
       .node("Constant", {}, {"one"},
             {attr_tensor("value", tensor_i64("", {1}, std::vector<std::int64_t>{1}))})
       .node("Reshape", {"r", "shape"}, {"s"})
@@ -54,6 +60,18 @@ std::vector<std::byte> seed_model() {
       .output("y")
       .output("ch");
   return m.bytes();
+}
+
+// Les passes qu'un moteur aux noyaux typés ajoute (Vulkan) : ConvTranspose réécrites, par phases ou non,
+// puis Cast entre flottants retirés. Sur une copie : ni plantage ni graphe invalide (A44-11).
+void exercise_engine_passes(const Graph& shaped) {
+  for (const bool phases : {false, true}) {
+    Graph copy = shaped;
+    if (!optimize(copy, {.transpose_conv_channels = 256, .transpose_phases = phases})) continue;
+    if (fold_float_casts(copy) > 0) (void)eliminate_dead_code(copy);
+    CHECK(validate(copy).has_value());
+    CHECK(plan_memory(copy).has_value());
+  }
 }
 
 // Tout le chemin d'un modèle : rien ne doit lever ni lire hors des tampons.
@@ -86,6 +104,7 @@ int exercise(const std::vector<std::byte>& bytes) {
   }
   const bool ran = runnable && run(*graph, inputs).has_value();
 
+  exercise_engine_passes(*graph);
   // Un graphe que l'interpréteur exécute se laisse optimiser, et s'exécute encore après.
   auto stats = optimize(*graph);
   if (ran) CHECK(stats.has_value());

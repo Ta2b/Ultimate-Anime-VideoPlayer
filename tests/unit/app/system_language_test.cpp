@@ -45,3 +45,16 @@ TEST_CASE("langues par défaut : audio japonais et sous-titres du système, puis
   set_system_language("eng");
   CHECK(default_language_presets() == Presets{{"jpn", "eng"}, {"eng", ""}});
 }
+
+TEST_CASE("langue de l'interface : celle du système tant que play.toml n'en dit rien (A19-03)",
+          "[app][language]") {
+  using namespace ajp::app::play;
+  set_system_language("fre");
+  CHECK(PlaySettings{}.language == "fr");
+  CHECK(parse_settings("")->language == "fr");
+  CHECK(parse_settings("[interface]\nlanguage = \"en\"\n")->language == "en");  // un choix gardé l'emporte
+  set_system_language("jpn");
+  CHECK(PlaySettings{}.language == "en");
+  set_system_language("eng");
+  CHECK(PlaySettings{}.language == "en");
+}

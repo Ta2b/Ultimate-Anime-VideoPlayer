@@ -25,6 +25,7 @@
 #include "app/play/bench_events.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
+#include "app/play/chain_choices.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
 #include "app/play/default_player.h"
@@ -57,6 +58,7 @@
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
+#include "app/play/sleep_watch.h"
 #include "app/play/span_auto.h"
 #include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
@@ -126,6 +128,22 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
+// A29-02, A33-03, décision 7 : un trou dans le temps (veille, gel du processus) met la lecture en pause à
+// l'image d'avant et recale les horloges par un seek exact ; l'appareil perdu pendant la veille arrête la
+// lecture sur DeviceLost (relance, A31-02).
+std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, std::int64_t gap_us) {
+  const std::int64_t at = session.view().position_us;
+  log_channel("app")->warn("trou de {:.1f} s (veille ou gel) : pause et recalage à {}",
+                           static_cast<double>(gap_us) / 1e6, format_position(at));
+  if (c.backend) {
+    if (auto healthy = c.backend->kernels()->health(); !healthy) return std::move(healthy.error());
+  }
+  session.command(cmd::Pause{});
+  if (at != kNoPts) session.command(cmd::Seek{.target_us = at, .exact = true});
+  ui.controls().notify(i18n::ui_tr("Paused after sleep"), host_now_us());
+  return std::nullopt;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -146,13 +164,24 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const bool early_hdr =
       early_color && (early_color->transfer == Transfer::Pq || early_color->transfer == Transfer::Hlg);
   if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
-  auto prepared = prepare_chain(p, settings);
+  // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
+  // demandée ou rien.
+  auto prepared = prepare_chain(p, settings, p.options.bench_out ? nullptr : p.stages);
+  if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
+    // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
+    Reopen to_dropped{
+        .settings = settings, .position_us = start_us, .next_file = std::exchange(p.dropped_video, {})};
+    return to_dropped;
+  }
   if (!prepared) return std::unexpected(std::move(prepared.error()));
   if (!*prepared) {  // q ou la fenêtre fermée pendant la préparation des moteurs
     p.quit = true;
     return std::nullopt;
   }
   ChainEngines& c = **prepared;
+  // Ce que les moteurs jouent : settings sans les étages refusés ; settings reste le choix de l'utilisateur,
+  // que le panneau montre et que play.toml garde.
+  const PlaySettings& played = c.played;
   // La variante de SPAN chargée, pour la mesure d'un essai du bench (--bench-out).
   const std::string span_variant = c.span_int8 ? std::string(variant_text(c.span_int8->kind))
                                    : c.model   ? std::string("FP16")
@@ -184,24 +213,17 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                              settings.hdr_native ? "HDR · " : "", c.span_label());
   log->info("{} : {}", prepare::utf8_path(options.file.filename()), label_text);
   auto live = std::make_shared<LiveSettings>();
-  live->set_rife_factor(rife_loaded ? factor_of(settings) : Factor{});
+  live->set_rife_factor(rife_loaded ? factor_of(played) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
-  PipelineConfig config{
-      .file = options.file,
-      .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
-      .languages = {.presets = settings.language_presets},
-      .audio_device = settings.audio_device,
-      .audio_pll = p.options.audio_pll,
-      .audio_track = p.audio_track,
-      .subtitle_track = p.subtitle_track};
+  const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
         const int height = stage.track->height;
-        const WorkSize sized = chain_work_size(settings, width, height);
+        const WorkSize sized = chain_work_size(played, width, height);
         // Anneau RGBA16 ; RGB10A2 derrière --ring-rgb10a2 tant que la porte de banding n'est pas mesurée (ADR
         // 0008).
         const RingFormat ring_format =
@@ -213,7 +235,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         if (!slots) return std::unexpected(std::move(slots.error()));
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(std::move(stage),
-                                   c.upscale(settings, live, clock, width, height, std::move(*slots)));
+                                   c.upscale(played, live, clock, width, height, std::move(*slots)));
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
   if ((*pipeline)->chapters_flattened() && p.notice.empty())
@@ -263,7 +285,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   log->info("{}", session_config.output);
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   if (start_paused) session.command(cmd::Pause{});
-  const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   // Le mode Performance de SPAN : ce que le moteur annonce, et sinon pourquoi (moteur absent ou autre carte).
   const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
                                .gpu_name = gpu_facts(p.screen).name,
@@ -287,49 +308,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .height = work.height},
                 settings.preset != Preset::Custom)
           : SpanPrepare{};
-  const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
   p.ui.set_tracks((*pipeline)->tracks());
-  SettingsChoices choices{
-      .models = c.model ? c.model->available : std::vector<std::string>{},
-      .default_model = c.model ? c.model->default_name : std::string(),
-      .source_width = video.width,
-      .source_height = video.height,
-      .source_fps = fps_of(video.frame_rate),
-      .source_rate = video.frame_rate,
-      .display_hz = display_period_us(out.window()) > 0
-                        ? 1e6 / static_cast<double>(display_period_us(out.window()))
-                        : 0.0,
-      .display_vrr = p.display && p.display->vrr.value_or(false),
-      .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
-      .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
-      .span_tiers = c.model ? span_tiers(c.model->path, paths::derived_models(p.paths), fp8_engine,
-                                         c.backend && c.backend->capabilities().span_fp8_cutlass)
-                            : TierSupport{},
-      .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
-      .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
-      .distil_drba_available = c.drba_found,
-      .rife_loaded = rife_loaded,
-      .opened = c.opened,
-      .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
-      .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
-      .rife_folder = c.model_places.front().string(),
-      .hdr_output = p.screen.hdr_output(),
-      .auto_peak = auto_peak,
-      .engines = engine_badges(p.paths.engines,
-                               c.span_int8 ? c.span_int8->onnx
-                               : c.model   ? c.model->path
-                                           : std::filesystem::path(),
-                               work, c.rife || c.rife_motion ? c.rife_model : std::nullopt,
-                               c.rife_motion ? c.geometry : c.image_geometry),
-      .chosen_engines = chosen_line(p.engines),
-      .engine_in_use = engine_of_library(p.library->path()),
-      .engine_note = fallback_note(p.engines, p.library->path()),
-      .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
-      .source_file = p.options.file,
-      .display_height = display_height(out.window()),
-      .span_prepare = span_prepare,
-      .fp8_reason = fp8_reason,
-      .span_job = p.span_job.note};
+  SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
   fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
   p.ui.set_settings(settings, choices);
   Chain chain{.session = session,
@@ -354,6 +334,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
               .anime_shots = p.options.anime_shots};
+  chain.stages = p.stages;
   apply_oled_care(chain, settings);
 
   std::ofstream stats;
@@ -373,6 +354,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         host_now_us());
     p.resumed = false;
   }
+  if (const i18n::Translated dropped = stage_notice(c.stage_notes); !dropped.empty())
+    p.notice = p.notice.empty() ? dropped : dropped + i18n::Translated::data(" · ") + p.notice;
   if (!p.notice.empty()) {
     p.ui.controls().warn(p.notice, host_now_us());
     p.notice = {};
@@ -534,7 +517,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         return core::store_auto_step(store, key, centi);
       });
   };
+  SleepWatch sleep_watch;
+  ScreenSaverHold screen_saver;  // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
+    if (const auto gap = sleep_watch.turn(host_now_us(), suspend_aware_now_us())) {
+      if (auto lost = after_gap(session, c, p.ui, *gap)) {
+        failure = std::move(*lost);
+        break;
+      }
+    }
+    screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
          ++p.next_key) {
@@ -695,6 +687,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       wait_loop(wait_us, p.options.precise_wait);  // --precise-wait : à la microseconde (6.7)
     }
   }
+  screen_saver.want(false);
   if (chain.dirty) {
     writer.post("play.toml",
                 [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
@@ -771,10 +764,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   // Ordre d'arrêt : les slots rendus, les threads arrêtés, le moteur avant son backend, le
   // backend (et ses imports du ring) avant l'écran qui possède le ring.
+  p.stopped_at_us = std::max<std::int64_t>(session.view().position_us, 0);
   session.end();
   out.flush();
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
+  // A31-16 : un refus fatal vu d'abord ailleurs (NVDEC au réveil, l'écran) sur un appareil mort : le backend
+  // le dit, et la lecture se traite comme une perte du GPU (message, relance).
+  if (failure && failure->code != RefusalCode::DeviceLost && c.backend) {
+    if (auto healthy = c.backend->kernels()->health();
+        !healthy && healthy.error().code == RefusalCode::DeviceLost) {
+      log->warn("{} : l'appareil est perdu ({})", failure->detail, healthy.error().detail);
+      failure = std::move(healthy.error());
+    }
+  }
   if (c.backend)
     keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2
   prepared->reset();

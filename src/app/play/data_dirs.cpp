@@ -9,6 +9,8 @@
 #include <string_view>
 #include <system_error>
 
+#include "core/utf8_path.h"
+
 #ifdef _WIN32
 #include <shlobj.h>
 #include <windows.h>
@@ -42,6 +44,21 @@ bool version_name(std::string_view name) {
          });
 }
 
+// Le dossier updates/ des versions qui s'appliquaient elles-mêmes : rien que des versions, extract et
+// previous. Un parcours qui échoue ne reconnaît rien : rien ne part.
+bool update_leftovers(const std::filesystem::path& updates) {
+  namespace fs = std::filesystem;
+  std::error_code error;
+  if (!fs::is_directory(updates, error)) return false;
+  fs::directory_iterator it(updates, error);
+  for (; !error && it != fs::directory_iterator(); it.increment(error)) {
+    const std::string name = core::to_utf8(it->path().filename());
+    if (!it->is_directory(error) || !(name == "extract" || name == "previous" || version_name(name)))
+      return false;
+  }
+  return !error;
+}
+
 }  // namespace
 
 std::filesystem::path local_data(const std::filesystem::path& roaming) {
@@ -66,34 +83,45 @@ std::filesystem::path local_data(const std::filesystem::path& roaming) {
 
 int move_heavy_data(const std::filesystem::path& from, const std::filesystem::path& to,
                     const std::function<void(const std::string&)>& said) {
+  namespace fs = std::filesystem;
   if (from.empty() || to.empty()) return 0;
   std::error_code same;
-  if (std::filesystem::equivalent(from, to, same)) return 0;
+  if (fs::equivalent(from, to, same)) return 0;
+  const auto say = [&](const std::string& line) {
+    if (said) said(line);
+  };
   int moved = 0;
   for (const std::string_view name : kHeavy) {
-    const std::filesystem::path source = from / name;
-    const std::filesystem::path target = to / name;
+    const fs::path source = from / name;
+    const fs::path target = to / name;
+    fs::path staging = target;
+    staging += ".migration";
     std::error_code error;
-    if (!std::filesystem::exists(source, error) || std::filesystem::exists(target, error)) continue;
-    std::filesystem::create_directories(to, error);
-    std::filesystem::rename(source, target, error);
+    // Une copie coupée (processus tué, coupure de courant) ne laisse que « .migration » : retirée, la copie
+    // recommence (A19-01).
+    if (fs::exists(staging, error)) fs::remove_all(staging, error);
+    // La cible n'existe qu'entière (renommée une fois copiée) : elle n'est jamais écrasée.
+    if (!fs::exists(source, error) || fs::exists(target, error)) continue;
+    fs::create_directories(to, error);
+    fs::rename(source, target, error);
     if (error) {
-      // Un autre volume : copie puis effacement ; une copie incomplète est retirée, l'ancien dossier sert
-      // encore.
+      // Un autre volume : copie complète à côté, puis un renommage sur le volume de la cible ; la source ne
+      // part qu'après. Une copie refusée est retirée, l'ancien dossier sert encore.
       error.clear();
-      std::filesystem::copy(source, target, std::filesystem::copy_options::recursive, error);
+      fs::copy(source, staging, fs::copy_options::recursive, error);
+      if (!error) fs::rename(staging, target, error);
       if (error) {
         std::error_code ignored;
-        std::filesystem::remove_all(target, ignored);
+        fs::remove_all(staging, ignored);
         constexpr std::string_view kRefused = "{} : non déplacé vers {} ({})";  // i18n-ok : journal
-        const std::string line = std::format(kRefused, source.string(), to.string(), error.message());
-        if (said) said(line);
+        say(std::format(kRefused, core::to_utf8(source), core::to_utf8(to), error.message()));
         continue;
       }
-      std::filesystem::remove_all(source, error);  // un reste ne sert plus : la copie complète est lue
+      fs::remove_all(source, error);  // un reste ne sert plus : la copie complète est lue
     }
     ++moved;
-    if (said) said(std::format("{} déplacé vers {}", source.string(), target.string()));  // i18n-ok : journal
+    constexpr std::string_view kMoved = "{} déplacé vers {}";  // i18n-ok : journal
+    say(std::format(kMoved, core::to_utf8(source), core::to_utf8(target)));
   }
   return moved;
 }
@@ -108,7 +136,8 @@ int purge_misplaced(const std::filesystem::path& shared,
     std::error_code gone;
     if (fs::remove_all(path, gone) > 0 && !gone) {
       ++removed;
-      if (said) said(std::format("{} retiré (d'une version d'avant)", path.string()));  // i18n-ok : journal
+      if (said)
+        said(std::format("{} retiré (d'une version d'avant)", core::to_utf8(path)));  // i18n-ok : journal
     }
   };
   const fs::path state = shared / "update.toml";
@@ -121,21 +150,34 @@ int purge_misplaced(const std::filesystem::path& shared,
   if (fs::is_regular_file(cache, error) && head_of(cache, 8) == "pl_cache") drop(cache);
   const fs::path plans = shared / "plans";
   if (fs::is_directory(plans, error)) {
-    for (const fs::directory_entry& entry : fs::directory_iterator(plans, error))
-      if (entry.is_regular_file(error) && entry.path().extension() == ".shots") drop(entry.path());
+    // Parcours sans exception (A19-09) : un incrément refusé arrête la boucle.
+    fs::directory_iterator it(plans, error);
+    for (; !error && it != fs::directory_iterator(); it.increment(error)) {
+      std::error_code kind;
+      if (it->is_regular_file(kind) && it->path().extension() == ".shots") drop(it->path());
+    }
+    error.clear();
     if (fs::is_empty(plans, error) && !error) drop(plans);
   }
-  const fs::path updates = shared / "updates";
-  if (fs::is_directory(updates, error)) {
-    bool ours = true;
-    for (const fs::directory_entry& entry : fs::directory_iterator(updates, error)) {
-      const std::string name = entry.path().filename().string();
-      ours = ours && entry.is_directory(error) &&
-             (name == "extract" || name == "previous" || version_name(name));
-    }
-    if (ours && !error) drop(updates);
-  }
+  if (const fs::path updates = shared / "updates"; update_leftovers(updates)) drop(updates);
   return removed;
+}
+
+int purge_update_leftovers(const std::filesystem::path& data,
+                           const std::function<void(const std::string&)>& said) {
+  namespace fs = std::filesystem;
+  if (data.empty()) return 0;
+  const fs::path updates = data / "updates";
+  if (!update_leftovers(updates)) return 0;
+  std::error_code error;
+  const auto count = fs::remove_all(updates, error);
+  if (error) {
+    if (said) said(std::format("{} : {}", core::to_utf8(updates), error.message()));  // i18n-ok : journal
+    return 0;
+  }
+  if (said && count > 0)
+    said(std::format("{} retiré, ancienne mise à jour", core::to_utf8(updates)));  // i18n-ok : journal
+  return count > 0 ? 1 : 0;
 }
 
 }  // namespace ajp::app::play

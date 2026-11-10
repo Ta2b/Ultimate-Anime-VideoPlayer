@@ -86,7 +86,7 @@ pkg_check_modules(AJP_PLACEBO REQUIRED IMPORTED_TARGET libplacebo>=7.387)
 ajp_require_patched(libplacebo "${AJP_PLACEBO_INCLUDE_DIRS}" libplacebo/vulkan.h pl_vulkan_swapchain_submit)
 ajp_alias_dep(placebo PkgConfig::AJP_PLACEBO)
 
-# libass du fork the-database, commit 896614fa (overlay ports/libass ; pourquoi le fork : son portfile).
+# libass 0.17.5 de l'amont plus le rendu sur plusieurs fils (overlay ports/libass, son correctif et son portfile).
 pkg_check_modules(AJP_ASS REQUIRED IMPORTED_TARGET libass)
 ajp_require_patched(libass "${AJP_ASS_INCLUDE_DIRS}" ass/ass.h ass_set_render_thread_count)
 ajp_alias_dep(ass PkgConfig::AJP_ASS)

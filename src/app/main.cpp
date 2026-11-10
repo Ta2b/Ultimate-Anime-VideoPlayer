@@ -51,7 +51,6 @@ extern "C" {
 #include "core/log.h"
 #include "core/log_redact.h"
 #include "core/thread_role.h"
-#include "core/update_manifest.h"
 #include "media/ffmpeg_log.h"
 #include "prepare/utf8.h"
 
@@ -127,8 +126,8 @@ void start_diagnostics(const std::filesystem::path& settings_dir, const std::fil
         "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");
 }
 
-// Relance le lecteur avec les mêmes arguments, après une mise à jour : il remplace ce processus (POSIX) ou
-// démarre à sa place (Windows, où un exécutable en service ne s'écrase pas : l'ancien est renommé .old).
+// Relance le lecteur avec les mêmes arguments, après la mise à jour d'un moteur : il remplace ce processus
+// (POSIX) ou démarre à sa place (Windows).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
   ajp::app::play::end_session();  // une relance voulue n'est pas un plantage
   ajp::close_log();               // execv remplace le processus : la file du journal s'écrit avant
@@ -295,7 +294,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   std::error_code error;
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
                              .video = data / "bench-clip-v4.mkv",
-                             .work_dir = std::filesystem::temp_directory_path(error) / "ajp-calibration",
+                             .work_dir = play::calibration_work_dir(data),
                              .data = data,
                              .silent = silent,
                              .display_width = display_height * 16 / 9,
@@ -330,6 +329,10 @@ int run_player(int argc, char** argv) {
   // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
   ajp::set_thread_role(ajp::ThreadRole::Playback);
 #ifdef _WIN32
+  // Les DLL qu'une bibliothèque chargée demande par son seul nom (TensorRT, ses ressources, NVRTC) ne se
+  // cherchent plus dans le PATH ni le dossier courant (A20-07) : dossier du lecteur, System32, et les
+  // dossiers que core/dynamic_library.cpp ajoute pour chaque bibliothèque ouverte.
+  SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   // Minuteur à 1 ms : les attentes courtes (vidange de l'export, démarrage) ne s'arrondissent pas
   // aux 15,6 ms par défaut de Windows. La cadence de lecture suit, elle, le swapchain.
   timeBeginPeriod(1);
@@ -386,8 +389,8 @@ int run_player(int argc, char** argv) {
     std::fprintf(stdout, "%s\n", done->c_str());
     return 0;
   }
-  // Un seul lecteur (P2.13) : un double-clic sur une vidéo l'ouvre dans la fenêtre déjà là. Pris avant la
-  // mise à jour, que deux lancements appliquaient ensemble ; rendu avant chaque relance.
+  // Un seul lecteur (P2.13) : un double-clic sur une vidéo l'ouvre dans la fenêtre déjà là ; rendu avant
+  // chaque relance.
   std::shared_ptr<ajp::app::play::InstanceListener> instance;
   if (!options->data_dir && !options->bench_out && !data.empty() && ajp::app::play::shares_instance(args)) {
     std::vector<std::string> files;
@@ -397,43 +400,6 @@ int run_player(int argc, char** argv) {
     auto claim = ajp::app::play::claim_instance(data, ajp::app::play::instance_key(data), files);
     if (claim.forwarded) return 0;
     instance = std::move(claim.listener);
-  }
-  // Une mise à jour préparée (mode Automatique) s'applique ici, avant tout, puis le lecteur se relance.
-  if (!options->data_dir && !options->bench_out) {
-    const ajp::app::play::UpdatePaths update{.data = data, .install = base, .executable = place.executable};
-    ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
-    const auto saved = ajp::app::play::load_settings(data / "play.toml");
-    if (!state.staged_version.empty() && saved && saved->update_mode == ajp::app::play::UpdateMode::Auto &&
-        ajp::core::compare_versions(state.staged_version, ajp::app::play::installed_version()).value_or(0) >
-            0 &&
-        ajp::app::play::update_managed_reason(update).empty()) {
-      const auto applied = ajp::app::play::apply_staged_update(update, state);
-      state.last_error = applied ? std::string() : applied.error().detail;
-      if (!applied)
-        state.staged_version
-            .clear();  // une archive qui ne s'applique pas ne se réessaie pas à chaque lancement
-      if (const auto kept = ajp::app::play::save_update_state(data / "update.toml", state); !kept)
-        std::fprintf(stderr, "ajp : update.toml : %s\n", kept.error().detail.c_str());
-      if (applied) {
-        std::fprintf(stderr, "ajp : %s\n", applied->c_str());
-        instance.reset();
-        return relaunch(place.executable, argc, argv);
-      }
-      std::fprintf(stderr, "ajp: update failed: %s\n", applied.error().detail.c_str());
-    }
-    // La garde : une version appliquée qui ne mène aucune lecture à son terme revient à l'ancienne.
-    const ajp::app::play::UpdateState before = state;
-    const auto restored =
-        ajp::app::play::guard_new_version(update, state, ajp::app::play::installed_version());
-    if (state != before) {
-      if (const auto kept = ajp::app::play::save_update_state(data / "update.toml", state); !kept)
-        std::fprintf(stderr, "ajp : update.toml : %s\n", kept.error().detail.c_str());
-    }
-    if (restored) {
-      std::fprintf(stderr, "ajp : %s\n", restored->c_str());
-      instance.reset();
-      return relaunch(place.executable, argc, argv);
-    }
   }
   // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
@@ -515,10 +481,16 @@ int run_player(int argc, char** argv) {
   ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), [](const std::string& line) {
     ajp::log_channel("app")->info("données : {}", line);
   });
+  // La mise à jour n'est plus qu'une notification : les archives préparées et la copie
+  // de l'ancienne installation qu'avaient laissées les versions qui s'appliquaient elles-mêmes se retirent
+  // (A26-06).
+  if (!options->data_dir && !options->bench_out)
+    ajp::app::play::purge_update_leftovers(
+        data, [](const std::string& line) { ajp::log_channel("app")->info("mise à jour : {}", line); });
   bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
-      .data = data,  // le dossier du lecteur, celui que lit l'application d'une mise à jour plus haut
+      .data = data,  // le dossier des données du lecteur
       .executable = place.executable,
       .engines = heavy / "engines",
       .settings = settings_dir,
@@ -550,15 +522,6 @@ int run_player(int argc, char** argv) {
   const auto played = ajp::app::play::play(*options, paths);
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();
-  if (!options->data_dir && !options->bench_out) {
-    // Une sortie sans plantage referme le lancement ; une lecture menée à son terme confirme la version en
-    // cours (updater.h, étape 4).
-    ajp::app::play::UpdateState state = ajp::app::play::load_update_state(data / "update.toml");
-    const bool closed = ajp::app::play::close_launch(state);
-    const bool confirmed =
-        played && ajp::app::play::confirm_version(state, ajp::app::play::installed_version());
-    if (closed || confirmed) std::ignore = ajp::app::play::save_update_state(data / "update.toml", state);
-  }
   if (played && engines_updated) return relaunch(place.executable, argc, argv);
   if (played) return 0;
   // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.

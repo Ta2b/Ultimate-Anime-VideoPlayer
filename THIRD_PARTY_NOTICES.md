@@ -18,7 +18,7 @@ Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).
 |---|---|---|
 | FFmpeg | LGPL-2.1 ou plus récent | n9.0.2, construit sans `--enable-gpl` ni `--enable-nonfree` (`tools/deps/linux-from-source.sh`, `macos-from-source.sh`). https://ffmpeg.org |
 | libplacebo | LGPL-2.1 ou plus récent | 7.387.0 (`ports/libplacebo`). https://code.videolan.org/videolan/libplacebo |
-| libass (fork the-database) | ISC | 0.17.5-the-database-896614fa (`ports/libass`) |
+| libass, avec le rendu sur plusieurs fils de the-database/libass | ISC | 0.17.5 et `ports/libass/rendu-sur-plusieurs-fils.patch` |
 | dav1d | BSD-2-Clause | via vcpkg |
 | SDL3 | zlib | via vcpkg |
 | Dear ImGui, spdlog, toml++ | MIT | via vcpkg |

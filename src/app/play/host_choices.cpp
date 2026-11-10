@@ -20,8 +20,8 @@ namespace ajp::app::play {
 
 void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, const PlayerPaths& paths,
                        const EngineCatalog& catalog, const std::filesystem::path& settings_dir) {
-  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Évaluer ma machine » si elle est
-  // de cette carte et de ce pilote, sinon l'estimation.
+  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Calibrer cette machine » si elle
+  // est de cette carte et de ce pilote, sinon l'estimation.
   std::optional<BenchResult> measured;
   if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);
@@ -50,7 +50,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   choices.luts_dir = paths::luts(paths);
   choices.switchable = installed_switchable(catalog, paths);
   choices.engines_dir_default = prepare::utf8_path(paths::backends_install(paths));
-  choices.engines_dir_free = format_size(free_bytes(catalog.layout.engines));
+  choices.engines_dir_free = shown_size(free_bytes(catalog.layout.engines));
   choices.place = place_of(paths);
   choices.default_player_is_ajp = is_default_player(choices.place);
   choices.settings_dir = settings_dir;

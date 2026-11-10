@@ -7,11 +7,11 @@ namespace {
 
 // Export, moteurs, application : (clé anglaise, français).
 constexpr std::array kSystemPages{
-    Entry{" (ready)", " (préparée)"},
-    Entry{": restart the player", " : relancez le lecteur"},
-    Entry{"A notification; you start the update yourself.",
-          "Une notification ; vous lancez la mise à jour vous-même."},
+    Entry{"A notification with the link to the new version; you install it yourself.",
+          "Une notification avec le lien de la nouvelle version ; vous l'installez vous-même."},
     Entry{"AJP is already the default video player.", "AJP est déjà le lecteur par défaut des vidéos."},
+    Entry{"Download page", "Page de téléchargement"},
+    Entry{"The last check failed: {}", "La dernière vérification a échoué : {}"},
     Entry{"AV1 10-bit: smaller at equal quality; needs a GPU AV1 encoder (RTX 40/50, Radeon RX 7000/9000, "
           "Intel Arc).",
           "AV1 10 bits : plus compact à qualité égale ; demande un encodeur AV1 dans le GPU (RTX 40/50, "
@@ -37,16 +37,13 @@ constexpr std::array kSystemPages{
           "cancels.",
           "Audio, sous-titres, polices et chapitres sont copiés tels quels. La lecture s'arrête pendant "
           "l'export ; Échap l'annule."},
-    Entry{"Automatic", "Automatique"},
-    Entry{"Available: {}{}", "Disponible : {}{}"},
+    Entry{"Available: {}", "Disponible : {}"},
     Entry{"Below the playback output, libplacebo scales down with its best filter (EWA Lanczos).",
           "Sous la sortie de la lecture, libplacebo réduit avec son meilleur filtre (EWA Lanczos)."},
     Entry{"Built engines", "Moteurs construits"},
     Entry{"Cancel##bench", "Annuler##bench"},
     Entry{"Cancel##moteur", "Annuler##moteur"},
     Entry{"Cancel##span_prepare", "Annuler##span_prepare"},
-    Entry{"Channel", "Canal"},
-    Entry{"Channel and frequency", "Canal et fréquence"},
     Entry{"Check now", "Vérifier maintenant"},
     Entry{"Choose the output file.", "Choisissez le fichier exporté."},
     Entry{"Codec", "Codec"},
@@ -63,8 +60,6 @@ constexpr std::array kSystemPages{
     Entry{"Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
           "Par défaut : {}. Libre ici : {}. Vaut au prochain lancement ; les moteurs installés ne sont pas "
           "déplacés."},
-    Entry{"Downloaded, verified, installed at next launch.",
-          "Téléchargée, vérifiée, installée au prochain lancement."},
     Entry{"Encoding", "Encodage"},
     Entry{"FFV1 does not fit in a MOV: use .mkv or .mp4.",
           "FFV1 ne va pas dans un MOV : choisissez .mkv ou .mp4."},
@@ -77,8 +72,6 @@ constexpr std::array kSystemPages{
           "Les images non interpolées sont omises : cadence variable, un peu plus léger, sans souci dans les "
           "lecteurs."},
     Entry{"Frequency", "Fréquence"},
-    Entry{"Greyed out: no update has been installed yet.",
-          "Grisé : aucune mise à jour n'a encore été installée."},
     Entry{"H.264 8-bit: for older players; gradients are coarser.",
           "H.264 8 bits : pour les anciens lecteurs ; les dégradés y sont moins fins."},
     Entry{"HEVC 10-bit: plays almost everywhere, encoded by the GPU.",
@@ -90,11 +83,6 @@ constexpr std::array kSystemPages{
     Entry{"Last check: {}", "Dernière vérification : {}"},
     Entry{"Version {} was set aside: it did not start properly.",
           "La version {} a été mise de côté : elle ne démarrait pas correctement."},
-    Entry{"Offer it again", "La proposer de nouveau"},
-    Entry{"Release notes", "Notes de version"},
-    Entry{"Install now", "Installer maintenant"},
-    Entry{"The last update failed (details in the log).",
-          "La dernière mise à jour a échoué (détails dans le journal)."},
     Entry{"MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use "
           ".mkv to keep everything. Esc cancels.",
           "MP4 et MOV gardent les instants exacts, les chapitres et l'audio compatible, mais ni sous-titres "
@@ -109,15 +97,13 @@ constexpr std::array kSystemPages{
     Entry{"Open a video: the export uses its settings and is named next to it.",
           "Ouvrez une vidéo : l'export reprend ses réglages et se nomme à côté d'elle."},
     Entry{"Optimization cancelled: nothing changed.", "Optimisation annulée : rien n'a changé."},
-    Entry{"Optimize for this machine", "Optimiser pour ma machine"},
+    Entry{"Calibrate this machine", "Calibrer cette machine"},
     Entry{"Playback output · {}x{}", "Sortie de la lecture · {}x{}"},
     Entry{"Prepare again for this video", "Refaire la préparation pour cette vidéo"},
-    Entry{"Previews", "Préversions"},
     Entry{"Previous settings restored.", "Réglages d'avant rétablis."},
     Entry{"Remove from \"Open with\"", "Retirer de « Ouvrir avec »"},
     Entry{"Reopens the engines screen; playback resumes at the same spot.",
           "Rouvre l'écran des moteurs ; la lecture reprend ensuite au même endroit."},
-    Entry{"Roll back to the previous version", "Revenir à la version précédente"},
     Entry{"SPAN Performance mode (FP8)", "Mode Performance de SPAN (FP8)"},
     Entry{"SPAN Performance mode (FP8) preparation", "préparation du mode Performance de SPAN (FP8)"},
     Entry{"Same engines and settings as playback, with no skipped frame. No HDR or grading: the "

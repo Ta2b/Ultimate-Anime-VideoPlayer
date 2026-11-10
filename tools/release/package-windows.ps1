@@ -21,7 +21,10 @@ $Out = (Resolve-Path $Out).Path
 $Version = (Select-String -Path "$Root/CMakeLists.txt" -Pattern '^  VERSION ([0-9.]+)$').Matches[0].Groups[1].Value
 $Tag = if ($env:AJP_RELEASE_TAG) { $env:AJP_RELEASE_TAG } else { "v$Version" }
 # Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
-$Repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else { "Ta2b/Ultimate-Anime-VideoPlayer" }
+# Une seule source pour le dépôt par défaut : tools/release/versions.env (A28-05).
+$Repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else {
+  (Select-String -Path "$PSScriptRoot/versions.env" -Pattern '^AJP_RELEASE_REPO=(.+)$').Matches[0].Groups[1].Value
+}
 $BaseUrl = "https://github.com/$Repo/releases/download/$Tag"
 $Cuda = if ($env:AJP_WITH_CUDA) { $env:AJP_WITH_CUDA } else { "OFF" }
 
@@ -40,7 +43,9 @@ if ($env:AJP_COMPILER_LAUNCHER) {
 if ($env:AJP_VCPKG_TRIPLET) {
   $Extra += "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET", "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET"
 }
-cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" @Extra
+# Une étiquette de préversion (v0.11.0-rc.1) donne son suffixe au binaire : il dit la version de l'étiquette (A26-04).
+$Suffix = if ($Tag.StartsWith("v$Version-")) { $Tag.Substring("v$Version".Length) } else { "" }
+cmake --preset windows-release -S $Root "-DAJP_WITH_CUDA=$Cuda" "-DAJP_VERSION_SUFFIX=$Suffix" @Extra
 if ($LASTEXITCODE -ne 0) { throw "configuration" }
 cmake --build --preset windows-release -- -k 0  # toutes les erreurs de MSVC en une passe
 if ($LASTEXITCODE -ne 0) { throw "construction" }
@@ -87,9 +92,10 @@ if (Test-Path $TrtModule) {
   Copy-Item $TrtModule $dir
   $cache = Get-Content "$Build/CMakeCache.txt"
   $trtRoot = ($cache | Select-String '^AJP_TENSORRT_ROOT:[A-Z]*=(.*)$').Matches[0].Groups[1].Value
-  $nvinferHere = Get-ChildItem "$trtRoot/lib/nvinfer_*.dll", "$trtRoot/bin/nvinfer_*.dll" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
-  $trtVersion = if ($nvinferHere) { $Matches[1] } else { $Version }
+  # La version entière de TensorRT (11.3.0.99), celle de versions.env : jamais le seul numéro majeur, ni la version
+  # du lecteur par défaut (A28-09). Elle nomme le dossier d'installation.
+  $trtVersion = (Select-String -Path "$PSScriptRoot/versions.env" -Pattern '^TENSORRT_LIBS_VERSION=(.+)$').Matches[0].Groups[1].Value
+  if (-not $trtVersion) { throw "TENSORRT_LIBS_VERSION absent de versions.env" }
   $vendor = "$Root/tools/release/nvidia-vendor/tensorrt-windows-x64.lock"
   if (-not $env:AJP_NVIDIA_BUNDLE -and (Test-Path $vendor)) {
     # Lien direct : le paquet ne porte que le module ; les bibliothèques de NVIDIA et trtexec se
@@ -97,7 +103,8 @@ if (Test-Path $TrtModule) {
     # (entrées [[vendor_file]], tools/release/vendor-index.py).
     # trtexec.exe est à nous dans l'archive (comme trtexec sous Linux) : le moteur construit ses réseaux avec lui.
     $trtexec = if ($env:AJP_TRTEXEC) { $env:AJP_TRTEXEC } else { "$trtRoot/bin/trtexec.exe" }
-    if (Test-Path $trtexec) { Copy-Item $trtexec $dir } else { Write-Warning "trtexec.exe introuvable ($trtexec) : le moteur ne pourra pas construire ses réseaux" }
+    # Sans trtexec.exe, le moteur ne construit aucun réseau : le paquet ne part pas (TRT-04).
+    if (Test-Path $trtexec) { Copy-Item $trtexec $dir } else { throw "trtexec.exe introuvable ($trtexec)" }
     Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
     Add-Content -Path $Lock -Value (@("") + (Get-Content $vendor)) -Encoding utf8NoBOM
   } else {
@@ -112,8 +119,6 @@ if (Test-Path $TrtModule) {
       Copy-Item "$env:CUDA_PATH/bin/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
       Copy-Item "$env:CUDA_PATH/bin/x64/cudart64_*.dll" $dir -ErrorAction SilentlyContinue
     }
-    $nvinfer = Get-ChildItem "$dir/nvinfer_*.dll" | Where-Object { $_.Name -match '^nvinfer_(\d+)\.dll$' } | Select-Object -First 1
-    $trtVersion = if ($nvinfer) { $Matches[1] } else { $Version }
     Add-Engine "tensorrt" $trtVersion "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" $dir
   }
 }

@@ -8,16 +8,16 @@ namespace {
 // Assistant et écran des moteurs : (clé anglaise, français).
 constexpr std::array kWizardTexts{
     Entry{"Calibrating this machine", "Calibration de la machine"},
-    Entry{"New graphics card: optimise for this PC again (Video > Post-processing)",
-          "Nouvelle carte graphique : refaites l'optimisation pour ce PC (Vidéo > Post-traitement)"},
+    Entry{"New graphics card: calibrate this PC again (Video > Post-processing)",
+          "Nouvelle carte graphique : refaites la calibration de ce PC (Vidéo > Post-traitement)"},
     Entry{"Machine calibration failed: settings unchanged (see log)",
           "La calibration de la machine a échoué : réglages inchangés (voir le journal)"},
     Entry{"Machine calibration", "Calibration de la machine"},
     Entry{
-        "\"Optimise now\" tests several settings on a very demanding sequence: picture resolution, SPAN "
+        "\"Calibrate now\" tests several settings on a very demanding sequence: picture resolution, SPAN "
         "upscaling and RIFE smoothness, and keeps the best combination this machine sustains. Only a "
         "progress bar is shown; it takes a few minutes, longer the first time (the engines are built once).",
-        "« Optimiser maintenant » essaie plusieurs réglages sur une séquence très éprouvante : résolution de "
+        "« Calibrer maintenant » essaie plusieurs réglages sur une séquence très éprouvante : résolution de "
         "l'image, agrandissement SPAN et fluidité RIFE, et garde la meilleure combinaison que la machine "
         "tient. Seule une barre de chargement s'affiche ; cela prend quelques minutes, plus la première fois "
         "(les moteurs se construisent une fois)."},
@@ -25,16 +25,16 @@ constexpr std::array kWizardTexts{
           "Post-processing.",
           "« Régler moi-même » : le préréglage Auto estimé pour cette carte, modifiable dans Vidéo > "
           "Post-traitement."},
-    Entry{"Machine calibration: with \"Optimise now\", the best settings this machine sustains (Video > "
+    Entry{"Machine calibration: with \"Calibrate now\", the best settings this machine sustains (Video > "
           "Post-processing)",
-          "Calibration de la machine : avec « Optimiser maintenant », les meilleurs réglages que la machine "
+          "Calibration de la machine : avec « Calibrer maintenant », les meilleurs réglages que la machine "
           "tient (Vidéo > Post-traitement)"},
     Entry{"Default video player: asked at the end of the assistant (General > Application)",
           "Lecteur vidéo par défaut : demandé à la fin de l'assistant (Général > Application)"},
     Entry{"Integration", "Intégration"},
     Entry{"Make it the default video player", "En faire le lecteur vidéo par défaut"},
     Entry{"AJP is added to \"Open with\" in any case.", "AJP s'ajoute à « Ouvrir avec » dans tous les cas."},
-    Entry{"Optimise now", "Optimiser maintenant"},
+    Entry{"Calibrate now", "Calibrer maintenant"},
     Entry{"Estimated for this machine: about {} minutes.", "Estimé pour cette machine : environ {} minutes."},
     Entry{"Ready", "Prêt"},
     Entry{"Vulkan works on every GPU. Checked engines install at the end of the assistant, verified by hash; "
@@ -74,7 +74,11 @@ constexpr std::array kWizardTexts{
     Entry{"Compatibility", "Compatibilité"},
     Entry{"Display {}p · {:.0f} Hz", "Écran {}p · {:.0f} Hz"},
     Entry{"Does not suit this GPU", "Ne convient pas à ce GPU"},
-    Entry{"Downloaded, installed at next launch.", "Téléchargée, installée au prochain lancement."},
+    Entry{"{:.1f} GB", "{:.1f} Go"},
+    Entry{"{} GB", "{} Go"},
+    Entry{"{} MB", "{} Mo"},
+    Entry{"active", "actif"},
+    Entry{"inactive", "inactif"},
     Entry{"Engine", "Moteur"},
     Entry{"Estimated level: {}", "Niveau estimé : {}"},
     Entry{"Everything can be changed later in Settings (p). To redo this: ajp --first-run.",
@@ -99,10 +103,10 @@ constexpr std::array kWizardTexts{
     Entry{"Multichannel, direct surround.", "Multicanal, surround direct."},
     Entry{"Next", "Suivant"},
     Entry{"Not said yet", "Pas encore dit"},
-    Entry{"Once the engines are installed, \"Optimize for this machine\" (Settings > Video > "
+    Entry{"Once the engines are installed, \"Calibrate this machine\" (Settings > Video > "
           "Post-processing) tunes "
           "this for your PC in about a minute.",
-          "Une fois les moteurs installés, « Optimiser pour ma machine » (Paramètres > Général > "
+          "Une fois les moteurs installés, « Calibrer cette machine » (Paramètres > Général > "
           "Configuration) règle cela pour votre PC en une minute environ."},
     Entry{"Picture and smoothness", "Image et fluidité"},
     Entry{"Picture and smoothness: skipped, Auto preset (Video > Post-processing)",
@@ -112,6 +116,7 @@ constexpr std::array kWizardTexts{
     Entry{"Read the licence", "Lire la licence"},
     Entry{"Not installed until its licence is accepted.",
           "Pas installé tant que sa licence n'est pas acceptée."},
+    Entry{"{} is not available here: {}", "{} n'est pas disponible ici : {}"},
     Entry{"{}: recommended for this card but not selected. The calibration will measure a slower engine.",
           "{} : recommandé pour cette carte mais pas coché. La calibration mesurera un moteur plus lent."},
     Entry{"{}: licence not accepted, it will not be installed",
@@ -144,7 +149,6 @@ constexpr std::array kWizardTexts{
           "Vulkan sert tous les GPU. Les moteurs cochés s'installent après « {} », vérifiés par empreinte ; "
           "Vulkan prend le relais si l'un échoue."},
     Entry{"Welcome", "Bienvenue"},
-    Entry{"automatic", "automatiques"},
     Entry{"bundled with the player", "livré avec le lecteur"},
     Entry{"cannot be installed in this version yet", "pas encore installable dans cette version"},
     Entry{"installed", "installé"},

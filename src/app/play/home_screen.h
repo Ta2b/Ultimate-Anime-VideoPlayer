@@ -50,9 +50,14 @@ struct HomeState {
   std::optional<PlayFile> start;  // la vidéo choisie par PlayFile : instant et pause
 };
 
+// Ce qu'est un chemin glissé, d'après son extension seule, sans toucher au disque (A24-15). Pur.
+DropKind drop_kind(const std::filesystem::path& path);
 // Le fichier d'un SDL_EVENT_DROP_FILE et ce qu'il est (Dropped, input.h) ; rien pour un autre événement ou un
-// dossier.
+// dossier. Lit le disque une fois (dossier ou fichier) et appelle raise_for_forwarded.
 std::optional<Dropped> dropped(const SDL_Event& event);
+// La fenêtre passe devant quand l'événement est un fichier transmis par un autre lancement
+// (single_instance.h).
+void raise_for_forwarded(const SDL_Event& event);
 // La vidéo d'un SDL_EVENT_DROP_FILE ; rien pour le reste.
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event);
 

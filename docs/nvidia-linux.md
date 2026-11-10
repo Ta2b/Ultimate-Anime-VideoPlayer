@@ -64,10 +64,11 @@ Sans effet sur l'export. Clés `play.toml` : `[picture] scaler`, `deband`.
 ## DistilDRBA en 4K : flot à l'échelle 0,5
 
 L'auteur de DistilDRBA conseille un flot de 0,5 au lieu de 1 en 4K. Le lecteur prend
-`distil_drba_v2_lite_s05.onnx` (plans remplis à un multiple de 128) dès que la hauteur de travail
-atteint 1440p, et le graphe entier sinon ; l'un sert de repli à l'autre. Aucune bascule dans
-l’environnement (règle du projet) : le seuil est dans `drba_half_flow`. **À mesurer** : PSNR/SSIM entre les deux
-sur un extrait en 2160p, et temps par paire (`--stats`).
+`distil_drba_v2_lite_s05.onnx` (plans remplis à un multiple de 128) dès que la hauteur d'estimation
+atteint 2160 lignes, et le graphe entier sinon ; l'un sert de repli à l'autre, et le journal le dit. Aucune
+bascule dans l’environnement (règle du projet) : le seuil est `kDrbaHalfFlowHeight`. Il était à 1440 lignes
+sans mesure ; la mesure sur processeur est dans `docs/banc-qualite.md` (« DistilDRBA, demi-flot »). **Reste à
+mesurer sur la RTX** : temps par paire des deux graphes à 1440 et 2160 lignes (`--stats`).
 
 Le demi-flot de DRBA s'exporte par le workflow `Exporter les modèles d'interpolation` (Actions), qui peut le
 joindre à la release `models-interp-1` ; `tools/release/fetch-models.sh` l'ajoute alors aux paquets. GMFSS
@@ -87,23 +88,22 @@ Le paquet TensorRT (notre module et trtexec) ne change presque jamais d'une rele
 puis relancer Release Linux pour que son index entre dans l'`engines.lock`, coûtait plus de 30 minutes par release (v0.5.1).
 Il est donc versionné par **l'empreinte de ses entrées** (`tools/release/trt-fingerprint.sh` : le code que le module lie,
 les définitions CMake, la recette des dépendances et de l'image, l'empaquetage, l'index NVIDIA ; pas `src/app`, `src/audio`,
-`src/render`, la documentation ni les tests ; pas non plus le `CMakeLists.txt` racine, dont la VERSION change à chaque release) et
+`src/render`, la documentation ni les tests ; le `CMakeLists.txt` racine sans sa ligne VERSION, `CMakePresets.json`, CUTLASS et l'image du préflight) et
 vit dans la release fixe `trt-<empreinte>` du dépôt des releases.
 
-Depuis P1.19, la CI le construit aussi sur un runner jetable, sans carte : le workflow « Paquet TensorRT Linux »
-(`.github/workflows/trt-package.yml`, lancé à la main) compile le module avec le kit CUDA, prend trtexec dans l'archive
-Linux de TensorRT à l'empreinte épinglée (`tools/deps/linux-tensorrt.sh --trtexec`, `versions.env`), et rend l'archive en
-artefact avec son SHA-256, comparé à celui de `trt-<empreinte>` s'il existe. Il ne publie rien : joindre ce paquet à la
-release reste `tools/release/attach-nvidia-linux.sh`, sur décision. Les tests sur GPU restent au poste NVIDIA.
+La CI le construit elle-même sur un runner jetable, sans carte : `release-linux.yml` appelle « Paquet TensorRT Linux »
+(`.github/workflows/trt-package.yml`) avant le paquet du lecteur. S'il manque pour l'empreinte courante, ce workflow
+compile le module avec le kit CUDA, prend trtexec dans l'archive Linux de TensorRT à l'empreinte épinglée
+(`tools/deps/linux-tensorrt.sh --trtexec`, `versions.env`), vérifie que l'archive a le module et trtexec, et la publie
+dans `trt-<empreinte>`. La release Linux reprend ensuite son index ; une release finale sans TensorRT Linux échoue. Les
+tests sur GPU restent au poste NVIDIA. Le poste peut toujours construire le paquet lui-même :
 
 ```
 tools/release/trt-package.sh --check   # dit si le paquet de l'empreinte courante existe (code 0) ou manque (code 3)
 tools/release/trt-package.sh           # le construit (préflight Docker) et le joint à trt-<empreinte>, une seule fois
 ```
 
-`release-linux.yml` lit `engines-nvidia.lock` dans `trt-<empreinte>` pour n'importe quelle étiquette : si le paquet existe, la
-release se fait en une passe, sans rien à relancer ; s'il manque, le workflow avertit et dit la commande à lancer sur le poste NVIDIA
-(puis relancer le workflow). L'image Docker de préflight garde ses couches : seule une modification de `versions.env` ou de
+L'image Docker de préflight garde ses couches : seule une modification de `versions.env` ou de
 `tools/deps/linux-from-source.sh` la reconstruit (c'est ce qui a coûté ~30 minutes à la 0.5.1), et ces deux fichiers font
 justement partie de l'empreinte : le paquet et l'image changent ensemble, jamais l'un sans l'autre. L'ancienne méthode (paquet
 joint à l'étiquette elle-même) reste lue en second.

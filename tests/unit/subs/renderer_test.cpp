@@ -334,3 +334,40 @@ TEST_CASE("Rendu : un écran sans événement n'appelle libass qu'une fois (P3.3
   CHECK(bench.renderer.libass_calls() == calls);
   CHECK_FALSE(bench.render(0.5).rects.empty());  // un retour en arrière rend de nouveau
 }
+
+TEST_CASE(
+    "Rendu : la montée fait passer les dialogues du bas au-dessus de la barre, pas les panneaux (A24-19)",
+    "[render]") {
+  Bench bench(ajp::subs::test::reference_script());
+  const float lift = 0.25F;  // un quart de la hauteur : 90 px sur 360
+  // Le dialogue du bas monte en entier, d'environ la part demandée de la hauteur.
+  const Box low = draw(bench.render(0.5)).covered();
+  const SubtitleFrame lifted =
+      bench.render_on(0.5, {.width = kScriptWidth, .height = kScriptHeight, .line_lift = lift});
+  CHECK(lifted.line_lift == lift);
+  const Box high = draw(lifted).covered();
+  REQUIRE_FALSE(low.empty());
+  REQUIRE_FALSE(high.empty());
+  CHECK(high.y1 <= kScriptHeight - static_cast<int>(lift * kScriptHeight) + 4);  // au-dessus de la barre
+  CHECK(low.y1 - high.y1 > 60);
+  CHECK(low.y1 - low.y0 == high.y1 - high.y0);  // même réplique, déplacée d'un bloc
+  // Le style du haut, le panneau \pos et le \move ne bougent pas.
+  for (const double at : {1.5, 2.5, 4.5}) {
+    const Box plain = draw(bench.render(at)).covered();
+    const Box with_lift =
+        draw(bench.render_on(at, {.width = kScriptWidth, .height = kScriptHeight, .line_lift = lift}))
+            .covered();
+    CHECK(plain.y0 == with_lift.y0);
+    CHECK(plain.y1 == with_lift.y1);
+    CHECK(plain.x0 == with_lift.x0);
+  }
+  // Hors plage : refusé, comme l'échelle des polices.
+  bench.recycle();
+  const auto refused = bench.renderer.render(
+      bench.track,
+      RenderRequest{.pts_us = 500'000,
+                    .target = {.width = kScriptWidth, .height = kScriptHeight, .line_lift = 0.75F}},
+      bench.pool);
+  REQUIRE_FALSE(refused);
+  CHECK(refused.error().code == ajp::RefusalCode::FieldOutOfRange);
+}
