@@ -54,7 +54,9 @@ class PlaceboRing {
   // Cède le slot à CUDA après le dernier rendu qui l'a lu (signal de ready_value + 1).
   SlotFree retire(pl_gpu gpu, const RingFrame& frame);
   // Le sémaphore du slot a atteint ready_value : l'image est écrite. Lu sans attendre.
+  // A31-13 : l'appareil perdu à la lecture du sémaphore rend faux (l'image n'est pas prise) et le retient.
   bool ready(const RingFrame& frame) const;
+  bool lost() const { return lost_; }
   void clear(pl_gpu gpu);
   // Le sémaphore du slot d'un RingFrame du ring courant, sinon VK_NULL_HANDLE.
   VkSemaphore semaphore_of(const RingFrame& frame) const;
@@ -79,6 +81,7 @@ class PlaceboRing {
   VkDevice device_ = VK_NULL_HANDLE;
   PFN_vkGetSemaphoreCounterValue counter_ = nullptr;
   RingWatcher* watcher_ = nullptr;
+  mutable bool lost_ = false;  // vkGetSemaphoreCounterValue a rendu VK_ERROR_DEVICE_LOST
 };
 
 // Sous-titres et OSD en calques monochromes, au-dessus de l'image, en pixels de la sortie.

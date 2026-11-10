@@ -19,9 +19,8 @@ namespace {
 constexpr std::int64_t kEndGraceUs = 1'000'000;
 // Un seek dont une boîte a refusé un message est rejoué après ce délai.
 constexpr std::int64_t kSeekRetryUs = 50'000;
-// Des images attendent l'horloge audio depuis 1,5 s (Session::audio_stall_grace_us_) : l'horloge
-// hôte prend la main. Après une première perte, le délai est plus court : la piste est
-// probablement illisible.
+// Des images attendent l'horloge audio depuis 1,5 s (Session::audio_stall_grace_us_) : l'horloge hôte prend
+// la main. Après une première perte, le délai est plus court : la piste est probablement illisible.
 constexpr std::int64_t kAudioStallRepeatUs = 400'000;
 constexpr std::size_t kMaxRefusals = 3;
 // L'OSD se recompose quatre fois par seconde, pas à chaque vsync.
@@ -488,6 +487,7 @@ void Session::follow_subtitles(std::int64_t host_now) {
 }
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
+  if (auto lost = screen_.device_lost()) return std::unexpected(std::move(*lost));  // relance, pas de gel
   fresh_ = std::exchange(stepped_, false);
   last_tick_us_ = host_now;
   if (retry_seek_ && host_now >= retry_seek_->at_us) seek_to(retry_seek_->target_us, retry_seek_->exact);

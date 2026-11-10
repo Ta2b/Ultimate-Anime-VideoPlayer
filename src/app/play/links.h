@@ -17,6 +17,7 @@
 #include <span>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "app/play/present_level.h"
@@ -39,6 +40,10 @@ struct StreamEnded {
 
 // Un thread s'est arrêté ou a refusé quelque chose : affiché tel quel. fatal arrête la
 // lecture (thread arrêté, fichier illisible).
+// La clé d'un refus qui arrête la lecture sans perdre son code (A31-01) : un étage gpu qui refuse une image
+// garde DeviceLost, GpuMemoryExhausted… au lieu de les réécrire en ThreadFailed, et le message les dit.
+inline constexpr std::string_view kFatalStageKey = "stage.fatal";
+
 struct StageRefusal {
   std::string stage;  // « source », « gpu », « audio », « subs »
   Refusal refusal;
@@ -166,6 +171,9 @@ class Screen {
   // l'image ferait attendre son écriture à la file de l'affichage, et derrière elle chaque
   // présentation suivante, interface et OSD compris. Faute de pouvoir le lire : vrai.
   virtual bool ready(const RingFrame& /*frame*/) const { return true; }
+  // L'appareil de l'écran est perdu (TDR, Xid, pilote rechargé) : la session s'arrête sur ce refus, de code
+  // DeviceLost, au lieu de figer l'image (A10-01, A31-13). Rien : il répond.
+  virtual std::optional<Refusal> device_lost() const { return std::nullopt; }
   // Veilleur d'écriture (6.5, --ring-watcher) : surveiller l'écriture d'une image reçue ; l'heure exacte où
   // elle a été vue écrite, une fois ; et si une écriture finie réveille main (sinon il sonde ready).
   virtual void watch(const RingFrame& /*frame*/) {}

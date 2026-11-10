@@ -257,6 +257,26 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
   to.ui.controls().notify(i18n::ui_tr_format("Not a video or subtitles: {}", name), now_us);
 }
 
+namespace {
+
+void start_calibration(Chain& to) {
+  log_channel("app")->info("banc demandé : la lecture se ferme pendant la calibration");
+  to.ui.close_settings();
+  to.calibrate = true;
+  to.reopen = to.running;
+}
+
+// « Réessayer » (décision 10) : les étages refusés sont oubliés, la chaîne se rouvre telle qu'elle est
+// demandée.
+void retry_stages(Chain& to) {
+  log_channel("app")->info("réessayer : les étages refusés sont oubliés, la chaîne se rouvre");
+  if (to.stages != nullptr) to.stages->forget();
+  to.ui.close_settings();
+  to.reopen = to.running;
+}
+
+}  // namespace
+
 // Une action du clavier ou de l'interface. La barre paraît aussi après un seek au clavier.
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void apply(const Input& input, Chain& to, std::int64_t now_us) {
@@ -425,12 +445,8 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
                                      .audio_delay_us = std::int64_t{to.running.audio_delay_ms} * 1000};
             to.reopen = to.running;
           },
-          [&](const StartCalibration&) {
-            log_channel("app")->info("banc demandé : la lecture se ferme pendant la calibration");
-            to.ui.close_settings();
-            to.calibrate = true;
-            to.reopen = to.running;
-          }},
+          [&](const StartCalibration&) { start_calibration(to); },
+          [&](const RetryStages&) { retry_stages(to); }},
       input);
 }
 

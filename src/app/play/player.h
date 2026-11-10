@@ -46,7 +46,7 @@ inline PlayerPlace place_of(const PlayerPaths& paths) {
 
 // Lit le fichier jusqu'à la fin, à « q » ou à la fermeture de la fenêtre. SDL doit être
 // initialisé (vidéo et audio) et les puits du journal installés.
-std::expected<void, Refusal> play(const PlayOptions& options, const PlayerPaths& paths);
+std::expected<void, Refusal> play(const PlayOptions& launch_options, const PlayerPaths& paths);
 
 // --bake-looks : la pile de LUT de `settings_file` (play.toml), intensités et ordre compris, composée en une
 // seule LUT de 65 points écrite dans `out` ; sans fenêtre.

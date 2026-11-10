@@ -91,4 +91,13 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
                        choices.engines_dir_default, choices.engines_dir_free));
 }
 
+void stages_note(const SettingsChoices& choices, std::vector<Input>& actions) {
+  if (choices.stage_note.empty()) return;
+  ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+  ImGui::TextWrapped("%s", choices.stage_note.c_str());
+  ImGui::PopStyleColor();
+  if (ImGui::Button(i18n::tr("Retry"))) actions.emplace_back(RetryStages{});
+  note(i18n::tr("Playback reopens at the same spot and prepares these engines again."));
+}
+
 }  // namespace ajp::app::play

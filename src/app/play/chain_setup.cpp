@@ -149,8 +149,9 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
 
 namespace {
 
-std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
-                                                                       const PlaySettings& settings);
+using Prepared = std::expected<std::optional<ChainEngines>, StageFailure>;
+
+Prepared prepare_chain_once(Player& p, const PlaySettings& settings);
 
 // La forme de l'ouverture (chain_shape.h) : l'anneau de ces réglages et l'ordre du warp que les moteurs
 // chargés ont pris (c.top_factor), avec l'écran et la source d'où ils viennent.
@@ -166,27 +167,60 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
           c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.top_factor)};
 }
 
-std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_tiers(Player& p,
-                                                                        const PlaySettings& settings) {
-  auto chain = prepare_chain_once(p, settings);
-  if (chain || (settings.span_precision == PrecisionTier::Balanced &&
-                settings.motion_precision == PrecisionTier::Balanced))
-    return chain;
-  // Un graphe FP8 ou FP32 que le moteur refuse : la chaîne repart au cran Équilibre (FP16), celui de
-  // toujours.
-  log_channel("app")->warn("chaîne refusée aux crans de précision choisis ({}) : Équilibre (FP16)",
-                           chain.error().detail);
-  PlaySettings balanced = settings;
-  balanced.span_precision = balanced.motion_precision = PrecisionTier::Balanced;
-  return prepare_chain_once(p, balanced);
-}
-
 }  // namespace
 
-std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings) {
-  auto chain = prepare_chain_tiers(p, settings);
-  if (chain && *chain) note_opened(**chain, p, settings);
-  return chain;
+std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings,
+                                                                  StageMemory* memory) {
+  const auto log = log_channel("app");
+  // Sans mémoire de séance (export, banc), une mémoire de cet appel : les crans retombent, rien d'autre.
+  StageMemory local;
+  StageMemory& refused = memory != nullptr ? *memory : local;
+  const std::string library = p.library ? core::to_utf8(p.library->path().filename()) : std::string();
+  const int width = p.video.width;
+  const int height = p.video.height;
+  // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
+  constexpr int kAttempts = 5;
+  std::optional<StageFailure> last;
+  for (int attempt = 0; attempt < kAttempts; ++attempt) {
+    std::optional<StagePlan> plan =
+        plan_stages(settings, refused, width, height, library, p.options.file, memory != nullptr);
+    if (!plan) break;  // un étage refusé que seule la lecture peut laisser de côté
+    for (const StageNote& note : plan->notes)
+      log->warn("{} : {} ({})", note.stage == ChainStage::Upscale ? "SPAN" : "interpolation",
+                note.change == StageChange::Cancelled ? "construction annulée, lecture sans lui"
+                : note.change == StageChange::Dropped ? "refusé, lecture sans lui"
+                                                      : "cran refusé, Équilibre (FP16) à la place",
+                note.refusal.detail);
+    auto chain = prepare_chain_once(p, plan->settings);
+    if (chain) {
+      if (*chain) {
+        ChainEngines& c = **chain;
+        note_opened(c, p, plan->settings);
+        c.played = std::move(plan->settings);
+        c.stage_notes = std::move(plan->notes);
+      }
+      return std::move(*chain);
+    }
+    StageFailure& failure = chain.error();
+    // Une vidéo glissée arrête toute la préparation : rien n'est retenu, la lecture passe à elle (A08-08).
+    // Un appareil perdu n'est pas un refus de l'étage : la chaîne entière s'arrête, la relance suit (A31-02).
+    if (!failure.stage || failure.refusal.key == kDroppedVideoKey ||
+        failure.refusal.code == RefusalCode::DeviceLost)
+      return std::unexpected(std::move(failure.refusal));
+    // Le refus retenu sous la signature de l'étage tel qu'il a été essayé : la suite (ce tour, la vidéo
+    // suivante, une réouverture) ne le reconstruit pas.
+    const ChainStage stage = *failure.stage;
+    log->warn("{} refusé : {}", stage == ChainStage::Upscale ? "SPAN" : "interpolation",
+              failure.refusal.detail);
+    refused.remember({.stage = stage,
+                      .signature = stage_signature(stage, plan->settings, width, height, library),
+                      .refusal = failure.refusal,
+                      .cancelled = watch_now(failure.refusal),
+                      .file = p.options.file});
+    last = std::move(failure);
+  }
+  return std::unexpected(last ? std::move(last->refusal)
+                              : Refusal{RefusalCode::BuilderFailed, "chaîne refusée"});
 }
 
 namespace {
@@ -235,9 +269,116 @@ void load_calm_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
   }
 }
 
+// Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
+std::unexpected<StageFailure> stage_refused(Refusal refusal, std::optional<ChainStage> stage) {
+  return std::unexpected(StageFailure{.refusal = std::move(refusal), .stage = stage});
+}
+
+// La variante de ce genre que SPAN peut prendre ici, rien sinon : celle qui passe ses garde-fous, ou pour le
+// banc celle pas encore jugée à cette taille ; un préréglage (strict) ne prend pas un reçu v1 du FP8 CUTLASS.
+std::optional<SpanInt8> usable_variant(SpanVariantKind kind, const ModelChoice& model,
+                                       const std::filesystem::path& variants,
+                                       const SpanFp8Context& fp8_context, WorkSize work, bool bench,
+                                       bool strict) {
+  const auto log = log_channel("app");
+  SpanInt8Lookup found = find_span_variant(kind, model.path, variants,
+                                           kind == SpanVariantKind::Fp8Cutlass ? &fp8_context : nullptr);
+  if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
+  if (!found.variant && bench && found.unjudged) {
+    // Le bench mesure le temps du FP8 à cette taille ; la lecture d'un épisode la jugera sur ses images.
+    log->info("SPAN {} : pas jugé à {}x{}, joué pour le bench seulement", variant_text(kind), work.width,
+              work.height);
+    found.variant = std::move(found.unjudged);
+  }
+  if (found.variant && strict && kind == SpanVariantKind::Fp8Cutlass && !found.variant->receipt_v2) {
+    log->info("SPAN FP8 CUTLASS : reçu v1, pas pris par un préréglage (préparer de nouveau)");
+    return std::nullopt;
+  }
+  return std::move(found.variant);
+}
+
+// Le SPAN FP8 choisi à la main dans la liste des modèles se prépare ici, sur l'écran de chargement, comme
+// un moteur qui se construit ; la tâche de fond (span_auto.h) ne le refait pas pour cette vidéo.
+// Le bench (--bench-out) ne valide jamais sur son clip : une mire synthétique aux bords nets jugerait le
+// FP8 bien plus durement qu'un épisode et écrirait ses refus dans le reçu de l'utilisateur. Faux : la fenêtre
+// fermée ; refus : une vidéo glissée pendant la préparation.
+std::expected<bool, StageFailure> prepare_manual_fp8(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                                     const PlaySettings& settings,
+                                                     const SpanFp8Context& fp8_context) {
+  if (p.options.file.empty() || p.options.bench_out) return true;
+  const std::optional<bool> ready =
+      prepare_span_fp8(p, init, c.model->path, paths::derived_models(p.paths),
+                       span_still_reduce(c.work.width, c.work.height, settings.downscale), fp8_context);
+  if (!ready && p.dropped_video) return stage_refused(dropped_video_refusal(), std::nullopt);
+  if (!ready) return false;
+  p.span_job.attempted = prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file);
+  return true;
+}
+
+// La variante de SPAN du cran (precision.h) quand tools/span/quantize_span.py ou derive_span_fp8.py en ont
+// laissé une qui passe ses garde-fous (span_int8.h) : Performance prend le SPAN entier en noyaux CUTLASS
+// FP8 (moteur qui l'annonce : RTX 40), puis le FP8 par Q/DQ (moteur qui l'accélère), puis l'INT8 ;
+// Équilibre l'INT8, sinon le FP16 tel que livré ; Qualité le FP32. Chaque variante refusée au chargement
+// (autre GPU, taille que les noyaux ne prennent pas, erreur CUDA, TensorRT qui la refuse) laisse la place à
+// la suivante, et la dernière au SPAN choisi, en FP16 sous TensorRT. Faux : la fenêtre fermée.
+std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                            const PlaySettings& settings) {
+  const auto log = log_channel("app");
+  const std::filesystem::path variants = paths::derived_models(p.paths);
+  const gpu::BackendCaps caps = c.backend->capabilities();
+  const PrecisionTier tier = settings.span_precision;
+  // Un cran posé par un préréglage (Auto et les autres, auto_config.h) est strict : ni FP8 par Q/DQ, ni
+  // reçu v1 du FP8 CUTLASS (étape 3.6).
+  const bool strict = settings.preset != Preset::Custom;
+  const std::vector<SpanVariantKind> wanted = span_variant_order(
+      tier, SpanVariantCaps{.cutlass = caps.span_fp8_cutlass, .fp8 = caps.fp8, .int8 = caps.int8}, strict);
+  if (tier == PrecisionTier::Performance && !caps.fp8)
+    log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
+  const auto prepare_span = [&] {
+    return prepare_engine(
+        p, init, *c.backend, c.span_int8 ? c.span_int8->onnx : c.model->path,
+        gpu::Shape{.dims = {1, 3, c.work.height, c.work.width}},
+        EngineLabel{.name = c.span_int8 ? std::format("SPAN {}", variant_text(c.span_int8->kind)) : "SPAN",
+                    .model = c.model->path.stem().string(),
+                    .width = c.work.width,
+                    .height = c.work.height},
+        gpu::Lane::Upscale);
+  };
+  using Loaded = decltype(prepare_span());
+  std::optional<Loaded> loaded;
+  const SpanFp8Context fp8_context{.gpu_arch = caps.gpu_arch,
+                                   .kernels_version = caps.span_fp8_kernels,
+                                   .width = c.work.width,
+                                   .height = c.work.height};
+  const bool bench = p.options.bench_out.has_value();
+  if (tier == PrecisionTier::Performance && !strict && caps.span_fp8_cutlass) {
+    auto ready = prepare_manual_fp8(p, init, c, settings, fp8_context);
+    if (!ready || !*ready) return ready;
+  }
+  for (const SpanVariantKind kind : wanted) {
+    std::optional<SpanInt8> found =
+        usable_variant(kind, *c.model, variants, fp8_context, c.work, bench, strict);
+    if (!found) continue;
+    c.span_int8 = std::move(found);
+    loaded = prepare_span();
+    if (*loaded) break;
+    // « Annuler et regarder » n'est pas un refus de la variante : aucune autre ne se construit (A08-01).
+    if (watch_now(loaded->error())) return stage_refused(std::move(loaded->error()), ChainStage::Upscale);
+    log->warn("SPAN {} refusé ({}) : variante suivante ou SPAN FP16", variant_text(kind),
+              loaded->error().detail);
+    c.span_int8.reset();
+    loaded.reset();
+  }
+  if (!c.span_int8 && tier != PrecisionTier::Balanced) warn_span_fallback(*log, tier);
+  if (!loaded) loaded = prepare_span();
+  if (!*loaded) return stage_refused(std::move(loaded->error()), ChainStage::Upscale);
+  if (!**loaded) return false;
+  c.engine = std::move(***loaded);
+  return true;
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
-std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p,
-                                                                       const PlaySettings& settings) {
+Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
   ChainEngines c;
@@ -248,7 +389,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                              video.height);
   if (span) {
     auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
-    if (!chosen) return std::unexpected(std::move(chosen.error()));
+    if (!chosen) return stage_refused(std::move(chosen.error()), ChainStage::Upscale);
     c.model = std::move(*chosen);
   }
   c.factor = c.model ? kSpanFactor : 1;
@@ -283,13 +424,14 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
   const bool want_apple = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Apple;
   if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple)
-    return std::unexpected(
-        choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error());
+    return stage_refused(
+        choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error(),
+        ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init{
       .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()};
   auto backend = BackendLibrary::create(p.library, init);
-  if (!backend) return std::unexpected(std::move(backend.error()));
+  if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
   c.backend_name = c.backend->capabilities().name;
   log->info("backend {} ({}) depuis {}", c.backend_name, c.backend->capabilities().device_name,
@@ -299,80 +441,10 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
     log->warn("Resizable BAR inactif : activer Above 4G Decoding et Resizable BAR dans le BIOS");
 
-  // La variante de SPAN du cran (precision.h) quand tools/span/quantize_span.py ou derive_span_fp8.py en ont
-  // laissé une qui passe ses garde-fous (span_int8.h) : Performance prend le SPAN entier en noyaux CUTLASS
-  // FP8 (moteur qui l'annonce : RTX 40), puis le FP8 par Q/DQ (moteur qui l'accélère), puis l'INT8 ;
-  // Équilibre l'INT8, sinon le FP16 tel que livré ; Qualité le FP32. Chaque variante refusée au chargement
-  // (autre GPU, taille que les noyaux ne prennent pas, erreur CUDA, TensorRT qui la refuse) laisse la place à
-  // la suivante, et la dernière au SPAN choisi, en FP16 sous TensorRT.
   if (c.model) {
-    const std::filesystem::path variants = paths::derived_models(p.paths);
-    const gpu::BackendCaps caps = c.backend->capabilities();
-    const PrecisionTier tier = settings.span_precision;
-    // Un cran posé par un préréglage (Auto et les autres, auto_config.h) est strict : ni FP8 par Q/DQ, ni
-    // reçu v1 du FP8 CUTLASS (étape 3.6).
-    const bool strict = settings.preset != Preset::Custom;
-    const std::vector<SpanVariantKind> wanted = span_variant_order(
-        tier, SpanVariantCaps{.cutlass = caps.span_fp8_cutlass, .fp8 = caps.fp8, .int8 = caps.int8}, strict);
-    if (tier == PrecisionTier::Performance && !caps.fp8)
-      log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
-    const auto prepare_span = [&] {
-      return prepare_engine(
-          p, init, *c.backend, c.span_int8 ? c.span_int8->onnx : c.model->path,
-          gpu::Shape{.dims = {1, 3, c.work.height, c.work.width}},
-          EngineLabel{.name = c.span_int8 ? std::format("SPAN {}", variant_text(c.span_int8->kind)) : "SPAN",
-                      .model = c.model->path.stem().string(),
-                      .width = c.work.width,
-                      .height = c.work.height},
-          gpu::Lane::Upscale);
-    };
-    using Prepared = decltype(prepare_span());
-    std::optional<Prepared> loaded;
-    const SpanFp8Context fp8_context{.gpu_arch = caps.gpu_arch,
-                                     .kernels_version = caps.span_fp8_kernels,
-                                     .width = c.work.width,
-                                     .height = c.work.height};
-    // Le SPAN FP8 choisi à la main dans la liste des modèles se prépare ici, sur l'écran de chargement, comme
-    // un moteur qui se construit ; la tâche de fond (span_auto.h) ne le refait pas pour cette vidéo.
-    // Le bench (--bench-out) ne valide jamais sur son clip : une mire synthétique aux bords nets jugerait le
-    // FP8 bien plus durement qu'un épisode et écrirait ses refus dans le reçu de l'utilisateur.
-    const bool bench = p.options.bench_out.has_value();
-    if (tier == PrecisionTier::Performance && !strict && caps.span_fp8_cutlass && !p.options.file.empty() &&
-        !bench) {
-      const std::optional<bool> ready =
-          prepare_span_fp8(p, init, c.model->path, variants,
-                           span_still_reduce(c.work.width, c.work.height, settings.downscale), fp8_context);
-      if (!ready) return std::nullopt;
-      p.span_job.attempted = prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file);
-    }
-    for (const SpanVariantKind kind : wanted) {
-      SpanInt8Lookup found = find_span_variant(kind, c.model->path, variants,
-                                               kind == SpanVariantKind::Fp8Cutlass ? &fp8_context : nullptr);
-      if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
-      if (!found.variant && bench && found.unjudged) {
-        // Le bench mesure le temps du FP8 à cette taille ; la lecture d'un épisode la jugera sur ses images.
-        log->info("SPAN {} : pas jugé à {}x{}, joué pour le bench seulement", variant_text(kind),
-                  c.work.width, c.work.height);
-        found.variant = std::move(found.unjudged);
-      }
-      if (!found.variant) continue;
-      if (strict && kind == SpanVariantKind::Fp8Cutlass && !found.variant->receipt_v2) {
-        log->info("SPAN FP8 CUTLASS : reçu v1, pas pris par un préréglage (préparer de nouveau)");
-        continue;
-      }
-      c.span_int8 = std::move(found.variant);
-      loaded = prepare_span();
-      if (*loaded) break;
-      log->warn("SPAN {} refusé ({}) : variante suivante ou SPAN FP16", variant_text(kind),
-                loaded->error().detail);
-      c.span_int8.reset();
-      loaded.reset();
-    }
-    if (!c.span_int8 && tier != PrecisionTier::Balanced) warn_span_fallback(*log, tier);
-    if (!loaded) loaded = prepare_span();
-    if (!*loaded) return std::unexpected(std::move(loaded->error()));
-    if (!**loaded) return std::nullopt;
-    c.engine = std::move(***loaded);
+    auto upscaled = load_span(p, init, c, settings);
+    if (!upscaled) return std::unexpected(std::move(upscaled.error()));
+    if (!*upscaled) return std::nullopt;
   }
   // Au-delà de 720 lignes de travail (la 4K sans réduction), RIFE estime le mouvement sur une copie
   // réduite à 720p et le warp déforme les images de travail : la variante mouvement seulement.
@@ -397,9 +469,12 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
     // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
     const bool smaller = motion && c.rife_size.height < c.work.height;
     const WorkSize at = smaller ? c.rife_size : c.work;
-    auto loaded = prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
-                                      settings.motion_precision, try_fused ? &fused : nullptr, &motion);
-    if (smaller && loaded && *loaded && !motion) {
+    auto loaded =
+        prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
+                            settings.motion_precision, try_fused ? &fused : nullptr, &motion, smaller);
+    // Sans variante mouvement, l'image se fait à la taille de travail : rien n'a été construit plus bas.
+    if (smaller &&
+        ((!loaded && loaded.error().key == kDrbaImageElsewhereKey) || (loaded && *loaded && !motion))) {
       fused = DrbaFusedUse{.declined = fused.declined};
       loaded =
           prepare_distil_drba(p, init, *c.backend, c.model_places, c.work.width, c.work.height, c.drba_align,
@@ -417,6 +492,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       else if (try_fused)
         log->warn("DistilDRBA fusionné indisponible ({}) : DistilDRBA entier", fused.declined);
     }
+    // Annulée, la construction ne passe pas la main à RIFE : l'interpolation part, SPAN reste (A31-15).
+    if (!loaded && watch_now(loaded.error()))
+      return stage_refused(std::move(loaded.error()), ChainStage::Motion);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
@@ -447,6 +525,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   // autre backend que Core ML, ou sur un Mac qui ne l'offre pas.
   if (want_apple) {
     auto loaded = prepare_apple(p, init, *c.backend, c.work.width, c.work.height);
+    if (!loaded && watch_now(loaded.error()))
+      return stage_refused(std::move(loaded.error()), ChainStage::Motion);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
       p.ui.controls().notify(c.rife_model ? i18n::ui_tr("Apple interpolation unavailable: using RIFE")
@@ -466,7 +546,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   c.image_geometry = kernels::rife_geometry(c.work.width, c.work.height, c.rife_align);
   if (use_rife) {
     auto planes = rife_input_planes(*c.rife_model);
-    if (!planes) return std::unexpected(std::move(planes.error()));
+    if (!planes) return stage_refused(std::move(planes.error()), ChainStage::Motion);
     c.rife_planes = *planes;
   }
   // RIFE fusionné (kernels/spec/rife_fused.h) : six petits moteurs et des noyaux de colle à la place du
@@ -479,12 +559,18 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
   const bool fused_wanted = fused_declined.empty();
   if (use_rife && settings.rife_fused && !fused_wanted)
     log->info("RIFE fusionné non utilisé : {}", fused_declined);
-  // Rien (fenêtre fermée pendant la construction) : « arrêt » ; un refus : journal et RIFE entier.
-  enum class Fused : std::uint8_t { Loaded, Declined, Closed };
+  // Rien (fenêtre fermée pendant la construction) : « arrêt » ; un refus : journal et RIFE entier ; une
+  // annulation (« Annuler et regarder ») : l'interpolation part sans autre construction (A08-01, A31-15).
+  enum class Fused : std::uint8_t { Loaded, Declined, Closed, Cancelled };
+  std::optional<Refusal> cancelled;
   const auto try_fused = [&](const kernels::RifeGeometry& g, bool motion,
                              std::unique_ptr<gpu::Engine>& into) {
     if (!fused_wanted) return Fused::Declined;
     auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, motion);
+    if (!fused && watch_now(fused.error())) {
+      cancelled = std::move(fused.error());
+      return Fused::Cancelled;
+    }
     if (!fused) {
       log->warn("RIFE fusionné indisponible ({}) : RIFE entier", fused.error().detail);
       return Fused::Declined;
@@ -503,6 +589,8 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
       log->warn("RIFE mouvement indisponible ({}) : RIFE image", derived.error().detail);
     } else if (const Fused tried = try_fused(c.geometry, true, c.rife_motion); tried == Fused::Closed) {
       return std::nullopt;
+    } else if (tried == Fused::Cancelled) {
+      return stage_refused(std::move(*cancelled), ChainStage::Motion);
     } else if (tried == Fused::Declined) {
       const kernels::RifeGeometry& g = c.geometry;
       auto loaded = prepare_engine(p, init, *c.backend, *derived,
@@ -512,15 +600,24 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                                                .width = g.padded_width,
                                                .height = g.padded_height},
                                    gpu::Lane::Interpolate);
-      if (!loaded) return std::unexpected(std::move(loaded.error()));
-      if (!*loaded) return std::nullopt;
-      c.rife_motion = std::move(**loaded);
+      if (!loaded && watch_now(loaded.error()))
+        return stage_refused(std::move(loaded.error()), ChainStage::Motion);
+      if (!loaded) {
+        // La variante mouvement refusée (construction, mémoire) : RIFE image reste à essayer (A29-01).
+        log->warn("RIFE mouvement refusé ({}) : RIFE image", loaded.error().detail);
+      } else if (!*loaded) {
+        return std::nullopt;
+      } else {
+        c.rife_motion = std::move(**loaded);
+      }
     }
   }
   load_calm_rife(p, init, c, models_dir);
   if (use_rife && !c.rife_motion) {
     const kernels::RifeGeometry& g = c.image_geometry;
-    if (try_fused(g, false, c.rife) == Fused::Closed) return std::nullopt;
+    const Fused tried = try_fused(g, false, c.rife);
+    if (tried == Fused::Closed) return std::nullopt;
+    if (tried == Fused::Cancelled) return stage_refused(std::move(*cancelled), ChainStage::Motion);
   }
   if (use_rife && !c.rife_motion && !c.rife) {
     const kernels::RifeGeometry& g = c.image_geometry;
@@ -531,7 +628,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain_once(Player& p
                                              .width = g.padded_width,
                                              .height = g.padded_height},
                                  gpu::Lane::Interpolate);
-    if (!loaded) return std::unexpected(std::move(loaded.error()));
+    if (!loaded) return stage_refused(std::move(loaded.error()), ChainStage::Motion);
     if (!*loaded) return std::nullopt;
     c.rife = std::move(**loaded);
   }

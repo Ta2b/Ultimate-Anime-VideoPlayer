@@ -106,11 +106,13 @@ bool network_added(const core::Settings& before, const core::Settings& after) {
 // La calibration de la machine de l'assistant (machine_calibration.h) sur son thread : l'utilisateur ne voit
 // qu'une barre de chargement. Rien si la fenêtre se ferme ; une calibration qui échoue garde base (Auto).
 std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
-                                                const std::filesystem::path& data_dir, PlaySettings base) {
+                                                const std::filesystem::path& data_dir, PlaySettings base,
+                                                bool keep_base) {
   const auto log = log_channel("app");
-  // Tout retour sans calibration est le préréglage Auto, comme le message le dit (P3.16).
-  const auto as_auto = [](PlaySettings settings) {
-    settings.preset = Preset::Auto;
+  // Tout retour sans calibration est le préréglage Auto, comme le message le dit (P3.16) ; en lecture, la
+  // chaîne qui jouait (A29-07).
+  const auto as_auto = [keep_base](PlaySettings settings) {
+    if (!keep_base) settings.preset = Preset::Auto;
     return settings;
   };
   struct Shared {
@@ -166,7 +168,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     // P3.10 : la calibration abandonnée garde les choix de l'assistant et le préréglage Auto.
     if (watch_now) {
       worker->request_stop();
-      log->info("calibration de la machine annulée : préréglage Auto");
+      log->info("calibration de la machine annulée : {}", keep_base ? "chaîne gardée" : "préréglage Auto");
       return as_auto(std::move(base));
     }
     PrepareView view;
@@ -189,8 +191,10 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   }
   const std::scoped_lock lock(shared->mutex);
   if (!*shared->result) {
-    log->warn("calibration de la machine : {} ; préréglage Auto", shared->result->error().detail);
-    ui.controls().defer(i18n::ui_tr("Machine calibration failed: Auto preset (see log)"));
+    const char* const kept = keep_base ? "chaîne gardée" : "préréglage Auto";  // i18n-ok : journal
+    log->warn("calibration de la machine : {} ; {}", shared->result->error().detail, kept);
+    ui.controls().defer(keep_base ? i18n::ui_tr("Machine calibration failed: chain unchanged (see log)")
+                                  : i18n::ui_tr("Machine calibration failed: Auto preset (see log)"));
     return as_auto(std::move(base));
   }
   // Auto calibré : le lecteur relit les bornes mesurées (calibration.toml) et refait la chaîne pour chaque

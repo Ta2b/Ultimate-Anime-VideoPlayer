@@ -10,6 +10,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -79,11 +80,38 @@ void log_surface_color_spaces(const pl_vulkan vk, VkSurfaceKHR surface) {
                            hdr10 ? "offert" : "absent", text);
 }
 
+// A10-01 : un même message redit sans fin (une acquisition qui échoue à chaque tour) s'écrit une fois, puis
+// son compte toutes les kRepeatSummaryUs ou au message suivant ; le journal ne se remplit plus de mille
+// lignes par seconde.
+constexpr std::int64_t kRepeatSummaryUs = 10'000'000;
+struct RepeatedLog {
+  std::mutex mutex;
+  std::string last;
+  std::int64_t repeats = 0;
+  std::int64_t since_us = 0;
+};
+
 void placebo_log(void* priv, pl_log_level level, const char* message) {
+  if (level > PL_LOG_WARN) return;
   auto* log = static_cast<spdlog::logger*>(priv);
+  static RepeatedLog repeated;
+  {
+    const std::scoped_lock lock(repeated.mutex);
+    const std::int64_t now = host_now_us();
+    if (repeated.last == message && now - repeated.since_us < kRepeatSummaryUs) {
+      ++repeated.repeats;
+      return;
+    }
+    if (repeated.repeats > 0)
+      log->warn("libplacebo : message précédent redit {} fois en {} s", repeated.repeats,
+                (now - repeated.since_us) / 1'000'000);
+    repeated.last = message;
+    repeated.repeats = 0;
+    repeated.since_us = now;
+  }
   if (level <= PL_LOG_ERR) {
     log->error("libplacebo : {}", message);
-  } else if (level == PL_LOG_WARN) {
+  } else {
     log->warn("libplacebo : {}", message);
   }
 }

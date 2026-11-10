@@ -212,6 +212,13 @@ bool PlaceboScreen::ready(const RingFrame& frame) const {
   return impl_->ring.ready(frame);
 }
 
+std::optional<Refusal> PlaceboScreen::device_lost() const {
+  const Impl& s = *impl_;
+  if (s.ring.lost() || (s.vk != nullptr && pl_gpu_is_failed(s.vk->gpu)))
+    return Refusal{RefusalCode::DeviceLost, "appareil Vulkan de l'écran perdu (TDR, pilote rechargé)"};
+  return std::nullopt;
+}
+
 void PlaceboScreen::watch_writes(void (*waker)(void*), void* context) {
   Impl& s = *impl_;
   s.ring.set_watcher(nullptr);
@@ -383,15 +390,19 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
       (void)SDL_WaitEventTimeout(nullptr, kHiddenWaitMs);
       return ScreenTiming{.presented = false};
     }
+    // A10-01 : un échec d'acquisition sur un appareil en échec est une perte du GPU, pas une fenêtre cachée.
+    const auto not_shown = [&]() -> std::expected<ScreenTiming, Refusal> {
+      if (auto lost = device_lost()) return std::unexpected(std::move(*lost));
+      return ScreenTiming{.presented = false};
+    };
     if (out != s.swapchain_size) {
       int w = out.width;
       int h = out.height;
-      if (!pl_swapchain_resize(s.swapchain, &w, &h)) return ScreenTiming{.presented = false};
+      if (!pl_swapchain_resize(s.swapchain, &w, &h)) return not_shown();
       s.swapchain_size = out;
     }
     pl_swapchain_frame swframe{};
-    if (!pl_swapchain_start_frame(s.swapchain, &swframe))
-      return ScreenTiming{.presented = false};  // fenêtre cachée
+    if (!pl_swapchain_start_frame(s.swapchain, &swframe)) return not_shown();  // fenêtre cachée, ou GPU perdu
     pl_frame_from_swapchain(&target, &swframe);
     acquired = host_now_us();
   }

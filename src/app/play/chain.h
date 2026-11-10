@@ -28,6 +28,7 @@
 #include "app/play/player.h"
 #include "app/play/session.h"
 #include "app/play/settings.h"
+#include "app/play/stage_fallback.h"
 #include "app/play/ui.h"
 #include "core/types.h"
 #include "gpu/kernel_ops.h"
@@ -91,10 +92,11 @@ struct Chain {
   // Raccourcis du clavier (Ctrl+G, interpolation, tout couper) : valables pour la séance, pas écrits dans
   // play.toml. Chaque champ garde la valeur du fichier jusqu'à ce que le menu change ce réglage.
   KeptChoices kept;
-  std::optional<PlaySettings> reopen;              // demandé par le menu des paramètres
-  std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
-  std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
-  bool calibrate = false;                          // « Refaire le banc » : à faire avant de rouvrir
+  std::optional<PlaySettings> reopen;   // demandé par le menu des paramètres
+  std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
+  std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
+  bool calibrate = false;               // « Refaire le banc » : à faire avant de rouvrir
+  StageMemory* stages = nullptr;        // les étages refusés de la séance, oubliés par « Réessayer »
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
   std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
