@@ -28,7 +28,7 @@ constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
 
 void note(const std::string& text) {
   ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-  ImGui::TextWrapped("%s", text.c_str());
+  panel::wrapped(text.c_str());
   ImGui::PopStyleColor();
 }
 
@@ -412,7 +412,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
   switch (current(wizard)) {
     case WizardStep::Welcome:
       section(i18n::tr("Welcome"));
-      ImGui::TextWrapped("%s", view.gpu.c_str());
+      panel::wrapped(view.gpu.c_str());
       note(view.tier_line);
       if (!view.display_line.empty()) note(view.display_line);
       note(i18n::tr(

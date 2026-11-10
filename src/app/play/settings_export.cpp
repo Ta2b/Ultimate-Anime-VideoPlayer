@@ -164,9 +164,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   const media::Rational rate = export_rate(choices.source_rate, factor_of(export_chain(job.chain)));
   if (rate.den > 0 && rate.num > 60 * rate.den) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    ImGui::TextWrapped("%s", i18n::tr_format("{:.0f} fps: many TVs and phones refuse or stutter above 60.",
-                                             static_cast<double>(rate.num) / rate.den)
-                                 .c_str());
+    panel::wrapped(i18n::tr_format("{:.0f} fps: many TVs and phones refuse or stutter above 60.",
+                                   static_cast<double>(rate.num) / rate.den)
+                       .c_str());
     ImGui::PopStyleColor();
   }
   const std::string named = std::format("{}x{} {}/{}", size.width, size.height, rate.num, rate.den);
@@ -193,7 +193,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   std::error_code error;
   if (!problem.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    ImGui::TextWrapped("%s", problem.c_str());
+    panel::wrapped(problem.c_str());
     ImGui::PopStyleColor();
   } else if (std::filesystem::exists(output, error)) {
     note(i18n::tr("This file exists: it is replaced only when the export succeeds."));

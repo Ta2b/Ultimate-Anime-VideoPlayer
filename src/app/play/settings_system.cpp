@@ -32,7 +32,7 @@ using panel::section;
 
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool already_default) {
   section(i18n::tr("Default player"));
-  ImGui::TextWrapped("%s", i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager."));
+  panel::wrapped(i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager."));
   if (already_default) note(i18n::tr("AJP is already the default video player."));
 #ifdef __APPLE__
   static_cast<void>(last);
@@ -61,7 +61,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
     note(i18n::tr("Working…"));
   } else if (last.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    ImGui::TextWrapped("%s", last.text.c_str());
+    panel::wrapped(last.text.c_str());
     ImGui::PopStyleColor();
   } else if (!last.text.empty()) {
     note(last.text);
@@ -180,7 +180,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
     note(i18n::tr("Working…"));
   } else if (result.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    ImGui::TextWrapped("%s", result.text.c_str());
+    panel::wrapped(result.text.c_str());
     ImGui::PopStyleColor();
   } else if (!result.text.empty()) {
     note(result.text);
@@ -211,8 +211,7 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& state) {
 
 void span_prepare_section(const SpanPrepare& prepare, PrepareNote& state) {
   section(i18n::tr("SPAN Performance mode (FP8)"));
-  ImGui::TextWrapped(
-      "%s",
+  panel::wrapped(
       i18n::tr("With SPAN's Performance precision, the player prepares this mode by itself for the open "
                "video (about a minute, FP16 meanwhile). Redo it by hand here."));
   poll_prepare(state);
@@ -232,7 +231,7 @@ void span_prepare_section(const SpanPrepare& prepare, PrepareNote& state) {
     ImGui::ProgressBar(fraction, ImVec2(-1.0F, 0.0F), stage.c_str());
   } else if (state.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    ImGui::TextWrapped("%s", state.text.c_str());
+    panel::wrapped(state.text.c_str());
     ImGui::PopStyleColor();
   } else if (!state.text.empty()) {
     note(state.text);
@@ -310,12 +309,10 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
   if (!bench.state) bench.state = std::make_shared<BenchState>();
   BenchState& state = *bench.state;
   section(i18n::tr("Optimize for this machine"));
-  ImGui::TextWrapped(
-      "%s",
-      i18n::tr(
-          "The player tries a few seconds of video with its recommended settings, lightest to heaviest, "
-          "keeps "
-          "what your PC holds without stutter and applies it. About a minute (several the first time)."));
+  panel::wrapped(i18n::tr(
+      "The player tries a few seconds of video with its recommended settings, lightest to heaviest, "
+      "keeps "
+      "what your PC holds without stutter and applies it. About a minute (several the first time)."));
   // Le résultat arrive : les réglages recommandés sont posés dans le brouillon, une fois.
   if (state.pending && state.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     std::expected<BenchDone, Refusal> done = state.pending->get();
@@ -392,15 +389,15 @@ BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& vid
     float fraction = view.fraction;
     if (view.step == BenchStep::Span)
       fraction = overall_fraction(BenchStep::Span, state.span_progress->get().first);
-    ImGui::TextWrapped("%s", step_line(view.step, view.what).c_str());
+    panel::wrapped(step_line(view.step, view.what).c_str());
     ImGui::ProgressBar(fraction, ImVec2(-1.0F, 0.0F));
     if (!view.note.empty()) note(view.note);
   } else if (bench.refused) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    ImGui::TextWrapped("%s", bench.text.c_str());
+    panel::wrapped(bench.text.c_str());
     ImGui::PopStyleColor();
   } else if (!bench.text.empty()) {
-    ImGui::TextWrapped("%s", bench.text.c_str());
+    panel::wrapped(bench.text.c_str());
     if (state.undo.valid && state.result) {
       if (ImGui::Button(i18n::tr("Undo these settings"))) {
         if (const auto restored = restore_bench_file(state.undo, paths::bench(context.data_dir)); !restored) {
@@ -435,7 +432,7 @@ void report_problem_section(const PlayerPlace& place, const std::string& gpu_nam
     last = SDL_OpenURL(kIssueUrl) ? i18n::tr("Report copied. Paste it into the page that opened.")
                                   : i18n::tr_format("Report copied. Open {} and paste it there.", kIssueUrl);
   }
-  if (!last.empty()) ImGui::TextWrapped("%s", last.c_str());
+  if (!last.empty()) panel::wrapped(last.c_str());
   panel::tip(i18n::tr(
       "Copies the version, the system, the graphics card, the preset and the end of the log (and the one "
       "before it after a crash), with only the file names of your videos, then opens the report page. "
