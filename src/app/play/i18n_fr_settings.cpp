@@ -7,16 +7,17 @@ namespace {
 
 // Pages de réglages : (clé anglaise, français).
 constexpr std::array kSettingsPages{
-    Entry{" · RIFE (auto Fast)", " · RIFE (auto Rapide)"},
+    Entry{" · RIFE (auto Instant)", " · RIFE (auto Instantané)"},
     Entry{" · no interpolation", " · sans interpolation"},
     Entry{"Display peak", "Pic de l'écran"},
     Entry{"SPAN off", "SPAN coupé"},
     Entry{"Apply", "Appliquer"},
     Entry{"Bench results", "Résultats du bench"},
     Entry{"Cancel##calibration", "Annuler##calibration"},
-    Entry{"Interpolation runs in Auto Fast mode. The working resolution goes up to the 1080p of the test "
+    Entry{"Interpolation runs in Auto Instant mode. The working resolution goes up to the 1080p of the test "
           "sequence; SPAN doubles it.",
-          "L'interpolation tourne en mode auto Rapide. La résolution de travail monte jusqu'à la 1080p de la "
+          "L'interpolation tourne en mode auto Instantané. La résolution de travail monte jusqu'à la 1080p "
+          "de la "
           "séquence d'essai ; SPAN la double."},
     Entry{"Measured by an older version: Auto keeps its estimate. Run the bench again.",
           "Mesuré par une version plus ancienne : Auto garde son estimation. Refaites le bench."},
@@ -155,6 +156,8 @@ constexpr std::array kSettingsPages{
     Entry{"Replace the file and export", "Remplacer le fichier et exporter"},
     Entry{"Fallback", "Sinon"},
     Entry{"Fast", "Rapide"},
+    Entry{"Instant", "Instantané"},
+    Entry{"Interpolation level", "Niveau d'interpolation"},
     Entry{"Fastest", "Le plus rapide"},
     Entry{"Final scaling", "Mise à l'échelle finale"},
     Entry{"Finest", "Le plus fin"},
@@ -273,8 +276,11 @@ constexpr std::array kSettingsPages{
     Entry{"Subtitle delay", "Décalage des sous-titres"},
     Entry{"Delay (ms)", "Décalage (ms)"},
     Entry{"Reset delay", "Décalage à 0"},
-    Entry{"Positive: subtitles later. Keys z and x: 100 ms. This session only.",
-          "Positif : les sous-titres plus tard. Touches z et x : 100 ms. Pour cette séance seulement."},
+    Entry{
+        "Positive: subtitles later. Keys z and x: 100 ms. Ctrl+click the slider to type a value (up to "
+        "±30,000 ms). This session only.",
+        "Positif : les sous-titres plus tard. Touches z et x : 100 ms. Ctrl+clic sur le curseur pour saisir "
+        "une valeur (jusqu'à ±30 000 ms). Pour cette séance seulement."},
     Entry{"Subtitle size", "Taille des sous-titres"},
     Entry{
         "The first preference whose tracks exist is used when a file opens. Applies to the next file.",

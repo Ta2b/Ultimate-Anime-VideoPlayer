@@ -57,18 +57,18 @@ constexpr std::array kImageTabs{
     Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},
-    Entry{"DistilDRBA: the lightest; it keeps characters animated on twos on their rhythm. One frame of "
-          "delay.",
-          "DistilDRBA : le plus léger ; les personnages animés à une image sur deux gardent leur rythme. Une "
-          "image de retard."},
+    Entry{"DistilDRBA: the lightest up to ×5; it keeps characters animated on twos on their rhythm. One "
+          "frame of delay.",
+          "DistilDRBA : le plus léger jusqu'à ×5 ; les personnages animés à une image sur deux gardent leur "
+          "rythme. Une image de retard."},
     Entry{"RIFE 4.22 lite: light and clean, for most graphics cards.",
           "RIFE 4.22 lite : léger et propre, pour la plupart des cartes graphiques."},
     Entry{"RIFE 4.25: cleaner in-between frames, for recent graphics cards.",
           "RIFE 4.25 : des images intermédiaires plus propres, pour les cartes graphiques récentes."},
     Entry{"Very fast is the lightest, Balanced the cleanest. Applies after a short reload.",
           "Très rapide est le plus léger, Équilibré le plus propre. S'applique après un court rechargement."},
-    Entry{"Greyed out: above the display ({:.0f} Hz for {} fps).",
-          "Grisé : au-delà de l'écran ({:.0f} Hz pour {} i/s)."},
+    Entry{"Greyed out: above the display ({:.0f} Hz for {:.3f} fps).",
+          "Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s)."},
     Entry{"Greyed out: turn on RIFE at ×2 or more, or playback stalls.",
           "Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale."},
     Entry{"Keep poses (DRBA) with RIFE", "Garder les poses (DRBA) avec RIFE"},
@@ -90,16 +90,23 @@ constexpr std::array kImageTabs{
         "on this PC, then faster, at the cost of some precision.",
         "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger. FP8 : "
         "préparé une fois sur ce PC, puis plus rapide, au prix d'un peu de précision."},
+    Entry{"DistilDRBA is running: fused engines.", "DistilDRBA tourne : moteurs fusionnés."},
+    Entry{"DistilDRBA is running: whole network.", "DistilDRBA tourne : réseau entier."},
+    Entry{"Motion variant: one SPAN pass per source frame.",
+          "Variante mouvement : une passe de SPAN par image source."},
+    Entry{"Not fused: this engine cannot run it fused.",
+          "Non fusionné : ce moteur ne sait pas le fusionner."},
+    Entry{"Not fused: fused engines need Balanced precision.",
+          "Non fusionné : les moteurs fusionnés demandent le cran Équilibre."},
+    Entry{"Not fused: the fused engines were refused (see the log).",
+          "Non fusionné : les moteurs fusionnés ont été refusés (voir le journal)."},
+    Entry{"Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter.",
+          "Au-delà de ×5, DistilDRBA calcule plus que RIFE : Rapide (RIFE 4.22 lite) est plus léger."},
+    Entry{"Here Auto goes up to ×{} ({:.0f} Hz display).",
+          "Ici Auto monte jusqu'à ×{} (écran de {:.0f} Hz)."},
     Entry{"Interpolation precision", "Précision de l'interpolation"},
     Entry{"Fused engines only run at Balanced precision: the whole network is used instead.",
           "Les moteurs fusionnés ne tournent qu'au cran Équilibre : le réseau entier sert à la place."},
-    Entry{"Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest.",
-          "Performance : rapide. Balanced : plus fin. Sharp1 : plus net. ArtCNN : le plus léger."},
-    Entry{
-        "Performance: fast. Balanced: finer. Sharp1: crisp. ArtCNN: lightest. FP8: prepared once on this PC, "
-        "then faster.",
-        "Performance : rapide. Balanced : plus fin. Sharp1 : plus net. ArtCNN : le plus léger. FP8 : préparé "
-        "une fois sur ce PC, puis plus rapide."},
     Entry{"RIFE model", "Modèle RIFE"},
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},
@@ -122,10 +129,11 @@ constexpr std::array kImageTabs{
           "Coupe RIFE en petits moteurs TensorRT : environ trois fois plus rapide. TensorRT seulement. "
           "Recharge la lecture ; construit à la première utilisation pour cette taille."},
     Entry{"Stable", "Stable"},
-    Entry{"Stable follows what the GPU can hold in steps (×1 to ×8). Fast has no steps and falls back to "
-          "Stable if too many frames are lost. Playback only.",
-          "Stable suit ce que le GPU tient par paliers (×1 à ×8). Rapide n'a pas de palier et repasse sur "
-          "Stable si trop d'images sont perdues. Lecture seulement."},
+    Entry{
+        "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps and falls back to "
+        "Stable if too many frames are lost. Playback only.",
+        "Stable suit ce que le GPU tient par paliers (×1 à ×8). Instantané n'a pas de palier et repasse sur "
+        "Stable si trop d'images sont perdues. Lecture seulement."},
     Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch.",
           "Le pilote NVIDIA (RTX 40 et 50) ajoute une image entre deux images affichées. Vaut au prochain "
           "lancement."},

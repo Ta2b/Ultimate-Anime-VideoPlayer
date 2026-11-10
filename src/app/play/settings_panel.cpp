@@ -185,7 +185,9 @@ void languages_tab(PlaySettings& d) {
       "The first preference whose tracks exist is used when a file opens. Applies to the next file."));
 }
 
-void subtitles_tab(PlaySettings& d) {
+// Vrai tant que le curseur du délai est tenu : le délai s'applique au relâchement, pas à chaque image du
+// glissement (A23-12).
+bool subtitles_tab(PlaySettings& d) {
   section(i18n::tr("Subtitle size"));
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
   if (ImGui::SliderInt(i18n::tr("Size"), &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
@@ -196,11 +198,17 @@ void subtitles_tab(PlaySettings& d) {
   if (ImGui::Button(i18n::tr("Reset size"))) d.subtitle_scale = 1.0F;
   panel::tip(i18n::tr("Scales all text, panels included. Live."));
   section(i18n::tr("Subtitle delay"));
-  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, -5000, 5000, "%d", ImGuiSliderFlags_None);
+  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, limits::kSubtitleDelaySlider.lo,
+                   limits::kSubtitleDelaySlider.hi, "%d", ImGuiSliderFlags_None);
+  const bool held = ImGui::IsItemActive();
   d.subtitle_delay_ms =
       std::clamp(d.subtitle_delay_ms, limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
   if (ImGui::Button(i18n::tr("Reset delay"))) d.subtitle_delay_ms = 0;
-  panel::tip(i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. This session only."));
+  static_assert(limits::kSubtitleDelayMs.hi == 30'000, "le texte de l'infobulle dit ±30,000 ms");
+  panel::tip(
+      i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. Ctrl+click the slider to type a value "
+               "(up to ±30,000 ms). This session only."));
+  return held;
 }
 
 // L'épisode suivant : lu tout seul à la fin du fichier ouvert.
@@ -229,7 +237,7 @@ void stats_tab(PlaySettings& d) {
 // pour cette machine, cet écran et cette vidéo (auto_config.h : apply_preset). Auto prend le niveau de la
 // machine ; un réglage fait à la main plus bas passe en Personnalisé, montré seulement quand il est en cours.
 void level_section(PlaySettings& d, const SettingsChoices& choices) {
-  section(i18n::tr("Level"));
+  section(i18n::tr("Preset"));
   const auto detected = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1));
   // Le préréglage qui porte le niveau de la machine : le nom qu'Auto affiche entre parenthèses.
   constexpr std::array<Preset, kTierCount> kByTier{Preset::Economy, Preset::Fast, Preset::Normal,
@@ -279,8 +287,6 @@ void sharpness_section(PlaySettings& d) {
 void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("This machine"));
   panel::wrapped(choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
-  ImGui::TextWrapped("%s",
-                     choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));
 
   section(i18n::tr("Setup wizard"));
@@ -382,6 +388,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::PushItemWidth(-width * 0.42F);
     panel::advanced() = advanced_;
     bool delay_held = false;
+    bool sub_delay_held = false;
     const PlaySettings before = draft_;
     // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
@@ -527,7 +534,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         }
         case Page::Playback: {
           languages_tab(draft_);
-          subtitles_tab(draft_);
+          sub_delay_held = subtitles_tab(draft_);
           episodes_section(draft_);
           break;
         }
@@ -598,6 +605,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
     // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
     if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
+    if (sub_delay_held) live.subtitle_delay_ms = running.subtitle_delay_ms;
     if (live != running) result.live = live;
     const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
     pending_shown_ = pending.cost == ChangeCost::Reopen;
@@ -605,8 +613,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       ImGui::Spacing();
       ImGui::Separator();
       ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      ImGui::TextWrapped(
-          "%s",
+      panel::wrapped(
           i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason).c_str());
       ImGui::PopStyleColor();
       if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;

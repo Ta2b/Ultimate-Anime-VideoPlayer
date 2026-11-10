@@ -301,6 +301,9 @@ inline constexpr std::size_t kMaxEnginesDirBytes = 4096;
 
 namespace limits {
 inline constexpr core::Range<int> kAudioDelayMs{-5000, 5000};
+// Le curseur du délai audio va moins loin que la saisie au clavier (Ctrl+clic), qui va jusqu'à kAudioDelayMs.
+inline constexpr core::Range<int> kAudioDelaySlider{-1000, 1000};
+inline constexpr core::Range<int> kSubtitleDelaySlider{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};

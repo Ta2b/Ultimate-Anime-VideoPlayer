@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -187,15 +188,27 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   // P3.92 : un nom seul, ou un chemin relatif, se lit depuis le dossier de la source.
   std::filesystem::path output = prepare::path_from_utf8(draft.path.data());
   if (!output.empty() && output.is_relative()) output = choices.source_file.parent_path() / output;
-  const std::string problem = path_problem(output, choices.source_file, job.codec);
+  ExportDraft::PathCheck& seen = draft.check;
+  const auto now = std::chrono::steady_clock::now();
+  if (!seen.valid || seen.output != output || seen.source != choices.source_file || seen.codec != job.codec ||
+      now - seen.at >= std::chrono::seconds(1)) {
+    std::error_code error;
+    seen.output = output;
+    seen.source = choices.source_file;
+    seen.codec = job.codec;
+    seen.problem = path_problem(output, choices.source_file, job.codec);
+    seen.exists = seen.problem.empty() && std::filesystem::exists(output, error);
+    seen.at = now;
+    seen.valid = true;
+  }
+  const std::string& problem = seen.problem;
   const exporter::Container container =
       exporter::container_of(output).value_or(exporter::Container::Matroska);
-  std::error_code error;
   if (!problem.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
     panel::wrapped(problem.c_str());
     ImGui::PopStyleColor();
-  } else if (std::filesystem::exists(output, error)) {
+  } else if (seen.exists) {
     note(i18n::tr("This file exists: it is replaced only when the export succeeds."));
   }
   if (container == exporter::Container::Matroska) {
@@ -213,8 +226,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   }
   ImGui::BeginDisabled(!problem.empty());
   // Un fichier existant n'est remplacé que sur un bouton qui le dit (P3.92).
-  if (ImGui::Button(std::filesystem::exists(output, error) ? i18n::tr("Replace the file and export")
-                                                           : i18n::tr("Export"))) {
+  if (ImGui::Button(seen.exists ? i18n::tr("Replace the file and export") : i18n::tr("Export"))) {
     ExportJob start = job;
     start.output = output;
     actions.emplace_back(StartExport{.job = std::move(start)});
