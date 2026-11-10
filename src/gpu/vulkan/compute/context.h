@@ -167,6 +167,9 @@ class VkContext {
   // hôte : celles d'avant la soumission). Un refus annule la soumission. Un seul rappel ; vide
   // pour le retirer.
   void before_flush(std::function<Done()> hook) { before_flush_ = std::move(hook); }
+  // Tests : les count prochains vkQueueSubmit rendent VK_ERROR_OUT_OF_DEVICE_MEMORY sans rien soumettre,
+  // comme une carte à court de mémoire un instant (A45-05).
+  void fail_next_submits(std::uint32_t count) { failing_submits_ = count; }
   std::uint64_t queue_submits() const { return queue_submits_; }  // appels à vkQueueSubmit
   std::uint64_t submit_infos() const { return submit_infos_; }    // VkSubmitInfo soumis, tous appels
 
@@ -211,6 +214,9 @@ class VkContext {
   Done create_device(const CreateOptions& options);
   Done finish_setup();  // file, outils internes, journal
   Done queue_submit(std::span<const VkSubmitInfo> infos, std::size_t lane = 0);
+  // Après un vkQueueSubmit refusé au groupe first d'un lot de groups groupes et count entrées : renvoie
+  // les signaux promis sans leurs command buffers, ou tient le contexte pour perdu (queue.cpp).
+  void recover_signals(std::size_t first, std::size_t groups, std::size_t count);
 
   // Une soumission du lot, ses tableaux réutilisés d'un lot à l'autre.
   struct Batched {
@@ -264,6 +270,7 @@ class VkContext {
   std::uint64_t once_count_ = 0;
   std::uint64_t host_waits_ = 0;
   std::uint64_t queue_submits_ = 0;
+  std::uint32_t failing_submits_ = 0;  // fail_next_submits
   std::uint64_t submit_infos_ = 0;
   std::vector<Batched> batch_;
   std::size_t batched_ = 0;  // entrées de batch_ en attente

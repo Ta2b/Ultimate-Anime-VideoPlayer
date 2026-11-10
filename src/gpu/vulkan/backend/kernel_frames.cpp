@@ -242,9 +242,8 @@ std::expected<VulkanKernelOps::Source, Refusal> VulkanKernelOps::source(const De
         src.staging = SIZE_MAX;
         return src;
       }
-      // Les vues ne se créent pas (rare : appareil à court) : la copie prend le relais.
-      frame.data->end_vulkan_access(access->state, false);
-      return std::unexpected(planes.error());
+      // Les vues ne se créent pas (rare : appareil à court) : la copie prend le relais, l'accès reste
+      // ouvert pour elle comme pour une image qui ne se lit pas sur place (A45-06).
     }
   }
   const MemoryUse use = memory == FrameMemory::Host ? MemoryUse::Upload : MemoryUse::Device;
