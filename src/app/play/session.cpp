@@ -368,13 +368,7 @@ void Session::request_subtitles(const RingFrame& frame) {
   const subs::RenderRequest request{.pts_us = frame.pts_us,
                                     .epoch = frame.epoch,
                                     .delay_us = config_.subtitle_delay_us,
-                                    .target = {.width = size.width,
-                                               .height = size.height,
-                                               .video_width = config_.video_width,
-                                               .video_height = config_.video_height,
-                                               .sample_aspect = config_.video_sar,
-                                               .video_matrix = config_.video_matrix,
-                                               .font_scale = config_.subtitle_scale}};
+                                    .target = subtitle_target(size)};
   if (stages_.request_subtitles(request)) ++subtitle_requests_;
 }
 
@@ -529,7 +523,8 @@ const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
 
 // Une image tenue plus d'une période source : les demandes de sous-titres continuent sur la grille des
 // sources, et la lecture suit l'horloge (jamais au-delà de la dernière demande).
-void Session::follow_subtitles(std::int64_t host_now) {
+void Session::follow_subtitles(std::int64_t host_now, const UiFrame& ui) {
+  place_subtitles(ui);
   if (fresh_) held_subtitle_pts_.reset();
   if (!config_.subtitles || !current_ || !subtitle_pts_ || config_.extra == nullptr) return;
   const std::int64_t period = config_.extra->source_period_us();
@@ -569,7 +564,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   retire_written();
   follow_display();
   choose(host_now);
-  follow_subtitles(host_now);
+  follow_subtitles(host_now, ui);
   const bool fresh = fresh_;
   bool osd_changed = refresh_osd(host_now);  // overlay_due peut le lever
   const subs::SubtitleFrame* subtitles =

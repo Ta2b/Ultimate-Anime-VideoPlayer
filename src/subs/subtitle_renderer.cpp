@@ -32,6 +32,10 @@ std::expected<void, Refusal> validate(const RenderRequest& request) {
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("sous-titres : échelle des polices {}", t.font_scale));
   }
+  if (!(t.line_lift >= 0.0F && t.line_lift <= kMaxLineLift)) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("sous-titres : montée des dialogues {}", t.line_lift));
+  }
   if (!timestamp_in_range(request.pts_us)) {
     return refuse(RefusalCode::FieldOutOfRange, std::format("sous-titres : pts {} µs", request.pts_us));
   }
@@ -161,6 +165,7 @@ void SubtitleRenderer::configure(const RenderTarget& target, bool use_margins) {
   // libass compense pour que les lettres gardent leurs proportions (1 pour un pixel carré).
   ass_set_pixel_aspect(renderer_.get(), pixel_aspect(target));
   ass_set_font_scale(renderer_.get(), static_cast<double>(target.font_scale));
+  ass_set_line_position(renderer_.get(), static_cast<double>(target.line_lift) * 100.0);
   target_ = target;
   use_margins_ = use_margins;
   in_sync_ = false;
@@ -206,6 +211,17 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render(const SubtitleTra
   }
 }
 
+namespace {
+// L'image d'une demande, sans contenu : placée pour la cible rendue.
+SubtitleFrame placed(const RenderRequest& request, const RenderTarget& target) {
+  return {.pts_us = request.pts_us,
+          .epoch = request.epoch,
+          .width = target.width,
+          .height = target.height,
+          .line_lift = target.line_lift};
+}
+}  // namespace
+
 std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const SubtitleTrack& track,
                                                                   const RenderRequest& request,
                                                                   AtlasPool& pool, bool use_margins) {
@@ -220,8 +236,7 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
   const ass_track* events = track.get();
   const long long now_ms = to_ms(request.pts_us - request.delay_us);
   if (events->n_events == quiet_events_ && now_ms >= quiet_from_ms_ && now_ms < quiet_until_ms_ && in_sync_)
-    return SubtitleFrame{
-        .pts_us = request.pts_us, .epoch = request.epoch, .width = target.width, .height = target.height};
+    return placed(request, target);
   quiet_until_ms_ = -1;
   rendered_ = true;
   ++libass_calls_;
@@ -234,8 +249,7 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::render_at(const Subtitle
   }
 
   // Les rectangles sont placés pour la taille rendue : l'affichage les étire à la sienne.
-  SubtitleFrame frame{
-      .pts_us = request.pts_us, .epoch = request.epoch, .width = target.width, .height = target.height};
+  SubtitleFrame frame = placed(request, target);
   if (pieces_.empty()) {
     forget();
     if (shrink_ != 1) {  // l'instant lourd est passé : le prochain sous-titre en pleine taille

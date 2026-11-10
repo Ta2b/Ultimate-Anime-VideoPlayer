@@ -102,6 +102,7 @@ class PlayerUi {
   void release(PlaceboScreen& screen);
 
  private:
+  bool handle_key(const SDL_Event& event);  // les touches : modificateurs, Échap sur une liste, saisie
   PlayerUi(SDL_Window* window, std::string title);
   void apply_scale();
   bool over_ui() const;
@@ -118,6 +119,7 @@ class PlayerUi {
   PlaySettings running_;
   SettingsChoices choices_;
   bool input_pending_ = false;
+  bool close_popups_ = false;  // Échap sur une liste ouverte : elle seule se ferme, au tour suivant (A24-14)
   static constexpr int kSettleFrames = 2;
   int settle_ = 0;  // images encore à recomposer après la dernière entrée
   // Un élément survolé attend son infobulle (immobilité de la souris puis délai d'ImGui) : en pause,

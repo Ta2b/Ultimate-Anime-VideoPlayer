@@ -5,6 +5,8 @@
 #include <format>
 #include <utility>
 
+#include "subs/subtitle_renderer.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -30,6 +32,11 @@ std::string format_clock(std::int64_t us, std::int64_t duration_us) {
 float subtitle_lift(float text_bottom, float height, float reserved) {
   if (reserved <= 0.0F) return 0.0F;
   return std::max(0.0F, text_bottom - (height - reserved));
+}
+
+float line_lift(int reserved, int height) {
+  if (reserved <= 0 || height <= 0) return 0.0F;
+  return std::min(static_cast<float>(reserved) / static_cast<float>(height), subs::kMaxLineLift);
 }
 
 double fraction_of(std::int64_t position_us, std::int64_t duration_us) {

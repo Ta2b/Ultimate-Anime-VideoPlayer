@@ -152,7 +152,8 @@ void SubsWorker::deliver_empty(const RenderRequest& request) {
   deliver({.pts_us = request.pts_us,
            .epoch = request.epoch,
            .width = request.target.width,
-           .height = request.target.height});
+           .height = request.target.height,
+           .line_lift = request.target.line_lift});
 }
 
 void SubsWorker::report(const Refusal& refusal) {
