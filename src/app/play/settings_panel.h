@@ -132,7 +132,6 @@ struct SettingsPage {
   Page id;
   const char* category;
   const char* name;
-  bool advanced;
 };
 // Toutes les pages, dans l'ordre de l'écran (les catégories se déduisent du changement de `category`).
 std::span<const SettingsPage> settings_pages();
@@ -172,7 +171,7 @@ class SettingsPanel {
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
   bool busy() const;
   // Il y a quelque chose à dessiner : le panneau ouvert.
-  bool wants_draw(const PlaySettings&, const SettingsChoices&) const { return open_; }
+  bool wants_draw() const { return open_; }
 
   struct Result {
     std::optional<PlaySettings> live;    // à appliquer tout de suite
@@ -201,14 +200,13 @@ class SettingsPanel {
   int page_ = 0;                         // la page de l'arbre affichée (settings_panel.cpp : kPages)
   std::array<bool, 8> category_open_{};  // les catégories ouvertes de l'arbre
   int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change
-  bool advanced_ = false;       // la case « Réglages avancés » : montre la catégorie Avancé
+  bool advanced_ = false;       // la case « Réglages avancés » : montre les sections avancées des pages
   bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
   FolderField engines_folder_;
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
   UpdateNote updates_;                    // Général > Application : la vérification en cours ou son résultat
-  BenchNote bench_;                       // « Calibrer cette machine » : l'essai en cours ou son rapport
   std::unique_ptr<MachineNote> machine_;  // Vidéo > Post-traitement : les résultats du bench
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };

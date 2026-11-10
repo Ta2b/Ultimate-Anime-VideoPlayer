@@ -16,11 +16,6 @@ namespace {
 
 constexpr std::array<std::string_view, kUsageCount> kUsageNames{"upscale", "interpolate"};
 
-// Les SDK de RTX HDR, retiré : un ancien settings.toml les nomme encore, ils sont oubliés à la lecture.
-bool retired_engine(std::string_view name) {
-  return name == "rtx_video_sdk" || name == "maxine_vfx";
-}
-
 template <class T>
 std::expected<void, Refusal> no_duplicate(const std::vector<T>& values, std::string_view where) {
   for (std::size_t i = 0; i < values.size(); ++i) {
@@ -99,7 +94,7 @@ void read_engines(const toml::table& root, Settings& settings, const Reader& rea
   if ((*table)->contains("preferred")) settings.preferred = {};
   for (std::size_t i = 0; i < kUsageCount; ++i) {
     auto name = reader.take(fields::optional<std::string>(**preferred, kUsageNames[i], "engines.preferred"));
-    if (!name || !*name) continue;
+    if (!name || !*name || retired_engine(**name)) continue;
     const std::string where = std::format("engines.preferred.{}", kUsageNames[i]);
     const auto id = engine(**name, where, reader);
     if (!id) continue;

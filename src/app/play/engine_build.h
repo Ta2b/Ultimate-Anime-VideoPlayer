@@ -1,8 +1,6 @@
 // Construction du moteur SPAN en arrière-plan (trtexec, une minute la première fois, puis lu
 // dans le cache) sur une instance de backend à elle : main garde la fenêtre vivante et
 // affiche la progression pendant ce temps.
-//
-// Provisoire : le thread preparer (prepare/preparer.h), branché par gpu, en prendra la place.
 #pragma once
 
 #include <atomic>

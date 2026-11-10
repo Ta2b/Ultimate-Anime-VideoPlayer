@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "app/play/controls.h"
+#include "app/play/edition_plan.h"
 #include "app/play/frame_latency.h"
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
@@ -78,6 +79,7 @@ struct SessionConfig {
   // La fin de la piste audio quand elle finit avant la vidéo (P3.75) ; 0 : inconnue ou pas avant.
   std::int64_t audio_end_us = 0;
   std::vector<ChapterMark> chapters;     // du fichier, dans l'ordre
+  std::vector<PlayPart> parts;           // édition ordonnée jouée dans son ordre (A14-03) ; vide : le fichier
   std::int64_t stop_after_us = 0;        // quitte après ce temps de lecture ; 0 jamais
   std::int64_t fullscreen_after_us = 0;  // bascule en plein écran après ce temps ; 0 jamais
   bool subtitles = false;                // une piste est choisie : demander leurs images
@@ -294,6 +296,8 @@ class Session {
   std::optional<Refusal> read_lost_;  // lecture abandonnée par la source dans l'époque courante (A13-02)
   bool resized_ = false;
   bool quit_ = false;
+  EditionPlan plan_;                             // A14-03 : les parties d'une édition ordonnée
+  bool plan_jump_ = false;                       // le seek en cours vient du plan : il ne le recalcule pas
   std::optional<std::int64_t> pending_seek_us_;  // cible du dernier seek, jusqu'à sa première image
   // Seek dont une boîte a refusé le Flush ou le Seek : rejoué par tick, jusqu'à ce que tout passe.
   struct SeekRetry {

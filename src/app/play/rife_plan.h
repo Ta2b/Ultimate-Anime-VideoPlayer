@@ -4,7 +4,7 @@
 // RIFE ne tourne pas sur une paire qui ne bouge pas ou qui coupe :
 //   - coupe de scène (kernels/spec/detect.h, score > 0,120) : mélanger deux plans ferait un
 //     fantôme ;
-//   - dessin tenu (pire bloc 32 × 32 sous 0,70 niveau) : interpoler une image avec elle-même
+//   - dessin tenu (pire bloc 16 × 16 sous 0,70 niveau, kHeldBlock) : interpoler une image avec elle-même
 //     redonne la même image, au prix de RIFE ;
 //   - écart de pts nul, négatif ou plus long que kMaxPairGapUs (trou, reprise) ;
 //   - pas de source a dans la même époque (début, seek).

@@ -47,6 +47,7 @@ struct Demuxer::State {
   std::expected<std::int64_t, Refusal> seek_before(std::int64_t target_us, int reference);
   std::expected<std::optional<std::int64_t>, Refusal> seek_after(std::int64_t target_us, int reference);
   std::int64_t indexed_before(std::int64_t target_us, int reference) const;
+  void note_chapter_layout(std::string_view shown);
 };
 
 namespace {
@@ -182,6 +183,23 @@ Demuxer::Demuxer(Demuxer&&) noexcept = default;
 Demuxer& Demuxer::operator=(Demuxer&&) noexcept = default;
 Demuxer::~Demuxer() = default;
 
+// A14-03 : les parties d'une édition ordonnée passent sur la ligne de temps du Demuxer ; ce que le lecteur
+// ne joue pas (chapitres d'un autre fichier) est dit au journal.
+void Demuxer::State::note_chapter_layout(std::string_view shown) {
+  for (ChapterPart& part : chapter_layout.parts) {
+    part.start_us = std::max<std::int64_t>(part.start_us - start_us, 0);
+    if (part.end_us != ChapterPart::kToEnd) part.end_us -= start_us;
+  }
+  if (!chapter_layout.parts.empty())
+    log->info("{} : édition ordonnée, {} parties jouées dans son ordre", shown, chapter_layout.parts.size());
+  else if (chapter_layout.ordered)
+    log->info(
+        "{} : édition ordonnée non jouée ou sans partie dans ce fichier, lecture dans l'ordre du fichier",
+        shown);
+  if (chapter_layout.linked)
+    log->warn("{} : chapitres liés à d'autres fichiers non pris en charge, ils ne sont pas joués", shown);
+}
+
 std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path) {
   auto state = std::make_unique<State>();
   const std::string where = utf8_path(path);
@@ -228,10 +246,7 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path)
     state->log->info("{} : {} chapitres, {} gardés", shown, raw->nb_chapters, kMaxChapters);
   if (std::string_view(raw->iformat->name).find("matroska") != std::string_view::npos) {
     state->chapter_layout = read_chapter_layout(path);
-    if (!state->chapter_layout.plain())
-      state->log->warn("{} : chapitres {}{} non pris en charge, lecture dans l'ordre du fichier", shown,
-                       state->chapter_layout.ordered ? "ordonnés" : "",
-                       state->chapter_layout.linked ? " liés à d'autres fichiers" : "");
+    state->note_chapter_layout(shown);
   }
   state->scratch.reset(av_packet_alloc());
   if (!state->scratch) return refuse(RefusalCode::MediaUnreadable, shown + " : mémoire insuffisante");
@@ -501,6 +516,15 @@ std::expected<void, Refusal> Demuxer::seek(std::int64_t target_us, int reference
   auto again = state_->seek_after(target_us, reference);
   if (!again) return std::unexpected(again.error());
   return {};
+}
+
+std::expected<void, Refusal> Demuxer::seek_file(std::int64_t target_us, int reference) {
+  if (track(reference) == nullptr)
+    return refuse(RefusalCode::TrackUnavailable, std::format("piste {}", reference));
+  const std::int64_t aim_us = std::max<std::int64_t>(target_us, 0);
+  const AVRational time_base = state_->format->streams[reference]->time_base;
+  return state_->seek_stream(reference, from_us(aim_us, time_base, state_->start_us), AVSEEK_FLAG_BACKWARD,
+                             std::format("seek du fichier à {} µs", aim_us));
 }
 
 std::uint32_t Demuxer::file_seeks() const {

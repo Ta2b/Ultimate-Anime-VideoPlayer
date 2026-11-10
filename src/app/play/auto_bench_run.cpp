@@ -45,21 +45,6 @@ void window_args(const BenchPlan& plan, std::vector<std::string>& args) {
 
 }  // namespace
 
-bool hide_is_reliable(std::string_view session_type, std::string_view current_desktop) {
-  return !(core::ascii_lower(session_type) == "wayland" &&
-           core::ascii_lower(current_desktop).contains("gnome"));
-}
-
-bool hide_is_reliable_here() {
-  // Le bureau ne se lit pas dans l'environnement (règle « aucune bascule cachée ») : sous Linux, où GNOME
-  // Wayland ne se distingue pas des autres, l'essai prend la petite fenêtre visible, sûre partout.
-#if defined(__linux__)
-  return false;
-#else
-  return true;
-#endif
-}
-
 std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::optional<Tier>& level,
                                           const std::filesystem::path& data_dir,
                                           const std::filesystem::path& out_file,
@@ -273,7 +258,8 @@ std::string format_compare_report(const CompareOutcome& outcome) {
         "{:>5.1f} ms: {}\n",
         variant.name, lost, static_cast<double>(r.run.lag_p95_us) / 1000.0,
         static_cast<double>(r.interval_median_us) / 1000.0, static_cast<double>(r.interval_p95_us) / 1000.0,
-        static_cast<double>(r.render_median_us) / 1000.0, holds(r.run) ? "tient" : i18n::tr("does not hold"));
+        static_cast<double>(r.render_median_us) / 1000.0,
+        holds(r.run) ? i18n::tr("holds") : i18n::tr("does not hold"));
   };
   std::string out = i18n::tr_format("Card: {}\n", outcome.reading_a.gpu) +
                     line(outcome.a, outcome.reading_a) + line(outcome.b, outcome.reading_b);
@@ -429,9 +415,10 @@ std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
 }
 
 std::string format_bench_report(const BenchOutcome& outcome) {
-  std::string out = i18n::tr_format("Card: {} (driver {})\nEstimated level: {}\n", outcome.result.gpu,
-                                    outcome.result.driver.empty() ? "inconnu" : outcome.result.driver,
-                                    tier_label(outcome.estimated));
+  std::string out = i18n::tr_format(
+      "Card: {} (driver {})\nEstimated level: {}\n", outcome.result.gpu,
+      outcome.result.driver.empty() ? std::string(i18n::tr("unknown")) : outcome.result.driver,
+      tier_label(outcome.estimated));
   for (const BenchRun& run : outcome.runs) {
     const double lost = run.presents > 0 ? 100.0 * static_cast<double>(run.dropped + run.missing) /
                                                static_cast<double>(run.presents)
@@ -439,7 +426,7 @@ std::string format_bench_report(const BenchOutcome& outcome) {
     out += i18n::tr_format("  {:<8} {:>5} presentations, {:>5.1f} % lost, p95 delay {:>6.1f} ms: {}\n",
                            tier_label(run.level), run.presents, lost,
                            static_cast<double>(run.lag_p95_us) / 1000.0,
-                           holds(run) ? "tient" : i18n::tr("does not hold"));
+                           holds(run) ? i18n::tr("holds") : i18n::tr("does not hold"));
   }
   out += i18n::tr_format("Level kept: {}\n", tier_label(outcome.result.level));
   if (outcome.result.work_height > 0)

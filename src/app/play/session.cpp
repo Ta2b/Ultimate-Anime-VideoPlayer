@@ -49,6 +49,7 @@ Session::Session(SessionConfig config, Stages& stages, Screen& screen, const Mas
       screen_(screen),
       clock_(clock),
       show_stats_(config_.stats) {
+  plan_ = EditionPlan(config_.parts);
   late_.reserve(kMaxRingSlots);
   unwritten_.reserve(kMaxRingSlots);
   unmeasured_.reserve(kMaxRingSlots);
@@ -203,6 +204,15 @@ void Session::toggle_fullscreen() {
 void Session::seek_to(std::int64_t target_us, bool exact) {
   target_us = std::max<std::int64_t>(target_us, 0);
   if (config_.duration_us > 0) target_us = std::min(target_us, config_.duration_us);
+  if (!plan_jump_) {
+    // A14-03 : hors des parties de l'édition, le début de la suivante ; après la dernière, la fin.
+    const std::optional<std::int64_t> planned = plan_.seek(target_us);
+    if (!planned) {
+      finished_ = true;
+      return;
+    }
+    target_us = *planned;
+  }
   const bool retrying = retry_seek_.has_value();
   retry_seek_.reset();
   clock_stalled_since_us_.reset();
@@ -719,6 +729,16 @@ void Session::check_end(std::int64_t host_now) {
     if (config_.fullscreen_after_us > 0 && !fullscreen_done_ && played >= config_.fullscreen_after_us) {
       screen_.set_fullscreen(true);
       fullscreen_done_ = true;
+    }
+  }
+  if (plan_.active() && current_ && current_->epoch == epoch_ && current_->pts_us != kNoPts) {
+    const EditionPlan::Step step = plan_.shown(current_->pts_us, pacing_period_us());
+    if (const auto* jump = std::get_if<EditionPlan::Jump>(&step)) {
+      plan_jump_ = true;
+      seek_to(jump->to_us, true);
+      plan_jump_ = false;
+    } else if (std::holds_alternative<EditionPlan::End>(step)) {
+      finished_ = true;
     }
   }
   if (stream_ended_ && !paused_ && queue_.empty() && stages_.idle() &&

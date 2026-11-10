@@ -167,7 +167,8 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
   const std::filesystem::path file = file_of(dir, key);
-  const std::filesystem::path temporary = file.string() + ".part";
+  std::filesystem::path temporary = file;
+  temporary += ".part";
   {
     std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
     stream.write(out.data(), static_cast<std::streamsize>(out.size()));
