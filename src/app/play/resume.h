@@ -30,7 +30,8 @@ std::optional<std::int64_t> resume_position(const std::filesystem::path& store,
                                             const std::filesystem::path& file);
 
 // Retient la position, ou oublie le fichier si elle est trop près du début ou de la fin (la
-// lecture allée au bout s'arrête là). duration_us : 0 si inconnue.
+// lecture allée au bout s'arrête là). duration_us : 0 si inconnue. Refus : écriture impossible, fichier
+// présent mais illisible, ou verrou tenu plus de 2 s par un autre lecteur ; le fichier reste alors tel quel.
 std::expected<void, Refusal> remember_position(const std::filesystem::path& store,
                                                const std::filesystem::path& file, std::int64_t position_us,
                                                std::int64_t duration_us);
