@@ -1,0 +1,49 @@
+// La vidéo à rouvrir après une relance du lecteur (A31-02, A29-04) : une relance rejoue les arguments du
+// lancement (main.cpp), qui ne nomment pas la vidéo en cours. Le lecteur qui se relance écrit ici la vidéo,
+// l'instant et la pause, et pourquoi ; le suivant les lit une fois, puis efface le fichier.
+//
+// Un fichier texte (relaunch.txt, dans le dossier des données), une clé par ligne : « file », « start_us »,
+// « paused », « reason » (« gpu-lost », « engine-updated ») et « written_s » (secondes depuis l'époque).
+#pragma once
+
+#include <cstdint>
+#include <expected>
+#include <filesystem>
+#include <optional>
+#include <string>
+
+#include "core/types.h"
+
+namespace ajp::app::play {
+
+enum class RelaunchReason : std::uint8_t { GpuLost, EngineUpdated };
+
+struct RelaunchTarget {
+  std::filesystem::path file;
+  std::int64_t start_us = 0;
+  bool paused = false;
+  RelaunchReason reason = RelaunchReason::EngineUpdated;
+  std::int64_t written_s = 0;  // quand la relance a été demandée
+};
+
+// Plus vieux que ceci, le fichier est d'une autre séance (relance qui n'a pas abouti) : ignoré.
+inline constexpr std::int64_t kRelaunchFreshS = 120;
+// Une perte du GPU dans la minute qui suit une relance pour la même raison ne relance plus (A31-02) : le
+// message et l'accueil.
+inline constexpr std::int64_t kRelaunchAgainS = 60;
+
+std::filesystem::path relaunch_target_file(const std::filesystem::path& data);
+std::int64_t relaunch_now_s();
+
+std::expected<void, Refusal> write_relaunch_target(const std::filesystem::path& store,
+                                                   const RelaunchTarget& target);
+// Lu puis effacé ; rien si le fichier manque, est illisible ou plus vieux que kRelaunchFreshS à now_s.
+std::optional<RelaunchTarget> take_relaunch_target(const std::filesystem::path& store, std::int64_t now_s);
+
+// La relance demandée (*paths.relaunch) avec la vidéo à rouvrir : vrai si elle l'est. Sans file, la relance
+// rejoue les arguments du lancement comme avant.
+struct PlayerPaths;
+bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file, std::int64_t start_us,
+                  bool paused, RelaunchReason reason);
+
+}  // namespace ajp::app::play

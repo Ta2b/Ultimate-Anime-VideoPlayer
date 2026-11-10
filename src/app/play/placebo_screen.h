@@ -155,6 +155,7 @@ class PlaceboScreen final : public Screen {
   std::expected<ScreenTiming, Refusal> show(const ShowRequest& request) override;
   SlotFree retire(const RingFrame& frame) override;
   bool ready(const RingFrame& frame) const override;
+  std::optional<Refusal> device_lost() const override;
   void watch(const RingFrame& frame) override;
   std::optional<std::int64_t> written_at(const RingFrame& frame) override;
   bool wakes_on_write() const override;
