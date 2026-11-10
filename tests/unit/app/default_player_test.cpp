@@ -291,3 +291,42 @@ TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[epis
   CHECK(opened.grew(file));
   std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp, le reste reste (A36-08)",
+          "[app]") {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "ajp-cache-data";
+  fs::remove_all(root);
+  const fs::path home = root / "home";
+  const fs::path heavy = home / ".local" / "share" / "ajp" / "ajp";
+  const fs::path cache = ajp::app::play::cache_data(home, heavy);
+#ifdef __linux__
+  CHECK(cache == home / ".cache" / "ajp");
+#else
+  CHECK(cache == heavy);
+#endif
+  CHECK(ajp::app::play::cache_data({}, heavy) == heavy);
+  for (const char* name : {"engines", "modeles", "plans", "backends", "models", "luts", "downloads"})
+    fs::create_directories(heavy / name);
+  {
+    std::ofstream(heavy / "shaders.cache") << "cache";
+  }
+  {
+    std::ofstream(heavy / "engines" / "span.plan") << "plan";
+  }
+  const int moved = ajp::app::play::move_cache_data(heavy, cache);
+#ifdef __linux__
+  CHECK(moved == 4);
+  CHECK(fs::is_regular_file(cache / "engines" / "span.plan"));
+  CHECK(fs::is_regular_file(cache / "shaders.cache"));
+  CHECK(fs::is_directory(cache / "plans"));
+  CHECK(fs::is_directory(cache / "modeles"));
+  CHECK_FALSE(fs::exists(heavy / "engines"));
+#else
+  CHECK(moved == 0);
+#endif
+  // Les paquets, modèles téléchargés, LUT et téléchargements restent avec les données.
+  for (const char* name : {"backends", "models", "luts", "downloads"}) CHECK(fs::is_directory(heavy / name));
+  CHECK(ajp::app::play::move_cache_data(heavy, cache) == 0);  // une fois
+  fs::remove_all(root);
+}

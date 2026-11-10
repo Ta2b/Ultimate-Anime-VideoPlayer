@@ -141,10 +141,10 @@ std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path
 EngineCatalog engine_catalog(const PlayOptions& options, const PlayerPaths& paths,
                              const PlaySettings& saved) {
   EngineCatalog catalog = load_catalog(
-      paths.engine_index, paths.engines.parent_path(),
+      paths.engine_index, paths::data_root(paths),
       saved.engines_dir.empty() ? std::filesystem::path() : prepare::path_from_utf8(saved.engines_dir));
   const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
-  add_release_engines(catalog, paths.engines.parent_path() / "engines-nvidia.lock", release_repo(),
+  add_release_engines(catalog, paths::data_root(paths) / "engines-nvidia.lock", release_repo(),
                       installed_version(),
                       update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),
                       online ? UpdateFetch(fetch_https) : UpdateFetch());
