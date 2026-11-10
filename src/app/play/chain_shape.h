@@ -52,6 +52,12 @@ struct OpenedChain {
 // L'avis de l'ouverture quand un moteur fusionné a été refusé ; vide sinon.
 i18n::Translated fused_refusal_notice(const OpenedChain& opened);
 
+// Où DistilDRBA mouvement estime (A03-19) : à la taille de travail jusqu'à 1080 lignes, sur une copie réduite
+// à 1080 lignes au-delà. RIFE s'arrête à 720 ; une passe de DistilDRBA en 1920 × 1088 coûte moins qu'une
+// passe de RIFE 4.25 en 960 × 576, et les petits mouvements ne sont plus étirés trois fois au warp.
+inline constexpr int kDrbaMotionHeight = 1080;
+WorkSize drba_motion_size(const WorkSize& work, int source_width, int source_height);
+
 // La forme que ces réglages demandent pour l'écran et la source de at.
 ChainShape chain_shape(const PlaySettings& settings, const OpenedChain& at);
 // Ces réglages tournent-ils dans la chaîne ouverte ? Sans interpolation, toujours. Un anneau plus profond que
