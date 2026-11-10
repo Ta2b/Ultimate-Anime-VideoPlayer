@@ -108,7 +108,11 @@ std::vector<std::filesystem::path> module_dirs(const std::filesystem::path& base
 
 constexpr int kKeptLogs = 3;  // ajp.log.1 à ajp.log.3
 
-bool log_open = false;  // le journal est ouvert : un refus s'y écrit (A18-10)
+// Le journal est ouvert : un refus s'y écrit (A18-10).
+bool& log_open() {
+  static bool open = false;
+  return open;
+}
 
 // Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal, la relance
 // n'efface plus celui qui en garde la trace. Les parts d'une séance trop longue (ajp.1.log, ajp.2.log)
@@ -133,7 +137,7 @@ void rotate_logs(const std::filesystem::path& log_file) {
 }
 
 int fail(const ajp::Refusal& refusal) {
-  if (log_open) {
+  if (log_open()) {
     ajp::log_channel("app")->error("{} {}", ajp::name(refusal.code), refusal.detail);  // stderr compris
   } else {
     std::fprintf(stderr, "ajp : %s %s\n", std::string(ajp::name(refusal.code)).c_str(),
@@ -519,7 +523,7 @@ int run_player(int argc, char** argv) {
   }
   const bool logs_to_file = sinks.size() > 1;
   ajp::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
-  log_open = true;
+  log_open() = true;
   if (logs_to_file) {
     spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
     ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
