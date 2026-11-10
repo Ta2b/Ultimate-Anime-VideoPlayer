@@ -19,6 +19,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -425,6 +426,11 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
     const std::filesystem::path path = channel_dir / "instance.sock";
     const auto address = socket_address(path);
     if (!address) return {};
+    // Deux lancements simultanés (A19-13) : sans verrou, le second peut trouver le socket du premier lié mais
+    // pas encore à l'écoute (ECONNREFUSED), le prendre pour orphelin et le retirer. Le verrou tient de la
+    // connexion à l'écoute ; il tombe avec le descripteur, même si le lecteur est tué.
+    const Fd lock(::open((channel_dir / "instance.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600));
+    if (lock) ::flock(lock.get(), LOCK_EX);
     // Deux tours : un socket resté d'un lecteur arrêté net se retire, et un lancement simultané qui vient
     // de le prendre se trouve au second.
     for (int attempt = 0; attempt < 2; ++attempt) {

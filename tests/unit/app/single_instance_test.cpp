@@ -3,7 +3,6 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <future>
 #include <optional>
 #include <string>
@@ -13,6 +12,13 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <catch2/catch_test_macros.hpp>
+
+#ifndef _WIN32
+#include <cstring>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#endif
 
 using namespace ajp::app::play;
 
@@ -70,7 +76,18 @@ TEST_CASE("Instance unique : un socket resté d'un lecteur arrêté net est repr
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-stale";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
-  std::ofstream(dir / "instance.sock") << "";  // ni socket ni lecteur derrière
+  {
+    // Un socket lié puis abandonné sans être retiré, comme celui d'un lecteur tué.
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    REQUIRE(fd >= 0);
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    const std::string text = (dir / "instance.sock").string();
+    REQUIRE(text.size() < sizeof(address.sun_path));
+    std::memcpy(static_cast<char*>(address.sun_path), text.c_str(), text.size() + 1);
+    REQUIRE(::bind(fd, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+    ::close(fd);
+  }
   const std::string key = instance_key(dir);
   auto claim = claim_instance(dir, key, {"film.mkv"});
   CHECK(claim.listener != nullptr);
