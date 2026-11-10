@@ -479,7 +479,7 @@ std::string play_usage(bool debug) {
       "  --fullscreen           full screen from the start\n"
       "  --start=S              start position, in seconds (otherwise, where playback stopped)\n"
       "  --no-resume            neither resume nor remember the position for this playback\n"
-      "  --seconds=S            quits after S seconds of playback\n"
+      "  --seconds=S            quits after S seconds of playback, from the first frame shown\n"
       "  --fullscreen-after=S   goes full screen after S seconds\n"
       "  --stats=FILE           timing of each presented frame\n"
       "  --snapshot=FILE        the window as PPM, after --snapshot-at=S seconds (3) of playback,\n"
