@@ -1,7 +1,7 @@
-// Instantané de PlaceboScreen : la composition de la fenêtre rendue une fois de plus, en
-// SDR sRGB, dans une texture hors écran relue sur l'hôte et écrite en PPM. Outil de
-// vérification (--snapshot), hors du chemin de lecture. Un fichier en « .pq.ppm » garde la
-// sortie HDR telle que l'écran la reçoit (PQ BT.2020, grade compris), en PPM 16 bits.
+// Instantané de PlaceboScreen : la composition de la fenêtre rendue une fois de plus, dans l'espace SDR de
+// la fenêtre (sRGB si elle est en HDR), dans une texture hors écran relue sur l'hôte et écrite en PPM. Outil
+// de vérification (--snapshot), hors du chemin de lecture. Un fichier en « .pq.ppm » garde la sortie HDR
+// telle que l'écran la reçoit (PQ BT.2020, grade compris), en PPM 16 bits.
 #include <array>
 #include <cstdint>
 #include <format>
@@ -43,7 +43,12 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
   sdr.planes[0].components = 4;
   for (int c = 0; c < 4; ++c) sdr.planes[0].component_mapping[c] = c;
   sdr.repr = pl_color_repr_rgb;
-  sdr.color = pq ? target.color : pl_color_space_srgb;
+  // A10-18 : une fenêtre SDR donne l'instantané dans son propre espace (primaires et courbe de la surface),
+  // ce que l'écran reçoit ; avant, toujours sRGB, donc une image qui n'était pas celle de la fenêtre dès que
+  // la surface n'était pas en sRGB. Une fenêtre HDR sans « .pq.ppm » reste rendue en sRGB.
+  sdr.color = snapshot_keeps_target(pq, pl_color_transfer_is_hdr(target.color.transfer))
+                  ? target.color
+                  : pl_color_space_srgb;
   sdr.crop = {0, 0, static_cast<float>(out.width), static_cast<float>(out.height)};
   if (image != nullptr)
     pl_rect2df_aspect_set(&sdr.crop, pl_rect2df_aspect(&image->crop) * static_cast<float>(sample_aspect),
@@ -76,6 +81,24 @@ std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* 
   if (!file) return std::unexpected(Refusal{RefusalCode::IoFailed, "écriture de l'instantané"});
   channel->info("instantané écrit : {}", core::to_utf8(path.filename()));
   return {};
+}
+
+void PlaceboScreen::Impl::take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
+                                        const ImDrawData* drawn_ui) {
+  if (!snapshot) return;
+  std::filesystem::path path = *snapshot;
+  if (snapshot_count > 1) {
+    // « nom.pq.ppm » → « nom-001.pq.ppm », « nom.ppm » → « nom-001.ppm ».
+    const std::string file = core::to_utf8(path.filename());
+    const std::size_t dot = file.ends_with(".pq.ppm") ? file.size() - 7 : file.rfind('.');
+    path.replace_filename(
+        core::path_from_utf8(std::format("{}-{:03}{}", file.substr(0, dot), snapshot_index + 1,
+                                         dot == std::string::npos ? std::string() : file.substr(dot))));
+  }
+  if (++snapshot_index >= snapshot_count) snapshot.reset();
+  if (auto saved = save_snapshot(image, target, out, drawn_ui, path); !saved) {
+    channel->warn("instantané {} : {}", core::to_utf8(path.filename()), saved.error().detail);
+  }
 }
 
 }  // namespace ajp::app::play

@@ -17,9 +17,11 @@
 
 namespace ajp::app::play {
 
-// DistilDRBA dans l'Auto (tranches Rapide et Ultra) : faux tant que sa porte de qualité n'est pas passée
-// (docs/adr/0003) ; ces tranches prennent alors RIFE 4.22 lite, comme les deux du dessous. Le choix manuel
-// de DistilDRBA reste ouvert.
+// DistilDRBA dans l'Auto (tranches Qualité et Ultra) : faux tant que sa porte de qualité n'est pas passée. La
+// porte (décision 8 de docs/audits/SYNTHESE.md, A07-13) : au banc de qualité (docs/banc-qualite.md), sur des
+// fenêtres d'un vrai épisode, DistilDRBA doit faire au moins aussi bien que RIFE 4.25 contre l'image vraie,
+// et tenir son temps sur la carte. D'ici là ces tranches prennent RIFE 4.25 (level_rife_model). Le choix
+// manuel de DistilDRBA reste ouvert.
 inline constexpr bool kDistilDrbaInAuto = false;
 
 // ArtCNN C4F32 (kLightSpanModel, P6.7) dans les tranches Économe et Léger : faux tant que le banc sur iGPU

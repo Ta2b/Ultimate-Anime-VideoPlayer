@@ -446,13 +446,10 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
     case WizardStep::Updates: {
       section(i18n::tr("Updates"));
       bool pick = false;
-      radio_note(i18n::tr("Notify me"), i18n::tr("A notification; you start the update yourself."),
+      radio_note(i18n::tr("Notify me"),
+                 i18n::tr("A notification with the link to the new version; you install it yourself."),
                  wizard.update_mode == UpdateMode::Notify, pick);
       if (pick) wizard.update_mode = UpdateMode::Notify;
-      pick = false;
-      radio_note(i18n::tr("Automatic"), i18n::tr("Downloaded, installed at next launch."),
-                 wizard.update_mode == UpdateMode::Auto, pick);
-      if (pick) wizard.update_mode = UpdateMode::Auto;
       pick = false;
       radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == UpdateMode::Never, pick);
       if (pick) wizard.update_mode = UpdateMode::Never;
@@ -467,7 +464,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
       section(i18n::tr("Machine calibration"));
       note(
-          i18n::tr("\"Optimise now\" tests several settings on a very demanding sequence: picture "
+          i18n::tr("\"Calibrate now\" tests several settings on a very demanding sequence: picture "
                    "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
                    "machine sustains. Only a progress bar is shown; it takes a few minutes, longer the first "
                    "time (the engines are built once)."));
@@ -522,7 +519,7 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
     if (is_last(wizard)) {
-      if (ImGui::Button(i18n::tr("Optimise now"), {0.0F, tall})) {
+      if (ImGui::Button(i18n::tr("Calibrate now"), {0.0F, tall})) {
         wizard.calibrate = true;
         view.done = true;
       }

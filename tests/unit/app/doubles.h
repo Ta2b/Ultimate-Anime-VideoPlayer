@@ -95,6 +95,8 @@ struct FakeScreen final : Screen {
     return at;
   }
   bool wakes_on_write() const override { return waking; }
+  std::optional<Refusal> lost;  // Screen::device_lost
+  std::optional<Refusal> device_lost() const override { return lost; }
   std::optional<core::VblankGrid> grid;  // Screen::vblank_grid
   std::optional<core::VblankGrid> vblank_grid() const override { return grid; }
   void set_fullscreen(bool on) override { is_fullscreen = on; }

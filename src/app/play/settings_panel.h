@@ -78,8 +78,9 @@ struct SettingsChoices {
   std::string black_status;                     // seuils du vrai noir en cours
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
-      2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Évaluer ma machine »
+      2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Calibrer cette machine »
   int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
+  int display_width = 0;   // sa largeur ; 0 : inconnue (16:9 supposé)
   // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo
   // (A23-03) : choisir « Auto » au panneau doit donner la même chaîne. calibrated : Auto suit la calibration
   // de l'assistant (calibration.toml) sur cette carte et cet écran ; explored_* : ce que l'exploration du
@@ -107,6 +108,9 @@ struct SettingsChoices {
   SpanPrepare span_prepare;
   std::string fp8_reason;
   std::shared_ptr<PrepareNote> span_job;
+  // Les étages que la chaîne joue sans eux, ou à un autre cran, et pourquoi (stage_fallback.h) : la page
+  // Post-traitement l'affiche avec « Réessayer ». Vide : la chaîne demandée tourne.
+  std::string stage_note;
   std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
 };
 
@@ -179,6 +183,13 @@ class SettingsPanel {
               std::vector<Input>& actions);
 
  private:
+  // Le corps de la page choisie, puis le pied du panneau (case avancée, annuler, appliquer) : draw les
+  // assemble.
+  void draw_page(const PlaySettings& running, const SettingsChoices& choices, std::vector<Input>& actions,
+                 Result& result, bool& delay_held, bool& sub_delay_held);
+  void draw_footer(const PlaySettings& running, const SettingsChoices& choices, const PlaySettings& before,
+                   bool delay_held, bool sub_delay_held, Result& result);
+
   bool open_ = false;
   PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
   PlaySettings seen_;   // running au tour précédent
@@ -197,7 +208,7 @@ class SettingsPanel {
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
   SystemNote system_;                           // l'onglet Système : sa dernière action
   UpdateNote updates_;                    // Général > Application : la vérification en cours ou son résultat
-  BenchNote bench_;                       // « Évaluer ma machine » : l'essai en cours ou son rapport
+  BenchNote bench_;                       // « Calibrer cette machine » : l'essai en cours ou son rapport
   std::unique_ptr<MachineNote> machine_;  // Vidéo > Post-traitement : les résultats du bench
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };

@@ -4,10 +4,8 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
 
 ## Avant une release
 
-- **Paquet TensorRT Linux 0.9.1** : le module a changé, son empreinte (`tools/release/trt-fingerprint.sh`) aussi ;
-  à reconstruire sur le poste NVIDIA Linux (`tools/release/trt-package.sh`). Aucune release sans demande de Tatoub.
-- **TensorRT Windows** : `release-windows.yml` avec `tensorrt=true`, puis `tensorrt=false` sur la même étiquette
-  (voir `docs/moteurs.md`).
+- **Release** : une étiquette poussée suffit (`release.yml`, `docs/signature-des-releases.md`) ; les paquets TensorRT
+  Linux et Windows se construisent en CI s'ils manquent. Aucune release sans demande de Tatoub.
 - **Banc Windows contre Linux** sur le même PC, mêmes réglages.
 
 ## Code mort à retirer (sans effet sur l'image)

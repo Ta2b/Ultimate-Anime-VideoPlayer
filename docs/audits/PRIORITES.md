@@ -135,7 +135,7 @@ Une correction n'arrive chez personne tant que le canal Stable se croit à jour 
 | 89 | A36-09 | Mineur | `tests/unit/app/settings_test.cpp:620-645` | Aucun test de passage entre versions hors des clés inconnues |  |
 | 90 | A05-11 | Mineur | `src/prepare/process_win.cpp:128` | `trtexec.exe` relit sa ligne de commande en page ANSI : compte non ANSI, TensorRT inutilisable | A20-02 (même cause) |
 | 91 | A08-17 | Mineur | `src/app/play/player.cpp:162` | Treize `path::string()` (dette) | A20-02 (même cause) |
-| 92 | A24-09 | Mineur | `src/app/play/visible_error.h:44-45` | 56 codes sur 71 affichés par leur nom anglais | A20-09 (même cause) |
+| 92 | A24-09 | Mineur | `src/app/play/visible_error.h:44-45` | 56 codes sur 71 affichés par leur nom anglais | Corrigé : chaque code de refus a une phrase traduite (table des familles de C01, complétée des six codes qu'elle laissait ; test sur les 71 codes) |
 | 93 | A26-09 | Mineur | `src/app/main.cpp:526` | Refus d'écriture d'`update.toml` ignoré : compté comme un plantage | A20-01 (même cause) |
 
 <a id="c02"></a>
@@ -213,9 +213,9 @@ Source 1080p gardée, b8f64 essayé, FP8 seulement avec reçu, RIFE 4.25 enfin e
 | 13 | A07-02 | Majeur | `src/app/play/machine_calibration.cpp:338` | « Tient » ignore les images non interpolées quand le Rapide coupe RIFE |  |
 | 14 | A23-03 | Majeur | `src/app/play/settings_panel.cpp:250-255` | « Auto (calibré) » choisi au panneau applique une chaîne non calibrée |  |
 | 15 | A25-02 | Majeur | `src/app/play/first_run.cpp:263-265` | Sur une RTX, calibration mesurée sous Vulkan sans le dire, jamais refaite quand TensorRT arrive : image plus petite |  |
-| 16 | A31-06 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | Cran Qualité ou Performance retombé en FP16 : garde le refus du fusionné, plus lent qu'Équilibre (toujours sous Windows en Performance) | Touche aussi CachyOS (34) |
-| 17 | A31-07 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | DistilDRBA Performance avec graphe FP8 : moins de qualité et plus lent que le fusionné FP16 |  |
-| 18 | A34-01 | Majeur | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Auto calibré : b8f64 FP8 CUTLASS sous Linux, b5f48 FP16 ou INT8 sous Windows | Précisé par 07 (complément) : sous Windows en 1080p, b8f64 INT8 ou FP16 |
+| 16 | A31-06 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | Cran Qualité ou Performance retombé en FP16 : garde le refus du fusionné, plus lent qu'Équilibre (toujours sous Windows en Performance) | Touche aussi CachyOS (34) ; Passé à C05, qui possède ces fichiers |
+| 17 | A31-07 | Majeur | `src/app/play/drba_fused_choice.cpp:9` | DistilDRBA Performance avec graphe FP8 : moins de qualité et plus lent que le fusionné FP16 | Passé à C05, qui possède ces fichiers |
+| 18 | A34-01 | Majeur | `src/gpu/cuda/backend/CMakeLists.txt:27-31` | Auto calibré : b8f64 FP8 CUTLASS sous Linux, b5f48 FP16 ou INT8 sous Windows | Précisé par 07 (complément) : sous Windows en 1080p, b8f64 INT8 ou FP16 ; Traité par A49-03 : l'Auto calibré ne pose plus le FP8 |
 | 19 | A36-02 | Majeur | `src/app/play/machine_calibration.cpp:240-252` | `calibration.toml` jamais invalidé par la version du lecteur, du module ni par le pilote : Auto calibré bridé |  |
 | 20 | A37-01 | Majeur | `src/gpu/cuda/backend/span_fp8_net.cu:225-228` | SPAN FP8 CUTLASS déclaré pris en charge sur RTX 50 sans y avoir tourné ; seule garde la porte aveugle aux NaN (à confirmer) |  |
 | 21 | A38-02 | Majeur | `README.md:32` | Le README promet RIFE 4.25 en Qualité et Ultra, l'Auto calibré impose 4.22 lite : baisse de qualité sans mesure | A25-08 (même cause) |
@@ -480,30 +480,30 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 7 | A12-03 | Majeur | `src/core/vsync_phase.h:2-5` | Phase des vsyncs apprise sur le retour de `swap_buffers` au niveau Open (à confirmer sous Windows) | Corrigé |
 | 8 | A24-02 | Majeur | `src/app/play/controls.cpp:167-174` | L'interface déclenche des présentations hors cadence pendant la lecture | Corrigé |
 | 9 | A10-03 | Mineur | `src/app/play/ring_watcher.cpp:474` | Le veilleur de l'anneau sort sans un mot sur une erreur de `vkWaitSemaphores` (GPU-10) | Corrigé |
-| 10 | A10-04 | Mineur | `src/app/play/placebo_open.cpp:323` | Attentes sans délai sur un GPU bloqué (GPU-17) |  |
-| 11 | A10-05 | Mineur | `src/app/play/placebo_screen.cpp:522` | Rien ne dessine pendant la boucle modale de Windows |  |
+| 10 | A10-04 | Mineur | `src/app/play/placebo_open.cpp:323` | Attentes sans délai sur un GPU bloqué (GPU-17) | Corrigé : un garde de 60 s sur le démontage du GPU à la fermeture ; passé ce délai le lecteur le dit au journal et sort (code 75) au lieu de rester sans fenêtre (test du garde avec une horloge courte) |
+| 11 | A10-05 | Mineur | `src/app/play/placebo_screen.cpp:522` | Rien ne dessine pendant la boucle modale de Windows | Correctif prêt hors de main, à ne fusionner que si la mesure le justifie : un observateur des expositions « en direct » de SDL (`ModalRedraw`) fait un tour de lecture pendant la boucle modale ; testé en simulant ces expositions, jamais exécuté sous Windows. Correctif : `/mnt/project-files/c08/a10-05-boucle-modale.patch` (branche locale `a10-05-boucle-modale`) |
 | 12 | A10-06 | Mineur | `src/app/play/placebo_feedback.cpp:241` | Le niveau de retour ne retombe jamais quand rien ne revient | Corrigé |
-| 13 | A10-07 | Mineur | `src/app/play/placebo_feedback.cpp:378` | Sous Windows, domaine d'horloge `CLOCK_MONOTONIC` qui n'y existe pas |  |
-| 14 | A10-08 | Mineur | `src/app/play/placebo_screen.cpp:569` | Image acquise jamais soumise sur les sorties en erreur |  |
+| 13 | A10-07 | Mineur | `src/app/play/placebo_feedback.cpp:378` | Sous Windows, domaine d'horloge `CLOCK_MONOTONIC` qui n'y existe pas | Corrigé d'après le code : sous Windows le calage du domaine local se fait contre le compteur de performance (l'horloge de host_now_us), converti de tics en ns ; avant il demandait CLOCK_MONOTONIC, absent, et le niveau timing ne datait rien (test de la conversion) |
+| 14 | A10-08 | Mineur | `src/app/play/placebo_screen.cpp:569` | Image acquise jamais soumise sur les sorties en erreur | Corrigé d'après le code : une image de la swapchain acquise et jamais soumise (sortie de show sur une erreur) est soumise au tour suivant avant d'en acquérir une autre, avec une ligne au journal |
 | 15 | A10-09 | Mineur | `src/app/play/placebo_ring.cpp:229` | `retire` ignore l'échec de `hand_to_cuda` | Corrigé |
 | 16 | A10-10 | Mineur | `src/app/play/placebo_screen.cpp:632` | `path::string()` dans les instantanés | Corrigé ; Dette (34) |
 | 17 | A10-11 | Mineur | `src/app/play/placebo_open.cpp:275` | Cache des shaders lu sans plafond, `.part` jamais purgés | Corrigé |
-| 18 | A10-13 | Mineur | `tests/unit/app/present_level_test.cpp` | Aucun test des chemins dégradés de la présentation |  |
+| 18 | A10-13 | Mineur | `tests/unit/app/present_level_test.cpp` | Aucun test des chemins dégradés de la présentation | Corrigé en partie : les chemins dégradés qui se simulent ont leur test (repli de present timing muet et table des niveaux dans present_level_test, registre des présentations dans present_ledger_test, veilleur mort dans ring_watcher_test, ring hors CUDA par les tests e2e sous lavapipe) ; la perte du GPU dans show suit A10-01 (C07) ; le choix du domaine de temps de PresentFeedback reste sans test, il demande un pilote Vulkan réel |
 | 19 | A10-14 | Mineur | `src/app/play/placebo_screen.cpp:464-470` | `present_us` et `queue_wait_us` sont le retour de `swap_buffers`, pas un vsync (rend inopérante la vérification d'A12-03) | Corrigé en partie : commentaires et phase des vsyncs ; shown_at_us_ et les intervalles restent sur le retour de swap_buffers |
-| 20 | A10-15 | Mineur | `src/app/play/placebo_screen.cpp:328` | Présentation plafonnée vers 127 i/s à 165 Hz, RIFE comme DistilDRBA, cause à mesurer |  |
-| 21 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre |  |
+| 20 | A10-15 | Mineur | `src/app/play/placebo_screen.cpp:328` | Présentation plafonnée vers 127 i/s à 165 Hz, RIFE comme DistilDRBA, cause à mesurer | Non corrigé : la cause n'est pas lisible dans le code, il faut la mesure |
+| 21 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre | Corrigé : l'instantané d'une fenêtre SDR est rendu dans l'espace de la fenêtre, plus toujours en sRGB ; une fenêtre HDR sans « .pq.ppm » reste en sRGB (même image qu'avant sous lavapipe, surface sRGB) |
 | 22 | A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu | Corrigé |
-| 23 | A11-03 | Mineur | `src/app/play/display_edid.cpp:421-429` | Écran choisi par sous-chaîne du nom : deux écrans du même modèle confondus |  |
+| 23 | A11-03 | Mineur | `src/app/play/display_edid.cpp:421-429` | Écran choisi par sous-chaîne du nom : deux écrans du même modèle confondus | Corrigé : l'écran se choisit par le connecteur entier (« DP-2 » ne prend plus « DP-10 »), puis par le nom EDID ; deux écrans du même nom ne donnent plus le connecteur du premier (connecteur vidé, VRR non armé), test `pick_display` |
 | 24 | A11-04 | Mineur | `src/app/play/system_peak.cpp:85-108` | Entrée KWin choisie par le seul connecteur | Corrigé |
 | 25 | A11-05 | Mineur | `src/app/play/display_edid.cpp:56-63` | Demi-flottant infini retenu comme pic | Corrigé |
-| 26 | A11-06 | Mineur | `src/app/play/display_contract.cpp:24-42` | Hors KDE, blanc de référence fixé à 203 et marge mal rapportée sous Windows |  |
+| 26 | A11-06 | Mineur | `src/app/play/display_contract.cpp:24-42` | Hors KDE, blanc de référence fixé à 203 et marge mal rapportée sous Windows | Corrigé d'après le code : sous Windows le contrat d'écran prend la marge × le blanc SDR que SDL rapporte (niveau × 80 nits), plus 203 fixe ; hors Windows et hors KDE, SDL ne donne pas ce blanc et 203 reste, test |
 | 27 | A11-07 | Mineur | `src/app/play/host_facts.cpp:247-250` | Windows : pic DXGI demandé seulement si un EDID a été lu | Corrigé |
 | 28 | A11-08 | Mineur | `src/app/play/gpu_telemetry.cpp:311-372` | `GpuTelemetry::sample` écrit sans verrou depuis deux threads (GPU-09) | Corrigé |
 | 29 | A11-09 | Mineur | `src/app/play/host_facts.cpp:378-380` | `on_battery()` sans cache sur le thread de la boucle | Corrigé par A31-10 : on_battery n'est plus appelé par la boucle ; Corrigé (plus d'appel dans la boucle : le plafond de batterie est retiré) |
 | 30 | A11-10 | Mineur | `src/app/play/gpu_telemetry.cpp:58` | « chaleur » en dur dans l'OSD anglais | Corrigé |
-| 31 | A11-11 | Mineur | `src/app/play/display_edid.cpp:139-147` | Pic et noir dépendent de l'ordre des blocs EDID | Corrigé en partie : taille des descripteurs Adaptive-Sync ; le choix d'une seule source par grandeur change le pic ou le noir de l'écran cible, il attend une décision |
-| 32 | A11-12 | Mineur | `tests/unit/app/` | Aucun test du contrat d'écran, du multi-écran ni du pic de contenu |  |
-| 33 | A11-13 | Mineur | `src/app/play/host_facts.cpp:39-81` | Quatre copies de l'énumération `QueryDisplayConfig` |  |
+| 31 | A11-11 | Mineur | `src/app/play/display_edid.cpp:139-147` | Pic et noir dépendent de l'ordre des blocs EDID | Corrigé en partie : taille des descripteurs Adaptive-Sync ; le journal montre désormais le pic et le noir de chaque bloc quand les deux parlent (`luminance_sources`, test). Le choix d'une seule source par grandeur change le pic ou le noir de l'écran cible : décision de Tatoub, à prendre sur le relevé de son écran |
+| 32 | A11-12 | Mineur | `tests/unit/app/` | Aucun test du contrat d'écran, du multi-écran ni du pic de contenu | Corrigé : tests du choix d'écran (`pick_display`), du contrat avec le blanc SDR du système, et de la règle du pic de contenu sortie de `content_peak_nits` (`uncalibrated_peak_nits`, Windows et ailleurs) ; la lecture des propriétés SDL elles-mêmes reste sans test |
+| 33 | A11-13 | Mineur | `src/app/play/host_facts.cpp:39-81` | Quatre copies de l'énumération `QueryDisplayConfig` | Corrigé d'après le code : une seule énumération `active_paths()` pour les quatre usages, qui recommence si la configuration change pendant la lecture (ERROR_INSUFFICIENT_BUFFER) ; code Windows, construit par la CI MSVC seulement |
 | 34 | A11-14 | Mineur | `src/app/play/gpu_telemetry.cpp:73-76` | Unité « Go » en dur dans la ligne VRAM de l'OSD anglais (UX-09) | Corrigé |
 | 35 | A12-04 | Mineur | `src/core/auto_rate.cpp:293-301` | Paliers calés sur le plafond passé comme fréquence d'écran | Corrigé |
 | 36 | A12-05 | Mineur | `src/core/auto_rate.cpp:599-608` | Réarmement toutes les 8 s même sans palier calé | Corrigé |
@@ -517,21 +517,21 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 44 | A24-06 | Mineur | `src/app/play/input.cpp:94-116` | Quinze touches en dur avant `[keys]`, non refusées | Corrigé |
 | 45 | A24-07 | Mineur | `src/app/play/user_keys.cpp:16-24` | Une entrée fautive de `[keys]` remet tous les raccourcis par défaut | Corrigé |
 | 46 | A24-08 | Mineur | `src/app/play/user_keys.cpp:32` | `path::string()` dans le journal (dette, voir A20-02) | Corrigé |
-| 47 | A24-10 | Mineur | `src/app/play/visible_error.h:28` | UX-17 : phrase d'erreur répétée |  |
-| 48 | A24-11 | Mineur | `src/app/play/controls_draw.cpp:354-371` | UX-15 : textes de préparation sans largeur maximale |  |
+| 47 | A24-10 | Mineur | `src/app/play/visible_error.h:28` | UX-17 : phrase d'erreur répétée | Corrigé |
+| 48 | A24-11 | Mineur | `src/app/play/controls_draw.cpp:354-371` | UX-15 : textes de préparation sans largeur maximale | Corrigé d'après le code : le texte de préparation s'arrête avant « Annuler et regarder » et au bord de la fenêtre |
 | 49 | A24-12 | Mineur | `src/app/play/controls_draw.cpp:114-125` | Message bref sans retour à la ligne, avis collés | Corrigé |
-| 50 | A24-13 | Mineur | `src/app/play/panel_style.h:115-130` | UX-22 : badges qui ne suivent pas l'échelle |  |
-| 51 | A24-14 | Mineur | `src/app/play/ui.cpp:452` | UX-08 : Échap ferme tout le panneau et jette les changements |  |
-| 52 | A24-15 | Mineur | `src/app/play/home_screen.cpp:205-213` | `dropped()` passe la fenêtre au premier plan et interroge le disque |  |
-| 53 | A24-16 | Mineur | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface à l'accueil |  |
-| 54 | A24-17 | Mineur | `src/app/play/home_screen.cpp:336-341` | Accueil redessiné toutes les 16 ms sans événement |  |
-| 55 | A24-18 | Mineur | `src/app/play/placebo_imgui.cpp:107-124` | Atlas des polices en RGBA32, renvoyé depuis l'origine |  |
-| 56 | A24-19 | Mineur | `src/app/play/placebo_overlays.cpp:63-76` | Barre visible : panneaux typographiés montés avec les dialogues |  |
-| 57 | A24-20 | Mineur | `src/app/play/placebo_overlays.cpp:45-47` | Sous-titres étirés à la nouvelle taille jusqu'au rendu suivant |  |
-| 58 | A24-21 | Mineur | `src/app/play/placebo_imgui.cpp:161-207` | Une passe de dessin par commande ImGui |  |
-| 59 | A24-22 | Mineur | `src/app/play/osd_text.cpp:68` | Seconde bibliothèque libass pour l'OSD |  |
-| 60 | A24-23 | Mineur | `src/app/play/ui.cpp:117-129` | Polices de secours CJK différentes sous Windows et Linux |  |
-| 61 | A24-24 | Mineur | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » à l'accueil n'ouvre que l'écran des moteurs |  |
+| 50 | A24-13 | Mineur | `src/app/play/panel_style.h:115-130` | UX-22 : badges qui ne suivent pas l'échelle | Corrigé d'après le code : pastilles aux mesures de la police, à la ligne quand elles ne tiennent pas |
+| 51 | A24-14 | Mineur | `src/app/play/ui.cpp:452` | UX-08 : Échap ferme tout le panneau et jette les changements | Corrigé : Échap sur une liste ouverte ne ferme que la liste (vérifié sur capture, avant et après) |
+| 52 | A24-15 | Mineur | `src/app/play/home_screen.cpp:205-213` | `dropped()` passe la fenêtre au premier plan et interroge le disque | Corrigé en partie : tri par extension séparé et testé, fenêtre passée devant dans sa propre fonction ; le disque reste lu une fois par fichier glissé (c'est ce qui écarte un dossier) |
+| 53 | A24-16 | Mineur | `src/app/play/home_screen.cpp:244-250` | `save_settings` synchrone sur le thread de l'interface à l'accueil | Corrigé : à l'accueil, play.toml s'écrit par le thread d'écriture (LatestWriter), comme en lecture |
+| 54 | A24-17 | Mineur | `src/app/play/home_screen.cpp:336-341` | Accueil redessiné toutes les 16 ms sans événement | Corrigé |
+| 55 | A24-18 | Mineur | `src/app/play/placebo_imgui.cpp:107-124` | Atlas des polices en RGBA32, renvoyé depuis l'origine | Corrigé : atlas des polices en un octet par pixel (`ImTextureFormat_Alpha8`), quatre fois moins d'octets à chaque envoi ; capture du menu identique au pixel, sauf le titre (98 pixels plus clairs de 19 niveaux en moyenne : la frange sombre du filtrage linéaire d'un atlas RGBA disparaît). L'envoi part toujours de l'origine (limite de libplacebo 7.360) |
+| 56 | A24-19 | Mineur | `src/app/play/placebo_overlays.cpp:63-76` | Barre visible : panneaux typographiés montés avec les dialogues | Corrigé : la barre visible fait monter les dialogues par libass (`ass_set_line_position`), événement entier et seulement sans position explicite ; un panneau `\pos` ou `\move` reste à sa place. Capture avant et après : panneau en (200,460) déplacé de 87 px avant, à sa place après ; réplique de deux lignes montée d'un bloc. Le décalage par morceau ne sert plus que le temps que l'image replacée arrive |
+| 57 | A24-20 | Mineur | `src/app/play/placebo_overlays.cpp:45-47` | Sous-titres étirés à la nouvelle taille jusqu'au rendu suivant | Corrigé : quand la taille de sortie change, l'image à l'écran redemande ses sous-titres à la nouvelle taille, en pause aussi (avant : étirés jusqu'à l'image suivante, donc toute la pause), test de session |
+| 58 | A24-21 | Mineur | `src/app/play/placebo_imgui.cpp:161-207` | Une passe de dessin par commande ImGui | Non corrigé : la cause se lit (une passe par commande ImGui, rejouée à chaque présentation) mais pas son coût ; le correctif proposé (interface dans une texture, un mélange par présentation) change le mélange des couches translucides en HDR et ajoute un mélange plein écran par présentation, ce qui peut coûter plus que les passes actuelles sur un vrai GPU. À décider sur mesure |
+| 59 | A24-22 | Mineur | `src/app/play/osd_text.cpp:68` | Seconde bibliothèque libass pour l'OSD | Corrigé en partie : le relevé de la mémoire vidéo et du GPU dort dès que l'OSD ne le lit plus depuis 1 s et repart à la première lecture (`sample_demand.h`, test). Non corrigé : la seconde bibliothèque libass de l'OSD ; la remplacer par ImGui déplace l'OSD dans la couche de l'interface (autre aspect, autre place dans la sortie HDR), à voir à l'écran, et son coût réel n'est pas mesuré |
+| 60 | A24-23 | Mineur | `src/app/play/ui.cpp:117-129` | Polices de secours CJK différentes sous Windows et Linux | Corrigé d'après le code : sous Windows, Malgun Gothic (coréen) et Microsoft YaHei (chinois) s'ajoutent en repli après le japonais (`ui_fonts.h`, test de la table) ; sous Linux, une police du bureau qui couvre déjà le japonais n'est plus annoncée « aucune police CJK » |
+| 61 | A24-24 | Mineur | `src/app/play/home_screen.cpp:307-316` | « Run the wizard again » à l'accueil n'ouvre que l'écran des moteurs | Corrigé d'après le code : l'accueil lance l'assistant entier et relit play.toml ; à voir à l'écran |
 | 62 | A31-10 | Mineur | `src/app/play/host_facts.h:48-51` | Sur batterie, Auto plafonné à 60 Hz sans avis, et retenu | Corrigé : plafond retiré (décision 11) |
 | 63 | A22-04 | Mineur | `src/app/play/settings.cpp:453-499` | `change_between` classe en direct des réglages lus à l'ouverture | Corrigé ; A08-03 (même cause) |
 

@@ -20,8 +20,8 @@ namespace ajp::app::play {
 
 void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, const PlayerPaths& paths,
                        const EngineCatalog& catalog, const std::filesystem::path& settings_dir) {
-  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Évaluer ma machine » si elle est
-  // de cette carte et de ce pilote, sinon l'estimation.
+  // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Calibrer cette machine » si elle
+  // est de cette carte et de ce pilote, sinon l'estimation.
   std::optional<BenchResult> measured;
   if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);
@@ -38,6 +38,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
                               .tensorrt = choices.engine_in_use == core::EngineId::TensorRt &&
                                           tensorrt_backend_present(catalog, paths),
                               .driver = machine.driver};
+  choices.display_width = display_width(screen.window());  // un écran 21:9 se mesure à sa vraie taille
   choices.calibrated = calibrated_chain(settings_dir, choices.calibration_host);
   choices.gpu_name = machine.name;
   choices.gpus = screen.device_names();

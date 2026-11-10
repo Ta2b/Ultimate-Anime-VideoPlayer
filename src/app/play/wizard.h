@@ -15,7 +15,7 @@
 namespace ajp::app::play {
 
 // Dans l'ordre de l'assistant (P3.18) : les choix légers d'abord, le lourd (moteurs) en dernier, puis Prêt
-// avec « Optimiser maintenant » ou « Régler moi-même ». La valeur est celle de first_run_step (1 à 5) ; une
+// avec « Calibrer maintenant » ou « Régler moi-même ». La valeur est celle de first_run_step (1 à 5) ; une
 // valeur plus haute d'une version d'avant (1 à 8) reprend au dernier écran.
 enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran, langue de l'interface
@@ -44,14 +44,13 @@ struct Wizard {
   std::size_t at = 0;
   std::vector<WizardStep> skipped;
   UpdateMode update_mode = UpdateMode::Notify;
-  UpdateChannel update_channel = UpdateChannel::Stable;
   // Première préférence de langue de l'audio (vide : selon le fichier) et des sous-titres (vide : aucun),
   // celle par défaut d'abord : audio japonais, sous-titres dans la langue du système.
   std::string audio_language = default_language_presets().front().audio;
   std::string subtitle_language = default_language_presets().front().subtitles;
   std::string interface_language;  // « en » ou « fr » ; vide : celle détectée, inchangée
   bool make_default = false;       // lecteur par défaut des vidéos, demandé à « Terminer »
-  bool calibrate = true;           // « Optimiser maintenant » ; « Régler moi-même » l'éteint
+  bool calibrate = true;           // « Calibrer maintenant » ; « Régler moi-même » l'éteint
   int seen = 0;                    // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
 
@@ -82,7 +81,7 @@ core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
 // P3.3 : l'assistant repris en route retrouve les choix enregistrés à chaque écran (mises à jour, langues).
 void resume_choices(Wizard& wizard, const PlaySettings& saved);
-// « Optimiser maintenant » : la calibration de la machine après l'assistant.
+// « Calibrer maintenant » : la calibration de la machine après l'assistant.
 bool wants_machine_calibration(const Wizard& wizard);
 
 }  // namespace ajp::app::play

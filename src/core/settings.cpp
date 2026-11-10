@@ -21,25 +21,6 @@ bool retired_engine(std::string_view name) {
   return name == "rtx_video_sdk" || name == "maxine_vfx";
 }
 
-// Étiquette BCP 47 simplifiée : langue de 2 ou 3 lettres minuscules, puis sous-étiquettes alphanumériques.
-bool language_tag(std::string_view tag) {
-  const auto alnum = [](char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
-  };
-  const std::size_t dash = tag.find('-');
-  const std::string_view language = tag.substr(0, dash);
-  if (language.size() < 2 || language.size() > 3) return false;
-  if (!std::ranges::all_of(language, [](char c) { return c >= 'a' && c <= 'z'; })) return false;
-  if (dash == std::string_view::npos) return true;
-  for (std::string_view rest = tag.substr(dash + 1);;) {
-    const std::size_t next = rest.find('-');
-    const std::string_view part = rest.substr(0, next);
-    if (part.size() < 2 || part.size() > 8 || !std::ranges::all_of(part, alnum)) return false;
-    if (next == std::string_view::npos) return true;
-    rest.remove_prefix(next + 1);
-  }
-}
-
 template <class T>
 std::expected<void, Refusal> no_duplicate(const std::vector<T>& values, std::string_view where) {
   for (std::size_t i = 0; i < values.size(); ++i) {
@@ -49,16 +30,6 @@ std::expected<void, Refusal> no_duplicate(const std::vector<T>& values, std::str
     }
   }
   return {};
-}
-
-std::expected<void, Refusal> check_languages(const std::vector<std::string>& tags, std::string_view where) {
-  if (tags.size() > limits::kMaxLanguages) return refuse(RefusalCode::FieldOutOfRange, std::string(where));
-  for (std::size_t i = 0; i < tags.size(); ++i) {
-    if (!language_tag(tags[i])) {
-      return refuse(RefusalCode::FieldOutOfRange, std::format("{}[{}] = « {} »", where, i, tags[i]));
-    }
-  }
-  return no_duplicate(tags, where);
 }
 
 // P2.21 : la lecture est tolérante, comme celle de play.toml. Une valeur fausse (type, nom inconnu, hors
@@ -139,19 +110,6 @@ void read_engines(const toml::table& root, Settings& settings, const Reader& rea
   }
 }
 
-std::vector<std::string> languages_of(std::vector<std::string> tags, std::string_view where,
-                                      const Reader& reader) {
-  std::vector<std::string> kept;
-  for (std::size_t i = 0; i < tags.size(); ++i) {
-    if (!language_tag(tags[i]) || std::ranges::contains(kept, tags[i]) ||
-        kept.size() >= limits::kMaxLanguages)
-      reader.skip(std::format("{}[{}] = « {} »", where, i, tags[i]));
-    else
-      kept.push_back(std::move(tags[i]));
-  }
-  return kept;
-}
-
 void read_rest(const toml::table& root, Settings& settings, const Reader& reader) {
   if (auto first_run = reader.take(fields::optional<bool>(root, "first_run_done", "settings")))
     settings.first_run_done = first_run->value_or(false);
@@ -160,22 +118,9 @@ void read_rest(const toml::table& root, Settings& settings, const Reader& reader
   if (auto registered = reader.take(fields::optional<bool>(root, "open_with_registered", "settings")))
     settings.open_with_registered = registered->value_or(false);
 
-  if (auto languages = reader.take(fields::table(root, "languages", "settings"))) {
-    if (auto audio = strings(**languages, "audio", "languages", reader))
-      settings.audio_languages = languages_of(std::move(*audio), "languages.audio", reader);
-    if (auto subtitles = strings(**languages, "subtitles", "languages", reader))
-      settings.subtitle_languages = languages_of(std::move(*subtitles), "languages.subtitles", reader);
-  }
-
   if (auto playback = reader.take(fields::table(root, "playback", "settings"))) {
     if (auto resume = reader.take(fields::optional<bool>(**playback, "resume_position", "playback")))
       settings.resume_position = resume->value_or(true);
-    if (auto delay = reader.take(fields::optional<std::int64_t>(**playback, "audio_delay_ms", "playback"))) {
-      if (limits::kAudioDelayMs.contains(delay->value_or(0)))
-        settings.audio_delay_ms = delay->value_or(0);
-      else
-        reader.skip("playback.audio_delay_ms");
-    }
   }
 }
 
@@ -183,12 +128,6 @@ toml::array names_of(const std::vector<EngineId>& engines) {
   toml::array names;
   for (const EngineId id : engines) names.push_back(std::string(engine_name(id)));
   return names;
-}
-
-toml::array array_of(const std::vector<std::string>& values) {
-  toml::array array;
-  for (const std::string& value : values) array.push_back(value);
-  return array;
 }
 
 }  // namespace
@@ -216,11 +155,6 @@ std::expected<void, Refusal> validate_settings(const Settings& settings) {
       return refuse(RefusalCode::FieldOutOfRange, where + " : moteur non installé");
     }
   }
-  if (auto r = check_languages(settings.audio_languages, "languages.audio"); !r) return r;
-  if (auto r = check_languages(settings.subtitle_languages, "languages.subtitles"); !r) return r;
-  if (!limits::kAudioDelayMs.contains(settings.audio_delay_ms)) {
-    return refuse(RefusalCode::FieldOutOfRange, "playback.audio_delay_ms");
-  }
   return {};
 }
 
@@ -228,9 +162,17 @@ std::expected<Settings, Refusal> parse_settings(std::string_view toml_text,
                                                 std::vector<std::string>* skipped) {
   auto root = fields::parse(toml_text, RefusalCode::FileUnreadable, "settings.toml");
   if (!root) return std::unexpected(root.error());
-  if (auto version = fields::check_version(*root, kSettingsVersion, "settings.toml"); !version) {
-    return std::unexpected(version.error());
-  }
+  // Une version plus récente se lit avec ce que celle-ci en connaît (A22-07) : le lecteur ne perd plus ses
+  // moteurs choisis pour un numéro ; ses clés inconnues restent à la réécriture. Une version absente ou
+  // inférieure à 1 reste refusée.
+  const auto version = fields::required<std::int64_t>(*root, "version", "settings.toml");
+  if (!version) return std::unexpected(version.error());
+  if (*version < kSettingsVersion)
+    return std::unexpected(
+        refuse(RefusalCode::FormatVersion, std::format("settings.toml version = {}", *version)));
+  if (*version > kSettingsVersion && skipped != nullptr)
+    skipped->push_back(std::format("version = {} : plus récente que {}, lue avec les clés connues", *version,
+                                   kSettingsVersion));
   Settings settings;
   const Reader reader{.skipped = skipped};
   read_engines(*root, settings, reader);
@@ -253,7 +195,9 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
   auto root = fields::parse(existing_toml, RefusalCode::FileUnreadable, "settings.toml");
   if (!root) return std::unexpected(root.error());
 
-  root->insert_or_assign("version", kSettingsVersion);
+  // Jamais abaissée : la version plus récente, relancée, sait qu'un lecteur plus ancien est passé.
+  const std::int64_t on_disk = root->contains("version") ? (*root)["version"].value_or<std::int64_t>(0) : 0;
+  root->insert_or_assign("version", std::max<std::int64_t>(kSettingsVersion, on_disk));
   root->insert_or_assign("first_run_done", settings.first_run_done);
   root->insert_or_assign("first_run_step", settings.first_run_step);
   root->insert_or_assign("open_with_registered", settings.open_with_registered);
@@ -269,12 +213,8 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
       preferred.erase(kUsageNames[i]);
     }
   }
-  toml::table& languages = fields::child(*root, "languages");
-  languages.insert_or_assign("audio", array_of(settings.audio_languages));
-  languages.insert_or_assign("subtitles", array_of(settings.subtitle_languages));
   toml::table& playback = fields::child(*root, "playback");
   playback.insert_or_assign("resume_position", settings.resume_position);
-  playback.insert_or_assign("audio_delay_ms", settings.audio_delay_ms);
   return fields::format(*root);
 }
 

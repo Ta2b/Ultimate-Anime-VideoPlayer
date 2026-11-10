@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL.h>
+
 namespace ajp::app::play {
 
 #if defined(VK_KHR_present_id2) && defined(VK_KHR_present_wait2) && defined(VK_EXT_present_timing)
@@ -209,6 +211,27 @@ void PresentFeedback::read_properties(VkSwapchainKHR swapchain) {
 #endif
 }
 
+#ifdef AJP_PRESENT_FEEDBACK
+namespace {
+
+// L'horloge de host_now_us vue par Vulkan (A10-07). Avant, le calage demandait CLOCK_MONOTONIC partout : sous
+// Windows ce domaine n'existe pas, l'appel échouait, le domaine local restait inconnu et le niveau timing ne
+// datait jamais rien.
+struct HostDomain {
+  VkTimeDomainKHR kind;
+  std::uint64_t ticks_per_second;
+};
+HostDomain host_domain() {
+#if defined(_WIN32)
+  return {VK_TIME_DOMAIN_QUERY_PERFORMANCE_COUNTER_KHR, SDL_GetPerformanceFrequency()};
+#else
+  return {VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR, 1'000'000'000ULL};
+#endif
+}
+
+}  // namespace
+#endif
+
 void PresentFeedback::choose_domain(VkSwapchainKHR swapchain) {
 #ifdef AJP_PRESENT_FEEDBACK
   VkSwapchainTimeDomainPropertiesEXT props{.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_TIME_DOMAIN_PROPERTIES_EXT};
@@ -249,6 +272,7 @@ void PresentFeedback::choose_domain(VkSwapchainKHR swapchain) {
 void PresentFeedback::calibrate(VkSwapchainKHR swapchain, std::int64_t now_us) {
 #ifdef AJP_PRESENT_FEEDBACK
   if (!local_domain_ || api_->calibrated == nullptr) return;
+  const HostDomain host = host_domain();
   const VkSwapchainCalibratedTimestampInfoEXT local{
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CALIBRATED_TIMESTAMP_INFO_EXT,
       .swapchain = swapchain,
@@ -258,13 +282,12 @@ void PresentFeedback::calibrate(VkSwapchainKHR swapchain, std::int64_t now_us) {
       {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR,
        .pNext = &local,
        .timeDomain = static_cast<VkTimeDomainKHR>(domain_kind_)},
-      {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR,
-       .timeDomain = VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR},
+      {.sType = VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR, .timeDomain = host.kind},
   }};
   std::array<std::uint64_t, 2> stamps{};
   std::uint64_t deviation = 0;
   if (api_->calibrated(vk_->device, 2, infos.data(), stamps.data(), &deviation) == VK_SUCCESS)
-    domain_.calibrate(stamps[0], stamps[1], now_us);
+    domain_.calibrate(stamps[0], host_ticks_to_ns(stamps[1], host.ticks_per_second), now_us);
 #else
   (void)swapchain;
   (void)now_us;

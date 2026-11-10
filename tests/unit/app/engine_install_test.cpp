@@ -189,7 +189,7 @@ TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "
   cut.file.size = kPlain.size();
   cut.file.sha256 = core::sha256_hex(kPlain);
   fs::create_directories(f.root / "tmp");
-  std::ofstream(f.root / "tmp" / "reprise.so.part", std::ios::binary) << kPlain.substr(0, 5);
+  std::ofstream(f.root / "tmp" / (cut.file.sha256 + ".part"), std::ios::binary) << kPlain.substr(0, 5);
   require_done(fetch_vendor_file(cut.file, f.root / "sortie" / "reprise.so", f.root / "tmp", f.progress()));
   CHECK(read_all(f.root / "sortie" / "reprise.so") == kPlain);
 
@@ -208,6 +208,49 @@ TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "
   if (!outside && outside.error().code == RefusalCode::LibraryUnavailable) SKIP(outside.error().detail);
   CHECK_FALSE(outside);
   CHECK_FALSE(fs::exists(f.root / "sortie" / "loin.so"));
+}
+
+TEST_CASE("Fichier tiers : un .part d'une autre version et un flux trop long sont refusés (A06-04, A06-05)",
+          "[app][install]") {
+  ajp::app::play::FrenchUi french;
+  Fixture f("tiers-garde");
+  // Le .part d'un autre fichier au même nom (une autre version de TensorRT) ne se reprend pas : nommé par
+  // l'empreinte, il n'est pas celui-ci.
+  Wheel next(f, kPlain, false);
+  next.file.name = "nvinfer.so";
+  next.file.size = kPlain.size();
+  next.file.sha256 = core::sha256_hex(kPlain);
+  fs::create_directories(f.root / "tmp");
+  fs::create_directories(f.root / "sortie");
+  std::ofstream(f.root / "tmp" / "nvinfer.so.part", std::ios::binary) << "XXXXX";
+  require_done(fetch_vendor_file(next.file, f.root / "sortie" / "nvinfer.so", f.root / "tmp", f.progress()));
+  CHECK(read_all(f.root / "sortie" / "nvinfer.so") == kPlain);
+
+  // Un flux qui décompresse plus que la taille de l'index s'arrête là, refusé.
+  Wheel bomb(f, kDeflated, true);
+  bomb.file.name = "bombe.so";
+  bomb.file.size = 4;
+  bomb.file.sha256 = core::sha256_hex(kPlain.substr(0, 4));
+  require_refused(fetch_vendor_file(bomb.file, f.root / "sortie" / "bombe.so", f.root / "tmp", f.progress()),
+                  RefusalCode::HashMismatch);
+  CHECK_FALSE(fs::exists(f.root / "sortie" / "bombe.so"));
+}
+
+TEST_CASE("Téléchargements : ce que l'index ne nomme plus est retiré, le reste gardé (A06-04)",
+          "[app][install]") {
+  Fixture f("purge");
+  const std::string kept(64, 'a');
+  const std::string stale(64, 'b');
+  f.catalog.packages.push_back(core::EnginePackage{.engine = core::EngineId::OpenVino, .sha256 = kept});
+  fs::create_directories(f.catalog.layout.downloads);
+  std::ofstream(f.catalog.layout.downloads / (kept + ".part")) << "x";
+  std::ofstream(f.catalog.layout.downloads / (stale + ".part")) << "x";
+  std::ofstream(f.catalog.layout.downloads / (stale + ".morceau")) << "x";
+  std::ofstream(f.catalog.layout.downloads / "notes.txt") << "x";
+  CHECK(purge_stale_downloads(f.catalog) == 2);
+  CHECK(fs::exists(f.catalog.layout.downloads / (kept + ".part")));
+  CHECK(fs::exists(f.catalog.layout.downloads / "notes.txt"));
+  CHECK_FALSE(fs::exists(f.catalog.layout.downloads / (stale + ".part")));
 }
 
 TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent le module",

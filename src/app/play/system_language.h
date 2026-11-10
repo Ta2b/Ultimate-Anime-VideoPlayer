@@ -31,5 +31,8 @@ std::string pick_menu_language(std::span<const std::string> locales);
 void set_system_language(std::string code);
 std::string_view system_language();
 std::vector<media::LanguagePreset> default_language_presets();
+// La langue de l'interface tant que play.toml n'en dit aucune : « fr » sur un système en français, « en »
+// sinon (A19-03).
+std::string default_interface_language();
 
 }  // namespace ajp::app::play

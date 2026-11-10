@@ -207,6 +207,8 @@ class Session {
   const FrameStats& stats() const { return stats_; }
   const std::vector<std::string>& refusals() const { return refusals_; }
   std::vector<std::string> osd_lines() const;
+  // Les lignes de l'OSD recomposées au plus toutes les kOsdPeriodUs : vrai si elles ont changé.
+  bool refresh_osd(std::int64_t host_now);
   // Ce que la barre de lecture montre : la position (la cible d'un seek en cours, sinon l'image à
   // l'écran), la durée, la pause, le plein écran, les statistiques.
   ControlsView view() const;
@@ -321,7 +323,14 @@ class Session {
   std::optional<std::int64_t> subtitle_pts_;
   std::optional<std::int64_t>
       held_subtitle_pts_;  // le pts à lire pendant une tenue ; vide : celui de l'image
-  void follow_subtitles(std::int64_t host_now);
+  void follow_subtitles(std::int64_t host_now, const UiFrame& ui);
+  // La place des sous-titres (session_subtitles.cpp) : la cible d'une demande, et l'image à l'écran qui
+  // redemande les siens quand la taille de sortie change (A24-20, en pause aussi) ou quand la barre du
+  // lecteur paraît ou disparaît (A24-19 : libass monte les dialogues, pas les panneaux).
+  subs::RenderTarget subtitle_target(OutputSize size);
+  void place_subtitles(const UiFrame& ui);
+  OutputSize placed_size_;  // taille de la dernière demande
+  float line_lift_ = 0.0F;  // montée demandée à libass (controls.h, line_lift)
   // L'image tenue se représente à intervalles égaux sous le plancher du VRR : l'intervalle voulu, 0 si
   // inactif.
   std::int64_t floor_step_us_now(std::int64_t host_now) const;

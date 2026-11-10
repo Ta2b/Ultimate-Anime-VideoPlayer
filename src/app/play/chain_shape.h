@@ -34,6 +34,12 @@ struct OpenedChain {
   int output_height = 0;     // lignes après SPAN
   bool span = false;         // SPAN chargé : sans lui, l'ordre du warp ne change rien
   bool rife_loaded = false;  // sans moteur d'interpolation, l'anneau reste à 4
+  // DistilDRBA tel que la chaîne l'a pris (A23-07) : le panneau le dit, au lieu de laisser croire que la case
+  // « fusionné » décide seule.
+  bool drba = false;                // DistilDRBA est le moteur du mouvement chargé
+  bool drba_fused = false;          // ses quatre moteurs fusionnés tournent
+  bool drba_motion = false;         // la variante mouvement (un SPAN par image source)
+  bool drba_fused_capable = false;  // le backend sait le fusionner
 };
 
 // La forme que ces réglages demandent pour l'écran et la source de at.

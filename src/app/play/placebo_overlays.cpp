@@ -59,8 +59,10 @@ std::expected<bool, Refusal> Overlays::add(Layer& layer, const subs::SubtitleFra
     part.color[3] = static_cast<float>(rect.color.a) / 255.0F;
     layer.parts.push_back(part);
   }
-  // Les sous-titres de la moitié basse montent au-dessus de la barre de lecture visible.
-  if (ui_bottom > 0) {
+  // Les dialogues du bas montent au-dessus de la barre de lecture visible : libass les place ainsi dès que
+  // la demande porte la montée (frame.line_lift, A24-19). Le temps que cette image arrive, celle rendue
+  // sans montée est décalée ici, panneaux de la moitié basse compris.
+  if (ui_bottom > 0 && frame.line_lift == 0.0F) {
     const float height = static_cast<float>(out.height);
     float bottom = 0.0F;
     for (const pl_overlay_part& part : layer.parts) {

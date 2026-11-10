@@ -82,5 +82,25 @@ TEST_CASE("Une vraie fin de flux reste une fin d'épisode", "[app][session]") {
   CHECK_FALSE(rig.session.failure().has_value());
 }
 
+// A31-01 : un étage gpu en échec garde son code ; DeviceLost arrive tel quel à la lecture (message, relance).
+TEST_CASE("Un appareil perdu reste DeviceLost pour la lecture", "[app][session]") {
+  Rig rig;
+  Refusal lost{RefusalCode::DeviceLost, "contexte CUDA perdu"};
+  lost.key = std::string(kFatalStageKey);
+  rig.session.handle(StageRefusal{.stage = "gpu", .refusal = lost, .fatal = true});
+  CHECK(rig.session.finished());
+  REQUIRE(rig.session.failure().has_value());
+  CHECK(rig.session.failure()->code == RefusalCode::DeviceLost);
+}
+
+// A10-01, A31-13 : l'écran qui a perdu son appareil arrête la session au lieu de figer l'image.
+TEST_CASE("Un écran sans appareil arrête la session sur DeviceLost", "[app][session]") {
+  Rig rig;
+  rig.screen.lost = Refusal{RefusalCode::DeviceLost, "appareil Vulkan perdu"};
+  auto record = rig.session.tick(0);
+  REQUIRE_FALSE(record);
+  CHECK(record.error().code == RefusalCode::DeviceLost);
+}
+
 }  // namespace
 }  // namespace ajp::app::play
