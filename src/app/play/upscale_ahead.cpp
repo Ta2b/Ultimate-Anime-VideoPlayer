@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "app/play/upscale_stage.h"
+#include "core/trace.h"
 
 namespace ajp::app::play {
 
@@ -59,6 +60,7 @@ std::expected<bool, Refusal> UpscaleStage::deband_source(const gpu::Tensor& rgb)
 }
 
 std::expected<gpu::PairScores, Refusal> UpscaleStage::pair_scores() {
+  AJP_TRACE("rife.scores");
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (auto taken = std::exchange(ahead_taken_, std::nullopt);
       taken && previous_ && taken->first == previous_->id)
@@ -134,6 +136,7 @@ std::expected<void, Refusal> UpscaleStage::write_rife_pair(float t) {
 }
 
 std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
+  AJP_TRACE("rife.pair");
   if (rife_in_pair_ && rife_in_t_ == t) return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (rife_in_pair_ && rife_time_) {

@@ -564,6 +564,7 @@ int run_player(int argc, char** argv) {
 // asynchrone du journal avant de s'arrêter (P2.1).
 int main(int argc, char** argv) {
   ajp::install_terminate_flush();
+  ajp::install_system_thread_names();  // Nsight, gdb et les vidages nomment chaque thread (A20-11)
   const int code = ajp::run_logged([&] { return run_player(argc, argv); });
   ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
   ajp::close_log();
