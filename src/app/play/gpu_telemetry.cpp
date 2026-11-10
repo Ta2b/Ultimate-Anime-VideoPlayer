@@ -61,6 +61,45 @@ std::string throttle_text(std::uint64_t mask) {
   return text;
 }
 
+namespace {
+struct GpuRange {
+  std::mutex mutex;
+  unsigned min_mhz = 0;
+  unsigned max_mhz = 0;
+  unsigned min_c = 0;
+  unsigned max_c = 0;
+  bool any = false;
+};
+GpuRange& gpu_range() {
+  static GpuRange range;
+  return range;
+}
+}  // namespace
+
+void note_gpu_range(const GpuSample& s) {
+  GpuRange& r = gpu_range();
+  const std::scoped_lock lock(r.mutex);
+  if (!r.any) {
+    r.min_mhz = r.max_mhz = s.sm_mhz;
+    r.min_c = r.max_c = s.temperature_c;
+    r.any = true;
+    return;
+  }
+  r.min_mhz = std::min(r.min_mhz, s.sm_mhz);
+  r.max_mhz = std::max(r.max_mhz, s.sm_mhz);
+  r.min_c = std::min(r.min_c, s.temperature_c);
+  r.max_c = std::max(r.max_c, s.temperature_c);
+}
+
+std::string take_gpu_range_text() {
+  GpuRange& r = gpu_range();
+  const std::scoped_lock lock(r.mutex);
+  if (!r.any) return {};
+  r.any = false;
+  return std::format("GPU : horloge {} à {} MHz, température {} à {} °C", r.min_mhz, r.max_mhz, r.min_c,
+                     r.max_c);
+}
+
 std::string telemetry_line(const GpuSample& s) {
   std::string line = std::format("GPU {} / {} MHz", s.sm_mhz, s.sm_max_mhz);
   if (s.pstate >= 0) line += std::format(" · P{}", s.pstate);
