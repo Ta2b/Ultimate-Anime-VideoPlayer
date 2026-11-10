@@ -96,8 +96,8 @@ std::string take_gpu_range_text() {
   const std::scoped_lock lock(r.mutex);
   if (!r.any) return {};
   r.any = false;
-  return std::format("GPU : horloge {} à {} MHz, température {} à {} °C", r.min_mhz, r.max_mhz, r.min_c,
-                     r.max_c);
+  return std::format("GPU : horloge {} à {} MHz, température {} à {} °C",  // i18n-ok : journal
+                     r.min_mhz, r.max_mhz, r.min_c, r.max_c);
 }
 
 std::string telemetry_line(const GpuSample& s) {
