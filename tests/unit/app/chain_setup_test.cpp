@@ -143,6 +143,20 @@ TEST_CASE("A22-04 : le plafond de l'Auto qui change le plus haut facteur rouvre"
   CHECK(live_part(capped, free, true, &opened).auto_cap == 60);
 }
 
+TEST_CASE("A03-19 : DistilDRBA mouvement estime à la taille de travail jusqu'à 1080 lignes", "[app][chain]") {
+  // 720p et 1080p : pas de copie réduite. 4K : une copie à 1080 lignes, plus à 720.
+  CHECK(drba_motion_size(WorkSize{1280, 720}, 1280, 720).height == 720);
+  const WorkSize full = drba_motion_size(WorkSize{1920, 1080}, 1920, 1080);
+  CHECK(full.width == 1920);
+  CHECK(full.height == 1080);
+  const WorkSize uhd = drba_motion_size(WorkSize{3840, 2160}, 3840, 2160);
+  CHECK(uhd.width == 1920);
+  CHECK(uhd.height == 1080);
+  const WorkSize wide = drba_motion_size(WorkSize{3440, 1440}, 3440, 1440);
+  CHECK(wide.width == 2580);
+  CHECK(wide.height == 1080);
+}
+
 TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien sinon", "[app][chain]") {
   OpenedChain opened = opened_for(manual(2));
   CHECK(fused_refusal_notice(opened).empty());

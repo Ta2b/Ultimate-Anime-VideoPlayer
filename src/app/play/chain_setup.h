@@ -113,7 +113,7 @@ struct ChainEngines {
   std::optional<RefusalCode> rife_fused_refused;
   std::optional<RefusalCode> drba_fused_refused;
   bool drba_motion = false;  // drba rend flot et masque (variante mouvement, warp après SPAN)
-  WorkSize drba_size;        // où DistilDRBA estime : rife_size en variante mouvement, sinon work
+  WorkSize drba_size;        // où DistilDRBA estime : drba_motion_size en variante mouvement, sinon work
   bool apple = false;
   // Les réglages que la chaîne joue vraiment : ceux demandés, sans les étages refusés et avec les crans
   // ramenés à Équilibre (stage_fallback.h) ; stage_notes dit ce qui a changé.

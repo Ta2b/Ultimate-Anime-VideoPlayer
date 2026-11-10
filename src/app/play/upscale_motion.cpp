@@ -98,11 +98,8 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     poses_ = setup_.live && setup_.live->keep_poses();
     single_run_ = false;
     if (auto ok = settle_motion(); !ok) return ok;
-    // Garder les poses demande le mouvement du milieu à chaque instant : une seule passe, au milieu.
-    direct_run_ = !poses_ && intermediates_ > 1 && strong_motion_ && flow_max_async_;
+    direct_run_ = decide_direct(t);
     if (direct_run_) {
-      ++multi_pairs_;
-      ++direct_pairs_;
       // Le milieu n'est pas estimé : la paire suivante ne garde pas les poses d'après lui.
       now_ = PairMotion::Unknown;
     } else {
@@ -190,6 +187,20 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   // Mouvement fort : RIFE à cet instant, son mouvement tel quel.
   if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
   return blend(a, b, other, 0.5F, out);
+}
+
+bool UpscaleStage::decide_direct(float t) {
+  // A09-05 : une seule image à faire, hors du milieu et sans poses : RIFE à son instant, sans la passe du
+  // milieu dont le mouvement ne servirait ni au warp ni aux poses.
+  if (!poses_ && intermediates_ == 1 && t != 0.5F) {
+    ++single_pairs_;
+    return true;
+  }
+  // Garder les poses demande le mouvement du milieu à chaque instant : une seule passe, au milieu.
+  if (poses_ || intermediates_ <= 1 || !strong_motion_ || !flow_max_async_) return false;
+  ++multi_pairs_;
+  ++direct_pairs_;
+  return true;
 }
 
 }  // namespace ajp::app::play

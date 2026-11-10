@@ -66,6 +66,11 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
     return refuse(RefusalCode::FieldOutOfRange, std::format("{} : instant {} hors de ]0, 1[", op, t));
   }
   if (auto ok = bind(); !ok) return ok;
+  // A03-07 : RIFE fusionné ne lit que l'élément 0 du plan de l'instant ; quand il est le dernier lecteur de
+  // ce tampon, le noyau n'écrit que lui, et l'instant reste à étendre pour un moteur entier (A03-04).
+  const auto reader =
+      std::ranges::find(compact_rife_inputs_, input.handle + input.offset, &CompactRifeInput::key);
+  const bool compact = reader != compact_rife_inputs_.end();
   const RifeInputParams params{.a = address(a),
                                .b = address(b),
                                .width = g.width,
@@ -78,8 +83,13 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
                                .time = t,
                                .input = address(input),
                                .planes = static_cast<int>(planes),
-                               .mesh = mesh};
+                               .mesh = mesh,
+                               .lone_time = compact};
   if (auto ok = order({a.handle, b.handle}, {input.handle}); !ok) return ok;
+  if (compact) {
+    reader->lone_time = kernels::ref::float_to_half(t);
+    reader->plane = static_cast<std::size_t>(g.padded_width) * static_cast<std::size_t>(g.padded_height);
+  }
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
   auto launched =
@@ -88,15 +98,29 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
   return launched;
 }
 
-void TensorRtBackend::note_rife_reader(const Tensor& input, bool compact) {
+std::expected<void, Refusal> TensorRtBackend::note_rife_reader(const Tensor& input, bool compact) {
   const std::uintptr_t key = input.handle + input.offset;
-  const auto found = std::ranges::find(compact_rife_inputs_, key);
+  const auto found = std::ranges::find(compact_rife_inputs_, key, &CompactRifeInput::key);
   if (compact && found == compact_rife_inputs_.end()) {
     if (compact_rife_inputs_.size() >= 8) compact_rife_inputs_.erase(compact_rife_inputs_.begin());
-    compact_rife_inputs_.push_back(key);
-  } else if (!compact && found != compact_rife_inputs_.end()) {
-    compact_rife_inputs_.erase(found);
+    compact_rife_inputs_.push_back({.key = key});
+    return {};
   }
+  if (compact || found == compact_rife_inputs_.end()) return {};
+  // A03-04 : un moteur entier lit ce tampon après RIFE fusionné. Si rife_time n'y a posé que l'élément 0,
+  // le reste du plan porte encore l'instant du dernier rife_input : le plan entier est réécrit d'abord.
+  const CompactRifeInput last = *found;
+  compact_rife_inputs_.erase(found);
+  if (!last.lone_time) return {};
+  if (auto ok = bind(); !ok) return ok;
+  if (auto ok = order({input.handle}, {input.handle}); !ok) return ok;
+  const CUdeviceptr time_plane =
+      key + std::size_t{kernels::kRifeChannelTime} * last.plane * sizeof(std::uint16_t);
+  if (const CUresult set = cuMemsetD16Async(time_plane, *last.lone_time, last.plane, stream_);
+      set != CUDA_SUCCESS)
+    return refuse(RefusalCode::VendorCallFailed,
+                  std::format("cuMemsetD16Async : erreur {}", static_cast<int>(set)));
+  return {};
 }
 
 std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, float t) {
@@ -116,13 +140,18 @@ std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, flo
   const CUdeviceptr time_plane =
       input.handle + input.offset + std::size_t{kernels::kRifeChannelTime} * plane * sizeof(std::uint16_t);
   // RIFE fusionné ne lit que l'élément 0 du plan (étape 5.2) : un demi-flottant au lieu d'un plan entier.
-  const bool compact =
-      std::ranges::find(compact_rife_inputs_, input.handle + input.offset) != compact_rife_inputs_.end();
+  const auto reader =
+      std::ranges::find(compact_rife_inputs_, input.handle + input.offset, &CompactRifeInput::key);
+  const bool compact = reader != compact_rife_inputs_.end();
+  const std::uint16_t half = kernels::ref::float_to_half(t);
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
-  const CUresult set =
-      cuMemsetD16Async(time_plane, kernels::ref::float_to_half(t), compact ? 1 : plane, stream_);
+  const CUresult set = cuMemsetD16Async(time_plane, half, compact ? 1 : plane, stream_);
   timing.end(stream_);
+  if (compact && set == CUDA_SUCCESS) {  // A03-04 : le plan reste à étendre si un moteur entier le lit
+    reader->lone_time = half;
+    reader->plane = plane;
+  }
   if (set != CUDA_SUCCESS)
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("cuMemsetD16Async : erreur {}", static_cast<int>(set)));

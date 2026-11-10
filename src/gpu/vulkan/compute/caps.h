@@ -81,6 +81,10 @@ struct DeviceCaps {
   std::uint32_t max_storage_buffer_range = 0;
   VkDeviceSize min_storage_buffer_alignment = 0;
   std::uint32_t max_image_dimension_2d = 0;
+  // Contrôles du float 16 bits (Vulkan 1.2, A45-15) : ce que les shaders peuvent exiger du pilote. Vrais
+  // seulement quand chaque largeur se règle seule (indépendance « toutes »).
+  bool round_rte_f16 = false;        // arrondi au plus proche, égalités au pair
+  bool denorm_preserve_f16 = false;  // sous-normaux gardés
   // Présentes sur l'appareil, sans être activées par le socle.
   bool cooperative_matrix = false;      // VK_KHR_cooperative_matrix
   std::vector<std::string> extensions;  // extensions activées sur le VkDevice
