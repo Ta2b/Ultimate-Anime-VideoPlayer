@@ -504,7 +504,7 @@ namespace {
 std::unexpected<Refusal> deferred_swap(const std::filesystem::path& target, const std::error_code& error) {
   log_channel("app")->warn(
       "{} tenu ({}) : la nouvelle version attend le prochain lancement",  // i18n-ok : journal
-      core::to_utf8(target), error.message());
+      core::to_utf8(target.filename()), error.message());
   return std::unexpected(
       Refusal{RefusalCode::FileUnwritable,
               i18n::tr("the new version is ready: it replaces the installed one at the next launch")});

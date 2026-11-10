@@ -106,20 +106,21 @@ bool finish_deferred_swap(const fs::path& target, const fs::path& staging, const
   fs::remove_all(aside, error);
   fs::rename(target, aside, error);
   if (error) {
-    log_channel("app")->warn("moteurs : {} toujours tenu, remplacement remis : {}", core::to_utf8(target),
-                             error.message());
+    log_channel("app")->warn("moteurs : {} toujours tenu, remplacement remis : {}",
+                             core::to_utf8(target.filename()), error.message());
     return false;
   }
   fs::rename(staging, target, error);
   if (error) {
     std::error_code restore;
     fs::rename(aside, target, restore);
-    log_channel("app")->warn("moteurs : {} non mis en place : {}", core::to_utf8(staging), error.message());
+    log_channel("app")->warn("moteurs : {} non mis en place : {}", core::to_utf8(staging.filename()),
+                             error.message());
     return false;
   }
   fs::remove_all(aside, error);
   log_channel("app")->info("moteurs : nouvelle version mise en place au lancement ({})",
-                           core::to_utf8(target));
+                           core::to_utf8(target.filename()));
   return true;
 }
 
