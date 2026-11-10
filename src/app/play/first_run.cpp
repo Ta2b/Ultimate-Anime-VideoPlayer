@@ -123,13 +123,13 @@ void downloadable_row(EngineRow& row, const EnginesHere& here) {
     // reste.
     row.status =
         download->needed == 0
-            ? i18n::tr_format("to download ({})", shown_size(download->bytes))
-            : i18n::tr_format("to download ({}) · needs {} of space, {} free", shown_size(download->bytes),
-                              shown_size(download->needed), shown_size(download->available));
+            ? i18n::tr_format("to download ({})", format_size(download->bytes))
+            : i18n::tr_format("to download ({}) · needs {} of space, {} free", format_size(download->bytes),
+                              format_size(download->needed), format_size(download->available));
     if (!fits)
       row.status = i18n::tr_format("not enough disk space: {} needed ({} to download), {} left",
-                                   shown_size(download->needed), shown_size(download->bytes),
-                                   shown_size(download->available));
+                                   format_size(download->needed), format_size(download->bytes),
+                                   format_size(download->available));
   } else {
     row.status = i18n::tr("not published for this version yet");
   }
@@ -201,17 +201,16 @@ std::string rebar_text(const GpuFacts& gpu) {
   const bool wide = gpu.host_visible_vram_bytes >= gpu.vram_bytes / 4 * 3;
   const double size = static_cast<double>(gpu.host_visible_vram_bytes);
   const std::string text = gpu.host_visible_vram_bytes >= kGiB
-                               ? i18n::tr_format("{} GB", std::lround(size / static_cast<double>(kGiB)))
-                               : i18n::tr_format("{} MB", std::lround(size / (1024.0 * 1024.0)));
-  return std::format("{}, {}", wide ? i18n::tr("active") : i18n::tr("inactive"), text);
+                               ? std::format("{} Go", std::lround(size / static_cast<double>(kGiB)))
+                               : std::format("{} Mo", std::lround(size / (1024.0 * 1024.0)));
+  return std::format("{}, {}", wide ? "actif" : "inactif", text);
 }
 
 std::string gpu_line(const GpuFacts& gpu) {
   std::string line = gpu.name.empty() ? std::string(i18n::tr("Unknown GPU")) : gpu.name;
   if (gpu.vram_bytes > 0) {
-    line +=
-        " · " + i18n::tr_format("{} GB", static_cast<int>(std::lround(static_cast<double>(gpu.vram_bytes) /
-                                                                      static_cast<double>(kGiB))));
+    line += std::format(" · {} Go", static_cast<int>(std::lround(static_cast<double>(gpu.vram_bytes) /
+                                                                 static_cast<double>(kGiB))));
   }
   if (const std::string rebar = rebar_text(gpu); !rebar.empty()) line += " · Resizable BAR " + rebar;
   if (gpu.tensor_cores) line += i18n::tr(" · Tensor cores");
@@ -262,14 +261,9 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
         row.status = i18n::tr("cannot be installed in this version yet");
         break;
     }
-    // Coché à l'assistant puis la fenêtre fermée pendant le téléchargement : le choix est écrit avant
-    // (A25-10), la case et l'accord de la licence reviennent à la reprise.
-    const bool agreed = row.download && chosen(current, offer.id);
-    const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected || agreed;
+    const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected;
     // Une licence ne se coche jamais d'office : le moteur qui en demande une attend l'accord.
-    row.chosen =
-        offer.id == core::EngineId::Vulkan || (wanted && row.usable && (row.license.empty() || agreed));
-    row.license_accepted = agreed;
+    row.chosen = offer.id == core::EngineId::Vulkan || (wanted && row.usable && row.license.empty());
     view.engines.push_back(std::move(row));
   }
   return view;
@@ -387,11 +381,6 @@ std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
       refused.push_back(i18n::tr_format(
           "{}: recommended for this card but not selected. The calibration will measure a slower engine.",
           label));
-    // Le moteur recommandé que ce poste ne peut pas installer : sa raison (pilote trop ancien, place, paquet
-    // non publié) se lit ici, l'écran Moteurs étant sauté quand Vulkan est le seul choix (A25-13).
-    if (!row.usable && !row.status.empty() && row.offer.id != core::EngineId::Vulkan &&
-        std::ranges::contains(row.offer.badges, core::Badge::Recommended))
-      refused.push_back(i18n::tr_format("{} is not available here: {}", label, row.status));
     if (!row.chosen || !row.usable) continue;
     if (row.download && !row.license.empty() && !row.license_accepted) {
       refused.push_back(i18n::tr_format("{}: licence not accepted, it will not be installed", label));
@@ -401,7 +390,7 @@ std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
     if (row.download) bytes += row.bytes;
   }
   std::vector<std::string> out;
-  out.push_back(bytes > 0 ? i18n::tr_format("Engines: {} ({} to download)", kept, shown_size(bytes))
+  out.push_back(bytes > 0 ? i18n::tr_format("Engines: {} ({} to download)", kept, format_size(bytes))
                           : i18n::tr_format("Engines: {}", kept));
   out.insert(out.end(), refused.begin(), refused.end());
   return out;
@@ -461,12 +450,8 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                  wizard.update_mode == UpdateMode::Notify, pick);
       if (pick) wizard.update_mode = UpdateMode::Notify;
       pick = false;
-      // Le texte du panneau (A25-19). Là où rien ne s'installerait seul (AppImage, Flatpak, dossier non
-      // inscriptible), le choix est grisé et dit pourquoi (A25-05).
-      radio_note(i18n::tr("Automatic"),
-                 view.managed_updates.empty() ? i18n::tr("Downloaded, verified, installed at next launch.")
-                                              : view.managed_updates.c_str(),
-                 wizard.update_mode == UpdateMode::Auto, pick, view.managed_updates.empty());
+      radio_note(i18n::tr("Automatic"), i18n::tr("Downloaded, installed at next launch."),
+                 wizard.update_mode == UpdateMode::Auto, pick);
       if (pick) wizard.update_mode = UpdateMode::Auto;
       pick = false;
       radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == UpdateMode::Never, pick);

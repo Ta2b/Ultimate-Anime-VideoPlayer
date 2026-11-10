@@ -4,7 +4,6 @@
 #include "media/cuda_driver.h"
 
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <cstring>
 #include <format>
@@ -105,17 +104,7 @@ void close_library(void* library) {
 }
 #else
 constexpr const char* kLibrary = "libcuda.so.1";
-// Le pilote se cherche d'abord dans les dossiers du système, par chemin absolu, comme NVML
-// (gpu_telemetry.cpp) : un libcuda.so.1 déposé à côté du lecteur ou dans LD_LIBRARY_PATH ne passe plus avant
-// lui (A34-08). Le nom seul en dernier recours, pour une distribution qui le range ailleurs.
 void* open_library() {
-  static constexpr std::array<const char*, 6> kFolders{
-      "/usr/lib/x86_64-linux-gnu", "/usr/lib64", "/usr/lib", "/usr/lib/nvidia", "/usr/lib/wsl/lib", "/lib64"};
-  for (const char* folder : kFolders) {
-    const std::string path = std::string(folder) + "/" + kLibrary;
-    if (access(path.c_str(), R_OK) != 0) continue;
-    if (void* library = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL); library != nullptr) return library;
-  }
   return dlopen(kLibrary, RTLD_NOW | RTLD_LOCAL);
 }
 void* find_symbol(void* library, const char* name) {

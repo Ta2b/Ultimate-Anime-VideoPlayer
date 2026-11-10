@@ -129,11 +129,6 @@ bool needs_second_run(const CandidateTrial& trial);
 // Le fichier des résultats (calibration.toml, à côté de play.toml), que calibrate_machine écrit quand
 // plan.data est donné.
 std::filesystem::path calibration_file(const std::filesystem::path& data_dir);
-// Le dossier jetable des essais (BenchPlan::work_dir) : propre à ce lancement, sous le dossier de données de
-// l'utilisateur (A25-11 : un nom fixe dans /tmp appartenait au premier compte qui calibrait, et un dossier
-// temporaire introuvable donnait un chemin relatif au dossier courant). data_dir vide : chemin vide, et
-// calibrate_machine refuse.
-std::filesystem::path calibration_work_dir(const std::filesystem::path& data_dir);
 std::string format_calibration(const MachineCalibration& calibration);
 std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view text);
 std::expected<MachineCalibration, Refusal> load_calibration(const std::filesystem::path& file);

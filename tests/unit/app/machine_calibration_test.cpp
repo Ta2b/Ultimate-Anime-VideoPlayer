@@ -432,21 +432,3 @@ target_fps = 48.0
   CHECK(calibration_use(*read, {.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true}) ==
         CalibrationUse::OldVersion);
 }
-
-TEST_CASE("calibration : le dossier des essais est propre au lancement, sous les données (A25-11)",
-          "[app][calibration]") {
-  const std::filesystem::path data = std::filesystem::temp_directory_path() / "ajp-donnees";
-  const std::filesystem::path first = calibration_work_dir(data);
-  CHECK(first.parent_path() == data);
-  CHECK(first.is_absolute());
-  CHECK(calibration_work_dir({}).empty());
-  // Sans dossier, ou avec un chemin relatif au dossier courant : refusé avant tout essai.
-  for (const std::filesystem::path& bad :
-       {std::filesystem::path{}, std::filesystem::path{"ajp-calibration"}}) {
-    const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .work_dir = bad};
-    const auto refused = calibrate_machine(plan, PlaySettings{}, 1080, Tier::Normal, std::stop_token{}, {});
-    REQUIRE_FALSE(refused);
-    CHECK(refused.error().code == ajp::RefusalCode::FileUnreadable);
-    CHECK_FALSE(std::filesystem::exists("ajp-calibration"));
-  }
-}
