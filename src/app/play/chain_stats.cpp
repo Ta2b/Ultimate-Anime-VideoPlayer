@@ -207,8 +207,7 @@ void ChainStats::start_sampler() {
                        log_channel("app")->warn("relevé du GPU arrêté : {}", refusal.detail);  // i18n-ok
                      }),
                      [this](const std::stop_token& stop, const ThreadReport& /*report*/) {
-                       std::mutex idle;
-                       std::condition_variable_any wake;
+                       using std::chrono::milliseconds;
                        while (!stop.stop_requested()) {
                          auto memory = read_memory();
                          auto gpu = read_gpu();
@@ -217,8 +216,8 @@ void ChainStats::start_sampler() {
                            memory_text_ = std::move(memory);
                            gpu_text_ = std::move(gpu);
                          }
-                         std::unique_lock lock(idle);
-                         wake.wait_for(lock, stop, std::chrono::milliseconds(500), [] { return false; });
+                         // L'OSD caché ne lit plus rien : le relevé dort jusqu'à ce qu'il reparaisse.
+                         if (!demand_.wait(stop, milliseconds(500), milliseconds(1000))) break;
                        }
                      });
     // Sans thread, les relevés restent vides : l'OSD n'affiche alors ni mémoire ni charge du GPU.
@@ -235,12 +234,14 @@ void ChainStats::stop() {
 }
 
 std::optional<std::string> ChainStats::memory() {
+  demand_.asked();
   start_sampler();
   const std::scoped_lock lock(sampled_mutex_);
   return memory_text_;
 }
 
 std::optional<std::string> ChainStats::gpu() {
+  demand_.asked();
   start_sampler();
   const std::scoped_lock lock(sampled_mutex_);
   return gpu_text_;

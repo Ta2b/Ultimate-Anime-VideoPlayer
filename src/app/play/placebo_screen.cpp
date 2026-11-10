@@ -364,7 +364,8 @@ void note_feedback(ScreenTiming& timing, const PresentFeedback& feedback) {
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 // La présentation part. Aucun autre thread n'ouvre de commande sur le pl_gpu pendant ce temps (une commande
 // ouverte entre la prise de la swapchain et sa soumission fait échouer vk_cmd_submit dans libplacebo).
-std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present* present) const {
+std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present* present) {
+  frame_pending = false;
   if (present == nullptr) {
     if (pl_swapchain_submit_frame(swapchain)) return {};
     return refuse(RefusalCode::VendorCallFailed, "pl_swapchain_submit_frame");
@@ -374,6 +375,17 @@ std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present
   feedback->submitted(result);
   if (!ok) return refuse(RefusalCode::VendorCallFailed, "pl_vulkan_swapchain_submit");
   return {};
+}
+
+bool PlaceboScreen::Impl::start_frame(pl_swapchain_frame* frame) {
+  if (frame_pending) {
+    channel->warn(
+        "présentation : l'image acquise au tour précédent n'avait pas été soumise, elle part d'abord");
+    if (auto sent = submit(nullptr); !sent) channel->warn("présentation : {}", sent.error().detail);
+    pl_swapchain_swap_buffers(swapchain);
+  }
+  frame_pending = pl_swapchain_start_frame(swapchain, frame);
+  return frame_pending;
 }
 
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
@@ -408,7 +420,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
       s.swapchain_size = out;
     }
     pl_swapchain_frame swframe{};
-    if (!pl_swapchain_start_frame(s.swapchain, &swframe)) return not_shown();  // fenêtre cachée, ou GPU perdu
+    if (!s.start_frame(&swframe)) return not_shown();  // fenêtre cachée, ou GPU perdu
     pl_frame_from_swapchain(&target, &swframe);
     acquired = host_now_us();
   }

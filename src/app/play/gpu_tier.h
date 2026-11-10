@@ -2,7 +2,7 @@
 // (docs/ux-parametres.md, 4.7). Elle vient de data/gpu_tiers.toml, embarqué dans le lecteur : des règles
 // par famille (« rtx 4070 », « rx 7900 », « arc a7 »…), la première qui correspond gagne ; une carte
 // inconnue reçoit une estimation par fabricant, VRAM et unités matricielles. Ce sont des estimations,
-// que « Évaluer ma machine » corrige. Rien ici ne change un réglage.
+// que « Calibrer cette machine » corrige. Rien ici ne change un réglage.
 #pragma once
 
 #include <cstdint>
