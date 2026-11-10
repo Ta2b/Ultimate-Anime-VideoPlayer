@@ -110,14 +110,6 @@ bool peak_due(ContractWatch& watch, std::int64_t polled_at) {
 
 // Les réglages d'une réouverture demandée, écrits une fois la chaîne rouverte (Player::unsaved), sans les
 // raccourcis de séance (A08-04).
-// Le délai que la sortie du système reprend quand l'appareil choisi disparaît (A16-02) : celui mémorisé pour
-// elle, 0 sans mémoire. Rien quand on suit déjà le système : son délai est celui de la séance.
-std::optional<std::int64_t> fallback_delay_us(const PlaySettings& settings) {
-  if (settings.audio_device.empty()) return std::nullopt;
-  const auto known = settings.audio_device_delays_ms.find("");
-  return std::int64_t{known != settings.audio_device_delays_ms.end() ? known->second : 0} * 1000;
-}
-
 void save_reopened(Player& p) {
   if (!p.unsaved) return;
   const PlaySettings kept = with_kept_choices(p.kept, *p.unsaved);
@@ -224,15 +216,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_rife_factor(rife_loaded ? factor_of(played) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
   live->set_keep_poses(settings.keep_poses);
-  PipelineConfig config{
-      .file = options.file,
-      .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
-      .languages = {.presets = settings.language_presets},
-      .audio_device = settings.audio_device,
-      .audio_fallback_delay_us = fallback_delay_us(settings),
-      .audio_pll = p.options.audio_pll,
-      .audio_track = p.audio_track,
-      .subtitle_track = p.subtitle_track};
+  const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
   auto pipeline = Pipeline::open(
