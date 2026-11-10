@@ -517,8 +517,8 @@ std::string play_usage(bool debug) {
   return usage +
          "Trial options, with --debug:\n"
          "  --rife-image           image RIFE at every instant (without the motion variant)\n"
-         "  --ring-rgb10a2         RGB10A2 ring under TensorRT (half the memory, default);\n"
-         "                         --no-ring-rgb10a2: RGBA16\n"
+         "  --ring-rgb10a2         RGB10A2 ring under TensorRT (half the memory, banding not\n"
+         "                         measured yet); default and --no-ring-rgb10a2: RGBA16\n"
          "  --hdr-metadata[=NITS]  HDR10 output with its metadata, KWin's compression done by the\n"
          "                         grade (NITS: KDE's SDR brightness, read from KDE without a value);\n"
          "                         default under KDE and Windows; --no-hdr-metadata: compression\n"
