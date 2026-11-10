@@ -524,6 +524,40 @@ TEST_CASE("Espace : le pic compte le décompressé et l'ancienne version, pas se
   CHECK(again.peak > 2 * fresh.installed);
 }
 
+TEST_CASE("Espace : un fichier tiers repris par lien dur ne compte ni au téléchargement ni au pic (A06-06)",
+          "[app][install][space]") {
+  EngineCatalog catalog;
+  catalog.layout = core::install_layout(host_os(), "/d");
+  constexpr std::uint64_t kMo = 1U << 20;
+  core::VendorFile big;
+  big.engine = core::EngineId::TensorRt;
+  big.platform = host_os();
+  big.name = "libnvinfer.so.11";
+  big.packed_size = 306 * kMo;
+  big.size = 663 * kMo;
+  catalog.vendor_files.push_back(big);
+  core::EnginePackage package;
+  package.engine = core::EngineId::TensorRt;
+  package.size = 2 * kMo;
+  const std::filesystem::path root = std::filesystem::temp_directory_path() / "ajp-space-linked";
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root / "11.2");
+  {
+    std::ofstream(root / "11.2" / big.name) << "";
+  }
+  std::filesystem::resize_file(root / "11.2" / big.name, big.size);  // creux : aucune place prise
+
+  const InstallSpace fresh = install_space(catalog, package, "sm89");
+  const InstallSpace linked = install_space(catalog, package, "sm89", big.size, root);
+  CHECK(linked.download == package.size);
+  CHECK(linked.installed == fresh.installed);  // le dossier final a la même taille apparente
+  CHECK(linked.peak < fresh.peak);  // l'ancienne version compte, mais rien ne se tire ni ne se copie
+  // Une autre taille : pas le même fichier, il se télécharge.
+  std::filesystem::resize_file(root / "11.2" / big.name, big.size - 1);
+  CHECK(install_space(catalog, package, "sm89", big.size, root).download == fresh.download);
+  std::filesystem::remove_all(root);
+}
+
 TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "[app][install][space]") {
   ajp::app::play::FrenchUi french;
   const InstallSpace space{.download = 742ULL << 20, .installed = 1250ULL << 20, .peak = 1400ULL << 20};

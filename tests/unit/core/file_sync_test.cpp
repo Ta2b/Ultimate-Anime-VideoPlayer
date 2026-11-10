@@ -1,5 +1,6 @@
 // L'écriture atomique (write_atomic) : contenu entier, temporaire retiré sur un refus, et sous Windows une
-// destination tenue ouverte par un autre processus le temps d'un scan (A20-01).
+// destination tenue ouverte par un autre processus le temps d'un scan (A20-01), liens symboliques et
+// temporaires abandonnés (A20-08).
 #include "core/file_sync.h"
 
 #include <chrono>
@@ -86,3 +87,39 @@ TEST_CASE(
   fs::remove_all(dir);
 }
 #endif
+
+TEST_CASE("Écriture atomique : un lien symbolique reste un lien, le fichier nommé change (A20-08)",
+          "[core]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-write-symlink";
+  fs::remove_all(dir);
+  fs::create_directories(dir / "dotfiles");
+  const fs::path real = dir / "dotfiles" / "play.toml";
+  REQUIRE(ajp::core::write_text_atomically(real, "a = 1\n"));
+  std::error_code linked;
+  fs::create_symlink(fs::path("dotfiles") / "play.toml", dir / "play.toml", linked);
+  if (linked) SKIP("liens symboliques refusés ici : " << linked.message());
+  REQUIRE(ajp::core::write_text_atomically(dir / "play.toml", "a = 2\n"));
+  CHECK(fs::is_symlink(dir / "play.toml"));
+  CHECK(read_all(real) == "a = 2\n");
+  CHECK(entries(dir) == 2);
+  fs::remove_all(dir);
+}
+
+TEST_CASE("Écriture atomique : les temporaires abandonnés depuis plus d'une heure sont retirés (A20-08)",
+          "[core]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-write-orphans";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path old_temp = dir / ".play.toml.1-2.tmp";
+  const fs::path fresh_temp = dir / ".play.toml.3-4.tmp";
+  const fs::path other = dir / ".autre.toml.5-6.tmp";
+  for (const fs::path& file : {old_temp, fresh_temp, other}) std::ofstream(file) << "x";
+  const auto two_hours_ago = fs::file_time_type::clock::now() - std::chrono::hours(2);
+  fs::last_write_time(old_temp, two_hours_ago);
+  fs::last_write_time(other, two_hours_ago);
+  REQUIRE(ajp::core::write_text_atomically(dir / "play.toml", "a = 1\n"));
+  CHECK_FALSE(fs::exists(old_temp));
+  CHECK(fs::exists(fresh_temp));  // un autre écrivain peut l'écrire en ce moment
+  CHECK(fs::exists(other));       // les temporaires d'un autre fichier ne sont pas les siens
+  fs::remove_all(dir);
+}

@@ -133,7 +133,7 @@ pas, et vit dans le dossier « modeles » des données du lecteur à côté des 
 
 ```
 ~/.animejanai-tools/venv-gpu/bin/python3 -I tools/span/derive_span_fp8.py MODELE.onnx \
-    --corpus images/ --out ~/.local/share/ajp/ajp/modeles \
+    --corpus images/ --out ~/.cache/ajp/modeles \
     --runner build/linux-prefix-cuda/src/gpu/cuda/backend/ajp_span_fp8_run \
     --gpu-prefix ~/ajp-tools/bin/ajp-gpu --trtexec ~/ajp-sdk/tensorrt/bin/trtexec
 ```

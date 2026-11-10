@@ -7,7 +7,7 @@
 #include <iterator>
 
 #include "core/auto_rate.h"
-#include "core/user_overlay.h"
+#include "core/text_file.h"
 
 namespace ajp::core {
 

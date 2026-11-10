@@ -8,8 +8,8 @@
 #include <utility>
 
 #include "core/model_index.h"
+#include "core/text_file.h"
 #include "core/toml_fields.h"
-#include "core/user_overlay.h"
 
 namespace ajp::core {
 namespace {

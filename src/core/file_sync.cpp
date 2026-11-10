@@ -83,6 +83,43 @@ std::error_code rename_retrying(const std::filesystem::path& from, const std::fi
   }
 }
 
+// Un temporaire plus vieux que ceci n'a plus d'écrivain : un arrêt brutal l'a laissé (A20-08). L'âge laisse
+// tranquille celui qu'un autre processus écrit en ce moment.
+constexpr auto kOrphanAge = std::chrono::hours(1);
+
+// La destination réelle : un lien symbolique (play.toml mis dans un dépôt de fichiers de configuration, par
+// exemple) reste un lien, c'est le fichier qu'il nomme qui est remplacé (A20-08). Les liens en chaîne sont
+// suivis ; un lien cassé désigne le fichier qu'il nommerait.
+std::filesystem::path real_destination(const std::filesystem::path& path) {
+  std::filesystem::path target = path;
+  std::error_code error;
+  for (int hops = 0; hops < 40 && std::filesystem::is_symlink(target, error); ++hops) {
+    std::filesystem::path next = std::filesystem::read_symlink(target, error);
+    if (error) return path;
+    target = next.is_absolute() ? next : target.parent_path() / next;
+  }
+  return target;
+}
+
+// Les « .<nom>.*.tmp » abandonnés à côté du fichier, de ses écritures d'avant.
+void remove_orphan_temps(const std::filesystem::path& path) {
+  const std::filesystem::path folder =
+      path.has_parent_path() ? path.parent_path() : std::filesystem::path(".");
+  const std::string prefix = "." + to_utf8(path.filename()) + ".";
+  std::error_code error;
+  std::filesystem::directory_iterator it(folder, error);
+  if (error) return;
+  const auto now = std::filesystem::file_time_type::clock::now();
+  for (const std::filesystem::directory_iterator end; it != end; it.increment(error)) {
+    if (error) return;
+    const std::string name = to_utf8(it->path().filename());
+    if (!name.starts_with(prefix) || !name.ends_with(".tmp")) continue;
+    std::error_code stale;
+    const auto written = it->last_write_time(stale);
+    if (!stale && now - written > kOrphanAge) std::filesystem::remove(it->path(), stale);
+  }
+}
+
 std::string temp_suffix() {
   const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
   const std::size_t thread = std::hash<std::thread::id>{}(std::this_thread::get_id());
@@ -91,8 +128,9 @@ std::string temp_suffix() {
 
 }  // namespace
 
-std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
+std::expected<void, Refusal> write_atomic(const std::filesystem::path& given,
                                           std::span<const std::byte> bytes) {
+  const std::filesystem::path path = real_destination(given);
   std::error_code error;
   if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), error);
   std::filesystem::path name = ".";
@@ -120,6 +158,7 @@ std::expected<void, Refusal> write_atomic(const std::filesystem::path& path,
         Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", to_utf8(path), renamed.message())});
   }
   sync_directory(path.has_parent_path() ? path.parent_path() : std::filesystem::path("."));
+  remove_orphan_temps(path);
   return {};
 }
 

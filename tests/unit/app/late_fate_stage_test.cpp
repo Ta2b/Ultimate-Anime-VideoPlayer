@@ -38,9 +38,10 @@ struct Played {
   std::vector<std::string> shape;
   std::size_t rife = 0;
   std::size_t span = 0;
+  std::size_t drba = 0;
 };
 
-Played play(bool late_fate) {
+Played play(bool late_fate, bool drba = false) {
   Rig rig;
   MovingClock clock;
   clock.value =
@@ -49,10 +50,17 @@ Played play(bool late_fate) {
   UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1}, 1);
   s.clock = &clock;
   s.late_fate = late_fate;
+  if (drba) {
+    s.rife = nullptr;
+    s.distil_drba = &rig.drba_motion;
+    s.drba_motion = true;
+    s.warp_after_span = true;
+  }
   rig.start(std::move(s), &clock);
   rig.feed(1, 1);
-  REQUIRE(rig.collect(1, false));  // le seul emplacement est tenu
-  rig.feed(2, 2);                  // la paire (1, 2) est préparée à l'heure, puis attend l'emplacement
+  if (drba) rig.feed(2, 2);              // DistilDRBA attend l'image d'après pour montrer la source 1
+  REQUIRE(rig.collect(1, false));        // le seul emplacement est tenu
+  rig.feed(drba ? 3 : 2, drba ? 3 : 2);  // la paire (1, 2) est préparée à l'heure, puis attend l'emplacement
   std::this_thread::sleep_for(150ms);
   clock.jump(10'000'000);  // l'horloge passe la paire pendant l'attente
   rig.release_all();
@@ -60,7 +68,8 @@ Played play(bool late_fate) {
   rig.stage.reset();
   return Played{.shape = shape_of(rig.sink.frames()),
                 .rife = rig.backend.count("engine rife"),
-                .span = rig.backend.count("engine span")};
+                .span = rig.backend.count("engine span"),
+                .drba = rig.backend.count("engine drba_motion")};
 }
 
 }  // namespace
@@ -71,6 +80,18 @@ TEST_CASE("Étage gpu : Rapide, un instant passé pendant l'attente n'est ni cal
   CHECK(late.shape == std::vector<std::string>{"1"});
   CHECK(late.rife == 0);
   CHECK(late.span == 1);  // la source 2 en retard : sans warp après SPAN, rien ne lit son SPAN
+}
+
+TEST_CASE("Étage gpu : Rapide, DistilDRBA ne calcule pas non plus un instant déjà passé (A09-07)",
+          "[app][stage][free]") {
+  const Played late = play(true, true);
+  CHECK(late.shape == std::vector<std::string>{"1"});
+  CHECK(late.drba == 0);
+  const Played old = play(false, true);
+  INFO("forme " << old.shape.size() << ", passes " << old.drba);
+  REQUIRE(old.shape.size() >= 2);
+  CHECK(old.shape[1] == "1-2");
+  CHECK(old.drba >= 1);
 }
 
 TEST_CASE("Étage gpu : Rapide sans late_fate, la paire sort quand même, en retard", "[app][stage][free]") {

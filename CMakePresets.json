@@ -101,7 +101,8 @@
         "rhs": "Windows"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "AJP_REQUIRE_SPIRV_VAL": "ON"
       }
     },
     {
@@ -152,7 +153,8 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O3 -g -DNDEBUG",
         "CMAKE_CXX_FLAGS": "-march=x86-64-v3",
-        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+        "AJP_WARNINGS_AS_ERRORS": "OFF"
       }
     },
     {

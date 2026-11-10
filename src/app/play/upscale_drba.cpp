@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "app/play/upscale_stage.h"
+#include "core/trace.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/resample.h"
@@ -85,12 +86,16 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
       drba_.small_taken = true;
     }
     drba_.after_id.reset();
+    debanded_ = drba_.after_debanded;
     return {};
   }
   drba_.after_id.reset();
   drba_.after_scores.reset();
   drba_.after_ticket.reset();
-  return setup_.backend->kernels()->ingest(frame, spec, rgb_[current_]->tensor());
+  auto debanded = ingest_source(frame, spec, rgb_[current_]->tensor());
+  if (!debanded) return std::unexpected(std::move(debanded.error()));
+  debanded_ = *debanded;
+  return {};
 }
 
 void UpscaleStage::keep_scores_wait(std::int64_t waited_us) {
@@ -140,7 +145,7 @@ std::expected<gpu::PairScores, Refusal> UpscaleStage::drba_scores(const DecodedF
     return kept;
   }
   drba_.after_scores.reset();
-  return setup_.backend->kernels()->scores_now(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor());
+  return setup_.backend->kernels()->scores_now(rife_source(current_ ^ 1U), rife_source(current_));
 }
 
 kernels::RifeGeometry UpscaleStage::drba_geometry() const {
@@ -149,13 +154,14 @@ kernels::RifeGeometry UpscaleStage::drba_geometry() const {
 
 std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                                      bool measure) {
+  AJP_TRACE("drba.ingest");
   drba_.after_ok = false;
   drba_.after_held = false;
   drba_.after_ticket.reset();
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (std::exchange(drba_.bridge, false)) {
     // Reprise après une image sautée : elle (rgb_ de l'autre côté) contre celle-ci, relue à la suivante.
-    if (auto ticket = ops.scores_start(rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor())) {
+    if (auto ticket = ops.scores_start(rife_source(current_ ^ 1U), rife_source(current_))) {
       drba_.bridge_ticket = *ticket;
       drba_.bridge_right_pts_us = frame.pts_us;
     }
@@ -165,7 +171,9 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   // image courante, et son refus SourceResized rouvre la chaîne.
   if (after == nullptr || after->width != setup_.source_width || after->height != setup_.source_height)
     return {};
-  if (auto ok = ops.ingest(*after, spec, drba_.after->tensor()); !ok) return ok;
+  auto debanded = ingest_source(*after, spec, drba_.after->tensor());
+  if (!debanded) return std::unexpected(std::move(debanded.error()));
+  drba_.after_debanded = *debanded;
   if (drba_.small_after) {
     if (auto ok = ops.ingest(*after, gpu::IngestSpec{}, drba_.small_after->tensor()); !ok) return ok;
   }
@@ -174,13 +182,16 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   drba_.left_pts_us = frame.pts_us;
   drba_.right_pts_us = after->pts_us;
   if (!measure) return {};
-  if (auto ticket = ops.scores_start(rgb_[current_]->tensor(), drba_.after->tensor())) {
+  // A09-18 : la mesure se fait sur les copies réduites quand elles existent, comme sous RIFE : le seuil
+  // des dessins tenus est réglé à cette taille, et la paire y coûte moins de pixels lus.
+  const gpu::Tensor& measured_after = drba_.small_after ? drba_.small_after->tensor() : drba_.after->tensor();
+  if (auto ticket = ops.scores_start(rife_source(current_), measured_after)) {
     drba_.after_ticket = *ticket;
     drba_.ticket_left = frame.id;
     drba_.ticket_right = after->id;
     return {};
   }
-  auto scores = ops.scores_now(rgb_[current_]->tensor(), drba_.after->tensor());
+  auto scores = ops.scores_now(rife_source(current_), measured_after);
   if (!scores) return std::unexpected(std::move(scores.error()));
   scores->left = frame.id;
   scores->right = after->id;
@@ -212,6 +223,7 @@ void UpscaleStage::keep_skipped(const DecodedFrame& frame) {
 
 std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& call,
                                                     std::span<gpu::Tensor> results) {
+  AJP_TRACE("drba.pair");
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // Les copies réduites quand le mouvement s'estime plus petit que le travail (variante mouvement).
   const bool small = small_[0] != nullptr;

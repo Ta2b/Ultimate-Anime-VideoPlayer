@@ -1,6 +1,10 @@
 #include "app/play/chain_setup.h"
 
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
+
+#include "app/play/visible_error.h"
 
 namespace ajp::app::play {
 namespace {
@@ -137,6 +141,22 @@ TEST_CASE("A22-04 : le plafond de l'Auto qui change le plus haut facteur rouvre"
   free.auto_cap = 0;  // l'écran : ×4, warp après SPAN
   CHECK(change_between(capped, free, true, &opened).cost == ChangeCost::Reopen);
   CHECK(live_part(capped, free, true, &opened).auto_cap == 60);
+}
+
+TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien sinon", "[app][chain]") {
+  OpenedChain opened = opened_for(manual(2));
+  CHECK(fused_refusal_notice(opened).empty());
+  opened.rife_fused_refused = RefusalCode::BuilderFailed;
+  const std::string rife = fused_refusal_notice(opened).str();
+  CHECK(rife.contains("RIFE"));
+  CHECK(rife.contains(visible_error(Refusal{RefusalCode::BuilderFailed, ""})));
+  // DistilDRBA chargé : c'est son repli qui est dit.
+  opened.drba = true;
+  opened.drba_fused_refused = RefusalCode::CacheIo;
+  const std::string drba = fused_refusal_notice(opened).str();
+  CHECK(drba.contains("DistilDRBA"));
+  CHECK(drba.contains(visible_error(Refusal{RefusalCode::CacheIo, ""})));
+  CHECK_FALSE(visible_error(Refusal{RefusalCode::CacheIo, ""}).empty());
 }
 
 }  // namespace ajp::app::play

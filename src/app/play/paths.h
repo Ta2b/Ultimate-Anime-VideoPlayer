@@ -1,7 +1,8 @@
 // Les emplacements du lecteur, en un seul endroit (P5.32) : chaque dossier et chaque fichier se calcule ici,
-// pas à l'endroit qui s'en sert. Deux racines : le dossier des données (le parent de paths.engines, où vivent
-// les moteurs, les modèles dérivés, les LUT, les plans), et le dossier des réglages (celui de play.toml, que
-// --data-dir peut déplacer). Tests : tests/unit/app/paths_test.cpp.
+// pas à l'endroit qui s'en sert. Trois racines : le dossier des données (paths.heavy : paquets des moteurs,
+// modèles téléchargés, LUT), celui des caches qui se refont seuls (paths.cache : moteurs construits, modèles
+// dérivés, plans, cache des shaders), et le dossier des réglages (celui de play.toml, que --data-dir peut
+// déplacer). Tests : tests/unit/app/paths_test.cpp.
 #pragma once
 
 #include <filesystem>
@@ -10,13 +11,17 @@
 
 namespace ajp::app::play::paths {
 
-// Le dossier des données : le parent des moteurs construits.
+// Le dossier des données : paths.heavy, sinon le parent des moteurs construits.
 inline std::filesystem::path data_root(const PlayerPaths& p) {
-  return p.engines.parent_path();
+  return p.heavy.empty() ? p.engines.parent_path() : p.heavy;
+}
+// Le dossier des caches qui se refont seuls : paths.cache, sinon celui des données (A36-08).
+inline std::filesystem::path cache_root(const PlayerPaths& p) {
+  return p.cache.empty() ? data_root(p) : p.cache;
 }
 // Les modèles dérivés (FP8, INT8, DistilDRBA fusionnés, Core ML) : « modeles ».
 inline std::filesystem::path derived_models(const PlayerPaths& p) {
-  return data_root(p) / "modeles";
+  return cache_root(p) / "modeles";
 }
 // Les LUT du grade, copiées au premier lancement.
 inline std::filesystem::path luts(const PlayerPaths& p) {
@@ -28,10 +33,10 @@ inline std::filesystem::path backends_install(const PlayerPaths& p) {
 }
 // Le cache des shaders de libplacebo et celui de la pré-analyse des plans.
 inline std::filesystem::path shader_cache(const PlayerPaths& p) {
-  return data_root(p) / "shaders.cache";
+  return cache_root(p) / "shaders.cache";
 }
 inline std::filesystem::path shot_cache(const PlayerPaths& p) {
-  return data_root(p) / "plans";
+  return cache_root(p) / "plans";
 }
 // Le dossier des réglages : paths.settings, ou le dossier des données sans --data-dir.
 inline std::filesystem::path settings_dir(const PlayerPaths& p) {
