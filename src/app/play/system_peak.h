@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace ajp::app::play {
@@ -18,10 +19,17 @@ struct KwinOutput {
   std::optional<double> reference;
 };
 // connector : « DP-1 » (le préfixe « card1- » de DRM est ôté). Rien si la sortie n'y est pas.
-std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_view connector);
+// edid : le début de « edidIdentifier » de l'écran branché (kwin_edid_key), vide si inconnu. KWin garde une
+// entrée par écran déjà vu sur ce port : celle de cet écran l'emporte (A11-04) ; sans elle, celle où le HDR
+// est actif, sinon la première.
+std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_view connector,
+                                            std::string_view edid = {});
+// « MSI 15066 » : le fabricant PNP et le product id en décimal, comme KWin commence « edidIdentifier ». Vide
+// sans fabricant.
+std::string kwin_edid_key(std::string_view manufacturer, std::uint16_t product);
 // La sortie de ce connecteur DRM (« card1-DP-1 ») lue dans ~/.config/kwinoutputconfig.json ; rien hors Linux,
 // sans le fichier ou sans la sortie.
-std::optional<KwinOutput> read_kwin_output(std::string_view connector);
+std::optional<KwinOutput> read_kwin_output(std::string_view connector, std::string_view edid = {});
 // La date de modification de ce fichier (ns), pour le relire quand KDE le réécrit ; rien sans lui.
 std::optional<std::int64_t> kwin_config_stamp();
 

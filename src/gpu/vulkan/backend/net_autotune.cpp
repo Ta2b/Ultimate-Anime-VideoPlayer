@@ -140,6 +140,24 @@ std::optional<std::vector<std::uint32_t>> tuning_of(std::string_view text) {
   return out;
 }
 
+// Le choix que la table pré-réglée de la famille (et du pilote, si elle en nomme un) donne à cette signature,
+// s'il est parmi les candidats.
+std::optional<KernelChoice> preset_choice(std::span<const PresetTable> presets, const DeviceProfile& profile,
+                                          std::uint64_t signature, std::span<const KernelChoice> candidates) {
+  for (const PresetTable& table : presets) {
+    if (table.family != profile.family) continue;
+    if (table.driver && *table.driver != profile.driver) continue;
+    for (const PresetEntry& e : table.entries) {
+      if (e.signature != signature) continue;
+      auto tuning = tuning_of(e.tuning);
+      if (!tuning) continue;
+      KernelChoice c{.variant = std::string(e.variant), .tuning = std::move(*tuning)};
+      if (std::ranges::find(candidates, c) != candidates.end()) return c;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 float tuning_input(ir::DataType type, std::uint64_t index) {
@@ -256,22 +274,12 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
     }
     remembered = found->second.choice;
   }
-  for (const PresetTable& table : presets_) {
-    if (remembered || table.family != profile_.family) continue;
-    if (table.driver && *table.driver != profile_.driver) continue;
-    for (const PresetEntry& e : table.entries) {
-      if (e.signature != signature) continue;
-      auto tuning = tuning_of(e.tuning);
-      KernelChoice c{.variant = std::string(e.variant),
-                     .tuning = tuning ? std::move(*tuning) : std::vector<std::uint32_t>{}};
-      if (tuning && known(c)) {
-        remembered = std::move(c);
-        break;
-      }
-    }
-  }
+  if (!remembered) remembered = preset_choice(presets_, profile_, signature, candidates);
   // Tranché sous une autre version du pilote, ou lu dans la table : sa sortie, pas son temps, se
-  // revérifie. Discordante, le nœud se remesure.
+  // revérifie. Discordante, le nœud se remesure. Un choix à précision réduite se remesure toujours : il ne
+  // vaut que par son gain de temps (kPrecisionTie), que rien ne garantit sous un autre pilote ni sur une
+  // autre carte de la famille (A45-01).
+  if (remembered && low_precision(*remembered)) remembered.reset();
   if (remembered) {
     // Un choix qui ne s'exécute plus (pilote changé, limite dépassée) est discordant : on remesure.
     const auto same = agrees_with_direct(graph, node, *remembered, candidates);

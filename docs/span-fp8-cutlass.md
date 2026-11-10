@@ -159,7 +159,7 @@ refusée passe à la suivante.
 
 | Cas | Où | Effet |
 |---|---|---|
-| GPU autre que sm 8.9 et sm 12.0 (Turing, Ampere, Blackwell des centres de calcul) | `BackendCaps::span_fp8_cutlass` faux ; le lecteur n'essaie pas la variante | variante suivante |
+| GPU autre que sm 8.9 (Turing, Ampere, Blackwell : RTX 50 comprises, voir « Autres architectures ») | `BackendCaps::span_fp8_cutlass` faux ; le lecteur n'essaie pas la variante | variante suivante |
 | Backend construit sans CUTLASS (hors Linux, `third_party/cutlass` absent, `AJP_WITH_SPAN_FP8=OFF`, pas de CUDA) | `span_fp8_net_none.cpp` : capacité fausse | variante suivante |
 | Reçu absent, refusé, d'un autre modèle, paquet modifié | `find_span_variant` | variante suivante |
 | Reçu v2 d'une autre architecture ou d'autres noyaux, taille refusée | `find_span_variant` avec `SpanFp8Context` | variante suivante |
@@ -209,10 +209,11 @@ SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Le
 ## Autres architectures (chantier 10)
 
 - **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour
-  `89-real;120` (CUDA 12.8 au moins), et `supported_device` prend 12.0. C'est la même boucle CUTLASS : le `mma`
+  `89-real;120` (CUDA 12.8 au moins), mais `supported_device` refuse 12.0 depuis les audits (A37-01, décision
+  14) : pas de FP8 sur une carte où aucun noyau n'a tourné. C'est la même boucle CUTLASS : le `mma`
   FP8 m16n8k32 existe dès sm 89 (garde CUTLASS `>= 890`). Le reçu v2 porte `gpu_arch = "sm_120"`, donc un
-  paquet d'une RTX 40 n'y sert pas sans revalidation, et la porte décide. **Jamais lancé sur une RTX 50** : sur
-  la carte, il faut vérifier `ptxas --verbose` sans débordement, une mémoire partagée ≥ 57 Ko,
+  paquet d'une RTX 40 n'y sert pas sans revalidation. **Jamais lancé sur une RTX 50** : avant de rendre 12.0 à
+  `supported_device`, il faut vérifier sur la carte `ptxas --verbose` sans débordement, une mémoire partagée ≥ 57 Ko,
   `cuobjdump -sass -arch sm_120` avec du MMA FP8 natif, et la tuile TM ∈ {128, 256} au banc. Visé :
   ≤ 0,70 × TensorRT FP16.
 - **Poids par canal (étape 10.3)** : voir « Le paquet » ; `kKernelsVersion` = 2.
