@@ -73,4 +73,8 @@ inline std::expected<void, Refusal> cuda_check(cudaError_t error, std::string_vi
   return std::unexpected(cuda_refusal(error, call));
 }
 
+// Événement que l'hôte attend (cudaEventSynchronize) : le fil dort au lieu de tourner dans le pilote
+// (A32-11). Les événements seulement interrogés ou attendus par un flux gardent cudaEventDisableTiming.
+constexpr unsigned kHostWaitedEvent = cudaEventDisableTiming | cudaEventBlockingSync;
+
 }  // namespace ajp::gpu::cuda

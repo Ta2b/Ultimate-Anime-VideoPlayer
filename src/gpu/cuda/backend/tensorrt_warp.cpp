@@ -160,8 +160,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::flow_max_start(const Moti
     if (ready)
       ready =
           cuda_check(cudaMallocHost(reinterpret_cast<void**>(&slot.host), kHistogramBytes), "cudaMallocHost");
-    if (ready)
-      ready = cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
+    if (ready) ready = cuda_check(cudaEventCreateWithFlags(&slot.done, kHostWaitedEvent), "cudaEventCreate");
   }
   if (ready) ready = order({motion.flow.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready) ready = cuda_check(cudaMemsetAsync(slot.device, 0, kHistogramBytes, stream_), "cudaMemsetAsync");

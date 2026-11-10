@@ -161,7 +161,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   cuda_warn(cudaDriverGetVersion(&backend->driver_version_), "cudaDriverGetVersion");
   if (auto ok = backend->create_lanes(); !ok) return std::unexpected(ok.error());
   for (Held& held : backend->held_) {
-    if (auto ok = cuda_check(cudaEventCreateWithFlags(&held.done, cudaEventDisableTiming), "cudaEventCreate");
+    if (auto ok = cuda_check(cudaEventCreateWithFlags(&held.done, kHostWaitedEvent), "cudaEventCreate");
         !ok) {
       return std::unexpected(ok.error());
     }
