@@ -239,6 +239,12 @@ std::optional<RelaunchTarget> take_relaunch(PlayOptions& options, const PlayerPa
   return target;
 }
 
+// A33-02 : SDL coupe l'économiseur dès son ouverture ; l'accueil et l'assistant le laissent agir, la
+// lecture le coupe pendant qu'une vidéo avance (sleep_watch.h).
+void allow_screensaver() {
+  if (!SDL_EnableScreenSaver()) log_channel("app")->warn("économiseur d'écran : {}", SDL_GetError());
+}
+
 // Un avis de plus devant ceux de la vidéo qui s'ouvre, une fois : first est vidé.
 void announce_first(i18n::Translated& notice, i18n::Translated& first) {
   if (first.empty()) return;
@@ -310,9 +316,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       .screen_stamps = options.stats ? std::filesystem::path(*options.stats).replace_extension(".screen.tsv")
                                      : std::filesystem::path()});
   if (!screen) return std::unexpected(std::move(screen.error()));
-  // A33-02 : SDL coupe l'économiseur dès son ouverture ; l'accueil et l'assistant le laissent agir, la
-  // lecture le coupe pendant qu'une vidéo avance (sleep_watch.h).
-  if (!SDL_EnableScreenSaver()) log->warn("économiseur d'écran : {}", SDL_GetError());
+  allow_screensaver();
   auto ui = PlayerUi::create((*screen)->window(), given ? options.file.filename().string() : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
   note_ignored_keys((*ui)->controls());
@@ -407,13 +411,12 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   std::shared_ptr<BackendLibrary> library;       // ouverte à la première vidéo, gardée pour les suivantes
   std::optional<core::EngineId> library_wanted;  // le moteur préféré quand elle a été ouverte
   // La pré-analyse des plans (chain_shots.h) et son cache : seule la vidéo lue s'analyse.
-  ShotWork shots{.cache_dir = paths::shot_cache(paths)};
+  ShotWork shots = shot_work(paths::shot_cache(paths), options);
   // P3.10, décisions 6 et 10 : un étage refusé ou annulé (« Annuler et regarder ») laisse la vidéo jouer sans
   // lui ; le refus vaut pour la séance, l'annulation pour sa vidéo (stage_fallback.h). play.toml n'en garde
   // rien.
   StageMemory stage_memory;
   i18n::Translated engine_fallback;  // le moteur choisi remplacé à l'ouverture : à dire sur la vidéo (A31-03)
-  if (options.probe_nvdec) shots.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
   // PlayFile : l'instant et la pause du fichier suivant, à la place de la reprise.
   std::optional<std::int64_t> forced_start;
   bool forced_paused = false;
@@ -567,7 +570,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                   .next_key = next_key,
                   .engines = std::move(*engines),
                   .display = window_display((*screen)->window())};
-    player.shots = &shots;
+    player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     player.stages = &stage_memory;
     {
       // « Me prévenir » : une version plus récente vue par la dernière vérification, annoncée une fois par
@@ -655,7 +658,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // mesure la machine seule, puis la lecture reprend avec ce qu'elle a trouvé.
       if ((*outcome)->calibrate) {
         auto calibrated = calibrate_on_screen(player.screen, player.ui, player.paths,
-                                              player.settings_path.parent_path(), settings, true);
+                                              player.settings_path.parent_path(), settings);
         if (!calibrated) {
           player.quit = true;
           break;

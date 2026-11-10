@@ -43,12 +43,9 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
                                                std::size_t& next_key, SnapshotPlan& snapshot);
 
 // La calibration de la machine sur cette fenêtre, une barre de chargement et « Annuler et regarder » : les
-// réglages calibrés, base (préréglage Auto) si elle échoue ou s'annule, rien si la fenêtre se ferme.
-// keep_base (« Refaire le banc » en lecture, A29-07) : une annulation ou un échec rend base tel quel, la
-// chaîne qui jouait, au lieu d'un préréglage Auto que la réouverture ne referait pas.
+// réglages calibrés, base tel quel si elle échoue ou s'annule, rien si la fenêtre se ferme.
 std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi& ui, const PlayerPaths& paths,
-                                                const std::filesystem::path& data_dir, PlaySettings base,
-                                                bool keep_base = false);
+                                                const std::filesystem::path& data_dir, PlaySettings base);
 
 // Les bibliothèques de backend du poste, par préférence : les téléchargées d'abord, puis celles
 // livrées ou de l'arbre de construction (présentes ou non).

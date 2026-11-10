@@ -114,8 +114,8 @@ constexpr std::array kSoundPage{
     Entry{"Original (no processing)", "Fidèle (aucun traitement)"},
     Entry{"Output device", "Appareil de sortie"},
     Entry{"Own profile for this device", "Profil propre à cet appareil"},
-    Entry{"Positive delays the sound. Ctrl+click the slider to type a value (up to ±10,000 ms).",
-          "Positif : le son est retardé. Ctrl+clic sur le curseur pour saisir une valeur (jusqu'à ±10 000 "
+    Entry{"Positive delays the sound. Ctrl+click the slider to type a value (up to ±5,000 ms).",
+          "Positif : le son est retardé. Ctrl+clic sur le curseur pour saisir une valeur (jusqu'à ±5 000 "
           "ms)."},
     Entry{"Profile", "Profil"},
     Entry{"Rear level", "Niveau des arrières"},

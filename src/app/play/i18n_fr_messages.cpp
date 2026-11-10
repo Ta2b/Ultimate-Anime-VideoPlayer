@@ -114,8 +114,6 @@ constexpr std::array kMessages{
     Entry{"Paused after sleep", "En pause après la veille"},
     Entry{"The graphics card stopped responding: the player restarted",
           "La carte graphique ne répondait plus : le lecteur a redémarré"},
-    Entry{"Machine calibration failed: chain unchanged (see log)",
-          "Échec de la calibration de la machine : chaîne inchangée (voir le journal)"},
     Entry{"{} unavailable: {} is used, slower (Settings > General > Engines)",
           "{} indisponible : {} à sa place, plus lent (Paramètres > Général > Moteurs)"},
     Entry{"Playback reopens at the same spot and prepares these engines again.",

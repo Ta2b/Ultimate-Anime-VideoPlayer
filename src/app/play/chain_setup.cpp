@@ -161,6 +161,10 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
               .output_height = c.work.height * kSpanFactor,
               .span = c.engine != nullptr,
               .rife_loaded = c.interpolates()};
+  c.opened.drba = c.drba != nullptr;
+  c.opened.drba_fused = c.opened.drba && c.drba_fused;
+  c.opened.drba_motion = c.opened.drba && c.drba_motion;
+  c.opened.drba_fused_capable = c.backend != nullptr && c.backend->capabilities().drba_fused;
   c.opened.shape = {
       .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}),
       .warp_after_span =

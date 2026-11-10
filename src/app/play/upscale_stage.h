@@ -180,7 +180,13 @@ class UpscaleStage final : public RingStage {
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
   std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                          bool measure);
-  std::expected<void, Refusal> settle_after_scores();
+  // timed : l'attente hôte de la relecture va au profil de fin (keep_scores_wait).
+  std::expected<void, Refusal> settle_after_scores(bool timed = true);
+  void keep_scores_wait(std::int64_t waited_us);
+  // pts(b) − pts(a), ou 0 si l'une des deux images n'a pas de date.
+  static constexpr std::int64_t pts_gap_us(std::int64_t a_us, std::int64_t b_us) {
+    return a_us != kNoPts && b_us != kNoPts ? b_us - a_us : 0;
+  }
   std::expected<void, Refusal> interpolate_drba(std::uint32_t output);
   // Variante mouvement : la passe rend flot et masque, puis le warp de a et b (agrandies si spanned, de
   // travail sinon) dans out.
@@ -220,6 +226,7 @@ class UpscaleStage final : public RingStage {
     std::int64_t pts_us = 0;
   };
   std::vector<PendingStats> stats_pending_;
+  std::uint64_t stats_dropped_ = 0;  // relectures abandonnées (A42-18), journalisées une fois
   void analyze_source(const DecodedFrame& frame);
   bool looks_ahead() const { return interpolates() && !drba(); }
   // Retard mesuré des images de sortie (FrameLatency) ; 0 sans mesure.

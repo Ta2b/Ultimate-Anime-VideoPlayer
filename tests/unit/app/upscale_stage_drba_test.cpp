@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -87,6 +88,34 @@ TEST_CASE("Étage gpu : DistilDRBA ne lit pas l'image d'après une coupe que seu
     const bool read_next = std::ranges::count(pairs, std::pair<std::uint32_t, std::uint32_t>{3, 4}) > 0;
     CHECK(read_next == !known);
   }
+}
+
+TEST_CASE("Étage gpu : DistilDRBA n'ingère pas une image suivante d'une autre taille", "[app][stage]") {
+  // A09-04 : la source rétrécit à l'image 3. L'image 2 sort sans lire la 3, et c'est la 3 qui rapporte
+  // SourceResized, le refus qui rouvre la chaîne ; avant, l'ingestion de la 3 comme « image d'après »
+  // échouait sur la 2.
+  Rig rig;
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  rig.start(std::move(s));
+  rig.feed(1, 2);
+  REQUIRE(rig.push(test::host_frame(3, kWidth / 2, kHeight / 2, 3 * kPeriodUs, 0)));
+  // DistilDRBA attend l'image suivante avant de traiter la 3.
+  REQUIRE(rig.push(test::host_frame(4, kWidth / 2, kHeight / 2, 4 * kPeriodUs, 0)));
+  std::vector<Refusal> reported;
+  for (int tries = 0; tries < 500 && reported.empty(); ++tries) {
+    rig.release_all();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    reported = rig.reported();
+  }
+  rig.stage.reset();
+  REQUIRE(reported.size() == 1);
+  CHECK(reported.front().code == RefusalCode::SourceResized);
+  CHECK(rig.backend.count("ingest 3") == 0);
+  const std::vector<std::string> shape = shape_of(rig.sink.frames());
+  REQUIRE_FALSE(shape.empty());
+  CHECK(shape.back() == "2");
 }
 
 TEST_CASE("Étage gpu : en lecture, DistilDRBA écrit b une fois quand (b, après) est tenu, sans la source",

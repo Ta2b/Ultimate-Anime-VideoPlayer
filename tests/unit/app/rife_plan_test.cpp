@@ -92,4 +92,22 @@ TEST_CASE("RIFE : le score de coupe est rapporté à la zone hors bandes noires 
   CHECK(pair_cut(scope));
 }
 
+TEST_CASE("RIFE : le plancher des plans se compare au score rapporté et ne défait pas une coupe mesurée",
+          "[app][rife]") {
+  // A09-22. En 2,39:1, une coupe connue des plans à 0,07 brut vaut 0,095 hors bandes : au-dessus du plancher.
+  PairFacts scope = moving(4);
+  scope.known_cut = true;
+  scope.scores->scene_score = 0.07;
+  CHECK_FALSE(pair_cut(scope));  // sans bandes, 0,07 reste un effet
+  scope.useful_area = 0.74;
+  CHECK(pair_cut(scope));
+  // Zone utile de 0,64 : 0,08 brut vaut 0,125. Plans et mesure disent « coupe », la réponse aussi.
+  PairFacts window = moving(4);
+  window.known_cut = true;
+  window.scores->scene_score = 0.08;
+  window.useful_area = 0.64;
+  CHECK(measured_cut(window));
+  CHECK(pair_cut(window));
+}
+
 }  // namespace ajp::app::play

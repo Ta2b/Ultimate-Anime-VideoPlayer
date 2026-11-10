@@ -132,3 +132,21 @@ ouverture, `player_run.cpp` décide avec `system_hdr` (`src/app/play/host_facts.
 
 Pendant la lecture, l'état est relu toutes les 2 s : allumer ou couper le HDR du système bascule la sortie en
 direct, sans rouvrir la chaîne. Le pic visé (`hdr.peak`, avancé) reste un réglage.
+
+## Plans et flashs (pré-analyse)
+
+La pré-analyse (`media/shot_probe.h`) découpe la vidéo en plans devant la lecture ; le grade y lit la lumière de
+chaque plan, l'interpolation ses coupes (`--shot-cuts`, donc aussi sans grade).
+
+- **Découpe** (`media/shot_cutter.cpp`). Une coupe est un saut plus grand que 0,28, ou que 2,5 fois le mouvement
+  récent. Ce mouvement se mesure entre dessins distincts : en animation tenue sur deux ou trois images, un
+  panoramique reste un plan. Un saut attend trois images avant d'être jugé : un éclair de une à trois images
+  reste dans son plan.
+- **Flashs** (`media/flash_guard.h`, UIT-R BT.1702-2). Plus de trois flashs par seconde, chacun d'au moins 20 cd/m²
+  sur un quart de l'écran, l'image sombre sous 160 cd/m², en lumière de sortie du grade : le pic du grade tombe à
+  250 nits, jusqu'à une seconde après le dernier. La pré-analyse marque ces séquences d'avance, le plafond les
+  prend dès leur première transition ; sans elle, l'analyse à l'ingestion le pose après ce qu'elle a vu
+  (875 ms à 4 Hz). Rien en sortie SDR. Le plafond retire l'amplification du grade, il ne rend pas sûre une
+  source déjà dangereuse.
+- **Cache** (`media/shot_cache.h`). Un fichier `.shots` par vidéo, avec la version de l'analyse et le chemin de
+  décodage (logiciel ou NVDEC réduit) : un fichier d'une autre version se refait.
