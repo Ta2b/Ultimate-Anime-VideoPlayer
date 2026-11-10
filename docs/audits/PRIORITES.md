@@ -480,18 +480,18 @@ Décision 11 : plus de plafond à 60 Hz sur batterie, le plafond est toujours le
 | 7 | A12-03 | Majeur | `src/core/vsync_phase.h:2-5` | Phase des vsyncs apprise sur le retour de `swap_buffers` au niveau Open (à confirmer sous Windows) | Corrigé |
 | 8 | A24-02 | Majeur | `src/app/play/controls.cpp:167-174` | L'interface déclenche des présentations hors cadence pendant la lecture | Corrigé |
 | 9 | A10-03 | Mineur | `src/app/play/ring_watcher.cpp:474` | Le veilleur de l'anneau sort sans un mot sur une erreur de `vkWaitSemaphores` (GPU-10) | Corrigé |
-| 10 | A10-04 | Mineur | `src/app/play/placebo_open.cpp:323` | Attentes sans délai sur un GPU bloqué (GPU-17) |  |
-| 11 | A10-05 | Mineur | `src/app/play/placebo_screen.cpp:522` | Rien ne dessine pendant la boucle modale de Windows |  |
+| 10 | A10-04 | Mineur | `src/app/play/placebo_open.cpp:323` | Attentes sans délai sur un GPU bloqué (GPU-17) | Corrigé : un garde de 60 s sur le démontage du GPU à la fermeture ; passé ce délai le lecteur le dit au journal et sort (code 75) au lieu de rester sans fenêtre (test du garde avec une horloge courte) |
+| 11 | A10-05 | Mineur | `src/app/play/placebo_screen.cpp:522` | Rien ne dessine pendant la boucle modale de Windows | Non corrigé : la cause se lit (la boucle modale de Windows retient SDL_PollEvent, donc la boucle du lecteur), mais le remède fait tourner un tour de lecture depuis un observateur d'événements SDL, dans run_chain, et rien ne peut l'exercer hors de Windows |
 | 12 | A10-06 | Mineur | `src/app/play/placebo_feedback.cpp:241` | Le niveau de retour ne retombe jamais quand rien ne revient | Corrigé |
-| 13 | A10-07 | Mineur | `src/app/play/placebo_feedback.cpp:378` | Sous Windows, domaine d'horloge `CLOCK_MONOTONIC` qui n'y existe pas |  |
-| 14 | A10-08 | Mineur | `src/app/play/placebo_screen.cpp:569` | Image acquise jamais soumise sur les sorties en erreur |  |
+| 13 | A10-07 | Mineur | `src/app/play/placebo_feedback.cpp:378` | Sous Windows, domaine d'horloge `CLOCK_MONOTONIC` qui n'y existe pas | Corrigé d'après le code : sous Windows le calage du domaine local se fait contre le compteur de performance (l'horloge de host_now_us), converti de tics en ns ; avant il demandait CLOCK_MONOTONIC, absent, et le niveau timing ne datait rien (test de la conversion) |
+| 14 | A10-08 | Mineur | `src/app/play/placebo_screen.cpp:569` | Image acquise jamais soumise sur les sorties en erreur | Corrigé d'après le code : une image de la swapchain acquise et jamais soumise (sortie de show sur une erreur) est soumise au tour suivant avant d'en acquérir une autre, avec une ligne au journal |
 | 15 | A10-09 | Mineur | `src/app/play/placebo_ring.cpp:229` | `retire` ignore l'échec de `hand_to_cuda` | Corrigé |
 | 16 | A10-10 | Mineur | `src/app/play/placebo_screen.cpp:632` | `path::string()` dans les instantanés | Corrigé ; Dette (34) |
 | 17 | A10-11 | Mineur | `src/app/play/placebo_open.cpp:275` | Cache des shaders lu sans plafond, `.part` jamais purgés | Corrigé |
 | 18 | A10-13 | Mineur | `tests/unit/app/present_level_test.cpp` | Aucun test des chemins dégradés de la présentation |  |
 | 19 | A10-14 | Mineur | `src/app/play/placebo_screen.cpp:464-470` | `present_us` et `queue_wait_us` sont le retour de `swap_buffers`, pas un vsync (rend inopérante la vérification d'A12-03) | Corrigé en partie : commentaires et phase des vsyncs ; shown_at_us_ et les intervalles restent sur le retour de swap_buffers |
-| 20 | A10-15 | Mineur | `src/app/play/placebo_screen.cpp:328` | Présentation plafonnée vers 127 i/s à 165 Hz, RIFE comme DistilDRBA, cause à mesurer |  |
-| 21 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre |  |
+| 20 | A10-15 | Mineur | `src/app/play/placebo_screen.cpp:328` | Présentation plafonnée vers 127 i/s à 165 Hz, RIFE comme DistilDRBA, cause à mesurer | Non corrigé : la cause n'est pas lisible dans le code, il faut la mesure |
+| 21 | A10-18 | Mineur | `src/app/play/placebo_snapshot.cpp:45` | Instantané SDR en sRGB, pas dans l'espace de la fenêtre | Corrigé : l'instantané d'une fenêtre SDR est rendu dans l'espace de la fenêtre, plus toujours en sRGB ; une fenêtre HDR sans « .pq.ppm » reste en sRGB (même image qu'avant sous lavapipe, surface sRGB) |
 | 22 | A10-19 | Mineur | `src/app/play/display_contract.cpp:85` | Contrat 203/1000 par défaut écrit au journal comme s'il avait été lu | Corrigé |
 | 23 | A11-03 | Mineur | `src/app/play/display_edid.cpp:421-429` | Écran choisi par sous-chaîne du nom : deux écrans du même modèle confondus |  |
 | 24 | A11-04 | Mineur | `src/app/play/system_peak.cpp:85-108` | Entrée KWin choisie par le seul connecteur | Corrigé |
