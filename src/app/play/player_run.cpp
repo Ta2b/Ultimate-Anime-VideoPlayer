@@ -161,10 +161,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
-  if (is_gmfss(settings.motion_engine)) {  // débranché de la lecture (settings.h, offered)
-    log->info("interpolation {} : débranchée de la lecture, RIFE à sa place", label(settings.motion_engine));
-    settings.motion_engine = MotionEngine::Rife;
-  }
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
@@ -174,6 +170,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
+  const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)
   auto prepared = prepare_chain(p, settings, p.options.bench_out ? nullptr : p.stages);
   if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
     // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
@@ -247,7 +244,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) return std::unexpected(std::move(pipeline.error()));
   if ((*pipeline)->chapters_flattened() && p.notice.empty())
-    p.notice = i18n::ui_tr("Ordered chapters are not supported: playing in file order");
+    p.notice = i18n::ui_tr("Chapters stored in other files are not played (linked opening or ending)");
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
@@ -770,8 +767,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
-  // Ordre d'arrêt : les slots rendus, les threads arrêtés, le moteur avant son backend, le
-  // backend (et ses imports du ring) avant l'écran qui possède le ring.
+  // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
   p.stopped_at_us = std::max<std::int64_t>(session.view().position_us, 0);
   session.end();
   out.flush();

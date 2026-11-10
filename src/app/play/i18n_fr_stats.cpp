@@ -9,6 +9,8 @@ namespace {
 constexpr std::array kStatsTexts{
     Entry{" (+ {} cuts and held drawings)", " (+ {} coupes et dessins tenus)"},
     Entry{" fused", " fusionné"},
+    Entry{" · full: the driver may spill into system memory",
+          " · pleine : le pilote peut déborder en mémoire système"},
     Entry{" · heavy scene", " · scène lourde"},
     Entry{" · locked to the display {:+.3f} %", " · calée sur l'écran {:+.3f} %"},
     Entry{" · predicted ×{}", " · prédit ×{}"},
@@ -32,7 +34,6 @@ constexpr std::array kStatsTexts{
     Entry{"Stop the export", "Arrêter l'export"},
     Entry{"Continue", "Continuer"},
     Entry{"Last optimization: {}", "Dernière optimisation : {}"},
-    Entry{"Light", "Léger"},
     Entry{"Open a video: the player prepares Performance mode on its frames.",
           "Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images."},
     Entry{"True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit).",

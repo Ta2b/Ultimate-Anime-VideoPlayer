@@ -24,8 +24,6 @@ namespace ajp::app::play {
 constexpr std::uint32_t free_instants_limit(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
-    case MotionEngine::Gmfss:  // ancien play.toml : RIFE à sa place
-    case MotionEngine::GmfssUnion:
     case MotionEngine::DistilDrba:
       return static_cast<std::uint32_t>(core::kMaxInstantsPerPair);
     case MotionEngine::Apple:

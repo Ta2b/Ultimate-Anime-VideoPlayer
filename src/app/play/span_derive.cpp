@@ -9,6 +9,7 @@
 
 #include "app/play/i18n.h"
 #include "app/play/span_int8.h"
+#include "core/file_sync.h"
 #include "gpu/span_fp8/hard_cases.h"
 #include "gpu/span_fp8/onnx_weights.h"
 #include "gpu/span_fp8/package.h"
@@ -31,6 +32,10 @@ std::expected<void, Refusal> write_file(const std::filesystem::path& path, std::
   file.close();
   if (!file)
     return refuse(RefusalCode::IoFailed, std::format("{} : écriture impossible", prepare::utf8_path(path)));
+  if (const std::error_code synced = core::sync_file(path)) {
+    return refuse(RefusalCode::IoFailed, std::format("{} : écriture sur le disque impossible ({})",
+                                                     prepare::utf8_path(path), synced.message()));
+  }
   return {};
 }
 
@@ -41,6 +46,10 @@ class Swap {
   explicit Swap(std::filesystem::path target)
       : target_(std::move(target)), part_(partial_of(target_)), old_(target_) {
     old_ += ".old";
+    // Le « .old » d'une opération interrompue (coupure entre deux renommages) : seul le processus qui
+    // l'avait créé le retirait, il restait sur le disque (A02-14).
+    std::error_code error;
+    std::filesystem::remove(old_, error);
   }
   Swap(const Swap&) = delete;
   Swap& operator=(const Swap&) = delete;
@@ -121,7 +130,9 @@ std::expected<void, Refusal> commit_derivation(const std::filesystem::path& pack
     receipt_swap.rollback();
     return why;
   };
-  // Tout s'écrit d'abord sous un nom provisoire : un disque plein ou une coupure laisse l'ancien état entier.
+  // Tout s'écrit d'abord sous un nom provisoire, sur le disque avant son renommage (P5.11) : un disque
+  // plein ou une coupure laisse l'ancien état entier, jamais un paquet ou un reçu vide sous son nom
+  // définitif (A02-14).
   if (passed) {
     if (auto ok = write_file(package_swap.part(), package_bytes); !ok) return fail(ok);
   }
@@ -131,6 +142,8 @@ std::expected<void, Refusal> commit_derivation(const std::filesystem::path& pack
     if (auto ok = package_swap.install(); !ok) return fail(ok);
   }
   if (auto ok = receipt_swap.install(); !ok) return fail(ok);
+  core::sync_directory(receipt.parent_path());
+  if (package.parent_path() != receipt.parent_path()) core::sync_directory(package.parent_path());
   package_swap.finish();
   receipt_swap.finish();
   // Refusé : le reçu dit « passed = false », et le paquet d'une dérivation d'avant n'y correspond plus.
@@ -396,8 +409,7 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
   if (!supported) {
     prepare.note =
         i18n::tr("Performance mode (FP8) is not available: ") +
-        (unavailable.empty() ? std::string(i18n::tr(
-                                   "it needs an RTX 40 (Ada) or RTX 50 (Blackwell) with the TensorRT engine"))
+        (unavailable.empty() ? std::string(i18n::tr("it needs an RTX 40 (Ada) with the TensorRT engine"))
                              : unavailable) +
         ".";
     return prepare;

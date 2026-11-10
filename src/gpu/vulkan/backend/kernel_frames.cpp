@@ -401,11 +401,7 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
   if (!dst) return std::unexpected(dst.error());
   auto color = detail::color_spec(frame.color);
   if (!color) return std::unexpected(color.error());
-  kernels::Filter chroma = spec.chroma;
-  if (spec.rife_conversion) {
-    *color = {.matrix = kernels::kRifeMatrix, .range = color->range, .siting = kernels::kRifeSiting};
-    chroma = kernels::kRifeChromaFilter;
-  }
+  const kernels::Filter chroma = spec.chroma;
   // Tenseur plus petit que l'image : réduction fusionnée, l'image entière passe par un tenseur
   // F32 de l'enregistrement puis par les tables de reduce_weights.
   const bool reduced =

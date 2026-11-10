@@ -116,25 +116,35 @@ std::span<const std::byte> mov_text_payload(std::span<const std::byte> packet) {
   return packet.subspan(2, std::min(length, packet.size() - 2));
 }
 
-std::vector<subs::AttachFont> attached_fonts(std::span<const media::TrackInfo> tracks) {
-  std::vector<subs::AttachFont> fonts;
+AttachedFonts attached_fonts(std::span<const media::TrackInfo> tracks, std::size_t max_bytes) {
+  AttachedFonts out;
+  std::size_t total = 0;
   for (const media::TrackInfo& track : tracks) {
     if (!media::is_font(track) || !track.parameters) continue;
     const auto extra = track.parameters->extradata();
-    fonts.push_back(subs::AttachFont{.name = track.filename, .data = {extra.begin(), extra.end()}});
+    if (extra.size() > max_bytes - total) {
+      ++out.dropped;
+      continue;
+    }
+    total += extra.size();
+    out.fonts.push_back(subs::AttachFont{.name = track.filename, .data = {extra.begin(), extra.end()}});
   }
-  return fonts;
+  return out;
+}
+
+subs::TrackPacket subs_packet(const media::Packet& packet, bool mov_text) {
+  auto bytes = packet.data();
+  if (mov_text) bytes = mov_text_payload(bytes);
+  subs::TrackPacket out{.track = subs_track_id(packet.track),
+                        .packet = {.start_us = packet.pts_us, .duration_us = packet.duration_us, .data = {}}};
+  out.packet.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  return out;
 }
 
 bool SubsBridge::try_push(media::Packet&& packet) {
   if (packet.track != track_.load()) return true;  // piste non choisie : écartée
   if (packet.pts_us == kNoPts) return true;        // sans instant, rien à afficher : écarté
-  auto bytes = packet.data();
-  if (std::ranges::contains(mov_text_, packet.track)) bytes = mov_text_payload(bytes);
-  subs::TrackPacket out{.track = subs_track_id(packet.track),
-                        .packet = {.start_us = packet.pts_us, .duration_us = packet.duration_us, .data = {}}};
-  out.packet.data.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-  if (inbox_->try_push(std::move(out))) return true;
+  if (inbox_->try_push(subs_packet(packet, std::ranges::contains(mov_text_, packet.track)))) return true;
   refused_.store(true);
   return false;
 }

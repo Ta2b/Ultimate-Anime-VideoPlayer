@@ -46,9 +46,10 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
                                                  const std::filesystem::path& bundled = {});
 // Les deux versions de RIFE que le menu propose, de la plus fine à la plus légère : 4.25 (7,1 ms par passe à
 // 720p sur une 4070 Ti) et 4.22 lite, plus légère (retours sur la v0.5.1 : « catalogue réduit à 4.22 lite
-// et 4.25 »). Les exports ONNX de vs-mlrt à 11 plans d'entrée, convertis en FP16 à îlots FP32
-// (tools/rife/convert_rife_fp16.py), sous ces noms. --rife-model lit encore tout autre fichier, pour les
-// essais.
+// et 4.25 »). Les exports ONNX de vs-mlrt à 11 plans d'entrée, en FP16 tels que convertis par
+// animejanai-inference (tools/release/fetch-models.sh), sous ces noms : la grille y est en FP32, mais une
+// partie des Resize lit du FP16, ce que tools/rife/convert_rife_fp16.py éviterait (A46-06, à mesurer).
+// --rife-model lit encore tout autre fichier, pour les essais.
 inline constexpr std::array<std::string_view, 2> kRifeCatalogue{"rife_v4.25.onnx", "rife_v4.22_lite.onnx"};
 
 // Le modèle par défaut, le premier présent dans cet ordre : 4.25 sur une RTX ; 4.22 lite, plus légère, sur

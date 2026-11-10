@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <future>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@
 #include "app/play/default_player.h"
 #include "app/play/settings.h"
 #include "app/play/span_derive.h"
+#include "app/play/updater.h"
 
 namespace ajp::app::play {
 
@@ -25,43 +27,6 @@ struct SystemNote {
   // L'action en cours sur un autre fil : xdg-mime et consorts peuvent durer des secondes, et le
   // thread de présentation ne les attend pas.
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
-};
-
-struct BenchState;  // l'essai en cours et de quoi le défaire (settings_system.cpp ; auto_bench.h le décrit)
-
-// Le bouton « Calibrer cette machine » : l'essai en cours (étapes, progression, annulation), son résultat
-// en une phrase, et de quoi défaire les réglages posés.
-struct BenchNote {
-  std::string text;  // le résultat en une phrase, ou ce qui a manqué
-  bool refused = false;
-  std::shared_ptr<BenchState> state;
-  ~BenchNote();
-  BenchNote();
-  BenchNote(const BenchNote&) = delete;
-  BenchNote& operator=(const BenchNote&) = delete;
-  // Arrête l'essai en cours (le panneau qui disparaît).
-  void stop();
-};
-
-// Ce que la page sait de la machine et de la vidéo ouverte.
-struct BenchContext {
-  int display_height = 1080;
-  double display_hz = 60.0;
-  int source_height = 1080;
-  double source_fps = 23.976;
-  SpanPrepare span;        // la préparation du mode Performance (étape 4) : offerte avec une vidéo ouverte
-  std::string fp8_reason;  // pourquoi le mode Performance est impossible ici (vide : possible)
-  // Le dossier des réglages (celui de play.toml : bench.toml, settings.toml et la séquence de test y sont).
-  // PlayerPlace::data est la racine des données de l'utilisateur, un ou deux niveaux plus haut : y écrire le
-  // résultat le rendait introuvable (« jamais évaluée ») et les essais perdaient les moteurs choisis.
-  std::filesystem::path data_dir;
-};
-
-enum class BenchEvent : std::uint8_t {
-  None,
-  Started,  // l'optimisation vient de partir : l'appelant met la lecture en pause
-  Applied,  // elle a fini : le brouillon porte les réglages recommandés, à appliquer
-  Undone,   // « Annuler ces réglages » : le brouillon est revenu à l'état d'avant
 };
 
 // Vidéo > Post-traitement (réglages avancés) : « Refaire la préparation sur cette vidéo » (span_derive.h),
@@ -81,15 +46,6 @@ bool start_span_prepare(const SpanPrepare& prepare, PrepareNote& note);
 // vidéo ». Discrète : réglages avancés seulement.
 void span_prepare_section(const SpanPrepare& prepare, PrepareNote& note);
 
-// La page « Calibrer cette machine » : un bouton, l'étape en cours, une barre, Annuler, le résultat. draft
-// : les réglages du panneau, que l'optimisation règle (préréglage Auto sur la mesure) ou que « Annuler ces
-// réglages » rétablit (avec le bench.toml d'avant). Une optimisation tourne : le panneau demande des images
-// même en pause, pour que l'étape et la barre avancent.
-bool bench_running(const BenchNote& bench);
-
-BenchEvent bench_page(const PlayerPlace& place, const std::filesystem::path& video,
-                      const BenchContext& context, BenchNote& bench, PlaySettings& draft);
-
 // Général > Application : le mode, le canal, la fréquence, « Vérifier maintenant », le retour arrière.
 // Le panneau qui se ferme arrête la vérification ou le téléchargement en cours (P2.6) : le futur attendu par
 // le destructeur rend la main au lieu de tenir la fermeture jusqu'à 30 minutes.
@@ -98,6 +54,8 @@ struct UpdateNote {
   bool refused = false;
   std::shared_ptr<std::stop_source> stop = std::make_shared<std::stop_source>();
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;  // détruit avant stop
+  std::optional<UpdateState> state;  // update.toml lu par la page, relu au plus toutes les deux secondes
+  std::chrono::steady_clock::time_point read_at;
   UpdateNote() = default;
   ~UpdateNote() { stop->request_stop(); }
   UpdateNote(const UpdateNote&) = delete;

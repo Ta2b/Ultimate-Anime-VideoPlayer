@@ -294,6 +294,24 @@ TEST_CASE("TrtexecBuilder : un poids externe qui sort du dossier par un lien sym
   CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
         RefusalCode::ModelMismatch);
 }
+
+TEST_CASE("TrtexecBuilder : le même lien est refusé pour un modèle nommé sans dossier (A04-05)",
+          "[prepare][builder]") {
+  Bench bench("ok", {.external = {"poids.bin"}});
+  Steps steps;
+  auto progress = steps.progress();
+  test::TempDir outside;
+  test::write_file(outside.path() / "secret.bin", "hors du dossier");
+  test::fs::create_symlink(outside.path() / "secret.bin", bench.model.onnx_path.parent_path() / "poids.bin");
+  // « --model=modele.onnx » : le chemin n'a pas de dossier, le dossier courant est celui du modèle.
+  ajp::gpu::ModelSpec bare = bench.model;
+  bare.onnx_path = bench.model.onnx_path.filename();
+  const test::fs::path previous = test::fs::current_path();
+  test::fs::current_path(bench.model.onnx_path.parent_path());
+  const auto built = TrtexecBuilder(bench.config).build(bare, kHd, progress);
+  test::fs::current_path(previous);
+  CHECK(test::refusal(built) == RefusalCode::ModelMismatch);
+}
 #endif
 
 TEST_CASE("TrtexecBuilder : la vérification du moteur peut refuser sa publication", "[prepare][builder]") {
@@ -331,45 +349,6 @@ TEST_CASE("TrtexecBuilder : un ONNX qui n'est pas un fichier est refusé sans ex
   test::fs::remove(bench.model.onnx_path);
   CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
         RefusalCode::ModelUnreadable);
-}
-
-TEST_CASE("TrtexecBuilder : rebuild remplace le moteur refusé par load(), pas un autre",
-          "[prepare][builder]") {
-  Bench bench("ok");
-  const TrtexecBuilder builder(bench.config);
-  Steps steps;
-  auto progress = steps.progress();
-  const auto first = builder.build(bench.model, kHd, progress);
-  REQUIRE(first);
-  // Publié tronqué (son empreinte avec lui) : seul load() le refuse.
-  test::write_file(first->path, "moteur tronqué par une coupure");
-  test::write_file(test::fs::path(first->path.string() + ".sha256"),
-                   sha256_hex("moteur tronqué par une coupure") + "\n");
-  const std::string rejected = sha256_file(first->path).value();
-
-  // Un autre lecteur a refusé d'autres octets : ceux en place se reprennent.
-  REQUIRE(builder.rebuild(bench.model, kHd, progress, sha256_hex("autres octets")));
-  CHECK(bench.builder_calls() == 1);
-  CHECK(test::read_file(first->path) == "moteur tronqué par une coupure");
-
-  const auto second = builder.rebuild(bench.model, kHd, progress, rejected);
-  REQUIRE(second);
-  CHECK(second->path == first->path);
-  CHECK(bench.builder_calls() == 2);
-  CHECK(test::read_file(second->path) == "moteur factice pour " + bench.model.onnx_path.string());
-  CHECK(test::stage_count(bench.cache()) == 0);
-  CHECK(bench.timing_cache() == std::vector<std::string>{"passe", "passe"});  // reçu, puis enrichi
-
-  // Un échec de la reconstruction garde le moteur en place.
-  test::write_file(first->path, "encore tronqué");
-  const TrtexecBuilder refusing(bench.config, [](const test::fs::path&) -> std::expected<void, ajp::Refusal> {
-    return std::unexpected(ajp::Refusal{RefusalCode::BuilderFailed, "désérialisation impossible"});
-  });
-  CHECK(test::refusal(refusing.rebuild(bench.model, kHd, progress, sha256_file(first->path).value())) ==
-        RefusalCode::BuilderFailed);
-  CHECK(test::read_file(first->path) == "encore tronqué");
-  CHECK(test::refusal(builder.rebuild(bench.model, kHd, progress, "pas un sha")) ==
-        RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("TrtexecBuilder : deux demandes simultanées, un seul trtexec", "[prepare][builder]") {

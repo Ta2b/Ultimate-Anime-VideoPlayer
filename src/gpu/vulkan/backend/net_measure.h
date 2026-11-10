@@ -1,11 +1,10 @@
 // Mesures communes aux moteurs de réseaux : médiane d'échantillons, écart entre deux sorties, et le
-// choix de l'unité de calcul d'un runtime de fabricant (OpenVINO : GPU ou NPU ; Core ML : GPU,
-// Neural Engine ou les deux). Chaque unité candidate exécute le réseau sur la même image de test
-// (probe_image) ; le temps qui compte est la médiane de kUnitTimedRuns inférences après chauffe, et
-// sa première sortie est comparée à celle de l'unité de référence. L'accélérateur préféré (NPU,
-// Neural Engine), qui laisse le GPU à la chaîne, à l'interpolation et au rendu, garde le réseau
-// s'il est juste et pas plus lent que kUnitTolerance fois la plus rapide ; sinon la plus rapide
-// des unités justes.
+// choix de l'unité de calcul d'un runtime de fabricant (Core ML : GPU, Neural Engine ou les deux). Chaque
+// unité candidate exécute le réseau sur la même image de test (probe_image) ; le temps qui compte est la
+// médiane de kUnitTimedRuns inférences après chauffe, et sa première sortie est comparée à celle de l'unité
+// de référence. L'accélérateur préféré (NPU, Neural Engine), qui laisse le GPU à la chaîne, à l'interpolation
+// et au rendu, garde le réseau s'il est juste et pas plus lent que kUnitTolerance fois la plus rapide ; sinon
+// la plus rapide des unités justes.
 #pragma once
 
 #include <cstddef>

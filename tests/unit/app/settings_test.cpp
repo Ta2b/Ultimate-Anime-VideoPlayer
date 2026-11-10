@@ -62,14 +62,12 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
-  // P5.2 : GMFSS n'est plus écrit, et un ancien play.toml qui le nomme se lit en RIFE.
-  s.motion_engine = MotionEngine::Gmfss;
-  CHECK(format_settings(s).find("gmfss\"") == std::string::npos);
-  CHECK(parse_settings("[interpolation]\nengine = \"gmfss\"\n")->motion_engine == MotionEngine::Rife);
-  CHECK(parse_settings("[interpolation]\nengine = \"gmfss_union\"\n")->motion_engine == MotionEngine::Rife);
-  CHECK(export_chain(s).motion_engine == MotionEngine::Rife);
-  CHECK(is_gmfss(MotionEngine::GmfssUnion));
-  CHECK_FALSE(is_gmfss(MotionEngine::Rife));
+  // P5.2 : GMFSS est retiré, et un ancien play.toml qui le nomme se lit en RIFE, (A22-18).
+  for (const char* old : {"gmfss", "gmfss_union"}) {
+    const auto read = parse_settings(std::format("[interpolation]\nengine = \"{}\"\n", old));
+    REQUIRE(read);
+    CHECK(read->motion_engine == MotionEngine::Rife);
+  }
   // L'interpolation d'Apple se garde partout ; elle n'est proposée que sur un Mac.
   s.motion_engine = MotionEngine::Apple;
   CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::Apple);
@@ -79,15 +77,12 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK_FALSE(offered(MotionEngine::Apple));
 #endif
   CHECK(offered(MotionEngine::Rife));
-  CHECK_FALSE(offered(MotionEngine::Gmfss));  // débranché de la lecture
-  CHECK_FALSE(offered(MotionEngine::GmfssUnion));
   // Les niveaux du menu : Très rapide, Rapide, Équilibré, puis Apple.
   CHECK(interp_level(MotionEngine::DistilDrba, "") == InterpLevel::VeryFast);
   CHECK(interp_level(MotionEngine::Rife, "rife_v4.22_lite.onnx") == InterpLevel::Fast);
   CHECK(interp_level(MotionEngine::Rife, "rife_v4.25.onnx") == InterpLevel::Balanced);
   CHECK(interp_level(MotionEngine::Apple, "") == InterpLevel::System);
   CHECK_FALSE(interp_level(MotionEngine::Rife, "rife_v4.6.onnx"));
-  CHECK_FALSE(interp_level(MotionEngine::Gmfss, ""));
 }
 
 TEST_CASE("La netteté se garde dans play.toml, bornée de 0 à 100 %, en direct", "[app][settings]") {
@@ -277,6 +272,35 @@ TEST_CASE("Une option d'essai n'entre pas dans play.toml, un changement du menu 
   CHECK(saved.volume == 0.4F);
 }
 
+TEST_CASE(
+    "Options de moteur : --rife-model et --motion, le menu montre le moteur chargé, play.toml n'en garde "
+    "rien (A18-17, A18-09)",
+    "[app][settings]") {
+  PlaySettings file;
+  file.motion_engine = MotionEngine::DistilDrba;
+  file.rife_model = "rife_v4.25.onnx";
+  const std::array<std::string_view, 2> rife{"film.mkv", "--rife-model=/opt/ajp/models/rife_v4.22_lite.onnx"};
+  const auto options = parse_play_options(rife);
+  REQUIRE(options);
+  const PlaySettings started = settings_for(file, *options);
+  CHECK(started.rife_model == "rife_v4.22_lite.onnx");
+  CHECK(started.motion_engine == MotionEngine::Rife);
+  const PlaySettings saved = settings_to_save(started, file, started, *options);
+  CHECK(saved.rife_model == "rife_v4.25.onnx");
+  CHECK(saved.motion_engine == MotionEngine::DistilDrba);
+
+  const std::array<std::string_view, 2> drba{"film.mkv", "--motion=drba"};
+  const auto chosen = parse_play_options(drba);
+  REQUIRE(chosen);
+  PlaySettings rife_file;
+  CHECK(settings_for(rife_file, *chosen).motion_engine == MotionEngine::DistilDrba);
+  CHECK(
+      settings_to_save(settings_for(rife_file, *chosen), rife_file, settings_for(rife_file, *chosen), *chosen)
+          .motion_engine == MotionEngine::Rife);
+  const std::array<std::string_view, 2> wrong{"film.mkv", "--motion=gmfss"};
+  CHECK_FALSE(parse_play_options(wrong));
+}
+
 TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'appliquer", "[app][settings]") {
   const PlaySettings running;
   CHECK(change_between(running, running, true).cost == ChangeCost::None);
@@ -312,13 +336,13 @@ TEST_CASE("Ce qu'un changement demande : direct ou réouverture, dit avant d'app
   PlaySettings heavy = on;
   heavy.rife_model = "rife_v4.26_heavy.onnx";
   CHECK(change_between(on, heavy, true).reason.find("RIFE model") != std::string::npos);
-  // Avec GMFSS, le modèle RIFE ne sert pas : le changer ne recharge rien.
-  PlaySettings gmfss = on;
-  gmfss.motion_engine = MotionEngine::Gmfss;
-  PlaySettings gmfss_heavy = gmfss;
-  gmfss_heavy.rife_model = "rife_v4.26_heavy.onnx";
-  CHECK(change_between(gmfss, gmfss_heavy, true).cost == ChangeCost::Live);
-  CHECK(live_part(gmfss, gmfss_heavy, true).rife_model == "rife_v4.26_heavy.onnx");
+  // Avec l'interpolation d'Apple, le modèle RIFE ne sert pas : le changer ne recharge rien.
+  PlaySettings apple = on;
+  apple.motion_engine = MotionEngine::Apple;
+  PlaySettings apple_heavy = apple;
+  apple_heavy.rife_model = "rife_v4.26_heavy.onnx";
+  CHECK(change_between(apple, apple_heavy, true).cost == ChangeCost::Live);
+  CHECK(live_part(apple, apple_heavy, true).rife_model == "rife_v4.26_heavy.onnx");
   // L'ordre du warp et de SPAN recharge la chaîne qui interpole, et attend sans interpolation.
   PlaySettings before = on;
   before.span_order = SpanOrder::Before;
@@ -479,7 +503,7 @@ TEST_CASE("repères des listes et résolution en français courant", "[settings]
   CHECK(badge_of(Downscale::Hermite) == Badge::Recommended);
   CHECK_FALSE(badge_of(Downscale::Mitchell));
   CHECK_FALSE(badge_of(Downscale::Area));
-  CHECK(label(MotionEngine::Gmfss) == "GMFSS Fortuna");
+  CHECK(label(MotionEngine::DistilDrba) == "DistilDRBA");
 }
 
 TEST_CASE("audio : l'appareil fait l'aller-retour, les anciennes clés du son sont ignorées", "[settings]") {
@@ -565,8 +589,7 @@ TEST_CASE("play.toml garde le mode d'Auto (Rapide par défaut) et refuse une val
 
 TEST_CASE("mode Rapide : instants par paire acceptés par chaque moteur", "[settings][auto][libre]") {
   using namespace ajp::app::play;
-  for (const MotionEngine engine :
-       {MotionEngine::Rife, MotionEngine::Gmfss, MotionEngine::GmfssUnion, MotionEngine::DistilDrba}) {
+  for (const MotionEngine engine : {MotionEngine::Rife, MotionEngine::DistilDrba}) {
     CHECK(free_instants_limit(engine) >= 2);
     CHECK(free_instants_limit(engine) <= ajp::core::kMaxInstantsPerPair);  // la borne du ring
   }

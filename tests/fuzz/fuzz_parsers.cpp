@@ -4,6 +4,7 @@
 // d'AnimeJaNai, la ligne de commande. Chacun lit des octets quelconques sans plantage ni lecture hors du
 // tampon ; certains vérifient en plus une propriété (fuzz_check.h).
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -40,7 +41,11 @@ int ajp::fuzz::onnx(const std::uint8_t* data, std::size_t size) {
 }
 
 int ajp::fuzz::srt(const std::uint8_t* data, std::size_t size) {
-  const std::string utf8 = ajp::subs::to_utf8(text_of(data, size));
+  // Le premier octet choisit un indice de nom de fichier : les branches des encodages hérités (A17-13).
+  constexpr std::array<std::string_view, 8> kHints = {
+      "", "ja", "zh", "zh_TW", "ko", "ru", "chs&jpn.forced", "big5"};
+  const std::string_view hint = size > 0 ? kHints[data[0] % kHints.size()] : std::string_view{};
+  const std::string utf8 = ajp::subs::to_utf8(text_of(data, size), hint);
   std::vector<std::string> skipped;
   if (const auto cues = ajp::subs::parse_srt(utf8, &skipped)) {
     for (const auto& cue : *cues) (void)ajp::subs::srt_text_to_ass(cue.text);

@@ -48,22 +48,19 @@ std::string rife_label(const std::string& file);
 // poses), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
 // entraîné à imiter DRBA, les poses gardées par le réseau lui-même, une image de retard), ou
 // l'interpolation d'Apple (VTFrameRateConversion de VideoToolbox, macOS 15.4, sous le backend Core
-// ML : gpu/system_interpolator.h). Gmfss et GmfssUnion ne restent que pour lire un ancien play.toml : GMFSS
-// Fortuna est retiré des sources (0.10.0), et la chaîne prend RIFE à sa place.
-enum class MotionEngine : std::uint8_t { Rife, Gmfss, GmfssUnion, DistilDrba, Apple };
-inline constexpr int kMotionEngineCount = 5;
-constexpr bool is_gmfss(MotionEngine engine) {
-  return engine == MotionEngine::Gmfss || engine == MotionEngine::GmfssUnion;
-}
+// ML : gpu/system_interpolator.h). GMFSS Fortuna est retiré des sources (0.10.0) : un ancien play.toml qui
+// le nomme (« gmfss », « gmfss_union ») se lit en RIFE (settings_toml.cpp). La valeur numérique n'est
+// écrite nulle part : play.toml porte le nom.
+enum class MotionEngine : std::uint8_t { Rife, DistilDrba, Apple };
+inline constexpr int kMotionEngineCount = 3;
 // Proposé sur ce système : l'interpolation d'Apple sur un Mac seulement. play.toml garde le choix
-// partout ; ailleurs, la chaîne reprend RIFE. GMFSS n'est jamais proposé.
+// partout ; ailleurs, la chaîne reprend RIFE.
 #if defined(__APPLE__)
 inline constexpr bool kAppleOffered = true;
 #else
 inline constexpr bool kAppleOffered = false;
 #endif
 constexpr bool offered(MotionEngine engine) {
-  if (is_gmfss(engine)) return false;
   return kAppleOffered || engine != MotionEngine::Apple;
 }
 std::string_view name(MotionEngine engine);   // « rife », la clé de play.toml
@@ -183,9 +180,10 @@ struct PlaySettings {
   Downscale downscale = Downscale::Hermite;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation
   int rife_factor_den = 1;               // 2 : ×rife_factor / 2 (×1,5 : 3 et 2)
-  // Mode auto : le multiplicateur ×k (entier, jusqu'à rife_factor) suit ce que le GPU tient
-  // (core/auto_rate.h) ; en direct. Par défaut (v0.6) : l'interpolation est en Auto, pour tous les profils et
-  // après le benchmark ; un multiplicateur choisi à la main (liste du menu) la coupe.
+  // Mode auto : le multiplicateur ×k suit ce que le GPU tient (core/auto_rate.h) ; en direct. En Stable,
+  // jusqu'à rife_factor ; en Rapide (auto_free, le défaut), rife_factor ne plafonne rien : le facteur suit
+  // la cadence de l'écran (top_factor, chain_shape.cpp) et seul auto_cap le borne (A22-10). L'Auto est le
+  // défaut ; un multiplicateur choisi à la main (liste du menu) le coupe.
   bool rife_auto = true;
   // Plafond de la cadence de sortie du mode auto, en i/s (60, 120…) ; 0 : celle de l'écran, le maximum.
   int auto_cap = 0;
@@ -244,7 +242,7 @@ struct PlaySettings {
   // Langue de l'interface : « en » ou « fr », celle du système par défaut (default_interface_language) ;
   // prise en direct (app/play/i18n.h).
   std::string language = default_interface_language();
-  // Le dossier où s'installent les moteurs téléchargés (TensorRT, OpenVINO…) et leurs téléchargements ; vide
+  // Le dossier où s'installent les moteurs téléchargés (TensorRT) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.
   std::string engines_dir;
@@ -308,9 +306,9 @@ inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
 inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
-// Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66) : un pic réglable fait
-// toujours une sortie HDR.
 inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
+// Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66 ; tenu par un static_assert de
+// host_facts.cpp) : un pic réglable fait toujours une sortie HDR.
 inline constexpr core::Range<int> kTrueHdrPeak{350, 2000};  // ou 0 : automatique
 inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits

@@ -174,6 +174,10 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
     return failed(e, "cudaMemset");
   if (cudaError_t e = cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking); e != cudaSuccess)
     return failed(e, "cudaStreamCreate");
+  // L'essai écrit dans la zone d'activation partagée de la voie, sur un flux à lui : le travail encore
+  // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue nomme ce moteur
+  // dernier utilisateur de la zone : celui qui y gardait ses tampons les refait.
+  if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
   const auto in = reinterpret_cast<std::uintptr_t>(scratch.input);
   const auto out = reinterpret_cast<std::uintptr_t>(scratch.output);
   const Tensor input = tensor_of(in, 0, kernels::kFusedInputPlanes, h, w);

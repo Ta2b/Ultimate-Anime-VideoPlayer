@@ -143,11 +143,23 @@ changent pas. Seul Apple (flux optique du système, instants imposés) reste en 
 - Statistiques : « Rapide · 87 i/s · limite GPU 78 % · écart service 11,4 ms » (OSD et journal toutes les
   5 s).
 
-## 3. Vérification réelle
+## 3. Vérification réelle (historique, fin octobre 2026)
+
+> **Mesure historique**, prise fin octobre 2026 juste après la loi de #123 (branche `auto-mesure`, fusionnée le
+> 29/10 sur `7f11230`), avant l'ADR 0012 : RTX HDR et GMFSS ont été retirés depuis, et la chaîne a changé
+> (SPAN, RIFE 4.22 lite, grade). Le script du banc (`cmp3.py`) vivait hors du dépôt et est perdu ; le banc
+> du dépôt est `tools/bench/banc.sh`. Ces chiffres ne valent pas pour la chaîne actuelle (A28-21) : ne pas
+> calibrer une décision dessus sans les refaire.
+
+> **Historique (A32-01).** Ces chiffres datent de la chaîne avec RTX HDR par image créée, retirée depuis :
+> le « service de 13 à 16 ms » et les cadences de 60 à 67 i/s ne décrivent plus le lecteur actuel. Ne pas
+> s'en servir pour décider d'une cadence ou d'un moteur. La remesure sur le binaire livré (`linux-release`,
+> par moteur, même scène) est demandée dans `docs/audits/A-CONFIRMER.md` (A32-01) ; son tableau remplacera
+> celui-ci.
 
 Re:Zero 4e saison ép. 18 à 960 s, 75 s, plein écran (QD-OLED 165 Hz VRR armé), RTX 4070 Ti, 1440p de sortie,
 RTX HDR, hauteur de travail 720p, `[auto] preset = 'custom'`, données de test à part (`--data-dir`), sous
-verrou GPU. Banc : `/tmp/claude-1000/pbt/cmp3.py`. Auto = la loi actuelle (`origin/auto-mesure`, #123).
+verrou GPU. Banc : un script hors du dépôt, perdu. Auto = la loi de l'époque (#123).
 
 | | Stable | Rapide |
 | --- | --- | --- |
@@ -173,7 +185,7 @@ pas la mesure de service (la dernière image d'une paire n'est plus forcément l
 | --- | --- | --- | --- |
 | RIFE | 44,5 et 42,2 i/s / 0,57 et 0,63 % | 60,2 et 61,0 i/s / 0,18 et 0,09 % | 7,9 / 28 ms |
 | DistilDRBA ×3 fusionné | 40,7 i/s / 0,76 % (22 manquées, 10 changements) | **67,5 i/s / 0,04 %** (2 sautées, 0 manquée) | 7,7 / 25,3 ms (Auto 8,7 / 42,2) |
-| GMFSS | 24,0 i/s / 3,60 % (65 manquées, 18 changements) | 23,9 et 23,8 i/s / 0,99 % (15 sautées, 3 manquées) | 18,7 / 68 ms (Auto 9,7 / 58,9) |
+| GMFSS (retiré des sources depuis) | 24,0 i/s / 3,60 % (65 manquées, 18 changements) | 23,9 et 23,8 i/s / 0,99 % (15 sautées, 3 manquées) | 18,7 / 68 ms (Auto 9,7 / 58,9) |
 
 DRBA : « Rapide · 66 i/s · limite GPU 79 % · écart service 13,1 ms ». GMFSS : « 22 i/s · limite GPU 91 %
 · écart service 56 ms ». Un bug trouvé avec DRBA : `FreeRate::settle` (seek) raccourcissait le silence de

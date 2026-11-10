@@ -94,14 +94,13 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   }
   const auto format = ingest_format(frame.format, host);
   const auto matrix = matrix_of(frame.color.matrix);
-  if (!format || !matrix || spec.rife_conversion) {
+  if (!format || !matrix) {
     return refuse(RefusalCode::FormatUnsupported,
                   host
                       ? "ingestion hôte : NV12, P010, P016 ou YUV 4:2:0 8 ou 10 bits, chaîne d'agrandissement"
                       : "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
   }
   // Tenseur à la taille de l'image, ou plus petit : réduction Area fusionnée (slice_kernels.h).
-  // Extension de ce backend au contrat de KernelOps::ingest, signalée pour l'intégration.
   const int out_width = static_cast<int>(rgb.shape.dims[3]);
   const int out_height = static_cast<int>(rgb.shape.dims[2]);
   if (out_width < 1 || out_height < 1 || out_width > frame.width || out_height > frame.height ||
@@ -204,13 +203,21 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   GpuTiming& timing = stage("ingestion");
   timing.begin(stream_);
   if (auto ok = cuda_check(launch_ingest(params, stream_), "ingest<<<>>>"); !ok) return ok;
+  // Tenue dès l'ingestion enfilée, avant le débandage (release_source, A01-05).
+  if (auto ok = release_source(host, frame); !ok) return ok;
   if (deband_pass) {
     const DebandParams deband{
         .in = deband_out_, .out = address(rgb), .width = out_width, .height = out_height};
     if (auto ok = cuda_check(launch_deband(deband, stream_), "deband<<<>>>"); !ok) return ok;
   }
   timing.end(stream_);
-  // Une image hôte est déjà copiée : elle repart au décodeur sans attendre le GPU.
+  return {};
+}
+
+std::expected<void, Refusal> TensorRtBackend::release_source(bool host, const DecodedFrame& frame) {
+  // La source est tenue dès que l'ingestion qui la lit est enfilée : un débandage refusé ensuite ne la
+  // rend pas au décodeur (ni le tampon épinglé à l'envoi suivant) pendant cette lecture (A01-05). Une
+  // image hôte est déjà copiée : elle repart au décodeur sans attendre le GPU.
   if (host) return uploads_->consumed(stream_);
   return hold(frame);
 }
@@ -286,11 +293,21 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_write(const Tensor&
     return refuse(RefusalCode::ShapeInvalid, std::format("slot {} : tenseur FP16 1×3×{}×{} attendu",
                                                          desc.index, desc.height, desc.width));
   }
-  if (auto ok = bind(); !ok) return std::unexpected(std::move(ok.error()));
+  if (auto ok = bind_joined(&desc); !ok) return std::unexpected(std::move(ok.error()));
   const std::array scratch_writes{scratch};
   if (auto ok = order(std::span(&rgb.handle, 1), std::span(scratch_writes).first(scratch != 0 ? 1 : 0)); !ok)
     return std::unexpected(std::move(ok.error()));
   return begin_slot(desc, sync);
+}
+
+std::expected<void, Refusal> TensorRtBackend::bind_joined(const RingSlotDesc* desc) {
+  if (auto ok = bind(); !ok) return ok;
+  // Ring recréé : les écritures de l'ancienne génération, sur toutes les voies, avant le relâche de
+  // ses imports (slot). Faite avant order() de l'opération qui écrit le premier slot de la
+  // génération : au milieu, l'événement de l'opération serait posé avant ses derniers noyaux, et une
+  // autre voie qui attend ce rang lirait une sortie à moitié écrite (A01-02).
+  if (desc == nullptr || desc->generation <= generation_) return {};
+  return join();
 }
 
 std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_slot(const RingSlotDesc& desc,
@@ -300,11 +317,7 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::begin_slot(const RingSlot
                   std::format("slot {} : valeur à signaler {} impaire et > {} attendue", desc.index,
                               sync.signal_value, sync.wait_value));
   }
-  // Ring recréé : les écritures de l'ancienne génération, sur toutes les voies, avant le relâche
-  // de ses imports (slot).
-  if (desc.generation > generation_) {
-    if (auto ok = join(); !ok) return std::unexpected(std::move(ok.error()));
-  }
+  // La jointure d'un ring recréé est déjà faite (bind_joined, avant order de l'opération).
   auto imported = slot(desc);
   if (!imported) return std::unexpected(std::move(imported.error()));
   if (sync.wait_value != 0) {
@@ -349,12 +362,6 @@ std::expected<void, Refusal> TensorRtBackend::resample(const Tensor& in, kernels
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("cuMemcpyDtoDAsync : erreur {}", static_cast<int>(copied)));
   return {};
-}
-std::expected<void, Refusal> TensorRtBackend::rife_pad(const DecodedFrame&, const Tensor&) {
-  return not_here("rife_pad");
-}
-std::expected<void, Refusal> TensorRtBackend::measure(const DecodedFrame&, const DecodedFrame&) {
-  return not_here("measure");
 }
 
 }  // namespace ajp::gpu::cuda

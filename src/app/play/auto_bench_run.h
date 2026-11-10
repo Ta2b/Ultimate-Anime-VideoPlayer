@@ -37,7 +37,9 @@ struct BenchPlan {
              // quoi chaque essai rouvrirait l'assistant ; vide : « déjà vu » seulement
   int seconds = kBenchSeconds;
   bool fullscreen = true;  // l'écran réel, comme la lecture
-  bool silent = true;  // fenêtre masquée autant que le bureau le permet (--hidden ; hide_is_reliable_here)
+  // Essai sans fenêtre (--hidden, rendu hors écran) : sur tous les bureaux, ni présentation ni compositeur
+  // ne comptent dans la mesure (A34-06).
+  bool silent = true;
   // Le délai d'un essai s'ajoute à sa durée. Le premier essai charge et, la première fois, construit les
   // moteurs de la machine : sur un portable cela dépasse largement 3 minutes (un SPAN seul en prend 2,5 sur
   // une RTX 4070 Ti), et un essai tué en pleine construction ne garde rien : le suivant recommence au même
@@ -126,13 +128,6 @@ struct Evaluation {
 std::expected<Evaluation, Refusal> evaluate_machine(
     const BenchPlan& plan, const std::filesystem::path& data_dir, const std::stop_token& stop,
     const std::function<void(const std::string&)>& progress = {});
-
-// Le masquage de la fenêtre des essais (--hidden) est-il fiable sur ce bureau ? GNOME sous Wayland ne rend
-// pas la main à une fenêtre minuscule sans bordure comme les autres bureaux : la mesure y serait faussée, la
-// fenêtre des essais y reste donc visible (petite). Pur : les variables d'environnement sont données.
-bool hide_is_reliable(std::string_view session_type, std::string_view current_desktop);
-// La même, lue dans l'environnement du processus.
-bool hide_is_reliable_here();
 
 // Le rapport technique : une ligne par essai (niveau, images perdues, retard, tient ou non), le niveau gardé.
 std::string format_bench_report(const BenchOutcome& outcome);

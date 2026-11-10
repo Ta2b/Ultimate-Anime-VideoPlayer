@@ -28,9 +28,9 @@ TEST_CASE("DistilDRBA fusionné : essayé par défaut avec DistilDRBA, avec la r
   PlaySettings rife;
   rife.motion_engine = MotionEngine::Rife;
   CHECK(drba_fused_declined(rife, true) == "moteur du mouvement autre que DistilDRBA");
-  PlaySettings gmfss;
-  gmfss.motion_engine = MotionEngine::Gmfss;
-  CHECK_FALSE(drba_fused_declined(gmfss, true).empty());
+  PlaySettings apple;
+  apple.motion_engine = MotionEngine::Apple;
+  CHECK_FALSE(drba_fused_declined(apple, true).empty());
 }
 
 TEST_CASE("DistilDRBA : le cran rendu décide du graphe et du fusionné", "[app][drba_fused]") {

@@ -15,6 +15,7 @@
 #include "gpu/cuda/backend/span_fp8_kernels.cuh"
 #include "gpu/cuda/backend/span_fp8_layout.cuh"
 #include "gpu/cuda/backend/span_fp8_net.h"
+#include "gpu/span_fp8/quantize.h"
 
 namespace ajp::gpu::cuda {
 namespace {
@@ -56,12 +57,12 @@ std::array<float, 64> quantize_fp8(const std::uint16_t* half_bits, std::size_t c
     std::memcpy(&h, &half_bits[i], sizeof(h));
     values[i] = __half2float(h);
   }
+  // Les échelles de la référence hôte testée (quantize.h), pas une copie (A02-09).
+  const std::vector<float> channel = span_fp8::channel_scales(values, kOut);
   std::array<float, kOut> scales{};
+  std::copy(channel.begin(), channel.end(), scales.begin());
   out.resize(values.size());
   for (std::size_t c = 0; c < kOut; ++c) {
-    float peak = 0.F;
-    for (std::size_t i = c * per; i < (c + 1) * per; ++i) peak = std::max(peak, std::abs(values[i]));
-    scales[c] = peak > 0.F ? peak / 448.F : 1.F;
     for (std::size_t i = c * per; i < (c + 1) * per; ++i)
       out[i] =
           static_cast<std::uint8_t>(__nv_cvt_float_to_fp8(values[i] / scales[c], __NV_SATFINITE, __NV_E4M3));

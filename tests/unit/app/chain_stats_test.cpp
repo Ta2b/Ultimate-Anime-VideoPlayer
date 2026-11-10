@@ -27,9 +27,6 @@ class CountingKernels final : public gpu::KernelOps {
   std::expected<void, Refusal> resample(const gpu::Tensor&, kernels::Filter, const gpu::Tensor&) override {
     return refuse(RefusalCode::FormatUnsupported, "factice");
   }
-  std::expected<void, Refusal> rife_pad(const DecodedFrame&, const gpu::Tensor&) override {
-    return refuse(RefusalCode::FormatUnsupported, "factice");
-  }
   std::expected<void, Refusal> rife_crop(const gpu::Tensor&, const gpu::Tensor&) override {
     return refuse(RefusalCode::FormatUnsupported, "factice");
   }
@@ -41,10 +38,6 @@ class CountingKernels final : public gpu::KernelOps {
                                           const gpu::RingWrite&) override {
     return refuse(RefusalCode::FormatUnsupported, "factice");
   }
-  std::expected<void, Refusal> measure(const DecodedFrame&, const DecodedFrame&) override {
-    return refuse(RefusalCode::FormatUnsupported, "factice");
-  }
-  std::optional<gpu::PairScores> previous_scores() override { return std::nullopt; }
 };
 
 TEST_CASE("ChainStats : après stop(), plus aucun relevé ne lit les noyaux, même si l'OSD redemande (A08-02)",
@@ -65,11 +58,13 @@ TEST_CASE("ChainStats : après stop(), plus aucun relevé ne lit les noyaux, mê
 TEST_CASE("ChainStats : stop() sans relevé lancé ne démarre rien", "[app][stats]") {
   const LiveSettings live;
   CountingKernels kernels;
-  ChainStats stats(live, kernels, false, "RIFE", 24.0);
-  stats.stop();
+  ChainStats stats(live, kernels, false, "RIFE", 24.0);  // une lecture à l'ouverture (A32-10)
+  stats.stop();                                          // une à la fermeture, pour le journal (A33-08)
+  const int seen = kernels.reads.load();
+  CHECK(seen == 2);
   static_cast<void>(stats.memory());
   std::this_thread::sleep_for(50ms);
-  CHECK(kernels.reads.load() == 0);
+  CHECK(kernels.reads.load() == seen);  // aucun fil de relevé
 }
 
 }  // namespace

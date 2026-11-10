@@ -115,17 +115,4 @@ std::string uuid_text(const DeviceUuid& uuid);
 // « 0000:03:00.0 » : domaine, bus, appareil et fonction, comme lspci -D.
 std::string pci_text(const PciAddress& pci);
 
-// Un appareil tel qu'un autre runtime le voit (HIP, OpenVINO) : ce qu'il sait de son identité.
-struct DeviceIdentity {
-  std::optional<DeviceUuid> uuid;
-  std::optional<PciAddress> pci;
-};
-
-// L'index, parmi others, de l'appareil Vulkan de caps : même UUID d'abord, sinon même adresse PCI
-// (domaine, bus et appareil : HIP ne donne pas la fonction, toujours 0 pour un GPU) ; nullopt si
-// aucun. Le repli par le bus sert là où les deux runtimes ne dérivent pas l'UUID de la même façon
-// (RADV le tire du bus PCI, ROCm de l'identifiant unique du KFD) : sur un PC à plusieurs GPU AMD,
-// l'UUID seul ne retrouvait aucun appareil et le premier était pris.
-std::optional<std::size_t> match_device(std::span<const DeviceIdentity> others, const DeviceCaps& caps);
-
 }  // namespace ajp::gpu::vk

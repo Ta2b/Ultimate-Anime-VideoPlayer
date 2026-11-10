@@ -5,7 +5,9 @@
 
 #include <expected>
 #include <filesystem>
+#include <utility>
 
+#include "core/dynamic_library.h"
 #include "core/types.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
@@ -19,22 +21,17 @@ class VulkanLibrary {
   // bibliothèque ne s'ouvre pas ou n'exporte pas vkGetInstanceProcAddr.
   static std::expected<VulkanLibrary, Refusal> open(const std::filesystem::path& path);
 
-  VulkanLibrary(VulkanLibrary&& other) noexcept;
-  VulkanLibrary& operator=(VulkanLibrary&& other) noexcept;
-  VulkanLibrary(const VulkanLibrary&) = delete;
-  VulkanLibrary& operator=(const VulkanLibrary&) = delete;
-  ~VulkanLibrary();
-
   // Valide tant que la bibliothèque vit.
   PFN_vkGetInstanceProcAddr get_instance_proc_addr() const { return get_instance_proc_addr_; }
 
  private:
-  VulkanLibrary(void* handle, PFN_vkGetInstanceProcAddr entry)
-      : handle_(handle), get_instance_proc_addr_(entry) {}
-  static std::expected<VulkanLibrary, Refusal> load(const std::filesystem::path& path, bool search);
-  void close();
+  VulkanLibrary(DynamicLibrary library, PFN_vkGetInstanceProcAddr entry)
+      : library_(std::move(library)), get_instance_proc_addr_(entry) {}
+  static std::expected<VulkanLibrary, Refusal> wrap(DynamicLibrary library);
 
-  void* handle_ = nullptr;
+  // L'ouverture, le déplacement et la fermeture sont ceux de core (A45-09) : une correction de l'un
+  // (texte de l'erreur, dossiers de recherche) vaut pour l'autre.
+  DynamicLibrary library_;
   PFN_vkGetInstanceProcAddr get_instance_proc_addr_ = nullptr;
 };
 

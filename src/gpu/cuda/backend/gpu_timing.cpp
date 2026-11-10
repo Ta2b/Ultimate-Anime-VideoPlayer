@@ -71,16 +71,23 @@ void GpuTiming::collect() {
 
 namespace {
 
-std::string summary_of(const std::string& label, const StageSamples& all) {
-  if (all.count() == 0) return {};
-  std::vector<float> sorted = all.samples();
+std::string summary_of(const std::string& label, const core::SampleReservoir<float>& all) {
+  if (all.empty()) return {};
+  std::vector<float> sorted = all.kept();
   std::ranges::sort(sorted);
-  // A03-22 : nombre, total et minimum de toute la séance ; passé le plafond, les centiles viennent d'un
-  // échantillon tiré sur toute la séance, et la ligne le dit.
+  const std::string kept =
+      sorted.size() < all.seen() ? std::format(", centiles sur {} gardées", sorted.size()) : std::string();
   return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms, total {:.0f} ms ({} mesures{})",
-                     label, sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], all.min_ms(),
-                     all.total_ms(), all.count(),
-                     all.sampled() ? std::format(", centiles sur {} tirées au sort", sorted.size()) : "");
+                     label, sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], sorted.front(),
+                     all.total(), all.seen(), kept);
+}
+
+// Le résumé pour le .gpu.tsv : centiles de l'échantillon, nombre et total de toutes les mesures.
+GpuStageSummary profile_of(const std::string& label, const core::SampleReservoir<float>& all) {
+  GpuStageSummary out = summarize(label, all.kept());
+  out.count = static_cast<std::size_t>(all.seen());
+  out.total_ms = all.total();
+  return out;
 }
 
 }  // namespace
@@ -92,7 +99,7 @@ std::string GpuTiming::summary() {
 
 GpuStageSummary GpuTiming::profile() {
   collect();
-  return all_.summary(label_);
+  return profile_of(label_, all_);
 }
 
 GpuSpan::GpuSpan(std::string label) : label_(std::move(label)) {
@@ -156,7 +163,7 @@ std::string GpuSpan::summary() {
 
 GpuStageSummary GpuSpan::profile() {
   collect();
-  return all_.summary(label_);
+  return profile_of(label_, all_);
 }
 
 }  // namespace ajp::gpu::cuda

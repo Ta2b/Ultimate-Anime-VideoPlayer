@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <variant>
@@ -124,10 +125,14 @@ namespace {
 
 // Un moteur des réseaux ajouté entre before et after.
 bool network_added(const core::Settings& before, const core::Settings& after) {
-  const std::vector<core::EngineId> networks = {core::EngineId::TensorRt, core::EngineId::MiGraphX,
-                                                core::EngineId::OpenVino, core::EngineId::Metal};
+  const std::vector<core::EngineId> networks = {core::EngineId::TensorRt, core::EngineId::Metal};
   return std::ranges::any_of(networks,
                              [&](core::EngineId id) { return chosen(after, id) && !chosen(before, id); });
+}
+
+// « Laptop GPU » depuis les RTX 30, « with Max-Q Design » sur les portables RTX 20 (A37-04).
+bool laptop_gpu(std::string_view name) {
+  return name.find("Laptop") != std::string_view::npos || name.find("Max-Q") != std::string_view::npos;
 }
 
 }  // namespace
@@ -231,7 +236,7 @@ namespace {
 
 // Ce que l'assistant dit de cet hôte : un portable (construction des moteurs deux fois plus longue, A25-03).
 void host_notes(FirstRunView& view, const GpuFacts& gpu, SDL_Window* window) {
-  view.laptop = gpu.name.find("Laptop") != std::string::npos;
+  view.laptop = laptop_gpu(gpu.name);
   const int height = display_height(window);
   if (height > 0)
     view.display_line = i18n::tr_format("Display {}p · {:.0f} Hz", height, display_refresh_hz(window));
@@ -379,8 +384,7 @@ std::vector<std::filesystem::path> backend_candidates(const EngineCatalog& catal
                                                       const PlayerPaths& paths) {
   std::vector<std::filesystem::path> out = installed_backends(catalog);
   for (const std::filesystem::path& backend : paths.backends) {
-    const std::optional<core::EngineId> id = engine_of_library(backend);
-    if (!id || core::engine_plugged(*id)) out.push_back(backend);  // MIGraphX, OpenVINO : débranchés
+    if (!retired_library(backend)) out.push_back(backend);  // MIGraphX, OpenVINO : retirés
   }
   return out;
 }

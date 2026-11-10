@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <map>
@@ -12,12 +13,16 @@
 #include <system_error>
 #include <vector>
 
+#include "core/utf8_path.h"
 #include "kernels/ref/half.h"
 
 namespace ajp::gpu::span_fp8 {
 namespace {
 
 using ir::onnx::Tensor;
+
+// Les SPAN du lecteur pèsent quelques mégaoctets en FP32 ; au-delà, ce n'en est pas un.
+constexpr std::uintmax_t kMaxOnnxBytes = std::uintmax_t{256} << 20U;
 
 std::unexpected<Refusal> refuse(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::FormatUnsupported, std::move(detail)});
@@ -27,6 +32,19 @@ std::string shape_text(const std::vector<std::int64_t>& dims) {
   std::string out = "(";
   for (std::size_t i = 0; i < dims.size(); ++i) out += std::format("{}{}", i == 0 ? "" : ", ", dims[i]);
   return out + ")";
+}
+
+// La forme attendue, et des valeurs flottantes en nombre : un initialiseur entier de bonne forme a ses
+// valeurs dans ints, krsc_padded et flat_padded liraient floats hors bornes (A02-06).
+std::expected<void, Refusal> check_weight(const Tensor& w, const std::string& weight,
+                                          const std::vector<std::int64_t>& shape) {
+  if (w.dims != shape)
+    return refuse(std::format("{} : {}, {} attendu", weight, shape_text(w.dims), shape_text(shape)));
+  std::size_t count = 1;
+  for (const std::int64_t d : shape) count *= static_cast<std::size_t>(d);
+  if ((w.data_type != ir::onnx::kFloat && w.data_type != ir::onnx::kFloat16) || w.floats.size() != count)
+    return refuse(std::format("{} : {} valeurs flottantes attendues", weight, count));
+  return {};
 }
 
 // (sortie, entrée, ligne, colonne) -> (sortie, ligne, colonne, entrée) en FP16, sorties complétées de zéros
@@ -107,9 +125,9 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
     if (error == std::errc{} && end != last && *end == '.') blocks.insert(number);
   }
   const int block_count = static_cast<int>(blocks.size());
-  if (blocks.empty() || block_count > kBlocks || *blocks.begin() != 1 || *blocks.rbegin() != block_count)
-    return refuse(
-        std::format("{} blocs trouvés, 1 à {} numérotés depuis 1 attendus", blocks.size(), kBlocks));
+  if (std::clamp(block_count, kMinBlocks, kBlocks) != block_count || *blocks.begin() != 1 ||
+      *blocks.rbegin() != block_count)
+    return refuse(std::format("{} blocs, {} à {} attendus (depuis 1)", block_count, kMinBlocks, kBlocks));
 
   // shape : la forme du modèle ; out_to, in_to : celle du paquet (64 canaux) ; groups : voir flat_padded.
   const auto conv = [&](const std::string& weight, const std::string& bias,
@@ -119,8 +137,7 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
     const Tensor* w = find(weight);
     const Tensor* b = find(bias);
     if (w == nullptr) return refuse(std::format("{} : absent, {} attendu", weight, shape_text(shape)));
-    if (w->dims != shape)
-      return refuse(std::format("{} : {}, {} attendu", weight, shape_text(w->dims), shape_text(shape)));
+    if (auto ok = check_weight(*w, weight, shape); !ok) return ok;
     if (b == nullptr || b->floats.size() != static_cast<std::size_t>(shape[0]))
       return refuse(std::format("{} : biais absent ou de mauvaise taille", bias));
     out.weights = three_by_three ? krsc_padded(*w, out_to, in_to)
@@ -233,15 +250,21 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model) 
 }
 
 std::expected<Package, Refusal> package_from_onnx_file(const std::filesystem::path& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file)
-    return std::unexpected(Refusal{RefusalCode::FileUnreadable, "modèle SPAN illisible : " + path.string()});
-  const std::streamsize size = file.tellg();
+  // Un fichier ordinaire, de taille connue et plafonnée : un dossier ou un fichier spécial ne fait pas
+  // lever std::length_error hors de std::expected (tellg à -1), un fichier énorme n'est pas lu (A02-07).
+  std::error_code error;
+  const std::uintmax_t size =
+      std::filesystem::is_regular_file(path, error) ? std::filesystem::file_size(path, error) : 0;
+  if (error || size == 0 || size > kMaxOnnxBytes) {
+    return std::unexpected(
+        Refusal{RefusalCode::FileUnreadable, "modèle SPAN illisible : " + core::to_utf8(path)});
+  }
   std::vector<std::byte> bytes(static_cast<std::size_t>(size));
-  file.seekg(0);
-  file.read(reinterpret_cast<char*>(bytes.data()), size);
-  if (!file)
-    return std::unexpected(Refusal{RefusalCode::FileUnreadable, "modèle SPAN tronqué : " + path.string()});
+  std::ifstream file(path, std::ios::binary);
+  file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size));
+  if (!file || file.gcount() != static_cast<std::streamsize>(size))
+    return std::unexpected(
+        Refusal{RefusalCode::FileUnreadable, "modèle SPAN tronqué : " + core::to_utf8(path)});
   auto model = ir::onnx::read_onnx(bytes);
   if (!model) return std::unexpected(std::move(model.error()));
   return package_from_onnx(*model);

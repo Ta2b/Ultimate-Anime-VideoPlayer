@@ -2,12 +2,14 @@
 // horloge et synchronisation. AudioThread la nourrit depuis sa boîte, un
 // message à la fois ; les tests l'appellent directement.
 //
-// Deux horloges possibles :
-// - VRR : l'audio est maître. Chaque mesure du périphérique publie la position
-//   entendue dans clock(), que present et gpu lisent.
-// - Écran fixe : present publie l'horloge maître, reçue par SyncTo. L'audio
-//   se cale dessus (silence ajouté ou trames coupées), puis suit sa dérive en
-//   changeant sa vitesse de lecture d'au plus 0,125 %.
+// Deux horloges possibles (qui mène : host_must_lead, app/play/wiring.h) :
+// - Le cas courant, sur tout écran (VRR ou fixe) : l'audio est maître à
+//   vitesse 1. Chaque mesure du périphérique publie la position entendue dans
+//   clock(), que present et gpu lisent.
+// - L'hôte mène seulement sous calage sur l'écran (vitesse autre que 1), audio
+//   perdu, ou son trop en avance : present publie l'horloge maître, reçue par
+//   SyncTo. L'audio se cale dessus (silence ajouté ou trames coupées), puis
+//   suit sa dérive en changeant sa vitesse de lecture d'au plus 0,125 %.
 //
 // L'instant présent est celui de la sortie (AudioOutput::reading) : l'horloge
 // hôte avec SDL, le temps simulé du faux périphérique dans les tests.

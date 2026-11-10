@@ -298,7 +298,6 @@ TEST_CASE("Backend : opérateur inconnu, annulation et précision refusés à la
   ModelSpec int8 = span;
   int8.precision = TensorType::I8;
   require_refusal(backend->build(int8, shapes(8, 8), progress), RefusalCode::FormatUnsupported);
-  require_refusal(backend->import(ExternalImage{}), RefusalCode::FormatUnsupported);
   require_refusal(backend->alloc_tensor(TensorType::F16, Shape{{1, 3, 0, 64}}), RefusalCode::ShapeInvalid);
 }
 

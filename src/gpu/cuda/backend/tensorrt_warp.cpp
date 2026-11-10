@@ -110,7 +110,7 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
   if (!(t > 0.0F && t < 1.0F))
     return refuse(RefusalCode::FieldOutOfRange, std::format("warp_blend : instant {}", t));
   if (auto ok = check_motion(motion); !ok) return ok;
-  if (auto ok = bind(); !ok) return ok;
+  if (auto ok = bind_joined(target.ring); !ok) return ok;
   trim_textures();
   const WarpBlendParams params{
       .a = address(a),
@@ -155,14 +155,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::flow_max_start(const Moti
   const std::uint64_t ticket = flow_tickets_ + 1;
   FlowRead& slot = flow_reads_[ticket % flow_reads_.size()];
   std::expected<void, Refusal> ready = bind();
-  if (ready && slot.device == nullptr) {
-    ready = cuda_check(cudaMalloc(reinterpret_cast<void**>(&slot.device), kHistogramBytes), "cudaMalloc");
-    if (ready)
-      ready =
-          cuda_check(cudaMallocHost(reinterpret_cast<void**>(&slot.host), kHistogramBytes), "cudaMallocHost");
-    if (ready)
-      ready = cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
-  }
+  if (ready) ready = reserve_readback(slot, kHistogramBytes);
   if (ready) ready = order({motion.flow.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready) ready = cuda_check(cudaMemsetAsync(slot.device, 0, kHistogramBytes, stream_), "cudaMemsetAsync");
   if (ready) {

@@ -2,6 +2,7 @@
 // menu, et les mesures de l'OSD (compteurs de l'interpolation, mémoire vidéo).
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -50,7 +51,9 @@ class ChainStats final : public StatsSource {
         interpolates_(interpolates),
         engine_(std::move(engine)),
         source_fps_(source_fps),
-        telemetry_(telemetry) {}
+        telemetry_(telemetry) {
+    check_memory();
+  }
   std::optional<std::string> rife() const override;
   // La mémoire vidéo et la ligne GPU de l'OSD : relues à 2 Hz par un fil à part (cudaMemGetInfo
   // prend le verrou du contexte CUDA, NVML dix appels : le fil d'affichage n'attend ni l'un ni
@@ -75,6 +78,12 @@ class ChainStats final : public StatsSource {
   GpuTelemetry* telemetry_;
 
   std::optional<std::string> read_memory() const;
+  // A32-10 : la mémoire vidéo pleine (moins de 256 Mio libres) se dit une fois au journal ; sous Windows, le
+  // pilote déborde alors en mémoire système sans refuser, et la chaîne ralentit sans autre signe. Vrai si
+  // pleine.
+  bool note_memory(const gpu::KernelOps::DeviceMemory& memory) const;
+  void check_memory() const;
+  mutable std::atomic<bool> memory_full_told_{false};
   std::optional<std::string> read_gpu() const;
   void start_sampler();
 

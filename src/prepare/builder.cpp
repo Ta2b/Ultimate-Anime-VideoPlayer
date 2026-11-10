@@ -3,6 +3,7 @@
 // de sortie et place libre dans le refus, aucun moteur incomplet publié.
 #include "prepare/builder.h"
 
+#include <chrono>
 #include <cstdint>
 #include <format>
 #include <fstream>
@@ -101,13 +102,15 @@ std::expected<KeyLock, Refusal> lock_device(const fs::path& timing_cache, gpu::P
 // publiée par renommage après une construction réussie, sous le verrou du GPU.
 // Le fork lui passait le cache persistant (aji_trt.cpp:876-889) ; la clé du
 // moteur n'en dépend pas.
-void stage_timing_cache(const fs::path& persistent, const fs::path& staged, spdlog::logger& log) {
+// Rend vrai quand la copie est faite.
+bool stage_timing_cache(const fs::path& persistent, const fs::path& staged, spdlog::logger& log) {
   std::error_code error;
-  if (!fs::exists(persistent, error)) return;
+  if (!fs::exists(persistent, error)) return false;
   fs::copy_file(persistent, staged, error);
-  if (!error) return;
+  if (!error) return true;
   log.warn("timing cache {} illisible ({}), construction sans lui", utf8_path(persistent), error.message());
   fs::remove(staged, error);
+  return false;
 }
 
 void keep_timing_cache(const fs::path& staged, const fs::path& persistent, spdlog::logger& log) {
@@ -173,13 +176,6 @@ TrtexecBuilder::TrtexecBuilder(TrtexecConfig config, EngineCheck check)
 std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec& model,
                                                             const gpu::ShapeSet& shapes,
                                                             gpu::Progress& progress) const {
-  return rebuild(model, shapes, progress, {});
-}
-
-std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSpec& model,
-                                                              const gpu::ShapeSet& shapes,
-                                                              gpu::Progress& progress,
-                                                              const std::string& rejected_sha256) const {
   if (config_.runtime.major < 11) {
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange,
                                    "TensorRT " + config_.runtime.token() + " : trtexec 11 ou plus attendu"});
@@ -198,7 +194,11 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::rebuild(const gpu::ModelSp
   }
 
   report(progress, 0.0F, "Préparation");
-  const CacheEntry entry{.destination = plan->engine, .rejected_sha256 = rejected_sha256};
+  // Le détenteur de la clé attend le GPU (kMaxLockWait au plus) puis lance trtexec (config_.timeout) :
+  // une minute de plus pour la vérification et la publication (A05-02).
+  const CacheEntry entry{.destination = plan->engine,
+                         .max_wait = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             kMaxLockWait + config_.timeout + std::chrono::minutes(1))};
   auto produced = produce_once(
       entry, [&](const fs::path& output) { return run(*plan, model, *source, output, progress); },
       progress.stop);
@@ -220,9 +220,17 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   const fs::path timing_cache = device_timing_cache(config_);
   auto device = lock_device(timing_cache, progress);
   if (!device) return std::unexpected(std::move(device.error()));
+  if (!config_.trtexec_sha256.empty()) {
+    const auto now = sha256_file_known(config_.trtexec);
+    if (!now || *now != config_.trtexec_sha256) {
+      return std::unexpected(Refusal{RefusalCode::FieldMissing,
+                                     "trtexec remplacé depuis l'ouverture du moteur : réinstallez le moteur "
+                                     "TensorRT, puis rouvrez la vidéo"});
+    }
+  }
   const fs::path staged_cache = output.parent_path() / "timing.cache";
   const fs::path staged_layers = output.parent_path() / "layers.json";
-  stage_timing_cache(timing_cache, staged_cache, *log_);
+  const bool cached = stage_timing_cache(timing_cache, staged_cache, *log_);
   const ProcessSpec spec{
       .program = config_.trtexec,
       .args = trtexec_arguments({.onnx = model.onnx_path,
@@ -233,28 +241,43 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
       .timeout = config_.timeout,
   };
   log_->info("{} {} : construction de {}", model.id, plan.label, plan.engine_file);
-  std::ofstream log_file(plan.log_file, std::ios::trunc);
-  TrtexecProgress parsed;
-  auto exit = run_process(
-      spec,
-      [&](std::string_view line) {
-        log_file << line << '\n';
-        if (auto step = parsed.feed(line)) report(progress, step->fraction, step->stage);
-      },
-      progress.stop);
-  if (!exit) {
-    log_file << "[ajp] " << exit.error().detail << '\n';
-    return std::unexpected(exit.error());
-  }
-  log_file << "[ajp] trtexec : " << describe(*exit) << '\n';
-  log_file.flush();
-  if (!log_file)
-    log_->warn("journal {} illisible ou incomplet (droits ou disque plein, voir la place libre)",
-               utf8_path(plan.log_file));
-  if (auto verdict = judge(*exit, parsed, plan, config_.timeout); !verdict) {
-    log_file << "[ajp] " << verdict.error().detail << '\n';
+  // Un essai de trtexec, son journal ajouté à celui du moteur (vidé au premier).
+  const auto attempt = [&](std::ios::openmode mode) -> std::expected<void, Refusal> {
+    std::ofstream log_file(plan.log_file, mode);
+    TrtexecProgress parsed;
+    auto exit = run_process(
+        spec,
+        [&](std::string_view line) {
+          log_file << line << '\n';
+          if (auto step = parsed.feed(line)) report(progress, step->fraction, step->stage);
+        },
+        progress.stop);
+    if (!exit) {
+      log_file << "[ajp] " << exit.error().detail << '\n';
+      return std::unexpected(exit.error());
+    }
+    log_file << "[ajp] trtexec : " << describe(*exit) << '\n';
+    log_file.flush();
+    if (!log_file)
+      log_->warn("journal {} illisible ou incomplet (droits ou disque plein, voir la place libre)",
+                 utf8_path(plan.log_file));
+    auto verdict = judge(*exit, parsed, plan, config_.timeout);
+    if (!verdict) log_file << "[ajp] " << verdict.error().detail << '\n';
     return verdict;
+  };
+  auto built = attempt(std::ios::trunc);
+  // Le timing cache persistant n'est remplacé qu'après une réussite : s'il fait échouer trtexec (abîmé,
+  // écrit par un autre build), chaque construction sur ce GPU échouerait. Un échec avec lui se refait
+  // une fois sans lui, et la réussite le remplace (A05-03).
+  if (!built && cached && built.error().code == RefusalCode::BuilderFailed) {
+    log_->warn("{} {} : trtexec a échoué avec le timing cache {}, nouvel essai sans lui", model.id,
+               plan.label, utf8_path(timing_cache.filename()));
+    std::error_code removed;
+    fs::remove(staged_cache, removed);
+    report(progress, 0.0F, "Préparation");
+    built = attempt(std::ios::app);
   }
+  if (!built) return built;
   if (!is_published(output)) {
     return std::unexpected(
         Refusal{RefusalCode::BuilderFailed,

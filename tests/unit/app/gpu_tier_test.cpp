@@ -71,6 +71,10 @@ TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bu
   CHECK(nvidia("NVIDIA GeForce RTX 2070 Laptop GPU") == Tier::Light);
   CHECK(nvidia("NVIDIA GeForce RTX 4070 Laptop GPU") == Tier::Normal);  // sa règle nommée reste devant
   CHECK(nvidia("NVIDIA GeForce RTX 4090 Laptop GPU") == Tier::Fast);
+  // Les portables RTX 20 disent « Max-Q », pas « Laptop » (A37-04).
+  CHECK(nvidia("NVIDIA GeForce RTX 2080 with Max-Q Design") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 2070 with Max-Q Design") == Tier::Light);
+  CHECK(nvidia("NVIDIA GeForce RTX 2080") == Tier::Fast);
   // La Quadro RTX 6000 (Turing) n'est pas la RTX 6000 Ada ; la RTX A400 n'est pas une RTX A4000.
   CHECK(nvidia("NVIDIA Quadro RTX 6000") == Tier::Fast);
   CHECK(nvidia("NVIDIA RTX 6000 Ada Generation") == Tier::Ultra);

@@ -34,6 +34,10 @@ struct TrtexecConfig {
   CudaDevice device;
   std::chrono::milliseconds timeout = std::chrono::minutes(20);
   std::string input_name = "input";  // nom de l'entrée des modèles livrés
+  // SHA-256 de trtexec relevé à l'ouverture du moteur : revérifié juste avant chaque lancement, pour
+  // qu'un trtexec remplacé depuis (mise à jour à moitié faite) ne construise rien (A05-05). Vide : pas
+  // de vérification (tests).
+  std::string trtexec_sha256;
 };
 
 // Vérifie un moteur avant sa publication, par exemple en le désérialisant.
@@ -70,13 +74,6 @@ class TrtexecBuilder {
   // Contrat de Backend::build : un backend TensorRT y délègue sa construction.
   std::expected<gpu::Artifact, Refusal> build(const gpu::ModelSpec& model, const gpu::ShapeSet& shapes,
                                               gpu::Progress& progress) const;
-
-  // Reconstruit un moteur publié que load() n'a pas pu désérialiser, dont le
-  // fichier a ce SHA-256 (rejected_digest du fork). Il reste en place jusqu'à
-  // son remplacement réussi ; s'il a déjà été remplacé, le remplaçant se reprend.
-  std::expected<gpu::Artifact, Refusal> rebuild(const gpu::ModelSpec& model, const gpu::ShapeSet& shapes,
-                                                gpu::Progress& progress,
-                                                const std::string& rejected_sha256) const;
 
  private:
   std::expected<void, Refusal> run(const BuildPlan& plan, const gpu::ModelSpec& model,

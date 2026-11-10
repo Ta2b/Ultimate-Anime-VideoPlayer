@@ -10,6 +10,7 @@
 #include <system_error>
 
 #include "core/utf8_path.h"
+#include "prepare/cache_purge.h"
 
 #ifdef _WIN32
 #include <shlobj.h>
@@ -204,6 +205,19 @@ int purge_update_leftovers(const std::filesystem::path& data,
   if (said && count > 0)
     said(std::format("{} retiré, ancienne mise à jour", core::to_utf8(updates)));  // i18n-ok : journal
   return count > 0 ? 1 : 0;
+}
+
+void tidy_at_launch(const std::filesystem::path& data, const std::filesystem::path& engines,
+                    const std::function<void(const std::string&)>& said) {
+  purge_update_leftovers(data, said);
+  if (engines.empty()) return;
+  const prepare::CachePurgeResult purged = prepare::purge_engine_cache(engines);
+  constexpr double kMib = 1024.0 * 1024.0;
+  if (said && (purged.removed > 0 || purged.kept > 0))
+    said(std::format(
+        "cache des moteurs : {} gardé(s), {:.0f} Mio ; {} retiré(s), {:.0f} Mio",  // i18n-ok : journal
+        purged.kept, static_cast<double>(purged.kept_bytes) / kMib, purged.removed,
+        static_cast<double>(purged.removed_bytes) / kMib));
 }
 
 }  // namespace ajp::app::play
