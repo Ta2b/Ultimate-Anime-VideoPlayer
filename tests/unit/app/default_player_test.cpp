@@ -179,6 +179,10 @@ TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_pla
   CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop"));
   CHECK_FALSE(default_handler_is_ajp("mpv.desktop\n"));
   CHECK_FALSE(default_handler_is_ajp(""));
+  // La question ne bloque jamais l'appelant (A19-04) : xdg-mime répond sur un fil à lui.
+  const auto asked = std::chrono::steady_clock::now();
+  static_cast<void>(is_default_player(PlayerPlace{}));
+  CHECK(std::chrono::steady_clock::now() - asked < std::chrono::milliseconds(200));
   CHECK(user_choice_is_ajp("AJP.Video"));
   CHECK_FALSE(user_choice_is_ajp("VLC.mkv"));
   CHECK_FALSE(user_choice_is_ajp(""));

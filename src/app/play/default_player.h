@@ -84,7 +84,8 @@ bool default_handler_is_ajp(std::string_view query_output);
 // Windows : le ProgId de UserChoice (FileExts\.mkv\UserChoice) désigne AJP (A19-05).
 bool user_choice_is_ajp(std::string_view prog_id);
 // Ce lecteur est-il déjà celui des vidéos, pour MKV et MP4 ? Linux : xdg-mime ; Windows : UserChoice ;
-// macOS : on ne sait pas (faux).
+// macOS : on ne sait pas (faux). Ne bloque jamais : la première fois, la question part sur un fil à elle et
+// la réponse vaut faux jusqu'à ce qu'elle arrive (A19-04).
 bool is_default_player(const PlayerPlace& place);
 
 // Windows : ajp.exe n'a pas de console à lui (sous-système fenêtré) ; lancé d'un terminal, il écrit dans la

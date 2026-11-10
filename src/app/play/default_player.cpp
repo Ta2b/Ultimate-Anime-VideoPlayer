@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -11,6 +12,7 @@
 #include <optional>
 #include <stop_token>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include "app/play/i18n.h"
@@ -261,12 +263,19 @@ std::vector<RegistryValue> registry_shared_values() {
 namespace {
 // P4.11 : xdg-mime ne se lance qu'une fois par processus (et après une inscription ou un retrait), plus à
 // chaque ouverture de chaîne, « Appliquer » ou épisode.
-std::mutex g_default_mutex;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-std::optional<bool> g_default_known;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+// A19-04 : la question part sur un fil à elle (xdg-mime peut prendre 10 s, deux fois) ; tant qu'elle n'a
+// pas de réponse, le lecteur n'est pas dit « par défaut ». generation écarte la réponse d'une question
+// posée avant une inscription ou un retrait.
+std::mutex g_default_mutex;              // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::optional<bool> g_default_known;     // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+bool g_default_asking = false;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::uint64_t g_default_generation = 0;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 void forget_default_player() {
   const std::scoped_lock lock(g_default_mutex);
   g_default_known.reset();
+  g_default_asking = false;
+  ++g_default_generation;
 }
 }  // namespace
 
@@ -430,8 +439,28 @@ bool user_choice_is_ajp(std::string_view prog_id) {
 bool is_default_player(const PlayerPlace& place) {
   static_cast<void>(place);
   const std::scoped_lock lock(g_default_mutex);
-  if (!g_default_known) g_default_known = query_default_player();
-  return *g_default_known;
+  if (g_default_known) return *g_default_known;
+  if (!g_default_asking) {
+    g_default_asking = true;
+    const std::uint64_t generation = g_default_generation;
+    try {
+      std::thread([generation] {
+        bool answer = false;
+        try {
+          answer = query_default_player();
+        } catch (...) {  // NOLINT(bugprone-empty-catch) : sans réponse, pas par défaut
+        }
+        const std::scoped_lock done(g_default_mutex);
+        if (generation != g_default_generation) return;
+        g_default_known = answer;
+        g_default_asking = false;
+      }).detach();
+    } catch (...) {  // pas de fil : la question n'est pas posée, le lecteur n'est pas dit par défaut
+      g_default_known = false;
+      g_default_asking = false;
+    }
+  }
+  return false;
 }
 
 void leave_lone_console() {
