@@ -212,11 +212,27 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife
       gpu::Lane::Interpolate);
 }
 
+namespace {
+
+// A09-21 : le repli entre flot entier et demi-flot se dit, dans les deux sens. Le demi-flot à la place de
+// l'entier estime le mouvement à la moitié de la hauteur ; l'entier à la place du demi-flot coûte plus cher.
+void note_drba_fallback(const std::optional<DrbaModel>& found, int work_height) {
+  if (!found || !found->fallback) return;
+  const bool half = found->align == kDistilDrbaHalfAlign;
+  log_channel("app")->warn("DistilDRBA à {} lignes : {} manque, {} à la place ({})", work_height,
+                           half ? kDistilDrbaFile : kDistilDrbaHalfFile,
+                           half ? kDistilDrbaHalfFile : kDistilDrbaFile,
+                           half ? "mouvement estimé moins finement" : "plus lent");
+}
+
+}  // namespace
+
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_distil_drba(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend,
     std::span<const std::filesystem::path> dirs, int work_width, int work_height, int& align,
     PrecisionTier tier, DrbaFusedUse* fused, bool* motion) {
   std::optional<DrbaModel> found = find_distil_drba(dirs, drba_half_flow(work_height));
+  note_drba_fallback(found, work_height);
   if (found && tier != PrecisionTier::Balanced) {
     // Le cran rendu décide du fusionné, pas le cran demandé (A31-06, A31-07 : drba_fused_choice.h).
     const DrbaTier plan =
@@ -233,8 +249,10 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
     std::string tried;
     for (const std::filesystem::path& dir : dirs)
       tried += std::format("{}{}", tried.empty() ? "" : ", ", dir.string());
-    return std::unexpected(Refusal{RefusalCode::FieldMissing,
-                                   i18n::tr_format("DistilDRBA: {} not found ({})", kDistilDrbaFile, tried)});
+    return std::unexpected(
+        Refusal{RefusalCode::FieldMissing,
+                i18n::tr_format("DistilDRBA: {} not found ({})",
+                                std::format("{}, {}", kDistilDrbaFile, kDistilDrbaHalfFile), tried)});
   }
   align = found->align;
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);

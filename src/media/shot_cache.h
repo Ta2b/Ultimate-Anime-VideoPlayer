@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -21,14 +22,26 @@ std::string shot_cache_key(const std::filesystem::path& video);
 // arrêtée (une vidéo quittée, des parties sautées), qu'elle reprendra à la prochaine ouverture.
 struct CachedShots {
   std::vector<Shot> shots;
+  std::vector<FlashSpan> flashes;  // les séquences de flashs dangereux de la part analysée
   bool complete = false;
 };
+
+// La version de l'analyse (A42-10) : les seuils de la découpe, la grille et le limiteur de flashs. Elle monte
+// à chaque changement qui donnerait d'autres plans ; un fichier d'une autre version se refait, comme celui
+// d'un autre chemin de décodage (`variant` : 0 logiciel, 1 NVDEC réduit, qui ne mesurent pas la même image).
+// 2 : animation tenue, éclairs de deux ou trois images, flashs par zones.
+inline constexpr std::uint32_t kShotAnalysis = 2;
+inline constexpr std::size_t kShotCacheKeep = 400;  // fichiers gardés
 
 // Écrit les plans sous dir (créé au besoin), par un fichier temporaire renommé ; faux si l'écriture
 // échoue. Au-delà de keep fichiers, les plus anciens partent.
 bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, std::span<const Shot> shots,
-                     bool complete, std::size_t keep = 400);
-// Les plans gardés pour cette empreinte ; rien si le fichier manque ou ne se lit pas entier.
-std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, const std::string& key);
+                     bool complete, std::size_t keep = kShotCacheKeep,
+                     std::span<const FlashSpan> flashes = {}, std::uint32_t variant = 0);
+// Les plans gardés pour cette empreinte ; rien si le fichier manque, ne se lit pas entier, ou vient d'une
+// autre version de l'analyse ou d'un autre chemin de décodage. Un fichier lu reprend la date du jour : le
+// tri du cache garde ce qui se regarde, pas seulement ce qui s'est écrit en dernier.
+std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, const std::string& key,
+                                           std::uint32_t variant = 0);
 
 }  // namespace ajp::media

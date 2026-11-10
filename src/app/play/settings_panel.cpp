@@ -186,7 +186,9 @@ void languages_tab(PlaySettings& d) {
       "The first preference whose tracks exist is used when a file opens. Applies to the next file."));
 }
 
-void subtitles_tab(PlaySettings& d) {
+// Vrai tant que le curseur du délai est tenu : le délai s'applique au relâchement, pas à chaque image du
+// glissement (A23-12).
+bool subtitles_tab(PlaySettings& d) {
   section(i18n::tr("Subtitle size"));
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
   if (ImGui::SliderInt(i18n::tr("Size"), &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
@@ -197,11 +199,17 @@ void subtitles_tab(PlaySettings& d) {
   if (ImGui::Button(i18n::tr("Reset size"))) d.subtitle_scale = 1.0F;
   panel::tip(i18n::tr("Scales all text, panels included. Live."));
   section(i18n::tr("Subtitle delay"));
-  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, -5000, 5000, "%d", ImGuiSliderFlags_None);
+  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, limits::kSubtitleDelaySlider.lo,
+                   limits::kSubtitleDelaySlider.hi, "%d", ImGuiSliderFlags_None);
+  const bool held = ImGui::IsItemActive();
   d.subtitle_delay_ms =
       std::clamp(d.subtitle_delay_ms, limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
   if (ImGui::Button(i18n::tr("Reset delay"))) d.subtitle_delay_ms = 0;
-  panel::tip(i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. This session only."));
+  static_assert(limits::kSubtitleDelayMs.hi == 30'000, "le texte de l'infobulle dit ±30,000 ms");
+  panel::tip(
+      i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. Ctrl+click the slider to type a value "
+               "(up to ±30,000 ms). This session only."));
+  return held;
 }
 
 // L'épisode suivant : lu tout seul à la fin du fichier ouvert.
@@ -230,7 +238,7 @@ void stats_tab(PlaySettings& d) {
 // pour cette machine, cet écran et cette vidéo (auto_config.h : apply_preset). Auto prend le niveau de la
 // machine ; un réglage fait à la main plus bas passe en Personnalisé, montré seulement quand il est en cours.
 void level_section(PlaySettings& d, const SettingsChoices& choices) {
-  section(i18n::tr("Level"));
+  section(i18n::tr("Preset"));
   const auto detected = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1));
   // Le préréglage qui porte le niveau de la machine : le nom qu'Auto affiche entre parenthèses.
   constexpr std::array<Preset, kTierCount> kByTier{Preset::Economy, Preset::Fast, Preset::Normal,
@@ -280,8 +288,6 @@ void sharpness_section(PlaySettings& d) {
 void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
   section(i18n::tr("This machine"));
   panel::wrapped(choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
-  ImGui::TextWrapped("%s",
-                     choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));
 
   section(i18n::tr("Setup wizard"));
@@ -359,6 +365,215 @@ SettingsPanel::~SettingsPanel() {
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+namespace {
+
+// L'arbre des pages, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les
+// pages en retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
+void draw_tree(int& current, int shown_page, std::array<bool, 8>& opened, bool advanced, float scale) {
+  const auto visible = [&](std::size_t i) { return advanced || !kPages[i].advanced; };
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float row_height = ImGui::GetFontSize() + 12.0F * scale;
+  const float head_height = ImGui::GetFontSize() + 14.0F * scale;
+  const float indent = 26.0F * scale;
+  const ImU32 accent = ImGui::ColorConvertFloat4ToU32(panel::kAccent);
+  ImVec4 soft = panel::kAccent;
+  soft.w = 0.20F;
+  ImVec4 band = style.Colors[ImGuiCol_Header];
+  band.w = 0.14F;
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
+  std::string_view category;
+  const std::string_view page_category = kPages[static_cast<std::size_t>(current)].category;
+  std::string_view shown_category;
+  if (shown_page >= 0) shown_category = kPages[static_cast<std::size_t>(shown_page)].category;
+  int category_index = -1;
+  bool category_open = false;
+  for (std::size_t i = 0; i < kPages.size(); ++i) {
+    const SettingsPage& page = kPages[i];
+    if (!visible(i)) continue;
+    if (std::string_view(page.category) != category) {
+      category = page.category;
+      ++category_index;
+      const auto slot = static_cast<std::size_t>(category_index);
+      // Quand la page change de catégorie (clic, molette), la catégorie de la page s'ouvre et les autres
+      // se replient : l'arbre tient dans une fenêtre basse. Ensuite chaque catégorie garde l'état choisi
+      // à la main.
+      if (current != shown_page && shown_category != page_category) opened[slot] = category == page_category;
+      if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
+      const ImVec2 at = ImGui::GetCursorScreenPos();
+      const float row_width = ImGui::GetContentRegionAvail().x;
+      ImGui::PushID(category_index);
+      if (ImGui::InvisibleButton("##categorie", {row_width, head_height})) opened[slot] = !opened[slot];
+      ImGui::PopID();
+      const bool hovered = ImGui::IsItemHovered();
+      ImVec4 fill = band;
+      if (hovered) fill.w = 0.30F;
+      draw->AddRectFilled(at, {at.x + row_width, at.y + head_height}, ImGui::ColorConvertFloat4ToU32(fill),
+                          5.0F * scale);
+      // Le chevron : un triangle plein, à droite quand c'est replié, vers le bas quand c'est ouvert.
+      const float cx = at.x + 12.0F * scale;
+      const float cy = at.y + head_height * 0.5F;
+      const float r = 4.0F * scale;
+      if (opened[slot])
+        draw->AddTriangleFilled({cx - r, cy - r * 0.6F}, {cx + r, cy - r * 0.6F}, {cx, cy + r * 0.9F},
+                                accent);
+      else
+        draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
+                                accent);
+      draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
+                    i18n::tr(page.category));
+      category_open = opened[slot];
+    }
+    if (!category_open) continue;
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    const float row_width = ImGui::GetContentRegionAvail().x;
+    ImGui::PushID(static_cast<int>(i));
+    const bool picked = ImGui::InvisibleButton("##page", {row_width, row_height});
+    ImGui::PopID();
+    if (picked) current = static_cast<int>(i);
+    const bool selected = static_cast<int>(i) == current;
+    if (selected) {
+      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                          ImGui::ColorConvertFloat4ToU32(soft), 5.0F * scale);
+      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y + 4.0F * scale},
+                          {at.x + indent - 5.0F * scale, at.y + row_height - 4.0F * scale}, accent,
+                          2.0F * scale);
+    } else if (ImGui::IsItemHovered()) {
+      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
+                          ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
+    }
+    draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
+                  ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled), i18n::tr(page.name));
+  }
+  ImGui::PopStyleVar();
+}
+
+}  // namespace
+
+void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices& choices,
+                              std::vector<Input>& actions, Result& result, bool& delay_held,
+                              bool& sub_delay_held) {
+  switch (kPages[static_cast<std::size_t>(page_)].id) {
+    case Page::PostProcessing: {
+      level_section(draft_, choices);
+      image_tab(draft_, choices);
+      sharpness_section(draft_);
+      fluidity_tab(draft_, choices);
+      if (advanced_) {
+        span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
+        // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
+        // demandé.
+        if (!machine_) machine_ = std::make_unique<MachineNote>();
+        if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
+          result.reopen = draft_;
+      }
+      break;
+    }
+    case Page::Colors: {
+      hdr_tab(draft_, choices);
+      grade_tab(draft_, choices, actions);
+      break;
+    }
+    case Page::Display: {
+      composition_section(draft_);
+      if (advanced_) oled_sections(draft_, choices);
+      break;
+    }
+    case Page::Sound: {
+      delay_held = sound_tab(draft_, choices);
+      break;
+    }
+    case Page::Playback: {
+      languages_tab(draft_);
+      sub_delay_held = subtitles_tab(draft_);
+      episodes_section(draft_);
+      break;
+    }
+    case Page::Application: {
+      language_section(draft_);
+      gpu_section(draft_, choices.gpus);
+      updates_page(draft_, choices.place, updates_);
+      default_player_page(choices.place, system_, choices.default_player_is_ajp);
+      break;
+    }
+    case Page::Engines: {
+      engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_);
+      break;
+    }
+    case Page::Export: {
+      export_tab(*export_, running, choices, actions);
+      break;
+    }
+    case Page::Statistics: {
+      stats_tab(draft_);
+      break;
+    }
+    case Page::About: {
+      about_page(choices, actions);
+      if (reset_page(draft_)) result.reopen = draft_;
+      break;
+    }
+  }
+}
+
+void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoices& choices,
+                                const PlaySettings& before, bool delay_held, bool sub_delay_held,
+                                Result& result) {
+  ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
+  // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
+  // compte pour un seul changement).
+  if (!ImGui::IsAnyItemActive() && draft_ != stable_) {
+    undo_.push_back(stable_);
+    if (undo_.size() > 100) undo_.erase(undo_.begin());
+    redo_.clear();
+    stable_ = draft_;
+  }
+  ImGui::SameLine();
+  ImGui::BeginDisabled(undo_.empty());
+  if (ImGui::Button(i18n::tr("Undo"))) {
+    redo_.push_back(draft_);
+    draft_ = undo_.back();
+    undo_.pop_back();
+    stable_ = draft_;
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(redo_.empty());
+  if (ImGui::Button(i18n::tr("Redo"))) {
+    undo_.push_back(draft_);
+    draft_ = redo_.back();
+    redo_.pop_back();
+    stable_ = draft_;
+  }
+  ImGui::EndDisabled();
+  // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
+  if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
+      preset_chain_differs(before, draft_, choices.calibrated.has_value()))
+    draft_.preset = Preset::Custom;
+  ImGui::PopItemWidth();
+
+  // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
+  PlaySettings live = live_part(running, draft_, choices.rife_loaded, choices.chain());
+  // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
+  // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
+  if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
+  if (sub_delay_held) live.subtitle_delay_ms = running.subtitle_delay_ms;
+  if (live != running) result.live = live;
+  const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
+  pending_shown_ = pending.cost == ChangeCost::Reopen;
+  if (pending.cost == ChangeCost::Reopen) {
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+    panel::wrapped(
+        i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason).c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;
+    ImGui::SameLine();
+    if (ImGui::Button(i18n::tr("Discard changes"))) draft_ = live;
+  }
+}
+
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
@@ -383,6 +598,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::PushItemWidth(-width * 0.42F);
     panel::advanced() = advanced_;
     bool delay_held = false;
+    bool sub_delay_held = false;
     const PlaySettings before = draft_;
     // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
@@ -408,212 +624,17 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
         }
       }
     }
-    // L'arbre, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les pages en
-    // retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
-    {
-      ImDrawList* draw = ImGui::GetWindowDrawList();
-      const ImGuiStyle& style = ImGui::GetStyle();
-      const float row_height = ImGui::GetFontSize() + 12.0F * scale;
-      const float head_height = ImGui::GetFontSize() + 14.0F * scale;
-      const float indent = 26.0F * scale;
-      const ImU32 accent = ImGui::ColorConvertFloat4ToU32(panel::kAccent);
-      ImVec4 soft = panel::kAccent;
-      soft.w = 0.20F;
-      ImVec4 band = style.Colors[ImGuiCol_Header];
-      band.w = 0.14F;
-      ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
-      std::string_view category;
-      const std::string_view page_category = kPages[static_cast<std::size_t>(page_)].category;
-      std::string_view shown_category;
-      if (shown_page_ >= 0) shown_category = kPages[static_cast<std::size_t>(shown_page_)].category;
-      int category_index = -1;
-      bool category_open = false;
-      for (std::size_t i = 0; i < kPages.size(); ++i) {
-        const SettingsPage& page = kPages[i];
-        if (!visible(i)) continue;
-        if (std::string_view(page.category) != category) {
-          category = page.category;
-          ++category_index;
-          const auto slot = static_cast<std::size_t>(category_index);
-          // Quand la page change de catégorie (clic, molette), la catégorie de la page s'ouvre et les autres
-          // se replient : l'arbre tient dans une fenêtre basse. Ensuite chaque catégorie garde l'état choisi
-          // à la main.
-          if (page_ != shown_page_ && shown_category != page_category)
-            category_open_[slot] = category == page_category;
-          if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
-          const ImVec2 at = ImGui::GetCursorScreenPos();
-          const float row_width = ImGui::GetContentRegionAvail().x;
-          ImGui::PushID(category_index);
-          if (ImGui::InvisibleButton("##categorie", {row_width, head_height}))
-            category_open_[slot] = !category_open_[slot];
-          ImGui::PopID();
-          const bool hovered = ImGui::IsItemHovered();
-          ImVec4 fill = band;
-          if (hovered) fill.w = 0.30F;
-          draw->AddRectFilled(at, {at.x + row_width, at.y + head_height},
-                              ImGui::ColorConvertFloat4ToU32(fill), 5.0F * scale);
-          // Le chevron : un triangle plein, à droite quand c'est replié, vers le bas quand c'est ouvert.
-          const float cx = at.x + 12.0F * scale;
-          const float cy = at.y + head_height * 0.5F;
-          const float r = 4.0F * scale;
-          if (category_open_[slot])
-            draw->AddTriangleFilled({cx - r, cy - r * 0.6F}, {cx + r, cy - r * 0.6F}, {cx, cy + r * 0.9F},
-                                    accent);
-          else
-            draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
-                                    accent);
-          draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
-                        i18n::tr(page.category));
-          category_open = category_open_[slot];
-        }
-        if (!category_open) continue;
-        const ImVec2 at = ImGui::GetCursorScreenPos();
-        const float row_width = ImGui::GetContentRegionAvail().x;
-        ImGui::PushID(static_cast<int>(i));
-        const bool picked = ImGui::InvisibleButton("##page", {row_width, row_height});
-        ImGui::PopID();
-        if (picked) page_ = static_cast<int>(i);
-        const bool selected = static_cast<int>(i) == page_;
-        if (selected) {
-          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
-                              ImGui::ColorConvertFloat4ToU32(soft), 5.0F * scale);
-          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y + 4.0F * scale},
-                              {at.x + indent - 5.0F * scale, at.y + row_height - 4.0F * scale}, accent,
-                              2.0F * scale);
-        } else if (ImGui::IsItemHovered()) {
-          draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
-                              ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
-        }
-        draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
-                      ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled),
-                      i18n::tr(page.name));
-      }
-      ImGui::PopStyleVar();
-    }
+    draw_tree(page_, shown_page_, category_open_, advanced_, scale);
     shown_page_ = page_;
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("##page", ImVec2(0, -footer));
     panel::begin_page();
-    {
-      switch (kPages[static_cast<std::size_t>(page_)].id) {
-        case Page::PostProcessing: {
-          level_section(draft_, choices);
-          image_tab(draft_, choices);
-          sharpness_section(draft_);
-          fluidity_tab(draft_, choices);
-          if (advanced_) {
-            span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
-            // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
-            // demandé.
-            if (!machine_) machine_ = std::make_unique<MachineNote>();
-            if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
-              result.reopen = draft_;
-          }
-          break;
-        }
-        case Page::Colors: {
-          hdr_tab(draft_, choices);
-          grade_tab(draft_, choices, actions);
-          break;
-        }
-        case Page::Display: {
-          composition_section(draft_);
-          if (advanced_) oled_sections(draft_, choices);
-          break;
-        }
-        case Page::Sound: {
-          delay_held = sound_tab(draft_, choices);
-          break;
-        }
-        case Page::Playback: {
-          languages_tab(draft_);
-          subtitles_tab(draft_);
-          episodes_section(draft_);
-          break;
-        }
-        case Page::Application: {
-          language_section(draft_);
-          gpu_section(draft_, choices.gpus);
-          updates_page(draft_, choices.place, updates_);
-          default_player_page(choices.place, system_, choices.default_player_is_ajp);
-          break;
-        }
-        case Page::Engines: {
-          engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_);
-          break;
-        }
-        case Page::Export: {
-          export_tab(*export_, running, choices, actions);
-          break;
-        }
-        case Page::Statistics: {
-          stats_tab(draft_);
-          break;
-        }
-        case Page::About: {
-          about_page(choices, actions);
-          if (reset_page(draft_)) result.reopen = draft_;
-          break;
-        }
-      }
-    }
+    draw_page(running, choices, actions, result, delay_held, sub_delay_held);
     panel::end_page();
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
-    ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
-    // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
-    // compte pour un seul changement).
-    if (!ImGui::IsAnyItemActive() && draft_ != stable_) {
-      undo_.push_back(stable_);
-      if (undo_.size() > 100) undo_.erase(undo_.begin());
-      redo_.clear();
-      stable_ = draft_;
-    }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(undo_.empty());
-    if (ImGui::Button(i18n::tr("Undo"))) {
-      redo_.push_back(draft_);
-      draft_ = undo_.back();
-      undo_.pop_back();
-      stable_ = draft_;
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::BeginDisabled(redo_.empty());
-    if (ImGui::Button(i18n::tr("Redo"))) {
-      undo_.push_back(draft_);
-      draft_ = redo_.back();
-      redo_.pop_back();
-      stable_ = draft_;
-    }
-    ImGui::EndDisabled();
-    // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
-    if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
-        preset_chain_differs(before, draft_, choices.calibrated.has_value()))
-      draft_.preset = Preset::Custom;
-    ImGui::PopItemWidth();
-
-    // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
-    PlaySettings live = live_part(running, draft_, choices.rife_loaded, choices.chain());
-    // Chaque délai recale le son (il reprend les blocs en file) : un glissement hacherait le son à
-    // chaque image, le délai s'applique donc au relâchement (saisie au clavier comprise).
-    if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
-    if (live != running) result.live = live;
-    const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
-    pending_shown_ = pending.cost == ChangeCost::Reopen;
-    if (pending.cost == ChangeCost::Reopen) {
-      ImGui::Spacing();
-      ImGui::Separator();
-      ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      ImGui::TextWrapped(
-          "%s",
-          i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason).c_str());
-      ImGui::PopStyleColor();
-      if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;
-      ImGui::SameLine();
-      if (ImGui::Button(i18n::tr("Discard changes"))) draft_ = live;
-    }
+    draw_footer(running, choices, before, delay_held, sub_delay_held, result);
   }
   ImGui::End();
   if (!keep) open_ = false;

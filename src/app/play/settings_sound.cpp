@@ -69,10 +69,11 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
 
   if (!panel::advanced()) return false;
   section(i18n::tr("Sync"));
-  ImGui::SliderInt(i18n::tr("Audio delay (ms)"), &d.audio_delay_ms, -1000, 1000);
+  ImGui::SliderInt(i18n::tr("Audio delay (ms)"), &d.audio_delay_ms, limits::kAudioDelaySlider.lo,
+                   limits::kAudioDelaySlider.hi);
   const bool held = ImGui::IsItemActive();
-  panel::tip(
-      i18n::tr("Positive delays the sound. Ctrl+click the slider to type a value (up to ±10,000 ms)."));
+  static_assert(limits::kAudioDelayMs.hi == 5000, "le texte de l'infobulle dit ±5,000 ms");
+  panel::tip(i18n::tr("Positive delays the sound. Ctrl+click the slider to type a value (up to ±5,000 ms)."));
   if (ImGui::Button(i18n::tr("Reset to 0"))) d.audio_delay_ms = 0;
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
   ImGui::Checkbox(i18n::tr("Sync playback to the display"), &d.display_sync);

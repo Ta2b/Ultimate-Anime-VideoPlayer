@@ -18,16 +18,14 @@ src/app/play/pipeline.cpp	ajp::app::play::Pipeline::open	58	208
 src/app/play/placebo_open.cpp	ajp::app::play::PlaceboScreen::open	49	222
 src/app/play/placebo_ring.cpp	ajp::app::play::PlaceboRing::create	28	112
 src/app/play/placebo_screen.cpp	ajp::app::play::PlaceboScreen::show	37	143
-src/app/play/player.cpp	ajp::app::play::play	130	480
+src/app/play/player.cpp	ajp::app::play::play	130	479
 src/app/play/player_run.cpp	ajp::app::play::run_chain	197	652
 src/app/play/ring_stage.cpp	ajp::app::play::RingStage::emit	30	100
 src/app/play/session.cpp	ajp::app::play::Session::tick	43	95
 src/app/play/settings.cpp	ajp::app::play::change_between	33	44
 src/app/play/settings_bench_results.cpp	ajp::app::play::bench_results_section	26	92
-src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	77	183
-src/app/play/settings_chain_tabs.cpp	ajp::app::play::image_tab	35	94
-src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	147
-src/app/play/settings_panel.cpp	ajp::app::play::SettingsPanel::draw	60	260
+src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	82	193
+src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	146
 src/app/play/settings_system.cpp	ajp::app::play::bench_page	22	121
 src/app/play/settings_system.cpp	ajp::app::play::updates_page	28	94
 src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	57	224
@@ -36,7 +34,7 @@ src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	31	96
 src/app/play/ui.cpp	ajp::app::play::PlayerUi::handle	26	77
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	41	104
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
-src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	171	265
+src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	169	260
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::produce	37	91
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::start	39	62
 src/core/auto_rate.cpp	ajp::core::AutoRate::try_rise	26	41
@@ -85,7 +83,7 @@ src/gpu/vulkan/compute/spirv_access.cpp	ajp::gpu::vk::spirv_readonly_bindings	37
 src/kernels/ref/frame_stats.cpp	ajp::kernels::ref::frame_counts	30	84
 src/media/bench_clip.cpp	ajp::media::draw_frame	26	73
 src/media/bench_clip.cpp	ajp::media::write_clip_to	29	82
-src/media/shot_probe.cpp	ajp::media::ShotProbe::run	42	117
+src/media/shot_probe.cpp	ajp::media::ShotProbe::run	39	117
 src/media/stills.cpp	ajp::media::extract_stills	35	76
 src/media/video_decoder.cpp	ajp::media::VideoDecoder::receive	42	69
 src/prepare/drba_split.cpp	ajp::prepare::analyze_drba	63	105

@@ -10,8 +10,8 @@ constexpr std::array kWizardTexts{
     Entry{"Calibrating this machine", "Calibration de la machine"},
     Entry{"New graphics card: optimise for this PC again (Video > Post-processing)",
           "Nouvelle carte graphique : refaites l'optimisation pour ce PC (Vidéo > Post-traitement)"},
-    Entry{"Machine calibration failed: Auto preset (see log)",
-          "La calibration de la machine a échoué : préréglage Auto (voir le journal)"},
+    Entry{"Machine calibration failed: settings unchanged (see log)",
+          "La calibration de la machine a échoué : réglages inchangés (voir le journal)"},
     Entry{"Machine calibration", "Calibration de la machine"},
     Entry{
         "\"Optimise now\" tests several settings on a very demanding sequence: picture resolution, SPAN "

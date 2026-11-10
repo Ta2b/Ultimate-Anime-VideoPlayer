@@ -9,6 +9,7 @@
 // coupe, fin du flux), le côté manquant répète l'image du centre comme la tête et la fin
 // d'infer.py. Un côté tenu (dessin identique) rend l'image de ce côté sans passe du réseau.
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -92,11 +93,27 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
   return setup_.backend->kernels()->ingest(frame, spec, rgb_[current_]->tensor());
 }
 
-std::expected<void, Refusal> UpscaleStage::settle_after_scores() {
+void UpscaleStage::keep_scores_wait(std::int64_t waited_us) {
+  // Les dernières attentes seulement : le journal de fin les résume, la mémoire reste bornée.
+  if (scores_wait_us_.size() < kScoresWaitKept) {
+    scores_wait_us_.push_back(waited_us);
+  } else {
+    scores_wait_us_[scores_wait_next_++ % kScoresWaitKept] = waited_us;
+  }
+}
+
+std::expected<void, Refusal> UpscaleStage::settle_after_scores(bool timed) {
   if (!drba_.after_ticket) return {};
   const std::uint64_t ticket = *drba_.after_ticket;
   drba_.after_ticket.reset();
+  // A09-19 : dès ×2 le ticket est relu ici, au premier instant du côté b, et non dans outputs() : sans ce
+  // chronomètre le profil de fin donnait une attente nulle à DistilDRBA.
+  const auto asked = std::chrono::steady_clock::now();
   auto scores = setup_.backend->kernels()->scores_take(ticket);
+  if (timed)
+    keep_scores_wait(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
+            .count());
   if (!scores) return std::unexpected(std::move(scores.error()));
   scores->left = drba_.ticket_left;
   scores->right = drba_.ticket_right;
@@ -115,7 +132,8 @@ bool UpscaleStage::cut_measured(const gpu::PairScores& scores, std::int64_t left
 }
 
 std::expected<gpu::PairScores, Refusal> UpscaleStage::drba_scores(const DecodedFrame& frame) {
-  if (auto ok = settle_after_scores(); !ok) return std::unexpected(std::move(ok.error()));
+  // Sans chronomètre : outputs() mesure déjà tout cet appel.
+  if (auto ok = settle_after_scores(false); !ok) return std::unexpected(std::move(ok.error()));
   if (drba_.after_scores && drba_.after_scores->right == frame.id) {
     const gpu::PairScores kept = *drba_.after_scores;
     drba_.after_scores.reset();
@@ -143,7 +161,10 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
     }
   }
   const DecodedFrame* after = next();
-  if (after == nullptr) return {};
+  // Une image d'une autre taille n'est pas ingérée (A09-04, comme look_ahead) : elle arrive ensuite comme
+  // image courante, et son refus SourceResized rouvre la chaîne.
+  if (after == nullptr || after->width != setup_.source_width || after->height != setup_.source_height)
+    return {};
   if (auto ok = ops.ingest(*after, spec, drba_.after->tensor()); !ok) return ok;
   if (drba_.small_after) {
     if (auto ok = ops.ingest(*after, gpu::IngestSpec{}, drba_.small_after->tensor()); !ok) return ok;

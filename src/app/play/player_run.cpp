@@ -608,8 +608,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           log->warn("Mode Rapide : trop d'images perdues ({}) : retour au mode Stable",
                     free_status_text(chain.live.free_info(host_now_us())));
           if (free_fallback.fell_back(host_now_us()))
-            p.ui.controls().notify(i18n::ui_tr("Fast mode: too many frames lost, back to Stable"),
-                                   host_now_us());
+            p.ui.controls().warn(i18n::ui_tr("Instant mode: too many frames lost, back to Stable"),
+                                 host_now_us());
           apply_auto();
         }
       }

@@ -121,10 +121,17 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
   CHECK_FALSE(find_distil_drba(dirs));
   std::ofstream(fake.rife / kDistilDrbaFile) << "x";
   CHECK(find_distil_drba(dirs, true)->align == 64);  // pas de demi-flot : le graphe entier
+  CHECK(find_distil_drba(dirs, true)->fallback);     // et l'appelant le sait (A09-21)
+  CHECK_FALSE(find_distil_drba(dirs, false)->fallback);
   std::ofstream(fake.rife / kDistilDrbaHalfFile) << "x";
   CHECK(find_distil_drba(dirs, true)->path == fake.rife / kDistilDrbaHalfFile);
   CHECK(find_distil_drba(dirs, true)->align == 128);
+  CHECK_FALSE(find_distil_drba(dirs, true)->fallback);
   CHECK(find_distil_drba(dirs, false)->path == fake.rife / kDistilDrbaFile);
+  // Dans l'autre sens : il ne reste que le demi-flot, une lecture à 720p le prend et le dit.
+  std::filesystem::remove(fake.rife / kDistilDrbaFile);
+  CHECK(find_distil_drba(dirs, false)->path == fake.rife / kDistilDrbaHalfFile);
+  CHECK(find_distil_drba(dirs, false)->fallback);
   CHECK_FALSE(drba_half_flow(1080));
   CHECK(drba_half_flow(2160));
 }
