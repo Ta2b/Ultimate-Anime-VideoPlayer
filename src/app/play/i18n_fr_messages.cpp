@@ -66,6 +66,7 @@ constexpr std::array kMessages{
     Entry{"Previous version restored{}", "Version précédente remise{}"},
     Entry{"Settings opened on {}: \"Set default\" at the top of the page, or one type at a time.",
           "Paramètres ouverts sur {} : « Définir par défaut » en haut de la page, ou un type à la fois."},
+    Entry{"Shortcut ignored: {}", "Raccourci ignoré : {}"},
     Entry{"Step {} of {}: {}", "Étape {} sur {} : {}"},
     Entry{"TensorRT is installed but the player uses {}: pick TensorRT in Settings > General > Engines",
           "le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres "

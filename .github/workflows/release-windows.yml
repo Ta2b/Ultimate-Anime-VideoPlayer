@@ -46,18 +46,18 @@ jobs:
       AJP_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      # Restauration et sauvegarde séparées : les ports déjà compilés restent en cache même quand
-      # la construction échoue plus loin.
+      # Le même cache que ci.yml (même triplet) : une clé stable par image du runner, manifeste et ports
+      # (voir ci.yml). Sauvé seulement après un paquet construit : jamais une installation coupée.
+      - id: runner-image
+        shell: pwsh
+        run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
       - id: vcpkg-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: C:\vc
-          key: vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-${{ github.run_id }}
+          key: vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-${{ hashFiles('vcpkg.json', 'ports/**') }}
           restore-keys: |
-            vcpkg-windows-x64-release-${{ hashFiles('vcpkg.json', 'ports/**') }}-
-            vcpkg-windows-x64-release-
-            vcpkg-windows-x64-ci-${{ hashFiles('vcpkg.json', 'ports/**') }}-
-            vcpkg-windows-x64-ci-
+            vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-
       - name: vcpkg à la référence du manifeste
         shell: pwsh
         run: |
@@ -75,6 +75,7 @@ jobs:
         shell: pwsh
         run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
       - name: Paquet
+        id: package
         shell: pwsh
         env:
           # Les liens d'engines.lock visent la release de cette étiquette : sans elle, le script
@@ -138,7 +139,7 @@ jobs:
           ctest --preset windows-release
           if ($LASTEXITCODE -ne 0) { throw "tests" }
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: always()
+        if: always() && steps.package.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
         with:
           path: C:\vc
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
