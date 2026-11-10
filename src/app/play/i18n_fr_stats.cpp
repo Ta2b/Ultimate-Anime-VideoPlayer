@@ -37,6 +37,7 @@ constexpr std::array kStatsTexts{
           "Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images."},
     Entry{"True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit).",
           "Vrai noir : 0 sous {:.4f} nit, pied jusqu'à {:.4f} nit (noir de la source à {:.4f} nit avant)."},
+    Entry{"True black: cannot measure (see the log).", "Vrai noir : mesure impossible (voir le journal)."},
     Entry{"True black: no effect here (grading off, or HDR output without a path).",
           "Vrai noir : sans effet ici (étalonnage coupé, ou sortie HDR sans voie)."},
     Entry{"True black: off.", "Vrai noir : coupé."},

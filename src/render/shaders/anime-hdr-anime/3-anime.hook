@@ -2,6 +2,7 @@
 //!BIND HOOKED
 //!BIND AJG_LOCAL
 //!BIND AJG_AREAT
+//!COMPONENTS 4
 //!DESC AnimeJaNai HDR anime - surfaces ancrees, seuls les emetteurs montent
 
 // Le grade HDR du lecteur (methode « HDR anime ») : aucune decision pixel par pixel.
@@ -12,6 +13,11 @@
 //    proche du blanc) monte vers la marge des eclats, qui suit la luminosite moyenne de la scene.
 //  - Application : un gain lisse multiplie les trois canaux ; le grain, les traits et la teinte gardent leur
 //    contraste d'origine (le damier de la peau pale, c'etait le masque pixel par pixel).
+//  - Eclats en dernier (an_late, docs/hdr-anime.md) : sur une sortie HDR dont la derniere passe
+//    compresse vers l'ecran (anime-hdr-black.hook), la montee des emetteurs n'est pas appliquee ici. La pile de
+//    LUT et la compression la divisaient par deux (audit A41-02). Elle part dans le canal alpha, en
+//    diaphragmes au-dessus des surfaces, et la derniere passe l'applique apres la pile, avec le limiteur de
+//    la scene. Les passes de ce grade gardent donc toutes quatre composantes (COMPONENTS 4).
 // Sortie SDR : image inchangee (les surfaces gardent leur niveau).
 const vec3 LUMA = vec3(0.2627, 0.6780, 0.0593);
 
@@ -124,11 +130,16 @@ vec4 hook() {
     float boost = (spec_gain - 1.0) * an_spec +
                   (an_spec >= 1.0 ? 1.5 * (an_spec - 1.0) : -0.25 * (1.0 - an_spec));
     float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * boost);
-    emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
+    bool late = an_late > 0.5;
+    // Eclats en dernier : ni epaule ni limiteur ici, la derniere passe les pose sur le niveau de l'ecran.
+    if (!late) emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
     float floor_gain = an_lift * (an_spec >= 1.0 ? 1.0 : mix(0.75, 1.0, an_spec));
     float gain = mix(an_lift, max(emit_out / lvl, floor_gain), emitter);
+    // La montee de l'emetteur au-dessus des surfaces, en diaphragmes (de -2 a +6), dans l'alpha : 0,75 moins
+    // un huitieme par diaphragme. Un alpha de 1 ne se produit jamais : la derniere passe le lit comme « rien ».
+    px.a = late ? clamp(0.75 - log2(gain / an_lift) / 8.0, 0.0, 0.98) : 1.0;
 
-    vec3 c = lin * gain;
+    vec3 c = lin * (late ? an_lift : gain);
     // Noirs profonds selon la serie (P3.52) : le curseur est le maximum, atteint dans une serie tres claire ;
     // l'effet descend a 0 dans une serie tres sombre. La cle de la serie ne bouge pas aux coupes : les memes
     // cheveux sombres sortent au meme niveau d'un plan a l'autre. Serie inconnue : une cle moyenne (0,25).

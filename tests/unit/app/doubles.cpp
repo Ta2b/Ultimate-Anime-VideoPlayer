@@ -22,11 +22,21 @@ bool FakeStages::seek(const cmd::Seek& seek) {
 }
 
 bool FakeStages::play(std::uint32_t epoch, std::int64_t media_us) {
+  if (refuse_clock > 0) {
+    --refuse_clock;
+    log.push_back(std::format("play {} {} refusé", epoch, media_us));
+    return false;
+  }
   log.push_back(std::format("play {} {}", epoch, media_us));
   return true;
 }
 
 bool FakeStages::pause() {
+  if (refuse_clock > 0) {
+    --refuse_clock;
+    log.emplace_back("pause refusée");
+    return false;
+  }
   log.emplace_back("pause");
   return true;
 }

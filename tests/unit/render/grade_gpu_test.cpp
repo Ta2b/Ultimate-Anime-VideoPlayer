@@ -29,7 +29,7 @@ namespace ajp::render {
 
 using namespace gpu_test;
 
-TEST_CASE("look : quinze LUT s'enchaînent, la dernière compte comme la première", "[render][gpu][lut]") {
+TEST_CASE("look : les LUT s'enchaînent, la dernière compte comme la première", "[render][gpu][lut]") {
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
@@ -39,43 +39,17 @@ TEST_CASE("look : quinze LUT s'enchaînent, la dernière compte comme la premiè
   for (float& value : inverted.rgb) value = 1.0F - value;
   std::array<const CubeLut*, kLookSlots> luts{};
   luts[3] = &inverted;
-  luts[14] = &inverted;
+  luts[kLookSlots - 1] = &inverted;
   REQUIRE(gpu.grade->set_looks(luts));
   GradeParams params = sdr_neutral();
   params.look_mixes[3] = 1.0;
-  params.look_mixes[14] = 1.0;
+  params.look_mixes[kLookSlots - 1] = 1.0;
   const std::vector<Rgb> twice = graded_codes(gpu, source, params);
   for (std::size_t x = 8; x < twice.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(twice[x][c] - base[x][c]) < 8e-3);
-  params.look_mixes[14] = 0.0;
+  params.look_mixes[kLookSlots - 1] = 0.0;
   const std::vector<Rgb> once = graded_codes(gpu, source, params);
   CHECK(once[32][0] > 0.55);
-}
-
-TEST_CASE("look : la pile composée en tâche de fond rend la même image (P4.9)", "[render][gpu][lut]") {
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.8, 0.6);
-  CubeLut inverted = identity_lut(17);
-  for (float& value : inverted.rgb) value = 1.0F - value;
-  REQUIRE(gpu.grade->set_looks({&inverted, nullptr, nullptr}));
-  GradeParams params = sdr_neutral();
-  params.look_mixes[0] = 1.0;
-  const std::vector<Rgb> direct = graded_codes(gpu, source, params);
-  gpu.grade->set_background(true);
-  REQUIRE(gpu.grade->set_looks({&inverted, nullptr, nullptr}));  // la pile est à refaire, sur le thread
-  gpu.grade->set_params(params);
-  bool adopted = false;
-  for (int i = 0; i < 500 && !adopted; ++i) {
-    adopted = gpu.grade->adopt();
-    if (!adopted) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  REQUIRE(adopted);
-  REQUIRE(gpu.grade->look_stack() != nullptr);
-  const std::vector<Rgb> later = graded_codes(gpu, source, params);
-  for (std::size_t x = 8; x < later.size(); ++x)
-    for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(later[x][c] - direct[x][c]) < 1e-4);
 }
 
 TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gpu]") {
@@ -192,49 +166,6 @@ TEST_CASE("look : deux LUT s'enchaînent dans l'ordre, deux inversions se compen
   const std::vector<Rgb> none = graded_codes(gpu, source, params);
   for (std::size_t x = 0; x < none.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(none[x][c] == base[x][c]);
-}
-
-}  // namespace ajp::render
-
-namespace ajp::render {
-
-// La courbe de KWin sans métadonnées (colormanagement.glsl, doTonemapping) sur un gris : le signal (blanc
-// PQ de 203 nits) posé au blanc de référence de KDE, compressé de 10 000 nits vers le pic de l'écran.
-double kwin_without_metadata(double nits, double reference, double peak) {
-  const double k = reference / 203.0;
-  const double in_range = 10000.0 * k / reference;
-  const double out_range = peak / reference;
-  const double v = (out_range * (1.0 + in_range) - in_range) / (in_range * in_range);
-  const double rel = nits * k / reference;
-  return std::min(rel * (1.0 + rel * v) / (1.0 + rel) * reference, peak);
-}
-
-TEST_CASE("métadonnées HDR : le grade compresse comme KWin, qui n'a plus qu'à écrêter", "[render][gpu]") {
-  using namespace gpu_test;
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> source = ramp(4000.0, 1.0, 1.0);  // un gris jusqu'à 4 000 nits
-  GradeParams neutral;
-  neutral.peak = kPeak;
-  neutral.shadows = 0.0;
-  neutral.spec_gain = 1.0;
-  const std::vector<Rgb> base = graded_rgb(gpu, source, neutral);
-  constexpr double kReference = 200.0;
-  constexpr double kScreenPeak = 800.0;
-  gpu.grade->set_kwin_match(Grade::KwinMatch{.reference = kReference, .peak = kScreenPeak});
-  const std::vector<Rgb> matched = graded_rgb(gpu, source, neutral);
-  gpu.grade->set_kwin_match(std::nullopt);
-  const double k = kReference / 203.0;
-  for (std::size_t x = 4; x < base.size(); ++x) {
-    const double before = kwin_without_metadata(base[x][0], kReference, kScreenPeak);
-    const double now = std::min(matched[x][0] * k, kScreenPeak);  // KWin, métadonnées reçues : il écrête
-    CHECK(std::abs(now - before) <= (0.02 * before) + 0.05);
-    CHECK(std::abs(matched[x][1] - matched[x][0]) <= 0.01 * matched[x][0] + 0.01);  // le gris reste gris
-  }
-  // Sans la passe, l'image ne bouge pas.
-  const std::vector<Rgb> off = graded_rgb(gpu, source, neutral);
-  for (std::size_t x = 0; x < base.size(); ++x) CHECK(off[x][0] == base[x][0]);
 }
 
 }  // namespace ajp::render

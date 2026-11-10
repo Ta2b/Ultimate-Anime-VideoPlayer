@@ -12,6 +12,7 @@
 #include "audio/devices.h"
 #include "audio/output.h"
 #include "core/log.h"
+#include "core/text.h"
 #include "kernels/spec/color.h"
 #include "media/demuxer.h"
 #include "media/video_decoder.h"
@@ -63,12 +64,12 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       config.subtitles ? find_external_subtitles(config.file) : std::vector<ExternalSubtitle>{};
   std::vector<media::TrackInfo> candidates(demuxer->tracks().begin(), demuxer->tracks().end());
   for (std::size_t k = 0; k < externals.size(); ++k) {
-    const std::string extension = externals[k].path.extension().string();
+    const std::string extension = core::ascii_lower(prepare::utf8_path(externals[k].path.extension()));
     candidates.push_back({.index = kExternalSubtitleBase + static_cast<int>(k),
                           .kind = media::TrackKind::Subtitle,
-                          .codec = extension == ".srt" || extension == ".SRT" ? "subrip" : "ass",
+                          .codec = extension == ".srt" ? "subrip" : "ass",
                           .language = externals[k].language,
-                          .title = externals[k].path.filename().string()});
+                          .title = prepare::utf8_path(externals[k].path.filename())});
   }
   media::TrackChoice choice = media::choose_tracks(candidates, config.languages);
   const auto kind_of = [&](int index) {
@@ -80,8 +81,8 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   if (config.subtitle_track && subtitle_exists(*config.subtitle_track, *demuxer, externals.size()))
     choice.subtitle = *config.subtitle_track;
   if (!choice.video) {
-    return std::unexpected(
-        Refusal{RefusalCode::TrackUnavailable, std::format("{}: no video track", config.file.string())});
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable,
+                                   std::format("{}: no video track", prepare::utf8_path(config.file))});
   }
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();
@@ -179,7 +180,7 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
       p->tracks_.push_back({.index = index,
                             .kind = media::TrackKind::Subtitle,
                             .codec = "externe",
-                            .title = p->external_[k].path.filename().string()});
+                            .title = prepare::utf8_path(p->external_[k].path.filename())});
     }
     if (!choice.subtitle && !config.subtitle_track && !p->external_.empty() &&
         std::ranges::none_of(demuxer->tracks(), [](const media::TrackInfo& t) {
