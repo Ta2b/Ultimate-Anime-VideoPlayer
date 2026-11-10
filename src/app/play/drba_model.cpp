@@ -26,7 +26,7 @@ std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path>
 }
 
 bool drba_half_flow(int work_height) {
-  return work_height >= 1440;
+  return work_height >= kDrbaHalfFlowHeight;
 }
 
 std::expected<std::filesystem::path, Refusal> drba_motion_model(const std::filesystem::path& model,

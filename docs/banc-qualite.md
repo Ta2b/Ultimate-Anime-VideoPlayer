@@ -101,6 +101,38 @@ milieu vient du réseau, pas de son FP16. Sur l'extrait de la section « Mesure 
 en synthèse et 80,78 dB sur l'extrait. `seuils.json` porte les chiffres du graphe livré : un export qui
 remettrait la grille en FP16 ferait échouer la CI.
 
+### DistilDRBA, demi-flot (C05, A09-24)
+
+`distil_drba_v2_lite_s05.onnx` estime le mouvement à la moitié de la taille. Le lecteur le prenait dès 1440
+lignes, sans chiffre. Mesuré avec `--reseau`, le flot entier d'abord, le demi-flot ensuite :
+
+| Images | Vérité, flot entier (dB) | Vérité, demi-flot (dB) | Écart | ms entier | ms demi-flot | Temps |
+|---|---:|---:|---:|---:|---:|---:|
+| synthèse 1280 × 720, 8 scènes | 35,76 | 31,92 | −3,84 | 167 | 96 | −42 % |
+| synthèse 1600 × 900, 8 scènes | 36,67 | 32,30 | −4,37 | 300 | 197 | −34 % |
+| extrait 1280 × 720, 60 fenêtres | 24,58 | 24,68 | +0,10 | 162 | 90 | −44 % |
+| extrait 1920 × 1080, 12 fenêtres | 23,87 | 23,97 | +0,10 | 366 | 215 | −41 % |
+| extrait agrandi à 2560 × 1440, 8 fenêtres | 24,63 | 24,86 | +0,23 | 713 | 419 | −41 % |
+
+Opérations (multiplications-additions des convolutions, comptées sur le graphe) : 6,5 milliards contre 1,6 à
+1280 × 768, 24,8 contre 6,5 à 1440 lignes, 55,0 contre 13,7 à 2160 lignes. Le demi-flot fait quatre fois
+moins de convolutions ; sur processeur le temps ne baisse que de 34 à 44 %, le reste (warps, mélange) se fait
+à la taille pleine.
+
+Ce que ces chiffres disent :
+
+- **Sur un mouvement simple** (les scènes de synthèse : translation, zoom, où tout tient au placement), le
+  demi-flot perd 3,8 à 4,4 dB, et la perte ne diminue pas quand la taille monte.
+- **Sur l'extrait d'action**, les deux se valent, le demi-flot un peu devant (0,1 à 0,2 dB) : sur un grand
+  mouvement, estimer à la moitié de la taille élargit ce que le réseau voit.
+- Le seuil passe donc à **2160 lignes** (`kDrbaHalfFlowHeight`), le conseil de l'auteur : à 1440 lignes rien ne
+  justifie de perdre 4 dB sur les panoramiques.
+
+Limites : pas de source native en 1440 ou 2160 lignes ici, l'extrait est agrandi (ce qu'est presque tout anime
+en 4K) et les scènes de synthèse s'arrêtent sous 1080 lignes ; les temps sont ceux d'ONNX Runtime sur
+processeur, pas ceux de la RTX. À 3840 × 2160 le banc n'a pas tenu dans les 15 Go de la machine de mesure : le
+demi-flot en 4K reste sur le conseil de l'auteur, sans chiffre d'ici.
+
 ## Mesure sur un épisode
 
 Un extrait de 31 s d'un épisode en 1080p (743 images, surtout de l'action), avec `--video`. Le banc y prend des
