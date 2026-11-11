@@ -87,6 +87,7 @@ TEST_CASE("Touches : core::fixed_key dit exactement les touches lues avant [keys
   int fixed = 0;
   for (SDL_Keycode code = SDLK_BACKSPACE; code <= SDLK_UP; ++code) {
     if (code == SDLK_DELETE + 1) code = SDLK_CAPSLOCK;  // des caractères aux touches sans caractère
+    if (code == SDLK_F11) continue;  // plein écran : un raccourci du lecteur hors de fixed_key (B24-03)
     const auto key = key_of(code);
     if (!key) continue;
     SDL_Event down{};
