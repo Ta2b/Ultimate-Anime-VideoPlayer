@@ -507,17 +507,19 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
                                                   library_wanted, *engines, catalog, paths);
     const bool explored = measured_tier && !file_options.bench_level && measured_here(*measured_tier, here);
-    chosen = apply_preset(
-        chosen,
-        Machine{.tier = tier,
-                .display_height = display_height((*screen)->window()),
-                .display_hz = display_refresh_hz((*screen)->window()),
-                .explored_work_height = explored ? measured_tier->work_height : 0,
-                .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
-                .calibrated = file_options.bench_level ? std::nullopt
-                                                       : calibrated_chain(settings_path.parent_path(), host),
-                .display_width = display_width((*screen)->window())},
-        source);
+    // La machine vue de l'écran où est la fenêtre : à l'ouverture, et quand elle change d'écran (B29-01).
+    const auto machine_now = [&] {
+      return Machine{.tier = tier,
+                     .display_height = display_height((*screen)->window()),
+                     .display_hz = display_refresh_hz((*screen)->window()),
+                     .explored_work_height = explored ? measured_tier->work_height : 0,
+                     .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
+                     .calibrated = file_options.bench_level
+                                       ? std::nullopt
+                                       : calibrated_chain(settings_path.parent_path(), host),
+                     .display_width = display_width((*screen)->window())};
+    };
+    chosen = apply_preset(chosen, machine_now(), source);
     PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
@@ -586,6 +588,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                   .display = window_display((*screen)->window())};
     player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     player.stages = &stage_memory;
+    player.relaunch_on_loss =
+        !scripted && !(lost_recently && relaunch_now_s() - launched_s < kRelaunchAgainS);
     announce_once(player, announced, update_file, saved->update_mode, here.name, host.display_height);
     announce_first(player.notice, relaunch_note);
     announce_first(player.notice, engine_fallback);
@@ -648,6 +652,18 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
         player.notice = exported.notice;
       }
       settings = (*outcome)->settings;
+      if ((*outcome)->rederive) {
+        // B29-01 : la chaîne du préréglage pour le nouvel écran ; Personnalisé reste tel quel
+        // (apply_preset). Un raccourci de séance (Ctrl+I) garde son interpolation.
+        const PlaySettings before = settings;
+        settings = settings_for(apply_preset(settings, machine_now(), source), file_options);
+        if (player.kept.rife) {
+          settings.rife_factor = before.rife_factor;
+          settings.rife_factor_den = before.rife_factor_den;
+        }
+        log->info("écran changé : chaîne refaite pour lui ({} p, ×{})", settings.work_height,
+                  settings.rife_factor);
+      }
       // « Refaire le banc » (P3.12) : la chaîne est fermée, sa mémoire vidéo libérée ; la calibration
       // mesure la machine seule, puis la lecture reprend avec ce qu'elle a trouvé.
       if ((*outcome)->calibrate) {

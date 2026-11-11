@@ -94,6 +94,9 @@ class PlayerUi {
     choices_.window_fullscreen = fullscreen;
   }
   void set_running(const PlaySettings& running);
+  // B08-04 : la sortie HDR ou SDR et le pic de l'écran ont changé pendant la lecture (système, écran) ; la
+  // page Sortie les suit, sans toucher au reste des choix.
+  void set_display_output(bool hdr_output, int auto_peak);
   void set_black_status(std::string status);  // ligne du vrai noir dans l'onglet Grade
   void toggle_settings();
   void open_settings();

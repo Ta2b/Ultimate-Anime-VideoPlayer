@@ -88,6 +88,7 @@ constexpr std::array kPlayer{
     Entry{"Subtitles", "Sous-titres"},
     Entry{"Subtitles (j)", "Sous-titres (j)"},
     Entry{"Subtitles off", "Sous-titres désactivés"},
+    Entry{"Subtitles refused ({}): {}", "Sous-titres refusés ({}) : {}"},
     Entry{"Subtitles: {}", "Sous-titres : {}"},
     Entry{"Thai", "Thaï"},
     Entry{"Track {}", "Piste {}"},

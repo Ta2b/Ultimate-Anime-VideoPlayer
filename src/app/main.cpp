@@ -47,6 +47,7 @@ extern "C" {
 #include "app/play/player.h"
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
 #include "app/play/updater.h"
@@ -232,6 +233,22 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
   execv(executable.c_str(), arguments.data());
   return 1;  // execv ne revient que sur un échec
 #endif
+}
+
+// B31-04 : la relance qu'une fermeture bloquée sur le GPU fait elle-même (relaunch_target.h : exit_stuck),
+// avec les arguments du lancement. Posés une fois par run_player, lus par le garde sur son thread.
+struct StuckRelaunch {
+  std::filesystem::path executable;
+  int argc = 0;
+  char** argv = nullptr;
+};
+StuckRelaunch& stuck_relaunch_args() {
+  static StuckRelaunch args;
+  return args;
+}
+void relaunch_when_stuck() {
+  const StuckRelaunch& args = stuck_relaunch_args();
+  if (args.argv != nullptr) (void)relaunch(args.executable, args.argc, args.argv);
 }
 
 // « ajp compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
@@ -595,6 +612,8 @@ int run_player(int argc, char** argv) {
 #endif
   std::error_code error;
   std::filesystem::create_directories(paths.engines, error);
+  stuck_relaunch_args() = StuckRelaunch{.executable = place.executable, .argc = argc, .argv = argv};
+  ajp::app::play::set_stuck_relaunch(&relaunch_when_stuck);
   const auto played = ajp::app::play::play(*options, paths);
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();

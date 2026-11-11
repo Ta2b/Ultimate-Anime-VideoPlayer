@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -28,9 +29,10 @@
 #include "app/play/chain_choices.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
+#include "app/play/close_watch.h"
 #include "app/play/default_player.h"
-#include "app/play/display_contract.h"
 #include "app/play/display_edid.h"
+#include "app/play/display_follow.h"
 #include "app/play/drba_model.h"
 #include "app/play/engine_build.h"
 #include "app/play/engine_install.h"
@@ -55,6 +57,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/present_stats.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
@@ -66,7 +69,6 @@
 #include "app/play/upscale_stage.h"
 #include "app/play/user_keys.h"
 #include "app/play/visible_error.h"
-#include "app/play/vrr_watch.h"
 #include "audio/devices.h"
 #include "core/auto_memory.h"
 #include "core/auto_rate.h"
@@ -86,28 +88,17 @@ namespace {
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus (P4.7 : 33 ms, l'interface à 30 i/s ; une image réveille).
 constexpr std::int32_t kPausedWaitMs = 33;
-// L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle) ; le
-// HDR et le pic du système toutes les 2 s, l'appel coûte plus et l'utilisateur ne bascule pas plus vite.
+// L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle), sur
+// le fil de DisplayProbe ; le HDR et le pic sur événement, sinon toutes les 10 s (display_follow.cpp).
 constexpr std::int64_t kDisplayPollUs = 500'000;
-// Le pic et le HDR du système se relisent sur événement (ContractWatch::take_peak_change) ; ce sondage n'est
-// que le filet, pour un système qui ne dit rien (A11-02 : sous Windows, chaque relevé énumère les écrans).
-constexpr std::int64_t kHdrPollUs = 10'000'000;
 // Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
 constexpr std::int64_t kResizeWindowUs = 60'000'000;
 constexpr std::size_t kResizesRefused = 4;
+// Le démontage d'une chaîne saine (moteurs TensorRT compris) se compte en secondes (placebo_open.cpp).
+constexpr std::chrono::seconds kTeardownLimit{60};
 
 // La période d'une fréquence déjà relue (display_period_us referait le relevé du mode, deux
 // QueryDisplayConfig par tour sous Windows) ; une fréquence inutilisable laisse SDL répondre.
-std::int64_t period_of_hz(double hz, SDL_Window* window) {
-  return hz > 1.0 ? std::llround(1e6 / hz) : display_period_us(window);
-}
-
-// Le pic et le HDR du système sont à relire : un événement l'a dit, ou le filet de kHdrPollUs est échu.
-bool peak_due(ContractWatch& watch, std::int64_t polled_at) {
-  const bool changed = watch.take_peak_change();
-  return changed || host_now_us() - polled_at >= kHdrPollUs;
-}
-
 // Les réglages d'une réouverture demandée, écrits une fois la chaîne rouverte (Player::unsaved), sans les
 // raccourcis de séance (A08-04).
 void save_reopened(Player& p) {
@@ -146,18 +137,14 @@ std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, Player
 
 // Le nouvel écran : son contrat (P3.40, A11-01), puis son pic, ses soins OLED et son vrai noir tout de suite,
 // en SDR aussi (A08-07).
-void adopt_display(Player& p, ContractWatch& watch, Chain& chain, const std::optional<DisplayFacts>& display,
-                   SDL_Window* window) {
-  watch.set_display(p.display = display);
-  follow_display(chain, content_peak_nits(window));
-}
-
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
+  // B31-03 : une perte du GPU pendant la préparation relance au départ demandé, pas à 0:00.
+  p.stopped_at_us = std::max<std::int64_t>(start_us, 0);
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
@@ -394,29 +381,19 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{settings.audio_delay_ms} * 1000});
   std::int64_t saved_at = host_now_us();
   std::int64_t display_polled_at = saved_at;
-  std::int64_t hdr_polled_at = host_now_us();
   p.ui.controls().show_deferred(host_now_us());
   // Le mode auto : son plafond suit la fréquence de l'écran.
-  bool vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
-                   p.display->vrr_armed.value_or(false);
+  DisplayState screen_state{.known_hz = display_refresh_hz(out.window()),
+                            .known_period_us = display_period_us(out.window()),
+                            .vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
+                                         p.display->vrr_armed.value_or(false)};
+  const double& known_hz = screen_state.known_hz;
+  const std::int64_t& known_period_us = screen_state.known_period_us;
+  const bool& vrr_armed = screen_state.vrr_armed;
   std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
-  // La fréquence de l'écran selon SDL, gardée quand SDL ne la donne plus : un écran rallumé passe un moment
-  // sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la source.
-  double known_hz = display_refresh_hz(out.window());
-  std::int64_t known_period_us = display_period_us(out.window());
-  SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
-  const DisplayMove opened{display_height(out.window()), known_hz, fps_of(video.frame_rate)};
   const GrowingFile opened_file =
       GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
-  double session_hz_seen = known_hz;
-  ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
-  const auto read_display_facts = [&] {
-    if (const double hz = display_refresh_hz(out.window()); hz > 0.0) {
-      known_hz = hz;
-      known_period_us = period_of_hz(hz, out.window());  // un seul relevé du mode par tour (A11-02)
-    }
-  };
   // Repli du Rapide pour la séance seulement : play.toml garde le choix, qu'un choix explicite annule.
   core::FreeFallback free_fallback;  // revient au Rapide après un calme (core/free_rate.h)
   bool free_chosen = chain.running.auto_free;
@@ -440,10 +417,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
       if (!why.empty()) log->info("Mode Rapide indisponible ({}) : mode Stable", why);
     }
-    chain.live.set_auto(on && !free, core::auto_limits(known_hz, fps_of(video.frame_rate), vrr_armed,
+    // B12-02, B12-07 : les paliers calés et la grille des vsyncs sur la fréquence mesurée, celle que la
+    // session suit, et non l'annoncée (164,78 Hz pour 165 : le facteur exact ne se calait plus).
+    const double lock_hz = session.display_hz() > 0.0 ? session.display_hz() : known_hz;
+    chain.live.set_auto(on && !free, core::auto_limits(lock_hz, fps_of(video.frame_rate), vrr_armed,
                                                        chain.running.rife_factor, cap_hz));
+    const std::int64_t refresh_us =
+        session.display_period_us() > 0 ? session.display_period_us() : known_period_us;
     // Écart minimal : la période de l'écran ou du plafond, à 1 % près ; à fréquence fixe, sur les vsyncs.
-    const std::int64_t refresh_us = known_period_us;
     const bool vsync = free && !vrr_armed;
     chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * 0.99)) : 0,
                         host_now_us());
@@ -470,14 +451,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
     }
   }
-  bool vrr_fullscreen = true;  // relu au premier tour : VRR, compositeur (P3.45)
-  VrrWatch vrr_watch(vrr_armed);
   // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
   const auto apply_floor = [&] {
     const int min_hz = p.display ? p.display->vrr_floor_hz() : 0;
     session.set_vrr_floor(vrr_armed ? core::vrr_floor_us(min_hz) : 0);
   };
   apply_floor();
+  DisplayFollow follow(p, chain, session, screen_state, fps_of(video.frame_rate),
+                       {.apply_auto = apply_auto, .apply_floor = apply_floor}, log, &LoopWake::push, &wake);
   if (p.display)
     log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
@@ -566,31 +547,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                            chain.running.preset != Preset::Custom);
         if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
       }
-      // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence, son VRR et son état sont relus.
-      read_display_facts();
-      if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
-      // Le HDR et le pic suivent le système et l'écran (Windows, KDE) : relus sur événement, sinon à 10 s.
-      if (!p.options.sdr && peak_due(contract_watch, hdr_polled_at)) {
-        hdr_polled_at = host_now_us();
-        const std::optional<double> peak_now = content_peak_nits(out.window());
-        if (system_hdr(peak_now) != chain.running.hdr_native) {
-          PlaySettings switched = chain.running;
-          switched.hdr_native = !switched.hdr_native;
-          chain.auto_peak = auto_peak_nits(peak_now);
-          log->info("HDR du système {} : sortie {}", switched.hdr_native ? "allumé" : "coupé",
-                    switched.hdr_native ? "HDR10" : "SDR gradée");
-          apply(Input{ApplySettings{.settings = switched}}, chain, host_now_us());
-        } else {
-          follow_display(chain, peak_now);  // P3.58
-        }
-      }
-      const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());
-      const bool display_changed =
-          display_id != known_display || (display_id != 0 && known_hz > 0.0 && known_hz != session_hz_seen);
-      known_display = display_id;
-      session_hz_seen = known_hz;
-      session.set_display(known_period_us, known_hz);
-      apply_auto();
+      // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence, son VRR et son état sont relus,
+      // hors du thread qui présente (display_follow.h).
+      follow.poll();
       // Le mode auto écoute les images manquées à l'écran (sans paire en retard, le GPU peut ne pas suivre)
       // et le chien de garde veille sur le moteur d'interpolation.
       const FrameStats& shown = session.stats();
@@ -617,45 +576,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
-      // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque tour (un seul ioctl).
-      if (p.display && !p.display->connector.empty()) {
-        if (const auto now =
-                vrr_watch.observe(out.vrr_armed(), window_vrr_armed(out.window(), p.display->connector))) {
-          const bool armed = !p.options.no_vrr && p.display->vrr.value_or(false) && *now;
-          log->info("VRR : {}", *now ? "armé" : "non armé");
-          p.ui.set_display_vrr(p.display->vrr.value_or(false), *now,
-                               (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0);
-          if (armed != vrr_armed) {
-            vrr_armed = armed;
-            apply_floor();
-            apply_auto();
-          }
-        }
-      }
-      // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
-      const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
-      if (fullscreen != vrr_fullscreen || display_changed) {
-        if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
-        if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
-            display_moves_chain(chain.running.preset, opened.now(display_height(out.window()), known_hz)))
-          chain.reopen = chain.running;  // A29-03 : la chaîne, pas le lecteur ; pistes et sous-titres gardés
-        vrr_fullscreen = fullscreen;
-        session.set_composited(!fullscreen);
-        if (const auto display = window_display(out.window())) {
-          if (display_changed) adopt_display(p, contract_watch, chain, display, out.window());
-          p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
-          const bool armed =
-              !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
-          if (armed != vrr_armed) {
-            vrr_armed = armed;
-            apply_floor();
-            apply_auto();  // les demi-paliers suivent le VRR
-          }
-          log->info("VRR : {} · {}", display->vrr.value_or(false) ? "capable" : "non capable",
-                    display->vrr_armed.value_or(false) ? "armé" : "non armé");
-        }
-      }
     }
+    follow.take();  // le relevé de l'écran fini sur son fil, s'il y en a un
     grade_tick(chain, host_now_us());
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
@@ -761,14 +683,22 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     .calibrate = chain.calibrate,
                     .next_file = chain.next_file,
                     .next_start_us = chain.next_start_us,
-                    .next_paused = chain.next_paused};
+                    .next_paused = chain.next_paused,
+                    .rederive = chain.rederive};
     reopen->settings.volume = p.ui.controls().volume();
     p.kept = chain.kept;  // la chaîne rouverte garde les raccourcis de séance (A08-04)
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
   // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
-  p.stopped_at_us = std::max<std::int64_t>(session.view().position_us, 0);
+  if (const std::int64_t at = session.view().position_us; at != kNoPts)
+    p.stopped_at_us = std::max<std::int64_t>(at, 0);
+  // B31-04, B30-07 : ce démontage attend le GPU sans délai (jointure des fils, cudaStreamSynchronize,
+  // cudaFree) ; gardé comme celui de l'écran. Après une perte du GPU, la relance est demandée d'abord : un
+  // démontage bloqué la fait au lieu de laisser une fenêtre figée.
+  if (failure && failure->code == RefusalCode::DeviceLost && p.relaunch_on_loss)
+    (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, false, RelaunchReason::GpuLost);
+  const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
   session.end();
   out.flush();
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)

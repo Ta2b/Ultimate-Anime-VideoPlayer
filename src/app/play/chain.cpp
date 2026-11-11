@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <tuple>
 #include <utility>
 #include <variant>
 
@@ -12,6 +13,7 @@
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "app/play/present_stats.h"
+#include "app/play/visible_error.h"
 #include "audio/devices.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -69,6 +71,17 @@ bool grade_changed(const PlaySettings& a, const PlaySettings& b) {
          a.oled_black_steps != b.oled_black_steps || a.look_contrast != b.look_contrast ||
          a.look_highlight != b.look_highlight || a.surface_white != b.surface_white;
 }
+
+}  // namespace
+
+std::pair<int, int> toggled_interpolation(int factor, int den,
+                                          const std::optional<std::pair<int, int>>& kept) {
+  if (factor >= 2) return {0, den};
+  if (kept && kept->first >= 2) return *kept;
+  return {kDefaultRifeFactor, 1};
+}
+
+namespace {
 
 // Un raccourci change la chaîne pour la séance : play.toml garde ce qu'il avait avant.
 void keep_for_file(Chain& to, bool grade, bool rife) {
@@ -249,11 +262,18 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
     return;
   }
   if (drop.kind == DropKind::Subtitles) {
-    if (auto added = to.pipeline.add_subtitle_file(drop.path)) {
+    auto added = to.pipeline.add_subtitle_file(drop.path);
+    if (added) {
       if (to.dropped_subtitles != nullptr) to.dropped_subtitles->push_back(drop.path);
       switch_subtitles(to, *added, now_us);
       return;
     }
+    // B08-11 : des sous-titres illisibles ne sont pas « ni une vidéo ni des sous-titres » ; la raison va au
+    // journal.
+    log_channel("app")->warn("sous-titres glissés refusés : {} ({})", name, added.error().detail);
+    to.ui.controls().notify(
+        i18n::ui_tr_format("Subtitles refused ({}): {}", visible_error(added.error()), name), now_us);
+    return;
   }
   log_channel("app")->info("fichier glissé refusé : {}", name);
   to.ui.controls().notify(i18n::ui_tr_format("Not a video or subtitles: {}", name), now_us);
@@ -320,13 +340,15 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             }
             if (std::holds_alternative<cmd::ToggleInterpolation>(command)) {
               PlaySettings wanted = to.running;
-              wanted.rife_factor = wanted.rife_factor >= 2 ? 0 : kDefaultRifeFactor;
-              if (wanted.rife_factor == kDefaultRifeFactor) wanted.rife_factor_den = 1;
               keep_for_file(to, false, true);
+              std::tie(wanted.rife_factor, wanted.rife_factor_den) =
+                  toggled_interpolation(wanted.rife_factor, wanted.rife_factor_den, to.kept.rife);
               switch_chain(to, wanted, now_us);
               return;
             }
-            if (std::holds_alternative<cmd::ProcessingOff>(command)) {  // la source telle quelle
+            // Ni grade ni interpolation pour la séance. B08-05 : SPAN, le débandage et la netteté restent
+            // (les couper rouvrirait la chaîne) ; l'aide et le README le disent.
+            if (std::holds_alternative<cmd::ProcessingOff>(command)) {
               PlaySettings wanted = to.running;
               wanted.grade = false;
               wanted.rife_factor = 0;

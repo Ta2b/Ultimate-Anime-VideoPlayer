@@ -135,7 +135,7 @@ réglages avancés.
 | `.` / `,` | image par image |
 | `p` | paramètres |
 | Tab | statistiques |
-| Ctrl+0 | sans traitement |
+| Ctrl+0 | sans grade ni interpolation (l'agrandissement reste) |
 | Ctrl+G / Ctrl+I | grade / interpolation |
 | `q` | quitter |
 
