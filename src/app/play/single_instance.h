@@ -41,6 +41,11 @@ struct InstanceClaim {
 InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::string_view key,
                              const std::vector<std::string>& files);
 
+// Remet des fichiers dans la file de SDL, comme un glisser-déposer venu d'un autre lancement (la fenêtre
+// passe devant). Faux si SDL en refuse un. Sert aussi à rendre à la boucle suivante les vidéos reçues
+// pendant une attente qui ne les ouvre pas (DeferredDrops, B29-04).
+bool push_forwarded_files(const std::vector<std::string>& files);
+
 // Les fichiers d'un message (lignes jusqu'à la ligne vide) ; exposé pour les tests.
 std::vector<std::string> instance_message_files(std::string_view message);
 std::string instance_message(const std::vector<std::string>& files);

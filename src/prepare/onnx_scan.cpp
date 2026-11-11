@@ -13,6 +13,7 @@
 #include <string_view>
 #include <utility>
 
+#include "core/text.h"
 #include "prepare/protobuf_fields.h"
 #include "prepare/utf8.h"
 
@@ -239,7 +240,7 @@ namespace {
 bool reserved_device_name(std::string_view component) {
   const std::size_t dot = component.find('.');
   std::string base(component.substr(0, dot));
-  for (char& c : base) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  for (char& c : base) c = core::ascii_upper(c);
   if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL") return true;
   return base.size() == 4 && (base.starts_with("COM") || base.starts_with("LPT")) && base[3] >= '1' &&
          base[3] <= '9';

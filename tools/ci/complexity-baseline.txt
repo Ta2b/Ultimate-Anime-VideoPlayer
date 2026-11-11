@@ -7,8 +7,7 @@ src/app/play/chain.cpp	ajp::app::play::apply_live	39	92
 src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	106	256
 src/app/play/controls_draw.cpp	ajp::app::play::draw_controls	57	197
 src/app/play/display_edid.cpp	ajp::app::play::parse_edid	32	56
-src/app/play/engine_install.cpp	ajp::app::play::fetch_vendor_file	27	114
-src/app/play/engine_install.cpp	ajp::app::play::install_steps	30	169
+src/app/play/engine_install.cpp	ajp::app::play::install_steps	25	140
 src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	36	86
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303
 src/app/play/home_screen.cpp	ajp::app::play::run_home	28	117
@@ -83,10 +82,9 @@ src/prepare/drba_split.cpp	ajp::prepare::drba_expected_wiring	6	158
 src/prepare/drba_split.cpp	ajp::prepare::parse_drba_manifest	26	57
 src/prepare/onnx_scan.cpp	ajp::prepare::child_kind	28	32
 src/prepare/onnx_split.cpp	ajp::prepare::extract_subgraph	46	116
-src/prepare/onnx_split.cpp	ajp::prepare::read_onnx_graph	36	62
-src/prepare/onnx_split.cpp	ajp::prepare::read_tensor	38	74
+src/prepare/onnx_split.cpp	ajp::prepare::read_tensor	33	55
 src/prepare/process_win.cpp	ajp::prepare::run_process	31	109
-src/prepare/rife_split.cpp	ajp::prepare::analyze_rife	93	147
+src/prepare/rife_split.cpp	ajp::prepare::analyze_rife	83	138
 src/prepare/rife_split.cpp	ajp::prepare::parse_manifest	31	66
 src/render/cube_lut.cpp	ajp::render::fill_unreachable	28	56
 src/render/cube_lut.cpp	ajp::render::parse_cube	36	82

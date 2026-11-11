@@ -17,6 +17,7 @@
 #include <spdlog/logger.h>
 
 #include "core/file_sync.h"
+#include "core/text.h"
 #include "prepare/cache.h"
 #include "prepare/cache_io.h"
 #include "prepare/key_lock.h"
@@ -112,8 +113,7 @@ std::expected<KeyLock, Refusal> lock_device(const fs::path& timing_cache, gpu::P
 
 // Cette ligne d'erreur de trtexec parle-t-elle du timing cache ?
 bool mentions_cache(std::string_view line) {
-  std::string lower(line);
-  for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  const std::string lower = core::ascii_lower(line);
   return lower.find("timing cache") != std::string::npos || lower.find("timingcache") != std::string::npos ||
          lower.find("timing-cache") != std::string::npos;
 }

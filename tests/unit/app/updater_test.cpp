@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/data_dirs.h"
+#include "app/play/machine_calibration.h"
 
 using namespace ajp::app::play;
 namespace fs = std::filesystem;
@@ -253,5 +254,29 @@ TEST_CASE("mises à jour : les archives préparées d'avant la simple notificati
   write(root / "updates" / "notes.txt", "à moi");
   CHECK(purge_update_leftovers(root) == 0);
   CHECK(fs::exists(root / "updates" / "notes.txt"));
+  fs::remove_all(root);
+}
+
+TEST_CASE("banc : les restes d'une calibration tuée et des clips d'avant se retirent (B36-09)", "[updater]") {
+  const fs::path root = fs::temp_directory_path() / "ajp-bench-leftovers";
+  fs::remove_all(root);
+  write(root / "calibration-essais-1a" / "essai.log", "vieux");
+  write(root / "calibration-essais-2b" / "essai.log", "récent");
+  write(root / "bench-clip-v3.mkv", "clip d'avant");
+  write(root / std::string(kBenchClipName), "clip d'aujourd'hui");
+  write(root / "calibration.toml", "à moi");
+  write(root / "bench-clip-notes.txt", "à moi aussi");
+  // Une calibration tuée il y a deux jours ; l'autre tourne peut-être encore.
+  fs::last_write_time(root / "calibration-essais-1a",
+                      fs::file_time_type::clock::now() - std::chrono::hours(48));
+
+  CHECK(purge_bench_leftovers(root) == 2);
+  CHECK_FALSE(fs::exists(root / "calibration-essais-1a"));
+  CHECK(fs::exists(root / "calibration-essais-2b"));
+  CHECK_FALSE(fs::exists(root / "bench-clip-v3.mkv"));
+  CHECK(fs::exists(root / std::string(kBenchClipName)));
+  CHECK(fs::exists(root / "calibration.toml"));
+  CHECK(fs::exists(root / "bench-clip-notes.txt"));
+  CHECK(purge_bench_leftovers(root) == 0);
   fs::remove_all(root);
 }

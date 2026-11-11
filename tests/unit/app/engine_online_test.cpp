@@ -115,6 +115,7 @@ TEST_CASE("Moteurs de la release : sans réseau, la copie gardée et signée ser
   const fs::path cache = dir / "engines-nvidia.lock";
   write(cache, signed_index());
   write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
+  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
   const std::vector<std::string> keys{std::string(kTestKey)};
   EngineCatalog catalog = empty_catalog();
   add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
@@ -125,12 +126,49 @@ TEST_CASE("Moteurs de la release : sans réseau, la copie gardée et signée ser
   fs::remove_all(dir);
 }
 
+TEST_CASE("Moteurs de la release : la copie d'une autre version du lecteur ne se reprend pas (B06-01)",
+          "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-version";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  const std::vector<std::string> keys{std::string(kTestKey)};
+  // Le lecteur 1.2.3 a gardé l'index de sa release aujourd'hui : frais pour lui.
+  write(cache, signed_index());
+  write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
+  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  EngineCatalog same = empty_catalog();
+  merge_release_copy(same, read_release_index(cache), "o/r", "1.2.3", keys);
+  CHECK(same.packages.size() == 1);
+  // Mis à jour vers 1.2.4 le jour même : la copie, signée et fraîche, est celle d'une autre release. Elle
+  // n'est pas reprise (le module TensorRT d'une autre ABI serait réinstallé) et l'index de 1.2.4 est dû tout
+  // de suite.
+  CHECK(release_index_due(cache, "1.2.4"));
+  EngineCatalog newer = empty_catalog();
+  merge_release_copy(newer, read_release_index(cache), "o/r", "1.2.4", keys);
+  CHECK(newer.packages.empty());
+  // Une copie d'avant le témoin (aucun « .version ») ne se reprend pas non plus.
+  fs::remove(dir / "engines-nvidia.lock.version");
+  EngineCatalog legacy = empty_catalog();
+  merge_release_copy(legacy, read_release_index(cache), "o/r", "1.2.3", keys);
+  CHECK(legacy.packages.empty());
+  CHECK(release_index_due(cache, "1.2.3"));
+  // Un 404 ou un échec retenu pour 1.2.3 ne retient pas 1.2.4.
+  write(dir / "engines-nvidia.lock.absent", "1.2.3\n");
+  fs::remove(cache);
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.2.4"));
+  fs::remove_all(dir);
+}
+
 TEST_CASE("Moteurs de la release : sans signature valide, l'index n'est pas cru (A26-02)", "[app][install]") {
   const fs::path dir = fs::temp_directory_path() / "ajp-online-unsigned";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
   const std::vector<std::string> keys{std::string(kTestKey)};
+  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
 
   // Pas de signature du tout.
   write(cache, signed_index());
@@ -221,8 +259,9 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   const fs::path cache = dir / "engines-nvidia.lock";
   write(cache, signed_index());
   write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
+  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
   fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
-  CHECK(release_index_due(cache));
+  CHECK(release_index_due(cache, "1.2.3"));
   int asked = 0;
   const UpdateFetch offline = [&](std::string_view, const fs::path&, int,
                                   const std::stop_token&) -> std::expected<void, Refusal> {
@@ -232,17 +271,17 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 1);
   CHECK(fs::exists(dir / "engines-nvidia.lock.tried"));
-  CHECK_FALSE(release_index_due(cache));
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
   // La copie gardée et signée sert toujours.
   EngineCatalog catalog = empty_catalog();
-  merge_release_copy(catalog, read_release_index(cache), "o/r", {std::string(kTestKey)});
+  merge_release_copy(catalog, read_release_index(cache), "o/r", "1.2.3", {std::string(kTestKey)});
   CHECK(catalog.packages.size() == 1);
   // Pas de nouvel essai tout de suite ; quelques heures après, si.
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 1);
   fs::last_write_time(dir / "engines-nvidia.lock.tried",
                       fs::file_time_type::clock::now() - std::chrono::hours(7));
-  CHECK(release_index_due(cache));
+  CHECK(release_index_due(cache, "1.2.3"));
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 2);
 

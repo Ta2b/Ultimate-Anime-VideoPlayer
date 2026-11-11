@@ -139,6 +139,9 @@ std::expected<MachineCalibration, Refusal> load_calibration_at(const std::filesy
 // temporaire introuvable donnait un chemin relatif au dossier courant). data_dir vide : chemin vide, et
 // calibrate_machine refuse.
 std::filesystem::path calibration_work_dir(const std::filesystem::path& data_dir);
+// Le clip de l'évaluation, dans le dossier des données : une version de plus change ce nom, et
+// purge_bench_leftovers retire les clips des versions d'avant (B36-09).
+inline constexpr std::string_view kBenchClipName = "bench-clip-v4.mkv";
 std::string format_calibration(const MachineCalibration& calibration);
 std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view text);
 std::expected<MachineCalibration, Refusal> load_calibration(const std::filesystem::path& file);

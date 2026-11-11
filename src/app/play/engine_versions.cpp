@@ -1,11 +1,14 @@
 #include "app/play/engine_versions.h"
 
+#include <charconv>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <string>
 #include <system_error>
 #include <vector>
 
+#include "core/file_sync.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
 
@@ -49,6 +52,15 @@ std::optional<InstalledPackage> read_package_note(const fs::path& dir) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.starts_with("sha256=")) found.sha256 = line.substr(7);
     if (line.starts_with("licence=")) found.license = line.substr(8);
+    if (line.starts_with("fichier=")) {  // « fichier=<taille> <nom> »
+      const std::string_view rest = std::string_view(line).substr(8);
+      const std::size_t space = rest.find(' ');
+      std::uint64_t size = 0;
+      if (space == std::string_view::npos || space + 1 >= rest.size()) continue;
+      const auto [end, error] = std::from_chars(rest.data(), rest.data() + space, size);
+      if (error != std::errc{} || end != rest.data() + space) continue;
+      found.files.emplace_back(std::string(rest.substr(space + 1)), size);
+    }
   }
   if (found.sha256.empty()) return std::nullopt;
   return found;
@@ -58,7 +70,21 @@ InstalledState installed_state(const EngineCatalog& catalog, const core::EngineP
   const fs::path current = core::engine_dir(catalog.layout, package);
   if (installed(catalog, package)) {
     InstalledState here{.state = PackageState::Replaced, .dir = current, .note = read_package_note(current)};
-    if (here.note && here.note->sha256 == package.sha256) here.state = PackageState::Current;
+    if (here.note && here.note->sha256 == package.sha256) {
+      here.state = PackageState::Current;
+      // « Installé » ne veut pas dire « le module existe » : un fichier tiers mis en quarantaine par un
+      // antivirus laisse un dossier « à jour » qui ne se charge pas (B06-11). La note en garde les noms et
+      // les tailles.
+      for (const auto& [name, size] : here.note->files) {
+        std::error_code missing;
+        const std::uintmax_t actual = fs::file_size(current / core::path_from_utf8(name), missing);
+        if (missing || actual != size) {
+          here.state = PackageState::Replaced;
+          here.missing = name;
+          break;
+        }
+      }
+    }
     return here;
   }
   if (const auto other = other_installed_version(catalog, package))
@@ -104,16 +130,16 @@ bool finish_deferred_swap(const fs::path& target, const fs::path& staging, const
   std::error_code error;
   if (!read_package_note(staging) || !fs::is_directory(staging, error)) return false;
   fs::remove_all(aside, error);
-  fs::rename(target, aside, error);
+  // Defender ouvre les fichiers qu'il vient de voir : le renommage se réessaie (B31-06).
+  error = core::rename_retrying(target, aside, kInstallRenamePatience);
   if (error) {
     log_channel("app")->warn("moteurs : {} toujours tenu, remplacement remis : {}",
                              core::to_utf8(target.filename()), error.message());
     return false;
   }
-  fs::rename(staging, target, error);
+  error = core::rename_retrying(staging, target, kInstallRenamePatience);
   if (error) {
-    std::error_code restore;
-    fs::rename(aside, target, restore);
+    core::rename_retrying(aside, target, kInstallRenamePatience);
     log_channel("app")->warn("moteurs : {} non mis en place : {}", core::to_utf8(staging.filename()),
                              error.message());
     return false;
@@ -142,7 +168,7 @@ bool recover_interrupted_install(const EngineCatalog& catalog, const core::Engin
   for (const fs::path& copy : {staging, aside}) {
     if (copy == staging && !read_package_note(copy)) continue;
     if (!fs::is_directory(copy, error)) continue;
-    fs::rename(copy, target, error);
+    error = core::rename_retrying(copy, target, kInstallRenamePatience);
     if (error) {
       log_channel("app")->warn("moteurs : {} non remis en place : {}", core::to_utf8(copy.filename()),
                                error.message());

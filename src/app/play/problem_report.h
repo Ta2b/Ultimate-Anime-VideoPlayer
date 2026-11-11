@@ -19,6 +19,11 @@ namespace ajp::app::play {
 void note_report_fact(std::string_view name, std::string_view value);
 // Le moteur retenu et ceux qui ont refusé l'appareil avant lui, avec leurs raisons (vide : aucun refus).
 void note_engine_facts(std::string_view engine, std::string_view passed_over);
+// Le dernier refus d'une construction de moteur : sa cause en une ligne et la fin du journal de trtexec que
+// son détail nomme (« ; journal : <chemin> »), tenues comme le fait « Construction ». Ce journal est le seul
+// endroit où se lit pourquoi un moteur ne se construit pas, et personne ne retrouve ce fichier dans le cache
+// (B39-03). Sans journal nommé ni lisible, seule la cause est gardée.
+void note_build_failure(std::string_view code, std::string_view detail);
 std::vector<std::pair<std::string, std::string>> report_facts();
 void clear_report_facts();
 

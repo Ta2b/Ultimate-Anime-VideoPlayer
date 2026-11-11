@@ -183,6 +183,39 @@ std::string glue_problem(const Index& index, const OnnxGraph& graph, const RifeS
   return {};
 }
 
+// Les Resize, GridSample et DepthToSpace du graphe : leurs attributs sont ceux que les noyaux refont, leur
+// nombre est contrôlé plus loin. Les GridSample sont rangés dans `glue`.
+struct OperatorCounts {
+  std::size_t resizes = 0;
+  std::size_t grids = 0;
+  std::size_t shuffles = 0;
+};
+
+std::expected<OperatorCounts, Refusal> count_operators(const Index& index, const OnnxGraph& graph,
+                                                       Glue& glue) {
+  OperatorCounts counts;
+  for (const OnnxFullNode& node : graph.nodes) {
+    if (node.op_type == "Resize") {
+      ++counts.resizes;
+      if (resize_scale(index, node) == 0.0)
+        return unknown(node.name + " : Resize non linéaire/demi-pixel à échelle constante");
+    } else if (node.op_type == "GridSample") {
+      ++counts.grids;
+      glue.grids.push_back(&node);
+      const OnnxAttribute* align = node.attribute("align_corners");
+      if (align == nullptr || !align->integer || *align->integer != 1 ||
+          !text_is(node, "padding_mode", "border") || !text_is(node, "mode", "bilinear"))
+        return unknown(node.name + " : GridSample hors coins alignés, bords répétés, bilinéaire");
+    } else if (node.op_type == "DepthToSpace") {
+      ++counts.shuffles;
+      const OnnxAttribute* size = node.attribute("blocksize");
+      if (size == nullptr || !size->integer || *size->integer != 2 || !text_is(node, "mode", "CRD"))
+        return unknown(node.name + " : DepthToSpace hors CRD de bloc 2");
+    }
+  }
+  return counts;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -206,29 +239,10 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
   split.elem_type = summary->inputs[0].elem_type;
 
   // Les attributs de tous les Resize et GridSample : ce que les noyaux refont.
-  std::size_t resizes = 0;
-  std::size_t grids = 0;
-  std::size_t shuffles = 0;
   Glue glue;
-  for (const OnnxFullNode& node : graph->nodes) {
-    if (node.op_type == "Resize") {
-      ++resizes;
-      if (resize_scale(index, node) == 0.0)
-        return unknown(node.name + " : Resize non linéaire/demi-pixel à échelle constante");
-    } else if (node.op_type == "GridSample") {
-      ++grids;
-      glue.grids.push_back(&node);
-      const OnnxAttribute* align = node.attribute("align_corners");
-      if (align == nullptr || !align->integer || *align->integer != 1 ||
-          !text_is(node, "padding_mode", "border") || !text_is(node, "mode", "bilinear"))
-        return unknown(node.name + " : GridSample hors coins alignés, bords répétés, bilinéaire");
-    } else if (node.op_type == "DepthToSpace") {
-      ++shuffles;
-      const OnnxAttribute* size = node.attribute("blocksize");
-      if (size == nullptr || !size->integer || *size->integer != 2 || !text_is(node, "mode", "CRD"))
-        return unknown(node.name + " : DepthToSpace hors CRD de bloc 2");
-    }
-  }
+  const auto counts = count_operators(index, *graph, glue);
+  if (!counts) return std::unexpected(std::move(counts.error()));
+  const auto [resizes, grids, shuffles] = *counts;
 
   // L'encodeur.
   const OnnxFullNode* head_split = index.named("/Split", "Split");
@@ -391,6 +405,23 @@ std::string format_manifest(const RifeFusedManifest& manifest) {
   return text;
 }
 
+namespace {
+
+// Ce qu'un manifeste lu doit encore vérifier : complet, accepté par les noyaux, ses morceaux et ses tailles
+// en nombre. Rien : il est bon.
+std::optional<std::string> manifest_problem(const RifeFusedManifest& manifest, bool complete) {
+  if (!complete) return "en-tête, sortie ou taille absents";
+  if (!kernels::rife_fused_size_valid(manifest.plan, manifest.height, manifest.width))
+    return "découpage ou taille que les noyaux ne prennent pas";
+  if (manifest.pieces.size() != static_cast<std::size_t>(manifest.plan.blocks) + 1)
+    return "nombre de morceaux différent de 1 + blocs";
+  if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
+    return "autant de tailles que de morceaux attendu";
+  return std::nullopt;
+}
+
+}  // namespace
+
 std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text) {
   const auto bad = [](std::string detail) {
     return std::unexpected(
@@ -454,13 +485,7 @@ std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text) 
       return bad("champ « " + std::string(key) + " » inconnu");
     }
   }
-  if (!header || !has_output || !has_size) return bad("en-tête, sortie ou taille absents");
-  if (!kernels::rife_fused_size_valid(manifest.plan, manifest.height, manifest.width))
-    return bad("découpage ou taille que les noyaux ne prennent pas");
-  if (manifest.pieces.size() != static_cast<std::size_t>(manifest.plan.blocks) + 1)
-    return bad("nombre de morceaux différent de 1 + blocs");
-  if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
-    return bad("autant de tailles que de morceaux attendu");
+  if (const auto problem = manifest_problem(manifest, header && has_output && has_size)) return bad(*problem);
   return manifest;
 }
 

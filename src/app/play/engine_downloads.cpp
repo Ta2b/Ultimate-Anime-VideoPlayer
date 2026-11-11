@@ -16,6 +16,7 @@
 #include "app/play/backend_library.h"
 #include "app/play/controls_draw.h"
 #include "app/play/engine_versions.h"
+#include "app/play/home_screen.h"
 #include "app/play/i18n.h"
 #include "app/play/pumped_task.h"
 #include "app/play/visible_error.h"
@@ -64,9 +65,11 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
                      shared->result = std::move(done);
                    });
   if (!worker) return std::unexpected(std::move(worker.error()));
+  DeferredDrops drops;  // une vidéo envoyée par un second lancement pendant l'installation (B29-04)
   while (true) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      if (drops.keep(event)) continue;
       if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
         worker->request_stop();
         return std::nullopt;

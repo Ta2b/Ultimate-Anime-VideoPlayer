@@ -23,6 +23,7 @@
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
 #include "app/play/gpu_tier.h"
+#include "app/play/home_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
@@ -77,6 +78,7 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(
   std::size_t at = view.wizard.at;
   std::int64_t last_event_us = started;
   const KeyboardNav nav(ui);
+  DeferredDrops drops;  // la vidéo d'un second lancement attend la fin de l'assistant (B29-04)
   while (!view.done && !view.cancelled) {
     // P3.3 : chaque « Suivant », « Passer » ou « Précédent » enregistre les choix faits jusque-là.
     if (view.wizard.at != at) {
@@ -89,6 +91,7 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       last_event_us = host_now_us();
+      if (drops.keep(event)) continue;
       if (ui.handle(event, last_event_us, actions)) continue;
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
@@ -153,7 +156,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   auto shared = std::make_shared<Shared>();
   std::error_code error;
   BenchPlan plan{.executable = paths.executable,
-                 .video = data_dir / "bench-clip-v4.mkv",
+                 .video = data_dir / std::string(kBenchClipName),
                  .work_dir = calibration_work_dir(data_dir),
                  .data = data_dir,
                  .display_width = display_width(screen.window()),
@@ -183,9 +186,11 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   }
   bool watch_now = false;
   std::vector<Input> ignored;
+  DeferredDrops drops;  // la vidéo d'un second lancement attend la fin de la calibration (B29-04)
   while (true) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      if (drops.keep(event)) continue;
       if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
         worker->request_stop();
         return std::nullopt;

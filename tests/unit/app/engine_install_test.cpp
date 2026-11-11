@@ -103,10 +103,12 @@ struct Fixture {
   }
 
   InstallProgress progress() {
-    return InstallProgress{.report = [this](float fraction, const std::string& stage) {
-      fractions.push_back(fraction);
-      stages.push_back(stage);
-    }};
+    return InstallProgress{.report =
+                               [this](float fraction, const std::string& stage) {
+                                 fractions.push_back(fraction);
+                                 stages.push_back(stage);
+                               },
+                           .allow_local_files = true};
   }
 
   fs::path root;
@@ -602,6 +604,12 @@ TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toute
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3060") == "sm86");
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2070") == "sm75");
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 5080") == "sm120");
+  // « a100 » est un mot entier : une RTX A1000 est une Ampere sm86, pas une A100 sm80 (B06-06, B37-04).
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA RTX A1000") == "sm86");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA RTX A1000 Laptop GPU") == "sm86");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA RTX A2000") == "sm86");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA A100-SXM4-80GB") == "sm80");
+  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA A100") == "sm80");
   // Les exceptions à la règle par série (A37-03).
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2050") == "sm86");
   CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3050 A Laptop GPU") == "sm89");
@@ -611,7 +619,9 @@ TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toute
   CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3080"));
   CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 2050"));
   CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3050 A Laptop GPU"));
-  CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 5080"));
+  CHECK_FALSE(ajp::app::play::fp8_presumed(
+      "NVIDIA GeForce RTX 5080"));  // aucune mesure du FP8 sur une RTX 50 (B37-06)
+  CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 4080"));
   CHECK(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 4070 Ti"));
   CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 5080"));  // pas avant une mesure (A37-01)
   CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 3060"));
@@ -638,4 +648,17 @@ TEST_CASE("Fichier tiers repris d'une version installée à SHA égal (P3.8)", "
   CHECK(read_all(dest) == kPlain);
   file.sha256 = core::sha256_hex("autre");
   CHECK_FALSE(ajp::app::play::reuse_vendor_file(file, root / "1.2.partiel" / "libnvinfer.so", root, {}));
+}
+
+TEST_CASE("curl du lecteur : https seulement, file:// réservé aux tests (B06-10)", "[app][install]") {
+  const auto proto = [](const std::vector<std::string>& args) {
+    const auto it = std::ranges::find(args, "--proto");
+    return it == args.end() ? std::string() : *std::next(it);
+  };
+  CHECK(proto(curl_download_args()) == "=https");
+  CHECK(proto(curl_download_args(true)) == "=https,file");
+  const std::vector<std::string> args = curl_download_args();
+  const auto redir = std::ranges::find(args, "--proto-redir");
+  REQUIRE(redir != args.end());
+  CHECK(*std::next(redir) == "=https");
 }

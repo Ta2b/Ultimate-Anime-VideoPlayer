@@ -159,4 +159,21 @@ TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien
   CHECK_FALSE(visible_error(Refusal{RefusalCode::CacheIo, ""}).empty());
 }
 
+TEST_CASE("B39-03 : un moteur qui ne se construit pas dit pourquoi, au moins mémoire, délai et pilote",
+          "[app][chain]") {
+  const std::string generic = visible_error(Refusal{RefusalCode::BuilderFailed, "échec"});
+  const std::string timeout = visible_error(Refusal{RefusalCode::BuilderTimeout, "délai dépassé"});
+  const std::string memory = visible_error(
+      Refusal{RefusalCode::BuilderFailed, "trtexec ; dernière erreur : Error Code 2: OutOfMemory"});
+  const std::string driver = visible_error(
+      Refusal{RefusalCode::BuilderCrashed, "dernière erreur : CUDA driver version is insufficient"});
+  CHECK(timeout != generic);
+  CHECK(memory != generic);
+  CHECK(driver != generic);
+  CHECK(timeout != memory);
+  CHECK(memory != driver);
+  // Une cause inconnue garde la phrase générale, sans détail technique.
+  CHECK(visible_error(Refusal{RefusalCode::SdkRejected, "autre"}) == generic);
+}
+
 }  // namespace ajp::app::play

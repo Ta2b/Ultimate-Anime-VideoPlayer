@@ -287,7 +287,9 @@ BackendCaps TensorRtBackend::capabilities() const {
       .needs_host_sync = false,
       .fp16 = true,
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
-      .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
+      // Ada (8.9) et Hopper (9.x), pas Blackwell (RTX 50, 12.x) : aucune mesure de qualité ni de vitesse du
+      // FP8 sur une RTX 50, donc pas de cran Performance FP8 proposé tant qu'elle n'existe pas (B37-06).
+      .fp8 = properties_.major == 9 || (properties_.major == 8 && properties_.minor >= 9),
       .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
       .gpu_arch = std::format("sm_{}{}", properties_.major, properties_.minor),
       .span_fp8_kernels = SpanFp8Net::kKernelsVersion,

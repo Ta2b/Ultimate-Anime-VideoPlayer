@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "app/play/chain.h"
 #include "app/play/engine_install.h"
@@ -60,6 +61,28 @@ std::optional<Dropped> dropped(const SDL_Event& event);
 void raise_for_forwarded(const SDL_Event& event);
 // La vidéo d'un SDL_EVENT_DROP_FILE ; rien pour le reste.
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event);
+
+// Les vidéos déposées sur la fenêtre, ou transmises par un second lancement, pendant une attente qui n'en
+// ouvre aucune (assistant, installation des moteurs, calibration) : elles sont gardées et rendues à la file
+// de SDL à la fin, d'où la boucle suivante les lit comme un dépôt. Sans cela, l'événement était consommé et
+// perdu alors que le second lancement avait répondu « ok » et s'était fermé (B29-04). La fenêtre passe devant
+// dans tous les cas.
+class DeferredDrops {
+ public:
+  DeferredDrops() = default;
+  ~DeferredDrops();
+  DeferredDrops(const DeferredDrops&) = delete;
+  DeferredDrops& operator=(const DeferredDrops&) = delete;
+  // Vrai si l'événement est un dépôt (il ne va pas plus loin) ; une vidéo est gardée, le reste est écarté.
+  bool keep(const SDL_Event& event);
+  // Les chemins gardés, le plus ancien d'abord. Pour les tests.
+  const std::vector<std::string>& files() const { return files_; }
+  // Rend les fichiers à la file de SDL maintenant ; la liste se vide.
+  void release();
+
+ private:
+  std::vector<std::string> files_;
+};
 
 // L'accueil jusqu'à une vidéo choisie ; rien si l'utilisateur quitte. problem : pourquoi la vidéo
 // précédente n'a pas pu être lue, vide sinon.

@@ -36,8 +36,10 @@ bool release_index_signed(std::string_view text, std::string_view signature,
 int merge_release_index(EngineCatalog& catalog, std::string_view text, std::string_view prefix);
 
 // Faux tant qu'une copie gardée a moins d'un jour, qu'un 404 a moins d'un jour, ou qu'un autre échec a moins
-// de quelques heures : rien à demander au réseau.
-bool release_index_due(const std::filesystem::path& cache);
+// de quelques heures, À CETTE VERSION du lecteur : rien à demander au réseau. Une copie, un 404 ou un échec
+// posés par une autre version ne comptent pas : après une mise à jour du lecteur, l'index de la nouvelle
+// release est relu tout de suite (B06-01).
+bool release_index_due(const std::filesystem::path& cache, std::string_view version);
 // Relit engines-nvidia.lock et sa signature de la release si c'est dû (release_index_due), en quelques
 // secondes au plus, dans cache et cache.sig ; hors du thread de la fenêtre (A18-02). stop coupe curl.
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
@@ -46,11 +48,14 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
 struct ReleaseIndexCopy {
   std::string text;
   std::string signature;
+  std::string
+      version;  // la version du lecteur qui l'a gardée (« <cache>.version ») ; vide : d'avant le témoin
 };
 ReleaseIndexCopy read_release_index(const std::filesystem::path& cache);
-// Ajoute au catalogue les moteurs d'une copie lue, si elle est signée par l'une des keys.
+// Ajoute au catalogue les moteurs d'une copie lue, si elle est de cette version du lecteur et signée par
+// l'une des keys.
 void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, std::string_view repo,
-                        const std::vector<std::string>& keys);
+                        std::string_view version, const std::vector<std::string>& keys);
 
 // refresh_release_index puis merge_release_copy, sur le thread de l'appelant (essais) : relit
 // engines-nvidia.lock et sa signature de la release (au plus une fois par jour, en quelques secondes au plus,

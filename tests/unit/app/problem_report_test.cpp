@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -150,4 +151,34 @@ TEST_CASE("Rapport : le rapport complet joint la séance d'avant quand elle a pl
   CHECK(report.find("…/ep.mkv") != std::string::npos);
   end_session();
   clear_report_facts();
+}
+
+TEST_CASE("Rapport : la fin du journal de construction part avec le refus (B39-03)", "[app][report]") {
+  const fs::path dir = fresh_dir("ajp-report-build");
+  std::string log = "commande trtexec --onnx=modele.onnx\n";
+  for (int i = 0; i < 100; ++i) log += "[I] tactique " + std::to_string(i) + "\n";
+  log += "[E] Error Code 2: OutOfMemory (Requested size was 9000000000 bytes.)\n";
+  write(dir / "span.engine.build.log", log);
+  clear_report_facts();
+
+  note_build_failure("BuilderFailed", "trtexec a échoué ; dernière erreur : OutOfMemory ; journal : " +
+                                          (dir / "span.engine.build.log").string());
+  const auto facts = report_facts();
+  REQUIRE(facts.size() == 1);
+  CHECK(facts[0].first == "Construction");
+  const std::string& text = facts[0].second;
+  CHECK(text.starts_with("BuilderFailed : trtexec a échoué ; dernière erreur : OutOfMemory\n"));
+  CHECK(text.contains("Error Code 2: OutOfMemory"));
+  CHECK(text.contains("tactique 99"));
+  CHECK_FALSE(text.contains("tactique 10\n"));  // les dernières lignes seulement
+  CHECK_FALSE(text.contains("commande trtexec"));
+  CHECK_FALSE(text.contains("journal :"));
+
+  // Sans journal nommé ou lisible : la cause reste.
+  note_build_failure("BuilderTimeout", "trtexec a dépassé son délai de 600.0 s");
+  CHECK(report_facts()[0].second == "BuilderTimeout : trtexec a dépassé son délai de 600.0 s");
+  note_build_failure("BuilderFailed", "échec ; journal : " + (dir / "absent.build.log").string());
+  CHECK(report_facts()[0].second == "BuilderFailed : échec");
+  clear_report_facts();
+  fs::remove_all(dir);
 }

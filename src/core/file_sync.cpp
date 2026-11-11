@@ -55,9 +55,6 @@ void sync_directory([[maybe_unused]] const std::filesystem::path& folder) {
 
 namespace {
 
-// 10, 20, 40, 80, 160 puis 250 ms : environ 1,5 s en tout avant le refus.
-constexpr int kRenameAttempts = 10;
-
 // Sous Windows, le renommage échoue tant qu'un autre processus (antivirus, indexeur, sauvegarde) tient la
 // destination ou le temporaire ouvert sans partage de suppression : refus passagers, réessayés pendant un peu
 // plus d'une seconde (A20-01). Ailleurs, rename(2) remplace même un fichier ouvert : un refus est définitif.
@@ -79,14 +76,19 @@ std::string temp_suffix() {
 
 }  // namespace
 
-std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to) {
+std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to,
+                                std::chrono::milliseconds patience) {
+  const auto deadline = std::chrono::steady_clock::now() + patience;
   std::error_code error;
-  auto pause = std::chrono::milliseconds(10);
-  for (int attempt = 0;; ++attempt) {
+  auto pause = std::chrono::milliseconds(10);  // 10, 20, 40, 80, 160 puis 250 ms
+  for (;;) {
     error.clear();
     std::filesystem::rename(from, to, error);
-    if (!error || attempt == kRenameAttempts - 1 || !transient_rename_refusal(error)) return error;
-    std::this_thread::sleep_for(pause);
+    if (!error || !transient_rename_refusal(error)) return error;
+    const auto left =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    if (left <= std::chrono::milliseconds::zero()) return error;
+    std::this_thread::sleep_for(std::min(pause, left));
     pause = std::min(pause * 2, std::chrono::milliseconds(250));
   }
 }

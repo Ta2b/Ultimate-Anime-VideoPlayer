@@ -267,6 +267,64 @@ const OnnxAttribute* OnnxFullNode::attribute(std::string_view attribute_name) co
   return found == attributes.end() ? nullptr : &*found;
 }
 
+namespace {
+
+// Le nom d'une sortie du graphe (ValueInfoProto.name = 1) ; vide s'il manque.
+std::string value_info_name(std::span<const std::byte> info) {
+  Fields fields(info);
+  RawField item;
+  while (fields.next(item)) {
+    if (item.number == 1 && item.delimited) return text_of(item.payload);
+  }
+  return {};
+}
+
+// Un NodeProto : ses entrées, sorties, nom, opérateur et attributs, avec la constante d'un attribut tenseur ;
+// `out` apprend les données externes et les sous-graphes qu'il rencontre.
+std::expected<OnnxFullNode, Refusal> read_node(std::span<const std::byte> payload, OnnxGraph& out) {
+  OnnxFullNode node;
+  Fields parts(payload);
+  RawField part;
+  while (parts.next(part)) {
+    if (!part.delimited) continue;
+    if (part.number == kNodeInput) {
+      node.inputs.push_back(text_of(part.payload));
+    } else if (part.number == kNodeOutput) {
+      node.outputs.push_back(text_of(part.payload));
+    } else if (part.number == kNodeName) {
+      node.name = text_of(part.payload);
+    } else if (part.number == kNodeOpType) {
+      node.op_type = text_of(part.payload);
+    } else if (part.number == kNodeAttribute) {
+      OnnxAttribute attribute;
+      Fields inner(part.payload);
+      RawField item;
+      while (inner.next(item)) {
+        if (item.number == kAttrName && item.delimited) {
+          attribute.name = text_of(item.payload);
+        } else if (item.number == kAttrInteger && !item.delimited) {
+          attribute.integer = static_cast<std::int64_t>(item.scalar);
+        } else if (item.number == kAttrText && item.delimited) {
+          attribute.text = text_of(item.payload);
+        } else if (item.number == kAttrTensor && item.delimited) {
+          auto tensor = read_tensor(item.payload);
+          if (!tensor) return std::unexpected(std::move(tensor.error()));
+          node.constant = std::move(tensor->values);
+          out.has_external_data = out.has_external_data || tensor->external;
+        } else if (item.number == kAttrGraph || item.number == kAttrGraphs) {
+          out.has_subgraphs = true;
+        }
+      }
+      if (!inner.ok()) return malformed("ONNX : attribut malformé");
+      node.attributes.push_back(std::move(attribute));
+    }
+  }
+  if (!parts.ok()) return malformed("ONNX : nœud malformé");
+  return node;
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> model) {
   auto graph = graph_of(model);
@@ -279,57 +337,19 @@ std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> mod
     if (field.number == kGraphSparse) {
       out.has_sparse_initializers = true;
     } else if (field.number == kGraphOutput) {
-      Fields info(field.payload);  // ValueInfoProto.name = 1
-      RawField item;
-      while (info.next(item)) {
-        if (item.number == 1 && item.delimited) out.outputs.push_back(text_of(item.payload));
-      }
+      if (std::string name = value_info_name(field.payload); !name.empty())
+        out.outputs.push_back(std::move(name));
     } else if (field.number == kGraphInitializer) {
       auto tensor = read_tensor(field.payload);
       if (!tensor) return std::unexpected(std::move(tensor.error()));
       out.has_external_data = out.has_external_data || tensor->external;
       if (!tensor->values.empty()) out.constants[tensor->name] = std::move(tensor->values);
     } else if (field.number == kGraphNode) {
-      OnnxFullNode& node = out.nodes.emplace_back();
-      Fields parts(field.payload);
-      RawField part;
-      while (parts.next(part)) {
-        if (!part.delimited) continue;
-        if (part.number == kNodeInput) {
-          node.inputs.push_back(text_of(part.payload));
-        } else if (part.number == kNodeOutput) {
-          node.outputs.push_back(text_of(part.payload));
-        } else if (part.number == kNodeName) {
-          node.name = text_of(part.payload);
-        } else if (part.number == kNodeOpType) {
-          node.op_type = text_of(part.payload);
-        } else if (part.number == kNodeAttribute) {
-          OnnxAttribute attribute;
-          Fields inner(part.payload);
-          RawField item;
-          while (inner.next(item)) {
-            if (item.number == kAttrName && item.delimited) {
-              attribute.name = text_of(item.payload);
-            } else if (item.number == kAttrInteger && !item.delimited) {
-              attribute.integer = static_cast<std::int64_t>(item.scalar);
-            } else if (item.number == kAttrText && item.delimited) {
-              attribute.text = text_of(item.payload);
-            } else if (item.number == kAttrTensor && item.delimited) {
-              auto tensor = read_tensor(item.payload);
-              if (!tensor) return std::unexpected(std::move(tensor.error()));
-              node.constant = std::move(tensor->values);
-              out.has_external_data = out.has_external_data || tensor->external;
-            } else if (item.number == kAttrGraph || item.number == kAttrGraphs) {
-              out.has_subgraphs = true;
-            }
-          }
-          if (!inner.ok()) return malformed("ONNX : attribut malformé");
-          node.attributes.push_back(std::move(attribute));
-        }
-      }
-      if (!parts.ok()) return malformed("ONNX : nœud malformé");
-      if (node.op_type == "Constant" && node.outputs.size() == 1 && !node.constant.empty())
-        out.constants[node.outputs[0]] = node.constant;
+      auto node = read_node(field.payload, out);
+      if (!node) return std::unexpected(std::move(node.error()));
+      if (node->op_type == "Constant" && node->outputs.size() == 1 && !node->constant.empty())
+        out.constants[node->outputs[0]] = node->constant;
+      out.nodes.push_back(std::move(*node));
     }
   }
   if (!fields.ok()) return malformed("ONNX : protobuf du graphe malformé");

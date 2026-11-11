@@ -8,6 +8,8 @@
 // téléchargement, jamais d'office.
 #pragma once
 
+#include <chrono>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -15,6 +17,7 @@
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/engines.h"
@@ -78,9 +81,15 @@ bool installed(const EngineCatalog& catalog, const core::EnginePackage& package)
 // note : le dossier porte la version du runtime (« 11 » pour TensorRT), pas celle du lecteur, et
 // un module d'une version précédente du lecteur y reste après une mise à jour.
 inline constexpr std::string_view kPackageNote = "paquet.txt";
+// Le temps qu'un renommage d'installation attend un fichier tenu par Defender ou l'indexeur (B31-06).
+inline constexpr std::chrono::seconds kInstallRenamePatience{10};
 struct InstalledPackage {
   std::string sha256;
   std::string license;
+  // Les fichiers tiers posés avec le module (nom, taille), une ligne « fichier=<taille> <nom> » de la note :
+  // un antivirus qui met l'un d'eux en quarantaine se voit au lancement et le paquet est réinstallé (B06-11).
+  // Vide pour une note d'avant : rien à vérifier.
+  std::vector<std::pair<std::string, std::uint64_t>> files;
   friend bool operator==(const InstalledPackage&, const InstalledPackage&) = default;
 };
 std::optional<InstalledPackage> installed_package(const EngineCatalog& catalog,
@@ -95,6 +104,8 @@ struct InstallProgress {
   // L'architecture du GPU (« sm89 ») pour les fichiers tiers qui en dépendent ; vide : ceux de
   // toutes les architectures (detect_cuda_arch rend vide quand le GPU ne se lit pas).
   std::string cuda_arch;
+  // Les tests servent leurs archives par file:// ; le lecteur n'accepte que https (B06-10).
+  bool allow_local_files = false;
 };
 
 // « sm89 » pour une carte de capacité 8.9, lu par nvidia-smi une fois par processus ; vide s'il manque ou se

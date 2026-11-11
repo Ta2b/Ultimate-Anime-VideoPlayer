@@ -440,6 +440,23 @@ std::string format_drba_manifest(const DrbaFusedManifest& manifest) {
   return text;
 }
 
+namespace {
+
+// Ce qu'un manifeste lu doit encore vérifier : complet, accepté par les noyaux, ses morceaux et ses tailles
+// en nombre. Rien : il est bon.
+std::optional<std::string> manifest_problem(const DrbaFusedManifest& manifest, bool complete) {
+  if (!complete) return "en-tête, taille ou réduction absents";
+  if (!kernels::drba_fused_size_valid(manifest.plan, manifest.height, manifest.width))
+    return "découpage ou taille que les noyaux ne prennent pas";
+  if (manifest.pieces.size() != static_cast<std::size_t>(kernels::kDrbaFusedBlocks) + 1)
+    return "nombre de morceaux différent de 4";
+  if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
+    return "autant de tailles que de morceaux attendu";
+  return std::nullopt;
+}
+
+}  // namespace
+
 std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view text) {
   const auto bad = [](std::string detail) {
     return std::unexpected(
@@ -494,13 +511,7 @@ std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view t
       return bad("champ « " + std::string(key) + " » inconnu");
     }
   }
-  if (!header || !has_size || !has_tail) return bad("en-tête, taille ou réduction absents");
-  if (!kernels::drba_fused_size_valid(manifest.plan, manifest.height, manifest.width))
-    return bad("découpage ou taille que les noyaux ne prennent pas");
-  if (manifest.pieces.size() != static_cast<std::size_t>(kernels::kDrbaFusedBlocks) + 1)
-    return bad("nombre de morceaux différent de 4");
-  if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
-    return bad("autant de tailles que de morceaux attendu");
+  if (const auto problem = manifest_problem(manifest, header && has_size && has_tail)) return bad(*problem);
   return manifest;
 }
 

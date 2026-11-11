@@ -13,6 +13,7 @@
 #include "app/play/ed25519.h"
 #include "core/file_sync.h"
 #include "core/log.h"
+#include "core/text.h"
 #include "core/utf8_path.h"
 
 namespace ajp::app::play {
@@ -39,6 +40,18 @@ bool fresh(const std::filesystem::path& file, std::filesystem::file_time_type::d
   if (error) return false;
   const auto age = std::filesystem::file_time_type::clock::now() - written;
   return age >= std::filesystem::file_time_type::duration::zero() && age < within;
+}
+
+// Un témoin (copie, 404 ou échec) n'est frais que pour la version du lecteur qui l'a posé : une mise à jour
+// du lecteur le même jour ne doit pas reprendre l'index de l'ancienne release, dont le module TensorRT n'a
+// plus la bonne ABI (B06-01). Le témoin porte la version en texte.
+bool fresh_for(const std::filesystem::path& file, std::string_view version,
+               std::filesystem::file_time_type::duration within = kFreshFor) {
+  return fresh(file, within) && core::trim(read_text(file)) == version;
+}
+
+void write_version(const std::filesystem::path& file, std::string_view version) {
+  std::ofstream(file, std::ios::binary | std::ios::trunc) << version << '\n';
 }
 
 }  // namespace
@@ -77,6 +90,11 @@ int merge_release_index(EngineCatalog& catalog, std::string_view text, std::stri
       continue;
     }
     const core::EngineId engine = package.engine;
+    if (core::vendor_file_skipped(*parsed, engine, catalog.layout.os)) {
+      catalog.problem += std::format("{}engines-nvidia.lock : un fichier NVIDIA est écarté, paquet écarté",
+                                     catalog.problem.empty() ? "" : " ; ");
+      continue;
+    }
     const auto mine = [&](const core::VendorFile& file) { return file.engine == engine; };
     // Les fichiers NVIDIA du même moteur, tous de pypi.nvidia.com, ou aucun : un index à moitié cru
     // installerait un moteur sans ses bibliothèques.
@@ -109,19 +127,23 @@ std::filesystem::path beside(const std::filesystem::path& cache, std::string_vie
 
 }  // namespace
 
-bool release_index_due(const std::filesystem::path& cache) {
-  return !fresh(cache) && !fresh(beside(cache, ".absent")) && !fresh(beside(cache, ".tried"), kRetryAfter);
+bool release_index_due(const std::filesystem::path& cache, std::string_view version) {
+  // La copie vaut pour la version qui l'a écrite (« .version » à côté), quel que soit son âge pour une autre.
+  const bool copy_fresh = fresh(cache) && core::trim(read_text(beside(cache, ".version"))) == version;
+  return !copy_fresh && !fresh_for(beside(cache, ".absent"), version) &&
+         !fresh_for(beside(cache, ".tried"), version, kRetryAfter);
 }
 
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
                            std::string_view version, const UpdateFetch& fetch, const std::stop_token& stop) {
-  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache)) return;
+  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache, version)) return;
   const std::string url = release_download_prefix(repo, version) + "engines-nvidia.lock";
   const std::filesystem::path signature = beside(cache, ".sig");
   // Un 404 se retient un jour, comme une copie fraîche : sans paquet NVIDIA dans la release, le lancement
   // suivant ne refait pas la requête (A38-10). Un autre échec (hors ligne, portail captif) se retient
   // quelques heures (A18-02).
   const std::filesystem::path absent = beside(cache, ".absent");
+  const std::filesystem::path stamped = beside(cache, ".version");
   const std::filesystem::path tried = beside(cache, ".tried");
   const auto log = log_channel("app");
   std::error_code error;
@@ -138,6 +160,9 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
     std::filesystem::remove(tried, error);
     std::filesystem::rename(sig_part, signature, error);
     if (!error) std::filesystem::rename(part, cache, error);
+    // La version en dernier : une coupure entre les deux laisse une copie sans témoin, relue au lancement
+    // suivant.
+    if (!error) write_version(stamped, version);
     if (error) log->info("moteurs de la release : {}", error.message());
     return;
   }
@@ -149,20 +174,30 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
     // plus.
     std::filesystem::remove(cache, error);
     std::filesystem::remove(signature, error);
-    std::ofstream(absent, std::ios::binary | std::ios::trunc).put('\n');
+    std::filesystem::remove(stamped, error);
+    write_version(absent, version);
   } else {
-    std::ofstream(tried, std::ios::binary | std::ios::trunc).put('\n');
+    write_version(tried, version);
   }
   log->info("moteurs de la release : {}", got.error().detail);
 }
 
 ReleaseIndexCopy read_release_index(const std::filesystem::path& cache) {
-  return {.text = read_text(cache), .signature = read_text(beside(cache, ".sig"))};
+  return {.text = read_text(cache),
+          .signature = read_text(beside(cache, ".sig")),
+          .version = std::string(core::trim(read_text(beside(cache, ".version"))))};
 }
 
 void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, std::string_view repo,
-                        const std::vector<std::string>& keys) {
+                        std::string_view version, const std::vector<std::string>& keys) {
   if (repo.empty() || copy.text.empty()) return;
+  // Une copie d'une autre version du lecteur (ou d'avant le témoin) ne se reprend pas : son module TensorRT
+  // n'a pas l'ABI de ce lecteur. Elle sera relue (release_index_due), et d'ici là Vulkan joue (B06-01).
+  if (copy.version != version) {
+    log_channel("app")->info("moteurs de la release : copie de la version « {} » écartée (lecteur {})",
+                             copy.version, version);
+    return;
+  }
   // Signé en CI par la clé des mises à jour (A26-02) : sans signature valide, rien n'est cru, même la copie
   // gardée (un fichier du dossier de données changé à la main ne pointe pas ailleurs).
   if (!release_index_signed(copy.text, copy.signature, keys)) {
@@ -180,7 +215,7 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
                          const UpdateFetch& fetch) {
   if (repo.empty() || version.empty()) return;
   refresh_release_index(cache, repo, version, fetch, std::stop_token{});
-  merge_release_copy(catalog, read_release_index(cache), repo, keys);
+  merge_release_copy(catalog, read_release_index(cache), repo, version, keys);
 }
 
 }  // namespace ajp::app::play
