@@ -46,6 +46,10 @@ constexpr std::array kMessages{
     Entry{"Open a video", "Ouvrir une vidéo"},
     Entry{"the latest release has no update manifest: check the releases page",
           "la dernière release n'a pas de manifeste de mise à jour : voir la page des releases"},
+    Entry{"Performance mode is not available on Windows yet: its speed and quality are still to be measured "
+          "there",
+          "Le mode Performance n'existe pas encore sous Windows : sa vitesse et sa qualité doivent d'abord y "
+          "être mesurées"},
     Entry{"Performance mode ready: used from the next video",
           "Mode Performance prêt : utilisé dès la vidéo suivante"},
     Entry{"Pick the video in the open window.", "Choisissez la vidéo dans la fenêtre ouverte."},

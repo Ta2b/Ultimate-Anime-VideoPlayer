@@ -86,7 +86,8 @@ TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bu
 }
 
 // A37-12 : une table par famille NVIDIA, la tranche, l'architecture présumée et le FP8 présumé (moteur,
-// et SPAN FP8) ensemble : un nom qui change de règle ou d'architecture se voit ici.
+// et SPAN FP8) ensemble : un nom qui change de règle ou d'architecture se voit ici. RTX 50 (sm120) : pas de
+// FP8 tant qu'aucune mesure ne le justifie (B21-01).
 TEST_CASE("les décisions par famille NVIDIA, du nom à la tranche et au FP8 (A37-12)", "[gpu_tier]") {
   ajp::app::play::FrenchUi french;
   struct Row {
@@ -106,16 +107,16 @@ TEST_CASE("les décisions par famille NVIDIA, du nom à la tranche et au FP8 (A3
       Row{"NVIDIA GeForce RTX 4060 Laptop GPU", Tier::Light, "sm89", true, true},
       Row{"NVIDIA GeForce RTX 4070 Ti", Tier::Fast, "sm89", true, true},
       Row{"NVIDIA GeForce RTX 4090", Tier::Ultra, "sm89", true, true},
-      Row{"NVIDIA GeForce RTX 5070 Laptop GPU", Tier::Normal, "sm120", true, false},
-      Row{"NVIDIA GeForce RTX 5090", Tier::Ultra, "sm120", true, false},
+      Row{"NVIDIA GeForce RTX 5070 Laptop GPU", Tier::Normal, "sm120", false, false},
+      Row{"NVIDIA GeForce RTX 5090", Tier::Ultra, "sm120", false, false},
       Row{"NVIDIA RTX A2000", Tier::Normal, "sm86", false, false},
       Row{"NVIDIA RTX 4000 Ada Generation", Tier::Normal, "sm89", true, true},
-      Row{"NVIDIA RTX PRO 6000 Blackwell Workstation Edition", Tier::Ultra, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", Tier::Ultra, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 4000 Blackwell", Tier::Fast, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 2000 Blackwell", Tier::Normal, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 5000 Blackwell Generation Laptop GPU", Tier::Fast, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU", Tier::Light, "sm120", true, false},
+      Row{"NVIDIA RTX PRO 6000 Blackwell Workstation Edition", Tier::Ultra, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", Tier::Ultra, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 4000 Blackwell", Tier::Fast, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 2000 Blackwell", Tier::Normal, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 5000 Blackwell Generation Laptop GPU", Tier::Fast, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU", Tier::Light, "sm120", false, false},
   };
   for (const Row& row : kRows) {
     INFO(row.name);

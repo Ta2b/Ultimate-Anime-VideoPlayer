@@ -80,6 +80,9 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
                                .planes = static_cast<int>(planes),
                                .mesh = mesh};
   if (auto ok = order({a.handle, b.handle}, {input.handle}); !ok) return ok;
+  // Le plan de l'instant est réécrit en entier : plus rien à reposer pour cette entrée.
+  const std::uintptr_t key = input.handle + input.offset;
+  std::erase_if(stale_times_, [key](const StaleTime& stale) { return stale.key == key; });
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
   auto launched =
@@ -97,6 +100,27 @@ void TensorRtBackend::note_rife_reader(const Tensor& input, bool compact) {
   } else if (!compact && found != compact_rife_inputs_.end()) {
     compact_rife_inputs_.erase(found);
   }
+}
+
+void TensorRtBackend::forget_rife_input(std::uintptr_t key) {
+  std::erase(compact_rife_inputs_, key);
+  std::erase_if(stale_times_, [key](const StaleTime& stale) { return stale.key == key; });
+}
+
+std::expected<void, Refusal> TensorRtBackend::restore_rife_times(std::span<const Tensor> inputs) {
+  for (const Tensor& input : inputs) {
+    const std::uintptr_t key = input.handle + input.offset;
+    const auto found = std::ranges::find(stale_times_, key, &StaleTime::key);
+    if (found == stale_times_.end()) continue;
+    const StaleTime stale = *found;
+    stale_times_.erase(found);
+    const CUresult set =
+        cuMemsetD16Async(static_cast<CUdeviceptr>(stale.plane), stale.half, stale.count, stream_);
+    if (set != CUDA_SUCCESS)
+      return refuse(RefusalCode::VendorCallFailed,
+                    std::format("cuMemsetD16Async : erreur {}", static_cast<int>(set)));
+  }
+  return {};
 }
 
 std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, float t) {
@@ -118,14 +142,22 @@ std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, flo
   // RIFE fusionné ne lit que l'élément 0 du plan (étape 5.2) : un demi-flottant au lieu d'un plan entier.
   const bool compact =
       std::ranges::find(compact_rife_inputs_, input.handle + input.offset) != compact_rife_inputs_.end();
+  const std::uint16_t half = kernels::ref::float_to_half(t);
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
-  const CUresult set =
-      cuMemsetD16Async(time_plane, kernels::ref::float_to_half(t), compact ? 1 : plane, stream_);
+  const CUresult set = cuMemsetD16Async(time_plane, half, compact ? 1 : plane, stream_);
   timing.end(stream_);
   if (set != CUDA_SUCCESS)
     return refuse(RefusalCode::VendorCallFailed,
                   std::format("cuMemsetD16Async : erreur {}", static_cast<int>(set)));
+  // Compact, le reste du plan garde l'instant d'avant : un moteur entier qui lirait cette entrée ensuite le
+  // fera reposer (restore_rife_times, B03-04).
+  const std::uintptr_t key = input.handle + input.offset;
+  std::erase_if(stale_times_, [key](const StaleTime& stale) { return stale.key == key; });
+  if (compact) {
+    if (stale_times_.size() >= 8) stale_times_.erase(stale_times_.begin());
+    stale_times_.push_back({.key = key, .plane = time_plane, .count = plane, .half = half});
+  }
   return {};
 }
 
@@ -180,6 +212,8 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
                                 .width = width_of(a),
                                 .height = height_of(a),
                                 .levels = pair_levels_,  // la plage de la dernière source ingérée
+                                .kr = pair_k_.kr,        // et sa matrice
+                                .kb = pair_k_.kb,
                                 .total = &slot.device->total,
                                 .worst = &slot.device->worst};
     GpuTiming& timing = stage("mesures de la paire");

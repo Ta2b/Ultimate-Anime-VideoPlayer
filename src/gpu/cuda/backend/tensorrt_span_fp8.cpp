@@ -22,11 +22,10 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_span_fp8(const ModelSpec
     return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : une forme fixe 1×3×H×W est attendue");
   }
   const std::int64_t height = shape.dims[2], width = shape.dims[3];
-  constexpr std::int64_t kMaxSide =
-      32768;  // size_refusal juge la taille ; ce plafond évite le rétrécissement
-  if (height <= 0 || width <= 0 || height > kMaxSide || width > kMaxSide)
+  // Un seul plafond, celui de size_refusal (B02-04) ; borné avant le rétrécissement en int.
+  if (height <= 0 || width <= 0 || height > span_fp8::kMaxSide || width > span_fp8::kMaxSide)
     return refuse(RefusalCode::ShapeInvalid,
-                  std::format("SPAN FP8 : taille {}x{} hors de portée", width, height));
+                  std::format("SPAN FP8 : taille {}x{} hors de 1 à {}", width, height, span_fp8::kMaxSide));
   if (const std::string why = span_fp8::size_refusal(static_cast<int>(height), static_cast<int>(width));
       !why.empty())
     return refuse(RefusalCode::FormatUnsupported, "SPAN FP8 : " + why);
@@ -41,8 +40,9 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_span_fp8(const ModelSpec
 
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(const Artifact& artifact) {
   const std::optional<Shape> shape = span_fp8_artifact_shape(artifact.cache_key);
-  if (!shape) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : clé d'artefact illisible");
-  auto engine = SpanFp8Engine::load(artifact.path, static_cast<int>(shape->dims[2]),
+  const std::optional<std::uint32_t> crc = span_fp8_artifact_crc(artifact.cache_key);
+  if (!shape || !crc) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : clé d'artefact illisible");
+  auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
                                     static_cast<int>(shape->dims[3]), arena());
   if (!engine) return std::unexpected(std::move(engine.error()));
   log(BackendLogLevel::Info,

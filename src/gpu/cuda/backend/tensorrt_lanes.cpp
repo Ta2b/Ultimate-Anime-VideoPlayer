@@ -4,11 +4,15 @@
 // alors enfilée) ou quand une autre voie doit l'attendre. kLaneMarks événements par voie servent
 // à tour de rôle : un rang ancien se lit sur un événement plus récent de la même file, attente
 // plus forte, jamais plus faible.
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <format>
 #include <thread>
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
+#include "gpu/cuda/backend/shared_activations.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/cuda/backend/trt_engine.h"
 
@@ -21,9 +25,39 @@ constexpr auto kQueryBeforeWait = std::chrono::microseconds(200);
 
 }  // namespace
 
+bool TensorRtBackend::any_lane() const {
+  return std::ranges::any_of(streams_, [](cudaStream_t lane) { return lane != nullptr; });
+}
+
+void TensorRtBackend::release_arenas() {
+  // Les zones d'activation, la plus grosse allocation du pool, partent avant sa purge : détruites après le
+  // corps du destructeur (membres), elles revenaient au pool déjà purgé et y restaient jusqu'à la fin du
+  // processus. Les moteurs qui les tenaient sont déjà détruits (ChainEngines) ; une zone qu'un moteur
+  // tiendrait encore se libère seule par cudaFree, sans rappeler ce backend.
+  for (std::shared_ptr<SharedActivations>& zone : arenas_) {
+    if (!zone) continue;
+    zone->set_pool({}, {});
+    zone.reset();
+  }
+}
+
 std::expected<void, Refusal> TensorRtBackend::create_lanes() {
-  // 8 Go et plus : trois voies ; sinon toutes passent par la file de l'agrandissement.
-  lanes_ = properties_.totalGlobalMem >= kLaneMemory ? static_cast<int>(kLanes) : 1;
+  // 8 Go et plus, dont assez de libres à l'ouverture : trois voies ; sinon toutes passent par la file de
+  // l'agrandissement, avec une seule zone d'activation. La mémoire libre compte (B37-03) : une carte de 8 Go
+  // dont le bureau, un navigateur ou un jeu tiennent déjà une part ne paie pas la seconde zone (sous WDDM,
+  // le pilote déborderait en mémoire système sans erreur, et la lecture saccaderait).
+  std::size_t free = 0;
+  std::size_t total = 0;
+  if (cudaMemGetInfo(&free, &total) != cudaSuccess) {
+    static_cast<void>(clear_error());
+    free = properties_.totalGlobalMem;  // inconnue : la totale seule décide, comme avant
+  }
+  lanes_ = lane_count(properties_.totalGlobalMem, free);
+  if (lanes_ == 1 && properties_.totalGlobalMem >= kLaneMemory) {
+    log(BackendLogLevel::Info,
+        std::format("une seule voie de calcul : {} Mio libres sur {} à l'ouverture, {} attendus pour trois",
+                    free >> 20U, properties_.totalGlobalMem >> 20U, kLaneFreeMemory >> 20U));
+  }
   // La voie de l'agrandissement porte l'échéance d'affichage : quand les voies se disputent les SM,
   // le GPU lui donne la main en premier.
   int least = 0;
@@ -74,11 +108,16 @@ void TensorRtBackend::destroy_lanes() {
     streams_[lane] = nullptr;
   }
   stream_ = nullptr;
-  // A33-01 : la réserve CUDA garde son sommet pendant la lecture (tune_pool) ; à la fermeture de la chaîne,
-  // ce qu'elle ne prête plus revient au pilote (accueil, calibration et trtexec ont la mémoire vidéo).
+  // La réserve CUDA garde son sommet pendant la lecture (tune_pool) ; à la fermeture de la chaîne, ce
+  // qu'elle ne prête plus revient au pilote (accueil, calibration et trtexec ont la mémoire vidéo), et son
+  // seuil retrouve celui de CUDA : le pool par défaut est celui de tout le processus, un tenseur libéré
+  // après le backend ne doit pas y rester.
   cudaMemPool_t pool = nullptr;
-  if (cudaDeviceSynchronize() == cudaSuccess && cudaDeviceGetDefaultMemPool(&pool, device_) == cudaSuccess)
+  if (cudaDeviceSynchronize() == cudaSuccess && cudaDeviceGetDefaultMemPool(&pool, device_) == cudaSuccess) {
+    std::uint64_t release_all = 0;
+    cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &release_all);
     cudaMemPoolTrimTo(pool, 0);
+  }
   static_cast<void>(clear_error());
 }
 
@@ -95,14 +134,26 @@ const std::shared_ptr<SharedActivations>& TensorRtBackend::arena() {
     // détruit avant ses files).
     arenas_[zone]->set_pool(
         [this](std::size_t bytes) -> void* {
-          void* memory = nullptr;
-          if (cudaMallocAsync(&memory, bytes, stream_) != cudaSuccess ||
-              cudaStreamSynchronize(stream_) != cudaSuccess) {
-            if (memory != nullptr) cudaFree(memory);
-            static_cast<void>(clear_error());
-            return nullptr;
-          }
-          return memory;
+          const auto attempt = [this, bytes]() -> void* {
+            void* memory = nullptr;
+            if (cudaMallocAsync(&memory, bytes, stream_) != cudaSuccess ||
+                cudaStreamSynchronize(stream_) != cudaSuccess) {
+              if (memory != nullptr) cudaFree(memory);
+              static_cast<void>(clear_error());
+              return nullptr;
+            }
+            return memory;
+          };
+          if (void* memory = attempt(); memory != nullptr) return memory;
+          // Refus : la réserve garde peut-être de la mémoire libre (seuil infini, tune_pool), dont une zone
+          // tout juste rendue derrière les voies. Les voies finies, elle revient au pilote, puis un dernier
+          // essai ; seulement au refus, rare, au chargement d'un moteur.
+          cudaMemPool_t pool = nullptr;
+          if (cudaDeviceSynchronize() == cudaSuccess &&
+              cudaDeviceGetDefaultMemPool(&pool, device_) == cudaSuccess)
+            cudaMemPoolTrimTo(pool, 0);
+          static_cast<void>(clear_error());
+          return attempt();
         },
         [this](void* memory) { free_after_lanes(memory); });
   }

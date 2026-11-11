@@ -28,6 +28,17 @@ Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « 
 Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
 `--rife=N` ou par `play.toml`, pour le diagnostic.
 
+## Warp du backend TensorRT : lecture filtrée
+
+Sous TensorRT, le warp et le mélange des images intermédiaires (`warp_blend_filtered`,
+`src/gpu/cuda/backend/warp_kernels.cu`) lisent les images, le flot et le masque par le filtre bilinéaire de
+la texture. Sa fraction est sur 8 bits : l'écart avec le warp exact (`warp_blend`) va jusqu'au gradient local
+divisé par 512, soit environ un demi-niveau 8 bits sur un trait noir net. C'est une perte de qualité consentie
+pour la vitesse, dont le gain est **non mesuré** (audit B03-03). Mesure à faire sur la RTX :
+`ncu --kernel-name regex:warp_blend` sur 30 s de lecture ×3 en 1080p et en 4K, chaque noyau forcé tour à tour,
+plus le temps par image de `--stats=`. Si le gain est sous 0,1 ms par image, la lecture exacte redevient le
+défaut ; sinon le chiffre s'écrit ici.
+
 ## GMFSS retiré
 
 GMFSS Fortuna (base et union) donnait les images intermédiaires les plus propres sur l'animation, mais coûtait
