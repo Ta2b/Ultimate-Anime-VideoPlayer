@@ -611,7 +611,7 @@ TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toute
   CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3080"));
   CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 2050"));
   CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3050 A Laptop GPU"));
-  CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 5080"));
+  CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 5080"));  // B08-07 : pas sans mesure
   CHECK(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 4070 Ti"));
   CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 5080"));  // pas avant une mesure (A37-01)
   CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 3060"));

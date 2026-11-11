@@ -165,6 +165,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "ring_watcher.cpp",
                                         "display_contract.cpp",
                                         "display_follow.cpp",
+                                        "stage_fallback.cpp",
                                         "gpu_profile_out.cpp",
                                         "placebo_open.cpp",
                                         "placebo_ring.cpp",

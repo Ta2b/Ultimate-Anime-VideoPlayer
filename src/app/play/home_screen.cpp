@@ -137,7 +137,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
   // Sans moteur chargé, le FP8 se présume d'après le nom de la carte, avec la règle du moteur : TensorRT le
-  // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02). Le moteur le confirme à l'ouverture.
+  // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02) ni 50 (B08-07). Le moteur le confirme à
+  // l'ouverture.
   const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                           gpu_facts(h.screen).tensor_cores && fp8_presumed(gpu_facts(h.screen).name);
   // Le mode Performance de SPAN (noyaux CUTLASS) : une RTX 40 (Ada, 8.9, portable compris : le nom de la

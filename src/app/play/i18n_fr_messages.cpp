@@ -94,6 +94,8 @@ constexpr std::array kMessages{
           "Précision de l'agrandissement indisponible : Équilibre à la place"},
     Entry{"Smoothing precision unavailable: Balanced instead",
           "Précision de la fluidité indisponible : Équilibre à la place"},
+    Entry{"Upscaling: a fallback engine runs", "Agrandissement : un moteur de repli tourne"},
+    Entry{"Smoothing: a fallback engine runs", "Fluidité : un moteur de repli tourne"},
     Entry{"(Video > Post-processing: Retry)", "(Vidéo > Post-traitement : Réessayer)"},
     Entry{"Retry", "Réessayer"},
     Entry{"Paused after sleep", "En pause après la veille"},

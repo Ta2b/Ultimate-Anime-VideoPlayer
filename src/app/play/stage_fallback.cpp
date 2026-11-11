@@ -7,6 +7,8 @@
 #include "app/play/player_engines.h"
 #include "app/play/precision.h"
 #include "app/play/visible_error.h"
+#include "core/log.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 
@@ -40,6 +42,49 @@ void StageMemory::remember(Entry entry) {
   std::erase_if(entries_,
                 [&](const Entry& e) { return e.stage == entry.stage && e.signature == entry.signature; });
   entries_.push_back(std::move(entry));
+}
+
+const StageMemory::Inner* StageMemory::find_inner(std::string_view key) const {
+  const auto found = std::ranges::find(inner_, key, &Inner::key);
+  return found == inner_.end() ? nullptr : &*found;
+}
+
+void StageMemory::remember_inner(Inner inner) {
+  std::erase_if(inner_, [&](const Inner& i) { return i.key == inner.key; });
+  inner_.push_back(std::move(inner));
+}
+
+std::string inner_key(std::string_view what, std::string_view library, const std::filesystem::path& model,
+                      int width, int height) {
+  return std::format("{}|{}|{}|{}x{}", what, library, core::to_utf8(model), width, height);
+}
+
+void InnerFallbacks::note(ChainStage stage, const Refusal& refusal) {
+  // Une note par étage : le panneau dit qu'un repli joue, avec la première raison.
+  if (std::ranges::any_of(
+          notes_, [&](const StageNote& n) { return n.stage == stage && n.change == StageChange::Fallback; }))
+    return;
+  notes_.push_back({.stage = stage, .change = StageChange::Fallback, .refusal = refusal});
+}
+
+const Refusal* InnerFallbacks::refused(ChainStage stage, const std::string& key) {
+  if (memory_ == nullptr) return nullptr;
+  const StageMemory::Inner* found = memory_->find_inner(key);
+  if (found == nullptr) return nullptr;
+  log_channel("app")->info("repli retenu pour la séance ({}) : {}", found->refusal.detail, key);
+  note(stage, found->refusal);
+  return &found->refusal;
+}
+
+void InnerFallbacks::failed(ChainStage stage, std::string key, const Refusal& refusal) {
+  // « Annuler et regarder », une vidéo glissée ou un appareil perdu ne sont pas des refus du moteur : rien
+  // n'est retenu.
+  if (watch_now(refusal) || refusal.key == kDroppedVideoKey || refusal.code == RefusalCode::DeviceLost)
+    return;
+  fresh_ = true;
+  note(stage, refusal);
+  if (memory_ != nullptr)
+    memory_->remember_inner({.stage = stage, .key = std::move(key), .refusal = refusal});
 }
 
 namespace {
@@ -109,6 +154,9 @@ i18n::Translated note_text(const StageNote& note) {
     case StageChange::Balanced:
       return span ? i18n::ui_tr("Upscaling precision unavailable: Balanced instead")
                   : i18n::ui_tr("Smoothing precision unavailable: Balanced instead");
+    case StageChange::Fallback:
+      return span ? i18n::ui_tr("Upscaling: a fallback engine runs")
+                  : i18n::ui_tr("Smoothing: a fallback engine runs");
   }
   return {};
 }
@@ -117,8 +165,11 @@ i18n::Translated note_text(const StageNote& note) {
 
 i18n::Translated stage_notice(const std::vector<StageNote>& notes) {
   i18n::Translated text;
-  for (const StageNote& note : notes)
+  for (const StageNote& note : notes) {
+    // Un repli interne s'annonce à son premier refus (chain_setup.cpp) ; au panneau seulement ensuite.
+    if (note.change == StageChange::Fallback) continue;
     text = text.empty() ? note_text(note) : text + i18n::Translated::data(" · ") + note_text(note);
+  }
   if (!text.empty())
     text = text + i18n::Translated::data(" ") + i18n::ui_tr("(Video > Post-processing: Retry)");
   return text;

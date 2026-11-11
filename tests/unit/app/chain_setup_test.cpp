@@ -22,11 +22,16 @@ PlaySettings fast_settings() {
 TEST_CASE("Rapide : le warp et l'anneau suivent l'écran, pas le facteur demandé", "[app][chain]") {
   PlaySettings s = fast_settings();
   CHECK(top_factor(s, 165.0, 23.976) == 6);
-  CHECK(ring_depth(s, factor_of(s)) == 8U);
+  CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 8U);
+  // B08-08 : sur 60 Hz, ×2 au plus : l'anneau de 4 suffit, pas 8 ; écran inconnu : 8.
+  CHECK(ring_depth(s, factor_of(s), 60.0, 23.976) == 4U);
+  CHECK(ring_depth(s, factor_of(s), 90.0, 23.976) == 6U);
+  CHECK(ring_depth(s, factor_of(s), 0.0, 23.976) == 8U);
+  CHECK(ring_depth(s, Factor{}, 165.0, 23.976) == 4U);  // sans interpolation chargée
 
   s.auto_free = false;  // Stable : le facteur demandé borne toujours
   CHECK(top_factor(s, 165.0, 23.976) == 2);
-  CHECK(ring_depth(s, factor_of(s)) == 4U);
+  CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 4U);
 }
 
 TEST_CASE("Rapide : jamais moins de 1, aucune interpolation sans facteur", "[app][chain]") {

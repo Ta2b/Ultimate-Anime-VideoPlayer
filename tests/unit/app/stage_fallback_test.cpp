@@ -130,4 +130,57 @@ TEST_CASE("Étages : un refus vaut pour la séance, « Réessayer » l'oublie", 
 }
 
 }  // namespace
+TEST_CASE("B08-02 : un repli interne refusé est retenu pour la séance, au panneau, et oublié par Réessayer",
+          "[stage_fallback]") {
+  StageMemory memory;
+  const std::string key = inner_key("rife-fused", kLibrary, "rife.onnx", 1920, 1088);
+  const Refusal why{RefusalCode::BuilderFailed, "trtexec : mémoire"};
+  {
+    // La première ouverture : le fusionné se construit, échoue, le refus est retenu et neuf.
+    std::vector<StageNote> notes;
+    bool fresh = false;
+    InnerFallbacks inner(&memory, notes, fresh);
+    CHECK(inner.refused(ChainStage::Motion, key) == nullptr);
+    inner.failed(ChainStage::Motion, key, why);
+    CHECK(fresh);
+    REQUIRE(notes.size() == 1);
+    CHECK(notes[0].change == StageChange::Fallback);
+    CHECK_FALSE(memory.empty());
+  }
+  {
+    // La réouverture suivante : la construction est sautée, le panneau le dit encore, l'avis à l'écran non.
+    std::vector<StageNote> notes;
+    bool fresh = false;
+    InnerFallbacks inner(&memory, notes, fresh);
+    const Refusal* before = inner.refused(ChainStage::Motion, key);
+    REQUIRE(before != nullptr);
+    CHECK(before->code == RefusalCode::BuilderFailed);
+    CHECK_FALSE(fresh);
+    REQUIRE(notes.size() == 1);
+    CHECK_FALSE(stage_panel_note(notes).empty());
+    CHECK(stage_notice(notes).empty());
+    // Une autre taille est un autre moteur : elle s'essaie.
+    CHECK(inner.refused(ChainStage::Motion, inner_key("rife-fused", kLibrary, "rife.onnx", 1280, 736)) ==
+          nullptr);
+  }
+  memory.forget();  // « Réessayer »
+  CHECK(memory.empty());
+  std::vector<StageNote> notes;
+  bool fresh = false;
+  InnerFallbacks inner(&memory, notes, fresh);
+  CHECK(inner.refused(ChainStage::Motion, key) == nullptr);
+}
+
+TEST_CASE("B08-02 : « Annuler et regarder » n'est pas retenu comme un repli", "[stage_fallback]") {
+  StageMemory memory;
+  std::vector<StageNote> notes;
+  bool fresh = false;
+  InnerFallbacks inner(&memory, notes, fresh);
+  inner.failed(ChainStage::Upscale, "k",
+               Refusal{.code = RefusalCode::Cancelled, .detail = "annulé", .key = std::string(kWatchNowKey)});
+  CHECK(memory.empty());
+  CHECK(notes.empty());
+  CHECK_FALSE(fresh);
+}
+
 }  // namespace ajp::app::play

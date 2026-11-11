@@ -171,9 +171,19 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
   c.opened.drba_fused_refused = c.opened.drba ? c.drba_fused_refused : std::nullopt;
   c.opened.rife_fused_refused = c.rife_fused ? std::nullopt : c.rife_fused_refused;
   c.opened.shape = {
-      .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}),
+      .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}, c.opened.display_hz,
+                         c.opened.source_fps),
       .warp_after_span =
           c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.top_factor)};
+}
+
+}  // namespace
+
+namespace {
+
+// Le module du moteur (TensorRT, Vulkan) : il entre dans les signatures des refus retenus.
+std::string library_name(const Player& p) {
+  return p.library ? core::to_utf8(p.library->path().filename()) : std::string();
 }
 
 }  // namespace
@@ -184,7 +194,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   // Sans mémoire de séance (export, banc), une mémoire de cet appel : les crans retombent, rien d'autre.
   StageMemory local;
   StageMemory& refused = memory != nullptr ? *memory : local;
-  const std::string library = p.library ? core::to_utf8(p.library->path().filename()) : std::string();
+  const std::string library = library_name(p);
   const int width = p.video.width;
   const int height = p.video.height;
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
@@ -205,10 +215,11 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       if (*chain) {
         ChainEngines& c = **chain;
         note_opened(c, p, plan->settings);
-        // A03-21 : le repli du fusionné vers le réseau entier se dit à l'écran, pas au journal seulement.
-        if (p.notice.empty()) p.notice = fused_refusal_notice(c.opened);
+        // A03-21 : le repli du fusionné vers le réseau entier se dit à l'écran, pas au journal seulement ;
+        // une fois, à son refus, pas à chaque réouverture qui reprend le repli retenu (B08-02).
+        if (p.notice.empty() && c.fallback_fresh) p.notice = fused_refusal_notice(c.opened);
         c.played = std::move(plan->settings);
-        c.stage_notes = std::move(plan->notes);
+        c.stage_notes.insert(c.stage_notes.begin(), plan->notes.begin(), plan->notes.end());
       }
       return std::move(*chain);
     }
@@ -385,10 +396,14 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
     auto ready = prepare_manual_fp8(p, init, c, settings, fp8_context);
     if (!ready || !*ready) return ready;
   }
+  InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);  // B08-02
   for (const SpanVariantKind kind : wanted) {
     std::optional<SpanInt8> found =
         usable_variant(kind, *c.model, variants, fp8_context, c.work, bench, strict);
     if (!found) continue;
+    const std::string key = inner_key(std::format("span-variant {}", variant_text(kind)), library_name(p),
+                                      c.model->path, c.work.width, c.work.height);
+    if (inner.refused(ChainStage::Upscale, key) != nullptr) continue;
     c.span_int8 = std::move(found);
     loaded = prepare_span();
     if (*loaded) break;
@@ -396,6 +411,7 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
     if (watch_now(loaded->error())) return stage_refused(std::move(loaded->error()), ChainStage::Upscale);
     log->warn("SPAN {} refusé ({}) : variante suivante ou SPAN FP16", variant_text(kind),
               loaded->error().detail);
+    inner.failed(ChainStage::Upscale, key, loaded->error());
     c.span_int8.reset();
     loaded.reset();
   }
@@ -480,8 +496,15 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   c.rife_size = !p.options.rife_image && c.work.height > kRifeMotionHeight
                     ? work_size(video.width, video.height, kRifeMotionHeight)
                     : c.work;
-  // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque.
-  if (want_drba) {
+  // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque. Un refus
+  // retenu pour la séance (B08-02) passe à RIFE sans reconstruire.
+  InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);
+  const std::string library = library_name(p);
+  const std::string drba_key = inner_key(std::format("drba {}", name(settings.motion_precision)), library, {},
+                                         c.work.width, c.work.height);
+  if (want_drba && inner.refused(ChainStage::Motion, drba_key) != nullptr)
+    log->info("DistilDRBA refusé plus tôt dans la séance : {}", c.rife_model ? "RIFE" : "sans interpolation");
+  else if (want_drba) {
     // DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la
     // place du moteur entier, quand le backend le sait, que le réglage le veut et que le cran est Équilibre ;
     // tout échec garde le moteur entier.
@@ -489,6 +512,13 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     fused.declined = drba_fused_declined(settings, c.backend->capabilities().drba_fused);
     if (settings.drba_fused && !fused.declined.empty())
       log->info("DistilDRBA fusionné non utilisé : {}", fused.declined);
+    const std::string fused_key = inner_key("drba-fused", library, {}, c.work.width, c.work.height);
+    if (fused.declined.empty()) {
+      if (const Refusal* before = inner.refused(ChainStage::Motion, fused_key)) {
+        fused.declined = before->detail;
+        fused.refused = before->code;
+      }
+    }
     const bool try_fused = fused.declined.empty();
     // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
     // créée.
@@ -516,12 +546,15 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
                 c.work.height);
     if (loaded && *loaded) {
       note_drba_fused(c, fused, try_fused);
+      if (try_fused && fused.refused)
+        inner.failed(ChainStage::Motion, fused_key, Refusal{*fused.refused, fused.declined});
     }
     // Annulée, la construction ne passe pas la main à RIFE : l'interpolation part, SPAN reste (A31-15).
     if (!loaded && watch_now(loaded.error()))
       return stage_refused(std::move(loaded.error()), ChainStage::Motion);
     if (!loaded) {
       log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
+      inner.failed(ChainStage::Motion, drba_key, loaded.error());
       p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
                                         : i18n::ui_tr("DistilDRBA unavailable"),
                            host_now_us());
@@ -591,6 +624,12 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto try_fused = [&](const kernels::RifeGeometry& g, bool motion,
                              std::unique_ptr<gpu::Engine>& into) {
     if (!fused_wanted) return Fused::Declined;
+    const std::string key = inner_key(motion ? "rife-fused motion" : "rife-fused", library, *c.rife_model,
+                                      g.padded_width, g.padded_height);
+    if (const Refusal* before = inner.refused(ChainStage::Motion, key)) {
+      c.rife_fused_refused = before->code;  // le panneau dit encore pourquoi l'entier tourne
+      return Fused::Declined;
+    }
     auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, motion);
     if (!fused && watch_now(fused.error())) {
       cancelled = std::move(fused.error());
@@ -599,6 +638,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     if (!fused) {
       log->warn("RIFE fusionné indisponible ({}) : RIFE entier", fused.error().detail);
       c.rife_fused_refused = fused.error().code;
+      inner.failed(ChainStage::Motion, key, fused.error());
       return Fused::Declined;
     }
     if (!*fused) return Fused::Closed;
@@ -617,6 +657,10 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       return std::nullopt;
     } else if (tried == Fused::Cancelled) {
       return stage_refused(std::move(*cancelled), ChainStage::Motion);
+    } else if (const std::string key = inner_key("rife-motion", library, *derived, c.geometry.padded_width,
+                                                 c.geometry.padded_height);
+               tried == Fused::Declined && inner.refused(ChainStage::Motion, key) != nullptr) {
+      log->info("RIFE mouvement refusé plus tôt dans la séance : RIFE image");
     } else if (tried == Fused::Declined) {
       const kernels::RifeGeometry& g = c.geometry;
       auto loaded = prepare_engine(p, init, *c.backend, *derived,
@@ -631,6 +675,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       if (!loaded) {
         // La variante mouvement refusée (construction, mémoire) : RIFE image reste à essayer (A29-01).
         log->warn("RIFE mouvement refusé ({}) : RIFE image", loaded.error().detail);
+        inner.failed(ChainStage::Motion, key, loaded.error());
       } else if (!*loaded) {
         return std::nullopt;
       } else {

@@ -119,7 +119,8 @@ std::string cuda_arch_from_name(std::string_view gpu_name) {
 
 bool fp8_presumed(std::string_view gpu_name) {
   const std::string arch = cuda_arch_from_name(gpu_name);
-  return arch == "sm89" || arch == "sm90" || arch == "sm120";
+  // Pas sm 12 (RTX 50) : pas de FP8 sans mesure qui le justifie (B08-07), même règle que le moteur.
+  return arch == "sm89" || arch == "sm90";
 }
 
 bool span_fp8_presumed(std::string_view gpu_name) {

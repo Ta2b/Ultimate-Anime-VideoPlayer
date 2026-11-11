@@ -122,6 +122,16 @@ void DisplayFollow::follow_window(bool display_changed) {
     chain_.reopen = chain_.running;  // A29-03 : la chaîne, pas le lecteur ; pistes et sous-titres gardés
     chain_.rederive = true;          // B29-01 : refaite pour le nouvel écran, pas recopiée
   }
+  if (display_changed && !chain_.reopen && chain_.opened.rife_loaded) {
+    // B08-08 : l'anneau du Rapide est taillé sur l'écran de l'ouverture ; un écran plus rapide en demande un
+    // plus profond, la chaîne se rouvre telle quelle pour lui.
+    OpenedChain now = chain_.opened;
+    now.display_hz = state_.known_hz;
+    if (chain_shape(chain_.running, now).ring > chain_.opened.shape.ring) {
+      log_->info("écran plus rapide : l'anneau du mode Rapide se refait à sa mesure");
+      chain_.reopen = chain_.running;
+    }
+  }
   vrr_fullscreen_ = fullscreen;
   session_.set_composited(!fullscreen);
   const std::optional<DisplayFacts> display = window_display(out.window());

@@ -117,7 +117,8 @@ struct BackendCaps {
   bool needs_host_sync = false;  // wait() attend côté hôte ; compté dans host_waits
   bool fp16 = false;
   bool int8 = false;
-  bool fp8 = false;  // graphes Q/DQ FP8 (E4M3) calculés par les unités matricielles : Ada (sm 8.9) et après
+  bool fp8 = false;  // graphes Q/DQ FP8 (E4M3) calculés par les unités matricielles : Ada (sm 8.9), Hopper ;
+                     // pas les RTX 50 sans mesure (B08-07)
   // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
   // dans un backend construit avec CUTLASS.
   bool span_fp8_cutlass = false;

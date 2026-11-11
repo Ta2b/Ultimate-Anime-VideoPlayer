@@ -287,7 +287,9 @@ BackendCaps TensorRtBackend::capabilities() const {
       .needs_host_sync = false,
       .fp16 = true,
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
-      .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
+      // Ada (sm 8.9) et Hopper ; pas les RTX 50 (sm 12) tant qu'aucune mesure ne montre un gain qui vaille la
+      // perte de qualité (B08-07, comme span_fp8_cutlass).
+      .fp8 = (properties_.major == 8 && properties_.minor >= 9) || properties_.major == 9,
       .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
       .gpu_arch = std::format("sm_{}{}", properties_.major, properties_.minor),
       .span_fp8_kernels = SpanFp8Net::kKernelsVersion,

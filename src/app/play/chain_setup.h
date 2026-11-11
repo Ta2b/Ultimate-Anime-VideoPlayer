@@ -120,6 +120,7 @@ struct ChainEngines {
   // ramenés à Équilibre (stage_fallback.h) ; stage_notes dit ce qui a changé.
   PlaySettings played;
   std::vector<StageNote> stage_notes;
+  bool fallback_fresh = false;  // B08-02 : un repli interne refusé à cette ouverture, pas retenu d'avant
 
   bool use_drba() const { return drba != nullptr; }
   bool use_apple() const { return apple && rife != nullptr; }

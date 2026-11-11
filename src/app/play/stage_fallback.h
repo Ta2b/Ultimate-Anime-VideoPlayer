@@ -41,7 +41,9 @@ std::string stage_signature(ChainStage stage, const PlaySettings& settings, int 
                             int source_height, std::string_view library);
 
 // Ce que la préparation a retiré ou ramené pour jouer : montré une fois à l'écran et dans le panneau.
-enum class StageChange : std::uint8_t { Cancelled, Dropped, Balanced };
+// Fallback (B08-02) : un repli interne à l'étage (RIFE fusionné → entier, variante de SPAN → la suivante,
+// RIFE mouvement → image, DistilDRBA → RIFE, DistilDRBA fusionné → entier) ; l'étage joue encore.
+enum class StageChange : std::uint8_t { Cancelled, Dropped, Balanced, Fallback };
 struct StageNote {
   ChainStage stage = ChainStage::Upscale;
   StageChange change = StageChange::Dropped;
@@ -61,12 +63,48 @@ class StageMemory {
   // Le refus retenu pour cet étage et cette signature ; une annulation ne vaut que pour sa vidéo.
   const Entry* find(ChainStage stage, std::string_view signature, const std::filesystem::path& file) const;
   void remember(Entry entry);
+  // B08-02 : un repli interne retenu sous sa clé (inner_key) ; la réouverture suivante ne refait pas la
+  // construction refusée, elle prend le repli tout de suite.
+  struct Inner {
+    ChainStage stage = ChainStage::Upscale;
+    std::string key;
+    Refusal refusal;
+  };
+  const Inner* find_inner(std::string_view key) const;
+  void remember_inner(Inner inner);
   // « Réessayer » : tout est oublié, la chaîne se rouvre telle qu'elle est demandée.
-  void forget() { entries_.clear(); }
-  bool empty() const { return entries_.empty(); }
+  void forget() {
+    entries_.clear();
+    inner_.clear();
+  }
+  bool empty() const { return entries_.empty() && inner_.empty(); }
 
  private:
   std::vector<Entry> entries_;
+  std::vector<Inner> inner_;
+};
+
+// La clé d'un repli interne : ce qui a été refusé (« rife-fused », « span-variant FP8 »…), le module du
+// moteur, le modèle et la forme. Deux réouvertures de même clé construiraient le même moteur.
+std::string inner_key(std::string_view what, std::string_view library, const std::filesystem::path& model,
+                      int width, int height);
+
+// Les replis internes d'une préparation (B08-02), retenus dans la mémoire de séance quand il y en a une
+// (le lecteur) : refused dit si la clé est déjà refusée (la construction est sautée), failed retient un refus
+// neuf. notes reçoit une note par repli, pour le panneau et « Réessayer » ; fresh passe à vrai sur un refus
+// neuf (l'avis à l'écran ne se répète pas aux réouvertures suivantes).
+class InnerFallbacks {
+ public:
+  InnerFallbacks(StageMemory* memory, std::vector<StageNote>& notes, bool& fresh)
+      : memory_(memory), notes_(notes), fresh_(fresh) {}
+  const Refusal* refused(ChainStage stage, const std::string& key);
+  void failed(ChainStage stage, std::string key, const Refusal& refusal);
+
+ private:
+  void note(ChainStage stage, const Refusal& refusal);
+  StageMemory* memory_;
+  std::vector<StageNote>& notes_;
+  bool& fresh_;
 };
 
 // Les réglages à essayer : wanted sans les étages que la mémoire refuse, un cran refusé ramené à Équilibre
