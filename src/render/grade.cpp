@@ -190,8 +190,8 @@ struct Grade::Impl {
   float video_fps = 24.0F;
   std::optional<Grade::KwinMatch> kwin;  // set_kwin_match, réécrit dans un hook refait
   void put_kwin();
-  // La sortie HDR : le sommet de la courbe et le blanc rendu, recalculés dès que les paramètres, la pile ou
-  // l'écran changent ; rien sans la dernière passe.
+  // La sortie HDR : le sommet de la courbe, le blanc rendu et le plafond des éclats, recalculés dès que les
+  // paramètres, la pile ou l'écran changent ; rien sans la dernière passe.
   std::optional<OutputTune> tune;
   void put_output();
   ParsedHook grade;
@@ -306,7 +306,12 @@ void Grade::Impl::put_output() {
     for (const pl_hook* hook : {black.hook, grade.hook})
       if (pl_var_data* data = find_param(*hook, name)) data->f = static_cast<float>(value);
   };
-  if (tune) put("kwin_curve", std::clamp(tune->curve_peak, 50.0, 100000.0));
+  // Les éclats après la pile, sur toute sortie HDR qui passe par la dernière passe (3-anime.hook, an_late).
+  put("an_late", tune ? 1.0 : 0.0);
+  if (tune) {
+    put("kwin_curve", std::clamp(tune->curve_peak, 50.0, 100000.0));
+    put("em_top", std::clamp(tune->top, 50.0, 10000.0));
+  }
 }
 
 void Grade::set_video_fps(double fps) {

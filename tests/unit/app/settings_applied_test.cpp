@@ -103,6 +103,8 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"subtitle_delay_ms", [](PlaySettings& s) { s.subtitle_delay_ms = 200; }},
       {"grade", [](PlaySettings& s) { s.grade = !s.grade; }},
       {"look_contrast", [](PlaySettings& s) { s.look_contrast = 20; }},
+      {"flash_guard", [](PlaySettings& s) { s.flash_guard = !s.flash_guard; }},
+      {"surface_white", [](PlaySettings& s) { s.surface_white = 70; }},
       {"oled_care", [](PlaySettings& s) { s.oled_care = !s.oled_care; }},
       {"autoplay_next", [](PlaySettings& s) { s.autoplay_next = !s.autoplay_next; }},
       {"update_mode", [](PlaySettings& s) { s.update_mode = UpdateMode::Never; }},

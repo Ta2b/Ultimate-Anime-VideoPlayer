@@ -280,6 +280,12 @@ struct PlaySettings {
   // looks et looks_mix d'un ancien play.toml ne sont plus lues.
   int look_contrast = 0;
   int look_highlight = 0;
+  // Le blanc des surfaces en HDR, en % de celui que la pile porte (100 : vers 70 % du pic de l'écran ; 70 :
+  // vers la moitié). Les éclats montent toujours jusqu'au pic.
+  int surface_white = 100;
+  // Limiteur de flashs (P3.51) : une suite de flashs rapides (UIT-R BT.1702) plafonne le grade HDR vers
+  // 250 nits pendant une seconde. Coupé, les flashs gardent toute leur lumière.
+  bool flash_guard = true;
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;
@@ -293,6 +299,9 @@ struct PlaySettings {
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
+
+// Le curseur « Blanc des surfaces », en % (PlaySettings::surface_white).
+inline constexpr core::Range<int> kSurfaceWhite{50, 100};
 
 // La longueur d'un chemin de dossier d'installation que le menu et play.toml acceptent (A22-09).
 inline constexpr std::size_t kMaxEnginesDirBytes = 4096;

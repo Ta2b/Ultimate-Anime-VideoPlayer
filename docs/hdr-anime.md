@@ -13,9 +13,14 @@ la dernière passe (`anime-hdr-black.hook`, réglée par `src/render/output_tune
 - **Blanc des surfaces : là où la pile le porte, vers 70 % du pic.** La dernière passe applique la courbe de
   KWin sous laquelle la pile a été réglée à l'œil, de 10 000 nits vers le pic de l'écran. Les curseurs « LUT
   contrast intensity » et « LUT highlight intensity » déplacent ce blanc (de 483 à 818 nits et de 410 à 863
-  nits sur un écran de 1 000 nits).
-- **Éclats avant la pile.** La passe anime décide quels pixels sont des lumières et les monte jusqu'au pic ;
-  la pile les amplifie ensuite.
+  nits sur un écran de 1 000 nits). Le réglage avancé « Blanc des surfaces » (50 à 100 %, 100 par défaut) le
+  baisse : la courbe est alors résolue pour rendre ce blanc (à 70 %, vers la moitié du pic, comme la rc.1 et
+  la rc.2), et les éclats montent toujours jusqu'au pic.
+- **Éclats après la pile, jusqu'au pic de l'écran (A41-02).** La passe anime décide quels pixels sont des
+  lumières et transmet leur gain dans l'alpha ; la dernière passe l'applique après la pile et la courbe, sous
+  le pic de l'écran (`emitter_level`, `src/render/output_tune.h`). Avant, la pile et la courbe divisaient leur
+  écart sur les surfaces par deux (un émetteur à 804 nits pour des surfaces à 690). Leur niveau ne dépend ni
+  de la scène ni des curseurs de la pile.
 - **Luminosité stable d'un plan à l'autre en HDR (Tatoub, 11/11/2026, essai de la rc.4).** Les surfaces
   gardent le relèvement fixe : plus d'exposition par plan (jusqu'à ±19 %, que la pile double à peu près),
   qui faisait sauter un même décor entre un gros plan sombre et un plan large clair. Plus de limiteur de
@@ -54,8 +59,12 @@ Mesuré sous lavapipe sur les shaders du lecteur (`ajp_render_tests "[.mesure]"`
 | 192 | 305 | 258 | 308 |
 | 224 | 538 | 403 | 538 |
 | 255 (blanc d'une surface) | 690 | 496 | 690 |
-| Émetteur blanc, Éclats 100 %, scène sombre | 793 | 690 | 804 |
-| Émetteur blanc, Éclats 200 %, scène sombre | 899 | 975 | 899 |
+| Émetteur blanc, Éclats 50 % | | | 699 |
+| Émetteur blanc, Éclats 100 %, toute scène | 793 | 690 | 860 |
+| Émetteur blanc, Éclats 200 %, toute scène | 899 | 975 | 997 |
+
+Avant les éclats après la pile (rc.4 et rc.5), l'émetteur sortait à 804 nits (Éclats 100 %) et 899 (200 %) en
+scène sombre, moins en scène claire. Sur un écran de 400 nits : surfaces à 320, émetteur à 381 (Éclats 100 %).
 
 Blanc des surfaces selon le pic : 320 nits à 400, 690 à 1 000, 1 304 à 2 000 (rc.1 et rc.2 : 278, 496, 992).
 
@@ -67,8 +76,8 @@ Blanc des surfaces selon le pic : 320 nits à 400, 690 à 1 000, 1 304 à 2 000 
   plan. Rien n'est fait avant ce constat à l'œil.
 - **Rendu universel** : le même rendu quel que soit le système et l'écran. La pile fondue en une seule LUT
   est écartée : l'audit A41-01 a mesuré qu'elle change l'image (18 codes PQ au pire, une couleur sur cinq à
-  plus d'un code). Restent : une pile de taille fixe (19 emplacements, les curseurs ne changent que des
-  intensités, sans refaire le hook), la passe de sortie allumée sur Mac (la pile y demande ~6 000 nits et
+  plus d'un code). La pile a maintenant 19 emplacements fixes : les curseurs ne changent que des intensités,
+  sans refaire le hook, et l'image est la même octet pour octet. Restent : la passe de sortie allumée sur Mac (la pile y demande ~6 000 nits et
   macOS compresse à sa façon), et le temps de la passe du look mesuré sur la carte de Tatoub.
 
 Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) reste dans
@@ -164,6 +173,8 @@ chaque plan, l'interpolation ses coupes (`--shot-cuts`, donc aussi sans grade).
   250 nits, jusqu'à une seconde après le dernier. La pré-analyse marque ces séquences d'avance, le plafond les
   prend dès leur première transition ; sans elle, l'analyse à l'ingestion le pose après ce qu'elle a vu
   (875 ms à 4 Hz). Rien en sortie SDR. Le plafond retire l'amplification du grade, il ne rend pas sûre une
-  source déjà dangereuse.
+  source déjà dangereuse. La case « Limiter les flashs rapides » (page Couleurs, `grade.flash_guard`, allumée
+  par défaut) le coupe : les flashs gardent alors toute leur lumière. La version 3 de l'analyse refait les
+  fichiers marqués sous l'ancien blanc du grade, plus bas, qui manquaient des flashs.
 - **Cache** (`media/shot_cache.h`). Un fichier `.shots` par vidéo, avec la version de l'analyse et le chemin de
   décodage (logiciel ou NVDEC réduit) : un fichier d'une autre version se refait.

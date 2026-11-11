@@ -2,13 +2,13 @@
 
 Le grade HDR anime (`docs/hdr-anime.md`) passe l'image par une pile de LUT 3D d'HDR (`anime_look_layers`,
 `src/app/play/look_catalog.cpp`), appliquée par `anime-hdr-look.hook` après le grade et avant le vrai noir
-OLED. Le shader parcourt la pile LUT par LUT, chacune lue telle quelle et mélangée à son intensité (11 LUT par
-défaut, 19 aux curseurs à 100, quatre textures : une par fichier). Jusqu'en novembre 2026 la pile était réduite
+OLED. Le shader parcourt la pile LUT par LUT, chacune lue telle quelle et mélangée à son intensité (19
+emplacements fixes : 11 LUT servent par défaut, 19 aux curseurs à 100, les autres sont à intensité 0 et sautés ;
+quatre textures, une par fichier). Jusqu'en novembre 2026 la pile était réduite
 à une table de 65 points : entre deux points, une table interpole la pile entière au lieu de la parcourir, et
 l'image s'en écartait jusqu'à 12,7 codes PQ sur 1 023 (7,5 avec 129 points ; mesure cachée
 `mesure : écart de la table composée à la pile exacte` de `tests/unit/render`, audit A41-01). Un curseur du
-look ne change plus que des intensités, sans rien recalculer ; les LUT ne sont relues que si leur nombre
-change. `--bake-looks` écrit toujours cette table de 65 points, pour un autre lecteur.
+look ne change que des intensités, sans rien recalculer ni relire. `--bake-looks` écrit toujours cette table de 65 points, pour un autre lecteur.
 
 Une correction entoure la pile depuis novembre 2026 (`docs/hdr-anime.md`, « Niveaux à l'écran ») : sous RVB 48,
 un pied adouci remplace le bas de la LUT de base, qui rendait noir tout ce qui était sous RVB 16. La dernière

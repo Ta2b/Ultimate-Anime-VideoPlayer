@@ -42,24 +42,27 @@ struct Pile {
   std::array<const CubeLut*, kLookSlots> luts{};
   std::array<double, kLookSlots> mixes{};
   std::size_t count = 0;
-  explicit Pile(int contrast_slider = 0, int highlight_slider = 0) {
+  // `fixed` : la pile du lecteur, toujours 19 emplacements (6, 3 et 8), ceux en trop à intensité 0 ; sinon
+  // la pile serrée, une LUT par emplacement utile.
+  explicit Pile(int contrast_slider = 0, int highlight_slider = 0, bool fixed = false) {
     const double c = 7.0 * (1.0 + contrast_slider / 100.0);
     const double h = 1.5 * (1.0 + highlight_slider / 100.0);
-    add(&base, 1.0);
-    add(&contrast, c * 3.0 / 7.0);
-    add(&highlight, h);
-    add(&skin, 1.0);
-    add(&contrast, c * 4.0 / 7.0);
+    add(&base, 1.0, fixed ? 1 : 0);
+    add(&contrast, c * 3.0 / 7.0, fixed ? 6 : 0);
+    add(&highlight, h, fixed ? 3 : 0);
+    add(&skin, 1.0, fixed ? 1 : 0);
+    add(&contrast, c * 4.0 / 7.0, fixed ? 8 : 0);
   }
   Pile(const Pile&) = delete;
   Pile& operator=(const Pile&) = delete;
   LookChain chain() const { return LookChain{.luts = luts, .mixes = mixes}; }
 
  private:
-  void add(const CubeLut* lut, double units) {
-    for (; units > 1e-9 && count < kLookSlots; units -= 1.0, ++count) {
+  void add(const CubeLut* lut, double units, std::size_t slots) {
+    for (std::size_t i = 0; (slots > 0 ? i < slots : units > 1e-9) && count < kLookSlots;
+         ++i, units -= 1.0, ++count) {
       luts.at(count) = lut;
-      mixes.at(count) = std::min(units, 1.0);
+      mixes.at(count) = std::clamp(units, 0.0, 1.0);
     }
   }
 };

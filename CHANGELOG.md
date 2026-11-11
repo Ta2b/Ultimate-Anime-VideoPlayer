@@ -6,7 +6,7 @@ reprend telles quelles. La version vient de `project()` dans `CMakeLists.txt` ; 
 
 | Version | Notes |
 |---|---|
-| 0.11.0 | [v0.11.0-rc.5](tools/release/notes/v0.11.0-rc.5.md) : corrections de l'audit (qualité, résilience, Windows, TensorRT), préversion |
+| 0.11.0 | [v0.11.0-rc.6](tools/release/notes/v0.11.0-rc.6.md) : corrections de l'audit (qualité, résilience, Windows, TensorRT), préversion |
 | 0.10.3 | [v0.10.3](tools/release/notes/v0.10.3.md) : corrections Windows et Vulkan (ArtCNN, netteté) |
 | 0.10.2 | [v0.10.2](tools/release/notes/v0.10.2.md) : la 0.10.1 reconstruite (modèle ArtCNN livré, macOS) |
 | 0.10.1 | [v0.10.1](tools/release/notes/v0.10.1.md) : commandes rejouées en boucle, trtexec de Linux ; ne s'est pas construite |

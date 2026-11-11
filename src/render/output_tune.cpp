@@ -75,6 +75,27 @@ double identity_curve_peak(double reference) {
   return kContentTop * reference / kContentReferenceNits;
 }
 
+double curve_peak_for(double content_nits, double target, double reference) {
+  const double k = reference / kContentReferenceNits;
+  const double in_range = kContentTop * k / reference;
+  const double rel = content_nits * k / reference;
+  // rel × (1 + rel × v) / (1 + rel) = cible / référence, résolu en v ; v = 0 : Reinhard seul, v = 1 :
+  // l'identité.
+  const double v =
+      rel > 0.0 ? std::clamp((target / reference * (1.0 + rel) / rel - 1.0) / rel, 0.0, 1.0) : 1.0;
+  return reference * (v * in_range * in_range + in_range) / (1.0 + in_range);
+}
+
+double emitter_level(double m, double gain, double top) {
+  const double v = m * gain;
+  if (gain <= 1.0) return v;
+  if (m >= top) return m;
+  const double knee = std::max(0.65 * top, m);
+  if (v <= knee) return v;
+  const double room = std::max(top - knee, 1e-3);
+  return knee + room * (1.0 - std::exp(-(v - knee) / room));
+}
+
 OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const> luts, double reference,
                        double panel_peak) {
   // Le blanc d'une surface avant la pile : le blanc de la source au relèvement fixe (pas celui du plan : la
@@ -87,6 +108,13 @@ OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const
   OutputTune tune;
   tune.curve_peak = pile ? panel_peak : identity_curve_peak(reference);
   tune.white = std::min(compress_neutral(pile_white, reference, tune.curve_peak), panel_peak);
+  // Le curseur « Blanc des surfaces » (100 % : là où la pile le porte) : la courbe est résolue pour rendre le
+  // blanc à cette part, tout le reste de l'image suit la même courbe. Les éclats montent toujours au pic.
+  if (pile && params.surface_white < 0.999) {
+    tune.curve_peak = curve_peak_for(pile_white, params.surface_white * tune.white, reference);
+    tune.white = std::min(compress_neutral(pile_white, reference, tune.curve_peak), panel_peak);
+  }
+  tune.top = panel_peak;  // pas de limiteur de scène : la dalle limite elle-même les scènes claires
   return tune;
 }
 

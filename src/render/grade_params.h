@@ -135,6 +135,9 @@ struct GradeParams {
   double look_white = 203.0;
   double look_pq = 0.0;
   double look_clean = 0.0;  // 1 : la pile sur la couleur du voisinage, grain et paliers non étirés
+  // Le blanc des surfaces en part de celui que la pile porte sous la courbe (1 : la pile seule ; 0,5 à 1),
+  // réglé par la dernière passe (output_tune).
+  double surface_white = 1.0;
   // La luminance moyenne de la scène à l'écran (nits ; < 0 : inconnue), donnée par le lecteur.
   double fs_apl = -1.0;
   // La luminance moyenne de la série (la médiane des plans connus, nits ; < 0 : inconnue) : les noirs

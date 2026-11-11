@@ -62,6 +62,58 @@ TEST_CASE("sortie HDR : blanc des surfaces vers 70 % du pic, déplacé par les c
   CHECK(bare.white == Approx(203.0 * kAnimeLift));
 }
 
+TEST_CASE("sortie HDR : le curseur Blanc des surfaces baisse le blanc, 100 % garde celui de la pile",
+          "[render][tune]") {
+  const gpu_test::Pile stack;
+  for (const double peak : {400.0, 1000.0}) {
+    GradeParams p = gpu_test::player_params(peak);
+    const OutputTune full = output_tune(p, stack.luts, 203.0, peak);
+    CHECK(full.curve_peak == Approx(peak));  // 100 % : la courbe de la rc.4, vers le pic
+    double before = full.white;
+    for (const double share : {0.9, 0.7, 0.5}) {
+      p.surface_white = share;
+      const OutputTune lower = output_tune(p, stack.luts, 203.0, peak);
+      CAPTURE(peak, share, lower.white);
+      CHECK(lower.white < before);
+      // La courbe ne descend pas sous Reinhard seul : sur un écran peu lumineux, le plus bas reste au-dessus.
+      if (peak >= 1000.0) CHECK(lower.white == Approx(share * full.white).epsilon(0.02));
+      CHECK(lower.white >= 0.98 * share * full.white);
+      CHECK(lower.top == Approx(peak));  // les éclats montent toujours au pic
+      before = lower.white;
+    }
+  }
+  // Sans pile, rien n'est compressé : le curseur n'y fait rien.
+  GradeParams bare = gpu_test::player_params(1000.0);
+  bare.surface_white = 0.5;
+  CHECK(output_tune(bare, {}, 203.0, 1000.0).curve_peak == Approx(identity_curve_peak(203.0)));
+}
+
+TEST_CASE("éclats après la pile : le gain entier sous le genou, une épaule douce sous le pic de l'écran",
+          "[render][tune]") {
+  for (const double top : {400.0, 1000.0}) {
+    // Sous le genou (65 % du pic), le gain passe entier ; un gain de 1 ou moins ne touche à rien.
+    CHECK(emitter_level(100.0, 2.0, top) == Approx(200.0));
+    CHECK(emitter_level(300.0, 0.9, top) == Approx(270.0));
+    // Au-dessus, l'épaule monte toujours et reste sous le pic.
+    double before = 0.0;
+    for (double gain = 1.0; gain <= 64.0; gain *= 1.25) {
+      const double out = emitter_level(0.6 * top, gain, top);
+      CHECK(out >= before);
+      CHECK(out <= top);
+      before = out;
+    }
+    // Une surface déjà au pic ou au-delà reste où elle est.
+    CHECK(emitter_level(top, 3.0, top) == Approx(top));
+    CHECK(emitter_level(1.2 * top, 3.0, top) == Approx(1.2 * top));
+  }
+  // Le plafond suit l'écran : le même émetteur monte plus haut sur une dalle plus lumineuse.
+  CHECK(emitter_level(300.0, 3.0, 1000.0) > emitter_level(300.0, 3.0, 400.0));
+  // La sortie réglée pour un écran porte son pic comme plafond.
+  const gpu_test::Pile stack;
+  GradeParams params = gpu_test::player_params(800.0);
+  CHECK(output_tune(params, stack.luts, 203.0, 800.0).top == Approx(800.0));
+}
+
 TEST_CASE("pied des noirs : vrai noir sous RVB 4, nuits gardées, courbe croissante (pile livrée)",
           "[render][tune]") {
   const gpu_test::Pile stack;

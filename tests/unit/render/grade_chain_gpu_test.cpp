@@ -19,12 +19,13 @@ using namespace gpu_test;
 
 namespace {
 
-// Un halo clair de 48 colonnes (195 nits) sur un fond sombre (3 nits) : un émetteur pour la passe anime.
-std::vector<std::uint16_t> halo() {
+// Un halo clair de 48 colonnes (195 nits par défaut) sur un fond sombre (3 nits) : un émetteur pour la passe
+// anime.
+std::vector<std::uint16_t> halo(double lit = 195.0) {
   std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
   for (std::size_t y = 0; y < static_cast<std::size_t>(kSide); ++y) {
     for (std::size_t x = 0; x < static_cast<std::size_t>(kSide); ++x) {
-      const double nits = x >= 104 && x < 152 ? 195.0 : 3.0;
+      const double nits = x >= 104 && x < 152 ? lit : 3.0;
       const auto code = static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
       std::uint16_t* px = &pixels[(y * static_cast<std::size_t>(kSide) + x) * 4];
       px[0] = px[1] = px[2] = code;
@@ -89,6 +90,14 @@ TEST_CASE("chaîne HDR : blanc des surfaces vers 70 % du pic, gris moyen inchang
     // Ce que la dernière passe annonce est ce qu'elle rend (MaxFALL, A41-02).
     REQUIRE(gpu.grade->output());
     CHECK(gpu.grade->output()->white == Approx(white).epsilon(0.02));
+    // Le curseur « Blanc des surfaces » à 70 % : le blanc vers 70 % de celui de la pile, à l'écran aussi.
+    if (peak < 1000.0) continue;
+    GradeParams lower = params;
+    lower.surface_white = 0.7;
+    const double lowered = chain_level(gpu, sdr_code_nits(255.0), lower);
+    INFO("blanc des surfaces à 70 % : " << lowered << " nits");
+    CHECK(lowered == Approx(0.7 * white).epsilon(0.03));
+    CHECK(gpu.grade->output()->white == Approx(lowered).epsilon(0.02));
   }
   gpu.grade->set_kwin_match(std::nullopt);
 }
@@ -125,6 +134,28 @@ TEST_CASE("chaîne HDR : les curseurs de la pile agissent en direct, même quand
   gpu.grade->set_kwin_match(std::nullopt);
 }
 
+TEST_CASE("chaîne HDR : la pile de 19 emplacements rend l'image de la pile serrée, octet pour octet",
+          "[render][gpu][chain]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const auto image = [&](const Pile& pile, const std::vector<std::uint16_t>& source) {
+    set_player_output(gpu, pile, 1000.0);
+    GradeParams params = player_params(1000.0);
+    params.look_mixes = pile.mixes;
+    return graded_image(gpu, source, params);
+  };
+  for (const auto& [contrast, highlight] : {std::pair{0, 0}, std::pair{45, -30}, std::pair{-100, 100}}) {
+    CAPTURE(contrast, highlight);
+    for (const auto& source : {ramp(400.0, 0.6, 0.3), ramp(250.0, 0.9, 1.1)}) {
+      const Pile tight(contrast, highlight);
+      const Pile fixed(contrast, highlight, true);
+      CHECK(image(tight, source) == image(fixed, source));
+    }
+  }
+  gpu.grade->set_kwin_match(std::nullopt);
+}
+
 TEST_CASE("chaîne HDR : le shader et son double en C++ rendent la même courbe neutre",
           "[render][gpu][chain]") {
   Gpu gpu;
@@ -147,8 +178,9 @@ TEST_CASE("chaîne HDR : le shader et son double en C++ rendent la même courbe 
   gpu.grade->set_kwin_match(std::nullopt);
 }
 
-TEST_CASE("chaîne HDR : les éclats montent avant la pile, au-dessus des surfaces, et le curseur agit",
-          "[render][gpu][chain]") {
+TEST_CASE(
+    "chaîne HDR : les éclats se posent après la pile, au même niveau dans toute scène, et le curseur agit",
+    "[render][gpu][chain]") {
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
@@ -165,20 +197,52 @@ TEST_CASE("chaîne HDR : les éclats montent avant la pile, au-dessus des surfac
     return graded(gpu, halo(), p)[128];
   };
   const double dark = emitter(1.0, 20.0);
+  const double bright = emitter(1.0, 160.0);
   const double more = emitter(2.0, 20.0);
   const double less = emitter(0.5, 20.0);
-  INFO("surface " << surface << ", émetteur " << dark << ", Éclats 200 % " << more << ", 50 % " << less);
-  // Avant la 0.11 : un émetteur blanc vers 800 nits sur un écran de 1 000, une surface blanche vers 690.
-  CHECK(dark > 1.1 * surface);
-  CHECK(dark > 750.0);
+  INFO("surface " << surface << ", émetteur " << dark << ", scène claire " << bright << ", Éclats 200 % "
+                  << more << ", 50 % " << less);
+  // Avant la pile, l'émetteur sortait vers 800 nits ; après elle, son écart sur les surfaces reste entier.
+  CHECK(dark > 1.2 * surface);
+  CHECK(dark > 820.0);
+  CHECK(dark <= kScreen);
+  // Pas de limiteur de scène : la dalle limite elle-même une scène claire.
+  CHECK(bright == Approx(dark).epsilon(0.01));
   CHECK(more > 1.08 * dark);
   CHECK(more <= kScreen);
-  CHECK(less < 0.95 * dark);
+  CHECK(less < 0.9 * dark);
   CHECK(less >= 0.95 * surface);
   // Le fond sombre du halo ne monte pas avec lui.
   GradeParams p = params;
   p.fs_apl = 20.0;
   CHECK(graded(gpu, halo(), p)[16] < 4.0);
+  gpu.grade->set_kwin_match(std::nullopt);
+}
+
+TEST_CASE("chaîne HDR : l'écart des éclats sur les surfaces ne dépend pas des curseurs de la pile",
+          "[render][gpu][chain]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  constexpr double kScreen = 1000.0;
+  const GradeParams base = player_params(kScreen);
+  // Le halo à Éclats 50 % : sous le genou de l'épaule, son gain reste presque entier.
+  const auto ratio = [&](int contrast) {
+    const Pile stack(contrast, 0);
+    set_player_output(gpu, stack, kScreen);
+    GradeParams p = base;
+    std::ranges::copy(stack.mixes, p.look_mixes.begin());
+    p.fs_apl = 20.0;
+    p.an_spec = 0.5;
+    const double surface = chain_level(gpu, 195.0, p);
+    const double lit = graded(gpu, halo(), p)[128];
+    return lit / surface;
+  };
+  const double low = ratio(-100);
+  const double high = ratio(100);
+  INFO("écart à contraste -100 : " << low << ", à 100 : " << high);
+  CHECK(low > 1.03);
+  CHECK(high == Approx(low).epsilon(0.05));
   gpu.grade->set_kwin_match(std::nullopt);
 }
 

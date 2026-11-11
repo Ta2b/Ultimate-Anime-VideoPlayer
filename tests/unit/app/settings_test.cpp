@@ -49,6 +49,8 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.oled_black_steps = 3.5;
   s.oled_care = false;
   s.steady_cadence = true;
+  s.flash_guard = false;
+  s.surface_white = 80;
   s.smooth_motion = true;
   s.motion_engine = MotionEngine::DistilDrba;
   s.rife_model = "rife_v4.22_lite.onnx";
@@ -641,6 +643,35 @@ TEST_CASE("play.toml : les clés de l'ancienne pile de LUT se lisent et ne sont 
   const std::string written = ajp::app::play::format_settings(ajp::app::play::PlaySettings{});
   CHECK(written.find("look_mix") == std::string::npos);
   CHECK(written.find("looks") == std::string::npos);
+}
+
+TEST_CASE("play.toml : le limiteur de flashs, activé par défaut et dans un fichier d'avant, se coupe",
+          "[app][settings]") {
+  CHECK(ajp::app::play::PlaySettings{}.flash_guard);
+  const auto old = ajp::app::play::parse_settings("[grade]\nlook_contrast = 20\n");
+  REQUIRE(old.has_value());
+  CHECK(old->flash_guard);
+  const auto off = ajp::app::play::parse_settings("[grade]\nflash_guard = false\n");
+  REQUIRE(off.has_value());
+  CHECK_FALSE(off->flash_guard);
+}
+
+TEST_CASE("play.toml : le blanc des surfaces, 100 % par défaut et dans un fichier d'avant, borné",
+          "[app][settings]") {
+  CHECK(ajp::app::play::PlaySettings{}.surface_white == 100);
+  const auto old = ajp::app::play::parse_settings("[grade]\nlook_contrast = 20\n");
+  REQUIRE(old.has_value());
+  CHECK(old->surface_white == 100);
+  const auto lower = ajp::app::play::parse_settings("[grade]\nsurface_white = 70\n");
+  REQUIRE(lower.has_value());
+  CHECK(lower->surface_white == 70);
+  ajp::app::play::PlaySettings s;
+  s.surface_white = 70;
+  const auto again = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  REQUIRE(again.has_value());
+  CHECK(again->surface_white == 70);
+  s.surface_white = 30;
+  CHECK_FALSE(ajp::app::play::validate(s).has_value());
 }
 
 TEST_CASE("play.toml : une version plus récente garde ses clés à la réécriture (P2.22)", "[app][settings]") {

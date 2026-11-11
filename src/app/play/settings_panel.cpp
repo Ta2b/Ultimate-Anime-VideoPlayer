@@ -99,9 +99,18 @@ void grade_tab(PlaySettings& d) {
                      ImGuiSliderFlags_AlwaysClamp);
     ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d",
                      ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderInt(i18n::tr("Surface white"), &d.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi, "%d %%",
+                     ImGuiSliderFlags_AlwaysClamp);
+    panel::tip(
+        i18n::tr("HDR: the white of walls and skin, in % of where the LUTs put it (about 70 % of the screen "
+                 "peak). Lower leaves more room to the lights, which still reach the peak."));
     grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
     panel::tip(i18n::tr("The maximum, reached in a very bright episode; it fades out in a very dark one."));
   }
+  ImGui::Checkbox(i18n::tr("Limit rapid flashes"), &d.flash_guard);
+  panel::tip(
+      i18n::tr("HDR only: a burst of rapid flashes (more than three a second) is dimmed for a second, for "
+               "photosensitive viewers. Off: flashes keep their full light."));
   if (ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;
     g.anime_saturation = defaults.grade_values.anime_saturation;
@@ -109,6 +118,8 @@ void grade_tab(PlaySettings& d) {
     g.anime_highlights = defaults.grade_values.anime_highlights;
     d.look_contrast = defaults.look_contrast;
     d.look_highlight = defaults.look_highlight;
+    d.flash_guard = defaults.flash_guard;
+    d.surface_white = defaults.surface_white;
     g.shadows = defaults.grade_values.shadows;
   }
 }

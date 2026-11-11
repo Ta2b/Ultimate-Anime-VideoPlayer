@@ -180,6 +180,41 @@ void read_updates(const toml::table& updates, PlaySettings& s,
   choice("frequency", s.update_frequency, kUpdateFrequencyNames);
 }
 
+// [grade] : le grade, la pile de LUT, le limiteur de flashs et le vrai noir.
+void read_grade(const toml::table& grade, PlaySettings& s, std::vector<std::expected<void, Refusal>>& reads) {
+  std::string preset;  // l'ancienne clé « preset » : lue, puis ignorée
+  render::GradeSettings& v = s.grade_values;
+  reads.push_back(read(grade, "grade", "enabled", s.grade));
+  reads.push_back(read(grade, "grade", "preset", preset));
+  reads.push_back(read(grade, "grade", "shadows", v.shadows));
+  reads.push_back(read(grade, "grade", "highlights_rtx", v.highlights_rtx));
+  reads.push_back(read(grade, "grade", "area_rtx", v.area_rtx));
+  reads.push_back(read(grade, "grade", "look_contrast", s.look_contrast));
+  reads.push_back(read(grade, "grade", "look_highlight", s.look_highlight));
+  reads.push_back(read(grade, "grade", "flash_guard", s.flash_guard));
+  reads.push_back(read(grade, "grade", "surface_white", s.surface_white));
+  reads.push_back(read(grade, "grade", "anime_contrast", v.anime_contrast));
+  reads.push_back(read(grade, "grade", "anime_saturation", v.anime_saturation));
+  reads.push_back(read(grade, "grade", "anime_highlights", v.anime_highlights));
+  std::string oled(name(s.oled_black));
+  reads.push_back(read(grade, "grade", "oled_black", oled));
+  reads.push_back(read(grade, "grade", "oled_black_steps", s.oled_black_steps));
+  bool oled_known = false;
+  for (int i = 0; i < kOledBlackCount; ++i) {
+    if (name(static_cast<OledBlack>(i)) == oled) {
+      s.oled_black = static_cast<OledBlack>(i);
+      oled_known = true;
+    }
+  }
+  if (!oled_known)
+    reads.emplace_back(
+        refuse_key(RefusalCode::FieldOutOfRange, "grade.oled_black", std::format(" : « {} »", oled)));
+  // Plus de préréglages : les valeurs du fichier font foi.
+  // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
+  const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
+  for (double* x : {&v.shadows, &v.highlights_rtx, &v.area_rtx, &s.oled_black_steps}) hundredth(*x);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root) {
   PlaySettings s;
@@ -357,38 +392,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*oled, "oled", "care", s.oled_care));
     reads.push_back(read(*oled, "oled", "steady_cadence", s.steady_cadence));
   }
-  if (const toml::table* grade = section(root, "grade")) {
-    std::string preset;  // l'ancienne clé « preset » : lue, puis ignorée
-    render::GradeSettings& v = s.grade_values;
-    reads.push_back(read(*grade, "grade", "enabled", s.grade));
-    reads.push_back(read(*grade, "grade", "preset", preset));
-    reads.push_back(read(*grade, "grade", "shadows", v.shadows));
-    reads.push_back(read(*grade, "grade", "highlights_rtx", v.highlights_rtx));
-    reads.push_back(read(*grade, "grade", "area_rtx", v.area_rtx));
-    reads.push_back(read(*grade, "grade", "look_contrast", s.look_contrast));
-    reads.push_back(read(*grade, "grade", "look_highlight", s.look_highlight));
-    reads.push_back(read(*grade, "grade", "anime_contrast", v.anime_contrast));
-    reads.push_back(read(*grade, "grade", "anime_saturation", v.anime_saturation));
-    reads.push_back(read(*grade, "grade", "anime_highlights", v.anime_highlights));
-    std::string oled(name(s.oled_black));
-    reads.push_back(read(*grade, "grade", "oled_black", oled));
-    reads.push_back(read(*grade, "grade", "oled_black_steps", s.oled_black_steps));
-    bool oled_known = false;
-    for (int i = 0; i < kOledBlackCount; ++i) {
-      if (name(static_cast<OledBlack>(i)) == oled) {
-        s.oled_black = static_cast<OledBlack>(i);
-        oled_known = true;
-      }
-    }
-    if (!oled_known)
-      reads.emplace_back(
-          refuse_key(RefusalCode::FieldOutOfRange, "grade.oled_black", std::format(" : « {} »", oled)));
-    // Plus de préréglages : les valeurs du fichier font foi.
-    // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
-    const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
-    for (double* x : {&v.shadows, &v.highlights_rtx, &v.area_rtx, &s.oled_black_steps}) hundredth(*x);
-    s.grade_values = v;
-  }
+  if (const toml::table* grade = section(root, "grade")) read_grade(*grade, s, reads);
   if (const toml::table* stats = section(root, "stats")) {
     reads.push_back(read(*stats, "stats", "all", s.stats.all));
     reads.push_back(read(*stats, "stats", "chain", s.stats.chain));
@@ -486,6 +490,8 @@ std::string format_settings(const PlaySettings& s) {
                                    {"area_rtx", hundredth(g.area_rtx)},
                                    {"look_contrast", s.look_contrast},
                                    {"look_highlight", s.look_highlight},
+                                   {"flash_guard", s.flash_guard},
+                                   {"surface_white", s.surface_white},
                                    {"anime_contrast", g.anime_contrast},
                                    {"anime_saturation", g.anime_saturation},
                                    {"anime_highlights", g.anime_highlights},

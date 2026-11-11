@@ -10,6 +10,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -302,9 +303,11 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   if (auto steps = check("grade.oled_black_steps", s.oled_black_steps, render::grade_limits::kBlackSteps);
       !steps)
     return std::unexpected(steps.error());
-  for (const auto& [field, value] : {std::pair{"grade.look_contrast", s.look_contrast},
-                                     std::pair{"grade.look_highlight", s.look_highlight}}) {
-    if (auto in = check(field, value, core::Range<int>{-100, 100}); !in) return std::unexpected(in.error());
+  constexpr core::Range<int> kLookSlider{-100, 100};
+  for (const auto& [field, value, range] : {std::tuple{"grade.look_contrast", s.look_contrast, kLookSlider},
+                                            {"grade.look_highlight", s.look_highlight, kLookSlider},
+                                            {"grade.surface_white", s.surface_white, kSurfaceWhite}}) {
+    if (auto in = check(field, value, range); !in) return std::unexpected(in.error());
   }
   for (const auto& [field, value] : {std::pair{"grade.anime_contrast", s.grade_values.anime_contrast},
                                      std::pair{"grade.anime_saturation", s.grade_values.anime_saturation},
@@ -438,6 +441,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.grade_values = wanted.grade_values;
   s.look_contrast = wanted.look_contrast;
   s.look_highlight = wanted.look_highlight;
+  s.surface_white = wanted.surface_white;
+  s.flash_guard = wanted.flash_guard;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
   s.keep_poses = wanted.keep_poses;
