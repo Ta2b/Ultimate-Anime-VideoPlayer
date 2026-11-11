@@ -80,7 +80,7 @@ jobs:
           dir="$RUNNER_TEMP/release"
           # Un paquet joint après coup à cette étiquette (attach-nvidia-*) passe avant ceux des archives.
           gh release download "$TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -O "$dir/joint.lock" 2>/dev/null || true
-          tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/joint.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
+          AJP_RELEASE_TAG="$TAG" tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/joint.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
           key="$RUNNER_TEMP/ajp-update-key.pem"
           trap 'rm -f "$key"' EXIT
           # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).

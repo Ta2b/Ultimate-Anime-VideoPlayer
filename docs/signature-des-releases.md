@@ -88,6 +88,13 @@ Si l'active est perdue ou volée : signer le manifeste suivant avec la clé de s
 `revoked_keys = ["<clé publique active>"]`. Les lecteurs le croient, retiennent la révocation dans `update.toml`, et ne
 croient plus aucun manifeste signé par l'ancienne clé. La release suivante compile une nouvelle clé de secours.
 
+Une clé ne révoque que celles qui la précèdent dans la liste « active, secours » (B26-02) : un manifeste signé par
+l'active qui révoquerait la clé de secours est cru pour le reste, mais cette révocation-là est ignorée ; une clé qui se
+révoque elle-même est refusée. Sans cela, qui tiendrait l'active pourrait neutraliser le secours. Le manifeste ne sert
+que de ce qu'il porte (`version`, `expires`, `notes_url`, `revoked_keys`) : ses sections d'archive sont ignorées par le
+lecteur. L'index des moteurs de la release (`engines-nvidia.lock`) porte `tag = "v<version>"` et n'est cru que dans la
+release de cette étiquette (B51-06) ; `tools/release/nvidia-index.sh` l'écrit avant la signature.
+
 ## Pas de canal Préversions
 
 Le canal Préversions est retiré (décision de Tatoub, 9 novembre 2026) : une préversion se publie sans manifeste, et
