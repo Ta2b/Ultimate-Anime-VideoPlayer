@@ -43,7 +43,9 @@ int ajp::fuzz::span_package(const std::uint8_t* data, std::size_t size) {
     ajp::fuzz::require(again.has_value(), "un paquet écrit se relit");
   }
   if (size < 3) return 0;
-  const int blocks = pkg::kMinBlocks + ((data[0] >> 2U) & 7U) % (pkg::kBlocks - pkg::kMinBlocks + 1);
+  const int blocks =
+      pkg::kMinBlocks +
+      static_cast<int>(((data[0] >> 2U) & 7U) % static_cast<unsigned>(pkg::kBlocks - pkg::kMinBlocks + 1));
   std::vector<std::byte> bytes = pkg::serialize(pkg::synthetic(0.01F, blocks));
   const std::size_t at =
       (data[1] & 0x80U) != 0U
