@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "app/play/controls.h"
@@ -30,6 +31,8 @@ union SDL_Event;
 struct ImGuiContext;
 
 namespace ajp::app::play {
+
+struct EngineCatalog;
 
 class PlaceboScreen;
 
@@ -86,7 +89,9 @@ class PlayerUi {
   // Les pistes que les menus de la barre proposent, et celles choisies.
   void set_tracks(TrackMenu tracks);
   // Les réglages en cours et ce que le menu des paramètres propose.
-  void set_settings(const PlaySettings& running, SettingsChoices choices);
+  // `catalog` : de quoi relire les sorties son et la place libre pendant que le menu est ouvert (B23-08).
+  void set_settings(const PlaySettings& running, SettingsChoices choices,
+                    const EngineCatalog* catalog = nullptr);
   // L'état du VRR relu en cours de lecture (plein écran) : l'avertissement du mode auto le suit.
   void set_display_vrr(bool capable, bool armed, bool fullscreen) {
     choices_.display_vrr = capable;
@@ -124,6 +129,11 @@ class PlayerUi {
   SettingsPanel panel_;
   PlaySettings running_;
   SettingsChoices choices_;
+  const EngineCatalog* catalog_ = nullptr;  // de quoi relire les choix du poste (B23-08)
+  std::int64_t refreshed_us_ = 0;
+  bool refresh_pending_ = false;  // le menu vient de s'ouvrir : à relire tout de suite
+  static constexpr std::int64_t kChoicesRefreshUs = 4'000'000;
+  void refresh_choices(std::int64_t now_us);
   bool input_pending_ = false;
   bool close_popups_ = false;  // Échap sur une liste ouverte : elle seule se ferme, au tour suivant (A24-14)
   static constexpr int kSettleFrames = 2;
@@ -147,6 +157,7 @@ class PlayerUi {
   bool home_ = false;          // l'écran d'accueil est à l'écran : le menu y prend la molette
   std::int64_t last_frame_us_ = 0;
   const ImDrawData* draw_ = nullptr;  // dernière image recomposée, si quelque chose y est visible
+  std::uint64_t serial_ = 0;          // compte les recompositions de frame() (UiFrame::serial)
   int bottom_ = 0;                    // hauteur de la barre dans cette image
   int top_ = 0;                       // hauteur du titre
 };

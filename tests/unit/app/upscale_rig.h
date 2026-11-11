@@ -2,9 +2,12 @@
 // ses moteurs factices et les réglages en direct, et la forme des images reçues.
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -51,6 +54,18 @@ struct Rig : test::StageRig {
       REQUIRE(push(test::host_frame(id, kWidth, kHeight, static_cast<std::int64_t>(id) * kPeriodUs, epoch)));
   }
 };
+
+// Attend que le journal du backend factice compte n entrées égales à entry ; faux après le délai, qui n'est
+// qu'un filet : le test avance dès que la condition est vraie, sans attente fixe (B40-08).
+inline bool logged(const Rig& rig, std::string_view entry, std::size_t n = 1,
+                   std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+  const auto until = std::chrono::steady_clock::now() + timeout;
+  while (rig.backend.count(entry) < n) {
+    if (std::chrono::steady_clock::now() > until) return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
 
 // « 3 » : la source 3 telle quelle ; « 2-3 » : une image entre les sources 2 et 3.
 inline std::vector<std::string> shape_of(const std::vector<RingFrame>& frames) {

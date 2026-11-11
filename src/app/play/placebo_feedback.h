@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -88,6 +89,8 @@ class PresentFeedback {
   void choose_domain(VkSwapchainKHR swapchain);
   void calibrate(VkSwapchainKHR swapchain, std::int64_t now_us);
   void read_back(VkSwapchainKHR swapchain, std::int64_t now_us);
+  std::int64_t host_us_of(VkTimeDomainKHR domain, std::uint64_t time, std::int64_t now_us);
+  std::uint64_t target_time(std::int64_t target_us) const;
   void poll_wait(VkSwapchainKHR swapchain, std::int64_t now_us);
   void accept(std::uint64_t id, std::int64_t visible_us, bool dated);
   void read_wayland();
@@ -113,6 +116,9 @@ class PresentFeedback {
   std::uint64_t domain_id_ = 0;
   int domain_kind_ = 0;        // VkTimeDomainKHR du domaine retenu
   bool local_domain_ = false;  // domaine propre à la swapchain, recalé par horodatages calibrés
+  // Domaine du compteur de performance (Windows, B10-02) : ses dates en tics plutôt qu'en ns, appris de la
+  // première date revenue (host_stamp_in_ticks) ; inconnu, aucune date visée ne part.
+  std::optional<bool> host_ticks_;
   std::uint32_t stage_ = 0;
   std::uint64_t refresh_duration_ = 0;
   std::uint64_t refresh_interval_ = 0;

@@ -118,8 +118,9 @@ std::string cuda_arch_from_name(std::string_view gpu_name) {
 }
 
 bool fp8_presumed(std::string_view gpu_name) {
+  // gpu::fp8_allowed : Ada et Hopper ; une RTX 50 (sm120) n'a pas de FP8 tant qu'aucune mesure ne le
+  // justifie.
   const std::string arch = cuda_arch_from_name(gpu_name);
-  // Pas sm 12 (RTX 50) : pas de FP8 sans mesure qui le justifie (B08-07), même règle que le moteur.
   return arch == "sm89" || arch == "sm90";
 }
 

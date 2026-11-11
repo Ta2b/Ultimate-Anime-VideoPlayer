@@ -27,6 +27,26 @@ TEST_CASE("Veille : un trou sur l'une des deux horloges est vu, un tour ordinair
   CHECK_FALSE(watch.turn(1'203'036'000, 2'452'036'000));
 }
 
+TEST_CASE("Veille ou gel : la barre de titre tenue sous Windows n'est pas une veille (B31-13)",
+          "[app][sleep]") {
+  // Windows : les deux horloges comptent la veille ; seule la fenêtre tenue (boucle modale) dit le gel.
+  CHECK(gap_kind(6'000'000, 6'000'000, false, false) == GapKind::Sleep);
+  CHECK(gap_kind(6'000'000, 6'000'000, true, false) == GapKind::Freeze);
+  // Linux : steady s'arrête pendant la veille. Les deux horloges d'accord : un gel (SIGSTOP, débogueur).
+  CHECK(gap_kind(3'000, 1'200'000'000, false, true) == GapKind::Sleep);
+  CHECK(gap_kind(6'000'000, 6'000'000, false, true) == GapKind::Freeze);
+
+  SleepWatch watch;
+  CHECK_FALSE(watch.turn(1'000'000, 50'000'000));
+  const auto held = watch.turn(7'500'000, 56'500'000);  // 6,5 s sans tour de boucle
+  REQUIRE(held);
+  // Un déplacement de la fenêtre vu 2 s après le début du trou : la boucle modale de Windows.
+  CHECK(watch.last_kind(52'000'000) == GapKind::Freeze);
+  // Rien pendant le trou, ou juste au tour d'avant (un événement ordinaire de la boucle) : pas de fenêtre
+  // tenue.
+  CHECK(watch.last_kind(0) == watch.last_kind(50'010'000));
+}
+
 TEST_CASE("Économiseur : coupé seulement quand une vidéo avance", "[app][sleep]") {
   CHECK(must_stay_awake(true, false, false));
   CHECK_FALSE(must_stay_awake(true, true, false));    // en pause

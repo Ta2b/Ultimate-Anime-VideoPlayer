@@ -28,6 +28,7 @@
 #include <windows.h>
 #endif
 
+#include "app/play/host_choices.h"
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/ui_fonts.h"
@@ -549,7 +550,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   if (input_pending_) last_input_us_ = now_us;
   const bool tooltip_due = hover_waiting_ && now_us - last_input_us_ < kTooltipWindowUs;
   if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0 || tooltip_due))
-    return UiFrame{.draw = draw_, .changed = false, .bottom = bottom_, .top = top_};
+    return UiFrame{.draw = draw_, .changed = false, .serial = serial_, .bottom = bottom_, .top = top_};
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
   home_ = false;
@@ -573,6 +574,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   choices_.position_us = view.position_us;
   choices_.paused = view.paused;
   if (panel_.wants_draw()) {
+    refresh_choices(now_us);
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
@@ -581,13 +583,14 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   hover_waiting_ = ImGui::IsAnyItemHovered();
   ImGui::Render();
+  ++serial_;
   controls_.framed(now_us, view, drawn);
   follow_text_input();
   draw_ = drawn ? ImGui::GetDrawData() : nullptr;
   const bool bar = controls_.shown(now_us, view.paused);
   bottom_ = bar ? static_cast<int>(std::ceil(controls_height(look_.scale))) : 0;
   top_ = bar ? static_cast<int>(std::ceil(title_height(look_.scale))) : 0;
-  return UiFrame{.draw = draw_, .changed = true, .bottom = bottom_, .top = top_};
+  return UiFrame{.draw = draw_, .changed = true, .serial = serial_, .bottom = bottom_, .top = top_};
 }
 
 const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {
@@ -623,6 +626,7 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   clicks_.clear();
   draw_home(view, look_.scale, panel_.is_open());
   if (panel_.wants_draw()) {
+    refresh_choices(now_us);
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
@@ -634,8 +638,10 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   return ImGui::GetDrawData();
 }
 
-void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices) {
+void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices,
+                            const EngineCatalog* catalog) {
   running_ = running;
+  catalog_ = catalog;
   choices_ = std::move(choices);
   input_pending_ = true;
 }
@@ -658,11 +664,19 @@ void PlayerUi::set_running(const PlaySettings& running) {
   input_pending_ = true;
 }
 
+void PlayerUi::refresh_choices(std::int64_t now_us) {
+  if (catalog_ == nullptr || (!refresh_pending_ && now_us - refreshed_us_ < kChoicesRefreshUs)) return;
+  refresh_host_choices(choices_, *catalog_);
+  refreshed_us_ = now_us;
+  refresh_pending_ = false;
+}
+
 void PlayerUi::toggle_settings() {
   if (panel_.is_open()) {
     panel_.close();
   } else {
     panel_.open(running_);
+    refresh_pending_ = true;  // une sortie son branchée depuis l'ouverture de la vidéo y paraît (B23-08)
   }
   look_.keep_visible = panel_.is_open();
   // Ouvert au clavier, barre effacée : sans cela, aucune image ne se dessine avant que la souris

@@ -101,7 +101,8 @@ TEST_CASE("A08-03 : ×2 manuel ouvert, Auto Rapide à 165 Hz rouvre", "[app][cha
   PlaySettings fast = x2;
   fast.rife_auto = true;
   fast.auto_free = true;
-  CHECK(chain_shape(fast, opened) == ChainShape{.ring = 8, .warp_after_span = true});
+  // Le warp reste avant SPAN à 1080p de sortie : l'ordre ne suit plus la cadence de l'écran (B22-03).
+  CHECK(chain_shape(fast, opened) == ChainShape{.ring = 8, .warp_after_span = false});
   CHECK(change_between(x2, fast, true, &opened).cost == ChangeCost::Reopen);
   const PlaySettings live = live_part(x2, fast, true, &opened);
   CHECK_FALSE(live.rife_auto);
@@ -136,17 +137,63 @@ TEST_CASE("A08-03 : ce qui tient dans la chaîne ouverte reste direct", "[app][c
   CHECK(change_between(manual(4), manual(2), true, &bare).cost == ChangeCost::Live);
 }
 
-TEST_CASE("A22-04 : le plafond de l'Auto qui change le plus haut facteur rouvre", "[app][chain]") {
-  // Auto Stable jusqu'à ×4, plafonné à 60 i/s : ×2 au plus sur 23,976, warp avant SPAN, anneau de 4.
+TEST_CASE("B22-03 : en Auto, l'ordre du warp ne suit ni l'écran ni le plafond", "[app][chain]") {
+  // Auto Stable jusqu'à ×4 : le plafond (60 ou l'écran) change le palier le plus haut, pas l'ordre du warp,
+  // qui n'est après SPAN qu'au-dessus de 1080p (mesuré en temps) ; l'anneau est celui du facteur demandé.
   PlaySettings capped = manual(4);
   capped.rife_auto = true;
   capped.auto_cap = 60;
   const OpenedChain opened = opened_for(capped);
   CHECK(opened.shape == ChainShape{.ring = 6, .warp_after_span = false});
   PlaySettings free = capped;
-  free.auto_cap = 0;  // l'écran : ×4, warp après SPAN
-  CHECK(change_between(capped, free, true, &opened).cost == ChangeCost::Reopen);
-  CHECK(live_part(capped, free, true, &opened).auto_cap == 60);
+  free.auto_cap = 0;
+  CHECK(chain_shape(free, opened) == opened.shape);
+  CHECK(change_between(capped, free, true, &opened).cost == ChangeCost::Live);
+  // Rapide à 165 Hz (×6 possible) : toujours avant SPAN à 1080p, après SPAN à 4K.
+  PlaySettings fast = fast_settings();
+  CHECK(order_factor(fast, 165.0, 23.976) == 0);
+  CHECK_FALSE(chain_shape(fast, opened_for(fast, 1080)).warp_after_span);
+  CHECK(chain_shape(fast, opened_for(fast, 2160)).warp_after_span);
+  // Un facteur choisi à la main garde la règle de ×3 (coût de SPAN par image créée).
+  CHECK(order_factor(manual(4), 165.0, 23.976) == 4);
+  CHECK(chain_shape(manual(4), opened_for(manual(4), 1080)).warp_after_span);
+}
+
+TEST_CASE("B22-01 : interpolation coupée puis rallumée, le moteur chargé est comparé au choix",
+          "[app][settings]") {
+  PlaySettings run = manual(3);
+  OpenedChain opened = opened_for(run);
+  opened.loaded = loaded_by(run);
+  // Off, puis DistilDRBA, le cran Qualité et l'ordre Après : rien à recharger, le réglage passe et
+  // s'enregistre.
+  PlaySettings off = run;
+  off.rife_factor = 0;
+  off.motion_engine = MotionEngine::DistilDrba;
+  off.motion_precision = PrecisionTier::Quality;
+  off.span_order = SpanOrder::After;
+  const PlaySettings live = live_part(run, off, /*rife_loaded=*/true, &opened);
+  CHECK(live.motion_engine == MotionEngine::DistilDrba);
+  CHECK(change_between(run, off, true, &opened).cost == ChangeCost::Live);
+  // L'interpolation revient : RIFE FP16 est toujours celui qui tourne, la réouverture est annoncée.
+  PlaySettings on = off;
+  on.rife_factor = 3;
+  const Change back = change_between(live, on, true, &opened);
+  CHECK(back.cost == ChangeCost::Reopen);
+  CHECK(back.reason.find("interpolation engine") != std::string::npos);
+  // Le cran de précision seul (même moteur) et l'ordre du warp aussi.
+  PlaySettings quality = run;
+  quality.rife_factor = 0;
+  quality.motion_precision = PrecisionTier::Quality;
+  PlaySettings quality_on = quality;
+  quality_on.rife_factor = 3;
+  CHECK(change_between(quality, quality_on, true, &opened).reason.find("switches to") != std::string::npos);
+  // Le même moteur qu'à l'ouverture : en direct.
+  PlaySettings same = run;
+  same.rife_factor = 0;
+  PlaySettings same_on = run;
+  CHECK(change_between(same, same_on, true, &opened).cost == ChangeCost::Live);
+  // Sans chaîne à comparer, on compare au réglage en cours (comportement d'avant).
+  CHECK(change_between(live, on, true).cost == ChangeCost::Live);
 }
 
 TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien sinon", "[app][chain]") {

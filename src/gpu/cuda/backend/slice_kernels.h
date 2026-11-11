@@ -1,13 +1,12 @@
-// Noyaux CUDA provisoires du backend TensorRT de la tranche verticale : ingestion NV12, P010 ou
-// P016 (mémoire linéaire de NVDEC), ou YUV 4:2:0 planaire du décodage logiciel envoyé par
-// host_upload.h, vers RGB planaire FP16, réduction Area comprise quand le tenseur est plus petit
-// que l'image (1080p vers 720p, une seule passe), et écriture RGB FP16 vers un slot RGBA16 UNORM
-// du ring importé de Vulkan.
+// Noyaux CUDA de l'ingestion du backend TensorRT : NV12, P010 ou P016 (mémoire linéaire de NVDEC), ou YUV
+// 4:2:0, 4:2:2 et 4:4:4 planaire du décodage logiciel envoyé par host_upload.h, vers RGB planaire FP16,
+// réduction comprise quand le tenseur est plus petit que l'image (1080p vers 720p, une seule passe), et
+// écriture RGB FP16 vers un slot RGBA16 UNORM du ring importé de Vulkan.
 //
-// Provisoire : le socle CUDA (chantier pc/cuda-compute, src/gpu/cuda/compute) porte les noyaux
-// exacts de kernels/spec (chroma Spline36 en codes bruts). Ici la chroma est bilinéaire, avec
-// la position de chroma de la source ; l'écart reste sous un niveau 8 bits sur les aplats.
-// Ces noyaux disparaissent quand le socle est fusionné.
+// La chroma suit le contrat de kernels/spec/resample.h, comme l'ingestion Vulkan et kernels/ref/color.cpp
+// (B03-02) : suréchantillonnée en codes bruts, passe horizontale puis verticale, au filtre demandé
+// (IngestSpec::chroma, Spline36 pour la chaîne), avec les décalages de chroma_shift_up et les bords en
+// miroir ; la matrice s'applique ensuite point par point.
 #pragma once
 
 #include <cstddef>
@@ -23,8 +22,14 @@ inline constexpr int kReduceArea = 0;
 inline constexpr int kReduceTriangle = 1;
 inline constexpr int kReduceCubic = 2;
 inline constexpr int kReduceSpline36 = 3;
-// Pixels de source par axe au plus pour un pixel de sortie (Spline36 : 6 × l'échelle + 1).
-inline constexpr int kMaxReduceTaps = 32;
+// Pixels de source par axe au plus pour un pixel de sortie (Spline36 : 6 × l'échelle + 1, soit toutes ses
+// prises jusqu'à une réduction de 21 fois ; au-delà, retirées autant à gauche qu'à droite).
+inline constexpr int kMaxReduceTaps = 128;
+
+// Chroma de la source (IngestParams::chroma_layout).
+inline constexpr int kChroma420 = 0;  // demi-largeur, demi-hauteur
+inline constexpr int kChroma422 = 1;  // demi-largeur, pleine hauteur
+inline constexpr int kChroma444 = 2;  // entière : lue au point, sans rééchantillonnage
 
 struct IngestParams {
   const void* luma = nullptr;      // plan Y
@@ -44,7 +49,7 @@ struct IngestParams {
   int reduce_kind = kReduceArea;
   float reduce_b = 0.0F;
   float reduce_c = 0.0F;
-  bool sixteen_bits = false;  // P010, P016 ou YUV 4:2:0 10 bits : échantillons de 16 bits
+  bool sixteen_bits = false;  // P010, P016, YUV 10 ou 16 bits : échantillons de 16 bits
   // Normalisation et matrice (kernels/spec/color.h : yuv_scale, coefficients).
   float yoff = 0.0F;
   float yscale = 1.0F;
@@ -52,9 +57,22 @@ struct IngestParams {
   float cscale = 1.0F;
   float kr = 0.2126F;
   float kb = 0.0722F;
-  // Position de la chroma en pixels de luma : 0 pour la gauche, 0,5 au centre.
-  float chroma_x = 0.0F;
-  float chroma_y = 0.5F;
+  // Chroma : disposition, taille de son plan, et tables du suréchantillonnage (kernels::ref::compute_weights,
+  // décalage de chroma_shift_up compris) : pour la sortie i, x_taps poids x_weights[i × x_taps + j] des
+  // points x_start[i] + j, passés au miroir (mirror_index). Sommes FP32 depuis 0, j croissant, comme la
+  // référence. x_* en 4:2:0 et 4:2:2, y_* en 4:2:0 seulement.
+  int chroma_layout = kChroma420;
+  int chroma_width = 0;
+  int chroma_height = 0;
+  const int* x_start = nullptr;
+  const float* x_weights = nullptr;
+  int x_taps = 0;
+  const int* y_start = nullptr;
+  const float* y_weights = nullptr;
+  int y_taps = 0;
+  // 4:2:0 : la passe horizontale, faite une fois par ingest_chroma_rows avant les autres noyaux (width ×
+  // chroma_height paires Cb, Cr en FP32, chroma_rows_bytes octets) ; la verticale se fait à la lecture.
+  float* chroma_rows = nullptr;
   void* rgb = nullptr;  // 1 × 3 × height × width, FP16
   // Filtres étirés (triangle, cubique, Spline36) : deux passes séparables, la première convertit et
   // filtre les lignes dans rows (3 × height × out_width, FP32, ingest_rows_bytes octets), la
@@ -70,6 +88,8 @@ struct IngestParams {
 
 // Octets de IngestParams::rows pour ces paramètres ; 0 sans filtre séparable (même taille, Area).
 std::size_t ingest_rows_bytes(const IngestParams& params);
+// Octets de IngestParams::chroma_rows : 2 × width × chroma_height × 4 en 4:2:0, 0 sinon.
+std::size_t chroma_rows_bytes(const IngestParams& params);
 
 cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream);
 

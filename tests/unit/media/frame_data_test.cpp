@@ -238,6 +238,47 @@ TEST_CASE("frame_data : la chaîne qui les lit garde le 4:4:4 entier et les 12 b
   if (c.to == ajp::PixelFormat::Yuv444p16) CHECK(out->linesize[1] >= 2 * 64);
 }
 
+TEST_CASE("frame_data : sous TensorRT, le 4:2:2 garde sa chroma et sa position en 16 bits (B01-03)",
+          "[media][frame_data]") {
+  const int bits = GENERATE(8, 10, 12);
+  const AVPixelFormat from = bits == 8    ? AV_PIX_FMT_YUV422P
+                             : bits == 10 ? AV_PIX_FMT_YUV422P10LE
+                                          : AV_PIX_FMT_YUV422P12LE;
+  CAPTURE(bits);
+  FramePtr frame = host_frame(from, bits);
+  frame->chroma_location = AVCHROMA_LOC_TOPLEFT;
+  auto decoded = to_decoded_frame(std::move(frame), 0, 40'000, {}, true, true);
+  REQUIRE(decoded);
+  CHECK(decoded->format == ajp::PixelFormat::Yuv422p16);
+  const AVFrame* out = av_frame_of(*decoded->data);
+  REQUIRE(out != nullptr);
+  CHECK(out->chroma_location == AVCHROMA_LOC_TOPLEFT);  // rien n'est rééchantillonné
+  // Chroma à demi-largeur, pleine hauteur : les bandes de Cb restent, ligne après ligne.
+  const int step = 1 << (16 - bits);
+  for (const int y : {0, 31}) {
+    const auto* cb = reinterpret_cast<const std::uint16_t*>(out->data[1] + y * out->linesize[1]);
+    CHECK(cb[1] == 0);
+    CHECK(cb[2] >= 65536 - step);
+    CHECK(cb[3] >= 65536 - step);
+    CHECK(cb[4] == 0);
+  }
+  // Sans host_422 (Vulkan), la même source est réduite en 4:2:0 comme avant.
+  auto reduced = to_decoded_frame(host_frame(from, bits), 0, 40'000, {}, true, false);
+  REQUIRE(reduced);
+  CHECK(reduced->format == (bits > 8 ? ajp::PixelFormat::Yuv420p10 : ajp::PixelFormat::Yuv420p));
+}
+
+TEST_CASE("frame_data : un format que la chaîne ne lit pas sans full est converti (B01-03)",
+          "[media][frame_data]") {
+  // Du yuv444p16le natif sans full_host_formats : ramené au 4:2:0 10 bits, plus jamais rendu tel quel.
+  auto decoded = to_decoded_frame(host_frame(AV_PIX_FMT_YUV444P16LE, 16), 0, 40'000, {}, false);
+  REQUIRE(decoded);
+  CHECK(decoded->format == ajp::PixelFormat::Yuv420p10);
+  auto kept = to_decoded_frame(host_frame(AV_PIX_FMT_YUV444P16LE, 16), 0, 40'000, {}, true);
+  REQUIRE(kept);
+  CHECK(kept->format == ajp::PixelFormat::Yuv444p16);
+}
+
 // Une rampe de chroma en largeur : tout filtre normalisé la rend telle quelle, à la position où il pose ses
 // points. À gauche, le point j de la chroma réduite vaut celui de la colonne 2j ; au centre, il vaudrait la
 // moyenne des colonnes 2j et 2j+1, une demi-marche plus haut.

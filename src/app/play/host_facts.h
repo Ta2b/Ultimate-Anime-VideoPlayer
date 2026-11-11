@@ -54,8 +54,8 @@ struct PeakFacts {
   std::optional<double> edid_peak;  // la crête que l'EDID annonce
 };
 std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts);
-// La crête « automatique » du grade : celle de l'écran bornée à 200-2000 nits (un écran HDR de 310 nits ne
-// reçoit pas une cible de 400) ; 1000 si inconnue.
+// La crête « automatique » du grade : celle de l'écran bornée à 200-4000 nits (un écran HDR de 310 nits ne
+// reçoit pas une cible de 400 ; un téléviseur de 3000 nits est exploité, B37-09) ; 1000 si inconnue.
 int auto_peak_nits(std::optional<double> detected);
 // Le HDR suit le système, sans réglage : la sortie est en HDR10 quand l'écran en reçoit (Windows ou le
 // compositeur l'a activé) et que sa crête atteint kMinHdrPeakNits. En dessous, un écran qui se dit HDR mais

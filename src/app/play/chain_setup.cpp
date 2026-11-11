@@ -84,9 +84,10 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
           .render_luid = render.luid,
           .devices = shared,
           .download = !tensorrt,
-          // L'ingestion Vulkan lit Yuv444p16 et P016 en mémoire hôte ; celle de TensorRT ne lit pas le
-          // 4:4:4 et n'a pas été vue sur la carte avec du P016 hôte (A15-07, A-CONFIRMER).
-          .full_host_formats = !tensorrt,
+          // Les deux ingestions lisent Yuv444p16 et P016 en mémoire hôte ; celle de TensorRT lit aussi le
+          // 4:2:2 (Yuv422p16) : la chroma d'une source logicielle n'est jamais réduite (B01-03).
+          .full_host_formats = true,
+          .host_422 = tensorrt,
           .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
 }
 
@@ -143,7 +144,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .rife_height = rife_motion   ? rife_size.height
                      : drba_motion ? drba_size.height
                                    : 0,
-      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, top_factor),
+      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, order_factor),
       // En lecture (horloge présente), un instant déjà passé n'est ni calculé ni écrit, en Rapide comme à pas
       // constant : l'image serait jetée par la présentation (audit F11).
       .late_fate = clock != nullptr,
@@ -158,7 +159,7 @@ using Prepared = std::expected<std::optional<ChainEngines>, StageFailure>;
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings);
 
 // La forme de l'ouverture (chain_shape.h) : l'anneau de ces réglages et l'ordre du warp que les moteurs
-// chargés ont pris (c.top_factor), avec l'écran et la source d'où ils viennent.
+// chargés ont pris (c.order_factor), avec l'écran et la source d'où ils viennent.
 void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings) {
   c.opened = {.display_hz = display_refresh_hz(p.screen.window()),
               .source_fps = fps_of(p.video.frame_rate),
@@ -171,11 +172,12 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
   c.opened.drba_fused_capable = c.backend != nullptr && c.backend->capabilities().drba_fused;
   c.opened.drba_fused_refused = c.opened.drba ? c.drba_fused_refused : std::nullopt;
   c.opened.rife_fused_refused = c.rife_fused ? std::nullopt : c.rife_fused_refused;
+  if (c.opened.rife_loaded) c.opened.loaded = loaded_by(settings);
   c.opened.shape = {
       .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}, c.opened.display_hz,
                          c.opened.source_fps),
       .warp_after_span =
-          c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.top_factor)};
+          c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.order_factor)};
 }
 
 }  // namespace
@@ -454,7 +456,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> build_drba(P
   // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
   // créée.
   bool motion =
-      settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
+      settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.order_factor);
   // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
   // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
   const bool smaller = motion && c.rife_size.height < c.work.height;
@@ -530,7 +532,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     c.model = std::move(*chosen);
   }
   c.factor = c.model ? kSpanFactor : 1;
-  c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
+  c.order_factor = order_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
   c.work = chain_work_size(settings, video.width, video.height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),

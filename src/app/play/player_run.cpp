@@ -19,6 +19,7 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
+#include "app/play/after_gap.h"
 #include "app/play/auto_bench.h"
 #include "app/play/auto_config.h"
 #include "app/play/auto_watch.h"
@@ -60,6 +61,7 @@
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
 #include "app/play/resume.h"
+#include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
 #include "app/play/sleep_notice.h"
@@ -124,12 +126,6 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
-// A29-02, A33-03, décision 7 : un trou dans le temps (veille, gel du processus) met la lecture en pause à
-// l'image d'avant et recale les horloges par un seek exact ; l'appareil perdu pendant la veille arrête la
-// lecture sur DeviceLost (relance, A31-02). Après une veille annoncée (sleep_notice.h), la chaîne se rouvre :
-// sous Linux, la mémoire vidéo n'est pas toujours gardée (NVreg_PreserveVideoMemoryAllocations=0) et ses
-// tampons perdus ne disent rien (B31-01). Un autre refus du GPU au réveil rouvre la chaîne aussi, au lieu
-// d'arrêter la vidéo (B31-18).
 // B31-02 : l'étage que ce refus retire pour la réouverture (stage_fallback.h, retreat_stage) ; rien pour le
 // banc, qui mesure la chaîne demandée ou rien.
 std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusal& refusal) {
@@ -137,32 +133,6 @@ std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusa
                        c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file);
 }
 
-struct AfterGap {
-  std::optional<Refusal> lost;  // l'appareil est perdu : la relance
-  bool reopen = false;
-};
-AfterGap after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, std::int64_t gap_us,
-                   bool announced) {
-  const auto log = log_channel("app");
-  const std::int64_t at = session.view().position_us;
-  log->warn("trou de {:.1f} s ({}) : pause et recalage à {}", static_cast<double>(gap_us) / 1e6,
-            announced ? "veille annoncée" : "veille ou gel", format_position(at));
-  AfterGap out{.reopen = announced};
-  if (c.backend) {
-    if (auto healthy = c.backend->kernels()->health(); !healthy) {
-      if (healthy.error().code == RefusalCode::DeviceLost) return {.lost = std::move(healthy.error())};
-      log->warn("GPU au réveil : {} ; la chaîne se rouvre", healthy.error().detail);
-      out.reopen = true;
-    }
-  }
-  session.command(cmd::Pause{});
-  if (at != kNoPts && !out.reopen) session.command(cmd::Seek{.target_us = at, .exact = true});
-  ui.controls().notify(i18n::ui_tr("Paused after sleep"), host_now_us());
-  return out;
-}
-
-// Le nouvel écran : son contrat (P3.40, A11-01), puis son pic, ses soins OLED et son vrai noir tout de suite,
-// en SDR aussi (A08-07).
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -177,10 +147,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
-  const std::optional<ColorInfo> early_color = media::track_color(video);
-  const bool early_hdr =
-      early_color && (early_color->transfer == Transfer::Pq || early_color->transfer == Transfer::Hlg);
-  if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
+  if (p.shots != nullptr)
+    open_shots_early(*p.shots, p.options.file, settings, start_us, video,
+                     content_peak_nits(p.screen.window()), p.options.sdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
   const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)
@@ -270,8 +239,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
-  const std::uint64_t energy_start_mj =
-      telemetry ? telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj : 0;
+  const std::uint64_t energy_start_mj = telemetry ? telemetry->energy_mj(host_now_us()) : 0;
   ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
                          fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
@@ -321,22 +289,23 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                            fp8_reason.empty() ? "disponible" : fp8_reason, c.backend_name,
                            fp8_facts.capability);
   const SpanPrepare span_prepare =
-      c.model ? make_span_prepare(
-                    p.library,
-                    gpu::BackendInit{
-                        .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
-                    fp8_facts.capability, c.model->path, paths::derived_models(p.paths), p.options.file,
-                    fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
-                    SpanFp8Context{.gpu_arch = c.backend->capabilities().gpu_arch,
-                                   .kernels_version = c.backend->capabilities().span_fp8_kernels,
-                                   .width = work.width,
-                                   .height = work.height},
-                    settings.preset != Preset::Custom)
-              : SpanPrepare{};
+      c.model
+          ? make_span_prepare(
+                p.library,
+                gpu::BackendInit{
+                    .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
+                fp8_facts.capability, c.model->path, paths::derived_models(p.paths), p.options.file,
+                fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
+                SpanFp8Context{.gpu_arch = c.backend ? c.backend->capabilities().gpu_arch : std::string(),
+                               .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
+                               .width = work.width,
+                               .height = work.height},
+                settings.preset != Preset::Custom, true)
+          : SpanPrepare{};
   p.ui.set_tracks((*pipeline)->tracks());
   SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
   fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
-  p.ui.set_settings(settings, choices);
+  p.ui.set_settings(settings, choices, &p.catalog);
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
@@ -554,7 +523,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   SleepWatch sleep_watch;
   SleepNotice sleep_notice(&LoopWake::push, &wake);  // B31-01 : la veille dite avant
   bool sleep_announced = false;
-  ScreenSaverHold screen_saver;  // coupé seulement pendant qu'une vidéo avance (A33-02)
+  const WindowEvents window_events;  // B31-13 : la barre de titre tenue sous Windows n'est pas une veille
+  ScreenSaverHold screen_saver;      // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
     if (sleep_notice.take()) {
       // Pause avant la veille : le son s'arrête, le GPU finit ce qu'il a en vol, puis la veille suit.
@@ -563,13 +533,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       sleep_notice.ready();
       sleep_announced = true;
     }
-    if (const auto gap = sleep_watch.turn(host_now_us(), suspend_aware_now_us())) {
-      AfterGap after = after_gap(session, c, p.ui, *gap, std::exchange(sleep_announced, false));
+    if (AfterGap after = after_gap(session, c, p.ui, sleep_watch, window_events, sleep_announced);
+        after.lost || after.reopen) {
       if (after.lost) {
         failure = std::move(*after.lost);
         break;
       }
-      if (after.reopen) chain.reopen = chain.running;
+      chain.reopen = chain.running;
     }
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
@@ -644,7 +614,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
-    if (chain.dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) {
+    if (settings_save_due(writer, p.ui, chain.dirty, saved_at, host_now_us())) {  // B31-08, B36-01
       writer.post("play.toml",
                   [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
       chain.dirty = false;
@@ -680,12 +650,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   remember();
   stats_sink.reset();
-  writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers
+  finish_settings_writes(writer, p.settings_path, saved_settings());  // attente bornée (B30-05)
   p.quit = session.quit_asked();
   log_summary(session);
   if (telemetry) {
-    // Énergie de la lecture : le compteur NVML relevé au début et à la fin (au plus 500 ms de retard).
-    const std::uint64_t energy_end_mj = telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj;
+    // Énergie de la lecture : le compteur NVML relu au début et à la fin, à l'instant même (B11-14).
+    const std::uint64_t energy_end_mj = telemetry->energy_mj(host_now_us());
     if (const auto per_frame =
             millijoules_per_frame(energy_start_mj, energy_end_mj, session.stats().new_frames))
       log->info("énergie : {:.1f} J, {:.1f} mJ par image neuve",

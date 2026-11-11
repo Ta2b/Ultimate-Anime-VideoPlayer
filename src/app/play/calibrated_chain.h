@@ -14,6 +14,7 @@ struct CalibratedChain {
   int height = 0;          // la plus haute résolution de travail que SPAN tient
   std::string span_model;  // le SPAN mesuré, joué en FP16 ; vide : le modèle par défaut
   std::string rife_model;  // le RIFE mesuré ; vide : RIFE 4.22 lite
+  bool operator==(const CalibratedChain&) const = default;
 };
 
 // La machine telle qu'elle est maintenant, pour juger si une calibration vaut encore (A36-02, A25-02,

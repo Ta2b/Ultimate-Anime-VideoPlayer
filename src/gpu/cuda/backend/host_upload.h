@@ -1,7 +1,8 @@
 // Ingestion des images décodées en mémoire hôte sous TensorRT (M1) : le décodage logiciel prend le
 // relais de NVDEC pour ce qu'il ne décode pas (H.264 10 bits des fansubs, H.264 4:4:4, VP9 profils
-// 1 et 3…). Les plans sont recopiés dans un tampon hôte épinglé, envoyés vers l'appareil sur une
-// file de transfert, puis lus par le noyau d'ingestion habituel (slice_kernels.h).
+// 1 et 3, et toute piste 4:2:2 ou 4:4:4, que la chaîne garde entière). Les plans sont recopiés dans un
+// tampon hôte épinglé, envoyés vers l'appareil sur une file de transfert, puis lus par le noyau
+// d'ingestion habituel (slice_kernels.h).
 //
 // kDepth envois à tour de rôle : la copie de l'image suivante passe pendant que la chaîne traite la
 // précédente. L'hôte n'attend un envoi que s'il a kDepth images d'avance sur la copie, et la file
@@ -28,7 +29,7 @@ class HostUploads {
   static constexpr std::size_t kPitchAlign = 256;
 
   // Les plans d'une image d'un format lisible par l'ingestion : NV12, P010, P016 (chroma
-  // entrelacée, deux plans) ou YUV 4:2:0 planaire 8 et 10 bits (trois plans).
+  // entrelacée, deux plans), YUV 4:2:0 planaire 8 et 10 bits, ou 4:2:2 et 4:4:4 16 bits (trois plans).
   struct Layout {
     int planes = 0;
     std::array<std::size_t, 3> row_bytes{};

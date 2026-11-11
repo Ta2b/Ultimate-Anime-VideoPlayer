@@ -19,6 +19,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -27,6 +28,7 @@
 #include <span>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -77,6 +79,14 @@ struct SpanDerivePlan {
   // Les poids du modèle rangés pour le paquet ; vide : lus dans l'ONNX (gpu/span_fp8/onnx_weights.h). Les
   // essais y mettent des poids de leur façon.
   std::function<std::expected<gpu::span_fp8::Package, Refusal>()> load_weights;
+  // B02-01 : le temps d'une passe du SPAN FP16 de TensorRT à cette taille (time_span_fp16), le moteur que la
+  // lecture garde sans le paquet. Un paquet qui passe la porte de qualité n'est gardé que s'il va au moins
+  // gpu::span_fp8::kMinSpeedup fois plus vite. Vide : rien n'est mesuré ni exigé (essais, outils) ; le
+  // lecteur le donne toujours.
+  std::function<std::expected<double, Refusal>(int width, int height, gpu::Progress&)> time_fp16;
+  // B02-08 : la préparation tourne pendant la lecture (préréglage) : le reçu le dit, ses temps étant pris
+  // sous la charge de la lecture.
+  bool during_playback = false;
 };
 
 struct SpanDeriveReport {
@@ -87,6 +97,9 @@ struct SpanDeriveReport {
   int calibration_images = 0;
   int validation_images = 0;
   std::string size;               // « 1920x1080 »
+  double trt_fp16_ms = 0.0;       // B02-01 : une passe du SPAN FP16 de TensorRT ; 0 : non mesuré
+  double speedup = 0.0;           // trt_fp16_ms sur le temps des noyaux FP8 ; 0 : non mesuré
+  bool too_slow = false;          // la qualité passait, le gain non : le paquet est refusé
   std::filesystem::path package;  // le paquet écrit ; vide si les garde-fous l'ont refusé
   std::filesystem::path receipt;
   std::string text;  // pour l'utilisateur : ce qui a été fait ou pourquoi pas
@@ -149,14 +162,35 @@ struct SpanPrepare {
 // faux.
 // reduce : la taille de travail de la chaîne et son filtre de réduction (span_still_reduce) ; les images de
 // calibration et de validation y sont ramenées (étape 3.7a). Vide : la découpe à la taille de la source.
+// during_playback (B02-08) : la tâche tourne pendant la lecture (panneau, préparation automatique) ; elle
+// laisse la carte à la lecture entre deux images (kBackgroundPause) et le reçu dit ses temps pris sous
+// charge.
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
                               const std::string& unavailable = {}, const media::StillReduce& reduce = {},
-                              const SpanFp8Context& context = {}, bool automatic = false);
+                              const SpanFp8Context& context = {}, bool automatic = false,
+                              bool during_playback = false);
 
 // La marge de VRAM d'une préparation lancée par un préréglage (étape 3.6).
 inline constexpr double kAutoMinFreeRatio = 1.5;
+
+// B02-08 : la préparation lancée par un préréglage tourne pendant la lecture, sur le même GPU. Après chaque
+// image qu'elle passe (trois passes du SPAN), elle rend la carte à la lecture ce temps-là.
+inline constexpr std::chrono::milliseconds kBackgroundPause{120};
+
+// Le temps d'une passe du SPAN FP16 de TensorRT à width × height sur backend (B02-01) : le moteur que la
+// chaîne construit pour cette taille (lu dans le cache, construit s'il manque), kSpanTimingWarmup passes de
+// chauffe, puis la médiane de kSpanTimingBatches lots de kSpanTimingBatchRuns passes enchaînées. Refus : ceux
+// de la construction, du chargement ou d'une passe ; Cancelled si progress.stop le demande.
+inline constexpr int kSpanTimingWarmup = 5;
+inline constexpr int kSpanTimingBatches = 5;
+inline constexpr int kSpanTimingBatchRuns = 5;
+// B02-08 : la pause de kBackgroundPause après une image de calibration ou de validation (stage, l'étape que
+// le backend nomme), pour une préparation qui tourne pendant la lecture.
+void pause_for_playback(std::string_view stage, const std::stop_token& stop);
+std::expected<double, Refusal> time_span_fp16(gpu::Backend& backend, const std::filesystem::path& model,
+                                              int width, int height, gpu::Progress& progress);
 
 // La réduction des images de la préparation : la taille de travail et le filtre du menu « Réduction », comme
 // le noyau d'ingestion les applique (live_settings.h, reduction_of).

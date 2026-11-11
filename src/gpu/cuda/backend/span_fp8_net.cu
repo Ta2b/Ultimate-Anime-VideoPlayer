@@ -7,7 +7,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -53,9 +52,9 @@ std::array<float, 64> quantize_fp8(const std::uint16_t* half_bits, std::size_t c
   const std::size_t per = count / kOut;
   std::vector<float> values(count);
   for (std::size_t i = 0; i < count; ++i) {
-    __half h;
-    std::memcpy(&h, &half_bits[i], sizeof(h));
-    values[i] = __half2float(h);
+    __half_raw raw;
+    raw.x = half_bits[i];
+    values[i] = __half2float(__half(raw));
   }
   // Les échelles de la référence hôte testée (quantize.h), pas une copie (A02-09).
   const std::vector<float> channel = span_fp8::channel_scales(values, kOut);

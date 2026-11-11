@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <iterator>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -35,9 +34,11 @@
 #include "app/play/placebo_impl.h"
 #include "app/play/placebo_present.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/queue_lanes.h"
 #include "app/play/relaunch_target.h"
 #include "app/play/window_size.h"
 #include "core/clock.h"
+#include "core/file_sync.h"
 #include "core/log.h"
 
 namespace ajp::app::play {
@@ -149,7 +150,8 @@ constexpr std::uint32_t kPlaceboQueues = 1;  // pl_vulkan_params.queue_count
 
 struct EngineQueue {
   QueueRef queue;
-  bool shared = true;  // la file de calcul de libplacebo, sous son verrou
+  bool shared = true;               // la file de calcul de libplacebo, sous son verrou
+  std::uint32_t family_queues = 0;  // files de sa famille, toutes créées par libplacebo ; 0 : aucune voie
 };
 
 // Le LUID de l'adaptateur (VkPhysicalDeviceIDProperties), que D3D11VA retrouve par DXGI pour
@@ -189,7 +191,9 @@ EngineQueue engine_queue(pl_vulkan vk) {
   };
   for (const std::uint32_t family : {compute, graphics}) {
     if (computes(family) && families[family].queueCount > kPlaceboQueues)
-      return EngineQueue{.queue = {.family = family, .index = kPlaceboQueues}, .shared = false};
+      return EngineQueue{.queue = {.family = family, .index = kPlaceboQueues},
+                         .shared = false,
+                         .family_queues = families[family].queueCount};
   }
   if constexpr (kBackendQueueFlags != 0) {
     const auto transfer = static_cast<std::uint32_t>(vk->queue_transfer.index);
@@ -220,13 +224,10 @@ VulkanDevice vulkan_description(pl_vulkan vk) {
                  .compute = engines.queue};
   // Les files qui suivent celle du backend, créées par libplacebo (toute la famille) et qu'il
   // n'emploie pas : des voies de calcul en plus (au plus deux), seulement hors d'une file partagée.
-  const std::array<pl_vulkan_queue, 2> created{vk->queue_compute, vk->queue_graphics};
-  for (const pl_vulkan_queue& queue : created) {
-    if (engines.shared || queue.index != d.compute.family) continue;
-    const std::uint32_t count = queue.count;
-    d.compute_lanes = count > d.compute.index + 1 ? std::min(count - d.compute.index - 1, 2U) : 0;
-    break;
-  }
+  // Comptées sur la famille, pas sur pl_vulkan_queue::count, qui ne compte que le pool de libplacebo
+  // (B10-04). FFmpeg ne reçoit que la file 0 des familles de libplacebo (vulkan_share.cpp) : ces files sont
+  // libres.
+  if (!engines.shared) d.compute_lanes = backend_lanes(engines.family_queues, d.compute.index);
   if (engines.shared) {
     d.lock_queue = lock_placebo_queue;
     d.unlock_queue = unlock_placebo_queue;
@@ -326,44 +327,51 @@ void PlaceboScreen::Impl::open_shader_cache(const std::filesystem::path& file) {
     // Jamais écrit par nous à cette taille : abîmé ou d'ailleurs, il n'est pas lu en mémoire (A10-11).
     impl.channel->warn("cache des shaders : {} Mo sur le disque, plus que le plafond, ignoré",
                        on_disk >> 20u);
-  } else if (std::ifstream in(file, std::ios::binary); in) {
-    const std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  } else if (std::ifstream in(file, std::ios::binary); !error && in) {
+    // D'un seul bloc, à la taille du fichier : jusqu'à 64 Mo sur le chemin de l'ouverture de la fenêtre.
+    std::vector<char> bytes(static_cast<std::size_t>(on_disk));
+    in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    bytes.resize(static_cast<std::size_t>(in.gcount()));
     const int loaded =
         pl_cache_load(impl.shader_cache, reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
-    impl.channel->info("cache des shaders : {} objets relus", std::max(loaded, 0));
+    impl.channel->info("cache des shaders : {} objets relus ({} Ko)", std::max(loaded, 0),
+                       bytes.size() >> 10U);
   }
+  impl.shader_cache_loaded = pl_cache_signature(impl.shader_cache);
   pl_gpu_set_cache(impl.vk->gpu, impl.shader_cache);
 }
 
-// Gardé à la fermeture, écrit à côté puis renommé : une fermeture brutale ne laisse jamais un fichier à
-// moitié écrit.
+// Gardé à la fermeture, par l'écriture atomique du projet (core::write_atomic : à côté, sur le disque, puis
+// renommé) : une fermeture brutale ne laisse jamais un fichier à moitié écrit. Un cache que la lecture n'a
+// pas changé n'est pas réécrit (B36-05 : jusqu'à 64 Mo à chaque fermeture).
 void PlaceboScreen::Impl::save_shader_cache() {
   Impl& impl = *this;
   if (impl.shader_cache == nullptr) return;
   if (impl.vk != nullptr) pl_gpu_set_cache(impl.vk->gpu, nullptr);
   const std::size_t size = pl_cache_save(impl.shader_cache, nullptr, 0);
-  if (size > 0) {
-    std::vector<std::uint8_t> bytes(size);
-    pl_cache_save(impl.shader_cache, bytes.data(), bytes.size());
-    std::error_code error;
-    std::filesystem::create_directories(impl.shader_cache_file.parent_path(), error);
-    // Un nom propre à cette fermeture : plusieurs lecteurs (les essais du bench) peuvent fermer en même
-    // temps.
-    std::filesystem::path part = impl.shader_cache_file;
-    part += std::format(".{}.part", std::chrono::steady_clock::now().time_since_epoch().count());
-    bool written = false;
-    {
-      std::ofstream out(part, std::ios::binary | std::ios::trunc);
-      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-      written = static_cast<bool>(out.flush());
-    }
-    if (written) std::filesystem::rename(part, impl.shader_cache_file, error);
-    if (!written || error) std::filesystem::remove(part, error);
+  if (size > 0 && pl_cache_signature(impl.shader_cache) != impl.shader_cache_loaded) {
+    std::vector<std::byte> bytes(size);
+    pl_cache_save(impl.shader_cache, reinterpret_cast<std::uint8_t*>(bytes.data()), bytes.size());
+    if (auto written = core::write_atomic(impl.shader_cache_file, bytes); !written)
+      impl.channel->warn("cache des shaders non écrit : {}", written.error().detail);
   }
   pl_cache_destroy(&impl.shader_cache);
 }
 
 namespace {
+// Smooth Motion : le chargeur Vulkan lit la variable à la création de l'instance ; le thread main est encore
+// seul à toucher l'environnement à ce moment. B34-06 : c'est la voie du pilote Linux ; sous Windows, Smooth
+// Motion se règle par profil dans l'application NVIDIA, et le réglage reste lu (play.toml) sans rien
+// demander.
+void request_smooth_motion(spdlog::logger& log) {
+#if defined(__linux__)
+  SDL_setenv_unsafe("NVPRESENT_ENABLE_SMOOTH_MOTION", "1", 1);
+  log.info("Smooth Motion : couche du pilote NVIDIA demandée (NVPRESENT_ENABLE_SMOOTH_MOTION=1)");
+#else
+  log.info("Smooth Motion : réglé par l'application NVIDIA sous Windows, rien n'est demandé ici");
+#endif
+}
+
 // Le démontage d'un pilote sain se compte en secondes (moteurs TensorRT compris) ; au-delà, il ne finira pas.
 constexpr std::chrono::seconds kCloseLimit{60};
 }  // namespace
@@ -384,6 +392,10 @@ PlaceboScreen::Impl::~Impl() {
   const CloseWatch stuck(kCloseLimit, [] {
     exit_stuck(std::format("fermeture de l'écran bloquée depuis {} s", kCloseLimit.count()));
   });
+  // Le veilleur d'écriture attend sur un sémaphore de l'appareil : arrêté avant tout le reste, quel que soit
+  // le chemin qui ferme l'écran (sortie anticipée, exception), jamais après pl_vulkan_destroy.
+  ring.set_watcher(nullptr);
+  watcher.reset();
   if (vk != nullptr) pl_gpu_finish(vk->gpu);
   for (pl_tex& tex : offscreen_tex)
     if (tex != nullptr) pl_tex_destroy(vk->gpu, &tex);
@@ -480,13 +492,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
     return refuse(RefusalCode::LibraryUnavailable,
                   std::format("SDL_Vulkan_GetInstanceExtensions : {}", SDL_GetError()));
   }
-  if (options.smooth_motion) {
-    // Le chargeur Vulkan lit la variable à la création de l'instance ; le thread main est encore
-    // seul à toucher l'environnement à ce moment.
-    SDL_setenv_unsafe("NVPRESENT_ENABLE_SMOOTH_MOTION", "1", 1);
-    impl->channel->info(
-        "Smooth Motion : couche du pilote NVIDIA demandée (NVPRESENT_ENABLE_SMOOTH_MOTION=1)");
-  }
+  if (options.smooth_motion) request_smooth_motion(*impl->channel);
 #if defined(__linux__)
   // Le pilote Intel de Mesa (ANV) n'expose qu'une file graphique, que l'affichage et les moteurs
   // partageraient : deux, chacune son contexte sur le moteur de rendu, que le GPU alterne par

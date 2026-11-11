@@ -4,6 +4,7 @@
 #include <format>
 #include <utility>
 
+#include "app/play/options.h"
 #include "app/play/player_engines.h"
 #include "app/play/precision.h"
 #include "app/play/visible_error.h"
@@ -24,10 +25,15 @@ std::string stage_signature(ChainStage stage, const PlaySettings& s, int source_
                                          s.work_height, name(s.downscale), s.restore_lines);
   if (stage == ChainStage::Upscale)
     return std::format("span|{}|{}|{}", common, s.model, name(s.span_precision));
-  // L'interpolation dépend aussi de SPAN (ordre du warp, sortie haute) et du facteur le plus haut.
+  // L'interpolation dépend aussi de SPAN : l'ordre du warp, que le facteur le plus haut et la sortie fixent.
+  // Pas le facteur brut, que l'Auto récrit selon l'écran : un refus retenu à ×5 vaut à ×4 (même ordre), et
+  // ×5 et ×2,5 ne se confondent plus (B09-05).
+  const int output_height = chain_work_size(s, source_width, source_height).height * kSpanFactor;
+  const bool after =
+      warp_after_span(s.span_order, output_height, s.rife_factor / std::max(s.rife_factor_den, 1));
   return std::format("motion|{}|{}|{}|{}|{}|{}|{}|{}|{}", common, name(s.motion_engine), s.rife_model,
                      name(s.motion_precision), s.rife_fused, s.drba_fused, s.upscale, name(s.span_order),
-                     s.rife_factor);
+                     after ? "warp-after" : "warp-before");
 }
 
 const StageMemory::Entry* StageMemory::find(ChainStage stage, std::string_view signature,
@@ -139,6 +145,16 @@ std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemo
   StagePlan plan{.settings = wanted, .notes = {}};
   // SPAN d'abord : le retirer change la taille de travail, donc la signature de l'interpolation.
   for (const ChainStage stage : {ChainStage::Upscale, ChainStage::Motion}) {
+    // « Annuler et regarder » vaut pour toute la préparation de cette vidéo (B29-02) : SPAN annulé, la
+    // taille de travail change et l'interpolation demanderait une construction de plus, avec un second écran
+    // de préparation et un second bouton. Elle part avec lui.
+    const auto cancelled = std::ranges::find(plan.notes, StageChange::Cancelled, &StageNote::change);
+    if (cancelled != plan.notes.end() && stage_on(stage, plan.settings)) {
+      if (!allow_drop) return std::nullopt;
+      drop(stage, plan.settings);
+      plan.notes.push_back({.stage = stage, .change = StageChange::Cancelled, .refusal = cancelled->refusal});
+      continue;
+    }
     // Au plus deux tours par étage : le cran ramené à Équilibre, puis l'étage retiré.
     for (int turn = 0; turn < 2 && stage_on(stage, plan.settings); ++turn) {
       const StageMemory::Entry* refused = memory.find(

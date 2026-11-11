@@ -295,8 +295,12 @@ std::optional<double> content_peak_nits(SDL_Window* window, const DisplaySdl& sd
   if (!facts.sdl_hdr) return std::nullopt;
   // La marge de SDL est relative au blanc de référence du compositeur (KDE : la « luminosité SDR »), pas à
   // 203 nits : le pic que le système a calibré se lit chez lui (system_peak.h).
-  if (const auto display = read_display(sdl.name))
-    if (const auto calibrated = system_peak_nits(display->connector, headroom)) return calibrated;
+  if (const auto display = read_display(sdl.name)) {
+    // B11-04 : l'entrée KWin de cet écran, pas celle d'un ancien écran du même port.
+    const std::string edid = kwin_edid_key(display->manufacturer, display->product);
+    if (const auto calibrated = system_peak_nits(display->connector, headroom, nullptr, edid))
+      return calibrated;
+  }
 #endif
   return uncalibrated_peak_nits(facts);
 }
@@ -310,7 +314,7 @@ bool system_hdr(std::optional<double> peak_nits) {
 int auto_peak_nits(std::optional<double> detected) {
   constexpr double kUnknown = 1000.0;
   constexpr double kLow = 200.0;
-  constexpr double kHigh = 2000.0;
+  constexpr double kHigh = static_cast<double>(limits::kTrueHdrPeak.hi);  // B37-09 : 4000
   if (!detected || !std::isfinite(*detected) || *detected <= 0.0) return static_cast<int>(kUnknown);
   return static_cast<int>(std::lround(std::clamp(*detected, kLow, kHigh)));
 }

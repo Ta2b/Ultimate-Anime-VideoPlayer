@@ -1,11 +1,9 @@
 // Backend TensorRT (gpu/backend.h) : moteurs construits par trtexec (prepare), exécutés sur les
 // flux CUDA non bloquants du contexte primaire de la RTX du rendu, un par voie de calcul
-// (gpu/lanes.h), et les noyaux de la chaîne que la tranche verticale demande : ingestion des
-// images NVDEC et écriture du ring importé de Vulkan.
+// (gpu/lanes.h), et les noyaux de la chaîne : ingestion des images NVDEC ou du décodage logiciel
+// (slice_kernels.h), mouvement, mesures, et écriture du ring importé de Vulkan.
 //
 // Chargé à l'exécution (ajp_backend_tensorrt.so) : le lecteur démarre sans CUDA ni TensorRT.
-// Les noyaux et l'enveloppe TensorRT sont provisoires (slice_kernels.h, trt_engine.h) : ils
-// laissent la place au socle CUDA (pc/cuda-compute) et à l'enveloppe TensorRT (pc/tensorrt).
 #pragma once
 
 #include <array>
@@ -41,6 +39,7 @@ class SharedActivations;
 class SpanFp8Engine;
 class RifeFusedEngine;
 class DrbaFusedEngine;
+struct IngestParams;
 
 class TensorRtBackend final : public Backend, public KernelOps {
  public:
@@ -134,7 +133,16 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Sous cette mémoire, une seule voie et une seule zone d'activation : la RTX 4050 mobile à 6 Go
   // ne paie pas la zone de plus (une carte de 8 Go, qui en annonce un peu moins, garde les voies).
   static constexpr std::size_t kLaneMemory = std::size_t{15} << 29;  // 7,5 Gio
+ public:
+  // Et sous cette mémoire libre à l'ouverture du backend : une 8 Go sous Windows avec le bureau et un
+  // navigateur en a 6 à 7 ; sous 5 Gio (un jeu, un autre lecteur), la seconde zone ferait déborder.
+  static constexpr std::size_t kLaneFreeMemory = std::size_t{5} << 30;
+  // Les voies de calcul pour cette mémoire totale et libre (create_lanes) ; pur, pour les tests.
+  static constexpr int lane_count(std::size_t total, std::size_t free) {
+    return total >= kLaneMemory && free >= kLaneFreeMemory ? static_cast<int>(kLanes) : 1;
+  }
 
+ private:
   TensorRtBackend() = default;
   std::expected<void, Refusal> bind() const;  // le device courant est propre à chaque thread
   // rife_input, et rife_pair sans le maillage (tensorrt_rife.cpp).
@@ -153,7 +161,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> apply(const LaneHazards::Op& op);
   std::expected<void, Refusal> record(std::size_t lane);  // l'événement en attente de lane
   std::expected<void, Refusal> create_lanes();
-  void destroy_lanes();  // et rend au pilote ce que la réserve CUDA ne prête plus (A33-01)
+  void destroy_lanes();   // et rend au pilote ce que la réserve CUDA ne prête plus (A33-01)
+  bool any_lane() const;  // une file au moins créée, même par une création interrompue (B01-04)
+  void log_profile();     // le profil GPU de la séance au journal
+  void release_arenas();  // les zones d'activation rendues au pool avant sa purge (B33-01)
   // Attente hôte d'un événement : interrogé quelques centaines de µs d'abord, puis attendu (le
   // contexte en attente bloquante réveille le thread 50 à 200 µs après l'événement, T14).
   static std::expected<void, Refusal> wait_event(cudaEvent_t event);
@@ -315,6 +326,18 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // demi-flottant. Un moteur TensorRT ou DistilDRBA fusionné qui lit la même adresse la retire.
   std::vector<std::uintptr_t> compact_rife_inputs_;
   void note_rife_reader(const Tensor& input, bool compact);
+  // Les plans de l'instant que rife_time n'a écrits qu'à l'élément 0 (B03-04) : un moteur entier qui lit
+  // ensuite la même entrée a besoin du plan entier, reposé juste avant lui (restore_rife_times). Oubliés
+  // quand rife_input ou rife_pair réécrivent le plan, et quand le tampon est libéré.
+  struct StaleTime {
+    std::uintptr_t key = 0;   // adresse du tenseur d'entrée
+    std::uint64_t plane = 0;  // son plan de l'instant (CUdeviceptr)
+    std::size_t count = 0;    // demi-flottants du plan
+    std::uint16_t half = 0;   // l'instant, en demi-flottant
+  };
+  std::vector<StaleTime> stale_times_;
+  void forget_rife_input(std::uintptr_t key);
+  std::expected<void, Refusal> restore_rife_times(std::span<const Tensor> inputs);
   GpuTiming& stage(std::string_view name);
   std::unique_ptr<GpuSpan> chain_span_;               // de l'ingestion d'une source à la fin de son SPAN
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice
@@ -363,6 +386,29 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::size_t deband_out_size_ = 0;
   // Envois des images du décodage logiciel (host_upload.h), créés à la première.
   std::unique_ptr<HostUploads> uploads_;
+  // Ingestion : les tables du suréchantillonnage de la chroma pour une taille, une disposition, un siting et
+  // un filtre, en mémoire d'appareil, et les lignes de la passe horizontale en 4:2:0 (slice_kernels.h,
+  // IngestParams) ; refaites au changement (ingest_chroma.cpp, B03-02).
+  struct ChromaTables {
+    int width = 0;
+    int height = 0;
+    int layout = -1;
+    kernels::Siting siting = kernels::Siting::Left;
+    kernels::Filter filter = kernels::Filter::Spline36;
+    int* x_start = nullptr;
+    float* x_weights = nullptr;
+    int x_taps = 0;
+    int* y_start = nullptr;
+    float* y_weights = nullptr;
+    int y_taps = 0;
+    float* rows = nullptr;
+  };
+  ChromaTables chroma_;
+  // Pose dans params la disposition de la chroma (layout, slice_kernels.h) et ses tables, params.width et
+  // params.height déjà posés ; refuse un filtre qui ne suréchantillonne pas (Area ne fait que réduire).
+  std::expected<void, Refusal> chroma_tables(IngestParams& params, int layout, kernels::Siting siting,
+                                             kernels::Filter filter);
+  void release_chroma_tables(bool behind_lanes = false);  // true en lecture : derrière les voies
   // write_yuv : les tables de la réduction de chroma pour une taille et un siting, en mémoire
   // d'appareil, et les lignes réduites en largeur (export_kernels.h) ; refaites au changement.
   struct YuvTables {
@@ -399,6 +445,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   static constexpr std::size_t kTextures = 256;
   float pair_levels_ = 219.0F;  // pas de luma 8 bits de la source ingérée : 219 limitée, 255 pleine
+  kernels::Coefficients pair_k_ = kernels::coefficients(kernels::Matrix::Bt709);  // sa matrice (B03-06)
   std::map<TextureKey, cudaTextureObject_t> textures_;
   struct RetiredTextures {
     std::vector<cudaTextureObject_t> objects;

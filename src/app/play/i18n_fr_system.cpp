@@ -111,6 +111,9 @@ constexpr std::array kSystemPages{
           "Ce fichier existe : il n'est remplacé qu'à la fin d'un export réussi."},
     Entry{"This file is the video being played.", "Ce fichier est la vidéo lue."},
     Entry{"This folder does not exist.", "Ce dossier n'existe pas."},
+    Entry{"This folder cannot be written to.", "Ce dossier n'accepte pas l'écriture."},
+    Entry{"Give a full path (starting at the root of a drive).",
+          "Donnez un chemin complet (depuis la racine d'un disque)."},
     Entry{"This package has no signing key: updates cannot be verified.",
           "Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées."},
     Entry{"To apply: playback reopens at the same spot with {}; its engines are built the first time for "
@@ -131,8 +134,8 @@ constexpr std::array kSystemPages{
           "Avec la précision Performance de SPAN, le lecteur prépare ce mode seul pour la vidéo ouverte "
           "(environ une minute, en FP16 entre-temps). Refaites-le à la main ici."},
     Entry{"Working…", "En cours…"},
-    Entry{"· cached", "· en cache"},
-    Entry{"· loaded", "· chargé"},
+    Entry{"Cached", "En cache"},
+    Entry{"Loaded", "Chargé"},
 };
 
 }  // namespace

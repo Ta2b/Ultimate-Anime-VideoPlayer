@@ -1,4 +1,4 @@
-// Noyaux provisoires de la tranche verticale (voir slice_kernels.h).
+// Noyaux de l'ingestion du backend TensorRT (voir slice_kernels.h).
 #include <cuda_fp16.h>
 
 #include "gpu/cuda/backend/deband_kernels.cuh"
@@ -20,41 +20,79 @@ __device__ int clamp_index(int i, int n) {
   return i < 0 ? 0 : (i >= n ? n - 1 : i);
 }
 
-// Chroma bilinéaire au point (cx, cy) du plan de chroma, bords répétés ; c vaut 0 (Cb) ou 1 (Cr).
-__device__ float chroma_at(const IngestParams& p, float cx, float cy, int c) {
-  const int cw = (p.width + 1) / 2;
-  const int ch = (p.height + 1) / 2;
-  const float fx = floorf(cx);
-  const float fy = floorf(cy);
-  const float ax = cx - fx;
-  const float ay = cy - fy;
-  const int x0 = clamp_index(static_cast<int>(fx), cw);
-  const int x1 = clamp_index(static_cast<int>(fx) + 1, cw);
-  const int y0 = clamp_index(static_cast<int>(fy), ch);
-  const int y1 = clamp_index(static_cast<int>(fy) + 1, ch);
-  // Entrelacée : Cb et Cr alternent dans chroma. Planaire : Cb dans chroma, Cr dans chroma_v.
-  const bool planar = p.chroma_v != nullptr;
-  const void* plane = planar && c == 1 ? p.chroma_v : p.chroma;
-  const int stride = planar ? 1 : 2;
-  const int lane = planar ? 0 : c;
-  const float top = sample(plane, p.chroma_pitch, stride * x0 + lane, y0, p.sixteen_bits) * (1.0F - ax) +
-                    sample(plane, p.chroma_pitch, stride * x1 + lane, y0, p.sixteen_bits) * ax;
-  const float bottom = sample(plane, p.chroma_pitch, stride * x0 + lane, y1, p.sixteen_bits) * (1.0F - ax) +
-                       sample(plane, p.chroma_pitch, stride * x1 + lane, y1, p.sixteen_bits) * ax;
-  return top * (1.0F - ay) + bottom * ay;
+// Miroir au demi-échantillon, puis bornage (kernels/spec/resample.h, mirror_index).
+__device__ int mirror_index(int i, int n) {
+  i = i < 0 ? -i - 1 : i;
+  i = i >= n ? 2 * n - 1 - i : i;
+  return i < 0 ? 0 : (i >= n ? n - 1 : i);
 }
 
-// RGB du pixel (x, y) de l'image décodée.
+// Code brut de la chroma au point (x, y) de son plan ; c vaut 0 (Cb) ou 1 (Cr). Entrelacée : Cb et Cr
+// alternent dans chroma. Planaire : Cb dans chroma, Cr dans chroma_v.
+__device__ float chroma_code(const IngestParams& p, int x, int y, int c) {
+  const bool planar = p.chroma_v != nullptr;
+  const void* plane = planar && c == 1 ? p.chroma_v : p.chroma;
+  return sample(plane, p.chroma_pitch, planar ? x : 2 * x + c, y, p.sixteen_bits);
+}
+
+// Passe horizontale de la chroma (resample_rows de la référence) : la colonne x de la luma, à la ligne cy
+// du plan de chroma. Boucle non déroulée : les prises sont lues de la table.
+__device__ float2 chroma_row(const IngestParams& p, int x, int cy) {
+  const float* w = p.x_weights + static_cast<std::size_t>(x) * static_cast<std::size_t>(p.x_taps);
+  const int first = p.x_start[x];
+  float cb = 0.0F;
+  float cr = 0.0F;
+#pragma unroll 1
+  for (int j = 0; j < p.x_taps; ++j) {
+    const int cx = mirror_index(first + j, p.chroma_width);
+    cb += w[j] * chroma_code(p, cx, cy, 0);
+    cr += w[j] * chroma_code(p, cx, cy, 1);
+  }
+  return make_float2(cb, cr);
+}
+
+// Cb et Cr bruts au pixel (x, y) de la luma : lus au point en 4:4:4, passe horizontale à la volée en 4:2:2,
+// passe verticale sur les lignes de ingest_chroma_rows en 4:2:0 (resample_columns de la référence).
+__device__ float2 chroma_at(const IngestParams& p, int x, int y) {
+  if (p.chroma_layout == kChroma444) return make_float2(chroma_code(p, x, y, 0), chroma_code(p, x, y, 1));
+  if (p.chroma_layout == kChroma422) return chroma_row(p, x, y);
+  const float* w = p.y_weights + static_cast<std::size_t>(y) * static_cast<std::size_t>(p.y_taps);
+  const int first = p.y_start[y];
+  const auto* rows = reinterpret_cast<const float2*>(p.chroma_rows);
+  float cb = 0.0F;
+  float cr = 0.0F;
+#pragma unroll 1
+  for (int j = 0; j < p.y_taps; ++j) {
+    const std::size_t row = static_cast<std::size_t>(mirror_index(first + j, p.chroma_height));
+    const float2 v = rows[row * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x)];
+    cb += w[j] * v.x;
+    cr += w[j] * v.y;
+  }
+  return make_float2(cb, cr);
+}
+
+// RGB du pixel (x, y) de l'image décodée : la chroma suréchantillonnée en codes bruts, puis normalisée et
+// passée par la matrice (normalize et to_rgb de kernels/spec/color.h).
 __device__ float3 rgb_at(const IngestParams& p, int x, int y) {
-  const float cx = (static_cast<float>(x) - p.chroma_x) * 0.5F;
-  const float cy = (static_cast<float>(y) - p.chroma_y) * 0.5F;
   const float luma = (sample(p.luma, p.luma_pitch, x, y, p.sixteen_bits) - p.yoff) / p.yscale;
-  const float cb = (chroma_at(p, cx, cy, 0) - p.coff) / p.cscale;
-  const float cr = (chroma_at(p, cx, cy, 1) - p.coff) / p.cscale;
+  const float2 chroma = chroma_at(p, x, y);
+  const float cb = (chroma.x - p.coff) / p.cscale;
+  const float cr = (chroma.y - p.coff) / p.cscale;
   const float kg = 1.0F - p.kr - p.kb;
   return make_float3(luma + 2.0F * (1.0F - p.kr) * cr,
                      luma - (2.0F * p.kb * (1.0F - p.kb) * cb + 2.0F * p.kr * (1.0F - p.kr) * cr) / kg,
                      luma + 2.0F * (1.0F - p.kb) * cb);
+}
+
+// Passe horizontale de la chroma 4:2:0, une fois par image avant les autres noyaux : width × chroma_height
+// paires Cb, Cr en FP32 dans chroma_rows.
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest_chroma_rows(IngestParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int cy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || cy >= p.chroma_height) return;
+  const std::size_t at =
+      static_cast<std::size_t>(cy) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
+  reinterpret_cast<float2*>(p.chroma_rows)[at] = chroma_row(p, x, cy);
 }
 
 // Moyenne Area du pixel de sortie (x, y) : la boîte [x·sx, (x+1)·sx) × [y·sy, (y+1)·sy) de
@@ -143,8 +181,14 @@ __device__ Taps taps_for(const IngestParams& p, int o, int in, int out) {
                        : p.reduce_kind == kReduceSpline36 ? 3.0F
                                                           : 2.0F;
   const float center = (static_cast<float>(o) + 0.5F) * scale - 0.5F;
-  const int first = static_cast<int>(ceilf(center - radius * scale));
-  const int count = min(static_cast<int>(floorf(center + radius * scale)) - first + 1, kMaxReduceTaps);
+  int first = static_cast<int>(ceilf(center - radius * scale));
+  int count = static_cast<int>(floorf(center + radius * scale)) - first + 1;
+  // Au-delà du plafond (réduction de plus de 21 fois en Spline36), autant de prises en moins de chaque côté :
+  // le noyau reste centré, l'image ne se décale pas (B03-07).
+  if (count > kMaxReduceTaps) {
+    first += (count - kMaxReduceTaps) / 2;
+    count = kMaxReduceTaps;
+  }
   return Taps{.first = first, .count = count, .center = center, .scale = scale};
 }
 
@@ -153,8 +197,8 @@ __device__ float tap_weight(const IngestParams& p, const Taps& t, int i) {
 }
 
 // Première passe des filtres étirés : la ligne y de la source, convertie en RGB et filtrée vers
-// out_width colonnes, poids normalisés, bords répétés. Boucles non déroulées : sm_120 déroule
-// sinon les 32 prises et déborde des 64 registres.
+// out_width colonnes, poids normalisés, bords répétés. Boucles non déroulées : sm_120 déroulerait
+// sinon les prises et déborderait des 64 registres.
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) ingest_rows(IngestParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -355,6 +399,12 @@ std::size_t tile_bytes(const IngestParams& p) {
 
 }  // namespace
 
+std::size_t chroma_rows_bytes(const IngestParams& params) {
+  if (params.chroma_layout != kChroma420) return 0;
+  return std::size_t{2} * static_cast<std::size_t>(params.width) *
+         static_cast<std::size_t>(params.chroma_height) * sizeof(float);
+}
+
 std::size_t ingest_rows_bytes(const IngestParams& params) {
   const bool same = params.out_width == params.width && params.out_height == params.height;
   if (same || params.reduce_kind == kReduceArea) return 0;
@@ -366,6 +416,17 @@ std::size_t ingest_rows_bytes(const IngestParams& params) {
 cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream) {
   const dim3 block(kBlock, kBlock);
   const dim3 out = grid_for(params.out_width, params.out_height);
+  if (params.chroma_layout != kChroma444 &&
+      (params.x_start == nullptr || params.x_weights == nullptr || params.x_taps < 1 ||
+       params.chroma_width < 1 || params.chroma_height < 1))
+    return cudaErrorInvalidValue;
+  if (params.chroma_layout == kChroma420) {
+    if (params.y_start == nullptr || params.y_weights == nullptr || params.y_taps < 1 ||
+        params.chroma_rows == nullptr)
+      return cudaErrorInvalidValue;
+    ingest_chroma_rows<<<grid_for(params.width, params.chroma_height), block, 0, stream>>>(params);
+    if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
+  }
   if (params.out_width == params.width && params.out_height == params.height) {
     if (params.deband) {
       ingest_deband<<<out, block, 0, stream>>>(params);

@@ -51,7 +51,8 @@ void DisplayFollow::poll() {
   const bool changed = contract_watch_.take_peak_change();
   const bool peak = !p_.options.sdr && (changed || host_now_us() - hdr_polled_at_ >= kHdrPollUs);
   if (peak) hdr_polled_at_ = host_now_us();
-  const bool vrr = p_.display && !p_.display->connector.empty();
+  // B11-15 : relu même sans connecteur (window_vrr_armed sait le lire autrement).
+  const bool vrr = p_.display.has_value();
   probe_.ask(display_sdl(out.window()), peak, vrr, vrr ? p_.display->connector : std::string());
   // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence (le dernier relevé), son VRR et son
   // état sont relus.
@@ -96,10 +97,11 @@ void DisplayFollow::follow_peak(std::optional<double> peak_now) {
 }
 
 void DisplayFollow::follow_vrr(std::optional<bool> reading) {
-  // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque relevé.
-  if (!p_.display || p_.display->connector.empty()) return;
+  // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque relevé, même sans connecteur (B11-15).
+  if (!p_.display) return;
   const std::optional<bool> now = vrr_watch_.observe(p_.screen.vrr_armed(), reading);
   if (!now) return;
+  if (*now) p_.display->vrr = true;  // armé : capable, même sans plage dans l'EDID (B11-03)
   const bool armed = !p_.options.no_vrr && p_.display->vrr.value_or(false) && *now;
   log_->info("VRR : {}", *now ? "armé" : "non armé");
   p_.ui.set_display_vrr(p_.display->vrr.value_or(false), *now, fullscreen_of(p_.screen.window()));

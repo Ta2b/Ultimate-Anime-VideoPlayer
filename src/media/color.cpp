@@ -224,6 +224,8 @@ std::expected<PixelFormat, Refusal> map_pixel_format(AVPixelFormat format) {
       return PixelFormat::Yuv420p10;
     case AV_PIX_FMT_YUV444P16LE:
       return PixelFormat::Yuv444p16;
+    case AV_PIX_FMT_YUV422P16LE:
+      return PixelFormat::Yuv422p16;
     case AV_PIX_FMT_RGBA64LE:
       return PixelFormat::Rgba16Unorm;
     case AV_PIX_FMT_RGBA:

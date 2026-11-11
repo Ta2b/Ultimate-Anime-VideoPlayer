@@ -32,6 +32,8 @@ namespace ajp::gpu::cuda {
 std::string span_fp8_artifact_key(std::uint32_t crc, int height, int width);
 // Hauteur et largeur d'une telle clé ; rien si la clé est celle d'un autre moteur.
 std::optional<Shape> span_fp8_artifact_shape(std::string_view key);
+// Le CRC-32 du paquet que la clé couvre ; rien si la clé est celle d'un autre moteur.
+std::optional<std::uint32_t> span_fp8_artifact_crc(std::string_view key);
 // Le fichier d'un paquet, entier. Refus FileUnreadable.
 std::expected<std::vector<std::byte>, Refusal> read_span_fp8_package(const std::filesystem::path& path);
 // L'extension d'un paquet : « .span8 ».
@@ -39,12 +41,13 @@ bool is_span_fp8_package(const std::filesystem::path& path);
 
 class SpanFp8Engine final : public Engine {
  public:
-  // Lit le paquet, envoie les poids, prend sa zone de travail dans shared et fait passer une image de zéros
-  // par les noyaux (un noyau qui ne tourne pas sur cet appareil se voit ici, au chargement, pas en pleine
-  // lecture). Refus : fichier ou paquet illisible, taille ou appareil que les noyaux ne prennent pas,
+  // Lit le paquet, vérifie qu'il est celui de la clé (crc, B02-06), envoie les poids, fait passer une image
+  // de zéros par les noyaux (un noyau qui ne tourne pas sur cet appareil se voit ici, au chargement, pas en
+  // pleine lecture), puis prend sa zone de travail dans shared. Refus : fichier ou paquet illisible, paquet
+  // réécrit depuis la construction (GraphInvalid), taille ou appareil que les noyaux ne prennent pas,
   // mémoire.
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
-      const std::filesystem::path& package, int height, int width,
+      const std::filesystem::path& package, std::uint32_t crc, int height, int width,
       const std::shared_ptr<SharedActivations>& shared);
   ~SpanFp8Engine() override;
   SpanFp8Engine(const SpanFp8Engine&) = delete;

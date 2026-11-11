@@ -64,6 +64,7 @@ struct VideoDecoder::State {
   bool software_allowed = false;
   bool download = false;
   bool full_host_formats = false;  // DecoderOptions::full_host_formats
+  bool host_422 = false;           // DecoderOptions::host_422
   int extra_hw_frames = 0;         // de l'essai en cours
   bool direct = false;             // NVDEC sans copie de sécurité (DecoderOptions::direct_surfaces)
   std::vector<Attempt> rejected;
@@ -209,7 +210,7 @@ struct VideoDecoder::State {
       if (!recorded) return std::unexpected(recorded.error());
       ready = std::move(*recorded);
     }
-    return to_decoded_frame(std::move(frame), pts, duration, std::move(ready), full_host_formats);
+    return to_decoded_frame(std::move(frame), pts, duration, std::move(ready), full_host_formats, host_422);
   }
 
   // Les paquets à rejouer, puis la fin du flux ; arrêté par EAGAIN, repris au receive() suivant.
@@ -350,6 +351,7 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   state->software_allowed = std::ranges::contains(options.attempts, HwApi::Software);
   state->download = options.download;
   state->full_host_formats = options.full_host_formats;
+  state->host_422 = options.host_422;
   if (track.inverse_telecine) state->deinterlacer = Deinterlacer(FieldMode::InverseTelecine);
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
     state->nominal_duration_us = av_rescale(1'000'000, track.frame_rate.den, track.frame_rate.num);

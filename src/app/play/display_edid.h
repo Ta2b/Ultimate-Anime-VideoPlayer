@@ -89,12 +89,31 @@ std::string describe_for_log(const DisplayFacts& display);
 // (B34-14). Rien hors Linux ou si le système ne le dit pas.
 std::optional<bool> vrr_armed_now(std::string_view connector);
 
+// L'état armé lu dans DRM (B11-01), pur. Sans CRTC (sortie éteinte), rien n'est armé ; VRR_ENABLED absente
+// (descripteur sans DRM_CLIENT_CAP_ATOMIC, pilote sans VRR) est un état inconnu, jamais « non armé ».
+constexpr std::optional<bool> vrr_armed_from(std::uint32_t crtc, std::optional<std::uint64_t> vrr_enabled) {
+  if (crtc == 0) return false;
+  if (!vrr_enabled) return std::nullopt;
+  return *vrr_enabled != 0;
+}
+
 // L'écran de `found` que nomme `wanted` (le nom que SDL donne à l'écran de la fenêtre). Pur (A11-03).
 // Dans l'ordre : le connecteur nommé en toutes lettres (« DP-2 » pour « card1-DP-2 »), puis le nom de
 // l'EDID. Deux écrans du même modèle portent le même nom : avant, le premier gagnait et son connecteur
 // passait pour celui de la fenêtre (VRR armé et réglages KWin de l'autre écran). L'EDID commun est rendu,
 // sans connecteur ni état propre à une sortie : inconnu plutôt que faux. Sans aucun nom reconnu, le premier.
-std::optional<DisplayFacts> pick_display(const std::vector<DisplayFacts>& found, std::string_view wanted);
-std::optional<DisplayFacts> read_display(std::string_view wanted);
+//
+// instance (Windows, B34-02) : le chemin d'interface du moniteur de la fenêtre (EnumDisplayDevices,
+// EDD_GET_DEVICE_INTERFACE_NAME), ou son identifiant d'instance. L'écran dont le connecteur (l'identifiant
+// d'instance de SetupAPI) lui correspond passe devant les noms : deux écrans du même modèle, un nom SDL
+// générique (« Generic PnP Monitor ») ou un EDID sans nom ne font plus lire l'EDID d'un autre écran.
+std::optional<DisplayFacts> pick_display(const std::vector<DisplayFacts>& found, std::string_view wanted,
+                                         std::string_view instance = {});
+std::optional<DisplayFacts> read_display(std::string_view wanted, std::string_view instance = {});
+
+// « \\?\DISPLAY#GSM5B08#5&2a0b3e4c&0&UID4352#{e6f07b5f-…} » (chemin d'interface) ou
+// « DISPLAY\GSM5B08\5&2A0B3E4C&0&UID4352 » (identifiant d'instance) : les deux rendent le second, en
+// capitales, pour les comparer. Pur.
+std::string monitor_instance_from_interface(std::string_view path);
 
 }  // namespace ajp::app::play

@@ -50,6 +50,7 @@
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
+#include "app/play/player_machine.h"
 #include "app/play/player_run.h"
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
@@ -79,11 +80,17 @@ namespace {
 
 // Un fichier de configuration que le lecteur n'a pas compris sera réécrit au prochain changement
 // de réglage : il est mis de côté d'abord (« nom.invalide-AAAAMMJJ-HHMMSS »), pour qu'aucun profil
-// ni réglage valide qu'il contenait ne se perde sans copie. Rien si le fichier est illisible
-// (droits) : il n'est pas écrasé non plus. Rend le message à montrer à l'accueil.
+// ni réglage valide qu'il contenait ne se perde sans copie. Un fichier illisible (verrou, droits) n'est pas
+// déplacé : load_settings et save_settings le laissent intact, et la séance le dit (B22-02). Rend le message
+// à montrer à l'accueil.
 std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
   std::error_code error;
-  if (why.code == RefusalCode::FileUnreadable || !std::filesystem::exists(path, error)) return {};
+  if (why.code == RefusalCode::FileUnreadable)
+    return i18n::tr_format(
+        "{} cannot be read: this session starts from the default settings and does not "
+        "change the file",
+        core::to_utf8(path.filename()));
+  if (!std::filesystem::exists(path, error)) return {};
   const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
   std::filesystem::path aside = path;
   aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
@@ -97,6 +104,15 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
                            core::to_utf8(aside.filename()));
   return i18n::tr_format("{} was invalid: copy kept as {}", core::to_utf8(path.filename()),
                          core::to_utf8(aside.filename()));
+}
+
+// play.toml, avec l'avis des valeurs fautives que le défaut a remplacées (B22-05) ajouté aux notes de départ.
+std::expected<PlaySettings, Refusal> load_with_notes(const std::filesystem::path& path,
+                                                     std::vector<std::string>& notes) {
+  std::vector<std::string> ignored;
+  auto loaded = load_settings(path, &ignored);
+  if (std::string note = ignored_values_note(ignored); !note.empty()) notes.push_back(std::move(note));
+  return loaded;
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
@@ -263,46 +279,6 @@ void announce_once(Player& player, Announced& announced, const std::filesystem::
   }
 }
 
-// La machine vue de l'écran où est la fenêtre : à l'ouverture, et quand elle change d'écran (B29-01).
-// explored : l'exploration du banc quand elle vaut pour cette carte ; calibrated : la calibration de l'écran.
-Machine machine_of(SDL_Window* window, Tier tier, const BenchResult* explored,
-                   std::optional<CalibratedChain> calibrated) {
-  return Machine{.tier = tier,
-                 .display_height = display_height(window),
-                 .display_hz = display_refresh_hz(window),
-                 .explored_work_height = explored != nullptr ? explored->work_height : 0,
-                 .explored_rife_model = explored != nullptr ? explored->rife_model : std::string(),
-                 .calibrated = std::move(calibrated),
-                 .display_width = display_width(window)};
-}
-
-// A31-02 : la relance après une perte du GPU, sauf une seconde dans la minute.
-bool relaunch_allowed(bool lost_recently, std::int64_t launched_s) {
-  return !(lost_recently && relaunch_now_s() - launched_s < kRelaunchAgainS);
-}
-
-// B29-08 : weakly_canonical et file_size sur un partage lent, hors du thread de la fenêtre.
-std::optional<std::int64_t> resume_from(const std::filesystem::path& store,
-                                        const std::filesystem::path& file) {
-  return run_pumped_for<std::optional<std::int64_t>>("resume", std::chrono::milliseconds(5000), true,
-                                                     [store, file] { return resume_position(store, file); })
-      .value_or(std::nullopt);
-}
-
-// B29-01 : la chaîne du préréglage pour le nouvel écran ; Personnalisé reste tel quel (apply_preset). Un
-// raccourci de séance (Ctrl+I) garde son interpolation.
-PlaySettings rederived(const PlaySettings& settings, const Machine& machine, const core::SourceInfo& source,
-                       const PlayOptions& file_options, const KeptChoices& kept) {
-  PlaySettings out = settings_for(apply_preset(settings, machine, source), file_options);
-  if (kept.rife) {
-    out.rife_factor = settings.rife_factor;
-    out.rife_factor_den = settings.rife_factor_den;
-  }
-  log_channel("app")->info("écran changé : chaîne refaite pour lui ({} p, ×{})", out.work_height,
-                           out.rife_factor);
-  return out;
-}
-
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -337,7 +313,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::filesystem::path update_file = paths::update_state(paths.data);
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
-  auto saved = load_settings(settings_path);
+  auto saved = load_with_notes(settings_path, startup_notes);
   i18n::set_language(i18n::language_from_code(saved ? saved->language : default_interface_language()));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
