@@ -16,8 +16,6 @@ constexpr std::array kMessages{
           "composition {:>5.1f} ms : {}\n"},
     Entry{"  {:<8} {:>5} presentations, {:>5.1f} % lost, p95 delay {:>6.1f} ms: {}\n",
           "  {:<8} {:>5} présentations, {:>5.1f} % perdues, retard p95 {:>6.1f} ms : {}\n"},
-    Entry{" SPAN Performance FP8: no{}{}.", " Performance FP8 pour SPAN : non{}{}."},
-    Entry{" SPAN Performance FP8: ready.", " Performance FP8 pour SPAN : prête."},
     Entry{": zero size", " : taille nulle"},
     Entry{"AJP is no longer in \"Open with\".", "AJP ne figure plus dans « Ouvrir avec »."},
     Entry{"AJP is now the video player (mkv, mp4, webm, avi, mov…).",
@@ -58,6 +56,7 @@ constexpr std::array kMessages{
           "Paramètres ouverts sur {} : « Définir par défaut » en haut de la page, ou un type à la fois."},
     Entry{"Shortcut ignored: {}", "Raccourci ignoré : {}"},
     Entry{"Step {} of {}: {}", "Étape {} sur {} : {}"},
+    Entry{"{}: package missing, prepare it again", "{} : paquet introuvable, à préparer de nouveau"},
     Entry{"TensorRT is installed but the player uses {}: pick TensorRT in Settings > General > Engines",
           "le moteur TensorRT est installé mais le lecteur utilise {} : choisissez TensorRT dans Paramètres "
           "> Général > Moteurs"},
@@ -78,10 +77,8 @@ constexpr std::array kMessages{
           "d'être construits."},
     Entry{"Upscaling, interpolation and HDR for anime: adjust the settings here before playback.",
           "Upscale, interpolation et HDR pour les animes : réglez les paramètres ici avant la lecture."},
-    Entry{"Your PC holds: {}.", "Votre PC tient : {}."},
     Entry{"another engine", "un autre moteur"},
     Entry{"bench.toml: ", "bench.toml : "},
-    Entry{"bench.toml: cannot write", "bench.toml : écriture impossible"},
     Entry{"cannot write the downloaded file", "impossible d'écrire le fichier téléchargé"},
     Entry{"checking free space", "vérification de la place"},
     Entry{"comparison cancelled", "comparaison annulée"},
@@ -126,12 +123,10 @@ constexpr std::array kMessages{
     Entry{"failed", "échec"},
     Entry{"file not found on the server", "fichier absent du serveur"},
     Entry{"file {} ({}/{})", "fichier {} ({}/{})"},
-    Entry{"interpolation up to ×{}, {}", "interpolation jusqu'à ×{}, {}"},
     Entry{"it ran over {} s without finishing, probably building an engine (slow the first time)",
           "il a dépassé {} s sans finir, sans doute en construisant un moteur (long la première fois)"},
     Entry{"no Internet connection (server name not found)",
           "pas de connexion Internet (nom du serveur introuvable)"},
-    Entry{"no interpolation", "sans interpolation"},
     Entry{"not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {}",
           "espace disque insuffisant : l'installation demande {} (dont {} à télécharger, {} une fois "
           "installé), il reste {} sur {}"},
@@ -140,7 +135,6 @@ constexpr std::array kMessages{
     Entry{"of the \"{}\" settings", "des réglages « {} »"},
     Entry{"of the \"{}\" variant", "de la variante « {} »"},
     Entry{"or drop a file on this window.", "ou glissez un fichier sur cette fenêtre."},
-    Entry{"original picture, no upscaling", "image d'origine sans agrandissement"},
     Entry{"package {} without {}", "paquet {} sans {}"},
     Entry{"preparing engines and first measurement", "préparation des moteurs et première mesure"},
     Entry{"q: quit", "q : quitter"},
@@ -190,7 +184,6 @@ constexpr std::array kMessages{
     Entry{"{}: package note", "{} : note du paquet"},
     Entry{"{}: {} bytes received, {} expected", "{} : {} octets reçus, {} attendus"},
     Entry{"{}: the server ignored the byte range", "{} : le serveur a ignoré la plage d'octets"},
-    Entry{"×2 upscaling from {}p", "agrandissement ×2 depuis {}p"},
 };
 
 }  // namespace

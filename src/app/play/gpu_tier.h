@@ -20,7 +20,8 @@ namespace ajp::app::play {
 enum class Tier : std::uint8_t { Economy, Light, Normal, Fast, Ultra };
 inline constexpr int kTierCount = 5;
 
-// « Économe », « Léger », « Normal », « Rapide », « Ultra ».
+// Les noms du menu : « Economy », « Fast », « Normal », « Quality », « Ultra » (en français Économe, Rapide,
+// Normal, Qualité, Ultra) ; Tier::Light est « Fast », Tier::Fast est « Quality ».
 std::string_view tier_label(Tier tier);
 
 struct TierRule {

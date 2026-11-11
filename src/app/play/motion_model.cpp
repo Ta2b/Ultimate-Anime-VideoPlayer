@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "app/play/derived_model.h"
+#include "core/utf8_path.h"
 #include "kernels/spec/rife.h"
 #include "prepare/model_source.h"
 #include "prepare/onnx_outputs.h"
@@ -87,7 +88,7 @@ std::expected<int, Refusal> scan_input_planes(const std::filesystem::path& rife_
   if (!kernels::is_rife_input_planes(planes)) {
     return std::unexpected(Refusal{RefusalCode::InputMismatch,
                                    std::format("{} : entrée RIFE de {} plans, 11 (v1) ou 7 (v2) attendus",
-                                               rife_onnx.filename().string(), planes)});
+                                               core::to_utf8(rife_onnx.filename()), planes)});
   }
   return static_cast<int>(planes);
 }
@@ -118,8 +119,8 @@ std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_
 }
 
 int rife_padding_multiple(const std::filesystem::path& rife_onnx) {
-  return rife_onnx.stem().string().starts_with("rife_v4.25_lite") ? kernels::kRifeAlignLite
-                                                                  : kernels::kRifeAlign;
+  return core::to_utf8(rife_onnx.stem()).starts_with("rife_v4.25_lite") ? kernels::kRifeAlignLite
+                                                                        : kernels::kRifeAlign;
 }
 
 }  // namespace ajp::app::play

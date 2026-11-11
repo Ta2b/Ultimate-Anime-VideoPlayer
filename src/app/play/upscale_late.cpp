@@ -38,6 +38,10 @@ void UpscaleStage::expect_pair(std::uint32_t id, int written, std::int64_t lead_
 std::expected<void, Refusal> UpscaleStage::late(const DecodedFrame& frame, std::uint32_t output) {
   ++late_dropped_;
   if (setup_.live) setup_.live->auto_unexpect(frame.id.value, 1);
+  // DistilDRBA, côté b tenu : la sortie chargée d'écrire b a été jugée Write, puis est passée en retard en
+  // attendant un slot. b n'est pas à l'écran : la sortie suivante (la source) l'écrit (B09-03). La copie
+  // d'une pose (copy_written_) n'a pas ce cas : late_fate_now_ est éteint pour elle.
+  if (b_shown_ && output == b_output_) b_shown_ = false;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   if (instant.t >= 1.0F) {
     // Le warp de la paire suivante lit les deux sources agrandies : le SPAN de celle-ci, sans écriture.
