@@ -50,6 +50,16 @@ Mesuré sous lavapipe sur les shaders du lecteur (`ajp_render_tests "[.mesure]"`
 
 Blanc des surfaces selon le pic : 320 nits à 400, 690 à 1 000, 1 304 à 2 000 (rc.1 et rc.2 : 278, 496, 992).
 
+### Pistes ouvertes (décisions de Tatoub du 11/11/2026)
+
+- **Scènes très claires sur OLED** : le lecteur laisse la dalle baisser l'image (son limiteur plein écran).
+  Si une scène très claire (ciel, neige) fait « respirer » l'image sur l'OLED de Tatoub, la piste est que le
+  lecteur baisse lui-même les surfaces seules, en gardant les éclats au pic et les tons moyens, à la coupe de
+  plan. Rien n'est fait avant ce constat à l'œil.
+- **Rendu universel** : le même rendu quel que soit le système et l'écran. La pile fondue en une seule LUT
+  faite pour la sortie PQ, avec des curseurs continus, puis la courbe de KWin retirée, sans changement visible
+  sur un écran de 1 000 nits (instantanés `.pq.ppm` avant et après).
+
 Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) reste dans
 `docs/audits/A-CONFIRMER.md`.
 
