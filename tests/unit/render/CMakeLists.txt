@@ -5,3 +5,8 @@ ajp_add_unit_tests(render SOURCES cube_lut_test.cpp shaders_test.cpp display_mod
   MAIN ajp_test_vulkan)
 # Les LUT livrées (data/luts), lues par les tests de la chaîne complète du grade.
 target_compile_definitions(ajp_render_tests PRIVATE AJP_DATA_DIR="${CMAKE_SOURCE_DIR}/data")
+# Les visages (A4) et la référence des émetteurs (A5) n'ont pas d'appelant dans le lecteur (B41-05) : leur code
+# vit hors de la bibliothèque render, compilé avec leurs tests seulement. tools/grade/emitters en garde la
+# version numpy.
+target_sources(ajp_render_tests PRIVATE "${CMAKE_SOURCE_DIR}/src/render/faces.cpp"
+                                        "${CMAKE_SOURCE_DIR}/src/render/emitters.cpp")
