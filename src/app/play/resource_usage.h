@@ -3,9 +3,11 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace ajp::app::play {
 
@@ -19,7 +21,18 @@ ProcessResources process_resources();
 // « mémoire 812 Mio, 46 threads, 131 descripteurs » ; ce que le système ne dit pas est omis.
 std::string describe(const ProcessResources& resources);
 
-// Une ligne « ressources : … » au journal toutes les 5 minutes, jusqu'à la destruction du fil.
+// B33-05 : la mémoire vidéo de la chaîne ouverte (utilisée, totale), ajoutée à la ligne des 5 minutes ; nul :
+// aucune chaîne. Posé par ChainStats à l'ouverture, retiré à sa fermeture (le fil du journal ne lit plus les
+// noyaux une fois retiré).
+using DeviceMemoryReader = std::function<std::optional<std::pair<std::uint64_t, std::uint64_t>>()>;
+void set_device_memory_reader(DeviceMemoryReader reader);
+
+// La dérive à signaler : mémoire résidente ou descripteurs au-delà de la moitié de plus que le premier relevé
+// (à 5 min), le texte de l'avertissement ; vide sinon.
+std::string resource_drift(const ProcessResources& first, const ProcessResources& now);
+
+// Une ligne « ressources : … » au journal toutes les 5 minutes, jusqu'à la destruction du fil, avec la
+// mémoire vidéo et un avertissement de dérive (B33-05 : un essai de 8 h se lit dans ajp.log seul).
 std::jthread start_resource_log();
 
 }  // namespace ajp::app::play

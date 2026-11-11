@@ -54,7 +54,9 @@ class ChainStats final : public StatsSource {
         source_fps_(source_fps),
         telemetry_(telemetry) {
     check_memory();
+    publish_memory();
   }
+  ~ChainStats() override { stop(); }
   std::optional<std::string> rife() const override;
   // La mémoire vidéo et la ligne GPU de l'OSD : relues à 2 Hz par un fil à part (cudaMemGetInfo
   // prend le verrou du contexte CUDA, NVML dix appels : le fil d'affichage n'attend ni l'un ni
@@ -84,6 +86,8 @@ class ChainStats final : public StatsSource {
   // pleine.
   bool note_memory(const gpu::KernelOps::DeviceMemory& memory) const;
   void check_memory() const;
+  void publish_memory();  // B33-05 : la mémoire vidéo pour la ligne des 5 minutes (resource_usage.h)
+  bool stopped_ = false;
   mutable std::atomic<bool> memory_full_told_{false};
   std::optional<std::string> read_gpu() const;
   void start_sampler();

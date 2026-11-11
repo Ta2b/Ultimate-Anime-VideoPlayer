@@ -239,7 +239,17 @@ void ChainStats::start_sampler() {
   });
 }
 
+void ChainStats::publish_memory() {
+  set_device_memory_reader([this]() -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
+    const auto memory = kernels_.device_memory();
+    if (!memory) return std::nullopt;
+    return std::pair{memory->used, memory->total};
+  });
+}
+
 void ChainStats::stop() {
+  if (std::exchange(stopped_, true)) return;
+  set_device_memory_reader(nullptr);        // le journal ne lit plus les noyaux, détruits après
   std::call_once(sampler_started_, [] {});  // un appel de l'OSD après stop() ne relance pas le fil
   if (sampler_.joinable()) {
     sampler_.request_stop();

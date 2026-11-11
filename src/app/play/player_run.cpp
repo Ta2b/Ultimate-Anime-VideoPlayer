@@ -480,8 +480,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!p.settings_path.empty() && !p.options.file.empty()) {
     auto_memory_path = paths::auto_memory(p.settings_path.parent_path());
     auto_memory_key =
-        core::auto_memory_key(prepare::utf8_path(p.options.file), file_bytes, std::string(c.motion_name()),
-                              settings.work_height, gpu_facts(p.screen).name);
+        // B32-06 : la variante de SPAN chargée (FP16, FP8, INT8) entre dans la clé : un palier appris sur
+        // l'une ne vaut pas pour l'autre.
+        core::auto_memory_key(prepare::utf8_path(p.options.file), file_bytes,
+                              std::format("{} {}", c.motion_name(), span_variant), settings.work_height,
+                              gpu_facts(p.screen).name);
     if (chain.live.auto_active()) {
       if (const auto remembered = core::load_auto_step(auto_memory_path, auto_memory_key)) {
         chain.live.auto_seed(*remembered, host_now_us());
@@ -536,7 +539,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(*todo.notify),
                                                 auto_source_fps * *todo.notify / 100.0),
                              at);
-    if (todo.store)
+    // B32-06 : la préparation du FP8 de SPAN charge le GPU pendant la lecture ; un palier tenu sous elle ne
+    // dit rien de la charge de la vidéo, il n'est pas retenu.
+    if (todo.store && p.span_job.note && p.span_job.note->pending)
+      log->info("auto : palier ×{} non retenu, préparation du mode Performance en cours",
+                auto_factor_text(*todo.store));
+    else if (todo.store)
       writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi = *todo.store] {
         return core::store_auto_step(store, key, centi);
       });
