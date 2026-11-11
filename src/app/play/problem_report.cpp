@@ -40,6 +40,8 @@ int find_build_id(dl_phdr_info* info, std::size_t /*size*/, void* data) {
   for (int i = 0; i < info->dlpi_phnum; ++i) {
     const ElfW(Phdr) & header = info->dlpi_phdr[i];
     if (header.p_type != PT_NOTE) continue;
+    // L'adresse du segment est un entier (base de chargement + décalage) : le cast est voulu.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     const auto* at = reinterpret_cast<const std::uint8_t*>(info->dlpi_addr + header.p_vaddr);
     const std::uint8_t* end = at + header.p_memsz;
     while (static_cast<std::size_t>(end - at) >= sizeof(ElfW(Nhdr))) {
