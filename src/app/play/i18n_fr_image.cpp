@@ -54,7 +54,7 @@ constexpr std::array kImageTabs{
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
     Entry{"Very fast", "Très rapide"},
-    Entry{"Balanced", "Équilibré"},
+    Entry{"Balanced", "Équilibre"},
     Entry{"System (macOS)", "Système (macOS)"},
     Entry{"DistilDRBA: the lightest up to ×5; it keeps characters animated on twos on their rhythm. One "
           "frame of delay.",
@@ -65,7 +65,7 @@ constexpr std::array kImageTabs{
     Entry{"RIFE 4.25: cleaner in-between frames, for recent graphics cards.",
           "RIFE 4.25 : des images intermédiaires plus propres, pour les cartes graphiques récentes."},
     Entry{"Very fast is the lightest, Balanced the cleanest. Applies after a short reload.",
-          "Très rapide est le plus léger, Équilibré le plus propre. S'applique après un court rechargement."},
+          "Très rapide est le plus léger, Équilibre le plus propre. S'applique après un court rechargement."},
     Entry{"Greyed out: above the display ({:.0f} Hz for {:.3f} fps).",
           "Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s)."},
     Entry{"Greyed out: turn on RIFE at ×2 or more, or playback stalls.",
@@ -84,11 +84,8 @@ constexpr std::array kImageTabs{
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
     Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest.",
           "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger."},
-    Entry{
-        "Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest. FP8: prepared once "
-        "on this PC, then faster, at the cost of some precision.",
-        "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger. FP8 : "
-        "préparé une fois sur ce PC, puis plus rapide, au prix d'un peu de précision."},
+    Entry{"FP8: prepared once on this PC, then faster, at the cost of some precision.",
+          "FP8 : préparé une fois sur ce PC, puis plus rapide, au prix d'un peu de précision."},
     Entry{"DistilDRBA is running: fused engines.", "DistilDRBA tourne : moteurs fusionnés."},
     Entry{"DistilDRBA is running: whole network.", "DistilDRBA tourne : réseau entier."},
     Entry{"Motion variant: one SPAN pass per source frame.",

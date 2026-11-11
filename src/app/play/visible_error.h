@@ -40,6 +40,8 @@ enum class ErrorFamily : std::uint8_t {
   Subtitles,
   CacheBusy,
   Builder,
+  BuilderDriver,
+  BuilderRetry,
   Component,
   Driver,
   Internal,
@@ -103,9 +105,9 @@ inline constexpr std::array kErrorFamilies{
     std::pair{RefusalCode::CacheBusy, ErrorFamily::CacheBusy},
     std::pair{RefusalCode::BuilderFailed, ErrorFamily::Builder},
     std::pair{RefusalCode::BuilderCrashed, ErrorFamily::Builder},
-    std::pair{RefusalCode::BuilderTimeout, ErrorFamily::Builder},
+    std::pair{RefusalCode::BuilderTimeout, ErrorFamily::BuilderRetry},
     std::pair{RefusalCode::ReceiptInvalid, ErrorFamily::Builder},
-    std::pair{RefusalCode::SdkRejected, ErrorFamily::Builder},
+    std::pair{RefusalCode::SdkRejected, ErrorFamily::BuilderDriver},
     std::pair{RefusalCode::LibraryUnavailable, ErrorFamily::Component},
     std::pair{RefusalCode::AbiMismatch, ErrorFamily::Component},
     std::pair{RefusalCode::VendorCallFailed, ErrorFamily::Driver},
@@ -167,6 +169,10 @@ inline std::string visible_error(const Refusal& refusal) {
       return i18n::tr("another player window is preparing the same engine: try again in a moment");
     case detail::ErrorFamily::Builder:
       return i18n::tr("the GPU engine could not be prepared");
+    case detail::ErrorFamily::BuilderDriver:
+      return i18n::tr("the GPU engine could not be prepared: update the graphics driver");
+    case detail::ErrorFamily::BuilderRetry:
+      return i18n::tr("the GPU engine took too long to prepare: try again");
     case detail::ErrorFamily::Component:
       return i18n::tr("a component of the player is missing or out of date: reinstall it");
     case detail::ErrorFamily::Driver:

@@ -177,7 +177,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
       .chosen_engines = chosen_line(st.engines),
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
-      .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),
+      .display_text = display ? describe(*display) : std::string(i18n::tr("EDID unreadable: OLED unknown")),
       .source_file = {},
       .display_height = display_height(h.screen.window()),
       .span_prepare = {.note = i18n::tr("Open a video: the player prepares Performance mode on its frames.")},

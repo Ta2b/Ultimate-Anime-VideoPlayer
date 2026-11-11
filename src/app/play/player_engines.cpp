@@ -104,7 +104,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
       const auto seconds = [](double s) { return format_clock(static_cast<std::int64_t>(s * 1e6), 0); };
       const PrepareView view{
           .label = i18n::ui_tr_format("Preparing engine {}", engine.name),
-          .fraction = progress.fraction(now),
+          .fraction = progress.overdue(now) ? std::nullopt : std::optional(progress.fraction(now)),
           .details = {status.stage,
                       i18n::tr_format("elapsed {} · expected ~{}", seconds(progress.elapsed_seconds(now)),
                                       seconds(progress.expected_seconds())),

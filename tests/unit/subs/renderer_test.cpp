@@ -178,6 +178,22 @@ TEST_CASE("Rendu : un contenu inchangé réutilise l'atlas sans nouveau téléve
   CHECK(third.atlas->generation > first.atlas->generation);
 }
 
+TEST_CASE("Rendu : deux rendus successifs ne repartent pas de la même génération (B24-01)", "[render]") {
+  std::uint64_t last_of_first = 0;
+  {
+    Bench first(ajp::subs::test::reference_script());
+    const SubtitleFrame frame = first.render(0.2);
+    REQUIRE(frame.atlas != nullptr);
+    last_of_first = frame.atlas->generation;
+  }
+  // Un rendu neuf (réouverture de la chaîne, épisode suivant) : l'écran garde la dernière paire (adresse,
+  // génération) téléversée ; une génération qui retomberait sur une valeur déjà vue y ferait sauter un envoi.
+  Bench second(ajp::subs::test::reference_script());
+  const SubtitleFrame frame = second.render(0.2);
+  REQUIRE(frame.atlas != nullptr);
+  CHECK(frame.atlas->generation > last_of_first);
+}
+
 TEST_CASE("Rendu : un déplacement seul garde l'atlas et change les positions", "[render]") {
   Bench bench(ajp::subs::test::reference_script());
   const SubtitleFrame start = bench.render(4.2);

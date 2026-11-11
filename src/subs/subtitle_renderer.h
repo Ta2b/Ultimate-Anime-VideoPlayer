@@ -137,7 +137,6 @@ class SubtitleRenderer {
   bool in_sync_ = false;
   bool refused_ = false;
   bool vsfilter_ = false;  // couleurs converties comme VSFilter, pour la piste et la cible courantes
-  std::uint64_t generation_ = 0;
   // P3.39 : après un rendu vide, aucun événement avant quiet_until_ms_ (piste de quiet_events_ événements) :
   // les instants de [quiet_from_ms_, quiet_until_ms_) sont vides sans appeler libass.
   long long quiet_from_ms_ = 0;
