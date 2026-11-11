@@ -121,9 +121,10 @@ jobs:
     env:
       AJP_DEPS_PREFIX: /opt/ajp-deps
       AJP_TEST_VULKAN_VALIDATION: "off"
+      CCACHE_DIR: /tmp/ccache
     steps:
       - run: >-
-          pacman -Syu --noconfirm --needed base-devel git cmake ninja pkgconf python meson nasm autoconf automake
+          pacman -Syu --noconfirm --needed base-devel git cmake ninja ccache pkgconf python meson nasm autoconf automake
           libtool python-jinja vulkan-headers vulkan-icd-loader vulkan-swrast shaderc glslang spirv-tools freetype2
           harfbuzz fribidi fontconfig lcms2 dav1d svt-av1 alsa-lib libpulse libx11 libxext libxrandr libxcursor libxi
           libxss libxtst libxfixes libxinerama libxkbcommon libxkbcommon-x11 wayland wayland-protocols libdecor
