@@ -322,7 +322,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (!data) return std::unexpected(data.error());
   if (tuner) {
     for (const std::string& line : tuner->decisions()) log(BackendLogLevel::Debug, model.id + " : " + line);
-    if (auto ok = gate(model, *data); !ok) return std::unexpected(ok.error());
+    if (auto ok = gate(model, *data, tuner ? &*tuner : nullptr); !ok) return std::unexpected(ok.error());
   }
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
@@ -338,7 +338,8 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   return artifact;
 }
 
-std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data) {
+std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data,
+                                                 const net::Autotuner* tuner) {
   // Les noyaux de référence partout, quand les choix de l'autotuner ne peuvent pas être vérifiés.
   const auto to_reference = [&](std::string_view why) -> std::expected<void, Refusal> {
     auto reference = net::reference_choices(data.graph, profile_.target);
@@ -367,6 +368,12 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
                   "noyaux de référence)",
                   model.id, gated->db, gated->floor_db)
             : std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
+    // Une perte de qualité consentie à la vitesse se dit, chiffrée avec son gain (B45-01).
+    if (const std::string notice = net::reduced_precision_notice(
+            model.id, data.choices, *gated,
+            tuner ? std::span(tuner->reduced()) : std::span<const net::ReducedChoice>());
+        !notice.empty())
+      log(BackendLogLevel::Warn, notice);
     return {};
   }
   auto program = net::lower(data.graph, gated->choices, profile_.target);
@@ -396,7 +403,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
       program->dispatches != data->dispatches || shaders != data->shaders) {
     log(BackendLogLevel::Warn, std::format("{} : programme refait autrement qu'à sa construction, artefact "
                                            "réécrit",
-                                           artifact.path.filename().string()));
+                                           core::to_utf8(artifact.path.filename())));
     data->dispatches = program->dispatches;
     data->shaders = std::move(shaders);
     // Un programme que la porte n'a jamais vu ne sert pas sans elle (A45-13) : elle rejoue comme à la

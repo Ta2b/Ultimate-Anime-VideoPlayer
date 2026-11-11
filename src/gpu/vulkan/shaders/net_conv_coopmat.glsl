@@ -304,6 +304,8 @@ void main() {
 #ifdef AJP_COOPMAT_ACC16
       coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> sum =
           coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(acc[t * NTW + jl]);
+      // Une somme float16 qui a débordé est ±Inf (puis NaN au calcul suivant) : plafonnée avant l'épilogue (B49-01).
+      for (int e = 0; e < sum.length(); ++e) sum[e] = clamp(sum[e], -60000.0, 60000.0);
       coopMatStore(sum, tile_c, sg * 256u, 16u, gl_CooperativeMatrixLayoutRowMajor);
 #else
       coopMatStore(acc[t * NTW + jl], tile_c, sg * 256u, 16u, gl_CooperativeMatrixLayoutRowMajor);

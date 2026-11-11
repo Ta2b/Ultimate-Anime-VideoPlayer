@@ -13,21 +13,6 @@
 namespace ajp::gpu::ir {
 namespace {
 
-// Le lecteur unique de id, s'il le lit une seule fois et que id reste interne.
-std::optional<std::size_t> sole_reader(const Graph& graph, TensorId id) {
-  if (is_graph_output(graph, id)) return std::nullopt;
-  const auto readers = consumers(graph)[id];
-  if (readers.size() != 1) return std::nullopt;
-  if (std::ranges::count(graph.nodes[readers[0]].inputs, id) != 1) return std::nullopt;
-  return readers[0];
-}
-
-const Value* constant_input(const Graph& graph, const Node& node, std::size_t index) {
-  if (index >= node.inputs.size() || node.inputs[index] == kNoTensor) return nullptr;
-  const Tensor& tensor = graph.tensors[node.inputs[index]];
-  return tensor.kind == TensorKind::Constant ? &tensor.value : nullptr;
-}
-
 // Valeurs par canal d'une constante qui se diffuse sur [N, channels, H, W] sans
 // en changer la forme : scalaire, [C, 1, 1] ou [1, C, 1, 1].
 std::optional<std::vector<float>> per_channel(const Value& value, std::int64_t channels) {
@@ -74,7 +59,7 @@ bool fold_into_conv(Graph& graph, Node& conv, OpKind op, const std::vector<float
   if (channels == 0) return false;
   const std::size_t per_out = element_count(weights.dims) / static_cast<std::size_t>(channels);
   const bool has_bias = conv.inputs.size() > kConvB && conv.inputs[kConvB] != kNoTensor;
-  const Value* bias = constant_input(graph, conv, kConvB);
+  const Value* bias = constant_operand(graph, conv, kConvB);
   if (has_bias && bias == nullptr) return false;  // biais calculé à l'exécution : rien à fondre
   if (op == OpKind::Div && std::ranges::find(c, 0.0F) != c.end()) return false;
   Value w = weights.value;
@@ -114,11 +99,11 @@ bool fold_into_conv(Graph& graph, Node& conv, OpKind op, const std::vector<float
 }
 
 // Tente de fondre le lecteur de la Conv n ; renvoie vrai si le graphe a changé.
-bool try_bias(Graph& graph, std::size_t n) {
+bool try_bias(Graph& graph, std::size_t n, GraphIndex& index) {
   Node& conv = graph.nodes[n];
-  if (plain_conv(conv) == nullptr || constant_input(graph, conv, kConvW) == nullptr) return false;
+  if (plain_conv(conv) == nullptr || constant_operand(graph, conv, kConvW) == nullptr) return false;
   const TensorId y = conv.outputs[0];
-  const auto reader = sole_reader(graph, y);
+  const auto reader = index.sole_reader(y);
   if (!reader) return false;
   const Node& next = graph.nodes[*reader];
   const bool commutes = next.op == OpKind::Add || next.op == OpKind::Mul;
@@ -126,7 +111,7 @@ bool try_bias(Graph& graph, std::size_t n) {
     return false;
   const std::size_t y_index = next.inputs[0] == y ? 0 : 1;
   if (y_index == 1 && !commutes) return false;
-  const Value* c = constant_input(graph, next, 1 - y_index);
+  const Value* c = constant_operand(graph, next, 1 - y_index);
   if (c == nullptr || graph.tensors[next.outputs[0]].dims != graph.tensors[y].dims) return false;
   const auto values = per_channel(*c, graph.tensors[y].dims[1]);
   if (!values || !fold_into_conv(graph, conv, next.op, *values)) return false;
@@ -135,11 +120,11 @@ bool try_bias(Graph& graph, std::size_t n) {
   return true;
 }
 
-bool try_residual(Graph& graph, std::size_t n) {
+bool try_residual(Graph& graph, std::size_t n, GraphIndex& index) {
   ConvAttrs* attrs = plain_conv(graph.nodes[n]);
   if (attrs == nullptr) return false;
   const TensorId y = graph.nodes[n].outputs[0];
-  const auto reader = sole_reader(graph, y);
+  const auto reader = index.sole_reader(y);
   if (!reader || graph.nodes[*reader].op != OpKind::Add) return false;
   const Node& add = graph.nodes[*reader];
   const TensorId r = add.inputs[0] == y ? add.inputs[1] : add.inputs[0];
@@ -165,18 +150,18 @@ std::optional<std::pair<float, float>> clip_bounds(const Graph& graph, const Nod
                                  std::numeric_limits<float>::infinity()};
   for (std::size_t k = 1; k < 3; ++k) {
     if (k >= clip.inputs.size() || clip.inputs[k] == kNoTensor) continue;
-    const Value* value = constant_input(graph, clip, k);
+    const Value* value = constant_operand(graph, clip, k);
     if (value == nullptr || value->f.size() != 1) return std::nullopt;
     (k == 1 ? bounds.first : bounds.second) = value->f[0];
   }
   return bounds;
 }
 
-bool try_activation(Graph& graph, std::size_t n) {
+bool try_activation(Graph& graph, std::size_t n, GraphIndex& index) {
   ConvAttrs* attrs = open_conv(graph.nodes[n], false);
   if (attrs == nullptr) return false;
   const TensorId y = graph.nodes[n].outputs[0];
-  const auto reader = sole_reader(graph, y);
+  const auto reader = index.sole_reader(y);
   if (!reader || graph.nodes[*reader].inputs[0] != y) return false;
   const Node& act = graph.nodes[*reader];
   Epilogue e;
@@ -206,7 +191,7 @@ bool try_activation(Graph& graph, std::size_t n) {
       break;
     }
     case OpKind::PRelu: {
-      const Value* value = constant_input(graph, act, 1);
+      const Value* value = constant_operand(graph, act, 1);
       const auto values = value != nullptr ? per_channel(*value, graph.tensors[y].dims[1]) : std::nullopt;
       if (!values) return false;
       e.act = Activation::PRelu;
@@ -231,15 +216,14 @@ bool try_activation(Graph& graph, std::size_t n) {
 }
 
 // Porte : m = Mul(s, a), s = Add(x, r), a = Conv(x) de la forme de x, a et s lus par m seul.
-bool try_gate(Graph& graph, std::size_t m) {
+bool try_gate(Graph& graph, std::size_t m, GraphIndex& index) {
   const Node& mul = graph.nodes[m];
   if (mul.op != OpKind::Mul || mul.inputs.size() != 2 || mul.inputs[0] == mul.inputs[1]) return false;
-  const auto producer = producers(graph);
   for (std::size_t side = 0; side < 2; ++side) {
     const TensorId a = mul.inputs[side];
     const TensorId s = mul.inputs[1 - side];
-    const std::size_t conv_at = producer[a];
-    const std::size_t add_at = producer[s];
+    const std::size_t conv_at = index.producer(a);
+    const std::size_t add_at = index.producer(s);
     if (conv_at == kNoNode || add_at == kNoNode) continue;
     Node& conv = graph.nodes[conv_at];
     const Node& add = graph.nodes[add_at];
@@ -247,7 +231,7 @@ bool try_gate(Graph& graph, std::size_t m) {
     if (conv.op != OpKind::Conv || attrs == nullptr || attrs->epilogue.residual || attrs->epilogue.gate ||
         add.op != OpKind::Add || add.inputs.size() != 2)
       continue;
-    if (sole_reader(graph, a) != m || sole_reader(graph, s) != m) continue;
+    if (index.sole_reader(a) != m || index.sole_reader(s) != m) continue;
     const TensorId x = conv.inputs[kConvX];
     if (add.inputs[0] != x && add.inputs[1] != x) continue;
     const TensorId r = add.inputs[0] == x ? add.inputs[1] : add.inputs[0];
@@ -270,14 +254,14 @@ bool try_gate(Graph& graph, std::size_t m) {
 }
 
 // DepthToSpace d dont l'entrée vient d'une Conv qu'il lit seul : la Conv écrit sa sortie.
-bool try_space(Graph& graph, std::size_t d) {
+bool try_space(Graph& graph, std::size_t d, GraphIndex& index) {
   const Node& space = graph.nodes[d];
   const auto* block = std::get_if<BlockAttrs>(&space.attrs);
   if (space.op != OpKind::DepthToSpace || block == nullptr || block->blocksize < 2 || space.inputs.empty())
     return false;
   const TensorId t = space.inputs[0];
-  const std::size_t conv_at = producers(graph)[t];
-  if (conv_at == kNoNode || sole_reader(graph, t) != d) return false;
+  const std::size_t conv_at = index.producer(t);
+  if (conv_at == kNoNode || index.sole_reader(t) != d) return false;
   Node& conv = graph.nodes[conv_at];
   auto* attrs = std::get_if<ConvAttrs>(&conv.attrs);
   if (conv.op != OpKind::Conv || attrs == nullptr || attrs->epilogue.space != 0) return false;
@@ -294,8 +278,10 @@ bool try_space(Graph& graph, std::size_t d) {
 template <class Fn>
 int fuse_each(Graph& graph, Fn&& fuse) {
   int fused = 0;
+  GraphIndex index(graph);  // refait après chaque fusion seulement, pas à chaque candidat (B44-02)
   for (std::size_t n = 0; n < graph.nodes.size();) {
-    if (fuse(graph, n)) {
+    if (fuse(graph, n, index)) {
+      index.invalidate();
       ++fused;
     } else {
       ++n;
@@ -327,8 +313,10 @@ int fuse_spaces(Graph& graph) {
 // sauter un (fuse_each réexamine l'indice du nœud changé).
 int fuse_gates(Graph& graph) {
   int fused = 0;
+  GraphIndex index(graph);
   for (std::size_t m = 0; m < graph.nodes.size();) {
-    if (try_gate(graph, m)) {
+    if (try_gate(graph, m, index)) {
+      index.invalidate();
       ++fused;
       m = 0;
     } else {

@@ -49,22 +49,20 @@ std::optional<Rearrangement> match(const Dims& x, const Dims& t, const Dims& per
 }
 
 // Le nœud qui lit seul la sortie unique de node, s'il est de type op.
-std::optional<std::size_t> next_of(const Graph& graph, const std::vector<std::vector<std::size_t>>& readers,
-                                   const Node& node, OpKind op) {
+std::optional<std::size_t> next_of(const Graph& graph, GraphIndex& index, const Node& node, OpKind op) {
   const TensorId out = node.outputs[0];
-  if (is_graph_output(graph, out) || readers[out].size() != 1) return std::nullopt;
-  const std::size_t next = readers[out][0];
+  if (is_graph_output(graph, out) || index.readers(out).size() != 1) return std::nullopt;
+  const std::size_t next = index.readers(out)[0];
   if (graph.nodes[next].op != op || graph.nodes[next].inputs[0] != out) return std::nullopt;
   return next;
 }
 
-bool try_rearrangement(Graph& graph, std::size_t first) {
+bool try_rearrangement(Graph& graph, std::size_t first, GraphIndex& index) {
   const Node& reshape = graph.nodes[first];
   if (reshape.op != OpKind::Reshape) return false;
-  const auto readers = consumers(graph);
-  const auto second = next_of(graph, readers, reshape, OpKind::Transpose);
+  const auto second = next_of(graph, index, reshape, OpKind::Transpose);
   if (!second) return false;
-  const auto third = next_of(graph, readers, graph.nodes[*second], OpKind::Reshape);
+  const auto third = next_of(graph, index, graph.nodes[*second], OpKind::Reshape);
   if (!third) return false;
 
   const Tensor& x = graph.tensors[reshape.inputs[0]];
@@ -129,8 +127,10 @@ int fold_grid_transposes(Graph& graph) {
 
 int fuse_pixel_shuffles(Graph& graph) {
   int fused = 0;
+  GraphIndex index(graph);
   for (std::size_t n = 0; n < graph.nodes.size();) {
-    if (try_rearrangement(graph, n)) {
+    if (try_rearrangement(graph, n, index)) {
+      index.invalidate();
       ++fused;
     } else {
       ++n;

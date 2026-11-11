@@ -13,6 +13,7 @@
 #include "app/play/ed25519.h"
 #include "core/file_sync.h"
 #include "core/log.h"
+#include "core/toml_fields.h"
 #include "core/utf8_path.h"
 
 namespace ajp::app::play {
@@ -42,6 +43,11 @@ bool fresh(const std::filesystem::path& file, std::filesystem::file_time_type::d
 }
 
 }  // namespace
+
+std::string release_index_tag(std::string_view text) {
+  auto root = core::fields::parse(text, RefusalCode::FileUnreadable, "engines-nvidia.lock");
+  return root ? (*root)["tag"].value_or(std::string()) : std::string();
+}
 
 std::string release_download_prefix(std::string_view repo, std::string_view version) {
   return std::format("https://github.com/{}/releases/download/v{}/", repo, version);
@@ -161,13 +167,21 @@ ReleaseIndexCopy read_release_index(const std::filesystem::path& cache) {
 }
 
 void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, std::string_view repo,
-                        const std::vector<std::string>& keys) {
+                        const std::vector<std::string>& keys, std::string_view version) {
   if (repo.empty() || copy.text.empty()) return;
   // Signé en CI par la clé des mises à jour (A26-02) : sans signature valide, rien n'est cru, même la copie
   // gardée (un fichier du dossier de données changé à la main ne pointe pas ailleurs).
   if (!release_index_signed(copy.text, copy.signature, keys)) {
     catalog.problem += std::format("{}engines-nvidia.lock : signature absente ou fausse, écarté",
                                    catalog.problem.empty() ? "" : " ; ");
+    return;
+  }
+  // Un index signé ne vaut que pour la release qu'il nomme : un ancien (ou celui d'une autre version),
+  // recopié avec sa signature dans cette release, ne ramène pas un ancien module (B51-06).
+  const std::string expected = std::format("v{}", version);
+  if (const std::string tag = release_index_tag(copy.text); tag != expected) {
+    catalog.problem += std::format("{}engines-nvidia.lock : étiquette « {} » au lieu de « {} », écarté",
+                                   catalog.problem.empty() ? "" : " ; ", tag, expected);
     return;
   }
   const std::string prefix = release_repo_prefix(repo);
@@ -180,7 +194,7 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
                          const UpdateFetch& fetch) {
   if (repo.empty() || version.empty()) return;
   refresh_release_index(cache, repo, version, fetch, std::stop_token{});
-  merge_release_copy(catalog, read_release_index(cache), repo, keys);
+  merge_release_copy(catalog, read_release_index(cache), repo, keys, version);
 }
 
 }  // namespace ajp::app::play

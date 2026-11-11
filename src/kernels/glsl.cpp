@@ -162,6 +162,9 @@ void add_rife_warp(Table& t) {
                        f == kFormats[0] ? "Bords noir studio, quelle que soit la plage" : "");
     t.unsigned_integer(std::format("RIFE_PAD_CHROMA_{}", glsl_name(f)), rife_pad_chroma(f));
   }
+  t.integer("FLOW_BINS", kFlowBins,
+            "Histogramme du mouvement : kFlowBins cases de kFlowBinStep pixels (spec/warp.h)");
+  t.real("FLOW_BIN_STEP", kFlowBinStep);
   t.real("BLEND_LAW_A", kBlendLawA, "logit(m) = A logit(mm) + B ln((1 - t) / t) + C");
   t.real("BLEND_LAW_B", kBlendLawB);
   t.real("BLEND_LAW_C", kBlendLawC);
@@ -170,6 +173,15 @@ void add_rife_warp(Table& t) {
   t.integer("POSE_ITERATIONS", kPoseIterations, "Garder les poses (spec/poses.h)");
   t.real("POSE_EPSILON", kPoseEpsilon);
   t.real("POSE_TIME_LIMIT", kPoseTimeLimit);
+}
+
+// La luma BT.709 de l'analyse des images et de la mesure des coupes : les mêmes coefficients que la
+// référence.
+void add_luma(Table& t) {
+  const Coefficients c = coefficients(Matrix::Bt709);
+  t.real("LUMA_709_R", c.kr, "Luma BT.709 : Y = R × kr + G × kg + B × kb (spec/color.h)");
+  t.real("LUMA_709_G", 1.0F - c.kr - c.kb);
+  t.real("LUMA_709_B", c.kb);
 }
 
 void add_transfer(Table& t) {
@@ -275,6 +287,7 @@ std::vector<GlslConstant> glsl_constants() {
   add_color(t);
   add_resample(t);
   add_rife_warp(t);
+  add_luma(t);
   add_transfer(t);
   add_detect(t);
   add_frame_stats(t);

@@ -4,7 +4,8 @@
 // release ni réinstaller le lecteur.
 //
 // Confiance : l'index porte une signature Ed25519 (engines-nvidia.lock.sig) de la clé des mises à jour,
-// posée par la CI de release (A26-02) ; sans elle, rien n'est cru. Il n'est cru ensuite que pour des archives
+// posée par la CI de release (A26-02) ; sans elle, rien n'est cru. Il dit aussi l'étiquette de sa release
+// (tag = "v0.12.0") et n'est cru que dans celle-là (B51-06). Il n'est cru ensuite que pour des archives
 // du dépôt des releases (les paquets TensorRT vivent dans trt-<empreinte> et trt-win-<empreinte>) et des
 // fichiers de pypi.nvidia.com (comme l'engines.lock livré) ; chaque archive se vérifie enfin par sa taille et
 // son SHA-256, comme avant.
@@ -25,6 +26,10 @@ namespace ajp::app::play {
 std::string release_download_prefix(std::string_view repo, std::string_view version);
 // Toutes les releases du dépôt : « https://github.com/<dépôt>/releases/download/ ».
 std::string release_repo_prefix(std::string_view repo);
+
+// L'étiquette que l'index dit servir (« tag = "v0.12.0" », écrite par nvidia-index.sh avant la signature) ;
+// vide s'il n'en dit pas.
+std::string release_index_tag(std::string_view text);
 
 // Vrai si signature (hexadécimal, fin de ligne tolérée) signe text pour l'une des clés.
 bool release_index_signed(std::string_view text, std::string_view signature,
@@ -48,9 +53,10 @@ struct ReleaseIndexCopy {
   std::string signature;
 };
 ReleaseIndexCopy read_release_index(const std::filesystem::path& cache);
-// Ajoute au catalogue les moteurs d'une copie lue, si elle est signée par l'une des keys.
+// Ajoute au catalogue les moteurs d'une copie lue, si elle est signée par l'une des keys et porte l'étiquette
+// de la release de cette version (« v<version> »).
 void merge_release_copy(EngineCatalog& catalog, const ReleaseIndexCopy& copy, std::string_view repo,
-                        const std::vector<std::string>& keys);
+                        const std::vector<std::string>& keys, std::string_view version);
 
 // refresh_release_index puis merge_release_copy, sur le thread de l'appelant (essais) : relit
 // engines-nvidia.lock et sa signature de la release (au plus une fois par jour, en quelques secondes au plus,

@@ -6,6 +6,7 @@
 #include <format>
 #include <vector>
 
+#include "kernels/ref/check.h"
 #include "kernels/ref/transfer.h"
 
 namespace ajp::kernels::ref {
@@ -77,10 +78,19 @@ float ictcp_i(const Rgb& n) {
   return 0.5F * pq_inverse_eotf(l) + 0.5F * pq_inverse_eotf(m);
 }
 
-Result<FrameCounts> frame_counts(const RgbImage& rgb, FrameTransfer transfer) {
+// Les trois plans, leur taille et leur nombre d'échantillons, comme toute autre entrée de la référence
+// (B50-07).
+Result<void> check_analysis_input(const RgbImage& rgb) {
+  if (auto ok = check_rgb(rgb, "analyse"); !ok) return ok;
   const int w = rgb.width(), h = rgb.height();
   if (w < 2 || h < 2 || w > kMaxDimension || h > kMaxDimension)
     return fail(ErrorCode::DimensionOutOfRange, std::format("analyse : image {}x{}", w, h));
+  return {};
+}
+
+Result<FrameCounts> frame_counts(const RgbImage& rgb, FrameTransfer transfer) {
+  if (auto ok = check_analysis_input(rgb); !ok) return std::unexpected(ok.error());
+  const int w = rgb.width(), h = rgb.height();
   const Coefficients k = coefficients(transfer == FrameTransfer::Sdr ? Matrix::Bt709 : Matrix::Bt2020Ncl);
   const auto at = [](int gx, int gy) {
     return static_cast<std::size_t>(gy) * fs::kGridW + static_cast<std::size_t>(gx);
