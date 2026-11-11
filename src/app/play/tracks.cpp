@@ -115,7 +115,7 @@ std::optional<int> matching_track(std::span<const media::TrackInfo> tracks, medi
   if (same_title != tracks.end()) return same_title->index;
   if (fallback) {
     const auto chosen = std::ranges::find(tracks, *fallback, &media::TrackInfo::index);
-    if (chosen != tracks.end() && alike(*chosen)) return *fallback;
+    if (chosen != tracks.end() && alike(*chosen)) return chosen->index;
   }
   const auto first = std::ranges::find_if(tracks, alike);
   if (first != tracks.end()) return first->index;
