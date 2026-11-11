@@ -86,25 +86,23 @@ TEST_CASE("anime par plan : l'exposition relève les surfaces du grade, rien san
 TEST_CASE("anime par plan : en HDR, la luminosité ne suit ni le plan ni la scène ; en SDR, si",
           "[app][anime]") {
   // Retour d'essai de la rc.4 : l'exposition par plan et la marge des éclats selon la scène, amplifiées par
-  // la pile de LUT, marquaient chaque coupe. La dalle limite elle-même les scènes claires.
+  // la pile de LUT, faisaient sauter un même décor d'un plan à l'autre. La dalle limite les scènes claires.
   PlaySettings s;
   s.hdr_native = true;
   const render::GradeChoice still = grade_of(s, 1000);
   REQUIRE(still.pq.has_value());
   REQUIRE(still.sdr_anime.has_value());
   s.grade_values.scene_light = render::SceneLight{.apl_nits = 150.0, .lit = 0.6};  // une scène très claire
+  s.grade_values.anime_exposure = -0.25;
   const render::GradeChoice bright = grade_of(s, 1000);
   REQUIRE(bright.pq.has_value());
   REQUIRE(bright.sdr_anime.has_value());
+  CHECK(bright.pq->an_lift == Approx(render::kAnimeLift));
   CHECK(bright.pq->fs_apl < 0.0);  // clé inconnue : la marge des éclats au pic
   CHECK(*bright.pq == *still.pq);
   // La sortie SDR garde sa courbe par plan.
+  CHECK(bright.sdr_anime->an_lift < still.sdr_anime->an_lift);
   CHECK(bright.sdr_anime->tm_top < still.sdr_anime->tm_top);
-  // L'exposition par plan reste en HDR.
-  s.grade_values.anime_exposure = -0.25;
-  const render::GradeChoice lower = grade_of(s, 1000);
-  REQUIRE(lower.pq.has_value());
-  CHECK(lower.pq->an_lift < still.pq->an_lift);
 }
 
 TEST_CASE("anime : le peps en % devient contraste, saturation et part des éclats du grade", "[app][anime]") {

@@ -173,6 +173,7 @@ void sdr_tonemap(GradeParams& p) {
 }
 
 void steady_hdr(GradeParams& p) {
+  p.an_lift = kAnimeLift;
   p.fs_apl = -1.0;
 }
 

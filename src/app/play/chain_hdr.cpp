@@ -102,9 +102,10 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
     render::sdr_tonemap(anime);
     choice.sdr_anime = anime;
   }
-  // En HDR, la luminosité ne suit pas le plan : les surfaces gardent le relèvement fixe et les éclats la
-  // marge entière, la dalle limite elle-même les scènes claires (docs/hdr-anime.md). L'exposition par plan et
-  // la marge selon la scène, amplifiées par la pile de LUT, marquaient chaque coupe. La sortie SDR les garde.
+  // En HDR, la luminosité ne suit ni le plan ni la scène : les surfaces gardent le relèvement fixe et les
+  // éclats la marge entière, la dalle limite elle-même les scènes claires (docs/hdr-anime.md). Amplifiées par
+  // la pile de LUT, l'exposition par plan et la marge selon la scène faisaient sauter un même décor d'un plan
+  // à l'autre (retour d'essai). La sortie SDR garde sa courbe par plan.
   if (choice.pq) render::steady_hdr(*choice.pq);
   return choice;
 }

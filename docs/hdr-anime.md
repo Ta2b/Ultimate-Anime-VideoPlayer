@@ -16,11 +16,15 @@ la dernière passe (`anime-hdr-black.hook`, réglée par `src/render/output_tune
   nits sur un écran de 1 000 nits).
 - **Éclats avant la pile.** La passe anime décide quels pixels sont des lumières et les monte jusqu'au pic ;
   la pile les amplifie ensuite.
-- **Pas de limiteur de scène en HDR (Tatoub, 11/11/2026, essai de la rc.4).** La marge des éclats ne baisse
-  plus dans une scène claire (elle tombait jusqu'à la moitié du pic) : amplifié par la pile, et déclenché à
-  chaque coupe depuis que les coupes de l'animation tenue sont trouvées (#676), ce limiteur marquait les
-  transitions. La dalle limite elle-même les scènes claires. L'exposition des surfaces par plan reste ; la
-  sortie SDR garde sa courbe par plan (`steady_hdr`, `render/grade_params.h`).
+- **Luminosité stable d'un plan à l'autre en HDR (Tatoub, 11/11/2026, essai de la rc.4).** Les surfaces
+  gardent le relèvement fixe : plus d'exposition par plan (jusqu'à ±19 %, que la pile double à peu près),
+  qui faisait sauter un même décor entre un gros plan sombre et un plan large clair. Plus de limiteur de
+  scène : la marge des éclats ne tombe plus à la moitié du pic dans une scène claire, la dalle limite
+  elle-même. Les deux se déclenchaient bien plus souvent depuis que les coupes de l'animation tenue sont
+  trouvées (#676). La sortie SDR garde sa courbe par plan (`steady_hdr`, `render/grade_params.h`). Restent
+  adaptatifs : les lumières décidées zone par zone, et les noirs profonds selon la série. Piste si une scène
+  paraît trop sombre ou trop claire : une exposition par décor (une suite de plans du même lieu), glissée
+  lentement d'un décor à l'autre.
 - **MaxFALL annoncé** : le blanc des surfaces réellement rendu (une image toute blanche), ou la moyenne
   plein écran du contrat d'écran quand il la connaît.
 - **Noirs (décision 17 du 09/11/2026).** Le noir pur reste un vrai noir : 0 sous RVB 4. Au-dessus, la LUT de
