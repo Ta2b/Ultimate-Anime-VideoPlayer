@@ -1,6 +1,6 @@
 // Attendre une échéance à la microseconde (étape 6.7) : une attente grossière du système jusqu'à
 // 1,5 ms avant l'échéance, puis une attente absolue précise. Fonction pure ; l'appelant fait les
-// attentes (SDL_WaitEventTimeout, clock_nanosleep en TIMER_ABSTIME).
+// attentes (SDL_WaitEventTimeout, puis sleep_until_precise de loop_wait.cpp).
 #pragma once
 
 #include <algorithm>

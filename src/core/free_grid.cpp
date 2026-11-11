@@ -65,6 +65,7 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   // (aucune passe d'interpolation), décalée de quelques millisecondes au plus. Sur écran fixe (P3.37), le
   // vsync à moins d'une demi-période avant la source la montre telle quelle, à l'heure du vsync.
   const std::int64_t snap = vsync > 0 ? vsync / 2 : step / 4;
+  bool source_shown = false;
   while (emitted < limit && t <= d) {
     const bool on_source = d - t < snap;
     const std::int64_t at = on_source && vsync <= 0 ? d : t;
@@ -74,7 +75,19 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
     if (!on_source) ++interpolated;
     base = vsync > 0 ? std::max(base + step, at + spacing) : at + step;
     t = on_vsync(base);
-    if (on_source) break;
+    if (on_source) {
+      source_shown = true;
+      break;
+    }
+  }
+  // B12-04 : sur écran fixe, le vsync à moins d'une demi-période après la source la montre aussi telle
+  // quelle. Sans cela, la paire suivante la recalculait par le réseau à t presque nul : une inférence de plus
+  // et une image légèrement adoucie au lieu du dessin d'origine.
+  if (vsync > 0 && !source_shown && emitted > 0 && emitted < limit && t > d && t - d < snap) {
+    out.add({.t = {1, 1}, .pts_us = t});  // à l'heure du vsync, comme une source rattrapée avant lui
+    last_emitted_ = t;
+    ++emitted;
+    base = std::max(base + step, t + spacing);
   }
   if (emitted == 0) {
     // Le GPU ne tient pas une image dans cette paire : la source seule, comme sans interpolation.

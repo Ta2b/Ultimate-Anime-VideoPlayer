@@ -67,8 +67,4 @@ std::optional<double> vsync_lock(double refresh_hz, double output_fps) {
   return speed;
 }
 
-double vsync_speed(double refresh_hz, double output_fps) {
-  return vsync_lock(refresh_hz, output_fps).value_or(1.0);
-}
-
 }  // namespace ajp::core

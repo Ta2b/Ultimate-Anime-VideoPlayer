@@ -25,6 +25,10 @@ class VsyncPhase {
   // Longueur du vecteur moyen au-dessus de laquelle les instants s'accordent : 0,8 vaut un écart type
   // d'environ un dixième de période ; des instants au hasard donnent 0,2 à 0,4.
   static constexpr double kAgreement = 0.8;
+  // B12-07 : sans instant vu depuis ce temps (aucune acquisition n'a attendu, GPU juste), la phase vieillit
+  // avec l'écart entre la période annoncée et la réelle (8 µs par vsync de 165 Hz annoncés à 164,78 réels :
+  // 1,3 ms par seconde) ; au-delà, elle est tenue pour inconnue et les instants ne se calent plus sur elle.
+  static constexpr std::int64_t kStaleUs = 500'000;
 
   // La période a changé (autre écran, autre mode) : la phase repart.
   void set_period(std::int64_t period_us);
@@ -32,6 +36,8 @@ class VsyncPhase {
   // Un vsync vu à host_us.
   void note(std::int64_t host_us);
   bool known() const;
+  // Connue, et un instant vu depuis moins de kStaleUs à host_us.
+  bool fresh(std::int64_t host_us) const { return known() && host_us - last_note_us_ <= kStaleUs; }
   // Le vsync (instant hôte) le plus proche de host_us ; host_us si la phase est inconnue.
   std::int64_t nearest(std::int64_t host_us) const;  // pas « near » : une macro de windows.h
 
@@ -42,6 +48,7 @@ class VsyncPhase {
   double sin_ = 0.0;
   double weight_ = 0.0;  // poids reçu par la moyenne : corrige son départ de zéro
   int notes_ = 0;
+  std::int64_t last_note_us_ = 0;
 };
 
 }  // namespace ajp::core

@@ -239,7 +239,7 @@ ainsi de prendre du retard sur des images que personne ne verra.
 HDR actif, VRR, crête, noir et blanc SDR en nits, espace de sortie (sRGB, PQ,
 scRGB), et la provenance de chaque champ (défaut, profil, système, `--display`).
 Sur un écran fixe, `lock_factor()` donne le facteur qui cale k vsyncs par image et
-`vsync_speed()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
+`vsync_lock()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
 choisit k.
 
 ### Retour de présentation (`--present`, docs/adr/0011-presentation-en-boucle-fermee.md)
