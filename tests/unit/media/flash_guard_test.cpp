@@ -101,7 +101,7 @@ TEST_CASE("flashs : une analyse perdue pendant une suite de variations compte (A
   bool limited = false;
   for (int i = 0; i < 120; ++i) {
     const std::int64_t pts = i * std::int64_t{16'667};
-    if (i == 45) {
+    if (i == 75) {  // six transitions dans la seconde qui précède
       limited = guard.missed(pts) || limited;
       continue;
     }
@@ -111,4 +111,26 @@ TEST_CASE("flashs : une analyse perdue pendant une suite de variations compte (A
   // Hors de toute variation, une image perdue ne déclenche rien.
   FlashGuard calm;
   for (int i = 0; i < 60; ++i) CHECK_FALSE(calm.missed(i * std::int64_t{16'667}));
+}
+
+TEST_CASE("flashs : une image fixe ne se plafonne pas quand des analyses manquent", "[flash_guard]") {
+  // Le début d'une vidéo (noir puis une mire fixe : une transition), puis une analyse sur deux perdue, comme
+  // sous un GPU chargé. Chaque image perdue comptait pour une transition : le grade se plafonnait à 250 nits.
+  FlashGuard guard;
+  guard.set_gain(3.4);
+  bool limited = false;
+  for (int i = 0; i < 96; ++i) {
+    const std::int64_t pts = i * std::int64_t{41'708};
+    if (i > 1 && i % 2 == 0) {
+      limited = guard.missed(pts) || limited;
+      continue;
+    }
+    limited = guard.push(pts, i == 0 ? 0.0 : 120.0) || limited;
+  }
+  CHECK_FALSE(limited);
+  // Une suite d'images perdues sans analyse du tout : rien non plus.
+  FlashGuard lost;
+  lost.push(0, 0.0);
+  lost.push(41'708, 120.0);
+  for (int i = 2; i < 48; ++i) CHECK_FALSE(lost.missed(i * std::int64_t{41'708}));
 }

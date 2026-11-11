@@ -1,5 +1,6 @@
 // La chaîne complète du grade HDR sur le GPU (audit A41-11) : la passe anime, la pile de LUT livrée et la
-// dernière passe. Les niveaux écrits ici sont ceux des décisions 16 et 17 du 09/11/2026 (docs/hdr-anime.md).
+// dernière passe. Les niveaux écrits ici sont ceux de docs/hdr-anime.md : le blanc et les éclats d'avant la
+// 0.11 (décision du 11/11/2026), les noirs de la décision 17 du 09/11/2026.
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -70,27 +71,57 @@ namespace ajp::render {
 using namespace gpu_test;
 using Catch::Approx;
 
-TEST_CASE("chaîne HDR : blanc des surfaces à la moitié du pic, gris moyen inchangé (décision 16)",
-          "[render][gpu][chain]") {
+TEST_CASE("chaîne HDR : blanc des surfaces vers 70 % du pic, gris moyen inchangé", "[render][gpu][chain]") {
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
   const Pile stack;
-  for (const double peak : {400.0, 1000.0, 2000.0}) {
+  for (const auto& [peak, expected] : {std::pair{400.0, 320.0}, {1000.0, 690.0}, {2000.0, 1304.0}}) {
     set_player_output(gpu, stack, peak);
     const GradeParams params = player_params(peak);
     const double white = chain_level(gpu, sdr_code_nits(255.0), params);
     const double grey = chain_level(gpu, sdr_code_nits(128.0), params);
     INFO("pic " << peak << " : blanc " << white << " nits, RVB 128 à " << grey << " nits");
-    // Avant : 320, 690 et 1 310 nits (80, 69 et 65 % du pic).
-    CHECK(white == Approx(surface_white_target(peak)).epsilon(0.03));
-    // Le gris moyen ne bouge pas (43 à 45 nits avant).
+    // La 0.11.0-rc.1 le posait à la moitié du pic (278, 496 et 992 nits).
+    CHECK(white == Approx(expected).epsilon(0.03));
     CHECK(grey > 41.0);
     CHECK(grey < 47.0);
     // Ce que la dernière passe annonce est ce qu'elle rend (MaxFALL, A41-02).
     REQUIRE(gpu.grade->output());
     CHECK(gpu.grade->output()->white == Approx(white).epsilon(0.02));
   }
+  gpu.grade->set_kwin_match(std::nullopt);
+}
+
+// Les curseurs « LUT contrast intensity » et « LUT highlight intensity » changent le nombre de LUT de la pile
+// : le lecteur pose une nouvelle pile (set_looks, un nouveau hook) puis ses intensités. Sous la 0.11.0-rc.1,
+// la dernière passe ramenait le blanc à la même cible quelle que soit la pile : les curseurs ne changeaient
+// plus rien aux surfaces claires.
+TEST_CASE("chaîne HDR : les curseurs de la pile agissent en direct, même quand le nombre de LUT change",
+          "[render][gpu][chain]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const auto white_with = [&](int contrast, int highlight) {
+    const Pile pile(contrast, highlight);
+    set_player_output(gpu, pile, 1000.0);
+    GradeParams params = player_params(1000.0);
+    params.look_mixes = pile.mixes;
+    return chain_level(gpu, sdr_code_nits(255.0), params);
+  };
+  const double base = white_with(0, 0);
+  const double more_contrast = white_with(100, 0);  // 18 LUT
+  const double no_contrast = white_with(-100, 0);   // 4 LUT
+  const double more_highlight = white_with(0, 100);
+  const double no_highlight = white_with(0, -100);
+  const double again = white_with(0, 0);  // de retour aux 11 LUT
+  INFO("blanc " << base << " ; contraste 100 " << more_contrast << ", -100 " << no_contrast
+                << " ; éclats 100 " << more_highlight << ", -100 " << no_highlight);
+  CHECK(more_contrast > 1.1 * base);
+  CHECK(no_contrast < 0.85 * base);
+  CHECK(more_highlight > 1.1 * base);
+  CHECK(no_highlight < 0.85 * base);
+  CHECK(again == Approx(base).epsilon(0.005));
   gpu.grade->set_kwin_match(std::nullopt);
 }
 
@@ -116,7 +147,7 @@ TEST_CASE("chaîne HDR : le shader et son double en C++ rendent la même courbe 
   gpu.grade->set_kwin_match(std::nullopt);
 }
 
-TEST_CASE("chaîne HDR : les éclats gardent leur écart, le limiteur et le curseur agissent (décision 16)",
+TEST_CASE("chaîne HDR : les éclats montent avant la pile, au-dessus des surfaces, et le curseur agit",
           "[render][gpu][chain]") {
   Gpu gpu;
   require_device(gpu);
@@ -134,23 +165,16 @@ TEST_CASE("chaîne HDR : les éclats gardent leur écart, le limiteur et le curs
     return graded(gpu, halo(), p)[128];
   };
   const double dark = emitter(1.0, 20.0);
-  const double bright = emitter(1.0, 180.0);
   const double more = emitter(2.0, 20.0);
   const double less = emitter(0.5, 20.0);
-  INFO("surface " << surface << ", émetteur " << dark << " (scène claire " << bright << "), Éclats 200 % "
-                  << more << ", 50 % " << less);
-  // L'écart que la passe anime décide (0,53 diaphragme) arrive à l'écran : il n'en restait que 0,20.
-  CHECK(std::log2(dark / surface) > 0.45);
-  CHECK(std::log2(dark / surface) < 0.60);
-  // Le limiteur de la scène baisse les éclats sans les ramener aux surfaces (il ne changeait rien).
-  CHECK(bright < 0.92 * dark);
-  CHECK(bright > 1.15 * surface);
-  CHECK(bright <= kEmitterMinRoom * 0.5 * kScreen * 1.02);
-  // Le curseur Éclats : à 200 %, près du pic sans le passer ; à 50 %, près des surfaces.
-  CHECK(more > 1.3 * dark);
+  INFO("surface " << surface << ", émetteur " << dark << ", Éclats 200 % " << more << ", 50 % " << less);
+  // Avant la 0.11 : un émetteur blanc vers 800 nits sur un écran de 1 000, une surface blanche vers 690.
+  CHECK(dark > 1.1 * surface);
+  CHECK(dark > 750.0);
+  CHECK(more > 1.08 * dark);
   CHECK(more <= kScreen);
-  CHECK(less < 0.85 * dark);
-  CHECK(less >= surface);
+  CHECK(less < 0.95 * dark);
+  CHECK(less >= 0.95 * surface);
   // Le fond sombre du halo ne monte pas avec lui.
   GradeParams p = params;
   p.fs_apl = 20.0;
@@ -198,7 +222,7 @@ TEST_CASE("chaîne HDR : sans pile, la dernière passe ne compresse plus l'image
   // Le blanc sortait à 119 nits : il reste au relèvement des surfaces (233 nits).
   CHECK(chain_level(gpu, 203.0, params) == Approx(203.0 * kAnimeLift).epsilon(0.03));
   CHECK(chain_level(gpu, 40.0, params) == Approx(40.0 * kAnimeLift).epsilon(0.03));
-  // La passe coupée, l'image ne dépend plus de l'alpha : les émetteurs montent dans la passe anime.
+  // La passe coupée : les émetteurs montent dans la passe anime.
   gpu.grade->set_kwin_match(std::nullopt);
   CHECK_FALSE(gpu.grade->output());
   CHECK(graded(gpu, halo(), params)[128] > 1.3 * 195.0 * kAnimeLift);

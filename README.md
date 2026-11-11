@@ -36,8 +36,8 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
 - **HDR anime** : l'anime SDR passe en HDR10 avec un grade guidé plan par plan. Le rendu est lumineux : une
-  surface blanche sort à la moitié du pic de l'écran (500 nits sur un écran de 1 000 nits), et les éclats
-  (lumières, effets) montent au-dessus, jusqu'au pic. Le noir pur reste noir, les scènes de nuit gardent leurs
+  surface blanche sort vers 70 % du pic de l'écran (690 nits sur un écran de 1 000 nits), et les éclats
+  (lumières, effets) montent au-dessus, vers le pic. Le noir pur reste noir, les scènes de nuit gardent leurs
   détails. Sur un écran SDR, le même grade s'applique en SDR : les surfaces gardent leur niveau jusqu'à 90 % du
   blanc, le blanc sort à 95 % et les éclats prennent les derniers 5 %.
 - **Netteté** réglable après l'agrandissement, à halo limité.

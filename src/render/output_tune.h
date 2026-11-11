@@ -1,12 +1,13 @@
-// Ce que la sortie HDR du grade vise, sans GPU : le niveau du blanc des surfaces, le plafond des éclats et
-// le pied des noirs. Les shaders font le même calcul (anime-hdr-look.hook, anime-hdr-black.hook) ; ce
-// fichier en est le double en C++, pour régler leurs paramètres et pour les tests.
+// Ce que la sortie HDR du grade rend, sans GPU : le blanc des surfaces et le pied des noirs. Les shaders font
+// le même calcul (anime-hdr-look.hook, anime-hdr-black.hook) ; ce fichier en est le double en C++, pour
+// régler leurs paramètres et pour les tests.
 //
-// Décisions 16 et 17 du chantier C06 (docs/audits/PRIORITES.md, docs/hdr-anime.md) :
-// - 16 : un rendu HDR éclatant, mais les surfaces blanches redescendent pour que les vrais éclats gardent
-//   leur écart. Le blanc d'une surface sort à la moitié du pic de l'écran (il sortait vers 70 %), et la
-//   montée des émetteurs s'applique après la pile de LUT, sous le limiteur de la scène.
-// - 17 : vrai noir pour le noir pur (sous RVB 4 environ), pied adouci au-dessus pour garder les nuits.
+// La pile de LUT est réglée à l'œil sous la compression que KWin faisait sans métadonnées : la dernière passe
+// applique la même courbe, de 10 000 nits vers le pic de l'écran. Le blanc d'une surface sort donc là où la
+// pile le porte (vers 70 % du pic), et les curseurs de la pile le déplacent. Les éclats montent dans la passe
+// anime, avant la pile, qui les amplifie (docs/hdr-anime.md).
+// Décision 17 du chantier C06 : vrai noir pour le noir pur (sous RVB 4 environ), pied adouci au-dessus pour
+// garder les nuits.
 #pragma once
 
 #include <array>
@@ -16,16 +17,6 @@
 #include "render/grade_params.h"
 
 namespace ajp::render {
-
-// Le blanc d'une surface à l'écran : la moitié du pic. Sur un écran peu lumineux, la moitié du pic
-// aplatirait les surfaces claires (à 400 nits, RVB 192 à 255 tenaient dans 10 % de lumière) : le blanc ne
-// descend pas sous 300 nits, sans dépasser 70 % du pic.
-inline constexpr double kSurfaceWhiteShare = 0.5;
-inline constexpr double kSurfaceWhiteFloorNits = 300.0;
-inline constexpr double kSurfaceWhiteMaxShare = 0.7;
-double surface_white_target(double panel_peak);
-// Le plafond des éclats ne descend jamais sous ce multiple du blanc des surfaces (scène très claire).
-inline constexpr double kEmitterMinRoom = 1.25;
 
 // Nits d'un code PQ (ST 2084) et son inverse.
 namespace pq {
@@ -52,20 +43,16 @@ double look_neutral(const LookChain& chain, const LookToe& toe, double nits);
 // La compression de la dernière passe sur un gris : `content_nits` (signal PQ) rendu en nits affichés, pour
 // le blanc de référence `reference` du compositeur et le sommet `curve_peak` de la courbe (nits affichés).
 double compress_neutral(double content_nits, double reference, double curve_peak);
-// Le sommet de la courbe qui rend `content_nits` à `target` nits affichés. Borné : jamais sous la courbe de
-// Reinhard seule (la cible est trop basse), jamais au-dessus de l'identité (le niveau est déjà sous la
-// cible : rien n'est compressé).
-double curve_peak_for(double content_nits, double target, double reference);
-
-// Le niveau d'un émetteur à l'écran : la surface `m` (nits affichés) montée de `gain`, sous le plafond `top`.
-double emitter_level(double m, double gain, double top);
+// Le sommet de la courbe qui ne compresse rien (l'identité) pour le blanc de référence `reference`.
+double identity_curve_peak(double reference);
 
 // Les réglages de la dernière passe pour un grade, les LUT de sa pile (leurs intensités sont dans
 // params.look_mixes ; aucune : pas de pile) et l'écran.
+// Avec la pile, la courbe va vers le pic de l'écran ; sans elle, la dernière passe ne compresse pas une image
+// que la pile n'a pas montée (A41-04).
 struct OutputTune {
   double curve_peak = 1000.0;  // sommet de la courbe de compression, nits affichés
-  double white = 500.0;        // blanc d'une surface à l'écran, nits affichés
-  double top = 1000.0;         // plafond des éclats, nits affichés
+  double white = 700.0;        // blanc d'une surface à l'écran, nits affichés (le MaxFALL annoncé)
   friend bool operator==(const OutputTune&, const OutputTune&) = default;
 };
 OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const> luts, double reference,

@@ -41,9 +41,9 @@ TEST_CASE("Pré-analyse : sans grade, elle part quand l'interpolation lit les co
 }
 
 TEST_CASE("Limiteur de flashs : l'échelle du grade suit son pic", "[app][shots]") {
-  CHECK(flash_gain_of(1000.0) == Catch::Approx(496.0 / 203.0));
-  CHECK(flash_gain_of(400.0) == Catch::Approx(278.0 / 203.0));
-  CHECK(flash_gain_of(2000.0) == Catch::Approx(992.0 / 203.0));
+  CHECK(flash_gain_of(1000.0) == Catch::Approx(690.0 / 203.0));
+  CHECK(flash_gain_of(400.0) == Catch::Approx(320.0 / 203.0));
+  CHECK(flash_gain_of(2000.0) == Catch::Approx(1304.0 / 203.0));
   CHECK(flash_gain_of(100.0) == 1.0);  // jamais sous la source
 }
 
