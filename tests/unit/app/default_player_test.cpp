@@ -55,7 +55,7 @@ TEST_CASE("Lecteur par défaut : la fiche porte l'identifiant de l'application e
   const auto plain = desktop_entry("/opt/ajp-linux-x64/ajp");
   REQUIRE(plain);
   CHECK(line_of(*plain, "StartupWMClass") == "io.github.ta2b.ajp");  // l'app_id de la fenêtre
-  CHECK(line_of(*plain, "Icon") == "video-x-generic");  // pas d'icône installée : la générique
+  CHECK(line_of(*plain, "Icon") == "video-x-generic");               // pas d'icône installée : la générique
   const auto with_icon = desktop_entry("/opt/ajp-linux-x64/ajp", true);
   REQUIRE(with_icon);
   CHECK(line_of(*with_icon, "Icon") == "io.github.ta2b.ajp");
@@ -332,10 +332,14 @@ TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[epis
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-growing";
   std::filesystem::create_directories(dir);
   const std::filesystem::path file = dir / "ep01.mkv";
-  { std::ofstream(file, std::ios::binary) << "1234"; }
+  {
+    std::ofstream(file, std::ios::binary) << "1234";
+  }
   const ajp::app::play::GrowingFile opened = ajp::app::play::GrowingFile::of(file);
   CHECK_FALSE(opened.grew(file, std::chrono::milliseconds(200)));  // écrit à l'instant, mais n'a pas grandi
-  { std::ofstream(file, std::ios::binary | std::ios::app) << "5678"; }
+  {
+    std::ofstream(file, std::ios::binary | std::ios::app) << "5678";
+  }
   CHECK(opened.grew(file));
   std::filesystem::remove_all(dir);
 }
@@ -356,8 +360,12 @@ TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp,
   CHECK(ajp::app::play::cache_data({}, heavy) == heavy);
   for (const char* name : {"engines", "modeles", "plans", "backends", "models", "luts", "downloads"})
     fs::create_directories(heavy / name);
-  { std::ofstream(heavy / "shaders.cache") << "cache"; }
-  { std::ofstream(heavy / "engines" / "span.plan") << "plan"; }
+  {
+    std::ofstream(heavy / "shaders.cache") << "cache";
+  }
+  {
+    std::ofstream(heavy / "engines" / "span.plan") << "plan";
+  }
   const int moved = ajp::app::play::move_cache_data(heavy, cache);
 #ifdef __linux__
   CHECK(moved == 4);

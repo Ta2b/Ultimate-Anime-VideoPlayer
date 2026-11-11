@@ -181,7 +181,7 @@ TEST_CASE("la taille de travail de la chaîne se calcule une seule fois (A08-15)
   // L'anneau et l'étage reprenaient work_size sans cette exception et réduisaient à 720p.
   CHECK(chain_work_size(true, false, 1920, 1080, 720) == WorkSize{1920, 1080});
   CHECK(chain_work_size(true, true, 1920, 1080, 720) == WorkSize{1280, 720});  // avec : réduite, puis SPAN
-  CHECK(chain_work_size(true, false, 854, 480, 720) == WorkSize{854, 480});  // SPAN tourne, rien à réduire
+  CHECK(chain_work_size(true, false, 854, 480, 720) == WorkSize{854, 480});    // SPAN tourne, rien à réduire
   CHECK(chain_work_size(false, false, 1920, 1080, 720) ==
         WorkSize{1280, 720});  // sans SPAN : réduction voulue
   CHECK(chain_work_size(true, false, 1920, 1080, 0) == WorkSize{1920, 1080});

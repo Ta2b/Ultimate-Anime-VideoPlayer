@@ -30,7 +30,7 @@ std::string_view title(WizardStep step);  // « Bienvenue », « Langues », « 
 
 // Ce que la machine permet : les écrans sans objet sont sautés.
 struct WizardFacts {
-  bool engine_choice = true;  // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
+  bool engine_choice = true;     // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
   bool updates_managed = false;  // paquet de distribution, Flatpak : mis à jour ailleurs (écran grisé, gardé)
 };
 
