@@ -3,9 +3,20 @@
 // deux lectures égales de suite.
 #pragma once
 
+#include <cstdint>
 #include <optional>
 
 namespace ajp::app::play {
+
+// NvAPI_Disp_GetVRRInfo (Windows, B11-02) : bit 0 bIsVRREnabled (G-SYNC permis sur cet écran), bit 4
+// bIsDisplayInVRRMode (engagé en ce moment) dans les SDK récents. Un pilote qui ne pose jamais le bit 4
+// ferait lire « non armé » pour toujours : il n'est exigé qu'une fois vu posé dans ce processus. Pur.
+inline constexpr std::uint32_t kNvVrrEnabled = 1U << 0U;
+inline constexpr std::uint32_t kNvVrrInMode = 1U << 4U;
+constexpr bool nv_vrr_armed(std::uint32_t flags, bool in_mode_seen) {
+  if ((flags & kNvVrrEnabled) == 0) return false;
+  return (flags & kNvVrrInMode) != 0 || !in_mode_seen;
+}
 
 class VrrWatch {
  public:
