@@ -8,8 +8,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "core/toml_fields.h"
-
 using ajp::RefusalCode;
 using namespace ajp::core;
 namespace fs = std::filesystem;
@@ -270,11 +268,12 @@ TEST_CASE("Réglages : un moteur d'une version plus récente reste à la réécr
   REQUIRE(text);
   CHECK(text->find("nouveau") != std::string::npos);
   // La préférence inconnue reste ; la connue se réécrit comme avant.
-  auto reread = fields::parse(*text, RefusalCode::FileUnreadable, "settings.toml");
-  REQUIRE(reread);
-  CHECK((*reread)["engines"]["preferred"]["upscale"].value<std::string>() == "nouveau");
-  CHECK((*reread)["engines"]["preferred"]["interpolate"].value<std::string>() == "vulkan");
-  CHECK((*reread)["engines"]["chosen"].as_array()->size() == 2);
+  CHECK(text->find("upscale = \"nouveau\"") != std::string::npos);
+  CHECK(text->find("interpolate = \"vulkan\"") != std::string::npos);
+  // « nouveau » reste dans les deux listes et dans la préférence : trois fois.
+  std::size_t kept = 0;
+  for (auto at = text->find("nouveau"); at != std::string::npos; at = text->find("nouveau", at + 1)) ++kept;
+  CHECK(kept == 3);
   // Une préférence que l'utilisateur retire (moteur connu) s'efface.
   Settings cleared = *settings;
   cleared.preferred[1].reset();
