@@ -14,48 +14,12 @@ Les PPM viennent de `ajp play … --snapshot=FICHIER.pq.ppm --snapshot-at=S` sur
 import argparse
 import json
 import sys
+from pathlib import Path
 
 import numpy as np
 
-
-def read_ppm16(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    fields = []
-    i = 0
-    while len(fields) < 4:
-        while data[i:i + 1].isspace():
-            i += 1
-        if data[i:i + 1] == b"#":
-            while data[i:i + 1] not in (b"\n", b""):
-                i += 1
-            continue
-        j = i
-        while not data[j:j + 1].isspace():
-            j += 1
-        fields.append(data[i:j])
-        i = j
-    i += 1
-    if fields[0] != b"P6" or int(fields[3]) != 65535:
-        raise ValueError(f"{path} : PPM 16 bits (P6, 65535) attendu")
-    w, h = int(fields[1]), int(fields[2])
-    pixels = np.frombuffer(data, dtype=">u2", count=w * h * 3, offset=i)
-    return pixels.reshape(h, w, 3).astype(np.float64) / 65535.0
-
-
-def pq_to_linear(e):
-    """Codes PQ (0 à 1) → lumière / 10 000 nits."""
-    m1, m2 = 0.1593017578125, 78.84375
-    c1, c2, c3 = 0.8359375, 18.8515625, 18.6875
-    p = np.power(np.clip(e, 0.0, 1.0), 1.0 / m2)
-    return np.power(np.maximum(p - c1, 0.0) / (c2 - c3 * p), 1.0 / m1)
-
-
-def linear_to_pq(y):
-    m1, m2 = 0.1593017578125, 78.84375
-    c1, c2, c3 = 0.8359375, 18.8515625, 18.6875
-    q = np.power(np.clip(y, 0.0, 1.0), m1)
-    return np.power((c1 + c2 * q) / (1.0 + c3 * q), m2)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
+from hdr import linear_to_pq, pq_to_linear, read_ppm16  # noqa: E402,F401  (check_hdr.py les reprend d'ici)
 
 
 RGB_TO_LMS = np.array([[1688, 2146, 262], [683, 2951, 462], [99, 309, 3688]]) / 4096.0

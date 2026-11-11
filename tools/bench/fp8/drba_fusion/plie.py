@@ -18,11 +18,7 @@ for n in g.node:
     if n.op_type == "Shape" and n.input[0] in shapes and all(shapes[n.input[0]]):
         const[n.output[0]] = np.array(shapes[n.input[0]], np.int64); folded += 1; continue
     if n.input and all((i in const) or i=="" for i in n.input) and n.op_type not in ("Conv",):
-        try:
-            r = ReferenceEvaluator(helper.make_model(helper.make_graph([n], "t", [], []), opset_imports=m.opset_import) if False else None) if False else None
-        except Exception: r=None
-        # evaluation par un mini modele
-        ins = [helper.make_tensor_value_info(i, onnx.TensorProto.FLOAT, None) for i in []]
+        # évaluation par un mini modèle
         mm = helper.make_model(helper.make_graph([n], "t", [helper.make_tensor_value_info(i, numpy_helper.from_array(const[i]).data_type, list(const[i].shape)) for i in n.input if i],
               [helper.make_tensor_value_info(o, 0, None) for o in n.output]), opset_imports=m.opset_import)
         try:
