@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "app/play/i18n.h"
+#include "app/play/machine_calibration.h"
 #include "app/play/panel_style.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"

@@ -9,6 +9,7 @@
 #include "app/play/bench_events.h"
 #include "app/play/engine_switch.h"
 #include "app/play/i18n.h"
+#include "app/play/machine_calibration.h"
 #include "app/play/paths.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
