@@ -1,10 +1,13 @@
 #include "app/play/span_derive.h"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "app/play/i18n.h"
@@ -28,6 +31,13 @@ std::string db(double value) {
 
 std::string ratio(double value) {
   std::string text = std::format("{:.4f}", value);
+  std::ranges::replace(text, '.', ',');
+  return text;
+}
+
+// « 1,18 » : un rapport de temps, deux décimales.
+std::string times(double value) {
+  std::string text = std::format("{:.2f}", value);
   std::ranges::replace(text, '.', ',');
   return text;
 }
@@ -73,6 +83,72 @@ std::vector<gpu::span_fp8::ImageScore> scores_of(const std::vector<gpu::SpanFp8I
                    .error_p999 = score.error_p999,
                    .dark_error_p999 = score.dark_error_p999});
   return out;
+}
+
+// B02-01 : le temps du SPAN FP16 de TensorRT à la taille jugée, et le gain des noyaux FP8 sur lui. Rien quand
+// la qualité refuse déjà, ou sans mesure possible (plan.time_fp16 vide). Un gain sous kMinSpeedup refuse le
+// paquet : sa perte de qualité ne s'achèterait par rien.
+std::expected<void, Refusal> judge_speed(const SpanDerivePlan& plan, double kernels_ms, int width, int height,
+                                         SpanDeriveProgress& progress, const std::stop_token& stop,
+                                         SpanDeriveReport& report) {
+  if (!report.verdict.passed || !plan.time_fp16) return {};
+  progress.set(0.95F, i18n::tr("TensorRT FP16 timing"));
+  gpu::Progress timing{.report = {}, .stop = stop};
+  auto trt = plan.time_fp16(width, height, timing);
+  if (!trt) return std::unexpected(std::move(trt.error()));
+  report.trt_fp16_ms = *trt;
+  report.speedup = kernels_ms > 0.0 ? *trt / kernels_ms : 0.0;
+  report.too_slow = report.speedup < gpu::span_fp8::kMinSpeedup;
+  if (report.too_slow) report.verdict.passed = false;
+  return {};
+}
+
+// Ce que le gain mesuré dit à l'utilisateur : rien sans mesure ; le refus quand il manque.
+std::string speed_text(const SpanDeriveReport& report, double kernels_ms) {
+  if (report.trt_fp16_ms <= 0.0) return {};
+  if (report.too_slow)
+    return i18n::tr_format(
+        "Performance mode rejected: FP8 kernels {} ms against {} ms for TensorRT FP16 ({}× as fast, at least "
+        "{}× is required). Playback stays on TensorRT FP16.",
+        db(kernels_ms), db(report.trt_fp16_ms), times(report.speedup), times(gpu::span_fp8::kMinSpeedup));
+  return " " + i18n::tr_format(
+                   "TensorRT FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the "
+                   "quality given above.",
+                   db(report.trt_fp16_ms), times(report.speedup));
+}
+
+// Étape 3.5a : la variante à accumulateur f16 hors blocs, si elle passe la porte et perd au plus 0,3 dB de
+// PSNR moyen ; c'est alors elle que le paquet, le reçu et le temps décrivent. Rend le temps de la variante
+// gardée.
+double keep_variant(const gpu::SpanFp8Derivation& derived, SpanDeriveReport& report) {
+  report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived.scores), scores_of(derived.hard_scores));
+  report.passed = report.verdict.passed;
+  report.acc16 = false;
+  if (derived.scores_acc16.empty()) return derived.kernels_ms;
+  const gpu::span_fp8::Verdict verdict16 =
+      gpu::span_fp8::judge_hardened(scores_of(derived.scores_acc16), scores_of(derived.hard_scores_acc16));
+  if (!gpu::span_fp8::keep_acc16(report.verdict, verdict16)) return derived.kernels_ms;
+  report.acc16 = true;
+  report.verdict = verdict16;
+  return derived.kernels_ms_acc16;
+}
+
+// Ce que la dérivation dit à l'utilisateur : prêt avec ses mesures et son gain, ou pourquoi elle refuse.
+std::string derived_text(const SpanDeriveReport& report, double kernels_ms) {
+  if (report.too_slow) return speed_text(report, kernels_ms);
+  const std::string scores_text = verdict_text(report.verdict);
+  if (report.passed)
+    return i18n::tr_format(
+               "Performance mode ready: {} ({} calibration frames, {} validation frames at {}, kernels {} "
+               "ms). It is used the next time a video opens.",
+               scores_text, report.calibration_images, report.validation_images, report.size,
+               db(kernels_ms)) +
+           speed_text(report, kernels_ms);
+  return i18n::tr_format(
+      "Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays on TensorRT "
+      "FP16.",
+      scores_text, gpu::span_fp8::kMinPsnrMeanDb, gpu::span_fp8::kMinPsnrWorstDb,
+      ratio(gpu::span_fp8::kMinSsimWorst));
 }
 
 void add_hard_cases(gpu::SpanFp8Request& request) {
@@ -135,22 +211,11 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   const int width = request.validation.front().width;
   const int height = request.validation.front().height;
   report.size = std::format("{}x{}", width, height);
-  report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived->scores), scores_of(derived->hard_scores));
+  const double kernels_ms = keep_variant(*derived, report);
+  const bool acc16 = report.acc16;
+  if (auto ok = judge_speed(plan, kernels_ms, width, height, progress, stop, report); !ok)
+    return std::unexpected(std::move(ok.error()));
   report.passed = report.verdict.passed;
-  // Étape 3.5a : la variante à accumulateur f16 hors blocs, si elle passe la porte et perd au plus 0,3 dB de
-  // PSNR moyen ; c'est alors elle que le paquet, le reçu et le temps décrivent.
-  bool acc16 = false;
-  double kernels_ms = derived->kernels_ms;
-  if (!derived->scores_acc16.empty()) {
-    const gpu::span_fp8::Verdict verdict16 = gpu::span_fp8::judge_hardened(
-        scores_of(derived->scores_acc16), scores_of(derived->hard_scores_acc16));
-    if (gpu::span_fp8::keep_acc16(report.verdict, verdict16)) {
-      acc16 = true;
-      report.verdict = verdict16;
-      kernels_ms = derived->kernels_ms_acc16;
-    }
-  }
-  report.acc16 = acc16;
 
   // Le paquet jugé est celui dont les échelles viennent de cette calibration, et pas un autre.
   gpu::span_fp8::Package package = std::move(*weights);
@@ -169,6 +234,9 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   receipt.model_sha256 = report.passed ? package_sha : std::string();
   receipt.quantizer = plan.quantizer;
   receipt.kernels_ms = kernels_ms;
+  receipt.trt_fp16_ms = report.trt_fp16_ms;
+  receipt.speedup = report.speedup;
+  receipt.timed_during_playback = plan.during_playback;
   receipt.calibration_images = report.calibration_images;
   receipt.calibration_crops = report.calibration_images;  // des images entières, pas des découpes de 576²
   receipt.calibration_crop = width;
@@ -194,19 +262,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
     return std::unexpected(std::move(ok.error()));
   if (!report.passed) report.package.clear();
 
-  const std::string scores_text = verdict_text(report.verdict);
-  if (report.passed) {
-    report.text = i18n::tr_format(
-        "Performance mode ready: {} ({} calibration frames, {} validation frames at {}, kernels {} ms). It "
-        "is used the next time a video opens.",
-        scores_text, report.calibration_images, report.validation_images, report.size, db(kernels_ms));
-  } else {
-    report.text = i18n::tr_format(
-        "Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays on TensorRT "
-        "FP16.",
-        scores_text, gpu::span_fp8::kMinPsnrMeanDb, gpu::span_fp8::kMinPsnrWorstDb,
-        ratio(gpu::span_fp8::kMinSsimWorst));
-  }
+  report.text = derived_text(report, kernels_ms);
   progress.set(1.0F, i18n::tr("done"));
   return report;
 }
@@ -265,6 +321,10 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   report.validation_images = static_cast<int>(request.validation.size());
   report.size = std::format("{}x{}", request.validation.front().width, request.validation.front().height);
   report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived->scores), scores_of(derived->hard_scores));
+  if (auto ok = judge_speed(plan, derived->kernels_ms, request.validation.front().width,
+                            request.validation.front().height, progress, stop, report);
+      !ok)
+    return std::unexpected(std::move(ok.error()));
   report.passed = report.verdict.passed;
   const auto drop = [&](std::vector<std::string>& from) { std::erase(from, report.size); };
   drop(sizes->validated);
@@ -278,22 +338,35 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   if (auto ok = commit_derivation(report.package, report.receipt, bytes, text, true); !ok)
     return std::unexpected(std::move(ok.error()));
   const std::string scores_text = verdict_text(report.verdict);
-  report.text = report.passed
-                    ? i18n::tr_format("Performance mode validated at {}: {}.", report.size, scores_text)
-                    : i18n::tr_format(
-                          "Performance mode rejected at {}: {}. Playback stays on TensorRT FP16 at this "
-                          "size.",
-                          report.size, scores_text);
+  if (report.too_slow)
+    report.text = speed_text(report, derived->kernels_ms);
+  else
+    report.text = report.passed
+                      ? i18n::tr_format("Performance mode validated at {}: {}.", report.size, scores_text) +
+                            speed_text(report, derived->kernels_ms)
+                      : i18n::tr_format(
+                            "Performance mode rejected at {}: {}. Playback stays on TensorRT FP16 at this "
+                            "size.",
+                            report.size, scores_text);
   if (!report.passed) report.package.clear();
   progress.set(1.0F, i18n::tr("done"));
   return report;
+}
+
+void pause_for_playback(std::string_view stage, const std::stop_token& stop) {
+  // Le backend rend compte après chaque image de calibration ou de validation : la lecture reprend la carte
+  // le temps d'une pause, interrompue au plus tard 10 ms après une demande d'arrêt.
+  if (stage != "calibration" && stage != "validation") return;
+  const auto until = std::chrono::steady_clock::now() + kBackgroundPause;
+  while (!stop.stop_requested() && std::chrono::steady_clock::now() < until)
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
 
 SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init,
                               bool supported, const std::filesystem::path& model,
                               const std::filesystem::path& models_dir, const std::filesystem::path& video,
                               const std::string& unavailable, const media::StillReduce& reduce,
-                              const SpanFp8Context& context, bool automatic) {
+                              const SpanFp8Context& context, bool automatic, bool during_playback) {
   SpanPrepare prepare;
   if (!supported) {
     prepare.note =
@@ -327,11 +400,17 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     return prepare;
   }
   prepare.offered = true;
-  prepare.run = [library, init, model, models_dir, video, reduce, validate, automatic](
+  prepare.run = [library, init, model, models_dir, video, reduce, validate, automatic, during_playback](
                     SpanDeriveProgress& progress,
                     const std::stop_token& stop) -> std::expected<std::string, Refusal> {
     SpanDerivePlan plan{.model = model, .models_dir = models_dir};
     if (automatic) plan.min_free_ratio = kAutoMinFreeRatio;
+    plan.during_playback = during_playback;
+    plan.time_fp16 = [&](int width, int height, gpu::Progress& timing) -> std::expected<double, Refusal> {
+      auto backend = BackendLibrary::create(library, init);
+      if (!backend) return std::unexpected(std::move(backend.error()));
+      return time_span_fp16(**backend, model, width, height, timing);
+    };
     const SpanStillsSource stills = [&](const std::stop_token& token,
                                         const std::function<void(float)>& report) {
       return media::extract_stills(video, media::StillsSpec{.reduce = reduce}, token, report);
@@ -340,7 +419,14 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
       auto backend = BackendLibrary::create(library, init);
       if (!backend)
         return std::expected<gpu::SpanFp8Derivation, Refusal>(std::unexpected(std::move(backend.error())));
-      return (*backend)->derive_span_fp8(request, backend_progress);
+      if (!during_playback) return (*backend)->derive_span_fp8(request, backend_progress);
+      gpu::Progress paced{.report =
+                              [&](float fraction, const std::string& stage) {
+                                if (backend_progress.report) backend_progress.report(fraction, stage);
+                                pause_for_playback(stage, backend_progress.stop);
+                              },
+                          .stop = backend_progress.stop};
+      return (*backend)->derive_span_fp8(request, paced);
     };
     auto report = validate ? validate_span_size(plan, stills, deriver, progress, stop)
                            : derive_span_fp8(plan, stills, deriver, progress, stop);

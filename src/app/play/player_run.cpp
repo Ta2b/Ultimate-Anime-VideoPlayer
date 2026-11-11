@@ -311,7 +311,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
                                .width = work.width,
                                .height = work.height},
-                settings.preset != Preset::Custom)
+                settings.preset != Preset::Custom, true)
           : SpanPrepare{};
   p.ui.set_tracks((*pipeline)->tracks());
   SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);

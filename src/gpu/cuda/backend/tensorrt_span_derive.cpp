@@ -4,10 +4,12 @@
 //
 //   1. La référence FP16 (span_fp8_ref.h) passe les images de calibration et relève le maximum de |valeur|
 //   des
-//      25 tenseurs que le réseau FP8 quantifie ; échelle = maximum / 448, comme l'outil Python.
+//      25 tenseurs que le réseau FP8 quantifie ; échelle = maximum × 1,25 / 448 (gpu/span_fp8/derive.h :
+//      scales_from_peaks, marge de tête B02-02), comme l'outil Python.
 //   2. Le réseau FP8 (span_fp8_net.h), à ces échelles, passe les images de validation, mises de côté ; sa
 //      sortie est jugée contre celle de la même référence FP16 (PSNR, SSIM de gpu/span_fp8/metrics.h).
-//   3. Le temps du réseau FP8 sur cette taille est mesuré.
+//   3. Le temps du réseau FP8 sur cette taille est mesuré. Le lecteur le compare ensuite au SPAN FP16 de
+//      TensorRT sur la même carte (app/play/span_derive.h : time_span_fp16, B02-01).
 //   La variante à accumulateur f16 hors blocs (conv_cat et to_pixel, étape 3.5a) passe les mêmes images et la
 //   même mesure ; l'application la garde si sa porte passe et que le PSNR moyen perd ≤ 0,3 dB.
 //

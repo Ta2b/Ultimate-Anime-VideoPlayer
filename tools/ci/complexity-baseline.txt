@@ -25,8 +25,7 @@ src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	82	193
 src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	146
 src/app/play/settings_system.cpp	ajp::app::play::updates_page	26	90
 src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	56	223
-src/app/play/span_derive.cpp	ajp::app::play::derive_span_fp8	18	126
-src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	30	87
+src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	26	70
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	38	104
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	163	246
