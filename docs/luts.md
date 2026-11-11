@@ -10,10 +10,9 @@ l'image s'en écartait jusqu'à 12,7 codes PQ sur 1 023 (7,5 avec 129 points ; m
 look ne change plus que des intensités, sans rien recalculer ; les LUT ne sont relues que si leur nombre
 change. `--bake-looks` écrit toujours cette table de 65 points, pour un autre lecteur.
 
-Une correction entoure la pile depuis novembre 2026 (`docs/hdr-anime.md`, « Niveaux à l'écran ») : sous RVB 48,
-un pied adouci remplace le bas de la LUT de base, qui rendait noir tout ce qui était sous RVB 16. La dernière
-passe ramène le blanc que la pile porte vers 6 300 nits sous la courbe de KWin, vers 70 % du pic de l'écran :
-les curseurs de contraste et d'éclats le déplacent.
+Deux corrections entourent la pile depuis novembre 2026 (`docs/hdr-anime.md`, « Niveaux à l'écran ») : sous
+RVB 48, un pied adouci remplace le bas de la LUT de base, qui rendait noir tout ce qui était sous RVB 16 ; et
+la dernière passe ramène le blanc que la pile porte vers 6 300 nits à la moitié du pic de l'écran.
 
 ## La pile
 Quatre fichiers de `data/luts/`, livrés dans un dossier `luts/` à côté du lecteur (Contents/Resources dans

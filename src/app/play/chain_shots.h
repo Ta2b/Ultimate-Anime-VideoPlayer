@@ -101,11 +101,11 @@ struct ShotScene {
   bool planned = false;
 };
 // Ce que le grade HDR anime fait à la lumière d'une source SDR, pour le limiteur de flashs : le blanc de ses
-// surfaces (320 nits sous un pic de 400, 690 sous 1 000, 1 304 sous 2 000 : docs/hdr-anime.md) sur celui de
-// la source, 203 nits.
+// surfaces (278 nits sous un pic de 400, 496 sous 1 000, 992 sous 2 000 : docs/hdr-anime.md) sur celui de la
+// source, 203 nits.
 inline constexpr double flash_gain_of(double peak_nits) {
   const double white =
-      peak_nits <= 1000.0 ? 320.0 + (peak_nits - 400.0) * (690.0 - 320.0) / 600.0 : 0.652 * peak_nits;
+      peak_nits <= 1000.0 ? 278.0 + (peak_nits - 400.0) * (496.0 - 278.0) / 600.0 : 0.496 * peak_nits;
   return (white > 203.0 ? white : 203.0) / 203.0;
 }
 // Le numéro d'une scène vue à l'ingestion : jamais celui d'un plan.

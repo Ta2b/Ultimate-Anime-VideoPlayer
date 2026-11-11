@@ -40,15 +40,15 @@ class Grade {
   // cadence n'est pas un réglage et change sans recharger le grade.
   void set_video_fps(double fps);
   // --hdr-metadata : la compression vers l'écran, faite par le grade (dernière passe), pour la luminosité SDR
-  // de KDE `reference` et le pic `peak` de l'écran (nits affichés) ; nullopt : passe sautée
-  // (render/output_tune.h).
+  // de KDE `reference` et le pic `peak` de l'écran (nits affichés) ; nullopt : passe sautée. Avec elle, les
+  // éclats s'appliquent en dernier, après la pile de LUT (render/output_tune.h).
   struct KwinMatch {
     double reference = 200.0;
     double peak = 1000.0;
     friend bool operator==(const KwinMatch&, const KwinMatch&) = default;
   };
   void set_kwin_match(std::optional<KwinMatch> match);
-  // Ce que la dernière passe rend (sommet de sa courbe, blanc des surfaces), en nits affichés ; rien quand
+  // Ce que la dernière passe vise (blanc des surfaces, plafond des éclats), en nits affichés ; rien quand
   // elle est sautée.
   std::optional<OutputTune> output() const;
 

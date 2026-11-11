@@ -28,40 +28,21 @@ inline CubeLut shipped_lut(const std::string& name) {
   return *lut;
 }
 
-// La pile du look HDR anime, comme app/play/look_catalog.cpp la construit : la base, 3/7 des LUT de
-// contraste, les éclats, « skin fix », puis 4/7 du contraste. Les curseurs « LUT contrast intensity » et «
-// LUT highlight intensity » (-100 à 100) donnent 7 × (1 + c / 100) LUT de contraste et 1,5 × (1 + h / 100)
-// d'éclats, chaque unité entière dans son emplacement et le reste à son intensité. Curseurs à 0 : 11 LUT, la
-// sixième à 50 %.
+// La pile par défaut du look HDR anime (app/play/look_catalog.cpp, curseurs à 0) : la base, 3 LUT de
+// contraste, 1,5 LUT d'éclats, « skin fix », puis 4 LUT de contraste, chacune dans son emplacement.
 inline constexpr std::array<double, 11> kDefaultMixes{1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0};
 struct Pile {
   CubeLut base = shipped_lut("HDR grading base ver.9.0 33 point.cube");
   CubeLut contrast = shipped_lut("HDR-contrast-Enhancement-L.cube");
   CubeLut highlight = shipped_lut("Highlight-Enhancement-L.cube");
   CubeLut skin = shipped_lut("skin fix.cube");
-  std::array<const CubeLut*, kLookSlots> luts{};
+  std::array<const CubeLut*, kLookSlots> luts{&base, &contrast, &contrast, &contrast, &highlight, &highlight,
+                                              &skin, &contrast, &contrast, &contrast, &contrast};
   std::array<double, kLookSlots> mixes{};
-  std::size_t count = 0;
-  explicit Pile(int contrast_slider = 0, int highlight_slider = 0) {
-    const double c = 7.0 * (1.0 + contrast_slider / 100.0);
-    const double h = 1.5 * (1.0 + highlight_slider / 100.0);
-    add(&base, 1.0);
-    add(&contrast, c * 3.0 / 7.0);
-    add(&highlight, h);
-    add(&skin, 1.0);
-    add(&contrast, c * 4.0 / 7.0);
-  }
+  Pile() { std::ranges::copy(kDefaultMixes, mixes.begin()); }
   Pile(const Pile&) = delete;
   Pile& operator=(const Pile&) = delete;
   LookChain chain() const { return LookChain{.luts = luts, .mixes = mixes}; }
-
- private:
-  void add(const CubeLut* lut, double units) {
-    for (; units > 1e-9 && count < kLookSlots; units -= 1.0, ++count) {
-      luts.at(count) = lut;
-      mixes.at(count) = std::min(units, 1.0);
-    }
-  }
 };
 
 // Le grade que le lecteur pose sur une sortie HDR10 de `peak` nits pour une source SDR (route native,
