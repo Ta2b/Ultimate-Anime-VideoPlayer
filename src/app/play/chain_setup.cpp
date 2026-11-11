@@ -494,10 +494,10 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     // créée.
     bool motion =
         settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
-    // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
-    // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
-    const bool smaller = motion && c.rife_size.height < c.work.height;
-    const WorkSize at = smaller ? c.rife_size : c.work;
+    // D4 et A03-19 : variante mouvement estimée jusqu'à 1080 lignes (drba_motion_size), image au travail.
+    const WorkSize drba_at = drba_motion_size(c.work, video.width, video.height, p.options.rife_image);
+    const bool smaller = motion && drba_at.height < c.work.height;
+    const WorkSize at = smaller ? drba_at : c.work;
     auto loaded =
         prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
                             settings.motion_precision, try_fused ? &fused : nullptr, &motion, smaller);

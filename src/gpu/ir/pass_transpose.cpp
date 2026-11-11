@@ -5,7 +5,8 @@
 // s² × cout canaux rangent les phases dans l'ordre DCR, en donne toutes les valeurs. Une Conv sait
 // passer par les matrices coopératives, pas la ConvTranspose. Un DepthToSpace lecteur unique de la
 // sortie (le PixelShuffle qui suit la dernière couche des blocs de RIFE) se fond dans le premier :
-// les canaux de la Conv sont rangés pour un seul DepthToSpace de bloc s × b.
+// les canaux de la Conv sont rangés pour un seul DepthToSpace de bloc s × b, en une Conv comme en
+// une Conv par phase.
 #include <algorithm>
 #include <iterator>
 #include <limits>
@@ -65,30 +66,79 @@ TensorId add_named(Graph& graph, Tensor tensor) {
   return add_tensor(graph, std::move(tensor));
 }
 
+// Le DepthToSpace de bloc b qui lit seul la sortie de la ConvTranspose, à fondre ; b = 1 : aucun.
+struct Shuffle {
+  std::int64_t b = 1;
+  BlockMode mode = BlockMode::Dcr;
+  std::optional<std::size_t> node;
+};
+
+// Une ligne de sorties d'une phase : ses décalages, et les canaux de la ConvTranspose qu'elle rend.
+struct PhasePart {
+  std::int64_t ry = 0;
+  std::int64_t rx = 0;
+  Offsets oy;
+  Offsets ox;
+  std::vector<std::int64_t> channels;
+};
+
+// Les poids et le biais de la Conv d'une part : les seules prises de sa phase, pour ses seuls canaux.
+std::pair<Value, Value> part_weights(const Tensor& w, const std::vector<float>& bias, const Quad& p,
+                                     std::int64_t s, const PhasePart& part) {
+  const std::int64_t cin = w.dims[0];
+  const std::int64_t cout = w.dims[1];
+  const std::int64_t kh = w.dims[2];
+  const std::int64_t kw = w.dims[3];
+  const std::int64_t ky_n = part.oy.hi - part.oy.lo + 1;
+  const std::int64_t kx_n = part.ox.hi - part.ox.lo + 1;
+  const auto count = static_cast<std::int64_t>(part.channels.size());
+  Value wv = make_value(w.value.type, Dims{count, cin, ky_n, kx_n});
+  Value bv = make_value(w.value.type, Dims{count});
+  for (std::int64_t ch = 0; ch < count; ++ch) {
+    const std::int64_t co = part.channels[static_cast<std::size_t>(ch)];
+    if (!bias.empty()) bv.f[static_cast<std::size_t>(ch)] = bias[static_cast<std::size_t>(co)];
+    for (std::int64_t dy = part.oy.lo; dy <= part.oy.hi; ++dy) {
+      const std::int64_t yy = part.ry + p[0] - (s * dy);
+      if (yy < 0 || yy >= kh) continue;
+      for (std::int64_t dx = part.ox.lo; dx <= part.ox.hi; ++dx) {
+        const std::int64_t xx = part.rx + p[1] - (s * dx);
+        if (xx < 0 || xx >= kw) continue;
+        for (std::int64_t ci = 0; ci < cin; ++ci) {
+          const auto to = static_cast<std::size_t>((((ch * cin + ci) * ky_n) + (dy - part.oy.lo)) * kx_n +
+                                                   (dx - part.ox.lo));
+          const auto from = static_cast<std::size_t>((((ci * cout + co) * kh) + yy) * kw + xx);
+          wv.f[to] = w.value.f[from];
+        }
+      }
+    }
+  }
+  return {std::move(wv), std::move(bv)};
+}
+
 // Une Conv par phase (ry, rx), sans prise nulle : noyau des seuls décalages de la phase, cout
 // canaux ; puis Concat dans l'ordre DCR et DepthToSpace de bloc s vers la sortie de la
-// ConvTranspose. Faux, rien de touché, si une phase ne lit rien, si ses marges seraient négatives
-// ou si les prises économisées n'atteignent pas 40 %.
+// ConvTranspose. Avec un DepthToSpace de bloc b à fondre (A44-12), chaque phase est coupée en b
+// Conv, une par ligne i du bloc, de cout / b canaux rangés (j, c) : concaténées dans l'ordre
+// (ry, i, rx), elles donnent les canaux d'un seul DepthToSpace DCR de bloc s × b, les mêmes
+// valeurs par les mêmes sommes. Faux, rien de touché, si une phase ne lit rien, si ses marges
+// seraient négatives ou si les prises économisées n'atteignent pas 40 %.
 bool rewrite_phases(Graph& graph, std::size_t index, std::int64_t max_channels, const Offsets& uy,
-                    const Offsets& ux) {
+                    const Offsets& ux, const Shuffle& shuffle) {
   const Node& node = graph.nodes[index];
   const auto& a = std::get<ConvTransposeAttrs>(node.attrs);
   const std::int64_t s = a.strides[0];
   const Tensor& x = graph.tensors[node.inputs[0]];
   const Tensor& w = graph.tensors[node.inputs[1]];
   const Tensor& t = graph.tensors[node.outputs[0]];
-  const std::int64_t cin = w.dims[0];
   const std::int64_t cout = w.dims[1];
-  const std::int64_t kh = w.dims[2];
-  const std::int64_t kw = w.dims[3];
-  const Quad& p = a.pads;
+  const Quad p = a.pads;
   if (cout > max_channels) return false;
   std::vector<Offsets> py;
   std::vector<Offsets> px;
   std::int64_t taps = 0;
   for (std::int64_t r = 0; r < s; ++r) {
-    const auto y = phase_offsets(s, kh, p[0], r);
-    const auto xx = phase_offsets(s, kw, p[1], r);
+    const auto y = phase_offsets(s, w.dims[2], p[0], r);
+    const auto xx = phase_offsets(s, w.dims[3], p[1], r);
     if (!y || !xx || y->lo > 0 || y->hi < 0 || xx->lo > 0 || xx->hi < 0) return false;
     py.push_back(*y);
     px.push_back(*xx);
@@ -105,64 +155,58 @@ bool rewrite_phases(Graph& graph, std::size_t index, std::int64_t max_channels, 
   // Copies : add_named agrandit graph.tensors, les références ne tiendraient pas.
   const bool has_bias = node.inputs.size() > 2 && node.inputs[2] != kNoTensor;
   const std::vector<float> bias = has_bias ? graph.tensors[node.inputs[2]].value.f : std::vector<float>{};
-  const std::vector<float> weights = w.value.f;
+  const Tensor weights = w;
   const Dims xd = x.dims;
   const std::string base = node.name;
   const DataType type = t.type;
-  const DataType wtype = w.value.type;
   const TensorId x_id = node.inputs[0];
-  const TensorId out = node.outputs[0];
-  const Dims phase_dims{xd[0], cout, xd[2], xd[3]};
+  const std::int64_t b = shuffle.b;
+  const std::int64_t c2 = cout / (b * b);
+  const TensorId out = shuffle.node ? graph.nodes[*shuffle.node].outputs[0] : node.outputs[0];
   std::vector<Node> made;
   std::vector<TensorId> parts;
   for (std::int64_t ry = 0; ry < s; ++ry) {
-    for (std::int64_t rx = 0; rx < s; ++rx) {
-      const Offsets& oy = py[static_cast<std::size_t>(ry)];
-      const Offsets& ox = px[static_cast<std::size_t>(rx)];
-      const std::int64_t ky_n = oy.hi - oy.lo + 1;
-      const std::int64_t kx_n = ox.hi - ox.lo + 1;
-      Value wv = make_value(wtype, Dims{cout, cin, ky_n, kx_n});
-      Value bv = make_value(wtype, Dims{cout});
-      for (std::int64_t co = 0; co < cout; ++co) {
-        if (has_bias) bv.f[static_cast<std::size_t>(co)] = bias[static_cast<std::size_t>(co)];
-        for (std::int64_t dy = oy.lo; dy <= oy.hi; ++dy) {
-          const std::int64_t yy = ry + p[0] - (s * dy);
-          if (yy < 0 || yy >= kh) continue;
-          for (std::int64_t dx = ox.lo; dx <= ox.hi; ++dx) {
-            const std::int64_t xx = rx + p[1] - (s * dx);
-            if (xx < 0 || xx >= kw) continue;
-            for (std::int64_t ci = 0; ci < cin; ++ci) {
-              const auto to =
-                  static_cast<std::size_t>((((co * cin + ci) * ky_n) + (dy - oy.lo)) * kx_n + (dx - ox.lo));
-              const auto from = static_cast<std::size_t>((((ci * cout + co) * kh) + yy) * kw + xx);
-              wv.f[to] = weights[from];
-            }
-          }
+    for (std::int64_t i = 0; i < b; ++i) {
+      for (std::int64_t rx = 0; rx < s; ++rx) {
+        PhasePart part{.ry = ry,
+                       .rx = rx,
+                       .oy = py[static_cast<std::size_t>(ry)],
+                       .ox = px[static_cast<std::size_t>(rx)]};
+        // Canal de la ConvTranspose que le DepthToSpace fondu lisait en (i, j, c).
+        for (std::int64_t j = 0; j < b; ++j) {
+          for (std::int64_t c = 0; c < c2; ++c)
+            part.channels.push_back(shuffle.mode == BlockMode::Dcr ? ((i * b + j) * c2) + c
+                                                                   : (c * b * b) + (i * b) + j);
         }
+        auto [wv, bv] = part_weights(weights, bias, p, s, part);
+        const Pair kernel{wv.dims[2], wv.dims[3]};
+        std::string tag = base + "_phase" + std::to_string((ry * s) + rx);
+        if (b > 1) tag += "_" + std::to_string(i);
+        const TensorId w_id = add_named(graph, Tensor{.name = tag + "_w",
+                                                      .kind = TensorKind::Constant,
+                                                      .type = wv.type,
+                                                      .dims = wv.dims,
+                                                      .known = true,
+                                                      .value = std::move(wv)});
+        const TensorId b_id = add_named(graph, Tensor{.name = tag + "_b",
+                                                      .kind = TensorKind::Constant,
+                                                      .type = bv.type,
+                                                      .dims = bv.dims,
+                                                      .known = true,
+                                                      .value = std::move(bv)});
+        const TensorId y_id = add_named(graph, Tensor{.name = tag,
+                                                      .kind = TensorKind::Activation,
+                                                      .type = type,
+                                                      .dims = Dims{xd[0], b * c2, xd[2], xd[3]},
+                                                      .known = true});
+        made.push_back(Node{
+            .name = tag,
+            .op = OpKind::Conv,
+            .attrs = ConvAttrs{.kernel = kernel, .pads = {-part.oy.lo, -part.ox.lo, part.oy.hi, part.ox.hi}},
+            .inputs = {x_id, w_id, b_id},
+            .outputs = {y_id}});
+        parts.push_back(y_id);
       }
-      const std::string tag = base + "_phase" + std::to_string((ry * s) + rx);
-      const TensorId w_id = add_named(graph, Tensor{.name = tag + "_w",
-                                                    .kind = TensorKind::Constant,
-                                                    .type = wv.type,
-                                                    .dims = wv.dims,
-                                                    .known = true,
-                                                    .value = std::move(wv)});
-      const TensorId b_id = add_named(graph, Tensor{.name = tag + "_b",
-                                                    .kind = TensorKind::Constant,
-                                                    .type = bv.type,
-                                                    .dims = bv.dims,
-                                                    .known = true,
-                                                    .value = std::move(bv)});
-      const TensorId y_id = add_named(
-          graph,
-          Tensor{
-              .name = tag, .kind = TensorKind::Activation, .type = type, .dims = phase_dims, .known = true});
-      made.push_back(Node{.name = tag,
-                          .op = OpKind::Conv,
-                          .attrs = ConvAttrs{.kernel = {ky_n, kx_n}, .pads = {-oy.lo, -ox.lo, oy.hi, ox.hi}},
-                          .inputs = {x_id, w_id, b_id},
-                          .outputs = {y_id}});
-      parts.push_back(y_id);
     }
   }
   const TensorId mid = add_named(graph, Tensor{.name = base + "_phases",
@@ -175,11 +219,17 @@ bool rewrite_phases(Graph& graph, std::size_t index, std::int64_t max_channels, 
                       .attrs = AxisAttrs{.axis = 1},
                       .inputs = parts,
                       .outputs = {mid}});
-  made.push_back(Node{.name = base + "_d2s",
-                      .op = OpKind::DepthToSpace,
-                      .attrs = BlockAttrs{.blocksize = s, .mode = BlockMode::Dcr},
-                      .inputs = {mid},
-                      .outputs = {out}});
+  Node d2s{.name = base + "_d2s",
+           .op = OpKind::DepthToSpace,
+           .attrs = BlockAttrs{.blocksize = s * b, .mode = BlockMode::Dcr},
+           .inputs = {mid},
+           .outputs = {out}};
+  // Le DepthToSpace fondu prend la place de celui qu'il remplace : l'ordre topologique tient.
+  if (shuffle.node) {
+    graph.nodes[*shuffle.node] = std::move(d2s);
+  } else {
+    made.push_back(std::move(d2s));
+  }
   graph.nodes[index] = std::move(made.front());
   graph.nodes.insert(graph.nodes.begin() + static_cast<std::ptrdiff_t>(index) + 1,
                      std::make_move_iterator(made.begin() + 1), std::make_move_iterator(made.end()));
@@ -214,18 +264,16 @@ bool rewrite(Graph& graph, std::size_t index, std::int64_t max_channels, bool ph
   const auto oy = offsets(s, kh, p[0]);
   const auto ox = offsets(s, kw, p[1]);
   if (!oy || !ox) return false;
-  if (phases && rewrite_phases(graph, index, max_channels, *oy, *ox)) return true;
-
   // Le DepthToSpace suivant, fondu : bloc total s × b, canaux rangés pour lui.
-  std::int64_t b = 1;
-  BlockMode mode = BlockMode::Dcr;
-  const auto next = sole_depth_to_space(graph, node.outputs[0]);
-  if (next) {
-    const auto* d = std::get_if<BlockAttrs>(&graph.nodes[*next].attrs);
+  Shuffle shuffle{.node = sole_depth_to_space(graph, node.outputs[0])};
+  if (shuffle.node) {
+    const auto* d = std::get_if<BlockAttrs>(&graph.nodes[*shuffle.node].attrs);
     if (d == nullptr || d->blocksize < 2 || cout % (d->blocksize * d->blocksize) != 0) return false;
-    b = d->blocksize;
-    mode = d->mode;
+    shuffle.b = d->blocksize;
+    shuffle.mode = d->mode;
   }
+  if (phases && rewrite_phases(graph, index, max_channels, *oy, *ox, shuffle)) return true;
+  const auto [b, mode, next] = shuffle;
   const std::int64_t channels = s * s * cout;
   if (channels > max_channels) return false;
   const std::int64_t c2 = cout / (b * b);
@@ -295,15 +343,15 @@ bool rewrite(Graph& graph, std::size_t index, std::int64_t max_channels, bool ph
   conv.attrs = ConvAttrs{.kernel = {ky_n, kx_n}, .pads = {-oy->lo, -ox->lo, oy->hi, ox->hi}};
   conv.inputs = {x_id, w_id, b_id};
   conv.outputs = {mid};
-  Node shuffle{.name = base + "_d2s",
-               .op = OpKind::DepthToSpace,
-               .attrs = BlockAttrs{.blocksize = big, .mode = BlockMode::Dcr},
-               .inputs = {mid},
-               .outputs = {final_out}};
+  Node d2s{.name = base + "_d2s",
+           .op = OpKind::DepthToSpace,
+           .attrs = BlockAttrs{.blocksize = big, .mode = BlockMode::Dcr},
+           .inputs = {mid},
+           .outputs = {final_out}};
   if (next) {
-    graph.nodes[*next] = std::move(shuffle);  // à sa place : l'ordre topologique tient
+    graph.nodes[*next] = std::move(d2s);  // à sa place : l'ordre topologique tient
   } else {
-    graph.nodes.insert(graph.nodes.begin() + static_cast<std::ptrdiff_t>(index) + 1, std::move(shuffle));
+    graph.nodes.insert(graph.nodes.begin() + static_cast<std::ptrdiff_t>(index) + 1, std::move(d2s));
   }
   return true;
 }

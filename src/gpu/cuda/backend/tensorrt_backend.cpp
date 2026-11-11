@@ -414,8 +414,17 @@ void TensorRtBackend::tune_pool() const {
 GpuTiming& TensorRtBackend::stage(std::string_view name) {
   push_launches();
   auto found = stages_.find(name);
-  if (found == stages_.end())
-    found = stages_.emplace(std::string(name), std::make_unique<GpuTiming>(std::string(name), nullptr)).first;
+  if (found == stages_.end()) {
+    // A03-22 : chaque étape dit sa médiane une fois par minute, pour qu'un plantage ou une dérive tardive
+    // laisse au journal autre chose que les deux rôles. stages_ est vidé avant la fin du backend.
+    const GpuTiming::Report report = [this](std::string_view text) {
+      log(BackendLogLevel::Info, std::format("profil GPU · {}", text));
+    };
+    found = stages_
+                .emplace(std::string(name),
+                         std::make_unique<GpuTiming>(std::string(name), report, kStageReportPeriod))
+                .first;
+  }
   return *found->second;
 }
 
@@ -423,7 +432,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
                                                       std::span<Tensor> outputs) {
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
   // Étape 5.2 : qui lit l'entrée de RIFE en dernier décide de ce que rife_time y écrit.
-  if (!inputs.empty()) note_rife_reader(inputs[0], dynamic_cast<RifeFusedEngine*>(&engine) != nullptr);
+  if (!inputs.empty()) {
+    if (auto ok = note_rife_reader(inputs[0], dynamic_cast<RifeFusedEngine*>(&engine) != nullptr); !ok)
+      return ok;
+  }
   if (trt == nullptr) {
     if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine))
       return enqueue_rife_fused(*rife, inputs, outputs);

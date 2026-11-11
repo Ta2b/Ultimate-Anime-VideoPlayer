@@ -8,8 +8,8 @@
 
 namespace ajp::gpu::cuda {
 
-GpuTiming::GpuTiming(std::string label, Report report)
-    : label_(std::move(label)), report_(std::move(report)) {
+GpuTiming::GpuTiming(std::string label, Report report, std::chrono::seconds every)
+    : label_(std::move(label)), report_(std::move(report)), every_(every) {
   for (std::size_t i = 0; i < kPairs; ++i) {
     cuda_warn(cudaEventCreate(&start_[i]), "cudaEventCreate");
     cuda_warn(cudaEventCreate(&stop_[i]), "cudaEventCreate");
@@ -48,12 +48,19 @@ void GpuTiming::collect() {
   while (read_ < ended_ && cudaEventQuery(stop_[read_ % kPairs]) == cudaSuccess) {
     float ms = 0.0F;
     if (cudaEventElapsedTime(&ms, start_[read_ % kPairs], stop_[read_ % kPairs]) == cudaSuccess) {
-      if (report_) samples_.push_back(ms);
+      if (report_ && samples_.size() < kMaxSamples) samples_.push_back(ms);
       all_.add(ms);
     }
     ++read_;
   }
-  if (!report_ || samples_.size() < kReport) return;
+  if (!report_ || samples_.empty()) return;
+  if (every_.count() > 0) {
+    const auto now = std::chrono::steady_clock::now();
+    if (now - reported_ < every_) return;
+    reported_ = now;
+  } else if (samples_.size() < kReport) {
+    return;
+  }
   std::ranges::sort(samples_);
   const float median = samples_[samples_.size() / 2];
   const float p95 = samples_[samples_.size() * 95 / 100];

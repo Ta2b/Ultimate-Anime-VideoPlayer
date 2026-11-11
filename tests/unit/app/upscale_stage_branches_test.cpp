@@ -1,5 +1,6 @@
 // Les branches de l'étage gpu que l'audit A09-16 a trouvées sans test : le RIFE des paires calmes, et
 // l'image que DistilDRBA saute puis reprend comme image d'avant (keep_skipped et son pont).
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -38,6 +39,29 @@ TEST_CASE("Étage gpu : RIFE des paires calmes, la passe du milieu change de mot
   rig.stage.reset();
   CHECK(rig.backend.count("engine rife_calm") == 3);  // la paire (4, 5) se décide encore sur le calme
   CHECK(rig.backend.count("engine rife_motion") > 1);
+  CHECK(rig.reported().empty());
+}
+
+TEST_CASE("Étage gpu : RIFE mouvement sans poses, une seule image hors du milieu, une seule passe (A09-05)",
+          "[app][stage]") {
+  Rig rig;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 2});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.feed(1, 5);
+  REQUIRE(rig.collect(7));
+  rig.stage.reset();
+  const std::vector<std::string> shape = shape_of(rig.sink.frames());
+  const auto made = static_cast<std::size_t>(
+      std::ranges::count_if(shape, [](const std::string& entry) { return entry.contains('-'); }));
+  REQUIRE(made >= 3);
+  // À ×1,5 les instants tombent à 1/3 et 2/3 : RIFE y passe une fois, sans la passe du milieu d'avant (deux
+  // passes par image avant A09-05).
+  CHECK(rig.backend.count("engine rife_motion") == made);
+  CHECK(rig.backend.count("warp_blend") == made);
+  // Le mouvement de l'instant est mesuré pour la paire suivante, comme celui du milieu l'était.
+  CHECK(rig.backend.count("flow_max_start") == made);
   CHECK(rig.reported().empty());
 }
 

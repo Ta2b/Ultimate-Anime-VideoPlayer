@@ -198,8 +198,11 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   }
   // Une capture refusée pendant l'essai laisse la chaîne tourner sans graphe : ce n'est pas un refus. Les
   // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus.
+  // Remise à zéro complète, comme DistilDRBA fusionné (A03-10).
   engine->drop_graphs();
   engine->capture_failures_ = 0;
+  engine->launch_failures_ = 0;
+  engine->graphs_full_ = false;
   engine->notice_.clear();
   return engine;
 }
@@ -287,6 +290,16 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
   return cuda_check(launch_fused_finish(finish, stream), "fused_finish<<<>>>");
 }
 
+bool RifeFusedEngine::graph_cache_full() {
+  if (graphs_.size() < kMaxGraphs) return false;
+  // A03-09 : dit une fois, au lieu de tourner en lancements directs pour toujours sans un mot.
+  if (!std::exchange(graphs_full_, true))
+    notice_ =
+        std::format("cache de graphes CUDA plein ({} jeux d'adresses) : lancements directs pour les suivants",
+                    kMaxGraphs);
+  return true;
+}
+
 std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
@@ -325,7 +338,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
            g.generation == arena->generation();
   });
   if (found == graphs_.end()) {
-    if (graphs_.size() >= kMaxGraphs) return run(stream, arena, inputs[0], outputs);
+    if (graph_cache_full()) return run(stream, arena, inputs[0], outputs);
     graphs_.push_back(Graph{.addresses = addresses,
                             .zone = reinterpret_cast<std::uintptr_t>(arena->data()),
                             .generation = arena->generation()});

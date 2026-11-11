@@ -99,6 +99,8 @@ class RifeFusedEngine final : public Engine {
   };
   std::vector<Graph> graphs_;
   bool graphs_off_ = false;
+  bool graphs_full_ = false;  // le plafond kMaxGraphs a été atteint : notice posée une fois (A03-09)
+  bool graph_cache_full();    // vrai au plafond ; pose la notice la première fois
   int capture_failures_ = 0;
   int launch_failures_ = 0;
   static constexpr int kMaxLaunchFailures = 3;

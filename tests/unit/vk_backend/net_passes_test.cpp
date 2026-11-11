@@ -125,3 +125,51 @@ TEST_CASE("Réseau : les passes du moteur réécrivent la ConvTranspose pour les
   require_ok(vk::net::engine_passes(plain, "essai", false, {.f16_storage = true, .matrix_units = false}));
   CHECK(ir::test::count_ops(plain, ir::OpKind::ConvTranspose) == 1);
 }
+
+namespace {
+
+// A44-12 : la dernière couche d'un bloc de RIFE, ConvTranspose 4 × 4 de pas 2 puis PixelShuffle de bloc 2.
+ir::test::ModelBuilder shuffled_transpose(bool half, const std::string& mode) {
+  ir::test::ModelBuilder m(17);
+  const std::int32_t type = half ? ir::onnx::kFloat16 : ir::onnx::kFloat;
+  m.input("x", {1, 8, 12, 16}, type);
+  add_weight(m, "wt", {8, 8, 4, 4}, half, 91, 0.15F);
+  add_weight(m, "bt", {8}, half, 92, 0.1F);
+  m.node("ConvTranspose", {"x", "wt", "bt"}, {"up"},
+         {ir::test::attr_ints("strides", {2, 2}), ir::test::attr_ints("pads", {1, 1, 1, 1})});
+  m.node("DepthToSpace", {"up"}, {"y"},
+         {ir::test::attr_int("blocksize", 2), ir::test::attr_string("mode", mode)});
+  m.output("y", type);
+  return m;
+}
+
+}  // namespace
+
+// Le graphe que le moteur abaisse sur un appareil à matrices coopératives (une Conv par phase, un seul
+// DepthToSpace de bloc 4), exécuté ici par le moteur Vulkan de l'appareil du test, lavapipe en CI : ses
+// Conv, son Concat et son DepthToSpace sont ceux de tout appareil, seul le noyau des Conv change avec
+// les matrices. Comparé à l'interpréteur sur ce graphe, lui-même comparé au graphe importé.
+TEST_CASE("Réseau : ConvTranspose par phases et PixelShuffle fondus en un seul réarrangement, sur l'appareil",
+          "[vk_backend][net][passes]") {
+  NetRig rig = make_net_rig();
+  for (const bool half : {false, true}) {
+    if (half && !rig.target.f16_storage) continue;
+    for (const std::string mode : {"DCR", "CRD"}) {
+      CAPTURE(half, mode);
+      const ir::Graph before = ir::test::build(shuffled_transpose(half, mode));
+      ir::Graph after = before;
+      require_ok(vk::net::engine_passes(after, "essai", half, {.f16_storage = true, .matrix_units = true}));
+      require_ok(ir::validate(after));
+      CHECK(ir::test::count_ops(after, ir::OpKind::ConvTranspose) == 0);
+      CHECK(ir::test::count_ops(after, ir::OpKind::Conv) == 8);
+      CHECK(ir::test::count_ops(after, ir::OpKind::DepthToSpace) == 1);
+      const std::vector<ir::NamedValue> inputs{
+          {.name = "x", .value = smooth_input(before.tensors[before.inputs[0]])}};
+      const std::vector<ir::Value> want = run_reference(before, inputs);
+      const std::vector<ir::Value> got = run_reference(after, inputs);
+      REQUIRE(got[0].dims == want[0].dims);
+      CHECK(psnr_db(got[0].f, want[0].f) > (half ? 60.0 : 100.0));
+      check_graph(rig, after, inputs, half ? kFp16 : kFp32);
+    }
+  }
+}

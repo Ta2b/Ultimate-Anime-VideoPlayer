@@ -29,6 +29,8 @@ struct RifeInputParams {
   // 11 pour RIFE ; 7 pour RIFE v2 (images et instant, sans grilles) ; 6 : les deux images seules.
   int planes = 11;
   bool mesh = true;  // faux : le maillage (plans 7 à 10) déjà écrit reste tel quel (rife_pair)
+  // Vrai : l'instant à l'élément 0 du plan 6 seulement, pour RIFE fusionné qui ne lit que lui (A03-07).
+  bool lone_time = false;
 };
 
 cudaError_t launch_rife_input(const RifeInputParams& params, cudaStream_t stream);

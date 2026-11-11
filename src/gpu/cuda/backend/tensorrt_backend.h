@@ -9,6 +9,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
@@ -310,11 +311,19 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, écriture), résumé au
   // journal à la destruction du backend.
   std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
+  static constexpr std::chrono::seconds kStageReportPeriod{60};
   // Étape 5.2 : entrées de RIFE (adresse du tenseur) que le dernier moteur à les lire était RIFE fusionné.
   // Ses noyaux calculent le maillage et lisent l'instant à l'élément 0 du plan 6 : rife_time n'y écrit qu'un
-  // demi-flottant. Un moteur TensorRT ou DistilDRBA fusionné qui lit la même adresse la retire.
-  std::vector<std::uintptr_t> compact_rife_inputs_;
-  void note_rife_reader(const Tensor& input, bool compact);
+  // demi-flottant. Un moteur TensorRT ou DistilDRBA fusionné qui lit la même adresse la retire, et
+  // réécrit d'abord le plan entier si rife_time n'en a posé que l'élément 0 (A03-04) : sans cela il lirait
+  // l'instant du dernier rife_input.
+  struct CompactRifeInput {
+    std::uintptr_t key = 0;
+    std::optional<std::uint16_t> lone_time;  // l'instant posé à l'élément 0 seul, pas encore étendu au plan
+    std::size_t plane = 0;                   // éléments du plan de l'instant
+  };
+  std::vector<CompactRifeInput> compact_rife_inputs_;
+  std::expected<void, Refusal> note_rife_reader(const Tensor& input, bool compact);
   GpuTiming& stage(std::string_view name);
   std::unique_ptr<GpuSpan> chain_span_;               // de l'ingestion d'une source à la fin de son SPAN
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice

@@ -151,6 +151,30 @@ TEST_CASE("exécution : les bindings readonly lus dans le SPIR-V", "[vk_compute]
   CHECK(spirv_readonly_bindings({}) == 0U);
 }
 
+TEST_CASE("exécution : arrondi et sous-normaux du float16 déclarés dans le SPIR-V (A45-15)",
+          "[vk_compute][execution]") {
+  const auto words = spirv::words("rife_fused_glue_f16");
+  const auto count_op = [](std::span<const std::uint32_t> module, std::uint32_t op, std::uint32_t operand) {
+    int found = 0;
+    for (std::size_t at = 5; at < module.size(); at += module[at] >> 16U) {
+      if ((module[at] & 0xFFFFU) == op && module[at + (op == 16 ? 2 : 1)] == operand) ++found;
+    }
+    return found;
+  };
+  const std::vector<std::uint32_t> both = spirv_with_float16_controls(words, true, true);
+  REQUIRE(both.size() == words.size() + 2 * 2 + 2 * 4);
+  CHECK(count_op(both, 17, 4467) == 1);  // capacité RoundingModeRTE
+  CHECK(count_op(both, 17, 4464) == 1);  // capacité DenormPreserve
+  CHECK(count_op(both, 16, 4462) == 1);  // mode RoundingModeRTE du point d'entrée
+  CHECK(count_op(both, 16, 4459) == 1);
+  CHECK(spirv_readonly_bindings(both) == spirv_readonly_bindings(words));
+  CHECK(spirv_with_float16_controls(words, true, false).size() == words.size() + 2 + 4);
+  // Rien à déclarer : ni l'un ni l'autre, un module sans float 16 bits, un module illisible.
+  CHECK(spirv_with_float16_controls(words, false, false).empty());
+  CHECK(spirv_with_float16_controls(spirv::words("transfer"), true, true).empty());
+  CHECK(spirv_with_float16_controls({}, true, true).empty());
+}
+
 TEST_CASE("exécution : les enregistrements d'un lot partagent un VkSubmitInfo", "[vk_compute][execution]") {
   Rig rig = make_rig();
   const kernels::RgbImage image = synthetic_rgb(16, 16, 7, 0.0F, 1.0F);

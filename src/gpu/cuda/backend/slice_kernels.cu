@@ -268,9 +268,11 @@ __global__ void __launch_bounds__(kTileWidth* kTileThreadsY) ingest_tiled(Ingest
     for (int j = 0; j < t.count; ++j) {
       const float w = tap_weight(p, t, j);
       if (w == 0.0F) continue;
-      total += w;
       const int r = t.first + j - first_row;
-      if (r < 0 || r >= rows) continue;  // jamais : la tuile couvre les prises de ses lignes
+      // Jamais : la tuile couvre les prises de ses lignes. Si la marge changeait, le poids d'une prise
+      // sautée ne compte pas non plus : la normalisation reste juste au lieu d'assombrir (A03-12).
+      if (r < 0 || r >= rows) continue;
+      total += w;
       const std::size_t at = static_cast<std::size_t>(r) * kTileWidth + threadIdx.x;
       sum.x += tile[at] * w;
       sum.y += tile[tile_plane + at] * w;

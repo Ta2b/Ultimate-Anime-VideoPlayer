@@ -1,10 +1,12 @@
 // Temps GPU d'une étape, mesuré par paires d'événements CUDA sur le flux du backend et relu
 // sans attente hôte : une paire n'est lue qu'une fois son second événement passé. Avec un
-// rapporteur, toutes les kReport mesures, la médiane et le 95e centile partent au journal du
-// backend ; summary() résume toutes les mesures depuis la création (profil de fin de lecture).
+// rapporteur, toutes les kReport mesures (ou, avec une période, à chaque période écoulée), la
+// médiane et le 95e centile partent au journal du backend ; summary() résume toutes les mesures
+// depuis la création (profil de fin de lecture).
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
@@ -24,7 +26,9 @@ class GpuTiming {
   static constexpr std::size_t kReport = 240;
   using Report = std::function<void(std::string_view)>;
 
-  GpuTiming(std::string label, Report report);
+  // every > 0 : le rapporteur parle à chaque période écoulée plutôt que toutes les kReport mesures (les
+  // étapes rares ou très fréquentes, A03-22).
+  GpuTiming(std::string label, Report report, std::chrono::seconds every = {});
   ~GpuTiming();
   GpuTiming(const GpuTiming&) = delete;
   GpuTiming& operator=(const GpuTiming&) = delete;
@@ -50,6 +54,9 @@ class GpuTiming {
   std::size_t ended_ = 0;               // paires finies (second événement enregistré)
   std::size_t read_ = 0;                // paires relues
   std::vector<float> samples_;
+  static constexpr std::size_t kMaxSamples = 1 << 16;  // entre deux rapports à période
+  std::chrono::seconds every_{};
+  std::chrono::steady_clock::time_point reported_ = std::chrono::steady_clock::now();
   static constexpr std::size_t kMaxAll = 1 << 18;
   // Toutes les mesures, pour summary() : comptées toutes, un échantillon uniforme au-delà de kMaxAll
   // (A33-05).
