@@ -60,7 +60,7 @@ constexpr std::array kSettingsPages{
     Entry{"Application", "Application"},
     Entry{"Apply (reopens the video)", "Appliquer (rouvre la vidéo)"},
     Entry{"Audio language", "Langue audio"},
-    Entry{"Auto (after SPAN above 1080p or from ×3)", "Auto (après SPAN au-dessus de 1080p ou dès ×3)"},
+    Entry{"Auto (after SPAN above 1080p)", "Auto (après SPAN au-dessus de 1080p)"},
     Entry{"Auto (from the display)", "Auto (selon l'écran)"},
     Entry{"Auto peak ({} nits)", "Pic automatique ({} nits)"},
     Entry{"In content nits: KDE shows them brighter (× its SDR brightness / 203), so a 1000-nit screen reads "
@@ -253,6 +253,11 @@ constexpr std::array kSettingsPages{
     Entry{"whole RIFE instead of fused RIFE", "RIFE entier à la place du RIFE fusionné"},
     Entry{"{} switches to {} (built the first time for this size)",
           "{} passe en {} (construit la première fois pour cette taille)"},
+    Entry{"{} cannot be read: this session starts from the default settings and does not change the file",
+          "{} ne peut pas être lu : la séance part des réglages par défaut et ne touche pas au fichier"},
+    Entry{"Invalid settings in play.toml went back to their default: {}",
+          "Réglages invalides de play.toml remis à leur défaut : {}"},
+    Entry{"Settings cannot be saved: {}", "Les réglages ne peuvent pas être enregistrés : {}"},
 };
 
 }  // namespace

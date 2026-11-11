@@ -9,9 +9,11 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "app/play/controls.h"
@@ -87,6 +89,10 @@ class PlayerUi {
   void set_tracks(TrackMenu tracks);
   // Les réglages en cours et ce que le menu des paramètres propose.
   void set_settings(const PlaySettings& running, SettingsChoices choices);
+  // Ce qui change pendant la séance (sorties son, lecteur par défaut, place libre) : relu à l'ouverture du
+  // menu et toutes les quelques secondes tant qu'il est ouvert (B23-08).
+  using ChoicesRefresh = std::function<void(SettingsChoices&)>;
+  void set_choices_refresh(ChoicesRefresh refresh) { refresh_ = std::move(refresh); }
   // L'état du VRR relu en cours de lecture (plein écran) : l'avertissement du mode auto le suit.
   void set_display_vrr(bool capable, bool armed, bool fullscreen) {
     choices_.display_vrr = capable;
@@ -121,6 +127,11 @@ class PlayerUi {
   SettingsPanel panel_;
   PlaySettings running_;
   SettingsChoices choices_;
+  ChoicesRefresh refresh_;
+  std::int64_t refreshed_us_ = 0;
+  bool refresh_pending_ = false;  // le menu vient de s'ouvrir : à relire tout de suite
+  static constexpr std::int64_t kChoicesRefreshUs = 4'000'000;
+  void refresh_choices(std::int64_t now_us);
   bool input_pending_ = false;
   bool close_popups_ = false;  // Échap sur une liste ouverte : elle seule se ferme, au tour suivant (A24-14)
   static constexpr int kSettleFrames = 2;

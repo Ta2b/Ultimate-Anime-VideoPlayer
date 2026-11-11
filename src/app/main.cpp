@@ -41,6 +41,7 @@ extern "C" {
 #include "app/play/crash_dump.h"
 #include "app/play/data_dirs.h"
 #include "app/play/default_player.h"
+#include "app/play/latest_writer.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
 #include "app/play/paths.h"
@@ -596,6 +597,8 @@ int run_player(int argc, char** argv) {
   std::error_code error;
   std::filesystem::create_directories(paths.engines, error);
   const auto played = ajp::app::play::play(*options, paths);
+  // Une écriture que la fin d'une vidéo n'a pas attendue (disque lent) finit avant que le processus ne parte.
+  ajp::app::play::LatestWriter::wait_abandoned(std::chrono::seconds(5));
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();
   if (played && engines_updated) return relaunch(place.executable, argc, argv);

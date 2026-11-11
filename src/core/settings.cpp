@@ -119,9 +119,19 @@ void read_rest(const toml::table& root, Settings& settings, const Reader& reader
   }
 }
 
-toml::array names_of(const std::vector<EngineId>& engines) {
+// Les noms des moteurs, suivis de ceux du fichier que cette version ne connaît pas : le moteur d'une version
+// plus récente reste à la réécriture (B22-07).
+toml::array names_of(const std::vector<EngineId>& engines, const toml::array* on_disk = nullptr) {
   toml::array names;
   for (const EngineId id : engines) names.push_back(std::string(engine_name(id)));
+  if (on_disk == nullptr) return names;
+  for (const toml::node& item : *on_disk) {
+    const std::optional<std::string> name = item.value_exact<std::string>();
+    if (!name || parse_engine(*name) || retired_engine(*name)) continue;
+    const bool known = std::ranges::any_of(
+        names, [&](const toml::node& other) { return other.value_exact<std::string>() == name; });
+    if (!known) names.push_back(*name);
+  }
   return names;
 }
 
@@ -197,14 +207,25 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
   root->insert_or_assign("first_run_step", settings.first_run_step);
   root->insert_or_assign("open_with_registered", settings.open_with_registered);
   toml::table& engines_table = fields::child(*root, "engines");
-  engines_table.insert_or_assign("chosen", names_of(settings.chosen_engines));
-  engines_table.insert_or_assign("installed", names_of(settings.installed_engines));
+  // Les listes du fichier, lues avant d'être remplacées : leurs entrées inconnues reviennent (B22-07).
+  const toml::array chosen_on_disk = engines_table.get_as<toml::array>("chosen") != nullptr
+                                         ? *engines_table.get_as<toml::array>("chosen")
+                                         : toml::array{};
+  const toml::array installed_on_disk = engines_table.get_as<toml::array>("installed") != nullptr
+                                            ? *engines_table.get_as<toml::array>("installed")
+                                            : toml::array{};
+  engines_table.insert_or_assign("chosen", names_of(settings.chosen_engines, &chosen_on_disk));
+  engines_table.insert_or_assign("installed", names_of(settings.installed_engines, &installed_on_disk));
   toml::table& preferred = fields::child(engines_table, "preferred");
   preferred.erase("truehdr");  // RTX HDR, retiré
   for (std::size_t i = 0; i < kUsageCount; ++i) {
     if (const std::optional<EngineId>& engine = settings.preferred[i]) {
       preferred.insert_or_assign(kUsageNames[i], std::string(engine_name(*engine)));
-    } else {
+    } else if (const std::optional<std::string> on_disk =
+                   preferred.contains(kUsageNames[i]) ? preferred[kUsageNames[i]].value_exact<std::string>()
+                                                      : std::nullopt;
+               !on_disk || parse_engine(*on_disk) || retired_engine(*on_disk)) {
+      // Un moteur qu'une version plus récente a choisi (nom inconnu d'ici) reste dans le fichier.
       preferred.erase(kUsageNames[i]);
     }
   }

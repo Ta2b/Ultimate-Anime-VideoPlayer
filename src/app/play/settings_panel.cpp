@@ -537,29 +537,14 @@ void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoic
   ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
   // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
   // compte pour un seul changement).
-  if (!ImGui::IsAnyItemActive() && draft_ != stable_) {
-    undo_.push_back(stable_);
-    if (undo_.size() > 100) undo_.erase(undo_.begin());
-    redo_.clear();
-    stable_ = draft_;
-  }
+  if (!ImGui::IsAnyItemActive()) history_.settle(draft_);
   ImGui::SameLine();
-  ImGui::BeginDisabled(undo_.empty());
-  if (ImGui::Button(i18n::tr("Undo"))) {
-    redo_.push_back(draft_);
-    draft_ = undo_.back();
-    undo_.pop_back();
-    stable_ = draft_;
-  }
+  ImGui::BeginDisabled(!history_.can_undo());
+  if (ImGui::Button(i18n::tr("Undo"))) draft_ = history_.undo(draft_);
   ImGui::EndDisabled();
   ImGui::SameLine();
-  ImGui::BeginDisabled(redo_.empty());
-  if (ImGui::Button(i18n::tr("Redo"))) {
-    undo_.push_back(draft_);
-    draft_ = redo_.back();
-    redo_.pop_back();
-    stable_ = draft_;
-  }
+  ImGui::BeginDisabled(!history_.can_redo());
+  if (ImGui::Button(i18n::tr("Redo"))) draft_ = history_.redo(draft_);
   ImGui::EndDisabled();
   // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
   if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
@@ -595,7 +580,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   if (!open_) return result;
   // Réglages changés ailleurs (Tab, volume) : le panneau les reprend, sans perdre ce qui attend.
   if (running != seen_) {
+    const ExternalChange external = external_changes(seen_, running, draft_);
     draft_ = follow_running(draft_, seen_, running, choices.rife_loaded);
+    history_.adopt(external, running);  // le volume des touches ne se rejoue pas avec « Annuler » (B23-01)
     seen_ = running;
   }
   const ImGuiIO& io = ImGui::GetIO();
@@ -614,7 +601,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     panel::advanced() = advanced_;
     bool delay_held = false;
     bool sub_delay_held = false;
-    const PlaySettings before = draft_;
+    // L'état d'avant les widgets de l'image : copié seulement quand il a changé, pas à chaque image (B23-09).
+    if (before_ != draft_) before_ = draft_;
+    const PlaySettings& before = before_;
     // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
                          2.0F * ImGui::GetStyle().ItemSpacing.y;
@@ -627,9 +616,24 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
     ImGui::PopStyleVar();
     // La molette sur l'arbre passe d'une page à la suivante ou à la précédente.
-    if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F) {
-      const int step = io.MouseWheel < 0.0F ? 1 : -1;
-      page_ = std::clamp(page_ + step, 0, static_cast<int>(kPages.size()) - 1);
+    // Une page par geste, pas par cran : une molette libre ou un pavé tactile envoie des dizaines de crans
+    // (B23-10).
+    if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F && !wheel_locked_) {
+      if (wheel_ * io.MouseWheel < 0.0F) wheel_ = 0.0F;  // le sens a changé : un nouveau geste
+      wheel_ += io.MouseWheel;
+      if (std::abs(wheel_) >= 1.0F) {
+        const int step = wheel_ < 0.0F ? 1 : -1;
+        page_ = std::clamp(page_ + step, 0, static_cast<int>(kPages.size()) - 1);
+        wheel_ = 0.0F;
+        wheel_idle_s_ = 0.0F;
+        wheel_locked_ = true;
+      }
+    }
+    if (wheel_locked_) {
+      // Le geste dure tant que la molette tourne ; un court calme le termine.
+      wheel_idle_s_ += io.DeltaTime;
+      if (io.MouseWheel != 0.0F) wheel_idle_s_ = 0.0F;
+      if (wheel_idle_s_ > 0.35F) wheel_locked_ = false;
     }
     draw_tree(page_, shown_page_, category_open_, scale);
     shown_page_ = page_;

@@ -43,17 +43,21 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   choices.gpu_name = machine.name;
   choices.gpus = screen.device_names();
   choices.nvidia = vendor_from_pci(screen.device_facts().pci_vendor) == GpuVendor::Nvidia;
+  choices.luts_dir = paths::luts(paths);
+  choices.switchable = installed_switchable(catalog, paths);
+  choices.engines_dir_default = prepare::utf8_path(paths::backends_install(paths));
+  choices.place = place_of(paths);
+  choices.settings_dir = settings_dir;
+  refresh_host_choices(choices, catalog);
+}
+
+void refresh_host_choices(SettingsChoices& choices, const EngineCatalog& catalog) {
   choices.audio_outputs.clear();
   for (const audio::AudioDevice& device : audio::playback_devices())
     choices.audio_outputs.push_back(
         {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  choices.luts_dir = paths::luts(paths);
-  choices.switchable = installed_switchable(catalog, paths);
-  choices.engines_dir_default = prepare::utf8_path(paths::backends_install(paths));
   choices.engines_dir_free = shown_size(free_bytes(catalog.layout.engines));
-  choices.place = place_of(paths);
   choices.default_player_is_ajp = is_default_player(choices.place);
-  choices.settings_dir = settings_dir;
 }
 
 }  // namespace ajp::app::play

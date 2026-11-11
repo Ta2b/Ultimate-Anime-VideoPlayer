@@ -56,6 +56,7 @@
 #include "app/play/player_engines.h"
 #include "app/play/present_stats.h"
 #include "app/play/resume.h"
+#include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
 #include "app/play/sleep_watch.h"
@@ -317,6 +318,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
   fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
   p.ui.set_settings(settings, choices);
+  p.ui.set_choices_refresh([c = &p.catalog](SettingsChoices& o) { refresh_host_choices(o, *c); });
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
@@ -393,6 +395,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (settings.audio_delay_ms != 0)
     session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{settings.audio_delay_ms} * 1000});
   std::int64_t saved_at = host_now_us();
+  bool save_failure_said = false;
   std::int64_t display_polled_at = saved_at;
   std::int64_t hdr_polled_at = host_now_us();
   p.ui.controls().show_deferred(host_now_us());
@@ -663,6 +666,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
+    if (settings_write_failed(writer, p.ui, save_failure_said, host_now_us())) {
+      chain.dirty = true;
+      saved_at = host_now_us() + kSettingsRetryUs - kSettingsSaveEveryUs;
+    }
     if (chain.dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) {
       writer.post("play.toml",
                   [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
@@ -698,7 +705,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
   }
   remember();
-  writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers
+  writer.flush();  // le prochain lancement relit ces fichiers ; l'attente est bornée (B30-05)
+  retry_settings_save(writer, p.settings_path, saved_settings());
   p.quit = session.quit_asked();
   log_summary(session);
   if (telemetry) {
