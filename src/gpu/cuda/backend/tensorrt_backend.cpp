@@ -20,6 +20,7 @@
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
+#include "gpu/cuda/backend/shared_activations.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
@@ -212,27 +213,13 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
 
 TensorRtBackend::~TensorRtBackend() {
   releaser_->backend = nullptr;  // un tenseur détruit après le backend se libère par cudaFree
-  if (stream_ == nullptr) return;
+  // Rien de créé : create_lanes a échoué avant la première file. Une file créée suffit à tout passer en
+  // revue (événements et files déjà créés d'une création interrompue au milieu) ; stream_ n'est posé qu'à
+  // la fin de create_lanes.
+  if (!any_lane()) return;
   cudaSetDevice(device_);
   destroy_textures();
-  if (const int used = std::popcount(used_lanes_); used > 1 && !stages_.empty()) {
-    log(BackendLogLevel::Info,
-        std::format("profil GPU · {} voies en parallèle : chaque temps court sur la file de son étape, "
-                    "recouvrement avec les autres voies compris (--one-lane : coût propre de chaque moteur)",
-                    used));
-  }
-  for (auto& [name, timing] : stages_) {
-    if (const std::string line = timing->summary(); !line.empty())
-      log(BackendLogLevel::Info, "profil GPU · " + line);
-  }
-  for (const auto& timing : role_timing_) {
-    if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
-      log(BackendLogLevel::Info, "profil GPU · rôle " + line);
-  }
-  if (chain_span_) {
-    if (const std::string line = chain_span_->summary(); !line.empty())
-      log(BackendLogLevel::Info, "profil GPU · " + line);
-  }
+  log_profile();
   stages_.clear();
   slots_.clear();
   retired_.clear();
@@ -258,6 +245,7 @@ TensorRtBackend::~TensorRtBackend() {
   if (deband_out_ != nullptr) cudaFree(deband_out_);
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();
+  release_chroma_tables();
   for (const MappedFences& block : mapped_fences_) cudaHostUnregister(block.host);  // pas rendus par l'étage
   mapped_fences_.clear();
   runtime_.reset();
@@ -268,7 +256,30 @@ TensorRtBackend::~TensorRtBackend() {
   for (cudaEvent_t fence : fences_) {
     if (fence != nullptr) cudaEventDestroy(fence);
   }
-  destroy_lanes();  // et rend la réserve CUDA au pilote (A33-01)
+  release_arenas();  // avant la purge du pool (B33-01)
+  destroy_lanes();   // et rend la réserve CUDA au pilote
+}
+
+// Le profil GPU de la séance au journal, à la destruction (--one-lane pour le coût propre de chaque moteur).
+void TensorRtBackend::log_profile() {
+  if (const int used = std::popcount(used_lanes_); used > 1 && !stages_.empty()) {
+    log(BackendLogLevel::Info,
+        std::format("profil GPU · {} voies en parallèle : chaque temps court sur la file de son étape, "
+                    "recouvrement avec les autres voies compris (--one-lane : coût propre de chaque moteur)",
+                    used));
+  }
+  for (auto& [name, timing] : stages_) {
+    if (const std::string line = timing->summary(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
+  }
+  for (const auto& timing : role_timing_) {
+    if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · rôle " + line);
+  }
+  if (chain_span_) {
+    if (const std::string line = chain_span_->summary(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
+  }
 }
 
 std::expected<void, Refusal> TensorRtBackend::bind() const {
@@ -287,7 +298,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .needs_host_sync = false,
       .fp16 = true,
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
-      .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
+      .fp8 = fp8_allowed(properties_.major, properties_.minor),  // Ada et Hopper ; RTX 50 sans mesure, non
       .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
       .gpu_arch = std::format("sm_{}{}", properties_.major, properties_.minor),
       .span_fp8_kernels = SpanFp8Net::kKernelsVersion,
@@ -382,6 +393,8 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> TensorRtBackend::alloc_ten
 void TensorRtBackend::free_after_lanes(void* memory) {
   if (memory == nullptr) return;
   hazards_.forget(reinterpret_cast<std::uintptr_t>(memory));  // libérée derrière toutes les voies (A21-09)
+  // Une allocation future à la même adresse n'hérite pas du drapeau compact de RIFE (B03-04).
+  forget_rife_input(reinterpret_cast<std::uintptr_t>(memory));
   cudaStream_t free_on = stream_;
   bool ordered = free_on != nullptr;
   for (cudaStream_t lane : streams_) {
@@ -422,8 +435,10 @@ GpuTiming& TensorRtBackend::stage(std::string_view name) {
 std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<const Tensor> inputs,
                                                       std::span<Tensor> outputs) {
   auto* trt = dynamic_cast<TrtEngine*>(&engine);
-  // Étape 5.2 : qui lit l'entrée de RIFE en dernier décide de ce que rife_time y écrit.
-  if (!inputs.empty()) note_rife_reader(inputs[0], dynamic_cast<RifeFusedEngine*>(&engine) != nullptr);
+  // Étape 5.2 : qui lit l'entrée de RIFE en dernier décide de ce que rife_time y écrit. Chaque entrée : la
+  // deuxième de DistilDRBA (pair12) efface aussi un drapeau posé sur son adresse (B03-04).
+  const bool fused_rife = dynamic_cast<RifeFusedEngine*>(&engine) != nullptr;
+  for (const Tensor& input : inputs) note_rife_reader(input, fused_rife);
   if (trt == nullptr) {
     if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine))
       return enqueue_rife_fused(*rife, inputs, outputs);
@@ -442,6 +457,8 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
   for (const Tensor& tensor : inputs) reads.push_back(tensor.handle);
   for (const Tensor& tensor : outputs) writes.push_back(tensor.handle);
   if (auto ok = order(reads, writes); !ok) return ok;
+  // Un moteur entier lit le plan de l'instant en entier : reposé s'il n'a été écrit qu'à l'élément 0.
+  if (auto ok = restore_rife_times(inputs); !ok) return ok;
   const Shape shape = trt->input_shape(0);
   GpuTiming& timing = stage(std::format("moteur {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
   // Un moteur qui agrandit (sortie plus haute que l'entrée) est le SPAN de sa source ; les autres

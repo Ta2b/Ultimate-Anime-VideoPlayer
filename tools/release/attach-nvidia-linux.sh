@@ -28,12 +28,8 @@ lock="$dir/engines.lock"
 
 repo="${AJP_RELEASE_REPO:-$(gh variable get AJP_RELEASE_REPO 2>/dev/null || gh repo view --json nameWithOwner -q .nameWithOwner)}"
 
-# Rien de NVIDIA dans l'archive : seulement notre module et trtexec (le lien direct tire le reste).
-if tar tzf "$archive" | grep -qiE 'libnvinfer|libnvonnxparser|libnvrtc|libcu[a-z]|builder_resource|nvinfer|cudart'; then
-  echo "L'archive contient des fichiers NVIDIA : elle n'a pas été construite en lien direct (sans AJP_NVIDIA_BUNDLE)" >&2
-  tar tzf "$archive" | grep -iE 'libnvinfer|libnvonnxparser|libnvrtc|libcu[a-z]|builder_resource|nvinfer|cudart' >&2
-  exit 1
-fi
+# Rien de NVIDIA dans l'archive : seulement notre module et trtexec (liste blanche : B51-10).
+"$(dirname "$0")/check-engine-archive.sh" "$archive"
 
 sha="$(sha256sum "$archive" | cut -d' ' -f1)"
 size="$(stat -c %s "$archive")"
@@ -77,7 +73,18 @@ if gh release download "$tag" -R "$repo" -p engines-nvidia.lock -O "$previous" -
     END { flush() }' "$previous" >> "$out"
 fi
 rm -f "$previous"
-gh release upload "$tag" -R "$repo" --clobber "$archive" "$out"
+# Les releases fixes trt-<empreinte> sont immuables : leur SHA-256 est déjà dans l'index signé de releases du lecteur.
+# Une archive refaite (une construction n'est pas reproductible à l'octet) ne la remplace jamais (B51-02).
+clobber=(--clobber)
+case "$tag" in
+  trt-*)
+    if gh release view "$tag" -R "$repo" --json assets -q '.assets[].name' 2>/dev/null | grep -qx 'engines-nvidia.lock'; then
+      echo "$repo $tag a déjà son paquet TensorRT : une release trt-* ne se réécrit pas (un autre appel l'a joint entre-temps ?)" >&2
+      exit 1
+    fi
+    clobber=() ;;
+esac
+gh release upload "$tag" -R "$repo" "${clobber[@]}" "$archive" "$out"
 case "$tag" in
   trt-*) echo "Joint à $repo $tag : release fixe, lue par Release Linux pour toutes les étiquettes (pas d'étiquette à pousser)." ;;
   *)     echo "Joint à $repo $tag. Pousser maintenant l'étiquette (ou relancer Release si elle existe : le lecteur ne croit engines-nvidia.lock que signé) : git tag $tag && git push origin $tag" ;;

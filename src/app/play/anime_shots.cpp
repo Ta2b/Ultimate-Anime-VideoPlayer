@@ -26,22 +26,20 @@ double series_apl_of(const std::vector<media::Shot>& shots) {
 }
 
 void AnimeGlide::aim(const AnimeShotLook& target, std::int64_t now_us, bool cut) {
-  if (!known_ || !cut) {
-    // Hors coupe : le plan est le même, sa valeur suit aussitôt (le glissé en cours finit vers elle).
-    if (known_ && gliding(now_us)) {
-      to_ = target;
-      return;
-    }
+  if (!known_ || cut) {
+    // Une coupe (ou la première valeur) : le nouveau plan à l'image de coupe, sans glissé après elle.
     from_ = target;
     to_ = target;
     start_us_ = now_us - kAnimeGlideUs;
     known_ = true;
     return;
   }
-  // Une coupe : le nouveau plan à l'image de coupe, sans glissé après elle.
-  from_ = target;
+  // B42-08 : hors coupe (le même plan mieux connu, la jointure de deux analyses, un fondu), la valeur glisse
+  // de celle montrée vers la nouvelle ; le glissé en cours repart d'où il en est.
+  if (target == to_) return;
+  from_ = at(now_us);
   to_ = target;
-  start_us_ = now_us - kAnimeGlideUs;
+  start_us_ = now_us;
 }
 
 AnimeShotLook AnimeGlide::at(std::int64_t now_us) const {

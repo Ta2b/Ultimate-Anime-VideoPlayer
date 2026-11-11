@@ -126,6 +126,8 @@ struct Chain {
   bool flash_limited = false;     // plafond des flashs dangereux tenu (next_flashing, P3.51)
   double anime_e = 0.0;           // l'exposition envoyée au grade (GradeSettings::anime_exposure)
   std::uint64_t shot_serial = 0;  // le plan analysé que le grade suit ; 0 : la mesure en direct
+  std::int64_t shot_end_us = -1;  // sa fin, s'il vient de la pré-analyse (B42-01) ; -1 sinon
+  double series_apl_sent = 0.0;   // la série des noirs profonds que le grade a reçue (B38-14)
   // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle
   // tant qu'aucune analyse ne dit mieux (un saut ne la perd pas). scene_light_at_us : son dernier envoi.
   std::optional<render::SceneLight> scene_light;

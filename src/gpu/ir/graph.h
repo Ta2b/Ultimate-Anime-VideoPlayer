@@ -6,6 +6,7 @@
 #include <expected>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -48,6 +49,32 @@ bool is_graph_input(const Graph& graph, TensorId id);
 std::vector<std::vector<std::size_t>> consumers(const Graph& graph);
 // Pour chaque tenseur, le nœud qui l'écrit, ou kNoNode.
 std::vector<std::size_t> producers(const Graph& graph);
+
+// La valeur de la constante qui est l'entrée `index` du nœud, ou nullptr (absente, facultative ou calculée).
+const Value* constant_operand(const Graph& graph, const Node& node, std::size_t index);
+
+// Producteurs et lecteurs des tenseurs, construits au premier besoin et refaits après invalidate() : une
+// passe qui examine beaucoup de candidats sans rien changer ne reconstruit pas tout le graphe à chacun
+// (B44-02). À invalider dès que le graphe change (nœud retiré ou recâblé, tenseur ajouté).
+class GraphIndex {
+ public:
+  explicit GraphIndex(const Graph& graph) : graph_(&graph) {}
+  void invalidate() { fresh_ = false; }
+  // Le nœud qui écrit id, ou kNoNode.
+  std::size_t producer(TensorId id);
+  // Les nœuds qui lisent id, une fois chacun.
+  std::span<const std::size_t> readers(TensorId id);
+  // Le lecteur unique de id, s'il le lit une seule fois et que id n'est pas une sortie du graphe.
+  std::optional<std::size_t> sole_reader(TensorId id);
+
+ private:
+  void refresh();
+  const Graph* graph_;
+  bool fresh_ = false;
+  std::vector<std::size_t> producers_;
+  std::vector<std::size_t> offsets_;  // lecteurs de t : readers_[offsets_[t] .. offsets_[t + 1])
+  std::vector<std::size_t> readers_;
+};
 
 // Remplace from par to dans les entrées de tous les nœuds.
 void replace_uses(Graph& graph, TensorId from, TensorId to);

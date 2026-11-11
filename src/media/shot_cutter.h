@@ -82,6 +82,11 @@ struct Shot {
   ShotStats first;
   ShotStats last;
   bool fade = false;
+  // Un fondu : la part du plan où la lumière change (B42-03). Avant ramp_from_us, first ; après ramp_to_us,
+  // last ; linéaire entre les deux. 0 et 0 : tout le plan (un fondu qui le couvre, ou dont le début ou la fin
+  // n'a pas été vu).
+  std::int64_t ramp_from_us = 0;
+  std::int64_t ramp_to_us = 0;
   // Vrai si le plan commence à une vraie coupe ; faux pour le premier plan analysé après un départ en
   // cours de vidéo (le début du fichier, ou un saut).
   bool cut_before = true;
@@ -141,6 +146,7 @@ class ShotCutter {
   void keep(const ShotFrame& frame);
   float limit(std::int64_t pts_us);
   std::optional<Shot> close_shot(std::int64_t end_us);
+  void ramp_of(Shot& shot, float begin, float end) const;
 
   bool starts_at_cut_ = true;
   bool first_shot_ = true;

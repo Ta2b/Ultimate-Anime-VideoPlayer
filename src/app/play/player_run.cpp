@@ -165,10 +165,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
-  const std::optional<ColorInfo> early_color = media::track_color(video);
-  const bool early_hdr =
-      early_color && (early_color->transfer == Transfer::Pq || early_color->transfer == Transfer::Hlg);
-  if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
+  if (p.shots != nullptr)
+    open_shots_early(*p.shots, p.options.file, settings, start_us, video,
+                     content_peak_nits(p.screen.window()), p.options.sdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
   const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)

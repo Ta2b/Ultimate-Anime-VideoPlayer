@@ -45,7 +45,7 @@ core ────── core_types · privé : toml++
 kernels ─── (feuille)
 subs ────── core_types · privé : libass, core_log
 audio ───── core_types · privé : av, FFmpeg, SDL3, core_log
-media ───── core_types, kernels · privé : av, FFmpeg, Vulkan, core_log
+media ───── core_types, kernels · privé : av, FFmpeg, Vulkan, core (écriture atomique), core_log
 gpu_ir ──── core_types · privé : kernels, core_log
 gpu_span_fp8 core_types
 gpu ─────── core, kernels

@@ -119,10 +119,15 @@ DeviceCaps probe_device(const InstanceFunctions& fn, VkPhysicalDevice device, st
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT};
   const bool has_pci = has_extension(extensions, VK_EXT_PCI_BUS_INFO_EXTENSION_NAME);
   VkPhysicalDeviceSubgroupSizeControlProperties sizes{
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES,
-      .pNext = has_pci ? &pci : nullptr};
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
+  // L'adresse PCI ne dépend pas de l'API 1.3, seule la taille des sous-groupes en dépend (B49-03) : sur un
+  // chargeur ou un appareil en 1.2, `pci` reste dans la chaîne.
   VkPhysicalDeviceDriverProperties driver{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
-                                          .pNext = api >= VK_API_VERSION_1_3 ? &sizes : nullptr};
+                                          .pNext = has_pci ? &pci : nullptr};
+  if (api >= VK_API_VERSION_1_3) {
+    sizes.pNext = driver.pNext;
+    driver.pNext = &sizes;
+  }
   VkPhysicalDeviceSubgroupProperties subgroup{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
                                               .pNext = &driver};
   VkPhysicalDeviceIDProperties ids{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,

@@ -46,6 +46,10 @@ constexpr std::array kMessages{
     Entry{"Open a video", "Ouvrir une vidéo"},
     Entry{"the latest release has no update manifest: check the releases page",
           "la dernière release n'a pas de manifeste de mise à jour : voir la page des releases"},
+    Entry{"Performance mode is not available on Windows yet: its speed and quality are still to be measured "
+          "there",
+          "Le mode Performance n'existe pas encore sous Windows : sa vitesse et sa qualité doivent d'abord y "
+          "être mesurées"},
     Entry{"Performance mode ready: used from the next video",
           "Mode Performance prêt : utilisé dès la vidéo suivante"},
     Entry{"Pick the video in the open window.", "Choisissez la vidéo dans la fenêtre ouverte."},
@@ -151,7 +155,11 @@ constexpr std::array kMessages{
     Entry{"starting", "démarrage"},
     Entry{"testing the \"{}\" settings", "test des réglages « {} »"},
     Entry{"the \"{}\" variant produced nothing", "la variante « {} » n'a rien rendu"},
-    Entry{"the manifest is for channel \"{}\", not \"{}\"", "le manifeste est du canal « {} », pas « {} »"},
+    Entry{"temporary folder: {}", "dossier temporaire : {}"},
+    Entry{"no free name for a temporary folder", "aucun nom libre pour un dossier temporaire"},
+    Entry{"the file is larger than expected", "le fichier est plus gros que prévu"},
+    Entry{"the update manifest is unreadable or incomplete",
+          "le manifeste de mise à jour est illisible ou incomplet : mise à jour ignorée"},
     Entry{"the manifest signature is wrong: update ignored",
           "la signature du manifeste est fausse : mise à jour ignorée"},
     Entry{"the update manifest has expired: update ignored",

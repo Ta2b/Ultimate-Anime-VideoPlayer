@@ -59,8 +59,8 @@ class CudaNv12 final : public FrameData {
   std::size_t chroma_pitch_ = 0;
 };
 
-// Image YUV 4:2:0 en mémoire hôte, comme le décodage logiciel la rend : trois plans (YUV 4:2:0
-// planaire) ou deux (NV12, P010, P016), échantillons de 8 ou 16 bits, lignes à marge.
+// Image YUV en mémoire hôte, comme le décodage logiciel la rend : trois plans (YUV planaire 4:2:0, 4:2:2
+// ou 4:4:4) ou deux (NV12, P010, P016), échantillons de 8 ou 16 bits, lignes à marge.
 class HostYuv final : public FrameData {
  public:
   explicit HostYuv(const kernels::YuvImage& image) {
@@ -85,6 +85,14 @@ class HostYuv final : public FrameData {
         put(bytes_.back(), y * strides_.back() + (2 * x + 1) * sample_, image.v.at(at, static_cast<int>(y)));
       }
     }
+  }
+  // Trois plans de 16 bits donnés tels quels : le 4:2:2 (chroma à demi-largeur), que YuvImage ne porte pas.
+  HostYuv(const kernels::PlaneU16& y, const kernels::PlaneU16& u, const kernels::PlaneU16& v) {
+    sample_ = 2;
+    planes_ = 3;
+    add(y);
+    add(u);
+    add(v);
   }
   FrameMemory memory() const override { return FrameMemory::Host; }
   int plane_count() const override { return planes_; }

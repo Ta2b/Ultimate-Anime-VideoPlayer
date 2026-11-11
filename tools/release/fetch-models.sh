@@ -55,13 +55,13 @@ check() {  # sha256 fichier
 
 for entry in "${SPAN[@]}"; do
   read -r sha name <<<"$entry"
-  curl -fsSL -o "$DEST/onnx/$name" "$SPAN_URL/$name"
+  curl -fsSL --retry 5 --retry-delay 5 -o "$DEST/onnx/$name" "$SPAN_URL/$name"
   check "$sha" "$DEST/onnx/$name"
 done
 
 archive="$CACHE/rife-fp16-1.7z"
 if ! echo "$RIFE_ARCHIVE_SHA  $archive" | "${SHA256[@]}" -c --status - >/dev/null 2>&1; then  # pas encore en cache
-  curl -fsSL -o "$archive" "$RIFE_URL"
+  curl -fsSL --retry 5 --retry-delay 5 -o "$archive" "$RIFE_URL"
   check "$RIFE_ARCHIVE_SHA" "$archive"
 fi
 for entry in "${RIFE[@]}"; do
@@ -81,7 +81,7 @@ check "$ARTCNN_SHA" "$DEST/onnx/2x_ArtCNN_C4F32_rgb_fp16.onnx"
 # de DistilDRBA, plus lents que le fusionné, restent facultatifs.
 for entry in "${DRBA[@]}"; do
   read -r sha name <<<"$entry"
-  curl -fsSL -o "$DEST/rife/$name" "$INTERP_URL/$name"
+  curl -fsSL --retry 5 --retry-delay 5 -o "$DEST/rife/$name" "$INTERP_URL/$name"
   check "$sha" "$DEST/rife/$name"
 done
 

@@ -45,14 +45,35 @@ struct Place {
   std::int64_t x = 0;
 };
 
-// Un dessin : aplats de 32 pixels dont un sur deux est sombre, dégradé lent par-dessus, traits sombres d'un
-// pixel. Les aplats sombres et les traits fins sont ce qu'une somme en float16 abîme d'abord (A45-02).
+// Un dessin, en quatre sortes de zones de 128 pixels qui se suivent (B45-02), pour que le jugement ne tienne
+// pas à un seul motif : (0) aplats de 32 pixels dont un sur deux est sombre, dégradé lent par-dessus, traits
+// sombres d'un pixel ; (1) un long dégradé de ciel en triangle (les bandes que les sommes réduites creusent)
+// ; (2) des traits obliques fins sur un fond clair ; (3) un grain fin autour d'un gris moyen. Les aplats
+// sombres et les traits fins sont ce qu'une somme en float16 abîme d'abord (A45-02). Une entrée de moins de
+// 128 pixels de côté n'a que la zone 0.
 float drawing(Place at) {
   std::uint64_t z = (static_cast<std::uint64_t>(at.c) * 0x9E3779B97F4A7C15ULL) ^
                     (static_cast<std::uint64_t>(at.y / 32) * 0xBF58476D1CE4E5B9ULL) ^
                     (static_cast<std::uint64_t>(at.x / 32) * 0x94D049BB133111EBULL);
   z = (z ^ (z >> 30U)) * 0xBF58476D1CE4E5B9ULL;
   z ^= z >> 27U;
+  const std::int64_t zone = ((at.x / 128) + (at.y / 128)) % 4;
+  if (zone == 1) {
+    const float t = static_cast<float>((at.x + (2 * at.y)) % 2048) / 2048.0F;
+    return 0.5F + (0.4F * (1.0F - std::abs((2.0F * t) - 1.0F)));
+  }
+  if (zone == 2) {
+    const bool line = (at.x + at.y) % 9 == 0 || (at.x - at.y + 4096) % 13 == 0;
+    return line ? 0.1F : 0.85F;
+  }
+  if (zone == 3) {
+    std::uint64_t g = (static_cast<std::uint64_t>(at.x) * 0x9E3779B97F4A7C15ULL) ^
+                      (static_cast<std::uint64_t>(at.y) * 0xBF58476D1CE4E5B9ULL) ^
+                      (static_cast<std::uint64_t>(at.c) * 0x94D049BB133111EBULL);
+    g = (g ^ (g >> 31U)) * 0x94D049BB133111EBULL;
+    g ^= g >> 29U;
+    return 0.5F + (0.06F * ((static_cast<float>(g & 0xFFU) / 255.0F) - 0.5F));
+  }
   float level = static_cast<float>(z & 0xFFU) / 255.0F;
   if (((at.x / 32) + (at.y / 32)) % 2 == 0) level *= 0.15F;
   const float shade = 0.08F * static_cast<float>((at.x + (2 * at.y)) % 256) / 255.0F;
@@ -356,6 +377,38 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
       "aux noyaux de référence)",
       gated.db, gated.floor_db);
   return gated;
+}
+
+std::string reduced_precision_notice(std::string_view model, std::span<const KernelChoice> choices,
+                                     const Gated& gated, std::span<const ReducedChoice> measured) {
+  const auto layers = static_cast<std::size_t>(std::ranges::count_if(choices, low_precision));
+  if (layers == 0) return {};
+  // Le gain n'est chiffré que pour les couches dont l'autotuner a mesuré les deux variantes ; un relevé dont
+  // le choix a été repris ensuite par la porte (autre variante au même nœud) ne compte pas.
+  double chosen_us = 0.0;
+  double full_us = 0.0;
+  std::size_t timed = 0;
+  for (const ReducedChoice& r : measured) {
+    if (r.node >= choices.size() || choices[r.node].variant != r.variant || !r.full_precision_us) continue;
+    chosen_us += r.chosen_us;
+    full_us += *r.full_precision_us;
+    ++timed;
+  }
+  std::string gain = "gain de vitesse non mesuré (choix repris du cache)";
+  if (timed > 0 && chosen_us > 0.0) {
+    gain = std::format(
+        "gain mesuré {:+.0f} % de vitesse sur {} couche(s) sur {} ({:.0f} µs contre {:.0f} µs en "
+        "sommes float)",
+        ((full_us / chosen_us) - 1.0) * 100.0, timed, layers, chosen_us, full_us);
+  }
+  const std::string loss =
+      gated.against_float
+          ? std::format(
+                "{:.1f} dB contre le calcul en float, {:+.2f} dB face aux noyaux de référence ({:.1f} dB)",
+                gated.db, gated.db - gated.floor_db, gated.floor_db)
+          : std::string("perte non mesurée (le calcul en float n'a pas pu être joué)");
+  return std::format("{} : précision réduite sur {} couche(s) pour gagner en vitesse : {} ; {}", model,
+                     layers, loss, gain);
 }
 
 }  // namespace ajp::gpu::vk::net

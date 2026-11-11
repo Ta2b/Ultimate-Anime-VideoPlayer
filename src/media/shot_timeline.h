@@ -40,8 +40,12 @@ class ShotTimeline {
   // L'instant jusqu'où l'analyse va sans trou depuis pts_us (pts_us lui-même si rien n'y est).
   std::int64_t analyzed_until(std::int64_t pts_us) const;
   // Le premier trou depuis le début de la vidéo (les plans se suivent à 0,1 s près) ; la fin du dernier plan
-  // s'il n'y en a pas, 0 sans plan.
+  // s'il n'y en a pas, 0 sans plan. Le début est l'origine (set_origin_us), 0 tant qu'elle n'est pas connue.
   std::int64_t first_gap_us() const;
+  // L'instant de la première image de la vidéo, vu par une analyse partie du début (B42-04) : un flux vidéo
+  // qui commence après le conteneur (TS, MKV dont l'audio commence avant) ne laisse plus un trou en tête qui
+  // ne se comble jamais.
+  void set_origin_us(std::int64_t pts_us);
   // La fin du dernier plan, 0 sans plan.
   std::int64_t end_us() const;
   std::size_t size() const;
@@ -54,6 +58,7 @@ class ShotTimeline {
   std::vector<Shot> shots_;  // triés par début, sans chevauchement
   std::vector<std::uint64_t> serials_;
   std::vector<FlashSpan> flashes_;  // triées, sans chevauchement
+  std::int64_t origin_us_ = 0;
   std::uint64_t next_serial_ = 1;
   std::uint64_t version_ = 0;
 };

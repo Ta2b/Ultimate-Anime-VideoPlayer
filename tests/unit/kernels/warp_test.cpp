@@ -160,7 +160,7 @@ TEST_CASE("warp : la loi de mélange ajustée sur RIFE", "[warp][parity]") {
   const ref::Motion motion = uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, mm);
   const auto out = ref::warp_blend_at(RgbImage(8, 4, 1.0F), RgbImage(8, 4, 0.0F), motion, t);
   REQUIRE(out);
-  const double z = 0.285 * std::log(0.4 / 0.6) + 2.591 * std::log(3.0) + 0.170;
+  const double z = std::log(0.4 / 0.6) + 2.591 * std::log(3.0);
   CHECK_THAT(out->planes[0].at(4, 2), WithinAbs(1.0 / (1.0 + std::exp(-z)), 1e-6));
   // Un masque saturé est borné à ε avant le logit.
   const auto saturated = ref::warp_blend_at(RgbImage(8, 4, 1.0F), RgbImage(8, 4, 0.0F),
@@ -168,6 +168,44 @@ TEST_CASE("warp : la loi de mélange ajustée sur RIFE", "[warp][parity]") {
   REQUIRE(saturated);
   CHECK(std::isfinite(saturated->planes[0].at(0, 0)));
   CHECK(saturated->planes[0].at(0, 0) < 1.0F);
+}
+
+// B50-01 : la loi rend le masque de RIFE au milieu de la paire, et sans saut juste avant.
+TEST_CASE("warp : la loi de mélange est l'identité à t = 1/2", "[warp]") {
+  const RgbImage a(8, 4, 1.0F);
+  const RgbImage b(8, 4, 0.0F);
+  const ref::Motion franc = uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, 0.99F);
+  const auto mid = ref::warp_blend_at(a, b, franc, 0.5F);
+  const auto near = ref::warp_blend_at(a, b, franc, 0.499F);
+  REQUIRE(mid);
+  REQUIRE(near);
+  CHECK_THAT(near->planes[0].at(4, 2), WithinAbs(mid->planes[0].at(4, 2), 0.01));
+  // Garder les poses, mouvement régulier (la paire précédente comme celle-ci) : le masque tel quel à 1/2.
+  const ref::Motion still = uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, 0.9F);
+  const auto plain = ref::warp_blend(a, b, still);
+  const auto poses = ref::warp_blend_poses(a, b, still, &still, 0.5F);
+  REQUIRE(plain);
+  REQUIRE(poses);
+  CHECK_THAT(poses->planes[0].at(4, 2), WithinAbs(plain->planes[0].at(4, 2), 1e-6));
+}
+
+// B50-02 : échanger a et b, t et 1 − t, et le masque rend le poids complémentaire ; un masque franc le reste.
+TEST_CASE("warp : la loi de mélange est symétrique et garde un masque franc", "[warp]") {
+  const RgbImage a(8, 4, 1.0F);
+  const RgbImage b(8, 4, 0.0F);
+  for (const float mm : {0.5F, 0.8F}) {
+    const auto fwd = ref::warp_blend_at(a, b, uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, mm), 0.4F);
+    const auto back =
+        ref::warp_blend_at(a, b, uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, 1.0F - mm), 0.6F);
+    REQUIRE(fwd);
+    REQUIRE(back);
+    CHECK_THAT(fwd->planes[0].at(4, 2), WithinAbs(1.0F - back->planes[0].at(4, 2), 1e-5));
+  }
+  // RIFE donne le pixel à b (masque 0,05, ce que a montre a disparu) : à t = 1/3, a n'y revient pas à moitié.
+  const auto gone =
+      ref::warp_blend_at(a, b, uniform_motion(8, 4, {0, 0, 8, 4}, 0.0F, 0.0F, 0.05F), 1.0F / 3.0F);
+  REQUIRE(gone);
+  CHECK(gone->planes[0].at(4, 2) < 0.3F);  // 0,24 ; l'ancienne loi rendait 0,76
 }
 
 TEST_CASE("warp : seuil d'une seule passe RIFE par paire", "[warp]") {

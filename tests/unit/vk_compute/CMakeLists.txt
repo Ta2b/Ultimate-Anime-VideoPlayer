@@ -9,6 +9,7 @@ ajp_set_warnings(ajp_vk_compute_fake_loader)
 
 ajp_add_unit_tests(vk_compute
   SOURCES
+    caps_test.cpp
     color_test.cpp
     context_test.cpp
     detect_test.cpp

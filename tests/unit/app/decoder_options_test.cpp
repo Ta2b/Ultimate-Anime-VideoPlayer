@@ -26,7 +26,9 @@ TEST_CASE("decoder_options : surfaces directes sous TensorRT seulement", "[app][
   CHECK(vulkan.download);
   // Le 4:4:4 et les 12 bits d'une source logicielle : gardés là où l'ingestion les lit (A15-07, A49-13).
   CHECK(vulkan.full_host_formats);
-  CHECK_FALSE(trt.full_host_formats);
+  CHECK(trt.full_host_formats);  // l'ingestion TensorRT lit aussi le 4:4:4 et les 12 bits (B01-03)
+  CHECK(trt.host_422);
+  CHECK_FALSE(vulkan.host_422);
   CHECK(vulkan.direct_surfaces == 0);
   CHECK(vulkan.attempts.back() == media::HwApi::Software);
 #if defined(__linux__)
