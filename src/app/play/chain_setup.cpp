@@ -190,6 +190,12 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   StageMemory local;
   StageMemory& refused = memory != nullptr ? *memory : local;
   const std::string library = library_name(p);
+  // B08-03 : une instance de construction pour toute l'ouverture, rendue en sortant (pas pendant la lecture).
+  p.builder = std::make_shared<BackendLibrary::Instance>();
+  const struct BuilderRelease {
+    Player& p;
+    ~BuilderRelease() { p.builder.reset(); }
+  } builder_release{p};
   const int width = p.video.width;
   const int height = p.video.height;
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.

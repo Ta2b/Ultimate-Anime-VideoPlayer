@@ -24,6 +24,13 @@ struct EngineRequest {
   gpu::BackendInit init;  // render, cache_dir et log ; render vit plus longtemps que la construction
   gpu::ModelSpec model;
   gpu::ShapeSet shapes;
+  // B08-03 : l'instance de construction partagée par les moteurs d'une même ouverture (une construction à la
+  // fois) ; nulle : une instance à elle, créée sur le fil. Le fil la crée aussi quand elle est vide, et la
+  // laisse dans builder pour la suivante.
+  std::shared_ptr<BackendLibrary::Instance> builder;
+  // B08-03 : réveille la boucle qui attend (wait_engine) dès le résultat posé, au lieu de son tour de 100 ms.
+  void (*wake)(void*) = nullptr;
+  void* wake_context = nullptr;
 };
 
 // A31-11 : une construction refusée à l'écriture (BuilderFailed, CacheIo, FileUnwritable, IoFailed) alors que

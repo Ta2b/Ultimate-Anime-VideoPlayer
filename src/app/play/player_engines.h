@@ -117,6 +117,9 @@ struct Player {
   // B31-04 : une perte du GPU relancera le lecteur (pas une seconde perte dans la minute, pas un essai
   // scripté) ; la relance est alors demandée avant le démontage, que le garde de fermeture peut couper.
   bool relaunch_on_loss = false;
+  // B08-03 : l'instance de construction des moteurs d'une ouverture (EngineRequest::builder), posée par
+  // prepare_chain et rendue à sa fin : elle ne garde pas un contexte CUDA pendant la lecture.
+  std::shared_ptr<BackendLibrary::Instance> builder;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.

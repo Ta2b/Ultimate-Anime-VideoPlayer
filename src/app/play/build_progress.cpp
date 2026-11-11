@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -145,11 +146,33 @@ std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
   return builds;
 }
 
+namespace {
+
+// B08-03 : les journaux du cache relus une fois tant que le dossier ne change pas (sa date de modification
+// suit l'ajout d'un journal) : chaque moteur d'une ouverture en relisait 128 sur le thread main.
+std::vector<PastBuild> past_builds_cached(const std::filesystem::path& cache_dir) {
+  static std::mutex mutex;
+  static std::filesystem::path seen_dir;
+  static std::filesystem::file_time_type seen_at;
+  static std::vector<PastBuild> seen;
+  std::error_code error;
+  const std::filesystem::file_time_type at = std::filesystem::last_write_time(cache_dir, error);
+  const std::scoped_lock lock(mutex);
+  if (error || seen_dir != cache_dir || seen_at != at) {
+    seen = past_builds(cache_dir);
+    seen_dir = error ? std::filesystem::path() : cache_dir;  // une date illisible : relu la fois suivante
+    seen_at = at;
+  }
+  return seen;
+}
+
+}  // namespace
+
 double expected_build_seconds(const std::filesystem::path& cache_dir, const std::filesystem::path& onnx,
                               std::int64_t pixels) {
   std::optional<PastBuild> nearest;
   double nearest_distance = 0.0;
-  for (const PastBuild& past : past_builds(cache_dir)) {
+  for (const PastBuild& past : past_builds_cached(cache_dir)) {
     if (past.onnx != onnx && past.onnx.filename() != onnx.filename()) continue;
     const double distance = std::abs(
         std::log(static_cast<double>(std::max<std::int64_t>(pixels, 1)) / static_cast<double>(past.pixels)));

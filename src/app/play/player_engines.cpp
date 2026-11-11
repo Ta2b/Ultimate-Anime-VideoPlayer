@@ -19,6 +19,7 @@
 #include "app/play/home_screen.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/loop_wait.h"
 #include "app/play/paths.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
@@ -115,7 +116,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
       auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
       if (!shown) return std::unexpected(std::move(shown.error()));
     }
-    // Une image toutes les 100 ms, plus tôt si un événement arrive.
+    // Une image toutes les 100 ms, plus tôt si un événement arrive (le résultat du moteur en pousse un).
     (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);
   }
 }
@@ -158,11 +159,15 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
   auto sha256 = prepare::sha256_file_known(onnx);
   if (!sha256) return std::unexpected(std::move(sha256.error()));
+  LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
   auto build = EngineBuild::start(
       EngineRequest{.library = p.library,
                     .init = init,
                     .model = {.id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha256},
-                    .shapes = {.min = shape, .opt = shape, .max = shape}});
+                    .shapes = {.min = shape, .opt = shape, .max = shape},
+                    .builder = p.builder,
+                    .wake = &LoopWake::push,
+                    .wake_context = &ready});
   if (!build) return std::unexpected(std::move(build.error()));
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);

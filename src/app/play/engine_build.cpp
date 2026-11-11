@@ -28,9 +28,13 @@ std::expected<std::unique_ptr<EngineBuild>, Refusal> EngineBuild::start(EngineRe
   std::unique_ptr<EngineBuild> build(new EngineBuild());
   EngineBuild* self = build.get();
   auto thread = start_thread(
-      "preparer", ThreadReport([self](const Refusal& refusal) {
-        const std::scoped_lock lock(self->mutex_);
-        if (!self->result_) self->result_ = std::unexpected(refusal);
+      "preparer",
+      ThreadReport([self, wake = request.wake, context = request.wake_context](const Refusal& refusal) {
+        {
+          const std::scoped_lock lock(self->mutex_);
+          if (!self->result_) self->result_ = std::unexpected(refusal);
+        }
+        if (wake != nullptr) wake(context);
       }),
       [self, request = std::move(request)](const std::stop_token& stop, const ThreadReport&) mutable {
         self->run(stop, request);
@@ -46,14 +50,24 @@ EngineBuild::~EngineBuild() {
 }
 
 void EngineBuild::run(const std::stop_token& stop, const EngineRequest& request) {
-  auto finish = [this](std::expected<gpu::Artifact, Refusal> outcome) {
-    const std::scoped_lock lock(mutex_);
-    result_ = std::move(outcome);
+  auto finish = [this, &request](std::expected<gpu::Artifact, Refusal> outcome) {
+    {
+      const std::scoped_lock lock(mutex_);
+      result_ = std::move(outcome);
+    }
+    if (request.wake != nullptr) request.wake(request.wake_context);
   };
-  auto backend = BackendLibrary::create(request.library, request.init);
-  if (!backend) {
-    finish(std::unexpected(std::move(backend.error())));
-    return;
+  // B08-03 : l'instance de l'ouverture, créée au premier moteur et reprise par les suivants (énumération des
+  // appareils, contexte et runtime une fois par ouverture, pas une fois par moteur).
+  BackendLibrary::Instance own;
+  BackendLibrary::Instance* backend = request.builder ? request.builder.get() : &own;
+  if (!*backend) {
+    auto created = BackendLibrary::create(request.library, request.init);
+    if (!created) {
+      finish(std::unexpected(std::move(created.error())));
+      return;
+    }
+    *backend = std::move(*created);
   }
   gpu::Progress progress{.report =
                              [this](float fraction, const std::string& stage) {
