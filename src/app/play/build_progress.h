@@ -11,10 +11,15 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
 namespace ajp::app::play {
+
+// L'étape de construction de prepare (une clé anglaise, prepare/trtexec_progress.cpp) dans la langue de
+// l'interface ; une étape inconnue reste telle quelle.
+std::string build_stage_text(std::string_view stage);
 
 // Durée attendue, en secondes, sans construction précédente du modèle.
 inline constexpr double kDefaultBuildSeconds = 60.0;

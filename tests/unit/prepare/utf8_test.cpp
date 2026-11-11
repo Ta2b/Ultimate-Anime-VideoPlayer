@@ -9,6 +9,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include "prepare/identity.h"
 #include "support.h"
 
@@ -56,20 +63,36 @@ TEST_CASE("ansi_safe_path : un chemin hors de la page ANSI prend son nom court (
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path existing = dir / "model.onnx";
-  {
-    std::ofstream(existing) << "x";
-  }
+  { std::ofstream(existing) << "x"; }
   const fs::path to_write = dir / "aji-v3-abc.engine";  // pas encore là : le nom reste, le dossier raccourcit
 #ifdef _WIN32
+  // La page ANSI du SYSTÈME (celle de trtexec), pas celle du processus : le manifeste UTF-8 d'ajp met CP_ACP
+  // à 65001 quoi que dise le système (B34-01).
+  DWORD system_page = 0;
+  GetLocaleInfoEx(LOCALE_NAME_SYSTEM_DEFAULT, LOCALE_IDEFAULTANSICODEPAGE | LOCALE_RETURN_NUMBER,
+                  reinterpret_cast<LPWSTR>(&system_page),
+                  static_cast<int>(sizeof(system_page) / sizeof(wchar_t)));
   for (const fs::path& path : {existing, to_write}) {
-    const std::string safe = ajp::prepare::ansi_safe_path(path);
-    // Sans nom court sur ce volume (fsutil 8dot3name), le chemin reste entier : rien de pire qu'avant.
-    if (safe == ajp::prepare::utf8_path(path)) continue;
-    CHECK(std::ranges::all_of(safe, [](char c) { return static_cast<unsigned char>(c) < 0x80; }));
-    CHECK(fs::equivalent(ajp::prepare::path_from_utf8(safe).parent_path(), dir));
-    CHECK(ajp::prepare::path_from_utf8(safe).filename() == path.filename());
+    const auto safe = ajp::prepare::ansi_command_path(path);
+    if (system_page == CP_UTF8) {
+      // « Utiliser Unicode UTF-8 » : tout s'écrit, le chemin reste entier.
+      REQUIRE(safe.has_value());
+      CHECK(*safe == ajp::prepare::utf8_path(path));
+      continue;
+    }
+    // Sans nom court sur ce volume (fsutil 8dot3name), aucune forme sûre : le refus se dit avant le
+    // lancement.
+    if (!safe) {
+      WARN("pas de nom court 8.3 sur ce volume : forme sûre introuvable, dit par nullopt");
+      CHECK(ajp::prepare::ansi_safe_path(path) == ajp::prepare::utf8_path(path));
+      continue;
+    }
+    CHECK(std::ranges::all_of(*safe, [](char c) { return static_cast<unsigned char>(c) < 0x80; }));
+    CHECK(fs::equivalent(ajp::prepare::path_from_utf8(*safe).parent_path(), dir));
+    CHECK(ajp::prepare::path_from_utf8(*safe).filename() == path.filename());
   }
 #else
+  CHECK(ajp::prepare::ansi_command_path(existing) == ajp::prepare::utf8_path(existing));
   CHECK(ajp::prepare::ansi_safe_path(existing) == ajp::prepare::utf8_path(existing));
   CHECK(ajp::prepare::ansi_safe_path(to_write) == ajp::prepare::utf8_path(to_write));
 #endif

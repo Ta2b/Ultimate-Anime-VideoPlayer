@@ -11,6 +11,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include "app/play/apple_model.h"
+#include "app/play/build_progress.h"
 #include "app/play/chain_setup.h"
 #include "app/play/controls.h"
 #include "app/play/derived_model.h"
@@ -105,7 +106,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
       const PrepareView view{
           .label = i18n::ui_tr_format("Preparing engine {}", engine.name),
           .fraction = progress.fraction(now),
-          .details = {status.stage,
+          .details = {build_stage_text(status.stage),
                       i18n::tr_format("elapsed {} · expected ~{}", seconds(progress.elapsed_seconds(now)),
                                       seconds(progress.expected_seconds())),
                       i18n::tr_format("{} · input {}x{} · {}", engine.model, engine.width, engine.height,

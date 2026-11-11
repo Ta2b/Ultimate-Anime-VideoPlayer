@@ -6,6 +6,7 @@
 #include "prepare/onnx_scan.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <optional>
 #include <set>
@@ -231,6 +232,28 @@ std::expected<OnnxSummary, Refusal> scan_onnx(Bytes model) {
   return summary;
 }
 
+namespace {
+
+// Un nom que Windows réserve à un périphérique (CON, NUL, COM1…), avec ou sans extension, quelle que soit la
+// casse.
+bool reserved_device_name(std::string_view component) {
+  const std::size_t dot = component.find('.');
+  std::string base(component.substr(0, dot));
+  for (char& c : base) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL") return true;
+  return base.size() == 4 && (base.starts_with("COM") || base.starts_with("LPT")) && base[3] >= '1' &&
+         base[3] <= '9';
+}
+
+// Un composant que Windows lirait autrement qu'écrit (un point ou une espace finale s'en va) ou réserve à un
+// périphérique. Refusé sur tous les systèmes : le même modèle doit être refusé partout (B04-05).
+bool windows_hostile_component(std::string_view component) {
+  if (component.empty() || component == "." || component == "..") return false;
+  return component.back() == '.' || component.back() == ' ' || reserved_device_name(component);
+}
+
+}  // namespace
+
 bool is_safe_location(const std::string& location) {
   if (!is_utf8(location)) return false;  // path_from_utf8 lèverait sous Windows (A04-01)
   const std::filesystem::path relative = path_from_utf8(location);
@@ -240,7 +263,15 @@ bool is_safe_location(const std::string& location) {
       location.find(':') != std::string::npos) {
     return false;
   }
-  return std::ranges::none_of(relative, [](const std::filesystem::path& part) { return part == ".."; });
+  if (std::ranges::any_of(relative, [](const std::filesystem::path& part) { return part == ".."; }))
+    return false;
+  std::size_t start = 0;
+  while (start <= location.size()) {
+    const std::size_t end = std::min(location.find('/', start), location.size());
+    if (windows_hostile_component(std::string_view(location).substr(start, end - start))) return false;
+    start = end + 1;
+  }
+  return true;
 }
 
 }  // namespace ajp::prepare

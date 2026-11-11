@@ -7,6 +7,9 @@
 #include <system_error>
 #include <vector>
 
+#include "prepare/cache.h"
+#include "prepare/cache_io.h"
+#include "prepare/key_lock.h"
 #include "prepare/utf8.h"
 
 namespace ajp::prepare {
@@ -52,6 +55,47 @@ bool remove_entry(const Entry& entry) {
   return true;
 }
 
+// Le reste d'une construction tuée : dossier de travail marqué, plus vieux que stale. Les octets rendus
+// comptent dans removed_bytes.
+bool remove_stale_stage(const fs::path& folder, const CachePurgeLimits& limits, fs::file_time_type now,
+                        CachePurgeResult& result) {
+  if (!utf8_path(folder.filename()).starts_with(kStagePrefix) || !is_stage_folder(folder)) return false;
+  std::error_code error;
+  const auto written = fs::last_write_time(folder, error);
+  if (error || now - written <= limits.stale_build) return true;  // trop récent : peut-être vivant
+  std::uint64_t bytes = 0;
+  for (fs::recursive_directory_iterator walk(folder, fs::directory_options::skip_permission_denied, error),
+       end;
+       !error && walk != end; walk.increment(error)) {
+    std::error_code size_error;
+    if (walk->is_regular_file(size_error)) bytes += size_of(walk->path());
+  }
+  error.clear();
+  fs::remove_all(folder, error);
+  if (!error) {
+    ++result.removed_stages;
+    result.removed_bytes += bytes;
+  }
+  return true;
+}
+
+// Le verrou d'un moteur disparu, sans usage depuis limits.idle : pris sans attendre (jamais un verrou tenu),
+// puis retiré. Sous Windows, retirer un fichier ouvert échoue : il reste, sans dommage.
+void remove_orphan_lock(const fs::path& lock, const CachePurgeLimits& limits, fs::file_time_type now,
+                        CachePurgeResult& result) {
+  const std::string name = utf8_path(lock.filename());
+  if (!name.starts_with("aji-v3-") || !name.ends_with(".engine.key-lock")) return;
+  fs::path engine = lock;
+  engine.replace_extension();  // « .key-lock » retiré
+  std::error_code error;
+  if (fs::exists(engine, error)) return;
+  const auto written = fs::last_write_time(lock, error);
+  if (error || now - written <= limits.idle) return;
+  auto held = KeyLock::acquire(lock, {}, LockWait::TryOnly);
+  if (!held) return;
+  if (fs::remove(lock, error) && !error) ++result.removed_locks;
+}
+
 }  // namespace
 
 CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits& limits,
@@ -60,11 +104,19 @@ CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits&
   std::vector<Entry> entries;
   std::error_code error;
   fs::directory_iterator it(dir, error);
+  std::vector<fs::path> locks;
   for (; !error && it != fs::directory_iterator(); it.increment(error)) {
     std::error_code type_error;
-    if (!it->is_regular_file(type_error)) continue;
     const fs::path& file = it->path();
+    if (!it->is_regular_file(type_error)) {
+      if (it->is_directory(type_error)) remove_stale_stage(file, limits, now, result);
+      continue;
+    }
     const std::string name = utf8_path(file.filename());
+    if (name.ends_with(".key-lock")) {
+      locks.push_back(file);
+      continue;
+    }
     if (name.starts_with("aji-timing-") && name.ends_with(".cache")) {
       std::error_code time_error;
       const auto written = fs::last_write_time(file, time_error);
@@ -91,6 +143,8 @@ CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits&
     ++result.kept;
     result.kept_bytes += entry.bytes;
   }
+  for (const fs::path& lock : locks)
+    remove_orphan_lock(lock, limits, now, result);  // après les moteurs retirés
   return result;
 }
 

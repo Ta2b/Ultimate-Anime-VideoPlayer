@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "prepare/process.h"
+#include "prepare/utf8.h"
 
 #ifdef __APPLE__
 #include <crt_externs.h>
@@ -45,7 +46,7 @@ constexpr std::array kDefaultSignals{SIGPIPE, SIGINT, SIGTERM, SIGQUIT, SIGHUP, 
 std::unexpected<Refusal> spawn_failure(const std::filesystem::path& program, int error) {
   return std::unexpected(Refusal{
       RefusalCode::BuilderFailed,
-      "lancement impossible de " + program.string() + " : " + std::generic_category().message(error)});
+      "lancement impossible de " + utf8_path(program) + " : " + std::generic_category().message(error)});
 }
 
 // L'environnement du lecteur, transmis sans être lu.
@@ -179,7 +180,7 @@ bool drain(int fd, LineSplitter& lines) {
 }
 
 #ifdef __linux__
-// L'enfant entre fork et exec : rien que des appels sûrs dans un processus à plusieurs threads (ni
+// L'enfant entre vfork et exec : rien que des appels sûrs dans un processus à plusieurs threads (ni
 // allocation, ni verrou). Un échec part par `report` (errno), puis _exit.
 [[noreturn]] void child_failed(int report) {
   const int error = errno;
@@ -197,7 +198,7 @@ bool drain(int fd, LineSplitter& lines) {
   if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0) fail();
   if (::getppid() != parent) ::_exit(127);
   if (::setpgid(0, 0) != 0) fail();
-  struct sigaction fallback{};
+  struct sigaction fallback {};
   fallback.sa_handler = SIG_DFL;
   sigemptyset(&fallback.sa_mask);
   for (const int sig : kDefaultSignals) ::sigaction(sig, &fallback, nullptr);
@@ -223,7 +224,11 @@ std::expected<pid_t, int> spawn_child(const std::filesystem::path& program, char
   Fd report_write(above_stdio(report[1]));
   const char* dir = working_dir.empty() ? nullptr : working_dir.c_str();
   const pid_t parent = ::getpid();
-  const pid_t pid = ::fork();
+  // vfork et non fork : le lecteur porte un contexte CUDA, Vulkan et plusieurs Gio d'adresses, dont fork
+  // copierait les tables de pages (fautes copie-sur-écriture du thread de rendu jusqu'à l'exec, ENOMEM sous
+  // vm.overcommit_memory=2). L'enfant ne fait que des appels système sûrs puis execve ou _exit (exec_child ne
+  // rend jamais la main), ce qui est ce que vfork permet ; le parent reprend à l'exec (B05-08).
+  const pid_t pid = ::vfork();
   if (pid < 0) return std::unexpected(errno);
   if (pid == 0) exec_child(program.c_str(), argv, envp, dir, output, report_write.get(), parent);
   report_write.reset();
@@ -270,7 +275,7 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   auto pipe = make_pipe();
   if (!pipe) return spawn_failure(spec.program, pipe.error());
 
-  std::vector<std::string> storage{spec.program.string()};
+  std::vector<std::string> storage{utf8_path(spec.program)};
   storage.insert(storage.end(), spec.args.begin(), spec.args.end());
   std::vector<char*> argv;
   argv.reserve(storage.size() + 1);
