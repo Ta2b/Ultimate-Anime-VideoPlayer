@@ -116,7 +116,17 @@ std::expected<void, Refusal> FakeBackend::enqueue(gpu::Engine& engine, std::span
                                                   std::span<gpu::Tensor> outputs) {
   if (inputs.size() != engine.input_names().size() || outputs.size() != engine.output_names().size())
     return refuse(RefusalCode::InputMismatch, "backend factice : nombre de tenseurs du moteur");
-  return note(std::format("engine {}", static_cast<const FakeEngine&>(engine).name()));
+  const std::string& name = static_cast<const FakeEngine&>(engine).name();
+  if (name == "span") {  // la sortie de SPAN porte l'image de son entrée
+    const std::scoped_lock lock(mutex_);
+    const auto source = ingested_.find(inputs[0].handle);
+    if (source != ingested_.end()) {
+      ingested_[outputs[0].handle] = source->second;
+    } else {
+      ingested_.erase(outputs[0].handle);
+    }
+  }
+  return note(std::format("engine {}", name));
 }
 
 std::expected<void, Refusal> FakeBackend::ingest(const DecodedFrame& frame, const gpu::IngestSpec&,

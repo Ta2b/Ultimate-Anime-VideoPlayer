@@ -150,11 +150,18 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<void, Refusal> rife_crop(const gpu::Tensor& /*padded*/, const gpu::Tensor& out) override {
     return note("rife_crop", out.handle);
   }
-  std::expected<void, Refusal> warp_blend(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+  std::expected<void, Refusal> warp_blend(const gpu::Tensor& a, const gpu::Tensor& b,
                                           const gpu::Motion& /*motion*/, float t,
                                           const gpu::Tensor& /*out*/) override {
+    note_warp(a, b);
     note_t(warp_ts_, t);
     return note("warp_blend");
+  }
+  // Les images (left, right) que lit chaque warp, dans l'ordre : celles ingérées dans a et b, ou passées
+  // par SPAN jusqu'à eux ; 0 pour un tenseur sans image.
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> warp_pairs() const {
+    const std::scoped_lock lock(mutex_);
+    return warp_pairs_;
   }
   // L'instant de chaque warp_blend, dans l'ordre.
   std::vector<float> warp_ts() const {
@@ -222,21 +229,24 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     const std::scoped_lock lock(mutex_);
     return flow_tickets_.size();
   }
-  std::expected<void, Refusal> warp_blend_poses(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+  std::expected<void, Refusal> warp_blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
                                                 const gpu::Motion& /*motion*/,
                                                 const gpu::Motion* /*previous*/, float /*t*/,
                                                 const gpu::Tensor& /*out*/) override {
+    note_warp(a, b);
     return note("warp_blend_poses");
   }
-  std::expected<void, Refusal> warp_blend_ring(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+  std::expected<void, Refusal> warp_blend_ring(const gpu::Tensor& a, const gpu::Tensor& b,
                                                const gpu::Motion& /*motion*/, float /*t*/,
                                                const gpu::RingTarget& ring) override {
+    note_warp(a, b);
     return note_ring("warp_blend_ring", ring);
   }
-  std::expected<void, Refusal> warp_blend_poses_ring(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+  std::expected<void, Refusal> warp_blend_poses_ring(const gpu::Tensor& a, const gpu::Tensor& b,
                                                      const gpu::Motion& /*motion*/,
                                                      const gpu::Motion* /*previous*/, float /*t*/,
                                                      const gpu::RingTarget& ring) override {
+    note_warp(a, b);
     return note_ring("warp_blend_poses_ring", ring);
   }
   std::expected<void, Refusal> write_yuv(const gpu::Tensor& rgb, const gpu::YuvTarget& target) override;
@@ -259,7 +269,16 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     const gpu::PairScores ids = scores_of(a, b);
     rife_pairs_.emplace_back(ids.left.value, ids.right.value);
   }
+  void note_warp(const gpu::Tensor& a, const gpu::Tensor& b) {
+    const std::scoped_lock lock(mutex_);
+    const auto id = [this](const gpu::Tensor& t) {
+      const auto found = ingested_.find(t.handle);
+      return found == ingested_.end() ? 0U : found->second.value;
+    };
+    warp_pairs_.emplace_back(id(a), id(b));
+  }
   std::vector<float> warp_ts_;
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> warp_pairs_;
   std::vector<float> rife_ts_;
   std::vector<std::pair<std::uint32_t, std::uint32_t>> rife_pairs_;
   mutable std::mutex mutex_;
