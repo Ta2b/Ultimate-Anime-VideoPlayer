@@ -332,6 +332,18 @@ std::string preferred_rtx_name(pl_vk_inst inst) {
   return {};
 }
 
+// La carte à demander à libplacebo : celle des options, sinon la RTX préférée (nul : choix automatique). Son
+// nom reste dans l'Impl, vivant jusqu'à pl_vulkan_create.
+template <class ScreenImpl>  // PlaceboScreen::Impl est privé : le gabarit évite de le nommer
+const char* pick_device(const ScreenOptions& options, ScreenImpl& impl) {
+  if (!options.device_name.empty()) return options.device_name.c_str();
+  if (options.allow_software) return nullptr;
+  impl.device_choice = preferred_rtx_name(impl.inst);
+  if (impl.device_choice.empty()) return nullptr;
+  impl.channel->info("plusieurs cartes : la carte NVIDIA RTX « {} » est préférée", impl.device_choice);
+  return impl.device_choice.c_str();
+}
+
 }  // namespace
 
 void PlaceboScreen::Impl::open_shader_cache(const std::filesystem::path& file) {
@@ -560,16 +572,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.num_opt_extensions = static_cast<int>(extensions.size());
   vk_params.extra_queues = kVideoQueueFlags | kBackendQueueFlags;
   vk_params.queue_count = static_cast<int>(kPlaceboQueues);  // la file d'après reste aux moteurs
-  std::string preferred;
-  if (!options.device_name.empty()) {
-    vk_params.device_name = options.device_name.c_str();
-  } else if (!options.allow_software) {
-    preferred = preferred_rtx_name(impl->inst);
-    if (!preferred.empty()) {
-      impl->channel->info("plusieurs cartes : la carte NVIDIA RTX « {} » est préférée", preferred);
-      vk_params.device_name = preferred.c_str();
-    }
-  }
+  vk_params.device_name = pick_device(options, *impl);
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
   if (impl->vk == nullptr && vk_params.device_name != nullptr) {
     // La carte choisie n'est plus là (eGPU débranché, pilote changé) : libplacebo choisit (P3.16).

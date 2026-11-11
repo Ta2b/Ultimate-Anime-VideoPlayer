@@ -55,6 +55,8 @@ std::vector<std::pair<std::string, std::string>> playback_facts(const PlaybackFa
 // Les faits de la lecture qui s'ouvre, retenus pour le rapport.
 void note_playback_facts(const media::TrackInfo& video, const ColorInfo& source, const std::string& screen,
                          bool hdr_output, const std::string& chain, const std::filesystem::path& file);
+// La chaîne qui joue : au journal avec le nom du fichier, et dans les faits du rapport.
+void announce_playback(const Player& p, const ColorInfo& source, bool hdr_output, const std::string& chain);
 
 // Les décodeurs à essayer pour un backend : NVDEC en mémoire CUDA pour TensorRT, puis le décodage
 // logiciel pour ce que NVDEC refuse (H.264 10 bits, VP9 profils 1 et 3…), envoyé par le backend

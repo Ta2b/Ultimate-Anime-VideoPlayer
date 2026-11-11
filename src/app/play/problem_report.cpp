@@ -92,6 +92,26 @@ bool path_starts(std::string_view text, std::size_t at) {
   return false;
 }
 
+// L'étendue d'un chemin qui commence en text[at] : un nom de dossier peut porter des espaces (« Données SSD
+// »), elle court donc jusqu'à une fin de ligne, un guillemet, un séparateur du journal (« , », « : », « · »,
+// « ; »), la parenthèse qui ferme celle d'où le chemin sort, ou un autre chemin.
+std::size_t path_end(std::string_view text, std::size_t at) {
+  const char opener = at == 0 ? '\0' : text[at - 1];
+  std::size_t end = at;
+  while (end < text.size()) {
+    const char c = text[end];
+    if (c == '\n' || c == '"') break;
+    const std::string_view rest = text.substr(end);
+    if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
+        rest.starts_with("; "))
+      break;
+    if (opener == '(' && c == ')') break;
+    if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
+    ++end;
+  }
+  return end;
+}
+
 }  // namespace
 
 void note_report_fact(std::string_view name, std::string_view value) {
@@ -169,22 +189,7 @@ std::string sanitize_report_paths(std::string_view text, std::string_view home) 
       out.push_back(text[at++]);
       continue;
     }
-    // L'étendue : un nom de dossier peut porter des espaces (« Données SSD »), elle court donc jusqu'à une
-    // fin de ligne, un guillemet, un séparateur du journal (« , », « : », « · », « ; »), la parenthèse qui
-    // ferme celle d'où le chemin sort, ou un autre chemin.
-    const char opener = at == 0 ? '\0' : text[at - 1];
-    std::size_t end = at;
-    while (end < text.size()) {
-      const char c = text[end];
-      if (c == '\n' || c == '"') break;
-      const std::string_view rest = text.substr(end);
-      if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
-          rest.starts_with("; "))
-        break;
-      if (opener == '(' && c == ')') break;
-      if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
-      ++end;
-    }
+    const std::size_t end = path_end(text, at);
     std::size_t last = std::string_view::npos;
     std::size_t separators = 0;
     for (std::size_t i = at; i < end; ++i) {

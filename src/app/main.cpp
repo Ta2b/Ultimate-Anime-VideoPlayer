@@ -77,6 +77,16 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;  // NOLINT
 
 namespace {
 
+// Avant SDL_Init : les erreurs de FFmpeg vont au journal (ses avertissements de sonde sont du bruit), et SDL
+// reçoit le nom, la version et l'identifiant de l'application (B19-01). L'identifiant devient l'app_id
+// Wayland et le WM_CLASS X11 : le bureau rattache la fenêtre à la fiche .desktop (icône, épinglage).
+void prepare_libraries() {
+  ajp::media::route_ffmpeg_log_to_journal();
+  SDL_SetAppMetadata(std::string(ajp::app::play::kAppName).c_str(),
+                     std::string(ajp::app::play::installed_version()).c_str(),
+                     std::string(ajp::app::play::kAppId).c_str());
+}
+
 // SDL rend ses chemins en UTF-8, quel que soit le système.
 std::filesystem::path sdl_path(const char* path) {
   return path != nullptr ? ajp::prepare::path_from_utf8(path) : std::filesystem::path();
@@ -538,14 +548,7 @@ int run_player(int argc, char** argv) {
     if (!baked) return fail(baked.error());
     return 0;
   }
-  ajp::media::route_ffmpeg_log_to_journal();  // les erreurs de FFmpeg vont au journal, ses avertissements de
-                                              // sonde sont du bruit
-  // B19-01 : le nom, la version et l'identifiant de l'application, avant SDL_Init. L'identifiant devient
-  // l'app_id Wayland et le WM_CLASS X11 : le bureau rattache la fenêtre à la fiche .desktop (icône,
-  // épinglage).
-  SDL_SetAppMetadata(std::string(ajp::app::play::kAppName).c_str(),
-                     std::string(ajp::app::play::installed_version()).c_str(),
-                     std::string(ajp::app::play::kAppId).c_str());
+  prepare_libraries();
   if (!SDL_Init(SDL_INIT_VIDEO))
     return fail_shown({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()},
                       *options);

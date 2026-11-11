@@ -293,6 +293,51 @@ void integrate(const PlayerPaths& paths, const Wizard& wizard, core::Settings& e
     log->warn("lecteur par défaut : {}", made.error().detail);
 }
 
+// La langue change en direct à l'écran Bienvenue : les textes déjà faits sont refaits dans la nouvelle
+// (B25-02). Les données (carte, moteurs, niveau, écran) sont copiées ici, la vue partant ailleurs.
+std::function<void(FirstRunView&)> retranslation(GpuFacts gpu, EnginesHere here, core::Settings saved,
+                                                 Tier tier, int height, double hertz) {
+  return [gpu = std::move(gpu), here = std::move(here), saved = std::move(saved), tier, height,
+          hertz](FirstRunView& shown) {
+    const FirstRunView fresh = first_run_view(gpu, here, saved);
+    shown.gpu = fresh.gpu;
+    for (EngineRow& row : shown.engines) {
+      const auto same =
+          std::ranges::find(fresh.engines, row.offer.id, [](const EngineRow& r) { return r.offer.id; });
+      if (same != fresh.engines.end()) row.status = same->status;
+    }
+    shown.tier_line = i18n::tr_format("Estimated level: {}", tier_label(tier));
+    shown.display_line = display_text(height, hertz);
+  };
+}
+
+// La fin de l'assistant : réglages, inscription et calibration. Faux si la fenêtre se ferme pendant la
+// calibration.
+bool finish_wizard(const EngineScreen& s, const Wizard& wizard, core::Settings& engines,
+                   const std::filesystem::path& play_path) {
+  const auto log = log_channel("app");
+  engines = wizard_settings(std::move(engines));
+  auto play = load_settings(play_path);
+  PlaySettings chosen_play;
+  if (play) chosen_play = std::move(*play);
+  chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
+  integrate(s.paths, wizard, engines);
+  for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
+  // P3.2 : play.toml, settings.toml et l'inscription s'écrivent avant la calibration ; la fenêtre fermée
+  // pendant qu'elle tourne ne perd plus les choix (seule la chaîne calibrée manque, Auto la remplace).
+  if (auto written = save_settings(play_path, chosen_play); !written) log->warn("{}", written.error().detail);
+  if (auto written = core::save_settings(s.engines_path, engines); !written)
+    log->warn("{}", written.error().detail);
+  if (wants_machine_calibration(wizard)) {
+    auto calibrated =
+        calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
+    if (!calibrated) return false;
+    if (auto written = save_settings(play_path, *calibrated); !written)
+      log->warn("{}", written.error().detail);
+  }
+  return true;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -320,21 +365,9 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
         begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
     view.tier_line = i18n::tr_format("Estimated level: {}", tier_label(estimate.tier));
     host_notes(view, gpu, s.screen.window());
-    // La langue change en direct à l'écran Bienvenue : les textes déjà faits sont refaits dans la nouvelle
-    // (B25-02). Les données (carte, moteurs, niveau, écran) sont copiées ici, la vue partant ailleurs.
-    view.retranslate = [gpu, here = engines_here(s.options, s.paths, s.catalog, gpu.name), saved = engines,
-                        tier = estimate.tier, height = display_height(s.screen.window()),
-                        hertz = display_refresh_hz(s.screen.window())](FirstRunView& shown) {
-      const FirstRunView fresh = first_run_view(gpu, here, saved);
-      shown.gpu = fresh.gpu;
-      for (EngineRow& row : shown.engines) {
-        const auto same =
-            std::ranges::find(fresh.engines, row.offer.id, [](const EngineRow& r) { return r.offer.id; });
-        if (same != fresh.engines.end()) row.status = same->status;
-      }
-      shown.tier_line = i18n::tr_format("Estimated level: {}", tier_label(tier));
-      shown.display_line = display_text(height, hertz);
-    };
+    view.retranslate =
+        retranslation(gpu, engines_here(s.options, s.paths, s.catalog, gpu.name), engines, estimate.tier,
+                      display_height(s.screen.window()), display_refresh_hz(s.screen.window()));
     start_from_saved(view.wizard, play_path);
   }
   const auto on_step = [&](const Wizard& wizard) {
@@ -375,29 +408,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   const std::optional<core::EngineId> kept = before.preferred[usage(core::Usage::Upscale)];
   if (revisit && kept && chosen(engines, *kept) && !network_added(before, engines))
     engines = using_engine(std::move(engines), *kept);
-  if (wizard_mode) {
-    const Wizard& wizard = (*chosen_view)->wizard;
-    engines = wizard_settings(std::move(engines));
-    auto play = load_settings(play_path);
-    PlaySettings chosen_play;
-    if (play) chosen_play = std::move(*play);
-    chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
-    integrate(s.paths, wizard, engines);
-    for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
-    // P3.2 : play.toml, settings.toml et l'inscription s'écrivent avant la calibration ; la fenêtre fermée
-    // pendant qu'elle tourne ne perd plus les choix (seule la chaîne calibrée manque, Auto la remplace).
-    if (auto written = save_settings(play_path, chosen_play); !written)
-      log->warn("{}", written.error().detail);
-    if (auto written = core::save_settings(s.engines_path, engines); !written)
-      log->warn("{}", written.error().detail);
-    if (wants_machine_calibration(wizard)) {
-      auto calibrated =
-          calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
-      if (!calibrated) return false;
-      if (auto written = save_settings(play_path, *calibrated); !written)
-        log->warn("{}", written.error().detail);
-    }
-  }
+  if (wizard_mode && !finish_wizard(s, (*chosen_view)->wizard, engines, play_path)) return false;
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);
   log->info("moteurs choisis : {}", chosen_line(engines));

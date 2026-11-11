@@ -197,8 +197,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
 
   settings.stats.all = p.details;  // Tab pendant la préparation
 
-  const std::string screen_text = describe_hdr(p.screen.window());
-  log->info("{}", screen_text);
+  log->info("{}", describe_hdr(p.screen.window()));
   const std::optional<double> peak_seen = content_peak_nits(p.screen.window());
   const int auto_peak = auto_peak_nits(peak_seen);
   // Le HDR suit le système (system_hdr) : sortie HDR10 si l'écran en reçoit assez, sinon SDR gradée, la
@@ -217,8 +216,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::string label_text = std::format("{}{}{}", c.motion_label(settings),
                                              // Le HDR, s'il tourne vraiment sur une sortie HDR10.
                                              settings.hdr_native ? "HDR · " : "", c.span_label());
-  log->info("{} : {}", prepare::utf8_path(options.file.filename()), label_text);
-  note_playback_facts(video, source, screen_text, settings.hdr_native, label_text, options.file);
+  announce_playback(p, source, settings.hdr_native, label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(played) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
