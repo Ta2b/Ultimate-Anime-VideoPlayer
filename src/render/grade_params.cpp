@@ -172,6 +172,10 @@ void sdr_tonemap(GradeParams& p) {
   p.tm_top = std::max(p.peak * (1.0 - 0.5 * t * t * (3.0 - 2.0 * t)), 1.25 * p.tm_white);
 }
 
+void steady_hdr(GradeParams& p) {
+  p.fs_apl = -1.0;
+}
+
 std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nits, double steps) {
   if (step_nits.size() < 2 || std::isnan(steps)) return std::nullopt;
   steps = std::clamp(steps, grade_limits::kBlackSteps.lo, grade_limits::kBlackSteps.hi);

@@ -175,6 +175,11 @@ std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display);
 // reste : ses seuils sont mesurés sur la sortie jouée.
 void sdr_tonemap(GradeParams& p);
 
+// La sortie HDR sans limiteur de scène : la marge des éclats au pic, quelle que soit la clé de la scène
+// (fs_apl inconnue) ; la dalle limite elle-même les scènes claires. L'exposition par plan (an_lift) et la
+// série (fs_series) restent.
+void steady_hdr(GradeParams& p);
+
 std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& settings,
                                                    const GradeContext& context);
 
