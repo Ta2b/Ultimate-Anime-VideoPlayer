@@ -235,6 +235,7 @@ class Session {
   bool step_from_queue();  // P3.42 : image suivante de la file, en pause, sans seek
   const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
+  ShowRequest show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const;
   // Une présentation vient d'être rendue. Si c'est la première image d'une époque, l'horloge part de son pts
   // maintenant, et --seconds compte d'ici : partie au choix de l'image, elle courait pendant ce premier rendu
   // (la compilation des shaders, plus d'une seconde sous lavapipe sans cache) et la lecture sautait autant

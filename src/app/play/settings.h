@@ -318,7 +318,9 @@ inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
 inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
 // Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66 ; tenu par un static_assert de
 // host_facts.cpp) : un pic réglable fait toujours une sortie HDR.
-inline constexpr core::Range<int> kTrueHdrPeak{350, 2000};  // ou 0 : automatique
+// Le haut suit les téléviseurs HDR de 3000 à 4000 nits (B37-09) ; le grade accepte jusqu'à 10 000
+// (render::grade_limits::kPeakNits).
+inline constexpr core::Range<int> kTrueHdrPeak{350, 4000};  // ou 0 : automatique
 inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits
 

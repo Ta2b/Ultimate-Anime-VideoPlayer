@@ -32,9 +32,12 @@ struct MeasuredAbl {
 // sdr_white_nits (A11-06) : le blanc SDR que le système dit, quand il le dit (sous Windows, le curseur
 // « luminosité du contenu SDR »). La marge de SDL est relative à lui : le pic vaut marge × ce blanc. Avant,
 // toujours marge × 203, donc un pic faux dès que le curseur quittait sa valeur par défaut. 0 : inconnu.
+// system_peak (B11-10) : sous Windows, le pic que le grade vise (content_peak_nits, MaxLuminance de DXGI
+// réglé par l'application « Étalonnage HDR ») ; il passe devant marge × blanc, pour qu'une seule source dise
+// le pic de l'écran. Rien ailleurs.
 render::DisplayContract contract_of(const DisplayFacts& facts, const std::optional<KwinOutput>& kwin,
                                     double headroom, const std::optional<MeasuredAbl>& abl,
-                                    double sdr_white_nits = 0.0);
+                                    double sdr_white_nits = 0.0, std::optional<double> system_peak = {});
 // Le blanc SDR du système d'après la propriété de SDL (1,0 = 80 nits en scRGB, sous Windows seulement) ;
 // 0 ailleurs ou quand SDL ne dit rien. Pur.
 constexpr double sdr_white_nits_of(float sdl_white_level, bool windows) {
