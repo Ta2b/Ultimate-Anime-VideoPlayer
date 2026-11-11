@@ -398,7 +398,7 @@ TEST_CASE("Un graphe aux noms de RIFE mais d'une autre colle n'est pas coupé (B
   // fausses.
   Fake fake;
   std::string_view which;
-  bool by_glue_check = true;  // le mélange sans masque est déjà refusé par la reconnaissance du masque
+  bool by_glue_check = true;  // ces défauts sont refusés plus tôt, par la reconnaissance du masque ou du flot
   SECTION("encodage non warpé") {
     fake.unwarped_encodings = true;
     which = "warpée";
@@ -406,6 +406,7 @@ TEST_CASE("Un graphe aux noms de RIFE mais d'une autre colle n'est pas coupé (B
   SECTION("flot non accumulé") {
     fake.flow_not_accumulated = true;
     which = "flot";
+    by_glue_check = false;  // le Mul 1/d du flot est déjà refusé avant la colle
   }
   SECTION("mélange sans masque") {
     fake.blend_without_mask = true;
