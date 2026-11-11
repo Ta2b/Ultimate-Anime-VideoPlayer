@@ -54,6 +54,11 @@ std::optional<IngestFormat> ingest_format(PixelFormat format, bool host) {
   }
 }
 
+const char* format_refusal(bool host) {
+  return host ? "ingestion hôte : NV12, P010, P016, YUV 4:2:0 8 ou 10 bits, 4:2:2 ou 4:4:4 16 bits"
+              : "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement";
+}
+
 kernels::Siting siting_of(ChromaSiting siting) {
   switch (siting) {
     case ChromaSiting::Left:
@@ -119,11 +124,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   }
   const auto format = ingest_format(frame.format, host);
   const auto matrix = matrix_of(frame.color.matrix);
-  if (!format || !matrix) {
-    return refuse(RefusalCode::FormatUnsupported,
-                  host ? "ingestion hôte : NV12, P010, P016, YUV 4:2:0 8 ou 10 bits, 4:2:2 ou 4:4:4 16 bits"
-                       : "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
-  }
+  if (!format || !matrix) return refuse(RefusalCode::FormatUnsupported, format_refusal(host));
   // Tenseur à la taille de l'image, ou plus petit : réduction Area fusionnée (slice_kernels.h).
   const int out_width = static_cast<int>(rgb.shape.dims[3]);
   const int out_height = static_cast<int>(rgb.shape.dims[2]);
@@ -135,14 +136,10 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
                     frame.height, frame.width));
   }
   pair_levels_ = frame.color.range == ColorRange::Full ? 255.0F : 219.0F;  // pas de luma de la source
-  // La chroma au filtre demandé, comme l'ingestion Vulkan (B03-02) ; Area ne fait que réduire.
-  if (spec.chroma != kernels::Filter::Spline36 && spec.chroma != kernels::Filter::Bilinear)
-    return refuse(RefusalCode::FormatUnsupported, "ingestion : chroma en Spline36 ou bilinéaire attendue");
   const kernels::YuvScale scale = kernels::yuv_scale(
       format->scale, frame.color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited);
   const kernels::Coefficients k = kernels::coefficients(*matrix);
-  pair_kr_ = k.kr;  // la luma des mesures de paire est celle de la source (B03-06)
-  pair_kb_ = k.kb;
+  pair_k_ = k;  // la luma des mesures de paire est celle de la source (B03-06)
   IngestParams params{
       .luma =
           reinterpret_cast<const void*>(frame.data->native_plane(0)),  // NOLINT(performance-no-int-to-ptr)
@@ -167,9 +164,6 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
       .cscale = scale.cscale,
       .kr = k.kr,
       .kb = k.kb,
-      .chroma_layout = format->chroma,
-      .chroma_width = format->chroma == kChroma444 ? frame.width : (frame.width + 1) / 2,
-      .chroma_height = format->chroma == kChroma420 ? (frame.height + 1) / 2 : frame.height,
       .rgb = address(rgb),
   };
   if (!host && (params.luma == nullptr || params.chroma == nullptr || params.luma_pitch == 0 ||
@@ -182,7 +176,9 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     if (!layout) return refuse(RefusalCode::FormatUnsupported, "ingestion hôte : format sans disposition");
   }
   if (auto ok = bind(); !ok) return ok;
-  if (auto ok = chroma_tables(params, siting_of(frame.color.siting), spec.chroma); !ok) return ok;
+  // La chroma au filtre demandé, comme l'ingestion Vulkan (B03-02).
+  if (auto ok = chroma_tables(params, format->chroma, siting_of(frame.color.siting), spec.chroma); !ok)
+    return ok;
   const std::size_t rows = ingest_rows_bytes(params);
   if (rows > ingest_rows_size_) {
     // Toutes les voies peuvent encore lire l'ancien tampon : il part en retrait, libéré quand elles

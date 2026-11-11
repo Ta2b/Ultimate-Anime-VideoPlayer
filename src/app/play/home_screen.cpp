@@ -149,8 +149,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .tensorrt_present = tensorrt_backend_present(h.catalog, h.paths),
       .capability = kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                     span_fp8_presumed(gpu_facts(h.screen).name) &&
-                    tensorrt_backend_present(h.catalog, h.paths),
-      .system_pending = !kSpanFp8Here};
+                    tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = window_display(h.screen.window());
   SettingsChoices choices{

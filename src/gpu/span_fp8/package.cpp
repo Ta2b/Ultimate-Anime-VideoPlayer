@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <optional>
+#include <string>
 #include <string_view>
 
 namespace ajp::gpu::span_fp8 {
@@ -85,6 +87,13 @@ Conv filled(std::size_t weights, std::size_t bias, float fill) {
   return conv;
 }
 
+// La version 1 n'a aucun drapeau ; l'accumulateur f16 n'existe qu'à partir de la 2 (B02-07).
+std::optional<std::string> flags_refusal(std::uint32_t version, std::uint32_t flags) {
+  const std::uint32_t known = version == 1 ? 0U : kFlagAcc16;
+  if ((flags & ~known) == 0U) return std::nullopt;
+  return std::format("paquet SPAN FP8 : drapeaux {:#x} inconnus en version {}", flags & ~known, version);
+}
+
 }  // namespace
 
 bool size_supported(int height, int width) {
@@ -131,12 +140,7 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
                   std::format("paquet SPAN FP8 : version {} inconnue", version));
   const std::uint32_t block_count = get_u32(head + 4);
   const std::uint32_t flags = get_u32(head + 28);
-  // La version 1 n'a aucun drapeau ; l'accumulateur f16 n'existe qu'à partir de la 2 (B02-07).
-  const std::uint32_t known = version == 1 ? 0U : kFlagAcc16;
-  if ((flags & ~known) != 0U)
-    return refuse(
-        RefusalCode::FormatUnsupported,
-        std::format("paquet SPAN FP8 : drapeaux {:#x} inconnus en version {}", flags & ~known, version));
+  if (auto refused = flags_refusal(version, flags)) return refuse(RefusalCode::FormatUnsupported, *refused);
   const std::uint32_t real = version == 1 ? (get_u32(head + 12) == 0 ? kChannels : 0U) : get_u32(head + 12);
   const bool shape_ok = get_u32(head + 8) == static_cast<std::uint32_t>(kChannels) &&
                         (version == 1 ? block_count == static_cast<std::uint32_t>(kBlocks)

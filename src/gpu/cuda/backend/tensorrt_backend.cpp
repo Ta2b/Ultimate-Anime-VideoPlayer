@@ -216,27 +216,10 @@ TensorRtBackend::~TensorRtBackend() {
   // Rien de créé : create_lanes a échoué avant la première file. Une file créée suffit à tout passer en
   // revue (événements et files déjà créés d'une création interrompue au milieu) ; stream_ n'est posé qu'à
   // la fin de create_lanes.
-  if (std::ranges::none_of(streams_, [](cudaStream_t lane) { return lane != nullptr; })) return;
+  if (!any_lane()) return;
   cudaSetDevice(device_);
   destroy_textures();
-  if (const int used = std::popcount(used_lanes_); used > 1 && !stages_.empty()) {
-    log(BackendLogLevel::Info,
-        std::format("profil GPU · {} voies en parallèle : chaque temps court sur la file de son étape, "
-                    "recouvrement avec les autres voies compris (--one-lane : coût propre de chaque moteur)",
-                    used));
-  }
-  for (auto& [name, timing] : stages_) {
-    if (const std::string line = timing->summary(); !line.empty())
-      log(BackendLogLevel::Info, "profil GPU · " + line);
-  }
-  for (const auto& timing : role_timing_) {
-    if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
-      log(BackendLogLevel::Info, "profil GPU · rôle " + line);
-  }
-  if (chain_span_) {
-    if (const std::string line = chain_span_->summary(); !line.empty())
-      log(BackendLogLevel::Info, "profil GPU · " + line);
-  }
+  log_profile();
   stages_.clear();
   slots_.clear();
   retired_.clear();
@@ -273,16 +256,30 @@ TensorRtBackend::~TensorRtBackend() {
   for (cudaEvent_t fence : fences_) {
     if (fence != nullptr) cudaEventDestroy(fence);
   }
-  // Les zones d'activation, la plus grosse allocation du pool, partent avant sa purge : détruites après le
-  // corps du destructeur (membres), elles revenaient au pool déjà purgé et y restaient jusqu'à la fin du
-  // processus. Les moteurs qui les tenaient sont déjà détruits (ChainEngines) ; une zone qu'un moteur
-  // tiendrait encore se libère seule par cudaFree, sans rappeler ce backend.
-  for (std::shared_ptr<SharedActivations>& zone : arenas_) {
-    if (!zone) continue;
-    zone->set_pool({}, {});
-    zone.reset();
+  release_arenas();  // avant la purge du pool (B33-01)
+  destroy_lanes();   // et rend la réserve CUDA au pilote
+}
+
+// Le profil GPU de la séance au journal, à la destruction (--one-lane pour le coût propre de chaque moteur).
+void TensorRtBackend::log_profile() {
+  if (const int used = std::popcount(used_lanes_); used > 1 && !stages_.empty()) {
+    log(BackendLogLevel::Info,
+        std::format("profil GPU · {} voies en parallèle : chaque temps court sur la file de son étape, "
+                    "recouvrement avec les autres voies compris (--one-lane : coût propre de chaque moteur)",
+                    used));
   }
-  destroy_lanes();  // et rend la réserve CUDA au pilote
+  for (auto& [name, timing] : stages_) {
+    if (const std::string line = timing->summary(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
+  }
+  for (const auto& timing : role_timing_) {
+    if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · rôle " + line);
+  }
+  if (chain_span_) {
+    if (const std::string line = chain_span_->summary(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
+  }
 }
 
 std::expected<void, Refusal> TensorRtBackend::bind() const {

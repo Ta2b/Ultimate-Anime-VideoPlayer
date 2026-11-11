@@ -212,8 +212,8 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
                                 .width = width_of(a),
                                 .height = height_of(a),
                                 .levels = pair_levels_,  // la plage de la dernière source ingérée
-                                .kr = pair_kr_,          // et sa matrice
-                                .kb = pair_kb_,
+                                .kr = pair_k_.kr,        // et sa matrice
+                                .kb = pair_k_.kb,
                                 .total = &slot.device->total,
                                 .worst = &slot.device->worst};
     GpuTiming& timing = stage("mesures de la paire");

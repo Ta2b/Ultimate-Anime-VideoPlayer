@@ -30,11 +30,11 @@ inline constexpr bool kSpanFp8Here = true;
 
 // Ce que la machine sait du mode Performance de SPAN (pour dire pourquoi il manque).
 struct SpanFp8Facts {
-  std::string backend_name;       // le moteur en service (« tensorrt », « vulkan »…)
-  std::string gpu_name;           // « NVIDIA GeForce RTX 4050 Laptop GPU »
-  bool tensorrt_present = false;  // le module TensorRT est installé (il peut ne pas être en service)
-  bool capability = false;        // le moteur en service annonce BackendCaps::span_fp8_cutlass
-  bool system_pending = false;    // pas encore sur ce système (!kSpanFp8Here) : la phrase le dit
+  std::string backend_name;             // le moteur en service (« tensorrt », « vulkan »…)
+  std::string gpu_name;                 // « NVIDIA GeForce RTX 4050 Laptop GPU »
+  bool tensorrt_present = false;        // le module TensorRT est installé (il peut ne pas être en service)
+  bool capability = false;              // le moteur en service annonce BackendCaps::span_fp8_cutlass
+  bool system_pending = !kSpanFp8Here;  // pas encore sur ce système (!kSpanFp8Here) : la phrase le dit
 };
 
 // Vide si le mode Performance est possible ; sinon une phrase qui dit pourquoi et ce qu'il faut faire. Une

@@ -161,7 +161,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> apply(const LaneHazards::Op& op);
   std::expected<void, Refusal> record(std::size_t lane);  // l'événement en attente de lane
   std::expected<void, Refusal> create_lanes();
-  void destroy_lanes();  // et rend au pilote ce que la réserve CUDA ne prête plus (A33-01)
+  void destroy_lanes();   // et rend au pilote ce que la réserve CUDA ne prête plus (A33-01)
+  bool any_lane() const;  // une file au moins créée, même par une création interrompue (B01-04)
+  void log_profile();     // le profil GPU de la séance au journal
+  void release_arenas();  // les zones d'activation rendues au pool avant sa purge (B33-01)
   // Attente hôte d'un événement : interrogé quelques centaines de µs d'abord, puis attendu (le
   // contexte en attente bloquante réveille le thread 50 à 200 µs après l'événement, T14).
   static std::expected<void, Refusal> wait_event(cudaEvent_t event);
@@ -401,8 +404,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
     float* rows = nullptr;
   };
   ChromaTables chroma_;
-  // Pose les tables de params (taille, chroma_layout, chroma_width et chroma_height déjà posés).
-  std::expected<void, Refusal> chroma_tables(IngestParams& params, kernels::Siting siting,
+  // Pose dans params la disposition de la chroma (layout, slice_kernels.h) et ses tables, params.width et
+  // params.height déjà posés ; refuse un filtre qui ne suréchantillonne pas (Area ne fait que réduire).
+  std::expected<void, Refusal> chroma_tables(IngestParams& params, int layout, kernels::Siting siting,
                                              kernels::Filter filter);
   void release_chroma_tables(bool behind_lanes = false);  // true en lecture : derrière les voies
   // write_yuv : les tables de la réduction de chroma pour une taille et un siting, en mémoire
@@ -441,8 +445,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   static constexpr std::size_t kTextures = 256;
   float pair_levels_ = 219.0F;  // pas de luma 8 bits de la source ingérée : 219 limitée, 255 pleine
-  float pair_kr_ = 0.2126F;     // coefficients de luma de sa matrice (B03-06)
-  float pair_kb_ = 0.0722F;
+  kernels::Coefficients pair_k_ = kernels::coefficients(kernels::Matrix::Bt709);  // sa matrice (B03-06)
   std::map<TextureKey, cudaTextureObject_t> textures_;
   struct RetiredTextures {
     std::vector<cudaTextureObject_t> objects;

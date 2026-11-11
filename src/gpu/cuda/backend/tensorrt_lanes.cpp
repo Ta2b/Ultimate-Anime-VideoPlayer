@@ -4,6 +4,7 @@
 // alors enfilée) ou quand une autre voie doit l'attendre. kLaneMarks événements par voie servent
 // à tour de rôle : un rang ancien se lit sur un événement plus récent de la même file, attente
 // plus forte, jamais plus faible.
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -11,6 +12,7 @@
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
+#include "gpu/cuda/backend/shared_activations.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/cuda/backend/trt_engine.h"
 
@@ -22,6 +24,22 @@ namespace {
 constexpr auto kQueryBeforeWait = std::chrono::microseconds(200);
 
 }  // namespace
+
+bool TensorRtBackend::any_lane() const {
+  return std::ranges::any_of(streams_, [](cudaStream_t lane) { return lane != nullptr; });
+}
+
+void TensorRtBackend::release_arenas() {
+  // Les zones d'activation, la plus grosse allocation du pool, partent avant sa purge : détruites après le
+  // corps du destructeur (membres), elles revenaient au pool déjà purgé et y restaient jusqu'à la fin du
+  // processus. Les moteurs qui les tenaient sont déjà détruits (ChainEngines) ; une zone qu'un moteur
+  // tiendrait encore se libère seule par cudaFree, sans rappeler ce backend.
+  for (std::shared_ptr<SharedActivations>& zone : arenas_) {
+    if (!zone) continue;
+    zone->set_pool({}, {});
+    zone.reset();
+  }
+}
 
 std::expected<void, Refusal> TensorRtBackend::create_lanes() {
   // 8 Go et plus, dont assez de libres à l'ouverture : trois voies ; sinon toutes passent par la file de

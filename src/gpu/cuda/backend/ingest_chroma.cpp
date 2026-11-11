@@ -56,8 +56,13 @@ void TensorRtBackend::release_chroma_tables(bool behind_lanes) {
   chroma_ = ChromaTables{};
 }
 
-std::expected<void, Refusal> TensorRtBackend::chroma_tables(IngestParams& params, kernels::Siting siting,
-                                                            kernels::Filter filter) {
+std::expected<void, Refusal> TensorRtBackend::chroma_tables(IngestParams& params, int layout,
+                                                            kernels::Siting siting, kernels::Filter filter) {
+  if (filter != kernels::Filter::Spline36 && filter != kernels::Filter::Bilinear)
+    return refuse(RefusalCode::FormatUnsupported, "ingestion : chroma en Spline36 ou bilinéaire attendue");
+  params.chroma_layout = layout;
+  params.chroma_width = layout == kChroma444 ? params.width : (params.width + 1) / 2;
+  params.chroma_height = layout == kChroma420 ? (params.height + 1) / 2 : params.height;
   if (params.chroma_layout == kChroma444) return {};  // lue au point, sans table
   const bool same = chroma_.width == params.width && chroma_.height == params.height &&
                     chroma_.layout == params.chroma_layout && chroma_.siting == siting &&
