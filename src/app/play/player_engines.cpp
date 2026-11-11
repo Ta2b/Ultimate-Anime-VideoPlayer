@@ -21,6 +21,7 @@
 #include "app/play/input.h"
 #include "app/play/loop_wait.h"
 #include "app/play/paths.h"
+#include "app/play/pumped_task.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -157,7 +158,9 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label) {
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
-  auto sha256 = prepare::sha256_file_known(onnx);
+  // B29-09 : le hachage d'un ONNX (la première fois du lancement) et le chargement d'un moteur prennent des
+  // centaines de ms à plusieurs secondes ; la fenêtre est pompée pendant ce temps.
+  auto sha256 = run_pumped<std::string>("sha256", [&onnx] { return prepare::sha256_file_known(onnx); });
   if (!sha256) return std::unexpected(std::move(sha256.error()));
   LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
   auto build = EngineBuild::start(
@@ -177,7 +180,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
   backend.use_lane(lane);
-  auto loaded = backend.load(**artifact);
+  auto loaded = run_pumped<std::unique_ptr<gpu::Engine>>(
+      "engine-load", [&backend, &artifact] { return backend.load(**artifact); });
   backend.use_lane(gpu::Lane::Upscale);
   if (!loaded) return std::unexpected(std::move(loaded.error()));
   p.loaded_engines.push_back(

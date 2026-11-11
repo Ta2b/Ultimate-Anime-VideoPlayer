@@ -15,6 +15,7 @@
 #include "app/play/motion_model.h"
 #include "app/play/paths.h"
 #include "app/play/problem_report.h"
+#include "app/play/pumped_task.h"
 #include "app/play/rife_fused_choice.h"
 #include "core/auto_rate.h"
 #include "core/clock.h"
@@ -477,7 +478,8 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     return stage_refused(std::move(rife_found.error()), ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p);
-  auto backend = BackendLibrary::create(p.library, init);
+  auto backend = run_pumped<BackendLibrary::Instance>(  // B29-09 : la fenêtre pompée
+      "backend", [&p, &init] { return BackendLibrary::create(p.library, init); });
   if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
   c.backend_name = c.backend->capabilities().name;

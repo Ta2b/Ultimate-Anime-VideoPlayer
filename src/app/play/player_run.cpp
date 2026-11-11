@@ -57,6 +57,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/present_stats.h"
+#include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
@@ -92,6 +93,9 @@ constexpr std::int32_t kPausedWaitMs = 33;
 // L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle), sur
 // le fil de DisplayProbe ; le HDR et le pic sur événement, sinon toutes les 10 s (display_follow.cpp).
 constexpr std::int64_t kDisplayPollUs = 500'000;
+// Les E/S du dossier de la vidéo (taille, fichier qui grandit, épisode suivant) : au-delà, laissées à leur
+// sort, la lecture continue comme si elles n'avaient rien trouvé.
+constexpr std::chrono::milliseconds kFolderIoLimit{5000};
 // Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
 constexpr std::int64_t kResizeWindowUs = 60'000'000;
 constexpr std::size_t kResizesRefused = 4;
@@ -421,8 +425,15 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const bool& vrr_armed = screen_state.vrr_armed;
   std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
-  const GrowingFile opened_file =
-      GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
+  // B31-12 : la taille du fichier hors du thread de la fenêtre, bornée (un partage réseau muet).
+  const std::uintmax_t file_bytes =
+      p.options.file.empty()
+          ? 0
+          : run_pumped_for<GrowingFile>("file-size", kFolderIoLimit, true,
+                                        [file = p.options.file] { return GrowingFile::of(file); })
+                .value_or(GrowingFile{})
+                .size;
+  const GrowingFile opened_file{p.options.bench_out ? 0 : file_bytes};
   // Repli du Rapide pour la séance seulement : play.toml garde le choix, qu'un choix explicite annule.
   core::FreeFallback free_fallback;  // revient au Rapide après un calme (core/free_rate.h)
   bool free_chosen = chain.running.auto_free;
@@ -467,12 +478,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::filesystem::path auto_memory_path;
   std::string auto_memory_key;
   if (!p.settings_path.empty() && !p.options.file.empty()) {
-    std::error_code size_error;
-    const std::uintmax_t file_size = std::filesystem::file_size(p.options.file, size_error);
     auto_memory_path = paths::auto_memory(p.settings_path.parent_path());
     auto_memory_key =
-        core::auto_memory_key(prepare::utf8_path(p.options.file), size_error ? 0 : file_size,
-                              std::string(c.motion_name()), settings.work_height, gpu_facts(p.screen).name);
+        core::auto_memory_key(prepare::utf8_path(p.options.file), file_bytes, std::string(c.motion_name()),
+                              settings.work_height, gpu_facts(p.screen).name);
     if (chain.live.auto_active()) {
       if (const auto remembered = core::load_auto_step(auto_memory_path, auto_memory_key)) {
         chain.live.auto_seed(*remembered, host_now_us());
@@ -700,14 +709,22 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       chain.reopen = chain.running;
     }
   }
-  if (!chain.reopen && !failure && !session.quit_asked() && opened_file.grew(p.options.file)) {
+  // B13-10, B29-08, B31-12 : l'attente du fichier qui grandit et le parcours du dossier se font hors du
+  // thread de la fenêtre, pompée, et bornés (un NAS lent ou muet ne la gèle plus).
+  if (!chain.reopen && !failure && !session.quit_asked() &&
+      run_pumped_for<bool>("growing-file", kFolderIoLimit, true, [file = p.options.file, opened_file] {
+        return opened_file.grew(file);
+      }).value_or(false)) {
     log->info("le fichier grandit encore : relu au même endroit");
     chain.reopen = chain.running;  // A29-03 : comme une réouverture de la chaîne, pistes gardées
   }
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&
       chain.running.autoplay_next && !p.options.file.empty()) {
-    if (const auto next = sibling_episode(p.options.file, 1)) {
+    if (const auto next = run_pumped_for<std::optional<std::filesystem::path>>(
+                              "next-episode", kFolderIoLimit, true,
+                              [file = p.options.file] { return sibling_episode(file, 1); })
+                              .value_or(std::nullopt)) {
       log->info("épisode suivant : {}", prepare::utf8_path(next->filename()));
       chain.next_file = *next;
       chain.reopen = chain.running;

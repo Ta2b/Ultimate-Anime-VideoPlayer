@@ -609,7 +609,11 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     if (file_options.resume && player.engines.resume_position) {
       player.resume_path = paths::resume(settings_path.parent_path());
       if (start_us == 0 && !forced) {
-        if (const auto at = resume_position(player.resume_path, file)) {
+        // B29-08 : weakly_canonical et file_size sur un partage lent, hors du thread de la fenêtre.
+        if (const auto at = run_pumped_for<std::optional<std::int64_t>>(
+                                "resume", std::chrono::milliseconds(5000), true,
+                                [store = player.resume_path, file] { return resume_position(store, file); })
+                                .value_or(std::nullopt)) {
           start_us = *at;
           player.resumed = true;
           log->info("reprise à {}", format_position(start_us));
