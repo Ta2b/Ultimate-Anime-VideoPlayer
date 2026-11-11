@@ -82,8 +82,9 @@ jobs:
           gh release download "$TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -O "$dir/joint.lock" 2>/dev/null || true
           tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/joint.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
           key="$RUNNER_TEMP/ajp-update-key.pem"
-          (umask 077; printf '%s\n' "$UPDATE_KEY" > "$key")
           trap 'rm -f "$key"' EXIT
+          # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
+          tools/release/update-key.sh "$key"
           # Le lecteur ne croit l'index que signé (A26-02).
           AJP_UPDATE_KEY="$key" tools/release/sign-file.sh "$dir/engines-nvidia.lock"
       - name: Manifeste signé
@@ -94,8 +95,9 @@ jobs:
           [ -n "$UPDATE_KEY" ] || { echo "::error::secret AJP_UPDATE_KEY absent de l'environnement release : pas de manifeste, pas de publication (docs/signature-des-releases.md)"; exit 1; }
           dir="$RUNNER_TEMP/release"
           key="$RUNNER_TEMP/ajp-update-key.pem"
-          (umask 077; printf '%s\n' "$UPDATE_KEY" > "$key")
           trap 'rm -f "$key"' EXIT
+          # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
+          tools/release/update-key.sh "$key"
           AJP_UPDATE_KEY="$key" tools/release/sign-manifest.sh "${TAG#v}" stable "$dir" \
             "https://github.com/$AJP_RELEASE_REPO/releases/download/$TAG" \
             "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
