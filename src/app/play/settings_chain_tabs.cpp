@@ -139,11 +139,11 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip(
-      fp8_offered
-          ? i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest. "
-                     "FP8: prepared once on this PC, then faster, at the cost of some precision.")
-          : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest."));
+  panel::tip(fp8_offered ? i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the "
+                                    "lightest (C4F16 more than C4F32). FP8: prepared once on this PC, then "
+                                    "faster, at the cost of some precision.")
+                         : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the "
+                                    "lightest (C4F16 more than C4F32)."));
 }
 
 }  // namespace

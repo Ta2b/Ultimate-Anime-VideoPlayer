@@ -3,7 +3,8 @@
 #
 #   <dest>/onnx/   SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), depuis le
 #                  dépôt mpv-AnimeJaNai-HDR à un commit fixé ; licence CC BY-NC-SA 4.0
-#                  ArtCNN C4F32 enveloppé en RGB (P6.7), rangé dans tools/upscale/models ; licence MIT
+#                  ArtCNN C4F32 et C4F16 enveloppés en RGB (P6.7), rangés dans tools/upscale/models ;
+#                  licence MIT
 #   <dest>/rife/   RIFE 4.25 et 4.22 lite en fp16 (conversions de vs-mlrt), les deux que le menu propose
 #                  (kRifeCatalogue), depuis la release models-rife-fp16-1 d'animejanai-inference ; RIFE est
 #                  sous licence MIT
@@ -70,12 +71,21 @@ for entry in "${RIFE[@]}"; do
   check "$sha" "$DEST/rife/$name"
 done
 
-# ArtCNN C4F32 (P6.7), enveloppé en RGB par tools/upscale/wrap_luma_rgb.py depuis ArtCNN_C4F32.onnx
-# (Artoriuz/ArtCNN 0837e53, SHA-256 b1a11304…) : 190 Ko, rangé dans le dépôt, à côté de sa licence MIT.
-ARTCNN_SHA=0f14a4cc990c5a00544fd8b939c35e2607d19ae872c4c4f31bc6e6b2dd643c12
-ARTCNN="$(cd "$(dirname "${BASH_SOURCE[0]}")/../upscale/models" && pwd)/2x_ArtCNN_C4F32_rgb_fp16.onnx"
-cp "$ARTCNN" "$DEST/onnx/"
-check "$ARTCNN_SHA" "$DEST/onnx/2x_ArtCNN_C4F32_rgb_fp16.onnx"
+# ArtCNN C4F32 et C4F16 (P6.7), enveloppés en RGB par tools/upscale/wrap_luma_rgb.py depuis ArtCNN_C4F32.onnx
+# (SHA-256 b1a11304…) et ArtCNN_C4F16.onnx (7a643629…) d'Artoriuz/ArtCNN 0837e53 : 190 et 51 Ko, rangés dans le
+# dépôt, à côté de leur licence MIT.
+ARTCNN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../upscale/models" && pwd)"
+ARTCNN=(
+  "0f14a4cc990c5a00544fd8b939c35e2607d19ae872c4c4f31bc6e6b2dd643c12 2x_ArtCNN_C4F32_rgb_fp16.onnx"
+  "0c9f39abf2d0a8cc899192771761cd3ad865aa3d0db1f95417e85c1f89c8b8fe 2x_ArtCNN_C4F16_rgb_fp16.onnx"
+)
+for entry in "${ARTCNN[@]}"; do
+  read -r sha name <<<"$entry"
+  cp "$ARTCNN_DIR/$name" "$DEST/onnx/"
+  check "$sha" "$DEST/onnx/$name"
+done
+# La licence MIT demande son texte avec chaque copie : il voyage à côté des modèles.
+cp "$ARTCNN_DIR/ArtCNN-LICENSE.txt" "$DEST/onnx/"
 
 # Les autres fichiers de models-interp-1 ne sont pas pris : GMFSS est retiré du lecteur (0.10.0), et les graphes FP8
 # de DistilDRBA, plus lents que le fusionné, restent facultatifs.
@@ -91,7 +101,8 @@ Modèles livrés avec le lecteur
 onnx/  AnimeJaNai HD V3.1 (SPAN), par the-database : Creative Commons BY-NC-SA 4.0
        (attribution, pas d'usage commercial, partage dans les mêmes conditions).
        https://github.com/the-database/mpv-upscale-2x_animejanai
-       ArtCNN C4F32 (João Chrisóstomo), enveloppé en RGB par ajp : licence MIT.
+       ArtCNN C4F32 et C4F16 (João Chrisóstomo), enveloppés en RGB par ajp : licence MIT
+       (texte complet dans onnx/ArtCNN-LICENSE.txt).
        https://github.com/Artoriuz/ArtCNN
 rife/  RIFE 4.25 et 4.22 lite (Practical-RIFE, hzwer), conversions ONNX de vs-mlrt passées en
        fp16 par animejanai-inference : licence MIT.

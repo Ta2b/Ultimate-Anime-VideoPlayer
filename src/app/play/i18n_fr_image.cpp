@@ -82,13 +82,16 @@ constexpr std::array kImageTabs{
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
-    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest.",
-          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger."},
-    Entry{
-        "Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest. FP8: prepared once "
-        "on this PC, then faster, at the cost of some precision.",
-        "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger. FP8 : "
-        "préparé une fois sur ce PC, puis plus rapide, au prix d'un peu de précision."},
+    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more than "
+          "C4F32).",
+          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger (C4F16 "
+          "plus "
+          "que C4F32)."},
+    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more than "
+          "C4F32). FP8: prepared once on this PC, then faster, at the cost of some precision.",
+          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger (C4F16 "
+          "plus "
+          "que C4F32). FP8 : préparé une fois sur ce PC, puis plus rapide, au prix d'un peu de précision."},
     Entry{"DistilDRBA is running: fused engines.", "DistilDRBA tourne : moteurs fusionnés."},
     Entry{"DistilDRBA is running: whole network.", "DistilDRBA tourne : réseau entier."},
     Entry{"Motion variant: one SPAN pass per source frame.",

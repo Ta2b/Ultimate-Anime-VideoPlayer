@@ -86,12 +86,16 @@ std::expected<toml::table, SpanInt8Lookup> read_receipt(const std::filesystem::p
 
 }  // namespace
 
+bool span_fp8_cutlass_model(const std::filesystem::path& span) {
+  return span.stem().u8string().find(u8"ArtCNN") == std::u8string::npos;
+}
+
 TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
                        bool cutlass_engine) {
   // Le moteur qui sait les noyaux CUTLASS suffit : le lecteur fabrique lui-même le paquet au premier
   // démarrage avec ce cran (span_auto.h), et la lecture reste en FP16 d'ici là. Le b5f48 (48 canaux, 5 blocs)
-  // est pris depuis l'étape 3.2c, rangé en 64 canaux.
-  const bool cutlass_possible = cutlass_engine;
+  // est pris depuis l'étape 3.2c, rangé en 64 canaux ; ArtCNN jamais (span_fp8_cutlass_model).
+  const bool cutlass_possible = cutlass_engine && span_fp8_cutlass_model(span);
   return TierSupport{
       .performance = cutlass_possible ||
                      (fp8_engine && find_span_variant(SpanVariantKind::Fp8, span, dir).variant.has_value()),

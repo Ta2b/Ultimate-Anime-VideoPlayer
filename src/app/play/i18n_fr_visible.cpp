@@ -52,6 +52,8 @@ constexpr std::array kVisibleTexts{
     Entry{"Fast · {:.0f} fps", "Rapide · {:.0f} i/s"},
     Entry{"Installing {}", "Installation de {}"},
     Entry{"No SPAN model in use: nothing to prepare.", "Aucun modèle SPAN en service : rien à préparer."},
+    Entry{"Performance mode (FP8) is for the AnimeJaNai SPAN models: ArtCNN stays in FP16.",
+          "Le mode Performance (FP8) est réservé aux modèles SPAN d'AnimeJaNai : ArtCNN reste en FP16."},
     Entry{"Not prepared yet: playback stays on TensorRT FP16 at the Performance level.",
           "Pas encore préparé : la lecture reste sur TensorRT FP16 au cran Performance."},
     Entry{"Performance mode (FP8) is not available: ", "Le mode Performance (FP8) n'est pas disponible : "},

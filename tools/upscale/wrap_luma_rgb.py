@@ -2,6 +2,10 @@
 """Un modèle ×2 qui n'agrandit que la luma (ArtCNN, P6.7) en un modèle RGB que le lecteur joue comme SPAN.
 
   python3 -I tools/upscale/wrap_luma_rgb.py ArtCNN_C4F32.onnx 2x_ArtCNN_C4F32_rgb_fp16.onnx
+  python3 -I tools/upscale/wrap_luma_rgb.py ArtCNN_C4F16.onnx 2x_ArtCNN_C4F16_rgb_fp16.onnx
+
+Les deux modèles livrés viennent d'Artoriuz/ArtCNN au commit 0837e53 (dossier ONNX) ; l'enveloppe est
+déterministe : relancée avec onnx 1.23, elle redonne au bit près les fichiers de tools/upscale/models.
 
 Entrée et sortie comme les SPAN d'AnimeJaNai : [1, 3, H, W] en FP16, R'G'B' entre 0 et 1. Dedans, en FP32 :
 la luma Y' (BT.709) passe par le réseau ; la différence R'G'B' − Y' (la couleur, sans détail fin) est agrandie

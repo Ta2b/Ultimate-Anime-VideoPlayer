@@ -20,6 +20,7 @@ ajp_add_unit_tests(vk_backend
     kernel_ops_test.cpp
     kernel_planes_test.cpp
     net_alias_test.cpp
+    net_artcnn_test.cpp
     net_conv_test.cpp
     net_gate_test.cpp
     net_hoist_test.cpp
@@ -50,7 +51,9 @@ set(AJP_SPAN_MODEL "$ENV{HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx
 # Le dossier des RIFE du lecteur (rife_v4.22_lite.onnx, rife_v4.25.onnx), lus en place par le test caché
 # [.rife_fused] : la chaîne fusionnée contre le RIFE entier, tous deux sur le backend Vulkan.
 set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
+# Les ArtCNN livrés sont rangés dans le dépôt (190 et 51 Ko) : lus en place par net_artcnn_test.cpp.
 target_compile_definitions(ajp_vk_backend_tests PRIVATE
+  AJP_ARTCNN_MODEL_DIR="${PROJECT_SOURCE_DIR}/tools/upscale/models"
   AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
   AJP_TEST_BACKEND="$<TARGET_FILE:ajp_backend_vulkan>"
   AJP_TEST_FAKE_BACKEND="$<TARGET_FILE:ajp_vk_backend_fake>"

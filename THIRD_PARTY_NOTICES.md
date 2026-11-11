@@ -45,8 +45,8 @@ FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous
 
 Huit images fixes tirées de Re:Zero kara Hajimeru Isekai Seikatsu (saison 4, épisode 18, © Tappei Nagatsuki, KADOKAWA / Re:Zero 4 Partners) et de Tensei Shitara Slime Datta Ken (saison 4, épisode 24, © Fuse, Micro Magazine / Tensura Project), ajoutées à la demande du propriétaire du dépôt pour la seule calibration du grade (Réglages > Vidéo). Elles restent la propriété de leurs ayants droit ; liste et instants dans `data/calibration/SOURCES.md`.
 
-## ArtCNN C4F32 (modèle livré depuis la 0.10.2)
-ArtCNN, © 2024 João Chrisóstomo, licence MIT (texte dans `tools/upscale/models/ArtCNN-LICENSE.txt`, à joindre à toute redistribution du modèle `2x_ArtCNN_C4F32_rgb_fp16.onnx`).
+## ArtCNN C4F32 (modèle livré depuis la 0.10.2) et C4F16
+ArtCNN, © 2024 João Chrisóstomo, licence MIT (texte dans `tools/upscale/models/ArtCNN-LICENSE.txt`, à joindre à toute redistribution des modèles `2x_ArtCNN_C4F32_rgb_fp16.onnx` et `2x_ArtCNN_C4F16_rgb_fp16.onnx`).
 
 ## Moteurs facultatifs téléchargés depuis l'écran de bienvenue
 MoltenVK (Apache-2.0) sur Mac. TensorRT, CUDA et cuDNN sont sous les licences propriétaires de NVIDIA, que l'utilisateur accepte à l'écran avant le téléchargement.

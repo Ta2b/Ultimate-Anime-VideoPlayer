@@ -32,7 +32,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 SPAN = ("2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
         "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
         "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
-        "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx")
+        "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+        # ArtCNN (P6.7), les modèles légers des petites cartes : leur image contre celle de SPAN et du bicubique.
+        "2x_ArtCNN_C4F32_rgb_fp16.onnx",
+        "2x_ArtCNN_C4F16_rgb_fp16.onnx")
 MOTION = ("rife_v4.25.onnx", "rife_v4.22_lite.onnx", "distil_drba_v2_lite.onnx")
 
 
