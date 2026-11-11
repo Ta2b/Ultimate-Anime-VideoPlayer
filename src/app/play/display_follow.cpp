@@ -112,7 +112,7 @@ void DisplayFollow::follow_vrr(std::optional<bool> reading) {
 
 void DisplayFollow::follow_window(bool display_changed) {
   // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
-  PlaceboScreen& out = p_.screen;
+  const PlaceboScreen& out = p_.screen;
   const bool fullscreen = fullscreen_of(out.window());
   if (fullscreen == vrr_fullscreen_ && !display_changed) return;
   if (display_changed) log_->info("écran : changement détecté ({} Hz), relecture du VRR", state_.known_hz);

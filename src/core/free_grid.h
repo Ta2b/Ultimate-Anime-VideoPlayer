@@ -60,9 +60,14 @@ class FreeGrid {
 
  private:
   CadenceStep origin(const SourceStamp& source, GridEvent event);
-  // Pas de paire avec source (époque périmée ou neuve, pts absent ou qui recule) : l'étape à rendre ; vide
-  // quand left_ et source forment une paire.
-  std::optional<CadenceStep> without_pair(const SourceStamp& source);
+  // La paire (left_, source) ; sans paire (époque périmée ou neuve, pts absent ou qui recule), l'étape à
+  // rendre.
+  struct Pair {
+    SourceId left;
+    std::int64_t g = 0;  // pts de la source gauche
+    std::int64_t d = 0;  // pts de la source droite
+  };
+  std::expected<Pair, CadenceStep> pair_with(const SourceStamp& source);
 
   std::optional<SourceStamp> left_;
   std::optional<std::int64_t> next_due_;      // où l'instant suivant tomberait, au pas courant

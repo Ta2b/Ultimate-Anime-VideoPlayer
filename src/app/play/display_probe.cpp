@@ -53,6 +53,7 @@ void DisplayProbe::run(const std::stop_token& stop) {
     {
       std::unique_lock lock(mutex_);
       if (!changed_.wait(lock, stop, [&] { return pending_.has_value(); })) return;
+      if (!pending_) continue;  // tenu par le prédicat ; dit pour l'analyse
       request = std::move(*pending_);
       pending_.reset();
       running_ = true;

@@ -427,7 +427,6 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
   return true;
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 // DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la place
 // du moteur entier, quand le backend le sait, que le réglage le veut et que le cran est Équilibre ; tout
 // échec garde le moteur entier. Un refus retenu pour la séance (B08-02) le décline sans reconstruire.
@@ -515,6 +514,7 @@ std::expected<bool, StageFailure> load_drba(Player& p, const gpu::BackendInit& i
   return true;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;

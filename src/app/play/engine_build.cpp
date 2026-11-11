@@ -27,9 +27,11 @@ std::expected<gpu::Artifact, Refusal> with_space_reason(std::expected<gpu::Artif
 std::expected<std::unique_ptr<EngineBuild>, Refusal> EngineBuild::start(EngineRequest request) {
   std::unique_ptr<EngineBuild> build(new EngineBuild());
   EngineBuild* self = build.get();
+  // Copiés avant le déplacement de request : l'ordre d'évaluation des arguments n'est pas fixé.
+  auto* const wake = request.wake;
+  void* const context = request.wake_context;
   auto thread = start_thread(
-      "preparer",
-      ThreadReport([self, wake = request.wake, context = request.wake_context](const Refusal& refusal) {
+      "preparer", ThreadReport([self, wake, context](const Refusal& refusal) {
         {
           const std::scoped_lock lock(self->mutex_);
           if (!self->result_) self->result_ = std::unexpected(refusal);

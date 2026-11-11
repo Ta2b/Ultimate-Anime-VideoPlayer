@@ -17,23 +17,26 @@ CadenceStep FreeGrid::origin(const SourceStamp& source, GridEvent event) {
   return step;
 }
 
-std::optional<CadenceStep> FreeGrid::without_pair(const SourceStamp& source) {
-  if (source.epoch < epoch_) return CadenceStep(GridEvent::Stale, {}, source.id);
+std::expected<FreeGrid::Pair, CadenceStep> FreeGrid::pair_with(const SourceStamp& source) {
+  if (source.epoch < epoch_) return std::unexpected(CadenceStep(GridEvent::Stale, {}, source.id));
   if (source.epoch > epoch_) {
     epoch_ = source.epoch;
     left_.reset();
   }
-  if (!left_) return origin(source, started_ ? GridEvent::NewEpoch : GridEvent::Start);
-  if (!source.pts_us || !left_->pts_us) return origin(source, GridEvent::InvalidPts);
-  if (*source.pts_us <= *left_->pts_us) return origin(source, GridEvent::PtsNotIncreasing);
-  return std::nullopt;
+  if (!left_) return std::unexpected(origin(source, started_ ? GridEvent::NewEpoch : GridEvent::Start));
+  if (!source.pts_us || !left_->pts_us) return std::unexpected(origin(source, GridEvent::InvalidPts));
+  const std::int64_t g = *left_->pts_us;
+  const std::int64_t d = *source.pts_us;
+  if (d <= g) return std::unexpected(origin(source, GridEvent::PtsNotIncreasing));
+  return Pair{.left = left_->id, .g = g, .d = d};
 }
 
 CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) {
   starved_ = false;
-  if (std::optional<CadenceStep> alone = without_pair(source)) return std::move(*alone);
-  const std::int64_t g = *left_->pts_us;
-  const std::int64_t d = *source.pts_us;
+  const std::expected<Pair, CadenceStep> pair = pair_with(source);
+  if (!pair) return pair.error();
+  const std::int64_t g = pair->g;
+  const std::int64_t d = pair->d;
 
   const std::int64_t gap = d - g;
   const std::int64_t vsync = std::max<std::int64_t>(inputs.vsync_period_us, 0);
@@ -63,7 +66,7 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   // repoussée.
   const std::int64_t unheld =
       on_vsync(std::max({last_emitted_.value_or(INT64_MIN) + spacing, inputs.ready_us, g + 1}));
-  CadenceStep out(GridEvent::Pair, left_->id, source.id);
+  CadenceStep out(GridEvent::Pair, pair->left, source.id);
   std::size_t emitted = 0;
   std::size_t interpolated = 0;
   // Un instant à moins d'un quart de pas de la source droite lui est ramené : l'image est la source elle-même
