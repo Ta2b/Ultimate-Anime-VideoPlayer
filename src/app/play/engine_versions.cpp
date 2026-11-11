@@ -57,8 +57,9 @@ std::optional<InstalledPackage> read_package_note(const fs::path& dir) {
       const std::size_t space = rest.find(' ');
       std::uint64_t size = 0;
       if (space == std::string_view::npos || space + 1 >= rest.size()) continue;
-      const auto [end, error] = std::from_chars(rest.data(), rest.data() + space, size);
-      if (error != std::errc{} || end != rest.data() + space) continue;
+      const std::string_view digits = rest.substr(0, space);
+      const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), size);
+      if (error != std::errc{} || end != digits.data() + digits.size()) continue;
       found.files.emplace_back(std::string(rest.substr(space + 1)), size);
     }
   }
@@ -139,7 +140,7 @@ bool finish_deferred_swap(const fs::path& target, const fs::path& staging, const
   }
   error = core::rename_retrying(staging, target, kInstallRenamePatience);
   if (error) {
-    core::rename_retrying(aside, target, kInstallRenamePatience);
+    (void)core::rename_retrying(aside, target, kInstallRenamePatience);  // l'ancien revient, au mieux
     log_channel("app")->warn("moteurs : {} non mis en place : {}", core::to_utf8(staging.filename()),
                              error.message());
     return false;
