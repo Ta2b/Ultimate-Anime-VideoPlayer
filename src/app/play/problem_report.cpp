@@ -36,10 +36,48 @@ bool is_separator(char c) {
   return c == '/' || c == '\\';
 }
 
-// Ce qui peut précéder un chemin : le début, un blanc, ou une ponctuation d'ouverture ou de liaison.
+// Ce qui peut précéder un chemin : le début, un blanc, une ponctuation d'ouverture ou de liaison, ou un
+// caractère hors ASCII (flèche, espace insécable : ses octets valent 0x80 et plus). Liste large exprès : un
+// chemin non reconnu part en clair, avec le nom d'utilisateur, dans une issue publique (B19-05, B39-07).
 bool opens_path(char before) {
-  return before == ' ' || before == '\t' || before == '\n' || before == '"' || before == '\'' ||
-         before == '(' || before == '[' || before == '=' || before == ':' || before == ',' || before == '<';
+  if (static_cast<unsigned char>(before) >= 0x80) return true;
+  switch (before) {
+    case ' ':
+    case '\t':
+    case '\n':
+    case '"':
+    case '\'':
+    case '(':
+    case '[':
+    case '{':
+    case '=':
+    case ':':
+    case ',':
+    case ';':
+    case '<':
+    case '>':
+    case '|':
+    case '@':
+    case '`':
+    case '*':
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Le dossier personnel nu (« /home/nom », « C:\\Users\\nom », sans fichier après) : réduit à « …/nom » il
+// laisserait le nom d'utilisateur ; il devient « ~ ».
+bool is_home_folder(std::string_view path) {
+  std::string_view rest = path;
+  if (rest.size() > 2 && rest[1] == ':') rest.remove_prefix(2);
+  for (const std::string_view prefix : {"/home/", "/Users/", "/users/", "\\Users\\"}) {
+    if (rest.starts_with(prefix)) {
+      const std::string_view name = rest.substr(prefix.size());
+      return !name.empty() && name.find_first_of("/\\") == std::string_view::npos;
+    }
+  }
+  return false;
 }
 
 // Le début d'un chemin absolu en text[at] : « X:\ », « X:/ », « \\ » (réseau), « / » suivi d'un nom, « ~/ ».
@@ -52,6 +90,26 @@ bool path_starts(std::string_view text, std::size_t at) {
   if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
     return next == ':' && at + 2 < text.size() && is_separator(text[at + 2]);
   return false;
+}
+
+// L'étendue d'un chemin qui commence en text[at] : un nom de dossier peut porter des espaces (« Données SSD
+// »), elle court donc jusqu'à une fin de ligne, un guillemet, un séparateur du journal (« , », « : », « · »,
+// « ; »), la parenthèse qui ferme celle d'où le chemin sort, ou un autre chemin.
+std::size_t path_end(std::string_view text, std::size_t at) {
+  const char opener = at == 0 ? '\0' : text[at - 1];
+  std::size_t end = at;
+  while (end < text.size()) {
+    const char c = text[end];
+    if (c == '\n' || c == '"') break;
+    const std::string_view rest = text.substr(end);
+    if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
+        rest.starts_with("; "))
+      break;
+    if (opener == '(' && c == ')') break;
+    if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
+    ++end;
+  }
+  return end;
 }
 
 }  // namespace
@@ -125,26 +183,13 @@ std::string sanitize_report_paths(std::string_view text, std::string_view home) 
   std::size_t at = 0;
   while (at < text.size()) {
     const bool line_start = at == 0 || text[at - 1] == '\n';
-    if (!(line_start || opens_path(text[at - 1])) || !path_starts(text, at)) {
+    // « file:///home/nom/a.mkv » : le chemin commence après « file:// ».
+    const bool after_scheme = at >= 7 && text.substr(at - 7, 7) == "file://";
+    if (!(line_start || after_scheme || opens_path(text[at - 1])) || !path_starts(text, at)) {
       out.push_back(text[at++]);
       continue;
     }
-    // L'étendue : un nom de dossier peut porter des espaces (« Données SSD »), elle court donc jusqu'à une
-    // fin de ligne, un guillemet, un séparateur du journal (« , », « : », « · », « ; »), la parenthèse qui
-    // ferme celle d'où le chemin sort, ou un autre chemin.
-    const char opener = at == 0 ? '\0' : text[at - 1];
-    std::size_t end = at;
-    while (end < text.size()) {
-      const char c = text[end];
-      if (c == '\n' || c == '"') break;
-      const std::string_view rest = text.substr(end);
-      if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
-          rest.starts_with("; "))
-        break;
-      if (opener == '(' && c == ')') break;
-      if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
-      ++end;
-    }
+    const std::size_t end = path_end(text, at);
     std::size_t last = std::string_view::npos;
     std::size_t separators = 0;
     for (std::size_t i = at; i < end; ++i) {
@@ -156,6 +201,11 @@ std::string sanitize_report_paths(std::string_view text, std::string_view home) 
     // « /s », « /x » : un seul séparateur, pas un dossier.
     if (text[at] == '/' && separators < 2) {
       out.push_back(text[at++]);
+      continue;
+    }
+    if (is_home_folder(text.substr(at, end - at))) {
+      out += '~';
+      at = end;
       continue;
     }
     out += "…/";

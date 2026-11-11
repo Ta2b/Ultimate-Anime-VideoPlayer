@@ -44,8 +44,8 @@ constexpr std::array kSettingsPages{
           "Le maximum, atteint dans un épisode très clair ; l'effet s'efface dans un épisode très sombre."},
     Entry{"holds", "tient"},
     Entry{"unknown", "inconnu"},
-    Entry{"Downscale", "Downscale"},
-    Entry{"Upscale", "Upscale"},
+    Entry{"Downscale", "Réduction"},
+    Entry{"Upscale", "Agrandissement"},
     Entry{"1% low", "1 % low"},
     Entry{"{:.1f} % lost", "{:.1f} % d'images perdues"},
     Entry{"Green: recommended, with margin. Orange: holds just barely, or misses a little. Red: this "
@@ -194,7 +194,7 @@ constexpr std::array kSettingsPages{
           "de "
           "la page Couleurs s'applique toujours."},
     Entry{"Saturation", "Saturation"},
-    Entry{"Scaler", "Filtre de mise à l'échelle"},
+    Entry{"Scaler", "Filtre"},
     Entry{"Scales all text, panels included. Live.",
           "Agrandit ou réduit tous les textes, panneaux compris. En direct."},
     Entry{"Settings", "Paramètres"},

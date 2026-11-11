@@ -1,6 +1,7 @@
 #include "subs/subtitle_renderer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <format>
@@ -15,6 +16,14 @@
 
 namespace ajp::subs {
 namespace {
+
+// Le compteur est commun à tous les rendus du processus (B24-01) : l'écran garde la dernière paire
+// (adresse de l'atlas, génération) téléversée, et un rendu neuf qui repartait de 1 pouvait retomber sur la
+// même paire avec un autre contenu (adresse d'un atlas libéré réutilisée par la réserve suivante).
+std::uint64_t next_atlas_generation() {
+  static std::atomic<std::uint64_t> counter{0};
+  return ++counter;
+}
 
 bool side_in_range(int side) {
   return 1 <= side && side <= kMaxTargetSide;
@@ -331,7 +340,7 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::build(SubtitleFrame fram
   std::unique_ptr<SubtitleAtlas> atlas = pool.take();
   if (atlas == nullptr) return WaitForAtlas{};
   copy_pieces(pieces_, *packing, *atlas);
-  atlas->generation = ++generation_;
+  atlas->generation = next_atlas_generation();
 
   rects_.clear();
   for (std::size_t i = 0; i < pieces_.size(); ++i) {
