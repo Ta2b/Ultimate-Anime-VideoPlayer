@@ -24,9 +24,12 @@ import subprocess
 import sys
 import tempfile
 
-# SMPTE ST 2084.
-M1, M2 = 2610 / 16384, 2523 / 4096 * 128
-C1, C2, C3 = 3424 / 4096, 2413 / 4096 * 32, 2392 / 4096 * 32
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))
+import hdr  # noqa: E402
+
+# SMPTE ST 2084 (tools/common/hdr.py).
+M1, M2 = hdr.PQ_M1, hdr.PQ_M2
+C1, C2, C3 = hdr.PQ_C1, hdr.PQ_C2, hdr.PQ_C3
 
 
 def pq_encode(nits):

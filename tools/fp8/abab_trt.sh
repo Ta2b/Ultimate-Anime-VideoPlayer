@@ -15,15 +15,23 @@ if [ "$SHAPES" != static ]; then  # « static » : modèle à formes fixes (les 
   mins=("--minShapes=$joined"); opts=("--optShapes=$joined"); maxs=("--maxShapes=$joined")
 fi
 
+# Clé du cache (B46-07) : le contenu de l'ONNX, ses formes et le trtexec. Un ONNX reconstruit sous le même nom,
+# ou un autre TensorRT, ne réutilise donc jamais un ancien moteur.
+trt_id="$(sha256sum "$TRTEXEC" | cut -c1-12)"
+declare -A ENGINE
 build() { # onnx étiquette
-  local eng="$CACHE/$2.engine"
+  local key
+  key="$(printf '%s\n%s\n%s\n' "$(sha256sum "$1" | cut -d' ' -f1)" "$SHAPES" "$trt_id" | sha256sum | cut -c1-16)"
+  local eng="$CACHE/$2-$key.engine"
+  ENGINE[$2]="$eng"
   [ -f "$eng" ] && return 0
   "$TRTEXEC" --onnx="$1" "${mins[@]}" "${opts[@]}" "${maxs[@]}" --builderOptimizationLevel=5 \
-    --saveEngine="$eng" >"$CACHE/$2.build.log" 2>&1 \
+    --saveEngine="$eng.tmp" >"$CACHE/$2.build.log" 2>&1 \
     || { echo "construction de $2 échouée ($CACHE/$2.build.log)" >&2; tail -5 "$CACHE/$2.build.log" >&2; exit 1; }
+  mv -f "$eng.tmp" "$eng"  # un moteur n'existe que s'il est complet
 }
 run() { # étiquette -> « min médiane »
-  "$TRTEXEC" --loadEngine="$CACHE/$1.engine" "${opts[@]}" --useCudaGraph --noDataTransfers --warmUp=500 \
+  "$TRTEXEC" --loadEngine="${ENGINE[$1]}" "${opts[@]}" --useCudaGraph --noDataTransfers --warmUp=500 \
     --iterations=300 2>&1 | sed -n 's/.*GPU Compute Time: min = \([0-9.]*\) ms.*median = \([0-9.]*\) ms.*/\1 \2/p'
 }
 build "$A" A

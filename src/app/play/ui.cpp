@@ -336,11 +336,10 @@ FontSearch FontSearch::start() {
 }
 
 std::vector<FontFile> FontSearch::take() {
-  if (thread_.joinable()) {
-    thread_.join();
-  } else if (found_->empty()) {
-    *found_ = search_fonts();
-  }
+  if (thread_.joinable()) thread_.join();
+  // Le fil n'a pas démarré, ou sa recherche a levé (le rapporteur journalise seulement) : une liste vide
+  // laisserait l'interface sans police, sans accents en français (B30-08). On la refait ici.
+  if (found_->empty()) *found_ = search_fonts();
   return std::move(*found_);
 }
 
@@ -403,8 +402,11 @@ void PlayerUi::begin_frame(std::int64_t now_us) {
   SDL_GetWindowSizeInPixels(window_, &width, &height);
   io.DisplaySize = {static_cast<float>(std::max(width, 1)), static_cast<float>(std::max(height, 1))};
   io.DisplayFramebufferScale = {1.0F, 1.0F};
-  io.DeltaTime = last_frame_us_ > 0 ? std::max(1e-4F, static_cast<float>(now_us - last_frame_us_) * 1e-6F)
-                                    : 1.0F / 60.0F;
+  // Plafonné à 0,1 s (B24-04) : l'interface ne se recompose pas barre cachée, et la première image après
+  // 30 s d'inactivité additionnerait d'un coup les minuteries de survol et d'infobulle.
+  io.DeltaTime = last_frame_us_ > 0
+                     ? std::clamp(static_cast<float>(now_us - last_frame_us_) * 1e-6F, 1e-4F, 0.1F)
+                     : 1.0F / 60.0F;
   last_frame_us_ = now_us;
   ImGui::NewFrame();
   if (std::exchange(close_popups_, false)) ImGui::ClosePopupToLevel(0, true);

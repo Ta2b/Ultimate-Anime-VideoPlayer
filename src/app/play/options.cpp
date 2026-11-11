@@ -571,11 +571,11 @@ std::string play_usage(bool debug) {
          "  --skip-held            playback: an instant identical to the shown frame is neither computed "
          "nor\n"
          "                         written (trial; off by default)\n"
-         "  --anime-shots          the anime HDR grade decided per shot (default): surfaces anchored at ±5%, "
-         "highlight\n"
-         "                         headroom of the shot, changed at the cut frame; --no-anime-shots: fixed "
-         "lift\n"
-         "  --fast-steady          trial: Fast mode at a constant step, N frames per held source in a shot\n"
+         "  --anime-shots          SDR output only: the grade decided per shot (default); on HDR output the "
+         "lift is\n"
+         "                         fixed whatever this says; --no-anime-shots: fixed lift on SDR too\n"
+         "  --fast-steady          trial: Instant mode at a constant step, N frames per held source in a "
+         "shot\n"
          "  --smooth-drawings      trial: a drawing held two frames blends into motion (motion RIFE)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-warm            trial: calm pairs reuse the coarse RIFE blocks of the previous pair;\n"
@@ -591,7 +591,7 @@ std::string play_usage(bool debug) {
          "                         --no-vsync-index: the clock)\n"
          "  --present=LEVEL        presentation feedback wait (default), auto, timing, wayland or open;\n"
          "                         --no-present: open, the former presentation\n"
-         "  --no-vrr               fixed refresh screen even if VRR is armed (Fast mode trial)\n";
+         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
 }
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,

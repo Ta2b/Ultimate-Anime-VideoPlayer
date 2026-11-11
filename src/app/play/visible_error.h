@@ -98,6 +98,7 @@ inline constexpr std::array kErrorFamilies{
     std::pair{RefusalCode::BuilderCrashed, ErrorFamily::Builder},
     std::pair{RefusalCode::BuilderTimeout, ErrorFamily::Builder},
     std::pair{RefusalCode::ReceiptInvalid, ErrorFamily::Builder},
+    std::pair{RefusalCode::SdkRejected, ErrorFamily::Builder},
     std::pair{RefusalCode::LibraryUnavailable, ErrorFamily::Component},
     std::pair{RefusalCode::AbiMismatch, ErrorFamily::Component},
     std::pair{RefusalCode::VendorCallFailed, ErrorFamily::Driver},
@@ -130,6 +131,15 @@ inline std::string keyed_error(std::string_view key) {
   return {};
 }
 }  // namespace detail
+
+// Le moteur GPU : le pilote refusé et le délai dépassé disent ce qui aide, le reste reste général (B43).
+inline std::string builder_error(RefusalCode code) {
+  if (code == RefusalCode::SdkRejected)
+    return i18n::tr("the GPU engine could not be prepared: update the graphics driver");
+  if (code == RefusalCode::BuilderTimeout)
+    return i18n::tr("the GPU engine took too long to prepare: try again");
+  return i18n::tr("the GPU engine could not be prepared");
+}
 
 inline std::string visible_error(const Refusal& refusal) {
   if (std::string keyed = detail::keyed_error(refusal.key); !keyed.empty()) return keyed;
@@ -165,7 +175,7 @@ inline std::string visible_error(const Refusal& refusal) {
     case detail::ErrorFamily::CacheBusy:
       return i18n::tr("another player window is preparing the same engine: try again in a moment");
     case detail::ErrorFamily::Builder:
-      return i18n::tr("the GPU engine could not be prepared");
+      return builder_error(refusal.code);
     case detail::ErrorFamily::Component:
       return i18n::tr("a component of the player is missing or out of date: reinstall it");
     case detail::ErrorFamily::Driver:

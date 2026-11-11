@@ -34,6 +34,11 @@ if(AJP_WITH_CUDA)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 endif()
 
+# Windows : l'icône de ajp.exe est une ressource (src/app/ajp.rc).
+if(WIN32)
+  enable_language(RC)
+endif()
+
 # L'interpolation d'Apple (gpu/coreml/coreml_vt.mm) est en Objective-C++, pour VideoToolbox :
 # activé ici, au-dessus de toutes les cibles qui le lient (les tests du backend Vulkan compris).
 if(APPLE AND AJP_WITH_COREML)

@@ -30,7 +30,7 @@ add_custom_command(
 # Le registre et SHChangeNotify de l'inscription comme lecteur par défaut (default_player.cpp) :
 # advapi32 et shell32. Les minidumps de plantage (crash_dump.cpp) : dbghelp.
 if(WIN32)
-  target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 winmm user32 dbghelp winhttp ole32)
+  target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 shlwapi winmm user32 dbghelp winhttp ole32)
 endif()
 # wp_presentation (placebo_wayland.cpp) : le code client du protocole, produit par wayland-scanner depuis
 # third_party/wayland-protocols/presentation-time.xml.
@@ -106,6 +106,7 @@ add_executable(ajp main.cpp)
 # semblait s'ouvrir deux fois). main() reste le point d'entrée ; d'un terminal, leave_lone_console() reprend
 # sa console.
 if(WIN32)
+  target_sources(ajp PRIVATE ajp.rc)
   set_target_properties(ajp PROPERTIES WIN32_EXECUTABLE TRUE)
   if(MSVC)
     target_link_options(ajp PRIVATE /ENTRY:mainCRTStartup)

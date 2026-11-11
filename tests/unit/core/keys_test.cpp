@@ -209,6 +209,19 @@ TEST_CASE("Raccourcis : une touche gardée par le lecteur n'est pas donnée à u
   }
 }
 
+TEST_CASE("Raccourcis : Ctrl+Moins et Ctrl+Plus règlent le délai audio, [keys] ne les prend pas (B38-10)",
+          "[keys]") {
+  // Avant : « toggle_grade = "Ctrl+=" » était accepté sans avis, puis la touche réglait le délai audio.
+  const KeysRead read =
+      read_keys("[keys]\ntoggle_grade = \"Ctrl+=\"\npause = \"Ctrl+-\"\ntoggle_osd = \"Ctrl+Shift+=\"\n");
+  REQUIRE(read.ignored.size() == 3);
+  for (const std::string& line : read.ignored) CHECK(line.contains("(fixed)"));
+  CHECK(read.map.chord(Action::ToggleGrade) == KeyMap::defaults().chord(Action::ToggleGrade));
+  CHECK(fixed_chord(ctrl(Key::Minus)));
+  CHECK_FALSE(fixed_chord(ctrl(Key::G)));
+  CHECK(fixed_chord(key(Key::Q)));
+}
+
 TEST_CASE("Raccourcis : rebind refuse de prendre la touche d'une autre action", "[keys]") {
   const KeyMap map = KeyMap::defaults();
   auto conflict = map.rebind(Action::ToggleOsd, key(Key::Space));

@@ -269,6 +269,12 @@ bool fixed_key(Key key) {
   return std::ranges::find(fixed, key) != fixed.end();
 }
 
+bool fixed_chord(const Chord& chord) {
+  if (!chord.ctrl && !chord.alt && !chord.meta) return fixed_key(chord.key);
+  // Ctrl + « - » et Ctrl + « + » règlent le délai audio, avec ou sans Maj (B38-10).
+  return chord.ctrl && !chord.alt && !chord.meta && (chord.key == Key::Minus || chord.key == Key::Equals);
+}
+
 namespace {
 
 // Une entrée de [keys] : l'action et sa touche (aucune pour ""), ou le texte à dire si elle est ignorée.
@@ -284,8 +290,7 @@ std::expected<Entry, std::string> read_entry(std::string_view name, const toml::
   if (text->empty()) return Entry{.action = *action, .chord = std::nullopt};
   const auto chord = parse_chord(*text);
   if (!chord) return std::unexpected(std::format("{} = {}", name, *text));
-  if (!chord->ctrl && !chord->alt && !chord->meta && fixed_key(chord->key))
-    return std::unexpected(std::format("{} = {} (fixed)", name, *text));  // A24-06
+  if (fixed_chord(*chord)) return std::unexpected(std::format("{} = {} (fixed)", name, *text));  // A24-06
   return Entry{.action = *action, .chord = *chord};
 }
 

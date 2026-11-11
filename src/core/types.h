@@ -63,6 +63,7 @@ struct SourceId {
   X(ModelMismatch)          /* hachage, précision ou forme différents de ModelSpec */                        \
   X(ReceiptInvalid)         /* reçu de qualification illisible, incomplet ou au hachage faux */              \
   /* Bibliothèques externes : chargement dynamique, appels, contrat d'entrée */                              \
+  X(SdkRejected) /* SDK refusé : fichier absent ou vide, architecture, version, ABI, pilote trop ancien */   \
   X(LibraryUnavailable) /* bibliothèque ou symbole introuvable au chargement */                              \
   X(VendorCallFailed)   /* un appel d'un SDK constructeur a renvoyé une erreur */                            \
   X(InputMismatch)      /* image ou tampon hors du contrat d'entrée (taille, format, tramage) */             \

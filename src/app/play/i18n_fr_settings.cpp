@@ -37,15 +37,18 @@ constexpr std::array kSettingsPages{
     Entry{"Run the calibration", "Lancer la calibration"},
     Entry{"Run the calibration again", "Refaire la calibration"},
     Entry{"SPAN: {} in FP16 · RIFE: {}", "SPAN : {} en FP16 · RIFE : {}"},
-    Entry{"Testing settings on a very demanding sequence: a few minutes.",
-          "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
+    Entry{"Testing settings on a very demanding sequence: 5 minutes, up to 40 with TensorRT (it builds its "
+          "engines).",
+          "Essai des réglages sur une séquence très éprouvante : 5 minutes, jusqu'à 40 avec TensorRT (il "
+          "construit "
+          "ses moteurs)."},
     Entry{"The calibration failed: {}", "La calibration a échoué : {}"},
     Entry{"The maximum, reached in a very bright episode; it fades out in a very dark one.",
           "Le maximum, atteint dans un épisode très clair ; l'effet s'efface dans un épisode très sombre."},
     Entry{"holds", "tient"},
     Entry{"unknown", "inconnu"},
-    Entry{"Downscale", "Downscale"},
-    Entry{"Upscale", "Upscale"},
+    Entry{"Downscale", "Réduction"},
+    Entry{"Upscale", "Agrandissement"},
     Entry{"1% low", "1 % low"},
     Entry{"{:.1f} % lost", "{:.1f} % d'images perdues"},
     Entry{"Green: recommended, with margin. Orange: holds just barely, or misses a little. Red: this "
@@ -194,7 +197,7 @@ constexpr std::array kSettingsPages{
           "de "
           "la page Couleurs s'applique toujours."},
     Entry{"Saturation", "Saturation"},
-    Entry{"Scaler", "Filtre de mise à l'échelle"},
+    Entry{"Scaler", "Filtre"},
     Entry{"Scales all text, panels included. Live.",
           "Agrandit ou réduit tous les textes, panneaux compris. En direct."},
     Entry{"Settings", "Paramètres"},

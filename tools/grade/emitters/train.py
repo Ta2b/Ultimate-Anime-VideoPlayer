@@ -25,11 +25,11 @@ OUTPUT_NAME = "emitters"
 STRIDE = 8
 OPSET = 17
 
-M1 = 2610.0 / 16384.0
-M2 = 2523.0 / 4096.0 * 128.0
-C1 = 3424.0 / 4096.0
-C2 = 2413.0 / 4096.0 * 32.0
-C3 = 2392.0 / 4096.0 * 32.0
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common"))
+import hdr  # noqa: E402
+
+M1, M2 = hdr.PQ_M1, hdr.PQ_M2
+C1, C2, C3 = hdr.PQ_C1, hdr.PQ_C2, hdr.PQ_C3
 
 
 def nits_to_pq(nits):
@@ -82,21 +82,27 @@ def build_model(torch):
 def train(args):
     import torch  # noqa: PLC0415 (seulement à l'entraînement)
 
-    pairs = list(load(args.data))
-    if not pairs:
+    # B46-12 : les tuiles se rangent en float16 au fil de la lecture (pas de liste en float32 ni de copie par
+    # np.stack) ; chaque lot repasse en float32 sur le périphérique.
+    xs, ys = [], []
+    for rgb, label in load(args.data):
+        xs.append(rgb.astype(np.float16))
+        ys.append(label.astype(np.float16))
+    if not xs:
         print(f"aucune tuile dans {args.data} (dataset.py d'abord)", file=sys.stderr)
         return 1
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = build_model(torch).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    x = torch.tensor(np.stack([p[0] for p in pairs]))
-    y = torch.tensor(np.stack([p[1] for p in pairs]))[:, None]
+    x = torch.from_numpy(np.stack(xs))
+    y = torch.from_numpy(np.stack(ys))[:, None]
+    del xs, ys
     for epoch in range(args.epochs):
         order = torch.randperm(len(x))
         total = 0.0
         for at in range(0, len(x), args.batch):
             idx = order[at:at + args.batch]
-            xb, yb = x[idx].to(device), y[idx].to(device)
+            xb, yb = x[idx].to(device).float(), y[idx].to(device).float()
             if torch.rand(1).item() < 0.5:  # l'image retournée : la même lumière
                 xb, yb = xb.flip(-1), yb.flip(-1)
             loss = torch.nn.functional.binary_cross_entropy(model(xb), yb)
@@ -108,7 +114,7 @@ def train(args):
     model = model.eval().half().to(device)
     dummy = torch.zeros(1, 3, 256, 256, dtype=torch.float16, device=device)
     torch.onnx.export(model, dummy, args.out, input_names=[INPUT_NAME], output_names=[OUTPUT_NAME],
-                      opset_version=OPSET,
+                      opset_version=OPSET, dynamo=False,
                       dynamic_axes={INPUT_NAME: {2: "h", 3: "w"}, OUTPUT_NAME: {2: "h8", 3: "w8"}})
     print(f"modèle écrit : {args.out}")
     return 0

@@ -56,6 +56,16 @@ TEST_CASE("Rapport : aucun nom d'utilisateur ne survit au nettoyage", "[app][rep
   CHECK(out.find("a.mkv") != std::string::npos);
 }
 
+TEST_CASE("Rapport : accolades, flèches, file:// et dossier personnel nu ne laissent pas le nom",
+          "[app][report]") {
+  CHECK(sanitize_report_paths("x {/home/tatoub/Videos/a.mkv}", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("→/home/tatoub/x/y.mkv", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("dossier : /home/tatoub", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("file:///home/tatoub/Videos/a.mkv", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("a|/home/tatoub/b.mkv", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("lecture de /home/tatoub/Videos/a.mkv", "").find("a.mkv") != std::string::npos);
+}
+
 TEST_CASE("Rapport : les faits sont gardés dans l'ordre, un même nom remplace sa valeur", "[app][report]") {
   clear_report_facts();
   note_report_fact("Carte", "RTX 4070");
