@@ -22,8 +22,9 @@ namespace ajp::gpu::vk::net {
 
 // 2 : GridSampleAttrs::grid_nchw ; 3 : Dispatch::subgroup ; 4 : Epilogue::gate et space ;
 // 5 : ConvAttrs::in_quant et out_quant (FP8 E4M3) ; 6 : porte de bout en bout à 1 % (P2.45), les artefacts
-// passés à 10 % se reconstruisent
-inline constexpr std::uint32_t kArtifactVersion = 6;
+// passés à 10 % se reconstruisent ; 7 : porte à 0,5 dB (B45-01), les artefacts passés à 3 dB de perte se
+// reconstruisent
+inline constexpr std::uint32_t kArtifactVersion = 7;
 
 struct ShaderHash {
   std::string shader;

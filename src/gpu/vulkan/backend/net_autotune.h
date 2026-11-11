@@ -87,6 +87,17 @@ struct Measured {
   std::vector<float> output;
 };
 
+// Une couche dont le choix retenu est à précision réduite (low_precision), avec son gain de temps : la
+// médiane du choix et celle de la meilleure variante en sommes float mesurée à côté (rien : pas mesurée,
+// choix repris du cache ou variante float écartée dès son sondage). Sert à annoncer la perte consentie à la
+// vitesse.
+struct ReducedChoice {
+  std::size_t node = 0;
+  std::string variant;
+  double chosen_us = 0.0;
+  std::optional<double> full_precision_us;
+};
+
 class Autotuner {
  public:
   // presets : les tables pré-réglées (celles du lecteur hors tests).
@@ -115,6 +126,8 @@ class Autotuner {
   std::size_t reverified() const { return reverified_; }
   // Une ligne par choix tranché par mesure (couche, variante, médiane et écart type), pour le journal.
   const std::vector<std::string>& decisions() const { return decisions_; }
+  // Les couches dont le choix est à précision réduite, dans l'ordre où choose() les a tranchées.
+  const std::vector<ReducedChoice>& reduced() const { return reduced_; }
 
  private:
   std::expected<Measured, Refusal> measure_with(const ir::Graph& graph, std::size_t node,
@@ -139,6 +152,7 @@ class Autotuner {
   // Relevés d'estampilles qui n'avancent pas : chacun se remesure ; au troisième, la mesure passe à l'hôte.
   std::uint32_t bad_stamps_ = 0;
   std::vector<std::string> decisions_;
+  std::vector<ReducedChoice> reduced_;
   struct Remembered {
     KernelChoice choice;
     std::string driver;  // DeviceProfile::driver_build sous lequel sa sortie a été vérifiée

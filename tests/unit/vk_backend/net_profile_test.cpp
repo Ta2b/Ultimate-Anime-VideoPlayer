@@ -212,4 +212,31 @@ TEST_CASE("Profil des dispatchs : RIFE v4.25 en 1x11x768x1280", "[.rife_profil]"
             << net::format_profile(report) << '\n';
 }
 
+TEST_CASE("Moteur de réseau : les poids d'origine ne restent pas deux fois en mémoire hôte",
+          "[vk_backend][net_profile]") {
+  // B45-06 : les blobs vont à l'appareil, et les constantes du graphe (float32 sur l'hôte) sont libérées ;
+  // le graphe garde ses formes, ses types et ses noms.
+  NetRig rig = make_net_rig();
+  require_f16(rig);
+  ir::Graph graph = require_value(ir::load_onnx(span_like(true).bytes()));
+  require_ok(ir::infer_shapes(graph));
+  (void)require_value(ir::optimize(graph));
+  const std::size_t weights =
+      static_cast<std::size_t>(std::ranges::count_if(graph.tensors, [](const ir::Tensor& t) {
+        return t.kind == ir::TensorKind::Constant && !t.value.f.empty();
+      }));
+  REQUIRE(weights > 0);
+  const std::vector<net::KernelChoice> choices = require_value(net::default_choices(graph, rig.target));
+  net::Program program = require_value(net::lower(graph, choices, rig.target));
+  auto engine = require_value(
+      net::NetEngine::create(*rig.context, *rig.memory, *rig.pipelines, graph, std::move(program)));
+  const ir::Graph& kept = engine->graph();
+  REQUIRE(kept.tensors.size() == graph.tensors.size());
+  for (std::size_t k = 0; k < kept.tensors.size(); ++k) {
+    CHECK(kept.tensors[k].dims == graph.tensors[k].dims);
+    CHECK(kept.tensors[k].name == graph.tensors[k].name);
+    if (kept.tensors[k].kind == ir::TensorKind::Constant) CHECK(kept.tensors[k].value.f.empty());
+  }
+}
+
 }  // namespace ajp::gpu::vk::test
