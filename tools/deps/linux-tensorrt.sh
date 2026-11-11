@@ -21,19 +21,21 @@ dir="${1:?usage : linux-tensorrt.sh [--trtexec] <dossier>}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=/dev/null
 source "$root/tools/release/versions.env"
-: "${CUDA_REDIST_SERIES:?}" "${TENSORRT_LIBS_VERSION:?}" "${TENSORRT_LIBS_SHA256:?}" "${TENSORRT_HEADERS_COMMIT:?}"
+: "${CUDA_REDIST_SERIES:?}" "${CUDA_REDIST_VERSION:?}" "${CUDA_REDIST_MANIFEST_SHA256:?}" "${TENSORRT_LIBS_VERSION:?}" "${TENSORRT_LIBS_SHA256:?}" "${TENSORRT_HEADERS_COMMIT:?}"
 
 mkdir -p "$dir/downloads"
 dir="$(cd "$dir" && pwd)"
 downloads="$dir/downloads"
 
-# --- Le kit CUDA : le dernier manifeste redistrib_<série>.<n>.json. ---
+# --- Le kit CUDA : le manifeste redistrib_<version>.json épinglé (versions.env), par son empreinte. ---
 redist=https://developer.download.nvidia.com/compute/cuda/redist
-cuda="$(curl -fsSL "$redist/" | grep -o "redistrib_${CUDA_REDIST_SERIES//./\\.}\.[0-9]*\.json" |
-  sed 's/^redistrib_//; s/\.json$//' | sort -u -V | tail -1)"
-[ -n "$cuda" ] || { echo "aucun manifeste CUDA $CUDA_REDIST_SERIES dans $redist" >&2; exit 1; }
+cuda="$CUDA_REDIST_VERSION"
+case "$cuda" in "$CUDA_REDIST_SERIES".*) ;; *) echo "CUDA $cuda hors de la série $CUDA_REDIST_SERIES" >&2; exit 1 ;; esac
 manifest="$downloads/redistrib_$cuda.json"
 curl -fsSL "$redist/redistrib_$cuda.json" -o "$manifest"
+got="$(sha256sum "$manifest" | cut -d' ' -f1)"
+[ "$got" = "$CUDA_REDIST_MANIFEST_SHA256" ] ||
+  { echo "manifeste CUDA $cuda : empreinte $got, attendue $CUDA_REDIST_MANIFEST_SHA256" >&2; exit 1; }
 echo "CUDA $cuda (manifeste redistrib_$cuda.json)"
 
 cuda_root="$dir/cuda"
@@ -69,6 +71,13 @@ done
 
 # --- TensorRT : bibliothèques de la roue, en-têtes du dépôt de NVIDIA. ---
 trt_root="$dir/tensorrt"
+# Un dossier déjà extrait de cette même roue (marqueur de son empreinte) n'est pas retéléchargé : près de 4 Go.
+wheel_marker="$trt_root/.wheel-$TENSORRT_LIBS_SHA256"
+if [ -e "$wheel_marker" ] && [ -e "$trt_root/lib/libnvinfer.so" ]; then
+  echo "TensorRT $TENSORRT_LIBS_VERSION : bibliothèques déjà extraites"
+  rm -rf "${trt_root:?}/include" && mkdir -p "$trt_root/include"
+else
+  # (le corps de cette branche n'est pas indenté : il contient un document ici en Python)
 rm -rf "${trt_root:?}" && mkdir -p "$trt_root/lib" "$trt_root/include"
 wheel="$downloads/tensorrt_cu13_libs-$TENSORRT_LIBS_VERSION-py3-none-manylinux_2_28_x86_64.whl"
 curl -fsSL "https://pypi.nvidia.com/tensorrt-cu13-libs/$(basename "$wheel")" -o "$wheel"
@@ -92,6 +101,8 @@ for lib in "$trt_root"/lib/lib*.so.*; do
   ln -sf "$base" "$trt_root/lib/${base%%.so.*}.so"
 done
 [ -e "$trt_root/lib/libnvinfer.so" ] || { echo "libnvinfer absent de $wheel" >&2; exit 1; }
+: >"$wheel_marker"
+fi
 
 headers="$downloads/tensorrt-headers"
 rm -rf "${headers:?}"

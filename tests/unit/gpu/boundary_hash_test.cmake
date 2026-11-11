@@ -30,3 +30,17 @@ list(FIND AJP_BOUNDARY_HEADERS "src/core/moving_area.h" moving_found)
 if(spec_found EQUAL -1 OR moving_found EQUAL -1)
   message(FATAL_ERROR "kernels/spec/frame_stats.h ou core/moving_area.h hors de l'empreinte : ${AJP_BOUNDARY_HEADERS}")
 endif()
+
+# Un commentaire en première ou en dernière position (blanc de tête ou de queue laissé par sa suppression) ne change
+# pas l'empreinte : retirer la ligne de licence d'un en-tête ne doit pas faire refuser le module déjà construit.
+file(WRITE "${WORK}/bare.h" "#pragma once\nint x;\n")
+file(WRITE "${WORK}/head_comment.h" "// licence\n#pragma once\nint x;\n")
+file(WRITE "${WORK}/tail_comment.h" "#pragma once\nint x;\n// fin\n")
+file(WRITE "${WORK}/block_comment.h" "/* licence */\n#pragma once\nint x;\n/* fin */\n")
+ajp_boundary_hash(bare "${WORK}/bare.h")
+foreach(variant head_comment tail_comment block_comment)
+  ajp_boundary_hash(with_comment "${WORK}/${variant}.h")
+  if(NOT with_comment STREQUAL bare)
+    message(FATAL_ERROR "${variant} change l'empreinte : ${bare} puis ${with_comment}")
+  endif()
+endforeach()

@@ -78,20 +78,6 @@
       }
     },
     {
-      "name": "windows-rtx",
-      "displayName": "Windows, backend TensorRT (PC de référence)",
-      "inherits": "base",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "AJP_WITH_CUDA": "ON"
-      }
-    },
-    {
       "name": "windows-ci",
       "displayName": "Windows, construction MSVC et tests sans GPU (CI), vcpkg",
       "inherits": "base",
@@ -117,7 +103,18 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
-        "AJP_WARNINGS_AS_ERRORS": "ON"
+        "AJP_WARNINGS_AS_ERRORS": "ON",
+        "AJP_REQUIRE_SPIRV_VAL": "ON",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_HOST_TRIPLET": "x64-windows-release"
+      }
+    },
+    {
+      "name": "windows-rtx",
+      "displayName": "Windows, backend TensorRT (PC de référence) : windows-release plus CUDA, rien d'autre",
+      "inherits": "windows-release",
+      "cacheVariables": {
+        "AJP_WITH_CUDA": "ON"
       }
     },
     {
@@ -212,7 +209,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "AJP_BUILD_TESTS": "ON",
-        "AJP_WARNINGS_AS_ERRORS": "ON"
+        "AJP_WARNINGS_AS_ERRORS": "ON",
+        "AJP_REQUIRE_SPIRV_VAL": "ON"
       }
     },
     {
@@ -349,6 +347,9 @@
         "include": {
           "name": "Inbox"
         }
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
@@ -361,6 +362,28 @@
     {
       "name": "linux-prefix-cuda",
       "configurePreset": "linux-prefix-cuda",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-cuda-release",
+      "configurePreset": "linux-prefix-cuda-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-prefix-cuda-machine",
+      "configurePreset": "linux-prefix-cuda-machine",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-rtx",
+      "displayName": "Windows RTX : tous les tests, TensorRT compris (ce que le filtre de windows-release exclut)",
+      "configurePreset": "windows-rtx",
       "output": {
         "outputOnFailure": true
       }
@@ -393,6 +416,9 @@
         "include": {
           "name": "Inbox"
         }
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
@@ -416,6 +442,9 @@
         "include": {
           "name": "^audio: |[Ss]ession|[Pp]ipeline|[Ss]tage|[Éé]tage"
         }
+      },
+      "execution": {
+        "noTestsAction": "error"
       },
       "environment": {
         "TSAN_OPTIONS": "halt_on_error=1 second_deadlock_stack=1 ignore_noninstrumented_modules=1"
@@ -444,11 +473,7 @@
       "output": {
         "outputOnFailure": true
       },
-      "filter": {
-        "include": {
-          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels|gpu|gpu_ir): "
-        }
-      },
+      "filter": {"exclude": {"name": "^(backend_tensorrt|span_fp8_kernels|coreml_rt): "}},
       "execution": {
         "noTestsAction": "error"
       }
@@ -457,7 +482,7 @@
       "name": "linux-release",
       "configurePreset": "linux-release",
       "output": {"outputOnFailure": true},
-      "filter": {"include": {"name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels|gpu|gpu_ir): "}},
+      "filter": {"exclude": {"name": "^(backend_tensorrt|span_fp8_kernels|coreml_rt): "}},
       "execution": {"noTestsAction": "error"}
     },
     {
@@ -466,11 +491,7 @@
       "output": {
         "outputOnFailure": true
       },
-      "filter": {
-        "include": {
-          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels|gpu|gpu_ir): "
-        }
-      },
+      "filter": {"exclude": {"name": "^(backend_tensorrt|span_fp8_kernels|coreml_rt): "}},
       "execution": {
         "noTestsAction": "error"
       }

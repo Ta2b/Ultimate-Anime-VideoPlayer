@@ -31,7 +31,6 @@ DEPS=(
   "tomlplusplus https://github.com/marzer/tomlplusplus v3.4.0 30172438cee64926dc41fdd9c11fb3ba5b2ba9de"
   "catch2 https://github.com/catchorg/Catch2 v3.16.0 317ac1ed4c0bb6e6b91eafc817e05c488feffcb3"
   "spdlog https://github.com/gabime/spdlog v1.17.0 79524ddd08a4ec981b7fea76afd08ee05f83755d"
-  "nanobench https://github.com/martinus/nanobench v4.6.0 b709728dba4df0356d467abfb0ba20781a8031c0"
   "imgui https://github.com/ocornut/imgui v1.93.0 c1aaac65e896a45f81f47a4d68f9959e0f86c859"
   "nv-codec-headers https://github.com/FFmpeg/nv-codec-headers n13.0.19.0 e844e5b26f46bb77479f063029595293aa8f812d"
   "ffmpeg https://github.com/FFmpeg/FFmpeg n9.0.2 946fcce07b6dcd0331c8cc609192aeff5e1924f8"
@@ -76,6 +75,15 @@ system_libs() {  # modules pkg-config...
 done_marker() { [[ -f "$PREFIX/.built-$1" && "$(<"$PREFIX/.built-$1")" == "$2 cc $COMPILER" ]]; }
 mark() { printf '%s\n' "$2 cc $COMPILER" >"$PREFIX/.built-$1"; }
 
+# Remet le clone d'une dépendance construite dans l'arbre (FFmpeg, libass, libunibreak, libplacebo) à son commit,
+# sans reste d'un correctif ou d'une configuration plus anciens : quand sa signature change (correctif réécrit,
+# option modifiée), le dossier de travail d'un poste garde sinon l'ancien correctif appliqué, `git apply` du
+# nouveau échoue et `set -e` laisse le préfixe à moitié mis à jour. -ff retire aussi les dépôts imbriqués.
+pristine() {  # nom
+  git -C "$WORK/$1" reset --hard -q
+  git -C "$WORK/$1" clean -ffdxq
+}
+
 cmake_dep() {  # nom [options...]
   local name="$1"; shift
   local signature
@@ -107,11 +115,6 @@ fi
 cmake_dep vulkan-headers
 cmake_dep sdl3 -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
 
-if ! done_marker nanobench "$(ref_of nanobench)"; then
-  install -D -m 644 "$WORK/nanobench/src/include/nanobench.h" "$PREFIX/include/nanobench.h"
-  mark nanobench "$(ref_of nanobench)"
-fi
-
 # imgui n'a pas de système de construction : on installe ses sources, que
 # cmake/Dependencies.cmake compile, sans backend (le lecteur n'en appelle aucun).
 if ! done_marker imgui "$(ref_of imgui) sans-backends"; then
@@ -133,13 +136,18 @@ fi
 # libva (libva-dev, libva-devel) ; la libva du système sert à l'exécution. Sans bzip2 : il ne
 # sert qu'aux pistes MKV compressées en bzip2, et sa bibliothèque ne porte pas le même nom
 # partout (libbz2.so.1.0 sous Debian et Ubuntu, libbz2.so.1 sous Fedora : package-linux.sh).
+# Sans détection automatique, comme le port vcpkg (--disable-autodetect) : seules les options écrites ici entrent
+# dans les bibliothèques, pas ce que la machine de construction a d'installé (lzma, alsa, xcb…). libdrm reste voulu
+# (export DRM-PRIME de VA-API vers Vulkan, libdrm-dev dans APT_PLAYER). zlib est
+# demandé des deux côtés : il ouvre les pistes Matroska dont les en-têtes sont compressés (ContentCompression).
 FFMPEG_OPTS=(--prefix="$PREFIX" --enable-shared --disable-static
-  --disable-programs --disable-doc --disable-debug --disable-bzlib
+  --disable-programs --disable-doc --disable-debug --disable-autodetect --disable-bzlib --enable-zlib
   --enable-ffnvcodec --enable-nvdec --enable-cuvid
-  --enable-vulkan --enable-vaapi --enable-libdav1d --enable-libsvtav1
+  --enable-vulkan --enable-vaapi --enable-libdrm --enable-libdav1d --enable-libsvtav1
   --extra-cflags="-I$PREFIX/include" --extra-ldflags="-L$PREFIX/lib")
 signature="$(ref_of ffmpeg) ${FFMPEG_OPTS[*]} nv-codec-headers $(ref_of nv-codec-headers)$(system_libs dav1d SvtAv1Enc libva)"
 if ! done_marker ffmpeg "$signature"; then
+  pristine ffmpeg
   (cd "$WORK/ffmpeg" && ./configure "${FFMPEG_OPTS[@]}" && make -j "$JOBS" && make install)
   mark ffmpeg "$signature"
 fi
@@ -158,11 +166,9 @@ PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
 placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
 signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(sha256sum "$placebo_patch" | cut -c1-16)$(system_libs shaderc lcms2)"
 if ! done_marker libplacebo "$signature"; then
+  pristine libplacebo
   git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
-  # Appliqué une fois : déjà là (une construction interrompue), rien à refaire.
-  if ! git -C "$WORK/libplacebo" apply --reverse --check "$placebo_patch" 2>/dev/null; then
-    git -C "$WORK/libplacebo" apply "$placebo_patch"
-  fi
+  git -C "$WORK/libplacebo" apply "$placebo_patch"
   rm -rf "$WORK/libplacebo/_build"
   meson setup "$WORK/libplacebo/_build" "$WORK/libplacebo" "${PLACEBO_OPTS[@]}"
   meson compile -C "$WORK/libplacebo/_build"
@@ -172,6 +178,7 @@ fi
 
 # La coupure des lignes selon Unicode (UAX #14), que libass prend à libunibreak.
 if ! done_marker libunibreak "$(ref_of libunibreak)"; then
+  pristine libunibreak
   (cd "$WORK/libunibreak" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
     && make -j "$JOBS" && make install)
   mark libunibreak "$(ref_of libunibreak)"
@@ -184,8 +191,8 @@ fi
 LIBASS_PATCH="$ROOT/ports/libass/rendu-sur-plusieurs-fils.patch"
 signature="$(ref_of libass) $(sha256sum "$LIBASS_PATCH" | cut -c1-16) asm libunibreak threads $(ref_of libunibreak)$(system_libs freetype2 fribidi harfbuzz fontconfig)"
 if ! done_marker libass "$signature"; then
-  git -C "$WORK/libass" apply --reverse --check "$LIBASS_PATCH" 2>/dev/null \
-    || git -C "$WORK/libass" apply "$LIBASS_PATCH"
+  pristine libass
+  git -C "$WORK/libass" apply "$LIBASS_PATCH"
   (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
     --enable-asm --enable-libunibreak --enable-threads && make -j "$JOBS" && make install)
   mark libass "$signature"

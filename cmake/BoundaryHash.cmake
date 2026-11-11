@@ -24,6 +24,9 @@ function(ajp_boundary_hash out)
     string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" " " text "${text}")
     string(REGEX REPLACE "//[^\n]*" " " text "${text}")
     string(REGEX REPLACE "[ \t\r\n]+" " " text "${text}")
+    # Sans blanc de tête ni de queue : un commentaire placé en première ou en dernière position laisse un blanc
+    # que le même texte sans commentaire n'a pas, et ne doit pas changer l'empreinte.
+    string(STRIP "${text}" text)
     string(APPEND all "${text}\n")
   endforeach()
   string(SHA256 digest "${all}")

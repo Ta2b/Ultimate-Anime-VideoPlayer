@@ -10,8 +10,6 @@
 #include <utility>
 
 extern "C" {
-#include <libswscale/swscale.h>
-
 #include <libavutil/buffer.h>
 #include <libavutil/cpu.h>
 #include <libavutil/hwcontext.h>
@@ -19,6 +17,7 @@ extern "C" {
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
+#include <libswscale/swscale.h>
 }
 
 #include "media/av_util.h"

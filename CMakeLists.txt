@@ -90,6 +90,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     add_compile_options("-ffile-prefix-map=$ENV{AJP_DEPS_PREFIX}=/deps")
   endif()
 endif()
+# MSVC : /Brepro (horodatage du lieur et de l'objet remplacé par une empreinte), /d1trimfile (le dossier des sources
+# n'entre plus dans __FILE__ ni dans les assertions) et /PDBALTPATH (le PDB sans le chemin du poste dans l'exécutable).
+if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX,C>:/Brepro> "$<$<COMPILE_LANGUAGE:CXX,C>:/d1trimfile:${CMAKE_SOURCE_DIR}/>")
+  add_link_options(/Brepro "/PDBALTPATH:%_PDB%")
+endif()
 
 # La libc++ de Xcode 16 (LLVM 19) range std::jthread et <stop_token> parmi ses fonctions
 # expérimentales : entièrement dans ses en-têtes, elles s'ouvrent par cette macro, sans
