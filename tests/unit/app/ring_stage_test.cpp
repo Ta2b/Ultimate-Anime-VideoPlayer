@@ -8,7 +8,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -240,8 +239,9 @@ TEST_CASE(
   stage.lose_device(true);
   const auto lost_at = std::chrono::steady_clock::now();
   REQUIRE(wait_for([&] { return !bench.reported().empty(); }));
-  // 0,3 s sur un poste ; sur les machines virtuelles de la CI (CI définie), cinq fois plus.
-  CHECK(std::chrono::steady_clock::now() - lost_at <= (std::getenv("CI") != nullptr ? 1500ms : 300ms));
+  // Quelques sondes (0,3 s sur un poste) ; la borne vaut pour toutes les machines, CI chargée comprise, sans
+  // branche sur l'environnement (B40-08) : elle dit que la perte se voit vite, pas au bout d'un délai long.
+  CHECK(std::chrono::steady_clock::now() - lost_at <= 1500ms);
   const std::vector<Refusal> refusals = bench.reported();
   // A31-01 : l'appareil perdu reste DeviceLost (« relancer le lecteur », relance), fatal par sa clé.
   CHECK(refusals.front().code == RefusalCode::DeviceLost);

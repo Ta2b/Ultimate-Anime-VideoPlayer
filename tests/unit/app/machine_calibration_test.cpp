@@ -14,9 +14,9 @@ namespace {
 
 // Joue la recherche contre une machine qui tient ce que holds accepte ; rend les essais faits.
 template <typename Holds>
-std::vector<CandidateTrial> search(Holds holds) {
+std::vector<CandidateTrial> search(Holds holds, int start_height = 0) {
   std::vector<CandidateTrial> tried;
-  while (const auto chain = next_candidate(tried)) {
+  while (const auto chain = next_candidate(tried, start_height)) {
     REQUIRE(tried.size() < 20);
     tried.push_back({.chain = *chain, .holds = holds(*chain)});
   }
@@ -58,6 +58,32 @@ TEST_CASE("la calibration monte SPAN seul, puis descend SPAN + RIFE depuis son p
   CHECK(tried[3].chain == C{.span = true, .rife = false, .height = 720});
   CHECK(tried[4].chain == C{.span = true, .rife = true, .height = 540});
   CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 540});
+}
+
+TEST_CASE("la calibration part du palier du niveau estimé, monte ou descend (B07-14)",
+          "[calibration-machine]") {
+  using C = ChainCandidate;
+  CHECK(calibration_start_height(Tier::Ultra) == 1080);
+  CHECK(calibration_start_height(Tier::Fast) == 1080);
+  CHECK(calibration_start_height(Tier::Normal) == 720);
+  // Une 4090 qui tient tout : SPAN seul 1080, puis SPAN + RIFE 1080 ; deux essais au lieu de six.
+  auto tried = search([](const ChainCandidate&) { return true; }, 1080);
+  REQUIRE(tried.size() == 2);
+  CHECK(tried[0].chain == C{.span = true, .rife = false, .height = 1080});
+  CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 1080});
+  // Estimée Qualité mais 720p au plus : SPAN seul descend de 1080 à 720, SPAN + RIFE part de 720.
+  tried = search([](const ChainCandidate& c) { return c.height <= 720; }, 1080);
+  REQUIRE(tried.size() == 3);
+  CHECK(tried[1].chain == C{.span = true, .rife = false, .height = 720});
+  CHECK(best_candidate(tried) == C{.span = true, .rife = true, .height = 720});
+  // Estimée Normal (720) et la carte tient 1080 : SPAN seul monte de 720 à 1080.
+  tried = search([](const ChainCandidate&) { return true; }, 720);
+  REQUIRE(tried.size() == 3);
+  CHECK(tried[1].chain == C{.span = true, .rife = false, .height = 1080});
+  // SPAN nulle part : la famille descend jusqu'au bout, puis RIFE seul.
+  tried = search([](const ChainCandidate& c) { return !c.span; }, 720);
+  CHECK(tried.back().chain == C{.span = false, .rife = true, .height = 0});
+  CHECK(best_candidate(tried) == C{.span = false, .rife = true, .height = 0});
 }
 
 TEST_CASE("la calibration préfère RIFE seul à SPAN seul, SPAN seul quand RIFE ne tient pas",
@@ -347,6 +373,16 @@ TEST_CASE("un essai avec RIFE ne tient que si RIFE double vraiment la cadence (A
   BenchReading lossy = reading_at(47.9);
   lossy.run.dropped = 60;
   CHECK_FALSE(trial_holds(both, lossy, 48.0));
+  // Les pertes se comptent par image visée, pas par présentation (B07-02) : 12 pertes en dix secondes à
+  // 60 Hz font 2 % des présentations, mais 5 % des 240 images d'une séquence à 24 i/s.
+  BenchReading jerky = reading_at(24.0);
+  jerky.run.dropped = 12;
+  CHECK(holds(jerky.run));
+  CHECK_FALSE(trial_holds(alone, jerky, 24.0));
+  jerky.run.dropped = 1;  // une image sur 240 : tient
+  CHECK(trial_holds(alone, jerky, 24.0));
+  jerky.run.dropped = 2;  // deux sur 240 : plus de 0,5 %
+  CHECK_FALSE(trial_holds(alone, jerky, 24.0));
   // Une lecture sans décompte (lecteur plus ancien) : la cadence brute.
   BenchReading old = reading_at(47.0);
   old.new_frames = 0;

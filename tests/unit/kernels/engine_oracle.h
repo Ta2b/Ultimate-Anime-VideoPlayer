@@ -381,11 +381,12 @@ inline float sample_window(const float* p, int stride, int x0w, int y0w, int w, 
 
 // k_warp_blend_mid ; à t = 0,5, sa branche est exactement k_warp_blend.
 // a, b : NCHW w × h ; flow : 4 plans fpw × fph ; mask : 1 plan ; fenêtre (fx0, fy0, fw, fh).
+// law_a, law_b, law_c : la loi de mélange, celle du moteur par défaut ; le lecteur a la sienne (spec/warp.h).
 inline std::vector<float> warp_blend_mid(const std::vector<float>& a, const std::vector<float>& b,
                                          const std::vector<float>& flow, const std::vector<float>& mask,
                                          int w, int h, int fpw, int fph, int fx0, int fy0, int fw, int fh,
-                                         float t) {
-  const float law_a = 0.285f, law_b = 2.591f, law_c = 0.170f;
+                                         float t, float law_a = 0.285f, float law_b = 2.591f,
+                                         float law_c = 0.170f) {
   std::vector<float> dst(3 * sz(w) * sz(h));
   const std::size_t fplane = sz(fpw) * sz(fph);
   const float *f0x = flow.data(), *f0y = f0x + fplane, *f1x = f0y + fplane, *f1y = f1x + fplane;

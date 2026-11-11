@@ -1,7 +1,6 @@
 # fichier	fonction	CCN	lignes : fonctions au-delà de CCN 25 ou 120 lignes, qui ne peuvent que baisser (check-complexity.py)
 src/app/main.cpp	run_player	45	204
 src/app/play/auto_bench_run.cpp	ajp::app::play::run_bench	34	104
-src/app/play/auto_config.cpp	ajp::app::play::apply_preset	28	79
 src/app/play/chain.cpp	ajp::app::play::apply	30	170
 src/app/play/chain.cpp	ajp::app::play::apply_live	39	92
 src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	106	256
@@ -22,14 +21,12 @@ src/app/play/player_run.cpp	ajp::app::play::run_chain	189	633
 src/app/play/ring_stage.cpp	ajp::app::play::RingStage::emit	30	100
 src/app/play/session.cpp	ajp::app::play::Session::tick	42	90
 src/app/play/settings.cpp	ajp::app::play::change_between	33	44
-src/app/play/settings_bench_results.cpp	ajp::app::play::bench_results_section	26	92
 src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	82	193
 src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	146
 src/app/play/settings_system.cpp	ajp::app::play::updates_page	26	90
 src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	52	192
-src/app/play/span_derive.cpp	ajp::app::play::derive_span_fp8	18	126
-src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	31	88
-src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	41	104
+src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	26	70
+src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	38	104
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	163	246
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::produce	37	91

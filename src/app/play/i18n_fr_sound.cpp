@@ -22,9 +22,12 @@ constexpr std::array kSoundPage{
           "image tienne des rafraîchissements entiers : plus d'image doublée. Le son suit, sans changement "
           "audible."},
     Entry{"Output device", "Appareil de sortie"},
-    Entry{"Positive delays the sound. Ctrl+click the slider to type a value (up to ±5,000 ms).",
-          "Positif : le son est retardé. Ctrl+clic sur le curseur pour saisir une valeur (jusqu'à ±5 000 "
-          "ms)."},
+    Entry{
+        "Positive delays the sound. Kept for this output device and every video, until you change it. "
+        "Ctrl+click the slider to type a value (up to ±5,000 ms).",
+        "Positif : le son est retardé. Gardé pour cet appareil de sortie et pour toutes les vidéos, jusqu'à "
+        "ce que vous le changiez. Ctrl+clic sur le curseur pour saisir une valeur (jusqu'à ±5 000 ms)."},
+    Entry{"{} (not connected)", "{} (non connecté)"},
     Entry{"Reset to 0", "Remettre à 0"},
     Entry{"Sync", "Synchronisation"},
     Entry{"Sync playback to the display", "Caler la lecture sur l'écran"},

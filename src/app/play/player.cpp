@@ -79,11 +79,17 @@ namespace {
 
 // Un fichier de configuration que le lecteur n'a pas compris sera réécrit au prochain changement
 // de réglage : il est mis de côté d'abord (« nom.invalide-AAAAMMJJ-HHMMSS »), pour qu'aucun profil
-// ni réglage valide qu'il contenait ne se perde sans copie. Rien si le fichier est illisible
-// (droits) : il n'est pas écrasé non plus. Rend le message à montrer à l'accueil.
+// ni réglage valide qu'il contenait ne se perde sans copie. Un fichier illisible (verrou, droits) n'est pas
+// déplacé : load_settings et save_settings le laissent intact, et la séance le dit (B22-02). Rend le message
+// à montrer à l'accueil.
 std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
   std::error_code error;
-  if (why.code == RefusalCode::FileUnreadable || !std::filesystem::exists(path, error)) return {};
+  if (why.code == RefusalCode::FileUnreadable)
+    return i18n::tr_format(
+        "{} cannot be read: this session starts from the default settings and does not "
+        "change the file",
+        core::to_utf8(path.filename()));
+  if (!std::filesystem::exists(path, error)) return {};
   const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
   std::filesystem::path aside = path;
   aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
@@ -97,6 +103,15 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
                            core::to_utf8(aside.filename()));
   return i18n::tr_format("{} was invalid: copy kept as {}", core::to_utf8(path.filename()),
                          core::to_utf8(aside.filename()));
+}
+
+// play.toml, avec l'avis des valeurs fautives que le défaut a remplacées (B22-05) ajouté aux notes de départ.
+std::expected<PlaySettings, Refusal> load_with_notes(const std::filesystem::path& path,
+                                                     std::vector<std::string>& notes) {
+  std::vector<std::string> ignored;
+  auto loaded = load_settings(path, &ignored);
+  if (std::string note = ignored_values_note(ignored); !note.empty()) notes.push_back(std::move(note));
+  return loaded;
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
@@ -297,7 +312,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::filesystem::path update_file = paths::update_state(paths.data);
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
-  auto saved = load_settings(settings_path);
+  auto saved = load_with_notes(settings_path, startup_notes);
   i18n::set_language(i18n::language_from_code(saved ? saved->language : default_interface_language()));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);

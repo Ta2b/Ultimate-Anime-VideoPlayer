@@ -105,7 +105,7 @@ struct ChainEngines {
   std::optional<ModelChoice> model;   // SPAN ; rien : sans agrandissement
   std::optional<SpanInt8> span_int8;  // sa variante INT8, construite à sa place (span_int8.h)
   int factor = 1;                     // kSpanFactor avec SPAN
-  int top_factor = 1;                 // le plus haut facteur d'interpolation que la lecture peut prendre
+  int order_factor = 0;  // le facteur qui décide l'ordre du warp et de SPAN (0 : inconnu, en Auto)
   // La forme de cette ouverture (anneau, ordre du warp) et ses mesures : ce qu'un réglage changé en direct
   // doit retrouver, sinon la chaîne se rouvre (chain_shape.h).
   OpenedChain opened;

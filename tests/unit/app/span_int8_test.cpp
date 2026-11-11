@@ -105,7 +105,11 @@ TEST_CASE("SPAN INT8 : reçu refusé, le SPAN d'origine reste", "[app][int8]") {
   SECTION("variante absente") {
     f.receipt(45.0, 41.0, 0.99, true, {}, std::string(64, 'b'));
     fs::remove(f.variant());
-    CHECK_FALSE(find_span_int8(f.span, f.dir()).variant);
+    const SpanInt8Lookup missing = find_span_int8(f.span, f.dir());
+    CHECK_FALSE(missing.variant);
+    // Le reçu l'admet : à refaire, pas refusée (B07-12).
+    CHECK(missing.stale);
+    CHECK(missing.note.find("introuvable") != std::string::npos);
   }
   SECTION("reçu illisible") {
     Folder::write(f.dir() / (f.stem + ".toml"), "format = ");

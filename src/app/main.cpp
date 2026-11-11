@@ -41,6 +41,7 @@ extern "C" {
 #include "app/play/crash_dump.h"
 #include "app/play/data_dirs.h"
 #include "app/play/default_player.h"
+#include "app/play/latest_writer.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
 #include "app/play/paths.h"
@@ -421,6 +422,15 @@ DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::
   return places;
 }
 
+// Le lecteur, puis l'attente d'une écriture que la fin d'une vidéo n'a pas attendue (disque lent) : elle
+// finit avant que le processus ne parte.
+std::expected<void, ajp::Refusal> play_then_settle(const ajp::app::play::PlayOptions& options,
+                                                   const ajp::app::play::PlayerPaths& paths) {
+  auto played = ajp::app::play::play(options, paths);
+  ajp::app::play::LatestWriter::wait_abandoned(std::chrono::seconds(5));
+  return played;
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 int run_player(int argc, char** argv) {
   // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
@@ -604,7 +614,7 @@ int run_player(int argc, char** argv) {
 #endif
   std::error_code error;
   std::filesystem::create_directories(paths.engines, error);
-  const auto played = ajp::app::play::play(*options, paths);
+  const auto played = play_then_settle(*options, paths);
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();
   if (played && engines_updated) return relaunch(place.executable, argc, argv);

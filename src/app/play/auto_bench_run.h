@@ -47,8 +47,10 @@ struct BenchPlan {
   // niveau dont les moteurs sont longs à construire est dit « non testé », il ne gèle pas l'évaluation.
   std::chrono::seconds first_allowance{20 * 60};
   std::chrono::seconds build_allowance{4 * 60};
-  std::chrono::seconds explore_allowance{25};  // l'exploration ne construit pas : trop long, elle s'arrête
-  BenchProgress* shown = nullptr;              // l'avancement montré à l'utilisateur (étapes, barre)
+  // Une hauteur explorée demande un moteur de plus sous TensorRT (un par forme) : l'exploration a le délai
+  // d'une construction, sinon elle est tuée avant la fin et ne garde jamais rien (B07-07).
+  std::chrono::seconds explore_allowance{4 * 60};
+  BenchProgress* shown = nullptr;  // l'avancement montré à l'utilisateur (étapes, barre)
   // L'écran de l'utilisateur, que les essais silencieux rendent hors écran (--hidden) : sa taille en pixels
   // (0 : 1920 × 1080) et s'il reçoit du HDR (sinon --sdr).
   int display_width = 0;

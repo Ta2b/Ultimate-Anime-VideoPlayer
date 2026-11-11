@@ -37,8 +37,12 @@ std::optional<std::int64_t> kwin_config_stamp();
 // (render/display_model.h) ; headroom : la marge HDR de SDL3. Linux : la crête de KWin, sinon marge × blanc
 // de référence de KWin, ramenées au blanc de 203 du contenu ; Windows : MaxLuminance de la sortie DXGI en
 // HDR. Rien si le système ne le dit pas. monitor : sous Windows, le HMONITOR de la fenêtre ; seule sa sortie
-// compte (P3.57). Sans lui, la plus lumineuse des sorties en HDR.
+// compte (P3.57). Sans lui, la plus lumineuse des sorties en HDR. edid : sous Linux, kwin_edid_key de l'écran
+// branché, comme le contrat d'écran : l'entrée KWin d'un ancien écran du même port ne compte pas (B11-04).
+// Hors KDE (GNOME, Hyprland, Sway), rien : le journal le dit une fois, et le pic reste marge de SDL × 203.
+// Le fichier de KDE se cherche sous ~/.config : XDG_CONFIG_HOME n'est pas lu (aucune variable
+// d'environnement dans src/, B11-12).
 std::optional<double> system_peak_nits(std::string_view connector, double headroom,
-                                       const void* monitor = nullptr);
+                                       const void* monitor = nullptr, std::string_view edid = {});
 
 }  // namespace ajp::app::play

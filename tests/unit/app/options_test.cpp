@@ -231,7 +231,8 @@ TEST_CASE("ajp play : le pic du grade HDR, refus nommés hors plage", "[app][opt
   CHECK_FALSE(parse({"a.mkv", "--truehdr-sdk=/opt/vfx"}));
   CHECK(parse({"a.mkv", "--truehdr-peak=0"})->true_hdr_peak == 0);
   CHECK(parse({"a.mkv", "--truehdr-peak=300"}).error().code == RefusalCode::FieldOutOfRange);
-  CHECK(parse({"a.mkv", "--truehdr-peak=2001"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--truehdr-peak=4001"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--truehdr-peak=3000"})->true_hdr_peak == 3000);  // téléviseur de 3000 nits (B37-09)
 }
 
 TEST_CASE("ajp play : le peps de --hdr-anime en %, 100 par défaut, refus hors de 0 à 200", "[app][options]") {

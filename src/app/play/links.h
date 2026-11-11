@@ -137,6 +137,8 @@ struct ShowRequest {
   const subs::SubtitleFrame* subtitles = nullptr;  // nullptr : aucun sous-titre
   std::span<const std::string> osd;                // lignes de l'OSD, en haut à gauche
   const ImDrawData* ui = nullptr;                  // interface (barre de lecture, menus), par-dessus tout
+  std::uint64_t ui_serial =
+      0;              // UiFrame::serial : l'interface gardée tant qu'il ne change pas ; 0 : dessinée
   int ui_bottom = 0;  // pixels pris en bas par l'interface : les sous-titres du bas passent au-dessus
   int ui_top = 0;     // pixels pris en haut par l'interface : l'OSD passe dessous
   // D'autres présentations de la même image suivront (cadence fixe, plancher du VRR, interface ou OSD
@@ -153,8 +155,9 @@ struct ShowRequest {
 struct UiFrame {
   const ImDrawData* draw = nullptr;  // nullptr : rien à dessiner
   bool changed = false;
-  int bottom = 0;  // pixels pris en bas de l'écran (barre visible), 0 sinon
-  int top = 0;     // pixels pris en haut (titre visible), 0 sinon
+  std::uint64_t serial = 0;  // numéro de la recomposition de draw, qui croît à chacune (B32-05)
+  int bottom = 0;            // pixels pris en bas de l'écran (barre visible), 0 sinon
+  int top = 0;               // pixels pris en haut (titre visible), 0 sinon
 };
 
 class Screen {

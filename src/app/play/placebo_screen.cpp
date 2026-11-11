@@ -121,9 +121,10 @@ void PlaceboScreen::release_ui(ImGuiPlatformIO& platform) {
   if (impl_->ui) impl_->ui->release_textures(platform);
 }
 
-void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target) {
+void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target, std::uint64_t serial) {
+  if (data == nullptr && ui) ui->drop_cache();  // interface cachée : sa texture gardée est rendue
   if (data == nullptr || ui_failed) return;
-  if (auto drawn = ui->draw(*data, target, kUiWhiteNits); !drawn) {
+  if (auto drawn = ui->draw(*data, target, kUiWhiteNits, serial); !drawn) {
     // Un échec isolé (texture ou tampon d'un redimensionnement) ne retire pas l'interface : elle
     // n'est abandonnée qu'après des échecs de suite.
     ++ui_failures;
@@ -393,6 +394,48 @@ bool PlaceboScreen::Impl::start_frame(pl_swapchain_frame* frame) {
   return frame_pending;
 }
 
+// L'image de la swapchain où présenter, et la taille qu'elle a vraiment ; faux : rien n'est présenté (fenêtre
+// cachée, swapchain à refaire).
+std::expected<bool, Refusal> PlaceboScreen::acquire(OutputSize& out, pl_frame& target) {
+  Impl& s = *impl_;
+  // Fenêtre réduite ou que le compositeur ne montre plus (Wayland « suspended », macOS) : rien n'est
+  // présenté (P2.19). En FIFO, la présentation y attendrait un rappel de rafraîchissement qui ne vient pas,
+  // et le thread de la fenêtre resterait bloqué. L'attente est rendue au premier événement, 50 ms au plus.
+  if ((SDL_GetWindowFlags(s.window) & (SDL_WINDOW_OCCLUDED | SDL_WINDOW_MINIMIZED)) != 0) {
+    constexpr Sint32 kHiddenWaitMs = 50;
+    (void)SDL_WaitEventTimeout(nullptr, kHiddenWaitMs);
+    s.acquire_streak.reset();
+    return false;
+  }
+  // A10-01 : un échec d'acquisition sur un appareil en échec est une perte du GPU, pas une fenêtre cachée.
+  // B31-15 : sur un appareil sain, des échecs qui durent sont une surface perdue ; la relance la recrée.
+  const auto not_shown = [&]() -> std::expected<bool, Refusal> {
+    if (auto lost = device_lost()) return std::unexpected(std::move(*lost));
+    if (s.acquire_streak.failed(host_now_us())) {
+      s.channel->error("présentation : aucune image acquise depuis {} s sur une fenêtre visible",
+                       kLostSurfaceUs / 1'000'000);
+      return std::unexpected(Refusal{RefusalCode::DeviceLost,
+                                     "surface de la fenêtre perdue (écran débranché ou sortie détruite)"});
+    }
+    return false;
+  };
+  if (out != s.swapchain_size) {
+    int w = out.width;
+    int h = out.height;
+    if (!pl_swapchain_resize(s.swapchain, &w, &h)) return not_shown();
+    s.swapchain_size = out;
+  }
+  pl_swapchain_frame swframe{};
+  if (!s.start_frame(&swframe)) return not_shown();  // fenêtre cachée, surface perdue ou GPU perdu
+  s.acquire_streak.reset();
+  pl_frame_from_swapchain(&target, &swframe);
+  // B10-05 : la taille réellement prise par la swapchain (currentExtent imposé par la surface pendant un
+  // redimensionnement ou un changement d'échelle), pas celle demandée : sous-titres, OSD et interface
+  // se placent dans la cible de cette présentation.
+  if (swframe.fbo != nullptr) out = OutputSize{swframe.fbo->params.w, swframe.fbo->params.h};
+  return true;
+}
+
 std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& request) {
   Impl& s = *impl_;
   const pl_gpu gpu = s.vk->gpu;
@@ -405,28 +448,9 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     if (!drawn) return std::unexpected(std::move(drawn.error()));
     target = *drawn;
   } else {
-    // Fenêtre réduite ou que le compositeur ne montre plus (Wayland « suspended », macOS) : rien n'est
-    // présenté (P2.19). En FIFO, la présentation y attendrait un rappel de rafraîchissement qui ne vient pas,
-    // et le thread de la fenêtre resterait bloqué. L'attente est rendue au premier événement, 50 ms au plus.
-    if ((SDL_GetWindowFlags(s.window) & (SDL_WINDOW_OCCLUDED | SDL_WINDOW_MINIMIZED)) != 0) {
-      constexpr Sint32 kHiddenWaitMs = 50;
-      (void)SDL_WaitEventTimeout(nullptr, kHiddenWaitMs);
-      return ScreenTiming{.presented = false};
-    }
-    // A10-01 : un échec d'acquisition sur un appareil en échec est une perte du GPU, pas une fenêtre cachée.
-    const auto not_shown = [&]() -> std::expected<ScreenTiming, Refusal> {
-      if (auto lost = device_lost()) return std::unexpected(std::move(*lost));
-      return ScreenTiming{.presented = false};
-    };
-    if (out != s.swapchain_size) {
-      int w = out.width;
-      int h = out.height;
-      if (!pl_swapchain_resize(s.swapchain, &w, &h)) return not_shown();
-      s.swapchain_size = out;
-    }
-    pl_swapchain_frame swframe{};
-    if (!s.start_frame(&swframe)) return not_shown();  // fenêtre cachée, ou GPU perdu
-    pl_frame_from_swapchain(&target, &swframe);
+    auto shown = acquire(out, target);
+    if (!shown) return std::unexpected(std::move(shown.error()));
+    if (!*shown) return ScreenTiming{.presented = false};
     acquired = host_now_us();
   }
   s.hdr_output = target.color.transfer == PL_COLOR_TRC_PQ;
@@ -494,7 +518,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
       return std::unexpected(std::move(drawn.error()));
     }
   }
-  s.draw_ui(request.ui, target);
+  s.draw_ui(request.ui, target, request.ui_serial);
   if (s.snapshot) s.take_snapshot(frame != nullptr ? &image : nullptr, target, out, request.ui);
   if (s.offscreen) {
     pl_gpu_flush(gpu);

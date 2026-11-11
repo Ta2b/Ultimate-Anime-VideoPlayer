@@ -152,6 +152,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
   // erreurs internes de chargement, fichier .desktop, journaux), jamais affichés tels quels dans l'interface
   // (voir visible_error.h).
   const std::set<std::string> developer{"settings_toml.cpp",
+                                        "settings_format.cpp",
                                         "settings.cpp",
                                         "auto_bench.cpp",
                                         "backend_library.cpp",
@@ -194,6 +195,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "ring_stage.cpp",
                                         "scripted_input.cpp",
                                         "session.cpp",
+                                        "span_commit.cpp",
                                         "span_derive.cpp",
                                         "span_derive.h",
                                         "ui.cpp",
@@ -206,7 +208,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "maxine_install.cpp",
                                         "relaunch_target.cpp",
                                         "sleep_watch.cpp",
-                                        "system_peak.cpp"};
+                                        "system_peak.cpp",
+                                        "window_vrr.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");
