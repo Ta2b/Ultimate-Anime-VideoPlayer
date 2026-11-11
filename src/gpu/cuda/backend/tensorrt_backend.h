@@ -134,7 +134,16 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Sous cette mémoire, une seule voie et une seule zone d'activation : la RTX 4050 mobile à 6 Go
   // ne paie pas la zone de plus (une carte de 8 Go, qui en annonce un peu moins, garde les voies).
   static constexpr std::size_t kLaneMemory = std::size_t{15} << 29;  // 7,5 Gio
+ public:
+  // Et sous cette mémoire libre à l'ouverture du backend : une 8 Go sous Windows avec le bureau et un
+  // navigateur en a 6 à 7 ; sous 5 Gio (un jeu, un autre lecteur), la seconde zone ferait déborder.
+  static constexpr std::size_t kLaneFreeMemory = std::size_t{5} << 30;
+  // Les voies de calcul pour cette mémoire totale et libre (create_lanes) ; pur, pour les tests.
+  static constexpr int lane_count(std::size_t total, std::size_t free) {
+    return total >= kLaneMemory && free >= kLaneFreeMemory ? static_cast<int>(kLanes) : 1;
+  }
 
+ private:
   TensorRtBackend() = default;
   std::expected<void, Refusal> bind() const;  // le device courant est propre à chaque thread
   // rife_input, et rife_pair sans le maillage (tensorrt_rife.cpp).

@@ -20,6 +20,7 @@
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
+#include "gpu/cuda/backend/shared_activations.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
@@ -212,7 +213,10 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
 
 TensorRtBackend::~TensorRtBackend() {
   releaser_->backend = nullptr;  // un tenseur détruit après le backend se libère par cudaFree
-  if (stream_ == nullptr) return;
+  // Rien de créé : create_lanes a échoué avant la première file. Une file créée suffit à tout passer en
+  // revue (événements et files déjà créés d'une création interrompue au milieu) ; stream_ n'est posé qu'à
+  // la fin de create_lanes.
+  if (std::ranges::none_of(streams_, [](cudaStream_t lane) { return lane != nullptr; })) return;
   cudaSetDevice(device_);
   destroy_textures();
   if (const int used = std::popcount(used_lanes_); used > 1 && !stages_.empty()) {
@@ -268,7 +272,16 @@ TensorRtBackend::~TensorRtBackend() {
   for (cudaEvent_t fence : fences_) {
     if (fence != nullptr) cudaEventDestroy(fence);
   }
-  destroy_lanes();  // et rend la réserve CUDA au pilote (A33-01)
+  // Les zones d'activation, la plus grosse allocation du pool, partent avant sa purge : détruites après le
+  // corps du destructeur (membres), elles revenaient au pool déjà purgé et y restaient jusqu'à la fin du
+  // processus. Les moteurs qui les tenaient sont déjà détruits (ChainEngines) ; une zone qu'un moteur
+  // tiendrait encore se libère seule par cudaFree, sans rappeler ce backend.
+  for (std::shared_ptr<SharedActivations>& zone : arenas_) {
+    if (!zone) continue;
+    zone->set_pool({}, {});
+    zone.reset();
+  }
+  destroy_lanes();  // et rend la réserve CUDA au pilote
 }
 
 std::expected<void, Refusal> TensorRtBackend::bind() const {
@@ -287,7 +300,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .needs_host_sync = false,
       .fp16 = true,
       .int8 = true,  // graphes Q/DQ (SPAN INT8, span_int8.h) : Turing et après
-      .fp8 = properties_.major > 8 || (properties_.major == 8 && properties_.minor >= 9),  // Ada et après
+      .fp8 = fp8_allowed(properties_.major, properties_.minor),  // Ada et Hopper ; RTX 50 sans mesure, non
       .span_fp8_cutlass = SpanFp8Net::supported_device(properties_.major, properties_.minor),
       .gpu_arch = std::format("sm_{}{}", properties_.major, properties_.minor),
       .span_fp8_kernels = SpanFp8Net::kKernelsVersion,
