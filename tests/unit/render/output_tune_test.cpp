@@ -1,5 +1,5 @@
-// Les réglages de la sortie HDR sans GPU (render/output_tune.h) : le blanc des surfaces à la moitié du pic,
-// le plafond des éclats, le pied adouci de la pile livrée. Décisions 16 et 17 du 09/11/2026.
+// Les réglages de la sortie HDR sans GPU (render/output_tune.h) : la courbe vers le pic de l'écran, le blanc
+// des surfaces que la pile livrée porte, le pied adouci (décision 17 du 09/11/2026).
 #include "render/output_tune.h"
 
 #include <algorithm>
@@ -10,79 +10,53 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "grade_chain_support.h"
+#include "render/display_model.h"
 
 namespace ajp::render {
 
 using Catch::Approx;
 
-TEST_CASE("sortie HDR : le sommet de la courbe pose le niveau demandé, entre Reinhard et l'identité",
-          "[render][tune]") {
+TEST_CASE("sortie HDR : la courbe va vers le pic de l'écran, l'identité sans pile", "[render][tune]") {
   for (const double reference : {203.0, 300.0}) {
-    // Un blanc de pile à 6 300 nits de contenu, visé à 500 nits affichés.
-    const double peak = curve_peak_for(6300.0, 500.0, reference);
-    CHECK(compress_neutral(6300.0, reference, peak) == Approx(500.0).epsilon(1e-9));
-    // La courbe est croissante et ne dépasse pas son sommet.
     double before = 0.0;
     for (double nits = 1.0; nits <= 10000.0; nits *= 1.5) {
-      const double out = compress_neutral(nits, reference, peak);
+      const double out = compress_neutral(nits, reference, 1000.0);
       CHECK(out > before);
-      CHECK(out <= peak * 1.0001);
+      CHECK(out <= 1000.0 * 1.0001);
       before = out;
     }
+    // Sans pile (A41-04) : rien n'est compressé, le signal est seulement rapporté au blanc du compositeur.
+    for (const double nits : {40.0, 233.0, 4000.0})
+      CHECK(compress_neutral(nits, reference, identity_curve_peak(reference)) ==
+            Approx(nits * reference / kContentReferenceNits));
   }
-  // Cible sous la courbe de Reinhard seule : le sommet reste le sien, le niveau sort un peu plus haut.
-  const double low = curve_peak_for(6300.0, 120.0, 203.0);
-  CHECK(compress_neutral(6300.0, 203.0, low) == Approx(203.0 * (6300.0 / 203.0) / (1.0 + 6300.0 / 203.0)));
-  // Niveau déjà sous la cible (aucune pile, A41-04) : l'identité, rien n'est compressé.
-  const double none = curve_peak_for(233.0, 500.0, 203.0);
-  CHECK(compress_neutral(233.0, 203.0, none) == Approx(233.0));
-  CHECK(compress_neutral(40.0, 203.0, none) == Approx(40.0));
 }
 
-TEST_CASE("sortie HDR : un émetteur monte sans passer le plafond ni descendre sous sa surface",
+// Le rendu d'avant la 0.11.0-rc.1 (décision de Tatoub du 11/11/2026) : le blanc d'une surface sort là où la
+// pile le porte sous la courbe de KWin, vers 70 % du pic, et les curseurs de la pile le déplacent. La rc.1
+// résolvait le sommet de la courbe pour le poser à la moitié du pic : les curseurs n'y changeaient plus rien.
+TEST_CASE("sortie HDR : blanc des surfaces vers 70 % du pic, déplacé par les curseurs de la pile",
           "[render][tune]") {
-  // Sous le genou (65 % du plafond) : le gain tel quel.
-  CHECK(emitter_level(100.0, 1.5, 1000.0) == Approx(150.0));
-  // Au-dessus : une épaule, croissante avec le gain, sous le plafond.
-  double before = 500.0;
-  for (double gain = 1.0; gain < 20.0; gain *= 1.3) {
-    const double out = emitter_level(500.0, gain, 1000.0);
-    CHECK(out >= before);
-    CHECK(out < 1000.0);
-    before = out;
-  }
-  CHECK(emitter_level(500.0, 16.0, 1000.0) > 990.0);
-  // Une surface déjà au-dessus du plafond n'est pas baissée par un gain d'émetteur.
-  CHECK(emitter_level(700.0, 2.0, 625.0) == Approx(700.0));
-  // Curseur Éclats sous 100 % : le niveau baisse tel quel.
-  CHECK(emitter_level(500.0, 0.8, 1000.0) == Approx(400.0));
-}
-
-TEST_CASE("sortie HDR : blanc des surfaces à la moitié du pic, limiteur en scène très claire",
-          "[render][tune]") {
-  // La moitié du pic, jamais sous 300 nits ni au-dessus de 70 % du pic (écrans peu lumineux).
-  CHECK(surface_white_target(350.0) == Approx(245.0));
-  CHECK(surface_white_target(400.0) == Approx(280.0));
-  CHECK(surface_white_target(500.0) == Approx(300.0));
-  CHECK(surface_white_target(600.0) == Approx(300.0));
-  CHECK(surface_white_target(1000.0) == Approx(500.0));
-  CHECK(surface_white_target(2000.0) == Approx(1000.0));
   const gpu_test::Pile stack;
-  for (const double peak : {400.0, 600.0, 1000.0, 1500.0, 2000.0}) {
-    GradeParams p = gpu_test::player_params(peak);
-    p.fs_apl = 20.0;
-    const OutputTune dark = output_tune(p, stack.luts, 203.0, peak);
-    INFO("pic " << peak << " : blanc " << dark.white << ", sommet de la courbe " << dark.curve_peak);
-    CHECK(dark.white == Approx(surface_white_target(peak)).epsilon(0.01));
-    CHECK(dark.top == Approx(peak));
-    p.fs_apl = 180.0;  // scène très claire : le plafond descend, sans rejoindre les surfaces
-    const OutputTune bright = output_tune(p, stack.luts, 203.0, peak);
-    CHECK(bright.white == Approx(dark.white));
-    CHECK(bright.top == Approx(std::max(0.5 * peak, kEmitterMinRoom * dark.white)).epsilon(0.01));
+  for (const auto& [peak, white] : {std::pair{400.0, 320.0}, {1000.0, 690.0}, {2000.0, 1304.0}}) {
+    const OutputTune tune = output_tune(gpu_test::player_params(peak), stack.luts, 203.0, peak);
+    INFO("pic " << peak << " : blanc " << tune.white << ", sommet de la courbe " << tune.curve_peak);
+    CHECK(tune.curve_peak == Approx(peak));
+    CHECK(tune.white == Approx(white).epsilon(0.03));
   }
-  // KDE à 300 nits de luminosité SDR : mêmes niveaux affichés.
-  const GradeParams p = gpu_test::player_params(1000.0 * 203.0 / 300.0);
-  CHECK(output_tune(p, stack.luts, 300.0, 1000.0).white == Approx(500.0).epsilon(0.01));
+  const auto white_of = [](int contrast, int highlight) {
+    const gpu_test::Pile pile(contrast, highlight);
+    GradeParams p = gpu_test::player_params(1000.0);
+    p.look_mixes = pile.mixes;
+    return output_tune(p, pile.luts, 203.0, 1000.0).white;
+  };
+  const double base = white_of(0, 0);
+  INFO("blanc : " << base << " ; contraste -100 " << white_of(-100, 0) << ", 100 " << white_of(100, 0)
+                  << " ; éclats -100 " << white_of(0, -100) << ", 100 " << white_of(0, 100));
+  CHECK(white_of(-100, 0) < 0.85 * base);
+  CHECK(white_of(100, 0) > 1.1 * base);
+  CHECK(white_of(0, -100) < 0.85 * base);
+  CHECK(white_of(0, 100) > 1.1 * base);
   // Sans pile (fichier .cube illisible, A41-04) : l'image n'est pas compressée, le blanc reste au relèvement.
   const OutputTune bare = output_tune(gpu_test::player_params(1000.0), {}, 203.0, 1000.0);
   CHECK(bare.white == Approx(203.0 * kAnimeLift));

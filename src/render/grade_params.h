@@ -56,8 +56,8 @@ struct SceneLight {
 struct GradeSettings {
   bool grade = true;              // grade activé
   bool grade_native_hdr = false;  // grade aussi une source déjà HDR
-  // Route native (le défaut) : le blanc de la source entre dans le grade à 203 nits ; à l'écran, la dernière
-  // passe pose le blanc d'une surface à la moitié du pic et les éclats au-dessus (render/output_tune.h).
+  // Route native (le défaut) : le blanc de la source entre dans le grade à 203 nits ; à l'écran, la pile de
+  // LUT et la dernière passe le portent vers 70 % du pic, les éclats au-dessus (render/output_tune.h).
   // Faux : le blanc au blanc papier (paper_white). La clé de play.toml garde son nom d'avant (truehdr_look).
   bool truehdr_look = true;
   double paper_white = 203.0;  // nits, blanc papier

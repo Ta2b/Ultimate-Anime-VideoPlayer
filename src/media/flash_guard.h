@@ -41,6 +41,7 @@ class FlashGuard {
   bool push(std::int64_t pts_us, std::span<const float, kFlashZones> zone_nits) {
     if (pts_us <= last_pts_) reset();
     last_pts_ = pts_us;
+    missing_ = false;
     int ups = 0, downs = 0;
     for (std::size_t i = 0; i < kFlashZones; ++i) {
       Zone& zone = zones_.at(i);
@@ -79,11 +80,15 @@ class FlashGuard {
     return push(pts_us, zones);
   }
 
-  // Une image dont l'analyse manque (A42-18) : pendant une suite de variations, elle compte pour une
-  // transition, par prudence ; hors de là, rien.
+  // Une image dont l'analyse manque (A42-18) : au milieu d'une suite de variations déjà rapide (cinq
+  // transitions dans la seconde : un flash caché de plus la rendrait dangereuse), elle compte pour une
+  // transition, une fois par suite d'images perdues. Hors de là, rien : une seule transition suivie d'images
+  // perdues (le début d'une vidéo, un GPU chargé) plafonnait le grade sur une image fixe.
   bool missed(std::int64_t pts_us) {
     if (pts_us <= last_pts_) return pts_us < limited_until_;
-    if (!turns_.empty()) turns_.push_back(pts_us);
+    while (!turns_.empty() && turns_.front() <= pts_us - 1'000'000) turns_.pop_front();
+    if (!missing_ && std::ssize(turns_) >= 2 * kFlashesPerSecond - 1) turns_.push_back(pts_us);
+    missing_ = true;
     return judge(pts_us);
   }
 
@@ -125,6 +130,7 @@ class FlashGuard {
   double gain_ = 1.0;
   int sense_ = 0;  // le sens de la dernière transition comptée
   bool started_ = false;
+  bool missing_ = false;  // la dernière image vue est une analyse perdue
 };
 
 }  // namespace ajp::media
