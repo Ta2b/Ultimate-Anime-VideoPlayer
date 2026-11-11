@@ -49,6 +49,7 @@
 #include "app/play/latest_writer.h"
 #include "app/play/look_catalog.h"
 #include "app/play/loop_wait.h"
+#include "app/play/modal_redraw.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
 #include "app/play/pipeline.h"
@@ -398,8 +399,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Le mode auto : son plafond suit la fréquence de l'écran.
   bool vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
                    p.display->vrr_armed.value_or(false);
-  std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
-                          // n'est pas voulu)
+  std::string free_note;  // pourquoi le Rapide choisi ne tourne pas (vide : il tourne, ou n'est pas voulu)
   // La fréquence de l'écran selon SDL, gardée quand SDL ne la donne plus : un écran rallumé passe un moment
   // sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la source.
   double known_hz = display_refresh_hz(out.window());
@@ -410,6 +410,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
   double session_hz_seen = known_hz;
   ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
+  const ModalRedraw modal(out.window(), [&] { modal_turn(**pipeline, session); });  // A10-05
   const auto read_display_facts = [&] {
     if (const double hz = display_refresh_hz(out.window()); hz > 0.0) {
       known_hz = hz;
