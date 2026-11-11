@@ -128,7 +128,7 @@ jobs:
           libtool python-jinja vulkan-headers vulkan-icd-loader vulkan-swrast shaderc glslang spirv-tools freetype2
           harfbuzz fribidi fontconfig lcms2 dav1d svt-av1 alsa-lib libpulse libx11 libxext libxrandr libxcursor libxi
           libxss libxtst libxfixes libxinerama libxkbcommon libxkbcommon-x11 wayland wayland-protocols libdecor
-          libdrm libva mesa dbus xorg-server-xvfb xorg-xauth
+          libdrm libva mesa dbus xorg-server-xvfb xorg-xauth ttf-dejavu
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: gcc --version | head -n 1
