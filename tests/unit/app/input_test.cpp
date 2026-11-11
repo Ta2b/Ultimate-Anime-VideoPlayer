@@ -87,6 +87,7 @@ TEST_CASE("Touches : core::fixed_key dit exactement les touches lues avant [keys
   int fixed = 0;
   for (SDL_Keycode code = SDLK_BACKSPACE; code <= SDLK_UP; ++code) {
     if (code == SDLK_DELETE + 1) code = SDLK_CAPSLOCK;  // des caractères aux touches sans caractère
+    if (code == SDLK_F11) continue;  // plein écran : un raccourci du lecteur hors de fixed_key (B24-03)
     const auto key = key_of(code);
     if (!key) continue;
     SDL_Event down{};
@@ -97,6 +98,28 @@ TEST_CASE("Touches : core::fixed_key dit exactement les touches lues avant [keys
     if (core::fixed_key(*key)) ++fixed;
   }
   CHECK(fixed == 15);
+}
+
+}  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("Touches : F11 et Alt + Entrée basculent le plein écran (B24-03)", "[app][input]") {
+  const core::KeyMap keys = core::KeyMap::defaults();
+  const auto toggles = [&](SDL_Keycode key, SDL_Keymod mod) {
+    SDL_Event down{};
+    down.type = SDL_EVENT_KEY_DOWN;
+    down.key.key = key;
+    down.key.mod = mod;
+    const auto input = input_of(down, keys);
+    return input && std::holds_alternative<ToggleFullscreen>(*input);
+  };
+  CHECK(toggles(SDLK_F11, SDL_KMOD_NONE));
+  CHECK(toggles(SDLK_RETURN, SDL_KMOD_LALT));
+  CHECK(toggles(SDLK_KP_ENTER, SDL_KMOD_RALT));
+  CHECK_FALSE(toggles(SDLK_RETURN, SDL_KMOD_NONE));
+  CHECK_FALSE(toggles(SDLK_F11, SDL_KMOD_LCTRL));
+  CHECK_FALSE(toggles(SDLK_F10, SDL_KMOD_NONE));
 }
 
 }  // namespace ajp::app::play

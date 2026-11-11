@@ -111,7 +111,7 @@ bool make_default_requested(const Wizard& wizard) {
          std::ranges::find(wizard.skipped, WizardStep::Updates) == wizard.skipped.end();
 }
 
-core::Settings wizard_settings([[maybe_unused]] const Wizard& wizard, core::Settings settings) {
+core::Settings wizard_settings(core::Settings settings) {
   settings.first_run_done = true;
   settings.first_run_step = kWizardSteps;
   return settings;

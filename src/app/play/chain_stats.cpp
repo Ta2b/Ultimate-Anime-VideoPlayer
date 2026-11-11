@@ -18,6 +18,7 @@
 #include "core/log.h"
 #include "core/text.h"
 #include "core/thread.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -54,7 +55,7 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
                                        std::span<const LoadedEngine> loaded_engines) {
   std::vector<EngineBadge> badges;
   for (const PastBuild& past : past_builds(cache_dir)) {
-    std::string file = past.onnx.filename().string();
+    std::string file = core::to_utf8(past.onnx.filename());
     std::string lower_file = file;
     lower_file = core::ascii_lower(lower_file);
     const bool is_rife = lower_file.find("rife") != std::string::npos;
@@ -63,7 +64,7 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
     const bool loaded =
         std::ranges::any_of(loaded_engines, [&](const LoadedEngine& e) { return built_from(e, past); });
     badges.push_back(EngineBadge{
-        .name = is_rife ? std::format("RIFE · {}", past.onnx.stem().string())
+        .name = is_rife ? std::format("RIFE · {}", core::to_utf8(past.onnx.stem()))
                 : int8  ? std::format("SPAN · {} · {}", model_label(*int8), variant_text(variant_kind))
                         : std::format("SPAN · {}", model_label(file)),
         .detail = i18n::tr_format("input {}x{} · built in {:.0f} s", past.width, past.height, past.seconds),

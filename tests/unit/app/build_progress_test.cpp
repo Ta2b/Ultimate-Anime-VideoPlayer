@@ -30,6 +30,16 @@ TEST_CASE("La barre avance au temps écoulé et n'atteint 100 % qu'à la fin", "
   CHECK(progress.fraction(131 * kS) == 1.0F);
 }
 
+TEST_CASE("Une construction bien plus longue que prévu passe en barre sans pourcentage (B24-08)",
+          "[app][build]") {
+  BuildProgress progress(60.0, 10 * kS);
+  CHECK_FALSE(progress.overdue(40 * kS));
+  CHECK_FALSE(progress.overdue(100 * kS));  // 90 s écoulées : exactement une fois et demie
+  CHECK(progress.overdue(101 * kS));
+  progress.finish();
+  CHECK_FALSE(progress.overdue(1000 * kS));
+}
+
 TEST_CASE("Seuls les repères sûrs de trtexec servent de plancher", "[app][build]") {
   BuildProgress progress(100.0, 0);
   progress.marker(0.10F);  // fin de la lecture du modèle

@@ -1,0 +1,4 @@
+[keys]
+pause = "."
+step_forward = "."
+quit = "Ctrl+Alt+Shift+Meta+Q"

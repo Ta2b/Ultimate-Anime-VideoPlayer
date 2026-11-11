@@ -664,7 +664,7 @@ TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]
   CHECK(osd[0] == "SPAN ×2");
   CHECK(osd[1].find("sautées 0") != std::string::npos);
   // Sans période de sortie connue, ni cible ni manque.
-  CHECK(osd[2] == "fluidité 0,0 im/s · manquées 0 · retard p95 0,0 ms");
+  CHECK(osd[2] == "fluidité 0,0 i/s · manquées 0 · retard p95 0,0 ms");
   CHECK(osd[3].starts_with("00:00:00.000"));
 }
 

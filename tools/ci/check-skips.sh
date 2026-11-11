@@ -7,6 +7,7 @@ set -euo pipefail
 report="$1"
 job="$2"
 here="$(cd "$(dirname "$0")" && pwd)"
+floor_file="$here/tests-floor.txt"
 ceiling="$(awk -v job="$job" '$1 == job { print $2 }' "$here/skip-ceiling.txt")"
 if [ -z "$ceiling" ]; then
   echo "check-skips : aucun plafond pour la tâche « $job » dans skip-ceiling.txt" >&2
@@ -17,5 +18,18 @@ echo "tests sautés : $skipped (plafond $ceiling)"
 grep -o '<testcase name="[^"]*"[^>]*status="notrun"' "$report" | sed 's/<testcase name="\([^"]*\)".*/  \1/' || true
 if [ "$skipped" -gt "$ceiling" ]; then
   echo "check-skips : $skipped tests sautés, plus que le plafond $ceiling de « $job »" >&2
+  exit 1
+fi
+# Plancher : un rapport vide ou amputé (une cible qui n'a pas été construite, un filtre trop large) ne doit pas passer
+# pour un succès (B40-09). Le nombre de cas du rapport ne descend pas sous le plancher de la tâche, tools/ci/tests-floor.txt.
+total="$(grep -c '<testcase ' "$report" || true)"
+minimum="$(awk -v job="$job" '$1 == job { print $2 }' "$floor_file" 2>/dev/null)"
+if [ -z "$minimum" ]; then
+  echo "check-skips : aucun plancher pour la tâche « $job » dans tests-floor.txt" >&2
+  exit 1
+fi
+echo "tests joués ou sautés : $total (plancher $minimum)"
+if [ "$total" -lt "$minimum" ]; then
+  echo "check-skips : $total cas seulement dans le rapport, moins que le plancher $minimum de « $job »" >&2
   exit 1
 fi

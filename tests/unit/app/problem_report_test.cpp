@@ -2,6 +2,7 @@
 // A39-03, A38-01).
 #include "app/play/problem_report.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -54,6 +55,16 @@ TEST_CASE("Rapport : aucun nom d'utilisateur ne survit au nettoyage", "[app][rep
   CHECK(out.find("Dupont") == std::string::npos);
   CHECK(out.find("ta2b") == std::string::npos);
   CHECK(out.find("a.mkv") != std::string::npos);
+}
+
+TEST_CASE("Rapport : accolades, flèches, file:// et dossier personnel nu ne laissent pas le nom",
+          "[app][report]") {
+  CHECK(sanitize_report_paths("x {/home/tatoub/Videos/a.mkv}", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("→/home/tatoub/x/y.mkv", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("dossier : /home/tatoub", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("file:///home/tatoub/Videos/a.mkv", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("a|/home/tatoub/b.mkv", "").find("tatoub") == std::string::npos);
+  CHECK(sanitize_report_paths("lecture de /home/tatoub/Videos/a.mkv", "").find("a.mkv") != std::string::npos);
 }
 
 TEST_CASE("Rapport : les faits sont gardés dans l'ordre, un même nom remplace sa valeur", "[app][report]") {
@@ -151,3 +162,13 @@ TEST_CASE("Rapport : le rapport complet joint la séance d'avant quand elle a pl
   end_session();
   clear_report_facts();
 }
+
+#ifdef __linux__
+// B39-04 : le build-id de l'exécutable accompagne le rapport, pour résoudre une pile brute avec les symboles
+// de la release (le binaire livré est dépouillé). CMakeLists.txt demande --build-id à l'éditeur de liens.
+TEST_CASE("Rapport : le build-id de l'exécutable se lit, en hexadécimal", "[app][report]") {
+  const std::string id = build_id_description();
+  REQUIRE(id.size() >= 16);
+  CHECK(std::ranges::all_of(id, [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }));
+}
+#endif

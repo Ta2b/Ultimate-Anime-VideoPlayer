@@ -8,8 +8,8 @@
 // indices temporels (les paires d'entraînement ne se suivent pas). Une session par taille.
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cuda.h>
-#include <dlfcn.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -18,6 +18,13 @@
 #include <vector>
 
 #include "nvOpticalFlowCuda.h"
+
+// Le pilote NVIDIA : libnvidia-opticalflow.so.1 sous Linux, nvofapi64.dll sous Windows (B46-19).
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 namespace {
 
@@ -37,9 +44,16 @@ using CreateInstance = NV_OF_STATUS NVOFAPI(uint32_t, NV_OF_CUDA_API_FUNCTION_LI
 struct Api {
   NV_OF_CUDA_API_FUNCTION_LIST calls{};
   Api() {
+#ifdef _WIN32
+    HMODULE library = LoadLibraryA("nvofapi64.dll");
+    if (library == nullptr) die("nvofapi64.dll absente (pilote NVIDIA)");
+    auto* create = reinterpret_cast<CreateInstance*>(
+        reinterpret_cast<void*>(GetProcAddress(library, "NvOFAPICreateInstanceCuda")));
+#else
     void* library = dlopen("libnvidia-opticalflow.so.1", RTLD_NOW | RTLD_LOCAL);
     if (library == nullptr) die("libnvidia-opticalflow.so.1 absente (pilote NVIDIA)");
     auto* create = reinterpret_cast<CreateInstance*>(dlsym(library, "NvOFAPICreateInstanceCuda"));
+#endif
     if (create == nullptr || create(NV_OF_API_VERSION, &calls) != NV_OF_SUCCESS) die("API NVOF refusée");
   }
 };

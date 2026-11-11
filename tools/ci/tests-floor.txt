@@ -1,0 +1,18 @@
+# Plancher du nombre de cas par rapport JUnit, par tâche (check-skips.sh, B40-09) : un rapport plus court est une
+# cible absente ou un filtre qui a tout retiré, pas un succès. Valeur provisoire volontairement basse, à serrer à
+# environ 90 % du compte réel relevé dans les journaux de la CI (le compte monte quand on ajoute des tests, jamais
+# l'inverse).
+lavapipe 50
+asan-ubsan 50
+tsan 50
+tsan-pr 5
+asan-fuzz 5
+windows 50
+core-gcc-13 5
+core-clang-20 5
+core-asan-ubsan 5
+core-tsan 5
+arch 5
+arch-player 50
+linux-release 50
+cloud 50

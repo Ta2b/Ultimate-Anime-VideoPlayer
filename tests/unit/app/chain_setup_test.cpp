@@ -225,4 +225,28 @@ TEST_CASE("B08-01 : Ctrl+I rallume l'interpolation au facteur que la séance ava
   CHECK(toggled_interpolation(0, 1, Pair{0, 1}) == Pair{kDefaultRifeFactor, 1});
 }
 
+TEST_CASE("B39-02 : les faits de la lecture vont en tête du rapport, vidéo, écran, sortie, chaîne",
+          "[app][chain]") {
+  const auto facts = playback_facts({.file = "ep01.mkv",
+                                     .codec = "hevc",
+                                     .width = 1920,
+                                     .height = 1080,
+                                     .frame_rate = 23.976,
+                                     .transfer = "PQ",
+                                     .screen = "pic 1000 nits",
+                                     .hdr_output = true,
+                                     .chain = "SPAN ×2 · RIFE ×2"});
+  REQUIRE(facts.size() == 4);
+  CHECK(facts[0].first == "Vidéo");
+  CHECK(facts[0].second.contains("hevc"));
+  CHECK(facts[0].second.contains("1920x1080"));
+  CHECK(facts[0].second.contains("23.976"));
+  CHECK(facts[0].second.contains("source PQ"));
+  CHECK(facts[1].second == "pic 1000 nits");
+  CHECK(facts[2].second == "HDR10");
+  CHECK(facts[3].second == "SPAN ×2 · RIFE ×2");
+  // Cadence inconnue : dit, pas « 0 i/s ».
+  CHECK(playback_facts({.file = "a.mkv"})[0].second.contains("cadence inconnue"));
+}
+
 }  // namespace ajp::app::play
