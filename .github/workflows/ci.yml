@@ -329,7 +329,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
       # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
-      - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Configuration
         id: configure
         shell: pwsh
@@ -429,7 +429,7 @@ jobs:
       - if: steps.touched.outputs.run == 'true'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - if: steps.touched.outputs.run == 'true'
-        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       # Le kit CUDA et TensorRT de NVIDIA (versions épinglées dans versions.env, empreintes vérifiées) : jetés avec la
       # tâche, rien n'en entre dans un paquet. Les lancer ici, c'est accepter leurs licences, comme release-windows.yml.
       - name: CUDA et TensorRT
