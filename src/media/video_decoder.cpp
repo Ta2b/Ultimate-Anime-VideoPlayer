@@ -238,6 +238,7 @@ struct VideoDecoder::State {
   // jamais un 0 inventé.
   bool skipped(FramePtr& frame);
   void release_covering(const AVFrame& next);
+  bool already_shown(const AVFrame& frame);
   std::expected<std::optional<DecodedFrame>, Refusal> deliver(FramePtr frame);
   std::expected<std::optional<DecodedFrame>, Refusal> timed(FramePtr frame);
 
@@ -576,11 +577,6 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
     s.sent.shrink_to_fit();
   }
 
-  if (s.catching_up) {  // B15-04 : le rejeu depuis l'image clé repasse sur des images déjà montrées
-    const std::int64_t at = frame->best_effort_timestamp;
-    if (at != AV_NOPTS_VALUE && s.delivered_us != kNoPts && at <= s.delivered_us) return std::nullopt;
-    s.catching_up = false;
-  }
   if (s.skipped(frame)) return std::nullopt;
   s.release_covering(*frame);
   return s.timed(std::move(frame));
@@ -604,6 +600,7 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::State::timed(F
 // donc que lorsque la suivante, de pts avant la cible aussi, prouve qu'elle ne couvre pas la cible (voir
 // release_covering).
 bool VideoDecoder::State::skipped(FramePtr& frame) {
+  if (already_shown(*frame)) return true;
   if (!skip_before || deinterlacer.active() || (frame->flags & AV_FRAME_FLAG_INTERLACED) != 0) return false;
   const std::int64_t pts =
       frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
@@ -613,6 +610,15 @@ bool VideoDecoder::State::skipped(FramePtr& frame) {
   next_pts_us = end_of(pts, std::max<std::int64_t>(duration, 1));
   last_skipped = std::move(frame);
   return true;
+}
+
+// B15-04 : le rejeu depuis l'image clé repasse sur des images déjà montrées, qui ne ressortent pas.
+bool VideoDecoder::State::already_shown(const AVFrame& frame) {
+  if (!catching_up) return false;
+  const std::int64_t at = frame.best_effort_timestamp;
+  if (at != AV_NOPTS_VALUE && delivered_us != kNoPts && at <= delivered_us) return true;
+  catching_up = false;
+  return false;
 }
 
 // La première image à ou après la cible arrive. La dernière écartée la couvre quand celle-ci est strictement

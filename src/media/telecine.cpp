@@ -39,6 +39,24 @@ constexpr int kMaxFrames = 120;
 constexpr int kMaxPackets = 600;
 constexpr auto kBudget = std::chrono::seconds(4);
 
+// Les images que le décodeur rend, mesurées ; leur nombre.
+int drain(AVCodecContext& ctx, AVFrame& frame, TelecineMeter& meter) {
+  int measured = 0;
+  while (avcodec_receive_frame(&ctx, &frame) >= 0) {
+    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(frame.format));
+    const int blocked = AV_PIX_FMT_FLAG_HWACCEL | AV_PIX_FMT_FLAG_BITSTREAM | AV_PIX_FMT_FLAG_RGB;
+    if (desc != nullptr && frame.data[0] != nullptr && (desc->flags & blocked) == 0 &&
+        (desc->flags & AV_PIX_FMT_FLAG_PLANAR) != 0 && desc->comp[0].depth >= 8 &&
+        desc->comp[0].depth <= 16) {
+      const int depth = desc->comp[0].depth;
+      meter.push(frame.data[0], frame.linesize[0], frame.width, frame.height, depth > 8 ? 2 : 1, depth);
+      ++measured;
+    }
+    av_frame_unref(&frame);
+  }
+  return measured;
+}
+
 }  // namespace
 
 void TelecineMeter::push(const std::uint8_t* luma, std::ptrdiff_t stride, int width, int height,
@@ -121,17 +139,7 @@ std::optional<bool> measure_telecine(Demuxer& demuxer, const TrackInfo& track) {
     } else if ((*packet)->track != track.index || avcodec_send_packet(ctx.get(), (*packet)->av.get()) < 0) {
       continue;
     }
-    while (avcodec_receive_frame(ctx.get(), frame.get()) >= 0) {
-      const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(frame->format));
-      if (desc != nullptr && frame->data[0] != nullptr && (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0 &&
-          (desc->flags & AV_PIX_FMT_FLAG_BITSTREAM) == 0 && (desc->flags & AV_PIX_FMT_FLAG_PLANAR) != 0 &&
-          (desc->flags & AV_PIX_FMT_FLAG_RGB) == 0 && desc->comp[0].depth >= 8 && desc->comp[0].depth <= 16) {
-        const int depth = desc->comp[0].depth;
-        meter.push(frame->data[0], frame->linesize[0], frame->width, frame->height, depth > 8 ? 2 : 1, depth);
-        ++frames;
-      }
-      av_frame_unref(frame.get());
-    }
+    frames += drain(*ctx, *frame, meter);
   }
   static_cast<void>(demuxer.seek_file(0, track.index));  // la lecture repart du début
   const auto verdict = meter.verdict();

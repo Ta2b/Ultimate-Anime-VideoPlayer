@@ -43,6 +43,8 @@ struct Demuxer::State {
   std::expected<std::optional<Packet>, Refusal> read_file();
   int read_frame(AVPacket* packet);
   bool wait_before_retry(int attempt) const;
+  struct RetryState;
+  std::expected<bool, Refusal> on_read_error(int err, RetryState& retry);
   std::expected<std::optional<Packet>, Refusal> peek_keyframe(int reference);
   std::expected<void, Refusal> seek_stream(int reference, std::int64_t ts, int flags, std::string_view what);
   std::expected<std::int64_t, Refusal> seek_before(std::int64_t target_us, int reference);
@@ -246,6 +248,46 @@ void Demuxer::State::note_chapter_layout(std::string_view shown) {
     log->warn("{} : chapitres liés à d'autres fichiers non pris en charge, ils ne sont pas joués", shown);
 }
 
+// Les pistes du fichier, dans state->tracks.
+static std::expected<void, Refusal> describe_streams(const AVFormatContext& format,
+                                                     std::vector<TrackInfo>& tracks, spdlog::logger& log,
+                                                     const std::string& shown, OpenOptions options) {
+  const AVFormatContext* raw = &format;
+  // B14-04, B35-04 : une piste vidéo hors des bornes (vignettes, bandeau 1920×200) est écartée avec un
+  // avertissement ; le fichier n'est refusé que s'il ne reste aucune vidéo lisible.
+  std::optional<Refusal> dropped_video;
+  bool has_video = false;
+  std::int64_t attachment_bytes = options.attachments ? kMaxAttachmentBytes : 0;
+  for (unsigned i = 0; i < raw->nb_streams; ++i) {
+    const AVStream& stream = *raw->streams[i];
+    const std::optional<TrackKind> kind = kind_of(stream.codecpar->codec_type);
+    if (!kind) continue;
+    if (*kind == TrackKind::Attachment && !options.attachments) continue;
+    if (*kind == TrackKind::Video && (stream.disposition & AV_DISPOSITION_ATTACHED_PIC) == 0) {
+      // Une taille annoncée hors de tout épisode (16384×4, 16384×16384) ferait construire des moteurs de
+      // cette forme pendant des minutes, gardés en cache, puis refusés faute de mémoire vidéo (A35-06).
+      if (auto refused = out_of_bounds(*stream.codecpar)) {
+        log.warn("{} : piste {} écartée, {}", shown, stream.index, refused->detail);
+        if (!dropped_video) dropped_video = std::move(refused);
+        continue;
+      }
+      has_video = true;
+    }
+    if (*kind == TrackKind::Attachment && stream.codecpar->extradata_size > attachment_bytes &&
+        is_font_attachment(tag(stream.metadata, "filename"), tag(stream.metadata, "mimetype")))
+      log.warn("{} : police jointe {} ({} octets) écartée, au-delà de {} Mio de polices", shown, stream.index,
+               stream.codecpar->extradata_size, kMaxAttachmentBytes >> 20);
+    if (*kind == TrackKind::Video && stream.codecpar->color_space == AVCOL_SPC_BT2020_CL)
+      log.warn("{} : matrice BT.2020 à luminance constante non prise en charge, devinée par la taille",
+               shown);
+    auto info = describe(stream, *kind, attachment_bytes);
+    if (!info) return std::unexpected(info.error());
+    tracks.push_back(std::move(*info));
+  }
+  if (dropped_video && !has_video) return std::unexpected(std::move(*dropped_video));
+  return {};
+}
+
 std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path, OpenOptions options) {
   auto state = std::make_unique<State>();
   const std::string where = open_url(path);
@@ -273,38 +315,8 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path,
   state->start_us = raw->start_time == AV_NOPTS_VALUE ? 0 : raw->start_time;
   state->duration_us = raw->duration == AV_NOPTS_VALUE || raw->duration < 0 ? 0 : raw->duration;
 
-  // B14-04, B35-04 : une piste vidéo hors des bornes (vignettes, bandeau 1920×200) est écartée avec un
-  // avertissement ; le fichier n'est refusé que s'il ne reste aucune vidéo lisible.
-  std::optional<Refusal> dropped_video;
-  bool has_video = false;
-  std::int64_t attachment_bytes = options.attachments ? kMaxAttachmentBytes : 0;
-  for (unsigned i = 0; i < raw->nb_streams; ++i) {
-    const AVStream& stream = *raw->streams[i];
-    const std::optional<TrackKind> kind = kind_of(stream.codecpar->codec_type);
-    if (!kind) continue;
-    if (*kind == TrackKind::Attachment && !options.attachments) continue;
-    if (*kind == TrackKind::Video && (stream.disposition & AV_DISPOSITION_ATTACHED_PIC) == 0) {
-      // Une taille annoncée hors de tout épisode (16384×4, 16384×16384) ferait construire des moteurs de
-      // cette forme pendant des minutes, gardés en cache, puis refusés faute de mémoire vidéo (A35-06).
-      if (auto refused = out_of_bounds(*stream.codecpar)) {
-        state->log->warn("{} : piste {} écartée, {}", shown, stream.index, refused->detail);
-        if (!dropped_video) dropped_video = std::move(refused);
-        continue;
-      }
-      has_video = true;
-    }
-    if (*kind == TrackKind::Attachment && stream.codecpar->extradata_size > attachment_bytes &&
-        is_font_attachment(tag(stream.metadata, "filename"), tag(stream.metadata, "mimetype")))
-      state->log->warn("{} : police jointe {} ({} octets) écartée, au-delà de {} Mio de polices", shown,
-                       stream.index, stream.codecpar->extradata_size, kMaxAttachmentBytes >> 20);
-    if (*kind == TrackKind::Video && stream.codecpar->color_space == AVCOL_SPC_BT2020_CL)
-      state->log->warn(
-          "{} : matrice BT.2020 à luminance constante non prise en charge, devinée par la taille", shown);
-    auto info = describe(stream, *kind, attachment_bytes);
-    if (!info) return std::unexpected(info.error());
-    state->tracks.push_back(std::move(*info));
-  }
-  if (dropped_video && !has_video) return std::unexpected(std::move(*dropped_video));
+  if (auto described = describe_streams(*raw, state->tracks, *state->log, shown, options); !described)
+    return std::unexpected(std::move(described.error()));
   // Plusieurs éditions Matroska (ou un chapitre répété) donnent le même chapitre plusieurs fois : un
   // ensemble les écarte en O(n log n), et au plus kMaxChapters sont gardés (A35-02 : 100 000 chapitres
   // prenaient 7 s par ouverture).
@@ -422,50 +434,64 @@ bool Demuxer::State::wait_before_retry(int attempt) const {
   return !interrupted.load();
 }
 
+// Ce qui est réessayé dans une lecture : erreurs d'E/S (attente cumulée) et de données.
+struct Demuxer::State::RetryState {
+  int io_errors = 0;
+  int io_waited_ms = 0;
+  int data_errors = 0;
+};
+
+// Une erreur de lecture n'arrête pas la vidéo : retentée, puis, si elle dure, un refus `recoverable`. Rend
+// vrai pour une vraie fin de fichier, faux pour « réessayer », un refus sinon.
+std::expected<bool, Refusal> Demuxer::State::on_read_error(int err, RetryState& retry) {
+  const AVFormatContext& ctx = *format;
+  // Une erreur d'E/S pose aussi eof_reached : beaucoup de démultiplexeurs (MP4 par avio_feof,
+  // AVI, MPEG-TS) rendent alors AVERROR_EOF. L'erreur collée à l'AVIOContext dit la vraie
+  // cause, qui passe par les nouveaux essais au lieu de finir l'épisode en silence (A14-01).
+  if (err == AVERROR_EOF && ctx.pb != nullptr && ctx.pb->error < 0 && ctx.pb->error != AVERROR_EOF)
+    err = ctx.pb->error;
+  if (err == AVERROR_EOF) return true;
+  // A14-07 : trois causes, trois codes. Une interruption (fermeture) : Cancelled ; une panne du disque
+  // ou du réseau : IoFailed ; des données abîmées : DecodeFailed.
+  if (err == AVERROR_EXIT || interrupted.load())
+    return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", err);
+  const bool data = err == AVERROR_INVALIDDATA;
+  int& errors = data ? retry.data_errors : retry.io_errors;
+  const int io_budget_ms = fault.io_budget_ms > 0 ? fault.io_budget_ms : kIoRetryBudgetMs;
+  if (data ? errors >= kDataRetries : retry.io_waited_ms >= io_budget_ms) {
+    auto refused = refuse_av(data ? RefusalCode::DecodeFailed : RefusalCode::IoFailed,
+                             std::format("lecture d'un paquet, après {} essais", errors + 1), err);
+    refused.error().recoverable = true;
+    return refused;
+  }
+  // Un seul avertissement par série : un bloc abîmé peut coûter des dizaines d'essais.
+  if (errors == 0) log->warn("lecture d'un paquet : {}, nouvel essai", av_error_text(err));
+  if (!data) {
+    if (!wait_before_retry(errors))
+      return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", AVERROR_EXIT);
+    retry.io_waited_ms += std::min(kFirstRetryWaitMs << std::min(errors, 8), kMaxRetryWaitMs);
+    // Une erreur de l'AVIOContext reste collée : sans l'effacer, chaque essai la rendrait.
+    if (ctx.pb != nullptr) {
+      ctx.pb->error = 0;
+      ctx.pb->eof_reached = 0;
+    }
+  }
+  ++errors;
+  return false;
+}
+
 // Une erreur de lecture n'arrête pas la vidéo : elle est retentée, puis, si elle dure, la lecture
 // s'arrête là comme à la fin du fichier, par un refus `recoverable` que la source traite comme
 // une fin de flux. Seule une interruption (fermeture) reste un refus qui arrête la source.
 std::expected<std::optional<Packet>, Refusal> Demuxer::State::read_file() {
   const AVFormatContext& ctx = *format;
   AVPacket* raw = scratch.get();
-  int io_errors = 0;
-  int io_waited_ms = 0;
-  int data_errors = 0;
-  const int io_budget_ms = fault.io_budget_ms > 0 ? fault.io_budget_ms : kIoRetryBudgetMs;
+  RetryState retry;
   while (true) {
-    if (int err = read_frame(raw); err < 0) {
-      // Une erreur d'E/S pose aussi eof_reached : beaucoup de démultiplexeurs (MP4 par avio_feof,
-      // AVI, MPEG-TS) rendent alors AVERROR_EOF. L'erreur collée à l'AVIOContext dit la vraie
-      // cause, qui passe par les nouveaux essais au lieu de finir l'épisode en silence (A14-01).
-      if (err == AVERROR_EOF && ctx.pb != nullptr && ctx.pb->error < 0 && ctx.pb->error != AVERROR_EOF)
-        err = ctx.pb->error;
-      if (err == AVERROR_EOF) return std::nullopt;
-      // A14-07 : trois causes, trois codes. Une interruption (fermeture) : Cancelled ; une panne du disque
-      // ou du réseau : IoFailed ; des données abîmées : DecodeFailed.
-      if (err == AVERROR_EXIT || interrupted.load())
-        return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", err);
-      const bool data = err == AVERROR_INVALIDDATA;
-      int& errors = data ? data_errors : io_errors;
-      if (errors >= (data ? kDataRetries : std::numeric_limits<int>::max()) ||
-          (!data && io_waited_ms >= io_budget_ms)) {
-        auto refused = refuse_av(data ? RefusalCode::DecodeFailed : RefusalCode::IoFailed,
-                                 std::format("lecture d'un paquet, après {} essais", errors + 1), err);
-        refused.error().recoverable = true;
-        return refused;
-      }
-      // Un seul avertissement par série : un bloc abîmé peut coûter des dizaines d'essais.
-      if (errors == 0) log->warn("lecture d'un paquet : {}, nouvel essai", av_error_text(err));
-      if (!data) {
-        if (!wait_before_retry(errors))
-          return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", AVERROR_EXIT);
-        io_waited_ms += std::min(kFirstRetryWaitMs << std::min(errors, 8), kMaxRetryWaitMs);
-        // Une erreur de l'AVIOContext reste collée : sans l'effacer, chaque essai la rendrait.
-        if (ctx.pb != nullptr) {
-          ctx.pb->error = 0;
-          ctx.pb->eof_reached = 0;
-        }
-      }
-      ++errors;
+    if (const int err = read_frame(raw); err < 0) {
+      auto verdict = on_read_error(err, retry);
+      if (!verdict) return std::unexpected(std::move(verdict.error()));
+      if (*verdict) return std::nullopt;  // fin du fichier
       continue;
     }
     // Tous les conteneurs ne sautent pas eux-mêmes les flux écartés (MKV non).
