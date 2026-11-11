@@ -29,6 +29,10 @@ jobs:
         run: tools/ci/check-comments.sh
       - name: Actions épinglées
         run: tools/ci/check-pinned-actions.sh
+      - name: Clé publique des mises à jour, trois copies
+        run: tools/ci/check-pubkey.sh
+      - name: Scripts de publication
+        run: tools/ci/check-release-scripts.sh
       - name: Aucun getenv
         run: tools/ci/check-no-getenv.sh
       - name: Aucun atoi ni sscanf

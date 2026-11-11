@@ -22,11 +22,6 @@ struct Window {
   Pair out;
 };
 
-// Position linéaire de (a, b, c, e) dans une forme de rang 4.
-std::size_t at4(const Dims& d, std::int64_t a, std::int64_t b, std::int64_t c, std::int64_t e) {
-  return static_cast<std::size_t>((((((a * d[1]) + b) * d[2]) + c) * d[3]) + e);
-}
-
 bool in_bounds(Pair kernel, Pair strides, Pair dilations, Quad pads) {
   for (std::size_t a = 0; a < 2; ++a) {
     for (const std::int64_t v : {kernel[a], strides[a], dilations[a]}) {

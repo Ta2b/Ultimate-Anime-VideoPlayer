@@ -147,7 +147,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .backend_name = tensorrt_backend_present(h.catalog, h.paths) ? "tensorrt" : "vulkan",
       .gpu_name = gpu_facts(h.screen).name,
       .tensorrt_present = tensorrt_backend_present(h.catalog, h.paths),
-      .capability = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
+      .capability = kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                     span_fp8_presumed(gpu_facts(h.screen).name) &&
                     tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());

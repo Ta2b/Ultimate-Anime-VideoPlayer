@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <string>
 #include <thread>
 #include <vector>
@@ -40,6 +42,54 @@ UpdateFetch signed_release(std::vector<std::string>& asked) {
                   const std::stop_token&) -> std::expected<void, ajp::Refusal> {
     asked.emplace_back(url);
     write(file, std::string(url.ends_with(".sig") ? kTestSignature : kSignedManifest));
+    return {};
+  };
+}
+
+// Deux clés de test, A (l'active) et B (la clé de secours), et des manifestes qu'elles signent (openssl
+// pkeyutl -sign -rawin) : version 99.0.0, valables jusqu'en 2099, avec chacun sa liste de clés révoquées.
+constexpr std::string_view kKeyA = "d7a96b1b6b7414d7549caa4e9ea50fe3062948f28c43ddadc6b600630bd4c6db";
+constexpr std::string_view kKeyB = "0151614c9d7df76a095a922f18042ff9014be3dca017f987e7fa1b2dbd4befe8";
+struct SignedFile {
+  std::string_view text;
+  std::string_view signature;
+};
+constexpr std::string_view kARevokesBText =
+    "version = \"99.0.0\"\n"
+    "expires = \"2099-12-31\"\n"
+    "revoked_keys = [\"0151614c9d7df76a095a922f18042ff9014be3dca017f987e7fa1b2dbd4befe8\"]\n";
+constexpr std::string_view kARevokesBSig =
+    "2ab81cecf78e00cb5e86f7093daf589f19ba21674b5f00ef0ea84ce0178da99324d2bfd025b222b60f3ed3809da56f42"
+    "967d71726ecb01cb3794d7960f901805";
+constexpr std::string_view kBRevokesAText =
+    "version = \"99.0.0\"\n"
+    "expires = \"2099-12-31\"\n"
+    "revoked_keys = [\"d7a96b1b6b7414d7549caa4e9ea50fe3062948f28c43ddadc6b600630bd4c6db\"]\n";
+constexpr std::string_view kBRevokesASig =
+    "008c97b4ec15a78362661a2a0d9683fe475bb1517f4aa7b8e7b0ba6c6b5521e20551042f25909800e814b97aba193785"
+    "4397f5e12f94833ffb2c0158fa14dc0b";
+constexpr std::string_view kARevokesOtherText =
+    "version = \"99.0.0\"\n"
+    "expires = \"2099-12-31\"\n"
+    "revoked_keys = [\"1111111111111111111111111111111111111111111111111111111111111111\"]\n";
+constexpr std::string_view kARevokesOtherSig =
+    "1d745a7b7b14a39c3b53eafdd235a06663c9a74b8b5a5f4c11640f6528195fc21b0df6426a358f710603fc7c5a9a9baa"
+    "72fe6af694fad9987b0d5b7050cc5e0d";
+constexpr std::string_view kBRevokesSelfText =
+    "version = \"99.0.0\"\n"
+    "expires = \"2099-12-31\"\n"
+    "revoked_keys = [\"0151614c9d7df76a095a922f18042ff9014be3dca017f987e7fa1b2dbd4befe8\"]\n";
+constexpr std::string_view kBRevokesSelfSig =
+    "fb0f6834023f03097da2a15c8eee79b85127e7114b19c4564b2e494fe40827f2547e80964e86b479df457c520d8c1645"
+    "e67f2e4e9b414e7977318badfbe93404";
+
+// Le serveur d'une release dont le manifeste et la signature sont ceux-là (la signature peut ne pas aller
+// avec).
+UpdateFetch release_of(std::string_view text, std::string_view signature, int& calls) {
+  return [text, signature, &calls](std::string_view url, const fs::path& file, int,
+                                   const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+    ++calls;
+    write(file, std::string(url.ends_with(".sig") ? signature : text));
     return {};
   };
 }
@@ -181,8 +231,11 @@ TEST_CASE("mises à jour : signature fausse, rien d'autre n'est téléchargé", 
       check_for_update(std::stop_token{}, signed_release(asked), {std::string(kOtherKey)}, "0.10.3");
   REQUIRE_FALSE(checked);
   CHECK(checked.error().code == ajp::RefusalCode::HashMismatch);
-  REQUIRE(asked.size() == 2);  // le manifeste et sa signature, jamais une archive
+  // Le manifeste et sa signature, deux fois (une release qui change entre les deux requêtes donne une
+  // signature fausse : B26-03), jamais une archive.
+  REQUIRE(asked.size() == 4);
   CHECK(asked[1].ends_with("manifest.toml.sig"));
+  CHECK(asked[3].ends_with("manifest.toml.sig"));
 }
 
 TEST_CASE("mises à jour : une version signée plus récente se signale, sans rien télécharger d'autre",
@@ -253,5 +306,163 @@ TEST_CASE("mises à jour : les archives préparées d'avant la simple notificati
   write(root / "updates" / "notes.txt", "à moi");
   CHECK(purge_update_leftovers(root) == 0);
   CHECK(fs::exists(root / "updates" / "notes.txt"));
+  fs::remove_all(root);
+}
+
+TEST_CASE(
+    "mises à jour : la clé active ne révoque pas la clé de secours, celle-ci peut révoquer l'active (B26-02)",
+    "[updater]") {
+  const std::vector<std::string> keys{std::string(kKeyA), std::string(kKeyB)};
+  int calls = 0;
+  // A tient le manifeste mais ne peut pas retirer B : la révocation est ignorée, la mise à jour se lit.
+  auto checked =
+      check_for_update(std::stop_token{}, release_of(kARevokesBText, kARevokesBSig, calls), keys, "0.1.0");
+  REQUIRE(checked);
+  CHECK(checked->revoked_keys.empty());
+  CHECK(checked->newer);
+  // B, la clé de secours, révoque A.
+  checked =
+      check_for_update(std::stop_token{}, release_of(kBRevokesAText, kBRevokesASig, calls), keys, "0.1.0");
+  REQUIRE(checked);
+  CHECK(checked->revoked_keys == std::vector<std::string>{std::string(kKeyA)});
+  // Une clé inconnue du lecteur se retient telle quelle, de A comme de B.
+  checked = check_for_update(std::stop_token{}, release_of(kARevokesOtherText, kARevokesOtherSig, calls),
+                             keys, "0.1.0");
+  REQUIRE(checked);
+  CHECK(checked->revoked_keys == std::vector<std::string>{std::string(64, '1')});
+  // Une clé qui se révoque elle-même n'est pas crue.
+  const auto itself = check_for_update(std::stop_token{},
+                                       release_of(kBRevokesSelfText, kBRevokesSelfSig, calls), keys, "0.1.0");
+  REQUIRE_FALSE(itself);
+  CHECK(itself.error().code == ajp::RefusalCode::HashMismatch);
+  // Une fois A révoquée, ses manifestes ne se vérifient plus (le lecteur ne lui laisse que B).
+  const std::vector<std::string> only_b{std::string(kKeyB)};
+  const auto old_key = check_for_update(
+      std::stop_token{}, release_of(kARevokesOtherText, kARevokesOtherSig, calls), only_b, "0.1.0");
+  CHECK_FALSE(old_key);
+}
+
+TEST_CASE(
+    "mises à jour : une signature venue d'une autre release se refait une fois, puis se refuse (B26-03)",
+    "[updater]") {
+  const std::vector<std::string> keys{std::string(kKeyA), std::string(kKeyB)};
+  // Première paire : le manifeste de l'ancienne release avec la signature de la neuve ; la seconde est la
+  // bonne.
+  int calls = 0;
+  const UpdateFetch changing = [&](std::string_view url, const fs::path& file, int,
+                                   const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+    const bool second_round = calls >= 2;
+    ++calls;
+    write(file, std::string(url.ends_with(".sig") ? (second_round ? kBRevokesASig : kARevokesOtherSig)
+                                                  : kBRevokesAText));
+    return {};
+  };
+  const auto checked = check_for_update(std::stop_token{}, changing, keys, "0.1.0");
+  REQUIRE(checked);
+  CHECK(calls == 4);
+  // Une signature absente du serveur (404) se lit comme fausse, après la seconde tentative.
+  calls = 0;
+  const UpdateFetch unsigned_release = [&](std::string_view url, const fs::path& file, int,
+                                           const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+    ++calls;
+    if (url.ends_with(".sig")) return std::unexpected(curl_failure(22, 404));
+    write(file, std::string(kBRevokesAText));
+    return {};
+  };
+  const auto missing = check_for_update(std::stop_token{}, unsigned_release, keys, "0.1.0");
+  REQUIRE_FALSE(missing);
+  CHECK(missing.error().code == ajp::RefusalCode::HashMismatch);
+  CHECK(calls == 4);
+}
+
+TEST_CASE("mises à jour : annulée ou sans signature, la vérification ne compte pas comme faite (B26-03)",
+          "[updater]") {
+  // Le manifeste arrive, la signature est coupée (fermeture du lecteur) : seule la tentative est notée.
+  const UpdateFetch cancelled = [](std::string_view url, const fs::path& file, int,
+                                   const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+    if (url.ends_with(".sig")) return ajp::refuse(ajp::RefusalCode::Cancelled, "annulé");
+    write(file, std::string(kSignedManifest));
+    return {};
+  };
+  UpdateState state{.last_check_unix = 1000};
+  REQUIRE_FALSE(run_update_check(state, std::stop_token{}, cancelled, 9000));
+  CHECK(state.last_check_unix == 1000);
+  CHECK(state.last_attempt_unix == 9000);
+  // Un manifeste reçu mais dont la signature n'est pas celle d'une clé crue : pas non plus une vérification
+  // faite.
+  state = UpdateState{.last_check_unix = 1000};
+  std::vector<std::string> asked;
+  REQUIRE_FALSE(run_update_check(state, std::stop_token{}, signed_release(asked), 9000));
+  CHECK(state.last_check_unix == 1000);
+}
+
+TEST_CASE("mises à jour : une clé révoquée s'écrit en majuscules ou en minuscules (B26-04)", "[updater]") {
+  const std::vector<std::string> keys = update_public_keys({});
+  REQUIRE_FALSE(keys.empty());
+  std::string upper = keys.front();
+  for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  const std::vector<std::string> left = update_public_keys({upper});
+  CHECK(std::ranges::find(left, keys.front()) == left.end());
+  // Les clés rendues sont en minuscules, comme celles que lit un manifeste.
+  for (const std::string& key : keys)
+    CHECK(key == [&] {
+      std::string lower = key;
+      for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      return lower;
+    }());
+}
+
+TEST_CASE("mises à jour : un update.toml illisible garde ses clés révoquées et sa copie (B26-10)",
+          "[updater]") {
+  const fs::path root = fs::temp_directory_path() / "ajp-update-corrupt";
+  fs::remove_all(root);
+  const std::string revoked(64, 'a');
+  const fs::path file = root / "update.toml";
+  // Un fichier tronqué en plein milieu de sa liste de clés (TOML invalide).
+  write(file, "last_check_unix = 12\nrevoked_keys = [\"" + revoked + "\", \"" + std::string(64, 'B') +
+                  "\", \"ab\n");
+  UpdateState state = load_update_state(file);
+  CHECK(state.last_check_unix == 0);
+  CHECK(state.revoked_keys == std::vector<std::string>{revoked, std::string(64, 'b')});
+  // La réécriture garde la copie de l'illisible et les clés.
+  state.last_check_unix = 5;
+  REQUIRE(save_update_state(file, state));
+  CHECK(fs::exists(root / "update.toml.bak"));
+  const UpdateState reread = load_update_state(file);
+  CHECK(reread.last_check_unix == 5);
+  CHECK(reread.revoked_keys == state.revoked_keys);
+  fs::remove_all(root);
+}
+
+TEST_CASE("mises à jour : le verrou de l'état n'est pas tenu pendant le téléchargement (B26-09, B30-02)",
+          "[updater]") {
+  const fs::path root = fs::temp_directory_path() / "ajp-update-lock";
+  fs::remove_all(root);
+  const fs::path file = root / "update.toml";
+  std::atomic<bool> downloading{false};
+  std::atomic<bool> release{false};
+  const UpdateFetch slow = [&](std::string_view, const fs::path&, int,
+                               const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+    downloading = true;
+    while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    return std::unexpected(curl_failure(6, 0));  // pas de réseau
+  };
+  std::thread checking([&] { (void)check_updates_now(file, std::stop_token{}, slow); });
+  while (!downloading) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  // Pendant que curl attend, une autre tâche (le bouton, la fermeture) lit et écrit l'état sans attendre.
+  auto other = std::async(std::launch::async, [&] {
+    return change_update_state(file,
+                               [](UpdateState& state) { state.notes_url = "https://example.invalid/n"; });
+  });
+  const bool free_lock = other.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+  release = true;
+  checking.join();
+  REQUIRE(free_lock);
+  REQUIRE(other.get());
+  // La vérification ne réécrit que ses champs : la note posée entre-temps reste, la tentative est notée.
+  const UpdateState kept = load_update_state(file);
+  CHECK(kept.notes_url == "https://example.invalid/n");
+  CHECK(kept.last_attempt_unix > 0);
+  CHECK_FALSE(kept.last_error.empty());
   fs::remove_all(root);
 }

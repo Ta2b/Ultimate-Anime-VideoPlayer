@@ -24,6 +24,9 @@ function(ajp_boundary_hash out)
     string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" " " text "${text}")
     string(REGEX REPLACE "//[^\n]*" " " text "${text}")
     string(REGEX REPLACE "[ \t\r\n]+" " " text "${text}")
+    # Sans blanc de tête ni de queue : un commentaire en première ou en dernière position ne change rien non
+    # plus (B27-12).
+    string(STRIP "${text}" text)
     string(APPEND all "${text}\n")
   endforeach()
   string(SHA256 digest "${all}")

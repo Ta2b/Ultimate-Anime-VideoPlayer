@@ -38,3 +38,10 @@ target_compile_definitions(ajp_app_tests PRIVATE AJP_PLAYER_EXE="$<TARGET_FILE:a
 add_dependencies(ajp_app_tests ajp)
 add_test(NAME "e2e: lecture de bout en bout et scénarios de recette" COMMAND ajp_app_tests "[e2e]")
 set_tests_properties("e2e: lecture de bout en bout et scénarios de recette" PROPERTIES TIMEOUT 400 RUN_SERIAL TRUE)
+
+
+# L'anneau CUDA vers Vulkan et la dérivation du SPAN FP8 sur la vraie carte, cachés dans leur binaire (B40-02) :
+# `ctest -L nvidia` (voir tests/CMakeLists.txt). Sans backend TensorRT construit, il n'y a rien à lancer.
+if(TARGET ajp_backend_tensorrt)
+  ajp_add_hardware_tests(ajp_app_tests nvidia 1800 ring_interop span_compat span_prepare)
+endif()

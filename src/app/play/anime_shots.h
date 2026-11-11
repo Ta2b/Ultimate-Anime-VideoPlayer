@@ -32,7 +32,8 @@ struct AnimeShotLook {
 };
 
 // D'un plan à l'autre : à une coupe, le nouveau plan aussitôt (à l'image de coupe) ; hors coupe (le même
-// plan, mieux connu), aussitôt aussi, un glissé en cours finissant vers la nouvelle valeur.
+// plan mieux connu, la jointure de deux analyses, un fondu), un glissé de kAnimeGlideUs depuis la valeur
+// montrée (B42-08).
 class AnimeGlide {
  public:
   void aim(const AnimeShotLook& target, std::int64_t now_us, bool cut);

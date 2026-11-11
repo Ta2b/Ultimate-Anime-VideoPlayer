@@ -285,6 +285,33 @@ std::optional<Shot> ShotCutter::finish(std::int64_t end_us) {
   return closed;
 }
 
+// B42-03 : la part du plan où la lumière change vraiment. Un plan long fini par un fondu au noir restait
+// interpolé sur toute sa durée : il dérivait vers le noir dès son début. Le fondu commence après la dernière
+// image de la fin du plan (tail_) encore au niveau du début, et finit à la première image du début du plan
+// (head_) déjà au niveau de la fin. Non vu dans ces images gardées (un fondu plus long qu'elles) : tout le
+// plan, comme avant.
+void ShotCutter::ramp_of(Shot& shot, float begin, float end) const {
+  const float near = 0.5F * kFadeDelta;
+  std::int64_t from = shot.start_us;
+  std::int64_t to = shot.end_us;
+  for (std::size_t i = tail_.size(); i-- > 0;) {
+    if (std::abs(tail_.at(i).mean - begin) <= near) {
+      if (i + 1 < tail_.size()) from = std::max(from, tail_.at(i).pts_us);
+      break;
+    }
+  }
+  for (std::size_t i = 0; i < head_.size(); ++i) {
+    if (std::abs(head_.at(i).mean - end) <= near) {
+      if (i > 0) to = std::min(to, head_.at(i).pts_us);
+      break;
+    }
+  }
+  if (from >= to) return;  // un aller-retour dans le plan : tout le plan
+  if (from == shot.start_us && to == shot.end_us) return;
+  shot.ramp_from_us = from;
+  shot.ramp_to_us = to;
+}
+
 std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
   if (totals_.count == 0) return std::nullopt;
   Shot shot;
@@ -308,6 +335,7 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
       shot.first = begin;
       shot.last = end;
       shot.fade = true;
+      ramp_of(shot, begin.mean, end.mean);
     }
   }
   totals_ = {};

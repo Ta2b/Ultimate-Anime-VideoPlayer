@@ -47,9 +47,15 @@ struct UpdateState {
   friend bool operator==(const UpdateState&, const UpdateState&) = default;
 };
 
+// Un téléchargement : l'adresse dans le fichier, en max_seconds au plus. Celui du lecteur est curl ; un test
+// donne le sien.
+using UpdateFetch = std::function<std::expected<void, Refusal>(
+    std::string_view url, const std::filesystem::path& file, int max_seconds, const std::stop_token& stop)>;
+
 std::string format_update_state(const UpdateState& state);
 std::expected<UpdateState, Refusal> parse_update_state(std::string_view toml_text);
-// Absent : l'état vide.
+// Absent : l'état vide. Illisible : l'état vide, mais avec les clés révoquées qu'on y lit encore (B26-10) ;
+// save_update_state garde alors une copie du fichier dans <fichier>.bak.
 UpdateState load_update_state(const std::filesystem::path& file);
 // Réécrit le fichier : les champs de state, plus les clés inconnues d'une version plus récente (A36-05).
 std::expected<void, Refusal> save_update_state(const std::filesystem::path& file, const UpdateState& state);
@@ -57,7 +63,7 @@ std::expected<void, Refusal> save_update_state(const std::filesystem::path& file
 // versions qui s'appliquaient elles-mêmes).
 std::string merge_update_state(std::string_view previous, const UpdateState& state);
 // Lire, changer, réécrire si quelque chose a changé, sans qu'un autre fil du processus s'intercale entre la
-// lecture et l'écriture (A26-10) : le fil des mises à jour et le bouton « Check now » passent par là.
+// lecture et l'écriture (A26-10). change est court : jamais de réseau sous ce verrou.
 std::expected<void, Refusal> change_update_state(const std::filesystem::path& file,
                                                  const std::function<void(UpdateState&)>& change);
 // Le fil des mises à jour : une vérification si may_check (premier tour, ou rien ne joue) et si elle est due,
@@ -68,6 +74,14 @@ void check_updates_if_due(const std::filesystem::path& file, UpdateMode mode, Up
 // une vérification réussie.
 std::expected<std::string, Refusal> check_updates_now(const std::filesystem::path& file,
                                                       const std::stop_token& stop);
+// Les mêmes, avec ce téléchargement (essais). Le verrou de l'état n'est tenu que pour lire puis réécrire le
+// fichier, jamais pendant le téléchargement (B26-09, B30-02) : ce qu'une autre tâche y change entre-temps
+// reste, la vérification n'en reporte que ses propres champs.
+void check_updates_if_due(const std::filesystem::path& file, UpdateMode mode, UpdateFrequency frequency,
+                          bool may_check, std::int64_t now_unix, const std::stop_token& stop,
+                          const UpdateFetch& fetch);
+std::expected<std::string, Refusal> check_updates_now(const std::filesystem::path& file,
+                                                      const std::stop_token& stop, const UpdateFetch& fetch);
 
 // Après une tentative sans réponse du serveur (pas de réseau), la suivante attend au moins ce délai, pas
 // toute la période choisie (A26-07).
@@ -96,10 +110,6 @@ Refusal curl_failure(int code, int http_status);
 // a pas : jamais lu comme « à jour », SEC-05), signature fausse, manifeste illisible ou expiré.
 std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop);
 
-// Un téléchargement : l'adresse dans le fichier, en max_seconds au plus. Celui du lecteur est curl ; un test
-// donne le sien.
-using UpdateFetch = std::function<std::expected<void, Refusal>(
-    std::string_view url, const std::filesystem::path& file, int max_seconds, const std::stop_token& stop)>;
 // Le téléchargement du lecteur : curl du système, https seulement (un 404 est refusé TrackUnavailable).
 std::expected<void, Refusal> fetch_https(std::string_view url, const std::filesystem::path& file,
                                          int max_seconds, const std::stop_token& stop);

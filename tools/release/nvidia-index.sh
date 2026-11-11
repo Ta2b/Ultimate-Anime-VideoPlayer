@@ -4,15 +4,19 @@
 # Pour chaque plateforme, le premier index qui en a gagne : passer d'abord celui joint après coup à la release
 # (attach-nvidia-*), puis ceux livrés dans les archives.
 #
-#   tools/release/nvidia-index.sh <sortie> <index>...
+# AJP_RELEASE_TAG (l'étiquette de la release, « v0.12.0 ») s'écrit dans l'index (tag = "…") avant sa signature : le
+# lecteur ne le croit que dans la release qu'il nomme (B51-06).
+#
+#   [AJP_RELEASE_TAG=v0.12.0] tools/release/nvidia-index.sh <sortie> <index>...
 set -euo pipefail
 
-[ $# -ge 2 ] || { sed -n '2,7p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,9p' "$0"; exit 2; }
 out=$1
 shift
 seen=" "
 {
   echo "version = 1"
+  [ -z "${AJP_RELEASE_TAG:-}" ] || echo "tag = \"$AJP_RELEASE_TAG\""
   for lock in "$@"; do
     [ -s "$lock" ] || continue
     blocks="$(tr -d '\r' < "$lock" | awk -v seen="$seen" '

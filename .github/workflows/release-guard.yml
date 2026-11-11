@@ -32,6 +32,14 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
         run: tools/ci/check-version.sh "$TAG"
+      # Une release finale (étiquette sans « - ») sans notes partirait avec des notes vides (B51-15).
+      - name: Notes de la release
+        if: inputs.tag != '' && !contains(inputs.tag, '-')
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          [ -s "tools/release/notes/$TAG.md" ] \
+            || { echo "::error::tools/release/notes/$TAG.md manque ou est vide : une release finale a ses notes"; exit 1; }
       - name: Commit de l'étiquette, ci.yml vert
         if: inputs.tag != ''
         env:

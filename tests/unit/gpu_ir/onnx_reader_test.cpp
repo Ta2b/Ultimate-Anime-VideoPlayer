@@ -280,3 +280,48 @@ TEST_CASE("onnx : dimension sans valeur ni nom inconnue, comme onnx_shape.cpp", 
   CHECK(read->graph.inputs[0].dims == std::vector<std::int64_t>{1, -1});
   CHECK(read->graph.inputs[0].symbols == std::vector<std::string>{"", "?"});
 }
+
+TEST_CASE("onnx : nœuds, initialiseurs, entrées et dimensions sont plafonnés", "[gpu_ir][onnx]") {
+  // B44-01 : un nœud vide de deux octets en coûte plus de deux cents en mémoire.
+  {
+    std::string empty_nodes;
+    for (std::size_t k = 0; k < (std::size_t{1} << 20U) + 1; ++k) empty_nodes.append("\x0a\x00", 2);
+    ProtoWriter graph;
+    graph.append(empty_nodes);
+    ProtoWriter model;
+    model.message(7, graph);
+    auto refused = onnx::read_onnx(model.data());
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::OnnxMalformed);
+    CHECK(refused.error().detail.contains("trop de nœuds"));
+  }
+  // Un rang de 8 se lit, de 9 est refusé dès la dimension qui le dépasse, sans accumuler les dimensions
+  // vides.
+  {
+    ModelBuilder ok;
+    ok.input("x", std::vector<std::int64_t>(8, 1)).node("Relu", {"x"}, {"y"}).output("y");
+    CHECK(onnx::read_onnx(ok.bytes()));
+    ModelBuilder deep;
+    deep.input("x", std::vector<std::int64_t>(9, 1)).node("Relu", {"x"}, {"y"}).output("y");
+    auto refused = onnx::read_onnx(deep.bytes());
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::OnnxMalformed);
+    CHECK(refused.error().detail.contains("rang"));
+  }
+  // Des dimensions vides par centaines de milliers : refusées, pas allouées.
+  {
+    ProtoWriter shape;
+    for (std::size_t k = 0; k < 200000; ++k) shape.append(std::string("\x0a\x00", 2));
+    ProtoWriter tensor_type;
+    tensor_type.varint(1, onnx::kFloat).message(2, shape);
+    ProtoWriter info;
+    info.bytes(1, "x").message(2, ProtoWriter{}.message(1, tensor_type));
+    ProtoWriter graph;
+    graph.message(11, info);
+    ProtoWriter model;
+    model.message(7, graph);
+    auto refused = onnx::read_onnx(model.data());
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == RefusalCode::OnnxMalformed);
+  }
+}

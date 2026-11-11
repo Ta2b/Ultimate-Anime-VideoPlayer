@@ -387,3 +387,9 @@ TEST_CASE("Autotuner : chaque candidat contre l'hôte, entrées pseudo-aléatoir
     CHECK(measured.median_us > 0.0);
   }
 }
+
+TEST_CASE("Familles : pas de tuiles FP8 sur une RTX 50 sans mesure", "[vk_backend][family]") {
+  // Intention du produit : RTX 50, pas de FP8 tant qu'aucune mesure ne le justifie (B45-08).
+  CHECK_FALSE(vk::matrix_f8_allowed(vk::GpuFamily::NvidiaBlackwell));
+  CHECK(vk::matrix_f8_allowed(vk::GpuFamily::NvidiaAda));
+}
