@@ -6,3 +6,6 @@ tests/fuzz/corpus/** -text
 
 # Les LUT 3D .cube (data/luts) : des octets exacts, jamais convertis (fins de ligne CRLF de Resolve).
 data/luts/*.cube -text
+
+# Les hooks mpv (src/render/shaders) : en LF partout ; grade.cpp cherche ses marques suivies de « \n ».
+*.hook text eol=lf
