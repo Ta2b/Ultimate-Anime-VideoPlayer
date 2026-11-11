@@ -55,6 +55,9 @@ constexpr std::array kSystemPages{
     Entry{"Default folder", "Dossier par défaut"},
     Entry{"Default player", "Lecteur par défaut"},
     Entry{"Graphics card", "Carte graphique"},
+    Entry{"{} does not open on this GPU: choose the NVIDIA card in Settings > General ({} stays active)",
+          "{} ne s'ouvre pas sur ce GPU : choisissez la carte NVIDIA dans Paramètres > Général ({} reste en "
+          "service)"},
     Entry{"Default##moteurs", "Par défaut##moteurs"},
     Entry{"Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
           "Par défaut : {}. Libre ici : {}. Vaut au prochain lancement ; les moteurs installés ne sont pas "

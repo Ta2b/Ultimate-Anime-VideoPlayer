@@ -30,7 +30,7 @@ std::string_view title(WizardStep step);  // « Bienvenue », « Langues », « 
 
 // Ce que la machine permet : les écrans sans objet sont sautés.
 struct WizardFacts {
-  bool engine_choice = true;     // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
+  bool engine_choice = true;  // un moteur autre que Vulkan est possible (sinon pas d'écran Moteur)
   bool updates_managed = false;  // paquet de distribution, Flatpak : mis à jour ailleurs (écran grisé, gardé)
 };
 
@@ -75,7 +75,7 @@ std::string progress_text(const Wizard& wizard);
 std::vector<std::string> wizard_summary(const Wizard& wizard);
 
 // Ce que « Terminer » écrit : les mises à jour, le dernier écran vu.
-core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
+core::Settings wizard_settings(core::Settings settings);
 // Les réglages de lecture : HDR, langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
 // de la machine sautée : le préréglage Auto.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);

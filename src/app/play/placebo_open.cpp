@@ -307,6 +307,31 @@ void purge_cache_parts(const std::filesystem::path& file) {
   }
 }
 
+// B37-01 : sur un poste à deux cartes (portable RTX + iGPU : Optimus, PRIME), libplacebo prend la première
+// que le système lui donne, souvent l'iGPU, et TensorRT refuse alors la carte. Sans carte demandée, la carte
+// NVIDIA RTX discrète est préférée ; seulement quand une autre carte existe, un poste à une carte ne change
+// pas. Rien si elle ne peut pas présenter : pl_vulkan_create échoue et le choix automatique reprend.
+std::string preferred_rtx_name(pl_vk_inst inst) {
+  constexpr std::uint32_t kNvidiaPci = 0x10DE;
+  const auto enumerate = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+      inst->get_proc_addr(inst->instance, "vkEnumeratePhysicalDevices"));
+  const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+      inst->get_proc_addr(inst->instance, "vkGetPhysicalDeviceProperties"));
+  if (enumerate == nullptr || properties_of == nullptr) return {};
+  std::uint32_t count = 0;
+  if (enumerate(inst->instance, &count, nullptr) != VK_SUCCESS || count < 2) return {};
+  std::vector<VkPhysicalDevice> devices(count);
+  if (enumerate(inst->instance, &count, devices.data()) != VK_SUCCESS) return {};
+  for (VkPhysicalDevice device : devices) {
+    VkPhysicalDeviceProperties properties{};
+    properties_of(device, &properties);
+    if (properties.vendorID == kNvidiaPci && properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+        std::string_view(properties.deviceName).contains("RTX"))
+      return properties.deviceName;
+  }
+  return {};
+}
+
 }  // namespace
 
 void PlaceboScreen::Impl::open_shader_cache(const std::filesystem::path& file) {
@@ -535,11 +560,20 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.num_opt_extensions = static_cast<int>(extensions.size());
   vk_params.extra_queues = kVideoQueueFlags | kBackendQueueFlags;
   vk_params.queue_count = static_cast<int>(kPlaceboQueues);  // la file d'après reste aux moteurs
-  if (!options.device_name.empty()) vk_params.device_name = options.device_name.c_str();
+  std::string preferred;
+  if (!options.device_name.empty()) {
+    vk_params.device_name = options.device_name.c_str();
+  } else if (!options.allow_software) {
+    preferred = preferred_rtx_name(impl->inst);
+    if (!preferred.empty()) {
+      impl->channel->info("plusieurs cartes : la carte NVIDIA RTX « {} » est préférée", preferred);
+      vk_params.device_name = preferred.c_str();
+    }
+  }
   impl->vk = pl_vulkan_create(impl->log, &vk_params);
   if (impl->vk == nullptr && vk_params.device_name != nullptr) {
     // La carte choisie n'est plus là (eGPU débranché, pilote changé) : libplacebo choisit (P3.16).
-    impl->channel->warn("carte « {} » introuvable : choix automatique", options.device_name);
+    impl->channel->warn("carte « {} » introuvable : choix automatique", vk_params.device_name);
     vk_params.device_name = nullptr;
     impl->vk = pl_vulkan_create(impl->log, &vk_params);
   }

@@ -49,12 +49,13 @@ core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
 // mineure) ; rien hors NVIDIA, sous NVK (version de Mesa, A37-11) ou sans version lisible.
 inline constexpr int kTensorRtDriverMajor = 580;
 std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu);
-// A37-08 : le minimum de CUDA 13 avec sa mineure : 580.65 sous Linux (notes de version de CUDA 13.0) ; la
-// mineure exigée sous Windows reste à confirmer (docs/audits/A-CONFIRMER.md), seule la majeure y compte.
+// A37-08, B34-07 : le minimum de CUDA 13 avec sa mineure, d'après le tableau « minimum driver version » des
+// notes de version de CUDA 13.0 : 580.65 sous Linux, 580.88 sous Windows (à revérifier sur la machine de
+// Tatoub avec un pilote 580.65 à 580.87 sous Windows : TensorRT doit être refusé avant le téléchargement).
 #ifdef __linux__
 inline constexpr std::pair<int, int> kTensorRtDriverMinimum{kTensorRtDriverMajor, 65};
 #else
-inline constexpr std::pair<int, int> kTensorRtDriverMinimum{kTensorRtDriverMajor, 0};
+inline constexpr std::pair<int, int> kTensorRtDriverMinimum{kTensorRtDriverMajor, 88};
 #endif
 // A37-08, A37-11 : pourquoi le pilote empêche TensorRT (pilote NVIDIA trop ancien, ou NVK) ; vide sinon,
 // et hors NVIDIA.
@@ -101,6 +102,9 @@ struct EngineRow {
 // chaque moteur coché dont la licence n'est pas acceptée, qui ne s'installera pas, et le moteur recommandé
 // pour cette carte s'il est resté décoché (A25-02).
 std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows);
+// Ce moteur coché s'installera-t-il ? Non s'il se télécharge sous une licence qui n'est pas acceptée
+// (B25-05).
+bool engine_installs(const EngineRow& row);
 
 struct FirstRunView {
   std::string gpu;
@@ -117,6 +121,9 @@ struct FirstRunView {
   std::string tier_line;     // « Niveau estimé : Rapide »
   std::string display_line;  // « Écran 3840×2160 · 165 Hz »
   bool laptop = false;       // un portable : la construction des moteurs y dure le double (A25-03)
+  // Refait les textes traduits à la construction (ligne GPU, niveau, écran, état des moteurs) quand la
+  // langue de l'interface change à l'écran Bienvenue (B25-02) ; les cases et les accords ne bougent pas.
+  std::function<void(FirstRunView&)> retranslate;
 };
 
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,

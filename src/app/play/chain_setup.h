@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "app/play/backend_library.h"
@@ -24,6 +25,7 @@
 #include "app/play/stage_fallback.h"
 #include "app/play/upscale_stage.h"
 #include "core/clock.h"
+#include "core/frame.h"
 #include "core/gpu_device.h"
 #include "core/ring.h"
 #include "core/types.h"
@@ -33,6 +35,26 @@
 #include "media/source.h"
 
 namespace ajp::app::play {
+
+// Ce que le rapport « Signaler un problème » dit de la lecture en cours (B39-02) : la vidéo (nom, codec,
+// taille, cadence, transfert de la source), l'écran, la sortie HDR10 ou SDR, la chaîne jouée. Les faits sont
+// remplacés à chaque nouvelle vidéo, et placés en tête du rapport : la fin du journal les perd après une
+// longue séance.
+struct PlaybackFacts {
+  std::string file;   // le nom du fichier seul
+  std::string codec;  // « hevc », « h264 »
+  int width = 0;
+  int height = 0;
+  double frame_rate = 0;  // 0 : inconnue
+  std::string transfer;   // « SDR », « PQ », « HLG »
+  std::string screen;     // describe_hdr : pic, HDR du système, fréquence
+  bool hdr_output = false;
+  std::string chain;  // l'étiquette de la chaîne : SPAN, RIFE, facteur
+};
+std::vector<std::pair<std::string, std::string>> playback_facts(const PlaybackFacts& facts);
+// Les faits de la lecture qui s'ouvre, retenus pour le rapport.
+void note_playback_facts(const media::TrackInfo& video, const ColorInfo& source, const std::string& screen,
+                         bool hdr_output, const std::string& chain, const std::filesystem::path& file);
 
 // Les décodeurs à essayer pour un backend : NVDEC en mémoire CUDA pour TensorRT, puis le décodage
 // logiciel pour ce que NVDEC refuse (H.264 10 bits, VP9 profils 1 et 3…), envoyé par le backend

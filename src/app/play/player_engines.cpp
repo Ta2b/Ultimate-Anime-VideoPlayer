@@ -20,6 +20,7 @@
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/paths.h"
+#include "app/play/problem_report.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -136,6 +137,8 @@ gpu::BackendLog backend_log() {
         break;
       case gpu::BackendLogLevel::Info:
         channel->info("{}", message);
+        // La version de TensorRT sur la carte, en tête du rapport (B39-02) : la fin du journal la perd.
+        if (message.starts_with("TensorRT ")) note_report_fact("TensorRT", message);
         break;
       case gpu::BackendLogLevel::Warn:
         channel->warn("{}", message);

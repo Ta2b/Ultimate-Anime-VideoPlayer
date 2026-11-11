@@ -44,8 +44,13 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
           if (ImGui::Selectable("Français", french)) wizard.interface_language = "fr";             // i18n-ok
           ImGui::EndCombo();
         }
-        if (!wizard.interface_language.empty())
-          i18n::set_language(i18n::language_from_code(wizard.interface_language));
+        if (!wizard.interface_language.empty()) {
+          const i18n::Language wanted = i18n::language_from_code(wizard.interface_language);
+          if (wanted != i18n::language()) {
+            i18n::set_language(wanted);
+            if (view.retranslate) view.retranslate(view);
+          }
+        }
       }
       break;
     case WizardStep::Engines:
@@ -93,7 +98,8 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                                                                    [](const EngineRow& row) {
                                                                      return row.offer.id ==
                                                                                 core::EngineId::TensorRt &&
-                                                                            row.chosen && row.usable;
+                                                                            row.chosen && row.usable &&
+                                                                            engine_installs(row);
                                                                    }),
                                                view.laptop)));
       note(
