@@ -148,17 +148,21 @@ vec4 hook() {
     c *= shadow_ratio(max(max(c.r, c.g), c.b), deep);
     // Peps (--anime-contrast, --anime-saturation) : contraste en puissance de la luminance autour du gris des
     // surfaces, puis saturation (ecart a la luminance, attenuee vers le pic, jamais de canal negatif).
-    // Identite exacte a an_punch = 0 et an_chroma = 1.
+    // Identite exacte a an_punch = 0 et an_chroma = 1. Eclats en dernier (B41-02) : un emetteur est ici a son
+    // niveau de surface ; la courbe et l'attenuation se calculent au niveau ou il montera (rise), comme
+    // quand la montee s'appliquait ici, pour que le peps le traite en lumiere et non en surface.
+    float rise = late ? gain / an_lift : 1.0;
     float yc = dot(c, LUMA);
     if (yc > 1e-4 && an_punch != 0.0) {
         float pivot = 0.4 * white;
-        float x = yc / pivot;
+        float yt = yc * rise;
+        float x = yt / pivot;
         float shaped = pivot * pow(x, 1.0 + an_punch * (x >= 1.0 ? 0.55 : 0.40));
-        c *= shaped / yc;
-        yc = shaped;
+        c *= shaped / yt;
+        yc *= shaped / yt;
     }
     if (yc > 1e-4 && an_chroma != 1.0) {
-        float k = 1.0 + (an_chroma - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yc));
+        float k = 1.0 + (an_chroma - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yc * rise));
         vec3 d = c - vec3(yc);
         float room = 1e6;
         for (int i = 0; i < 3; i++)
