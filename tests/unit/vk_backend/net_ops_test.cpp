@@ -3,6 +3,7 @@
 // Chaque cas tourne seul (tenseurs Nchw) puis entouré de LeakyRelu, ce qui range ses tenseurs
 // internes en Nhwc16 quand l'opération le permet.
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <optional>
 #include <string>
@@ -255,6 +256,32 @@ TEST_CASE("Réseau : Cast vers float16 et calcul en float16", "[vk_backend][net]
   const std::vector<ir::NamedValue> inputs{
       {"x", test_values(ir::DataType::F32, {1, 3, 5, 7}, 8, -4.0F, 4.0F)}};
   check_graph(rig, graph, inputs, kFp16);
+}
+
+TEST_CASE("Réseau : un tenseur float16 qui déborde se plafonne au lieu de devenir infini",
+          "[vk_backend][net]") {
+  // B49-02 : float16_t(80000.0) vaut +Inf, que les couches suivantes propagent en NaN ; le rangement plafonne
+  // à ±65 504, le plus grand float16 fini.
+  NetRig rig = make_net_rig();
+  require_f16(rig);
+  ModelBuilder m;
+  m.input("x", {1, 2, 2, 2});
+  m.node("Cast", {"x"}, {"h"}, {attr_int("to", ir::onnx::kFloat16)});
+  m.node("Add", {"h", "h"}, {"s"});
+  m.node("Cast", {"s"}, {"y"}, {attr_int("to", ir::onnx::kFloat)});
+  m.output("y");
+  const ir::Graph graph = build(m);
+  ir::Value x{.type = ir::DataType::F32, .dims = {1, 2, 2, 2}};
+  x.f = {40000.0F, -40000.0F, 1.0F, -2.0F, 32000.0F, 0.0F, 60000.0F, -60000.0F};
+  const std::vector<ir::NamedValue> inputs{{"x", x}};
+  const auto got = run_on_device(rig, graph, inputs);
+  REQUIRE(got.size() == 1);
+  REQUIRE(got[0].f.size() == x.f.size());
+  for (std::size_t i = 0; i < x.f.size(); ++i) {
+    INFO("élément " << i << " : " << got[0].f[i]);
+    CHECK(std::isfinite(got[0].f[i]));
+    CHECK(got[0].f[i] == std::clamp(2.0F * x.f[i], -65504.0F, 65504.0F));
+  }
 }
 
 TEST_CASE("Réseau : opérateur sans noyau refusé à l'abaissement", "[vk_backend][net]") {

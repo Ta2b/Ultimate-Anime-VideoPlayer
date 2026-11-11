@@ -38,3 +38,8 @@ target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
 add_dependencies(ajp_backend_tensorrt_tests ajp_backend_tensorrt)
 ajp_set_warnings(ajp_backend_tensorrt_tests)
 catch_discover_tests(ajp_backend_tensorrt_tests TEST_PREFIX "backend_tensorrt: " DISCOVERY_MODE PRE_TEST)
+
+# Les tests cachés qui jugent la qualité sur la vraie carte (B40-02) : RIFE et DistilDRBA fusionnés contre le moteur entier,
+# SPAN FP8 dérivé et ses noyaux. `ctest -L nvidia` les lance tous avant un tag (voir tests/CMakeLists.txt). Sans modèle ni
+# image (variables CMake ci-dessus), un groupe se saute avec sa raison.
+ajp_add_hardware_tests(ajp_backend_tensorrt_tests nvidia 3600 rife_fused drba_fused span_derive span_fp8)

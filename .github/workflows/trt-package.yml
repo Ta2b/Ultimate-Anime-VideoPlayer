@@ -26,8 +26,17 @@ on:
         type: boolean
         default: true
 
+# Le jeton du dépôt ne sert qu'à lire : les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul
+# (B51-12).
 permissions:
-  contents: write
+  contents: read
+
+# Un seul paquet TensorRT Linux à la fois, quelle que soit l'étiquette : deux étiquettes de même empreinte poussées à
+# peu d'intervalle ne construisent plus chacune « le paquet absent » ; la seconde attend, puis voit le paquet publié
+# par la première (B51-02).
+concurrency:
+  group: trt-package-linux
+  cancel-in-progress: false
 
 env:
   AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
@@ -73,7 +82,6 @@ jobs:
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
-          restore-keys: deps-player-gcc-13-
       - if: env.SKIP != '1'
         run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: CUDA, TensorRT et trtexec
@@ -91,10 +99,9 @@ jobs:
           AJP_RELEASE_TAG="trt-$FP" tools/release/package-linux.sh "$RUNNER_TEMP/out"
           archive="$RUNNER_TEMP/out/ajp-engine-tensorrt-linux-x64.tar.gz"
           # Un paquet sans module ni trtexec ne sert à rien : refusé ici plutôt que chez l'utilisateur (TRT-04).
-          tar -tzf "$archive" | tee -a "$GITHUB_STEP_SUMMARY" | grep -q 'ajp_backend_tensorrt\.so$' \
-            || { echo "::error::module TensorRT absent de l'archive"; exit 1; }
-          tar -tzf "$archive" | grep -q '/trtexec$\|^trtexec$' \
-            || { echo "::error::trtexec absent de l'archive"; exit 1; }
+          # Et rien d'autre : ni fichier de NVIDIA, ni bibliothèque copiée par une dépendance (liste blanche, B51-10).
+          tar -tzf "$archive" >>"$GITHUB_STEP_SUMMARY"
+          tools/release/check-engine-archive.sh "$archive"
           sha="$(sha256sum "$archive" | cut -d' ' -f1)"
           { echo; echo "empreinte des entrées : $FP ; archive : $sha"; } | tee -a "$GITHUB_STEP_SUMMARY"
           echo "SHA=$sha" >>"$GITHUB_ENV"
@@ -110,8 +117,9 @@ jobs:
       - name: Publication dans trt-${{ env.FP }}
         if: env.SKIP != '1' && inputs.publier && env.PUBLISHED != '1'
         env:
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
+          [ -n "$GH_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication dans $AJP_RELEASE_REPO"; exit 1; }
           tools/release/attach-nvidia-linux.sh "$RUNNER_TEMP/out" "trt-$FP" --publish | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: env.SKIP != '1'

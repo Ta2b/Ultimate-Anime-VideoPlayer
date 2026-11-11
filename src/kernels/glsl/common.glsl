@@ -4,7 +4,8 @@
 #ifndef AJP_COMMON_GLSL
 #define AJP_COMMON_GLSL
 
-// mirror_index (spec/resample.h) : miroir sans répétition du bord, puis clamp.
+// mirror_index (spec/resample.h) : miroir par symétrie au demi-échantillon (le bord est répété : −1 → 0,
+// n → n − 1), puis clamp.
 int mirror_index(int i, int n) {
   i = i < 0 ? -i - 1 : i;
   i = i >= n ? 2 * n - 1 - i : i;

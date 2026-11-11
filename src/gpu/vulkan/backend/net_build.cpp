@@ -229,12 +229,12 @@ int purge_stale_temporaries(const std::filesystem::path& folder, std::chrono::se
 
 std::expected<std::vector<std::byte>, Refusal> read_file(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary | std::ios::ate);
-  if (!in) return refuse(RefusalCode::CacheIo, std::format("{} illisible", path.string()));
+  if (!in) return refuse(RefusalCode::CacheIo, std::format("{} illisible", core::to_utf8(path)));
   const std::streamsize size = in.tellg();
   in.seekg(0);
   std::vector<std::byte> bytes(static_cast<std::size_t>(std::max<std::streamsize>(size, 0)));
   in.read(reinterpret_cast<char*>(bytes.data()), size);
-  if (!in) return refuse(RefusalCode::CacheIo, std::format("{} : lecture incomplète", path.string()));
+  if (!in) return refuse(RefusalCode::CacheIo, std::format("{} : lecture incomplète", core::to_utf8(path)));
   return bytes;
 }
 

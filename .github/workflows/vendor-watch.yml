@@ -1,0 +1,40 @@
+name: Surveillance des fichiers NVIDIA
+
+# Le lecteur tire TensorRT de pypi.nvidia.com par plage d'octets (data_offset figé dans tools/release/nvidia-vendor).
+# Si NVIDIA retire ou remplace la roue, toutes les releases passées perdent l'installation de TensorRT en même temps :
+# chaque semaine, chaque adresse est interrogée et le plus petit fichier de chaque index est relu et vérifié
+# (tools/release/check-vendor.py, B51-16). Un échec ouvre une issue.
+on:
+  schedule:
+    - cron: "43 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vendor:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Roues de NVIDIA
+        id: check
+        run: python3 -I tools/release/check-vendor.py tools/release/nvidia-vendor/*.lock
+      - name: Ouvrir une issue
+        if: ${{ failure() && steps.check.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Une roue de NVIDIA ne correspond plus à nvidia-vendor"
+          open="$(gh issue list -R "$REPO" --state open --search "\"$title\" in:title" --json number -q length)"
+          if [ "${open:-0}" -gt 0 ]; then echo "une issue est déjà ouverte"; exit 0; fi
+          gh issue create -R "$REPO" --title "$title" --body "La surveillance hebdomadaire de pypi.nvidia.com a échoué : $RUN_URL
+
+          Les index tools/release/nvidia-vendor/*.lock ne décrivent plus ce que NVIDIA publie : l'installation de TensorRT échoue pour toutes les releases. Régénérer les index avec tools/release/vendor-index.py sur la nouvelle roue."

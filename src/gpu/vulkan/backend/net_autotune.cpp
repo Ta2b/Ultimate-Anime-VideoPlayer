@@ -252,6 +252,32 @@ std::expected<void, Refusal> Autotuner::save() const {
   return write_file(cache_file_, std::as_bytes(std::span(bytes)));
 }
 
+namespace {
+
+// À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide), la variante aux sommes en float
+// l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de bruit ne
+// tranche pas. `full_precision_us` reçoit la meilleure variante aux sommes float, pour chiffrer le gain.
+std::optional<Measured> pick_best(std::vector<Measured>& measured, std::optional<double>& full_precision_us) {
+  const auto fp16_sums = [](const Measured& m) { return low_precision(m.choice); };
+  std::optional<Measured> best;
+  for (const Measured& m : measured) {
+    if (!fp16_sums(m) && (!full_precision_us || m.median_us < *full_precision_us))
+      full_precision_us = m.median_us;
+  }
+  if (measured.empty()) return best;
+  const Measured& quick = std::ranges::min(measured, {}, &Measured::median_us);
+  const double tie = std::max(kPrecisionTie * quick.median_us, quick.median_us + (2.0 * quick.spread_us));
+  for (Measured& m : measured) {
+    if (m.median_us > tie) continue;
+    if (!best || fp16_sums(*best) > fp16_sums(m) ||
+        (fp16_sums(*best) == fp16_sums(m) && m.median_us < best->median_us))
+      best = std::move(m);
+  }
+  return best;
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, std::size_t node,
                                                        std::span<const KernelChoice> candidates,
@@ -270,6 +296,8 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   if (const auto found = cache_.find(key); found != cache_.end() && known(found->second.choice)) {
     if (found->second.driver == profile_.driver_build) {
       ++cached_;
+      if (low_precision(found->second.choice))
+        reduced_.push_back({.node = node, .variant = found->second.choice.variant});
       return found->second.choice;
     }
     remembered = found->second.choice;
@@ -375,18 +403,8 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   // À vitesse proche (moins de 5 %, ou de deux écarts types du plus rapide), la variante aux sommes en float
   // l'emporte sur celle à précision réduite : la précision ne coûte alors rien, et un écart de bruit ne
   // tranche pas.
-  const auto fp16_sums = [](const Measured& m) { return low_precision(m.choice); };
-  std::optional<Measured> best;
-  if (!measured.empty()) {
-    const Measured& quick = std::ranges::min(measured, {}, &Measured::median_us);
-    const double tie = std::max(kPrecisionTie * quick.median_us, quick.median_us + (2.0 * quick.spread_us));
-    for (Measured& m : measured) {
-      if (m.median_us > tie) continue;
-      if (!best || fp16_sums(*best) > fp16_sums(m) ||
-          (fp16_sums(*best) == fp16_sums(m) && m.median_us < best->median_us))
-        best = std::move(m);
-    }
-  }
+  std::optional<double> full_precision_us;  // la meilleure variante aux sommes float, pour chiffrer le gain
+  std::optional<Measured> best = pick_best(measured, full_precision_us);
   if (!best) {
     return std::unexpected(last_error.value_or(Refusal{RefusalCode::InputMismatch, "aucun candidat mesuré"}));
   }
@@ -394,6 +412,12 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   decisions_.push_back(std::format("nœud {} ({}) : {} {}, {:.1f} ± {:.1f} µs parmi {} mesurés", node,
                                    graph.nodes[node].name, best->choice.variant, tuning_text(best->choice),
                                    best->median_us, best->spread_us, measured.size()));
+  if (low_precision(best->choice)) {
+    reduced_.push_back({.node = node,
+                        .variant = best->choice.variant,
+                        .chosen_us = best->median_us,
+                        .full_precision_us = full_precision_us});
+  }
   cache_[key] = {.choice = best->choice, .driver = profile_.driver_build};
   return best->choice;
 }
