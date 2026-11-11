@@ -247,13 +247,14 @@ void tidy_at_launch(const std::filesystem::path& data, const std::filesystem::pa
   if (engines.empty()) return;
   const prepare::CachePurgeResult purged = prepare::purge_engine_cache(engines);
   constexpr double kMib = 1024.0 * 1024.0;
+  constexpr std::string_view kTidied =  // i18n-ok : journal
+      "cache des moteurs : {} gardé(s), {:.0f} Mio ; {} retiré(s), {:.0f} Mio ; {} travail, {} verrou";
   if (said &&
       (purged.removed > 0 || purged.kept > 0 || purged.removed_stages > 0 || purged.removed_locks > 0))
-    said(std::format(
-        "cache des moteurs : {} gardé(s), {:.0f} Mio ; {} retiré(s), {:.0f} Mio ; {} construction(s) "
-        "abandonnée(s) et {} verrou(s) orphelin(s) retirés",  // i18n-ok : journal
-        purged.kept, static_cast<double>(purged.kept_bytes) / kMib, purged.removed,
-        static_cast<double>(purged.removed_bytes) / kMib, purged.removed_stages, purged.removed_locks));
+    said(std::format(kTidied,  // journal
+                     purged.kept, static_cast<double>(purged.kept_bytes) / kMib, purged.removed,
+                     static_cast<double>(purged.removed_bytes) / kMib, purged.removed_stages,
+                     purged.removed_locks));
 }
 
 }  // namespace ajp::app::play

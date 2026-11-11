@@ -91,9 +91,19 @@ void remove_orphan_lock(const fs::path& lock, const CachePurgeLimits& limits, fs
   if (fs::exists(engine, error)) return;
   const auto written = fs::last_write_time(lock, error);
   if (error || now - written <= limits.idle) return;
-  auto held = KeyLock::acquire(lock, {}, LockWait::TryOnly);
-  if (!held) return;
+  {
+    auto held = KeyLock::acquire(lock, {}, LockWait::TryOnly);
+    if (!held) return;
+#ifndef _WIN32
+    if (fs::remove(lock, error) && !error) ++result.removed_locks;
+    return;
+#endif
+  }
+#ifdef _WIN32
+  // Le verrou est ouvert sans FILE_SHARE_DELETE : il se retire une fois relâché. Si un autre lancement le
+  // prend entre-temps, la suppression échoue, sans dommage.
   if (fs::remove(lock, error) && !error) ++result.removed_locks;
+#endif
 }
 
 }  // namespace

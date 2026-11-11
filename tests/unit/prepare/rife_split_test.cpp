@@ -398,6 +398,7 @@ TEST_CASE("Un graphe aux noms de RIFE mais d'une autre colle n'est pas coupé (B
   // fausses.
   Fake fake;
   std::string_view which;
+  bool by_glue_check = true;  // le mélange sans masque est déjà refusé par la reconnaissance du masque
   SECTION("encodage non warpé") {
     fake.unwarped_encodings = true;
     which = "warpée";
@@ -409,6 +410,7 @@ TEST_CASE("Un graphe aux noms de RIFE mais d'une autre colle n'est pas coupé (B
   SECTION("mélange sans masque") {
     fake.blend_without_mask = true;
     which = "masque";
+    by_glue_check = false;
   }
   SECTION("grille indépendante du flot") {
     fake.grid_ignores_flow = true;
@@ -417,7 +419,7 @@ TEST_CASE("Un graphe aux noms de RIFE mais d'une autre colle n'est pas coupé (B
   const auto split = analyze_rife(fake_rife(fake));
   REQUIRE_FALSE(split.has_value());
   CHECK(split.error().code == RefusalCode::FieldMissing);
-  CHECK(split.error().detail.find("colle des noyaux") != std::string::npos);
+  if (by_glue_check) CHECK(split.error().detail.find("colle des noyaux") != std::string::npos);
   CHECK(split.error().detail.find(which) != std::string::npos);
   // Le même graphe, sans défaut, se reconnaît (le contrôle ne refuse pas tout).
   CHECK(analyze_rife(fake_rife(Fake{})).has_value());

@@ -91,7 +91,11 @@ TEST_CASE("ansi_safe_path : un chemin hors de la page ANSI prend son nom court (
     }
     CHECK(std::ranges::all_of(*safe, [](char c) { return static_cast<unsigned char>(c) < 0x80; }));
     CHECK(fs::equivalent(ajp::prepare::path_from_utf8(*safe).parent_path(), dir));
-    CHECK(ajp::prepare::path_from_utf8(*safe).filename() == path.filename());
+    if (path == existing) {
+      CHECK(fs::equivalent(ajp::prepare::path_from_utf8(*safe), existing));  // le fichier prend son nom court
+    } else {
+      CHECK(ajp::prepare::path_from_utf8(*safe).filename() == path.filename());
+    }
   }
 #else
   CHECK(ajp::prepare::ansi_command_path(existing) == ajp::prepare::utf8_path(existing));
