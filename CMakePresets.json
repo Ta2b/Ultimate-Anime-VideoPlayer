@@ -493,7 +493,11 @@
       "output": {
         "outputOnFailure": true
       },
-      "filter": {"exclude": {"name": "^(backend_tensorrt|span_fp8_kernels|coreml_rt): "}},
+      "filter": {
+        "include": {
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels|gpu|gpu_ir): "
+        }
+      },
       "execution": {
         "noTestsAction": "error"
       }
