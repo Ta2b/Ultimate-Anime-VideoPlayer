@@ -49,6 +49,18 @@ TEST_CASE("Lecteur par défaut : le .desktop nomme le lecteur et les types vidé
   CHECK(mimes.contains("video/x-matroska;"));
 }
 
+TEST_CASE("Lecteur par défaut : la fiche porte l'identifiant de l'application et l'icône (B19-01)",
+          "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
+  const auto plain = desktop_entry("/opt/ajp-linux-x64/ajp");
+  REQUIRE(plain);
+  CHECK(line_of(*plain, "StartupWMClass") == "io.github.ta2b.ajp");  // l'app_id de la fenêtre
+  CHECK(line_of(*plain, "Icon") == "video-x-generic");  // pas d'icône installée : la générique
+  const auto with_icon = desktop_entry("/opt/ajp-linux-x64/ajp", true);
+  REQUIRE(with_icon);
+  CHECK(line_of(*with_icon, "Icon") == "io.github.ta2b.ajp");
+}
+
 TEST_CASE("Lecteur par défaut : Exec échappe le chemin selon la spécification XDG", "[app][default_player]") {
   ajp::app::play::FrenchUi french;
   // Entre guillemets, « " », « ` », « $ » et « \ » prennent une barre oblique inverse et « % » se
@@ -148,6 +160,26 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
 
   CHECK_FALSE(refresh_registration(place));  // jamais inscrit (ou retiré) : rien n'est écrit
   CHECK_FALSE(fs::exists(file));
+}
+
+TEST_CASE("Lecteur par défaut : deux installations ne se disputent pas la fiche (B19-07)",
+          "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
+  const fs::path home = fs::temp_directory_path() / "ajp-default-player-two-test";
+  std::error_code error;
+  fs::remove_all(home, error);
+  fs::create_directories(home / "a", error);
+  fs::create_directories(home / "b", error);
+  std::ofstream(home / "a" / "ajp") << "x";
+  std::ofstream(home / "b" / "ajp") << "x";
+  const PlayerPlace first{.executable = home / "a" / "ajp", .home = home};
+  const PlayerPlace second{.executable = home / "b" / "ajp", .home = home};
+  REQUIRE(register_player(first));
+  CHECK_FALSE(refresh_registration(second));  // la première existe encore : la fiche reste à elle
+  CHECK(refresh_registration(first) == false);
+  fs::remove(home / "a" / "ajp", error);
+  CHECK(refresh_registration(second));  // la première a disparu : la fiche suit la seconde
+  fs::remove_all(home, error);
   const auto nowhere = register_player(PlayerPlace{.executable = place.executable});
   REQUIRE_FALSE(nowhere);
   CHECK(nowhere.error().code == RefusalCode::FieldMissing);
@@ -194,6 +226,12 @@ TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_pla
   static_cast<void>(is_default_player(PlayerPlace{}));
   CHECK(std::chrono::steady_clock::now() - asked < std::chrono::milliseconds(200));
   CHECK(user_choice_is_ajp("AJP.Video"));
+  CHECK(user_choice_is_ajp("Applications\\ajp.exe"));  // « Ouvrir avec > Toujours » (B19-02)
+  CHECK(user_choice_is_ajp("applications\\AJP.EXE"));
+  CHECK_FALSE(user_choice_is_ajp("Applications\\vlc.exe"));
+  CHECK(executable_is_ajp(R"(C:\Users\t\AppData\Local\Programs\AJP\ajp.exe)"));  // B34-09
+  CHECK_FALSE(executable_is_ajp(R"(C:\Program Files\VideoLAN\vlc.exe)"));
+  CHECK_FALSE(executable_is_ajp(""));
   CHECK_FALSE(user_choice_is_ajp("VLC.mkv"));
   CHECK_FALSE(user_choice_is_ajp(""));
 }
@@ -294,14 +332,10 @@ TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[epis
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-growing";
   std::filesystem::create_directories(dir);
   const std::filesystem::path file = dir / "ep01.mkv";
-  {
-    std::ofstream(file, std::ios::binary) << "1234";
-  }
+  { std::ofstream(file, std::ios::binary) << "1234"; }
   const ajp::app::play::GrowingFile opened = ajp::app::play::GrowingFile::of(file);
   CHECK_FALSE(opened.grew(file, std::chrono::milliseconds(200)));  // écrit à l'instant, mais n'a pas grandi
-  {
-    std::ofstream(file, std::ios::binary | std::ios::app) << "5678";
-  }
+  { std::ofstream(file, std::ios::binary | std::ios::app) << "5678"; }
   CHECK(opened.grew(file));
   std::filesystem::remove_all(dir);
 }
@@ -322,12 +356,8 @@ TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp,
   CHECK(ajp::app::play::cache_data({}, heavy) == heavy);
   for (const char* name : {"engines", "modeles", "plans", "backends", "models", "luts", "downloads"})
     fs::create_directories(heavy / name);
-  {
-    std::ofstream(heavy / "shaders.cache") << "cache";
-  }
-  {
-    std::ofstream(heavy / "engines" / "span.plan") << "plan";
-  }
+  { std::ofstream(heavy / "shaders.cache") << "cache"; }
+  { std::ofstream(heavy / "engines" / "span.plan") << "plan"; }
   const int moved = ajp::app::play::move_cache_data(heavy, cache);
 #ifdef __linux__
   CHECK(moved == 4);

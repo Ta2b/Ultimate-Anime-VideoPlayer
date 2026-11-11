@@ -1,0 +1,3 @@
+// Ressources de ajp.exe : l'icône (identifiant 1, celui que SDL donne à sa fenêtre), vue par l'Explorateur, la
+// barre des tâches, « Ouvrir avec » et « Applications par défaut ».
+1 ICON "../../tools/release/windows/ajp.ico"

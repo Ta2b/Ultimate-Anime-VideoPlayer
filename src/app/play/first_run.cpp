@@ -276,7 +276,7 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
         break;
     }
     // Premier passage : le moteur recommandé pour cette carte (TensorRT sur une RTX) est coché d'office, sa
-    // licence affichée à côté et acceptée par le geste « Suivant » (décidé par Tatoub, B25-01). Décochée ou
+    // licence affichée à côté et acceptée par le geste « Suivant » (B25-01). Décochée ou
     // refusée à l'écran, elle reste hors du choix. Coché à l'assistant puis la fenêtre fermée pendant le
     // téléchargement : le choix est écrit avant (A25-10), la case et l'accord de la licence reviennent à la
     // reprise.

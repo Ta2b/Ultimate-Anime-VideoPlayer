@@ -36,6 +36,9 @@ struct PlayerPlace {
 };
 
 inline constexpr std::string_view kAppName = "Ultimate Anime Video Player";
+// L'identifiant de l'application (app_id Wayland, WM_CLASS X11, nom de l'icône) et celui de sa fiche .desktop
+// : le bureau rattache la fenêtre à la fiche par le premier (B19-01).
+inline constexpr std::string_view kAppId = "io.github.ta2b.ajp";
 inline constexpr std::string_view kDesktopId = "io.github.ta2b.ajp.desktop";
 inline constexpr std::string_view kProgId = "AJP.Video";
 inline constexpr std::string_view kRegisteredName = "AJP";  // HKCU\Software\RegisteredApplications
@@ -48,7 +51,9 @@ const char* video_dialog_pattern();
 
 // Le .desktop du lecteur. Refus FieldOutOfRange pour un chemin qu'une ligne ne peut porter (saut
 // de ligne, caractère de contrôle, UTF-8 mal formé).
-std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable);
+// icon_installed : l'icône du lecteur est sous <données>/icons (sinon l'icône générique d'un lecteur vidéo).
+std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable,
+                                                  bool icon_installed = false);
 // <data>/applications/io.github.ta2b.ajp.desktop ; sans data, sous <home>/.local/share.
 std::filesystem::path desktop_file(const PlayerPlace& place);
 
@@ -91,6 +96,9 @@ std::expected<std::string, Refusal> default_once_registered(const std::string& r
 bool default_handler_is_ajp(std::string_view query_output);
 // Windows : le ProgId de UserChoice (FileExts\.mkv\UserChoice) désigne AJP (A19-05).
 bool user_choice_is_ajp(std::string_view prog_id);
+// Windows : l'exécutable associé à l'extension par le système (AssocQueryString) est ajp.exe (B34-09). Un
+// chemin de n'importe quelle forme, sans entrée de registre ; sa seule partie fichier compte.
+bool executable_is_ajp(std::string_view executable);
 // Ce lecteur est-il déjà celui des vidéos, pour MKV et MP4 ? Linux : xdg-mime ; Windows : UserChoice ;
 // macOS : on ne sait pas (faux). Ne bloque jamais : la première fois, la question part sur un fil à elle et
 // la réponse vaut faux jusqu'à ce qu'elle arrive (A19-04).

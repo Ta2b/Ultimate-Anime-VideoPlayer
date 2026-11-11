@@ -50,8 +50,8 @@ core::SystemInfo system_of(const GpuFacts& gpu, core::Os os);
 inline constexpr int kTensorRtDriverMajor = 580;
 std::optional<std::pair<int, int>> nvidia_driver(const GpuFacts& gpu);
 // A37-08, B34-07 : le minimum de CUDA 13 avec sa mineure, d'après le tableau « minimum driver version » des
-// notes de version de CUDA 13.0 : 580.65 sous Linux, 580.88 sous Windows (à revérifier sur la machine de
-// Tatoub avec un pilote 580.65 à 580.87 sous Windows : TensorRT doit être refusé avant le téléchargement).
+// notes de version de CUDA 13.0 : 580.65 sous Linux, 580.88 sous Windows (à revérifier avec un pilote 580.65
+// à 580.87 sous Windows : TensorRT doit être refusé avant le téléchargement).
 #ifdef __linux__
 inline constexpr std::pair<int, int> kTensorRtDriverMinimum{kTensorRtDriverMajor, 65};
 #else

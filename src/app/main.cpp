@@ -540,6 +540,12 @@ int run_player(int argc, char** argv) {
   }
   ajp::media::route_ffmpeg_log_to_journal();  // les erreurs de FFmpeg vont au journal, ses avertissements de
                                               // sonde sont du bruit
+  // B19-01 : le nom, la version et l'identifiant de l'application, avant SDL_Init. L'identifiant devient
+  // l'app_id Wayland et le WM_CLASS X11 : le bureau rattache la fenêtre à la fiche .desktop (icône,
+  // épinglage).
+  SDL_SetAppMetadata(std::string(ajp::app::play::kAppName).c_str(),
+                     std::string(ajp::app::play::installed_version()).c_str(),
+                     std::string(ajp::app::play::kAppId).c_str());
   if (!SDL_Init(SDL_INIT_VIDEO))
     return fail_shown({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()},
                       *options);
