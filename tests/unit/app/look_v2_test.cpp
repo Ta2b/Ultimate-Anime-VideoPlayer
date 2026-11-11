@@ -13,9 +13,20 @@
 
 using namespace ajp::app::play;
 
+namespace {
+
+// Les LUT appliquées, dans l'ordre : les emplacements à intensité 0 sont sautés par le shader.
+std::vector<LookLayer> applied(const std::vector<LookLayer>& pile) {
+  std::vector<LookLayer> out;
+  for (const LookLayer& layer : pile)
+    if (layer.mix > 0.0) out.push_back(layer);
+  return out;
+}
+
+}  // namespace
+
 TEST_CASE("le look est la pile HDR anime, une LUT par emplacement", "[app][look]") {
   PlaySettings s;
-  const std::vector<LookLayer> pile = look_slots(s);
   const std::vector<LookLayer> reference{
       {std::string(kAnimeLookBase), 1.0},      {std::string(kAnimeLookContrast), 1.0},
       {std::string(kAnimeLookContrast), 1.0},  {std::string(kAnimeLookContrast), 1.0},
@@ -23,32 +34,37 @@ TEST_CASE("le look est la pile HDR anime, une LUT par emplacement", "[app][look]
       {std::string(kAnimeLookSkin), 1.0},      {std::string(kAnimeLookContrast), 1.0},
       {std::string(kAnimeLookContrast), 1.0},  {std::string(kAnimeLookContrast), 1.0},
       {std::string(kAnimeLookContrast), 1.0}};
-  CHECK(pile == reference);
-  CHECK(ajp::render::look_is_pq(pile.front().key, ""));
-  // Les curseurs au maximum tiennent dans les emplacements du grade ; au minimum, la base et « skin fix ».
+  CHECK(applied(look_slots(s)) == reference);
+  CHECK(ajp::render::look_is_pq(look_slots(s).front().key, ""));
+  // Toujours 19 emplacements, dans les 20 du grade : aux curseurs à 100, tous servent ; au minimum, la base
+  // et « skin fix » seuls.
+  CHECK(look_slots(s).size() == 19);
   s.look_contrast = 100;
   s.look_highlight = 100;
-  CHECK(look_slots(s).size() == 19);
-  CHECK(look_slots(s).size() <= ajp::render::kLookSlots);
+  CHECK(applied(look_slots(s)).size() == 19);
+  s.look_contrast = 50;
+  s.look_highlight = 0;
+  CHECK(applied(look_slots(s)).size() == 15);  // base, 4,5 + 1,5 + skin + 6 : 1 + 5 + 2 + 1 + 6
   s.look_contrast = -100;
   s.look_highlight = -100;
-  CHECK(look_slots(s).size() == 2);
-  // Un curseur qui ne change que des intensités garde les mêmes fichiers : rien n'est relu.
-  PlaySettings a;
-  PlaySettings b;
-  a.look_highlight = 10;
-  b.look_highlight = 20;
-  CHECK(same_look_files(a, b));
-  b.look_highlight = 100;
-  CHECK_FALSE(same_look_files(a, b));
+  const std::vector<LookLayer> bare{{std::string(kAnimeLookBase), 1.0}, {std::string(kAnimeLookSkin), 1.0}};
+  CHECK(applied(look_slots(s)) == bare);
+  CHECK(look_slots(s).size() == 19);
 }
 
-TEST_CASE("look HDR anime : les intensités en LUT entières puis une partielle", "[app][look]") {
-  CHECK(anime_look_mixes(3.0) == std::vector<double>{1.0, 1.0, 1.0});
-  CHECK(anime_look_mixes(1.5) == std::vector<double>{1.0, 0.5});
-  CHECK(anime_look_mixes(0.0).empty());
-  const auto c = anime_look_mixes(7.0 * 1.5 * 4.0 / 7.0);  // contraste +50, la part d'après : 6
-  CHECK(c.size() == 6);
+TEST_CASE("look HDR anime : un curseur ne change que des intensités, jamais les fichiers", "[app][look]") {
+  // Bouger un curseur ne refait ni le hook ni ses textures (chain.cpp ne relit les LUT que si les fichiers
+  // changent) : de -100 à 100, la pile garde les mêmes fichiers aux mêmes places.
+  PlaySettings a;
+  for (const int contrast : {-100, -30, 0, 45, 100}) {
+    for (const int highlight : {-100, 0, 100}) {
+      PlaySettings b;
+      b.look_contrast = contrast;
+      b.look_highlight = highlight;
+      CAPTURE(contrast, highlight);
+      CHECK(same_look_files(a, b));
+    }
+  }
 }
 
 TEST_CASE("look HDR anime : chaque fichier de la pile se lit", "[app][look]") {

@@ -29,8 +29,9 @@ struct CachedShots {
 // La version de l'analyse (A42-10) : les seuils de la découpe, la grille et le limiteur de flashs. Elle monte
 // à chaque changement qui donnerait d'autres plans ; un fichier d'une autre version se refait, comme celui
 // d'un autre chemin de décodage (`variant` : 0 logiciel, 1 NVDEC réduit, qui ne mesurent pas la même image).
-// 2 : animation tenue, éclairs de deux ou trois images, flashs par zones.
-inline constexpr std::uint32_t kShotAnalysis = 2;
+// 2 : animation tenue, éclairs de deux ou trois images, flashs par zones. 3 : flashs jugés au blanc du grade
+// d'aujourd'hui (flash_gain_of), plus clair : les flashs marqués sous la version 2 en manquaient.
+inline constexpr std::uint32_t kShotAnalysis = 3;
 inline constexpr std::size_t kShotCacheKeep = 400;  // fichiers gardés
 
 // Écrit les plans sous dir (créé au besoin), par un fichier temporaire renommé ; faux si l'écriture

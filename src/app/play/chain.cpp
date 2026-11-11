@@ -67,7 +67,7 @@ bool grade_changed(const PlaySettings& a, const PlaySettings& b) {
   return a.grade != b.grade || a.grade_values != b.grade_values || a.hdr_native != b.hdr_native ||
          a.true_hdr_peak != b.true_hdr_peak || a.oled_black != b.oled_black ||
          a.oled_black_steps != b.oled_black_steps || a.look_contrast != b.look_contrast ||
-         a.look_highlight != b.look_highlight;
+         a.look_highlight != b.look_highlight || a.surface_white != b.surface_white;
 }
 
 // Un raccourci change la chaîne pour la séance : play.toml garde ce qu'il avait avant.

@@ -58,27 +58,21 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
   return lut;
 }
 
-std::vector<double> anime_look_mixes(double units) {
-  std::vector<double> mixes;
-  while (units > 1e-9) {
-    mixes.push_back(std::min(units, 1.0));
-    units -= 1.0;
-  }
-  return mixes;
-}
-
 std::vector<LookLayer> anime_look_layers(int contrast, int highlight) {
-  // L'ordre de la pile par défaut : base, 3/7 du contraste, éclats, skin fix, 4/7 du contraste.
+  // L'ordre de la pile par défaut : base, 3/7 du contraste, éclats, skin fix, 4/7 du contraste. Chaque groupe
+  // a toujours le nombre d'emplacements des curseurs à 100, les inutilisés à intensité 0 (sautés par le
+  // shader) : un curseur ne change que des intensités, jamais le hook ni ses textures.
   const double c = 7.0 * (1.0 + std::clamp(contrast, -100, 100) / 100.0);
   const double h = 1.5 * (1.0 + std::clamp(highlight, -100, 100) / 100.0);
   std::vector<LookLayer> layers{LookLayer{std::string(kAnimeLookBase), 1.0}};
-  const auto add = [&](std::string_view name, double units) {
-    for (const double mix : anime_look_mixes(units)) layers.push_back(LookLayer{std::string(name), mix});
+  const auto add = [&](std::string_view name, double units, std::size_t slots) {
+    for (std::size_t i = 0; i < slots; ++i)
+      layers.push_back(LookLayer{std::string(name), std::clamp(units - static_cast<double>(i), 0.0, 1.0)});
   };
-  add(kAnimeLookContrast, c * 3.0 / 7.0);
-  add(kAnimeLookHighlight, h);
+  add(kAnimeLookContrast, c * 3.0 / 7.0, kAnimeContrastSlotsBefore);
+  add(kAnimeLookHighlight, h, kAnimeHighlightSlots);
   layers.push_back(LookLayer{std::string(kAnimeLookSkin), 1.0});
-  add(kAnimeLookContrast, c * 4.0 / 7.0);
+  add(kAnimeLookContrast, c * 4.0 / 7.0, kAnimeContrastSlotsAfter);
   return layers;
 }
 

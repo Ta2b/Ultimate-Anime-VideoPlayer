@@ -92,6 +92,7 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
       }
       params.look_pq = pq && any_pq ? 1.0 : 0.0;
       params.look_clean = 1.0;  // audit F1 : grain et paliers non étirés par la pile
+      params.surface_white = std::clamp(s.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi) / 100.0;
       (pq ? choice.pq : choice.sdr) = params;
     }
   }
@@ -341,7 +342,8 @@ void grade_tick(Chain& to, std::int64_t now_us) {
   to.shot_serial = shot ? shot->serial : 0;
   // Le plafond ne joue que sur la sortie PQ (A42-19) : en SDR la sortie ne dépasse pas le blanc de l'écran,
   // et le journal annonçait un plafond qui ne changeait rien à l'image.
-  if (const bool flashing = to.running.grade && to.screen.hdr_output() && next_flashing(to);
+  if (const bool flashing =
+          to.running.flash_guard && to.running.grade && to.screen.hdr_output() && next_flashing(to);
       flashing != to.flash_limited) {
     to.flash_limited = flashing;
     if (flashing)

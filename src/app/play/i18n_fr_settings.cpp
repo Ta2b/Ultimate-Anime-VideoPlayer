@@ -178,6 +178,16 @@ constexpr std::array kSettingsPages{
     Entry{"SPAN switches to {} (built the first time for this size)",
           "SPAN passe en {} (construit la première fois pour cette taille)"},
     Entry{"Highlights", "Éclats"},
+    Entry{"Limit rapid flashes", "Limiter les flashs rapides"},
+    Entry{"Surface white", "Blanc des surfaces"},
+    Entry{"HDR: the white of walls and skin, in % of where the LUTs put it (about 70 % of the screen "
+          "peak). Lower leaves more room to the lights, which still reach the peak.",
+          "HDR : le blanc des murs et des peaux, en % de celui que donnent les LUT (environ 70 % du pic de "
+          "l'écran). Plus bas, les lumières gagnent de l'écart ; elles montent toujours jusqu'au pic."},
+    Entry{"HDR only: a burst of rapid flashes (more than three a second) is dimmed for a second, for "
+          "photosensitive viewers. Off: flashes keep their full light.",
+          "HDR seulement : une suite de flashs rapides (plus de trois par seconde) est atténuée pendant une "
+          "seconde, pour les personnes photosensibles. Coupé : les flashs gardent toute leur lumière."},
     Entry{"SDR: HDR is off in your system, or the display is too dim for it. The Color page's grade still "
           "applies.",
           "SDR : le HDR est coupé dans votre système, ou l'écran n'a pas assez de lumière pour lui. Le grade "
