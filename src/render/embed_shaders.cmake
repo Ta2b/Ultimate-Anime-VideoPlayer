@@ -5,6 +5,8 @@
 # longueur de littéral (MSVC refuse les chaînes de plus de 16 Kio). Un dossier est un hook en
 # plusieurs fichiers, mis bout à bout dans l'ordre de leurs noms : libplacebo ne voit les textures
 # //!SAVE que dans le fichier qui les déclare, le hook doit donc rester un seul texte.
+# Les retours chariot sont retirés : une extraction Windows (core.autocrlf) met les .hook en CRLF, et
+# grade.cpp cherche ses marques suivies de « \n » (sans quoi le hook du look ne compilait plus).
 set(body "// Généré par src/render/embed_shaders.cmake : ne pas modifier.\n")
 string(APPEND body "#include \"render/shaders.h\"\n\nnamespace ajp::render::shaders {\nnamespace {\n")
 set(views "")
@@ -22,9 +24,10 @@ foreach(input IN LISTS INPUTS)
   else()
     file(READ "${input}" hex HEX)
   endif()
-  string(LENGTH "${hex}" hex_length)
-  math(EXPR size "${hex_length} / 2")
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "'\\\\x\\1'," bytes "${hex}")
+  string(REPLACE "'\\x0d'," "" bytes "${bytes}")
+  string(LENGTH "${bytes}" bytes_length)
+  math(EXPR size "${bytes_length} / 7")  # « '\x..', » : sept caractères par octet
   string(REGEX REPLACE "(('\\\\x[0-9a-f][0-9a-f]',){16})" "\\1\n  " bytes "${bytes}")
   string(APPEND body "constexpr char k_${ident}[${size}] = {\n  ${bytes}\n};\n")
   string(APPEND views "const std::string_view ${ident}{k_${ident}, sizeof(k_${ident})};\n")

@@ -175,6 +175,12 @@ std::expected<ParsedHook, Refusal> parse(pl_gpu gpu, std::string_view text, std:
 
 // Le hook du look lu par libplacebo, qui crée les textures : sur le thread qui rend.
 std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, std::string_view text) {
+  // Une marque laissée (fin de ligne inattendue) couperait l'en-tête : le hook ne compilerait qu'au rendu,
+  // et libplacebo le couperait sans le dire au lecteur.
+  for (const std::string_view mark : {"//@LOOK_PARAMS@", "//@LOOK_BINDS@", "//@LOOK_CHAIN@"})
+    if (text.find(mark) != std::string_view::npos)
+      return std::unexpected(
+          Refusal{RefusalCode::FieldMissing, "anime-hdr-look.hook : marque LOOK non remplacée"});
   return parse(gpu, text, "anime-hdr-look.hook", kLookParams);
 }
 
