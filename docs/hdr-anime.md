@@ -14,8 +14,17 @@ la dernière passe (`anime-hdr-black.hook`, réglée par `src/render/output_tune
   KWin sous laquelle la pile a été réglée à l'œil, de 10 000 nits vers le pic de l'écran. Les curseurs « LUT
   contrast intensity » et « LUT highlight intensity » déplacent ce blanc (de 483 à 818 nits et de 410 à 863
   nits sur un écran de 1 000 nits).
-- **Éclats avant la pile.** La passe anime décide quels pixels sont des lumières et les monte, sous son
-  limiteur de scène ; la pile les amplifie ensuite.
+- **Éclats avant la pile.** La passe anime décide quels pixels sont des lumières et les monte jusqu'au pic ;
+  la pile les amplifie ensuite.
+- **Luminosité stable d'un plan à l'autre en HDR (Tatoub, 11/11/2026, essai de la rc.4).** Les surfaces
+  gardent le relèvement fixe : plus d'exposition par plan (jusqu'à ±19 %, que la pile double à peu près),
+  qui faisait sauter un même décor entre un gros plan sombre et un plan large clair. Plus de limiteur de
+  scène : la marge des éclats ne tombe plus à la moitié du pic dans une scène claire, la dalle limite
+  elle-même. Les deux se déclenchaient bien plus souvent depuis que les coupes de l'animation tenue sont
+  trouvées (#676). La sortie SDR garde sa courbe par plan (`steady_hdr`, `render/grade_params.h`). Restent
+  adaptatifs : les lumières décidées zone par zone, et les noirs profonds selon la série. Piste si une scène
+  paraît trop sombre ou trop claire : une exposition par décor (une suite de plans du même lieu), glissée
+  lentement d'un décor à l'autre.
 - **MaxFALL annoncé** : le blanc des surfaces réellement rendu (une image toute blanche), ou la moyenne
   plein écran du contrat d'écran quand il la connaît.
 - **Noirs (décision 17 du 09/11/2026).** Le noir pur reste un vrai noir : 0 sous RVB 4. Au-dessus, la LUT de
@@ -57,8 +66,10 @@ Blanc des surfaces selon le pic : 320 nits à 400, 690 à 1 000, 1 304 à 2 000 
   lecteur baisse lui-même les surfaces seules, en gardant les éclats au pic et les tons moyens, à la coupe de
   plan. Rien n'est fait avant ce constat à l'œil.
 - **Rendu universel** : le même rendu quel que soit le système et l'écran. La pile fondue en une seule LUT
-  faite pour la sortie PQ, avec des curseurs continus, puis la courbe de KWin retirée, sans changement visible
-  sur un écran de 1 000 nits (instantanés `.pq.ppm` avant et après).
+  est écartée : l'audit A41-01 a mesuré qu'elle change l'image (18 codes PQ au pire, une couleur sur cinq à
+  plus d'un code). Restent : une pile de taille fixe (19 emplacements, les curseurs ne changent que des
+  intensités, sans refaire le hook), la passe de sortie allumée sur Mac (la pile y demande ~6 000 nits et
+  macOS compresse à sa façon), et le temps de la passe du look mesuré sur la carte de Tatoub.
 
 Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) reste dans
 `docs/audits/A-CONFIRMER.md`.

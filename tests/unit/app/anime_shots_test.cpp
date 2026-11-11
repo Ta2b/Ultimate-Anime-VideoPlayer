@@ -8,6 +8,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/chain.h"
+#include "app/play/settings.h"
 #include "render/grade_params.h"
 
 namespace ajp::app::play {
@@ -79,6 +81,28 @@ TEST_CASE("anime par plan : l'exposition relève les surfaces du grade, rien san
   const auto low = render::decide_grade(s, pq_context());
   REQUIRE(low.has_value());
   CHECK(low->params.an_lift == Approx(render::kAnimeLift * std::exp2(-render::kAnimeExposureMaxE)));
+}
+
+TEST_CASE("anime par plan : en HDR, la luminosité ne suit ni le plan ni la scène ; en SDR, si",
+          "[app][anime]") {
+  // Retour d'essai de la rc.4 : l'exposition par plan et la marge des éclats selon la scène, amplifiées par
+  // la pile de LUT, faisaient sauter un même décor d'un plan à l'autre. La dalle limite les scènes claires.
+  PlaySettings s;
+  s.hdr_native = true;
+  const render::GradeChoice still = grade_of(s, 1000);
+  REQUIRE(still.pq.has_value());
+  REQUIRE(still.sdr_anime.has_value());
+  s.grade_values.scene_light = render::SceneLight{.apl_nits = 150.0, .lit = 0.6};  // une scène très claire
+  s.grade_values.anime_exposure = -0.25;
+  const render::GradeChoice bright = grade_of(s, 1000);
+  REQUIRE(bright.pq.has_value());
+  REQUIRE(bright.sdr_anime.has_value());
+  CHECK(bright.pq->an_lift == Approx(render::kAnimeLift));
+  CHECK(bright.pq->fs_apl < 0.0);  // clé inconnue : la marge des éclats au pic
+  CHECK(*bright.pq == *still.pq);
+  // La sortie SDR garde sa courbe par plan.
+  CHECK(bright.sdr_anime->an_lift < still.sdr_anime->an_lift);
+  CHECK(bright.sdr_anime->tm_top < still.sdr_anime->tm_top);
 }
 
 TEST_CASE("anime : le peps en % devient contraste, saturation et part des éclats du grade", "[app][anime]") {
