@@ -14,6 +14,7 @@ int edid(const std::uint8_t* data, std::size_t size);           // EDID de l'éc
 int build_log(const std::uint8_t* data, std::size_t size);      // *.build.log du cache
 int resume(const std::uint8_t* data, std::size_t size);         // resume.tsv
 int osd_script(const std::uint8_t* data, std::size_t size);     // texte de l'OSD en ASS
+int mkv_chapters(const std::uint8_t* data, std::size_t size);   // chapitres d'un MKV (B35-03)
 // fuzz_parsers.cpp
 int onnx(const std::uint8_t* data, std::size_t size);          // modèle ONNX (protobuf)
 int srt(const std::uint8_t* data, std::size_t size);           // SRT, encodage compris

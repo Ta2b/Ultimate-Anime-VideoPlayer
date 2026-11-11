@@ -116,7 +116,7 @@ bool SubtitleLead::prepare(const Job& job) {
   };
   if (unusable_) return stop_reading();
   if (!demuxer_) {
-    auto opened = media::Demuxer::open(config_.file);
+    auto opened = media::Demuxer::open(config_.file, {.attachments = false});
     if (!opened) {
       log->warn("sous-titres en avance : {} ne s'ouvre pas une seconde fois ({})",
                 core::to_utf8(config_.file.filename()), opened.error().detail);

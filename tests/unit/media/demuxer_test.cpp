@@ -1,6 +1,10 @@
 #include "media/demuxer.h"
 
 #include <algorithm>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <optional>
 #include <string>
@@ -328,4 +332,161 @@ TEST_CASE("Demuxer : une piste entrelacée à 29,97 sort à 23,976 par l'IVTC (A
     CHECK(std::int64_t{video->frame_rate.num} * c.rate.den ==
           std::int64_t{video->frame_rate.den} * c.rate.num);
   }
+}
+
+#ifndef _WIN32
+namespace {
+
+struct ChangeDirectory {
+  std::filesystem::path before = std::filesystem::current_path();
+  explicit ChangeDirectory(const std::filesystem::path& dir) { std::filesystem::current_path(dir); }
+  ~ChangeDirectory() { std::filesystem::current_path(before); }
+};
+
+}  // namespace
+
+// B14-01, B35-06 : FFmpeg lit « Re: » comme un protocole ; le chemin est absolu et précédé de « file: ».
+TEST_CASE("Demuxer : un chemin relatif contenant « : » s'ouvre", "[media][demuxer]") {
+  const std::filesystem::path clip = test::require_clip(test::seek_clip());
+  const std::filesystem::path dir = clip.parent_path() / "deux-points";
+  std::filesystem::create_directories(dir);
+  std::filesystem::copy_file(clip, dir / "Re:Zero - 01.mkv",
+                             std::filesystem::copy_options::overwrite_existing);
+  const ChangeDirectory here(dir);
+  auto demuxer = Demuxer::open("Re:Zero - 01.mkv");
+  INFO((demuxer ? std::string() : demuxer.error().detail));
+  REQUIRE(demuxer.has_value());
+  CHECK_FALSE(demuxer->tracks().empty());
+  auto url = Demuxer::open("http://exemple.invalide/x.mkv");  // pas une URL : un nom de fichier introuvable
+  CHECK_FALSE(url);
+}
+#endif
+
+// B14-04, B35-04 : une piste vidéo annexe hors des bornes est écartée, le fichier reste lisible.
+TEST_CASE("Demuxer : une piste vidéo annexe hors des bornes est écartée, pas le fichier",
+          "[media][demuxer]") {
+  test::ClipSpec spec{.name = "video-annexe.mkv", .frames = 5};
+  spec.extra_videos.emplace_back(16384, 64);
+  Demuxer demuxer = open_clip(spec);
+  int videos = 0;
+  for (const TrackInfo& track : demuxer.tracks()) videos += track.kind == TrackKind::Video ? 1 : 0;
+  CHECK(videos == 1);
+  CHECK(demuxer.track(0) != nullptr);
+  CHECK(demuxer.track(1) == nullptr);
+}
+
+// B35-05 : titres coupés à 256 octets UTF-8 entiers, caractères de contrôle remplacés.
+TEST_CASE("Demuxer : les titres de pistes sont bornés et nettoyés", "[media][demuxer]") {
+  std::string long_title;
+  for (int i = 0; i < 400; ++i) long_title += "é";  // 800 octets
+  test::ClipSpec spec{.name = "titres-hostiles.mkv", .frames = 5};
+  spec.audio.push_back({.language = "jpn", .title = long_title});
+  spec.audio.push_back({.language = "eng", .title = "Ligne 1\nLigne 2\t##x"});
+  Demuxer demuxer = open_clip(spec);
+  std::vector<std::string> titles;
+  for (const TrackInfo& track : demuxer.tracks())
+    if (track.kind == TrackKind::Audio) titles.push_back(track.title);
+  REQUIRE(titles.size() == 2);
+  CHECK(titles[0].size() <= 256);
+  CHECK(titles[0].size() % 2 == 0);  // pas au milieu d'un « é » (2 octets)
+  CHECK(titles[1] == "Ligne 1 Ligne 2 ##x");
+}
+
+// B35-01 : seules les polices sont recopiées ; les lectures annexes n'en décrivent aucune.
+TEST_CASE("Demuxer : les pièces jointes qui ne sont pas des polices ne sont pas recopiées",
+          "[media][demuxer]") {
+  test::ClipSpec spec{.name = "pieces-jointes.mkv", .frames = 5};
+  spec.attachments.push_back({.filename = "Police.ttf", .mime_type = "font/ttf", .data = test::kFontBytes});
+  spec.attachments.push_back(
+      {.filename = "notes.txt", .mime_type = "text/plain", .data = std::string(4096, 'x')});
+  const auto path = test::require_clip(spec);
+  auto full = Demuxer::open(path);
+  REQUIRE(full.has_value());
+  int fonts = 0;
+  int others = 0;
+  for (const TrackInfo& track : full->tracks()) {
+    if (track.kind != TrackKind::Attachment) continue;
+    if (is_font(track)) {
+      ++fonts;
+    } else {
+      ++others;
+      CHECK(track.parameters == nullptr);
+    }
+  }
+  CHECK(fonts == 1);
+  CHECK(others == 1);
+  auto bare = Demuxer::open(path, {.attachments = false});
+  REQUIRE(bare.has_value());
+  for (const TrackInfo& track : bare->tracks()) CHECK(track.kind != TrackKind::Attachment);
+}
+
+// B14-05 : un MKV dont l'en-tête annonce moins que le contenu (Duration réécrite à 300 ms sur 1,2 s).
+TEST_CASE("Demuxer : un seek au-delà de la durée annoncée, mais dans le fichier, aboutit",
+          "[media][demuxer]") {
+  const std::filesystem::path clip = test::require_clip(test::seek_clip());
+  std::ifstream in(clip, std::ios::binary);
+  std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const std::string marker("\x44\x89\x88", 3);  // Duration, un double de 8 octets
+  const std::size_t at = bytes.find(marker);
+  REQUIRE(at != std::string::npos);
+  const double short_duration = 300.0;  // en ms : l'échelle de temps Matroska par défaut
+  std::uint64_t bits = 0;
+  std::memcpy(&bits, &short_duration, sizeof bits);
+  for (int i = 0; i < 8; ++i)
+    bytes[at + 3 + static_cast<std::size_t>(i)] = static_cast<char>(bits >> (56 - 8 * i));
+  const std::filesystem::path patched = clip.parent_path() / "duree-courte.mkv";
+  std::ofstream(patched, std::ios::binary | std::ios::trunc)
+      .write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  Demuxer demuxer = [&] {
+    auto opened = Demuxer::open(patched);
+    REQUIRE(opened.has_value());
+    return std::move(*opened);
+  }();
+  REQUIRE(demuxer.duration_us() == 300'000);
+  CHECK(demuxer.seek(800'000, 0, SeekTarget::PreviousKeyframe).has_value());
+  const auto beyond =
+      demuxer.seek(60'000'000, 0, SeekTarget::PreviousKeyframe);  // au-delà de tout le fichier
+  REQUIRE_FALSE(beyond);
+  CHECK(beyond.error().code == RefusalCode::SeekFailed);
+}
+
+// B31-11 : une panne d'E/S de quelques secondes ne finit plus la vidéo (5 essais, 1,5 s, avant).
+TEST_CASE("Demuxer : six erreurs d'E/S de suite sont encore retentées", "[media][demuxer]") {
+  Demuxer demuxer = open_clip(test::seek_clip());
+  demuxer.fail_reads({.after_packets = 3, .count = 6, .error = AVERROR(EIO)});
+  std::size_t packets = 0;
+  while (true) {
+    auto packet = demuxer.read();
+    REQUIRE(packet.has_value());
+    if (!*packet) break;
+    ++packets;
+  }
+  CHECK(packets > 6);
+}
+
+TEST_CASE("Demuxer : une panne d'E/S qui dépasse le budget met fin à la lecture", "[media][demuxer]") {
+  Demuxer demuxer = open_clip(test::seek_clip());
+  demuxer.fail_reads({.after_packets = 3, .count = 1000, .error = AVERROR(EIO), .io_budget_ms = 100});
+  while (true) {
+    auto packet = demuxer.read();
+    if (!packet) {
+      CHECK(packet.error().code == RefusalCode::IoFailed);
+      CHECK(packet.error().recoverable);
+      break;
+    }
+    REQUIRE(packet->has_value());
+  }
+}
+
+// B14-07 : la luminance constante n'est pas une matrice linéaire ; elle n'est pas lue comme du NCL.
+TEST_CASE("Demuxer : BT.2020 à luminance constante n'est pas lue comme NCL", "[media][demuxer]") {
+  test::ClipSpec spec{.name = "bt2020-cl.mkv", .frames = 5};
+  spec.color.matrix = AVCOL_SPC_BT2020_CL;
+  Demuxer constant_luminance = open_clip(spec);
+  CHECK_FALSE(constant_luminance.tracks()[0].color_matrix.has_value());
+  spec.name = "bt2020-ncl.mkv";
+  spec.color.matrix = AVCOL_SPC_BT2020_NCL;
+  Demuxer non_constant = open_clip(spec);
+  REQUIRE(non_constant.tracks()[0].color_matrix.has_value());
+  CHECK(*non_constant.tracks()[0].color_matrix == ajp::ColorMatrix::Bt2020Ncl);
 }

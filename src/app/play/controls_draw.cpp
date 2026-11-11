@@ -50,7 +50,13 @@ void track_popup(const char* id, const char* heading, const std::vector<TrackEnt
     actions.emplace_back(SelectSubtitles{});
   for (const TrackEntry& entry : entries) {
     ImGui::PushID(entry.index);
-    if (ImGui::Selectable(entry.label.c_str(), selected == entry.index)) {
+    // B35-05 : le titre vient du fichier ; « ## » dans un Selectable cacherait la suite du texte. L'étiquette
+    // est donc dessinée à part, sans interprétation.
+    const ImVec2 row = ImGui::GetCursorPos();
+    const bool chosen = ImGui::Selectable("##track", selected == entry.index);
+    ImGui::SetCursorPos(row);
+    ImGui::TextUnformatted(entry.label.c_str());
+    if (chosen) {
       if (subtitles) {
         actions.emplace_back(SelectSubtitles{.track = entry.index});
       } else {

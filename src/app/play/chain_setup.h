@@ -55,7 +55,8 @@ std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
 // sans copie (DecoderOptions::direct_surfaces).
 inline constexpr int kHeldDecodedFrames =
     media::kSourceHeldFrames + static_cast<int>(RingStage::kMaxFrames) + gpu::kMaxIngestHeldFrames;
-static_assert(kHeldDecodedFrames <= media::kMaxExtraHwFrames, "NVDEC : 32 surfaces en plus au plus");
+static_assert(kHeldDecodedFrames + 1 <= media::kMaxExtraHwFrames,
+              "NVDEC: 32 extra surfaces at most, the one frame the decoder still holds included (B15-03)");
 
 // Les options du décodeur pour ce backend et cet écran : les essais de decoder_attempts ; sous
 // TensorRT, qui lit les images NVDEC en place, les surfaces directes ; ailleurs, la copie en

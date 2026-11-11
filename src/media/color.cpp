@@ -149,11 +149,24 @@ std::expected<Transfer, Refusal> map_transfer(AVColorTransferCharacteristic trc,
     // Courbes SDR de prise de vue : toutes affichées en BT.1886, comme le fork.
     case AVCOL_TRC_BT709:
     case AVCOL_TRC_SMPTE170M:
-    case AVCOL_TRC_GAMMA22:
-    case AVCOL_TRC_GAMMA28:
-    case AVCOL_TRC_BT2020_10:
+    case AVCOL_TRC_BT2020_10:  // la courbe de BT.709, à 10 et 12 bits : rien à avertir
     case AVCOL_TRC_BT2020_12:
       return Transfer::Bt1886;
+    // B15-05 : le vocabulaire n'a pas de gamma pur. La courbe sRGB est la plus proche d'un 2,2 (un rip d'un
+    // master sRGB, courant) : BT.1886 (2,4) écraserait les ombres. Un 2,8 (PAL historique) n'a pas de voisin
+    // plus proche que BT.1886, un peu plus clair que lui. Les deux sont dits au journal.
+    case AVCOL_TRC_GAMMA22: {
+      static std::atomic<std::uint64_t> warned{0};
+      approximated(warned, static_cast<int>(trc), "transfert",
+                   name_or_number(av_color_transfer_name(trc), static_cast<int>(trc)), "sRGB");
+      return Transfer::Srgb;
+    }
+    case AVCOL_TRC_GAMMA28: {
+      static std::atomic<std::uint64_t> warned{0};
+      approximated(warned, static_cast<int>(trc), "transfert",
+                   name_or_number(av_color_transfer_name(trc), static_cast<int>(trc)), "BT.1886");
+      return Transfer::Bt1886;
+    }
     case AVCOL_TRC_IEC61966_2_1:
       return Transfer::Srgb;
     case AVCOL_TRC_LINEAR:

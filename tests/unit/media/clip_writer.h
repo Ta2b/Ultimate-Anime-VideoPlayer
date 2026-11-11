@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 extern "C" {
@@ -72,8 +73,13 @@ struct ClipSpec {
   int gop = 10;
   AVFieldOrder field_order = AV_FIELD_UNKNOWN;  // ce que le conteneur dit des champs (FieldOrder Matroska)
   int b_frames = 0;
+  // pts de chaque image en pas de 1/frame_rate (vidéo à cadence variable) ; vide : 0, 1, 2… Un clip en
+  // milliers d'images par seconde fait des pas d'une milliseconde.
+  std::vector<std::int64_t> frame_ticks;
   int video_delay = 0;  // pts de la première image vidéo, en images ; l'audio part de 0
   ColorSpec color;
+  // Pistes vidéo annexes sans paquet (MPEG-4) : largeur et hauteur annoncées, à côté de la vidéo principale.
+  std::vector<std::pair<int, int>> extra_videos;
   std::vector<AudioSpec> audio;  // PCM 16 bits stéréo 48 kHz, paquets de 20 ms
   std::vector<SubtitleSpec> subtitles;
   std::vector<AttachmentSpec> attachments;

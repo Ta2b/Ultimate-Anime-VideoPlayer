@@ -16,6 +16,9 @@
 namespace ajp::app::play {
 namespace {
 
+// B35-07 : entrées lues au plus dans le dossier de la vidéo, pour trouver l'épisode voisin.
+constexpr std::size_t kMaxScannedEntries = 5000;
+
 bool digit(char c) {
   return std::isdigit(static_cast<unsigned char>(c)) != 0;
 }
@@ -163,11 +166,14 @@ std::optional<std::filesystem::path> sibling_episode(const std::filesystem::path
     int version = 1;
   };
   std::vector<Video> videos;
+  std::size_t scanned = 0;
   for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
-    if (!it->is_regular_file(error)) continue;  // un lien cassé n'est pas un fichier : sauté
+    // B35-07 : plafond de lecture d'un dossier (partage réseau), l'extension avant tout stat.
+    if (++scanned > kMaxScannedEntries) break;
     std::string extension = prepare::utf8_path(it->path().extension());
     std::ranges::transform(extension, extension.begin(), folded);
     if (std::ranges::find(video_extensions(), extension) == video_extensions().end()) continue;
+    if (!it->is_regular_file(error)) continue;  // un lien cassé n'est pas un fichier : sauté
     const std::string stem = prepare::utf8_path(it->path().stem());
     if (extra(stem) != among_extras) continue;
     auto [key, version] = without_version(stem);

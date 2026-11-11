@@ -37,11 +37,19 @@ struct ReadFault {
   // Vrai : l'erreur est posée dans l'AVIOContext et la lecture rend AVERROR_EOF, comme le fait
   // un démultiplexeur MP4 après une erreur d'E/S (A14-01).
   bool sticky_eof = false;
+  // Attente cumulée au-delà de laquelle une erreur d'E/S met fin à la lecture ; 0 : la valeur du lecteur.
+  int io_budget_ms = 0;
+};
+
+struct OpenOptions {
+  // Faux : les pièces jointes (polices) ne sont pas décrites ni recopiées. Pour les lectures annexes
+  // (sous-titres en avance, pré-analyse, images fixes) qui n'en ont que faire (B35-01).
+  bool attachments = true;
 };
 
 class Demuxer {
  public:
-  static std::expected<Demuxer, Refusal> open(const std::filesystem::path& path);
+  static std::expected<Demuxer, Refusal> open(const std::filesystem::path& path, OpenOptions options = {});
 
   Demuxer(Demuxer&&) noexcept;
   Demuxer& operator=(Demuxer&&) noexcept;
@@ -54,6 +62,10 @@ class Demuxer {
   ChapterLayout chapter_layout() const;
   const TrackInfo* track(int index) const;  // nullptr si absente
   std::int64_t duration_us() const;         // 0 si inconnue
+
+  // B15-01 : la mesure du télécinéma (media/telecine.h) tranche ce que la cadence seule avait supposé. Faux :
+  // la piste est du vrai 30i, désentrelacé sans jeter d'image et à sa cadence d'origine (29,97 i/s).
+  void set_inverse_telecine(int index, bool telecine);
 
   // Ne lit plus que ces pistes ; le conteneur saute les autres.
   std::expected<void, Refusal> keep_only(std::span<const int> tracks);

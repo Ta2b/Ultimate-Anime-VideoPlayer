@@ -10,12 +10,16 @@
 
 #include "app/play/i18n.h"
 #include "app/play/tracks.h"
+#include "core/log.h"
 #include "core/text.h"
 #include "core/utf8_path.h"
 #include "media/language.h"
 
 namespace ajp::app::play {
 namespace {
+
+// B35-07 : un dossier de 20 000 fichiers sur un partage réseau ne retarde pas la première image.
+constexpr std::size_t kMaxScannedEntries = 5000;
 
 // Le premier jeton après le nom de la vidéo qui est une langue connue : sa balise (« fr », « eng ») et son
 // nom. Les jetons se séparent par un point, un tiret bas ou une espace (« 2_English », « Subs/fr »).
@@ -99,14 +103,23 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
   // d'un sous-dossier Subs/<nom de la vidéo>/ (« Subs/Episode 01/2_English.srt »).
   std::vector<std::filesystem::path> dirs{dir};
   std::error_code error;
+  std::size_t scanned = 0;
   for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
+    if (++scanned > kMaxScannedEntries) break;
     if (it->is_directory(error) && is_subs_dir(core::ascii_lower(core::to_utf8(it->path().filename()))))
       dirs.push_back(it->path());
   }
   for (std::size_t d = 0; d < dirs.size(); ++d) {
     error.clear();
+    scanned = 0;
     for (std::filesystem::directory_iterator it(dirs[d], error), end; !error && it != end;
          it.increment(error)) {
+      if (++scanned > kMaxScannedEntries) {
+        const auto log = log_channel("subs");
+        log->warn("recherche des sous-titres voisins : {} entrées lues, la suite est ignorée",
+                  kMaxScannedEntries);
+        break;
+      }
       const std::filesystem::path& path = it->path();
       const std::string name = core::ascii_lower(core::to_utf8(path.stem()));
       if (d > 0 && it->is_directory(error)) {
@@ -120,8 +133,10 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
         }
         continue;
       }
-      if (!it->is_regular_file(error) || !is_subtitle(path)) continue;
-      if (const auto rest = tags_after(name, stem)) add(found, path, *rest);
+      // B35-07 : le nom d'abord, un stat par entrée seulement pour ce qui commence comme la vidéo.
+      if (!is_subtitle(path)) continue;
+      const auto rest = tags_after(name, stem);
+      if (rest && it->is_regular_file(error)) add(found, path, *rest);
     }
   }
   // La langue voulue d'abord : la coupe à kMaxExternalSubtitles ne doit pas la laisser de côté.

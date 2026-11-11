@@ -196,7 +196,7 @@ bool ShotProbe::preloaded() {
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void ShotProbe::run(const std::stop_token& stop, std::int64_t start_us) {
   auto log = make_logger();
-  auto demuxer = Demuxer::open(file_);
+  auto demuxer = Demuxer::open(file_, {.attachments = false});
   if (!demuxer) return fail(std::move(demuxer.error()));
   // L'arrêt (fermeture du fichier) interrompt aussi une lecture bloquée du démuxeur, sur un partage lent.
   const std::stop_callback interrupt(stop, [&demuxer] { demuxer->interrupt(); });
