@@ -41,9 +41,12 @@ if(AJP_WITH_SPAN_FP8)
   # chargeable sur une carte plus récente, où supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
   set_target_properties(ajp_backend_span_fp8_kernels PROPERTIES
     CUDA_ARCHITECTURES "89-real;120" POSITION_INDEPENDENT_CODE ON)
+  # Comme les autres noyaux du backend : un débordement de registres de net_kernel est une erreur sous Linux
+  # (B02-03) ; les diag_suppress de CUTLASS restent.
   target_compile_options(ajp_backend_span_fp8_kernels PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
-      -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose>
+      -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose,--warn-on-spills>
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra>
     # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
     $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
   set(ajp_span_fp8_net ajp_backend_span_fp8_kernels)
@@ -58,7 +61,7 @@ endif()
 
 add_library(ajp_backend_tensorrt MODULE
   drba_fused_engine.cpp entry.cpp fused_graphs.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp
-  shared_activations.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
+  ingest_chroma.cpp shared_activations.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
   tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_span_derive.cpp
   tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_warp.cpp trt_engine.cpp)
 target_include_directories(ajp_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")

@@ -92,9 +92,11 @@ bool size_supported(int height, int width) {
 }
 
 std::string size_refusal(int height, int width) {
-  constexpr long long kMaxSide = 16384;  // au-delà, les indices des noyaux (32 bits) ne tiennent plus
   if (height <= 0 || width <= 0 || height > kMaxSide || width > kMaxSide)
     return std::format("taille {}x{} hors de 1 à {}", width, height, kMaxSide);
+  if (static_cast<long long>(height) * width > kMaxPixels)
+    return std::format("taille {}x{} au-delà de 8K UHD (les pas des noyaux, en 32 bits, ne tiennent plus)",
+                       width, height);
   if (height % 2 != 0 || width % 2 != 0)
     return std::format("taille {}x{} : hauteur et largeur paires attendues (dégroupage 2x2)", width, height);
   // Toute taille paire (étape 3.1) : la dernière tuile de 128 lignes déborde de M, l'épilogue garde ses
@@ -129,9 +131,12 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
                   std::format("paquet SPAN FP8 : version {} inconnue", version));
   const std::uint32_t block_count = get_u32(head + 4);
   const std::uint32_t flags = get_u32(head + 28);
-  if ((flags & ~kFlagAcc16) != 0U)
-    return refuse(RefusalCode::FormatUnsupported,
-                  std::format("paquet SPAN FP8 : drapeaux {:#x} inconnus", flags & ~kFlagAcc16));
+  // La version 1 n'a aucun drapeau ; l'accumulateur f16 n'existe qu'à partir de la 2 (B02-07).
+  const std::uint32_t known = version == 1 ? 0U : kFlagAcc16;
+  if ((flags & ~known) != 0U)
+    return refuse(
+        RefusalCode::FormatUnsupported,
+        std::format("paquet SPAN FP8 : drapeaux {:#x} inconnus en version {}", flags & ~known, version));
   const std::uint32_t real = version == 1 ? (get_u32(head + 12) == 0 ? kChannels : 0U) : get_u32(head + 12);
   const bool shape_ok = get_u32(head + 8) == static_cast<std::uint32_t>(kChannels) &&
                         (version == 1 ? block_count == static_cast<std::uint32_t>(kBlocks)
@@ -140,7 +145,8 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes) {
                         (real == 48 || real == static_cast<std::uint32_t>(kChannels));
   if (!shape_ok)
     return refuse(RefusalCode::FormatUnsupported,
-                  "paquet SPAN FP8 : 1 à 8 blocs rangés en 64 canaux (48 ou 64 réels) attendus");
+                  std::format("paquet SPAN FP8 : {} à {} blocs rangés en 64 canaux (48 ou 64 réels) attendus",
+                              kMinBlocks, kBlocks));
   const std::uint64_t payload = get_u64(head + 16);
   if (payload != bytes.size() - kHeaderBytes)
     return refuse(RefusalCode::FileUnreadable, "paquet SPAN FP8 tronqué ou trop long");

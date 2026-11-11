@@ -18,8 +18,9 @@ namespace ajp::gpu::span_fp8 {
 inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7b
 // La version de la porte (judge_hardened) : un refus d'une porte plus ancienne se refait. 2 : les cas durs
 // synthétiques ne décident plus (séance de mesure).
-inline constexpr int kGateVersion = 3;                               // 3 : centiles réglés sur la RTX 4070 Ti
-inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";  // tools/span/derive_span_fp8.py
+inline constexpr int kGateVersion = 3;  // 3 : centiles réglés sur la RTX 4070 Ti
+// Le reçu de tools/span/derive_span_fp8.py, encore lu (app/play/span_int8.cpp).
+inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
@@ -30,7 +31,6 @@ inline constexpr double kMinSsimWorst = 0.985;
 inline constexpr double kErrorQuantile = 0.999;
 inline constexpr double kMaxErrorP999 = 10.0 / 255.0;
 inline constexpr double kMaxDarkErrorP999 = 4.5 / 255.0;
-inline constexpr double kMinHardPsnrWorstDb = 36.0;
 // Étape 3.5a : l'accumulateur f16 hors blocs ne coûte pas plus que ceci au PSNR moyen.
 inline constexpr double kMaxAcc16PsnrLossDb = 0.3;
 

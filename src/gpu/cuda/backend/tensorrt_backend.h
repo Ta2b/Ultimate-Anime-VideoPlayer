@@ -1,11 +1,9 @@
 // Backend TensorRT (gpu/backend.h) : moteurs construits par trtexec (prepare), exécutés sur les
 // flux CUDA non bloquants du contexte primaire de la RTX du rendu, un par voie de calcul
-// (gpu/lanes.h), et les noyaux de la chaîne que la tranche verticale demande : ingestion des
-// images NVDEC et écriture du ring importé de Vulkan.
+// (gpu/lanes.h), et les noyaux de la chaîne : ingestion des images NVDEC ou du décodage logiciel
+// (slice_kernels.h), mouvement, mesures, et écriture du ring importé de Vulkan.
 //
 // Chargé à l'exécution (ajp_backend_tensorrt.so) : le lecteur démarre sans CUDA ni TensorRT.
-// Les noyaux et l'enveloppe TensorRT sont provisoires (slice_kernels.h, trt_engine.h) : ils
-// laissent la place au socle CUDA (pc/cuda-compute) et à l'enveloppe TensorRT (pc/tensorrt).
 #pragma once
 
 #include <array>
@@ -41,6 +39,7 @@ class SharedActivations;
 class SpanFp8Engine;
 class RifeFusedEngine;
 class DrbaFusedEngine;
+struct IngestParams;
 
 class TensorRtBackend final : public Backend, public KernelOps {
  public:
@@ -324,6 +323,18 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // demi-flottant. Un moteur TensorRT ou DistilDRBA fusionné qui lit la même adresse la retire.
   std::vector<std::uintptr_t> compact_rife_inputs_;
   void note_rife_reader(const Tensor& input, bool compact);
+  // Les plans de l'instant que rife_time n'a écrits qu'à l'élément 0 (B03-04) : un moteur entier qui lit
+  // ensuite la même entrée a besoin du plan entier, reposé juste avant lui (restore_rife_times). Oubliés
+  // quand rife_input ou rife_pair réécrivent le plan, et quand le tampon est libéré.
+  struct StaleTime {
+    std::uintptr_t key = 0;   // adresse du tenseur d'entrée
+    std::uint64_t plane = 0;  // son plan de l'instant (CUdeviceptr)
+    std::size_t count = 0;    // demi-flottants du plan
+    std::uint16_t half = 0;   // l'instant, en demi-flottant
+  };
+  std::vector<StaleTime> stale_times_;
+  void forget_rife_input(std::uintptr_t key);
+  std::expected<void, Refusal> restore_rife_times(std::span<const Tensor> inputs);
   GpuTiming& stage(std::string_view name);
   std::unique_ptr<GpuSpan> chain_span_;               // de l'ingestion d'une source à la fin de son SPAN
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice
@@ -372,6 +383,28 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::size_t deband_out_size_ = 0;
   // Envois des images du décodage logiciel (host_upload.h), créés à la première.
   std::unique_ptr<HostUploads> uploads_;
+  // Ingestion : les tables du suréchantillonnage de la chroma pour une taille, une disposition, un siting et
+  // un filtre, en mémoire d'appareil, et les lignes de la passe horizontale en 4:2:0 (slice_kernels.h,
+  // IngestParams) ; refaites au changement (ingest_chroma.cpp, B03-02).
+  struct ChromaTables {
+    int width = 0;
+    int height = 0;
+    int layout = -1;
+    kernels::Siting siting = kernels::Siting::Left;
+    kernels::Filter filter = kernels::Filter::Spline36;
+    int* x_start = nullptr;
+    float* x_weights = nullptr;
+    int x_taps = 0;
+    int* y_start = nullptr;
+    float* y_weights = nullptr;
+    int y_taps = 0;
+    float* rows = nullptr;
+  };
+  ChromaTables chroma_;
+  // Pose les tables de params (taille, chroma_layout, chroma_width et chroma_height déjà posés).
+  std::expected<void, Refusal> chroma_tables(IngestParams& params, kernels::Siting siting,
+                                             kernels::Filter filter);
+  void release_chroma_tables(bool behind_lanes = false);  // true en lecture : derrière les voies
   // write_yuv : les tables de la réduction de chroma pour une taille et un siting, en mémoire
   // d'appareil, et les lignes réduites en largeur (export_kernels.h) ; refaites au changement.
   struct YuvTables {
@@ -408,6 +441,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   static constexpr std::size_t kTextures = 256;
   float pair_levels_ = 219.0F;  // pas de luma 8 bits de la source ingérée : 219 limitée, 255 pleine
+  float pair_kr_ = 0.2126F;     // coefficients de luma de sa matrice (B03-06)
+  float pair_kb_ = 0.0722F;
   std::map<TextureKey, cudaTextureObject_t> textures_;
   struct RetiredTextures {
     std::vector<cudaTextureObject_t> objects;

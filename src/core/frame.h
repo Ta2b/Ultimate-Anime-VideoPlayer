@@ -31,12 +31,13 @@ constexpr std::int64_t pts_or_unknown(std::optional<std::int64_t> pts_us) {
 }
 
 enum class PixelFormat : std::uint8_t {
-  Nv12,         // 8 bits, chroma entrelacée
-  P010,         // 10 bits dans 16, chroma entrelacée
-  P016,         // 16 bits, chroma entrelacée
-  Yuv420p,      // 8 bits planaire
-  Yuv420p10,    // 10 bits dans 16, planaire
-  Yuv444p16,    // repli prouvé du ring
+  Nv12,       // 8 bits, chroma entrelacée
+  P010,       // 10 bits dans 16, chroma entrelacée
+  P016,       // 16 bits, chroma entrelacée
+  Yuv420p,    // 8 bits planaire
+  Yuv420p10,  // 10 bits dans 16, planaire
+  Yuv444p16,  // repli prouvé du ring
+  Yuv422p16,  // 16 bits 4:2:2 planaire, décodage logiciel sous TensorRT seulement (DecoderOptions::host_422)
   Rgba16Unorm,  // format par défaut du ring
   Rgba8Unorm,
 };

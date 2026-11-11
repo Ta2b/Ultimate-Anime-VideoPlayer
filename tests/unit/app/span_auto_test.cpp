@@ -34,6 +34,13 @@ TEST_CASE("le mode Performance dit pourquoi il manque, et ce qu'il faut faire", 
       {.backend_name = "tensorrt", .gpu_name = "NVIDIA GeForce RTX 3060", .tensorrt_present = true});
   CHECK(old.contains("RTX 3060"));
   CHECK(old.contains("RTX 40"));
+  // Sous Windows, les noyaux ne sont pas encore construits : la phrase ne blâme pas la carte (B02-09).
+  const std::string windows = span_fp8_unavailable_reason({.backend_name = "tensorrt",
+                                                           .gpu_name = "NVIDIA GeForce RTX 4070 Ti",
+                                                           .tensorrt_present = true,
+                                                           .system_pending = true});
+  CHECK(windows.contains("Windows"));
+  CHECK_FALSE(windows.contains("RTX 40"));
 }
 
 TEST_CASE("rien n'exclut à tort une RTX 4050 de portable : Ada, calcul 8.9", "[span_auto]") {

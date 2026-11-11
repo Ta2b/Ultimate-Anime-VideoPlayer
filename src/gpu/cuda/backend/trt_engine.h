@@ -1,9 +1,7 @@
 // Un moteur TensorRT désérialisé et son contexte d'exécution, vus comme gpu::Engine.
 //
-// Provisoire pour la tranche verticale : l'enveloppe complète (profils de formes, journal
-// relié à spdlog, refus détaillés) est le chantier pc/tensorrt (src/gpu/cuda/trt). Celle-ci
-// ne connaît que ce que SPAN, RIFE et DistilDRBA demandent : 1 à kMaxInputs entrées et 1 à kMaxOutputs
-// sorties FP16 de formes fixes (DistilDRBA fusionné : plusieurs).
+// L'enveloppe ne connaît que ce que SPAN, RIFE et DistilDRBA demandent : 1 à kMaxInputs entrées et 1 à
+// kMaxOutputs sorties FP16 de formes fixes (DistilDRBA fusionné : plusieurs).
 #pragma once
 
 #include <cstdint>

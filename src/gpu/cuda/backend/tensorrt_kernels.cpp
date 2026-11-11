@@ -1,7 +1,8 @@
-// KernelOps du backend TensorRT : ingestion des images NVDEC ou du décodage logiciel, et écriture
-// du ring.
+// KernelOps du backend TensorRT : ingestion des images NVDEC ou du décodage logiciel (4:2:0, 4:2:2 et
+// 4:4:4, chroma suréchantillonnée au filtre demandé), et écriture du ring.
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cuda.h>
 #include <format>
 #include <span>
@@ -17,28 +18,52 @@ namespace ajp::gpu::cuda {
 namespace {
 
 std::unexpected<Refusal> not_here(std::string_view kernel) {
-  return refuse(RefusalCode::FormatUnsupported,
-                std::format("{} : pas encore dans le backend TensorRT de la tranche verticale", kernel));
+  return refuse(RefusalCode::FormatUnsupported, std::format("{} : pas dans le backend TensorRT", kernel));
 }
 
-// Les formats lus par l'ingestion : ceux de NVDEC, et le 4:2:0 planaire du décodage logiciel.
-std::optional<kernels::Format> ingest_format(PixelFormat format, bool host) {
+// Les formats lus par l'ingestion : ceux de NVDEC (4:2:0 entrelacé), et le YUV planaire du décodage logiciel
+// en 4:2:0, 4:2:2 et 4:4:4 (B01-03). scale : le format dont la normalisation vaut (Yuv422p16 range ses
+// codes comme Yuv444p16) ; chroma : la disposition de la chroma (slice_kernels.h).
+struct IngestFormat {
+  kernels::Format scale = kernels::Format::Nv12;
+  int chroma = kChroma420;
+};
+
+std::optional<IngestFormat> ingest_format(PixelFormat format, bool host) {
   switch (format) {
     case PixelFormat::Nv12:
-      return kernels::Format::Nv12;
+      return IngestFormat{.scale = kernels::Format::Nv12};
     case PixelFormat::P010:
-      return kernels::Format::P010;
+      return IngestFormat{.scale = kernels::Format::P010};
     case PixelFormat::P016:
-      return kernels::Format::P016;
+      return IngestFormat{.scale = kernels::Format::P016};
     case PixelFormat::Yuv420p:
-      if (host) return kernels::Format::Yuv420p;
+      if (host) return IngestFormat{.scale = kernels::Format::Yuv420p};
       return std::nullopt;
     case PixelFormat::Yuv420p10:
-      if (host) return kernels::Format::Yuv420p10;
+      if (host) return IngestFormat{.scale = kernels::Format::Yuv420p10};
+      return std::nullopt;
+    case PixelFormat::Yuv422p16:
+      if (host) return IngestFormat{.scale = kernels::Format::Yuv444p16, .chroma = kChroma422};
+      return std::nullopt;
+    case PixelFormat::Yuv444p16:
+      if (host) return IngestFormat{.scale = kernels::Format::Yuv444p16, .chroma = kChroma444};
       return std::nullopt;
     default:
       return std::nullopt;
   }
+}
+
+kernels::Siting siting_of(ChromaSiting siting) {
+  switch (siting) {
+    case ChromaSiting::Left:
+      return kernels::Siting::Left;
+    case ChromaSiting::Center:
+      return kernels::Siting::Center;
+    case ChromaSiting::TopLeft:
+      return kernels::Siting::TopLeft;
+  }
+  return kernels::Siting::Left;
 }
 
 std::optional<kernels::Matrix> matrix_of(ColorMatrix matrix) {
@@ -96,9 +121,8 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   const auto matrix = matrix_of(frame.color.matrix);
   if (!format || !matrix) {
     return refuse(RefusalCode::FormatUnsupported,
-                  host
-                      ? "ingestion hôte : NV12, P010, P016 ou YUV 4:2:0 8 ou 10 bits, chaîne d'agrandissement"
-                      : "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
+                  host ? "ingestion hôte : NV12, P010, P016, YUV 4:2:0 8 ou 10 bits, 4:2:2 ou 4:4:4 16 bits"
+                       : "ingestion : NV12, P010 ou P016 en YUV, chaîne d'agrandissement");
   }
   // Tenseur à la taille de l'image, ou plus petit : réduction Area fusionnée (slice_kernels.h).
   const int out_width = static_cast<int>(rgb.shape.dims[3]);
@@ -111,9 +135,14 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
                     frame.height, frame.width));
   }
   pair_levels_ = frame.color.range == ColorRange::Full ? 255.0F : 219.0F;  // pas de luma de la source
+  // La chroma au filtre demandé, comme l'ingestion Vulkan (B03-02) ; Area ne fait que réduire.
+  if (spec.chroma != kernels::Filter::Spline36 && spec.chroma != kernels::Filter::Bilinear)
+    return refuse(RefusalCode::FormatUnsupported, "ingestion : chroma en Spline36 ou bilinéaire attendue");
   const kernels::YuvScale scale = kernels::yuv_scale(
-      *format, frame.color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited);
+      format->scale, frame.color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited);
   const kernels::Coefficients k = kernels::coefficients(*matrix);
+  pair_kr_ = k.kr;  // la luma des mesures de paire est celle de la source (B03-06)
+  pair_kb_ = k.kb;
   IngestParams params{
       .luma =
           reinterpret_cast<const void*>(frame.data->native_plane(0)),  // NOLINT(performance-no-int-to-ptr)
@@ -131,15 +160,16 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
                                                                 : kReduceArea,
       .reduce_b = spec.reduce.b,
       .reduce_c = spec.reduce.c,
-      .sixteen_bits = kernels::info(*format).bytes == 2,
+      .sixteen_bits = kernels::info(format->scale).bytes == 2,
       .yoff = scale.yoff,
       .yscale = scale.yscale,
       .coff = scale.coff,
       .cscale = scale.cscale,
       .kr = k.kr,
       .kb = k.kb,
-      .chroma_x = frame.color.siting == ChromaSiting::Center ? 0.5F : 0.0F,
-      .chroma_y = frame.color.siting == ChromaSiting::TopLeft ? 0.0F : 0.5F,
+      .chroma_layout = format->chroma,
+      .chroma_width = format->chroma == kChroma444 ? frame.width : (frame.width + 1) / 2,
+      .chroma_height = format->chroma == kChroma420 ? (frame.height + 1) / 2 : frame.height,
       .rgb = address(rgb),
   };
   if (!host && (params.luma == nullptr || params.chroma == nullptr || params.luma_pitch == 0 ||
@@ -152,6 +182,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     if (!layout) return refuse(RefusalCode::FormatUnsupported, "ingestion hôte : format sans disposition");
   }
   if (auto ok = bind(); !ok) return ok;
+  if (auto ok = chroma_tables(params, siting_of(frame.color.siting), spec.chroma); !ok) return ok;
   const std::size_t rows = ingest_rows_bytes(params);
   if (rows > ingest_rows_size_) {
     // Toutes les voies peuvent encore lire l'ancien tampon : il part en retrait, libéré quand elles
@@ -177,11 +208,13 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
     if (auto ok = reserve_deband(deband_bytes); !ok) return ok;
     params.rgb = deband_out_;
   }
-  const std::array<std::uintptr_t, 3> writes{rgb.handle, reinterpret_cast<std::uintptr_t>(&ingest_rows_),
+  // Les lignes de chroma (4:2:0) sont réécrites à chaque image : une ressource écrite, comme rows.
+  const std::array<std::uintptr_t, 4> writes{rgb.handle, reinterpret_cast<std::uintptr_t>(&ingest_rows_),
+                                             reinterpret_cast<std::uintptr_t>(&chroma_.rows),
                                              reinterpret_cast<std::uintptr_t>(&deband_out_)};
   const std::array<std::uintptr_t, 1> reads{reinterpret_cast<std::uintptr_t>(&deband_out_)};
   if (auto ok =
-          order(std::span(reads).first(deband_pass ? 1 : 0), std::span(writes).first(deband_pass ? 3 : 2));
+          order(std::span(reads).first(deband_pass ? 1 : 0), std::span(writes).first(deband_pass ? 4 : 3));
       !ok)
     return ok;
   if (host) {
@@ -238,7 +271,20 @@ std::optional<KernelOps::DeviceMemory> TensorRtBackend::device_memory() {
   std::size_t free = 0;
   std::size_t total = 0;
   if (cudaMemGetInfo(&free, &total) != cudaSuccess) return std::nullopt;
-  return DeviceMemory{.used = total - free, .total = total};
+  std::size_t used = total - free;
+  // Le pool garde la mémoire rendue (seuil de libération au maximum) : réservée mais libre, elle sert à la
+  // prochaine allocation et n'est pas « pleine » pour l'OSD (B37-03).
+  cudaMemPool_t pool = nullptr;
+  std::uint64_t reserved = 0;
+  std::uint64_t taken = 0;
+  if (cudaDeviceGetDefaultMemPool(&pool, device_) != cudaSuccess ||
+      cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &reserved) != cudaSuccess ||
+      cudaMemPoolGetAttribute(pool, cudaMemPoolAttrUsedMemCurrent, &taken) != cudaSuccess) {
+    static_cast<void>(clear_error());  // un refus du pool ne reste pas au prochain appel
+  } else if (reserved > taken) {
+    used -= std::min(used, static_cast<std::size_t>(reserved - taken));
+  }
+  return DeviceMemory{.used = used, .total = total};
 }
 
 void TensorRtBackend::release_retired() {

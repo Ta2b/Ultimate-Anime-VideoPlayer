@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <format>
+#include <mutex>
 #include <string>
 
 #include "core/thread.h"
@@ -43,7 +44,7 @@ std::filesystem::path own_file() {
 
 // trtexec livré à côté de la bibliothèque, d'empreinte vérifiée ; à défaut, dans un build de
 // développement seulement, celui trouvé à la configuration (AJP_TRTEXEC_PATH).
-std::filesystem::path trtexec_path() {
+std::filesystem::path pick_trtexec_path() {
 #ifdef _WIN32
   constexpr const char* kTrtexec = "trtexec.exe";
 #else
@@ -57,6 +58,16 @@ std::filesystem::path trtexec_path() {
   const std::filesystem::path self = own_file();
   return ajp::prepare::pick_trtexec(self.empty() ? std::filesystem::path{} : self.parent_path() / kTrtexec,
                                     AJP_TRTEXEC_SHA256, fallback);
+}
+
+// Le même, cherché une fois par processus : pick_trtexec hache trtexec (plusieurs Mo), et chaque instance du
+// backend le redemandait au démarrage (B21-05). Un chemin vide ne se garde pas : trtexec peut arriver après.
+std::filesystem::path trtexec_path() {
+  static std::mutex lock;
+  static std::filesystem::path picked;
+  const std::scoped_lock guard(lock);
+  if (picked.empty()) picked = pick_trtexec_path();
+  return picked;
 }
 
 void tell(const ajp::gpu::BackendInit* init, ajp::Refusal refusal) {
