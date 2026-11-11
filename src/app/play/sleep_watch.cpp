@@ -65,15 +65,14 @@ GapKind SleepWatch::last_kind(std::int64_t window_event_aware_us) const {
 
 namespace {
 
-std::atomic<std::int64_t> g_window_event_us{0};
-
-bool on_window_event(void* /*context*/, SDL_Event* event) {
+bool on_window_event(void* context, SDL_Event* event) {
   switch (event->type) {
     case SDL_EVENT_WINDOW_MOVED:
     case SDL_EVENT_WINDOW_RESIZED:
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
     case SDL_EVENT_WINDOW_EXPOSED:
-      g_window_event_us.store(suspend_aware_now_us(), std::memory_order_relaxed);
+      static_cast<std::atomic<std::int64_t>*>(context)->store(suspend_aware_now_us(),
+                                                              std::memory_order_relaxed);
       break;
     default:
       break;
@@ -84,16 +83,15 @@ bool on_window_event(void* /*context*/, SDL_Event* event) {
 }  // namespace
 
 WindowEvents::WindowEvents() {
-  g_window_event_us.store(0, std::memory_order_relaxed);
-  (void)SDL_AddEventWatch(&on_window_event, nullptr);
+  (void)SDL_AddEventWatch(&on_window_event, &aware_us_);
 }
 
 WindowEvents::~WindowEvents() {
-  SDL_RemoveEventWatch(&on_window_event, nullptr);
+  SDL_RemoveEventWatch(&on_window_event, &aware_us_);
 }
 
 std::int64_t WindowEvents::last_aware_us() const {
-  return g_window_event_us.load(std::memory_order_relaxed);
+  return aware_us_.load(std::memory_order_relaxed);
 }
 
 void ScreenSaverHold::want(bool awake) {

@@ -12,6 +12,7 @@
 // pendant qu'une vidéo avance.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 
@@ -68,6 +69,9 @@ class WindowEvents {
   WindowEvents(const WindowEvents&) = delete;
   WindowEvents& operator=(const WindowEvents&) = delete;
   std::int64_t last_aware_us() const;
+
+ private:
+  std::atomic<std::int64_t> aware_us_{0};  // écrit par le veilleur d'événements de SDL
 };
 
 // L'économiseur d'écran et la veille automatique restent coupés seulement quand une vidéo avance : en pause,

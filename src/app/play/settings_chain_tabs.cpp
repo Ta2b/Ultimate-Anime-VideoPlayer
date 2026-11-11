@@ -277,7 +277,6 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
 
 }  // namespace
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 namespace {
 
 // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait
@@ -301,6 +300,7 @@ void smooth_motion_section([[maybe_unused]] PlaySettings& d) {
 
 }  // namespace
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
   // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
   const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
