@@ -56,6 +56,7 @@
 #include "app/play/player_engines.h"
 #include "app/play/present_stats.h"
 #include "app/play/resume.h"
+#include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
 #include "app/play/sleep_watch.h"
@@ -319,7 +320,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.ui.set_tracks((*pipeline)->tracks());
   SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
   fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
-  p.ui.set_settings(settings, choices);
+  p.ui.set_settings(settings, choices, &p.catalog);
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
@@ -667,7 +668,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
-    if (chain.dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) {
+    if (settings_save_due(writer, p.ui, chain.dirty, saved_at, host_now_us())) {  // B31-08, B36-01
       writer.post("play.toml",
                   [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
       chain.dirty = false;
@@ -702,7 +703,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
   }
   remember();
-  writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers
+  finish_settings_writes(writer, p.settings_path, saved_settings());  // attente bornée (B30-05)
   p.quit = session.quit_asked();
   log_summary(session);
   if (telemetry) {
