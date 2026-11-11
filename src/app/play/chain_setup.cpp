@@ -465,17 +465,16 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       log->warn("pilote NVIDIA {} : Smooth Motion demande 580.82.07 ou plus récent", driver);
   }
   const std::span<const std::string_view> rife_order = rife_preference(gpu);
-  if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
-    c.rife_choice = std::move(*found);
+  // B08-14 : un seul choix du modèle, son refus gardé pour le cas où l'interpolation n'a rien d'autre.
+  auto rife_found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models);
+  if (rife_found) c.rife_choice = std::move(*rife_found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
   c.model_places = motion_model_dirs(p.paths, c.rife_choice);
   c.drba_found = find_distil_drba(c.model_places).has_value();
   const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
   const bool want_apple = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Apple;
   if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple)
-    return stage_refused(
-        choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error(),
-        ChainStage::Motion);
+    return stage_refused(std::move(rife_found.error()), ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p);
   auto backend = BackendLibrary::create(p.library, init);

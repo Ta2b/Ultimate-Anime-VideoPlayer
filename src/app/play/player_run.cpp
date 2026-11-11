@@ -241,10 +241,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const WorkSize sized = chain_work_size(played, width, height);
         // Anneau RGBA16 ; RGB10A2 derrière --ring-rgb10a2 tant que la porte de banding n'est pas mesurée (ADR
         // 0008).
-        const RingFormat ring_format =
-            p.options.ring_rgb10a2 && c.backend && c.backend->capabilities().ring_rgb10a2
-                ? RingFormat::Rgb10a2Unorm
-                : RingFormat::Rgba16Unorm;
+        const RingFormat ring_format = p.options.ring_rgb10a2 && c.backend->capabilities().ring_rgb10a2
+                                           ? RingFormat::Rgb10a2Unorm
+                                           : RingFormat::Rgba16Unorm;
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, c.opened.shape.ring,
                                      c.backend_name == "tensorrt", ring_format);
         if (!slots) {
@@ -312,25 +311,24 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
                                .gpu_name = gpu_facts(p.screen).name,
                                .tensorrt_present = tensorrt_backend_present(p.catalog, p.paths),
-                               .capability = c.backend && c.backend->capabilities().span_fp8_cutlass};
+                               .capability = c.backend->capabilities().span_fp8_cutlass};
   const std::string fp8_reason = span_fp8_unavailable_reason(fp8_facts);
   log_channel("app")->info("SPAN Performance (FP8) : {} (moteur {}, capacite CUTLASS {})",
                            fp8_reason.empty() ? "disponible" : fp8_reason, c.backend_name,
                            fp8_facts.capability);
   const SpanPrepare span_prepare =
-      c.model
-          ? make_span_prepare(
-                p.library,
-                gpu::BackendInit{
-                    .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
-                fp8_facts.capability, c.model->path, paths::derived_models(p.paths), p.options.file,
-                fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
-                SpanFp8Context{.gpu_arch = c.backend ? c.backend->capabilities().gpu_arch : std::string(),
-                               .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
-                               .width = work.width,
-                               .height = work.height},
-                settings.preset != Preset::Custom)
-          : SpanPrepare{};
+      c.model ? make_span_prepare(
+                    p.library,
+                    gpu::BackendInit{
+                        .render = &p.screen.device(), .cache_dir = p.paths.engines, .log = backend_log()},
+                    fp8_facts.capability, c.model->path, paths::derived_models(p.paths), p.options.file,
+                    fp8_reason, span_still_reduce(work.width, work.height, settings.downscale),
+                    SpanFp8Context{.gpu_arch = c.backend->capabilities().gpu_arch,
+                                   .kernels_version = c.backend->capabilities().span_fp8_kernels,
+                                   .width = work.width,
+                                   .height = work.height},
+                    settings.preset != Preset::Custom)
+              : SpanPrepare{};
   p.ui.set_tracks((*pipeline)->tracks());
   SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
   fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
@@ -353,7 +351,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                   },
               .luts_dir = paths::luts(p.paths),
               .source_hdr = source_hdr,
-              .kernels = c.backend ? c.backend->kernels() : nullptr,
+              .kernels = c.backend->kernels(),
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
               .anime_shots = p.options.anime_shots};
@@ -717,7 +715,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   // B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
   // rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
-  if (failure && failure->key == kFatalStageKey && failure->code != RefusalCode::DeviceLost && c.backend &&
+  if (failure && failure->key == kFatalStageKey && failure->code != RefusalCode::DeviceLost &&
       c.backend->kernels()->health() && retreat(p, c, *failure)) {
     failure.reset();
     chain.reopen = chain.running;
@@ -755,15 +753,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   pipeline->reset();
   // A31-16 : un refus fatal vu d'abord ailleurs (NVDEC au réveil, l'écran) sur un appareil mort : le backend
   // le dit, et la lecture se traite comme une perte du GPU (message, relance).
-  if (failure && failure->code != RefusalCode::DeviceLost && c.backend) {
+  if (failure && failure->code != RefusalCode::DeviceLost) {
     if (auto healthy = c.backend->kernels()->health();
         !healthy && healthy.error().code == RefusalCode::DeviceLost) {
       log->warn("{} : l'appareil est perdu ({})", failure->detail, healthy.error().detail);
       failure = std::move(healthy.error());
     }
   }
-  if (c.backend)
-    keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2
+  keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2
   prepared->reset();
   if (failure) return std::unexpected(std::move(*failure));
   return reopen;

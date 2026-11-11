@@ -177,12 +177,12 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     if (wanted.grade != r.grade)
       controls.notify(wanted.grade ? i18n::ui_tr("Grade on") : i18n::ui_tr("Grade off"), now_us);
   }
-  if (wanted.sharpness != r.sharpness) {
+  // B08-14 : la finition se pose une fois, même quand la netteté et le filtre changent ensemble.
+  if (wanted.sharpness != r.sharpness || wanted.final_scaler != r.final_scaler || wanted.deband != r.deband)
     to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
+  if (wanted.sharpness != r.sharpness)
     controls.notify(i18n::ui_tr_format("Sharpness: {} %", wanted.sharpness), now_us);
-  }
   if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
-    to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
     to.live.set_deband_source(wanted.deband);
     controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
                                        wanted.deband ? i18n::tr("on") : i18n::tr("off")),
