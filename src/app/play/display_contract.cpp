@@ -9,8 +9,18 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
+#include "app/play/host_facts.h"
+
 namespace ajp::app::play {
 namespace {
+
+#if defined(_WIN32)
+constexpr bool kWindows = true;
+constexpr std::string_view kSystemName = "Windows";
+#else
+constexpr bool kWindows = false;
+constexpr std::string_view kSystemName = "KDE";
+#endif
 
 // Le filtre de SDL voit chaque événement en file, quel que soit le fil : il ne fait que poser le drapeau.
 bool on_event(void* context, SDL_Event* event) {
@@ -29,14 +39,18 @@ bool on_event(void* context, SDL_Event* event) {
 
 render::DisplayContract contract_of(const DisplayFacts& facts, const std::optional<KwinOutput>& kwin,
                                     double headroom, const std::optional<MeasuredAbl>& abl,
-                                    double sdr_white_nits) {
+                                    double sdr_white_nits, std::optional<double> system_peak) {
   render::DisplayContract out;
   out.oled = facts.oled;
   out.reference_nits = kwin && kwin->reference ? *kwin->reference : render::kContentReferenceNits;
   out.from_compositor = kwin && kwin->reference;
-  // La crête : celle réglée dans KDE, sinon la marge de SDL × la référence, sinon l'EDID.
+  // La crête : celle réglée dans KDE (ou celle de Windows), sinon la marge de SDL × la référence, sinon
+  // l'EDID.
   if (kwin && kwin->peak_override) {
     out.panel_peak_nits = *kwin->peak_override;
+    out.peak_source = render::DisplayContract::PeakSource::Compositor;
+  } else if (system_peak && *system_peak > 0.0) {
+    out.panel_peak_nits = *system_peak;
     out.peak_source = render::DisplayContract::PeakSource::Compositor;
   } else if (headroom > 1.0) {
     out.panel_peak_nits = headroom * (sdr_white_nits > 0.0 ? sdr_white_nits : out.reference_nits);
@@ -55,7 +69,7 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
 std::string describe(const render::DisplayContract& c) {
   // La source de chaque valeur (A10-19) : un contrat par défaut ne se lit pas comme un écran HDR mesuré.
   using Source = render::DisplayContract::PeakSource;
-  const std::string_view peak = c.peak_source == Source::Compositor ? "KDE"
+  const std::string_view peak = c.peak_source == Source::Compositor ? kSystemName
                                 : c.peak_source == Source::Headroom ? "marge de SDL"
                                 : c.peak_source == Source::Edid     ? "EDID"
                                                                     : "par défaut";
@@ -92,14 +106,12 @@ render::DisplayContract ContractWatch::read() const {
     headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0F);
     white = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F);
   }
-#if defined(_WIN32)
-  constexpr bool kWindows = true;
-#else
-  constexpr bool kWindows = false;
-#endif
   const std::string edid = kwin_edid_key(facts.manufacturer, facts.product);
+  // B11-10 : sous Windows, le pic du grade (DXGI) ; sous Linux, celui de KWin, lu juste au-dessus.
+  std::optional<double> system_peak;
+  if (kWindows && window_ != nullptr) system_peak = content_peak_nits(window_);
   return contract_of(facts, read_kwin_output(facts.connector, edid), headroom, std::nullopt,
-                     sdr_white_nits_of(white, kWindows));
+                     sdr_white_nits_of(white, kWindows), system_peak);
 }
 
 std::optional<render::DisplayContract> ContractWatch::tick() {

@@ -22,7 +22,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build_rife_fused(const ModelSpec
   const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
   if (!file && !file.eof())
     return refuse(RefusalCode::FileUnreadable,
-                  std::format("RIFE fusionné : {} illisible", model.onnx_path.string()));
+                  std::format("RIFE fusionné : {} illisible", core::to_utf8(model.onnx_path)));
   auto manifest = prepare::parse_manifest(text);
   if (!manifest) return std::unexpected(std::move(manifest.error()));
   const int h = manifest->height;
@@ -44,7 +44,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build_rife_fused(const ModelSpec
     auto sha = prepare::sha256_file_known(onnx);
     if (!sha) return std::unexpected(std::move(sha.error()));
     const ModelSpec piece{
-        .id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha, .precision = TensorType::F16};
+        .id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha, .precision = TensorType::F16};
     Shape input{.dims = {2, 3, h, w}};
     if (i > 0) {
       const kernels::FusedDims x = kernels::rife_fused_x(manifest->plan, static_cast<int>(i) - 1, h, w);
@@ -59,7 +59,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build_rife_fused(const ModelSpec
                   .stop = progress.stop};
     auto built = build(piece, ShapeSet{.min = input, .opt = input, .max = input}, part);
     if (!built) return std::unexpected(std::move(built.error()));
-    key.artifacts.push_back(built->path.string());
+    key.artifacts.push_back(core::to_utf8(built->path));
   }
   return Artifact{.cache_key = rife_fused_artifact_key(key), .path = model.onnx_path};
 }
@@ -69,7 +69,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_rife_fused(c
   if (!key) return refuse(RefusalCode::GraphInvalid, "RIFE fusionné : clé d'artefact illisible");
   std::vector<std::unique_ptr<VulkanEngine>> pieces;
   for (const std::string& path : key->artifacts) {
-    auto loaded = load(Artifact{.cache_key = {}, .path = path});
+    auto loaded = load(Artifact{.cache_key = {}, .path = core::path_from_utf8(path)});
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     auto* piece = dynamic_cast<VulkanEngine*>(loaded->get());
     if (piece == nullptr)

@@ -4,19 +4,15 @@
 #include <array>
 #include <cctype>
 #include <format>
-#include <fstream>
-#include <sstream>
 
-#include "app/play/auto_config.h"
 #include "app/play/i18n.h"
-#include "core/file_sync.h"
 #include "core/text.h"
 
 namespace ajp::app::play {
 namespace {
 
 // Le poids de chaque étape dans la barre globale : la préparation et les essais pèsent le plus.
-constexpr std::array<float, kBenchSteps> kWeights{0.25F, 0.35F, 0.25F, 0.15F};
+constexpr std::array<float, kBenchSteps> kWeights{0.3F, 0.4F, 0.3F};
 
 bool looks_like_error(std::string_view line) {
   const std::string text = core::ascii_lower(line);
@@ -129,73 +125,6 @@ std::string explain_trial(std::string_view what, const prepare::ProcessExit& exi
 std::string explain_no_reading(std::string_view what, std::string_view detail) {
   return i18n::tr_format("Test {} produced nothing: it ended without readable measurements{}{}", what,
                          detail.empty() ? "" : " — ", detail);
-}
-
-std::string result_sentence(const BenchResult& result, const ChainContext& context,
-                            const SpanFp8Verdict& fp8) {
-  PlaySettings base;
-  base.preset = Preset::Auto;
-  base.priority = Priority::Balance;
-  const PlaySettings chain = apply_preset(base,
-                                          Machine{.tier = result.level,
-                                                  .display_height = context.display_height,
-                                                  .display_hz = context.display_hz,
-                                                  .explored_work_height = result.work_height,
-                                                  .explored_rife_model = result.rife_model},
-                                          core::SourceInfo{.width = context.source_height * 16 / 9,
-                                                           .height = context.source_height,
-                                                           .fps = context.source_fps});
-  std::vector<std::string> parts;
-  if (chain.upscale)
-    parts.push_back(i18n::tr_format("×2 upscaling from {}p", chain.work_height));
-  else
-    parts.push_back(i18n::tr("original picture, no upscaling"));
-  if (chain.rife_factor >= 2)
-    parts.push_back(
-        i18n::tr_format("interpolation up to ×{}, {}", chain.rife_factor, label(chain.motion_engine)));
-  else
-    parts.push_back(i18n::tr("no interpolation"));
-  std::string joined;
-  for (const std::string& part : parts) joined += (joined.empty() ? "" : ", ") + part;
-  std::string out = i18n::tr_format("Your PC holds: {}.", joined);
-  switch (fp8.state) {
-    case SpanFp8Verdict::State::Ready:
-      out += i18n::tr(" SPAN Performance FP8: ready.");
-      break;
-    case SpanFp8Verdict::State::Unavailable:
-      out += i18n::tr_format(" SPAN Performance FP8: no{}{}.", fp8.reason.empty() ? "" : " — ", fp8.reason);
-      break;
-    case SpanFp8Verdict::State::Unknown:
-      break;
-  }
-  return out;
-}
-
-BenchUndo capture_undo(const std::filesystem::path& bench_file, const PlaySettings& settings) {
-  BenchUndo undo{.valid = true, .settings = settings};
-  std::error_code error;
-  if (std::filesystem::is_regular_file(bench_file, error)) {
-    std::ifstream in(bench_file, std::ios::binary);
-    std::ostringstream text;
-    text << in.rdbuf();
-    undo.bench_toml = text.str();
-  }
-  return undo;
-}
-
-std::expected<void, Refusal> restore_bench_file(const BenchUndo& undo,
-                                                const std::filesystem::path& bench_file) {
-  std::error_code error;
-  if (!undo.bench_toml) {
-    std::filesystem::remove(bench_file, error);
-    if (error) return refuse(RefusalCode::IoFailed, i18n::tr("bench.toml: ") + error.message());
-    return {};
-  }
-  // Renommage atomique : une coupure pendant « Annuler » laisse l'ancien bench.toml ou le rendu, jamais un
-  // fichier tronqué (A07-12).
-  if (!core::write_text_atomically(bench_file, *undo.bench_toml))
-    return refuse(RefusalCode::IoFailed, i18n::tr("bench.toml: cannot write"));
-  return {};
 }
 
 }  // namespace ajp::app::play

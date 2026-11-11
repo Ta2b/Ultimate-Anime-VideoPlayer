@@ -1,10 +1,10 @@
-// Noyaux CUDA de RIFE pour la tranche verticale, sur des images RGB FP16 déjà ingérées à la
-// taille de travail (1280x720) :
+// Noyaux CUDA de RIFE, sur des images RGB FP16 déjà ingérées à la taille de travail (libre, celle
+// que la chaîne choisit) :
 //   - l'entrée de RIFE (kernels/spec/rife.h) : 11 plans remplis au multiple de 64, image a,
 //     image b, instant t, grilles et pas, noir de studio autour de la fenêtre ;
 //   - le recadrage de la sortie remplie vers la fenêtre ;
 //   - les mesures d'une paire (kernels/spec/detect.h) sur la luma tirée du RGB : somme des
-//     écarts pour la coupe de scène, pire bloc 32 × 32 pour les dessins tenus.
+//     écarts pour la coupe de scène, pire bloc 16 × 16 pour les dessins tenus (kernels/spec/detect.h).
 // RIFE reçoit le RGB de la chaîne (matrice de la source) et sa sortie part telle quelle vers
 // SPAN : pas d'aller-retour YUV, les deux réseaux voient le même espace.
 #pragma once
@@ -55,6 +55,10 @@ struct PairDiffParams {
   int width = 0;
   int height = 0;
   float levels = 219.0F;  // pas de luma 8 bits entre noir et blanc : 219 limitée, 255 pleine
+  // Coefficients de luma de la matrice de la source (kernels/spec/color.h) : la luma mesurée est celle du
+  // flux (kernels/spec/detect.h), BT.601 pour un DVD, pas toujours BT.709 (B03-06).
+  float kr = 0.2126F;
+  float kb = 0.0722F;
   double* total = nullptr;
   unsigned int* worst = nullptr;
 };

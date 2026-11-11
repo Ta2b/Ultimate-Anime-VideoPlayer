@@ -61,8 +61,11 @@ TEST_CASE("AudioThread : un sinus joue, l'horloge avance au rythme du périphér
   const ClockSnapshot playing = clock->snapshot();
   // La PLL du produit corrige la vitesse publiée d'au plus ±0,05 % (core/clock_pll.h).
   CHECK(std::abs(playing.rate - 1.0) <= ajp::core::ClockPll::kMaxSpeed + 1e-9);
-  const std::int64_t elapsed = host_now_us() - start;
-  const std::int64_t advanced = playing.media_at(host_now_us()) - 1'000'000;
+  // Un seul instant pour les deux mesures : le thread du test retardé entre deux lectures de l'horloge ne
+  // fausse plus l'écart (B40-08).
+  const std::int64_t now = host_now_us();
+  const std::int64_t elapsed = now - start;
+  const std::int64_t advanced = playing.media_at(now) - 1'000'000;
   CHECK(advanced > elapsed - 150'000);  // démarrage du périphérique et son tampon
   CHECK(advanced < elapsed + 30'000);
 

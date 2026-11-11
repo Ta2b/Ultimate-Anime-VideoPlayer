@@ -120,8 +120,12 @@ std::optional<ShotAt> ShotTimeline::at(std::int64_t pts_us) const {
                .fade = shot.fade,
                .cut_before = shot.cut_before};
   if (shot.fade) {
+    // La part où la lumière change (B42-03) ; tout le plan si elle n'est pas connue.
+    const bool ramp = shot.ramp_to_us > shot.ramp_from_us;
+    const std::int64_t from = ramp ? shot.ramp_from_us : shot.start_us;
+    const std::int64_t to = ramp ? shot.ramp_to_us : shot.end_us;
     const auto t =
-        static_cast<float>(pts_us - shot.start_us) / static_cast<float>(shot.end_us - shot.start_us);
+        static_cast<float>(pts_us - from) / static_cast<float>(std::max<std::int64_t>(to - from, 1));
     found.stats = blend(shot.first, shot.last, std::clamp(t, 0.0F, 1.0F));
   }
   return found;
@@ -148,12 +152,17 @@ std::int64_t ShotTimeline::analyzed_until(std::int64_t pts_us) const {
 std::int64_t ShotTimeline::first_gap_us() const {
   constexpr std::int64_t kSlackUs = 100'000;
   const std::scoped_lock lock(mutex_);
-  std::int64_t until = 0;
+  std::int64_t until = origin_us_;
   for (const Shot& s : shots_) {
     if (s.start_us > until + kSlackUs) break;
     until = std::max(until, s.end_us);
   }
   return until;
+}
+
+void ShotTimeline::set_origin_us(std::int64_t pts_us) {
+  const std::scoped_lock lock(mutex_);
+  origin_us_ = std::max<std::int64_t>(pts_us, 0);
 }
 
 std::int64_t ShotTimeline::end_us() const {

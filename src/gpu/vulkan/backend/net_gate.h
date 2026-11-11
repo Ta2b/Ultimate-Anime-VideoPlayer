@@ -17,10 +17,12 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/types.h"
 #include "gpu/ir/ir.h"
+#include "gpu/vulkan/backend/net_autotune.h"
 #include "gpu/vulkan/backend/net_program.h"
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/memory.h"
@@ -30,10 +32,12 @@ namespace ajp::gpu::vk::net {
 
 inline constexpr double kNetworkDrift = 0.01;
 inline constexpr double kNetworkDriftLow = 0.02;
-// Perte permise sous le plancher des noyaux de référence, en dB : le bruit d'arrondi au plus doublé. Mesuré
-// sur lavapipe (docs/moteurs.md) : les sommes float16 partout coûtent 4,8 dB à SPAN b5f48 sur une image
-// réelle, 0,1 dB à RIFE 4.25.
-inline constexpr double kGateLossDb = 3.0;
+// Perte permise sous le plancher des noyaux de référence, en dB. La qualité d'image passe avant la vitesse
+// (B45-01) : 0,5 dB, un bruit d'arrondi qui reste sous le seuil de ce qu'on voit, et non les 3 dB d'avant (le
+// bruit d'arrondi × 1,4). Mesuré sur lavapipe (docs/moteurs.md) : les sommes float16 partout coûtent 4,8 dB à
+// SPAN b5f48 sur une image réelle, 0,1 dB à RIFE 4.25 : SPAN garde donc ses sommes en float, RIFE peut
+// garder la précision réduite si la porte la laisse passer.
+inline constexpr double kGateLossDb = 0.5;
 
 // Ce que la porte fait des choix de l'autotuner, depuis les PSNR contre le jumeau en float : celui des noyaux
 // de référence (le plancher), celui des choix, et celui des mêmes choix sans précision réduite s'ils en ont.
@@ -84,6 +88,12 @@ struct Gated {
   std::string unjudged;               // pourquoi le jumeau en float n'a pas été joué
   std::string fallback;               // vide : gardés tels quels ; sinon ce qui a été repris
 };
+// L'avis à donner à l'utilisateur quand des couches restent à précision réduite après la porte : leur nombre,
+// la perte contre le calcul en float et le gain de temps mesuré par l'autotuner (`measured`, ses relevés ;
+// « non mesuré » pour une couche reprise du cache). Vide sans couche à précision réduite.
+std::string reduced_precision_notice(std::string_view model, std::span<const KernelChoice> choices,
+                                     const Gated& gated, std::span<const ReducedChoice> measured);
+
 // Les choix de l'autotuner s'ils passent la porte ; sinon ceux qui la passent (voir plus haut).
 std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& memory,
                                            PipelineCache& pipelines, const ir::Graph& graph,

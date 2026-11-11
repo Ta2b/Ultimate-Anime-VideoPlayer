@@ -8,6 +8,7 @@
 #include <memory>
 #include <system_error>
 
+#include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
 
@@ -43,74 +44,24 @@ std::expected<Plan, Refusal> read_plan(const std::filesystem::path& path) {
   const bool regular = std::filesystem::is_regular_file(path, error);
   const std::uintmax_t size = regular ? std::filesystem::file_size(path, error) : 0;
   if (!regular || error)
-    return refuse(RefusalCode::IoFailed, std::format("moteur {} illisible", path.string()));
-  if (size == 0) return refuse(RefusalCode::IoFailed, std::format("moteur {} vide", path.string()));
+    return refuse(RefusalCode::IoFailed, std::format("moteur {} illisible", core::to_utf8(path)));
+  if (size == 0) return refuse(RefusalCode::IoFailed, std::format("moteur {} vide", core::to_utf8(path)));
   if (size > kMaxPlanBytes) {
-    return refuse(RefusalCode::IoFailed,
-                  std::format("moteur {} de {} octets, au-delà de {}", path.string(), size, kMaxPlanBytes));
+    return refuse(RefusalCode::IoFailed, std::format("moteur {} de {} octets, au-delà de {}",
+                                                     core::to_utf8(path), size, kMaxPlanBytes));
   }
   Plan plan{.bytes = std::make_unique_for_overwrite<char[]>(static_cast<std::size_t>(size)),
             .size = static_cast<std::size_t>(size)};
   std::ifstream file(path, std::ios::binary);
   file.read(plan.bytes.get(), static_cast<std::streamsize>(size));
   if (!file || file.gcount() != static_cast<std::streamsize>(size)) {
-    return refuse(RefusalCode::IoFailed, std::format("moteur {} tronqué pendant sa lecture", path.string()));
+    return refuse(RefusalCode::IoFailed,
+                  std::format("moteur {} tronqué pendant sa lecture", core::to_utf8(path)));
   }
   return plan;
 }
 
 }  // namespace
-
-SharedActivations::~SharedActivations() {
-  if (data_ != nullptr) cudaFree(data_);
-}
-
-void* SharedActivations::allocate(std::size_t bytes) {
-  if (alloc_) return alloc_(bytes);
-  void* memory = nullptr;
-  if (cudaMalloc(&memory, bytes) != cudaSuccess) {
-    static_cast<void>(clear_error());
-    return nullptr;
-  }
-  return memory;
-}
-
-std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
-  if (bytes <= bytes_) return {};
-  const auto refused = [bytes] {
-    return refuse(RefusalCode::GpuMemoryExhausted,
-                  std::format("activations partagées : {} Mo refusés par cudaMalloc", bytes >> 20));
-  };
-  // La nouvelle zone d'abord, l'ancienne intacte : un refus ne laisse pas aux moteurs déjà posés
-  // un pointeur libéré.
-  void* fresh = allocate(static_cast<std::size_t>(bytes));
-  if (fresh == nullptr) {
-    if (data_ == nullptr) return refused();
-    // Pas de place pour les deux zones à la fois : l'ancienne part avant le nouvel essai. Les
-    // moteurs la reposent (generation change) ; sans zone ils échoueront à l'exécution, sans
-    // écrire dans de la mémoire libérée.
-    cuda_warn(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-    cuda_warn(cudaFree(data_), "cudaFree");
-    data_ = nullptr;
-    bytes_ = 0;
-    ++generation_;
-    fresh = allocate(static_cast<std::size_t>(bytes));
-    if (fresh == nullptr) return refused();
-  } else if (data_ != nullptr) {
-    // Les moteurs déjà posés sur l'ancienne zone peuvent encore y travailler : rendue derrière toutes les
-    // voies quand le backend s'en charge, sinon après synchronisation de l'appareil.
-    if (release_) {
-      release_(data_);
-    } else {
-      cuda_warn(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
-      cuda_warn(cudaFree(data_), "cudaFree");
-    }
-  }
-  data_ = fresh;
-  bytes_ = bytes;
-  ++generation_;
-  return {};
-}
 
 TrtEngine::~TrtEngine() {
   drop_graphs();
@@ -140,8 +91,8 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
   engine->engine_.reset(runtime.deserializeCudaEngine(plan->bytes.get(), plan->size));
   plan->bytes.reset();  // les poids sont sur le GPU : le plan hôte (des centaines de Mo) part tout de suite
   if (!engine->engine_) {
-    return refuse(RefusalCode::VendorCallFailed,
-                  std::format("IRuntime::deserializeCudaEngine({}) a échoué", path.filename().string()));
+    return refuse(RefusalCode::VendorCallFailed, std::format("IRuntime::deserializeCudaEngine({}) a échoué",
+                                                             core::to_utf8(path.filename())));
   }
   engine->context_.reset(shared ? engine->engine_->createExecutionContext(
                                       nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED)
@@ -158,11 +109,6 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
       return refuse(RefusalCode::VendorCallFailed, "cudaStreamCreateWithFlags (file auxiliaire)");
     }
     engine->aux_streams_.push_back(aux);
-  }
-  if (shared) {
-    if (auto ok = shared->reserve(engine->engine_->getDeviceMemorySizeV2()); !ok)
-      return std::unexpected(ok.error());
-    engine->shared_ = std::move(shared);
   }
   // Entrées d'abord : une forme libre prend celle du profil (OPT), que le contexte fixe ; les
   // sorties se lisent ensuite sur le contexte, formes résolues.
@@ -196,6 +142,12 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
     return refuse(RefusalCode::GraphInvalid,
                   std::format("moteur à 1 à {} entrées et 1 à {} sorties attendu", kMaxInputs, kMaxOutputs));
   }
+  // La zone commune ne grandit que pour un moteur accepté : elle ne rapetisse jamais, un moteur refusé
+  // ensuite lui laisserait sa taille pour toute la séance.
+  if (shared) {
+    if (auto ok = shared->reserve(engine->activation_bytes()); !ok) return std::unexpected(ok.error());
+    engine->shared_ = std::move(shared);
+  }
   return engine;
 }
 
@@ -209,9 +161,14 @@ std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActiva
   // Lancé sur une autre voie que celle de son chargement : ses activations passent dans la zone
   // de cette voie (posée juste après).
   if (shared_ && arena && arena != shared_) {
-    if (auto ok = arena->reserve(engine_->getDeviceMemorySizeV2()); !ok) return ok;
+    if (auto ok = arena->reserve(activation_bytes()); !ok) return ok;
     shared_ = arena;
     shared_generation_ = 0;
+  }
+  // Une zone rendue plus petite que ce moteur (refus d'agrandir pour un autre, puis ancienne taille
+  // refusée aussi) : redemandée ici, et seul ce moteur échoue si elle ne vient pas.
+  if (shared_ && shared_->bytes() < activation_bytes()) {
+    if (auto ok = shared_->reserve(activation_bytes()); !ok) return ok;
   }
   // La zone commune a grandi depuis le dernier lancement : posée à nouveau, les graphes capturés
   // sur l'ancienne adresse jetés.

@@ -64,3 +64,7 @@ foreach(vendor IN ITEMS coreml)
     target_compile_definitions(ajp_vk_backend_tests PRIVATE AJP_TEST_WITH_${upper}=1)
   endif()
 endforeach()
+
+# Les tests cachés du repli Vulkan sur la vraie carte (B40-02) : RIFE et DistilDRBA fusionnés contre le moteur entier, le
+# profil de RIFE et les sommes des convolutions (`ctest -L gpu`, voir tests/CMakeLists.txt).
+ajp_add_hardware_tests(ajp_vk_backend_tests gpu 3600 rife_fused drba_fused rife_profil sommes)

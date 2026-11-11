@@ -41,7 +41,9 @@ class GraphBook {
     std::size_t index = 0;  // l'emplacement du graphe, pour Warm, Capture et Replay
   };
 
-  GraphBook(std::size_t capacity, int capture_attempts) : capacity_(capacity), attempts_(capture_attempts) {}
+  // Une place au moins : un registre vide n'aurait aucune entrée à chasser (next() la déréférence).
+  GraphBook(std::size_t capacity, int capture_attempts)
+      : capacity_(std::max<std::size_t>(capacity, 1)), attempts_(capture_attempts) {}
 
   Pick next(const Key& key) {
     if (off_) return {};
@@ -92,11 +94,14 @@ class GraphBook {
     return {.step = GraphStep::Capture, .index = index};
   }
 
-  // Le résultat de la capture que next() vient de demander. Après `attempts` refus, les graphes se coupent.
+  // Le résultat de la capture que next() vient de demander. Après `attempts` refus de suite, les graphes se
+  // coupent ; une capture réussie remet la série à zéro (des refus isolés, chacun suivi d'une réussite, ne
+  // coupent rien).
   void captured(bool ok, std::string_view reason = {}) {
     if (ok) {
       ++counters_.captures;
-      entries_[last_].ready = true;
+      capture_streak_ = 0;
+      if (last_ < entries_.size()) entries_[last_].ready = true;
       return;
     }
     ++counters_.capture_failures;
@@ -157,7 +162,7 @@ class GraphBook {
   bool overflow_said_ = false;
   std::uint64_t tick_ = 0;
   std::uint64_t healthy_ = 0;  // rejeux de suite sans refus
-  int capture_streak_ = 0;     // refus de capture depuis la dernière remise à zéro
+  int capture_streak_ = 0;     // refus de capture de suite
   int launch_streak_ = 0;      // refus de rejeu depuis la dernière remise à zéro
   std::string notice_;
 };

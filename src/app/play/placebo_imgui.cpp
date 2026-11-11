@@ -9,6 +9,7 @@
 #include <imgui.h>
 #include <libplacebo/shaders/colorspace.h>
 #include <libplacebo/shaders/custom.h>
+#include <libplacebo/shaders/sampling.h>
 
 namespace ajp::app::play {
 namespace {
@@ -40,6 +41,7 @@ ImGuiLayer::ImGuiLayer(pl_gpu gpu, pl_log log) : gpu_(gpu), dispatch_(pl_dispatc
 
 ImGuiLayer::~ImGuiLayer() {
   for (pl_tex& tex : textures_) pl_tex_destroy(gpu_, &tex);
+  pl_tex_destroy(gpu_, &cache_);
   pl_dispatch_destroy(&dispatch_);
 }
 
@@ -128,7 +130,7 @@ std::expected<void, Refusal> ImGuiLayer::update_texture(ImTextureData& texture) 
 }
 
 std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_frame& target,
-                                              float white_nits) {
+                                              float white_nits, std::uint64_t serial) {
   pl_dispatch_reset_frame(dispatch_);
   if (data.Textures != nullptr) {
     for (ImTextureData* texture : *data.Textures) {
@@ -138,15 +140,104 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
   const pl_tex target_tex = target.planes[0].texture;
   if (!has_caps(target_tex->params.format->caps, PL_FMT_CAP_BLENDABLE))
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "cible de l'interface non mélangeable"});
-  const pl_fmt float2 = pl_find_vertex_fmt(gpu_, PL_FMT_FLOAT, 2);
-  const pl_fmt rgba8 = pl_find_named_fmt(gpu_, "rgba8");
-  if (float2 == nullptr || rgba8 == nullptr || !has_caps(rgba8->caps, PL_FMT_CAP_VERTEX))
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "formats de sommet de l'interface"});
   if (data.DisplayPos.x != 0.0F || data.DisplayPos.y != 0.0F || data.FramebufferScale.x != 1.0F ||
       data.FramebufferScale.y != 1.0F) {
     return std::unexpected(
         Refusal{RefusalCode::InputMismatch, "interface : DisplayPos (0, 0) et échelle 1 attendus"});
   }
+  if (serial == 0) return draw_lists(data, target, target_tex, white_nits, nullptr);
+  if (!cache_matches(serial, target, white_nits)) {
+    cache_serial_ = 0;
+    const int w = target_tex->params.w;
+    const int h = target_tex->params.h;
+    if (cache_ == nullptr || cache_->params.w != w || cache_->params.h != h) {
+      pl_tex_destroy(gpu_, &cache_);
+      constexpr auto kNeeded =
+          static_cast<pl_fmt_caps>(PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE | PL_FMT_CAP_BLENDABLE |
+                                   PL_FMT_CAP_LINEAR | PL_FMT_CAP_BLITTABLE);
+      pl_tex_params params{};
+      params.w = w;
+      params.h = h;
+      // Une cible flottante (scRGB sous Windows) porte des valeurs au-delà de 1 : une texture gardée en
+      // entiers normalisés les écrêterait et ternirait l'interface. Sinon rgba16, plus précis sur [0, 1].
+      const bool float_target = target_tex->params.format->type == PL_FMT_FLOAT;
+      const std::array<const char*, 2> names = float_target ? std::array<const char*, 2>{"rgba16f", "rgba32f"}
+                                                            : std::array<const char*, 2>{"rgba16", "rgba16f"};
+      for (const char* name : names) {
+        const pl_fmt fmt = pl_find_named_fmt(gpu_, name);
+        if (fmt != nullptr && has_caps(fmt->caps, kNeeded)) {
+          params.format = fmt;
+          break;
+        }
+      }
+      params.sampleable = true;
+      params.renderable = true;
+      params.blit_dst = true;  // pl_tex_clear
+      params.debug_tag = "ajp interface gardée";
+      if (params.format != nullptr) cache_ = pl_tex_create(gpu_, &params);
+      // Sans texture gardée, le dessin direct d'avant.
+      if (cache_ == nullptr) return draw_lists(data, target, target_tex, white_nits, nullptr);
+    }
+    pl_tex_clear(gpu_, cache_, std::array<float, 4>{0.0F, 0.0F, 0.0F, 0.0F}.data());
+    pl_rect2d bounds{};
+    if (auto drawn = draw_lists(data, target, cache_, white_nits, &bounds); !drawn) return drawn;
+    cache_serial_ = serial;
+    cache_flipped_ = target.planes[0].flipped;
+    cache_white_ = white_nits;
+    cache_color_ = target.color;
+    cache_repr_ = target.repr;
+    cache_bounds_ = bounds;
+  }
+  return blend_cache(target_tex);
+}
+
+void ImGuiLayer::drop_cache() {
+  pl_tex_destroy(gpu_, &cache_);
+  cache_serial_ = 0;
+}
+
+bool ImGuiLayer::cache_matches(std::uint64_t serial, const pl_frame& target, float white_nits) const {
+  const pl_tex t = target.planes[0].texture;
+  return cache_ != nullptr && cache_serial_ == serial && cache_->params.w == t->params.w &&
+         cache_->params.h == t->params.h && cache_flipped_ == target.planes[0].flipped &&
+         cache_white_ == white_nits && pl_color_space_equal(&cache_color_, &target.color) &&
+         pl_color_repr_equal(&cache_repr_, &target.repr);
+}
+
+// La texture gardée, déjà prémultipliée par pl_alpha_overlay (couleur × alpha, alpha accumulé), se mélange
+// par « over » : cible × (1 − alpha) + couleur. Seul le rectangle couvert par l'interface est touché.
+std::expected<void, Refusal> ImGuiLayer::blend_cache(pl_tex target_tex) {
+  const pl_rect2d& b = cache_bounds_;
+  if (b.x1 <= b.x0 || b.y1 <= b.y0) return {};
+  pl_shader sh = pl_dispatch_begin(dispatch_);
+  pl_sample_src src{};
+  src.tex = cache_;
+  src.rect = {static_cast<float>(b.x0), static_cast<float>(b.y0), static_cast<float>(b.x1),
+              static_cast<float>(b.y1)};
+  if (!pl_shader_sample_direct(sh, &src)) {
+    pl_dispatch_abort(dispatch_, &sh);
+    return std::unexpected(render_failed("pl_shader_sample_direct (interface gardée)"));
+  }
+  static constexpr pl_blend_params kPremultiplied{.src_rgb = PL_BLEND_ONE,
+                                                  .dst_rgb = PL_BLEND_ONE_MINUS_SRC_ALPHA,
+                                                  .src_alpha = PL_BLEND_ONE,
+                                                  .dst_alpha = PL_BLEND_ONE_MINUS_SRC_ALPHA};
+  pl_dispatch_params params{};
+  params.shader = &sh;
+  params.target = target_tex;
+  params.rect = b;
+  params.blend_params = &kPremultiplied;
+  if (!pl_dispatch_finish(dispatch_, &params))
+    return std::unexpected(render_failed("pl_dispatch_finish (interface gardée)"));
+  return {};
+}
+
+std::expected<void, Refusal> ImGuiLayer::draw_lists(const ImDrawData& data, const pl_frame& target,
+                                                    pl_tex into, float white_nits, pl_rect2d* bounds) {
+  const pl_fmt float2 = pl_find_vertex_fmt(gpu_, PL_FMT_FLOAT, 2);
+  const pl_fmt rgba8 = pl_find_named_fmt(gpu_, "rgba8");
+  if (float2 == nullptr || rgba8 == nullptr || !has_caps(rgba8->caps, PL_FMT_CAP_VERTEX))
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "formats de sommet de l'interface"});
   const std::array<pl_vertex_attrib, 3> attribs{{
       {.name = "ajp_pos", .fmt = float2, .offset = offsetof(ImDrawVert, pos)},
       {.name = "ajp_uv", .fmt = float2, .offset = offsetof(ImDrawVert, uv)},
@@ -156,6 +247,8 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
   if (pl_color_space_is_hdr(&target.color)) ui.hdr.max_luma = white_nits;
   pl_color_repr repr = target.repr;
   repr.alpha = PL_ALPHA_INDEPENDENT;  // alpha droit : le mélange pl_alpha_overlay le veut ainsi
+  const bool flipped = target.planes[0].flipped;
+  const int height = into->params.h;
 
   for (const ImDrawList* list : data.CmdLists) {
     for (const ImDrawCmd& cmd : list->CmdBuffer) {
@@ -164,7 +257,7 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
         continue;
       }
       const pl_tex tex = texture_of(cmd.GetTexID());
-      const pl_rect2d scissors = clip_rect(cmd, target_tex);
+      const pl_rect2d scissors = clip_rect(cmd, into);
       if (tex == nullptr || cmd.ElemCount == 0 || scissors.x1 <= scissors.x0 || scissors.y1 <= scissors.y0)
         continue;
 
@@ -189,7 +282,7 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
 
       pl_dispatch_vertex_params params{};
       params.shader = &sh;
-      params.target = target_tex;
+      params.target = into;
       params.scissors = scissors;
       params.blend_params = &pl_alpha_overlay;
       params.vertex_attribs = attribs.data();
@@ -197,7 +290,7 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
       params.vertex_stride = sizeof(ImDrawVert);
       params.vertex_position_idx = 0;
       params.vertex_coords = PL_COORDS_ABSOLUTE;
-      params.vertex_flipped = target.planes[0].flipped;
+      params.vertex_flipped = flipped;
       params.vertex_type = PL_PRIM_TRIANGLE_LIST;
       params.vertex_count = static_cast<int>(cmd.ElemCount);
       params.vertex_data = list->VtxBuffer.Data + cmd.VtxOffset;
@@ -205,6 +298,19 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
       params.index_fmt = sizeof(ImDrawIdx) == 2 ? PL_INDEX_UINT16 : PL_INDEX_UINT32;
       if (!pl_dispatch_vertex(dispatch_, &params))
         return std::unexpected(render_failed("pl_dispatch_vertex (interface)"));
+      if (bounds != nullptr) {
+        // libplacebo retourne la découpe avec les sommets (vertex_flipped) : la même, en lignes de la
+        // texture.
+        const pl_rect2d in_tex{.x0 = scissors.x0,
+                               .y0 = flipped ? height - scissors.y1 : scissors.y0,
+                               .x1 = scissors.x1,
+                               .y1 = flipped ? height - scissors.y0 : scissors.y1};
+        *bounds = bounds->x1 <= bounds->x0 ? in_tex
+                                           : pl_rect2d{.x0 = std::min(bounds->x0, in_tex.x0),
+                                                       .y0 = std::min(bounds->y0, in_tex.y0),
+                                                       .x1 = std::max(bounds->x1, in_tex.x1),
+                                                       .y1 = std::max(bounds->y1, in_tex.y1)};
+      }
     }
   }
   return {};

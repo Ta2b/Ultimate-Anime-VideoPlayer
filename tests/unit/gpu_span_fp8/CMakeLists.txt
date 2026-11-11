@@ -11,3 +11,7 @@ ajp_add_unit_tests(gpu_span_fp8 SOURCES derive_test.cpp hard_cases_test.cpp metr
 target_compile_definitions(ajp_gpu_span_fp8_tests PRIVATE
   AJP_SPAN_FP8_MODEL="${AJP_SPAN_FP8_MODEL}" AJP_SPAN_FP8_PYTHON_PACKAGE="${AJP_SPAN_FP8_PYTHON_PACKAGE}"
   AJP_SPAN_B5F48_MODEL="${AJP_SPAN_B5F48_MODEL}")
+
+# Les tests cachés qui lisent le SPAN installé sur le poste (B40-02) : `ctest -L models`. Sans le modèle ni le paquet
+# (variables CMake ci-dessus), ils se sautent avec leur raison.
+ajp_add_hardware_tests(ajp_gpu_span_fp8_tests models 600 span_b5f48 span_compat)

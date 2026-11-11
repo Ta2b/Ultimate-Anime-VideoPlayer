@@ -76,17 +76,22 @@ TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bu
   // Les portables RTX 20 disent « Max-Q », pas « Laptop » (A37-04).
   CHECK(nvidia("NVIDIA GeForce RTX 2080 with Max-Q Design") == Tier::Normal);
   CHECK(nvidia("NVIDIA GeForce RTX 2070 with Max-Q Design") == Tier::Light);
-  CHECK(nvidia("NVIDIA GeForce RTX 2080") == Tier::Fast);
+  // Turing et Ampere hors 3090 et 3080 Ti : Normal, faute de mesure en Qualité (B07-04).
+  CHECK(nvidia("NVIDIA GeForce RTX 2080") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 3070") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 3080 Ti") == Tier::Fast);
+  CHECK(nvidia("NVIDIA GeForce RTX 3090") == Tier::Fast);
   // La Quadro RTX 6000 (Turing) n'est pas la RTX 6000 Ada ; la RTX A400 n'est pas une RTX A4000.
-  CHECK(nvidia("NVIDIA Quadro RTX 6000") == Tier::Fast);
+  CHECK(nvidia("NVIDIA Quadro RTX 6000") == Tier::Normal);
   CHECK(nvidia("NVIDIA RTX 6000 Ada Generation") == Tier::Ultra);
   CHECK(nvidia("NVIDIA RTX A400") == Tier::Economy);
   CHECK(nvidia("NVIDIA RTX A4000") == Tier::Normal);
-  CHECK(nvidia("NVIDIA RTX A4500") == Tier::Fast);
+  CHECK(nvidia("NVIDIA RTX A4500") == Tier::Normal);
 }
 
 // A37-12 : une table par famille NVIDIA, la tranche, l'architecture présumée et le FP8 présumé (moteur,
-// et SPAN FP8) ensemble : un nom qui change de règle ou d'architecture se voit ici.
+// et SPAN FP8) ensemble : un nom qui change de règle ou d'architecture se voit ici. RTX 50 (sm120) : pas de
+// FP8 tant qu'aucune mesure ne le justifie (B21-01).
 TEST_CASE("les décisions par famille NVIDIA, du nom à la tranche et au FP8 (A37-12)", "[gpu_tier]") {
   ajp::app::play::FrenchUi french;
   struct Row {
@@ -102,20 +107,20 @@ TEST_CASE("les décisions par famille NVIDIA, du nom à la tranche et au FP8 (A3
       Row{"NVIDIA GeForce RTX 2050", Tier::Light, "sm86", false, false},
       Row{"NVIDIA GeForce RTX 3050 Laptop GPU", Tier::Light, "sm86", false, false},
       Row{"NVIDIA GeForce RTX 3050 A Laptop GPU", Tier::Light, "sm89", true, true},
-      Row{"NVIDIA GeForce RTX 3080", Tier::Fast, "sm86", false, false},
+      Row{"NVIDIA GeForce RTX 3080", Tier::Normal, "sm86", false, false},
       Row{"NVIDIA GeForce RTX 4060 Laptop GPU", Tier::Light, "sm89", true, true},
       Row{"NVIDIA GeForce RTX 4070 Ti", Tier::Fast, "sm89", true, true},
       Row{"NVIDIA GeForce RTX 4090", Tier::Ultra, "sm89", true, true},
-      Row{"NVIDIA GeForce RTX 5070 Laptop GPU", Tier::Normal, "sm120", true, false},
-      Row{"NVIDIA GeForce RTX 5090", Tier::Ultra, "sm120", true, false},
+      Row{"NVIDIA GeForce RTX 5070 Laptop GPU", Tier::Normal, "sm120", false, false},
+      Row{"NVIDIA GeForce RTX 5090", Tier::Ultra, "sm120", false, false},
       Row{"NVIDIA RTX A2000", Tier::Normal, "sm86", false, false},
       Row{"NVIDIA RTX 4000 Ada Generation", Tier::Normal, "sm89", true, true},
-      Row{"NVIDIA RTX PRO 6000 Blackwell Workstation Edition", Tier::Ultra, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", Tier::Ultra, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 4000 Blackwell", Tier::Fast, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 2000 Blackwell", Tier::Normal, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 5000 Blackwell Generation Laptop GPU", Tier::Fast, "sm120", true, false},
-      Row{"NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU", Tier::Light, "sm120", true, false},
+      Row{"NVIDIA RTX PRO 6000 Blackwell Workstation Edition", Tier::Ultra, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", Tier::Ultra, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 4000 Blackwell", Tier::Fast, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 2000 Blackwell", Tier::Normal, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 5000 Blackwell Generation Laptop GPU", Tier::Fast, "sm120", false, false},
+      Row{"NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU", Tier::Light, "sm120", false, false},
   };
   for (const Row& row : kRows) {
     INFO(row.name);

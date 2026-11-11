@@ -105,6 +105,13 @@ std::expected<void, Refusal> NetEngine::prepare(PipelineCache& pipelines) {
   for (const auto& blob : program_.blobs) blob_sizes_.push_back(std::max<VkDeviceSize>(blob.size(), 4));
   program_.blobs.clear();
   program_.blobs.shrink_to_fit();
+  // Le graphe ne sert plus qu'à ses formes, types et noms (B45-06) : ses constantes (les poids d'origine, en
+  // float32 sur l'hôte) sont libérées, elles ne se relisent plus.
+  for (ir::Tensor& tensor : graph_.tensors) {
+    if (tensor.kind != ir::TensorKind::Constant) continue;
+    std::vector<float>().swap(tensor.value.f);
+    std::vector<std::int64_t>().swap(tensor.value.i);
+  }
   auto dummy = Buffer::create(context_, memory_, alignment, MemoryUse::Device);
   if (!dummy) return std::unexpected(dummy.error());
   const std::vector<std::byte> zeros(alignment, std::byte{0});

@@ -458,3 +458,29 @@ TEST_CASE("passes : les tenseurs de moins de 8 canaux restent en Nchw", "[gpu_ir
   }
   CHECK(std::ranges::any_of(graph.tensors, [](const Tensor& t) { return t.layout == Layout::Nhwc16; }));
 }
+
+// Les fusions partagent un index des lecteurs et des producteurs, refait après chaque fusion seulement
+// (B44-02) : une longue chaîne Conv + Relu fond entièrement, chaque Relu dans sa Conv.
+TEST_CASE("passes : une longue chaîne Conv + Relu fond sans rien perdre", "[gpu_ir][passes]") {
+  constexpr int kLayers = 400;
+  ModelBuilder m;
+  m.input("x", {1, 4, 6, 6});
+  m.weight("w", {4, 4, 3, 3}, std::vector<float>(4 * 4 * 9, 0.01F));
+  std::string previous = "x";
+  for (int k = 0; k < kLayers; ++k) {
+    const std::string conv = "c" + std::to_string(k);
+    const std::string relu = "r" + std::to_string(k);
+    m.node("Conv", {previous, "w"}, {conv}, {attr_ints("pads", {1, 1, 1, 1})});
+    m.node("Relu", {conv}, {relu});
+    previous = relu;
+  }
+  m.node("Relu", {previous}, {"y"}).output("y");
+  Graph graph = build(m);
+  REQUIRE(graph.nodes.size() == static_cast<std::size_t>((2 * kLayers) + 1));
+  const auto stats = optimize(graph);
+  REQUIRE(stats);
+  // Une Conv par couche, chacune avec son Relu ; le Relu final ne trouve plus de Conv libre et reste seul.
+  CHECK(graph.nodes.size() == static_cast<std::size_t>(kLayers + 1));
+  CHECK(std::ranges::count(graph.nodes, OpKind::Relu, &Node::op) == 1);
+  CHECK(validate(graph));
+}

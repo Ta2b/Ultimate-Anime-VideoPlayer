@@ -1,6 +1,22 @@
 find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
+# Les tests cachés qui jugent sur la vraie carte ou sur un modèle installé (B40-02), un test CTest par groupe Catch
+# `[.groupe]`, étiqueté pour `ctest -L <label>` : nvidia (TensorRT, noyaux CUDA, NVDEC), gpu (repli Vulkan sur une carte
+# matérielle), models (SPAN installé sur le poste). Hors AJP_HARDWARE_TESTS ils ne sont pas enregistrés : la CI sous
+# lavapipe, la garde de release et le plafond de tests sautés ne les voient pas. Le préréglage linux-prefix-cuda l'allume.
+option(AJP_HARDWARE_TESTS "Enregistrer les tests cachés qui demandent une vraie carte ou des modèles (ctest -L nvidia|gpu|models)" OFF)
+function(ajp_add_hardware_tests target label timeout)
+  if(NOT AJP_HARDWARE_TESTS)
+    return()
+  endif()
+  foreach(group IN LISTS ARGN)
+    set(name "${label}: ${target} ${group}")
+    add_test(NAME "${name}" COMMAND ${target} "[.${group}]")
+    set_tests_properties("${name}" PROPERTIES LABELS ${label} TIMEOUT ${timeout} RUN_SERIAL TRUE SKIP_RETURN_CODE 4)
+  endforeach()
+endfunction()
+
 # Où les tests de moteurs cherchent les modèles que le poste a déjà (jamais copiés dans le dépôt). HOME n'existe pas
 # sous Windows : sans ce repli, les chemins devenaient « /.local/... », et les tests SPAN, RIFE et DistilDRBA du
 # backend TensorRT se sautaient en silence sur le PC de Tatoub (B28-10). Deux réglages à poser d'un coup pour un autre

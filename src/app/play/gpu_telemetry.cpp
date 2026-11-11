@@ -353,11 +353,11 @@ std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice& device) {
   return std::unique_ptr<GpuTelemetry>(new GpuTelemetry(std::move(impl)));
 }
 
-std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us) {
+std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us, bool fresh) {
   Impl& i = *impl_;
   // Le fil « stats » et la boucle (énergie de fin de lecture) relèvent tous deux (A11-08).
   const std::scoped_lock lock(i.sample_mutex);
-  if (i.last && host_us - i.last_us < kRefreshUs) return i.last;
+  if (!fresh && i.last && host_us - i.last_us < kRefreshUs) return i.last;
   GpuSample s;
 #if defined(__linux__)
   if (!i.amd_card.empty()) {
@@ -426,7 +426,7 @@ GpuTelemetry::~GpuTelemetry() = default;
 std::unique_ptr<GpuTelemetry> GpuTelemetry::open(const GpuDevice&) {
   return nullptr;
 }
-std::optional<GpuSample> GpuTelemetry::sample(std::int64_t) {
+std::optional<GpuSample> GpuTelemetry::sample(std::int64_t /*host_us*/, bool /*fresh*/) {
   return std::nullopt;
 }
 

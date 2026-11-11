@@ -19,10 +19,13 @@ set(AJP_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.ri
 # place par le test caché [.drba_fused] ; AJP_DRBA_IMAGE : une image d'anime en PPM pour ses trois images (sinon un dessin).
 set(AJP_DRBA_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test caché [.drba_fused])")
 set(AJP_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.drba_fused]")
-add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp
-  rife_fused_test.cpp span_derive_test.cpp span_fp8_test.cpp)
+# Les pièces du module testées seules (backend_parts_test.cpp, B01-09) : compilées ici, le module n'étant pas lié.
+set(ajp_trt_dir "${PROJECT_SOURCE_DIR}/src/gpu/cuda/backend")
+add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_parts_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp
+  ingest_chroma_test.cpp rife_fused_test.cpp span_derive_test.cpp span_fp8_test.cpp
+  ${ajp_trt_dir}/gpu_timing.cpp ${ajp_trt_dir}/host_upload.cpp ${ajp_trt_dir}/shared_activations.cpp)
 target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
-  ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::kernels ajp::prepare ajp_backend_tensorrt_kernels ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
+  ajp::gpu ajp::gpu_ir ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::kernels ajp::prepare ajp::core_log ajp_backend_tensorrt_kernels ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
 target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
   AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>"
   AJP_TEST_CACHE_DIR="${CMAKE_CURRENT_BINARY_DIR}/engines"
@@ -38,3 +41,8 @@ target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
 add_dependencies(ajp_backend_tensorrt_tests ajp_backend_tensorrt)
 ajp_set_warnings(ajp_backend_tensorrt_tests)
 catch_discover_tests(ajp_backend_tensorrt_tests TEST_PREFIX "backend_tensorrt: " DISCOVERY_MODE PRE_TEST)
+
+# Les tests cachés qui jugent la qualité sur la vraie carte (B40-02) : RIFE et DistilDRBA fusionnés contre le moteur entier,
+# SPAN FP8 dérivé et ses noyaux. `ctest -L nvidia` les lance tous avant un tag (voir tests/CMakeLists.txt). Sans modèle ni
+# image (variables CMake ci-dessus), un groupe se saute avec sa raison.
+ajp_add_hardware_tests(ajp_backend_tensorrt_tests nvidia 3600 rife_fused drba_fused span_derive span_fp8)

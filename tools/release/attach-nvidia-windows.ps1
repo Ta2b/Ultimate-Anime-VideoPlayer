@@ -23,10 +23,14 @@ if (-not (Test-Path $archive)) { throw "$archive absent : le paquet TensorRT n'a
 if (-not (Test-Path $lock)) { throw "$lock absent" }
 $repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else { (gh repo view --json nameWithOwner -q .nameWithOwner) }
 
-# Rien de NVIDIA dans l'archive : seulement notre module et trtexec.exe (le lien direct tire le reste).
+# Rien de NVIDIA dans l'archive : seulement notre module et trtexec.exe (liste blanche : B51-10).
 $members = tar tzf $archive
-$nvidia = $members | Where-Object { $_ -match '(?i)nvinfer|nvonnxparser|nvrtc|cudart|cublas|cudnn|builder_resource' }
-if ($nvidia) { throw ("L'archive contient des fichiers NVIDIA (construite avec AJP_NVIDIA_BUNDLE ?) :`n" + ($nvidia -join "`n")) }
+$allowed = @("ajp_backend_tensorrt.dll", "trtexec.exe")
+$foreign = $members | ForEach-Object { ($_ -replace '^\./', '').TrimEnd('/') } | Where-Object { $_ -and $_ -ne "." -and ($allowed -notcontains $_) }
+if ($foreign) { throw ("L'archive contient autre chose que notre module et trtexec.exe (un fichier de NVIDIA ?) :`n" + ($foreign -join "`n")) }
+foreach ($want in $allowed) {
+  if (-not ($members | Where-Object { ($_ -replace '^\./', '') -eq $want })) { throw "$want absent de l'archive" }
+}
 
 $sha = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
 $size = (Get-Item $archive).Length
@@ -67,5 +71,14 @@ if ($LASTEXITCODE -eq 0 -and (Test-Path $previous)) {
   foreach ($block in $others) { Add-Content -Path $out -Value @("", $block.TrimEnd()) -Encoding utf8NoBOM }
   Remove-Item $previous
 }
-gh release upload $Tag -R $repo --clobber $archive $out
+# Les releases fixes trt-win-<empreinte> sont immuables : leur SHA-256 est déjà dans l'index signé de releases du
+# lecteur. Une archive refaite (celle-ci n'est jamais reproductible : dates des fichiers) ne la remplace jamais (B51-02).
+if ($Tag -like "trt-*") {
+  $names = gh release view $Tag -R $repo --json assets -q '.assets[].name'
+  if ($names -contains "engines-nvidia.lock") { throw "$repo $Tag a déjà son paquet TensorRT : une release trt-* ne se réécrit pas (un autre appel l'a joint entre-temps ?)" }
+  gh release upload $Tag -R $repo $archive $out
+} else {
+  gh release upload $Tag -R $repo --clobber $archive $out
+}
+if ($LASTEXITCODE -ne 0) { throw "envoi dans la release $Tag" }
 Write-Host "Joint à $repo $Tag. Pousser maintenant l'étiquette (ou relancer Release si elle existe : le lecteur ne croit engines-nvidia.lock que signé) : git tag $Tag; git push origin $Tag"

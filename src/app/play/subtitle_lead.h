@@ -10,24 +10,21 @@
 // Un fichier externe n'en a pas besoin : il est lu en entier.
 #pragma once
 
-#include <condition_variable>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <limits>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <stop_token>
 #include <thread>
 #include <vector>
 
-#include "media/demuxer.h"
 #include "subs/subs_messages.h"
 
 namespace ajp::app::play {
 
 inline constexpr std::int64_t kSubtitlePrerollUs = 10'000'000;  // relu avant la cible d'un seek
 inline constexpr std::int64_t kSubtitleLeadUs = 1'000'000;      // lu au-delà de l'instant voulu
+inline constexpr std::chrono::milliseconds kSubtitleStopLimit{2000};
 
 struct SubtitleLeadConfig {
   std::filesystem::path file;
@@ -42,7 +39,9 @@ class SubtitleLead {
   explicit SubtitleLead(SubtitleLeadConfig config);
   SubtitleLead(const SubtitleLead&) = delete;
   SubtitleLead& operator=(const SubtitleLead&) = delete;
-  ~SubtitleLead();  // interrompt une lecture en cours, puis attend le thread
+  // Interrompt une lecture en cours, puis attend le thread au plus kSubtitleStopLimit : au-delà, il est
+  // laissé à son sort (abandon_thread), sans plus toucher qu'à l'état qu'il partage.
+  ~SubtitleLead();
 
   // Depuis main. La piste du conteneur dont les paquets partent ; rien : aucune (piste externe).
   void select(std::optional<int> track);
@@ -57,37 +56,10 @@ class SubtitleLead {
   bool idle() const;
 
  private:
-  static constexpr std::int64_t kNothingRead = std::numeric_limits<std::int64_t>::min();
-
-  struct Job {
-    int track = 0;
-    std::optional<std::int64_t> place;  // où replacer le fichier avant de lire
-    std::uint64_t generation = 0;
-  };
-
-  void run(const std::stop_token& stop);
-  bool wanted() const;  // sous mutex_
-  bool prepare(const Job& job);
-  void read_one(const Job& job, const std::stop_token& stop);
-  bool push(subs::TrackPacket packet, std::uint64_t generation, const std::stop_token& stop);
-
-  SubtitleLeadConfig config_;
-  std::unique_ptr<media::Demuxer> demuxer_;  // écrit par le thread sous mutex_, interrompu par le destructeur
-  std::optional<int> kept_;                  // thread : la piste que garde le démultiplexeur
-  bool unusable_ = false;                    // thread : le fichier ne s'est pas ouvert une seconde fois
-
-  mutable std::mutex mutex_;
-  std::condition_variable_any wake_;
-  std::optional<int> track_;
-  std::optional<std::int64_t> place_;  // seek reçu, pas encore fait
-  std::int64_t want_us_ = kNothingRead;
-  std::int64_t read_us_ = kNothingRead;  // pts du dernier paquet lu depuis le dernier placement
-  std::int64_t delay_us_ = 0;
-  std::uint64_t generation_ = 0;  // change à chaque seek ou piste : un paquet d'avant est jeté
-  std::uint64_t sent_ = 0;
-  bool ended_ = false;  // fin du fichier ou lecture refusée : rien jusqu'au prochain seek
-  bool busy_ = false;
-
+  // L'état que le thread partage : il survit à la SubtitleLead quand le thread est laissé à son sort
+  // (B30-01 : une lecture suspendue à un partage réseau muet ne fige plus la fenêtre à la fermeture).
+  struct Core;
+  std::shared_ptr<Core> core_;
   std::jthread thread_;  // en dernier : il part quand tout le reste existe
 };
 

@@ -62,4 +62,67 @@ TEST_CASE("Écritures : un job qui lève ne bloque ni flush ni les suivantes", "
   CHECK(done.load());
 }
 
+TEST_CASE("Écritures : flush borné, une écriture lente ne retient pas l'affichage (B30-05, B36-11)",
+          "[app][writer]") {
+  std::atomic<bool> release{false};
+  std::atomic<bool> finished{false};
+  {
+    LatestWriter writer;
+    writer.post("lente", [&]() -> std::expected<void, Refusal> {
+      while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      finished = true;
+      return {};
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const auto begun = std::chrono::steady_clock::now();
+    CHECK_FALSE(writer.flush(std::chrono::milliseconds(100)));
+    const auto waited = std::chrono::steady_clock::now() - begun;
+    CHECK(waited < std::chrono::seconds(2));  // la borne, pas la durée de l'écriture
+    release = true;
+    CHECK(writer.flush(std::chrono::seconds(5)));  // finie : flush le voit
+    CHECK(finished.load());
+  }
+}
+
+TEST_CASE("Écritures : un refus se rapporte une fois, une réussite l'efface (B31-08, B36-01)",
+          "[app][writer]") {
+  LatestWriter writer;
+  CHECK_FALSE(writer.take_failure());
+  writer.post("play.toml", []() -> std::expected<void, Refusal> {
+    return std::unexpected(Refusal{RefusalCode::FileUnwritable, "disque plein"});
+  });
+  REQUIRE(writer.flush());
+  const auto failed = writer.take_failure();
+  REQUIRE(failed);
+  CHECK(failed->key == "play.toml");
+  CHECK(failed->refusal.code == RefusalCode::FileUnwritable);
+  CHECK_FALSE(writer.take_failure());  // une seule fois
+  // Refusé, puis réussi avant que l'affichage ne l'ait vu : rien à dire.
+  writer.post("resume", []() -> std::expected<void, Refusal> {
+    return std::unexpected(Refusal{RefusalCode::FileUnwritable, "verrou"});
+  });
+  REQUIRE(writer.flush());
+  writer.post("resume", []() -> std::expected<void, Refusal> { return {}; });
+  REQUIRE(writer.flush());
+  CHECK_FALSE(writer.take_failure());
+}
+
+TEST_CASE("Écritures : détruit pendant une écriture lente, le writer rend la main et la finit seule",
+          "[app][writer]") {
+  std::atomic<bool> release{false};
+  std::atomic<bool> finished{false};
+  {
+    LatestWriter writer;
+    writer.post("lente", [&]() -> std::expected<void, Refusal> {
+      while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      finished = true;
+      return {};
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    release = true;  // l'écriture finit pendant la destruction ou juste après
+  }
+  LatestWriter::wait_abandoned(std::chrono::seconds(5));
+  CHECK(finished.load());
+}
+
 }  // namespace ajp::app::play

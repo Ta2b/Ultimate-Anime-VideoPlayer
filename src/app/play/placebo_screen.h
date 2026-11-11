@@ -27,6 +27,7 @@
 struct SDL_Window;
 struct ImGuiPlatformIO;
 struct AVBufferRef;
+struct pl_frame;
 
 namespace ajp::app::play {
 
@@ -179,6 +180,7 @@ class PlaceboScreen final : public Screen {
  private:
   friend class FrameExport;  // l'export rend les slots du ring avec l'appareil de l'écran
   struct Impl;
+  std::expected<bool, Refusal> acquire(OutputSize& out, pl_frame& target);
   explicit PlaceboScreen(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
 };

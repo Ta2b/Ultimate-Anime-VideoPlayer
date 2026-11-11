@@ -3,10 +3,11 @@ name: CI
 # Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
 # construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
 # demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
-# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). Windows,
-# macOS (Core ML) et CUDA (TensorRT) tournent sur chaque pull request, la nuit et à la demande (P1.17). CUDA a deux
-# tâches : Linux (gcc, nvcc) à chaque pull request, Windows (MSVC, nvcc) à celles qui touchent ce que le module
-# TensorRT compile (src/core, gpu, kernels, prepare, CUTLASS, CMake, vcpkg) et chaque nuit.
+# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). Windows
+# et CUDA (TensorRT) tournent sur chaque pull request, la nuit et à la demande (P1.17). CUDA a deux tâches : Linux
+# (gcc, nvcc) à chaque pull request, Windows (MSVC, nvcc) à celles qui touchent ce que le module TensorRT compile
+# (src/core, gpu, kernels, prepare, CUTLASS, CMake, vcpkg) et chaque nuit. macOS n'a plus de tâche : son support est
+# délaissé pour l'instant (décision de Tatoub, novembre 2026) ; release-macos.yml reste lançable à la main.
 # Versions et paquets : tools/release/versions.env.
 on:
   push:
@@ -500,40 +501,3 @@ jobs:
         env:
           AJP_TIDY_ONLY: ^src/gpu/cuda/
         run: tools/ci/clang-tidy-src.sh build/linux-prefix-cuda
-
-  # Core ML et le reste du lecteur macOS sur chaque pull request (P1.17), avec le cache de dépendances de
-  # release-macos.yml : la construction et les tests sans GPU du préréglage macos-release.
-  macos:
-    name: macOS (Core ML)
-    if: github.event_name != 'push'
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      # Le lanceur ccache du workflow vaut ici aussi, dépendances comprises.
-      - run: brew install ccache
-      - id: deps-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-${{ github.run_id }}
-          restore-keys: |
-            deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-
-            deps-macos-arm64-
-      - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: always()
-        with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
-          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
-      - run: cmake --preset macos-release
-      - run: cmake --build --preset macos-release
-      - run: ctest --preset macos-release
-      # P5.8 : ce que seul macOS compile (Core ML et ses pixels), avec le clang-tidy de Homebrew.
-      - name: clang-tidy sur Core ML
-        env:
-          AJP_TIDY_ONLY: ^src/gpu/coreml/
-        run: |
-          brew install llvm@20
-          tools/ci/clang-tidy-src.sh build/macos-release "$(brew --prefix llvm@20)/bin/clang-tidy"

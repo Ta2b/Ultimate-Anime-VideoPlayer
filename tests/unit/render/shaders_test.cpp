@@ -12,9 +12,8 @@ using namespace ajp::render;
 TEST_CASE("les hooks embarqués n'ont aucun retour chariot", "[render]") {
   // Une extraction Windows mettait les .hook en CRLF : la marque des textures du look restait dans
   // l'en-tête, le corps du hook disparaissait, et la pile de LUT ne compilait plus (rc.1 à rc.3).
-  for (const std::string_view text :
-       {shaders::anime_hdr_params, shaders::anime_hdr_anime, shaders::anime_hdr_look,
-        shaders::anime_hdr_black, shaders::anime_hdr_calibration, shaders::sharpen}) {
+  for (const std::string_view text : {shaders::anime_hdr_params, shaders::anime_hdr_anime,
+                                      shaders::anime_hdr_look, shaders::anime_hdr_black, shaders::sharpen}) {
     REQUIRE_FALSE(text.empty());
     CHECK(text.find('\r') == std::string_view::npos);
   }

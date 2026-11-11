@@ -12,6 +12,7 @@
 // pendant qu'une vidéo avance.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 
@@ -21,6 +22,23 @@ namespace ajp::app::play {
 // secondes), plus court que toute veille.
 inline constexpr std::int64_t kSleepGapUs = 5'000'000;
 
+// Le trou, veille ou gel de la boucle (B31-13, B29-06, B11-13). Seule la veille met en pause avec « Paused
+// after sleep » ; un gel (barre de titre tenue sous Windows, qui fait entrer la boucle modale du système,
+// SIGSTOP, débogueur) laisse la lecture se recaler d'elle-même, sans message.
+enum class GapKind : std::uint8_t { Sleep, Freeze };
+// Un événement de la fenêtre traité pendant le trou, plus de kHeldAfterUs après son début : SDL tournait dans
+// la boucle modale de Windows (déplacement, redimensionnement), la machine ne dormait pas.
+inline constexpr std::int64_t kHeldAfterUs = 250'000;
+// window_held : un tel événement ; clocks_split : steady s'arrête pendant la veille et l'horloge de veille
+// non (Linux, macOS), la veille se reconnaît alors à leur écart. Sous Windows, les deux comptent la veille :
+// sans fenêtre tenue, un trou reste une veille. Pur.
+constexpr GapKind gap_kind(std::int64_t steady_gap_us, std::int64_t aware_gap_us, bool window_held,
+                           bool clocks_split) {
+  if (window_held) return GapKind::Freeze;
+  if (!clocks_split) return GapKind::Sleep;
+  return aware_gap_us - steady_gap_us >= kSleepGapUs ? GapKind::Sleep : GapKind::Freeze;
+}
+
 // Microsecondes d'une horloge qui avance aussi pendant la veille du système.
 std::int64_t suspend_aware_now_us();
 
@@ -29,10 +47,31 @@ class SleepWatch {
   // Un tour de la boucle : la durée du trou depuis le tour d'avant s'il dépasse kSleepGapUs sur l'une des
   // deux horloges, sinon rien. Le premier tour ne voit aucun trou.
   std::optional<std::int64_t> turn(std::int64_t steady_us, std::int64_t aware_us);
+  // Le dernier trou rendu par turn, veille ou gel. window_event_aware_us : l'instant (horloge de veille) du
+  // dernier événement de la fenêtre (WindowEvents::last_aware_us), 0 sans aucun.
+  GapKind last_kind(std::int64_t window_event_aware_us) const;
 
  private:
   std::optional<std::int64_t> steady_us_;
   std::int64_t aware_us_ = 0;
+  std::int64_t gap_steady_us_ = 0;  // le dernier trou, sur chaque horloge
+  std::int64_t gap_aware_us_ = 0;
+  std::int64_t gap_from_aware_ = 0;  // son début, horloge de veille
+};
+
+// Les événements de la fenêtre (déplacée, redimensionnée, à redessiner) vus par un filtre de SDL, appelé même
+// depuis la boucle modale de Windows où la boucle de lecture est arrêtée : l'instant du dernier, en horloge
+// de veille, pour SleepWatch::last_kind. Un seul à la fois, le temps d'une lecture.
+class WindowEvents {
+ public:
+  WindowEvents();
+  ~WindowEvents();
+  WindowEvents(const WindowEvents&) = delete;
+  WindowEvents& operator=(const WindowEvents&) = delete;
+  std::int64_t last_aware_us() const;
+
+ private:
+  std::atomic<std::int64_t> aware_us_{0};  // écrit par le veilleur d'événements de SDL
 };
 
 // L'économiseur d'écran et la veille automatique restent coupés seulement quand une vidéo avance : en pause,

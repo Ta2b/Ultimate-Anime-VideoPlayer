@@ -35,9 +35,9 @@ else
   : >"$work/SHA256SUMS.new"
 fi
 : >"$work/SHA256SUMS.facultatif"
-for f in "${OPTIONAL[@]}"; do (cd "$MODELS" && sha256sum "$f") | sed 's#  # #' >>"$work/SHA256SUMS.facultatif"; done
+for f in "${OPTIONAL[@]}"; do (cd "$MODELS" && sha256sum "$f") >>"$work/SHA256SUMS.facultatif"; done
 
-echo "== SHA256SUMS fusionné (lu par fetch-models.sh)"; cat "$work/SHA256SUMS.new"
+echo "== SHA256SUMS fusionné (la liste de la release ; fetch-models.sh épingle ses empreintes en ligne)"; cat "$work/SHA256SUMS.new"
 echo "== SHA256SUMS.facultatif (non lu par fetch-models.sh)"; cat "$work/SHA256SUMS.facultatif"
 echo "== tailles"; (cd "$MODELS" && ls -l "${OPTIONAL[@]}" | awk '{print $5, $9}')
 
