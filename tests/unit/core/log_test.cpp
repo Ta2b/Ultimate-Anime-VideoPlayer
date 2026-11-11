@@ -152,7 +152,7 @@ TEST_CASE("Journal : le fichier s'ouvre par son chemin et tourne en parts (B33-0
   const fs::path file = dir / "ajp.log";
   CHECK(ajp::log_part(file, 0) == file);
   CHECK(ajp::log_part(file, 2) == dir / "ajp.2.log");
-  const auto sink = ajp::log_file_sink(file, 64, 2);
+  auto sink = ajp::log_file_sink(file, 64, 2);
   REQUIRE(sink != nullptr);
   sink->set_pattern("%v");
   const auto write = [&](const char* text) {
@@ -172,6 +172,7 @@ TEST_CASE("Journal : le fichier s'ouvre par son chemin et tourne en parts (B33-0
   CHECK(read(dir / "ajp.2.log").contains("deuxieme"));
   CHECK_FALSE(fs::exists(dir / "ajp.3.log"));  // la première, au-delà des deux parts, est partie
   CHECK(ajp::log_file_sink(dir / "absent" / "ajp.log", 64, 2) == nullptr);
+  sink.reset();  // ajp.log refermé : Windows refuse de retirer un fichier ouvert
   fs::remove_all(dir.parent_path());
 }
 
