@@ -296,7 +296,9 @@ struct VideoDecoder::State {
       const std::int64_t pixels = std::int64_t{track.width} * track.height;
       direct = pixels <= kMaxDirectSurfacePixels;
       if (direct) {
-        extra_hw_frames = std::max(extra_hw_frames, options.direct_surfaces);
+        // B15-03 : l'aval en tient direct_surfaces, et timed() une de plus (le « +1 » d'au-dessus) : sans
+        // elle, une surface de plus que le pool ne se mappait pas et l'image était perdue.
+        extra_hw_frames = std::max(extra_hw_frames, options.direct_surfaces + 1);
       } else {
         log->info("NVDEC : copie de sécurité gardée, {}x{} au-delà de 1440p", track.width, track.height);
       }

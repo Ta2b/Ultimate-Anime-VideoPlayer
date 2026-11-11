@@ -145,7 +145,10 @@ void Session::step_frame(int direction) {
   if (pending_seek_us_) {
     base = *pending_seek_us_ - period / 2;
   } else if (current_ && current_->pts_us != kNoPts) {
+    // B13-01 : d'une image interpolée, le pas part de sa source de gauche : sans cela, la cible tombait une
+    // source plus loin (t = 1/2 + une période et demie : la source d'après la suivante).
     base = current_->pts_us;
+    if (current_->t_num > 0 && current_->t_den > 0) base -= period * current_->t_num / current_->t_den;
     // A13-05 : le pas d'avant est retombé dans l'image montrée (elle dure plus que la période moyenne, en
     // VFR) ; le suivant part de sa cible, sans quoi rien ne bougerait jamais.
     if (direction > 0 && last_step_ && last_step_->from_pts_us == base)
@@ -227,7 +230,9 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   send_pause();
   screen_.new_scene();
   ++epoch_;
-  read_lost_.reset();  // un seek relit le fichier (la source repart, media/source.h)
+  target_host_us_ = 0;  // B13-05 : la première image de l'époque n'a pas de date visée
+  phase_trim_.reset();  // B13-06 : l'horloge repart à une phase quelconque de la grille des vblanks
+  read_lost_.reset();   // un seek relit le fichier (la source repart, media/source.h)
   start_pts_.reset();
   // Le Seek part même si une boîte a refusé son Flush : la source qui a reçu le sien attend ce
   // Seek pour reprendre (media/source.h). La diffusion se rejoue ensuite, à une époque neuve,
@@ -265,18 +270,20 @@ bool Session::step_from_queue() {
   std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
   if (period <= 0) period = kAssumedFramePeriodUs;
   const RingFrame shown = *current_;
-  // L'image une période source plus loin (les images interpolées d'entre deux sont passées) ; écrite.
-  const RingFrame* head = queue_.first_of(epoch_);
-  if (head == nullptr || head->pts_us == kNoPts || head->pts_us > shown.pts_us + period + period / 4)
-    return false;
+  // B13-01 : la source suivante (t = 0), au plus une période et un quart plus loin ; les images interpolées
+  // d'entre deux sont passées. Elle et celles d'avant doivent être écrites, sinon le seek exact la donne.
+  const auto ready = [this](const RingFrame& f) { return screen_.ready(f); };
+  const RingFrame* source =
+      queue_.written_source_after(epoch_, shown.pts_us, shown.pts_us + period + period / 4, ready);
+  if (source == nullptr) return false;
   late_.clear();
-  const std::optional<RingFrame> next = queue_.pick(shown.pts_us + period, period / 4, late_,
-                                                    [this](const RingFrame& f) { return screen_.ready(f); });
+  const std::optional<RingFrame> next = queue_.pick(source->pts_us, 0, late_, ready);
   for (const RingFrame& frame : late_) retire(frame);
   late_.clear();
   if (!next) return false;
   retire(shown);
   current_ = next;
+  target_host_us_ = 0;       // B13-05 : la date visée de l'image d'avant ne vaut pas pour celle-ci
   stepped_ = true;           // montrée au prochain tour
   stepped_in_queue_ = true;  // l'audio est resté à la pause : la reprise le recale (A13-07)
   return true;
@@ -431,6 +438,7 @@ void Session::choose(std::int64_t host_now) {
     if (!first) return;
     if (current_) retire(*current_);
     current_ = first;
+    target_host_us_ = 0;  // B13-05
     fresh_ = true;
     prerolling_ = false;
     pending_seek_us_.reset();
@@ -524,11 +532,9 @@ Session::SubtitleLook Session::look_of(const subs::SubtitleFrame* frame) {
   return SubtitleLook{.generation = frame->atlas->generation, .rects = frame->rects};
 }
 
-const subs::SubtitleFrame* Session::subtitles_for(std::int64_t pts_us) {
-  const subs::SubtitleFrame* frame = subtitles_.for_pts(pts_us);
-  // Une image montrée sans réponse alors que d'autres attendent : le défaut du clignotement.
-  if (frame == nullptr && subtitles_.size() > 0) ++stats_.subtitle_gaps;
-  return frame;
+bool Session::same_look(const SubtitleLook& shown, const subs::SubtitleFrame* frame) {
+  if (frame == nullptr || !frame->atlas || frame->rects.empty()) return shown.generation == 0;
+  return shown.generation == frame->atlas->generation && std::ranges::equal(shown.rects, frame->rects);
 }
 
 // Une image tenue plus d'une période source : les demandes de sous-titres continuent sur la grille des
@@ -578,8 +584,12 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   const bool fresh = fresh_;
   bool osd_changed = refresh_osd(host_now);  // overlay_due peut le lever
   const subs::SubtitleFrame* subtitles =
-      current_ ? subtitles_for(held_subtitle_pts_.value_or(current_->pts_us)) : nullptr;
-  SubtitleLook look = look_of(subtitles);
+      current_ ? subtitles_.for_pts(held_subtitle_pts_.value_or(current_->pts_us)) : nullptr;
+  // Une image montrée sans réponse alors que d'autres attendent : le défaut du clignotement, compté à la
+  // présentation (B13-04), pas à chaque tour de boucle.
+  const bool subtitle_gap = current_ && subtitles == nullptr && subtitles_.size() > 0;
+  // B13-08 : comparés en place ; les rectangles ne se copient qu'à la présentation.
+  const bool look_changed = !same_look(shown_subtitles_, subtitles);
   const OutputSize size = screen_.size();
   // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le
   // rythme des images au lieu de recomposer à chaque vsync, ce qui laisse le GPU aux moteurs).
@@ -587,7 +597,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   const bool ui_changed = overlay_due(host_now, ui, osd_changed) || requested;
   std::string why;
   if (fresh) why += 'i';
-  if (look != shown_subtitles_) why += 's';
+  if (look_changed) why += 's';
   if (osd_changed) why += 'o';
   if (ui_changed) why += 'u';
   if (size != shown_size_) why += 't';
@@ -599,8 +609,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   const std::int64_t floor_step = floor_step_us_now(host_now);
   const bool floor_due = floor_step > 0 && host_now - shown_at_us_ >= floor_step - kCadenceSlackUs;
   if (floor_due && why.empty()) why += 'f';
-  if (shown_once_ && !fresh && !osd_changed && !ui_changed && look == shown_subtitles_ &&
-      size == shown_size_ && !cadence && !floor_due) {
+  if (shown_once_ && !fresh && !osd_changed && !ui_changed && !look_changed && size == shown_size_ &&
+      !cadence && !floor_due) {
     check_end(host_now);
     return std::optional<PresentRecord>{};
   }
@@ -621,12 +631,13 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   if (!timing->presented) present_requested_ = true;
   shown_at(timing->presented ? timing->present_us : host_now);
   shown_ui_ = ui.draw != nullptr;
-  shown_subtitles_ = std::move(look);
+  if (look_changed) shown_subtitles_ = look_of(subtitles);
   shown_size_ = size;
   std::optional<PresentRecord> record;
   if (timing->presented) {
     const std::int64_t period = display_period();
-    note_queue_wait(timing->queue_wait_us, period);
+    note_queue_wait(timing->acquire_us, period);
+    if (subtitle_gap) ++stats_.subtitle_gaps;
     const std::int64_t previous = stats_.last_new_present_us;
     stats_.presented(timing->render_us, timing->present_us, fresh);
     if (fresh && current_) pace(*current_, host_now + display_delay_us(period));
@@ -686,6 +697,16 @@ std::int64_t Session::idle_wait_us(std::int64_t host_now) {
   const std::int64_t lead_us = display_delay_us(period) + period / 2;
   const auto media_wait = static_cast<double>(head->pts_us - lead_us - now.media_at(host_now));
   std::int64_t wait = std::llround(media_wait / now.rate) - kCadenceSlackUs;
+  // B13-07 : par numéro de vblank, l'échéance est celle de pick() : l'image devient due quand le vblank où
+  // paraîtrait une présentation faite maintenant dépasse le précédent du sien. Le seuil de pts, différent,
+  // réveillait main toutes les millisecondes jusque-là.
+  if (const std::optional<core::VblankGrid> grid = config_.vsync_index ? screen_.vblank_grid() : std::nullopt;
+      grid && grid->period_us > 0.0) {
+    const double head_host =
+        static_cast<double>(host_now) + static_cast<double>(head->pts_us - now.media_at(host_now)) / now.rate;
+    const std::int64_t k = vsync_picker_.peek(grid->index_of(head_host));
+    wait = std::llround(grid->at(k - 1) - static_cast<double>(host_now + display_delay_us(period))) + 1;
+  }
   // Cadence fixe : l'image se représente à chaque période de l'écran.
   if (config_.steady_cadence && config_.display_period_us > 0 && shown_once_)
     wait = std::min(wait, shown_at_us_ + config_.display_period_us - kCadenceSlackUs - host_now);

@@ -296,7 +296,10 @@ TEST_CASE("Image par image : vers l'avant, l'image suivante de la file sans seek
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
   rig.session.command(cmd::Pause{});
-  rig.session.handle(ring_frame(1, 1'020'833));  // une image interpolée, passée
+  RingFrame between = ring_frame(1, 1'020'833);  // une image interpolée (t = 1/2), passée (B13-01)
+  between.t_num = 1;
+  between.t_den = 2;
+  rig.session.handle(between);
   rig.session.handle(ring_frame(2, 1'041'667));
   rig.stages.log.clear();
   rig.session.command(cmd::StepFrame{.direction = 1});
@@ -763,7 +766,7 @@ TEST_CASE("Latence de l'écran : l'image choisie est celle qui tombe à son appa
 TEST_CASE("Latence de l'écran : file pleine, l'image passe après celle déjà en file", "[app][session]") {
   ajp::app::play::FrenchUi french;
   Rig rig(SessionConfig{.display_period_us = 16'667, .swapchain_depth = 2});
-  rig.screen.queue_wait_us = 10'000;  // chaque présentation attend une place
+  rig.screen.acquire_us = 10'000;  // chaque acquisition attend une place (file FIFO pleine)
   rig.session.handle(ring_frame(0, 0));
   rig.tick();  // amorce
   rig.session.set_steady_cadence(true);

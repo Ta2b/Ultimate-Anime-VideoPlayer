@@ -19,6 +19,14 @@ class VsyncPicker {
   explicit VsyncPicker(double hysteresis = kVsyncHysteresis) : hysteresis_(hysteresis) {}
 
   // x : numéro fractionnaire du vblank visé (VblankGrid::index_of). Rend le numéro entier choisi.
+  // Le numéro que pick(x) rendrait, sans toucher au sens de l'hystérésis.
+  std::int64_t peek(double x) const {
+    const double floor_x = std::floor(x);
+    const double fraction = x - floor_x;
+    if (fraction < 0.5 - hysteresis_) return static_cast<std::int64_t>(floor_x);
+    if (fraction > 0.5 + hysteresis_) return static_cast<std::int64_t>(floor_x) + 1;
+    return static_cast<std::int64_t>(floor_x) + (up_ ? 1 : 0);
+  }
   std::int64_t pick(double x) {
     const double floor_x = std::floor(x);
     const double fraction = x - floor_x;
