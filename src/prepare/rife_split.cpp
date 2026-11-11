@@ -241,7 +241,7 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
   // Les attributs de tous les Resize et GridSample : ce que les noyaux refont.
   Glue glue;
   const auto counts = count_operators(index, *graph, glue);
-  if (!counts) return std::unexpected(std::move(counts.error()));
+  if (!counts) return std::unexpected(counts.error());
   const auto [resizes, grids, shuffles] = *counts;
 
   // L'encodeur.

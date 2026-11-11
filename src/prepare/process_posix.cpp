@@ -228,7 +228,7 @@ std::expected<pid_t, int> spawn_child(const std::filesystem::path& program, char
   // copierait les tables de pages (fautes copie-sur-écriture du thread de rendu jusqu'à l'exec, ENOMEM sous
   // vm.overcommit_memory=2). L'enfant ne fait que des appels système sûrs puis execve ou _exit (exec_child ne
   // rend jamais la main), ce qui est ce que vfork permet ; le parent reprend à l'exec (B05-08).
-  const pid_t pid = ::vfork();
+  const pid_t pid = ::vfork();  // NOLINT(bugprone-unsafe-functions) : choix expliqué ci-dessus
   if (pid < 0) return std::unexpected(errno);
   if (pid == 0) exec_child(program.c_str(), argv, envp, dir, output, report_write.get(), parent);
   report_write.reset();
