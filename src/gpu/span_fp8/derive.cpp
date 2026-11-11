@@ -39,7 +39,7 @@ std::expected<std::array<float, kScaleCount>, Refusal> scales_from_peaks(std::sp
                                      std::format("le tenseur {} est nul partout : images de calibration "
                                                  "inutilisables",
                                                  i)});
-    scales[i] = peaks[i] / kE4m3Max;
+    scales[i] = peaks[i] * kScaleHeadroom / kE4m3Max;
   }
   return scales;
 }
@@ -110,6 +110,7 @@ std::string receipt_text(const Receipt& r, std::string_view comment) {
   out += std::format("hard_error_p999_worst = {:.6f}\n", r.verdict.hard_error_p999_worst);
   whole("hard_images", r.verdict.hard_images);
   whole("gate_version", kGateVersion);
+  if (r.timed_during_playback) out += "timed_during_playback = true\n";
   out += sizes_line("validated_sizes", r.validated_sizes) + "\n";
   out += sizes_line("refused_sizes", r.refused_sizes) + "\n";
   return out;

@@ -25,7 +25,7 @@ std::expected<void, Refusal> UpscaleStage::smooth_decide(const DecodedFrame& fra
   if (!looks_ahead() || !ahead_.rgb || !ahead_scores_ || next() == nullptr) return {};
   // Warp après SPAN : a' reprend le SPAN de a (dessin tenu), le tampon libre reçoit celui de b.
   if (warps_spanned() && !(setup_.engine != nullptr && spans_reused_in_row_ < kMaxSpanReuse)) return {};
-  if (auto ok = look_ahead(frame, spec); !ok) return ok;
+  if (auto ok = look_ahead(frame, spec, true); !ok) return ok;
   if (ahead_.ticket == 0 || !ahead_.id) return {};
   auto scores = setup_.backend->kernels()->scores_take(std::exchange(ahead_.ticket, 0));
   if (!scores) return std::unexpected(std::move(scores.error()));

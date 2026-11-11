@@ -26,6 +26,9 @@ struct MachineNote {
   std::shared_ptr<std::atomic<float>> fraction;
   std::shared_ptr<std::stop_source> stop;
   std::shared_ptr<std::future<std::expected<MachineCalibration, Refusal>>> pending;
+  // Une calibration refaite au panneau : la chaîne que l'Auto en suit (rien si elle n'est pas suivie), à la
+  // place de SettingsChoices::calibrated, lu à l'ouverture de la vidéo (B07-13). Absente : pas refaite.
+  std::optional<std::optional<CalibratedChain>> fresh;
   MachineNote() = default;
   MachineNote(const MachineNote&) = delete;
   MachineNote& operator=(const MachineNote&) = delete;

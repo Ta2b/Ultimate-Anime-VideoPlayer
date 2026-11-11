@@ -1,7 +1,8 @@
 // RIFE dans l'étage gpu (upscale_stage.h) : l'image de RIFE à chaque instant, ou sa variante
 // mouvement, warpée à la sortie (kernels/spec/warp.h). Variante mouvement : une passe au milieu de
 // la paire, dont le mouvement maximal dit si elle suffit à toute la paire ; sinon une passe à
-// chaque instant. Quand la paire précédente bougeait fort, la passe au milieu est sautée : RIFE
+// chaque instant. Sans « garder les poses », une paire à un seul instant hors du milieu n'a que la passe
+// de cet instant. Quand la paire précédente bougeait fort, la passe au milieu est sautée : RIFE
 // tourne d'emblée à chaque instant (×3 : deux passes au lieu de trois), et le mouvement maximal du
 // premier instant, mis à l'échelle du milieu et relu sans attente à la paire suivante, dit si elle
 // reprend la passe au milieu. De même, le mouvement maximal du milieu se relit à la paire suivante
@@ -99,7 +100,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     single_run_ = false;
     if (auto ok = settle_motion(); !ok) return ok;
     // Garder les poses demande le mouvement du milieu à chaque instant : une seule passe, au milieu.
-    direct_run_ = !poses_ && intermediates_ > 1 && strong_motion_ && flow_max_async_;
+    direct_run_ = motion_direct(t);
     if (direct_run_) {
       ++multi_pairs_;
       ++direct_pairs_;

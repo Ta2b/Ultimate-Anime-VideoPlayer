@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <system_error>
@@ -84,6 +85,56 @@ std::expected<toml::table, SpanInt8Lookup> read_receipt(const std::filesystem::p
   return std::move(parsed).table();
 }
 
+// Le paquet ne correspond plus à son reçu : à refaire (stale), ou refusé s'il ne se lit pas. Un paquet
+// disparu (cache nettoyé, coupure entre deux renommages) alors que son reçu l'admet est à refaire, pas refusé
+// (B07-12).
+std::optional<SpanInt8Lookup> package_differs(const std::filesystem::path& package,
+                                              std::string_view receipt_sha, const std::string& where) {
+  std::error_code error;
+  if (!std::filesystem::exists(package, error))
+    return stale(i18n::tr_format("{}: package missing, prepare it again", where));
+  auto model_sha = prepare::sha256_file_known(package);
+  if (!model_sha) return refused(model_sha.error().detail);
+  if (receipt_sha != *model_sha)
+    return stale(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(package.filename())));
+  return std::nullopt;
+}
+
+// Pourquoi un reçu refuse sa variante : le gain sur le FP16 trop faible (B02-01), le 99,9e centile (la porte
+// durcie, quand PSNR et SSIM passent), ou les seuils de qualité.
+std::string refusal_note(const toml::table& receipt, const std::string& where, const KindFacts& limits,
+                         const std::string& scores, bool scores_pass, bool v2) {
+  const double speedup = receipt["speedup"].value_or(0.0);
+  if (v2 && scores_pass && speedup > 0.0 && speedup < gpu::span_fp8::kMinSpeedup)
+    return i18n::tr_format("{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)", where,
+                           speedup, gpu::span_fp8::kMinSpeedup);
+  if (scores_pass && v2)
+    return i18n::tr_format("{}: rejected at the 99.9th percentile ({:.1f}/255, dark {:.1f}/255; {} passes)",
+                           where, 255.0 * receipt["error_p999_worst"].value_or(0.0),
+                           255.0 * receipt["dark_error_p999_worst"].value_or(0.0), scores);
+  return i18n::tr_format("{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)",
+                         where, scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst);
+}
+
+// Étape 3.7b : un paquet admis ne vaut que pour la porte, l'appareil et les noyaux qui l'ont jugé ; sinon il
+// se refait. Une porte plus ancienne n'avait ni mesuré son gain sur le FP16 ni gardé de marge à ses échelles
+// (B02-01, B02-02).
+std::optional<SpanInt8Lookup> outdated(const toml::table& receipt, const std::string& where,
+                                       const SpanFp8Context& fp8, bool old_gate) {
+  if (old_gate)
+    return stale(i18n::tr_format(
+        "{}: prepared by an older player, gain over FP16 not measured: prepare it again", where));
+  const std::string_view arch = receipt["gpu_arch"].value_or(std::string_view());
+  if (arch != fp8.gpu_arch)
+    return stale(
+        i18n::tr_format("{}: derived on {}, this GPU is {}: prepare it again", where, arch, fp8.gpu_arch));
+  const auto kernels = receipt["kernels_version"].value_or(std::int64_t{0});
+  if (kernels != fp8.kernels_version)
+    return stale(i18n::tr_format("{}: kernels version {}, this engine has {}: prepare it again", where,
+                                 kernels, fp8.kernels_version));
+  return std::nullopt;
+}
+
 }  // namespace
 
 TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
@@ -157,32 +208,15 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
                            variant.psnr_worst_db >= limits.min_psnr_worst &&
                            variant.ssim_worst >= limits.min_ssim_worst;
   if (!receipt["passed"].value_or(false) || !scores_pass) {
-    // PSNR et SSIM passent mais le reçu refuse : c'est la porte durcie (99,9e centile) qui a dit non.
-    const std::string note =
-        scores_pass && v2
-            ? i18n::tr_format(
-                  "{}: rejected at the 99.9th percentile ({:.1f}/255, dark {:.1f}/255; {} passes)", where,
-                  255.0 * receipt["error_p999_worst"].value_or(0.0),
-                  255.0 * receipt["dark_error_p999_worst"].value_or(0.0), scores)
-            : i18n::tr_format(
-                  "{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)", where,
-                  scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst);
+    const std::string note = refusal_note(receipt, where, limits, scores, scores_pass, v2);
     return old_gate ? stale(note) : refused(note);
   }
-  auto model_sha = prepare::sha256_file_known(variant.onnx);
-  if (!model_sha) return refused(model_sha.error().detail);
-  if (receipt["model_sha256"].value_or(std::string_view()) != *model_sha)
-    return stale(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(onnx.filename())));
+  if (auto differs =
+          package_differs(variant.onnx, receipt["model_sha256"].value_or(std::string_view()), where))
+    return *differs;
   if (v2 && fp8 != nullptr) {
     // Étape 3.7b : le paquet ne vaut que pour l'appareil, les noyaux et les tailles où la porte l'a jugé.
-    const std::string_view arch = receipt["gpu_arch"].value_or(std::string_view());
-    if (arch != fp8->gpu_arch)
-      return stale(
-          i18n::tr_format("{}: derived on {}, this GPU is {}: prepare it again", where, arch, fp8->gpu_arch));
-    const auto kernels = receipt["kernels_version"].value_or(std::int64_t{0});
-    if (kernels != fp8->kernels_version)
-      return stale(i18n::tr_format("{}: kernels version {}, this engine has {}: prepare it again", where,
-                                   kernels, fp8->kernels_version));
+    if (auto old = outdated(receipt, where, *fp8, old_gate)) return *old;
     const std::string size = gpu::span_fp8::size_key(fp8->width, fp8->height);
     const auto listed = [&](std::string_view key) {
       if (const toml::array* sizes = receipt[key].as_array())
@@ -192,7 +226,6 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
     };
     if (listed("refused_sizes")) {
       const std::string note = i18n::tr_format("{}: rejected at {}", where, size);
-      if (old_gate) return stale(note);
       if (listed(gate_refusals_key())) {
         SpanInt8Lookup out = refused(note);
         out.unjudged = variant;

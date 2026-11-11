@@ -175,6 +175,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "ring_stage.cpp",
                                         "scripted_input.cpp",
                                         "session.cpp",
+                                        "span_commit.cpp",
                                         "span_derive.cpp",
                                         "span_derive.h",
                                         "ui.cpp",
