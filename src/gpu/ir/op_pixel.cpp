@@ -27,10 +27,6 @@ std::expected<Block, Refusal> block_of(const Node& node, const Dims& x) {
   return Block{.size = b, .mode = (*attrs)->mode};
 }
 
-std::size_t at4(const Dims& d, std::int64_t a, std::int64_t b, std::int64_t c, std::int64_t e) {
-  return static_cast<std::size_t>((((((a * d[1]) + b) * d[2]) + c) * d[3]) + e);
-}
-
 // Axes réduits, ou std::nullopt quand ReduceMean ne fait rien (noop_with_empty_axes).
 std::expected<std::optional<std::vector<bool>>, Refusal> reduced_axes(const Node& node,
                                                                       std::span<const Operand> in) {

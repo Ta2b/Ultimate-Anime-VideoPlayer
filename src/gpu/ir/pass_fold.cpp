@@ -38,12 +38,6 @@ bool constant(const Graph& graph, TensorId id) {
   return id == kNoTensor || graph.tensors[id].kind == TensorKind::Constant;
 }
 
-const Value* constant_value(const Graph& graph, const Node& node, std::size_t index) {
-  if (index >= node.inputs.size() || node.inputs[index] == kNoTensor) return nullptr;
-  const Tensor& tensor = graph.tensors[node.inputs[index]];
-  return tensor.kind == TensorKind::Constant ? &tensor.value : nullptr;
-}
-
 bool has_input(const Node& node, std::size_t index) {
   return index < node.inputs.size() && node.inputs[index] != kNoTensor;
 }
@@ -52,7 +46,7 @@ bool has_input(const Node& node, std::size_t index) {
 template <class Pred>
 bool absent_or_all(const Graph& graph, const Node& node, std::size_t index, Pred pred) {
   if (!has_input(node, index)) return true;
-  const Value* value = constant_value(graph, node, index);
+  const Value* value = constant_operand(graph, node, index);
   if (value == nullptr) return false;
   return value->type == DataType::I64 ? std::ranges::all_of(value->i, pred)
                                       : std::ranges::all_of(value->f, pred);

@@ -10,15 +10,6 @@
 namespace ajp::gpu::ir {
 namespace {
 
-// Le lecteur unique de id, s'il le lit une seule fois et que id reste interne.
-std::optional<std::size_t> sole_reader(const Graph& graph, TensorId id) {
-  if (is_graph_output(graph, id)) return std::nullopt;
-  const auto readers = consumers(graph)[id];
-  if (readers.size() != 1) return std::nullopt;
-  if (std::ranges::count(graph.nodes[readers[0]].inputs, id) != 1) return std::nullopt;
-  return readers[0];
-}
-
 // Échelle constante, scalaire et positive du FakeQuantE4M3.
 std::optional<float> constant_scale(const Graph& graph, const Node& node) {
   if (node.inputs.size() != 2 || node.inputs[1] == kNoTensor) return std::nullopt;
@@ -32,7 +23,7 @@ bool plain_epilogue(const Epilogue& e) {
   return !e.residual && e.act == Activation::None && !e.gate && e.space == 0;
 }
 
-bool try_quant(Graph& graph, std::size_t n) {
+bool try_quant(Graph& graph, std::size_t n, GraphIndex& index) {
   const Node& quant = graph.nodes[n];
   if (quant.op != OpKind::FakeQuantE4M3) return false;
   const auto scale = constant_scale(graph, quant);
@@ -41,7 +32,7 @@ bool try_quant(Graph& graph, std::size_t n) {
   const TensorId y = quant.outputs[0];
 
   // La Conv qui lit y seule : elle arrondit son entrée.
-  if (const auto reader = sole_reader(graph, y)) {
+  if (const auto reader = index.sole_reader(y)) {
     Node& conv = graph.nodes[*reader];
     auto* attrs = std::get_if<ConvAttrs>(&conv.attrs);
     if (conv.op == OpKind::Conv && attrs != nullptr && attrs->in_quant == 0.0F && conv.inputs[kConvX] == y) {
@@ -52,8 +43,8 @@ bool try_quant(Graph& graph, std::size_t n) {
     }
   }
   // Sinon la Conv qui produit x, dont ce nœud est le seul lecteur : elle arrondit sa sortie.
-  const std::size_t producer = producers(graph)[x];
-  if (producer == kNoNode || sole_reader(graph, x) != n) return false;
+  const std::size_t producer = index.producer(x);
+  if (producer == kNoNode || index.sole_reader(x) != n) return false;
   Node& conv = graph.nodes[producer];
   auto* attrs = std::get_if<ConvAttrs>(&conv.attrs);
   if (conv.op != OpKind::Conv || attrs == nullptr || attrs->out_quant != 0.0F ||
@@ -70,8 +61,10 @@ bool try_quant(Graph& graph, std::size_t n) {
 
 int fuse_fp8_quant(Graph& graph) {
   int fused = 0;
+  GraphIndex index(graph);
   for (std::size_t n = 0; n < graph.nodes.size();) {
-    if (try_quant(graph, n)) {
+    if (try_quant(graph, n, index)) {
+      index.invalidate();
       ++fused;
     } else {
       ++n;

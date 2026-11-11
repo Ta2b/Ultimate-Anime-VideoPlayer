@@ -14,10 +14,6 @@
 namespace ajp::gpu::ir::onnx {
 namespace {
 
-bool default_domain(const Node& node) {
-  return node.domain.empty() || node.domain == "ai.onnx";
-}
-
 const Tensor* find_initializer(const Graph& graph, const std::string& name) {
   const auto it = std::ranges::find(graph.initializers, name, &Tensor::name);
   return it == graph.initializers.end() ? nullptr : &*it;
@@ -73,6 +69,13 @@ std::optional<Tensor> fold_per_channel(const Tensor& weights, const Tensor& scal
   return out;
 }
 
+// Le DequantizeLinear FP8 qui lit seul la sortie du QuantizeLinear.
+bool pairs_with(const Graph& graph, const Node& quant, const Node& dequant) {
+  return is_default_domain(dequant.domain) && dequant.op_type == "DequantizeLinear" &&
+         dequant.outputs.size() == 1 && dequant.inputs.size() == 3 && dequant.inputs[0] == quant.outputs[0] &&
+         fp8_zero(graph, dequant);
+}
+
 }  // namespace
 
 std::size_t fuse_fp8_quant_pairs(Graph& graph) {
@@ -91,17 +94,15 @@ std::size_t fuse_fp8_quant_pairs(Graph& graph) {
   std::size_t fused = 0;
   for (std::size_t q = 0; q < graph.nodes.size(); ++q) {
     Node& quant = graph.nodes[q];
-    if (!default_domain(quant) || quant.op_type != "QuantizeLinear" || quant.outputs.size() != 1) continue;
+    if (!is_default_domain(quant.domain) || quant.op_type != "QuantizeLinear" || quant.outputs.size() != 1)
+      continue;
     if (quant.inputs.size() != 3 || !fp8_zero(graph, quant)) continue;
     const auto users = readers.find(quant.outputs[0]);
     if (users == readers.end() || users->second.size() != 1 || graph_outputs.contains(quant.outputs[0]))
       continue;
     const std::size_t d = users->second[0];
     Node& dequant = graph.nodes[d];
-    if (!default_domain(dequant) || dequant.op_type != "DequantizeLinear" || dequant.outputs.size() != 1 ||
-        dequant.inputs.size() != 3 || dequant.inputs[0] != quant.outputs[0] || !fp8_zero(graph, dequant)) {
-      continue;
-    }
+    if (!pairs_with(graph, quant, dequant)) continue;
     const Tensor* qs = positive_scale(graph, quant);
     const Tensor* ds = positive_scale(graph, dequant);
     const auto q_axis = quant_axis(quant);
