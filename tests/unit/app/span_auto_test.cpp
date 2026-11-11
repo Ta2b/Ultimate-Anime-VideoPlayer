@@ -29,9 +29,12 @@ TEST_CASE("le mode Performance dit pourquoi il manque, et ce qu'il faut faire", 
       {.backend_name = "vulkan", .gpu_name = "RTX 4050", .tensorrt_present = true});
   CHECK(other.contains("installé"));
   CHECK(other.contains("choisissez TensorRT"));
-  // TensorRT en service, mais la carte n'est pas une Ada.
-  const std::string old = span_fp8_unavailable_reason(
-      {.backend_name = "tensorrt", .gpu_name = "NVIDIA GeForce RTX 3060", .tensorrt_present = true});
+  // TensorRT en service, mais la carte n'est pas une Ada (sur un système où le mode existe : sous Windows,
+  // system_pending vaut true par défaut).
+  const std::string old = span_fp8_unavailable_reason({.backend_name = "tensorrt",
+                                                       .gpu_name = "NVIDIA GeForce RTX 3060",
+                                                       .tensorrt_present = true,
+                                                       .system_pending = false});
   CHECK(old.contains("RTX 3060"));
   CHECK(old.contains("RTX 40"));
   // Sous Windows, les noyaux ne sont pas encore construits : la phrase ne blâme pas la carte (B02-09).
