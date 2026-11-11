@@ -129,19 +129,24 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
-// A29-02, A33-03, décision 7 : un trou dans le temps (veille, gel du processus) met la lecture en pause à
-// l'image d'avant et recale les horloges par un seek exact ; l'appareil perdu pendant la veille arrête la
-// lecture sur DeviceLost (relance, A31-02).
-std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, std::int64_t gap_us) {
+// A29-02, A33-03, décision 7 : un trou dans le temps recale les horloges par un seek exact à l'image d'avant
+// ; une veille met aussi la lecture en pause, avec un message. Un gel de la boucle (barre de titre tenue sous
+// Windows, SIGSTOP) n'est pas une veille : ni pause ni message (B31-13). L'appareil perdu pendant le trou
+// arrête la lecture sur DeviceLost (relance, A31-02).
+std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, SleepWatch& watch,
+                                 const WindowEvents& window) {
+  const std::optional<std::int64_t> gap_us = watch.turn(host_now_us(), suspend_aware_now_us());
+  if (!gap_us) return std::nullopt;
   const std::int64_t at = session.view().position_us;
-  log_channel("app")->warn("trou de {:.1f} s (veille ou gel) : pause et recalage à {}",
-                           static_cast<double>(gap_us) / 1e6, format_position(at));
+  const bool sleep = watch.last_kind(window.last_aware_us()) == GapKind::Sleep;
+  log_channel("app")->warn("trou de {:.1f} s ({}) : recalage à {}", static_cast<double>(*gap_us) / 1e6,
+                           sleep ? "veille, pause" : "gel de la boucle, sans pause", format_position(at));
   if (c.backend) {
     if (auto healthy = c.backend->kernels()->health(); !healthy) return std::move(healthy.error());
   }
-  session.command(cmd::Pause{});
+  if (sleep) session.command(cmd::Pause{});
   if (at != kNoPts) session.command(cmd::Seek{.target_us = at, .exact = true});
-  ui.controls().notify(i18n::ui_tr("Paused after sleep"), host_now_us());
+  if (sleep) ui.controls().notify(i18n::ui_tr("Paused after sleep"), host_now_us());
   return std::nullopt;
 }
 
@@ -249,8 +254,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
-  const std::uint64_t energy_start_mj =
-      telemetry ? telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj : 0;
+  const std::uint64_t energy_start_mj = telemetry ? telemetry->energy_mj(host_now_us()) : 0;
   ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
                          fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
@@ -311,7 +315,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
                                .width = work.width,
                                .height = work.height},
-                settings.preset != Preset::Custom)
+                settings.preset != Preset::Custom, true)
           : SpanPrepare{};
   p.ui.set_tracks((*pipeline)->tracks());
   SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
@@ -523,13 +527,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   };
   SleepWatch sleep_watch;
-  ScreenSaverHold screen_saver;  // coupé seulement pendant qu'une vidéo avance (A33-02)
+  const WindowEvents window_events;  // B31-13 : la barre de titre tenue sous Windows n'est pas une veille
+  ScreenSaverHold screen_saver;      // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
-    if (const auto gap = sleep_watch.turn(host_now_us(), suspend_aware_now_us())) {
-      if (auto lost = after_gap(session, c, p.ui, *gap)) {
-        failure = std::move(*lost);
-        break;
-      }
+    if (auto lost = after_gap(session, c, p.ui, sleep_watch, window_events)) {
+      failure = std::move(*lost);
+      break;
     }
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
@@ -617,10 +620,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
-      // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque tour (un seul ioctl).
-      if (p.display && !p.display->connector.empty()) {
+      // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque tour, même sans connecteur
+      // (B11-15).
+      if (p.display) {
         if (const auto now =
                 vrr_watch.observe(out.vrr_armed(), window_vrr_armed(out.window(), p.display->connector))) {
+          if (*now) p.display->vrr = true;  // armé : capable, même sans plage dans l'EDID (B11-03)
           const bool armed = !p.options.no_vrr && p.display->vrr.value_or(false) && *now;
           log->info("VRR : {}", *now ? "armé" : "non armé");
           p.ui.set_display_vrr(p.display->vrr.value_or(false), *now,
@@ -702,8 +707,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   p.quit = session.quit_asked();
   log_summary(session);
   if (telemetry) {
-    // Énergie de la lecture : le compteur NVML relevé au début et à la fin (au plus 500 ms de retard).
-    const std::uint64_t energy_end_mj = telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj;
+    // Énergie de la lecture : le compteur NVML relu au début et à la fin, à l'instant même (B11-14).
+    const std::uint64_t energy_end_mj = telemetry->energy_mj(host_now_us());
     if (const auto per_frame =
             millijoules_per_frame(energy_start_mj, energy_end_mj, session.stats().new_frames))
       log->info("énergie : {:.1f} J, {:.1f} mJ par image neuve",

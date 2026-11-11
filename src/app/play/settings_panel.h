@@ -80,6 +80,10 @@ struct SettingsChoices {
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Calibrer cette machine »
+  // La tranche estimée d'après le nom de la carte (estimate_tier), sans bench.toml : celle dont une
+  // calibration prend ses modèles, quel que soit le bouton qui la lance (assistant, lecture, panneau,
+  // B07-10).
+  int estimated_tier = 2;
   int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
   int display_width = 0;   // sa largeur ; 0 : inconnue (16:9 supposé)
   // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo

@@ -282,8 +282,12 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
                "are not compared in this version. Applies after a short reload."));
 }
 
-// Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
-void smooth_motion_section(PlaySettings& d, const SettingsChoices& choices) {
+// Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait
+// la demander qu'au pilote Linux (NVPRESENT_ENABLE_SMOOTH_MOTION) : sous Windows, elle se règle par profil
+// dans l'application NVIDIA, et la case n'y ferait rien (B34-06).
+void smooth_motion_section([[maybe_unused]] PlaySettings& d,
+                           [[maybe_unused]] const SettingsChoices& choices) {
+#if defined(__linux__)
   section(i18n::tr("Smooth Motion (NVIDIA driver)"));
   // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
   // Le choix reste tel quel, grisé : l'interpolation éteinte puis rallumée ne le perd plus, et le lancement
@@ -297,6 +301,7 @@ void smooth_motion_section(PlaySettings& d, const SettingsChoices& choices) {
   note(i18n::tr(
       "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
   if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+#endif
 }
 
 // La liste du plafond de la cadence Auto et la phrase qui dit où il s'arrête.

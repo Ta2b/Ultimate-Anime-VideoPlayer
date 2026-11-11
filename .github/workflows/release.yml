@@ -2,10 +2,11 @@ name: Release
 
 # La seule entrée d'une release du lecteur : une étiquette v* poussée (ou donnée à la main). Dans l'ordre :
 #   1. la garde (commit, version de l'étiquette, ci.yml vert) ;
-#   2. les trois plateformes en parallèle, chacune avec son paquet TensorRT quand elle en a un (Linux et Windows,
-#      construits et publiés s'ils manquent : A28-01) ; chacune joint ses fichiers à la release de l'étiquette, qui
-#      reste une préversion ;
-#   3. « publier », quand Linux et Windows ont réussi (macOS, hors cible, ne bloque pas : B51-11) : vérifie que la
+#   2. Linux et Windows en parallèle, chacun avec son paquet TensorRT (construit et publié s'il manque : A28-01) ;
+#      chacun joint ses fichiers à la release de l'étiquette, qui reste une préversion. macOS n'est plus construit : son
+#      support est délaissé pour l'instant (décision de Tatoub, novembre 2026) ; release-macos.yml reste lançable à
+#      la main ;
+#   3. « publier », quand Linux et Windows ont réussi : vérifie que la
 #      release a tout ce qu'elle doit avoir et que ses archives sont celles que les jobs de construction ont produites
 #      (B51-07), signe le manifeste des mises à jour avec la clé Ed25519 du secret AJP_UPDATE_KEY (environnement protégé
 #      « release ») et le joint (A28-02), puis, pour une release finale, la rend finale et « latest » si elle est plus
@@ -45,17 +46,9 @@ jobs:
       tag: ${{ inputs.tag || github.ref_name }}
     secrets: inherit
 
-  macos:
-    uses: ./.github/workflows/release-macos.yml
-    with:
-      tag: ${{ inputs.tag || github.ref_name }}
-    secrets: inherit
-
   publish:
     name: Publier
-    needs: [linux, windows, macos]
-    # macOS est hors cible : son échec (notarisation, runner indisponible) ne prive pas Windows et Linux de leur
-    # mise à jour. Son archive, si elle n'a pas été construite, reste hors du manifeste (B51-11).
+    needs: [linux, windows]
     if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' }}
     runs-on: ubuntu-24.04
     # La clé de signature n'existe que dans cet environnement : ses règles disent quelles étiquettes y ont accès.
@@ -65,7 +58,8 @@ jobs:
       # Les SHA-256 des archives telles que les jobs de construction les ont produites (vide : non construite).
       BUILT_LINUX: ${{ needs.linux.outputs.archive-sha256 }}
       BUILT_WINDOWS: ${{ needs.windows.outputs.archive-sha256 }}
-      BUILT_MACOS: ${{ needs.macos.outputs.archive-sha256 }}
+      # macOS n'est plus construit : vide, son archive reste hors du manifeste (B51-11).
+      BUILT_MACOS: ""
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

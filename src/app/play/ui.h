@@ -154,6 +154,7 @@ class PlayerUi {
   bool home_ = false;          // l'écran d'accueil est à l'écran : le menu y prend la molette
   std::int64_t last_frame_us_ = 0;
   const ImDrawData* draw_ = nullptr;  // dernière image recomposée, si quelque chose y est visible
+  std::uint64_t serial_ = 0;          // compte les recompositions de frame() (UiFrame::serial)
   int bottom_ = 0;                    // hauteur de la barre dans cette image
   int top_ = 0;                       // hauteur du titre
 };

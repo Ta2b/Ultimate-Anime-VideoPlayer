@@ -176,6 +176,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "ring_stage.cpp",
                                         "scripted_input.cpp",
                                         "session.cpp",
+                                        "span_commit.cpp",
                                         "span_derive.cpp",
                                         "span_derive.h",
                                         "ui.cpp",
@@ -188,7 +189,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "maxine_install.cpp",
                                         "relaunch_target.cpp",
                                         "sleep_watch.cpp",
-                                        "system_peak.cpp"};
+                                        "system_peak.cpp",
+                                        "window_vrr.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");
