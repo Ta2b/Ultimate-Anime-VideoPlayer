@@ -109,6 +109,7 @@ void main() {
               f16vec4 w1 = weights.w[row + (ci + 1u) * QUADS + q];
               for (uint p = 0u; p < PIX; ++p) {
                 f16vec2 xv = unpackFloat2x16(packed[p][h]);
+                if (IN_Q > 0.0) xv = f16vec2(quant_in(float(xv.x)), quant_in(float(xv.y)));  // comme la queue (B49-05)
                 part[p * QUADS + q] += xv.x * w0;
                 part[p * QUADS + q] += xv.y * w1;
               }
@@ -125,7 +126,7 @@ void main() {
             }
           }
 #ifdef AJP_CONV_PACKED
-          for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += vec4(part[a]);
+          for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += clamp(vec4(part[a]), vec4(-60000.0), vec4(60000.0));
 #endif
         }
         for (uint ci = max(full * 8u, c_lo); ci < c_hi; ++ci) {
@@ -156,7 +157,7 @@ void main() {
             for (uint p = 0u; p < PIX; ++p) part[p * QUADS + q] += xv[p] * wv;
           }
         }
-        for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += vec4(part[a]);
+        for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += clamp(vec4(part[a]), vec4(-60000.0), vec4(60000.0));
       }
 #else
       for (uint ci = c_lo; ci < c_hi; ++ci) {

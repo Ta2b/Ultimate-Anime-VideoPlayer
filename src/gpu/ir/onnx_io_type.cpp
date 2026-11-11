@@ -54,17 +54,7 @@ std::unexpected<Refusal> unavailable(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, std::move(detail)});
 }
 
-// Appelle fn sur chaque champ du message ; s'arrête au premier refus.
-template <class Fn>
-std::expected<void, Refusal> for_each_field(Bytes bytes, Fn&& fn) {
-  proto::Reader reader(bytes);
-  for (;;) {
-    auto field = reader.next();
-    if (!field) return std::unexpected(field.error());
-    if (!*field) return {};
-    if (auto ok = fn(**field); !ok) return ok;
-  }
-}
+using proto::for_each_field;
 
 bool is_float(std::int32_t elem_type) {
   return elem_type == kFloat || elem_type == kFloat16;

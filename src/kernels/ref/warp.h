@@ -40,7 +40,8 @@ Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motio
 Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Motion& motion,
                                   const Motion* previous, float t);
 
-// Plus grand déplacement absolu dans la fenêtre, en pixels de la fenêtre (k_flow_max).
+// Le déplacement absolu que dépassent 0,1 % des pixels de la fenêtre (percentile 99,9 %, pas le maximum : un
+// pixel isolé ne décide pas), en pixels de la fenêtre (k_flow_max).
 Result<float> flow_max(const Motion& motion);
 
 }  // namespace ajp::kernels::ref

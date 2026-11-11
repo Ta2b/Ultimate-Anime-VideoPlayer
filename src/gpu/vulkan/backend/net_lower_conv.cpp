@@ -326,7 +326,7 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
   const bool packed = conv && !quantized(node) && target.f16_math && target.f16_storage &&
                       graph.tensors[node.inputs[0]].type == ir::DataType::F16 && y.type == ir::DataType::F16;
   for (const std::uint32_t q : {quads, 1U, 2U, 4U}) {
-    if (q > quads && q != quads) continue;
+    if (q > quads) continue;
     for (const std::uint32_t wg : {64U, 128U}) {
       if (wg > target.max_workgroup_invocations) continue;
       KernelChoice choice{.variant = std::string(kDirect), .tuning = {q, wg}};

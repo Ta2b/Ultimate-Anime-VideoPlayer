@@ -134,7 +134,8 @@
       "inherits": "linux-prefix",
       "cacheVariables": {
         "AJP_WITH_CUDA": "ON",
-        "AJP_CUDA_ARCHITECTURES": "89-real"
+        "AJP_CUDA_ARCHITECTURES": "89-real",
+        "AJP_HARDWARE_TESTS": "ON"
       }
     },
     {
@@ -363,6 +364,24 @@
       "configurePreset": "linux-prefix-cuda",
       "output": {
         "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "nvidia|gpu|models"
+        }
+      }
+    },
+    {
+      "name": "linux-prefix-cuda-hardware",
+      "displayName": "Les tests cachés sur la vraie carte NVIDIA et les modèles installés (ctest -L nvidia|gpu|models)",
+      "configurePreset": "linux-prefix-cuda",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "nvidia|gpu|models"
+        }
       }
     },
     {

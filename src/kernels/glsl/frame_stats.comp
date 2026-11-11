@@ -59,7 +59,7 @@ vec3 encoded(uint gx, uint gy) {
 }
 
 float luma_of(vec3 e) {
-  precise float y = 0.2126 * e.r + 0.7152 * e.g + 0.0722 * e.b;
+  precise float y = AJP_LUMA_709_R * e.r + AJP_LUMA_709_G * e.g + AJP_LUMA_709_B * e.b;
   return y;
 }
 

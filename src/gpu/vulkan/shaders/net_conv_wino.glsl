@@ -155,7 +155,7 @@ void main() {
     // Tous les 16 canaux, et au dernier : les sommes float16 passent en float.
     if (cp % 8u == 7u || cp + 1u >= pairs + (CIN % 2u)) {
       for (uint a = 0u; a < 16u * QUADS; ++a) {
-        m[a] += vec4(part[a]);
+        m[a] += clamp(vec4(part[a]), vec4(-60000.0), vec4(60000.0));  // somme float16 plafonnée (B49-01)
         part[a] = f16vec4(0.0);
       }
     }
