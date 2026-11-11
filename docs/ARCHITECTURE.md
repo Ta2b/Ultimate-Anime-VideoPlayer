@@ -246,7 +246,8 @@ choisit k.
 
 L'écran (`PlaceboScreen`) choisit un niveau (`present_level.h`) : Open, la présentation d'aujourd'hui ;
 Wayland (`wp_presentation`) ; Wait (`vkWaitForPresent2KHR` sondé) ; Timing et TimingAbsolute
-(`VK_EXT_present_timing`). Chaque présentation porte un identifiant (`core/present_ledger.h`) ; les dates
+(`VK_EXT_present_timing`). Au défaut `--present=wait`, le niveau qui date passe devant le sondage :
+Wayland sous CachyOS, Timing sous Windows et X11 quand le pilote l'offre, Wait sinon. Chaque présentation porte un identifiant (`core/present_ledger.h`) ; les dates
 relues sans attente, sur main, nourrissent `core::VblankClock`. `Screen::vblank_grid()` en rend la grille en
 fréquence fixe : `Session::set_display` y prend la fréquence réelle, `LiveSettings::vsync_grid` la phase des
 vblanks, et, à `--vsync-index`, `Session::pick` le numéro du vblank de chaque image (`core::VsyncPicker`).

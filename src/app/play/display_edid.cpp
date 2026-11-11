@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include "app/play/i18n.h"
@@ -16,6 +17,7 @@
 #if defined(__linux__)
 #include <bit>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <drm/drm.h>
 #include <drm/drm_mode.h>
@@ -40,6 +42,7 @@ namespace {
 constexpr std::size_t kBlock = 128;
 constexpr std::uint8_t kCtaTag = 0x02;
 constexpr std::uint8_t kDisplayIdTag = 0x70;
+constexpr std::uint8_t kDisplayId2 = 0x20;             // octet de version de la section : 2.0 et après
 constexpr std::uint8_t kCtaVendor = 3;                 // bloc propre au fabricant (tag 3)
 constexpr std::uint8_t kDisplayIdAdaptiveSync = 0x2B;  // DisplayID 2.0
 constexpr int kMinVrrSpanHz = 10;                      // une plage plus étroite n'est pas du VRR
@@ -132,6 +135,10 @@ void read_cta(std::span<const std::uint8_t> block, DisplayFacts& out, VrrSources
 }
 
 void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out, VrrSources& vrr) {
+  // Les étiquettes 0x21 et 0x2B sont celles de DisplayID 2.x (octet de version 0x20, 0x21…) : une section
+  // DisplayID 1.x ne se lit pas avec elles (B11-11 : sinon des bits pris pour « AMOLED », OLED « définitif
+  // »).
+  if (block[1] < kDisplayId2) return;
   const std::size_t end = std::min<std::size_t>(5 + block[2], kBlock - 1);
   for (std::size_t at = 5; at + 3 <= end;) {
     const std::uint8_t tag = block[at];
@@ -347,7 +354,15 @@ std::vector<DisplayFacts> connected_displays() {
     if (read != ERROR_SUCCESS || type != REG_BINARY || size < kBlock) continue;
     edid.resize(size);
     DisplayFacts facts = parse_edid(edid);
-    facts.connector = std::format("monitor{}", i);
+    // L'identifiant d'instance du moniteur (« DISPLAY\GSM5B08\5&2A0B3E4C&0&UID4352 ») : ce que
+    // pick_display rapproche de l'écran de la fenêtre (B34-02). Sans lui, un nom propre à cette liste.
+    std::array<wchar_t, 512> id{};
+    if (SetupDiGetDeviceInstanceIdW(set, &device, id.data(), static_cast<DWORD>(id.size()), nullptr) !=
+        FALSE) {
+      for (const wchar_t c : std::wstring_view(id.data()))
+        facts.connector.push_back(c > 0 && c < 0x80 ? static_cast<char>(c) : '?');
+    }
+    if (facts.connector.empty()) facts.connector = std::format("monitor{}", i);
     // La capacité, jamais le tearing (12.2) ; armé ou non : NVAPI (window_display) ou le retour de
     // présentation.
     facts.vrr = facts.vrr_range.has_value();
@@ -380,51 +395,67 @@ std::optional<std::uint64_t> drm_property(int fd, std::uint32_t object, std::uin
   return std::nullopt;
 }
 
-// Le VRR d'une sortie (« card1-DP-1 ») : vrr_capable du connecteur, lu en lecture seule sur le nœud DRM.
-std::optional<bool> drm_vrr(const std::filesystem::path& dir) {
-  const std::string name = dir.filename().string();
-  const std::size_t dash = name.find('-');
-  if (dash == std::string::npos) return std::nullopt;
-  const std::string connector_text = first_line(dir / "connector_id");
-  if (connector_text.empty()) return std::nullopt;
-  const std::uint32_t connector_id =
-      static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
-  const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
-  if (fd < 0) return std::nullopt;
-  // Capable suffit : KDE (adaptive sync « Automatique », le défaut) n'arme VRR_ENABLED qu'en plein
-  // écran, jamais au lancement en fenêtre. Seul un VRR coupé à la main passerait à côté.
-  std::optional<bool> result;
-  const auto capable = drm_property(fd, connector_id, DRM_MODE_OBJECT_CONNECTOR, "vrr_capable");
-  if (capable) result = *capable != 0;
-  close(fd);
-  return result;
-}
-// VRR_ENABLED du CRTC que l'encodeur de la sortie alimente : ce que le compositeur a armé en ce moment.
-std::optional<bool> drm_vrr_armed(const std::filesystem::path& dir) {
-  const std::string name = dir.filename().string();
-  const std::size_t dash = name.find('-');
-  if (dash == std::string::npos) return std::nullopt;
-  const std::string connector_text = first_line(dir / "connector_id");
-  if (connector_text.empty()) return std::nullopt;
-  const std::uint32_t connector_id =
-      static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
-  const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
-  if (fd < 0) return std::nullopt;
-  std::optional<bool> result;
-  drm_mode_get_connector connector{};
-  connector.connector_id = connector_id;
-  if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) >= 0) {
-    result = false;
+// Le nœud DRM d'une sortie (« card1-DP-1 » : /dev/dri/card1) et l'identifiant de son connecteur, ouverts une
+// fois pour les deux lectures du VRR (B11-15). En lecture seule, sans être maître.
+class DrmOutput {
+ public:
+  static std::optional<DrmOutput> open(const std::filesystem::path& dir) {
+    const std::string name = dir.filename().string();
+    const std::size_t dash = name.find('-');
+    if (dash == std::string::npos) return std::nullopt;
+    const std::string connector_text = first_line(dir / "connector_id");
+    if (connector_text.empty()) return std::nullopt;
+    const auto connector = static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
+    const int fd = ::open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return std::nullopt;
+    return DrmOutput(fd, connector);
+  }
+  DrmOutput(DrmOutput&& other) noexcept
+      : fd_(std::exchange(other.fd_, -1)), connector_(other.connector_), atomic_(other.atomic_) {}
+  DrmOutput(const DrmOutput&) = delete;
+  DrmOutput& operator=(const DrmOutput&) = delete;
+  DrmOutput& operator=(DrmOutput&&) = delete;
+  ~DrmOutput() {
+    if (fd_ >= 0) close(fd_);
+  }
+
+  // vrr_capable du connecteur (propriété ordinaire).
+  std::optional<bool> capable() const {
+    const auto value = drm_property(fd_, connector_, DRM_MODE_OBJECT_CONNECTOR, "vrr_capable");
+    if (!value) return std::nullopt;
+    return *value != 0;
+  }
+
+  // VRR_ENABLED du CRTC que l'encodeur de la sortie alimente : ce que le compositeur a armé en ce moment.
+  // C'est une propriété atomique : le noyau ne la liste qu'à un descripteur qui a demandé
+  // DRM_CLIENT_CAP_ATOMIC (permis sans être maître). Sans cela, elle manquait toujours et se lisait « non
+  // armé » (B11-01).
+  std::optional<bool> armed() {
+    if (!atomic_) {
+      drm_set_client_cap cap{.capability = DRM_CLIENT_CAP_ATOMIC, .value = 1};
+      atomic_ = ioctl(fd_, DRM_IOCTL_SET_CLIENT_CAP, &cap) == 0;
+    }
+    drm_mode_get_connector connector{};
+    connector.connector_id = connector_;
+    if (ioctl(fd_, DRM_IOCTL_MODE_GETCONNECTOR, &connector) < 0) return std::nullopt;
+    std::uint32_t crtc = 0;
     if (connector.encoder_id != 0) {
       drm_mode_get_encoder encoder{};
       encoder.encoder_id = connector.encoder_id;
-      if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &encoder) >= 0 && encoder.crtc_id != 0)
-        result = drm_property(fd, encoder.crtc_id, DRM_MODE_OBJECT_CRTC, "VRR_ENABLED").value_or(0) != 0;
+      if (ioctl(fd_, DRM_IOCTL_MODE_GETENCODER, &encoder) < 0) return std::nullopt;
+      crtc = encoder.crtc_id;
     }
+    return vrr_armed_from(crtc, crtc != 0 && atomic_
+                                    ? drm_property(fd_, crtc, DRM_MODE_OBJECT_CRTC, "VRR_ENABLED")
+                                    : std::nullopt);
   }
-  close(fd);
-  return result;
-}
+
+ private:
+  DrmOutput(int fd, std::uint32_t connector) : fd_(fd), connector_(connector) {}
+  int fd_ = -1;
+  std::uint32_t connector_ = 0;
+  bool atomic_ = false;
+};
 #endif
 
 // Les sorties branchées de DRM et leur EDID (/sys/class/drm/<sortie>/edid). Sur macOS, rien :
@@ -440,8 +471,10 @@ std::vector<DisplayFacts> connected_displays() {
     DisplayFacts facts = parse_edid(edid);
     facts.connector = dir.filename().string();
 #if defined(__linux__)
-    facts.vrr = drm_vrr(dir);
-    facts.vrr_armed = drm_vrr_armed(dir);
+    if (auto output = DrmOutput::open(dir)) {
+      facts.vrr = output->capable();
+      facts.vrr_armed = output->armed();
+    }
 #endif
     found.push_back(std::move(facts));
   }
@@ -451,23 +484,61 @@ std::vector<DisplayFacts> connected_displays() {
 
 }  // namespace
 
-std::optional<DisplayFacts> pick_display(const std::vector<DisplayFacts>& found, std::string_view wanted) {
+namespace {
+
+// « DP-1 » nommé en toutes lettres dans wanted : ni au milieu d'un mot (« eDP-1 », B11-08), ni suivi d'un
+// chiffre (« DP-10 »).
+bool names_output(std::string_view wanted, std::string_view output) {
+  const auto alnum = [](char c) {
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+  };
+  for (std::size_t at = wanted.find(output); at != std::string_view::npos; at = wanted.find(output, at + 1)) {
+    const std::size_t end = at + output.size();
+    if (at > 0 && alnum(wanted[at - 1])) continue;
+    if (end < wanted.size() && wanted[end] >= '0' && wanted[end] <= '9') continue;
+    return true;
+  }
+  return false;
+}
+
+char upper(char c) {
+  return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+}
+
+}  // namespace
+
+std::string monitor_instance_from_interface(std::string_view path) {
+  if (path.starts_with("\\\\?\\")) path.remove_prefix(4);
+  if (const std::size_t guid = path.rfind("#{"); guid != std::string_view::npos) path = path.substr(0, guid);
+  std::string out;
+  out.reserve(path.size());
+  for (const char c : path) out.push_back(c == '#' ? '\\' : upper(c));
+  return out;
+}
+
+std::optional<DisplayFacts> pick_display(const std::vector<DisplayFacts>& found, std::string_view wanted,
+                                         std::string_view instance) {
   if (found.empty()) return std::nullopt;
+  // Windows : l'écran de la fenêtre par son périphérique (B34-02, B37-08), sans passer par les noms.
+  if (!instance.empty()) {
+    const std::string key = monitor_instance_from_interface(instance);
+    for (const DisplayFacts& facts : found) {
+      if (monitor_instance_from_interface(facts.connector) == key) return facts;
+    }
+  }
   if (found.size() == 1) return found.front();
-  // « card1-DP-2 » : le nom de la sortie est ce qui suit le premier tiret.
+  // « card1-DP-2 » : le nom de la sortie est ce qui suit le premier tiret. Deux cartes (iGPU et dGPU) peuvent
+  // porter chacune un « DP-1 » : SDL ne dit pas la carte, le nom de l'EDID départage alors ces sorties-là.
+  std::vector<const DisplayFacts*> by_output;
   for (const DisplayFacts& facts : found) {
     const std::size_t dash = facts.connector.find('-');
     if (dash == std::string::npos || dash + 1 >= facts.connector.size()) continue;
-    const std::string_view output = std::string_view(facts.connector).substr(dash + 1);
-    const std::size_t at = wanted.find(output);
-    if (at == std::string_view::npos) continue;
-    // « DP-1 » ne doit pas se reconnaître dans « DP-10 ».
-    const std::size_t end = at + output.size();
-    if (end < wanted.size() && wanted[end] >= '0' && wanted[end] <= '9') continue;
-    return facts;
+    if (names_output(wanted, std::string_view(facts.connector).substr(dash + 1))) by_output.push_back(&facts);
   }
+  if (by_output.size() == 1) return *by_output.front();
   std::optional<DisplayFacts> named;
   for (const DisplayFacts& facts : found) {
+    if (!by_output.empty() && std::ranges::find(by_output, &facts) == by_output.end()) continue;
     if (facts.name.empty() || wanted.find(facts.name) == std::string_view::npos) continue;
     if (!named) {
       named = facts;
@@ -476,17 +547,19 @@ std::optional<DisplayFacts> pick_display(const std::vector<DisplayFacts>& found,
     named->connector.clear();  // un second écran du même nom : quelle sortie porte la fenêtre, inconnu
     named->vrr_armed.reset();
   }
-  return named ? named : found.front();
+  if (named) return named;
+  return by_output.empty() ? found.front() : *by_output.front();
 }
 
-std::optional<DisplayFacts> read_display(std::string_view wanted) {
-  return pick_display(connected_displays(), wanted);
+std::optional<DisplayFacts> read_display(std::string_view wanted, std::string_view instance) {
+  return pick_display(connected_displays(), wanted, instance);
 }
 
 std::optional<bool> vrr_armed_now([[maybe_unused]] std::string_view connector) {
 #if defined(__linux__)
   if (connector.empty()) return std::nullopt;
-  return drm_vrr_armed(std::filesystem::path("/sys/class/drm") / std::string(connector));
+  auto output = DrmOutput::open(std::filesystem::path("/sys/class/drm") / std::string(connector));
+  return output ? output->armed() : std::nullopt;
 #else
   return std::nullopt;
 #endif

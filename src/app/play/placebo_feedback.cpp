@@ -128,8 +128,8 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
     info.timeDomainId = domain_id_;
     info.presentStageQueries = stage_;
     info.targetTimeDomainPresentStage = stage_;
-    if (target_us != 0) {
-      info.targetTime = domain_.to_domain_ns(target_us);
+    info.targetTime = target_us != 0 ? target_time(target_us) : 0;
+    if (info.targetTime != 0) {
       // En fréquence fixe, au rafraîchissement le plus proche de la date visée.
       if (refresh_duration_ != 0 && refresh_interval_ == refresh_duration_)
         info.flags |= VK_PRESENT_TIMING_INFO_PRESENT_AT_NEAREST_REFRESH_CYCLE_BIT_EXT;
@@ -247,10 +247,13 @@ void PresentFeedback::choose_domain(VkSwapchainKHR swapchain) {
   domains_counter_ = counter;
   domain_.reset();
   local_domain_ = false;
-  // CLOCK_MONOTONIC, celui de host_now_us, tel quel ; sinon un domaine local recalé sur l'hôte.
+  host_ticks_.reset();
+  // L'horloge de host_now_us telle quelle (CLOCK_MONOTONIC sous Linux, le compteur de performance sous
+  // Windows, B10-02) ; sinon un domaine local recalé sur l'hôte.
+  const VkTimeDomainKHR host = host_domain().kind;
   int local = -1;
   for (std::uint32_t i = 0; i < props.timeDomainCount; ++i) {
-    if (kinds[i] == VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR) {
+    if (kinds[i] == host) {
       domain_kind_ = kinds[i];
       domain_id_ = ids[i];
       domain_.set_monotonic();
@@ -294,9 +297,34 @@ void PresentFeedback::calibrate(VkSwapchainKHR swapchain, std::int64_t now_us) {
 #endif
 }
 
+#ifdef AJP_PRESENT_FEEDBACK
+// Une date relue en heure hôte (µs). Le domaine de l'hôte n'a pas d'écart : CLOCK_MONOTONIC est en ns ; le
+// compteur de Windows en ns ou en tics, selon le pilote (host_stamp_in_ticks, appris une fois).
+std::int64_t PresentFeedback::host_us_of(VkTimeDomainKHR domain, std::uint64_t time, std::int64_t now_us) {
+  const HostDomain host = host_domain();
+  if (domain != host.kind) return domain_.to_host_us(time);
+  if (host.kind == VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR) return static_cast<std::int64_t>(time / 1000);
+  if (!host_ticks_) {
+    host_ticks_ = host_stamp_in_ticks(time, host.ticks_per_second, now_us);
+    channel_->info("présentation : dates du compteur de performance en {}", *host_ticks_ ? "tics" : "ns");
+  }
+  if (*host_ticks_) return static_cast<std::int64_t>(host_ticks_to_ns(time, host.ticks_per_second) / 1000);
+  return static_cast<std::int64_t>(time / 1000);
+}
+
+// Une heure hôte (µs) en date visée du domaine retenu ; 0 tant que l'unité du compteur n'est pas connue.
+std::uint64_t PresentFeedback::target_time(std::int64_t target_us) const {
+  const HostDomain host = host_domain();
+  if (domain_kind_ != host.kind || host.kind == VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR)
+    return domain_.to_domain_ns(target_us);
+  if (!host_ticks_) return 0;
+  const std::uint64_t ns = domain_.to_domain_ns(target_us);
+  return *host_ticks_ ? host_ns_to_ticks(ns, host.ticks_per_second) : ns;
+}
+#endif
+
 void PresentFeedback::read_back(VkSwapchainKHR swapchain, std::int64_t now_us) {
 #ifdef AJP_PRESENT_FEEDBACK
-  (void)now_us;
   if (ledger_.in_flight() == 0) return;
   TimingStorage& t = *timing_;
   for (std::size_t i = 0; i < kQueueSize; ++i) {
@@ -322,10 +350,7 @@ void PresentFeedback::read_back(VkSwapchainKHR swapchain, std::int64_t now_us) {
     const VkPastPresentationTimingEXT& p = t.past[i];
     if (p.presentStageCount == 0 || p.pPresentStages[0].time == 0) continue;  // pas encore daté
     const std::uint64_t ns = p.pPresentStages[0].time;
-    const std::int64_t visible = p.timeDomain == VK_TIME_DOMAIN_CLOCK_MONOTONIC_KHR
-                                     ? static_cast<std::int64_t>(ns / 1000)
-                                     : domain_.to_host_us(ns);
-    accept(p.presentId, visible, true);
+    accept(p.presentId, host_us_of(p.timeDomain, ns, now_us), true);
   }
 #else
   (void)swapchain;
