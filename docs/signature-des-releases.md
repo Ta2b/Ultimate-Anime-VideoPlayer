@@ -39,8 +39,12 @@ Ce qui suit se fait sur GitHub, sans le PC :
 
 1. **Environnement `release`** (Settings > Environments > New environment) : règle de déploiement « Selected branches
    and tags », avec le motif d'étiquette `v*` et la branche `main` (pour la re-signature mensuelle).
-2. **Secret `AJP_UPDATE_KEY`** dans cet environnement : le contenu entier du fichier PEM de la clé privée
-   (`-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`).
+2. **Secret `AJP_UPDATE_KEY`** dans cet environnement : la clé privée sur une seule ligne, ce qui ne s'abîme pas au
+   collage. Dans Git Bash ou un terminal : `base64 -w0 update-ed25519.pem` (sous Windows, `| clip` la copie), puis
+   coller tel quel. Le fichier PEM entier (`-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`) est accepté
+   aussi. `tools/release/update-key.sh` lit le secret, accepte ces formes, et vérifie que la clé correspond à
+   `AJP_UPDATE_PUBKEY` ; en cas d'échec, le journal dit ce qu'il a reçu (longueur, lignes, en-tête) sans afficher la
+   clé.
 3. **Secret `AJP_RELEASE_TOKEN`** (déjà en place) : un jeton qui peut écrire les releases du dépôt
    `AJP_RELEASE_REPO` de `tools/release/versions.env`.
 

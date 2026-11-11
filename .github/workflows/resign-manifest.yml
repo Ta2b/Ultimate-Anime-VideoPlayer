@@ -50,8 +50,9 @@ jobs:
           gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
             -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip
           key="$RUNNER_TEMP/ajp-update-key.pem"
-          (umask 077; printf '%s\n' "$UPDATE_KEY" > "$key")
           trap 'rm -f "$key"' EXIT
+          # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
+          tools/release/update-key.sh "$key"
           AJP_UPDATE_KEY="$key" tools/release/sign-manifest.sh "${TAG#v}" stable "$dir" \
             "https://github.com/$AJP_RELEASE_REPO/releases/download/$TAG" \
             "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
