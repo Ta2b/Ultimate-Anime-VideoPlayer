@@ -47,7 +47,7 @@ bool stamp_of(const fs::path& file, std::uintmax_t& size, std::int64_t& modified
   std::error_code size_error;
   std::error_code time_error;
   size = fs::file_size(file, size_error);
-  modified = fs::last_write_time(file, time_error).time_since_epoch().count();
+  modified = static_cast<std::int64_t>(fs::last_write_time(file, time_error).time_since_epoch().count());
   return !size_error && !time_error;
 }
 
