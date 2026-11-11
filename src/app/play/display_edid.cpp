@@ -207,7 +207,9 @@ std::optional<render::Chromaticities> edid_primaries(std::span<const std::uint8_
   const std::uint8_t low_rg = base[0x19];
   const std::uint8_t low_bw = base[0x1A];
   const auto at = [&](std::size_t high, std::uint8_t low, unsigned shift) {
-    return static_cast<double>((static_cast<unsigned>(base[high]) << 2U) | ((low >> shift) & 0x03U)) / 1024.0;
+    return static_cast<double>((static_cast<unsigned>(base[high]) << 2U) |
+                               (static_cast<unsigned>(low >> shift) & 0x03U)) /
+           1024.0;
   };
   const render::Chromaticities c{.rx = at(0x1B, low_rg, 6),
                                  .ry = at(0x1C, low_rg, 4),
