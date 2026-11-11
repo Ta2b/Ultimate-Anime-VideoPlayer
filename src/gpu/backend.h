@@ -109,6 +109,13 @@ struct BackendInit {
   Refusal* refusal = nullptr;
 };
 
+// Les architectures CUDA où le FP8 (graphes Q/DQ) est permis : Ada (sm 8.9) et Hopper (sm 9.0). Blackwell
+// (sm 10.x, sm 12.x : RTX 50) attend une mesure de qualité et de vitesse qui le justifie (intention du
+// produit) ; avant Ada, pas d'unités FP8.
+constexpr bool fp8_allowed(int sm_major, int sm_minor) {
+  return (sm_major == 8 && sm_minor >= 9) || sm_major == 9;
+}
+
 // Ce que sait faire le backend sur l'appareil choisi.
 struct BackendCaps {
   std::string name;  // "tensorrt", "vulkan", "metal"…
@@ -117,7 +124,8 @@ struct BackendCaps {
   bool needs_host_sync = false;  // wait() attend côté hôte ; compté dans host_waits
   bool fp16 = false;
   bool int8 = false;
-  bool fp8 = false;  // graphes Q/DQ FP8 (E4M3) calculés par les unités matricielles : Ada (sm 8.9) et après
+  bool fp8 =
+      false;  // graphes Q/DQ FP8 (E4M3) par les unités matricielles : fp8_allowed (Ada, Hopper ; pas RTX 50)
   // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
   // dans un backend construit avec CUTLASS.
   bool span_fp8_cutlass = false;

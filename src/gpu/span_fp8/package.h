@@ -57,7 +57,7 @@ struct Block {
 struct Package {
   std::array<float, kScaleCount> scales{};  // 1 + 3·blocks.size() servent, les autres à 1
   Conv first;                               // conv_1 : 3×3, 16 → 64 (4 canaux nuls)
-  std::vector<Block> blocks{static_cast<std::size_t>(kBlocks)};  // 1 à kBlocks
+  std::vector<Block> blocks{static_cast<std::size_t>(kBlocks)};  // kMinBlocks à kBlocks
   int real_channels = kChannels;  // 48 (b5f48, rangé en 64 avec des zéros) ou 64
   Conv concat;                    // conv_cat : 1×1, 256 → 64
   Conv pixel;                     // to_pixel : 3×3, 64 → 48
@@ -69,7 +69,11 @@ struct Package {
 inline constexpr std::uint32_t kFlagAcc16 = 1U;
 
 // Le dégroupage prend des blocs 2×2 : hauteur et largeur paires. La dernière tuile de 128 lignes des noyaux
-// garde ses lignes au-delà de M (étape 3.1) : plus de multiple de 128.
+// garde ses lignes au-delà de M (étape 3.1) : plus de multiple de 128. Plafonds (B02-04) : kMaxSide par côté,
+// et kMaxPixels en tout, parce que Launcher::init calcule les pas CUTLASS en int (256 canaux × W/2 × H/2 ne
+// tient plus au-delà de 33,5 Mpx).
+inline constexpr int kMaxSide = 16384;
+inline constexpr long long kMaxPixels = 7680LL * 4320LL;  // 8K UHD
 bool size_supported(int height, int width);
 // Pourquoi une taille n'est pas prise ; vide si elle l'est.
 std::string size_refusal(int height, int width);

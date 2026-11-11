@@ -7,7 +7,7 @@ documents décrivent le code actuel et lesquels sont historiques.
 
 `ajp`, un lecteur vidéo C++23 pour l'anime : agrandissement SPAN ×2 (AnimeJaNai), interpolation (RIFE 4.22 lite,
 DistilDRBA au choix) en mode Auto, grade HDR anime guidé par plan, export qui rejoue la même chaîne. Linux,
-Windows, macOS. Le propriétaire est Tatoub ; il écrit en français et décide des releases.
+Windows ; macOS est délaissé pour l'instant (plus construit par la CI ni par les releases, novembre 2026). Le propriétaire est Tatoub ; il écrit en français et décide des releases.
 
 Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur-simple.md)) :
 

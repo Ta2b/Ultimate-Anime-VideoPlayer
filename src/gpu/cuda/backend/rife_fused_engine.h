@@ -17,6 +17,8 @@
 #include <vector>
 
 #include "gpu/backend.h"
+#include "gpu/cuda/backend/fused_graphs.h"
+#include "gpu/cuda/backend/fused_keys.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "kernels/spec/rife_fused.h"
 
@@ -25,20 +27,6 @@ class IRuntime;
 }
 
 namespace ajp::gpu::cuda {
-
-// La clé d'un Artifact de ce moteur : « rife-fused:<h>x<w>:<image|motion>:<d0,d1…>:<moteur0>,<moteur1>… »,
-// les moteurs étant les fichiers du cache, dans l'ordre encodeur, blocs 0 à N-1. Artifact ne porte que la clé
-// et un chemin : la clé dit tout ce que load() doit savoir.
-struct RifeFusedKey {
-  int height = 0;
-  int width = 0;
-  bool motion = false;
-  kernels::RifeFusedPlan plan;
-  std::vector<std::string> engines;
-};
-std::string rife_fused_artifact_key(const RifeFusedKey& key);
-// Rien si la clé est celle d'un autre moteur ou illisible.
-std::optional<RifeFusedKey> rife_fused_artifact_key_parse(std::string_view text);
 
 class RifeFusedEngine final : public Engine {
  public:
@@ -64,8 +52,8 @@ class RifeFusedEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
-  // Le mot du moteur pour le journal du backend (graphes coupés), une fois ; vide sinon.
-  std::string take_notice();
+  // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
+  std::string take_notice() { return graphs_.take_notice(); }
 
  private:
   RifeFusedEngine() = default;
@@ -73,7 +61,6 @@ class RifeFusedEngine final : public Engine {
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                    const Tensor& input, std::span<const Tensor> outputs);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
-  void drop_graphs();
 
   std::unique_ptr<TrtEngine> encode_;
   std::vector<std::unique_ptr<TrtEngine>> blocks_;
@@ -88,21 +75,11 @@ class RifeFusedEngine final : public Engine {
   std::vector<std::string> outputs_;
   std::shared_ptr<SharedActivations> zone_;
 
+  std::uint64_t zone_generation_ = 0;  // la génération de zone_ à use_zone
+
+  // Graphes par jeu d'adresses (entrée, sortie ou flot, masque) et de zone.
   static constexpr std::size_t kMaxGraphs = 8;
-  static constexpr int kCaptureAttempts = 3;
-  struct Graph {
-    std::array<std::uintptr_t, 3> addresses{};  // entrée, sortie (image, ou flot), masque
-    std::uintptr_t zone = 0;
-    std::uint64_t generation = 0;
-    cudaGraphExec_t exec = nullptr;
-    bool warmed = false;
-  };
-  std::vector<Graph> graphs_;
-  bool graphs_off_ = false;
-  int capture_failures_ = 0;
-  int launch_failures_ = 0;
-  static constexpr int kMaxLaunchFailures = 3;
-  std::string notice_;
+  FusedGraphs graphs_{kMaxGraphs, "RIFE fusionné"};
 };
 
 }  // namespace ajp::gpu::cuda

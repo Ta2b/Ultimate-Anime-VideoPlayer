@@ -18,8 +18,11 @@ namespace ajp::gpu::span_fp8 {
 inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7b
 // La version de la porte (judge_hardened) : un refus d'une porte plus ancienne se refait. 2 : les cas durs
 // synthétiques ne décident plus (séance de mesure).
-inline constexpr int kGateVersion = 3;                               // 3 : centiles réglés sur la RTX 4070 Ti
-inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";  // tools/span/derive_span_fp8.py
+// 3 : centiles réglés sur la RTX 4070 Ti. 4 : gain sur le SPAN FP16 de TensorRT mesuré et exigé, échelles
+// avec marge de tête (B02-01, B02-02) ; un paquet d'une porte plus ancienne, même passé, se refait.
+inline constexpr int kGateVersion = 4;
+// Le reçu de tools/span/derive_span_fp8.py, encore lu (app/play/span_int8.cpp).
+inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
@@ -30,11 +33,20 @@ inline constexpr double kMinSsimWorst = 0.985;
 inline constexpr double kErrorQuantile = 0.999;
 inline constexpr double kMaxErrorP999 = 10.0 / 255.0;
 inline constexpr double kMaxDarkErrorP999 = 4.5 / 255.0;
-inline constexpr double kMinHardPsnrWorstDb = 36.0;
+// B02-01 : le FP8 perd en qualité contre le FP16 ; il n'est gardé que s'il va au moins ce rapport plus vite
+// que le SPAN FP16 de TensorRT sur la même carte, à la même taille (le seuil de
+// tools/span/derive_span_fp8.py).
+inline constexpr double kMinSpeedup = 1.05;
+// B02-02 : les échelles valent maximum observé × kScaleHeadroom / 448. Les maxima viennent d'une dizaine
+// d'images d'une seule vidéo, et le paquet sert ensuite à toutes : sans marge, une image plus lumineuse ou
+// plus saturée que le corpus écrête ses activations (bandes, teintes). La marge coûte un quart de pas en bas
+// de l'échelle ; la porte juge le paquet avec elle.
+inline constexpr float kScaleHeadroom = 1.25F;
 // Étape 3.5a : l'accumulateur f16 hors blocs ne coûte pas plus que ceci au PSNR moyen.
 inline constexpr double kMaxAcc16PsnrLossDb = 0.3;
 
-// Les échelles des 1 + 3·blocks tenseurs quantifiés d'après les maxima observés : maximum / 448 (peaks garde
+// Les échelles des 1 + 3·blocks tenseurs quantifiés d'après les maxima observés : maximum × kScaleHeadroom /
+// 448 (peaks garde
 // ses 25 places, les suivantes à 1). Refus FormatUnsupported si un maximum servi est nul ou non fini (corpus
 // inutilisable, ou réseau qui déborde).
 std::expected<std::array<float, kScaleCount>, Refusal> scales_from_peaks(std::span<const float> peaks,
@@ -103,6 +115,7 @@ struct Receipt {
   bool acc16 = false;
   std::vector<std::string> validated_sizes;  // « 1280x720 » : tailles où la porte a passé
   std::vector<std::string> refused_sizes;    // et où elle a échoué (rien n'est refait à cette taille)
+  bool timed_during_playback = false;        // B02-08 : les temps pris pendant la lecture, sous sa charge
 };
 
 std::string receipt_text(const Receipt& receipt, std::string_view comment);

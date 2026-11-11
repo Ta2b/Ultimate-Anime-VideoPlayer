@@ -81,6 +81,19 @@ std::string slot_name(std::string_view base, std::size_t slot) {
   return slot == 0 ? std::string(base) : std::format("{}{}", base, slot + 1);
 }
 
+// L'entrée de la grille d'une LUT dans le hook : c, ou c ramené à son domaine (DOMAIN_MIN/MAX,
+// LUT_3D_INPUT_RANGE), comme sample_lut (B41-04). Les LUT livrées n'ont pas de domaine : leur texte ne change
+// pas.
+std::string lut_input(const CubeLut& lut) {
+  constexpr std::array<float, 3> kUnitMin{0.0F, 0.0F, 0.0F};
+  constexpr std::array<float, 3> kUnitMax{1.0F, 1.0F, 1.0F};
+  if (lut.domain_min == kUnitMin && lut.domain_max == kUnitMax) return "c";
+  const std::array<float, 3>& lo = lut.domain_min;
+  const std::array<float, 3>& hi = lut.domain_max;
+  return std::format("(c - vec3({:.9g}, {:.9g}, {:.9g})) / vec3({:.9g}, {:.9g}, {:.9g})", lo[0], lo[1], lo[2],
+                     hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+}
+
 // Le texte du hook du look pour les LUT posées. Les marques //@LOOK_...@ du fichier reçoivent les intensités
 // (un //!PARAM par emplacement, réglable sans relire le hook), les textures et la chaîne : chaque emplacement
 // occupé lit sa LUT et s'y mélange, dans l'ordre. Deux emplacements de même contenu partagent une texture
@@ -108,9 +121,9 @@ std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
     }
     if (luts[i] == nullptr) continue;
     chain += std::format(
-        "    if ({0} > 0.0) {{\n        vec3 pos = (clamp(c, 0.0, 1.0) * {1}.0 + 0.5) / {2}.0;\n"
+        "    if ({0} > 0.0) {{\n        vec3 pos = (clamp({4}, 0.0, 1.0) * {1}.0 + 0.5) / {2}.0;\n"
         "        c = mix(c, clamp({3}_tex(pos).rgb, 0.0, 1.0), {0});\n    }}\n",
-        mix, luts[i]->size - 1, luts[i]->size, slot_name("AJG_LUT", texture[i]));
+        mix, luts[i]->size - 1, luts[i]->size, slot_name("AJG_LUT", texture[i]), lut_input(*luts[i]));
   }
   chain += "    return c;\n}\n";
   std::string binds;
@@ -197,7 +210,6 @@ struct Grade::Impl {
   ParsedHook grade;
   ParsedHook look;
   ParsedHook black;
-  const pl_hook* calibration = nullptr;
   std::array<const pl_hook*, 3> hooks{};
   GradeParams params;
   pl_gpu gpu = nullptr;
@@ -219,7 +231,6 @@ struct Grade::Impl {
     pl_mpv_user_shader_destroy(&grade.hook);
     pl_mpv_user_shader_destroy(&look.hook);
     pl_mpv_user_shader_destroy(&black.hook);
-    pl_mpv_user_shader_destroy(&calibration);
   }
 };
 
@@ -239,9 +250,6 @@ std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   auto black = parse(gpu, shaders::anime_hdr_black, "anime-hdr-black.hook", kBlackParams);
   if (!black) return std::unexpected(black.error());
   impl->black = std::move(*black);
-  auto calibration = parse(gpu, shaders::anime_hdr_calibration, "anime-hdr-calibration.hook", {});
-  if (!calibration) return std::unexpected(calibration.error());
-  impl->calibration = calibration->hook;
   impl->hooks = {impl->grade.hook, impl->look.hook, impl->black.hook};
   Grade out(std::move(impl));
   out.set_params(GradeParams{});
@@ -310,6 +318,8 @@ void Grade::Impl::put_output() {
   put("an_late", tune ? 1.0 : 0.0);
   if (tune) {
     put("kwin_curve", std::clamp(tune->curve_peak, 50.0, 100000.0));
+    put("kwin_gain", std::clamp(tune->curve_gain, 0.05, 1.0));
+    put("kwin_full", std::clamp(tune->full_peak, 50.0, 100000.0));
     put("em_top", std::clamp(tune->top, 50.0, 10000.0));
   }
 }
@@ -352,10 +362,6 @@ const GradeParams& Grade::params() const {
 
 std::span<const pl_hook* const> Grade::hooks() const {
   return std::span<const pl_hook* const>(impl_->hooks.data(), impl_->hooks.size());
-}
-
-const pl_hook* Grade::calibration() const {
-  return impl_->calibration;
 }
 
 }  // namespace ajp::render

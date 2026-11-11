@@ -1,4 +1,4 @@
-// Plan d'interpolation d'une paire de sources (a, b) dans la tranche verticale : si RIFE (ou un
+// Plan d'interpolation d'une paire de sources (a, b) dans l'étage gpu (upscale_stage.h) : si RIFE (ou un
 // autre moteur d'interpolation) y tourne. Les instants de sortie viennent de core/cadence.h.
 //
 // RIFE ne tourne pas sur une paire qui ne bouge pas ou qui coupe :

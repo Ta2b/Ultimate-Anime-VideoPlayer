@@ -6,8 +6,9 @@
 // Les hauteurs de travail essayées montent jusqu'à celle de la séquence (1080p), sur tout écran : une source
 // 1080p que la carte tient n'est plus réduite à la moitié de l'écran (A49-02). Deux familles, dans l'ordre
 // (choix jugé à l'œil) :
-//   1. SPAN seul, du palier le plus léger au plus lourd, jusqu'au premier qui ne tient pas ;
-//   2. SPAN + RIFE en mode auto Rapide, du plus haut palier que SPAN seul a tenu vers le bas, jusqu'au
+//   1. SPAN seul, depuis le palier du niveau estimé : en montant jusqu'au premier qui ne tient pas, ou en
+//      descendant jusqu'au premier qui tient (B07-14) ;
+//   2. SPAN + RIFE en mode auto Instantané, du plus haut palier que SPAN seul a tenu vers le bas, jusqu'au
 //      premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas ne se
 //      tient pas avec RIFE.
 // Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.25
@@ -43,11 +44,17 @@ inline constexpr std::array<int, 5> kCalibrationHeights{360, 480, 540, 720, 1080
 // tableau mais l'Auto ne le suit plus : il borne la chaîne plus bas que la carte ne tient.
 // 3 : le moteur et le pilote de la mesure sont notés, et un essai avec RIFE ne tient que si RIFE double
 // vraiment la cadence (A07-02) : une version 2 a pu retenir une chaîne où le Rapide avait coupé RIFE.
-inline constexpr int kCalibrationVersion = 3;
+// 4 : une chaîne ne tient qu'avec au plus kMaxLossPerImage de pertes par image visée (B07-02) ; une version
+// 3 a pu retenir une chaîne qui perd une image par seconde.
+inline constexpr int kCalibrationVersion = 4;
 // Un essai avec RIFE tient si les images neuves obtenues, créditées des instants laissés sans image à dessein
 // (coupes et dessins tenus de la séquence), font au moins cette part de la cadence doublée. En dessous, le
 // mode Rapide a baissé le facteur faute de temps : aucune image n'est perdue, mais RIFE ne tourne pas.
 inline constexpr double kMinRifeShare = 0.95;
+// Les pertes qu'une chaîne recommandée peut avoir, par image visée (target_fps), pas par présentation : à
+// 24 i/s sur un écran à 60 Hz, les 2 % par présentation de holds (auto_bench.h) font 5 % des images, une
+// saccade par seconde. 0,5 % : au plus une image sur 200, une par dix secondes de séquence à 24 i/s.
+inline constexpr double kMaxLossPerImage = 0.005;
 
 // Les modèles joués par les essais ; vides : ceux par défaut (SPAN Performance Sharp, RIFE 4.22 lite).
 struct CalibrationModels {
@@ -80,26 +87,31 @@ double credited_fps(const BenchReading& reading);
 // La cadence visée par un essai : celle de la séquence (24 i/s), doublée par RIFE sans dépasser celle de
 // l'écran (period_us, 0 : inconnue), que le mode Rapide ne dépasse pas non plus.
 double trial_target_fps(const ChainCandidate& chain, std::int64_t period_us);
-// Le verdict d'un essai : pertes et retard sous leurs seuils (holds, auto_bench.h), et avec RIFE la cadence
-// créditée à kMinRifeShare de target_fps au moins.
+// Le verdict d'un essai : pertes et retard sous leurs seuils (holds, auto_bench.h), pertes sous
+// kMaxLossPerImage des images visées, et avec RIFE la cadence créditée à kMinRifeShare de target_fps au
+// moins.
 bool trial_holds(const ChainCandidate& chain, const BenchReading& reading, double target_fps);
 
 // Les hauteurs essayées, de la plus lourde à la plus légère : toutes jusqu'à celle de la séquence.
 std::vector<int> calibration_heights();
 
 // Le prochain essai après ceux déjà faits ; rien quand la recherche est finie.
-std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried);
+// La famille SPAN seul part de start_height (le palier au plus égal, le plus bas si 0), monte tant qu'elle
+// tient ou descend tant qu'elle ne tient pas : une carte rapide ne construit pas tous les paliers d'en bas.
+std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int start_height = 0);
+// Le palier où la calibration commence pour ce niveau estimé : celui que l'Auto estimé y joue.
+int calibration_start_height(Tier tier);
 // La chaîne recommandée, la fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent
 // ensemble ; sinon le plus haut SPAN seul ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni RIFE si rien
 // ne tient. Les autres paliers restent au tableau, au choix de l'utilisateur.
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
 // Personnalisé, et pour le reste ce que l'Auto calibré écrira (apply_preset, A07-01) : réduction Hermite,
-// SPAN et RIFE de models en FP16, RIFE en mode auto Rapide, ordre de SPAN en Auto, poses gardées,
+// SPAN et RIFE de models en FP16, RIFE en mode auto Instantané, ordre de SPAN en Auto, poses gardées,
 // « Restaurer les traits » actif (sans lui un essai SPAN sous 1080p jouerait la source sans SPAN, A07-06).
 PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
                                 const CalibrationModels& models = {});
-// « 720p · SPAN · RIFE (auto Rapide) » ; pour le tableau et le journal.
+// « 720p · SPAN · RIFE (auto Instant) » ; pour le tableau et le journal.
 std::string describe(const ChainCandidate& chain);
 
 struct MachineCalibration {
@@ -155,6 +167,9 @@ bool calibration_driver_changed(const MachineCalibration& calibration, const Cal
 // calibré. std::nullopt sinon.
 std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir,
                                                 const CalibrationHost& host);
+// La même, d'une calibration déjà lue (celle que le panneau vient de refaire).
+std::optional<CalibratedChain> followed_chain(const MachineCalibration& calibration,
+                                              const CalibrationHost& host);
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
                                               const MachineCalibration& calibration);
 
@@ -176,7 +191,8 @@ struct CalibrationTrials {
 // s'il ne rend rien.
 std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlayer& play,
                                                                  const std::stop_token& stop,
-                                                                 const std::function<void(float)>& fraction);
+                                                                 const std::function<void(float)>& fraction,
+                                                                 int start_height = 0);
 
 // Les essais, l'un après l'autre (au plus une dizaine) : base porte les réglages de l'utilisateur, tier le
 // niveau estimé de la carte (ses modèles : calibration_models), fraction reçoit l'avancement (0 à 1). La

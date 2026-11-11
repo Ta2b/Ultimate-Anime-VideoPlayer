@@ -82,6 +82,20 @@
 //!MAXIMUM 100000.0
 1000.0
 
+//!PARAM kwin_gain
+//!DESC Facteur sur la sortie de la courbe (« Blanc des surfaces » sous Reinhard seul) : 1, sauf là
+//!TYPE float
+//!MINIMUM 0.05
+//!MAXIMUM 1.0
+1.0
+
+//!PARAM kwin_full
+//!DESC Sommet de la courbe à « Blanc des surfaces » 100 % (nits affichés) : le niveau d'où partent les éclats
+//!TYPE float
+//!MINIMUM 50.0
+//!MAXIMUM 100000.0
+1000.0
+
 //!PARAM em_top
 //!DESC Plafond des éclats (nits affichés) : le pic de l'écran, la dalle limite les scènes claires
 //!TYPE float
@@ -178,8 +192,9 @@ vec3 ajk_lin_to_pq(vec3 l) {
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }
 
-// La compression d'un pixel encodé : ses nits affichés (blanc de référence à kwin_ref), avant l'écrêtage.
-vec3 ajk_compress(vec3 e) {
+// La compression d'un pixel encodé vers le sommet `curve` : ses nits affichés (blanc de référence à
+// kwin_ref), avant l'écrêtage.
+vec3 ajk_compress(vec3 e, float curve) {
     float k = kwin_ref / 203.0;
     // Ce que l'écran recevrait, en nits affichés, divisé par 10 000.
     vec3 lms = AJK_TO_LMS * (ajk_pq_to_lin(e) * k);
@@ -188,7 +203,7 @@ vec3 ajk_compress(vec3 e) {
     float luminance = ajk_pq_to_lin(vec3(intensity)).x * 10000.0;
     float rel = max(luminance / kwin_ref, 0.0);
     float in_range = 10000.0 * k / kwin_ref;
-    float out_range = kwin_curve / kwin_ref;
+    float out_range = curve / kwin_ref;
     float v = (out_range * (1.0 + in_range) - in_range) / (in_range * in_range);
     rel = rel * (1.0 + rel * v) / (1.0 + rel);
     float mapped = ajk_lin_to_pq(vec3(rel * kwin_ref / 10000.0)).x;
@@ -211,13 +226,27 @@ float ajk_emit(float m, float gain, float top) {
     return knee + room * (1.0 - exp(-(v - knee) / room));
 }
 
+// B41-01 : « Blanc des surfaces » sous 100 % baisse la courbe (kwin_curve, kwin_gain), mais un émetteur part
+// du niveau qu'il aurait sous la courbe à 100 % (kwin_full) : baisser les surfaces ne baisse pas les éclats.
+// La part d'émetteur va de 0 (aucune montée) à 1 dès un demi-diaphragme, sans marche (le même calcul :
+// render::emitter_over_surface).
+float ajk_emit_over(vec3 e, float m, float gain) {
+    float base = m;
+    if (gain > 1.0 && kwin_full != kwin_curve) {
+        vec3 f = ajk_compress(e, kwin_full);
+        float m_full = max(f.r, max(f.g, f.b));
+        base = mix(m, max(m_full, m), smoothstep(0.0, 0.5, log2(gain)));
+    }
+    return ajk_emit(base, gain, em_top);
+}
+
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
-    vec3 n = ajk_compress(px.rgb);
+    vec3 n = ajk_compress(px.rgb, kwin_curve) * kwin_gain;
     // L'alpha de la passe anime : 0,75 moins un huitième par diaphragme de montée ; 1 : rien à appliquer.
     if (px.a < 0.99) {
         float m = max(n.r, max(n.g, n.b));
-        if (m > 1e-4) n *= ajk_emit(m, exp2((0.75 - px.a) * 8.0), em_top) / m;
+        if (m > 1e-4) n *= ajk_emit_over(px.rgb, m, exp2((0.75 - px.a) * 8.0)) / m;
     }
     // Ramené au signal : le compositeur multipliera par k, sans plus rien compresser.
     px.rgb = ajk_lin_to_pq(min(n, kwin_peak) / (kwin_ref / 203.0 * 10000.0));

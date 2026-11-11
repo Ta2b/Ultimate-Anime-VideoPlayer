@@ -116,6 +116,56 @@ TEST_CASE("Étages : « Annuler et regarder » ne coupe que l'étage annulé, et
                     ->refusal));
 }
 
+TEST_CASE("Étages : « Annuler et regarder » sur SPAN vaut pour toute la préparation de la vidéo (B29-02)",
+          "[app][stages]") {
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  StageMemory memory;
+  refuse(memory, ChainStage::Upscale, wanted, true);
+  const auto tried = plan(wanted, memory);
+  REQUIRE(tried);
+  CHECK_FALSE(tried->settings.upscale);
+  // L'interpolation, à une autre taille de travail, demanderait une seconde construction : elle part aussi.
+  CHECK(tried->settings.rife_factor == 0);
+  REQUIRE(tried->notes.size() == 2);
+  CHECK(tried->notes[1].stage == ChainStage::Motion);
+  CHECK(tried->notes[1].change == StageChange::Cancelled);
+  // La vidéo suivante essaie de nouveau les deux.
+  const auto next = plan(wanted, memory, true, "ep02.mkv");
+  REQUIRE(next);
+  CHECK(next->settings.upscale);
+  CHECK(next->settings.rife_factor == 2);
+  // Un refus (pas une annulation) de SPAN laisse l'interpolation, comme avant.
+  StageMemory refused;
+  refuse(refused, ChainStage::Upscale, wanted);
+  CHECK(plan(wanted, refused)->settings.rife_factor == 2);
+}
+
+TEST_CASE("Étages : le refus de l'interpolation suit l'ordre du warp, pas le facteur brut (B09-05)",
+          "[app][stages]") {
+  PlaySettings five = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  five.rife_factor = 5;
+  StageMemory memory;
+  refuse(memory, ChainStage::Motion, five);
+  // L'Auto récrit le facteur sur un autre écran (×5 → ×4) : même ordre du warp, même moteur, pas de
+  // nouvelle construction.
+  PlaySettings four = five;
+  four.rife_factor = 4;
+  CHECK(plan(four, memory)->settings.rife_factor == 0);
+  // ×5/2 (×2,5) n'est pas ×5 : le warp y passe avant SPAN en sortie 1080p.
+  PlaySettings half = five;
+  half.rife_factor_den = 2;
+  half.work_height = 540;
+  CHECK(stage_signature(ChainStage::Motion, half, kWidth, kHeight, kLibrary) != stage_signature(
+                                                                                    ChainStage::Motion,
+                                                                                    [&] {
+                                                                                      PlaySettings s = half;
+                                                                                      s.rife_factor_den = 1;
+                                                                                      return s;
+                                                                                    }(),
+                                                                                    kWidth, kHeight,
+                                                                                    kLibrary));
+}
+
 TEST_CASE("Étages : un refus vaut pour la séance, « Réessayer » l'oublie", "[app][stages]") {
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   StageMemory memory;

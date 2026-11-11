@@ -2,7 +2,7 @@
 // dans l'ordre des appels, ready (l'attente des entrées sur la timeline Vulkan), le calcul, done
 // (le signal de l'étape). Le fil du lecteur n'attend plus le réseau : le runtime calcule pendant
 // que le GPU fait le reste de la chaîne. Partagé par les réseaux d'ONNX Runtime de Core ML
-// (gpu/coreml) et de Windows ML (gpu/winml), et par l'interpolation d'Apple.
+// (gpu/coreml) et par l'interpolation d'Apple.
 #pragma once
 
 #include <cstddef>

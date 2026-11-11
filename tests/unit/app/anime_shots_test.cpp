@@ -60,11 +60,21 @@ TEST_CASE("anime par plan : une coupe change à l'image de coupe, sans glissé a
   glide.aim(bright, 2'000'000, true);  // la coupe : aussitôt
   CHECK_FALSE(glide.gliding(2'000'000));
   CHECK(glide.at(2'000'000) == bright);
-  // Le même plan mieux connu : aussitôt aussi.
+  // B42-08 : le même plan mieux connu (ou la jointure de deux analyses) glisse vers sa nouvelle valeur ; le
+  // glissé n'avait jamais lieu.
   AnimeShotLook better = bright;
   better.light.apl_nits = 70.0;
   glide.aim(better, 2'100'000, false);
-  CHECK(glide.at(2'100'000) == better);
+  CHECK(glide.gliding(2'100'000));
+  CHECK(glide.at(2'100'000) == bright);
+  const AnimeShotLook half = glide.at(2'100'000 + (kAnimeGlideUs / 2));
+  CHECK(half.light.apl_nits < 90.0);
+  CHECK(half.light.apl_nits > 70.0);
+  CHECK_FALSE(glide.gliding(2'100'000 + kAnimeGlideUs));
+  CHECK(glide.at(2'100'000 + kAnimeGlideUs) == better);
+  // La même valeur visée de nouveau ne relance rien.
+  glide.aim(better, 2'500'000, false);
+  CHECK_FALSE(glide.gliding(2'500'000));
 }
 
 TEST_CASE("anime par plan : l'exposition relève les surfaces du grade, rien sans elle", "[app][anime]") {

@@ -119,7 +119,10 @@ class VulkanBackend final : public Backend {
   // V9 : le réseau construit avec l'autotuner rejoué contre ses noyaux de référence (net_gate.h) ; les
   // choix repliés si sa sortie s'en éloigne trop. Porte non jouée ou repli refusé : les noyaux de référence
   // partout (P2.45) ; refus s'ils ne s'abaissent pas non plus, rien d'invérifié n'est écrit.
-  std::expected<void, Refusal> gate(const ModelSpec& model, net::ArtifactData& data);
+  // tuner : ses relevés chiffrent le gain d'une précision réduite gardée ; rien (rechargement), gain non
+  // mesuré.
+  std::expected<void, Refusal> gate(const ModelSpec& model, net::ArtifactData& data,
+                                    const net::Autotuner* tuner = nullptr);
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);

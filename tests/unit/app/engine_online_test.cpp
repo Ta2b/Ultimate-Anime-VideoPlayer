@@ -14,6 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/model_index.h"
+#include "core/update_manifest.h"
 
 using namespace ajp;
 using namespace ajp::app::play;
@@ -92,17 +93,26 @@ TEST_CASE("Moteurs de la release : hors de la release ou de pypi.nvidia.com, éc
 // L'index des trois plateformes signé par la clé de test kTestKey (signature kTestSignature, openssl
 // pkeyutl -sign -rawin) : l'archive vit dans la release fixe trt-abc du dépôt, comme en CI.
 std::string signed_index() {
-  std::string text = "version = 1\n";
+  std::string text = "version = 1\ntag = \"v1.2.3\"\n";
   for (const std::string_view platform : {"linux", "windows", "macos"})
     text +=
         engine(platform, "https://github.com/o/r/releases/download/trt-abc/m.tar.gz", std::string(64, 'a'));
   return text;
 }
-constexpr std::string_view kTestKey = "adf8860afcb60ac5a6de8c2d2ee667bd04e4e88f85570c5fe73b2c75f4c3358f";
+constexpr std::string_view kTestKey = "6e9a2010904180bcac497c94a59aa5ebf48a01578501b17a2493a8782ffb3a3f";
 constexpr std::string_view kTestSignature =
+    "57c0ffe2b77eb8d212e7e4c78339aed31b2c85e8a87181035432ec25098210ecf3188fdce24eada703e2f9074a94a948e3449739"
+    "e47e74046da339ff45105b0b";
+// Le même index avec « tag = "v9.9.9" », signé par la même clé : celui d'une autre release.
+constexpr std::string_view kOtherTagSignature =
+    "a97b27690df97e7d270f16041e1004072caf2cde98d54ba2631f1af4c70bd352a1cb48246b4b3ced7a571e4062adb06c000206c9"
+    "b11bfe8f4c1bf70a9a50ca02";
+// L'index d'avant l'étiquette (sans « tag »), signé par une ancienne clé de test : la signature est bonne,
+// mais l'index ne dit pas de quelle release il est.
+constexpr std::string_view kTaglessKey = "adf8860afcb60ac5a6de8c2d2ee667bd04e4e88f85570c5fe73b2c75f4c3358f";
+constexpr std::string_view kTaglessSignature =
     "b0c2c0c4053091bf05d9dabcb7c0797a85e5d7079e487d9f3f18c4ffaa4c2059dc668021a86a5200026fa6d73efd4f99b69a80ff"
-    "1158"
-    "4d6c3fca3a95a3528e0f";
+    "11584d6c3fca3a95a3528e0f";
 
 void write(const fs::path& file, std::string_view text) {
   std::ofstream(file, std::ios::binary) << text;
@@ -115,7 +125,6 @@ TEST_CASE("Moteurs de la release : sans réseau, la copie gardée et signée ser
   const fs::path cache = dir / "engines-nvidia.lock";
   write(cache, signed_index());
   write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
-  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
   const std::vector<std::string> keys{std::string(kTestKey)};
   EngineCatalog catalog = empty_catalog();
   add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
@@ -126,49 +135,12 @@ TEST_CASE("Moteurs de la release : sans réseau, la copie gardée et signée ser
   fs::remove_all(dir);
 }
 
-TEST_CASE("Moteurs de la release : la copie d'une autre version du lecteur ne se reprend pas (B06-01)",
-          "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-version";
-  fs::remove_all(dir);
-  fs::create_directories(dir);
-  const fs::path cache = dir / "engines-nvidia.lock";
-  const std::vector<std::string> keys{std::string(kTestKey)};
-  // Le lecteur 1.2.3 a gardé l'index de sa release aujourd'hui : frais pour lui.
-  write(cache, signed_index());
-  write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
-  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
-  EngineCatalog same = empty_catalog();
-  merge_release_copy(same, read_release_index(cache), "o/r", "1.2.3", keys);
-  CHECK(same.packages.size() == 1);
-  // Mis à jour vers 1.2.4 le jour même : la copie, signée et fraîche, est celle d'une autre release. Elle
-  // n'est pas reprise (le module TensorRT d'une autre ABI serait réinstallé) et l'index de 1.2.4 est dû tout
-  // de suite.
-  CHECK(release_index_due(cache, "1.2.4"));
-  EngineCatalog newer = empty_catalog();
-  merge_release_copy(newer, read_release_index(cache), "o/r", "1.2.4", keys);
-  CHECK(newer.packages.empty());
-  // Une copie d'avant le témoin (aucun « .version ») ne se reprend pas non plus.
-  fs::remove(dir / "engines-nvidia.lock.version");
-  EngineCatalog legacy = empty_catalog();
-  merge_release_copy(legacy, read_release_index(cache), "o/r", "1.2.3", keys);
-  CHECK(legacy.packages.empty());
-  CHECK(release_index_due(cache, "1.2.3"));
-  // Un 404 ou un échec retenu pour 1.2.3 ne retient pas 1.2.4.
-  write(dir / "engines-nvidia.lock.absent", "1.2.3\n");
-  fs::remove(cache);
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
-  CHECK(release_index_due(cache, "1.2.4"));
-  fs::remove_all(dir);
-}
-
 TEST_CASE("Moteurs de la release : sans signature valide, l'index n'est pas cru (A26-02)", "[app][install]") {
   const fs::path dir = fs::temp_directory_path() / "ajp-online-unsigned";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
   const std::vector<std::string> keys{std::string(kTestKey)};
-  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
 
   // Pas de signature du tout.
   write(cache, signed_index());
@@ -259,9 +231,8 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   const fs::path cache = dir / "engines-nvidia.lock";
   write(cache, signed_index());
   write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
-  write(dir / "engines-nvidia.lock.version", "1.2.3\n");
   fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
-  CHECK(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache));
   int asked = 0;
   const UpdateFetch offline = [&](std::string_view, const fs::path&, int,
                                   const std::stop_token&) -> std::expected<void, Refusal> {
@@ -271,17 +242,17 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 1);
   CHECK(fs::exists(dir / "engines-nvidia.lock.tried"));
-  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK_FALSE(release_index_due(cache));
   // La copie gardée et signée sert toujours.
   EngineCatalog catalog = empty_catalog();
-  merge_release_copy(catalog, read_release_index(cache), "o/r", "1.2.3", {std::string(kTestKey)});
+  merge_release_copy(catalog, read_release_index(cache), "o/r", {std::string(kTestKey)}, "1.2.3");
   CHECK(catalog.packages.size() == 1);
   // Pas de nouvel essai tout de suite ; quelques heures après, si.
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 1);
   fs::last_write_time(dir / "engines-nvidia.lock.tried",
                       fs::file_time_type::clock::now() - std::chrono::hours(7));
-  CHECK(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache));
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 2);
 
@@ -297,4 +268,64 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   CHECK_FALSE(fs::exists(dir / "engines-nvidia.lock.tried"));
   CHECK(fs::exists(cache));
   fs::remove_all(dir);
+}
+
+TEST_CASE(
+    "Moteurs de la release : un index signé d'une autre release, ou sans étiquette, est écarté (B51-06)",
+    "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-tag";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  const std::vector<std::string> keys{std::string(kTestKey), std::string(kTaglessKey)};
+  CHECK(release_index_tag(signed_index()) == "v1.2.3");
+
+  // Le bon index, signé, sous la bonne étiquette : pris.
+  write(cache, signed_index());
+  write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
+  EngineCatalog catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
+  CHECK(catalog.packages.size() == 1);
+
+  // Le même index recopié dans la release d'une autre version : écarté, malgré sa signature valide.
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.4", keys, UpdateFetch());
+  CHECK(catalog.packages.empty());
+  CHECK(catalog.problem.contains("v1.2.4"));
+
+  // Un index qui dit une autre étiquette (signé lui aussi).
+  std::string other = signed_index();
+  other.replace(other.find("v1.2.3"), 6, "v9.9.9");
+  write(cache, other);
+  write(dir / "engines-nvidia.lock.sig", std::string(kOtherTagSignature) + "\n");
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
+  CHECK(catalog.packages.empty());
+
+  // Un index d'avant l'étiquette : sa signature est bonne, mais il ne dit pas de quelle release il est.
+  std::string tagless = signed_index();
+  tagless.erase(tagless.find("tag = "), std::string("tag = \"v1.2.3\"\n").size());
+  write(cache, tagless);
+  write(dir / "engines-nvidia.lock.sig", std::string(kTaglessSignature) + "\n");
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
+  CHECK(catalog.packages.empty());
+  CHECK_FALSE(catalog.problem.empty());
+  fs::remove_all(dir);
+}
+
+// La même clé signe le manifeste des mises à jour et l'index des moteurs, sans préfixe de domaine dans le
+// message signé (B26-12) : la séparation tient au format. Un fichier signé pour l'un ne se lit pas comme
+// l'autre.
+TEST_CASE("Moteurs de la release : un index ne se lit pas comme un manifeste, ni l'inverse (B26-12)",
+          "[app][install]") {
+  CHECK_FALSE(core::parse_update_manifest(signed_index()));
+  const std::string manifest =
+      "version = \"99.0.0\"\nexpires = \"2099-12-31\"\nnotes_url = \"https://example.invalid/n\"\n";
+  REQUIRE(core::parse_update_manifest(manifest));
+  const auto as_index = core::read_engine_index(manifest);
+  CHECK((!as_index || as_index->packages.empty()));
+  EngineCatalog catalog = empty_catalog();
+  CHECK(merge_release_index(catalog, manifest, kPrefix) == 0);
+  CHECK(catalog.packages.empty());
 }

@@ -61,7 +61,10 @@ Played play(bool late_fate, bool drba = false) {
   if (drba) rig.feed(2, 2);              // DistilDRBA attend l'image d'après pour montrer la source 1
   REQUIRE(rig.collect(1, false));        // le seul emplacement est tenu
   rig.feed(drba ? 3 : 2, drba ? 3 : 2);  // la paire (1, 2) est préparée à l'heure, puis attend l'emplacement
-  std::this_thread::sleep_for(150ms);
+  // La paire (1, 2) préparée (entrée de RIFE écrite, ou mesures de la suivante lancées pour DistilDRBA) :
+  // elle attend l'emplacement. Une condition, pas une attente fixe (B40-08) : sous une machine chargée, 150
+  // ms ne suffisaient pas toujours.
+  REQUIRE(logged(rig, drba ? "scores_start 2 3" : "rife_input"));
   clock.jump(10'000'000);  // l'horloge passe la paire pendant l'attente
   rig.release_all();
   (void)rig.collect(4, true, 400ms);

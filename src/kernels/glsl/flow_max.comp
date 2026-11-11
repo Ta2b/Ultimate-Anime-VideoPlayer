@@ -7,6 +7,7 @@
 // Référence : kernels/ref/warp.cpp (flow_max) ; même calcul que warp_kernels.cu (flow_max).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
@@ -22,13 +23,14 @@ layout(push_constant) uniform Push {
   uint area_height;
 } pc;
 
-shared uint group_bins[256];
+// Les 16 × 16 invocations du groupe se partagent les kFlowBins cases de la spécification, quel qu'en soit le nombre.
+shared uint group_bins[AJP_FLOW_BINS];
 
 void main() {
   uint x = gl_GlobalInvocationID.x;
   uint y = gl_GlobalInvocationID.y;
   uint tid = gl_LocalInvocationIndex;
-  group_bins[tid] = 0u;
+  for (uint k = tid; k < uint(AJP_FLOW_BINS); k += 256u) group_bins[k] = 0u;
   barrier();
   if (x < pc.area_width && y < pc.area_height) {
     float m = 0.0;
@@ -38,9 +40,11 @@ void main() {
       float v = abs(float(flow.v[c * plane + i]));
       m = v > m ? v : m;  // NaN ne gagne jamais
     }
-    float scaled = m * 4.0;
-    atomicAdd(group_bins[scaled >= 255.0 ? 255u : uint(scaled)], 1u);
+    float scaled = m / AJP_FLOW_BIN_STEP;
+    atomicAdd(group_bins[scaled >= float(AJP_FLOW_BINS - 1) ? uint(AJP_FLOW_BINS - 1) : uint(scaled)], 1u);
   }
   barrier();
-  if (group_bins[tid] != 0u) atomicAdd(result.v[tid], group_bins[tid]);
+  for (uint k = tid; k < uint(AJP_FLOW_BINS); k += 256u) {
+    if (group_bins[k] != 0u) atomicAdd(result.v[k], group_bins[k]);
+  }
 }

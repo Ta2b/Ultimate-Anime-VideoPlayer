@@ -98,16 +98,17 @@ std::string resolution_text(int height);
 // et nettoie les défauts du warp. Après : SPAN agrandit chaque image source une fois, le warp
 // déforme les images agrandies à la taille de sortie. Auto : après dès que la sortie dépasse
 // kWarpAfterSpanAbove lignes, où SPAN coûte le plus (1080p → 4K : environ 8 ms par passe sur une
-// RTX 4070 Ti, contre 0,4 ms pour le warp), ou dès que le facteur peut atteindre ×3 (D5 : deux images créées
-// par paire, deux passes de SPAN de plus contre deux warps).
+// RTX 4070 Ti, contre 0,4 ms pour le warp), ou dès qu'un facteur choisi à la main atteint ×3 (D5 : deux
+// images créées par paire, deux passes de SPAN de plus contre deux warps). En Auto le facteur varie : seule
+// la hauteur décide (order_factor, chain_shape.h). La qualité des deux ordres n'est pas comparée (B22-03).
 enum class SpanOrder : std::uint8_t { Auto, Before, After };
 inline constexpr int kSpanOrderCount = 3;
 inline constexpr int kWarpAfterSpanAbove = 1080;
 std::string_view name(SpanOrder order);   // « auto », la clé de play.toml
-std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p ou dès ×3) », pour le menu
+std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p) », pour le menu
 inline constexpr int kWarpAfterSpanFactor = 3;
-// Le warp passe-t-il après SPAN pour une sortie de output_height lignes, au facteur le plus haut que la
-// lecture peut prendre (max_factor, arrondi au-dessous ; 0 : inconnu) ?
+// Le warp passe-t-il après SPAN pour une sortie de output_height lignes, au facteur choisi à la main
+// (max_factor, arrondi au-dessous ; 0 : inconnu ou Auto) ?
 constexpr bool warp_after_span(SpanOrder order, int output_height, int max_factor = 0) {
   return order == SpanOrder::After || (order == SpanOrder::Auto && (output_height > kWarpAfterSpanAbove ||
                                                                     max_factor >= kWarpAfterSpanFactor));
@@ -163,6 +164,9 @@ struct LookLayer {
 
 // play.toml se réécrit au plus une fois par seconde pendant qu'on règle (accueil et lecture).
 inline constexpr std::int64_t kSettingsSaveEveryUs = 1'000'000;
+// Après une écriture refusée de play.toml : le nouvel essai, plus lent pour ne pas remplir le journal
+// (B36-01).
+inline constexpr std::int64_t kSettingsRetryUs = 10'000'000;
 
 struct PlaySettings {
   // Auto-configuration : Auto par défaut, y compris au premier double-clic sur une vidéo (l'assistant ne
@@ -318,7 +322,9 @@ inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
 inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
 // Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66 ; tenu par un static_assert de
 // host_facts.cpp) : un pic réglable fait toujours une sortie HDR.
-inline constexpr core::Range<int> kTrueHdrPeak{350, 2000};  // ou 0 : automatique
+// Le haut suit les téléviseurs HDR de 3000 à 4000 nits (B37-09) ; le grade accepte jusqu'à 10 000
+// (render::grade_limits::kPeakNits).
+inline constexpr core::Range<int> kTrueHdrPeak{350, 4000};  // ou 0 : automatique
 inline constexpr core::Range<int> kSharpness{0, 100};
 }  // namespace limits
 
@@ -350,10 +356,19 @@ std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view tom
                                                             std::vector<std::string>* dropped = nullptr);
 std::string format_settings(const PlaySettings& settings);
 
-// Fichier absent : les réglages par défaut.
-std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path);
-// Écrit à côté puis remplace (FileUnwritable si impossible) : jamais un fichier à moitié écrit.
+// Fichier absent : les réglages par défaut. Un fichier qui existe sans se lire (verrou passager réessayé,
+// droits, dossier) est refusé (FileUnreadable), et ce processus ne le réécrit plus (B22-02). ignored reçoit
+// les valeurs fautives écartées (« section.clé (raison) »), le défaut les remplace : l'appelant les dit
+// (B22-05).
+std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path,
+                                                   std::vector<std::string>* ignored = nullptr);
+// Écrit à côté puis remplace (FileUnwritable si impossible) : jamais un fichier à moitié écrit. Un fichier
+// existant qui ne se lit pas n'est pas écrasé (FileUnreadable) ; un TOML invalide est gardé en copie d'abord.
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings);
+
+// L'avis des valeurs fautives que load_settings a écartées : les clés (« work_height, peak »), pour
+// l'accueil. Vide s'il n'y en a pas (B22-05).
+std::string ignored_values_note(const std::vector<std::string>& ignored);
 
 // Les réglages de cette lecture : ceux de play.toml, remplacés par les options données.
 PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options);

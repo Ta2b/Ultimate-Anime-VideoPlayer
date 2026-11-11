@@ -16,10 +16,10 @@ namespace {
 // choisi au menu s'il existe à côté.
 ModelChoice choose_in(const std::filesystem::path& found, std::string_view prefix,
                       const std::string& chosen_name, bool option_given) {
-  ModelChoice choice{.path = found, .default_name = found.filename().string()};
+  ModelChoice choice{.path = found, .default_name = core::to_utf8(found.filename())};
   std::error_code error;
   for (const auto& entry : core::dir_entries(found.parent_path(), error)) {
-    const std::string name = entry.path().filename().string();
+    const std::string name = core::to_utf8(entry.path().filename());
     if (name.starts_with(prefix) && name.ends_with(".onnx")) choice.available.push_back(name);
   }
   std::ranges::sort(choice.available);
@@ -81,9 +81,12 @@ std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available) {
 
 std::filesystem::path tier_variant(const std::filesystem::path& model, PrecisionTier tier) {
   if (tier == PrecisionTier::Balanced) return model;
+  // Par path et non par string : un nom Unicode ne passe pas par la page de code sous Windows.
+  std::filesystem::path name = model.stem();
+  name += tier == PrecisionTier::Performance ? "_fp8" : "_fp32";
+  name += model.extension();
   std::filesystem::path variant = model;
-  variant.replace_filename(model.stem().string() + (tier == PrecisionTier::Performance ? "_fp8" : "_fp32") +
-                           model.extension().string());
+  variant.replace_filename(name);
   std::error_code error;
   return std::filesystem::is_regular_file(variant, error) ? variant : model;
 }

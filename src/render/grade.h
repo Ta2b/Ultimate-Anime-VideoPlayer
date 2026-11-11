@@ -67,8 +67,6 @@ class Grade {
   // La valeur posée d'un //!PARAM de la passe du grade (après set_params, set_video_fps, set_kwin_match),
   // nullopt s'il n'y est pas.
   std::optional<float> param(std::string_view name) const;
-  // La mire d'étalonnage, qui remplace l'image par des patchs en luminance absolue (PQ).
-  const pl_hook* calibration() const;
 
  private:
   struct Impl;

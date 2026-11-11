@@ -139,7 +139,8 @@ class MemoryAllocator {
   // heap_full : vkAllocateMemory à court sur ce type (pas le budget, commun à tous les types).
   std::expected<Block*, Refusal> new_block(std::uint32_t type, Tiling tiling, VkDeviceSize size,
                                            bool& heap_full);
-  void free_block(std::vector<std::unique_ptr<Block>>::iterator at);
+  // Rend le bloc à l'appareil ; renvoie l'itérateur du bloc suivant.
+  std::vector<std::unique_ptr<Block>>::iterator free_block(std::vector<std::unique_ptr<Block>>::iterator at);
   // Rend les blocs vides en réserve jusqu'à ce que needed octets tiennent dans le budget.
   void evict_spares(VkDeviceSize needed);
   static bool carve(Block& block, VkDeviceSize size, VkDeviceSize alignment, VkDeviceSize& offset);
