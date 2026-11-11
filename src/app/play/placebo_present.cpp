@@ -29,7 +29,8 @@ std::vector<const char*> present_extensions(PresentWanted wanted) {
 #if defined(VK_KHR_present_id2) && defined(VK_KHR_present_wait2) && defined(VK_EXT_present_timing)
   out.push_back(VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
   out.push_back(VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME);
-  if (wanted != PresentWanted::Wait) out.push_back(VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
+  // Aussi à wait : sans wp_presentation (Windows, X11), present timing est son niveau qui date (B10-01).
+  out.push_back(VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
 #endif
 #ifdef VK_KHR_calibrated_timestamps
   out.push_back(VK_KHR_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);

@@ -503,7 +503,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   reuse_span_ = setup_.engine != nullptr && held && spans_reused_in_row_ < kMaxSpanReuse &&
                 (warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_));
   spans_reused_in_row_ = reuse_span_ ? spans_reused_in_row_ + 1 : 0;
-  if (reuse_span_) ++spans_reused_;
+  pick_span_buffer();
   // Après un dessin tenu, b paraît à 1/2 sans passe ni warp (poses_copy) : une seule image écrite.
   copy_pair_ = runs && setup_.skip_held && by_motion() && setup_.live && setup_.live->keep_poses() &&
                before_ == PairMotion::Still && intermediates_ > 0;
@@ -677,16 +677,21 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   return held_b(made, frame, output);
 }
 
+void UpscaleStage::pick_span_buffer() {
+  if (reuse_span_) ++spans_reused_;
+  // Choisi au premier SPAN, le tampon restait celui d'il y a deux images, qui après un dessin tenu est
+  // celui de a : le premier instant de la paire mélangeait a à elle-même, warpée par le mouvement de la
+  // paire (contours doublés, masque de RIFE en trame).
+  span_of_[current_] = reuse_span_ ? span_of_[current_ ^ 1U] : span_of_[current_ ^ 1U] ^ 1U;
+}
+
 std::expected<void, Refusal> UpscaleStage::span_current() {
   AJP_TRACE("span");
   if (spanned_now_) return {};
   spanned_now_ = true;
-  if (reuse_span_) {  // dessin tenu : le tampon de la précédente
-    span_of_[current_] = span_of_[current_ ^ 1U];
-    return {};
-  }
-  // L'autre tampon que celui de la précédente, qui reste le bord a des warps de la paire.
-  span_of_[current_] = span_of_[current_ ^ 1U] ^ 1U;
+  // Le tampon est choisi à l'arrivée de l'image : celui de la précédente pour un dessin tenu, sinon
+  // l'autre, car celui de la précédente reste le bord a des warps de la paire.
+  if (reuse_span_) return {};
   // Smooth : le SPAN de cette image a été fait en avance, dans ce même tampon (span_smooth_b).
   if (std::exchange(span_ahead_, std::nullopt) == frame_id_ && span_ahead_buf_ == span_of_[current_])
     return {};

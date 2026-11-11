@@ -1,6 +1,7 @@
 // Le VRR armé sur l'écran de la fenêtre (host_facts.h). Sous Windows, aucune API publique de DXGI ne dit si
 // G-SYNC ou FreeSync est engagé : NVAPI le dit sur une carte NVIDIA (nvapi64.dll, livrée avec le pilote,
 // chargée à l'exécution par nvapi_QueryInterface, sans en-tête ni fichier de NVIDIA dans nos sources).
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -9,6 +10,8 @@
 #include <SDL3/SDL_properties.h>
 
 #include "app/play/host_facts.h"
+#include "app/play/vrr_watch.h"
+#include "core/log.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -24,15 +27,13 @@ constexpr std::uint32_t kNvInitialize = 0x0150E828U;
 constexpr std::uint32_t kNvDisplayIdByName = 0xAE457190U;
 constexpr std::uint32_t kNvGetVrrInfo = 0xDF8FDA57U;
 
-// NV_GET_VRR_INFO_V1 : version, puis les drapeaux (bit 0 bIsVRREnabled, bit 4 bIsDisplayInVRRMode), puis
-// quatre mots réservés. La version vaut sizeof | (1 << 16) (MAKE_NVAPI_VERSION).
+// NV_GET_VRR_INFO_V1 : version, puis les drapeaux (bit 0 bIsVRREnabled, bit 4 bIsDisplayInVRRMode,
+// nv_vrr_armed), puis quatre mots réservés. La version vaut sizeof | (1 << 16) (MAKE_NVAPI_VERSION).
 struct NvVrrInfo {
   std::uint32_t version = sizeof(NvVrrInfo) | (1U << 16U);
   std::uint32_t flags = 0;
   std::uint32_t reserved[4] = {};
 };
-constexpr std::uint32_t kNvVrrEnabled = 1U << 0U;
-constexpr std::uint32_t kNvInVrrMode = 1U << 4U;
 
 using QueryInterface = void* (*)(std::uint32_t);
 using Initialize = int (*)();
@@ -75,8 +76,12 @@ std::string gdi_name(SDL_Window* window) {
   return monitor.szDevice;
 }
 
-// G-SYNC activé pour cet écran et engagé en ce moment ; rien si NVAPI ne connaît pas l'écran.
-std::optional<bool> nvapi_vrr_armed(SDL_Window* window) {
+// Ce que NVAPI dit de l'écran de la fenêtre ; rien s'il ne le connaît pas.
+struct NvVrr {
+  bool enabled = false;  // G-SYNC permis sur cet écran : capable (B11-03)
+  bool armed = false;    // engagé en ce moment (nv_vrr_armed)
+};
+std::optional<NvVrr> nvapi_vrr(SDL_Window* window) {
   const Nvapi* api = nvapi();
   if (api == nullptr) return std::nullopt;
   const std::string name = gdi_name(window);
@@ -84,17 +89,53 @@ std::optional<bool> nvapi_vrr_armed(SDL_Window* window) {
   if (name.empty() || api->display_id(name.c_str(), &id) != 0) return std::nullopt;
   NvVrrInfo info;
   if (api->vrr_info(id, &info) != 0) return std::nullopt;
-  return (info.flags & kNvVrrEnabled) != 0 && (info.flags & kNvInVrrMode) != 0;
+  // B11-02 : la structure est écrite à la main ; les drapeaux bruts vont au journal à chaque changement, pour
+  // vérifier sur l'écran réel que le bit 4 suit bien l'engagement de G-SYNC.
+  static std::atomic<bool> in_mode_seen{false};
+  static std::atomic<std::uint32_t> last_flags{UINT32_MAX};
+  if ((info.flags & kNvVrrInMode) != 0) in_mode_seen.store(true, std::memory_order_relaxed);
+  if (last_flags.exchange(info.flags, std::memory_order_relaxed) != info.flags)
+    log_channel("app")->info("NVAPI VRR : drapeaux {:#x}, réservés {:#x} {:#x} {:#x} {:#x}", info.flags,
+                             info.reserved[0], info.reserved[1], info.reserved[2], info.reserved[3]);
+  return NvVrr{.enabled = (info.flags & kNvVrrEnabled) != 0,
+               .armed = nv_vrr_armed(info.flags, in_mode_seen.load(std::memory_order_relaxed))};
+}
+
+// Le chemin d'interface du moniteur qui porte la fenêtre (« \\?\DISPLAY#GSM5B08#…#{e6f07b5f-…} »), que
+// pick_display rapproche de l'identifiant d'instance de SetupAPI (B34-02) ; vide s'il ne se lit pas.
+std::string monitor_interface(SDL_Window* window) {
+  const std::string adapter = gdi_name(window);
+  if (adapter.empty()) return {};
+  DISPLAY_DEVICEA device{};
+  device.cb = sizeof(device);
+  for (DWORD i = 0; EnumDisplayDevicesA(adapter.c_str(), i, &device, EDD_GET_DEVICE_INTERFACE_NAME) != FALSE;
+       ++i) {
+    if ((device.StateFlags & DISPLAY_DEVICE_ACTIVE) != 0 && device.DeviceID[0] != '\0')
+      return device.DeviceID;
+    device = DISPLAY_DEVICEA{};
+    device.cb = sizeof(device);
+  }
+  return {};
 }
 
 }  // namespace
 #endif
 
 std::optional<DisplayFacts> window_display(SDL_Window* window) {
-  std::optional<DisplayFacts> display = read_display(display_name(window));
 #if defined(_WIN32)
-  if (display && !display->vrr_armed) display->vrr_armed = nvapi_vrr_armed(window);
+  std::optional<DisplayFacts> display = read_display(display_name(window), monitor_interface(window));
+  if (display) {
+    if (const auto nv = nvapi_vrr(window)) {
+      if (!display->vrr_armed) display->vrr_armed = nv->armed;
+      // B11-03 : un écran G-SYNC à module n'annonce souvent aucune plage dans son EDID.
+      if (nv->enabled) display->vrr = true;
+    }
+  }
+#else
+  std::optional<DisplayFacts> display = read_display(display_name(window));
 #endif
+  // Armé suppose capable, quelle que soit la source (B11-03).
+  if (display && display->vrr_armed.value_or(false)) display->vrr = true;
   return display;
 }
 
@@ -108,7 +149,8 @@ std::optional<bool> window_vrr_armed([[maybe_unused]] SDL_Window* window, std::s
   const std::scoped_lock lock(guard);
   if (const auto now = std::chrono::steady_clock::now(); now - read_at >= kReread) {
     read_at = now;
-    last = nvapi_vrr_armed(window);
+    const auto nv = nvapi_vrr(window);
+    last = nv ? std::optional<bool>(nv->armed) : std::nullopt;
   }
   (void)connector;
   return last;

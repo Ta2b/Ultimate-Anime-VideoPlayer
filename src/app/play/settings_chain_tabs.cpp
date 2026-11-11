@@ -277,6 +277,29 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
 
 }  // namespace
 
+namespace {
+
+// Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait
+// la demander qu'au pilote Linux (NVPRESENT_ENABLE_SMOOTH_MOTION) : sous Windows, elle se règle par profil
+// dans l'application NVIDIA, et la case n'y ferait rien (B34-06).
+void smooth_motion_section([[maybe_unused]] PlaySettings& d) {
+#if defined(__linux__)
+  section(i18n::tr("Smooth Motion (NVIDIA driver)"));
+  // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
+  const bool without_rife = d.rife_factor < 2;
+  if (without_rife) d.smooth_motion = false;
+  ImGui::BeginDisabled(without_rife);
+  ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
+  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
+  ImGui::EndDisabled();
+  note(i18n::tr(
+      "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
+  if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+#endif
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
   // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
@@ -457,19 +480,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   panel::tip(
       i18n::tr("After SPAN upscales each source frame once, then warps it: faster. Before SPAN also cleans "
                "each in-between frame. Auto picks After from ×3 or above 1080p. Reloads playback."));
-  // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
-  if (exporting || !choices.nvidia) return;
-  section(i18n::tr("Smooth Motion (NVIDIA driver)"));
-  // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
-  const bool without_rife = d.rife_factor < 2;
-  if (without_rife) d.smooth_motion = false;
-  ImGui::BeginDisabled(without_rife);
-  ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
-  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
-  ImGui::EndDisabled();
-  note(i18n::tr(
-      "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
-  if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+  if (!exporting && choices.nvidia) smooth_motion_section(d);
 }
 
 }  // namespace ajp::app::play
