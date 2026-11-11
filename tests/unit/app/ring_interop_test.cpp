@@ -1,12 +1,11 @@
 // Étape 5.5c : l'anneau de bout en bout, sur la vraie interopérabilité Vulkan → CUDA. Une rampe ingérée et
 // écrite dans un emplacement par le backend TensorRT, relue par libplacebo (pl_tex_download) : au plus un
 // code d'écart avec la valeur attendue en RGB10A2. Test caché : il demande une carte NVIDIA et le backend
-// construit (AJP_BACKEND_TENSORRT de CMake, ou la variable d'environnement du même nom) :
-//   ajp_app_tests "[.ring_interop]"
+// construit (AJP_BACKEND_TENSORRT de CMake) :
+//   ajp_app_tests "[.ring_interop]"   ou   ctest -L nvidia
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -78,9 +77,10 @@ DecodedFrame ramp(int w, int h) {
 
 TEST_CASE("Anneau : une rampe écrite par le backend TensorRT se relit par libplacebo à un code près",
           "[.ring_interop][app][ring]") {
-  const char* path = std::getenv("AJP_TENSORRT_BACKEND");
-  if (path == nullptr || *path == '\0')
-    SKIP("AJP_TENSORRT_BACKEND : le chemin du backend TensorRT construit");
+  // Le backend construit avec ce binaire (macro de CMake, vide sans CUDA) : pas de variable d'environnement,
+  // le test ne se saute plus à tort sur un binaire construit avec CUDA (B40-02).
+  const std::string path = AJP_BACKEND_TENSORRT;
+  if (path.empty()) SKIP("binaire construit sans CUDA : pas de backend TensorRT");
   const RingFormat wanted = GENERATE(RingFormat::Rgba16Unorm, RingFormat::Rgb10a2Unorm);
   const bool ten_bits = wanted == RingFormat::Rgb10a2Unorm;
   CAPTURE(ten_bits);

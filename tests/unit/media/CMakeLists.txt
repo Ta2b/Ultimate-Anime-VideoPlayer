@@ -9,3 +9,5 @@ ajp_add_unit_tests(media
 target_compile_definitions(ajp_media_tests PRIVATE AJP_MEDIA_CLIP_DIR="${CMAKE_CURRENT_BINARY_DIR}/clips"
                                            AJP_DATA_DIR="${CMAKE_SOURCE_DIR}/data")
 
+# NVDEC réduit contre le décodage logiciel (B40-02) : test caché, sur une machine NVIDIA (`ctest -L nvidia`).
+ajp_add_hardware_tests(ajp_media_tests nvidia 1800 shot_nvdec)
