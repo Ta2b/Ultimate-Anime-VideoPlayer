@@ -105,6 +105,15 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
                          core::to_utf8(aside.filename()));
 }
 
+// play.toml, avec l'avis des valeurs fautives que le défaut a remplacées (B22-05) ajouté aux notes de départ.
+std::expected<PlaySettings, Refusal> load_with_notes(const std::filesystem::path& path,
+                                                     std::vector<std::string>& notes) {
+  std::vector<std::string> ignored;
+  auto loaded = load_settings(path, &ignored);
+  if (std::string note = ignored_values_note(ignored); !note.empty()) notes.push_back(std::move(note));
+  return loaded;
+}
+
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
 std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path& file) {
   auto demuxer = media::Demuxer::open(file);
@@ -302,17 +311,14 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   std::jthread update_check;
   const std::filesystem::path update_file = paths::update_state(paths.data);
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
-  std::vector<std::string> startup_notes;   // fichiers mis de côté, dits à l'accueil
-  std::vector<std::string> ignored_values;  // valeurs fautives écartées, le défaut les remplace (B22-05)
-  auto saved = load_settings(settings_path, &ignored_values);
+  std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
+  auto saved = load_with_notes(settings_path, startup_notes);
   i18n::set_language(i18n::language_from_code(saved ? saved->language : default_interface_language()));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
     startup_notes.push_back(set_aside(settings_path, saved.error()));
     saved = PlaySettings{};
   }
-  if (const std::string ignored = ignored_values_note(ignored_values); !ignored.empty())
-    startup_notes.push_back(ignored);
   ReleaseRefresh release_index = start_release_refresh(options, paths, *saved);  // A18-02
   const std::jthread resource_log = start_resource_log();                        // A33-08
   load_user_keys(paths::user_keys(settings_path.parent_path()));                 // [keys] seul

@@ -275,18 +275,12 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   PlaySettings from_file = st.saved;
   PlaySettings running = home_settings(h, st.saved);
   PlaySettings started = running;
-  const auto refresh = [&] {
-    h.ui.set_settings(running, home_choices(h, st, running));
-    h.ui.set_choices_refresh([catalog = &h.catalog](SettingsChoices& open_choices) {
-      refresh_host_choices(open_choices, *catalog);
-    });
-  };
+  const auto refresh = [&] { h.ui.set_settings(running, home_choices(h, st, running), &h.catalog); };
   refresh();
   h.ui.open_settings();
   const auto pick = std::make_shared<FilePick>();
   HomeView view{.problem = problem};
   bool dirty = false;
-  bool save_failure_said = false;
   std::int64_t saved_at = host_now_us();
   // A24-16 : play.toml s'écrit hors du thread de l'interface, comme en lecture (une écriture lente, disque
   // qui dort ou partage réseau, ne fige plus l'accueil). La sortie de la fonction attend la dernière.
@@ -374,12 +368,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                  input);
     }
     actions.clear();
-    // Une écriture refusée : dite une fois, et reprise plus tard au lieu d'être oubliée (B31-08, B36-01).
-    if (settings_write_failed(writer, h.ui, save_failure_said, host_now_us())) {
-      dirty = true;
-      saved_at = host_now_us() + kSettingsRetryUs - kSettingsSaveEveryUs;
-    }
-    if (dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) save();
+    if (settings_save_due(writer, h.ui, dirty, saved_at, host_now_us())) save();  // B31-08, B36-01
     st.snapshot.maybe(h.screen, opened);
     view.dialog_open = pick->open();
     const ImDrawData* draw = h.ui.home(host_now_us(), view, actions);

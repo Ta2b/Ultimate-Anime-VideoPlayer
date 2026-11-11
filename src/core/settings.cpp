@@ -221,10 +221,10 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
   for (std::size_t i = 0; i < kUsageCount; ++i) {
     if (const std::optional<EngineId>& engine = settings.preferred[i]) {
       preferred.insert_or_assign(kUsageNames[i], std::string(engine_name(*engine)));
-    } else if (const std::optional<std::string> on_disk =
+    } else if (const std::optional<std::string> stored =
                    preferred.contains(kUsageNames[i]) ? preferred[kUsageNames[i]].value_exact<std::string>()
                                                       : std::nullopt;
-               !on_disk || parse_engine(*on_disk) || retired_engine(*on_disk)) {
+               !stored || parse_engine(*stored) || retired_engine(*stored)) {
       // Un moteur qu'une version plus récente a choisi (nom inconnu d'ici) reste dans le fichier.
       preferred.erase(kUsageNames[i]);
     }

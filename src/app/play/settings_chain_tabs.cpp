@@ -282,6 +282,49 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
                "are not compared in this version. Applies after a short reload."));
 }
 
+// Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
+void smooth_motion_section(PlaySettings& d, const SettingsChoices& choices) {
+  section(i18n::tr("Smooth Motion (NVIDIA driver)"));
+  // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
+  // Le choix reste tel quel, grisé : l'interpolation éteinte puis rallumée ne le perd plus, et le lancement
+  // ne le prend que si RIFE tourne (player.cpp). Sans modèle d'interpolation, la case est grisée aussi
+  // (B23-12).
+  const bool without_rife = d.rife_factor < 2 || !choices.rife_available;
+  ImGui::BeginDisabled(without_rife);
+  ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
+  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
+  ImGui::EndDisabled();
+  note(i18n::tr(
+      "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
+  if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+}
+
+// La liste du plafond de la cadence Auto et la phrase qui dit où il s'arrête.
+void auto_cap_row(PlaySettings& d, const SettingsChoices& choices) {
+  // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
+  // GPU.
+  const auto cap_label = [](int cap) {
+    return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : std::format("{} i/s", cap);
+  };
+  if (ImGui::BeginCombo(i18n::tr("Auto limit"), cap_label(d.auto_cap).c_str())) {
+    for (const int cap : {0, 120, 60}) {
+      if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
+    }
+    // Un plafond de play.toml hors de cette liste reste visible et choisi (B23-05).
+    if (d.auto_cap != 0 && d.auto_cap != 120 && d.auto_cap != 60)
+      ImGui::Selectable(cap_label(d.auto_cap).c_str(), true);
+    ImGui::EndCombo();
+  }
+  panel::tip(i18n::tr("The highest frame rate Auto aims for. It still drops by itself on heavy scenes."));
+  // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
+  if (choices.display_hz > 0.0 && choices.source_fps > 0.0) {
+    // Le plafond choisi (60 ou 120) abaisse celui de l'écran : c'est lui que la phrase cite (B23-05).
+    note(i18n::tr_format("Here Auto goes up to ×{} ({:.0f} fps limit).",
+                         top_factor(d, choices.display_hz, choices.source_fps),
+                         core::auto_limit_hz(choices.display_hz, d.auto_cap)));
+  }
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -337,30 +380,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     ImGui::EndCombo();
   }
-  if (d.rife_auto && now.num > now.den && !exporting) {
-    // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
-    // GPU.
-    const auto cap_label = [](int cap) {
-      return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : std::format("{} i/s", cap);
-    };
-    if (ImGui::BeginCombo(i18n::tr("Auto limit"), cap_label(d.auto_cap).c_str())) {
-      for (const int cap : {0, 120, 60}) {
-        if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
-      }
-      // Un plafond de play.toml hors de cette liste reste visible et choisi (B23-05).
-      if (d.auto_cap != 0 && d.auto_cap != 120 && d.auto_cap != 60)
-        ImGui::Selectable(cap_label(d.auto_cap).c_str(), true);
-      ImGui::EndCombo();
-    }
-    panel::tip(i18n::tr("The highest frame rate Auto aims for. It still drops by itself on heavy scenes."));
-    // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
-    if (choices.display_hz > 0.0 && choices.source_fps > 0.0) {
-      // Le plafond choisi (60 ou 120) abaisse celui de l'écran : c'est lui que la phrase cite (B23-05).
-      note(i18n::tr_format("Here Auto goes up to ×{} ({:.0f} fps limit).",
-                           top_factor(d, choices.display_hz, choices.source_fps),
-                           core::auto_limit_hz(choices.display_hz, d.auto_cap)));
-    }
-  }
+  if (d.rife_auto && now.num > now.den && !exporting) auto_cap_row(d, choices);
   if (d.rife_auto && now.num > now.den && !exporting) {
     // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
     // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
@@ -477,21 +497,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                "in-between frames; the image quality of the two orders is not compared. Before SPAN also "
                "cleans each in-between frame. Auto picks After above 1080p, and from ×3 for a fixed "
                "multiplier. Reloads playback."));
-  // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
-  if (exporting || !choices.nvidia) return;
-  section(i18n::tr("Smooth Motion (NVIDIA driver)"));
-  // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
-  // Le choix reste tel quel, grisé : l'interpolation éteinte puis rallumée ne le perd plus, et le lancement
-  // ne le prend que si RIFE tourne (player.cpp). Sans modèle d'interpolation, la case est grisée aussi
-  // (B23-12).
-  const bool without_rife = d.rife_factor < 2 || !choices.rife_available;
-  ImGui::BeginDisabled(without_rife);
-  ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
-  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
-  ImGui::EndDisabled();
-  note(i18n::tr(
-      "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
-  if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+  if (!exporting && choices.nvidia) smooth_motion_section(d, choices);
 }
 
 }  // namespace ajp::app::play

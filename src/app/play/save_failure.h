@@ -15,21 +15,28 @@
 
 namespace ajp::app::play {
 
-// Relève l'échec d'écriture que le fil d'écriture a rapporté : un avis, une fois par séance (`said`), et vrai
-// quand c'est play.toml qui a échoué (l'appelant le remet à écrire, plus tard).
-inline bool settings_write_failed(LatestWriter& writer, PlayerUi& ui, bool& said, std::int64_t now_us) {
-  const auto failed = writer.take_failure();
-  if (!failed) return false;
-  if (!std::exchange(said, true))
-    ui.controls().warn(i18n::ui_tr_format("Settings cannot be saved: {}", visible_error(failed->refusal)),
-                       now_us);
-  return failed->key == "play.toml";
+// Faut-il écrire play.toml maintenant ? Relève aussi l'échec d'écriture que le fil d'écriture a rapporté : un
+// avis, une fois par écrivain ; si c'est play.toml, il est remis à écrire (`dirty`), après une pause plus
+// longue (`saved_at` avance d'autant).
+inline bool settings_save_due(LatestWriter& writer, PlayerUi& ui, bool& dirty, std::int64_t& saved_at,
+                              std::int64_t now_us) {
+  if (const auto failed = writer.take_failure()) {
+    if (!std::exchange(writer.failure_said, true))
+      ui.controls().warn(i18n::ui_tr_format("Settings cannot be saved: {}", visible_error(failed->refusal)),
+                         now_us);
+    if (failed->key == "play.toml") {
+      dirty = true;
+      saved_at = now_us + kSettingsRetryUs - kSettingsSaveEveryUs;
+    }
+  }
+  return dirty && now_us - saved_at >= kSettingsSaveEveryUs;
 }
 
-// Un dernier essai, sur place, à la fin de la chaîne : après sa fermeture, plus personne ne reprend ce
-// réglage.
-inline void retry_settings_save(LatestWriter& writer, const std::filesystem::path& path,
-                                const PlaySettings& saved) {
+// Vide l'écrivain (attente bornée) puis, si play.toml a échoué, un dernier essai sur place : après la
+// fermeture de la chaîne, plus personne ne reprend ce réglage.
+inline void finish_settings_writes(LatestWriter& writer, const std::filesystem::path& path,
+                                   const PlaySettings& saved) {
+  writer.flush();
   const auto failed = writer.take_failure();
   if (!failed || failed->key != "play.toml") return;
   if (auto again = save_settings(path, saved); !again) log_channel("app")->warn("{}", again.error().detail);

@@ -40,58 +40,7 @@ bool writable_folder(const std::filesystem::path& path) {
   return true;
 }
 
-}  // namespace
-
-void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
-                 std::vector<Input>& actions, std::string& engines_dir, FolderField& folder) {
-  section(i18n::tr("Active engine"));
-  const std::optional<core::EngineId> in_use = choices.engine_in_use;
-  if (in_use) ImGui::TextUnformatted(std::string(engine_label(*in_use)).c_str());
-  if (!choices.engine_note.empty()) note(choices.engine_note);
-  if (choices.switchable.size() < 2) {
-    note(i18n::tr("Only one engine is installed: \"Install more engines\" lists those that suit this GPU."));
-  } else {
-    const core::EngineId shown = draft.value_or(in_use.value_or(core::EngineId::Vulkan));
-    for (const core::EngineId id : choices.switchable) {
-      if (ImGui::RadioButton(std::string(engine_label(id)).c_str(), shown == id)) draft = id;
-    }
-    if (draft && draft != in_use) {
-      ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      panel::wrapped(
-          i18n::tr_format(i18n::tr("To apply: playback reopens at the same spot with {}; its engines "
-                                   "are built the first time for each model and size."),
-                          engine_label(*draft))
-              .c_str());
-      ImGui::PopStyleColor();
-      if (ImGui::Button(i18n::tr("Use this engine"))) {
-        actions.emplace_back(UseEngine{.id = *draft});
-        draft.reset();
-      }
-      ImGui::SameLine();
-      if (ImGui::Button(i18n::tr("Cancel##moteur"))) draft.reset();
-    }
-  }
-
-  section(i18n::tr("Installed engines"));
-  panel::wrapped(choices.chosen_engines.c_str());
-  if (ImGui::Button(i18n::tr("Install more engines…"))) actions.emplace_back(OpenEngineScreen{});
-  note(i18n::tr("Reopens the engines screen; playback resumes at the same spot."));
-
-  section(i18n::tr("Built engines"));
-  if (choices.engines.empty()) note(i18n::tr("No engine built yet."));
-  for (const EngineBadge& engine : choices.engines) {
-    // L'état d'abord, sur sa ligne ; le nom, long, passe à la ligne sans déborder ni cacher l'état (B23-11).
-    ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
-    ImGui::TextUnformatted(engine.loaded ? i18n::tr("Loaded") : i18n::tr("Cached"));
-    ImGui::PopStyleColor();
-    panel::wrapped(engine.name.c_str());
-    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-    panel::wrapped(engine.detail.c_str());
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-  }
-  note(i18n::tr("An engine is built once per model and size, then read from the cache."));
-
+void install_folder_section(const SettingsChoices& choices, std::string& engines_dir, FolderField& folder) {
   section(i18n::tr("Install folder"));
   // Un moteur téléchargé (TensorRT : 1,3 Go installés pour une RTX 4070 Ti) et ses téléchargements
   // s'installent ici ; l'espace libre se vérifie AVANT chaque téléchargement. Vide : le dossier des données
@@ -146,6 +95,61 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
   }
   note(i18n::tr_format("Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
                        choices.engines_dir_default, choices.engines_dir_free));
+}
+
+}  // namespace
+
+void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
+                 std::vector<Input>& actions, std::string& engines_dir, FolderField& folder) {
+  section(i18n::tr("Active engine"));
+  const std::optional<core::EngineId> in_use = choices.engine_in_use;
+  if (in_use) ImGui::TextUnformatted(std::string(engine_label(*in_use)).c_str());
+  if (!choices.engine_note.empty()) note(choices.engine_note);
+  if (choices.switchable.size() < 2) {
+    note(i18n::tr("Only one engine is installed: \"Install more engines\" lists those that suit this GPU."));
+  } else {
+    const core::EngineId shown = draft.value_or(in_use.value_or(core::EngineId::Vulkan));
+    for (const core::EngineId id : choices.switchable) {
+      if (ImGui::RadioButton(std::string(engine_label(id)).c_str(), shown == id)) draft = id;
+    }
+    if (draft && draft != in_use) {
+      ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+      panel::wrapped(
+          i18n::tr_format(i18n::tr("To apply: playback reopens at the same spot with {}; its engines "
+                                   "are built the first time for each model and size."),
+                          engine_label(*draft))
+              .c_str());
+      ImGui::PopStyleColor();
+      if (ImGui::Button(i18n::tr("Use this engine"))) {
+        actions.emplace_back(UseEngine{.id = *draft});
+        draft.reset();
+      }
+      ImGui::SameLine();
+      if (ImGui::Button(i18n::tr("Cancel##moteur"))) draft.reset();
+    }
+  }
+
+  section(i18n::tr("Installed engines"));
+  panel::wrapped(choices.chosen_engines.c_str());
+  if (ImGui::Button(i18n::tr("Install more engines…"))) actions.emplace_back(OpenEngineScreen{});
+  note(i18n::tr("Reopens the engines screen; playback resumes at the same spot."));
+
+  section(i18n::tr("Built engines"));
+  if (choices.engines.empty()) note(i18n::tr("No engine built yet."));
+  for (const EngineBadge& engine : choices.engines) {
+    // L'état d'abord, sur sa ligne ; le nom, long, passe à la ligne sans déborder ni cacher l'état (B23-11).
+    ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
+    ImGui::TextUnformatted(engine.loaded ? i18n::tr("Loaded") : i18n::tr("Cached"));
+    ImGui::PopStyleColor();
+    panel::wrapped(engine.name.c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
+    panel::wrapped(engine.detail.c_str());
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+  }
+  note(i18n::tr("An engine is built once per model and size, then read from the cache."));
+
+  install_folder_section(choices, engines_dir, folder);
 }
 
 void stages_note(const SettingsChoices& choices, std::vector<Input>& actions) {

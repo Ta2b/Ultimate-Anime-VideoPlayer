@@ -517,21 +517,25 @@ Change reopen_for(const std::vector<std::string>& reasons) {
 
 }  // namespace
 
+// Le moteur d'interpolation chargé : celui de l'ouverture, pas le réglage en cours. Interpolation coupée, un
+// choix de moteur, de modèle, de précision, de fusion ou d'ordre passe en direct (live_part) sans rien
+// recharger : à son retour, c'est la chaîne chargée qu'il faut comparer au choix (B22-01).
+static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, const OpenedChain* opened) {
+  PlaySettings base = running;
+  if (!rife_loaded || opened == nullptr || !opened->loaded) return base;
+  base.motion_engine = opened->loaded->motion_engine;
+  base.rife_model = opened->loaded->rife_model;
+  base.motion_precision = opened->loaded->motion_precision;
+  base.span_order = opened->loaded->span_order;
+  base.rife_fused = opened->loaded->rife_fused;
+  base.drba_fused = opened->loaded->drba_fused;
+  return base;
+}
+
 Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
                       const OpenedChain* opened) {
   std::vector<std::string> reopen;
-  // Le moteur d'interpolation chargé : celui de l'ouverture, pas le réglage en cours. Interpolation coupée,
-  // un choix de moteur, de modèle, de précision, de fusion ou d'ordre passe en direct (live_part) sans rien
-  // recharger : à son retour, c'est la chaîne chargée qu'il faut comparer au choix (B22-01).
-  PlaySettings base = running;
-  if (rife_loaded && opened != nullptr && opened->loaded) {
-    base.motion_engine = opened->loaded->motion_engine;
-    base.rife_model = opened->loaded->rife_model;
-    base.motion_precision = opened->loaded->motion_precision;
-    base.span_order = opened->loaded->span_order;
-    base.rife_fused = opened->loaded->rife_fused;
-    base.drba_fused = opened->loaded->drba_fused;
-  }
+  const PlaySettings base = loaded_base(running, rife_loaded, opened);
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
       running.work_height != wanted.work_height || running.restore_lines != wanted.restore_lines)
     reopen.emplace_back(i18n::tr("SPAN reloads (built the first time for this size)"));
@@ -553,15 +557,13 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       base.rife_model != wanted.rife_model)
     reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));
-  if (wanted.rife_factor >= 2 && base.span_order != wanted.span_order) {
+  if (wanted.rife_factor >= 2 && base.span_order != wanted.span_order)
     reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? i18n::tr("warp runs before SPAN")
                         : wanted.span_order == SpanOrder::After ? i18n::tr("warp runs after SPAN")
                                                                 : i18n::tr("warp order follows the output"));
-  }
-  if (wanted.upscale && running.span_precision != wanted.span_precision) {
+  if (wanted.upscale && running.span_precision != wanted.span_precision)
     reopen.emplace_back(i18n::tr_format("SPAN switches to {} (built the first time for this size)",
                                         precision_text(wanted.span_precision)));
-  }
   if (wanted.rife_factor >= 2 && base.motion_engine == wanted.motion_engine &&
       base.motion_precision != wanted.motion_precision) {
     reopen.emplace_back(i18n::tr_format("{} switches to {} (built the first time for this size)",

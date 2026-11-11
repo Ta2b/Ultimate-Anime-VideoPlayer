@@ -28,6 +28,7 @@
 #include <windows.h>
 #endif
 
+#include "app/play/host_choices.h"
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/ui_fonts.h"
@@ -636,8 +637,10 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   return ImGui::GetDrawData();
 }
 
-void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices) {
+void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices,
+                            const EngineCatalog* catalog) {
   running_ = running;
+  catalog_ = catalog;
   choices_ = std::move(choices);
   input_pending_ = true;
 }
@@ -654,8 +657,8 @@ void PlayerUi::set_running(const PlaySettings& running) {
 }
 
 void PlayerUi::refresh_choices(std::int64_t now_us) {
-  if (!refresh_ || (!refresh_pending_ && now_us - refreshed_us_ < kChoicesRefreshUs)) return;
-  refresh_(choices_);
+  if (catalog_ == nullptr || (!refresh_pending_ && now_us - refreshed_us_ < kChoicesRefreshUs)) return;
+  refresh_host_choices(choices_, *catalog_);
   refreshed_us_ = now_us;
   refresh_pending_ = false;
 }

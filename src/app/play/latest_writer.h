@@ -48,6 +48,8 @@ class LatestWriter {
     Refusal refusal;
   };
   std::optional<Failure> take_failure();
+  // Dit par l'affichage : l'avis d'un refus ne paraît qu'une fois par écrivain.
+  bool failure_said = false;
 
   // À la sortie du processus : attend, au plus limit, les écritures que des writers détruits ont laissées
   // en cours.

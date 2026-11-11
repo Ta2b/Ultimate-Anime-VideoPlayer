@@ -9,7 +9,6 @@
 
 #include <cstdint>
 #include <expected>
-#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -32,6 +31,8 @@ union SDL_Event;
 struct ImGuiContext;
 
 namespace ajp::app::play {
+
+struct EngineCatalog;
 
 class PlaceboScreen;
 
@@ -88,11 +89,9 @@ class PlayerUi {
   // Les pistes que les menus de la barre proposent, et celles choisies.
   void set_tracks(TrackMenu tracks);
   // Les réglages en cours et ce que le menu des paramètres propose.
-  void set_settings(const PlaySettings& running, SettingsChoices choices);
-  // Ce qui change pendant la séance (sorties son, lecteur par défaut, place libre) : relu à l'ouverture du
-  // menu et toutes les quelques secondes tant qu'il est ouvert (B23-08).
-  using ChoicesRefresh = std::function<void(SettingsChoices&)>;
-  void set_choices_refresh(ChoicesRefresh refresh) { refresh_ = std::move(refresh); }
+  // `catalog` : de quoi relire les sorties son et la place libre pendant que le menu est ouvert (B23-08).
+  void set_settings(const PlaySettings& running, SettingsChoices choices,
+                    const EngineCatalog* catalog = nullptr);
   // L'état du VRR relu en cours de lecture (plein écran) : l'avertissement du mode auto le suit.
   void set_display_vrr(bool capable, bool armed, bool fullscreen) {
     choices_.display_vrr = capable;
@@ -127,7 +126,7 @@ class PlayerUi {
   SettingsPanel panel_;
   PlaySettings running_;
   SettingsChoices choices_;
-  ChoicesRefresh refresh_;
+  const EngineCatalog* catalog_ = nullptr;  // de quoi relire les choix du poste (B23-08)
   std::int64_t refreshed_us_ = 0;
   bool refresh_pending_ = false;  // le menu vient de s'ouvrir : à relire tout de suite
   static constexpr std::int64_t kChoicesRefreshUs = 4'000'000;
