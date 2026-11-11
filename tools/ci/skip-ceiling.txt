@@ -5,8 +5,22 @@ lavapipe 10
 asan-ubsan 10
 tsan 10
 tsan-pr 0
+# Le rejeu du corpus de fuzz sous ASan, sur chaque pull request : aucun saut.
+asan-fuzz 0
 # Windows (MSVC) : le runner n'a ni GPU ni Vulkan logiciel (C14, compte du premier passage) : rendu (28, dont les curseurs de la pile, la pile fixe et l'écart des éclats, C06),
 # médias
 # (NVDEC 5, Vulkan Video et appareils Vulkan 4), polices de libass sans police système (3), découpe des modèles du
 # catalogue (2), veilleur d'écriture de l'anneau (1).
 windows 43
+# Tâches sans GPU ni Vulkan logiciel (cœur seul) : aucun test sauté (B28-12).
+core-gcc-13 0
+core-clang-20 0
+core-asan-ubsan 0
+core-tsan 0
+arch 0
+# Le lecteur entier sous le GCC d'Arch, lavapipe : comme la tâche lavapipe.
+arch-player 10
+# La version livrée (Release, LTO) sous lavapipe, chaque nuit : comme la tâche lavapipe.
+linux-release 10
+# cloud.yml : lavapipe, comme ci.yml.
+cloud 10

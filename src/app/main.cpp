@@ -179,6 +179,8 @@ void start_diagnostics(const std::filesystem::path& settings_dir, const std::fil
   play::set_report_log_file(log_file);
   play::note_report_fact("ajp", play::installed_version());
   play::note_report_fact("Système", play::os_description());
+  if (const std::string build = play::build_id_description(); !build.empty())
+    play::note_report_fact("Build", build);
   if (!settings_dir.empty() && play::begin_session(settings_dir))
     ajp::log_channel("app")->warn(
         "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");

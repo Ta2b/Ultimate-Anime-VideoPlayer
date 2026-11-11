@@ -71,7 +71,7 @@ jobs:
       - name: Bibliothèques du paquet Linux (versions d'Ubuntu)
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends libdav1d-dev libsvtav1enc-dev
+          sudo apt-get install -y --no-install-recommends libdav1d-dev libsvtav1enc-dev libfribidi-dev liblcms2-dev
       - name: Avis de sécurité et issue
         env:
           GH_TOKEN: ${{ github.token }}

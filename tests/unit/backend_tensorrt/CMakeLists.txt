@@ -1,7 +1,7 @@
 # Le backend se charge par dlopen, comme le lecteur le charge : le test ne le lie pas.
 # AJP_SPAN_MODEL : le modèle SPAN d'AnimeJaNai installé sur le poste, lu en place (jamais
 # copié dans le dépôt) ; absent, le test qui l'exécute se SKIP.
-set(AJP_SPAN_MODEL "$ENV{HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
+set(AJP_SPAN_MODEL "${AJP_ANIMEJANAI_ONNX_DIR}/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
     CACHE FILEPATH "Modèle SPAN ×2 d'AnimeJaNai pour le test du backend TensorRT")
 # AJP_SPAN_FP8_PACKAGE, AJP_SPAN_FP8_MODEL : le paquet dérivé par tools/span/derive_span_fp8.py et le SPAN dont il
 # vient, pour le test caché [.span_fp8] (docs/span-fp8-cutlass.md) ; vides, il se SKIP.
@@ -13,11 +13,11 @@ set(AJP_SPAN_DERIVE_IMAGES "" CACHE STRING "Images PPM séparées par des virgul
 set(AJP_SPAN_FP8_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.span_fp8] (sinon un dessin synthétique)")
 # AJP_RIFE_MODEL_DIR : le dossier des RIFE du lecteur (rife_v4.25.onnx, rife_v4.22_lite.onnx), lus en place par le test
 # caché [.rife_fused] ; AJP_RIFE_IMAGE : une image d'anime en PPM pour sa paire (sinon un dessin synthétique).
-set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
+set(AJP_RIFE_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
 set(AJP_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.rife_fused]")
 # AJP_DRBA_MODEL_DIR : le dossier des DistilDRBA du lecteur (distil_drba_v2_lite.onnx, distil_drba_v2_lite_s05.onnx), lus en
 # place par le test caché [.drba_fused] ; AJP_DRBA_IMAGE : une image d'anime en PPM pour ses trois images (sinon un dessin).
-set(AJP_DRBA_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test caché [.drba_fused])")
+set(AJP_DRBA_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test caché [.drba_fused])")
 set(AJP_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.drba_fused]")
 add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp
   rife_fused_test.cpp span_derive_test.cpp span_fp8_test.cpp)

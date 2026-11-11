@@ -45,11 +45,11 @@ ajp_add_unit_tests(vk_backend
 # build, puis comparées à chaque runtime des réseaux que ce build a (Core ML)
 # quand son matériel est là. AJP_SPAN_MODEL : le vrai SPAN d'AnimeJaNai installé sur le poste,
 # lu en place ; absent, seuls les modèles synthétiques servent.
-set(AJP_SPAN_MODEL "$ENV{HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
+set(AJP_SPAN_MODEL "${AJP_ANIMEJANAI_ONNX_DIR}/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
     CACHE FILEPATH "Modèle SPAN ×2 d'AnimeJaNai pour les tests des runtimes")
 # Le dossier des RIFE du lecteur (rife_v4.22_lite.onnx, rife_v4.25.onnx), lus en place par le test caché
 # [.rife_fused] : la chaîne fusionnée contre le RIFE entier, tous deux sur le backend Vulkan.
-set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
+set(AJP_RIFE_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
 target_compile_definitions(ajp_vk_backend_tests PRIVATE
   AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
   AJP_TEST_BACKEND="$<TARGET_FILE:ajp_backend_vulkan>"

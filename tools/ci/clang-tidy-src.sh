@@ -31,6 +31,8 @@ if [[ -n "${AJP_TIDY_BASE:-}" ]] && git diff --name-only --diff-filter=d "$AJP_T
     [[ -s "$only" ]] || { echo "clang-tidy : rien à analyser"; exit 0; }
   fi
 else
+  # La différence ne se calcule pas (clone superficiel, référence absente) : tout src/, et on le dit (B28-05).
+  [[ -z "${AJP_TIDY_BASE:-}" ]] || echo "clang-tidy : ${AJP_TIDY_BASE}...HEAD introuvable (clone superficiel ?), tout src/" >&2
   : > "$only"
 fi
 git ls-files -z -- 'src/*.cpp' | python3 -c '

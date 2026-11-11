@@ -407,6 +407,26 @@
       }
     },
     {
+      "name": "linux-prefix-asan-fuzz",
+      "displayName": "Rejeu du corpus de fuzz sous ASan et UBSan, sur chaque pull request (B28-09)",
+      "configurePreset": "linux-prefix-asan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "fuzz"
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "environment": {
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/tools/ci/lsan.supp",
+        "VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING": "1"
+      }
+    },
+    {
       "name": "linux-prefix-tsan",
       "configurePreset": "linux-prefix-tsan",
       "output": {

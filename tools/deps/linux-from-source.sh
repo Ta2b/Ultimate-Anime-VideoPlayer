@@ -189,12 +189,18 @@ fi
 # eux, configure passe outre avec un simple avertissement, et le rendu des sous-titres perd ses routines SIMD, la
 # coupure Unicode ou ses fils.
 LIBASS_PATCH="$ROOT/ports/libass/rendu-sur-plusieurs-fils.patch"
-signature="$(ref_of libass) $(sha256sum "$LIBASS_PATCH" | cut -c1-16) asm libunibreak threads $(ref_of libunibreak)$(system_libs freetype2 fribidi harfbuzz fontconfig)"
+# AJP_LIBASS_CFLAGS : les options de compilation de libass seul, pour l'instrumenter (« -fsanitize=thread -g -O1 »
+# dans la tâche TSan de ci.yml, « -fsanitize=address -g -O1 » dans la campagne de fuzz). Sans elles, le code multi-fils
+# du correctif, qui lit des scripts ASS venus de l'extérieur, échappait à TSan et à ASan (B35-02) : l'instrumentation
+# du lecteur s'arrête à la frontière de la bibliothèque. Elles entrent dans la signature : un préfixe du cache construit
+# autrement se refait.
+LIBASS_CFLAGS="${AJP_LIBASS_CFLAGS:--O2 -g}"
+signature="$(ref_of libass) $(sha256sum "$LIBASS_PATCH" | cut -c1-16) asm libunibreak threads cflags $LIBASS_CFLAGS $(ref_of libunibreak)$(system_libs freetype2 fribidi harfbuzz fontconfig)"
 if ! done_marker libass "$signature"; then
   pristine libass
   git -C "$WORK/libass" apply "$LIBASS_PATCH"
   (cd "$WORK/libass" && ./autogen.sh && ./configure --prefix="$PREFIX" --disable-static \
-    --enable-asm --enable-libunibreak --enable-threads && make -j "$JOBS" && make install)
+    --enable-asm --enable-libunibreak --enable-threads CFLAGS="$LIBASS_CFLAGS" && make -j "$JOBS" && make install)
   mark libass "$signature"
 fi
 

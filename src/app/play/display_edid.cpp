@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -387,8 +388,10 @@ std::optional<bool> drm_vrr(const std::filesystem::path& dir) {
   if (dash == std::string::npos) return std::nullopt;
   const std::string connector_text = first_line(dir / "connector_id");
   if (connector_text.empty()) return std::nullopt;
-  const std::uint32_t connector_id =
-      static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
+  std::uint32_t connector_id = 0;
+  if (std::from_chars(connector_text.data(), connector_text.data() + connector_text.size(), connector_id)
+          .ec != std::errc{})
+    return std::nullopt;
   const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
   if (fd < 0) return std::nullopt;
   // Capable suffit : KDE (adaptive sync « Automatique », le défaut) n'arme VRR_ENABLED qu'en plein
@@ -406,8 +409,10 @@ std::optional<bool> drm_vrr_armed(const std::filesystem::path& dir) {
   if (dash == std::string::npos) return std::nullopt;
   const std::string connector_text = first_line(dir / "connector_id");
   if (connector_text.empty()) return std::nullopt;
-  const std::uint32_t connector_id =
-      static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
+  std::uint32_t connector_id = 0;
+  if (std::from_chars(connector_text.data(), connector_text.data() + connector_text.size(), connector_id)
+          .ec != std::errc{})
+    return std::nullopt;
   const int fd = open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
   if (fd < 0) return std::nullopt;
   std::optional<bool> result;
