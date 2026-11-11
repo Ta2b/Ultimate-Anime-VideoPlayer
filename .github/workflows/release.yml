@@ -5,8 +5,9 @@ name: Release
 #   2. les trois plateformes en parallèle, chacune avec son paquet TensorRT quand elle en a un (Linux et Windows,
 #      construits et publiés s'ils manquent : A28-01) ; chacune joint ses fichiers à la release de l'étiquette, qui
 #      reste une préversion ;
-#   3. « publier », seulement quand les trois ont réussi : vérifie que la release a tout ce qu'elle doit avoir,
-#      signe le manifeste des mises à jour avec la clé Ed25519 du secret AJP_UPDATE_KEY (environnement protégé
+#   3. « publier », quand Linux et Windows ont réussi (macOS, hors cible, ne bloque pas : B51-11) : vérifie que la
+#      release a tout ce qu'elle doit avoir et que ses archives sont celles que les jobs de construction ont produites
+#      (B51-07), signe le manifeste des mises à jour avec la clé Ed25519 du secret AJP_UPDATE_KEY (environnement protégé
 #      « release ») et le joint (A28-02), puis, pour une release finale, la rend finale et « latest » si elle est plus
 #      récente que l'actuelle (A28-03). Une préversion n'a pas de manifeste : le canal Préversions est retiré.
 #
@@ -20,8 +21,10 @@ on:
         description: "Étiquette à (re)construire et publier"
         required: true
 
+# Les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul : le jeton du dépôt des sources ne sert
+# qu'à lire (B51-12).
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 # Une seule release par étiquette à la fois, jamais annulée en cours (A28-15).
@@ -51,15 +54,26 @@ jobs:
   publish:
     name: Publier
     needs: [linux, windows, macos]
+    # macOS est hors cible : son échec (notarisation, runner indisponible) ne prive pas Windows et Linux de leur
+    # mise à jour. Son archive, si elle n'a pas été construite, reste hors du manifeste (B51-11).
+    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' }}
     runs-on: ubuntu-24.04
     # La clé de signature n'existe que dans cet environnement : ses règles disent quelles étiquettes y ont accès.
     environment: release
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
+      # Les SHA-256 des archives telles que les jobs de construction les ont produites (vide : non construite).
+      BUILT_LINUX: ${{ needs.linux.outputs.archive-sha256 }}
+      BUILT_WINDOWS: ${{ needs.windows.outputs.archive-sha256 }}
+      BUILT_MACOS: ${{ needs.macos.outputs.archive-sha256 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Jeton de publication
+        env:
+          RELEASE_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
+        run: '[ -n "$RELEASE_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication dans le dépôt des releases"; exit 1; }'
       - name: Fichiers de la release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,6 +84,11 @@ jobs:
           mkdir -p "$dir"
           gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
             -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip -p engines.lock
+          # macOS non construite (échec, hors cible) : une archive restée d'un essai précédent ne se signe pas.
+          [ -n "$BUILT_MACOS" ] || rm -f "$dir/ajp-macos-arm64.zip"
+          # Ce qu'on signe est ce que la construction a produit, pas ce que la release contient maintenant (B51-07).
+          tools/release/check-built-sums.sh "$dir" "ajp-linux-x64.tar.gz=$BUILT_LINUX" \
+            "ajp-windows-x64.zip=$BUILT_WINDOWS" "ajp-macos-arm64.zip=$BUILT_MACOS"
           tools/release/check-release.sh "$TAG" "$dir"
       - name: Index NVIDIA signé
         env:
@@ -78,9 +97,12 @@ jobs:
         run: |
           [ -n "$UPDATE_KEY" ] || { echo "::error::secret AJP_UPDATE_KEY absent de l'environnement release (docs/signature-des-releases.md)"; exit 1; }
           dir="$RUNNER_TEMP/release"
-          # Un paquet joint après coup à cette étiquette (attach-nvidia-*) passe avant ceux des archives.
-          gh release download "$TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -O "$dir/joint.lock" 2>/dev/null || true
-          tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/joint.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
+          # L'index nomme le paquet TensorRT de l'engines.lock du paquet de chaque plateforme, jamais un
+          # engines-nvidia.lock déjà joint à l'étiquette : celui-ci pouvait nommer un autre module (étiquette reposée
+          # après un correctif) et gagner sur l'index du jour (B51-01).
+          AJP_RELEASE_TAG="$TAG" tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
+          # Et l'index le prouve : même adresse, même SHA-256, même taille que ce que les paquets embarquent.
+          tools/release/check-nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
           key="$RUNNER_TEMP/ajp-update-key.pem"
           trap 'rm -f "$key"' EXIT
           # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
@@ -104,12 +126,13 @@ jobs:
           # La signature se vérifie avec la clé publique compilée dans le lecteur, archive par archive.
           pub="$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
           for archive in ajp-linux-x64.tar.gz ajp-windows-x64.zip ajp-macos-arm64.zip; do
+            [ -f "$dir/$archive" ] || continue
             AJP_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$dir/$archive"
           done
           cat "$dir/manifest.toml" >>"$GITHUB_STEP_SUMMARY"
       - name: Publication
         env:
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
           dir="$RUNNER_TEMP/release"
           gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/engines-nvidia.lock" "$dir/engines-nvidia.lock.sig"

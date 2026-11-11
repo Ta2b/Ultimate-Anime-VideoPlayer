@@ -114,6 +114,65 @@ std::vector<std::size_t> producers(const Graph& graph) {
   return out;
 }
 
+const Value* constant_operand(const Graph& graph, const Node& node, std::size_t index) {
+  if (index >= node.inputs.size() || node.inputs[index] == kNoTensor) return nullptr;
+  const Tensor& tensor = graph.tensors[node.inputs[index]];
+  return tensor.kind == TensorKind::Constant ? &tensor.value : nullptr;
+}
+
+void GraphIndex::refresh() {
+  if (fresh_) return;
+  // Deux passes sur les nœuds, en tableaux plats : une fusion refait l'index entier, sans une allocation par
+  // tenseur.
+  const std::size_t tensors = graph_->tensors.size();
+  producers_.assign(tensors, kNoNode);
+  offsets_.assign(tensors + 1, 0);
+  for (std::size_t n = 0; n < graph_->nodes.size(); ++n) {
+    const Node& node = graph_->nodes[n];
+    for (const TensorId id : node.outputs) producers_[id] = n;
+    for (std::size_t k = 0; k < node.inputs.size(); ++k) {
+      const TensorId id = node.inputs[k];
+      // Un nœud qui lit deux fois le même tenseur ne compte qu'une fois (comme consumers()).
+      if (id != kNoTensor &&
+          std::ranges::find(node.inputs.begin(), node.inputs.begin() + static_cast<std::ptrdiff_t>(k), id) ==
+              node.inputs.begin() + static_cast<std::ptrdiff_t>(k))
+        ++offsets_[id + 1];
+    }
+  }
+  for (std::size_t t = 0; t < tensors; ++t) offsets_[t + 1] += offsets_[t];
+  readers_.assign(offsets_[tensors], 0);
+  std::vector<std::size_t> fill(offsets_.begin(), offsets_.end() - 1);
+  for (std::size_t n = 0; n < graph_->nodes.size(); ++n) {
+    const Node& node = graph_->nodes[n];
+    for (std::size_t k = 0; k < node.inputs.size(); ++k) {
+      const TensorId id = node.inputs[k];
+      if (id != kNoTensor &&
+          std::ranges::find(node.inputs.begin(), node.inputs.begin() + static_cast<std::ptrdiff_t>(k), id) ==
+              node.inputs.begin() + static_cast<std::ptrdiff_t>(k))
+        readers_[fill[id]++] = n;
+    }
+  }
+  fresh_ = true;
+}
+
+std::size_t GraphIndex::producer(TensorId id) {
+  refresh();
+  return producers_[id];
+}
+
+std::span<const std::size_t> GraphIndex::readers(TensorId id) {
+  refresh();
+  return std::span<const std::size_t>(readers_).subspan(offsets_[id], offsets_[id + 1] - offsets_[id]);
+}
+
+std::optional<std::size_t> GraphIndex::sole_reader(TensorId id) {
+  if (is_graph_output(*graph_, id)) return std::nullopt;
+  const std::span<const std::size_t> list = readers(id);
+  if (list.size() != 1) return std::nullopt;
+  if (std::ranges::count(graph_->nodes[list[0]].inputs, id) != 1) return std::nullopt;
+  return list[0];
+}
+
 void replace_uses(Graph& graph, TensorId from, TensorId to) {
   for (Node& node : graph.nodes) std::ranges::replace(node.inputs, from, to);
 }

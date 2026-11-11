@@ -84,6 +84,25 @@ class Writer {
 };
 
 std::unexpected<Refusal> malformed(std::string detail);
+// Ce que le décodeur sait lire mais que le lecteur ne prend pas en charge (OnnxUnsupported).
+std::unexpected<Refusal> unsupported(std::string detail);
+
+// Entiers petit-boutiens des quatre ou huit premiers octets de bytes (taille vérifiée par l'appelant).
+std::uint32_t read_le32(Bytes bytes);
+std::uint64_t read_le64(Bytes bytes);
+
+// Appelle fn sur chaque champ du message ; s'arrête au premier refus. Le seul parcours des champs d'un
+// message du dépôt (B44-03).
+template <class Fn>
+std::expected<void, Refusal> for_each_field(Bytes bytes, Fn&& fn) {
+  Reader reader(bytes);
+  for (;;) {
+    auto field = reader.next();
+    if (!field) return std::unexpected(field.error());
+    if (!*field) return {};
+    if (auto ok = fn(**field); !ok) return ok;
+  }
+}
 
 // Conversions d'un champ vers les types protobuf, avec vérification du type filaire.
 std::expected<std::int64_t, Refusal> as_int64(const Field& field);

@@ -19,8 +19,10 @@ void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats) {
   if (jump) kept_.clear();
   const bool flashing = flashes_.push(pts_us, zone_nits_of(frame));
   previous_ = frame;
-  // Moyenne cumulée de la scène : chaque image y entre avec le poids 1 / (images vues).
-  ++frames_;
+  // Moyenne de la scène : chaque image y entre avec le poids 1 / (images vues), jamais sous 1 / kLiveWindow
+  // (B42-12) : au-delà de cinq secondes de scène, la moyenne glisse et suit encore un fondu ou une dérive de
+  // la lumière, au lieu de rester figée sur son histoire.
+  frames_ = std::min(frames_ + 1, kLiveWindow);
   const float w = 1.0F / static_cast<float>(frames_);
   const auto mix = [w](float& into, float value) { into += w * (value - into); };
   for (std::size_t i = 0; i < histogram_.size(); ++i) mix(histogram_.at(i), frame.histogram.at(i));

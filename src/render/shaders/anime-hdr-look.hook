@@ -154,28 +154,34 @@ vec3 ajl_look(vec3 e) {
 // son voisinage (3 × 3 points tous les 6 pixels, moyenne linéaire), passe par la pile, puis retrouve son écart
 // relatif tel quel : la pile donne la couleur et le niveau du voisinage, le grain et les paliers gardent leur
 // contraste d'origine. Les bords francs (écart > 20 %) gardent la pile entière ; transition douce entre les
-// deux. Coût : neuf lectures et une seconde pile par pixel.
+// deux. Coût : neuf lectures, et la pile une fois par pixel dans les aplats (w = 1 : la pile du pixel n'y
+// compte pas, elle n'est pas lue, B41-06) et sur les bords francs (w = 0) ; deux fois entre les deux
+// seulement. L'image est la même qu'avec deux traversées partout.
 float ajl_luma(vec3 n) {
     return max(dot(n, sdr_out > 0.5 ? vec3(0.2126, 0.7152, 0.0722) : vec3(0.2627, 0.6780, 0.0593)), 1e-4);
 }
 
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
-    vec3 graded = ajl_look(px.rgb);
+    float w = 0.0;  // la part de la pile du voisinage
+    vec3 lin = vec3(0.0);
+    float r = 1.0;
     if (look_clean > 0.5) {
-        vec3 lin = ajl_decode(px.rgb);
+        lin = ajl_decode(px.rgb);
         float y = ajl_luma(lin);
         float yb = 0.0;
         for (int j = -1; j <= 1; j++)
             for (int i = -1; i <= 1; i++)
                 yb += ajl_luma(ajl_decode(HOOKED_tex(HOOKED_pos + vec2(float(i), float(j)) * 6.0 * HOOKED_pt).rgb));
-        float r = y / max(yb / 9.0, 1e-4);
-        float w = 1.0 - smoothstep(0.06, 0.20, abs(log(r)));
-        if (w > 0.0) {
-            vec3 clean = ajl_decode(ajl_look(ajl_encode(lin / r))) * r;
-            graded = mix(graded, ajl_encode(clean), w);
-        }
+        r = y / max(yb / 9.0, 1e-4);
+        w = 1.0 - smoothstep(0.06, 0.20, abs(log(r)));
     }
-    px.rgb = graded;
+    vec3 clean = w > 0.0 ? ajl_encode(ajl_decode(ajl_look(ajl_encode(lin / r))) * r) : px.rgb;
+    if (w >= 1.0) {
+        px.rgb = clean;
+    } else {
+        vec3 graded = ajl_look(px.rgb);
+        px.rgb = w > 0.0 ? mix(graded, clean, w) : graded;
+    }
     return px;
 }

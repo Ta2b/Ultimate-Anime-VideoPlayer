@@ -25,9 +25,15 @@ on:
       tag:
         type: string
         required: true
+    outputs:
+      archive-sha256:
+        description: "SHA-256 de ajp-linux-x64.tar.gz tel que cette construction l'a produit (B51-07)"
+        value: ${{ jobs.package.outputs.archive-sha256 }}
 
+# Les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul : le jeton du dépôt des sources ne sert
+# qu'à lire, pour que vcpkg, Meson et les actions tierces n'en reçoivent pas un qui écrit (B51-12).
 permissions:
-  contents: write
+  contents: read
   actions: read  # release-guard.yml lit les exécutions de ci.yml
 
 # Une seule construction par étiquette (ou branche), commune à la poussée et au lancement à la main (A28-15). Une
@@ -70,7 +76,15 @@ jobs:
     # Sans étiquette, le job tensorrt est sauté : le paquet se construit quand même.
     if: ${{ !cancelled() && needs.rules.result == 'success' && needs.guard.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
     runs-on: ubuntu-24.04
+    outputs:
+      archive-sha256: ${{ steps.sums.outputs.archive }}
     steps:
+      # Le jeton d'écriture manque : échouer ici, pas après quarante minutes de construction (B51-12).
+      - name: Jeton de publication
+        if: inputs.tag != ''
+        env:
+          RELEASE_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
+        run: '[ -n "$RELEASE_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication"; exit 1; }'
       # Le jeton du dépôt ne reste pas dans .git/config, où tout code tiers construit ensuite le lirait (A28-08).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -107,9 +121,9 @@ jobs:
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-${{ github.run_id }}
+          # Une release ne restaure que les dépendances de sa recette exacte, jamais celles d'une autre (B51-13).
           restore-keys: |
             deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
-            deps-player-gcc-13-
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
@@ -123,6 +137,10 @@ jobs:
         run: |
           [ -z "$AJP_TAG" ] || export AJP_RELEASE_TAG="$AJP_TAG"
           tools/release/package-linux.sh "$RUNNER_TEMP/package"
+      # Ce que « publier » retrouve dans la release avant de signer : le SHA-256 de l'archive telle que construite ici.
+      - name: Empreinte de l'archive
+        id: sums
+        run: echo "archive=$(sha256sum "$RUNNER_TEMP/package/ajp-linux-x64.tar.gz" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
       # Les tests sans GPU du build même du paquet (préréglage de test linux-release) : un échec arrête tout
       # avant l'artefact et la release, préversions comprises.
       - name: Tests sans GPU
@@ -151,6 +169,15 @@ jobs:
         run: |
           tools/release/appimage.sh "$RUNNER_TEMP/package/ajp-linux-x64.tar.gz" "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage"
           (cd "$RUNNER_TEMP/package" && sha256sum ajp-linux-x86_64.AppImage >> SHA256SUMS)
+      # Le paquet lancé tel que l'utilisateur le recevra (B51-04) : extrait dans un dossier propre, ses bibliothèques
+      # trouvées, le lecteur qui répond puis joue un clip en Vulkan logiciel jusqu'à un instantané, l'AppImage de même.
+      # Un échec arrête tout avant la release.
+      - name: Fumée du paquet
+        run: |
+          source tools/release/versions.env
+          sudo apt-get install -y -qq $APT_TESTS ffmpeg
+          tools/release/smoke-linux.sh "$RUNNER_TEMP/package/ajp-linux-x64.tar.gz" \
+            "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage"
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - name: Artefact
         if: env.AJP_TAG == ''
@@ -173,7 +200,7 @@ jobs:
         env:
           # Un dépôt public à part porte les releases (le lecteur télécharge ses moteurs sans compte) : secret
           # AJP_RELEASE_TOKEN qui peut y écrire. Seule étape à porter ce jeton, après toute construction (A28-08).
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         # Bloc « | » : dans un scalaire simple, YAML replie le saut de ligne en espace et la barre oblique échappait
         # cette espace (« \ /chemin… », fichier introuvable : v0.11.0-rc.2).
         run: |
