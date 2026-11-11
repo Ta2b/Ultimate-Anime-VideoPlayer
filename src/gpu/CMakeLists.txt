@@ -22,6 +22,8 @@ target_compile_definitions(ajp_gpu INTERFACE AJP_BOUNDARY_HASH=0x${ajp_boundary}
 add_subdirectory(vulkan)
 # Les parties portables du backend Core ML, vérifiées partout : les images de l'interpolation
 # d'Apple (coreml/vt_pixels.h), la place et les noms du modèle compilé (coreml/coreml_compiled.h).
+# Les clés d'Artifact des moteurs fusionnés du backend TensorRT, en C++ pur : testées sans CUDA (B03-09).
+ajp_add_module(cuda_fused_keys SOURCES cuda/backend/fused_keys.cpp DEPS ajp::kernels)
 ajp_add_module(coreml_pixels SOURCES coreml/coreml_compiled.cpp coreml/vt_pixels.cpp DEPS ajp::gpu ajp::kernels)
 if(AJP_WITH_COREML)
   add_subdirectory(coreml)

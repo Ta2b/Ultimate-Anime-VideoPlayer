@@ -11,6 +11,8 @@
 
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/cuda_warn.h"
+#include "gpu/cuda/backend/shared_activations.h"
 #include "gpu/span_fp8/package.h"
 
 namespace ajp::gpu::cuda {
@@ -107,6 +109,16 @@ std::optional<Shape> span_fp8_artifact_shape(std::string_view key) {
   return Shape{.dims = {1, 3, height, width}};
 }
 
+std::optional<std::uint32_t> span_fp8_artifact_crc(std::string_view key) {
+  if (!key.starts_with(kKeyPrefix)) return std::nullopt;
+  key.remove_prefix(kKeyPrefix.size());
+  const std::string_view hex = key.substr(0, key.find(':'));
+  std::uint32_t crc = 0;
+  const auto [end, error] = std::from_chars(hex.data(), hex.data() + hex.size(), crc, 16);
+  if (error != std::errc{} || end != hex.data() + hex.size() || hex.size() != 8) return std::nullopt;
+  return crc;
+}
+
 bool is_span_fp8_package(const std::filesystem::path& path) {
   return path.extension() == ".span8";
 }
@@ -125,10 +137,14 @@ void SpanFp8Engine::drop_graphs() {
 }
 
 std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
-    const std::filesystem::path& package, int height, int width,
+    const std::filesystem::path& package, std::uint32_t crc, int height, int width,
     const std::shared_ptr<SharedActivations>& shared) {
   auto bytes = read_span_fp8_package(package);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
+  // Une préparation de fond a pu réécrire le paquet depuis la construction : des poids qu'aucun reçu ne
+  // couvre à cette taille ne se chargent pas sous l'ancienne clé, la chaîne refait la recherche (B02-06).
+  if (span_fp8::crc32(*bytes) != crc)
+    return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : paquet réécrit depuis sa construction");
   auto parsed = span_fp8::parse(*bytes);
   if (!parsed) return std::unexpected(std::move(parsed.error()));
   bytes->clear();
@@ -146,6 +162,24 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   engine->input_ = Shape{.dims = {1, 3, height, width}};
   engine->output_ = Shape{.dims = {1, 3, 2 * std::int64_t{height}, 2 * std::int64_t{width}}};
   if (!shared) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : zone d'activation absente");
+  const std::int64_t need = engine->net_->workspace_bytes();
+  if (shared->bytes() < need) {
+    // La zone partagée devrait grandir : l'essai se fait d'abord sur une zone à lui, et la zone partagée ne
+    // grandit que s'il passe. Un refus ne la laisse pas à la taille du FP8 pour toute la séance (B02-05).
+    void* own = nullptr;
+    if (cudaError_t e = cudaMalloc(&own, static_cast<std::size_t>(need)); e != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      return refuse(
+          e == cudaErrorMemoryAllocation ? RefusalCode::GpuMemoryExhausted : RefusalCode::VendorCallFailed,
+          std::format("SPAN FP8 : zone d'essai de {} Mo : {}", need >> 20, cudaGetErrorString(e)));
+    }
+    engine->net_->bind(own);
+    auto tried = smoke_test(*engine->net_, height, width);
+    cuda_warn(cudaFree(own), "cudaFree");  // attend la fin de l'essai
+    if (!tried) return std::unexpected(std::move(tried.error()));
+    if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
+    return engine;
+  }
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
   // L'essai tourne dans la zone d'activation partagée de la voie, sur un flux à lui : le travail encore
   // en vol sur les voies finit avant, et la zone est marquée à ce moteur, pour que DistilDRBA fusionné

@@ -1,6 +1,7 @@
 // La lecture lâche de play.toml (settings_toml.cpp : parse_settings_lenient).
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <string>
 #include <vector>
@@ -13,6 +14,9 @@
 #include <toml++-ajp/toml.hpp>
 
 namespace ajp::app::play {
+
+// La version du fichier que ce lecteur écrit : une plus récente garde ses clés à la réécriture (P2.22).
+inline constexpr std::int64_t kSettingsVersion = 1;
 
 // La lecture lâche de play.toml (settings_toml.cpp) quand un refus ne nomme pas une clé du fichier : écarte
 // de root la première clé (sinon la première section) dont le retrait lève ce refus, et le note dans dropped

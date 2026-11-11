@@ -11,7 +11,8 @@ sont pris.
   1. Lecture et contrôle du graphe : noms et formes des poids, dégroupage 2x2.
   2. Calibration : le maximum de |valeur| des 1 + 3·blocs tenseurs que les noyaux quantifient en E4M3 (sortie de
      conv_1 ; relu1, relu2 et sortie de chaque bloc) sur des découpes d'images d'anime, avec ONNX Runtime CPU en
-     FP32. Échelle = maximum / 448 (le plus grand E4M3 fini).
+     FP32. Échelle = maximum × 1,25 / 448 (le plus grand E4M3 fini) : la marge de tête du lecteur
+     (gpu/span_fp8/derive.h, kScaleHeadroom, B02-02).
   3. Écriture du paquet « .span8 » (src/gpu/span_fp8/package.h) : poids FP16 du modèle, biais f32, échelles.
   4. Qualité : pour des images de validation, la sortie du lecteur (ajp_span_fp8_run, les noyaux eux-mêmes, sous
      le verrou GPU) contre le SPAN d'origine en FP32 : PSNR moyen et pire, pire SSIM, aux seuils du reçu INT8
@@ -59,6 +60,7 @@ VERSION = 2  # blocs et canaux réels dans l'en-tête (src/gpu/span_fp8/package.
 MAX_BLOCKS, CHANNELS = 8, 64  # les noyaux : 64 canaux rangés, 2 à 8 blocs
 FORMAT = "ajp-span-fp8c-v1"
 E4M3_MAX = 448.0
+SCALE_HEADROOM = 1.25  # gpu/span_fp8/derive.h : kScaleHeadroom
 # Seuils du reçu : ceux de l'INT8 (span_int8.cpp), pas ceux du FP8 par Q/DQ.
 MIN_PSNR_MEAN_DB, MIN_PSNR_WORST_DB, MIN_SSIM_WORST = 42.0, 38.0, 0.985
 
@@ -256,7 +258,7 @@ def main() -> int:
             peaks[j] = max(peaks[j], float(np.abs(a).max()))
     if not np.all(peaks > 0):
         fail("un tenseur calibré est nul partout : corpus ou découpes inutilisables")
-    scales = (peaks / E4M3_MAX).astype(np.float32)
+    scales = (peaks * SCALE_HEADROOM / E4M3_MAX).astype(np.float32)
     print(f"calibration : {args.calib_crops} découpes de {args.calib_size}², maxima {peaks.min():.2f} à {peaks.max():.2f}")
 
     package = build_package(init, scales, blocks, channels)

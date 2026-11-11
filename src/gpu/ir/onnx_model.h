@@ -9,6 +9,7 @@
 #include <expected>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/types.h"
@@ -62,6 +63,11 @@ struct Attribute {
   std::vector<std::int64_t> ints;
   std::vector<std::string> strings;
 };
+
+// Le domaine par défaut des opérateurs : vide ou « ai.onnx ».
+inline bool is_default_domain(std::string_view domain) {
+  return domain.empty() || domain == "ai.onnx";
+}
 
 struct Node {
   std::string name;

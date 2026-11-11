@@ -33,4 +33,14 @@ TEST_CASE("VRR relu : present timing prime sur l'ioctl et bascule tout de suite"
   CHECK(watch.observe(std::nullopt, std::optional<bool>(true)) == std::optional<bool>(true));
 }
 
+TEST_CASE("NVAPI : le bit « engagé » n'est exigé qu'une fois vu posé (B11-02)", "[app][display]") {
+  // Bit 0 seul : G-SYNC permis. Un pilote qui ne pose jamais le bit 4 laissait « non armé » pour toujours.
+  CHECK(nv_vrr_armed(kNvVrrEnabled, false));
+  CHECK_FALSE(nv_vrr_armed(0, false));
+  CHECK_FALSE(nv_vrr_armed(kNvVrrInMode, true));  // engagé sans être permis : incohérent, non
+  // Le bit 4 déjà vu posé : il dit l'engagement.
+  CHECK(nv_vrr_armed(kNvVrrEnabled | kNvVrrInMode, true));
+  CHECK_FALSE(nv_vrr_armed(kNvVrrEnabled, true));
+}
+
 }  // namespace ajp::app::play

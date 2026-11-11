@@ -45,7 +45,7 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
       .display_height = choices.display_height,
       .display_hdr = choices.hdr_output};
   const int height = choices.display_height > 0 ? choices.display_height : 1080;
-  const auto tier = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1));
+  const auto tier = static_cast<Tier>(std::clamp(choices.estimated_tier, 0, kTierCount - 1));
   bench.pending = start_task<MachineCalibration>(
       "calibration",
       [plan, base, height, tier, fraction = bench.fraction,
@@ -122,6 +122,21 @@ void measure_notes(const MachineCalibration& r, const CalibrationHost& host) {
   }
 }
 
+// Le bench refait est fini : son résultat au tableau, et la chaîne que l'Auto en suit, tout de suite
+// (B07-13).
+void collect_bench(const SettingsChoices& choices, MachineNote& bench) {
+  if (!bench.pending || bench.pending->wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+  auto done = bench.pending->get();
+  bench.pending.reset();
+  if (done) {
+    bench.result = std::move(*done);
+    bench.fresh = followed_chain(*bench.result, choices.calibration_host);
+  } else if (done.error().code != RefusalCode::Cancelled) {
+    log_channel("app")->warn("banc : {} {}", name(done.error().code), done.error().detail);
+    bench.problem = visible_error(done.error());
+  }
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -134,16 +149,7 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     if (auto loaded = load_calibration_at(choices.settings_dir, choices.calibration_host.display_height))
       bench.result = std::move(*loaded);
   }
-  if (bench.pending && bench.pending->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    auto done = bench.pending->get();
-    bench.pending.reset();
-    if (done) {
-      bench.result = std::move(*done);
-    } else if (done.error().code != RefusalCode::Cancelled) {
-      log_channel("app")->warn("banc : {} {}", name(done.error().code), done.error().detail);
-      bench.problem = visible_error(done.error());
-    }
-  }
+  collect_bench(choices, bench);
   if (bench.running()) {
     note(
         i18n::tr("Testing settings on a very demanding sequence: 5 minutes, up to 40 with TensorRT (it "

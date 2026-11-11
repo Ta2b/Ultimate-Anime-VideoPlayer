@@ -86,7 +86,10 @@ openssl pkey -in "$work/key.pem" -noout -text 2>/dev/null | grep -qi 'ED25519' \
 # La clé doit être celle dont le lecteur connaît la clé publique : sinon il refuserait tout ce qu'elle signe.
 pub="$(openssl pkey -in "$work/key.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 -v | tr -d ' \n')"
 want="${AJP_UPDATE_PUBKEY:-$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' "$root/src/app/CMakeLists.txt")}"
-if [ -n "$want" ] && [ "$pub" != "$want" ]; then
+# Une clé publique introuvable (CMakeLists.txt réécrit, variable vide) n'est pas « rien à comparer » : sans elle le
+# contrôle ne dit plus rien, la signature partirait avec n'importe quelle clé (B51-17).
+[ -n "$want" ] || { echo "::error::la clé publique du lecteur est illisible (AJP_UPDATE_PUBKEY, src/app/CMakeLists.txt) : contrôle impossible"; exit 1; }
+if [ "$pub" != "$want" ]; then
   echo "::error::AJP_UPDATE_KEY ne correspond pas à la clé publique du lecteur : elle donne $pub, le lecteur attend $want (AJP_UPDATE_PUBKEY)"
   exit 1
 fi

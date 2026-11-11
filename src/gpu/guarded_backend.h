@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/log.h"
 #include "core/thread.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
@@ -43,11 +44,18 @@ R call(std::string_view where, Fn&& fn) noexcept {
   }
 }
 
+// Les appels sans retour (drain, use_lane, unmap_fences) : rien à rendre, mais l'exception va au journal au
+// lieu de se perdre (B21-07) ; une libération qui suit un drain ou un unmap_fences raté se lit alors.
 template <class Fn>
-void call_void(Fn&& fn) noexcept {
+void call_void(std::string_view where, Fn&& fn) noexcept {
   try {
     std::forward<Fn>(fn)();
-  } catch (...) {  // NOLINT(bugprone-empty-catch) : rien à rendre, l'appel suivant refusera
+  } catch (...) {
+    try {
+      log_channel("backend")->error("{}",
+                                    refusal_from_exception(RefusalCode::VendorCallFailed, where).detail);
+    } catch (...) {  // NOLINT(bugprone-empty-catch) : le journal lui-même a échoué, rien de plus à faire
+    }
   }
 }
 
@@ -151,7 +159,7 @@ class GuardedKernelOps final : public KernelOps {
     return guarded_detail::call("map_fences", [&] { return in_->map_fences(block); });
   }
   void unmap_fences(std::span<std::byte> block) override {
-    guarded_detail::call_void([&] { in_->unmap_fences(block); });
+    guarded_detail::call_void("unmap_fences", [&] { in_->unmap_fences(block); });
   }
 
  private:
@@ -198,10 +206,10 @@ class GuardedBackend final : public Backend {
     return guarded_detail::call("wait", [&] { return in_->wait(fence); });
   }
   void drain() override {
-    guarded_detail::call_void([&] { in_->drain(); });
+    guarded_detail::call_void("drain", [&] { in_->drain(); });
   }
   void use_lane(Lane lane) override {
-    guarded_detail::call_void([&] { in_->use_lane(lane); });
+    guarded_detail::call_void("use_lane", [&] { in_->use_lane(lane); });
   }
   std::expected<SpanFp8Derivation, Refusal> derive_span_fp8(const SpanFp8Request& request,
                                                             Progress& progress) override {

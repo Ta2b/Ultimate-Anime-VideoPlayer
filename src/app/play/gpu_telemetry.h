@@ -85,8 +85,13 @@ class GpuTelemetry {
   GpuTelemetry(const GpuTelemetry&) = delete;
   GpuTelemetry& operator=(const GpuTelemetry&) = delete;
 
-  // Relue au plus toutes les 500 ms (host_us : l'horloge de l'hôte), sinon la précédente.
-  std::optional<GpuSample> sample(std::int64_t host_us);
+  // Relue au plus toutes les 500 ms (host_us : l'horloge de l'hôte), sinon la précédente. fresh : relue
+  // maintenant, pour les compteurs d'énergie du début et de la fin d'une lecture (B11-14).
+  std::optional<GpuSample> sample(std::int64_t host_us, bool fresh = false);
+  // Le compteur d'énergie relu maintenant (mJ), 0 s'il ne se lit pas.
+  std::uint64_t energy_mj(std::int64_t host_us) {
+    return sample(host_us, true).value_or(GpuSample{}).energy_mj;
+  }
 
  private:
   struct Impl;

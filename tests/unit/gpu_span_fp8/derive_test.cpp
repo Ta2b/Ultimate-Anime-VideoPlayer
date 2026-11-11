@@ -14,13 +14,16 @@
 
 namespace ajp::gpu::span_fp8 {
 
-TEST_CASE("les échelles sont le maximum observé sur 448", "[span_fp8][derive]") {
+TEST_CASE("les échelles sont le maximum observé, avec sa marge de tête, sur 448 (B02-02)",
+          "[span_fp8][derive]") {
   std::vector<float> peaks(kScaleCount, 4.48F);
   peaks[3] = 44.8F;
   const auto scales = scales_from_peaks(peaks);
   REQUIRE(scales);
-  CHECK((*scales)[0] == Catch::Approx(0.01F));
-  CHECK((*scales)[3] == Catch::Approx(0.1F));
+  // Une activation 1,25 fois au-dessus du maximum de la calibration tient encore sans écrêter.
+  CHECK((*scales)[0] == Catch::Approx(0.0125F));
+  CHECK((*scales)[3] == Catch::Approx(0.125F));
+  CHECK(1.25F * 44.8F / (*scales)[3] <= Catch::Approx(448.0F));
 }
 
 TEST_CASE("à 5 blocs, seules les 16 premières échelles servent (3.2b)", "[span_fp8][derive]") {
@@ -28,7 +31,7 @@ TEST_CASE("à 5 blocs, seules les 16 premières échelles servent (3.2b)", "[spa
   for (std::size_t i = 0; i < 16; ++i) peaks[i] = 4.48F;
   const auto scales = scales_from_peaks(peaks, 5);
   REQUIRE(scales);
-  CHECK((*scales)[15] == Catch::Approx(0.01F));
+  CHECK((*scales)[15] == Catch::Approx(0.0125F));
   CHECK((*scales)[16] == 1.0F);
   CHECK_FALSE(scales_from_peaks(peaks));  // à 8 blocs, le maximum 16 est nul
   CHECK_FALSE(scales_from_peaks(peaks, 0));

@@ -104,9 +104,9 @@ std::string detect_cuda_arch(std::string_view gpu_name = {});
 // L'architecture déduite du nom de la carte (« NVIDIA GeForce RTX 4050 Laptop GPU » : sm89) ; vide si
 // inconnue.
 std::string cuda_arch_from_name(std::string_view gpu_name);
-// Présomption de l'accueil, sans moteur chargé, avec la règle du moteur (A37-02) : le FP8 de TensorRT dès
-// sm 8.9 (Ada, Hopper, Blackwell), les noyaux CUTLASS de SPAN sur Ada seulement
-// (SpanFp8Net::supported_device).
+// Présomption de l'accueil, sans moteur chargé, avec la règle du moteur (gpu::fp8_allowed) : le FP8 de
+// TensorRT sur sm 8.9 et 9.0 (Ada, Hopper ; pas sur RTX 50 tant qu'aucune mesure ne le justifie), les noyaux
+// CUTLASS de SPAN sur Ada seulement (SpanFp8Net::supported_device).
 bool fp8_presumed(std::string_view gpu_name);
 bool span_fp8_presumed(std::string_view gpu_name);
 // Celle qu'on installe : lue par nvidia-smi, sinon d'après le nom, sinon « ptx » (aucun fichier propre à une

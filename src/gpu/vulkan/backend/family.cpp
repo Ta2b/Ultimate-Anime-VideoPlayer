@@ -181,4 +181,8 @@ bool matrix_units_unlisted(GpuFamily family, DriverKind driver) {
   return family == GpuFamily::Unknown && matrix_units_allowed(family, driver);
 }
 
+bool matrix_f8_allowed(GpuFamily family) {
+  return family != GpuFamily::NvidiaBlackwell;
+}
+
 }  // namespace ajp::gpu::vk

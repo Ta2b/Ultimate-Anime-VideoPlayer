@@ -263,12 +263,17 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   s.grade_values.scene_light = to.scene_light;
   s.grade_values.anime_exposure = to.anime_e;
   s.grade_values.series_apl_nits = to.anime_series_apl;
+  to.series_apl_sent = to.anime_series_apl;
   render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
   // Flashs dangereux (P3.51) : le grade HDR plafonne vers 250 nits, le plein champ d'un écran OLED.
   // Le limiteur juge la lumière que l'écran montre (A42-08) : celle de la source fois le blanc du grade, pris
-  // avant le plafond (sinon le plafond relâcherait le limiteur, qui le reposerait aussitôt).
-  to.live.scenes().set_flash_gain(choice.pq ? flash_gain_of(choice.pq->peak) : 1.0);
-  if (to.flash_limited && choice.pq) choice.pq->peak = std::min(choice.pq->peak, kFlashPeakNits);
+  // avant le plafond (sinon le plafond relâcherait le limiteur, qui le reposerait aussitôt). Une source déjà
+  // en PQ ou HLG est mesurée en nits : aucun gain (B42-07).
+  to.live.scenes().set_flash_gain(choice.pq && !to.source_hdr ? flash_gain_of(choice.pq->peak) : 1.0);
+  if (to.flash_limited && choice.pq && choice.pq->peak > kFlashPeakNits) {
+    choice.pq->uncapped_peak = choice.pq->peak;  // l'annonce HDR garde le pic (B41-03)
+    choice.pq->peak = kFlashPeakNits;
+  }
   to.live.set_deband_source(wanted.deband);  // la case Débandage, sur tous les moteurs (P3.56)
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
@@ -286,21 +291,40 @@ namespace {
 // image.
 constexpr std::int64_t kSceneLightEveryUs = 100'000;
 
-// La lumière de la scène pour le grade en trois passes : envoyée quand elle change vraiment (3 % de
-// luminance moyenne, 2 points de part claire), au plus tous les dixièmes de seconde, sauf à une coupe.
-// Sous --anime-shots (méga plan A2), un plan de la pré-analyse fixe aussi l'exposition de la méthode « HDR
-// anime », et l'une et l'autre glissent aux coupes (anime_shots.h) : envoyées à chaque tour du glissé.
+// Une lumière de scène qui change vraiment : 3 % de luminance moyenne, 2 points de part claire.
+bool light_moved(const render::SceneLight& now, const render::SceneLight& was) {
+  return std::abs(now.apl_nits - was.apl_nits) > std::max(0.03 * was.apl_nits, 0.25) ||
+         std::abs(now.lit - was.lit) > 0.02;
+}
+
+// La lumière de la scène pour le grade en trois passes : envoyée quand elle change vraiment (light_moved), au
+// plus tous les dixièmes de seconde, sauf à une coupe. Sous --anime-shots (méga plan A2), un plan de la
+// pré-analyse fixe aussi l'exposition de la méthode « HDR anime » ; l'une et l'autre changent à la coupe et
+// glissent hors coupe (anime_shots.h), avec le même seuil et la même cadence (B42-08 : un fondu
+// reconstruisait le grade à chaque image). B38-14 : en sortie HDR, la lumière de la scène et l'exposition par
+// plan sont effacées (render::steady_hdr) : rien à calculer ni à renvoyer, sauf la série des noirs profonds
+// quand elle change.
 void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t now_us, bool cut,
                 bool planned) {
   if (!scene || !to.running.grade) return;
+  if (to.screen.hdr_output()) {
+    to.scene_light.reset();  // revenue en SDR, la sortie reçoit aussitôt la lumière de sa scène
+    to.anime_e = 0.0;
+    if (std::abs(to.anime_series_apl - to.series_apl_sent) > 0.01 * std::max(to.series_apl_sent, 1.0))
+      set_grade(to, to.running, true);
+    return;
+  }
   render::SceneLight light = scene->light;
   if (to.anime_shots && planned) {
     to.anime_glide.aim({.e = anime_exposure(light.apl_nits, to.anime_series_apl), .light = light}, now_us,
                        cut);
     const AnimeShotLook shown = to.anime_glide.at(now_us);
-    const bool moved =
-        std::abs(shown.e - to.anime_e) > 0.005 || !to.scene_light || shown.light != *to.scene_light;
-    if (!moved) return;
+    // Le glissé fini : sa valeur exacte part, même sous le seuil.
+    const bool settled = !to.anime_glide.gliding(now_us) &&
+                         (shown.e != to.anime_e || !to.scene_light || shown.light != *to.scene_light);
+    const bool moved = std::abs(shown.e - to.anime_e) > 0.005 || !to.scene_light ||
+                       light_moved(shown.light, *to.scene_light) || settled;
+    if (!moved || (!cut && to.scene_light && now_us - to.scene_light_at_us < kSceneLightEveryUs)) return;
     to.anime_e = shown.e;
     to.scene_light = shown.light;
     to.scene_light_at_us = now_us;
@@ -309,9 +333,7 @@ void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t n
   }
   to.anime_e = 0.0;  // sans plan analysé : le relèvement fixe
   if (to.scene_light) {
-    const render::SceneLight& was = *to.scene_light;
-    const bool moved = std::abs(light.apl_nits - was.apl_nits) > std::max(0.03 * was.apl_nits, 0.25) ||
-                       std::abs(light.lit - was.lit) > 0.02;
+    const bool moved = light_moved(light, *to.scene_light);
     if (!moved || (!cut && now_us - to.scene_light_at_us < kSceneLightEveryUs)) return;
   }
   to.scene_light = light;
@@ -338,8 +360,11 @@ void grade_tick(Chain& to, std::int64_t now_us) {
   // Le plan de la pré-analyse qui arrive sur une scène vue à l'ingestion n'est pas une coupe (A42-04) : le
   // grade glisse de la mesure en direct aux valeurs du plan, il ne saute pas au milieu du plan.
   const bool replaces_live = shot && shot->planned && (to.shot_serial & kLiveSerialBit) != 0;
-  const bool new_shot = shot && shot->serial != to.shot_serial && !replaces_live;
+  // B42-01 : un même plan réel coupé en deux au point de reprise d'une analyse n'est pas une coupe.
+  const bool joined = shot && continues_shot(*shot, to.shot_end_us);
+  const bool new_shot = shot && shot->serial != to.shot_serial && !replaces_live && !joined;
   to.shot_serial = shot ? shot->serial : 0;
+  to.shot_end_us = shot && shot->planned ? shot->end_us : -1;
   // Le plafond ne joue que sur la sortie PQ (A42-19) : en SDR la sortie ne dépasse pas le blanc de l'écran,
   // et le journal annonçait un plafond qui ne changeait rien à l'image.
   if (const bool flashing =

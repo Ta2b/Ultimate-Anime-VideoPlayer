@@ -12,22 +12,6 @@ constexpr int kMaxVarintBytes = 10;
 // Numéro de champ maximal du format filaire (29 bits).
 constexpr std::uint64_t kMaxFieldNumber = (1U << 29U) - 1U;
 
-std::uint32_t read_le32(Bytes bytes) {
-  std::uint32_t value = 0;
-  for (std::size_t i = 0; i < 4; ++i) {
-    value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[i])) << (8U * i);
-  }
-  return value;
-}
-
-std::uint64_t read_le64(Bytes bytes) {
-  std::uint64_t value = 0;
-  for (std::size_t i = 0; i < 8; ++i) {
-    value |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(bytes[i])) << (8U * i);
-  }
-  return value;
-}
-
 std::expected<void, Refusal> expect_wire(const Field& field, WireType wire, const char* what) {
   if (field.wire != wire) {
     return malformed(std::format("champ {} : type filaire {} au lieu de {} ({})", field.number,
@@ -51,6 +35,26 @@ std::expected<std::uint64_t, Refusal> read_varint(Bytes data, std::size_t& pos) 
 }
 
 }  // namespace
+
+std::uint32_t read_le32(Bytes bytes) {
+  std::uint32_t value = 0;
+  for (std::size_t i = 0; i < 4; ++i) {
+    value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[i])) << (8U * i);
+  }
+  return value;
+}
+
+std::uint64_t read_le64(Bytes bytes) {
+  std::uint64_t value = 0;
+  for (std::size_t i = 0; i < 8; ++i) {
+    value |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(bytes[i])) << (8U * i);
+  }
+  return value;
+}
+
+std::unexpected<Refusal> unsupported(std::string detail) {
+  return std::unexpected(Refusal{RefusalCode::OnnxUnsupported, std::move(detail)});
+}
 
 std::unexpected<Refusal> malformed(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::OnnxMalformed, std::move(detail)});

@@ -710,6 +710,18 @@ TEST_CASE("Délai audio mémorisé par appareil, relu de play.toml (P2.7)", "[ap
   s.audio_device.clear();
   ajp::app::play::switch_device_delay(s, "Casque Bluetooth");
   CHECK(s.audio_delay_ms == 20);
+  // B23-06 : suivre le système et nommer la même carte, c'est le même appareil : le délai reste.
+  ajp::app::play::PlaySettings tv;
+  tv.audio_delay_ms = 120;
+  tv.audio_device = "HDMI";
+  ajp::app::play::switch_device_delay(tv, "", "HDMI");
+  CHECK(tv.audio_delay_ms == 120);
+  tv.audio_device.clear();
+  ajp::app::play::switch_device_delay(tv, "HDMI", "HDMI");
+  CHECK(tv.audio_delay_ms == 120);
+  tv.audio_device = "Casque";  // une autre carte : le délai de la TV est gardé pour elle
+  ajp::app::play::switch_device_delay(tv, "", "HDMI");
+  CHECK(tv.audio_delay_ms == 0);
   const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-delays.toml";
   REQUIRE(ajp::app::play::save_settings(path, s));
   auto reread = ajp::app::play::load_settings(path);

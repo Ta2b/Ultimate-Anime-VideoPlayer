@@ -70,28 +70,6 @@ std::optional<std::chrono::sys_days> parse_day(std::string_view text) {
   return std::chrono::sys_days{day};
 }
 
-std::expected<std::optional<UpdateArtifact>, Refusal> artifact(const toml::table& root,
-                                                               std::string_view name) {
-  const toml::table* table = root[name].as_table();
-  if (table == nullptr) return std::optional<UpdateArtifact>{};
-  UpdateArtifact out;
-  out.url = (*table)["url"].value_or(std::string());
-  out.sha256 = (*table)["sha256"].value_or(std::string());
-  const std::int64_t size = (*table)["size"].value_or(std::int64_t{0});
-  if (!out.url.starts_with("https://"))
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("manifeste [{}] : l'adresse doit être en https", name));
-  if (!is_sha256(out.sha256))
-    return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("manifeste [{}] : sha256 attendu (64 chiffres hexadécimaux)", name));
-  if (size <= 0 || size > kMaxUpdateBytes)
-    return refuse(
-        RefusalCode::FieldOutOfRange,
-        std::format("manifeste [{}] : taille {} hors de 1 à {} octets", name, size, kMaxUpdateBytes));
-  out.size = static_cast<std::uint64_t>(size);
-  return std::optional<UpdateArtifact>(std::move(out));
-}
-
 }  // namespace
 
 std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view toml_text) {
@@ -99,8 +77,6 @@ std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view to
   if (!root) return std::unexpected(root.error());
   UpdateManifest out;
   out.version = (*root)["version"].value_or(std::string());
-  out.channel = (*root)["channel"].value_or(std::string("stable"));
-  out.date = (*root)["date"].value_or(std::string());
   out.notes_url = (*root)["notes_url"].value_or(std::string());
   const auto expires = parse_day((*root)["expires"].value_or(std::string()));
   if (!expires)
@@ -122,28 +98,9 @@ std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view to
   if (!parse_version(out.version))
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("manifeste : version « {} » illisible", out.version));
-  if (out.channel != "stable" && out.channel != "preview")
-    return refuse(RefusalCode::FieldOutOfRange, std::format("manifeste : canal « {} » inconnu", out.channel));
   if (!out.notes_url.empty() && !out.notes_url.starts_with("https://"))
     return refuse(RefusalCode::FieldOutOfRange, "manifeste : notes_url doit être en https");
-  struct Slot {
-    std::string_view name;
-    std::optional<UpdateArtifact>* into;
-  };
-  for (const Slot slot : {Slot{"linux-x64", &out.linux_x64}, Slot{"windows-x64", &out.windows_x64},
-                          Slot{"macos-arm64", &out.macos_arm64}}) {
-    auto found = artifact(*root, slot.name);
-    if (!found) return std::unexpected(found.error());
-    *slot.into = std::move(*found);
-  }
   return out;
-}
-
-const UpdateArtifact* artifact_for(const UpdateManifest& manifest, Os os) {
-  const std::optional<UpdateArtifact>& found = os == Os::Linux     ? manifest.linux_x64
-                                               : os == Os::Windows ? manifest.windows_x64
-                                                                   : manifest.macos_arm64;
-  return found ? &*found : nullptr;
 }
 
 std::optional<int> compare_versions(std::string_view a, std::string_view b) {
@@ -154,19 +111,19 @@ std::optional<int> compare_versions(std::string_view a, std::string_view b) {
   if (left->pre.empty() != right->pre.empty())
     return left->pre.empty() ? 1 : -1;  // la finale suit ses préversions
   if (left->pre == right->pre) return 0;
-  // « preview.2 » contre « preview.10 » : par nombre quand les deux finissent par un nombre.
-  const auto number = [](const std::string& pre) -> std::optional<std::uint64_t> {
-    const std::size_t dot = pre.rfind('.');
-    if (dot == std::string::npos) return std::nullopt;
+  // « rc.2 » contre « rc.10 », « rc2 » contre « rc10 » : par nombre quand les deux finissent par un nombre
+  // derrière le même début (B26-11).
+  const auto split = [](const std::string& pre) -> std::pair<std::string_view, std::optional<std::uint64_t>> {
+    std::size_t start = pre.size();
+    while (start > 0 && pre[start - 1] >= '0' && pre[start - 1] <= '9') --start;
+    if (start == pre.size() || pre.size() - start > 18) return {pre, std::nullopt};
     std::uint64_t value = 0;
-    const auto [end, error] = std::from_chars(pre.data() + dot + 1, pre.data() + pre.size(), value);
-    if (error != std::errc{} || end != pre.data() + pre.size()) return std::nullopt;
-    return value;
+    std::from_chars(pre.data() + start, pre.data() + pre.size(), value);
+    return {std::string_view(pre).substr(0, start), value};
   };
-  const auto x = number(left->pre);
-  const auto y = number(right->pre);
-  if (x && y && left->pre.substr(0, left->pre.rfind('.')) == right->pre.substr(0, right->pre.rfind('.')))
-    return *x < *y ? -1 : (*x > *y ? 1 : 0);
+  const auto [left_head, x] = split(left->pre);
+  const auto [right_head, y] = split(right->pre);
+  if (x && y && left_head == right_head) return *x < *y ? -1 : (*x > *y ? 1 : 0);
   return left->pre < right->pre ? -1 : 1;
 }
 

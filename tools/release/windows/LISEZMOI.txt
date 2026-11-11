@@ -1,0 +1,26 @@
+Ultimate Anime VideoPlayer pour Windows x64
+===========================================
+
+Lancer
+  Double-cliquer ajp.exe, ou « Ouvrir avec » sur une vidéo. Le premier lancement montre l'écran de bienvenue
+  (moteurs et réglages de départ). Vulkan sert pour toute carte graphique ; TensorRT est proposé aux cartes NVIDIA
+  RTX (coché d'office, licence de NVIDIA affichée à côté) et se télécharge depuis NVIDIA elle-même : aucun fichier de
+  NVIDIA n'est dans cette archive.
+
+Windows demande une confirmation, ou refuse de lancer ajp.exe
+  Les fichiers de cette version ne sont pas encore signés (pas de compte de signature pour l'instant). Selon les
+  réglages de Windows :
+  - SmartScreen (« Windows a protégé votre ordinateur ») : « Informations complémentaires », puis « Exécuter quand même ».
+  - Clic droit sur le zip téléchargé, Propriétés, « Débloquer », avant de l'extraire : les fichiers extraits ne
+    portent alors plus la marque du téléchargement.
+  - Contrôle intelligent des applications (Sécurité Windows, Contrôle des applications et du navigateur) en mode
+    « Activé » : il bloque tout exécutable non signé sans réputation, et ne se contourne pas fichier par fichier.
+    Il se règle sur « Évaluation » ou « Désactivé » (Windows ne le rallume plus ensuite sans réinstallation).
+  Les archives se vérifient sans les lancer : tools/release/verify-download.sh (signature Ed25519 du manifeste de la
+  release, puis SHA-256 de l'archive) ou le SHA256SUMS-windows.txt de la release.
+
+Désinstaller
+  Zip : supprimer le dossier, après « ajp.exe --unregister » (retire « Ouvrir avec » et le lecteur par défaut).
+  Installeur : « Applications installées », ou le désinstalleur du dossier d'installation.
+  Les données du lecteur restent à part : %APPDATA%\ajp\ajp (réglages, journaux) et %LOCALAPPDATA%\ajp\ajp (moteurs,
+  modèles dérivés, caches ; plusieurs Go possibles).

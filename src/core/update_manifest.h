@@ -3,15 +3,13 @@
 // signé.
 //
 //   version = "0.5.0"
-//   channel = "stable"          # ou "preview"
-//   date = "2026-10-30"
 //   expires = "2027-02-27"     # au-delà, le manifeste est refusé : un ancien ne se rejoue pas
 //   notes_url = "https://github.com/…/releases/tag/v0.5.0"
 //   revoked_keys = ["…"]      # clés publiques (64 chiffres hexadécimaux) que le lecteur ne croit plus
-//   [linux-x64]
-//   url = "https://…/ajp-linux-x64.tar.gz"
-//   sha256 = "…"                # 64 chiffres hexadécimaux
-//   size = 123456789           # octets, de 1 à kMaxUpdateBytes
+//
+// Le lecteur ne lit que ces champs (B26-07). Le manifeste porte aussi, pour verify-download.sh, le canal, la
+// date et une section par archive ([linux-x64]… avec url, sha256, size) : il les ignore, de sorte qu'une
+// section abîmée pour une plateforme ne prive personne de sa notification.
 #pragma once
 
 #include <array>
@@ -23,35 +21,19 @@
 #include <string_view>
 #include <vector>
 
-#include "core/engines.h"
 #include "core/types.h"
 
 namespace ajp::core {
 
-// Plafond de la taille d'une archive : 4 Gio (le paquet Linux complet fait moins de 1 Gio).
-inline constexpr std::int64_t kMaxUpdateBytes = std::int64_t{4} << 30;
-
-struct UpdateArtifact {
-  std::string url;
-  std::string sha256;
-  std::uint64_t size = 0;
-};
-
 struct UpdateManifest {
-  std::string version;  // « 0.5.0 » ou « 0.5.0-preview.1 »
-  std::string channel;  // « stable » ou « preview »
-  std::string date;
+  std::string version;              // « 0.5.0 » ou « 0.5.0-rc.1 »
   std::chrono::sys_days expires{};  // jour UTC après lequel le manifeste ne vaut plus
   std::string notes_url;
   std::vector<std::string> revoked_keys;  // clés publiques retirées, en hexadécimal minuscule
-  std::optional<UpdateArtifact> linux_x64;
-  std::optional<UpdateArtifact> windows_x64;
-  std::optional<UpdateArtifact> macos_arm64;
 };
 
-// Refus pour un TOML mal formé, une version illisible, un canal inconnu, un sha256 qui n'est pas hexadécimal
-// sur 64 chiffres, une adresse qui n'est pas en https.
-// Aussi pour une taille hors de 1 à kMaxUpdateBytes et un expires absent ou illisible (AAAA-MM-JJ).
+// Refus pour un TOML mal formé, une version illisible, une clé révoquée qui n'est pas hexadécimale sur 64
+// chiffres, une notes_url qui n'est pas en https, un expires absent ou illisible (AAAA-MM-JJ).
 std::expected<UpdateManifest, Refusal> parse_update_manifest(std::string_view toml_text);
 // Le manifeste a passé son expiration (today en UTC) : un manifeste signé ancien, rejoué pour geler les mises
 // à jour, ne vaut plus.
@@ -59,11 +41,9 @@ inline bool manifest_expired(const UpdateManifest& manifest, std::chrono::sys_da
   return today > manifest.expires;
 }
 
-// Le fichier pour ce système ; rien si la release n'en livre pas.
-const UpdateArtifact* artifact_for(const UpdateManifest& manifest, Os os);
-
 // Les versions « majeure.mineure.correctif[-préversion.N] » : <0, 0, >0. Une préversion précède sa version
-// finale (0.5.0-preview.2 < 0.5.0). nullopt si l'un des textes n'est pas une version.
+// finale (0.5.0-rc.2 < 0.5.0) ; deux préversions de même début se comparent par leur nombre final. nullopt si
+// l'un des textes n'est pas une version.
 std::optional<int> compare_versions(std::string_view a, std::string_view b);
 
 }  // namespace ajp::core

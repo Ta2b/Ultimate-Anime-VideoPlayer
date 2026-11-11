@@ -16,7 +16,10 @@
 
 #include "backend_fixture.h"
 #include "backend_frames.h"
+#include "core/utf8_path.h"
 #include "gpu/backend.h"
+#include "gpu/ir/import.h"
+#include "gpu/ir/interpreter.h"
 #include "kernels/ref/color.h"
 #include "kernels/ref/half.h"
 #include "kernels/ref/warp.h"
@@ -302,11 +305,23 @@ TEST_CASE("Backend TensorRT : mesures d'une paire, coupe de scène et pire bloc"
   CHECK(std::fabs(moved->scene_score - expected) < 1e-4);
 }
 
-TEST_CASE("Backend TensorRT : le vrai SPAN d'AnimeJaNai, construit puis exécuté",
+// Un dessin d'anime : dégradés lents, aplats clairs proches du blanc, traits noirs d'un point et un
+// motif différent par canal. Une permutation des canaux, un dépliage ×2 décalé d'un point ou un
+// débordement FP16 sur les aplats clairs ne passent plus (B40-03).
+float drawn(int c, int x, int y, int w, int h) {
+  const bool line = x % 23 == 7 || y % 19 == 5 || (x + 2 * y) % 41 == 0;
+  if (line) return 0.04F;
+  if (x > w / 2 && y < h / 3) return c == 1 ? 0.97F : 0.99F;  // aplat clair
+  const float fx = static_cast<float>(x) / static_cast<float>(w - 1);
+  const float fy = static_cast<float>(y) / static_cast<float>(h - 1);
+  return c == 0 ? 0.15F + 0.7F * fx : c == 1 ? 0.2F + 0.6F * fy : 0.3F + 0.5F * fx * fy;
+}
+
+TEST_CASE("Backend TensorRT : le vrai SPAN d'AnimeJaNai face à l'interpréteur FP32 (B40-03)",
           "[backend_tensorrt][cuda][span]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
   const std::filesystem::path model(AJP_SPAN_MODEL);
-  if (!std::filesystem::is_regular_file(model)) SKIP("modèle AnimeJaNai absent : " + model.string());
+  if (!std::filesystem::is_regular_file(model)) SKIP("modèle AnimeJaNai absent : " + core::to_utf8(model));
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);
   constexpr int w = 96;
@@ -324,18 +339,55 @@ TEST_CASE("Backend TensorRT : le vrai SPAN d'AnimeJaNai, construit puis exécut�
   auto output = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, 2 * h, 2 * w}});
   REQUIRE(input);
   REQUIRE(output);
-  // Gris uniforme 0,5 : SPAN le rend presque tel quel.
-  std::vector<std::uint16_t> gray(3 * w * h, kernels::ref::float_to_half(0.5F));
-  REQUIRE(cudaMemcpy(reinterpret_cast<void*>((*input)->tensor().handle), gray.data(), gray.size() * 2,
+
+  // L'entrée arrondie en FP16 une fois : TensorRT et l'interpréteur lisent les mêmes valeurs.
+  std::vector<std::uint16_t> halves(static_cast<std::size_t>(3 * w * h));
+  gpu::ir::Value value{.type = gpu::ir::DataType::F16, .dims = {1, 3, h, w}};
+  value.f.resize(halves.size());
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
+        const auto i = static_cast<std::size_t>((c * h + y) * w + x);
+        halves[i] = kernels::ref::float_to_half(drawn(c, x, y, w, h));
+        value.f[i] = kernels::ref::half_to_float(halves[i]);
+      }
+    }
+  }
+  REQUIRE(cudaMemcpy(reinterpret_cast<void*>((*input)->tensor().handle), halves.data(), halves.size() * 2,
                      cudaMemcpyHostToDevice) == cudaSuccess);
   const std::array inputs{(*input)->tensor()};
   std::array outputs{(*output)->tensor()};
   REQUIRE(loaded.backend->enqueue(**engine, inputs, outputs));
   const auto got = download((*output)->tensor());
-  REQUIRE(got.size() == static_cast<std::size_t>(3 * 4 * w * h));
-  double sum = 0.0;
-  for (const float v : got) sum += v;
-  CHECK(std::fabs(sum / static_cast<double>(got.size()) - 0.5) < 0.05);
+
+  // Référence : le même ONNX dans l'interpréteur CPU de l'IR, en FP32.
+  auto graph = gpu::ir::load_onnx_file(model);
+  REQUIRE(graph);
+  REQUIRE(graph->inputs.size() == 1);
+  const std::array named{gpu::ir::NamedValue{.name = graph->tensors[graph->inputs[0]].name, .value = value}};
+  auto reference = gpu::ir::run(*graph, named);
+  REQUIRE(reference);
+  REQUIRE(reference->size() == 1);
+  const gpu::ir::Value& want = reference->front().value;
+  REQUIRE(want.dims == gpu::ir::Dims{1, 3, 2 * h, 2 * w});
+  REQUIRE(got.size() == want.f.size());
+
+  // Par canal : PSNR sur [0, 1] et écart le plus grand.
+  const std::size_t plane = static_cast<std::size_t>(4 * w * h);
+  for (std::size_t c = 0; c < 3; ++c) {
+    double squares = 0.0;
+    double worst = 0.0;
+    for (std::size_t i = c * plane; i < (c + 1) * plane; ++i) {
+      const double gap = static_cast<double>(got[i]) - static_cast<double>(want.f[i]);
+      squares += gap * gap;
+      worst = std::max(worst, std::fabs(gap));
+    }
+    const double mse = std::max(squares / static_cast<double>(plane), 1e-12);
+    const double psnr = 10.0 * std::log10(1.0 / mse);
+    CAPTURE(c, psnr, worst);
+    CHECK(psnr > 45.0);
+    CHECK(worst < 0.05);
+  }
 }
 
 }  // namespace

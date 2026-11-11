@@ -175,17 +175,17 @@ std::size_t MemoryAllocator::spare_count() const {
       std::ranges::count_if(blocks_, [](const auto& block) { return block->live == 0; }));
 }
 
-void MemoryAllocator::free_block(std::vector<std::unique_ptr<Block>>::iterator at) {
+std::vector<std::unique_ptr<MemoryAllocator::Block>>::iterator MemoryAllocator::free_block(
+    std::vector<std::unique_ptr<Block>>::iterator at) {
   context_.fn().vkFreeMemory(context_.device(), (*at)->memory, nullptr);
   reserved_ -= (*at)->size;
-  blocks_.erase(at);
+  return blocks_.erase(at);
 }
 
 void MemoryAllocator::evict_spares(VkDeviceSize needed) {
   for (auto it = blocks_.begin(); it != blocks_.end() && needed > limits_.budget - reserved_;) {
     if ((*it)->live == 0) {
-      free_block(it);
-      it = blocks_.begin();
+      it = free_block(it);  // le suivant : un seul passage, pas de reprise depuis le début (B49-07)
     } else {
       ++it;
     }
@@ -325,8 +325,7 @@ void MemoryAllocator::release(std::uint64_t id, VkDeviceSize offset, VkDeviceSiz
       for (auto it = blocks_.begin(); it != blocks_.end() && kept > limits_.large_spares;) {
         if ((*it)->id != id && (*it)->live == 0 && (*it)->size != limits_.block_size) {
           kept -= (*it)->size;
-          free_block(it);
-          it = blocks_.begin();
+          it = free_block(it);
         } else {
           ++it;
         }

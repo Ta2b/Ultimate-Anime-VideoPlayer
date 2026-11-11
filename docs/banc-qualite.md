@@ -74,7 +74,10 @@ Ce que ces chiffres disent :
 - **SPAN en FP16 est transparent** : moins d'un code d'écart au FP32, aucune perte contre l'original.
 - **Les deux RIFE perdent au FP16** : 0,9 dB contre la vraie image en 720p, 1,2 dB en 1024 lignes, et des
   pixels à 25 ou 41 codes de leur référence. C'est ce que l'audit A03-20 attribue à la grille du v1 arrondie
-  en FP16 ; le banc en donne la mesure, la correction donnera la sienne.
+  en FP16 ; le banc en donne la mesure, la correction donnera la sienne. Les Resize des blocs passés en FP32
+  (un Cast de part et d'autre, comme `tools/rife/convert_rife_fp16.py`) n'y changent rien : 47,56 et 47,24 dB
+  contre la vraie image, au centième près ceux du graphe livré (B09-06, 720p, 8 scènes, ONNX Runtime sur
+  processeur). La perte n'est donc pas dans les Resize.
 - **DistilDRBA est 11 à 12 dB sous RIFE 4.22 lite sur ce mouvement** (35,7 contre 47,6 dB), pour un temps cinq
   fois plus court sur processeur. Il place bien le mouvement (un panoramique pur tombe au bon endroit) mais le
   rend moins net. « Plus rapide à qualité proche » n'est donc pas tenu sur ces scènes ; la mesure sur un

@@ -22,7 +22,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-fs::path scratch(const std::string& name) {
+[[maybe_unused]] fs::path scratch(const std::string& name) {
   static std::atomic<int> counter{0};
   const fs::path dir = fs::temp_directory_path() / std::format("ajp-bench-test-{}-{}", name, counter++);
   fs::remove_all(dir);
@@ -30,21 +30,14 @@ fs::path scratch(const std::string& name) {
   return dir;
 }
 
-std::string slurp(const fs::path& file) {
-  std::ifstream in(file, std::ios::binary);
-  std::ostringstream text;
-  text << in.rdbuf();
-  return text.str();
-}
-
 }  // namespace
 
-TEST_CASE("les étapes se lisent « Étape n sur 4 » et la barre globale ne recule jamais", "[bench_steps]") {
+TEST_CASE("les étapes se lisent « Étape n sur 3 » et la barre globale ne recule jamais", "[bench_steps]") {
   ajp::app::play::FrenchUi french;
   CHECK(step_line(BenchStep::Levels, "test des réglages « Rapide »") ==
-        "Étape 2 sur 4 : test des réglages « Rapide »");
+        "Étape 2 sur 3 : test des réglages « Rapide »");
   float last = -1.0F;
-  for (const BenchStep step : {BenchStep::Prepare, BenchStep::Levels, BenchStep::Explore, BenchStep::Span}) {
+  for (const BenchStep step : {BenchStep::Prepare, BenchStep::Levels, BenchStep::Explore}) {
     for (const float within : {0.0F, 0.5F, 1.0F}) {
       const float now = overall_fraction(step, within);
       CHECK(now >= last);
@@ -52,7 +45,7 @@ TEST_CASE("les étapes se lisent « Étape n sur 4 » et la barre globale ne rec
     }
   }
   CHECK(overall_fraction(BenchStep::Prepare, 0.0F) == 0.0F);
-  CHECK(overall_fraction(BenchStep::Span, 1.0F) == 1.0F);
+  CHECK(overall_fraction(BenchStep::Explore, 1.0F) == 1.0F);
   CHECK(overall_fraction(BenchStep::Levels, 7.0F) == overall_fraction(BenchStep::Levels, 1.0F));  // bornée
 }
 
@@ -113,66 +106,6 @@ TEST_CASE("un essai qui n'a rien rendu est toujours expliqué en une phrase", "[
   CHECK(explain_trial(what, exit(ExitKind::Cancelled, 0), "x", std::chrono::seconds(1)).empty());
   CHECK(explain_trial(what, exit(ExitKind::Exited, 0), "x", std::chrono::seconds(1)).empty());
   CHECK(explain_no_reading(what, "fin").contains("sans mesures lisibles"));
-}
-
-TEST_CASE("le résultat tient en une phrase : chaîne gardée et mode Performance", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
-  const BenchResult fast{.gpu = "g", .driver = "d", .level = Tier::Normal};
-  const ChainContext context{
-      .display_height = 1440, .display_hz = 72.0, .source_height = 1080, .source_fps = 24.0};
-  const std::string ready = result_sentence(fast, context, {SpanFp8Verdict::State::Ready, {}});
-  CHECK(ready.starts_with("Votre PC tient : agrandissement ×2 depuis 720p"));
-  CHECK(ready.contains("interpolation jusqu'à ×3"));
-  CHECK(ready.contains("RIFE"));
-  CHECK(ready.contains("Performance FP8 pour SPAN : prête"));
-  CHECK(ready.find('\n') == std::string::npos);
-
-  const std::string no =
-      result_sentence(fast, context,
-                      {SpanFp8Verdict::State::Unavailable,
-                       "moteur TensorRT non installé : installez-le dans Paramètres > Général > Moteurs"});
-  CHECK(no.contains("Performance FP8 pour SPAN : non — moteur TensorRT non installé"));
-  CHECK_FALSE(result_sentence(fast, context, {}).contains("FP8"));  // inconnu : la phrase n'en parle pas
-
-  const std::string economy = result_sentence(BenchResult{.level = Tier::Economy}, context, {});
-  CHECK(economy.contains("sans agrandissement"));
-  CHECK(economy.contains("sans interpolation"));
-
-  // L'exploration trouvée est dite : une hauteur plus haute que celle du niveau.
-  BenchResult explored = fast;
-  explored.work_height = 900;
-  CHECK(result_sentence(explored, context, {}).contains("depuis 900p"));
-}
-
-TEST_CASE("défaire l'optimisation remet bench.toml comme il était, ou le retire", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
-  const fs::path dir = scratch("undo");
-  const fs::path file = dir / "bench.toml";
-  PlaySettings before;
-  before.preset = Preset::Quality;
-
-  // Pas de bench.toml avant : l'annulation le retire.
-  BenchUndo none = capture_undo(file, before);
-  CHECK(none.valid);
-  CHECK_FALSE(none.bench_toml.has_value());
-  CHECK(none.settings.preset == Preset::Quality);
-  REQUIRE(
-      save_bench(file, BenchResult{.gpu = "g", .driver = "d", .level = Tier::Fast, .date = "2026-10-29"}));
-  REQUIRE(restore_bench_file(none, file));
-  CHECK_FALSE(fs::exists(file));
-
-  // Un bench.toml d'avant : il revient octet pour octet.
-  REQUIRE(
-      save_bench(file, BenchResult{.gpu = "g", .driver = "d", .level = Tier::Light, .date = "2026-10-01"}));
-  const std::string old_text = slurp(file);
-  BenchUndo some = capture_undo(file, before);
-  REQUIRE(some.bench_toml.has_value());
-  REQUIRE(
-      save_bench(file, BenchResult{.gpu = "g", .driver = "d", .level = Tier::Ultra, .date = "2026-10-29"}));
-  CHECK(slurp(file) != old_text);
-  REQUIRE(restore_bench_file(some, file));
-  CHECK(slurp(file) == old_text);
-  fs::remove_all(dir);
 }
 
 #ifndef _WIN32
@@ -237,8 +170,8 @@ TEST_CASE("l'évaluation monte jusqu'au dernier niveau qui tient et explique l'e
   REQUIRE(outcome);
   CHECK(outcome->result.level == Tier::Normal);
   REQUIRE(lines.size() >= 2);
-  CHECK(lines.front() == "Étape 1 sur 4 : préparation des moteurs et première mesure");
-  CHECK(lines[1] == "Étape 2 sur 4 : test des réglages « Qualité »");
+  CHECK(lines.front() == "Étape 1 sur 3 : préparation des moteurs et première mesure");
+  CHECK(lines[1] == "Étape 2 sur 3 : test des réglages « Qualité »");
   REQUIRE(outcome->notes.size() == 1);
   CHECK(outcome->notes.front().starts_with(
       "L'essai des réglages « Qualité » n'a rien rendu : refus : GPU saturé"));
