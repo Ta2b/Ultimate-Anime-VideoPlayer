@@ -51,13 +51,18 @@ UpscaleStage::~UpscaleStage() {
   }
   if (setup_.rife_motion_calm != nullptr)
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
+  // RIFE à chaud, un compromis qualité contre vitesse (B45-07) : le milieu d'une paire calme qui accélère
+  // garde l'échelle grossière de la paire d'avant. Ni le gain ni la perte ne sont mesurés : l'essai reste
+  // hors défaut.
   if (setup_.rife_warm)
-    log_channel("gpu")->info("RIFE à chaud : {} passes sur {} sans les blocs grossiers{}", warm_runs_,
-                             rife_runs_,
-                             warm_runs_ == 0 && rife_runs_ > 0
-                                 ? " (ce moteur ne reprend pas à chaud : l'essai est sans effet hors du RIFE "
-                                   "fusionné de Vulkan)"
-                                 : "");
+    log_channel("gpu")->info(
+        "RIFE à chaud (qualité et gain non mesurés) : {} passes sur {} sans les blocs "
+        "grossiers{}",
+        warm_runs_, rife_runs_,
+        warm_runs_ == 0 && rife_runs_ > 0
+            ? " (ce moteur ne reprend pas à chaud : l'essai est sans effet hors du RIFE "
+              "fusionné de Vulkan)"
+            : "");
   if (moving_.pairs > 0) {
     const auto pairs = static_cast<double>(moving_.pairs);
     log_channel("gpu")->info(

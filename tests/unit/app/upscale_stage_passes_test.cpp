@@ -34,17 +34,6 @@ struct JumpClock final : MasterClock {
   }
 };
 
-// Attend que le journal du backend factice compte n entrées égales à entry ; faux après le délai, qui n'est
-// qu'un filet : le test avance dès que la condition est vraie (B40-08).
-bool logged(const Rig& rig, std::string_view entry, std::size_t n, std::chrono::milliseconds timeout = 5s) {
-  const auto until = std::chrono::steady_clock::now() + timeout;
-  while (rig.backend.count(entry) < n) {
-    if (std::chrono::steady_clock::now() > until) return false;
-    std::this_thread::sleep_for(1ms);
-  }
-  return true;
-}
-
 }  // namespace
 
 TEST_CASE(
@@ -90,7 +79,7 @@ TEST_CASE(
   rig.feed(3, 3);                  // la paire (1, 2) se prépare à l'heure, b attend le slot
   // Les mesures de (2, 3) relues : la paire (1, 2) est décidée. Que l'horloge saute avant ou après le premier
   // jugement de b, la source 2 doit s'écrire.
-  REQUIRE(logged(rig, "scores_take", 1));
+  REQUIRE(logged(rig, "scores_take"));
   clock.jump(70'000);  // l'instant 1/2 (60 000) est passé, la source 2 (80 000) ne l'est pas
   rig.release_all();
   rig.feed(4, 5);
