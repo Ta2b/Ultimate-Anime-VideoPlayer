@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "app/play/anime4k_choice.h"
 #include "app/play/i18n.h"
 #include "app/play/model_choice.h"
 
@@ -88,14 +89,17 @@ void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& ma
     out.rife_model = machine.explored_rife_model;
 }
 
-// SPAN de la tranche : rien en Économe (sauf le modèle léger s'il est admis, P6.7), le modèle du niveau
-// au-dessus (level_span_model) ; le modèle léger, s'il est admis, dans les deux tranches du bas.
+// SPAN de la tranche : rien en Économe (sauf Anime4K ou le modèle léger s'ils sont admis, P6.7), le modèle
+// du niveau au-dessus (level_span_model) ; le modèle léger, s'il est admis, dans les deux tranches du bas ;
+// Anime4K, s'il est admis, en Économe avant lui.
 void set_span(PlaySettings& out, Tier level, int work) {
   const bool economy = level == Tier::Economy;
-  out.upscale = !economy || kLightSpanInAuto;
-  out.work_height = economy && !kLightSpanInAuto ? 0 : work;
+  const bool economy_upscales = kLightSpanInAuto || kAnime4kInAuto;
+  out.upscale = !economy || economy_upscales;
+  out.work_height = economy && !economy_upscales ? 0 : work;
   out.model = std::string(level_span_model(level));
   if (kLightSpanInAuto && (economy || level == Tier::Light)) out.model = std::string(kLightSpanModel);
+  if (kAnime4kInAuto && economy) out.model = std::string(kAnime4kFast);
 }
 
 // La résolution de travail du niveau, avant l'exploration et la source. Qualité et Ultra : la source telle

@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include "app/play/anime4k_choice.h"
 #include "app/play/drba_model.h"
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
@@ -137,6 +138,15 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
         if (chosen) ImGui::SetItemDefaultFocus();
       }
     }
+    // Anime4K, sans fichier ni moteur : toujours proposé, après les modèles ONNX (anime4k_choice.h).
+    for (const std::string_view shader : kAnime4kModels) {
+      const bool chosen = current == shader;
+      if (ImGui::Selectable(model_label(std::string(shader)).c_str(), chosen)) {
+        d.model = std::string(shader);
+        if (d.span_precision == PrecisionTier::Performance) d.span_precision = PrecisionTier::Balanced;
+      }
+      if (chosen) ImGui::SetItemDefaultFocus();
+    }
     ImGui::EndCombo();
   }
   panel::tip(
@@ -144,6 +154,10 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
           ? i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest. "
                      "FP8: prepared once on this PC, then faster, at the cost of some precision.")
           : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest."));
+  if (anime4k_size(current))
+    note(
+        i18n::tr("Anime4K: shaders drawn by the display, with no engine to build, for small GPUs. Mode A, B "
+                 "or C follows the source and the downscale."));
 }
 
 }  // namespace
@@ -151,7 +165,8 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Upscaling"));
-  ImGui::Checkbox(i18n::tr("SPAN ×2 (AnimeJaNai)"), &d.upscale);
+  const bool anime4k = anime4k_size(d.model).has_value();
+  ImGui::Checkbox(anime4k ? i18n::tr("Anime4K ×2") : i18n::tr("SPAN ×2 (AnimeJaNai)"), &d.upscale);
   ImGui::BeginDisabled(!d.upscale);
   ImGui::Checkbox(i18n::tr("Restore line art (reduce, then upscale)"), &d.restore_lines);
   panel::tip(i18n::tr(
@@ -159,7 +174,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
       "lines for a quarter of the work. Off: such a source keeps all its detail (grain, textures), "
       "without SPAN."));
   model_combo(d, choices);
-  if (choices.span_tiers.quality) {
+  if (choices.span_tiers.quality && !anime4k) {
     TierSupport tiers = choices.span_tiers;
     tiers.performance = false;  // le FP8 se choisit dans la liste des modèles
     precision_combo(i18n::tr("SPAN precision"), d.span_precision, tiers);

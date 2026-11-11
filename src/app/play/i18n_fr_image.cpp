@@ -163,6 +163,13 @@ constexpr std::array kImageTabs{
     Entry{"Without upscaling, the output stays at the working resolution: {}.",
           "Sans agrandissement, la sortie garde la résolution de travail : {}."},
     Entry{"Working resolution", "Résolution de travail"},
+    Entry{"Anime4K ×2", "Anime4K ×2"},
+    Entry{
+        "Anime4K: shaders drawn by the display, with no engine to build, for small GPUs. Mode A, B or C "
+        "follows the source and the downscale.",
+        "Anime4K : des shaders dessinés par l'affichage, sans moteur à construire, pour les petites cartes. "
+        "Le mode A, B ou C suit la source et la réduction."},
+    Entry{"the upscaler changes to Anime4K", "l'agrandissement passe à Anime4K"},
 };
 
 }  // namespace

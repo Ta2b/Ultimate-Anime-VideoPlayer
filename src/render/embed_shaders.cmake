@@ -1,14 +1,17 @@
-# cmake -DOUTPUT=<fichier.cpp> -DINPUTS=<a.hook;b.hook> -P embed_shaders.cmake
+# cmake -DOUTPUT=<fichier.cpp> -DINPUTS=<a.hook;b.hook> [-DHEADER=render/autre.h] -P embed_shaders.cmake
 #
 # Écrit un .cpp qui définit, pour chaque hook, un std::string_view sur ses octets exacts
-# (shaders.h). Les octets passent en hexadécimal : aucun échappement, aucune limite de
+# (shaders.h, ou l'en-tête HEADER qui les déclare). Les octets passent en hexadécimal : aucun échappement, aucune limite de
 # longueur de littéral (MSVC refuse les chaînes de plus de 16 Kio). Un dossier est un hook en
 # plusieurs fichiers, mis bout à bout dans l'ordre de leurs noms : libplacebo ne voit les textures
 # //!SAVE que dans le fichier qui les déclare, le hook doit donc rester un seul texte.
 # Les retours chariot sont retirés : une extraction Windows (core.autocrlf) met les .hook en CRLF, et
 # grade.cpp cherche ses marques suivies de « \n » (sans quoi le hook du look ne compilait plus).
+if(NOT HEADER)
+  set(HEADER "render/shaders.h")
+endif()
 set(body "// Généré par src/render/embed_shaders.cmake : ne pas modifier.\n")
-string(APPEND body "#include \"render/shaders.h\"\n\nnamespace ajp::render::shaders {\nnamespace {\n")
+string(APPEND body "#include \"${HEADER}\"\n\nnamespace ajp::render::shaders {\nnamespace {\n")
 set(views "")
 foreach(input IN LISTS INPUTS)
   get_filename_component(stem "${input}" NAME_WE)

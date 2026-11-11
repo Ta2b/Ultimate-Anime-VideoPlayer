@@ -137,6 +137,38 @@ void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target
   }
 }
 
+// Anime4K sur MAIN d'abord (l'agrandissement, render/anime4k.h), la netteté sur SCALED ensuite, puis les
+// passes du grade sur OUTPUT. Une source SDR arrive à la netteté en lumière linéaire, une source HDR encodée
+// (A41-06).
+std::size_t PlaceboScreen::Impl::video_hooks(std::array<const pl_hook*, 16>& hooks, const pl_frame* image,
+                                             bool graded_now) const {
+  std::size_t count = 0;
+  const auto add = [&](std::span<const pl_hook* const> some) {
+    for (const pl_hook* hook : some) {
+      if (count < hooks.size()) hooks[count++] = hook;
+    }
+  };
+  if (anime4k && image != nullptr) add(anime4k->hooks());
+  const bool sdr_source = image == nullptr || !pl_color_space_is_hdr(&image->color);
+  if (sharpen && sharpen->hook(sdr_source) != nullptr) hooks[count++] = sharpen->hook(sdr_source);
+  if (graded_now) add(grade->hooks());
+  return count;
+}
+
+void PlaceboScreen::Impl::note_pass(const pl_dispatch_info& pass) const {
+  display_frame_ns += pass.last;
+  const char* what = pass.shader->description;
+  if (what == nullptr) return;
+  if (std::string_view(what).find("AnimeJaNai") != std::string_view::npos) grade_frame_ns += pass.last;
+  if (render::is_anime4k_pass(what)) anime4k_frame_ns += pass.last;
+}
+
+void PlaceboScreen::Impl::keep_pass_times(bool graded_now) const {
+  if (graded_now && grade_frame_ns > 0) grade_gpu_us.add(static_cast<std::uint32_t>(grade_frame_ns / 1000));
+  if (anime4k && anime4k_frame_ns > 0)
+    anime4k_gpu_us.add(static_cast<std::uint32_t>(anime4k_frame_ns / 1000));
+}
+
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
                                                           const pl_frame& target) const {
   AJP_TRACE("composition");
@@ -165,39 +197,25 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   }();
   if (deband && !frame_debanded)
     params.deband_params = graded_now ? &kQuietDeband : &pl_deband_default_params;
-  // La netteté sur SCALED d'abord, puis les passes du grade sur OUTPUT. Une source SDR lui arrive en lumière
-  // linéaire, une source HDR encodée (A41-06).
   std::array<const pl_hook*, 16> hooks{};
-  std::size_t count = 0;
-  const bool sdr_source = image == nullptr || !pl_color_space_is_hdr(&image->color);
-  if (sharpen && sharpen->hook(sdr_source) != nullptr) hooks[count++] = sharpen->hook(sdr_source);
-  if (graded_now) {
-    for (const pl_hook* hook : grade->hooks()) {
-      if (count < hooks.size()) hooks[count++] = hook;
-    }
-  }
-  if (count > 0) {
+  if (const std::size_t count = video_hooks(hooks, image, graded_now); count > 0) {
     params.hooks = hooks.data();
     params.num_hooks = static_cast<int>(count);
   }
   // Le temps GPU de chaque passe, toujours relevé (libplacebo le rend avec un retard d'une image ou deux) :
-  // toutes les passes pour l'affichage, celles du grade à part.
+  // toutes les passes pour l'affichage, celles du grade et d'Anime4K à part.
   params.info_callback = [](void* priv, const pl_render_info* info) {
-    Impl& self = *static_cast<Impl*>(priv);
-    self.display_frame_ns += info->pass->last;
-    const char* what = info->pass->shader->description;
-    if (what != nullptr && std::string_view(what).find("AnimeJaNai") != std::string_view::npos)
-      self.grade_frame_ns += info->pass->last;
+    static_cast<Impl*>(priv)->note_pass(*info->pass);
   };
   params.info_priv = const_cast<Impl*>(this);
   grade_frame_ns = 0;
+  anime4k_frame_ns = 0;
   display_frame_ns = 0;
   if (image == nullptr) pl_frame_clear(vk->gpu, &target, std::array<float, 3>{0.0F, 0.0F, 0.0F}.data());
   if (!pl_render_image(renderer, image, &target, &params)) {
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image a échoué"});
   }
-  if (graded_now && image != nullptr && grade_frame_ns > 0)
-    grade_gpu_us.add(static_cast<std::uint32_t>(grade_frame_ns / 1000));
+  if (image != nullptr) keep_pass_times(graded_now);
   return {};
 }
 
@@ -497,6 +515,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                              .final_scaler = s.final_scaler,
                              .deband = s.deband,
                              .sharpness = s.sharpness,
+                             .anime4k = s.anime4k_key(),
                              .sar = s.sample_aspect,
                              .transfer = static_cast<int>(target.color.transfer),
                              .primaries = static_cast<int>(target.color.primaries),

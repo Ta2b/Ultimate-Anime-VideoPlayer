@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/play/anime4k_choice.h"
 #include "app/play/backend_library.h"
 #include "app/play/chain_shape.h"
 #include "app/play/live_settings.h"
@@ -77,8 +78,12 @@ struct ChainEngines {
   }
 
   BackendLibrary::Instance backend;
-  std::string backend_name;           // « tensorrt », « vulkan »
-  std::optional<ModelChoice> model;   // SPAN ; rien : sans agrandissement
+  std::string backend_name;          // « tensorrt », « vulkan »
+  std::optional<ModelChoice> model;  // SPAN ; rien : sans agrandissement, ou Anime4K
+  // Anime4K à la place de SPAN (anime4k_choice.h) : la chaîne rend l'image de travail telle quelle (factor
+  // 1), l'écran et l'export y posent les shaders. span_list : la liste du menu, que model ne porte pas alors.
+  std::optional<render::Anime4kChoice> anime4k;
+  std::optional<ModelChoice> span_list;
   std::optional<SpanInt8> span_int8;  // sa variante INT8, construite à sa place (span_int8.h)
   int factor = 1;                     // kSpanFactor avec SPAN
   int top_factor = 1;                 // le plus haut facteur d'interpolation que la lecture peut prendre
@@ -127,7 +132,8 @@ struct ChainEngines {
   std::string_view motion_name() const;
   // « RIFE ×2 · rife_v4.25 · », ou rien sans interpolation.
   std::string motion_label(const PlaySettings& settings) const;
-  // « SPAN ×2 · modèle · vulkan · 1920x1080 → 3840x2160 », ou « sans agrandissement · … ».
+  // « SPAN ×2 · modèle · vulkan · 1920x1080 → 3840x2160 », « Anime4K ×2 · M · mode A · … », ou « sans
+  // agrandissement · … ».
   std::string span_label() const;
 
   // L'étage gpu pour des images source width × height écrites dans slots. clock nullptr : aucune

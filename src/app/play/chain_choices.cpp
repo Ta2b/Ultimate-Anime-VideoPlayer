@@ -30,8 +30,12 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
   return SettingsChoices{
-      .models = c.model ? c.model->available : std::vector<std::string>{},
-      .default_model = c.model ? c.model->default_name : std::string(),
+      .models = c.model       ? c.model->available
+                : c.span_list ? c.span_list->available
+                              : std::vector<std::string>{},
+      .default_model = c.model       ? c.model->default_name
+                       : c.span_list ? c.span_list->default_name
+                                     : std::string(),
       .source_width = video.width,
       .source_height = video.height,
       .source_fps = fps_of(video.frame_rate),

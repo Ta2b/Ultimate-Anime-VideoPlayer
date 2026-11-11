@@ -9,3 +9,6 @@ data/luts/*.cube -text
 
 # Les hooks mpv (src/render/shaders) : en LF partout ; grade.cpp cherche ses marques suivies de « \n ».
 *.hook text eol=lf
+
+# La copie d'Anime4K (third_party/anime4k) : des octets exacts, que FILES.sha256 vérifie.
+third_party/anime4k/** -text

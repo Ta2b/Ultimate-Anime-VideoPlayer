@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/anime4k_choice.h"
 #include "app/play/chain_shape.h"
 #include "core/utf8_path.h"
 #include "render/cube_lut.h"
@@ -83,6 +84,7 @@ bool is_noise(std::string_view token) {
 }  // namespace
 
 std::string model_label(const std::string& file) {
+  if (const auto size = anime4k_size(file)) return anime4k_label(*size);
   std::string_view name = file;
   if (name.ends_with(".onnx")) name.remove_suffix(5);
   if (name.starts_with("2x_")) name.remove_prefix(3);
@@ -499,6 +501,12 @@ void add_shape_reasons(std::vector<std::string>& reopen, const PlaySettings& run
                                               : i18n::tr("warp runs before SPAN"));
 }
 
+// Ce que recharge un agrandissement changé : SPAN, ou Anime4K, qui n'a rien à construire.
+std::string upscale_reason(const PlaySettings& wanted) {
+  if (wanted.upscale && anime4k_size(wanted.model)) return i18n::tr("the upscaler changes to Anime4K");
+  return i18n::tr("SPAN reloads (built the first time for this size)");
+}
+
 // La réouverture et ses raisons, jointes pour l'encadré du panneau.
 Change reopen_for(const std::vector<std::string>& reasons) {
   std::string reason;
@@ -514,7 +522,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
   std::vector<std::string> reopen;
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
       running.work_height != wanted.work_height || running.restore_lines != wanted.restore_lines)
-    reopen.emplace_back(i18n::tr("SPAN reloads (built the first time for this size)"));
+    reopen.emplace_back(upscale_reason(wanted));
   if (running.audio_device != wanted.audio_device) reopen.emplace_back(i18n::tr("the output device changes"));
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
     reopen.emplace_back(i18n::tr("the interpolation engine loads (built the first time for this size)"));

@@ -415,11 +415,21 @@ PlaceboScreen::Impl::~Impl() {
     channel->info("profil GPU · grade HDR : médiane {:.2f} ms, p95 {:.2f} ms ({} images, centiles sur {})",
                   at(0.5) / 1000.0, at(0.95) / 1000.0, grade_gpu_us.seen(), kept.size());
   }
+  if (!anime4k_gpu_us.empty()) {
+    std::vector<std::uint32_t>& kept = anime4k_gpu_us.kept();
+    std::ranges::sort(kept);
+    const auto at = [&](double q) {
+      return kept[static_cast<std::size_t>(q * static_cast<double>(kept.size() - 1))];
+    };
+    channel->info("profil GPU · Anime4K : médiane {:.2f} ms, p95 {:.2f} ms ({} images, centiles sur {})",
+                  at(0.5) / 1000.0, at(0.95) / 1000.0, anime4k_gpu_us.seen(), kept.size());
+  }
   if (recompositions + reuses > 0)
     channel->info("composition gardee : {} recompositions, {} recopies sans recomposition", recompositions,
                   reuses);
   ui.reset();
   grade.reset();
+  anime4k.reset();
   ramp_grade.reset();
   pl_renderer_destroy(&ramp_renderer);
   osd.reset();

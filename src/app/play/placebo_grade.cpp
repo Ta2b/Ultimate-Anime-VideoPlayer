@@ -129,6 +129,24 @@ void PlaceboScreen::set_finish(FinalScaler scaler, bool deband, int sharpness) {
   if (impl_->sharpen) impl_->sharpen->set_strength(impl_->sharpness / 100.0);
 }
 
+std::expected<void, Refusal> PlaceboScreen::set_anime4k(const std::optional<render::Anime4kChoice>& choice) {
+  if (!choice) {
+    impl_->anime4k.reset();
+    return {};
+  }
+  if (impl_->anime4k && impl_->anime4k->choice() == *choice) return {};
+  impl_->anime4k.reset();
+  auto made = render::Anime4k::create(impl_->vk->gpu, *choice);
+  if (!made) return std::unexpected(std::move(made.error()));
+  impl_->anime4k.emplace(std::move(*made));
+  return {};
+}
+
+std::span<const pl_hook* const> PlaceboScreen::anime4k_hooks() const {
+  if (!impl_->anime4k) return {};
+  return impl_->anime4k->hooks();
+}
+
 void PlaceboScreen::set_grade(const render::GradeChoice& choice) {
   impl_->grade_next.reset();
   impl_->grade_choice = choice;
