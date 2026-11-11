@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cstdlib>
+#include <tuple>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -123,7 +124,7 @@ std::optional<bool> measure_telecine(Demuxer& demuxer, const TrackInfo& track) {
   if (!demuxer.keep_only(keep)) return std::nullopt;
   // Vers le premier quart : un générique ou un logo fixe au début ne montre pas de mouvement.
   if (const std::int64_t duration = demuxer.duration_us(); duration > 0)
-    static_cast<void>(demuxer.seek(duration / 4, track.index, SeekTarget::NearestKeyframe));
+    std::ignore = demuxer.seek(duration / 4, track.index, SeekTarget::NearestKeyframe);
 
   TelecineMeter meter;
   const auto started = std::chrono::steady_clock::now();
@@ -141,7 +142,7 @@ std::optional<bool> measure_telecine(Demuxer& demuxer, const TrackInfo& track) {
     }
     frames += drain(*ctx, *frame, meter);
   }
-  static_cast<void>(demuxer.seek_file(0, track.index));  // la lecture repart du début
+  std::ignore = demuxer.seek_file(0, track.index);  // la lecture repart du début
   const auto verdict = meter.verdict();
   make_logger()->info("piste {} : télécinéma mesuré sur {} images ({} en mouvement, {} champs répétés) : {}",
                       track.index, meter.compared(), meter.moving(), meter.repeats(),
