@@ -40,10 +40,17 @@ struct Window {
 //   (u2, v2) = (u, v) − ((1 − t) f0 + t f1)(u, v) : où le point vu en t était au milieu ;
 //   d = f1(u2, v2) − f0(u2, v2) ; vers a : −t d ; vers b : (1 − t) d ;
 //   mm = clamp(masque(u2, v2), ε, 1 − ε) ;
-//   logit(m) = A logit(mm) + B ln((1 − t) / t) + C, loi de RIFE ajustée sur de vraies paires.
-inline constexpr float kBlendLawA = 0.285F;
+//   logit(m) = A logit(mm) + B ln((1 − t) / t) + C.
+// A = 1 et C = 0 : le masque de RIFE au milieu est gardé tel quel, et seul l'instant le déplace (B, pente de
+// RIFE ajustée sur de vraies paires). La loi rend ainsi le masque lui-même à t = 1/2, sans saut entre 0,499
+// et 0,5, et elle est symétrique (échanger a et b, t et 1 − t, mm et 1 − mm rend 1 − m). L'ancienne
+// (A = 0,285, C = 0,170) écrasait le masque : un pixel que RIFE donnait à b restait à moitié celui de a, en
+// fondu (audit B50-01, B50-02). Mesuré sur 42 paires de Re:Zero animées en uns, instants 1/3 et 2/3 entre
+// les sources i et i + 3, contre la vraie image : +0,15 dB sur l'image, +0,28 dB dans les occlusions, pire
+// bloc inchangé.
+inline constexpr float kBlendLawA = 1.0F;
 inline constexpr float kBlendLawB = 2.591F;
-inline constexpr float kBlendLawC = 0.170F;
+inline constexpr float kBlendLawC = 0.0F;
 inline constexpr float kMaskEpsilon = 1e-4F;
 
 // Sous ce mouvement maximal, mesuré à 720p et mis à l'échelle de la hauteur où RIFE travaille,
