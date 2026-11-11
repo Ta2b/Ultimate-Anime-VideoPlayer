@@ -122,8 +122,10 @@ l'échelle du tenseur entier avant elle), arrondi au plus proche, saturé. L'ép
 l'accumulateur par l'échelle de l'activation × celle de son canal (`KP::alpha_col`). Comme E4M3 est un format
 flottant, le gain ne vient que des canaux faibles qu'une échelle commune poussait sous le plus petit normal
 (2^−6) ; `kKernelsVersion` passe à 2, les reçus v2 d'avant se revalident (validation seule).
-Les échelles d'activation sont « maximum observé / 448 » sur le corpus de calibration (le percentile 99,99 donne
-1,1 dB de moins sur le prototype : maximum retenu). Un paquet tronqué, un bit changé, une version inconnue, une
+Les échelles d'activation sont « maximum observé × 1,25 / 448 » sur le corpus de calibration (le percentile 99,99
+donne 1,1 dB de moins sur le prototype : maximum retenu). La marge de tête (`kScaleHeadroom`, B02-02) garde d'écrêter
+une image plus lumineuse ou plus saturée que la dizaine d'images d'une seule vidéo qui a calibré le paquet, lequel
+sert ensuite à toutes ; la porte juge le paquet avec elle. Un paquet tronqué, un bit changé, une version inconnue, une
 échelle nulle ou un poids infini sont refusés.
 
 Le paquet est dérivé des poids d'AnimeJaNai (CC BY-NC-SA 4.0) : il se construit chez l'utilisateur, ne se publie
@@ -186,7 +188,7 @@ Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « É
 | Poids et graphe | `gpu/span_fp8/onnx_weights.{h,cpp}` | lecture ONNX en C++ ; 48 ou 64 canaux (48 rangés en 64), 2 à 8 blocs, les noms des 1 + 3·blocs tenseurs, l'ordre du Concat de conv_cat, le dégroupage (Transpose 0,1,3,5,2,4) et DepthToSpace(4, CRD) |
 | Images | `media/stills.{h,cpp}` | 24 instants de 8 % à 92 % de la durée, décodage logiciel, découpe centrale ≤ 1920×1088 alignée sur 128×4, RGB 8 bits ; noires et aplats écartés, les 12 plus contrastées gardées ; HDR (PQ, HLG, BT.2020) refusé ; rien n'est conservé |
 | Taille de travail (étape 3.7a) | `media::reduce_still`, `span_still_reduce` | chaque image entière est d'abord ramenée à la taille de travail de la chaîne par le filtre du menu « Réduction » (Area, Spline36, bilinéaire, cubiques B/C), puis découpée : la calibration et la validation voient ce que SPAN voit en lecture |
-| Calibration | `Backend::derive_span_fp8` (`tensorrt_span_derive.cpp`, `span_fp8_ref.cu`) | 8 images : le SPAN en FP16 par les mêmes convolutions CUTLASS (accumulation FP32) relève le maximum de \|valeur\| des 25 tenseurs ; échelle = maximum / 448, comme l'outil Python |
+| Calibration | `Backend::derive_span_fp8` (`tensorrt_span_derive.cpp`, `span_fp8_ref.cu`) | 8 images : le SPAN en FP16 par les mêmes convolutions CUTLASS (accumulation FP32) relève le maximum de \|valeur\| des 25 tenseurs ; échelle = maximum × 1,25 / 448, comme l'outil Python |
 | Validation | idem | 4 images mises de côté (une sur trois) : sortie du réseau FP8 contre la même référence FP16, PSNR et SSIM de `quantize_span.py` (`gpu/span_fp8/metrics.cpp`) ; garde-fous du reçu : 42 dB moyen, 38 dB pire, SSIM pire 0,985 |
 | Porte durcie (étape 3.7a) | `gpu/span_fp8/hard_cases.{h,cpp}`, `judge_hardened` | neuf cas durs synthétiques à la taille des images (traits d'un pixel à 0, 30, 45 et 90°, rampes sombres en paliers 8 bits, bords saturés, motifs fins, hautes lumières, grain), jugés sans calibrer ; sur la validation et les cas durs, 99,9e centile de \|FP8 − FP16\| ≤ 4/255 et ≤ 2/255 sur les pixels sombres (luminance < 32/255), pire PSNR des cas durs ≥ 36 dB. Seuils de départ du plan. **Porte 2 (04/11, choix de Tatoub)** : sur la RTX 4070 Ti, le b8f64 fait 52 dB sur les vraies images mais les cas durs synthétiques montent à 125/255 au 99,9e centile (et une marge ×2 ou ×4 sur les échelles n'y change rien) ; seules les images de validation décident désormais (centiles compris), les cas durs sont relevés au reçu (`hard_psnr_worst_db`, `hard_error_p999_worst`) et l'œil juge. `gate_version = 2` au reçu : un refus d'une porte plus ancienne, d'une autre carte ou d'autres noyaux se refait (`SpanInt8Lookup::stale`) **Porte 3 (04/11)** : les seuils de départ refusaient tout le monde (b8f64 à 8,1/255 et 3,6/255 sombre, b5f48 à 5,4/255 et 3,0/255, en 720p sur la RTX 4070 Ti) ; réglés comme le plan le prévoyait à 1,25 × le b8f64 : 10/255 et 4,5/255. `gate_version = 3`, les refus de la porte 2 se refont ; la note de refus dit quand c'est le centile qui refuse, et non plus les seuils de PSNR. |
 | Reçu v2 (étape 3.7b) | `receipt_text`, `find_span_variant` avec `SpanFp8Context` | `ajp-span-fp8c-v2` : en plus des clés de l'outil Python, `gpu_arch`, `kernels_version` (`SpanFp8Net::kKernelsVersion`, à augmenter à chaque changement des noyaux), `blocks`, `channels`, `accumulator`, les pires centiles, `validated_sizes` et `refused_sizes`. La chaîne refuse un reçu d'une autre architecture ou d'autres noyaux ; une taille de travail non jugée offre une validation seule (`validate_span_size` : échelles du paquet telles quelles, ~10 s), qui ajoute la taille à l'une des deux listes sans toucher au paquet. Un reçu v1 (outil Python) se lit encore mais ne sert pas l'Auto |
@@ -196,8 +198,14 @@ Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « É
 
 Choix de la référence : le SPAN FP16 des noyaux CUTLASS, pas TensorRT (un moteur TensorRT coûte une minute de construction et ses
 tenseurs intermédiaires sont fondus). Elle colle à ONNX Runtime FP32 : maxima à 0,13 % près et 78,8 dB sur une image 1920×1088
-(`ajp_span_fp8_run --reference`). Le gain sur TensorRT FP16 n'est pas exigé à la dérivation (le reçu porte `speedup = 0`) ; le test
-caché `[.span_derive]` le vérifie. Le reçu a les clés de l'outil Python, plus `reference` et `derived_by` ; un paquet de l'un se
+(`ajp_span_fp8_run --reference`). **Porte 4 (B02-01)** : le gain sur TensorRT FP16 est mesuré et exigé à la dérivation
+comme par l'outil Python. Une fois la qualité admise, `time_span_fp16` (`span_fp16_time.cpp`) charge le moteur SPAN FP16 que
+la chaîne construit pour la même taille (lu dans le cache, construit s'il manque), le passe 5 fois à chaud puis prend la
+médiane de 5 lots de 5 passes enchaînées ; le reçu porte `trt_fp16_ms` et `speedup`, un rapport sous 1,05 refuse le paquet
+(pour de bon, la note dit « pas plus rapide que TensorRT FP16 ») et le message de réussite dit le gain. Un paquet admis par
+une porte plus ancienne se refait. La préparation lancée pendant la lecture (panneau, préréglage, B02-08) laisse la carte
+120 ms après chaque image et le reçu porte `timed_during_playback = true` : ses deux temps sont pris sous la charge de la
+lecture. Le reçu a les clés de l'outil Python, plus `reference` et `derived_by` ; un paquet de l'un se
 lit chez l'autre (tests `[.span_compat]` : poids identiques octet pour octet, reçu Python accepté par `find_span_variant`).
 Interface de backend : `kBackendAbi` passe à 12 (`derive_span_fp8`), les backends installés se réinstallent.
 

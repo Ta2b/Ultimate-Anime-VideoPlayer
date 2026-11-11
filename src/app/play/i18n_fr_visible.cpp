@@ -151,6 +151,19 @@ constexpr std::array kVisibleTexts{
           "{} : refusé au 99,9e centile ({:.1f}/255, sombre {:.1f}/255 ; {} passe)"},
     Entry{"{}: derived on {}, this GPU is {}: prepare it again",
           "{} : dérivé sur {}, ce GPU est {} : à préparer de nouveau"},
+    Entry{"{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)",
+          "{} : pas plus rapide que TensorRT FP16 ({:.2f} fois plus vite, il faut {:.2f})"},
+    Entry{"{}: prepared by an older player, gain over FP16 not measured: prepare it again",
+          "{} : préparé par un lecteur plus ancien, sans mesure du gain sur le FP16 : à préparer de nouveau"},
+    Entry{
+        "Performance mode rejected: FP8 kernels {} ms against {} ms for TensorRT FP16 ({}× as fast, at least "
+        "{}× is required). Playback stays on TensorRT FP16.",
+        "Mode Performance refusé : noyaux FP8 {} ms contre {} ms pour TensorRT FP16 ({} fois plus vite, il "
+        "faut au moins {}). La lecture reste sur TensorRT FP16."},
+    Entry{"TensorRT FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the quality given above.",
+          "TensorRT FP16 prend ici {} ms : les noyaux FP8 vont {} fois plus vite, pour la qualité dite plus "
+          "haut."},
+    Entry{"TensorRT FP16 timing", "mesure de TensorRT FP16"},
     Entry{"{}: kernels version {}, this engine has {}: prepare it again",
           "{} : noyaux en version {}, ce moteur a la {} : à préparer de nouveau"},
     Entry{"{}: the engine package of this version is out of date, Vulkan instead",

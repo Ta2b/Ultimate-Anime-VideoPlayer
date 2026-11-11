@@ -96,6 +96,12 @@ double trial_target_fps(const ChainCandidate& chain, std::int64_t period_us) {
 
 bool trial_holds(const ChainCandidate& chain, const BenchReading& reading, double target_fps) {
   if (!holds(reading.run)) return false;
+  // Les images visées pendant l'essai : sa durée (présentations × période de l'écran) à target_fps.
+  const std::int64_t period = reading.run.period_us > 0 ? reading.run.period_us : 16'667;
+  const double images = static_cast<double>(reading.run.presents) * static_cast<double>(period) * 1e-6 *
+                        std::max(target_fps, 1.0);
+  const auto lost = static_cast<double>(reading.run.dropped + reading.run.missing);
+  if (lost > kMaxLossPerImage * images) return false;
   return !chain.rife || credited_fps(reading) >= kMinRifeShare * target_fps;
 }
 
@@ -107,16 +113,43 @@ CalibrationModels calibration_models(Tier tier) {
   return {.span = std::string(level_span_model(tier)), .rife = std::string(level_rife_model(tier))};
 }
 
-std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried) {
+int calibration_start_height(Tier tier) {
+  // La hauteur que l'Auto estimé de ce niveau joue sur un écran 1080p ou plus (auto_config.cpp).
+  constexpr std::array<int, kTierCount> kStart{360, 540, 720, 1080, 1080};
+  return kStart[static_cast<std::size_t>(tier)];
+}
+
+std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int start_height) {
   const std::vector<int> heavy_first = calibration_heights();
-  // 1. SPAN seul, en montant, jusqu'au premier palier qui ne tient pas.
+  const std::vector<int> light_first(heavy_first.rbegin(), heavy_first.rend());
+  // 1. SPAN seul, depuis le palier du niveau estimé (B07-14) : en montant tant qu'il tient, jusqu'au premier
+  // qui ne tient pas ; s'il ne tient pas, en descendant jusqu'au premier qui tient.
+  std::size_t start = 0;
+  for (std::size_t i = 0; i < light_first.size(); ++i)
+    if (light_first[i] <= start_height) start = i;
   int span_top = 0;
-  for (auto it = heavy_first.rbegin(); it != heavy_first.rend(); ++it) {
-    const ChainCandidate chain{.span = true, .rife = false, .height = *it};
-    const CandidateTrial* trial = find(tried, chain);
-    if (trial == nullptr) return chain;
-    if (!trial->holds) break;
-    span_top = *it;
+  const auto span_alone = [&](int height) {
+    return find(tried, ChainCandidate{.span = true, .rife = false, .height = height});
+  };
+  const CandidateTrial* first = span_alone(light_first[start]);
+  if (first == nullptr) return ChainCandidate{.span = true, .rife = false, .height = light_first[start]};
+  if (first->holds) {
+    span_top = light_first[start];
+    for (std::size_t i = start + 1; i < light_first.size(); ++i) {
+      const CandidateTrial* trial = span_alone(light_first[i]);
+      if (trial == nullptr) return ChainCandidate{.span = true, .rife = false, .height = light_first[i]};
+      if (!trial->holds) break;
+      span_top = light_first[i];
+    }
+  } else {
+    for (std::size_t i = start; i-- > 0;) {
+      const CandidateTrial* trial = span_alone(light_first[i]);
+      if (trial == nullptr) return ChainCandidate{.span = true, .rife = false, .height = light_first[i]};
+      if (trial->holds) {
+        span_top = light_first[i];
+        break;
+      }
+    }
   }
   if (span_top > 0) {
     // 2. SPAN + RIFE, du plus haut palier de SPAN seul vers le bas, jusqu'au premier qui tient.
@@ -170,7 +203,7 @@ PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
   base.motion_precision = PrecisionTier::Balanced;
   base.rife_model = models.rife.empty() ? std::string(kLightRifeModel) : models.rife;
   base.rife_auto = chain.rife;
-  base.auto_free = chain.rife;  // le mode auto Rapide, le seul que la calibration essaie
+  base.auto_free = chain.rife;  // le mode auto Instantané, le seul que la calibration essaie
   base.rife_factor = chain.rife ? 2 : 0;
   base.rife_factor_den = 1;
   base.keep_poses = true;
@@ -310,13 +343,19 @@ bool calibration_driver_changed(const MachineCalibration& calibration, const Cal
 std::optional<CalibratedChain> calibrated_chain(const std::filesystem::path& data_dir,
                                                 const CalibrationHost& host) {
   auto calibration = load_calibration_at(data_dir, host.display_height);
-  if (!calibration || calibration_use(*calibration, host) != CalibrationUse::Followed) return std::nullopt;
-  const ChainCandidate& chosen = calibration->chosen;
+  if (!calibration) return std::nullopt;
+  return followed_chain(*calibration, host);
+}
+
+std::optional<CalibratedChain> followed_chain(const MachineCalibration& calibration,
+                                              const CalibrationHost& host) {
+  if (calibration_use(calibration, host) != CalibrationUse::Followed) return std::nullopt;
+  const ChainCandidate& chosen = calibration.chosen;
   return CalibratedChain{.span = chosen.span,
                          .rife = chosen.rife,
                          .height = chosen.height,
-                         .span_model = chosen.span ? calibration->models.span : std::string(),
-                         .rife_model = calibration->models.rife};
+                         .span_model = chosen.span ? calibration.models.span : std::string(),
+                         .rife_model = calibration.models.rife};
 }
 
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
@@ -326,7 +365,8 @@ std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
 
 std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlayer& play,
                                                                  const std::stop_token& stop,
-                                                                 const std::function<void(float)>& fraction) {
+                                                                 const std::function<void(float)>& fraction,
+                                                                 int start_height) {
   const auto log = log_channel("app");
   CalibrationTrials out;
   // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
@@ -334,7 +374,7 @@ std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlay
   int index = 0;
   std::optional<ChainCandidate> retried;  // la chaîne déjà rejouée une fois
   std::optional<ChainCandidate> rebuilt;  // la chaîne rejouée avec le délai d'une construction
-  while (const auto chain = next_candidate(out.tried)) {
+  while (const auto chain = next_candidate(out.tried, start_height)) {
     if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
     // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps.
     auto reading = play(*chain, index, out.tried.empty() || rebuilt == *chain);
@@ -427,7 +467,7 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
     return play_variant(plan, Variant{.name = describe(chain), .settings = settings}, index, stop,
                         first ? plan.first_allowance : plan.build_allowance);
   };
-  auto trials = run_calibration_trials(play, stop, fraction);
+  auto trials = run_calibration_trials(play, stop, fraction, calibration_start_height(tier));
   if (!trials) return std::unexpected(std::move(trials.error()));
   out.tried = std::move(trials->tried);
   out.gpu = std::move(trials->gpu);
