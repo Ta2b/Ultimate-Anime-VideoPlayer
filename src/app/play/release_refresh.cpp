@@ -61,7 +61,8 @@ EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved
     if (refresh.done->load()) copy = read_release_index(refresh.cache);
   }
   merge_release_copy(catalog, copy, release_repo(),
-                     update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys));
+                     update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),
+                     installed_version());
   if (!catalog.problem.empty()) log_channel("app")->info("{}", catalog.problem);
   return catalog;
 }

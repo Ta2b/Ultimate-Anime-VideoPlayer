@@ -58,11 +58,11 @@ New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item "$Build/src/app/ajp.exe" $Stage
 Copy-Item "$Build/src/app/*.dll" $Stage
 Copy-Item "$Root/LICENSE", "$Root/THIRD_PARTY_NOTICES.md" $Stage
+Copy-Item (Join-Path $PSScriptRoot "windows/LISEZMOI.txt") $Stage
 Copy-Item "$Build/src/gpu/vulkan/backend/ajp_backend_vulkan.dll" $Stage
 Copy-Item "$Build/src/gpu/vulkan/backend/*.dll" $Stage -Exclude "ajp_backend_*" -ErrorAction SilentlyContinue
 # Le chargeur Vulkan vient du pilote (vulkan-1.dll dans System32) : jamais livré.
 Remove-Item "$Stage/vulkan-1.dll" -ErrorAction SilentlyContinue
-if (Test-Path "$Root/LICENSE") { Copy-Item "$Root/LICENSE" $Stage }
 
 # Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
 Copy-Item "$Root/data/luts" (Join-Path $Stage "luts") -Recurse
@@ -73,6 +73,13 @@ Set-Content -Path $Lock -Value "version = 1" -Encoding utf8NoBOM
 
 function Add-Engine([string]$Id, [string]$EngineVersion, [string]$License, [string]$Dir) {
   $archive = "ajp-engine-$Id-windows-x64.tar.gz"
+  # Notre module est signé comme le reste (B51-05) ; trtexec.exe est celui de NVIDIA, laissé tel quel : le module en
+  # garde l'empreinte. Sans compte de signature, sign.ps1 ne fait rien.
+  $module = Join-Path $Dir "ajp_backend_$Id.dll"
+  if (Test-Path $module) {
+    pwsh (Join-Path $PSScriptRoot "windows/sign.ps1") $module
+    if ($LASTEXITCODE -ne 0) { throw "signature de $module" }
+  }
   tar -C $Dir -czf (Join-Path $Out $archive) .
   if ($LASTEXITCODE -ne 0) { throw "tar $archive" }
   $file = Get-Item (Join-Path $Out $archive)

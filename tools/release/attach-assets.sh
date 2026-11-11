@@ -16,7 +16,11 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 repo="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$root/tools/release/versions.env" | tr -d '\r')}"
 [ -n "$repo" ] || { echo "dépôt des releases inconnu" >&2; exit 1; }
 notes="$root/tools/release/notes/$tag.md"
-[ -f "$notes" ] || notes=/dev/null
+if [ ! -s "$notes" ]; then
+  # Une release finale sans notes : refusée ici aussi, au cas où la garde de release-guard.yml serait contournée (B51-15).
+  [[ "$tag" == *-* ]] || { echo "tools/release/notes/$tag.md manque : une release finale a ses notes" >&2; exit 1; }
+  notes=/dev/null
+fi
 
 # Les trois plateformes peuvent créer la release au même moment : un refus de création ne compte que si la release
 # n'existe toujours pas.
