@@ -85,6 +85,11 @@ include(Dependencies)
 if(AJP_TRANSITIVE_RPATH AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_link_options("LINKER:--disable-new-dtags")
 endif()
+# Le build-id GNU de chaque binaire, posé exprès (certains GCC ne le font pas par défaut) : le rapport de « Signaler
+# un problème » le donne (problem_report.h), et il rattache la pile brute d'un plantage aux symboles de la release.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_link_options("LINKER:--build-id")
+endif()
 
 # Les chemins de l'arbre de construction n'entrent pas dans les binaires (assertions, __FILE__,
 # informations de débogage) : ni ceux de la machine qui construit, ni ceux du préfixe des
@@ -94,6 +99,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   if(DEFINED ENV{AJP_DEPS_PREFIX} AND NOT "$ENV{AJP_DEPS_PREFIX}" STREQUAL "")
     add_compile_options("-ffile-prefix-map=$ENV{AJP_DEPS_PREFIX}=/deps")
   endif()
+endif()
+# MSVC : /Brepro (horodatage du lieur et de l'objet remplacé par une empreinte), /d1trimfile (le dossier des sources
+# n'entre plus dans __FILE__ ni dans les assertions) et /PDBALTPATH (le PDB sans le chemin du poste dans l'exécutable).
+if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX,C>:/Brepro> "$<$<COMPILE_LANGUAGE:CXX,C>:/d1trimfile:${CMAKE_SOURCE_DIR}/>")
+  add_link_options(/Brepro "/PDBALTPATH:%_PDB%")
 endif()
 
 # La libc++ de Xcode 16 (LLVM 19) range std::jthread et <stop_token> parmi ses fonctions

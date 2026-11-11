@@ -13,6 +13,12 @@
 #else
 #include <sys/utsname.h>
 #endif
+#ifdef __linux__
+#include <cstdint>
+#include <cstring>
+#include <elf.h>
+#include <link.h>
+#endif
 
 namespace ajp::app::play {
 namespace {
@@ -26,6 +32,39 @@ struct State {
   fs::path log_file;
   bool previous_crashed = false;
 };
+
+#ifdef __linux__
+// Le premier objet que dl_iterate_phdr donne est l'exécutable : ses notes ELF portent le build-id.
+int find_build_id(dl_phdr_info* info, std::size_t /*size*/, void* data) {
+  std::string& hex = *static_cast<std::string*>(data);
+  for (int i = 0; i < info->dlpi_phnum; ++i) {
+    const ElfW(Phdr) & header = info->dlpi_phdr[i];
+    if (header.p_type != PT_NOTE) continue;
+    // L'adresse du segment est un entier (base de chargement + décalage) : le cast est voulu.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    const auto* at = reinterpret_cast<const std::uint8_t*>(info->dlpi_addr + header.p_vaddr);
+    const std::uint8_t* end = at + header.p_memsz;
+    while (static_cast<std::size_t>(end - at) >= sizeof(ElfW(Nhdr))) {
+      ElfW(Nhdr) note;
+      std::memcpy(&note, at, sizeof note);
+      const std::size_t desc_at = sizeof note + ((note.n_namesz + 3U) & ~3U);
+      const std::size_t next = desc_at + ((note.n_descsz + 3U) & ~3U);
+      if (next > static_cast<std::size_t>(end - at)) break;
+      if (note.n_type == NT_GNU_BUILD_ID && note.n_namesz == 4 &&
+          std::memcmp(at + sizeof note, "GNU", 4) == 0) {
+        constexpr std::string_view kDigits = "0123456789abcdef";
+        for (std::uint32_t b = 0; b < note.n_descsz; ++b) {
+          hex += kDigits[at[desc_at + b] >> 4U];
+          hex += kDigits[at[desc_at + b] & 15U];
+        }
+        return 1;
+      }
+      at += next;
+    }
+  }
+  return 1;  // seulement le premier objet
+}
+#endif
 
 State& state() {
   static State s;
@@ -141,6 +180,16 @@ void clear_report_facts() {
   State& s = state();
   const std::scoped_lock lock(s.mutex);
   s.facts.clear();
+}
+
+std::string build_id_description() {
+#ifdef __linux__
+  std::string hex;
+  dl_iterate_phdr(find_build_id, &hex);
+  return hex;
+#else
+  return {};
+#endif
 }
 
 std::string os_description() {

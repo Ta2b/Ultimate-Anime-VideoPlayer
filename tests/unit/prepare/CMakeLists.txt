@@ -12,9 +12,9 @@ target_compile_definitions(ajp_prepare_tests PRIVATE AJP_PREPARE_HELPER="$<TARGE
 add_dependencies(ajp_prepare_tests ajp_prepare_helper)
 # AJP_RIFE_MODEL_DIR : le dossier des RIFE du lecteur (rife_v4.25.onnx, rife_v4.22_lite.onnx), lus en place pour
 # le test de découpe ; absent, ce test se SKIP.
-set(AJP_RIFE_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE ONNX du lecteur (test de découpe)")
+set(AJP_RIFE_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des RIFE ONNX du lecteur (test de découpe)")
 target_compile_definitions(ajp_prepare_tests PRIVATE AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}")
 # AJP_DRBA_MODEL_DIR : le dossier des modèles du lecteur (distil_drba_v2_lite.onnx, distil_drba_v2_lite_s05.onnx), lus en
 # place pour le test de découpe ; absent, ce test se SKIP.
-set(AJP_DRBA_MODEL_DIR "$ENV{HOME}/ajp/models/rife" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test de découpe)")
+set(AJP_DRBA_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test de découpe)")
 target_compile_definitions(ajp_prepare_tests PRIVATE AJP_DRBA_MODEL_DIR="${AJP_DRBA_MODEL_DIR}")

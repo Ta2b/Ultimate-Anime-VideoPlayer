@@ -2,6 +2,7 @@
 // A39-03, A38-01).
 #include "app/play/problem_report.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -161,3 +162,13 @@ TEST_CASE("Rapport : le rapport complet joint la séance d'avant quand elle a pl
   end_session();
   clear_report_facts();
 }
+
+#ifdef __linux__
+// B39-04 : le build-id de l'exécutable accompagne le rapport, pour résoudre une pile brute avec les symboles
+// de la release (le binaire livré est dépouillé). CMakeLists.txt demande --build-id à l'éditeur de liens.
+TEST_CASE("Rapport : le build-id de l'exécutable se lit, en hexadécimal", "[app][report]") {
+  const std::string id = build_id_description();
+  REQUIRE(id.size() >= 16);
+  CHECK(std::ranges::all_of(id, [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }));
+}
+#endif

@@ -42,7 +42,9 @@ def tag_commit(url, tag):
 
 
 # Les bibliothèques que le paquet Linux copie d'Ubuntu (paquet binaire, paquet source dans OSV).
-UBUNTU = {"libdav1d7": "dav1d", "libsvtav1enc1d1": "svt-av1"}
+# FriBidi et lcms2 viennent aussi de l'image de construction : le paquet les livre (package-linux.sh ne les range pas
+# parmi les bibliothèques du système) ; FreeType, HarfBuzz et zlib, eux, sont celles du système de l'utilisateur.
+UBUNTU = {"libdav1d7": "dav1d", "libsvtav1enc1d1": "svt-av1", "libfribidi0": "fribidi", "liblcms2-2": "lcms2"}
 UBUNTU_ECOSYSTEM = "Ubuntu:24.04:LTS"
 
 
@@ -78,6 +80,9 @@ def shipped():
     for port, (url, tag_of) in PORTS.items():
         version = port_version(baseline, port)
         if not version:
+            # Hors ligne, 404 ou GitHub lent : la bibliothèque n'a pas été relevée. Elle est dite introuvable (code 1)
+            # et non passée sous silence, sans quoi « Aucune faille connue » refermerait l'issue ouverte (B28-08).
+            out.append((f"{port} (Windows)", "?", "port de vcpkg illisible", None))
             continue
         version = re.sub(r"#\d+$", "", str(version))
         commit = tag_commit(url, tag_of(version))
@@ -118,7 +123,7 @@ def main():
             summary = (vuln.get("summary") or vuln.get("details") or "").splitlines()[0][:120]
             rows.append(f"| {name} | {version} | [{vuln['id']}](https://osv.dev/vulnerability/{vuln['id']}) | {summary} |")
     if unresolved:
-        print("Versions introuvables (étiquette absente) : " + ", ".join(unresolved) + "\n")
+        print("Versions introuvables (étiquette absente ou port illisible) : " + ", ".join(unresolved) + "\n")
     if not rows:
         print("Aucune faille connue dans les bibliothèques livrées.")
         return 1 if unresolved else 0

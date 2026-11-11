@@ -25,6 +25,11 @@ void clear_report_facts();
 // Le système en une ligne : « Arch Linux · noyau 6.12 », « Windows 10.0.26100 », « macOS (Darwin 24.1) ».
 std::string os_description();
 
+// Le build-id GNU de l'exécutable en hexadécimal (Linux ; vide ailleurs, où le PDB de la release fait ce
+// rôle) : il rattache une pile brute du journal (« ajp(+0x1a2b3c) ») aux symboles de la release dont le
+// binaire livré est dépouillé (B39-04).
+std::string build_id_description();
+
 // text sans les dossiers : tout chemin absolu (Windows « D:\… », UNC, POSIX « /… », « ~/… ») est réduit à
 // « …/<nom du fichier> ». Le reste de la ligne après le nom est gardé. home sert aux chemins qui seraient
 // encore à son nom (le journal les a déjà remplacés par « ~ »).
