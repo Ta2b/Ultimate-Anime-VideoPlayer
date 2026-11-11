@@ -263,6 +263,46 @@ void announce_once(Player& player, Announced& announced, const std::filesystem::
   }
 }
 
+// La machine vue de l'écran où est la fenêtre : à l'ouverture, et quand elle change d'écran (B29-01).
+// explored : l'exploration du banc quand elle vaut pour cette carte ; calibrated : la calibration de l'écran.
+Machine machine_of(SDL_Window* window, Tier tier, const BenchResult* explored,
+                   std::optional<CalibratedChain> calibrated) {
+  return Machine{.tier = tier,
+                 .display_height = display_height(window),
+                 .display_hz = display_refresh_hz(window),
+                 .explored_work_height = explored != nullptr ? explored->work_height : 0,
+                 .explored_rife_model = explored != nullptr ? explored->rife_model : std::string(),
+                 .calibrated = std::move(calibrated),
+                 .display_width = display_width(window)};
+}
+
+// A31-02 : la relance après une perte du GPU, sauf une seconde dans la minute.
+bool relaunch_allowed(bool lost_recently, std::int64_t launched_s) {
+  return !(lost_recently && relaunch_now_s() - launched_s < kRelaunchAgainS);
+}
+
+// B29-08 : weakly_canonical et file_size sur un partage lent, hors du thread de la fenêtre.
+std::optional<std::int64_t> resume_from(const std::filesystem::path& store,
+                                        const std::filesystem::path& file) {
+  return run_pumped_for<std::optional<std::int64_t>>("resume", std::chrono::milliseconds(5000), true,
+                                                     [store, file] { return resume_position(store, file); })
+      .value_or(std::nullopt);
+}
+
+// B29-01 : la chaîne du préréglage pour le nouvel écran ; Personnalisé reste tel quel (apply_preset). Un
+// raccourci de séance (Ctrl+I) garde son interpolation.
+PlaySettings rederived(const PlaySettings& settings, const Machine& machine, const core::SourceInfo& source,
+                       const PlayOptions& file_options, const KeptChoices& kept) {
+  PlaySettings out = settings_for(apply_preset(settings, machine, source), file_options);
+  if (kept.rife) {
+    out.rife_factor = settings.rife_factor;
+    out.rife_factor_den = settings.rife_factor_den;
+  }
+  log_channel("app")->info("écran changé : chaîne refaite pour lui ({} p, ×{})", out.work_height,
+                           out.rife_factor);
+  return out;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -506,18 +546,13 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     const GpuFacts here = gpu_facts(**screen);
     const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
                                                   library_wanted, *engines, catalog, paths);
-    const bool explored = measured_tier && !file_options.bench_level && measured_here(*measured_tier, here);
-    // La machine vue de l'écran où est la fenêtre : à l'ouverture, et quand elle change d'écran (B29-01).
+    const BenchResult* explored =
+        measured_tier && !file_options.bench_level && measured_here(*measured_tier, here) ? &*measured_tier
+                                                                                          : nullptr;
     const auto machine_now = [&] {
-      return Machine{.tier = tier,
-                     .display_height = display_height((*screen)->window()),
-                     .display_hz = display_refresh_hz((*screen)->window()),
-                     .explored_work_height = explored ? measured_tier->work_height : 0,
-                     .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
-                     .calibrated = file_options.bench_level
-                                       ? std::nullopt
-                                       : calibrated_chain(settings_path.parent_path(), host),
-                     .display_width = display_width((*screen)->window())};
+      return machine_of(
+          (*screen)->window(), tier, explored,
+          file_options.bench_level ? std::nullopt : calibrated_chain(settings_path.parent_path(), host));
     };
     chosen = apply_preset(chosen, machine_now(), source);
     PlaySettings settings = settings_for(chosen, file_options);
@@ -588,8 +623,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                   .display = window_display((*screen)->window())};
     player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     player.stages = &stage_memory;
-    player.relaunch_on_loss =
-        !scripted && !(lost_recently && relaunch_now_s() - launched_s < kRelaunchAgainS);
+    player.relaunch_on_loss = !scripted && relaunch_allowed(lost_recently, launched_s);
     announce_once(player, announced, update_file, saved->update_mode, here.name, host.display_height);
     announce_first(player.notice, relaunch_note);
     announce_first(player.notice, engine_fallback);
@@ -609,11 +643,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     if (file_options.resume && player.engines.resume_position) {
       player.resume_path = paths::resume(settings_path.parent_path());
       if (start_us == 0 && !forced) {
-        // B29-08 : weakly_canonical et file_size sur un partage lent, hors du thread de la fenêtre.
-        if (const auto at = run_pumped_for<std::optional<std::int64_t>>(
-                                "resume", std::chrono::milliseconds(5000), true,
-                                [store = player.resume_path, file] { return resume_position(store, file); })
-                                .value_or(std::nullopt)) {
+        if (const auto at = resume_from(player.resume_path, file)) {
           start_us = *at;
           player.resumed = true;
           log->info("reprise à {}", format_position(start_us));
@@ -656,18 +686,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
         player.notice = exported.notice;
       }
       settings = (*outcome)->settings;
-      if ((*outcome)->rederive) {
-        // B29-01 : la chaîne du préréglage pour le nouvel écran ; Personnalisé reste tel quel
-        // (apply_preset). Un raccourci de séance (Ctrl+I) garde son interpolation.
-        const PlaySettings before = settings;
-        settings = settings_for(apply_preset(settings, machine_now(), source), file_options);
-        if (player.kept.rife) {
-          settings.rife_factor = before.rife_factor;
-          settings.rife_factor_den = before.rife_factor_den;
-        }
-        log->info("écran changé : chaîne refaite pour lui ({} p, ×{})", settings.work_height,
-                  settings.rife_factor);
-      }
+      if ((*outcome)->rederive)
+        settings = rederived(settings, machine_now(), source, file_options, player.kept);
       // « Refaire le banc » (P3.12) : la chaîne est fermée, sa mémoire vidéo libérée ; la calibration
       // mesure la machine seule, puis la lecture reprend avec ce qu'elle a trouvé.
       if ((*outcome)->calibrate) {
@@ -705,8 +725,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // A31-02, décision 9 : le GPU perdu (TDR, Xid, veille) ne revient pas dans ce processus ; le lecteur se
       // relance une fois sur cette vidéo, à cet instant, et le dit. Une seconde perte dans la minute : le
       // message et l'accueil.
-      if (result.error().code == RefusalCode::DeviceLost &&
-          !(lost_recently && relaunch_now_s() - launched_s < kRelaunchAgainS) &&
+      if (result.error().code == RefusalCode::DeviceLost && relaunch_allowed(lost_recently, launched_s) &&
           ask_relaunch(paths, file, player.stopped_at_us, false, RelaunchReason::GpuLost)) {
         log->error("{} ; le lecteur se relance", result.error().detail);
         return {};

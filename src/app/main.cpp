@@ -250,6 +250,14 @@ void relaunch_when_stuck() {
   const StuckRelaunch& args = stuck_relaunch_args();
   if (args.argv != nullptr) (void)relaunch(args.executable, args.argc, args.argv);
 }
+// Le dossier des moteurs, et la relance armée avant la lecture.
+void before_play(const std::filesystem::path& engines, const std::filesystem::path& executable, int argc,
+                 char** argv) {
+  std::error_code error;
+  std::filesystem::create_directories(engines, error);
+  stuck_relaunch_args() = StuckRelaunch{.executable = executable, .argc = argc, .argv = argv};
+  ajp::app::play::set_stuck_relaunch(&relaunch_when_stuck);
+}
 
 // « ajp compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
 int run_compare_command(const std::vector<std::string_view>& args) {
@@ -610,10 +618,7 @@ int run_player(int argc, char** argv) {
 #ifdef AJP_BACKEND_VULKAN
   paths.backends.emplace_back(AJP_BACKEND_VULKAN);
 #endif
-  std::error_code error;
-  std::filesystem::create_directories(paths.engines, error);
-  stuck_relaunch_args() = StuckRelaunch{.executable = place.executable, .argc = argc, .argv = argv};
-  ajp::app::play::set_stuck_relaunch(&relaunch_when_stuck);
+  before_play(paths.engines, place.executable, argc, argv);
   const auto played = ajp::app::play::play(*options, paths);
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();

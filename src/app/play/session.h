@@ -353,6 +353,15 @@ class Session {
   };
   static SubtitleLook look_of(const subs::SubtitleFrame* frame);
   static bool same_look(const SubtitleLook& shown, const subs::SubtitleFrame* frame);
+  // Les sous-titres de l'image montrée à ce tour : le défaut du clignotement (une image sans réponse alors
+  // que d'autres attendent, compté à la présentation, B13-04) et le changement d'aspect, comparé en place
+  // (B13-08).
+  struct SubtitleTick {
+    const subs::SubtitleFrame* frame = nullptr;
+    bool gap = false;
+    bool changed = false;
+  };
+  SubtitleTick subtitles_now();
   SubtitleLook shown_subtitles_;
   OutputSize shown_size_;         // taille de sortie de la dernière présentation
   std::int64_t shown_at_us_ = 0;  // instant hôte de la dernière présentation

@@ -130,6 +130,23 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
       now_us);
 }
 
+// B08-14 : la finition (filtre final, débandage, netteté) se pose une fois, même quand plusieurs changent.
+void apply_finish(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  const PlaySettings& r = to.running;
+  const bool sharpness = wanted.sharpness != r.sharpness;
+  const bool filter = wanted.final_scaler != r.final_scaler || wanted.deband != r.deband;
+  if (!sharpness && !filter) return;
+  to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
+  Controls& controls = to.ui.controls();
+  if (sharpness) controls.notify(i18n::ui_tr_format("Sharpness: {} %", wanted.sharpness), now_us);
+  if (filter) {
+    to.live.set_deband_source(wanted.deband);
+    controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
+                                       wanted.deband ? i18n::tr("on") : i18n::tr("off")),
+                    now_us);
+  }
+}
+
 // Réglages en direct du menu des paramètres : RIFE, réduction, HDR, son, statistiques.
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
@@ -177,17 +194,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     if (wanted.grade != r.grade)
       controls.notify(wanted.grade ? i18n::ui_tr("Grade on") : i18n::ui_tr("Grade off"), now_us);
   }
-  // B08-14 : la finition se pose une fois, même quand la netteté et le filtre changent ensemble.
-  if (wanted.sharpness != r.sharpness || wanted.final_scaler != r.final_scaler || wanted.deband != r.deband)
-    to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
-  if (wanted.sharpness != r.sharpness)
-    controls.notify(i18n::ui_tr_format("Sharpness: {} %", wanted.sharpness), now_us);
-  if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
-    to.live.set_deband_source(wanted.deband);
-    controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
-                                       wanted.deband ? i18n::tr("on") : i18n::tr("off")),
-                    now_us);
-  }
+  apply_finish(to, wanted, now_us);
   if (wanted.audio_delay_ms != r.audio_delay_ms) {
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
     controls.notify(i18n::ui_tr_format("Audio delay: {} ms", wanted.audio_delay_ms), now_us);
@@ -346,9 +353,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               switch_chain(to, wanted, now_us);
               return;
             }
-            // Ni grade ni interpolation pour la séance. B08-05 : SPAN, le débandage et la netteté restent
-            // (les couper rouvrirait la chaîne) ; l'aide et le README le disent.
-            if (std::holds_alternative<cmd::ProcessingOff>(command)) {
+            if (std::holds_alternative<cmd::ProcessingOff>(command)) {  // B08-05 : SPAN et finition restent
               PlaySettings wanted = to.running;
               wanted.grade = false;
               wanted.rife_factor = 0;

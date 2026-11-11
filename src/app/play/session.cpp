@@ -539,6 +539,16 @@ bool Session::same_look(const SubtitleLook& shown, const subs::SubtitleFrame* fr
   return shown.generation == frame->atlas->generation && std::ranges::equal(shown.rects, frame->rects);
 }
 
+Session::SubtitleTick Session::subtitles_now() {
+  SubtitleTick tick;
+  if (current_) {
+    tick.frame = subtitles_.for_pts(held_subtitle_pts_.value_or(current_->pts_us));
+    tick.gap = tick.frame == nullptr && subtitles_.size() > 0;
+  }
+  tick.changed = !same_look(shown_subtitles_, tick.frame);
+  return tick;
+}
+
 // Une image tenue plus d'une période source : les demandes de sous-titres continuent sur la grille des
 // sources, et la lecture suit l'horloge (jamais au-delà de la dernière demande).
 void Session::follow_subtitles(std::int64_t host_now, const UiFrame& ui) {
@@ -585,13 +595,8 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   follow_subtitles(host_now, ui);
   const bool fresh = fresh_;
   bool osd_changed = refresh_osd(host_now);  // overlay_due peut le lever
-  const subs::SubtitleFrame* subtitles =
-      current_ ? subtitles_.for_pts(held_subtitle_pts_.value_or(current_->pts_us)) : nullptr;
-  // Une image montrée sans réponse alors que d'autres attendent : le défaut du clignotement, compté à la
-  // présentation (B13-04), pas à chaque tour de boucle.
-  const bool subtitle_gap = current_ && subtitles == nullptr && subtitles_.size() > 0;
-  // B13-08 : comparés en place ; les rectangles ne se copient qu'à la présentation.
-  const bool look_changed = !same_look(shown_subtitles_, subtitles);
+  const SubtitleTick subtitles = subtitles_now();
+  const bool look_changed = subtitles.changed;
   const OutputSize size = screen_.size();
   // Présentation à la demande : rien n'a changé, l'écran garde l'image (et en VRR, il suit le
   // rythme des images au lieu de recomposer à chaque vsync, ce qui laisse le GPU aux moteurs).
@@ -617,7 +622,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
     return std::optional<PresentRecord>{};
   }
   const ShowRequest request{.frame = current_ ? &*current_ : nullptr,
-                            .subtitles = subtitles,
+                            .subtitles = subtitles.frame,
                             .osd = osd_,
                             .ui = ui.draw,
                             .ui_bottom = ui.draw != nullptr ? ui.bottom : 0,
@@ -633,13 +638,13 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
   if (!timing->presented) present_requested_ = true;
   shown_at(timing->presented ? timing->present_us : host_now);
   shown_ui_ = ui.draw != nullptr;
-  if (look_changed) shown_subtitles_ = look_of(subtitles);
+  if (look_changed) shown_subtitles_ = look_of(subtitles.frame);  // les rectangles copiés ici seulement
   shown_size_ = size;
   std::optional<PresentRecord> record;
   if (timing->presented) {
     const std::int64_t period = display_period();
     note_queue_wait(timing->acquire_us, period);
-    if (subtitle_gap) ++stats_.subtitle_gaps;
+    stats_.subtitle_gaps += static_cast<std::int64_t>(subtitles.gap);
     const std::int64_t previous = stats_.last_new_present_us;
     stats_.presented(timing->render_us, timing->present_us, fresh);
     if (fresh && current_) pace(*current_, host_now + display_delay_us(period));

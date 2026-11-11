@@ -428,6 +428,93 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+// DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la place
+// du moteur entier, quand le backend le sait, que le réglage le veut et que le cran est Équilibre ; tout
+// échec garde le moteur entier. Un refus retenu pour la séance (B08-02) le décline sans reconstruire.
+DrbaFusedUse drba_fused_use(const ChainEngines& c, const PlaySettings& settings, InnerFallbacks& inner,
+                            const std::string& fused_key) {
+  DrbaFusedUse fused;
+  fused.declined = drba_fused_declined(settings, c.backend->capabilities().drba_fused);
+  if (settings.drba_fused && !fused.declined.empty())
+    log_channel("app")->info("DistilDRBA fusionné non utilisé : {}", fused.declined);
+  if (!fused.declined.empty()) return fused;
+  if (const Refusal* before = inner.refused(ChainStage::Motion, fused_key)) {
+    fused.declined = before->detail;
+    fused.refused = before->code;
+  }
+  return fused;
+}
+
+// Le moteur DistilDRBA, la variante mouvement d'abord quand le warp suit SPAN ; pose drba_motion et
+// drba_size.
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> build_drba(Player& p,
+                                                                               const gpu::BackendInit& init,
+                                                                               ChainEngines& c,
+                                                                               const PlaySettings& settings,
+                                                                               DrbaFusedUse* fused) {
+  // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
+  // créée.
+  bool motion =
+      settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
+  // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
+  // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
+  const bool smaller = motion && c.rife_size.height < c.work.height;
+  const WorkSize at = smaller ? c.rife_size : c.work;
+  auto loaded = prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
+                                    settings.motion_precision, fused, &motion, smaller);
+  // Sans variante mouvement, l'image se fait à la taille de travail : rien n'a été construit plus bas.
+  if (smaller &&
+      ((!loaded && loaded.error().key == kDrbaImageElsewhereKey) || (loaded && *loaded && !motion))) {
+    if (fused != nullptr) *fused = DrbaFusedUse{.declined = fused->declined};
+    loaded = prepare_distil_drba(p, init, *c.backend, c.model_places, c.work.width, c.work.height,
+                                 c.drba_align, settings.motion_precision, fused, &motion);
+  }
+  c.drba_motion = loaded && *loaded && motion;
+  c.drba_size = c.drba_motion ? at : c.work;
+  if (c.drba_motion && smaller)
+    log_channel("app")->info("DistilDRBA mouvement : estimé en {}x{}, warp en {}x{}", at.width, at.height,
+                             c.work.width, c.work.height);
+  return loaded;
+}
+
+// DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque. Un refus retenu
+// pour la séance (B08-02) passe à RIFE sans reconstruire. Faux : construction annulée ; vrai : chargé, ou
+// refusé avec RIFE (ou rien) à la place.
+std::expected<bool, StageFailure> load_drba(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                            const PlaySettings& settings, InnerFallbacks& inner,
+                                            const std::string& library) {
+  const auto log = log_channel("app");
+  const std::string drba_key = inner_key(std::format("drba {}", name(settings.motion_precision)), library, {},
+                                         c.work.width, c.work.height);
+  if (inner.refused(ChainStage::Motion, drba_key) != nullptr) {
+    log->info("DistilDRBA refusé plus tôt dans la séance : {}", c.rife_model ? "RIFE" : "sans interpolation");
+    return true;
+  }
+  const std::string fused_key = inner_key("drba-fused", library, {}, c.work.width, c.work.height);
+  DrbaFusedUse fused = drba_fused_use(c, settings, inner, fused_key);
+  const bool try_fused = fused.declined.empty();
+  auto loaded = build_drba(p, init, c, settings, try_fused ? &fused : nullptr);
+  if (loaded && *loaded) {
+    note_drba_fused(c, fused, try_fused);
+    if (try_fused && fused.refused)
+      inner.failed(ChainStage::Motion, fused_key, Refusal{*fused.refused, fused.declined});
+  }
+  // Annulée, la construction ne passe pas la main à RIFE : l'interpolation part, SPAN reste (A31-15).
+  if (!loaded && watch_now(loaded.error()))
+    return stage_refused(std::move(loaded.error()), ChainStage::Motion);
+  if (!loaded) {
+    log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
+    inner.failed(ChainStage::Motion, drba_key, loaded.error());
+    p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
+                                      : i18n::ui_tr("DistilDRBA unavailable"),
+                         host_now_us());
+    return true;
+  }
+  if (!*loaded) return false;
+  c.drba = std::move(**loaded);
+  return true;
+}
+
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
@@ -500,73 +587,12 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   c.rife_size = !p.options.rife_image && c.work.height > kRifeMotionHeight
                     ? work_size(video.width, video.height, kRifeMotionHeight)
                     : c.work;
-  // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque. Un refus
-  // retenu pour la séance (B08-02) passe à RIFE sans reconstruire.
   InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);
   const std::string library = library_name(p);
-  const std::string drba_key = inner_key(std::format("drba {}", name(settings.motion_precision)), library, {},
-                                         c.work.width, c.work.height);
-  if (want_drba && inner.refused(ChainStage::Motion, drba_key) != nullptr)
-    log->info("DistilDRBA refusé plus tôt dans la séance : {}", c.rife_model ? "RIFE" : "sans interpolation");
-  else if (want_drba) {
-    // DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la
-    // place du moteur entier, quand le backend le sait, que le réglage le veut et que le cran est Équilibre ;
-    // tout échec garde le moteur entier.
-    DrbaFusedUse fused;
-    fused.declined = drba_fused_declined(settings, c.backend->capabilities().drba_fused);
-    if (settings.drba_fused && !fused.declined.empty())
-      log->info("DistilDRBA fusionné non utilisé : {}", fused.declined);
-    const std::string fused_key = inner_key("drba-fused", library, {}, c.work.width, c.work.height);
-    if (fused.declined.empty()) {
-      if (const Refusal* before = inner.refused(ChainStage::Motion, fused_key)) {
-        fused.declined = before->detail;
-        fused.refused = before->code;
-      }
-    }
-    const bool try_fused = fused.declined.empty();
-    // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
-    // créée.
-    bool motion =
-        settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
-    // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
-    // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
-    const bool smaller = motion && c.rife_size.height < c.work.height;
-    const WorkSize at = smaller ? c.rife_size : c.work;
-    auto loaded =
-        prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
-                            settings.motion_precision, try_fused ? &fused : nullptr, &motion, smaller);
-    // Sans variante mouvement, l'image se fait à la taille de travail : rien n'a été construit plus bas.
-    if (smaller &&
-        ((!loaded && loaded.error().key == kDrbaImageElsewhereKey) || (loaded && *loaded && !motion))) {
-      fused = DrbaFusedUse{.declined = fused.declined};
-      loaded =
-          prepare_distil_drba(p, init, *c.backend, c.model_places, c.work.width, c.work.height, c.drba_align,
-                              settings.motion_precision, try_fused ? &fused : nullptr, &motion);
-    }
-    c.drba_motion = loaded && *loaded && motion;
-    c.drba_size = c.drba_motion ? at : c.work;
-    if (c.drba_motion && smaller)
-      log->info("DistilDRBA mouvement : estimé en {}x{}, warp en {}x{}", at.width, at.height, c.work.width,
-                c.work.height);
-    if (loaded && *loaded) {
-      note_drba_fused(c, fused, try_fused);
-      if (try_fused && fused.refused)
-        inner.failed(ChainStage::Motion, fused_key, Refusal{*fused.refused, fused.declined});
-    }
-    // Annulée, la construction ne passe pas la main à RIFE : l'interpolation part, SPAN reste (A31-15).
-    if (!loaded && watch_now(loaded.error()))
-      return stage_refused(std::move(loaded.error()), ChainStage::Motion);
-    if (!loaded) {
-      log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      inner.failed(ChainStage::Motion, drba_key, loaded.error());
-      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
-                                        : i18n::ui_tr("DistilDRBA unavailable"),
-                           host_now_us());
-    } else if (!*loaded) {
-      return std::nullopt;
-    } else {
-      c.drba = std::move(**loaded);
-    }
+  if (want_drba) {
+    auto drba = load_drba(p, init, c, settings, inner, library);
+    if (!drba) return std::unexpected(std::move(drba.error()));
+    if (!*drba) return std::nullopt;
   }
   // RIFE au cran de précision demandé : le graphe « _fp8 » ou « _fp32 » à côté du modèle quand il y est (FP8
   // sur un moteur qui l'accélère seulement) ; le modèle tel que livré sinon.

@@ -17,8 +17,7 @@ CadenceStep FreeGrid::origin(const SourceStamp& source, GridEvent event) {
   return step;
 }
 
-CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) {
-  starved_ = false;
+std::optional<CadenceStep> FreeGrid::without_pair(const SourceStamp& source) {
   if (source.epoch < epoch_) return CadenceStep(GridEvent::Stale, {}, source.id);
   if (source.epoch > epoch_) {
     epoch_ = source.epoch;
@@ -26,9 +25,15 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   }
   if (!left_) return origin(source, started_ ? GridEvent::NewEpoch : GridEvent::Start);
   if (!source.pts_us || !left_->pts_us) return origin(source, GridEvent::InvalidPts);
+  if (*source.pts_us <= *left_->pts_us) return origin(source, GridEvent::PtsNotIncreasing);
+  return std::nullopt;
+}
+
+CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) {
+  starved_ = false;
+  if (std::optional<CadenceStep> alone = without_pair(source)) return std::move(*alone);
   const std::int64_t g = *left_->pts_us;
   const std::int64_t d = *source.pts_us;
-  if (d <= g) return origin(source, GridEvent::PtsNotIncreasing);
 
   const std::int64_t gap = d - g;
   const std::int64_t vsync = std::max<std::int64_t>(inputs.vsync_period_us, 0);
