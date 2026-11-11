@@ -126,6 +126,13 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
 // sous Linux, la mémoire vidéo n'est pas toujours gardée (NVreg_PreserveVideoMemoryAllocations=0) et ses
 // tampons perdus ne disent rien (B31-01). Un autre refus du GPU au réveil rouvre la chaîne aussi, au lieu
 // d'arrêter la vidéo (B31-18).
+// B31-02 : l'étage que ce refus retire pour la réouverture (stage_fallback.h, retreat_stage) ; rien pour le
+// banc, qui mesure la chaîne demandée ou rien.
+std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusal& refusal) {
+  return retreat_stage(p.options.bench_out ? nullptr : p.stages, refusal, c.played, c.interpolates(),
+                       c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file);
+}
+
 struct AfterGap {
   std::optional<Refusal> lost;  // l'appareil est perdu : la relance
   bool reopen = false;
@@ -226,6 +233,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
+  bool ring_refused = false;                  // B31-02 : l'anneau ne tient pas en mémoire vidéo
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
@@ -239,12 +247,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 : RingFormat::Rgba16Unorm;
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, c.opened.shape.ring,
                                      c.backend_name == "tensorrt", ring_format);
-        if (!slots) return std::unexpected(std::move(slots.error()));
+        if (!slots) {
+          ring_refused = true;
+          return std::unexpected(std::move(slots.error()));
+        }
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(std::move(stage),
                                    c.upscale(played, live, clock, width, height, std::move(*slots)));
       });
-  if (!pipeline) return std::unexpected(std::move(pipeline.error()));
+  if (!pipeline) {
+    // B31-02 : l'anneau refusé retire un étage, et la chaîne se rouvre au même endroit sans lui.
+    if (ring_refused && retreat(p, c, pipeline.error()))
+      return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
+    return std::unexpected(std::move(pipeline.error()));
+  }
   if ((*pipeline)->chapters_flattened() && p.notice.empty())
     p.notice = i18n::ui_tr("Chapters stored in other files are not played (linked opening or ending)");
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
@@ -698,6 +714,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       chain.next_file = *next;
       chain.reopen = chain.running;
     }
+  }
+  // B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
+  // rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
+  if (failure && failure->key == kFatalStageKey && failure->code != RefusalCode::DeviceLost && c.backend &&
+      c.backend->kernels()->health() && retreat(p, c, *failure)) {
+    failure.reset();
+    chain.reopen = chain.running;
+    chain.next_file.reset();
   }
   std::optional<Reopen> reopen;
   if (chain.reopen && !failure) {

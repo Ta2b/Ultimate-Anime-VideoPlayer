@@ -179,14 +179,9 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
 
 }  // namespace
 
-namespace {
-
-// Le module du moteur (TensorRT, Vulkan) : il entre dans les signatures des refus retenus.
 std::string library_name(const Player& p) {
   return p.library ? core::to_utf8(p.library->path().filename()) : std::string();
 }
-
-}  // namespace
 
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings,
                                                                   StageMemory* memory) {

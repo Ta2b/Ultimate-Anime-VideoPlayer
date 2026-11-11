@@ -87,6 +87,28 @@ void InnerFallbacks::failed(ChainStage stage, std::string key, const Refusal& re
     memory_->remember_inner({.stage = stage, .key = std::move(key), .refusal = refusal});
 }
 
+std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,
+                                        const PlaySettings& played, bool motion, bool upscale,
+                                        int source_width, int source_height, std::string_view library,
+                                        const std::filesystem::path& file) {
+  if (memory == nullptr || watch_now(refusal) || refusal.code == RefusalCode::DeviceLost ||
+      refusal.code == RefusalCode::SourceResized || refusal.key == kDroppedVideoKey)
+    return std::nullopt;
+  std::optional<ChainStage> stage;
+  if (motion && played.rife_factor >= 2)
+    stage = ChainStage::Motion;
+  else if (upscale && played.upscale)
+    stage = ChainStage::Upscale;
+  if (!stage) return std::nullopt;
+  memory->remember({.stage = *stage,
+                    .signature = stage_signature(*stage, played, source_width, source_height, library),
+                    .refusal = refusal,
+                    .file = file});
+  log_channel("app")->warn("{} refusé après la préparation ({}) : la chaîne se rouvre sans lui",
+                           *stage == ChainStage::Upscale ? "SPAN" : "interpolation", refusal.detail);
+  return stage;
+}
+
 namespace {
 
 bool stage_on(ChainStage stage, const PlaySettings& s) {

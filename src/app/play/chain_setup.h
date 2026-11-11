@@ -144,6 +144,9 @@ constexpr bool free_requested(const PlaySettings& settings, bool fallback) {
   return settings.auto_free && !fallback;
 }
 
+// Le module du moteur (TensorRT, Vulkan) : il entre dans les signatures des refus retenus.
+std::string library_name(const Player& p);
+
 // Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
 // fermée pendant une préparation. Un étage refusé ou annulé (SPAN, interpolation) est retenu dans memory et
 // la chaîne se prépare sans lui (ChainEngines::played, stage_notes) ; un cran FP8 ou FP32 refusé ne ramène

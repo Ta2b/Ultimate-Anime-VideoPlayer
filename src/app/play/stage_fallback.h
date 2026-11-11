@@ -118,6 +118,16 @@ std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemo
                                      int source_height, std::string_view library,
                                      const std::filesystem::path& file, bool allow_drop);
 
+// B31-02 : un refus venu après la préparation (l'anneau à l'ouverture du pipeline, un refus de l'étage GPU
+// pendant la lecture) retire un étage comme un refus de la préparation : l'interpolation d'abord (l'anneau le
+// plus profond, le moteur le plus lourd), puis SPAN. played : les réglages que la chaîne jouait ; motion et
+// upscale : les étages chargés. Rend l'étage retenu dans memory, rien quand il n'y a rien à retirer ou que le
+// refus n'est pas celui d'un étage (appareil perdu, source qui change de taille, annulation).
+std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,
+                                        const PlaySettings& played, bool motion, bool upscale,
+                                        int source_width, int source_height, std::string_view library,
+                                        const std::filesystem::path& file);
+
 // L'avis à l'écran pour ces changements, vide s'il n'y en a pas : « Upscaling unavailable: playing without
 // it (Video > Post-processing: Retry) ».
 i18n::Translated stage_notice(const std::vector<StageNote>& notes);

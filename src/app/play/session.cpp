@@ -324,7 +324,9 @@ void Session::on_refusal(const StageRefusal& refusal) {
   osd_at_us_.reset();  // le refus paraît au tour suivant
   if (refusal.refusal.code == RefusalCode::SourceResized) resized_ = true;
   if (refusal.fatal && !resized_ && !failure_)
-    failure_ = Refusal{refusal.refusal.code, std::format("{} : {}", refusal.stage, refusal.refusal.detail)};
+    failure_ = Refusal{.code = refusal.refusal.code,
+                       .detail = std::format("{} : {}", refusal.stage, refusal.refusal.detail),
+                       .key = refusal.refusal.key};  // B31-02 : la clé dit un refus de l'étage GPU
   if (refusal.fatal || resized_) finished_ = true;
   if (!refusal.fatal && refusal.refusal.recoverable && refusal.refusal.code != RefusalCode::FieldOutOfRange)
     notice_ = refusal.refusal;
