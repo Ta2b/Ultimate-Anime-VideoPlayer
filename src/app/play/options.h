@@ -73,6 +73,10 @@ inline constexpr double kDefaultKdeSdrNits = 200.0;  // la luminosité SDR de KD
 // --motion : RIFE ou DistilDRBA (settings.h : MotionEngine, que ce fichier ne voit pas).
 enum class MotionChoice : std::uint8_t { Rife, DistilDrba };
 
+enum class RelaunchedFor : std::uint8_t { None, GpuLost, EngineUpdated };
+// Le texte de --relaunched= ; vide pour None.
+std::string_view relaunched_name(RelaunchedFor reason);
+
 struct PlayOptions {
   std::filesystem::path file;                  // vide : l'écran d'accueil choisit la vidéo
   std::optional<std::filesystem::path> model;  // --model : absent, celui du lecteur actuel
@@ -106,7 +110,8 @@ struct PlayOptions {
   // --motion=rife|drba (A18-09) : le moteur de l'interpolation pour cette lecture, comme le menu ; absent,
   // celui de play.toml ou du préréglage.
   std::optional<MotionChoice> motion;
-  int true_hdr_peak = 0;  // --truehdr-peak=400..2000 nits ; 0 : la crête vue par le contenu sur l'écran
+  int true_hdr_peak = 0;  // --truehdr-peak=350..2000 nits (limits::kTrueHdrPeak) ; 0 : la crête vue par le
+                          // contenu sur l'écran
   bool help = false;      // --help
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
@@ -165,11 +170,11 @@ struct PlayOptions {
   // Un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5), par défaut ;
   // --no-ring-watcher : main sonde l'anneau.
   bool ring_watcher = true;
-  // L'attente de la boucle d'affichage à la microseconde (loop_wait.h, 6.7), par défaut ; --no-precise-wait :
-  // l'attente d'événement SDL à la milliseconde.
+  // L'attente précise de la boucle d'affichage (loop_wait.h), par défaut ; --no-precise-wait : l'attente
+  // d'événement SDL à la milliseconde.
   bool precise_wait = true;
-  // L'horloge audio maîtresse filtrée par une PLL (audio::PlayerConfig::pll, 6.9), par défaut ;
-  // --no-audio-pll : l'horloge brute.
+  // L'horloge audio maîtresse filtrée par une PLL (audio::PlayerConfig::pll) : l'état livré ;
+  // --no-audio-pll (essai) : l'horloge brute, pour comparer.
   bool audio_pll = true;
   // L'image choisie par le numéro de son vblank, avec hystérésis (SessionConfig::vsync_index, 6.6), par
   // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
@@ -208,6 +213,11 @@ struct PlayOptions {
   std::optional<int> bench_level;
   std::optional<std::filesystem::path> bench_out;
   Registration registration = Registration::None;
+  // --relaunched=gpu-lost|engine-updated : posé par le lecteur qui se relance (main.cpp), jamais par
+  // l'utilisateur. Seul un processus relancé lit relaunch.txt (un double-clic sur une autre vidéo n'ouvre
+  // plus l'ancienne, B18-02), et la garde contre une boucle de pertes du GPU ne dépend plus du disque
+  // (B31-07).
+  RelaunchedFor relaunched = RelaunchedFor::None;
   // Options données sur la ligne de commande (« --rife », « --truehdr-peak »…) : elles remplacent les
   // réglages de play.toml pour cette lecture.
   std::vector<std::string> given;
@@ -266,12 +276,12 @@ struct CompareOptions {
 std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std::string_view> args);
 std::string compare_usage();
 
-// Où chercher le modèle par défaut, dans l'ordre : l'installation d'AnimeJaNai, le profil par
-// défaut du dépôt mpv-AnimeJaNai-HDR, puis les modèles livrés avec le lecteur (bundled/onnx, si
-// bundled n'est pas vide). home vient de SDL (SDL_GetUserFolder).
+// Où chercher le modèle par défaut, dans l'ordre : les modèles livrés avec le lecteur (bundled/onnx, si
+// bundled n'est pas vide), puis l'installation d'AnimeJaNai et le profil par défaut du dépôt
+// mpv-AnimeJaNai-HDR (postes de développement, B18-06). home vient de SDL (SDL_GetUserFolder).
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,
                                                             const std::filesystem::path& bundled = {});
-// RIFE : kDefaultRifeFile dans chaque dossier, bundled/rife en dernier ; avec files, chacun d'eux,
+// RIFE : kDefaultRifeFile dans chaque dossier, bundled/rife en premier ; avec files, chacun d'eux,
 // dossier par dossier.
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
                                                            const std::filesystem::path& bundled = {});

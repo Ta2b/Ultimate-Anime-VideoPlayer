@@ -9,7 +9,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "core/display.h"
 #include "core/engines.h"
 #include "core/frame.h"
 #include "core/gpu_device.h"
@@ -121,20 +120,4 @@ TEST_CASE("FrameData : sans redéfinition, l'accès Vulkan est refusé", "[contr
   const VulkanImageAccess none;
   CHECK(none.state.layout == 0U);                  // VK_IMAGE_LAYOUT_UNDEFINED : rien de supposé
   CHECK(none.state.queue_family == 0xFFFF'FFFFU);  // VK_QUEUE_FAMILY_IGNORED
-}
-
-TEST_CASE("DisplayInfo : valeurs par défaut sûres et marquées comme telles", "[contracts]") {
-  const core::DisplayInfo display;
-  CHECK(display.refresh_hz == 0.0);  // inconnu : rien ne se cale
-  CHECK_FALSE(display.hdr);
-  CHECK(display.space == core::OutputSpace::Srgb);
-  CHECK(display.sdr_white_nits == core::display_defaults::kSdrWhiteNits);
-  CHECK(display.min_nits < display.peak_nits);
-  CHECK(display.provenance == core::DisplayProvenance{});
-  CHECK(display.provenance.peak == core::Provenance::Default);
-
-  core::DisplayInfo measured = display;
-  measured.peak_nits = 1015.0;
-  measured.provenance.peak = core::Provenance::System;
-  CHECK(measured.provenance != display.provenance);
 }

@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/session.h"
+#include "app/play/visible_error.h"
 #include "doubles.h"
 #include "french_ui.h"
 
@@ -48,6 +49,18 @@ TEST_CASE("Un refus fatal est un échec, pas une fin d'épisode ; un refus non f
   REQUIRE(rig.session.failure().has_value());
   CHECK(rig.session.failure()->code == RefusalCode::DecodeFailed);  // le premier, la cause
   CHECK(rig.session.failure()->detail == "source : lecture");
+}
+
+TEST_CASE("Le fil des sous-titres tombé coupe les sous-titres, pas la vidéo (B31-14)", "[app][session]") {
+  SessionConfig config;
+  config.subtitles = true;
+  Rig rig(std::move(config));
+  rig.session.handle(StageRefusal{.stage = "subs", .refusal = {RefusalCode::ThreadFailed, "std::bad_alloc"}});
+  CHECK_FALSE(rig.session.finished());
+  CHECK_FALSE(rig.session.failure().has_value());
+  const auto notice = rig.session.take_notice();
+  REQUIRE(notice.has_value());
+  CHECK(notice->key == kSubtitlesLostKey);
 }
 
 TEST_CASE("Un changement de taille de la source arrête la session et demande la réouverture",

@@ -191,11 +191,21 @@ std::expected<UpdateState, Refusal> parse_update_state(std::string_view text) {
   return state;
 }
 
+void forget_installed_announce(UpdateState& state, std::string_view installed) {
+  if (state.latest_version.empty()) return;
+  const auto order = core::compare_versions(state.latest_version, installed);
+  if (order && *order > 0) return;
+  state.latest_version.clear();
+  state.notes_url.clear();
+}
+
 UpdateState load_update_state(const fs::path& file) {
   std::error_code error;
   if (!fs::exists(file, error)) return {};
-  auto state = parse_update_state(read_all(file));
-  return state ? *state : UpdateState{};
+  auto parsed = parse_update_state(read_all(file));
+  UpdateState state = parsed ? *parsed : UpdateState{};
+  forget_installed_announce(state, installed_version());
+  return state;
 }
 
 namespace {

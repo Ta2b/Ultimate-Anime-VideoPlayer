@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <string>
 #include <thread>
@@ -80,6 +81,34 @@ TEST_CASE("mises à jour : l'état fait l'aller-retour", "[updater]") {
   REQUIRE(read_back);
   CHECK(*read_back == state);
   CHECK(load_update_state(fs::temp_directory_path() / "ajp-no-update.toml") == UpdateState{});
+}
+
+TEST_CASE("mises à jour : la version installée ne s'annonce plus après l'installation (B26-01)",
+          "[updater]") {
+  UpdateState state{.latest_version = "0.9.2", .notes_url = "https://x/y"};
+  forget_installed_announce(state, "0.9.2");  // installée : plus rien à annoncer
+  CHECK(state.latest_version.empty());
+  CHECK(state.notes_url.empty());
+  state = {.latest_version = "0.9.2", .notes_url = "https://x/y"};
+  forget_installed_announce(state, "0.10.0");  // plus ancienne que l'installée
+  CHECK(state.latest_version.empty());
+  state = {.latest_version = "0.9.2", .notes_url = "https://x/y"};
+  forget_installed_announce(state, "0.9.1");  // encore nouvelle : gardée
+  CHECK(state.latest_version == "0.9.2");
+  CHECK(state.notes_url == "https://x/y");
+  state = {.latest_version = "pas une version", .notes_url = "https://x/y"};
+  forget_installed_announce(state, "0.9.1");  // illisible : rien d'annoncé
+  CHECK(state.latest_version.empty());
+
+  // Par le fichier : le lecteur relancé après l'installation lit update.toml tel que la vérification l'a
+  // laissé.
+  const fs::path file = fs::temp_directory_path() / "ajp-update-installed" / "update.toml";
+  write(file, std::format("latest_version = \"{}\"\nnotes_url = \"https://x/y\"\nrevoked_keys = [\"cd\"]\n",
+                          installed_version()));
+  const UpdateState read_back = load_update_state(file);
+  CHECK(read_back.latest_version.empty());
+  CHECK(read_back.revoked_keys == std::vector<std::string>{"cd"});
+  fs::remove_all(file.parent_path());
 }
 
 TEST_CASE("mises à jour : l'update.toml d'une version qui s'appliquait elle-même se relit", "[updater]") {

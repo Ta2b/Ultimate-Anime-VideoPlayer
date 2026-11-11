@@ -13,3 +13,9 @@ add_executable(ajp_core_log_close_tests log_close_test.cpp)
 target_link_libraries(ajp_core_log_close_tests PRIVATE ajp::core_log Catch2::Catch2WithMain)
 ajp_set_warnings(ajp_core_log_close_tests)
 catch_discover_tests(ajp_core_log_close_tests TEST_PREFIX "core_log_close: " DISCOVERY_MODE PRE_TEST)
+
+# Le journal asynchrone ne se pose qu'une fois par processus : à part (le module reste core_log).
+add_executable(ajp_core_log_async_tests log_async_test.cpp)
+target_link_libraries(ajp_core_log_async_tests PRIVATE ajp::core_log Catch2::Catch2WithMain)
+ajp_set_warnings(ajp_core_log_async_tests)
+catch_discover_tests(ajp_core_log_async_tests TEST_PREFIX "core_log_async: " DISCOVERY_MODE PRE_TEST)

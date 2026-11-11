@@ -83,7 +83,9 @@ namespace ajp::gpu {
 // 34 : retirés, sans usage dans le lecteur (A21-10, A21-11) : Backend::import, ExternalImage,
 // BackendCaps::import_formats, KernelOps::rife_pad, measure, previous_scores, IngestSpec::rife_conversion ;
 // KernelOps::SceneStats passe au lecteur (chain_shots.h).
-inline constexpr int kBackendAbi = 34;
+// 35 : neuf RefusalCode jamais produits retirés (B20-04) : les codes suivants changent de numéro, un refus
+// d'un backend d'avant se lirait sous un autre nom.
+inline constexpr int kBackendAbi = 35;
 
 using DeviceUuid = ajp::DeviceUuid;
 

@@ -108,6 +108,7 @@ struct Player {
   // Les étages refusés ou annulés de la séance (stage_fallback.h) : ceux du lecteur, qui survivent aux vidéos
   // suivantes. Nul : aucun repli, un refus arrête la lecture.
   StageMemory* stages = nullptr;
+  ManualTracks* manual_tracks = nullptr;  // play() : les pistes choisies à la main de la séance (B29-11)
   // Une vidéo glissée sur la fenêtre pendant la construction d'un moteur (A08-08) : la préparation s'arrête
   // et la lecture passe à elle.
   std::optional<std::filesystem::path> dropped_video;

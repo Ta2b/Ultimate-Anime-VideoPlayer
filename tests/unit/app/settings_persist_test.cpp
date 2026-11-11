@@ -96,5 +96,27 @@ TEST_CASE("play.toml garde le grade et l'interpolation d'avant un raccourci de s
   CHECK(untouched == running);
 }
 
+TEST_CASE("play.toml : une édition à la main survit à la relecture du fil des mises à jour (B36-02)",
+          "[app][settings]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-peek.toml";
+  std::filesystem::remove_all(path);
+  REQUIRE(save_settings(path, PlaySettings{}));
+  auto ours = load_settings(path);  // le lecteur au lancement
+  REQUIRE(ours);
+  PlaySettings edited = *ours;  // Tatoub règle le volume à la main, lecteur ouvert
+  edited.volume = 0.25F;
+  write_text(path, format_settings(edited));
+  const auto peeked = peek_settings(path);  // le fil des mises à jour, toutes les 30 minutes
+  REQUIRE(peeked);
+  CHECK(peeked->volume == edited.volume);
+  ours->audio_delay_ms = 120;  // puis un changement dans le menu
+  REQUIRE(save_settings(path, *ours));
+  const auto merged = load_settings(path);
+  REQUIRE(merged);
+  CHECK(merged->audio_delay_ms == 120);
+  CHECK(merged->volume == edited.volume);
+  std::filesystem::remove(path);
+}
+
 }  // namespace
 }  // namespace ajp::app::play

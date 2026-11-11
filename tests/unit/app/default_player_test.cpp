@@ -238,6 +238,32 @@ TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier l
   fs::remove_all(root);
 }
 
+TEST_CASE("Journaux, minidumps et séquence du banc quittent le profil itinérant (B36-08)", "[app]") {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "ajp-local-diagnostics";
+  fs::remove_all(root);
+  const fs::path roaming = root / "Roaming";
+  const fs::path local = root / "Local";
+  fs::create_directories(roaming / "crashes");
+  std::ofstream(roaming / "crashes" / "ajp-1.dmp") << "dump";
+  std::ofstream(roaming / "ajp.log") << "séance";
+  std::ofstream(roaming / "ajp.log.1") << "séance d'avant";
+  std::ofstream(roaming / "ajp.1.log.2") << "part";
+  std::ofstream(roaming / "bench-clip-v4.mkv") << "clip";
+  std::ofstream(roaming / "play.toml") << "[playlist]";
+  std::ofstream(roaming / "resume.tsv") << "";
+  CHECK(ajp::app::play::move_diagnostics(roaming, local) == 5);
+  for (const char* name : {"ajp.log", "ajp.log.1", "ajp.1.log.2", "bench-clip-v4.mkv"}) {
+    CHECK(fs::is_regular_file(local / name));
+    CHECK_FALSE(fs::exists(roaming / name));
+  }
+  CHECK(fs::is_regular_file(local / "crashes" / "ajp-1.dmp"));
+  CHECK(fs::is_regular_file(roaming / "play.toml"));  // les réglages restent
+  CHECK(fs::is_regular_file(roaming / "resume.tsv"));
+  CHECK(ajp::app::play::move_diagnostics(roaming, roaming) == 0);
+  fs::remove_all(root);
+}
+
 TEST_CASE("Une migration coupée ne passe jamais pour finie : la copie recommence (A19-01)", "[app]") {
   namespace fs = std::filesystem;
   using ajp::app::play::move_heavy_data;

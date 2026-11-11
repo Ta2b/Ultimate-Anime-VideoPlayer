@@ -27,8 +27,6 @@ enum class DownscaleFilter : std::uint8_t {
 // « truehdr » des anciens profils (RTX HDR, retiré) se lit comme Native.
 enum class HdrMode : std::uint8_t { Off, Native };
 
-using ModelId = std::string;
-
 struct Ratio {
   std::int64_t num = 1;
   std::int64_t den = 1;
@@ -45,15 +43,10 @@ struct Range {
 };
 
 namespace limits {
-inline constexpr Range<std::int64_t> kStartProfile{1, 9};
 inline constexpr Range<std::int64_t> kPixels{0, 16384LL * 16384LL};
 inline constexpr Range<double> kFps{0.0, 1000.0};
-inline constexpr Range<std::int64_t> kUpscaleFactor{1, 8};
 inline constexpr Range<std::int64_t> kRatioTerm{1, 100000};
 inline constexpr Range<double> kInterpFactor{1.0, 8.0};  // borne basse exclue
-inline constexpr Range<std::int64_t> kDownscaleHeight{144, 4320};
-inline constexpr std::size_t kMaxSteps = 16;
-inline constexpr double kMaxFactorProduct = 16.0;
 }  // namespace limits
 
 }  // namespace ajp::core

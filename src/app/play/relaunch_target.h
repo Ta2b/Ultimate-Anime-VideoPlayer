@@ -46,4 +46,11 @@ struct PlayerPaths;
 bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file, std::int64_t start_us,
                   bool paused, RelaunchReason reason);
 
+// La vidéo du lecteur qui s'est relancé : options.file devient elle. Rien pour un essai ou un banc. Seul le
+// processus relancé (--relaunched=) prend le fichier : un lancement de l'utilisateur, même dans les deux
+// minutes d'une relance ratée, ouvre sa vidéo à lui (B18-02, B36-10) et retire le fichier resté.
+struct PlayOptions;
+std::optional<RelaunchTarget> take_relaunch(PlayOptions& options, const PlayerPaths& paths,
+                                            std::int64_t now_s);
+
 }  // namespace ajp::app::play

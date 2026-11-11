@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <iterator>
+#include <mutex>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -23,6 +25,8 @@
 #include <signal.h>
 #include <unistd.h>
 #if __has_include(<execinfo.h>)
+#include <cstdint>
+#include <dlfcn.h>
 #include <execinfo.h>
 #define AJP_HAS_BACKTRACE 1
 #endif
@@ -32,6 +36,17 @@ namespace ajp::app::play {
 namespace {
 
 namespace fs = std::filesystem;
+
+// L'étape en cours, lue par le gestionnaire de plantage sans verrou ni allocation : un octet nul final
+// toujours là, une écriture concurrente ne peut que mêler deux étapes, jamais déborder.
+std::array<char, 201> g_stage{};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::mutex g_stage_writers;       // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+std::size_t stage_length() {
+  std::size_t length = 0;
+  while (length + 1 < g_stage.size() && g_stage[length] != '\0') ++length;
+  return length;
+}
 
 #ifdef _WIN32
 // Les plus anciens vidages au-delà de keep - 1 : la place du prochain.
@@ -63,6 +78,12 @@ void note_crash(unsigned long code, const char* dump_name) {
                                    "[critical] plantage : code 0x%08lX, minidump %s\n", code, dump_name);
   DWORD written = 0;
   if (length > 0) WriteFile(out, line.data(), static_cast<DWORD>(length), &written, nullptr);
+  if (const std::size_t stage = stage_length(); stage > 0) {
+    constexpr std::string_view kStage = "[critical] dernière étape : ";  // i18n-ok : journal
+    WriteFile(out, kStage.data(), static_cast<DWORD>(kStage.size()), &written, nullptr);
+    WriteFile(out, g_stage.data(), static_cast<DWORD>(stage), &written, nullptr);
+    WriteFile(out, "\n", 1, &written, nullptr);
+  }
   CloseHandle(out);
 }
 
@@ -159,6 +180,43 @@ const char* signal_name(int signo) {
   }
 }
 
+#ifdef AJP_HAS_BACKTRACE
+// La pile, une ligne par cadre : « nom-du-module(+0xdécalage) [adresse] », sans le dossier du module, que le
+// journal ne doit pas dire (B39-05) ; backtrace_symbols_fd écrivait le chemin complet. dladdr est ce que
+// backtrace_symbols_fd appelle lui-même.
+void put_hex(int fd, std::uintptr_t value) {
+  std::array<char, 2 + 2 * sizeof(value)> digits{};
+  std::size_t at = digits.size();
+  do {
+    digits[--at] = "0123456789abcdef"[value & 0xFU];
+    value >>= 4U;
+  } while (value != 0 && at > 2);
+  digits[--at] = 'x';
+  digits[--at] = '0';
+  const ssize_t ignored = write(fd, digits.data() + at, digits.size() - at);
+  static_cast<void>(ignored);
+}
+
+void put_frames(int fd, void* const* frames, int count) {
+  for (int i = 0; i < count; ++i) {
+    const auto address = reinterpret_cast<std::uintptr_t>(frames[i]);  // NOLINT(*-reinterpret-cast)
+    Dl_info info{};
+    if (dladdr(frames[i], &info) != 0 && info.dli_fname != nullptr) {
+      const char* name = info.dli_fname;
+      for (const char* c = info.dli_fname; *c != '\0'; ++c)
+        if (*c == '/') name = c + 1;
+      put(fd, name);
+      put(fd, "(+");
+      put_hex(fd, address - reinterpret_cast<std::uintptr_t>(info.dli_fbase));  // NOLINT(*-reinterpret-cast)
+      put(fd, ") ");
+    }
+    put(fd, "[");
+    put_hex(fd, address);
+    put(fd, "]\n");
+  }
+}
+#endif
+
 void on_fatal_signal(int signo) {
   const int fd = open(g_log_path.data(), O_WRONLY | O_APPEND | O_CLOEXEC);
   if (fd >= 0) {
@@ -167,10 +225,16 @@ void on_fatal_signal(int signo) {
     put(fd, " (");
     put(fd, signal_name(signo));
     put(fd, ")\n");
+    if (const std::size_t stage = stage_length(); stage > 0) {
+      put(fd, "[critical] dernière étape : ");  // i18n-ok : journal
+      const ssize_t ignored = write(fd, g_stage.data(), stage);
+      static_cast<void>(ignored);
+      put(fd, "\n");
+    }
 #ifdef AJP_HAS_BACKTRACE
     std::array<void*, 48> frames{};
     const int count = backtrace(frames.data(), static_cast<int>(frames.size()));
-    backtrace_symbols_fd(frames.data(), count, fd);
+    put_frames(fd, frames.data(), count);
 #endif
     close(fd);
   }
@@ -220,6 +284,18 @@ void install_crash_dumps([[maybe_unused]] const fs::path& dir) {
     sigaction(signo, &action, nullptr);
   }
 #endif
+}
+
+void note_crash_stage(std::string_view stage) {
+  const std::scoped_lock lock(g_stage_writers);
+  const std::size_t length = std::min(stage.size(), g_stage.size() - 1);
+  std::ranges::copy(stage.substr(0, length), g_stage.begin());
+  g_stage[length] = '\0';
+}
+
+std::string crash_stage() {
+  const std::scoped_lock lock(g_stage_writers);
+  return {g_stage.data(), stage_length()};
 }
 
 bool write_crash_dump([[maybe_unused]] const fs::path& file) {

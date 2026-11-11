@@ -29,6 +29,8 @@ jobs:
         run: tools/ci/check-comments.sh
       - name: Actions épinglées
         run: tools/ci/check-pinned-actions.sh
+      - name: Révocation de la clé des mises à jour
+        run: tools/release/test-signing.sh
       - name: Aucun getenv
         run: tools/ci/check-no-getenv.sh
       - name: Aucun atoi ni sscanf

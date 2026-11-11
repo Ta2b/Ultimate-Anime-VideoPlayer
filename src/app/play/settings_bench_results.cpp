@@ -38,7 +38,7 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
   std::error_code error;
   const BenchPlan plan{
       .executable = choices.place.executable,
-      .video = data / "bench-clip-v4.mkv",
+      .video = choices.bench_clip,
       .work_dir = calibration_work_dir(data),
       .data = data,
       .display_width = choices.display_width > 0 ? choices.display_width : choices.display_height * 16 / 9,

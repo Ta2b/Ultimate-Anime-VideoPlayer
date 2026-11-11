@@ -13,6 +13,7 @@
 #include "app/play/apple_model.h"
 #include "app/play/chain_setup.h"
 #include "app/play/controls.h"
+#include "app/play/crash_dump.h"
 #include "app/play/derived_model.h"
 #include "app/play/drba_fused_choice.h"
 #include "app/play/engine_build.h"
@@ -161,17 +162,19 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   auto build = EngineBuild::start(
       EngineRequest{.library = p.library,
                     .init = init,
-                    .model = {.id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha256},
+                    .model = {.id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha256},
                     .shapes = {.min = shape, .opt = shape, .max = shape}});
   if (!build) return std::unexpected(std::move(build.error()));
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
+  note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
   auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video);
   if (!artifact) return std::unexpected(std::move(artifact.error()));
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
-  log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
+  log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
   backend.use_lane(lane);
+  note_crash_stage(std::format("chargement du moteur {} ({})", label.name, label.backend));
   auto loaded = backend.load(**artifact);
   backend.use_lane(gpu::Lane::Upscale);
   if (!loaded) return std::unexpected(std::move(loaded.error()));
@@ -222,7 +225,7 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
     const auto [fraction, stage] = note.progress ? note.progress->get() : std::pair<float, std::string>{};
     const PrepareView view{.label = i18n::ui_tr_format("Preparing engine {}", "SPAN"),
                            .fraction = fraction,
-                           .details = {stage, model.stem().string()},
+                           .details = {stage, core::to_utf8(model.stem())},
                            .show_details = p.details,
                            .watch_now = &watch_now};
     if (auto shown = p.screen.show(ShowRequest{.ui = p.ui.preparation(host_now_us(), view)}); !shown)
@@ -245,7 +248,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife
       p, init, backend, *manifest,
       gpu::Shape{.dims = {1, kernels::kRifeInputChannels, geometry.padded_height, geometry.padded_width}},
       EngineLabel{.name = i18n::tr("Fused RIFE"),
-                  .model = rife_onnx.stem().string(),
+                  .model = core::to_utf8(rife_onnx.stem()),
                   .width = geometry.padded_width,
                   .height = geometry.padded_height},
       gpu::Lane::Interpolate);
@@ -278,7 +281,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
         drba_tier(tier, fused != nullptr, sibling_tiers(found->path, backend.capabilities().fp8));
     if (plan.tier != PrecisionTier::Balanced) found->path = tier_variant(found->path, plan.tier);
     log_channel("app")->info("DistilDRBA {} : {}", label(tier),
-                             plan.why.empty() ? found->path.filename().string() : plan.why);
+                             plan.why.empty() ? core::to_utf8(found->path.filename()) : plan.why);
     if (!plan.fused && fused != nullptr) {
       fused->declined = "cran de précision hors Équilibre";
       fused = nullptr;
@@ -287,7 +290,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
   if (!found) {
     std::string tried;
     for (const std::filesystem::path& dir : dirs)
-      tried += std::format("{}{}", tried.empty() ? "" : ", ", dir.string());
+      tried += std::format("{}{}", tried.empty() ? "" : ", ", core::to_utf8(dir));
     return std::unexpected(
         Refusal{RefusalCode::FieldMissing,
                 i18n::tr_format("DistilDRBA: {} not found ({})",
@@ -297,7 +300,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
   const gpu::Shape shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}};
   const EngineLabel label{.name = "DistilDRBA",
-                          .model = found->path.stem().string(),
+                          .model = core::to_utf8(found->path.stem()),
                           .width = g.padded_width,
                           .height = g.padded_height};
   // Le graphe coupé d'abord : un refus de la découpe, de la construction ou du chargement garde l'entier.
@@ -385,7 +388,8 @@ PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const st
           .audio_fallback_delay_us = audio_fallback_delay_us(settings),
           .audio_pll = p.options.audio_pll,
           .audio_track = p.audio_track,
-          .subtitle_track = p.subtitle_track};
+          .subtitle_track = p.subtitle_track,
+          .manual = p.manual_tracks != nullptr ? *p.manual_tracks : ManualTracks{}};
 }
 
 }  // namespace ajp::app::play

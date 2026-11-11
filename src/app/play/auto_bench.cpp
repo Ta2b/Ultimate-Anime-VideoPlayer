@@ -72,7 +72,7 @@ Tier best_level(const std::vector<BenchRun>& runs) {
 
 std::string format_bench(const BenchResult& result) {
   toml::table root;
-  root.insert("version", std::int64_t{1});
+  root.insert("version", std::int64_t{kBenchVersion});
   root.insert("gpu", result.gpu);
   root.insert("driver", result.driver);
   root.insert("level", static_cast<std::int64_t>(result.level));
@@ -90,6 +90,11 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
     return refuse(RefusalCode::ProfileUnreadable,
                   std::format("bench.toml : {}", parsed.error().description()));
   const toml::table& root = parsed.table();
+  // B07-06 : une mesure d'avant les chaînes d'aujourd'hui ne décide plus de la tranche ni de la hauteur
+  // explorée ; l'estimation de la carte la remplace jusqu'au prochain « ajp bench ».
+  if (const std::int64_t version = root["version"].value_or(std::int64_t{0}); version < kBenchVersion)
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("bench.toml : version {} d'une chaîne plus ancienne, ignorée", version));
   BenchResult result;
   result.gpu = root["gpu"].value_or(std::string());
   result.driver = root["driver"].value_or(std::string());

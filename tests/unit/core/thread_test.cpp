@@ -207,3 +207,21 @@ TEST_CASE("start_task : l'exception du corps devient ThreadFailed", "[thread]") 
   CHECK(result.error().code == ajp::RefusalCode::ThreadFailed);
   CHECK(ajp::start_task<int>("essai", [] { return 3; })->get() == 3);
 }
+
+#ifdef __linux__
+namespace {
+std::atomic<int> g_role_refusals{0};
+}  // namespace
+
+TEST_CASE("Rôle d'un thread : un refus du système se dit une fois par rôle (B20-06)", "[thread]") {
+  ajp::set_role_refusal_reporter(
+      [](ajp::ThreadRole /*role*/, const char* /*what*/) noexcept { g_role_refusals.fetch_add(1); });
+  CHECK_FALSE(ajp::set_thread_priority_raiser([]() noexcept { return false; }));  // rtkit absent
+  CHECK_FALSE(ajp::set_thread_role(ajp::ThreadRole::Playback));
+  CHECK_FALSE(ajp::set_thread_role(ajp::ThreadRole::Playback));
+  CHECK(g_role_refusals.load() == 1);
+  ajp::set_thread_priority_raiser(nullptr);
+  CHECK(ajp::set_thread_role(ajp::ThreadRole::Playback));  // sans crochet : rien demandé, rien refusé
+  ajp::set_role_refusal_reporter(nullptr);
+}
+#endif

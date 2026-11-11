@@ -23,7 +23,7 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 
 | Dossier | Contenu |
 |---|---|
-| `src/core` | cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8 (`utf8_path.h`), écran et source (`display.h`) ; le profil v5 ne garde que ses types |
+| `src/core` | cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8 (`utf8_path.h`), taille et cadence de la source (`source_info.h`) ; le profil v5 ne garde que ses types |
 | `src/app/play` | le lecteur : boucle (`player.cpp`, `player_run.cpp`), chaîne en direct (`chain*.cpp`), menu (`settings_*.cpp`), réglages et `play.toml` (`settings.h`, `settings_toml.cpp`), assistant (`wizard.*`, `first_run.cpp`), traductions (`i18n_fr_*.cpp`) |
 | `src/render` | libplacebo, grade (`grade_params.*`), shaders `.hook` (`src/render/shaders/`), LUT (`cube_lut.*`) |
 | `src/gpu` | backends chargés à l'exécution : `vulkan`, `cuda` (TensorRT), `coreml` |

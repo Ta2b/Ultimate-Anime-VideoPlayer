@@ -82,13 +82,6 @@ std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
   return {};
 }
 
-std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display) {
-  if (display.provenance.peak == core::Provenance::Default) return grade_limits::kDefaultPeakNits;
-  if (auto ok = check("peak", display.peak_nits, grade_limits::kPeakNits); !ok)
-    return std::unexpected(ok.error());
-  return display.peak_nits;
-}
-
 std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const GradeContext& context) {
   if (auto ok = check_grade_settings(s); !ok) return std::unexpected(ok.error());
   if (auto ok = check("peak", context.peak_nits, grade_limits::kPeakNits); !ok)

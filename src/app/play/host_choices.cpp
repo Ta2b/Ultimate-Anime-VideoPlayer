@@ -54,6 +54,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   choices.place = place_of(paths);
   choices.default_player_is_ajp = is_default_player(choices.place);
   choices.settings_dir = settings_dir;
+  choices.bench_clip = paths::bench_clip(paths);
 }
 
 }  // namespace ajp::app::play

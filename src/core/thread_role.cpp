@@ -29,11 +29,30 @@ namespace {
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::atomic<PriorityRaiser> g_raiser{nullptr};
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+std::atomic<RoleRefusalReporter> g_refusal_reporter{nullptr};
+// Un drapeau par rôle : le premier refus seulement se dit.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+std::array<std::atomic<bool>, 3> g_refusal_told{};
+
 [[maybe_unused]] bool raise_if_set() noexcept {  // seul Linux s'en sert
   const PriorityRaiser raiser = g_raiser.load(std::memory_order_acquire);
   return raiser != nullptr && raiser();
 }
+
+bool refused(ThreadRole role, const char* what) noexcept {
+  const auto index = static_cast<std::size_t>(role);
+  const RoleRefusalReporter reporter = g_refusal_reporter.load(std::memory_order_acquire);
+  if (reporter != nullptr && index < g_refusal_told.size() &&
+      !g_refusal_told[index].exchange(true, std::memory_order_acq_rel))
+    reporter(role, what);
+  return false;
+}
 }  // namespace
+
+void set_role_refusal_reporter(RoleRefusalReporter reporter) noexcept {
+  g_refusal_reporter.store(reporter, std::memory_order_release);
+}
 
 bool set_thread_priority_raiser(PriorityRaiser raiser) noexcept {
   g_raiser.store(raiser, std::memory_order_release);
@@ -44,7 +63,7 @@ bool set_thread_priority_raiser(PriorityRaiser raiser) noexcept {
 #endif
 }
 
-void set_thread_role(ThreadRole role) noexcept {
+bool set_thread_role(ThreadRole role) noexcept {
 #if defined(_WIN32)
   switch (role) {
     case ThreadRole::Playback:
@@ -52,35 +71,39 @@ void set_thread_role(ThreadRole role) noexcept {
       // MMCSS garde au thread sa part du processeur à cadence fixe, même sous une charge de fond. La tâche
       // reste inscrite jusqu'à la fin du thread.
       DWORD index = 0;
-      AvSetMmThreadCharacteristicsW(role == ThreadRole::Audio ? L"Audio" : L"Playback", &index);
-      break;
+      if (AvSetMmThreadCharacteristicsW(role == ThreadRole::Audio ? L"Audio" : L"Playback", &index) ==
+          nullptr)
+        return refused(role, "MMCSS (AvSetMmThreadCharacteristicsW) refusé");
+      return true;
     }
     case ThreadRole::Background:
       // Le mode de fond baisse aussi la priorité d'E/S et de mémoire du thread, comme le nice 10 de Linux
       // (A20-06) ; sans lui (refusé), la priorité basse seule.
-      if (SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN) == 0)
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-      break;
+      if (SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN) != 0) return true;
+      if (SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST) != 0)
+        return refused(role, "mode de fond refusé, priorité basse seule");
+      return refused(role, "mode de fond et priorité basse refusés");
   }
+  return true;
 #elif defined(__APPLE__)
-  switch (role) {
-    case ThreadRole::Playback:
-    case ThreadRole::Audio:
-      pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-      break;
-    case ThreadRole::Background:
-      pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
-      break;
-  }
+  const qos_class_t qos = role == ThreadRole::Background ? QOS_CLASS_UTILITY : QOS_CLASS_USER_INTERACTIVE;
+  if (pthread_set_qos_class_self_np(qos, 0) != 0)
+    return refused(role, "classe de qualité de service refusée");
+  return true;
 #elif defined(__linux__)
   // Sous Linux, la priorité nice est propre à chaque thread (PRIO_PROCESS avec l'identifiant du thread).
   if (role == ThreadRole::Background) {
-    setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10);
-  } else {
-    raise_if_set();
+    if (setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10) != 0)
+      return refused(role, "nice 10 refusé");
+    return true;
   }
+  // Sans crochet (les tests, avant SDL_Init), rien n'est demandé : rien de refusé non plus.
+  if (g_raiser.load(std::memory_order_acquire) == nullptr) return true;
+  if (!raise_if_set()) return refused(role, "priorité haute refusée (rtkit absent ou limite RLIMIT_RTPRIO)");
+  return true;
 #else
   static_cast<void>(role);
+  return true;
 #endif
 }
 

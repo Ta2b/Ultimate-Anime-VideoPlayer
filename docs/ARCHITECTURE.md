@@ -15,7 +15,7 @@ tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 
 | Module | Responsabilité | Thread |
 |---|---|---|
-| `core` | Cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8, écran et source (`display.h`) ; les types du profil v5 | main |
+| `core` | Cadence, choix des moteurs (`engines.h`), raccourcis (`keys.h`), écriture atomique (`file_sync.h`), chemins UTF-8, taille et cadence de la source (`source_info.h`) ; les types du profil v5 | main |
 | `core_types` | Contrats entre modules : `types.h`, `inbox.h`, `messages.h`, `frame.h`, `thread.h`, `gpu_device.h`, `ring.h` | aucun |
 | `core_log` | Canal de journal de chaque module, puits installés par `app` | aucun |
 | `av` | Le texte d'un code AVERROR de FFmpeg (`av_error.h`), en-tête seul : `core` ne lie pas FFmpeg | celui de l'appelant |
@@ -233,11 +233,9 @@ garde la médiane des neuf dernières (`app/play/frame_latency.h`, mesures hors 
 jeté par main une fois prêt, et n'est pas calculé. Sous surcharge, le GPU cesse
 ainsi de prendre du retard sur des images que personne ne verra.
 
-### Écran et cadence (`core/display.h`, `core/pacing.h`)
+### Écran et cadence (`core/pacing.h`)
 
-`DisplayInfo` décrit l'écran : taille, rafraîchissement (0 sans VRR : inconnu),
-HDR actif, VRR, crête, noir et blanc SDR en nits, espace de sortie (sRGB, PQ,
-scRGB), et la provenance de chaque champ (défaut, profil, système, `--display`).
+L'écran se lit dans `app/play/host_facts.h` (sortie HDR ou SDR, `system_hdr`) et `display_edid.h` (OLED, pic).
 Sur un écran fixe, `lock_factor()` donne le facteur qui cale k vsyncs par image et
 `vsync_speed()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
 choisit k.

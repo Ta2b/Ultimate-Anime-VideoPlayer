@@ -9,6 +9,15 @@
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002  // Windows 10 1803 et après
+#endif
+#endif
 
 #include "core/clock.h"
 #include "core/wait_plan.h"
@@ -26,6 +35,23 @@ void tighten_timer_slack() {
   (void)done;
 #endif
 }
+
+#ifdef _WIN32
+// B18-05 : sleep_until ne descend pas sous le minuteur du système (1 ms au mieux avec timeBeginPeriod, soit
+// 15 % d'une période à 144 Hz). Un minuteur à haute résolution suit l'échéance de bien plus près, sans
+// attente active. Faux s'il n'existe pas (Windows plus ancien) : sleep_until reste.
+bool wait_high_resolution(std::int64_t until_us) {
+  thread_local const HANDLE timer =
+      CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+  if (timer == nullptr) return false;
+  const std::int64_t left_us = until_us - host_now_us();
+  if (left_us <= 0) return true;
+  LARGE_INTEGER due{};
+  due.QuadPart = -left_us * 10;  // relatif, en centaines de nanosecondes
+  if (SetWaitableTimerEx(timer, &due, 0, nullptr, nullptr, nullptr, 0) == FALSE) return false;
+  return WaitForSingleObject(timer, INFINITE) == WAIT_OBJECT_0;
+}
+#endif
 
 }  // namespace
 
@@ -52,6 +78,9 @@ void wait_loop(std::int64_t wait_us, bool precise) {
   const core::WaitPlan plan = core::wait_plan(now, now + std::max<std::int64_t>(wait_us, 0));
   if (plan.coarse_ms > 0 && SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(plan.coarse_ms))) return;
   if (SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST)) return;
+#ifdef _WIN32
+  if (wait_high_resolution(plan.precise_until_us)) return;
+#endif
   // host_now_us est steady_clock : la même horloge, une échéance absolue.
   std::this_thread::sleep_until(
       std::chrono::steady_clock::time_point(std::chrono::microseconds(plan.precise_until_us)));

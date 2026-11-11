@@ -83,10 +83,26 @@ tant qu'elle n'est pas créée). Créer la paire de secours comme ci-dessus, com
 `AJP_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **hors ligne**, chez Tatoub, en sauvegarde chiffrée (décision du
 9 novembre 2026) : jamais dans la CI, pour qu'un vol du secret `AJP_UPDATE_KEY` reste révocable.
 
-Si l'active est perdue ou volée : signer le manifeste suivant avec la clé de secours
-(`AJP_UPDATE_KEY=<secours>.pem tools/release/sign-manifest.sh …`) et y ajouter la ligne
-`revoked_keys = ["<clé publique active>"]`. Les lecteurs le croient, retiennent la révocation dans `update.toml`, et ne
-croient plus aucun manifeste signé par l'ancienne clé. La release suivante compile une nouvelle clé de secours.
+Si l'active est perdue ou volée, depuis le poste qui garde la clé de secours :
+
+```bash
+gh release download <étiquette> -R Ta2b/ajp-releases -D rel -p 'ajp-*'
+UPDATE_KEY="$(cat secours-ed25519.pem)" tools/release/update-key.sh secours.pem   # dit « (secours) »
+AJP_UPDATE_KEY=secours.pem tools/release/sign-manifest.sh --revoke <clé publique active> \
+  <version> stable rel https://github.com/Ta2b/ajp-releases/releases/download/<étiquette> \
+  https://github.com/Ta2b/ajp-releases/releases/tag/<étiquette>
+gh release upload <étiquette> -R Ta2b/ajp-releases --clobber rel/manifest.toml rel/manifest.toml.sig
+```
+
+`--revoke` écrit `revoked_keys` avant la signature (une ligne ajoutée après coup invaliderait la signature).
+`update-key.sh` accepte l'active ou la secours de `src/app/CMakeLists.txt`. Les lecteurs croient ce manifeste,
+retiennent la révocation dans `update.toml`, et ne croient plus aucun manifeste signé par l'ancienne clé. Retirer
+aussi le secret `AJP_UPDATE_KEY` de GitHub (sinon `resign-manifest.yml` re-signerait avec la clé volée, sans la
+révocation), puis préparer la release suivante avec une nouvelle active et une nouvelle secours.
+`tools/release/test-signing.sh` (CI, `rules.yml`) rejoue cette procédure avec deux paires jetables.
+
+Tant que `AJP_UPDATE_PUBKEY_BACKUP` est vide, aucun lecteur livré ne connaît de clé de secours et cette procédure
+ne protège personne : la créer avant la prochaine release.
 
 ## Pas de canal Préversions
 

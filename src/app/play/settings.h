@@ -352,6 +352,10 @@ std::string format_settings(const PlaySettings& settings);
 
 // Fichier absent : les réglages par défaut.
 std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path);
+// Comme load_settings, sans rien journaliser ni toucher à la base de fusion de save_settings : pour un fil
+// qui relit un réglage sans reprendre les autres (B36-02, le fil des mises à jour). Une édition du fichier
+// faite pendant que le lecteur tourne reste ainsi protégée.
+std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& path);
 // Écrit à côté puis remplace (FileUnwritable si impossible) : jamais un fichier à moitié écrit.
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings);
 

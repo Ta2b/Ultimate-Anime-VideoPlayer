@@ -89,7 +89,11 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
   CHECK(read->gpu == result.gpu);
   CHECK(read->level == Tier::Ultra);
   CHECK(read->date == "2026-10-28");
-  CHECK_FALSE(parse_bench("level = 9\ngpu = \"x\""));
+  CHECK_FALSE(parse_bench("version = 2\nlevel = 9\ngpu = \"x\""));
+  // B07-06 : un bench.toml d'une version plus ancienne (d'autres chaînes) ne décide plus.
+  CHECK_FALSE(parse_bench("version = 1\nlevel = 3\ngpu = \"x\""));
+  CHECK_FALSE(parse_bench("level = 3\ngpu = \"x\""));
+  CHECK(parse_bench("version = 2\nlevel = 3\ngpu = \"x\""));
   CHECK_FALSE(parse_bench("level = 1"));
   CHECK_FALSE(parse_bench("gpu = ["));
   CHECK_FALSE(load_bench(std::filesystem::temp_directory_path() / "ajp-no-such-bench.toml"));
@@ -291,13 +295,15 @@ TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto
   REQUIRE(back);
   CHECK(back->work_height == 900);
   CHECK(back->rife_model == "rife_v4.25.onnx");
-  // Un bench.toml d'avant l'exploration : rien d'exploré.
-  const auto old =
-      parse_bench("version = 1\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
-  REQUIRE(old);
-  CHECK(old->work_height == 0);
-  CHECK(old->rife_model.empty());
-  CHECK_FALSE(parse_bench("gpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
+  // Un bench.toml sans exploration : rien d'exploré.
+  const auto bare =
+      parse_bench("version = 2\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
+  REQUIRE(bare);
+  CHECK(bare->work_height == 0);
+  CHECK(bare->rife_model.empty());
+  // B07-06 : celui d'une version d'avant (d'autres chaînes) se lit sans planter, mais ne décide plus.
+  CHECK_FALSE(parse_bench("version = 1\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\n").has_value());
+  CHECK_FALSE(parse_bench("version = 2\ngpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
 }
 
 TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_bench][exploration]") {

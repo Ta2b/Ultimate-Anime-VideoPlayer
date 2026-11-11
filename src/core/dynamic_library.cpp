@@ -1,6 +1,8 @@
 #include "core/dynamic_library.h"
 
 #ifdef _WIN32
+#include <mutex>
+#include <set>
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -12,6 +14,18 @@ namespace {
 std::string utf8(const std::filesystem::path& path) {
   return library_path_text(path);
 }
+
+#ifdef _WIN32
+// Chaque dossier une fois dans la recherche du processus (B20-03) : AddDllDirectory ajoute une entrée à
+// chaque appel, la liste grossissait d'un doublon par bibliothèque ouverte.
+void add_dll_directory_once(const std::filesystem::path& dir) {
+  static std::mutex mutex;
+  static std::set<std::filesystem::path> added;
+  const std::scoped_lock lock(mutex);
+  if (!added.insert(dir).second) return;
+  if (AddDllDirectory(dir.c_str()) == nullptr) added.erase(dir);
+}
+#endif
 
 }  // namespace
 
@@ -31,7 +45,7 @@ std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesyste
   // aussi à la recherche du processus : une DLL qu'elle charge plus tard par son nom s'y trouve, alors que le
   // PATH n'est plus lu (SetDefaultDllDirectories dans main.cpp, A20-07). Jamais retiré : la bibliothèque peut
   // charger jusqu'à sa fermeture, et un dossier du lecteur n'apporte rien d'étranger.
-  AddDllDirectory(path.parent_path().c_str());
+  add_dll_directory_once(path.parent_path());
   HMODULE module = LoadLibraryExW(path.c_str(), nullptr,
                                   LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   if (module == nullptr) {
@@ -54,7 +68,9 @@ std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesyste
 std::expected<DynamicLibrary, Refusal> DynamicLibrary::open_system(const char* name) {
   const std::filesystem::path path(name);
 #ifdef _WIN32
-  HMODULE module = LoadLibraryExW(path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+  // System32 seul (B20-03) : LOAD_LIBRARY_SEARCH_DEFAULT_DIRS chercherait aussi le dossier du lecteur et ceux
+  // des moteurs déjà ouverts, où un vulkan-1.dll périmé copié à la main masquerait le chargeur du pilote.
+  HMODULE module = LoadLibraryExW(path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
   if (module == nullptr) {
     return refuse(RefusalCode::LibraryUnavailable,
                   std::format("{} ne se charge pas (erreur Windows {})", name, GetLastError()));

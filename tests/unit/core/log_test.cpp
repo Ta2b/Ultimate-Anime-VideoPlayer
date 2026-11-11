@@ -1,5 +1,8 @@
 #include "core/log.h"
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -11,6 +14,7 @@
 #include <spdlog/sinks/null_sink.h>
 #include <spdlog/spdlog.h>
 
+#include "core/log_file.h"
 #include "core/log_redact.h"
 
 namespace {
@@ -108,6 +112,67 @@ TEST_CASE("Journal nettoyé : frontière de composant, disques montés, casse so
   CHECK(ajp::redact_log_text("c:\\users\\jean\\a.mkv") == "c:\\users\\jean\\a.mkv");
 #endif
   ajp::set_log_home("");
+}
+
+TEST_CASE("Journal nettoyé : un point final et les barres inverses doublées (B20-02)", "[log]") {
+  ajp::set_log_home("/home/jean");
+  CHECK(ajp::redact_log_text("dossier /home/jean.") == "dossier ~.");
+  CHECK(ajp::redact_log_text("dossier /home/jean.x") == "dossier /home/jean.x");  // un autre dossier
+  CHECK(ajp::redact_log_text("/home/jean/.cache") == "~/.cache");
+  ajp::set_log_home("C:\\Users\\jean");
+  CHECK(ajp::redact_log_text("C:\\\\Users\\\\jean\\\\x") == "~\\\\x");
+  CHECK(ajp::redact_log_text("C:\\Users\\jean\\x") == "~\\x");
+  ajp::set_log_home("");
+}
+
+TEST_CASE("Journal nettoyé : les chemins sont réduits au nom de leur fichier (B39-05)", "[log]") {
+  CHECK(ajp::reduce_log_paths("moteur span D:\\AnimeJaNai\\engines\\a.engine") == "moteur span …/a.engine");
+  CHECK(ajp::reduce_log_paths("journal : ~/.local/share/ajp/ajp.log · ajp 1.0") ==
+        "journal : …/ajp.log · ajp 1.0");
+  CHECK(ajp::reduce_log_paths("vidéo /run/media/x/Données SSD/a.mkv, 24 i/s") == "vidéo …/a.mkv, 24 i/s");
+  CHECK(ajp::reduce_log_paths("1/2 et /s") == "1/2 et /s");  // pas des dossiers
+  // Le puits : le dossier personnel, puis les chemins.
+  std::vector<std::string> seen;
+  ajp::set_log_home("/home/jean");
+  const auto sink = ajp::redacting_sink(
+      std::make_shared<spdlog::sinks::callback_sink_mt>([&](const spdlog::details::log_msg& msg) {
+        seen.emplace_back(msg.payload.begin(), msg.payload.end());
+      }));
+  sink->log(spdlog::details::log_msg("app", spdlog::level::info, "cache /home/jean/.cache/ajp/x.bin"));
+  ajp::set_log_home("");
+  REQUIRE(seen.size() == 1);
+  CHECK(seen.front() == "cache …/x.bin");
+}
+
+TEST_CASE("Journal : le fichier s'ouvre par son chemin et tourne en parts (B33-06)", "[log]") {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "ajp-log-file-test" / "données ユーザー";
+  fs::remove_all(dir.parent_path());
+  fs::create_directories(dir);
+  const fs::path file = dir / "ajp.log";
+  CHECK(ajp::log_part(file, 0) == file);
+  CHECK(ajp::log_part(file, 2) == dir / "ajp.2.log");
+  const auto sink = ajp::log_file_sink(file, 64, 2);
+  REQUIRE(sink != nullptr);
+  sink->set_pattern("%v");
+  const auto write = [&](const char* text) {
+    sink->log(spdlog::details::log_msg("app", spdlog::level::info, text));
+  };
+  write("premiere ligne de quarante caracteres..");
+  write("deuxieme ligne de quarante caracteres..");  // dépasse 64 : la première part passe en .1
+  write("troisieme ligne de quarante caracteres.");
+  write("quatrieme ligne de quarante caracteres.");
+  sink->flush();
+  const auto read = [](const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  };
+  CHECK(read(file).contains("quatrieme"));
+  CHECK(read(dir / "ajp.1.log").contains("troisieme"));
+  CHECK(read(dir / "ajp.2.log").contains("deuxieme"));
+  CHECK_FALSE(fs::exists(dir / "ajp.3.log"));  // la première, au-delà des deux parts, est partie
+  CHECK(ajp::log_file_sink(dir / "absent" / "ajp.log", 64, 2) == nullptr);
+  fs::remove_all(dir.parent_path());
 }
 
 TEST_CASE("Journal : une exception sortie du corps est journalisée et vaut 1", "[log]") {

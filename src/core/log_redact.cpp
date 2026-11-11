@@ -60,12 +60,21 @@ bool name_char(char c) {
          c == '-' || c == '~' || static_cast<unsigned char>(c) >= 0x80;
 }
 
-// Remplace form par to là où il finit à une frontière de composant (séparateur, fin, espace, ponctuation).
+// La forme finit à une frontière de composant : séparateur, fin, espace, ponctuation. Un point n'en est une
+// que s'il n'est pas suivi d'un caractère de nom (« /home/jean. » finit la phrase, « /home/jean.x » est un
+// autre dossier) (B20-02).
+bool ends_component(std::string_view text, std::size_t after) {
+  if (after == text.size()) return true;
+  if (text[after] == '.') return after + 1 == text.size() || !name_char(text[after + 1]);
+  return !name_char(text[after]);
+}
+
+// Remplace form par to là où il finit à une frontière de composant.
 void replace_all(std::string& text, std::string_view form, std::string_view to) {
   std::size_t at = 0;
   while (at + form.size() <= text.size()) {
     const std::size_t after = at + form.size();
-    if (same_at(text, at, form) && (after == text.size() || !name_char(text[after]))) {
+    if (same_at(text, at, form) && ends_component(text, after)) {
       text.replace(at, form.size(), to);
       at += to.size();
     } else {
@@ -93,12 +102,57 @@ std::string short_form(const std::string& dir) {
 }
 #endif
 
+bool is_separator(char c) {
+  return c == '/' || c == '\\';
+}
+
+// Ce qui peut précéder un chemin : le début, un blanc, ou une ponctuation d'ouverture ou de liaison.
+bool opens_path(char before) {
+  return before == ' ' || before == '\t' || before == '\n' || before == '"' || before == '\'' ||
+         before == '(' || before == '[' || before == '=' || before == ':' || before == ',' || before == '<';
+}
+
+// Le début d'un chemin absolu en text[at] : « X:\ », « X:/ », « \\ » (réseau), « / » suivi d'un nom, « ~/ ».
+bool path_starts(std::string_view text, std::size_t at) {
+  const char c = text[at];
+  const char next = at + 1 < text.size() ? text[at + 1] : '\0';
+  if (c == '/') return next != '\0' && next != ' ' && next != '/' && next != '\n';
+  if (c == '\\') return next == '\\';
+  if (c == '~') return is_separator(next);
+  if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+    return next == ':' && at + 2 < text.size() && is_separator(text[at + 2]);
+  return false;
+}
+
+// La fin du chemin qui commence en text[at] : un nom de dossier peut porter des espaces (« Données SSD »),
+// l'étendue court donc jusqu'à une fin de ligne, un guillemet, un séparateur du journal (« , », « : »,
+// « · », « ; »), la parenthèse qui ferme celle d'où le chemin sort, ou un autre chemin.
+std::size_t path_end(std::string_view text, std::size_t at) {
+  const char opener = at == 0 ? '\0' : text[at - 1];
+  std::size_t end = at;
+  while (end < text.size()) {
+    const char c = text[end];
+    if (c == '\n' || c == '"') break;
+    const std::string_view rest = text.substr(end);
+    if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
+        rest.starts_with("; "))
+      break;
+    if (opener == '(' && c == ')') break;
+    if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
+    ++end;
+  }
+  return end;
+}
+
 class RedactingSink final : public spdlog::sinks::sink {
  public:
   explicit RedactingSink(spdlog::sink_ptr inner) : inner_(std::move(inner)) {}
 
   void log(const spdlog::details::log_msg& msg) override {
-    const std::string text = redact_log_text(std::string_view(msg.payload.data(), msg.payload.size()));
+    // Aussi propre que le rapport de « Signaler un problème » (B39-05) : l'utilisateur joint ajp.log quand
+    // une boîte d'erreur le lui dit, sans passer par le bouton.
+    const std::string text =
+        reduce_log_paths(redact_log_text(std::string_view(msg.payload.data(), msg.payload.size())));
     spdlog::details::log_msg copy = msg;
     copy.payload = text;
     inner_->log(copy);
@@ -132,7 +186,11 @@ void set_log_home(std::string_view path) {
       std::ranges::replace(slashes, '\\', '/');
       std::string backslashes = base;
       std::ranges::replace(backslashes, '/', '\\');
+      // Les barres inverses doublées d'un chemin échappé (« C:\\Users\\jean ») (B20-02).
+      std::string doubled;
+      for (const char c : backslashes) doubled.append(c == '\\' ? 2 : 1, c);
       forms.push_back(std::move(slashes));
+      if (doubled != backslashes) forms.push_back(std::move(doubled));
       forms.push_back(std::move(backslashes));
     }
     // Les disques montés de l'utilisateur gardent son nom (A20-03).
@@ -151,6 +209,37 @@ std::string redact_log_text(std::string_view text) {
   for (const std::string& form : home().forms) replace_all(out, form, "~");
   for (const std::string& mount : home().mounts)
     replace_all(out, mount, mount.substr(0, mount.find_last_of('/') + 1) + "<user>");
+  return out;
+}
+
+std::string reduce_log_paths(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+  std::size_t at = 0;
+  while (at < text.size()) {
+    const bool line_start = at == 0 || text[at - 1] == '\n';
+    if (!(line_start || opens_path(text[at - 1])) || !path_starts(text, at)) {
+      out.push_back(text[at++]);
+      continue;
+    }
+    const std::size_t end = path_end(text, at);
+    std::size_t last = std::string_view::npos;
+    std::size_t separators = 0;
+    for (std::size_t i = at; i < end; ++i) {
+      if (is_separator(text[i])) {
+        last = i;
+        ++separators;
+      }
+    }
+    // « /s », « /x » : un seul séparateur, pas un dossier.
+    if (text[at] == '/' && separators < 2) {
+      out.push_back(text[at++]);
+      continue;
+    }
+    out += "…/";
+    out.append(text.substr(last + 1, end - last - 1));
+    at = end;
+  }
   return out;
 }
 

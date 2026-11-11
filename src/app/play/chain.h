@@ -97,7 +97,8 @@ struct Chain {
   std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
   bool calibrate = false;               // « Refaire le banc » : à faire avant de rouvrir
   std::vector<std::filesystem::path>* dropped_subtitles = nullptr;  // Player::dropped_subtitles
-  StageMemory* stages = nullptr;  // les étages refusés de la séance, oubliés par « Réessayer »
+  StageMemory* stages = nullptr;          // les étages refusés de la séance, oubliés par « Réessayer »
+  ManualTracks* manual_tracks = nullptr;  // les pistes choisies à la main, pour les vidéos suivantes (B29-11)
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
   std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
@@ -190,8 +191,8 @@ void log_summary(const Session& session);
 
 // Ce que la séance garde d'une chaîne à l'autre : les étages refusés (stages) et les sous-titres glissés
 // pendant la vidéo (dropped), rajoutés à la chaîne rouverte (A29-03) ; wanted : la piste choisie avant la
-// réouverture, reprise si c'est l'un d'eux.
+// réouverture, reprise si c'est l'un d'eux ; manual : les pistes choisies à la main de la séance (B29-11).
 void carry_session(Chain& to, StageMemory* stages, std::vector<std::filesystem::path>& dropped,
-                   std::optional<std::optional<int>> wanted);
+                   std::optional<std::optional<int>> wanted, ManualTracks* manual);
 
 }  // namespace ajp::app::play

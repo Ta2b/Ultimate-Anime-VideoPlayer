@@ -10,7 +10,8 @@
 //     la lecture est relevée par un crochet que l'application installe (SDL_SetCurrentThreadPriority, qui
 //     passe par rtkit quand le système l'a) ;
 //   - macOS : classes de qualité de service (interactive, utilitaire).
-// Jamais d'échec : un système qui refuse laisse le thread tel qu'il est.
+// Jamais d'échec : un système qui refuse laisse le thread tel qu'il est, et le dit une fois par rôle au
+// crochet que l'application installe (set_role_refusal_reporter), qui le journalise (B20-06).
 #pragma once
 
 namespace ajp {
@@ -28,8 +29,13 @@ using PriorityRaiser = bool (*)() noexcept;
 // Rend vrai si le système l'a accordée.
 bool set_thread_priority_raiser(PriorityRaiser raiser) noexcept;
 
-// Applique le rôle au thread appelant, pour toute sa vie.
-void set_thread_role(ThreadRole role) noexcept;
+// Le premier refus du système pour chaque rôle (MMCSS refusé, rtkit absent, nice refusé) : what dit lequel.
+// core_os n'a pas de journal : l'application installe ce crochet, qui y écrit.
+using RoleRefusalReporter = void (*)(ThreadRole role, const char* what) noexcept;
+void set_role_refusal_reporter(RoleRefusalReporter reporter) noexcept;
+
+// Applique le rôle au thread appelant, pour toute sa vie ; rend faux si le système l'a refusé.
+bool set_thread_role(ThreadRole role) noexcept;
 
 // Pose thread_namer (core/thread.h) : chaque start_thread donne ensuite son nom au système
 // (pthread_setname_np, 15 octets sous Linux ; SetThreadDescription sous Windows), pour Nsight, gdb et les

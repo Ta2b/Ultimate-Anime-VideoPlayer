@@ -221,6 +221,19 @@ media::TrackChoice Pipeline::choose(const PipelineConfig& config, const media::D
                           .title = prepare::utf8_path(externals[k].path.filename())});
   }
   media::TrackChoice choice = media::choose_tracks(candidates, config.languages);
+  // B29-11 : le choix à la main d'une vidéo d'avant passe devant les préréglages, s'il a son pareil ici.
+  if (config.manual.audio) {
+    if (auto alike = matching_track(candidates, media::TrackKind::Audio, *config.manual.audio, choice.audio))
+      choice.audio = alike;
+  }
+  if (config.manual.subtitles) {
+    if (!*config.manual.subtitles) {
+      choice.subtitle.reset();
+    } else if (auto alike = matching_track(candidates, media::TrackKind::Subtitle, **config.manual.subtitles,
+                                           choice.subtitle)) {
+      choice.subtitle = alike;
+    }
+  }
   const auto kind_of = [&](int index) {
     const media::TrackInfo* track = demuxer.track(index);
     return track != nullptr ? std::optional(track->kind) : std::nullopt;
@@ -305,9 +318,12 @@ std::expected<void, Refusal> Pipeline::open_subtitles(
     tracks_.push_back({.index = index,
                        .kind = media::TrackKind::Subtitle,
                        .codec = "externe",
+                       .language = external_[k].language,
                        .title = prepare::utf8_path(external_[k].path.filename())});
   }
-  if (!subtitle && !config.subtitle_track && !external_.empty() && !readable_subtitles(demuxer))
+  const bool cut_by_hand = config.manual.subtitles && !*config.manual.subtitles;
+  if (!subtitle && !config.subtitle_track && !cut_by_hand && !external_.empty() &&
+      !readable_subtitles(demuxer))
     subtitle = kExternalSubtitleBase;
   note_image_subtitles(demuxer, subtitle.has_value(), mail_);
   if (subtitle && !std::ranges::contains(menu_.subtitles, *subtitle, &TrackEntry::index)) {

@@ -1,6 +1,8 @@
 // Libellés et ordre des pistes que la barre de lecture propose.
 #include "app/play/tracks.h"
 
+#include <vector>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/i18n.h"
@@ -90,6 +92,34 @@ TEST_CASE("Les noms de langue et les libellés suivent la langue de l'interface"
   CHECK(track_label(track(4, TrackKind::Subtitle, "subrip", "eng", "")) == "Anglais (SRT)");
   i18n::set_language(i18n::Language::English);
   CHECK(language_name("jpn") == "Japanese");
+}
+
+// B29-11 : l'épisode 1 joué en audio japonais, sous-titres « Signs » ; l'épisode 2 n'a pas les mêmes numéros.
+TEST_CASE("Une piste choisie à la main se retrouve dans la vidéo suivante par sa langue", "[app][tracks]") {
+  using media::TrackKind;
+  const std::vector<media::TrackInfo> next{
+      track(1, TrackKind::Audio, "aac", "fre", "VF"),
+      track(2, TrackKind::Audio, "aac", "ja", "VO"),
+      track(3, TrackKind::Subtitle, "ass", "fre", "Full"),
+      track(4, TrackKind::Subtitle, "ass", "fra", "Signs"),
+      track(5, TrackKind::Subtitle, "ass", "eng", "Full"),
+  };
+  const auto audio = track_like(track(7, TrackKind::Audio, "flac", "jpn", "Japanese 2.0"));
+  REQUIRE(audio);
+  CHECK(matching_track(next, TrackKind::Audio, *audio, 1) == 2);  // le préréglage disait VF
+
+  const auto signs = track_like(track(9, TrackKind::Subtitle, "ass", "fre", "Signs"));
+  REQUIRE(signs);
+  CHECK(matching_track(next, TrackKind::Subtitle, *signs, 3) == 4);  // même titre d'abord
+  const TrackLike french{.language = "fre", .title = "Autre"};
+  CHECK(matching_track(next, TrackKind::Subtitle, french, 4) == 4);  // le choix des préréglages s'il convient
+  CHECK(matching_track(next, TrackKind::Subtitle, french, 5) == 3);  // sinon la première de la langue
+  const TrackLike german{.language = "ger", .title = ""};
+  CHECK_FALSE(matching_track(next, TrackKind::Subtitle, german, 3));  // aucune : les préréglages décident
+  CHECK_FALSE(matching_track(next, TrackKind::Audio, french, std::nullopt) == 3);  // jamais d'un autre type
+
+  CHECK_FALSE(track_like(track(2, TrackKind::Audio, "aac", "", "Stereo")));  // sans langue : rien à retrouver
+  CHECK_FALSE(track_like(track(2, TrackKind::Audio, "aac", "und", "")));
 }
 
 }  // namespace

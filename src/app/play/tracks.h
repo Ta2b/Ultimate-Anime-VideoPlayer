@@ -48,4 +48,26 @@ std::optional<int> next_subtitle(const TrackMenu& menu);
 // La piste audio suivante, en boucle (touche a) ; rien sans piste audio.
 std::optional<int> next_audio(const TrackMenu& menu);
 
+// Une piste choisie à la main, retenue par sa langue et son titre : l'épisode suivant n'a pas les mêmes
+// numéros de flux.
+struct TrackLike {
+  std::string language;  // balise du conteneur ; vide : la piste n'en dit rien
+  std::string title;
+};
+
+// Les pistes choisies à la main pendant la séance (B29-11) : elles valent pour les vidéos suivantes tant
+// qu'une piste de la même langue existe, avant les préréglages de langue. subtitles : rien = aucun choix ;
+// nullopt dedans = coupés (touche j ou menu), ce qui vaut pour toute vidéo.
+struct ManualTracks {
+  std::optional<TrackLike> audio;
+  std::optional<std::optional<TrackLike>> subtitles;
+};
+
+// Le choix retenu d'une piste ; rien si elle ne dit pas sa langue (rien à reconnaître ailleurs).
+std::optional<TrackLike> track_like(const media::TrackInfo& track);
+// Dans tracks, la piste de ce type qui ressemble à wanted : même langue et même titre, sinon fallback s'il
+// est de la même langue, sinon la première de la même langue ; rien si aucune n'a cette langue.
+std::optional<int> matching_track(std::span<const media::TrackInfo> tracks, media::TrackKind kind,
+                                  const TrackLike& wanted, std::optional<int> fallback);
+
 }  // namespace ajp::app::play
