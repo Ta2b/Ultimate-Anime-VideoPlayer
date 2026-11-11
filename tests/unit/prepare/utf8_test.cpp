@@ -63,7 +63,9 @@ TEST_CASE("ansi_safe_path : un chemin hors de la page ANSI prend son nom court (
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path existing = dir / "model.onnx";
-  { std::ofstream(existing) << "x"; }
+  {
+    std::ofstream(existing) << "x";
+  }
   const fs::path to_write = dir / "aji-v3-abc.engine";  // pas encore là : le nom reste, le dossier raccourcit
 #ifdef _WIN32
   // La page ANSI du SYSTÈME (celle de trtexec), pas celle du processus : le manifeste UTF-8 d'ajp met CP_ACP

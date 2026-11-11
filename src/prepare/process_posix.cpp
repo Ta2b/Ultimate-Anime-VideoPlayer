@@ -198,7 +198,7 @@ bool drain(int fd, LineSplitter& lines) {
   if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0) fail();
   if (::getppid() != parent) ::_exit(127);
   if (::setpgid(0, 0) != 0) fail();
-  struct sigaction fallback {};
+  struct sigaction fallback{};
   fallback.sa_handler = SIG_DFL;
   sigemptyset(&fallback.sa_mask);
   for (const int sig : kDefaultSignals) ::sigaction(sig, &fallback, nullptr);
