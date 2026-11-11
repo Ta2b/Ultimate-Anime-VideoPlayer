@@ -1,11 +1,14 @@
 name: Re-signer le manifeste
 
 # Le manifeste des mises à jour expire 120 jours après sa signature (sign-manifest.sh) : sans release dans ce délai,
-# tout le parc verrait une erreur (SEC-24). Chaque mois, celui de la « latest » est re-signé quand il lui reste moins
-# de 45 jours, avec les mêmes archives, revérifiées. À la main, il est re-signé sans condition.
+# tout le parc verrait une erreur (SEC-24). Chaque semaine, celui de la « latest » est re-signé quand il lui reste moins
+# de 45 jours (marge de six semaines, pas de quinze jours), avec les mêmes archives, revérifiées. À la main, il est
+# re-signé sans condition. Un échec ouvre une issue dans ce dépôt : personne ne lit un journal de planification
+# (B51-14). GitHub arrête les planifications d'un dépôt public sans activité pendant 60 jours : l'issue et le
+# manifeste qui expire sont alors le seul signal, et un commit sur main suffit à réarmer.
 on:
   schedule:
-    - cron: "17 6 1 * *"
+    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -68,3 +71,25 @@ jobs:
           dir="$RUNNER_TEMP/release"
           gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
           echo "manifeste de $TAG re-signé" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Un échec de la re-signature (jeton expiré, environnement refusé, release sans manifeste) ne reste pas dans un
+  # journal : une issue, une seule tant qu'elle est ouverte (B51-14).
+  alert:
+    needs: resign
+    if: ${{ failure() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Ouvrir une issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="La re-signature du manifeste des mises à jour a échoué"
+          open="$(gh issue list -R "$REPO" --state open --search "\"$title\" in:title" --json number -q length)"
+          if [ "${open:-0}" -gt 0 ]; then echo "une issue est déjà ouverte"; exit 0; fi
+          gh issue create -R "$REPO" --title "$title" --body "Le manifeste de la « latest » expire dans moins de 45 jours et sa re-signature a échoué : $RUN_URL
+
+          Sans manifeste valide, tous les lecteurs affichent une erreur de mise à jour. Relancer « Re-signer le manifeste » à la main une fois la cause levée (secret AJP_UPDATE_KEY, jeton AJP_RELEASE_TOKEN, environnement release)."

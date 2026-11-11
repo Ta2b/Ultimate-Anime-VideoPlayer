@@ -15,11 +15,15 @@ on:
       tag:
         type: string
         required: true
+    outputs:
+      archive-sha256:
+        description: "SHA-256 de ajp-macos-arm64.zip tel que cette construction l'a produit (B51-07)"
+        value: ${{ jobs.package.outputs.archive-sha256 }}
   push:
     branches: ["release/macos"]
 
 permissions:
-  contents: write
+  contents: read
   actions: read  # release-guard.yml lit les exécutions de ci.yml
 
 # Une seule construction par étiquette, commune à release.yml et au lancement à la main (A28-15). Une étiquette
@@ -42,6 +46,8 @@ jobs:
 
   package:
     name: AJP.app (Apple Silicon)
+    outputs:
+      archive-sha256: ${{ steps.sums.outputs.archive }}
     needs: [guard]
     runs-on: macos-15
     steps:
@@ -98,6 +104,10 @@ jobs:
           [ -z "$AJP_TAG" ] || export AJP_RELEASE_TAG="$AJP_TAG"
           tools/release/package-macos.sh "$RUNNER_TEMP/package"
           rm -f "$RUNNER_TEMP/notary.p8"
+      # Ce que « publier » retrouve dans la release avant de signer : le SHA-256 du zip tel que construit ici (B51-07).
+      - name: Empreinte de l'archive
+        id: sums
+        run: echo "archive=$(shasum -a 256 "$RUNNER_TEMP/package/ajp-macos-arm64.zip" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
       # spirv-val ne voit pas ce que seul Metal refuse : chaque shader passe par SPIRV-Cross et le
       # compilateur Metal, comme MoltenVK le fera à la création du pipeline.
       - name: Shaders en Metal
@@ -123,7 +133,7 @@ jobs:
       - name: Joindre à la release
         if: env.AJP_TAG != ''
         env:
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
           tools/release/attach-assets.sh "$AJP_TAG" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
             "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" "$RUNNER_TEMP/package/ajp-macos-arm64.dmg" \
