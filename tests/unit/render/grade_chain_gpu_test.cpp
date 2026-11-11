@@ -72,6 +72,31 @@ namespace ajp::render {
 using namespace gpu_test;
 using Catch::Approx;
 
+// B41-01 : le réglage « Blanc des surfaces » promet que les éclats montent toujours jusqu'au pic. Avant la
+// correction, sous lavapipe : 674 nits à 70 % et 485 à 50 %, contre 860 à 100 % (écran de 1 000 nits).
+TEST_CASE("chaîne HDR : baisser le blanc des surfaces garde les éclats", "[render][gpu][chain]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const Pile stack;
+  constexpr double kScreen = 1000.0;
+  set_player_output(gpu, stack, kScreen);
+  GradeParams params = player_params(kScreen);
+  params.fs_apl = 20.0;
+  const double full = graded(gpu, halo(), params)[128];
+  const double surface = graded(gpu, halo(), params)[20];
+  for (const double share : {0.9, 0.7, 0.5}) {
+    GradeParams p = params;
+    p.surface_white = share;
+    const auto line = graded(gpu, halo(), p);
+    INFO("blanc des surfaces " << share << " : émetteur " << line[128] << " nits (à 100 % : " << full
+                               << "), fond " << line[20] << " (" << surface << ")");
+    CHECK(line[128] >= 0.97 * full);
+    CHECK(line[20] <= surface);  // le fond, une surface, baisse ou reste
+  }
+  gpu.grade->set_kwin_match(std::nullopt);
+}
+
 TEST_CASE("chaîne HDR : blanc des surfaces vers 70 % du pic, gris moyen inchangé", "[render][gpu][chain]") {
   Gpu gpu;
   require_device(gpu);

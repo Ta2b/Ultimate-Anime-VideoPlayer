@@ -6,6 +6,7 @@
 #include <deque>
 #include <format>
 #include <set>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -200,8 +201,11 @@ void Demuxer::State::note_chapter_layout(std::string_view shown) {
     log->warn("{} : chapitres liés à d'autres fichiers non pris en charge, ils ne sont pas joués", shown);
 }
 
-std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path) {
+std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path, std::stop_token stop) {
   auto state = std::make_unique<State>();
+  // L'arrêt pose le drapeau que lit le rappel d'interruption de FFmpeg, pendant l'ouverture aussi ; déjà
+  // demandé, il est posé tout de suite et l'ouverture refuse dès sa première lecture.
+  const std::stop_callback cancel(std::move(stop), [flag = &state->interrupted] { flag->store(true); });
   const std::string where = utf8_path(path);
   const std::string shown = utf8_path(path.filename());  // le journal n'a que le nom du fichier (A39-03)
   AVFormatContext* raw = avformat_alloc_context();

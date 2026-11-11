@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -80,6 +81,76 @@ TEST_CASE("play.toml : une valeur inconnue d'une version récente reste, et ses 
   REQUIRE(last);
   CHECK(last->motion_engine == MotionEngine::DistilDrba);
   std::filesystem::remove(path);
+}
+
+// B22-02 : un play.toml qui ne se lit pas n'est ni pris pour absent ni remplacé par les défauts de la séance.
+TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite (B22-02)", "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable";
+  std::filesystem::remove_all(dir);
+  // Un dossier à la place du fichier : sous Linux il s'ouvre et se lit vide, un « absent » trompeur.
+  const std::filesystem::path path = dir / "play.toml";
+  std::filesystem::create_directories(path);
+  const auto loaded = load_settings(path);
+  REQUIRE_FALSE(loaded);
+  CHECK(loaded.error().code == RefusalCode::FileUnreadable);
+  PlaySettings changed;
+  changed.volume = 0.5F;
+  CHECK_FALSE(save_settings(path, changed));
+  CHECK(std::filesystem::is_directory(path));  // rien n'a été remplacé
+  std::filesystem::remove_all(dir);
+}
+
+// B22-04 : un TOML invalide, édité à la main pendant la lecture, est gardé en copie avant d'être remplacé.
+TEST_CASE("play.toml invalide : une copie est gardée avant la réécriture (B22-04)", "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-invalid-copy";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::filesystem::path path = dir / "play.toml";
+  const std::string broken = "version = 1\n[image\nwork_height = 540\n";
+  write_text(path, broken);
+  PlaySettings changed;
+  changed.volume = 0.5F;
+  REQUIRE(save_settings(path, changed));
+  int copies = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+    if (entry.path().filename().string().starts_with("play.toml.invalide-")) {
+      ++copies;
+      CHECK(read_text(entry.path()) == broken);
+    }
+  }
+  CHECK(copies == 1);
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->volume == 0.5F);
+  std::filesystem::remove_all(dir);
+}
+
+// B22-05 et B22-06 : une valeur fautive est écartée seule, et dite ; une langue fautive ne prend pas les
+// autres.
+TEST_CASE("play.toml : valeurs écartées dites, langues écartées une à une (B22-05, B22-06)",
+          "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-ignored";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::filesystem::path path = dir / "play.toml";
+  write_text(path,
+             "version = 1\n[image]\nwork_height = 5000\n[hdr]\npeak = 300\n"
+             "[languages]\naudio_1 = \"ja_JP\"\naudio_2 = \"fr_FR\"\nsubtitles_1 = \"fre\"\n");
+  std::vector<std::string> ignored;
+  const auto loaded = load_settings(path, &ignored);
+  REQUIRE(loaded);
+  CHECK(loaded->work_height == PlaySettings{}.work_height);
+  CHECK(loaded->true_hdr_peak == 0);
+  REQUIRE(loaded->language_presets.size() >= 2);
+  CHECK(loaded->language_presets[0].subtitles == "fre");  // les sous-titres valides restent
+  CHECK(loaded->language_presets[0].audio == PlaySettings{}.language_presets[0].audio);  // le défaut
+  CHECK(loaded->language_presets[1].audio == PlaySettings{}.language_presets[1].audio);
+  CHECK(ignored.size() == 4);
+  const std::string note = ignored_values_note(ignored);
+  CHECK(note.find("image.work_height") != std::string::npos);
+  CHECK(note.find("languages.audio_2") != std::string::npos);
+  CHECK(ignored_values_note({}).empty());
+  std::filesystem::remove_all(dir);
 }
 
 // A08-04 : un raccourci de séance (Ctrl+G, Ctrl+I, Ctrl+0) n'entre pas dans play.toml, quelle que soit la

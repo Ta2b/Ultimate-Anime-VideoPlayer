@@ -31,9 +31,15 @@ on:
       tag:
         type: string
         required: true
+    outputs:
+      archive-sha256:
+        description: "SHA-256 de ajp-windows-x64.zip tel que cette construction l'a produit (B51-07)"
+        value: ${{ jobs.package.outputs.archive-sha256 }}
 
+# Les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul : le jeton du dépôt des sources ne sert
+# qu'à lire, pour que vcpkg, MSVC et les actions tierces n'en reçoivent pas un qui écrit (B51-12).
 permissions:
-  contents: write
+  contents: read
   actions: read  # release-guard.yml lit les exécutions de ci.yml
 
 # Une seule construction par étiquette, commune à release.yml et au lancement à la main (A28-15).
@@ -87,6 +93,11 @@ jobs:
     needs: [trt-check]
     if: needs.trt-check.outputs.build == 'true'
     runs-on: windows-2025
+    # Un seul paquet TensorRT Windows à la fois, quelle que soit l'étiquette : deux étiquettes de même empreinte ne le
+    # construisent plus en même temps ; la seconde attend, puis voit le paquet de la première (B51-02).
+    concurrency:
+      group: trt-package-windows
+      cancel-in-progress: false
     env:
       AJP_VCPKG: C:\v
       AJP_VCPKG_BUILDTREES: C:\vb
@@ -100,16 +111,32 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      # Le contrôle du job trt-check date d'avant l'attente du verrou : le paquet a pu être publié entre-temps par une
+      # autre étiquette de même empreinte. Rien ne se reconstruit ni ne se réécrit alors (B51-02).
+      - name: Paquet publié depuis le contrôle ?
+        if: env.AJP_TAG != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "trt-win-$FP" -R "$AJP_RELEASE_REPO" --json assets -q '.assets[].name' 2>/dev/null \
+             | grep -qx engines-nvidia.lock; then
+            echo "SKIP=1" >>"$GITHUB_ENV"
+            echo "paquet TensorRT Windows trt-win-$FP déjà publié : rien à construire" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - id: runner-image
+        if: env.SKIP != '1'
         shell: pwsh
         run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: env.SKIP != '1'
         with:
           path: C:\vc
           key: vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-${{ hashFiles('vcpkg.json', 'ports/**') }}
           restore-keys: |
             vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-
       - name: vcpkg à la référence du manifeste
+        if: env.SKIP != '1'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
@@ -118,11 +145,15 @@ jobs:
           git -C $env:AJP_VCPKG checkout -q $baseline
           & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        if: env.SKIP != '1'
       - uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+        if: env.SKIP != '1'
       - name: CUDA et TensorRT
+        if: env.SKIP != '1'
         shell: pwsh
         run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
       - name: Paquet TensorRT
+        if: env.SKIP != '1'
         shell: pwsh
         env:
           IN_SPAN_FP8: ${{ inputs.span_fp8 }}
@@ -145,12 +176,13 @@ jobs:
       # Seulement l'archive du moteur (notre module et trtexec.exe) et son index : le contrôle
       # d'attach-nvidia-windows.ps1 refuse une archive qui contient un fichier de NVIDIA.
       - name: Publication dans trt-win-${{ env.FP }}
-        if: env.AJP_TAG != ''
+        if: env.SKIP != '1' && env.AJP_TAG != ''
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "trt-win-$env:FP" -Publish
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: env.SKIP != '1'
         continue-on-error: true
         with:
           retention-days: 7
@@ -164,6 +196,8 @@ jobs:
     needs: [trt-check, tensorrt]
     if: ${{ !cancelled() && needs.trt-check.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
     runs-on: windows-2025
+    outputs:
+      archive-sha256: ${{ steps.sums.outputs.archive }}
     env:
       # Chemins courts : les sources de spirv-tools dépassent sinon les 260 caractères de MSVC.
       AJP_VCPKG: C:\v
@@ -177,6 +211,13 @@ jobs:
       FP: ${{ needs.trt-check.outputs.fp }}
       AJP_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
     steps:
+      # Le jeton d'écriture manque : échouer ici, pas après une heure de construction (B51-12).
+      - name: Jeton de publication
+        if: env.AJP_TAG != ''
+        shell: bash
+        env:
+          RELEASE_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
+        run: '[ -n "$RELEASE_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication"; exit 1; }'
       # Le jeton du dépôt ne reste pas dans .git/config, où les ports vcpkg le liraient (A28-08).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -240,6 +281,11 @@ jobs:
           if ($env:AJP_TAG) { $env:AJP_RELEASE_TAG = $env:AJP_TAG }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
           if ($LASTEXITCODE -ne 0) { throw "paquet" }
+      # Ce que « publier » retrouve dans la release avant de signer : le SHA-256 du zip tel que construit ici (B51-07).
+      - name: Empreinte de l'archive
+        id: sums
+        shell: pwsh
+        run: '"archive=$((Get-FileHash "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT'
       # L'installeur (Inno Setup, installation pour l'utilisateur seul) à côté du zip portable.
       - name: Installeur
         shell: pwsh
@@ -252,7 +298,8 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AJP_AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AJP_AZURE_CLIENT_SECRET }}
         run: |
-          choco install innosetup -y --no-progress | Out-Null
+          # Version épinglée : un Inno Setup remplacé s'exécuterait chez chaque utilisateur (B51-13).
+          choco install innosetup --version=6.7.1 -y --no-progress | Out-Null
           $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)\r?$').Groups[1].Value
           if (-not $version) { throw "version introuvable dans CMakeLists.txt" }
           # Une préversion affiche sa version entière (0.11.0-rc.1), comme le binaire (A28-04).
@@ -264,6 +311,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "signature de l'installeur" }
           $setup = Get-Item "$out/ajp-windows-x64-setup.exe"
           Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"
+      # Le zip et l'installeur lancés tels que l'utilisateur les recevra (B51-04) : le zip extrait, l'installeur installé
+      # en silence, ajp.exe qui répond dans les deux, puis désinstallé. Un échec arrête tout avant la release.
+      - name: Fumée du paquet
+        shell: pwsh
+        run: |
+          pwsh tools/release/smoke-windows.ps1 "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" "$env:RUNNER_TEMP/package/ajp-windows-x64-setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw "fumée du paquet" }
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
       # arrête tout avant l'artefact et la release, préversions comprises (P1.15).
       - name: Tests sans GPU
@@ -300,7 +354,7 @@ jobs:
         if: env.AJP_TAG != ''
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
           shopt -s nullglob
           assets=("$RUNNER_TEMP"/package/ajp-*.zip "$RUNNER_TEMP"/package/ajp-*-setup.exe "$RUNNER_TEMP/package/SHA256SUMS-windows.txt")

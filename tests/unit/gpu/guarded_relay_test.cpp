@@ -53,3 +53,21 @@ TEST_CASE("GuardedKernelOps relaie chaque virtuelle de KernelOps (A21-04)", "[gp
   CHECK(virtuals.size() >= 27);
   CHECK(relayed == virtuals);
 }
+
+// B21-06 : de même pour Backend et GuardedBackend. derive_span_fp8 et enqueue_ring ont un corps par défaut ;
+// oubliée dans le mandataire, enqueue_ring retomberait sur enqueue puis write_ring, et contournerait en
+// silence l'épilogue du SPAN FP8.
+TEST_CASE("GuardedBackend relaie chaque virtuelle de Backend (B21-06)", "[gpu][guarded]") {
+  const std::string interface = between(read_source("backend.h"), "class Backend {", "\n};");
+  const std::string relay = between(read_source("guarded_backend.h"), "class GuardedBackend", "\n};");
+  REQUIRE_FALSE(interface.empty());
+  REQUIRE_FALSE(relay.empty());
+  std::set<std::string> virtuals = matches(interface, std::regex(R"(virtual\s+[^;{(~]*?\b(\w+)\s*\()"));
+  virtuals.erase("Backend");  // le destructeur
+  const std::set<std::string> relayed =
+      matches(relay, std::regex(R"(\b(\w+)\s*\([^()]*\)\s*(?:const\s*)?override)"));
+  CHECK(virtuals.size() >= 13);  // borne la lecture des en-têtes, comme au-dessus
+  CHECK(virtuals.contains("enqueue_ring"));
+  CHECK(virtuals.contains("derive_span_fp8"));
+  CHECK(relayed == virtuals);
+}

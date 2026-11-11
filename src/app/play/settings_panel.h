@@ -19,6 +19,7 @@
 #include "app/play/input.h"
 #include "app/play/precision.h"
 #include "app/play/settings.h"
+#include "app/play/settings_history.h"
 #include "app/play/settings_system.h"
 #include "core/engines.h"
 #include "media/track.h"
@@ -79,6 +80,10 @@ struct SettingsChoices {
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Calibrer cette machine »
+  // La tranche estimée d'après le nom de la carte (estimate_tier), sans bench.toml : celle dont une
+  // calibration prend ses modèles, quel que soit le bouton qui la lance (assistant, lecture, panneau,
+  // B07-10).
+  int estimated_tier = 2;
   int display_height = 0;  // hauteur de l'écran en pixels ; 0 : inconnue
   int display_width = 0;   // sa largeur ; 0 : inconnue (16:9 supposé)
   // Ce que la machine a mesuré, tel que le lecteur le passe à apply_preset à l'ouverture d'une vidéo
@@ -161,9 +166,7 @@ class SettingsPanel {
     open_ = true;
     draft_ = running;
     seen_ = running;
-    stable_ = running;
-    undo_.clear();
-    redo_.clear();
+    history_.reset(running);
     engine_draft_.reset();
     engines_folder_ = {};
   }
@@ -191,13 +194,13 @@ class SettingsPanel {
                    bool delay_held, bool sub_delay_held, Result& result);
 
   bool open_ = false;
-  PlaySettings draft_;  // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
-  PlaySettings seen_;   // running au tour précédent
-  // Annuler / rétablir : stable_ est le dernier état posé (aucun réglage en cours de glissement), undo_ et
-  // redo_ les états de part et d'autre.
-  PlaySettings stable_;
-  std::vector<PlaySettings> undo_;
-  std::vector<PlaySettings> redo_;
+  PlaySettings draft_;       // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
+  PlaySettings seen_;        // running au tour précédent
+  SettingsHistory history_;  // annuler / rétablir, sans ce que le lecteur change seul (settings_history.h)
+  PlaySettings before_;      // le brouillon au début de l'image (B23-09)
+  float wheel_ = 0.0F;       // la molette cumulée sur l'arbre (une page par geste, B23-10)
+  float wheel_idle_s_ = 0.0F;
+  bool wheel_locked_ = false;
   int page_ = 0;                         // la page de l'arbre affichée (settings_panel.cpp : kPages)
   std::array<bool, 8> category_open_{};  // les catégories ouvertes de l'arbre
   int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change

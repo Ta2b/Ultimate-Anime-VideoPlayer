@@ -6,7 +6,8 @@
 #
 #   --revoke  clé publique (64 chiffres hexadécimaux) écrite dans revoked_keys AVANT la signature : la clé
 #             volée ou perdue que les lecteurs ne doivent plus croire (docs/signature-des-releases.md).
-#   VERSION   0.5.0 (ou 0.5.0-preview.1)       CANAL   stable | preview
+#   VERSION   0.5.0 (ou 0.5.0-rc.1)             CANAL   stable (le canal Préversions est retiré : seule la valeur
+#                                               « stable » est écrite, le lecteur ne lit plus ce champ)
 #   DOSSIER   contient ajp-linux-x64.tar.gz, ajp-windows-x64.zip, ajp-macos-arm64.zip (ceux qui existent)
 #   URL-DE-BASE   https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0
 # Produit DOSSIER/manifest.toml et DOSSIER/manifest.toml.sig (Ed25519, hexadécimal), à joindre à la release.

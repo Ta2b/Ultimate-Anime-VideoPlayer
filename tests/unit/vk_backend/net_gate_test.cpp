@@ -47,11 +47,17 @@ TEST_CASE("Porte de bout en bout : les noyaux de référence n'ont aucun écart,
   }
   CHECK(require_value(vk::net::network_drift(*rig.context, *rig.memory, *rig.pipelines, graph, reference,
                                              reference, rig.target)) == 0.0);
-  // La dernière candidate de chaque couche (fp16 empaquetée, Winograd, autre tuile…) : juste, donc dans la
-  // porte, et gardée telle quelle.
+  // La dernière candidate de chaque couche à sommes float (Winograd, autre tuile…) : juste, donc dans la
+  // porte, et gardée telle quelle. Les variantes à précision réduite ne passent plus que sous 0,5 dB de perte
+  // (B45-01) : elles ont leur propre cas plus bas.
   std::vector<vk::net::KernelChoice> other;
-  for (std::size_t k = 0; k < graph.nodes.size(); ++k)
-    other.push_back(require_value(vk::net::candidates(graph, k, rig.target)).back());
+  for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
+    const auto options = require_value(vk::net::candidates(graph, k, rig.target));
+    const auto exact =
+        std::ranges::find_if(options.rbegin(), options.rend(),
+                             [](const vk::net::KernelChoice& c) { return !vk::net::low_precision(c); });
+    other.push_back(exact != options.rend() ? *exact : options.back());
+  }
   const double drift = require_value(
       vk::net::network_drift(*rig.context, *rig.memory, *rig.pipelines, graph, other, reference, rig.target));
   INFO("écart " << drift);
@@ -68,7 +74,13 @@ TEST_CASE("Porte de bout en bout : le verdict suit la perte sous les noyaux de r
   using vk::net::GateVerdict;
   // SPAN b5f48 sur lavapipe (docs/moteurs.md) : 81,6 dB aux noyaux de référence, 74,3 dB en sommes float16.
   CHECK(gate_verdict(81.6, 81.6, std::nullopt) == GateVerdict::Keep);
-  CHECK(gate_verdict(81.6, 78.7, std::nullopt) == GateVerdict::Keep);
+  CHECK(gate_verdict(81.6, 81.2, std::nullopt) == GateVerdict::Keep);
+  // La qualité d'abord (B45-01) : 2,9 dB de perte, que l'ancienne porte à 3 dB gardait, ne passent plus ; la
+  // précision pleine reprend la place si elle tient, sinon les noyaux de référence.
+  CHECK(gate_verdict(81.6, 78.7, std::nullopt) == GateVerdict::Reference);
+  CHECK(gate_verdict(81.6, 78.7, 81.4) == GateVerdict::FullPrecision);
+  CHECK(gate_verdict(81.6, 80.9, 81.4) == GateVerdict::FullPrecision);
+  CHECK(vk::net::kGateLossDb <= 0.5);
   CHECK(gate_verdict(81.6, 74.3, 81.2) == GateVerdict::FullPrecision);
   CHECK(gate_verdict(81.6, 74.3, 70.0) == GateVerdict::Reference);
   CHECK(gate_verdict(81.6, 74.3, std::nullopt) == GateVerdict::Reference);
@@ -124,4 +136,32 @@ TEST_CASE("Porte de bout en bout : le jumeau en float et la fidélité des noyau
         vk::net::network_fidelity(*rig.context, *rig.memory, *rig.pipelines, graph, kept, rig.target));
     CHECK(after.db[0] >= fidelity.db[0] - vk::net::kGateLossDb);
   }
+}
+
+TEST_CASE("Porte de bout en bout : une précision réduite gardée s'annonce avec sa perte et son gain",
+          "[vk_backend][net][gate]") {
+  using vk::net::KernelChoice;
+  using vk::net::ReducedChoice;
+  const std::vector<KernelChoice> choices{{.variant = "direct"}, {.variant = "coopmat_acc16"}};
+  vk::net::Gated gated{.choices = choices, .against_float = true, .db = 80.9, .floor_db = 81.6};
+  // Aucune couche à précision réduite : rien à dire.
+  CHECK(vk::net::reduced_precision_notice("m", std::vector<KernelChoice>{{.variant = "direct"}}, gated, {})
+            .empty());
+  // Gain mesuré : 100 µs en précision réduite contre 150 µs en sommes float, soit +50 %.
+  const std::vector<ReducedChoice> measured{
+      {.node = 1, .variant = "coopmat_acc16", .chosen_us = 100.0, .full_precision_us = 150.0}};
+  const std::string notice = vk::net::reduced_precision_notice("span", choices, gated, measured);
+  CHECK(notice.contains("précision réduite"));
+  CHECK(notice.contains("+50 %"));
+  CHECK(notice.contains("-0.70 dB"));
+  // Choix repris du cache : le gain n'est pas mesuré, et l'avis le dit.
+  const std::vector<ReducedChoice> cached{{.node = 1, .variant = "coopmat_acc16"}};
+  CHECK(vk::net::reduced_precision_notice("span", choices, gated, cached).contains("non mesuré"));
+  // Un relevé d'une autre variante au même nœud (reprise par la porte) ne chiffre rien.
+  const std::vector<ReducedChoice> stale{
+      {.node = 1, .variant = "direct_f16p", .chosen_us = 10.0, .full_precision_us = 100.0}};
+  CHECK(vk::net::reduced_precision_notice("span", choices, gated, stale).contains("non mesuré"));
+  // Porte jugée sans le jumeau en float : la perte n'est pas chiffrée, elle est dite non mesurée.
+  gated.against_float = false;
+  CHECK(vk::net::reduced_precision_notice("span", choices, gated, measured).contains("perte non mesurée"));
 }

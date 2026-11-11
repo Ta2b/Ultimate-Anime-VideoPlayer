@@ -13,9 +13,10 @@
 
 namespace ajp::gpu::span_fp8 {
 
-// Le graphe du SPAN Balanced HD V3.1 à 8 blocs de 64 canaux « unshuffle » : noms et formes des poids, les 25
-// tenseurs que les noyaux quantifient, le dégroupage 2×2 et DepthToSpace(4) du modèle. Refus
-// FormatUnsupported, avec le motif : un autre SPAN (le b5f48 à 48 canaux, par exemple) ne se prend pas.
+// Le graphe d'un SPAN « unshuffle » d'AnimeJaNai : noms et formes des poids, les 1 + 3·blocs tenseurs que les
+// noyaux quantifient, le dégroupage 2×2 et DepthToSpace(4) du modèle. Le b8f64 (8 blocs de 64 canaux) et le
+// b5f48 (5 blocs de 48 canaux réels, rangés en 64) se prennent ; un autre graphe est refusé
+// (FormatUnsupported), avec le motif.
 // Les échelles du paquet rendu valent 1 : à remplacer par celles de la calibration.
 std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model);
 

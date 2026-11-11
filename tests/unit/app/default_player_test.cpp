@@ -192,7 +192,9 @@ TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_pla
   // La question ne bloque jamais l'appelant (A19-04) : xdg-mime répond sur un fil à lui.
   const auto asked = std::chrono::steady_clock::now();
   static_cast<void>(is_default_player(PlayerPlace{}));
-  CHECK(std::chrono::steady_clock::now() - asked < std::chrono::milliseconds(200));
+  // Borne large (B40-08) : un appel bloquant attendrait xdg-mime, bien au-delà ; le lancement d'un fil sur
+  // une machine chargée peut, lui, prendre plus de 200 ms.
+  CHECK(std::chrono::steady_clock::now() - asked < std::chrono::seconds(1));
   CHECK(user_choice_is_ajp("AJP.Video"));
   CHECK_FALSE(user_choice_is_ajp("VLC.mkv"));
   CHECK_FALSE(user_choice_is_ajp(""));

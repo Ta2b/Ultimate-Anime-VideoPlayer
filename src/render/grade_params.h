@@ -137,6 +137,9 @@ struct GradeParams {
   // Le blanc des surfaces en part de celui que la pile porte sous la courbe (1 : la pile seule ; 0,5 à 1),
   // réglé par la dernière passe (output_tune).
   double surface_white = 1.0;
+  // Le pic d'avant le plafond des flashs dangereux (0 : celui de `peak`, rien n'est plafonné). Les
+  // métadonnées HDR annoncées le gardent (B41-03) : elles ne changent pas à chaque entrée ou sortie de flash.
+  double uncapped_peak = 0.0;
   // La luminance moyenne de la scène à l'écran (nits ; < 0 : inconnue), donnée par le lecteur.
   double fs_apl = -1.0;
   // La luminance moyenne de la série (la médiane des plans connus, nits ; < 0 : inconnue) : les noirs

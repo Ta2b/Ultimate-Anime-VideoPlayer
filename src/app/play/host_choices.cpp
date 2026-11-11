@@ -26,6 +26,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);
   choices.machine_tier = static_cast<int>(effective_tier(machine, measured));
+  choices.estimated_tier = static_cast<int>(estimate_tier(machine).tier);
   const bool explored = measured && measured_here(*measured, machine);
   choices.bench_text = explored ? i18n::tr_format("Last optimization: {}", measured->date) : std::string();
   // La machine que le lecteur passe à apply_preset à l'ouverture d'une vidéo (player.cpp), pour que « Auto »
@@ -43,18 +44,22 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   choices.gpu_name = machine.name;
   choices.gpus = screen.device_names();
   choices.nvidia = vendor_from_pci(screen.device_facts().pci_vendor) == GpuVendor::Nvidia;
+  choices.luts_dir = paths::luts(paths);
+  choices.switchable = installed_switchable(catalog, paths);
+  choices.engines_dir_default = prepare::utf8_path(paths::backends_install(paths));
+  choices.place = place_of(paths);
+  choices.settings_dir = settings_dir;
+  choices.bench_clip = paths::bench_clip(paths);
+  refresh_host_choices(choices, catalog);
+}
+
+void refresh_host_choices(SettingsChoices& choices, const EngineCatalog& catalog) {
   choices.audio_outputs.clear();
   for (const audio::AudioDevice& device : audio::playback_devices())
     choices.audio_outputs.push_back(
         {.name = device.name, .channels = device.channels, .is_default = device.is_default});
-  choices.luts_dir = paths::luts(paths);
-  choices.switchable = installed_switchable(catalog, paths);
-  choices.engines_dir_default = prepare::utf8_path(paths::backends_install(paths));
   choices.engines_dir_free = shown_size(free_bytes(catalog.layout.engines));
-  choices.place = place_of(paths);
   choices.default_player_is_ajp = is_default_player(choices.place);
-  choices.settings_dir = settings_dir;
-  choices.bench_clip = paths::bench_clip(paths);
 }
 
 }  // namespace ajp::app::play

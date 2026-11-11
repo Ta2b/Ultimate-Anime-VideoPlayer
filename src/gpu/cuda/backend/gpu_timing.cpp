@@ -1,6 +1,7 @@
 #include "gpu/cuda/backend/gpu_timing.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <utility>
 
@@ -26,7 +27,10 @@ GpuTiming::~GpuTiming() {
 
 void GpuTiming::begin(cudaStream_t stream) {
   collect();
-  if (begun_ != ended_ || begun_ - read_ >= kPairs) return;  // paire ouverte, ou toutes en vol : on saute
+  // Une paire restée ouverte (l'étape d'avant est sortie en erreur entre begin et end) est abandonnée : la
+  // refermer ici mesurerait du début de l'image précédente à la fin de celle-ci, une fausse pointe au profil.
+  if (begun_ != ended_) --begun_;
+  if (begun_ - read_ >= kPairs) return;  // toutes en vol : on saute
   cuda_warn(cudaEventRecord(start_[begun_ % kPairs], stream), "cudaEventRecord");
   open_stream_ = stream;
   ++begun_;
@@ -54,11 +58,12 @@ void GpuTiming::collect() {
     ++read_;
   }
   if (!report_ || samples_.size() < kReport) return;
+  std::erase_if(samples_, [](float ms) { return !std::isfinite(ms); });
   std::ranges::sort(samples_);
-  const float median = samples_[samples_.size() / 2];
-  const float p95 = samples_[samples_.size() * 95 / 100];
-  report_(std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, max {:.2f} ms sur {} images", label_, median,
-                      p95, samples_.back(), samples_.size()));
+  if (!samples_.empty()) {
+    report_(std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, max {:.2f} ms sur {} images", label_,
+                        sorted_median(samples_), sorted_p95(samples_), samples_.back(), samples_.size()));
+  }
   samples_.clear();
 }
 
@@ -67,12 +72,14 @@ namespace {
 std::string summary_of(const std::string& label, const core::SampleReservoir<float>& all) {
   if (all.empty()) return {};
   std::vector<float> sorted = all.kept();
+  std::erase_if(sorted, [](float ms) { return !std::isfinite(ms); });
+  if (sorted.empty()) return {};
   std::ranges::sort(sorted);
   const std::string kept =
       sorted.size() < all.seen() ? std::format(", centiles sur {} gardées", sorted.size()) : std::string();
   return std::format("{} : médiane {:.2f} ms, p95 {:.2f} ms, min {:.2f} ms, total {:.0f} ms ({} mesures{})",
-                     label, sorted[sorted.size() / 2], sorted[sorted.size() * 95 / 100], sorted.front(),
-                     all.total(), all.seen(), kept);
+                     label, sorted_median(sorted), sorted_p95(sorted), sorted.front(), all.total(),
+                     all.seen(), kept);
 }
 
 // Le résumé pour le .gpu.tsv : centiles de l'échantillon, nombre et total de toutes les mesures.

@@ -256,8 +256,10 @@ TEST_CASE("parité : warp et mélange à tout instant", "[parity][warp]") {
     CAPTURE(t);
     const auto got = ref::warp_blend_at(a, b, motion, t);
     REQUIRE(got);
+    // La loi de mélange du lecteur n'est plus celle du moteur (spec/warp.h, B50-01) : la même, passée.
     CHECK(same_bits(nchw(*got), oracle::warp_blend_mid(nchw(a), nchw(b), flow, motion.mask.data, w, h, 64, 32,
-                                                       area.x, area.y, area.width, area.height, t)));
+                                                       area.x, area.y, area.width, area.height, t, kBlendLawA,
+                                                       kBlendLawB, kBlendLawC)));
   }
   const auto middle = ref::warp_blend(a, b, motion);
   REQUIRE(middle);

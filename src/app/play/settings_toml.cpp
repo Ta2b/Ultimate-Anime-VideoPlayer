@@ -2,6 +2,7 @@
 // (format_settings, save_settings). Les valeurs lues passent par validate() (settings.cpp).
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <format>
@@ -10,16 +11,20 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "app/play/auto_config.h"
 #include "app/play/settings.h"
+#include "app/play/settings_refuse.h"
 #include "app/play/settings_toml_lenient.h"
 #include "core/log.h"
 #include "core/text_file.h"
@@ -32,16 +37,6 @@
 
 namespace ajp::app::play {
 namespace {
-
-constexpr std::int64_t kSettingsVersion = 1;
-
-// Le refus d'une clé du fichier (P2.11) : la clé, « audio.delay_ms », dans Refusal::key, que la lecture
-// tolérante écarte sans relire le texte ; le détail commence par elle.
-std::unexpected<Refusal> refuse_key(RefusalCode code, std::string key, std::string_view rest = {}) {
-  std::string detail = key;
-  detail += rest;
-  return std::unexpected(Refusal{.code = code, .detail = std::move(detail), .key = std::move(key)});
-}
 
 // Lit table[key] s'il existe, du type de out (entier, booléen, réel, texte) ; FieldType sinon.
 template <class T>
@@ -78,14 +73,21 @@ std::expected<void, Refusal> read(const toml::table& table, std::string_view sec
   return refuse_key(RefusalCode::FieldType, std::format("{}.{}", section, key));
 }
 
-// Un cran de précision (precision.h) : sa clé, ou FieldOutOfRange pour un autre texte.
-std::expected<void, Refusal> read_precision(const toml::table& table, std::string_view section,
-                                            std::string_view key, PrecisionTier& out) {
+// Un énuméré lu par son nom (name(valeur)) : la valeur du texte, ou FieldOutOfRange pour un autre. Les noms
+// retirés (retired) donnent retired_as sans plainte.
+template <class E>
+std::expected<void, Refusal> read_named(const toml::table& table, std::string_view section,
+                                        std::string_view key, E& out, int count,
+                                        std::span<const std::string_view> retired = {}, E retired_as = E{}) {
   std::string text(name(out));
   if (auto ok = read(table, section, key, text); !ok) return ok;
-  for (int i = 0; i < kPrecisionTierCount; ++i) {
-    if (name(static_cast<PrecisionTier>(i)) == text) {
-      out = static_cast<PrecisionTier>(i);
+  if (std::ranges::contains(retired, text)) {
+    out = retired_as;
+    return {};
+  }
+  for (int i = 0; i < count; ++i) {
+    if (name(static_cast<E>(i)) == text) {
+      out = static_cast<E>(i);
       return {};
     }
   }
@@ -196,19 +198,8 @@ void read_grade(const toml::table& grade, PlaySettings& s, std::vector<std::expe
   reads.push_back(read(grade, "grade", "anime_contrast", v.anime_contrast));
   reads.push_back(read(grade, "grade", "anime_saturation", v.anime_saturation));
   reads.push_back(read(grade, "grade", "anime_highlights", v.anime_highlights));
-  std::string oled(name(s.oled_black));
-  reads.push_back(read(grade, "grade", "oled_black", oled));
+  reads.push_back(read_named(grade, "grade", "oled_black", s.oled_black, kOledBlackCount));
   reads.push_back(read(grade, "grade", "oled_black_steps", s.oled_black_steps));
-  bool oled_known = false;
-  for (int i = 0; i < kOledBlackCount; ++i) {
-    if (name(static_cast<OledBlack>(i)) == oled) {
-      s.oled_black = static_cast<OledBlack>(i);
-      oled_known = true;
-    }
-  }
-  if (!oled_known)
-    reads.emplace_back(
-        refuse_key(RefusalCode::FieldOutOfRange, "grade.oled_black", std::format(" : « {} »", oled)));
   // Plus de préréglages : les valeurs du fichier font foi.
   // Écrits au centième (format_settings) : relus au centième, la réécriture rend les mêmes réglages.
   const auto hundredth = [](double& x) { x = std::round(x * 100.0) / 100.0; };
@@ -242,24 +233,12 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     }
   }
   if (const toml::table* image = section(root, "image")) {
-    std::string downscale(name(s.downscale));
     reads.push_back(read(*image, "image", "upscale", s.upscale));
     reads.push_back(read(*image, "image", "restore_lines", s.restore_lines));
     reads.push_back(read(*image, "image", "model", s.model));
     reads.push_back(read(*image, "image", "work_height", s.work_height));
-    reads.push_back(read(*image, "image", "downscale", downscale));
-    reads.push_back(read_precision(*image, "image", "span_precision", s.span_precision));
-    bool known = false;
-    for (int i = 0; i < kDownscaleCount; ++i) {
-      const auto filter = static_cast<Downscale>(i);
-      if (name(filter) == downscale) {
-        s.downscale = filter;
-        known = true;
-      }
-    }
-    if (!known)
-      reads.emplace_back(
-          refuse_key(RefusalCode::FieldOutOfRange, "image.downscale", std::format(" : « {} »", downscale)));
+    reads.push_back(read_named(*image, "image", "downscale", s.downscale, kDownscaleCount));
+    reads.push_back(read_named(*image, "image", "span_precision", s.span_precision, kPrecisionTierCount));
   }
   if (const toml::table* interpolation = section(root, "interpolation")) {
     reads.push_back(read_factor(*interpolation, s));
@@ -269,7 +248,8 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
     reads.push_back(read(*interpolation, "interpolation", "drba_fused", s.drba_fused));
     // gmfss_fused, gmfss_quality et gmfss_precision : GMFSS retiré (0.10.0), clés ignorées.
-    reads.push_back(read_precision(*interpolation, "interpolation", "motion_precision", s.motion_precision));
+    reads.push_back(read_named(*interpolation, "interpolation", "motion_precision", s.motion_precision,
+                               kPrecisionTierCount));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
     reads.push_back(read(*interpolation, "interpolation", "auto_cap", s.auto_cap));
     std::string auto_mode = s.auto_free ? "libre" : "recommande";
@@ -285,34 +265,12 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     bool legacy_after = false;
     reads.push_back(read(*interpolation, "interpolation", "warp_after_span", legacy_after));
     if (legacy_after) s.span_order = SpanOrder::After;
-    std::string order(name(s.span_order));
-    reads.push_back(read(*interpolation, "interpolation", "span_order", order));
-    bool order_known = false;
-    for (int i = 0; i < kSpanOrderCount; ++i) {
-      if (name(static_cast<SpanOrder>(i)) == order) {
-        s.span_order = static_cast<SpanOrder>(i);
-        order_known = true;
-      }
-    }
-    if (!order_known)
-      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interpolation.span_order",
-                                    std::format(" : « {} »", order)));
-    std::string engine(name(s.motion_engine));
-    reads.push_back(read(*interpolation, "interpolation", "engine", engine));
+    reads.push_back(read_named(*interpolation, "interpolation", "span_order", s.span_order, kSpanOrderCount));
     // Le flux optique matériel des RTX et GMFSS (P5.2, 0.10.0) ont été retirés : RIFE les remplace, sans
     // plainte.
     constexpr std::array<std::string_view, 3> kRetiredMotion{"optical_flow", "gmfss", "gmfss_union"};
-    bool engine_known = std::ranges::contains(kRetiredMotion, engine);
-    if (engine_known) s.motion_engine = MotionEngine::Rife;
-    for (int i = 0; i < kMotionEngineCount; ++i) {
-      if (name(static_cast<MotionEngine>(i)) == engine) {
-        s.motion_engine = static_cast<MotionEngine>(i);
-        engine_known = true;
-      }
-    }
-    if (!engine_known)
-      reads.emplace_back(
-          refuse_key(RefusalCode::FieldOutOfRange, "interpolation.engine", std::format(" : « {} »", engine)));
+    reads.push_back(read_named(*interpolation, "interpolation", "engine", s.motion_engine, kMotionEngineCount,
+                               kRetiredMotion, MotionEngine::Rife));
   }
   // Le pic visé par le grade HDR. Le mode HDR n'est plus un réglage (il suit le système) : hdr.engine et la
   // section rtx_hdr d'avant (RTX HDR retiré, sauf son pic) sont ignorés, comme les clés du HDR adaptatif.
@@ -411,106 +369,6 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
 
 }  // namespace
 
-std::string format_settings(const PlaySettings& s) {
-  toml::table root;
-  root.insert("version", kSettingsVersion);
-  root.insert("auto", toml::table{{"preset", std::string(key(s.preset))},
-                                  {"priority", std::string(key(s.priority))}});
-  root.insert("image", toml::table{{"upscale", s.upscale},
-                                   {"restore_lines", s.restore_lines},
-                                   {"model", s.model},
-                                   {"work_height", s.work_height},
-                                   {"downscale", std::string(name(s.downscale))},
-                                   {"span_precision", std::string(name(s.span_precision))}});
-  toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
-                            {"model", s.rife_model},
-                            {"keep_poses", s.keep_poses},
-                            {"rife_fused", s.rife_fused},
-                            {"drba_fused", s.drba_fused},
-                            {"motion_precision", std::string(name(s.motion_precision))},
-                            {"auto", s.rife_auto},
-                            {"auto_cap", s.auto_cap},
-                            {"auto_mode", std::string(s.auto_free ? "libre" : "recommande")},
-                            {"span_order", std::string(name(s.span_order))},
-                            {"smooth_motion", s.smooth_motion}};
-  if (s.rife_factor_den == 2) {
-    interpolation.insert("rife", static_cast<double>(s.rife_factor) / 2.0);
-  } else {
-    interpolation.insert("rife", s.rife_factor);
-  }
-  root.insert("interpolation", std::move(interpolation));
-  {
-    toml::table hdr{{"peak", s.true_hdr_peak}};
-    root.insert("hdr", std::move(hdr));
-  }
-  // Le volume au centième : 0.85 et non 0.8500000238418579.
-  {
-    toml::table audio{{"delay_ms", s.audio_delay_ms},
-                      {"volume", std::round(static_cast<double>(s.volume) * 100.0) / 100.0},
-                      {"device", s.audio_device}};
-    toml::table delays;
-    for (const auto& [device, ms] : s.audio_device_delays_ms) {
-      if (device != s.audio_device) delays.insert(device, ms);
-    }
-    if (!delays.empty()) audio.insert("delays", std::move(delays));
-    root.insert("audio", std::move(audio));
-  }
-  {
-    const media::LanguagePreset first =
-        !s.language_presets.empty() ? s.language_presets[0] : media::LanguagePreset{};
-    const media::LanguagePreset second =
-        s.language_presets.size() > 1 ? s.language_presets[1] : media::LanguagePreset{};
-    root.insert("languages", toml::table{{"audio_1", first.audio},
-                                         {"subtitles_1", first.subtitles},
-                                         {"audio_2", second.audio},
-                                         {"subtitles_2", second.subtitles}});
-  }
-  root.insert("sync", toml::table{{"display", s.display_sync}, {"video_latency_ms", s.video_latency_ms}});
-  root.insert("picture", toml::table{{"deband", s.deband},
-                                     {"scaler", std::string(name(s.final_scaler))},
-                                     {"sharpness", s.sharpness}});
-  root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
-  root.insert("interface", toml::table{{"language", s.language}});
-  if (!s.engines_dir.empty() || !s.gpu.empty()) {
-    toml::table engines;
-    if (!s.engines_dir.empty()) engines.insert("install_dir", s.engines_dir);
-    if (!s.gpu.empty()) engines.insert("gpu", s.gpu);
-    root.insert("engines", std::move(engines));
-  }
-  root.insert("updates", toml::table{{"mode", std::string(name(s.update_mode))},
-                                     {"frequency", std::string(name(s.update_frequency))}});
-  root.insert("subtitles",
-              toml::table{{"scale", std::round(static_cast<double>(s.subtitle_scale) * 100.0) / 100.0}});
-  // Les réglages du grade au centième, comme le menu les montre.
-  const auto hundredth = [](double v) { return std::round(v * 100.0) / 100.0; };
-  const render::GradeSettings& g = s.grade_values;
-  root.insert("grade", toml::table{{"enabled", s.grade},
-                                   {"shadows", hundredth(g.shadows)},
-                                   {"highlights_rtx", hundredth(g.highlights_rtx)},
-                                   {"area_rtx", hundredth(g.area_rtx)},
-                                   {"look_contrast", s.look_contrast},
-                                   {"look_highlight", s.look_highlight},
-                                   {"flash_guard", s.flash_guard},
-                                   {"surface_white", s.surface_white},
-                                   {"anime_contrast", g.anime_contrast},
-                                   {"anime_saturation", g.anime_saturation},
-                                   {"anime_highlights", g.anime_highlights},
-                                   {"oled_black", std::string(name(s.oled_black))},
-                                   {"oled_black_steps", hundredth(s.oled_black_steps)}});
-  root.insert("oled", toml::table{{"care", s.oled_care}, {"steady_cadence", s.steady_cadence}});
-  root.insert("stats", toml::table{{"all", s.stats.all},
-                                   {"chain", s.stats.chain},
-                                   {"frames", s.stats.frames},
-                                   {"rife", s.stats.rife},
-                                   {"tracks", s.stats.tracks},
-                                   {"output", s.stats.output},
-                                   {"position", s.stats.position},
-                                   {"memory", s.stats.memory}});
-  std::ostringstream out;
-  out << "# Réglages de « ajp play », écrits par le menu des paramètres.\n" << root << '\n';
-  return out.str();
-}
-
 std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view toml_text,
                                                             std::vector<std::string>* dropped) {
   toml::parse_result parsed = toml::parse(toml_text);
@@ -558,6 +416,7 @@ namespace {
 struct SeenSettings {
   std::mutex mutex;
   std::map<std::filesystem::path, toml::table> tables;
+  std::set<std::filesystem::path> unreadable;  // lus sans succès : jamais réécrits (B22-02)
 };
 
 SeenSettings& seen() {
@@ -579,18 +438,66 @@ std::optional<toml::table> remembered(const std::filesystem::path& path) {
   return found->second;
 }
 
+void set_unreadable(const std::filesystem::path& path, bool unreadable) {
+  SeenSettings& s = seen();
+  const std::scoped_lock lock(s.mutex);
+  if (unreadable)
+    s.unreadable.insert(path);
+  else
+    s.unreadable.erase(path);
+}
+
+bool is_unreadable(const std::filesystem::path& path) {
+  SeenSettings& s = seen();
+  const std::scoped_lock lock(s.mutex);
+  return s.unreadable.contains(path);
+}
+
+// Le texte du fichier, absent (nullopt) ou refusé. Un verrou passager (antivirus, indexeur sous Windows : le
+// fichier est ouvert sans partage de lecture) se réessaie quelques fois ; un fichier qui reste illisible est
+// refusé, jamais lu comme « absent » (B22-02).
+std::expected<std::optional<std::string>, Refusal> read_file(const std::filesystem::path& path) {
+  constexpr int kAttempts = 4;
+  constexpr auto kPause = std::chrono::milliseconds(120);
+  auto text = core::read_text_file_if_present(path);
+  for (int attempt = 1; !text && attempt < kAttempts; ++attempt) {
+    std::this_thread::sleep_for(kPause);
+    text = core::read_text_file_if_present(path);
+  }
+  return text;
+}
+
+// Un play.toml au TOML invalide va être remplacé : une copie le garde d'abord (« play.toml.invalide-AAAAMMJJ-
+// HHMMSS »), pour qu'une édition à la main faite en séance ne se perde pas (B22-04). Refusé sans copie.
+std::expected<void, Refusal> keep_invalid_copy(const std::filesystem::path& path) {
+  const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+  std::filesystem::path aside = path;
+  aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
+  std::error_code error;
+  std::filesystem::copy_file(path, aside, std::filesystem::copy_options::overwrite_existing, error);
+  if (error)
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : copie de l'ancien fichier impossible ({})",
+                                                           core::to_utf8(path), error.message()));
+  log_channel("app")->warn("{} invalide : copie gardée dans {}", core::to_utf8(path.filename()),
+                           core::to_utf8(aside.filename()));
+  return {};
+}
+
 }  // namespace
 
-std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path) {
-  std::error_code error;
-  if (!std::filesystem::exists(path, error)) return PlaySettings{};
-  std::ifstream file(path, std::ios::binary);
-  if (!file) return refuse(RefusalCode::FileUnreadable, core::to_utf8(path));
-  std::ostringstream text;
-  text << file.rdbuf();
+std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& path,
+                                                   std::vector<std::string>* ignored) {
+  auto read_text = read_file(path);
+  if (!read_text) {
+    // Réglages par défaut pour la séance, mais le fichier n'est pas à eux : save_settings ne l'écrase pas.
+    set_unreadable(path, true);
+    return std::unexpected(read_text.error());
+  }
+  if (!*read_text) return PlaySettings{};  // absent
+  const std::string& text = **read_text;
   std::vector<std::string> dropped;
-  auto settings = parse_settings_lenient(text.str(), &dropped);
-  if (const toml::parse_result parsed = toml::parse(text.str()); parsed) {
+  auto settings = parse_settings_lenient(text, &dropped);
+  if (const toml::parse_result parsed = toml::parse(text); parsed) {
     // La version lue (P2.22) : une plus récente garde ses clés à la réécriture, et se dit au journal.
     if (const auto version = parsed.table()["version"].value<std::int64_t>();
         version && *version > kSettingsVersion)
@@ -599,6 +506,7 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
   }
   for (const std::string& why : dropped)
     log_channel("app")->warn("{} : valeur écartée, défaut gardé ({})", core::to_utf8(path), why);
+  if (ignored != nullptr) *ignored = std::move(dropped);
   if (!settings)
     return std::unexpected(
         Refusal{.code = settings.error().code,
@@ -618,21 +526,24 @@ std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& 
 
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
+  // Un fichier qui ne s'est pas lu au lancement : la séance tourne sur les défauts, les écrire le
+  // remplacerait (B22-02).
+  if (is_unreadable(path))
+    return refuse(RefusalCode::FileUnwritable,
+                  std::format("{} : illisible au lancement, non réécrit", core::to_utf8(path)));
   std::string text = format_settings(settings);
   // Mis en forme et lu une seule fois : la fusion et la base de la suivante partent de la même table
   // (A22-16).
   toml::parse_result fresh = toml::parse(text);
-  // Les clés d'une version plus récente restent (P2.22) : revenir à celle-ci ne les efface plus.
-  std::ostringstream existing;
-  bool exists = false;
-  {
-    // Fermé avant l'écriture : sous Windows, un fichier ouvert ne se remplace pas (MoveFileEx refuse).
-    std::ifstream file(path, std::ios::binary);
-    exists = static_cast<bool>(file);
-    if (exists) existing << file.rdbuf();
-  }
-  if (exists) {
-    toml::parse_result old = toml::parse(existing.str());
+  // Les clés d'une version plus récente restent (P2.22) : revenir à celle-ci ne les efface plus. Un fichier
+  // qui existe sans se lire n'est pas écrasé : l'écriture est refusée, et reprise au tour suivant.
+  auto existing = read_file(path);
+  if (!existing) return std::unexpected(existing.error());
+  if (*existing) {
+    toml::parse_result old = toml::parse(**existing);
+    if (!old) {
+      if (auto copy = keep_invalid_copy(path); !copy) return copy;
+    }
     if (old && fresh) {
       toml::table merged = fresh.table();
       // Le fichier lu comme au chargement : une valeur qu'il ne connaît pas (version plus récente) est

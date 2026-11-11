@@ -575,6 +575,21 @@ bool Session::refresh_osd(std::int64_t host_now) {
   return changed;
 }
 
+// La présentation de ce tour : l'image courante, ses sous-titres, l'OSD et l'interface.
+ShowRequest Session::show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const {
+  const bool shown = ui.draw != nullptr;
+  return ShowRequest{
+      .frame = current_ ? &*current_ : nullptr,
+      .subtitles = subtitles,
+      .osd = osd_,
+      .ui = ui.draw,
+      .ui_serial = shown ? ui.serial : 0,
+      .ui_bottom = shown ? ui.bottom : 0,
+      .ui_top = shown ? ui.top : 0,
+      .redraws_expected = config_.steady_cadence || config_.vrr_floor_us > 0 || shown || !osd_.empty(),
+      .target_us = fresh_ ? target_host_us_ : 0};
+}
+
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
   if (auto lost = screen_.device_lost()) return std::unexpected(std::move(*lost));  // relance, pas de gel
   fresh_ = std::exchange(stepped_, false);
@@ -614,16 +629,7 @@ std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t 
     check_end(host_now);
     return std::optional<PresentRecord>{};
   }
-  const ShowRequest request{.frame = current_ ? &*current_ : nullptr,
-                            .subtitles = subtitles,
-                            .osd = osd_,
-                            .ui = ui.draw,
-                            .ui_bottom = ui.draw != nullptr ? ui.bottom : 0,
-                            .ui_top = ui.draw != nullptr ? ui.top : 0,
-                            .redraws_expected = config_.steady_cadence || config_.vrr_floor_us > 0 ||
-                                                ui.draw != nullptr || !osd_.empty(),
-                            .target_us = fresh_ ? target_host_us_ : 0};
-  auto timing = screen_.show(request);
+  auto timing = screen_.show(show_request(ui, subtitles));
   if (!timing) return std::unexpected(std::move(timing.error()));
 
   // Présentation refusée (fenêtre cachée, swapchain à refaire) : l'image n'est pas à l'écran, elle se

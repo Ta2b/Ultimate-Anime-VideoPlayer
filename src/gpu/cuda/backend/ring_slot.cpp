@@ -165,10 +165,15 @@ std::expected<void, Refusal> ImportedSlot::signal(std::uint64_t value, cudaStrea
   // Sous Windows (WDDM), CUDA garde les lancements dans un lot logiciel jusqu'au prochain appel qui force
   // l'envoi : le signal partirait avec l'image suivante, une image trop tard pour l'écran qui la jette.
   // L'interrogation du flux pousse le lot vers le GPU sans attendre ; sans effet sous Linux. Sa réponse
-  // (prêt ou pas encore) ne dit rien d'utile ici, seule une vraie erreur compte.
+  // (prêt ou pas encore) ne dit rien d'utile ici. Le signal est déjà enfilé : seule une erreur collante
+  // (contexte perdu) fait échouer l'écriture ; une erreur d'un autre appel restée en attente sur ce fil
+  // (une mesure du profil non relue) est effacée, l'image est bonne.
   const cudaError_t pushed = cudaStreamQuery(stream);
-  if (pushed == cudaErrorNotReady) return {};
-  return cuda_check(pushed, "cudaStreamQuery");
+  if (pushed == cudaSuccess || pushed == cudaErrorNotReady) return {};
+  if (sticky(pushed)) return cuda_check(pushed, "cudaStreamQuery");
+  if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+    return std::unexpected(lost_refusal(lost, "cudaStreamQuery"));
+  return {};
 }
 
 }  // namespace ajp::gpu::cuda

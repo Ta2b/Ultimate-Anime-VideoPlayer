@@ -143,6 +143,16 @@ TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré, en FP16 (A49-03
   Machine no_span = machine;
   no_span.calibrated->span = false;
   CHECK_FALSE(apply_preset(with(Preset::Auto), no_span, k1080p24).upscale);
+  // Sans SPAN, la source n'est pas réduite : la calibration l'a mesurée à sa taille (B07-01).
+  const PlaySettings rife_only = apply_preset(with(Preset::Auto), no_span, k1080p24);
+  CHECK(chain_work_size(rife_only, 1920, 1080) == WorkSize{1920, 1080});
+  Machine weak = no_span;
+  weak.tier = Tier::Economy;
+  CHECK(chain_work_size(apply_preset(with(Preset::Auto), weak, k1080p24), 1920, 1080) ==
+        WorkSize{1920, 1080});
+  weak.calibrated->rife = false;  // rien ne tient
+  CHECK(chain_work_size(apply_preset(with(Preset::Auto), weak, k1080p24), 1920, 1080) ==
+        WorkSize{1920, 1080});
   // Une carte estimée Économe que la calibration a vue tenir SPAN suit la mesure.
   Machine economy = machine;
   economy.tier = Tier::Economy;
@@ -309,4 +319,27 @@ TEST_CASE("un écran d'une autre fréquence rouvre la chaîne quand le multiplic
   CHECK_FALSE(display_moves_chain(
       Preset::Custom,
       {.opened_height = 1080, .opened_hz = 50.0, .source_fps = 30.0, .now_height = 1080, .now_hz = 144.0}));
+}
+
+TEST_CASE("l'Auto calibré suit la priorité Fluidité d'un palier plus bas (B07-09)", "[auto_config]") {
+  const CalibratedChain measured{.span = true, .rife = true, .height = 1080};
+  const Machine machine{
+      .tier = Tier::Ultra, .display_height = 1440, .display_hz = 144.0, .calibrated = measured};
+  CHECK(apply_preset(with(Preset::Auto, Priority::Balance), machine, k1080p24).work_height == 1080);
+  CHECK(apply_preset(with(Preset::Auto, Priority::Image), machine, k1080p24).work_height == 1080);
+  CHECK(apply_preset(with(Preset::Auto, Priority::Fluidity), machine, k1080p24).work_height == 900);
+  Machine lowest = machine;
+  lowest.calibrated->height = 480;
+  CHECK(apply_preset(with(Preset::Auto, Priority::Fluidity), lowest, k1080p24).work_height == 480);
+}
+
+TEST_CASE("un préréglage restaure les traits, comme la calibration les mesure (B07-08)", "[auto_config]") {
+  PlaySettings s = with(Preset::Normal);
+  s.restore_lines = false;
+  const PlaySettings out = apply_preset(s, Machine{Tier::Normal, 1080, 60.0}, k1080p24);
+  CHECK(out.restore_lines);
+  CHECK(span_runs(out, 1080));
+  PlaySettings moved = out;
+  moved.restore_lines = false;
+  CHECK(preset_chain_differs(out, moved));
 }

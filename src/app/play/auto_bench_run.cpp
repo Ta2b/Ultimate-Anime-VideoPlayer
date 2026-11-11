@@ -8,12 +8,10 @@
 
 #include "app/play/bench_events.h"
 #include "app/play/data_dirs.h"
-#include "app/play/engine_switch.h"
 #include "app/play/i18n.h"
 #include "app/play/paths.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
-#include "core/settings.h"
 #include "core/text.h"
 #include "media/bench_clip.h"
 #include "prepare/process.h"
@@ -82,17 +80,6 @@ std::vector<std::string> variant_child_args(const BenchPlan& plan, const Variant
 
 namespace {
 
-// TensorRT installé : les essais jouent SPAN et RIFE dessus, quel que soit le moteur choisi par
-// l'utilisateur. Hors NVIDIA, sa bibliothèque refuse la carte et Vulkan reste le recours (engine_switch.h).
-void prefer_tensorrt(const std::filesystem::path& file) {
-  auto engines = core::load_settings(file);
-  if (!engines || !std::ranges::contains(engines->installed_engines, core::EngineId::TensorRt)) return;
-  if (auto saved = core::save_settings(file, using_engine(*engines, core::EngineId::TensorRt)); !saved) {
-    const auto log = log_channel("app");
-    log->warn("bench : TensorRT non imposé ({})", saved.error().detail);
-  }
-}
-
 // Les réglages de l'essai n'ont pas pu se copier dans son dossier jetable (disque plein, fichier verrouillé)
 // : l'essai ne se joue pas, il aurait mesuré les réglages par défaut sous le nom de la chaîne demandée
 // (A07-10).
@@ -121,8 +108,9 @@ Trial play_one(const BenchPlan& plan, const std::optional<Tier>& level, const Va
   std::filesystem::create_directories(dir / "reglages", error);
   if (!plan.data.empty() && std::filesystem::exists(plan.data / "settings.toml", error)) {
     std::filesystem::copy_file(plan.data / "settings.toml", dir / "reglages" / "settings.toml", error);
+    // Le moteur choisi par l'utilisateur, celui auquel l'Auto compare la calibration (calibration_host) :
+    // imposer TensorRT quand il a choisi Vulkan rendrait une mesure que l'Auto ne suit jamais (B07-05).
     if (error) return unprepared(what, error);
-    prefer_tensorrt(dir / "reglages" / "settings.toml");
   } else {
     std::ofstream(dir / "reglages" / "settings.toml")
         << "version = 1\nfirst_run_done = true\nfirst_run_step = 8\n";
@@ -335,9 +323,9 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
 
   // L'exploration, une fois le niveau connu : la hauteur de travail au-dessus de celle du niveau tant que la
   // machine tient, puis le modèle RIFE au-dessus du modèle léger. Le multiplicateur reste au mode Auto, qui
-  // le règle en direct. Un essai qui ne rend rien ou ne tient pas arrête la piste. Elle ne construit pas de
-  // moteur : si les moteurs viennent d'être construits (le premier essai a été long), elle est remise à la
-  // prochaine optimisation, où ils sont en cache.
+  // le règle en direct. Un essai qui ne rend rien ou ne tient pas arrête la piste. Une hauteur nouvelle
+  // construit son moteur (explore_allowance) ; si ceux du niveau viennent d'être construits, elle attend la
+  // suivante.
   std::optional<BenchReading> base;
   for (std::size_t i = 0; i < readings.size(); ++i) {
     if (readings[i] && outcome.runs[i].level == outcome.result.level && holds(outcome.runs[i]))

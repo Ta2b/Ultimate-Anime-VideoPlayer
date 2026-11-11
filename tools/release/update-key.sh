@@ -93,6 +93,9 @@ if [ -n "${AJP_UPDATE_PUBKEY:-}" ]; then
 else
   known=("$(cmake_key AJP_UPDATE_PUBKEY)" "$(cmake_key AJP_UPDATE_PUBKEY_BACKUP)")
 fi
+# Une clé publique introuvable (CMakeLists.txt réécrit, variable vide) n'est pas « rien à comparer » : sans elle le
+# contrôle ne dit plus rien, la signature partirait avec n'importe quelle clé (B51-17).
+[ -n "${known[0]}" ] || { echo "::error::la clé publique du lecteur est illisible (AJP_UPDATE_PUBKEY, src/app/CMakeLists.txt) : contrôle impossible"; exit 1; }
 role=""
 for i in "${!known[@]}"; do
   if [ -n "${known[$i]}" ] && [ "$pub" = "${known[$i]}" ]; then

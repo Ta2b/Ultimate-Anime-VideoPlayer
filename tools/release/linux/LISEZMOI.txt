@@ -27,13 +27,19 @@ Modèles
 
 Lancer
   ./ajp play "épisode.mkv" --fullscreen
-  ./ajp play "épisode.mkv" --stats        coût par image, pour choisir un profil
-  Le premier lancement montre l'écran de bienvenue (moteurs et profil de départ). Le moteur
+  ./ajp play "épisode.mkv" --stats        coût par image, pour régler la chaîne
+  Le premier lancement montre l'écran de bienvenue (moteurs et réglages de départ). Le moteur
   Vulkan mesure chaque couche une fois au premier passage d'un modèle : les premières
   secondes sont plus lentes, ensuite c'est en cache.
 
+TensorRT (cartes NVIDIA RTX 20 et suivantes)
+  Plus rapide que Vulkan sur ces cartes : l'écran de bienvenue le propose, coché d'office, avec la licence de
+  NVIDIA affichée à côté. Il se télécharge au premier lancement, depuis NVIDIA elle-même : aucun fichier de NVIDIA
+  n'est dans cette archive. Sans RTX, ou sans le cocher, Vulkan sert, pour toute carte.
+
 GPU de 4 Go (RX 6500, RX 6500M, RX 6400)
-  Commencer par le profil 7 « Léger 1080p », puis essayer 720p si --stats laisse de la marge.
+  Choisir une chaîne légère dans le menu (touche p, page Vidéo : agrandissement modeste, 1080p),
+  puis monter si --stats laisse de la marge.
   Brancher l'écran sur la carte graphique. Avec un iGPU Intel activé, la vidéo est décodée
   par lui (VA-API), ce qui laisse la carte graphique à SPAN et RIFE.
 

@@ -11,9 +11,6 @@ constexpr int kBlock = 16;
 constexpr int kTile = 16;      // bloc des dessins tenus (kernels::kHeldBlock)
 constexpr int kTileRows = 16;  // fils par colonne du bloc : 16 × 16 fils, une ligne chacun
 static_assert(kBlock * kBlock == kPixelThreads && kTile * kTileRows == kPixelThreads);
-constexpr float kRed = 0.2126F;
-constexpr float kGreen = 0.7152F;
-constexpr float kBlue = 0.0722F;
 
 dim3 grid_for(int width, int height) {
   return dim3(static_cast<unsigned>((width + kBlock - 1) / kBlock),
@@ -73,10 +70,10 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_crop(Ri
     out[static_cast<std::size_t>(c) * out_plane + to] = in[static_cast<std::size_t>(c) * in_plane + from];
 }
 
-// Luma du pixel pointé dans le plan R de trois plans RGB consécutifs.
-__device__ float luma(const __half* red, std::size_t plane) {
-  return kRed * __half2float(red[0]) + kGreen * __half2float(red[plane]) +
-         kBlue * __half2float(red[2 * plane]);
+// Luma du pixel pointé dans le plan R de trois plans RGB consécutifs, aux coefficients de la source.
+__device__ float luma(const __half* red, std::size_t plane, float kr, float kb) {
+  return kr * __half2float(red[0]) + (1.0F - kr - kb) * __half2float(red[plane]) +
+         kb * __half2float(red[2 * plane]);
 }
 
 // Un bloc CUDA par bloc de 16 × 16 pixels, tronqué aux bords.
@@ -97,7 +94,7 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) pair_diff(Pa
     const __half* pa = a + start;
     const __half* pb = b + start;
     for (int y = first; y < last; y += kTileRows) {
-      sum += fabsf(luma(pa, plane) - luma(pb, plane));
+      sum += fabsf(luma(pa, plane, p.kr, p.kb) - luma(pb, plane, p.kr, p.kb));
       pa += step;
       pb += step;
     }

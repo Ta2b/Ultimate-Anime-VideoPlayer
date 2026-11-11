@@ -88,6 +88,59 @@ TEST_CASE("sortie HDR : le curseur Blanc des surfaces baisse le blanc, 100 % gar
   CHECK(output_tune(bare, {}, 203.0, 1000.0).curve_peak == Approx(identity_curve_peak(203.0)));
 }
 
+// B10-03 : sous Reinhard seul, la courbe ne descendait plus ; tous les crans du curseur rendaient le même
+// blanc (61 % à 60 et 50 % sur 400 nits, 82 % de 80 à 50 % sous un blanc SDR de KDE à 300 nits).
+TEST_CASE("Blanc des surfaces : chaque cran baisse le blanc, aussi sous KDE (blanc SDR 300 nits)",
+          "[render][tune]") {
+  const gpu_test::Pile stack;
+  for (const double reference : {203.0, 300.0}) {
+    for (const double peak : {400.0, 600.0}) {
+      GradeParams p = gpu_test::player_params(peak);
+      const double full = output_tune(p, stack.luts, reference, peak).white;
+      double before = full;
+      for (const double share : {0.9, 0.8, 0.7, 0.6, 0.5}) {
+        p.surface_white = share;
+        const OutputTune tune = output_tune(p, stack.luts, reference, peak);
+        CAPTURE(reference, peak, share, tune.white, before, tune.curve_gain);
+        CHECK(tune.white < before - 1.0);  // un cran qui ne change rien est une promesse non tenue
+        CHECK(tune.white == Approx(share * full).epsilon(0.02));
+        CHECK(tune.curve_gain <= 1.0);
+        CHECK(tune.full_peak == Approx(peak));  // les éclats partent toujours de la courbe à 100 %
+        before = tune.white;
+      }
+    }
+  }
+}
+
+// B41-01 : « Blanc des surfaces » sous 100 % baissait aussi les émetteurs (699 nits au lieu de 889 sur un
+// écran de 1 000 nits à 70 %), contre la promesse de l'infobulle. Un émetteur franc garde son niveau.
+TEST_CASE("Blanc des surfaces : un émetteur garde son niveau, sans marche à la porte des émetteurs",
+          "[render][tune]") {
+  const gpu_test::Pile stack;
+  constexpr double kSpecGain = 1.444;  // un blanc à Éclats 100 %
+  for (const double peak : {400.0, 1000.0}) {
+    GradeParams p = gpu_test::player_params(peak);
+    const OutputTune full = output_tune(p, stack.luts, 203.0, peak);
+    const double surface_full = full.white;
+    const double emitter_full = emitter_over_surface(surface_full, surface_full, kSpecGain, full.top);
+    for (const double share : {0.9, 0.7, 0.5}) {
+      p.surface_white = share;
+      const OutputTune lower = output_tune(p, stack.luts, 203.0, peak);
+      // La surface sous la courbe baissée, et sous la courbe à 100 % (full_peak, celle de full).
+      CHECK(lower.full_peak == Approx(full.curve_peak));
+      const double m = lower.white;
+      const double m_full = surface_full;
+      const double emitter = emitter_over_surface(m, m_full, kSpecGain, lower.top);
+      CAPTURE(peak, share, m, m_full, emitter, emitter_full);
+      CHECK(m < surface_full);
+      CHECK(emitter >= 0.97 * emitter_full);
+      // Sans montée, l'émetteur suit les surfaces ; une montée infime ne fait pas de marche.
+      CHECK(emitter_over_surface(m, m_full, 1.0, lower.top) == Approx(m));
+      CHECK(emitter_over_surface(m, m_full, 1.0001, lower.top) == Approx(m).epsilon(0.01));
+    }
+  }
+}
+
 TEST_CASE("éclats après la pile : le gain entier sous le genou, une épaule douce sous le pic de l'écran",
           "[render][tune]") {
   for (const double top : {400.0, 1000.0}) {

@@ -52,6 +52,10 @@ std::expected<void, Refusal> expect_rank(const Node& node, const Dims& dims, std
 
 // Pas en éléments de chaque axe, en ordre ligne.
 std::vector<std::size_t> row_strides(const Dims& dims);
+// Position linéaire de (a, b, c, e) dans une forme de rang 4.
+inline std::size_t at4(const Dims& d, std::int64_t a, std::int64_t b, std::int64_t c, std::int64_t e) {
+  return static_cast<std::size_t>((((((a * d[1]) + b) * d[2]) + c) * d[3]) + e);
+}
 
 Value make_output(const OutputInfo& info);
 

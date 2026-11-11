@@ -20,11 +20,25 @@ celle de `project()` dans `CMakeLists.txt`. Aucune étiquette ne se pose sans la
    - Linux et Windows construisent d'abord leur **paquet TensorRT** s'il manque pour l'empreinte de ses entrées
      (`tools/release/trt-fingerprint.sh`, `--windows`), et le publient dans la release fixe `trt-<empreinte>` ou
      `trt-win-<empreinte>`. Une release finale sans paquet TensorRT Linux ou Windows échoue ;
+   - un paquet TensorRT publié est **immuable** : `attach-nvidia-*` refuse de réécrire une release `trt-*` qui a déjà
+     son index (le SHA-256 du paquet est dans l'index signé des releases), et un seul paquet de chaque système se
+     construit à la fois (`concurrency`) ; la liste blanche de `check-engine-archive.sh` n'admet dans l'archive que
+     notre module et `trtexec` ;
+   - avant de joindre quoi que ce soit, chacune **lance son paquet** tel que l'utilisateur le recevra
+     (`smoke-linux.sh` : bibliothèques trouvées, `--help`, clip joué en Vulkan logiciel jusqu'à un instantané, AppImage ;
+     `smoke-windows.ps1` : zip et installeur, `--help`, désinstallation) ; un échec arrête la release ;
    - chacune joint ses archives à la release de l'étiquette, qui reste une **préversion** pendant ce temps
-     (`tools/release/attach-assets.sh`).
+     (`tools/release/attach-assets.sh`), et sort le SHA-256 de son archive comme sortie de job.
 3. **Publier** (job final de `release.yml`, environnement `release`) :
-   - `tools/release/check-release.sh` vérifie que les trois archives sont là et que les index de Linux et de Windows
-     nomment TensorRT ;
+   - `tools/release/check-built-sums.sh` compare les archives téléchargées aux SHA-256 sortis des jobs de
+     construction : on ne signe que ce qui a été construit ;
+   - `tools/release/check-release.sh` vérifie que les archives de Linux et de Windows sont là (celle de macOS, hors
+     cible, est facultative : son échec ne bloque pas la publication), que les index de Linux et de Windows nomment
+     TensorRT avec ses `[[vendor_file]]`, et que l'archive de chaque moteur existe avec la taille et le SHA-256 de
+     l'index ;
+   - l'index signé `engines-nvidia.lock` est écrit d'après les `engines.lock` embarqués dans les paquets (jamais un
+     index déjà joint à l'étiquette), porte `tag = "<étiquette>"`, et `tools/release/check-nvidia-index.sh` prouve
+     qu'il nomme les mêmes paquets TensorRT que ceux-ci ;
    - pour une release finale, `tools/release/sign-manifest.sh` écrit et signe `manifest.toml` (canal `stable`),
      `tools/release/verify-download.sh` le revérifie contre chaque archive, et les deux fichiers sont joints ;
    - la release devient finale et « latest », sauf si une release plus récente l'est déjà (relance sur une ancienne
@@ -32,6 +46,10 @@ celle de `project()` dans `CMakeLists.txt`. Aucune étiquette ne se pose sans la
 
 Relancer une étiquette : Actions > Release > Run workflow, avec l'étiquette. Une plateforme seule se relance aussi à
 la main (son workflow, avec l'étiquette) tant que la release est une préversion ; puis relancer Release pour publier.
+
+Gardes à part : `vendor-watch.yml` (chaque semaine) relit la roue de NVIDIA que chaque index `nvidia-vendor` décrit
+(`tools/release/check-vendor.py`) ; `resign-manifest.yml` (chaque semaine) re-signe le manifeste de la « latest » quand
+il lui reste moins de 45 jours. Un échec de l'un ou l'autre ouvre une issue dans ce dépôt.
 
 ## Réglages du dépôt, une fois
 
@@ -103,6 +121,13 @@ révocation), puis préparer la release suivante avec une nouvelle active et une
 
 Tant que `AJP_UPDATE_PUBKEY_BACKUP` est vide, aucun lecteur livré ne connaît de clé de secours et cette procédure
 ne protège personne : la créer avant la prochaine release.
+
+Une clé ne révoque que celles qui la précèdent dans la liste « active, secours » (B26-02) : un manifeste signé par
+l'active qui révoquerait la clé de secours est cru pour le reste, mais cette révocation-là est ignorée ; une clé qui se
+révoque elle-même est refusée. Sans cela, qui tiendrait l'active pourrait neutraliser le secours. Le manifeste ne sert
+que de ce qu'il porte (`version`, `expires`, `notes_url`, `revoked_keys`) : ses sections d'archive sont ignorées par le
+lecteur. L'index des moteurs de la release (`engines-nvidia.lock`) porte `tag = "v<version>"` et n'est cru que dans la
+release de cette étiquette (B51-06) ; `tools/release/nvidia-index.sh` l'écrit avant la signature.
 
 ## Pas de canal Préversions
 
