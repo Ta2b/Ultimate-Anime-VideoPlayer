@@ -565,8 +565,21 @@ bool Session::refresh_osd(std::int64_t host_now) {
   return changed;
 }
 
+std::optional<Refusal> Session::stalled(std::int64_t host_now) {
+  if (auto lost = screen_.device_lost()) return lost;
+  const RingFrame* head = queue_.first_of(epoch_);
+  const bool waiting = head != nullptr && !screen_.ready(*head);
+  const std::uint64_t mark = head == nullptr ? 0
+                                             : (std::uint64_t{head->slot} << 32U) ^ head->ready_value ^
+                                                   static_cast<std::uint64_t>(head->pts_us);
+  if (!hang_.hung(waiting, mark, host_now)) return std::nullopt;
+  return Refusal{RefusalCode::DeviceLost,
+                 std::format("GPU bloqué : l'image du slot {} attend son écriture depuis plus de {} s",
+                             head->slot, kHangUs / 1'000'000)};
+}
+
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
-  if (auto lost = screen_.device_lost()) return std::unexpected(std::move(*lost));  // relance, pas de gel
+  if (auto stuck = stalled(host_now)) return std::unexpected(std::move(*stuck));  // relance, pas de gel
   fresh_ = std::exchange(stepped_, false);
   last_tick_us_ = host_now;
   retry_pending(host_now);

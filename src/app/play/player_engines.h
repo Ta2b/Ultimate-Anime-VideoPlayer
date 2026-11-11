@@ -13,6 +13,7 @@
 #include <string>
 
 #include "app/play/backend_library.h"
+#include "app/play/build_backend.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_shots.h"
@@ -114,6 +115,8 @@ struct Player {
   // Où en était la dernière ouverture de la chaîne quand elle s'est fermée : la relance après une perte du
   // GPU reprend là (A31-02).
   std::int64_t stopped_at_us = 0;
+  // L'instance de construction de la préparation en cours (build_backend.h) ; nulle hors d'elle.
+  std::shared_ptr<BuildBackend> builder;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.
@@ -122,6 +125,8 @@ gpu::BackendLog backend_log();
 // Une image de la superposition avant une étape bloquante (chargement d'un moteur) : la
 // fenêtre dit ce qu'elle attend au lieu de rester noire.
 void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label);
+// Détruit l'instance de construction de la préparation (Player::builder) sur un thread, la fenêtre pompée.
+void release_builder(Player& p);
 
 // Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
 // l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont

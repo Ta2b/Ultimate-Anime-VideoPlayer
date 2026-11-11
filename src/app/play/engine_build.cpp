@@ -1,10 +1,14 @@
 #include "app/play/engine_build.h"
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <format>
+#include <thread>
 #include <utility>
 
 #include "app/play/bench_events.h"
+#include "app/play/pumped_task.h"
 #include "core/file_sync.h"
 #include "core/thread.h"
 
@@ -26,6 +30,7 @@ std::expected<gpu::Artifact, Refusal> with_space_reason(std::expected<gpu::Artif
 
 std::expected<std::unique_ptr<EngineBuild>, Refusal> EngineBuild::start(EngineRequest request) {
   std::unique_ptr<EngineBuild> build(new EngineBuild());
+  build->pump_on_close_ = request.pump_on_close;
   EngineBuild* self = build.get();
   auto thread = start_thread(
       "preparer", ThreadReport([self](const Refusal& refusal) {
@@ -42,19 +47,25 @@ std::expected<std::unique_ptr<EngineBuild>, Refusal> EngineBuild::start(EngineRe
 
 EngineBuild::~EngineBuild() {
   thread_.request_stop();
+  if (pump_on_close_ && thread_.joinable()) {
+    constexpr auto kSlice = std::chrono::milliseconds(16);
+    while (!done_.load()) {
+      pump_window_events();
+      std::this_thread::sleep_for(kSlice);
+    }
+  }
   if (thread_.joinable()) thread_.join();
 }
 
 void EngineBuild::run(const std::stop_token& stop, const EngineRequest& request) {
+  struct Done {
+    std::atomic<bool>& done;
+    ~Done() { done = true; }  // après la destruction de l'instance locale
+  } const mark{done_};
   auto finish = [this](std::expected<gpu::Artifact, Refusal> outcome) {
     const std::scoped_lock lock(mutex_);
     result_ = std::move(outcome);
   };
-  auto backend = BackendLibrary::create(request.library, request.init);
-  if (!backend) {
-    finish(std::unexpected(std::move(backend.error())));
-    return;
-  }
   gpu::Progress progress{.report =
                              [this](float fraction, const std::string& stage) {
                                // Une vraie construction avance entre 0 et 1 ; un moteur en cache rend 1 seul.
@@ -65,6 +76,16 @@ void EngineBuild::run(const std::stop_token& stop, const EngineRequest& request)
                                stage_ = stage;
                              },
                          .stop = stop};
+  if (request.builder) {
+    finish(with_space_reason(request.builder->build(request.model, request.shapes, progress),
+                             request.init.cache_dir));
+    return;
+  }
+  auto backend = BackendLibrary::create(request.library, request.init);
+  if (!backend) {
+    finish(std::unexpected(std::move(backend.error())));
+    return;
+  }
   finish(
       with_space_reason((*backend)->build(request.model, request.shapes, progress), request.init.cache_dir));
 }

@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/hang_watch.h"
 #include "app/play/session.h"
 #include "doubles.h"
 #include "french_ui.h"
@@ -100,6 +101,51 @@ TEST_CASE("Un écran sans appareil arrête la session sur DeviceLost", "[app][se
   auto record = rig.session.tick(0);
   REQUIRE_FALSE(record);
   CHECK(record.error().code == RefusalCode::DeviceLost);
+}
+
+// A31-14 : un GPU bloqué sans être perdu n'écrit plus l'image attendue ; au-delà de kHangUs, la session
+// s'arrête sur DeviceLost (relance) au lieu de figer l'image. Une image qui arrive, ou une veille, ne l'est
+// pas.
+TEST_CASE("Un GPU qui n'écrit plus l'image attendue arrête la session sur DeviceLost", "[app][session]") {
+  Rig rig;
+  rig.screen.unwritten = {0};
+  rig.session.handle(test::ring_frame(0, 40'000));
+  std::int64_t now = 1'000'000;
+  for (; now <= 1'000'000 + kHangUs; now += 16'000) REQUIRE(rig.session.tick(now));
+  auto record = rig.session.tick(now + 16'000);
+  REQUIRE_FALSE(record);
+  CHECK(record.error().code == RefusalCode::DeviceLost);
+  CHECK(record.error().detail.find("GPU bloqué") != std::string::npos);
+}
+
+TEST_CASE("Une image écrite à temps, ou une veille au milieu, n'est pas un GPU bloqué", "[app][session]") {
+  Rig rig;
+  rig.screen.unwritten = {0};
+  rig.session.handle(test::ring_frame(0, 40'000));
+  std::int64_t now = 1'000'000;
+  for (; now < 1'000'000 + kHangUs - 100'000; now += 16'000) REQUIRE(rig.session.tick(now));
+  rig.screen.write(0);  // écrite : le GPU avance
+  for (int i = 0; i < 400; ++i, now += 16'000) REQUIRE(rig.session.tick(now));
+  // Une image attendue 3 s, 30 s sans tour de boucle (veille), puis 3 s encore : le compte repart.
+  Rig asleep;
+  asleep.screen.unwritten = {0};
+  asleep.session.handle(test::ring_frame(0, 40'000));
+  now = 1'000'000;
+  for (int i = 0; i < 190; ++i, now += 16'000) REQUIRE(asleep.session.tick(now));
+  now += 30'000'000;
+  for (int i = 0; i < 190; ++i, now += 16'000) REQUIRE(asleep.session.tick(now));
+}
+
+TEST_CASE("HangWatch : la même image attendue plus de kHangUs de suite", "[app][session]") {
+  HangWatch watch;
+  CHECK_FALSE(watch.hung(true, 7, 0));
+  CHECK_FALSE(watch.hung(true, 7, 900'000));
+  CHECK_FALSE(watch.hung(false, 7, 1'800'000));  // écrite : rien n'attend
+  CHECK_FALSE(watch.hung(true, 8, 2'000'000));   // une autre image : le compte repart
+  std::int64_t now = 2'000'000;
+  while (now < 2'000'000 + kHangUs) CHECK_FALSE(watch.hung(true, 8, now += 500'000));
+  CHECK(watch.hung(true, 8, now + 500'000));
+  CHECK_FALSE(watch.hung(true, 9, now + 600'000));
 }
 
 }  // namespace

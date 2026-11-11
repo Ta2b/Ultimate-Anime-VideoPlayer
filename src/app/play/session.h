@@ -25,6 +25,7 @@
 #include "app/play/frame_latency.h"
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
+#include "app/play/hang_watch.h"
 #include "app/play/links.h"
 #include "app/play/overlay_hold.h"
 #include "app/play/settings.h"
@@ -211,6 +212,8 @@ class Session {
   std::vector<std::string> osd_lines() const;
   // Les lignes de l'OSD recomposées au plus toutes les kOsdPeriodUs : vrai si elles ont changé.
   bool refresh_osd(std::int64_t host_now);
+  // L'écran a perdu son appareil (A10-01), ou le GPU n'écrit plus l'image attendue (A31-14) : DeviceLost.
+  std::optional<Refusal> stalled(std::int64_t host_now);
   // Ce que la barre de lecture montre : la position (la cible d'un seek en cours, sinon l'image à
   // l'écran), la durée, la pause, le plein écran, les statistiques.
   ControlsView view() const;
@@ -314,6 +317,7 @@ class Session {
   core::VsyncPicker vsync_picker_;    // SessionConfig::vsync_index
   std::int64_t target_host_us_ = 0;   // l'instant hôte où le pts de l'image choisie tombe (0 : aucun)
   std::optional<RingFrame> pick(const ClockSnapshot& now, std::int64_t host_now, std::int64_t lead_us);
+  HangWatch hang_;                     // l'image la plus vieille de l'époque, attendue du GPU (A31-14)
   std::vector<RingFrame> unwritten_;   // rendues par main avant d'être écrites : parties une fois écrites
   std::vector<RingFrame> unmeasured_;  // reçues, pas encore vues écrites : leur retard reste à mesurer
   SubtitleQueue subtitles_{kMaxKeptSubtitles};
