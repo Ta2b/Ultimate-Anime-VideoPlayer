@@ -160,6 +160,9 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
 
   CHECK_FALSE(refresh_registration(place));  // jamais inscrit (ou retiré) : rien n'est écrit
   CHECK_FALSE(fs::exists(file));
+  const auto nowhere = register_player(PlayerPlace{.executable = place.executable});
+  REQUIRE_FALSE(nowhere);
+  CHECK(nowhere.error().code == RefusalCode::FieldMissing);
 }
 
 TEST_CASE("Lecteur par défaut : deux installations ne se disputent pas la fiche (B19-07)",
@@ -180,9 +183,6 @@ TEST_CASE("Lecteur par défaut : deux installations ne se disputent pas la fiche
   fs::remove(home / "a" / "ajp", error);
   CHECK(refresh_registration(second));  // la première a disparu : la fiche suit la seconde
   fs::remove_all(home, error);
-  const auto nowhere = register_player(PlayerPlace{.executable = place.executable});
-  REQUIRE_FALSE(nowhere);
-  CHECK(nowhere.error().code == RefusalCode::FieldMissing);
 }
 
 TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_HOME)",
