@@ -296,8 +296,9 @@ TEST_CASE("plans : les zones d'une image en cd/m² gardent sa luminance moyenne"
 
 TEST_CASE("plans : dix-huit plans fixes de 6 s se découpent en dix-huit plans", "[media][shots]") {
   const std::filesystem::path clip = test::require_clip(test::shots_clip());
-  ShotTimeline timeline;
-  const auto probe = ShotProbe::start(clip, timeline, 0);
+  const auto shared = std::make_shared<ShotTimeline>();
+  ShotTimeline& timeline = *shared;
+  const auto probe = ShotProbe::start(clip, shared, 0);
   for (int i = 0; i < 600 && !probe->finished(); ++i)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());
@@ -316,8 +317,9 @@ TEST_CASE("plans : dix-huit plans fixes de 6 s se découpent en dix-huit plans",
 
 TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[media][shots]") {
   const std::filesystem::path clip = test::require_clip(test::shots_clip());
-  ShotTimeline timeline;
-  const auto probe = ShotProbe::start(clip, timeline, 30'000'000, ShotProbeOptions{.lead_us = 120'000'000});
+  const auto shared = std::make_shared<ShotTimeline>();
+  ShotTimeline& timeline = *shared;
+  const auto probe = ShotProbe::start(clip, shared, 30'000'000, ShotProbeOptions{.lead_us = 120'000'000});
   for (int i = 0; i < 600 && !probe->finished(); ++i)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());
@@ -425,8 +427,9 @@ TEST_CASE("plans : scènes vues à l'ingestion, coupes et sauts", "[media][shots
 TEST_CASE("plans : NVDEC réduit retrouve les plans du logiciel", "[.shot_nvdec][media][shots]") {
   const std::filesystem::path clip = test::require_clip(test::shots_clip());
   const auto analyse = [&](ShotProbeOptions options) {
-    ShotTimeline timeline;
-    const auto probe = ShotProbe::start(clip, timeline, 0, std::move(options));
+    const auto shared = std::make_shared<ShotTimeline>();
+    ShotTimeline& timeline = *shared;
+    const auto probe = ShotProbe::start(clip, shared, 0, std::move(options));
     for (int i = 0; i < 600 && !probe->finished(); ++i)
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     REQUIRE(probe->finished());

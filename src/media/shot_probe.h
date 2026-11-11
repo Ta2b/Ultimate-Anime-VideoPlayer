@@ -7,14 +7,12 @@
 // met en attente quand elle a assez d'avance.
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -45,18 +43,31 @@ struct ShotProbeOptions {
   // est connue entière : rien n'est analysé. La lecture du cache quitte ainsi le thread de la fenêtre
   // (A42-14 : un disque en veille y retardait l'ouverture).
   std::function<bool(ShotTimeline&)> preload;
+  // Sur le thread de l'analyse, quand elle s'arrête (arrêt demandé, refus) : la part faite, à garder au
+  // cache. complete : la vidéo est analysée entière, sans refus. L'écriture quitte ainsi le thread de la
+  // fenêtre (B42-05).
+  std::function<void(const ShotTimeline&, bool complete)> on_stop;
+  // B30-01 : le thread d'une analyse qui ne s'arrête pas dans stop_limit à la destruction (une lecture
+  // suspendue à un partage réseau muet, que le drapeau d'interruption de FFmpeg n'atteint pas) est confié à
+  // abandon ; il ne touche plus qu'à l'état qu'il partage (la chronologie comprise). stopped dit s'il a
+  // fini. Vide : la destruction attend le thread.
+  std::function<void(std::jthread thread, std::function<bool()> stopped)> abandon;
+  std::chrono::milliseconds stop_limit{2000};
 };
 inline constexpr const char* kProbeCuvidSize = "256x144";
 
 class ShotProbe {
  public:
-  // Analyse file depuis start_us dans timeline, qui doit survivre à la ShotProbe.
-  static std::unique_ptr<ShotProbe> start(std::filesystem::path file, ShotTimeline& timeline,
+  // Analyse file depuis start_us dans timeline, que l'analyse partage.
+  static std::unique_ptr<ShotProbe> start(std::filesystem::path file, std::shared_ptr<ShotTimeline> timeline,
                                           std::int64_t start_us, ShotProbeOptions options = {});
 
   ShotProbe(const ShotProbe&) = delete;
   ShotProbe& operator=(const ShotProbe&) = delete;
-  ~ShotProbe();  // demande l'arrêt et attend le thread
+  ShotProbe(ShotProbe&&) = delete;
+  ShotProbe& operator=(ShotProbe&&) = delete;
+  // Demande l'arrêt et attend le thread : au plus stop_limit si abandon est donné (ShotProbeOptions).
+  ~ShotProbe();
 
   // L'instant affiché : l'analyse se cale sur lui pour son avance.
   void set_playhead(std::int64_t us);
@@ -68,25 +79,11 @@ class ShotProbe {
   // La dernière image mesurée.
   std::int64_t frontier_us() const;
 
- private:
-  ShotProbe(std::filesystem::path file, ShotTimeline& timeline, ShotProbeOptions options);
-  bool preloaded();
-  void run(const std::stop_token& stop, std::int64_t start_us);
-  void fail(Refusal refusal);
+  struct State;  // l'état que le thread partage (shot_probe.cpp)
 
-  std::filesystem::path file_;
-  ShotTimeline& timeline_;
-  ShotProbeOptions options_;
-  std::atomic<std::int64_t> playhead_{0};
-  std::atomic<std::int64_t> seek_to_{-1};
-  std::atomic<std::int64_t> frontier_{0};
-  std::atomic<bool> finished_{false};
-  // P2.37 : l'attente de la pré-analyse (fin atteinte, assez d'avance) se réveille au saut ou quand la
-  // lecture avance, au lieu de dormir 100 ms par tour.
-  std::mutex wake_mutex_;
-  std::condition_variable_any wake_;
-  mutable std::mutex failure_mutex_;
-  std::optional<Refusal> failure_;
+ private:
+  explicit ShotProbe(std::shared_ptr<State> state);
+  std::shared_ptr<State> state_;
   std::jthread thread_;
 };
 

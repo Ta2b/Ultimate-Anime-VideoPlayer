@@ -68,6 +68,9 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
         if (held->path_ == path && !held->replaced_on_disk()) return held;  // même chemin que open l'a reçu
     }
     std::shared_ptr<BackendLibrary> library(new BackendLibrary());
+    // La date du fichier avant le chargement : un module remplacé pendant open est vu comme remplacé, jamais
+    // comme celui qui est en mémoire (B21-04).
+    const std::filesystem::file_time_type stamp = std::filesystem::last_write_time(path, error);
     // dlopen sous Linux et macOS, LoadLibraryExW sous Windows (dépendances cherchées à côté).
     auto opened = DynamicLibrary::open(std::filesystem::absolute(path, error));
     if (!opened) {
@@ -76,7 +79,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     }
     library->handle_.emplace(std::move(*opened));
     library->path_ = path;
-    library->stamp_ = std::filesystem::last_write_time(path, error);
+    library->stamp_ = stamp;
     const DynamicLibrary& handle = *library->handle_;
     const auto abi = symbol<gpu::BackendAbiFn>(handle, "ajp_backend_abi");
     const auto layout = symbol<gpu::BackendLayoutFn>(handle, "ajp_backend_layout");

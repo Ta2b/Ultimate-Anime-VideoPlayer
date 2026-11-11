@@ -49,8 +49,12 @@ constexpr KindFacts facts(SpanVariantKind kind) {
               kInt8MinPsnrWorstDb, kInt8MinSsimWorst};
     case SpanVariantKind::Fp8Cutlass:  // des noyaux écrits à la main : les seuils de l'INT8, pas ceux du FP8
                                        // par Q/DQ
-      return {"ajp-span-fp8c-v1",  "-fp8c-",         ".span8", kInt8MinPsnrMeanDb,
-              kInt8MinPsnrWorstDb, kInt8MinSsimWorst};
+      return {gpu::span_fp8::kReceiptFormatV1,
+              "-fp8c-",
+              ".span8",
+              kInt8MinPsnrMeanDb,
+              kInt8MinPsnrWorstDb,
+              kInt8MinSsimWorst};
   }
   return facts(SpanVariantKind::Int8);
 }

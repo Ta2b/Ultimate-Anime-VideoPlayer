@@ -16,8 +16,6 @@ extern const std::string_view anime_hdr_anime;
 extern const std::string_view anime_hdr_look;
 // Dixième passe, propre à ce dépôt : le vrai noir OLED (pied smoothstep sous black_hi).
 extern const std::string_view anime_hdr_black;
-// Mire d'étalonnage du lecteur actuel : patchs en luminance absolue, encodés en PQ.
-extern const std::string_view anime_hdr_calibration;
 // La netteté (render/sharpen.h) : un masque flou adaptatif sur SCALED.
 extern const std::string_view sharpen;
 

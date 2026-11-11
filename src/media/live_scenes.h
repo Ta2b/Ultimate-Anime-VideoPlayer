@@ -20,6 +20,8 @@ namespace ajp::media {
 
 inline constexpr float kLiveCut = 0.35F;
 inline constexpr std::size_t kLiveKept = 64;  // images gardées, environ 2,5 s à 24 i/s
+// La moyenne d'une scène glisse au-delà de ce nombre d'images (B42-12) : 120, cinq secondes à 24 i/s.
+inline constexpr std::size_t kLiveWindow = 120;
 
 struct LiveScene {
   ShotStats stats;

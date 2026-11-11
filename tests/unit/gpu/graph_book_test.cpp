@@ -106,4 +106,27 @@ TEST_CASE("Graphes : registre plein, une entrée qui ne sert plus laisse sa plac
   CHECK(book.next(1).step != GraphStep::Overflow);  // la clé vivante n'a pas été chassée
 }
 
+TEST_CASE("Graphes : des refus de capture isolés, chacun suivi d'une réussite, ne coupent rien (B21-02)",
+          "[gpu][graphs]") {
+  GraphBook<int> book(8, 3);
+  for (int key = 0; key < 3; ++key) {
+    static_cast<void>(book.next(key));  // chaud
+    REQUIRE(book.next(key).step == GraphStep::Capture);
+    book.captured(false, "mémoire juste");
+    REQUIRE(book.next(key).step == GraphStep::Capture);  // réessayée
+    book.captured(true);
+  }
+  CHECK_FALSE(book.off());  // trois refus, mais jamais de suite
+  CHECK(book.next(2).step == GraphStep::Replay);
+  CHECK(book.counters().capture_failures == 3);
+  CHECK(book.counters().captures == 3);
+}
+
+TEST_CASE("Graphes : un registre de capacité nulle garde une place (B21-03)", "[gpu][graphs]") {
+  GraphBook<int> book(0, 3);
+  CHECK(book.next(1).step == GraphStep::Warm);
+  CHECK(book.next(2).step == GraphStep::Overflow);  // la seule place sert encore à la clé 1
+  CHECK(book.size() == 1);
+}
+
 }  // namespace ajp::gpu

@@ -86,6 +86,15 @@ double curve_peak_for(double content_nits, double target, double reference) {
   return reference * (v * in_range * in_range + in_range) / (1.0 + in_range);
 }
 
+SurfaceCurve surface_curve_for(double content_nits, double target, double reference) {
+  SurfaceCurve curve{.peak = curve_peak_for(content_nits, target, reference)};
+  const double reached = compress_neutral(content_nits, reference, curve.peak);
+  // Sous Reinhard seul, la courbe ne descend plus : un gain sur toute la sortie prend le reste. La courbe
+  // reste croissante, la teinte et l'ordre des niveaux sont gardés.
+  if (reached > 0.0 && target > 0.0 && target < reached) curve.gain = target / reached;
+  return curve;
+}
+
 double emitter_level(double m, double gain, double top) {
   const double v = m * gain;
   if (gain <= 1.0) return v;
@@ -94,6 +103,12 @@ double emitter_level(double m, double gain, double top) {
   if (v <= knee) return v;
   const double room = std::max(top - knee, 1e-3);
   return knee + room * (1.0 - std::exp(-(v - knee) / room));
+}
+
+double emitter_over_surface(double m, double m_full, double gain, double top) {
+  // La part d'émetteur : 0 sans montée, 1 dès un demi-diaphragme (Éclats 100 % monte un blanc de 0,53).
+  const double share = gain > 1.0 ? smoothstep(0.0, 0.5, std::log2(gain)) : 0.0;
+  return emitter_level(std::lerp(m, std::max(m_full, m), share), gain, top);
 }
 
 OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const> luts, double reference,
@@ -107,12 +122,17 @@ OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const
   const double pile_white = pile ? look_neutral(chain, look_toe(lifted), lifted) : lifted;
   OutputTune tune;
   tune.curve_peak = pile ? panel_peak : identity_curve_peak(reference);
+  tune.full_peak = tune.curve_peak;
   tune.white = std::min(compress_neutral(pile_white, reference, tune.curve_peak), panel_peak);
   // Le curseur « Blanc des surfaces » (100 % : là où la pile le porte) : la courbe est résolue pour rendre le
-  // blanc à cette part, tout le reste de l'image suit la même courbe. Les éclats montent toujours au pic.
+  // blanc à cette part (sous Reinhard seul, avec un gain : B10-03), tout le reste des surfaces suit la même
+  // courbe. Les éclats partent du niveau qu'ils ont sous la courbe à 100 % (full_peak, B41-01) : ils gardent
+  // le pic.
   if (pile && params.surface_white < 0.999) {
-    tune.curve_peak = curve_peak_for(pile_white, params.surface_white * tune.white, reference);
-    tune.white = std::min(compress_neutral(pile_white, reference, tune.curve_peak), panel_peak);
+    const SurfaceCurve curve = surface_curve_for(pile_white, params.surface_white * tune.white, reference);
+    tune.curve_peak = curve.peak;
+    tune.curve_gain = curve.gain;
+    tune.white = std::min(compress_neutral(pile_white, reference, tune.curve_peak) * curve.gain, panel_peak);
   }
   tune.top = panel_peak;  // pas de limiteur de scène : la dalle limite elle-même les scènes claires
   return tune;

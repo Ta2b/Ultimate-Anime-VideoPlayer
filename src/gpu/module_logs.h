@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include <spdlog/sinks/callback_sink.h>
@@ -32,8 +33,19 @@ inline BackendLogLevel level_of(spdlog::level::level_enum level) {
 // deadlock would occur »).
 inline void route_module_logs(const BackendLog& log) {
   if (!log) return;
+  // Le nom du canal en tête (« [tensorrt] … », « [prepare] … ») : le rappel du lecteur écrit tout sous son
+  // canal « backend », et le journal envoyé dit sinon de quel module vient chaque ligne (B21-08).
   auto sink = std::make_shared<spdlog::sinks::callback_sink_mt>([log](const spdlog::details::log_msg& msg) {
-    log(level_of(msg.level), std::string_view(msg.payload.data(), msg.payload.size()));
+    const std::string_view payload(msg.payload.data(), msg.payload.size());
+    const std::string_view channel(msg.logger_name.data(), msg.logger_name.size());
+    if (channel.empty()) {
+      log(level_of(msg.level), payload);
+      return;
+    }
+    std::string line;
+    line.reserve(channel.size() + 3 + payload.size());
+    line.append("[").append(channel).append("] ").append(payload);
+    log(level_of(msg.level), line);
   });
   install_module_log_sinks({sink}, spdlog::level::debug);
 }

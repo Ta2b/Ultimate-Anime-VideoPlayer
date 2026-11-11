@@ -139,6 +139,15 @@ TEST_CASE("Backend : BackendInit et IngestSpec ne supposent rien", "[backend]") 
   CHECK_FALSE(PairScores{}.identical);
 }
 
+TEST_CASE("Backend : le FP8 est permis sur Ada et Hopper, pas sur RTX 50 sans mesure (B21-01)", "[backend]") {
+  STATIC_CHECK(fp8_allowed(8, 9));         // Ada : RTX 40, L40
+  STATIC_CHECK(fp8_allowed(9, 0));         // Hopper
+  STATIC_CHECK_FALSE(fp8_allowed(8, 6));   // Ampere : pas d'unités FP8
+  STATIC_CHECK_FALSE(fp8_allowed(7, 5));   // Turing
+  STATIC_CHECK_FALSE(fp8_allowed(12, 0));  // RTX 50 : pas avant une mesure
+  STATIC_CHECK_FALSE(fp8_allowed(10, 0));  // Blackwell des centres de calcul
+}
+
 TEST_CASE("Backend : un backend complet s'écrit contre l'interface", "[backend]") {
   ajp::GpuDevice render{.api = ajp::GpuApi::Vulkan, .pci_vendor = ajp::pci::kNvidia};
   render.uuid[0] = 0x42;

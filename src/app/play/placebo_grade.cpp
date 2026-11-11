@@ -27,6 +27,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "render/display_model.h"
+#include "render/output_tune.h"
 
 namespace ajp::app::play {
 namespace {
@@ -213,9 +214,15 @@ void PlaceboScreen::Impl::match_kwin() {
   const bool on = kwin_metadata() && hdr_output && grade_loaded_pq == true;
   // Le pic du grade est en unités du contenu ; la passe écrête au pic du panneau, et la sortie annonce celui
   // du contenu : KWin le ramène à son blanc (render::kwin_hint).
-  const double peak = grade->params().peak;
+  const render::GradeParams& params = grade->params();
+  const double peak = params.peak;
   const double reference = sdr_reference();
   const render::KwinHint hint = render::kwin_hint(peak, reference);
+  // B41-03 : sous le plafond des flashs, la dernière passe va vers 250 nits, mais l'annonce garde le pic de
+  // l'écran. Sinon les métadonnées HDR10 changeaient à chaque entrée et sortie de flash, et certains écrans
+  // ou compositeurs refaisaient leur compression à chaque fois : l'image pompait au pire moment.
+  const double announced_peak = std::max(params.uncapped_peak, peak);
+  const render::KwinHint announced = render::kwin_hint(announced_peak, reference);
   const std::optional<render::Grade::KwinMatch> match =
       on ? std::optional(render::Grade::KwinMatch{.reference = reference, .peak = hint.panel_peak_nits})
          : std::nullopt;
@@ -226,15 +233,18 @@ void PlaceboScreen::Impl::match_kwin() {
   // libplacebo croyait la cible à 10 000 nits et laissait l'écran écrêter une source masterisée plus haut que
   // lui. Le pic du contrat d'écran est annoncé, libplacebo ramène la source à ce pic.
   const bool bare = !on && kwin_metadata() && hdr_output && grade_loaded_pq != true && contract.has_value();
-  const double max_nits = on ? hint.max_content_nits : bare ? contract->content_peak_nits() : 0.0;
+  const double max_nits = on ? announced.max_content_nits : bare ? contract->content_peak_nits() : 0.0;
   // MaxFALL (P3.59, A41-02) : celui du contrat d'écran quand il le connaît (le plein écran du limiteur),
   // sinon la moyenne réelle d'une image toute blanche : le blanc des surfaces que la dernière passe rend, en
   // unités du contenu (au relèvement fixe, pas celui du plan : l'annonce ne bouge pas à chaque coupe).
   // Avant, 233 nits étaient annoncés pour un blanc rendu à 695.
   const double contract_fall = contract ? render::contract_metadata(*contract).max_fall : 0.0;
-  const std::optional<render::OutputTune> tune = grade->output();
-  const double surfaces = tune ? tune->white * render::kContentReferenceNits / reference
-                               : grade->params().sdr_white * render::kAnimeLift;
+  // Sous le plafond des flashs, le blanc est celui du pic non plafonné : l'annonce ne bouge pas (B41-03).
+  std::optional<render::OutputTune> tune = grade->output();
+  if (tune && announced_peak > peak)
+    tune = render::output_tune(params, grade->looks(), reference, announced.panel_peak_nits);
+  const double surfaces =
+      tune ? tune->white * render::kContentReferenceNits / reference : params.sdr_white * render::kAnimeLift;
   const double max_fall = on ? std::min(max_nits, contract_fall > 0.0 ? contract_fall : surfaces) : 0.0;
   if (max_nits == hinted_max_nits && max_fall == hinted_max_fall) return;
   hinted_max_nits = max_nits;
@@ -248,7 +258,7 @@ void PlaceboScreen::Impl::match_kwin() {
   }
   pl_swapchain_colorspace_hint(swapchain, &space);
   channel->info("--hdr-metadata : maximum annoncé {:.0f} nits, MaxFALL {:.0f} (pic {:.0f}, blanc SDR {:.0f})",
-                max_nits, max_fall, peak, reference);
+                max_nits, max_fall, announced_peak, reference);
 }
 
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {

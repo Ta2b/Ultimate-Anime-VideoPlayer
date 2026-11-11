@@ -3,8 +3,7 @@
 // noyaux CUTLASS mêmes du lecteur.
 //
 //   1. La référence FP16 (span_fp8_ref.h) passe les images de calibration et relève le maximum de |valeur|
-//   des
-//      25 tenseurs que le réseau FP8 quantifie ; échelle = maximum × 1,25 / 448 (gpu/span_fp8/derive.h :
+//      des tenseurs que le réseau FP8 quantifie ; échelle = maximum × 1,25 / 448 (gpu/span_fp8/derive.h :
 //      scales_from_peaks, marge de tête B02-02), comme l'outil Python.
 //   2. Le réseau FP8 (span_fp8_net.h), à ces échelles, passe les images de validation, mises de côté ; sa
 //      sortie est jugée contre celle de la même référence FP16 (PSNR, SSIM de gpu/span_fp8/metrics.h).

@@ -31,6 +31,10 @@ std::optional<HostUploads::Layout> HostUploads::layout(PixelFormat format, int w
       return Layout{.planes = 3, .row_bytes = {w, cw, cw}, .rows = {h, ch, ch}};
     case PixelFormat::Yuv420p10:
       return Layout{.planes = 3, .row_bytes = {2 * w, 2 * cw, 2 * cw}, .rows = {h, ch, ch}};
+    case PixelFormat::Yuv422p16:
+      return Layout{.planes = 3, .row_bytes = {2 * w, 2 * cw, 2 * cw}, .rows = {h, h, h}};
+    case PixelFormat::Yuv444p16:
+      return Layout{.planes = 3, .row_bytes = {2 * w, 2 * w, 2 * w}, .rows = {h, h, h}};
     default:
       return std::nullopt;
   }

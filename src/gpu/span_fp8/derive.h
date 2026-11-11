@@ -21,7 +21,8 @@ inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7
 // 3 : centiles réglés sur la RTX 4070 Ti. 4 : gain sur le SPAN FP16 de TensorRT mesuré et exigé, échelles
 // avec marge de tête (B02-01, B02-02) ; un paquet d'une porte plus ancienne, même passé, se refait.
 inline constexpr int kGateVersion = 4;
-inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";  // tools/span/derive_span_fp8.py
+// Le reçu de tools/span/derive_span_fp8.py, encore lu (app/play/span_int8.cpp).
+inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
@@ -32,7 +33,6 @@ inline constexpr double kMinSsimWorst = 0.985;
 inline constexpr double kErrorQuantile = 0.999;
 inline constexpr double kMaxErrorP999 = 10.0 / 255.0;
 inline constexpr double kMaxDarkErrorP999 = 4.5 / 255.0;
-inline constexpr double kMinHardPsnrWorstDb = 36.0;
 // B02-01 : le FP8 perd en qualité contre le FP16 ; il n'est gardé que s'il va au moins ce rapport plus vite
 // que le SPAN FP16 de TensorRT sur la même carte, à la même taille (le seuil de
 // tools/span/derive_span_fp8.py).
