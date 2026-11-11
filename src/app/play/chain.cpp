@@ -491,10 +491,6 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
       input);
 }
 
-void write_record(std::ofstream& stats, const PresentRecord& record) {
-  stats << stats_line(record);
-}
-
 void log_summary(const Session& session) {
   const FrameStats& stats = session.stats();
   log_channel("app")->info(

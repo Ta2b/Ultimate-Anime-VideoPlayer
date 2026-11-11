@@ -190,8 +190,7 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us);
 // Une action de l'utilisateur (touche, barre, menu) sur la chaîne.
 void apply(const Input& input, Chain& to, std::int64_t now_us);
 
-// --stats : une ligne par présentation ; le bilan de fin dans le journal.
-void write_record(std::ofstream& stats, const PresentRecord& record);
+// --stats : le bilan de fin dans le journal (les lignes : StatsSink, present_stats.h).
 void log_summary(const Session& session);
 
 // Ce que la séance garde d'une chaîne à l'autre : les étages refusés (stages) et les sous-titres glissés

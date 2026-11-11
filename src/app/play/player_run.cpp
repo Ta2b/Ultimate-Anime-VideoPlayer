@@ -388,6 +388,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // play.toml, la position et la mémoire de l'Auto s'écrivent sur leur thread, sans attendre le disque.
   LatestWriter writer;
   if (p.shots != nullptr) p.shots->writer = &writer;  // le cache des plans aussi
+  std::optional<StatsSink> stats_sink;                // B32-04 : --stats s'écrit sur ce même fil
+  if (stats.is_open()) stats_sink.emplace(stats, writer);
   const std::unique_ptr<ShotWork, void (*)(ShotWork*)> shots_writer(
       p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });
   // Ce que play.toml garde.
@@ -661,7 +663,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // l'heure de la présentation, que la boucle a elle-même choisie (A12-03).
     if (*record && (*record)->fresh)
       chain.live.vsync_note((*record)->vsync_us, out.vblank_grid(), (*record)->display_gpu_us);
-    if (*record && stats.is_open()) write_record(stats, **record);
+    if (*record && stats_sink) stats_sink->add(**record, host_now_us());
     // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme. En
     // lecture, la boucle dort jusqu'à l'échéance de l'image suivante (Session::idle_wait_us) ; en pause,
     // au plus kPausedWaitMs. Un message des autres threads (une image, un seek) la réveille.
@@ -677,6 +679,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
   }
   remember();
+  stats_sink.reset();
   writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers
   p.quit = session.quit_asked();
   log_summary(session);
