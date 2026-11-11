@@ -45,13 +45,15 @@ void SleepGate::ready() {
   changed_.notify_all();
 }
 
+#if defined(__linux__) || defined(_WIN32)
 namespace {
 
 // Le temps laissé à la boucle pour se mettre en pause : logind retient la veille jusqu'à InhibitDelayMaxSec
-// (5 s par défaut), Windows attend le rappel environ 2 s.
+// (5 s par défaut), Windows attend le rappel environ 2 s. Rien sur macOS, hors chantier.
 constexpr std::chrono::milliseconds kPauseLimit{1500};
 
 }  // namespace
+#endif
 
 #if defined(__linux__)
 
