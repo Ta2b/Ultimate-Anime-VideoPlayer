@@ -36,3 +36,22 @@ TEST_CASE("modèle de coût : sans mesure, pas de droite ; une coupe estompe les
   model.clear();
   CHECK(model.samples(3) == 0);
 }
+
+TEST_CASE("modèle de coût : après une coupe, les pointes de la scène d'avant ne comptent plus (B07-03)",
+          "[core][cost_model]") {
+  CostModel m;
+  std::int64_t now = 1'000'000;
+  for (int i = 0; i < 16; ++i) {  // un combat : une paire sur trois coûte le double
+    m.add(3, i % 3 == 0 ? 30'000 : 15'000, now);
+    now += 40'000;
+  }
+  CHECK(m.spike(now) > 1.3);
+  m.fade(now);  // coupe vers un plan calme
+  CHECK(m.spike(now) == Approx(1.0));
+  for (int i = 0; i < 8; ++i) {
+    m.add(3, 10'000, now);
+    now += 40'000;
+  }
+  CHECK(m.spike(now) == Approx(1.0).margin(0.05));
+  CHECK(m.samples(3) == 8);
+}

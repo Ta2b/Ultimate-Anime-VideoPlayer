@@ -615,6 +615,13 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     bool delay_held = false;
     bool sub_delay_held = false;
     const PlaySettings before = draft_;
+    // Une calibration refaite ici vaut tout de suite pour « Auto », sans attendre la vidéo suivante (B07-13).
+    std::optional<SettingsChoices> recalibrated;
+    if (machine_ && machine_->fresh && *machine_->fresh != choices.calibrated) {
+      recalibrated.emplace(choices);
+      recalibrated->calibrated = *machine_->fresh;
+    }
+    const SettingsChoices& shown = recalibrated ? *recalibrated : choices;
     // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
     const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
                          2.0F * ImGui::GetStyle().ItemSpacing.y;
@@ -637,11 +644,11 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::SameLine();
     ImGui::BeginChild("##page", ImVec2(0, -footer));
     panel::begin_page();
-    draw_page(running, choices, actions, result, delay_held, sub_delay_held);
+    draw_page(running, shown, actions, result, delay_held, sub_delay_held);
     panel::end_page();
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
-    draw_footer(running, choices, before, delay_held, sub_delay_held, result);
+    draw_footer(running, shown, before, delay_held, sub_delay_held, result);
   }
   ImGui::End();
   if (!keep) open_ = false;

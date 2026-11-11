@@ -423,7 +423,7 @@ l'effet.
   quelques secondes de vidéo (10 s par essai, fenêtre masquée et son coupé) avec ses réglages recommandés, du plus
   léger au plus lourd, garde ceux que le PC tient sans saccade et **les applique tout de suite** (préréglage Auto
   sur la mesure ; la chaîne se rouvre à la même position). Aucun mot « tranche » ni « niveau » à l'écran.
-- **Pendant l'essai** : une ligne d'étape lisible (« Étape 2 sur 4 : test des réglages « Rapide » »), une barre
+- **Pendant l'essai** : une ligne d'étape lisible (« Étape 2 sur 3 : test des réglages « Rapide » »), une barre
   de progression globale, un bouton **Annuler** ; l'interface ne gèle jamais (les essais sont des processus
   enfants, la barre avance même en pause). Les quatre étapes : 1 préparation des moteurs et première mesure ;
   2 test des réglages ; 3 recherche d'une image plus fine (hauteur de travail, modèle RIFE) ; 4 préparation du

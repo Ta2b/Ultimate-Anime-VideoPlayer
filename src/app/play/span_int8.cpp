@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <system_error>
@@ -78,6 +79,21 @@ std::expected<toml::table, SpanInt8Lookup> read_receipt(const std::filesystem::p
   if (parsed.table()["format"].value_or(std::string_view()).empty())
     return std::unexpected(stale(i18n::tr_format("{} unreadable: {}", where, i18n::tr("empty receipt"))));
   return std::move(parsed).table();
+}
+
+// Le paquet ne correspond plus à son reçu : à refaire (stale), ou refusé s'il ne se lit pas. Un paquet
+// disparu (cache nettoyé, coupure entre deux renommages) alors que son reçu l'admet est à refaire, pas refusé
+// (B07-12).
+std::optional<SpanInt8Lookup> package_differs(const std::filesystem::path& package,
+                                              std::string_view receipt_sha, const std::string& where) {
+  std::error_code error;
+  if (!std::filesystem::exists(package, error))
+    return stale(i18n::tr_format("{}: package missing, prepare it again", where));
+  auto model_sha = prepare::sha256_file_known(package);
+  if (!model_sha) return refused(model_sha.error().detail);
+  if (receipt_sha != *model_sha)
+    return stale(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(package.filename())));
+  return std::nullopt;
 }
 
 }  // namespace
@@ -165,10 +181,9 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
                   scores, limits.min_psnr_mean, limits.min_psnr_worst, limits.min_ssim_worst);
     return old_gate ? stale(note) : refused(note);
   }
-  auto model_sha = prepare::sha256_file_known(variant.onnx);
-  if (!model_sha) return refused(model_sha.error().detail);
-  if (receipt["model_sha256"].value_or(std::string_view()) != *model_sha)
-    return stale(i18n::tr_format("{}: changed since its receipt", prepare::utf8_path(onnx.filename())));
+  if (auto differs =
+          package_differs(variant.onnx, receipt["model_sha256"].value_or(std::string_view()), where))
+    return *differs;
   if (v2 && fp8 != nullptr) {
     // Étape 3.7b : le paquet ne vaut que pour l'appareil, les noyaux et les tailles où la porte l'a jugé.
     const std::string_view arch = receipt["gpu_arch"].value_or(std::string_view());

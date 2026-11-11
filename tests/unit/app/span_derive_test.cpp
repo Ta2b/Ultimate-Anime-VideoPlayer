@@ -643,4 +643,28 @@ TEST_CASE("la préparation à la main ne part qu'une fois à la fois, et seuleme
   CHECK(started == 1);
 }
 
+TEST_CASE("le « .old » d'une opération coupée entre deux renommages revient à sa place (B07-12)",
+          "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
+  const Folder folder;
+  const std::vector<std::byte> bytes(64, std::byte{7});
+  REQUIRE(commit_derivation(folder.package(), folder.receipt(), bytes, "passed = true\n", true));
+  // La coupure : le paquet est passé à « .old », le nouveau n'a pas encore pris sa place.
+  fs::path old = folder.package();
+  old += ".old";
+  fs::rename(folder.package(), old);
+  // La dérivation suivante échoue (le reçu provisoire est un dossier non vide) : l'état d'avant revient.
+  fs::path blocked = folder.receipt();
+  blocked += ".part";
+  fs::create_directories(blocked / "occupé");
+  std::ofstream(blocked / "occupé" / "fichier") << "x";
+  const std::vector<std::byte> other(64, std::byte{9});
+  REQUIRE_FALSE(commit_derivation(folder.package(), folder.receipt(), other, "passed = false\n", true));
+  REQUIRE(fs::exists(folder.package()));
+  std::ifstream in(folder.package(), std::ios::binary);
+  const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content == std::string(64, '\7'));
+  CHECK_FALSE(fs::exists(old));
+}
+
 }  // namespace ajp::app::play

@@ -87,6 +87,10 @@ void CostModel::fade(std::int64_t now_us) {
     const double w = weight_of(c, now_us);
     c.weight = w * 0.5;
     c.at_us = now_us;
+    // Les pointes de la scène d'avant ne disent rien de celle-ci : spike() ne lit que les mesures d'après
+    // la coupe, et vaut 1 tant qu'elles sont trop peu nombreuses.
+    c.filled = 0;
+    c.next = 0;
   }
 }
 

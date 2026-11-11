@@ -26,6 +26,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);
   choices.machine_tier = static_cast<int>(effective_tier(machine, measured));
+  choices.estimated_tier = static_cast<int>(estimate_tier(machine).tier);
   const bool explored = measured && measured_here(*measured, machine);
   choices.bench_text = explored ? i18n::tr_format("Last optimization: {}", measured->date) : std::string();
   // La machine que le lecteur passe à apply_preset à l'ouverture d'une vidéo (player.cpp), pour que « Auto »
