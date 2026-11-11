@@ -30,9 +30,9 @@ namespace {
 using namespace ajp;
 using namespace ajp::test;
 
-// Mouvement dans des plans pw × ph, image dans la fenêtre area ; images 1,5 fois plus grandes
-// (mouvement estimé à 720p, warp à 1080p). tolerance : l'écart admis à la référence, pour warp_blend
-// et warp_blend_poses.
+// Mouvement dans des plans pw × ph, image dans la fenêtre area ; images de la taille de la fenêtre, ou plus
+// grandes (mouvement estimé à 720p, warp à 1080p ou après SPAN). tolerance : l'écart admis à la référence,
+// pour warp_blend et warp_blend_poses.
 struct WarpCase {
   int pw = 0;
   int ph = 0;
@@ -48,6 +48,8 @@ void check_warp(const WarpCase& wc) {
   const int w = wc.w;
   const int h = wc.h;
   const kernels::Window area = wc.area;
+  // Le noyau lit les images en bicubique dès qu'elles dépassent la fenêtre du mouvement (A49-06).
+  const kernels::WarpImages images = kernels::warp_images(w, h, area.width, area.height);
   const auto q = [](float v) { return kernels::ref::half_to_float(kernels::ref::float_to_half(v)); };
   kernels::ref::Motion motion;
   for (auto& plane : motion.flow) plane = kernels::PlaneF(pw, ph);
@@ -107,7 +109,7 @@ void check_warp(const WarpCase& wc) {
     CAPTURE(t);
     REQUIRE(loaded.backend->kernels()->warp_blend(ta->tensor(), tb->tensor(), gm, t, out->tensor()));
     const auto got = download(out->tensor());
-    const auto want = kernels::ref::warp_blend_at(a, b, motion, t);
+    const auto want = kernels::ref::warp_blend_at(a, b, motion, t, images);
     REQUIRE(want);
     double worst = 0.0;
     for (int c = 0; c < 3; ++c) {
@@ -141,7 +143,7 @@ void check_warp(const WarpCase& wc) {
       REQUIRE(loaded.backend->kernels()->warp_blend_poses(ta->tensor(), tb->tensor(), gm,
                                                           held ? nullptr : &gbefore, t, out->tensor()));
       const auto got = download(out->tensor());
-      const auto want = kernels::ref::warp_blend_poses(a, b, motion, held ? nullptr : &before, t);
+      const auto want = kernels::ref::warp_blend_poses(a, b, motion, held ? nullptr : &before, t, images);
       REQUIRE(want);
       double worst = 0.0;
       for (int c = 0; c < 3; ++c) {
@@ -179,24 +181,44 @@ void check_warp(const WarpCase& wc) {
 TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la référence",
           "[backend_tensorrt][cuda]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  // Largeurs de 80 et 120 octets, hors du pas de 32 des objets texture : la lecture exacte, à
-  // l'arrondi FP16 de la sortie près.
+  // Largeur de 80 octets, hors du pas de 32 des objets texture : la lecture exacte, à l'arrondi FP16 de la
+  // sortie près. Images de la taille de la fenêtre : lues en bilinéaire.
+  check_warp({.pw = 40,
+              .ph = 32,
+              .w = 40,
+              .h = 24,
+              .area = {.x = 0, .y = 4, .width = 40, .height = 24},
+              .tolerance = 2e-3});
+}
+
+TEST_CASE("Backend TensorRT : warp après SPAN, images lues en bicubique, contre la référence",
+          "[backend_tensorrt][cuda][bicubic]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // Images 1,5 fois puis 2 fois plus grandes que la fenêtre du mouvement (A49-06) : le noyau
+  // warp_blend_bicubic contre kernels::ref (noyau de Keys en double), à l'arrondi FP16 de la sortie près.
   check_warp({.pw = 40,
               .ph = 32,
               .w = 60,
               .h = 36,
               .area = {.x = 0, .y = 4, .width = 40, .height = 24},
               .tolerance = 2e-3});
+  check_warp({.pw = 64,
+              .ph = 48,
+              .w = 128,
+              .h = 64,
+              .area = {.x = 0, .y = 8, .width = 64, .height = 32},
+              .tolerance = 2e-3});
 }
 
 TEST_CASE("Backend TensorRT : warp par objets texture, deux pixels par fil, contre la référence",
           "[backend_tensorrt][cuda]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  // Largeurs de 128 et 192 octets : le filtre bilinéaire matériel et la sortie half2.
+  // Largeur de 128 octets, images de la taille de la fenêtre : le filtre bilinéaire matériel et la sortie
+  // half2 (des images plus grandes passent par le noyau bicubique).
   check_warp({.pw = 64,
               .ph = 48,
-              .w = 96,
-              .h = 48,
+              .w = 64,
+              .h = 32,
               .area = {.x = 0, .y = 8, .width = 64, .height = 32},
               .tolerance = kernels::tolerance::kWarpFiltered});
 }

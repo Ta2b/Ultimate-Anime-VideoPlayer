@@ -88,8 +88,9 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
       image.v.data[image.v.index(x, y)] = static_cast<std::uint16_t>(200 - 4 * y);
     }
   }
+  // Le contrat de la chaîne (IngestSpec::chroma : Spline36 en codes bruts), la référence de kernels/ref.
   const auto expected =
-      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Bilinear);
+      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, gpu::IngestSpec{}.chroma);
   REQUIRE(expected);
 
   Loaded loaded;
@@ -101,11 +102,11 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
       ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
   REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*rgb)->tensor()));
   const auto got = download((*rgb)->tensor());
-  // Bords exclus : la référence y prolonge la chroma en miroir, ce noyau provisoire la répète.
+  // Bords compris : le noyau prolonge la chroma en miroir, comme la référence (kernels/spec/chroma_up.h).
   double worst = 0.0;
   for (int c = 0; c < 3; ++c) {
-    for (int y = 2; y < h - 2; ++y) {
-      for (int x = 2; x < w - 2; ++x) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
         const float want = expected->planes[static_cast<std::size_t>(c)].at(x, y);
         const float have = got[static_cast<std::size_t>((c * h + y) * w + x)];
         worst = std::max(worst, static_cast<double>(std::fabs(want - have)));
@@ -113,6 +114,24 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
     }
   }
   CHECK(worst < 2e-3);  // FP16 sur [0, 1] : un demi-pas à 1 vaut 2^-11 ≈ 4,9e-4
+
+  // IngestSpec::chroma = Bilinear garde le noyau d'avant (bords répétés : exclus de la comparaison).
+  const auto soft =
+      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Bilinear);
+  REQUIRE(soft);
+  REQUIRE(loaded.backend->kernels()->ingest(frame, {.chroma = kernels::Filter::Bilinear}, (*rgb)->tensor()));
+  const auto bilinear = download((*rgb)->tensor());
+  worst = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 2; y < h - 2; ++y) {
+      for (int x = 2; x < w - 2; ++x) {
+        const float want = soft->planes[static_cast<std::size_t>(c)].at(x, y);
+        const float have = bilinear[static_cast<std::size_t>((c * h + y) * w + x)];
+        worst = std::max(worst, static_cast<double>(std::fabs(want - have)));
+      }
+    }
+  }
+  CHECK(worst < 2e-3);
 }
 
 TEST_CASE("Backend TensorRT : ingestion avec débandage fusionné, tampons agrandis en cours de route",
@@ -251,8 +270,9 @@ TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme 
       image.v.data[image.v.index(x, y)] = static_cast<std::uint16_t>((200 - 4 * y) * unit);
     }
   }
+  // Le contrat de la chaîne (IngestSpec::chroma : Spline36 en codes bruts), la référence de kernels/ref.
   const auto expected =
-      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Bilinear);
+      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, gpu::IngestSpec{}.chroma);
   REQUIRE(expected);
 
   Loaded loaded;
@@ -272,8 +292,8 @@ TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme 
   const auto got = download((*rgb)->tensor());
   double worst = 0.0;
   for (int c = 0; c < 3; ++c) {
-    for (int y = 2; y < h - 2; ++y) {
-      for (int x = 2; x < w - 2; ++x) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
         const float want = expected->planes[static_cast<std::size_t>(c)].at(x, y);
         const float have = got[static_cast<std::size_t>((c * h + y) * w + x)];
         worst = std::max(worst, static_cast<double>(std::fabs(want - have)));

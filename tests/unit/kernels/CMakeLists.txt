@@ -1,5 +1,6 @@
 ajp_add_unit_tests(kernels
   SOURCES
+    chroma_up_test.cpp
     color_test.cpp
     detect_test.cpp
     dither_test.cpp

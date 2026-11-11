@@ -47,6 +47,9 @@ struct WarpBlendParams {
   } textures;
 };
 
+// Images plus grandes que la fenêtre du mouvement (kernels::warp_images, le warp après SPAN) : a et b sont
+// lues en bicubique (kernels/spec/warp_bicubic.h, A49-06), lecture exacte, un pixel par fil ; le mouvement
+// et le masque restent bilinéaires.
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream);
 
 // Plus grand |déplacement| des 4 plans de flot dans la fenêtre, en pixels de la fenêtre, écrit en

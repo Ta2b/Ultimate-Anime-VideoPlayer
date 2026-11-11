@@ -8,6 +8,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/poses.h"
 #include "kernels/spec/warp.h"
+#include "kernels/spec/warp_bicubic.h"
 
 namespace ajp::kernels::ref {
 
@@ -23,22 +24,27 @@ struct Motion {
 // Refus : plan hors contrat, fenêtre vide ou qui dépasse du plan.
 Result<float> sample(const PlaneF& p, float x, float y);
 Result<float> sample(const PlaneF& p, const Window& area, float x, float y);
+// Échantillon bicubique borné au plan (spec/warp_bicubic.h), calculé ici en double par le noyau de Keys.
+Result<float> sample_bicubic(const PlaneF& p, float x, float y);
 
 // Un mouvement conforme : plans de même taille, fenêtre non vide incluse dans les plans.
 Result<void> check_motion(const Motion& motion);
 
-// Sortie = a déformé × masque + b déformé × (1 − masque), au mouvement de l'instant estimé.
-Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& motion);
+// Sortie = a déformé × masque + b déformé × (1 − masque), au mouvement de l'instant estimé. images : la
+// lecture de a et b (spec/warp_bicubic.h ; le mouvement et le masque sont toujours lus en bilinéaire).
+Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& motion,
+                            WarpImages images = WarpImages::Bilinear);
 
 // Instant t de ]0, 1[ depuis le mouvement estimé au milieu de la paire ; t = 1/2 égale
 // warp_blend. Refus : t hors de ]0, 1[.
-Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motion& motion, float t);
+Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motion& motion, float t,
+                               WarpImages images = WarpImages::Bilinear);
 
 // Garder les poses (spec/poses.h) : warp_blend_at à l'instant réglé de chaque pixel, d'après le
 // mouvement de la paire précédente ; previous nul : la paire précédente était tenue (images
 // égales). Refus : t hors de ]0, 1[, mouvements hors contrat ou de tailles différentes.
 Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Motion& motion,
-                                  const Motion* previous, float t);
+                                  const Motion* previous, float t, WarpImages images = WarpImages::Bilinear);
 
 // Plus grand déplacement absolu dans la fenêtre, en pixels de la fenêtre (k_flow_max).
 Result<float> flow_max(const Motion& motion);
