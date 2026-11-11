@@ -166,6 +166,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "display_contract.cpp",
                                         "display_follow.cpp",
                                         "stage_fallback.cpp",
+                                        "sleep_notice.cpp",
                                         "gpu_profile_out.cpp",
                                         "placebo_open.cpp",
                                         "placebo_ring.cpp",

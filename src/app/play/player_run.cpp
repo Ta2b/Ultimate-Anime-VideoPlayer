@@ -61,6 +61,7 @@
 #include "app/play/resume.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
+#include "app/play/sleep_notice.h"
 #include "app/play/sleep_watch.h"
 #include "app/play/span_auto.h"
 #include "app/play/span_derive.h"
@@ -121,18 +122,32 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
 
 // A29-02, A33-03, décision 7 : un trou dans le temps (veille, gel du processus) met la lecture en pause à
 // l'image d'avant et recale les horloges par un seek exact ; l'appareil perdu pendant la veille arrête la
-// lecture sur DeviceLost (relance, A31-02).
-std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, std::int64_t gap_us) {
+// lecture sur DeviceLost (relance, A31-02). Après une veille annoncée (sleep_notice.h), la chaîne se rouvre :
+// sous Linux, la mémoire vidéo n'est pas toujours gardée (NVreg_PreserveVideoMemoryAllocations=0) et ses
+// tampons perdus ne disent rien (B31-01). Un autre refus du GPU au réveil rouvre la chaîne aussi, au lieu
+// d'arrêter la vidéo (B31-18).
+struct AfterGap {
+  std::optional<Refusal> lost;  // l'appareil est perdu : la relance
+  bool reopen = false;
+};
+AfterGap after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, std::int64_t gap_us,
+                   bool announced) {
+  const auto log = log_channel("app");
   const std::int64_t at = session.view().position_us;
-  log_channel("app")->warn("trou de {:.1f} s (veille ou gel) : pause et recalage à {}",
-                           static_cast<double>(gap_us) / 1e6, format_position(at));
+  log->warn("trou de {:.1f} s ({}) : pause et recalage à {}", static_cast<double>(gap_us) / 1e6,
+            announced ? "veille annoncée" : "veille ou gel", format_position(at));
+  AfterGap out{.reopen = announced};
   if (c.backend) {
-    if (auto healthy = c.backend->kernels()->health(); !healthy) return std::move(healthy.error());
+    if (auto healthy = c.backend->kernels()->health(); !healthy) {
+      if (healthy.error().code == RefusalCode::DeviceLost) return {.lost = std::move(healthy.error())};
+      log->warn("GPU au réveil : {} ; la chaîne se rouvre", healthy.error().detail);
+      out.reopen = true;
+    }
   }
   session.command(cmd::Pause{});
-  if (at != kNoPts) session.command(cmd::Seek{.target_us = at, .exact = true});
+  if (at != kNoPts && !out.reopen) session.command(cmd::Seek{.target_us = at, .exact = true});
   ui.controls().notify(i18n::ui_tr("Paused after sleep"), host_now_us());
-  return std::nullopt;
+  return out;
 }
 
 // Le nouvel écran : son contrat (P3.40, A11-01), puis son pic, ses soins OLED et son vrai noir tout de suite,
@@ -504,13 +519,24 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   };
   SleepWatch sleep_watch;
+  SleepNotice sleep_notice(&LoopWake::push, &wake);  // B31-01 : la veille dite avant
+  bool sleep_announced = false;
   ScreenSaverHold screen_saver;  // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
+    if (sleep_notice.take()) {
+      // Pause avant la veille : le son s'arrête, le GPU finit ce qu'il a en vol, puis la veille suit.
+      session.command(cmd::Pause{});
+      out.flush();
+      sleep_notice.ready();
+      sleep_announced = true;
+    }
     if (const auto gap = sleep_watch.turn(host_now_us(), suspend_aware_now_us())) {
-      if (auto lost = after_gap(session, c, p.ui, *gap)) {
-        failure = std::move(*lost);
+      AfterGap after = after_gap(session, c, p.ui, *gap, std::exchange(sleep_announced, false));
+      if (after.lost) {
+        failure = std::move(*after.lost);
         break;
       }
+      if (after.reopen) chain.reopen = chain.running;
     }
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
