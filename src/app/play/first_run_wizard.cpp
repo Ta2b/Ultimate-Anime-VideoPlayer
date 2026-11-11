@@ -84,8 +84,8 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       note(
           i18n::tr("\"Calibrate now\" tests several settings on a very demanding sequence: picture "
                    "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
-                   "machine sustains. Only a progress bar is shown; it takes a few minutes, longer the first "
-                   "time (the engines are built once)."));
+                   "machine sustains. Only a progress bar is shown; the estimate below is longer with "
+                   "TensorRT, which builds its engines during the test."));
       // Calculée au moment de l'afficher, d'après les moteurs cochés maintenant : TensorRT choisi à l'écran
       // des moteurs construit ses moteurs pendant l'essai (A25-03).
       note(i18n::tr_format("Estimated for this machine: about {} minutes.",

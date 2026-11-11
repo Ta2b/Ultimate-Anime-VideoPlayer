@@ -20,7 +20,7 @@ namespace ajp::app::play {
 enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran, langue de l'interface
   Languages,    // audio et sous-titres préférés
-  Updates,      // intégration : mises à jour (Me prévenir / Automatique / Jamais), lecteur par défaut
+  Updates,      // intégration : mises à jour (Me prévenir / Jamais), lecteur par défaut
   Engines,      // moteurs à installer (TensorRT sur RTX, Core ML sur Mac)
   Summary,      // Prêt : ce qui a été choisi, la calibration proposée
 };

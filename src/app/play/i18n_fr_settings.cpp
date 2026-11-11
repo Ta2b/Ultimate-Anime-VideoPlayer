@@ -37,8 +37,11 @@ constexpr std::array kSettingsPages{
     Entry{"Run the calibration", "Lancer la calibration"},
     Entry{"Run the calibration again", "Refaire la calibration"},
     Entry{"SPAN: {} in FP16 · RIFE: {}", "SPAN : {} en FP16 · RIFE : {}"},
-    Entry{"Testing settings on a very demanding sequence: a few minutes.",
-          "Essai des réglages sur une séquence très éprouvante : quelques minutes."},
+    Entry{"Testing settings on a very demanding sequence: 5 minutes, up to 40 with TensorRT (it builds its "
+          "engines).",
+          "Essai des réglages sur une séquence très éprouvante : 5 minutes, jusqu'à 40 avec TensorRT (il "
+          "construit "
+          "ses moteurs)."},
     Entry{"The calibration failed: {}", "La calibration a échoué : {}"},
     Entry{"The maximum, reached in a very bright episode; it fades out in a very dark one.",
           "Le maximum, atteint dans un épisode très clair ; l'effet s'efface dans un épisode très sombre."},

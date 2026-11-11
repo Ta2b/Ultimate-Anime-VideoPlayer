@@ -145,7 +145,9 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
     }
   }
   if (bench.running()) {
-    note(i18n::tr("Testing settings on a very demanding sequence: a few minutes."));
+    note(
+        i18n::tr("Testing settings on a very demanding sequence: 5 minutes, up to 40 with TensorRT (it "
+                 "builds its engines)."));
     ImGui::ProgressBar(bench.fraction ? bench.fraction->load() : 0.0F, {-1.0F, 0.0F});
     if (ImGui::Button(i18n::tr("Cancel##calibration"))) bench.stop->request_stop();
     return false;

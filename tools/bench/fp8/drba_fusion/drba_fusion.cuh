@@ -38,10 +38,6 @@ __device__ __forceinline__ float arrondi(float v) {
   return __half2float(__float2half_rn(v));
 }
 
-__device__ __forceinline__ float lire(const __half* p, std::size_t i) {
-  return __half2float(p[i]);
-}
-
 // Le côté choisi du graphe : vrai si tau < 1 (img0), faux sinon (img2). tau = 2 × plan 6 de pair01.
 __device__ __forceinline__ bool cote_avant(const __half* pair01, std::size_t plan) {
   const float tau = 2.0F * __half2float(pair01[6 * plan]);

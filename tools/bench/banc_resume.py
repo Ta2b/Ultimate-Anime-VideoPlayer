@@ -5,7 +5,9 @@
   python3 -I tools/bench/banc_resume.py DOSSIER
   python3 -I tools/bench/banc_resume.py --selftest
 
-Gain acquis si |moy(B) - moy(A)| > 2 × (max(A) - min(A)), avec A mesuré plusieurs fois ; sinon « bruit ».
+Gain acquis si |moy(B) - moy(A)| > 2 × le plus grand des deux bruits, le bruit d'un côté étant son étendue
+(max - min), et avec MIN_TOURS passages au moins de chaque côté ; avec moins, « à confirmer » (une étendue sur
+trois tours est une estimation fragile) ; sinon « bruit ».
 """
 import glob
 import math
@@ -17,6 +19,7 @@ import sys
 COLUMNS = ["seq", "host_us", "pts_us", "fresh", "acquire_us", "render_us", "queue_wait_us", "interval_us",
            "dropped", "why", "missing", "lag_us", "uninterpolated", "display_gpu_us"]
 # Colonnes du retour de présentation (6.3), absentes des relevés d'avant.
+MIN_TOURS = 5  # passages de chaque côté avant de conclure à un gain (B46-15)
 FEEDBACK = ["present_id", "feedback_id", "target_us", "visible_us", "vsync_k", "level"]
 
 
@@ -69,8 +72,10 @@ def verdict(a_values, b_values):
     if not a_values or not b_values:
         return "?"
     mean_a, mean_b = statistics.fmean(a_values), statistics.fmean(b_values)
-    noise = max(a_values) - min(a_values)
-    return "gain acquis" if abs(mean_b - mean_a) > 2 * noise else "bruit"
+    noise = max(max(a_values) - min(a_values), max(b_values) - min(b_values))  # la dispersion de B compte aussi
+    if abs(mean_b - mean_a) <= 2 * noise:
+        return "bruit"
+    return "gain acquis" if min(len(a_values), len(b_values)) >= MIN_TOURS else f"à confirmer (< {MIN_TOURS} tours)"
 
 
 def compare(directory):
@@ -110,13 +115,17 @@ def selftest():
 
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
-        for tour in (1, 2, 3):
+        for tour in range(1, MIN_TOURS + 1):
             for label, offset in (("A", 0), ("B", 500)):
                 with open(os.path.join(tmp, f"extrait1-tour{tour}-{label}-1.tsv"), "w", encoding="utf-8") as f:
                     f.write(table(offset, 100))
         report = compare(tmp)
         assert "extrait 1" in report and "p95_ms" in report, report
         assert "gain acquis" in report, report  # B est nettement plus lent et A n'a aucun bruit
+        # B46-15 : un B bruité n'est pas gagnant, et trois tours ne suffisent pas pour conclure.
+        assert verdict([10.0, 10.1, 10.0, 9.9, 10.0], [11.0, 15.0, 7.0, 13.0, 9.0]) == "bruit"
+        assert verdict([10.0, 10.1, 10.0], [12.0, 12.1, 12.0]).startswith("à confirmer")
+        assert verdict([10.0, 10.1, 10.0, 9.9, 10.0], [12.0, 12.1, 12.0, 11.9, 12.0]) == "gain acquis"
         assert percentile([1, 2, 3, 4], 50) == 2.5
         bad = os.path.join(tmp, "mauvais.tsv")
         with open(bad, "w", encoding="utf-8") as f:

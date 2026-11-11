@@ -2,8 +2,12 @@
 """Banding d'instantanés 16 bits (étape 5.5c du plan NVIDIA).
 
 Compte les paliers d'un dégradé sombre : sur chaque ligne, une plage d'au moins --run pixels de même code
-RGB, dans la zone sombre (luminance BT.2020 sous --dark), bordée des deux côtés d'un pas d'un seul code
-10 bits (au plus 64 sur 65 535). Rendu : paliers par mégapixel.
+RGB, dans la zone sombre (luminance BT.2020 des codes PQ sous le seuil --dark, en nits), bordée des deux côtés
+d'un pas d'un seul code 10 bits (au plus 64 sur 65 535). Rendu : paliers par mégapixel.
+
+Le seuil est en nits (B46-04) : les dégradés sombres se voient entre 0,5 et 20 nits, d'où 20 nits par défaut
+(code PQ 0,36 environ). --dark-pq prend un code PQ à la place (l'ancien --dark 0,10 valait 0,33 nit : il
+excluait presque toute la plage utile).
 
   banding.py A.ppm [B.ppm …]                 paliers de chaque image
   banding.py --compare A.ppm B.ppm [--max-ratio 1.10]
@@ -14,40 +18,31 @@ data/calibration/calibration.mkv, une fois avec l'anneau par défaut et une fois
 """
 import argparse
 import sys
+from pathlib import Path
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "common"))
+import hdr  # noqa: E402
+
+DARK_NITS = 20.0  # la zone sombre : sous ce niveau, un palier d'un code 10 bits se voit
 
 STEP_10BIT = 65535.0 / 1023.0  # un code 10 bits, en codes 16 bits
 
 
 def read_ppm16(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    fields = []
-    i = 0
-    while len(fields) < 4:
-        while data[i:i + 1].isspace():
-            i += 1
-        if data[i:i + 1] == b"#":
-            while data[i:i + 1] not in (b"\n", b""):
-                i += 1
-            continue
-        j = i
-        while not data[j:j + 1].isspace():
-            j += 1
-        fields.append(data[i:j])
-        i = j
-    i += 1
-    if fields[0] != b"P6":
-        raise ValueError(f"{path} : PPM binaire (P6) attendu")
-    width, height, maxval = int(fields[1]), int(fields[2]), int(fields[3])
-    dtype = ">u2" if maxval > 255 else "u1"
-    pixels = np.frombuffer(data, dtype=dtype, count=width * height * 3, offset=i).reshape(height, width, 3)
-    scale = 65535.0 / maxval
-    return pixels.astype(np.float64) * scale
+    """Codes 16 bits (flottants 0 à 65535) d'un PPM binaire de tout maximum."""
+    return hdr.read_ppm16(path, strict16=False) * 65535.0
 
 
-def bands(image, run=16, dark=0.10):
+def dark_code(nits=DARK_NITS):
+    """Le code PQ (0 à 1) d'un niveau en nits : le seuil de bands()."""
+    return float(hdr.nits_to_pq(nits))
+
+
+def bands(image, run=16, dark=None):
+    """Paliers par mégapixel ; dark : seuil en code PQ (0 à 1), DARK_NITS par défaut."""
+    dark = dark_code() if dark is None else dark
     height, width, _ = image.shape
     luma = (0.2627 * image[..., 0] + 0.6780 * image[..., 1] + 0.0593 * image[..., 2]) / 65535.0
     count = 0
@@ -77,9 +72,11 @@ def main():
     parser.add_argument("--compare", action="store_true", help="deux images : rapport B / A")
     parser.add_argument("--max-ratio", type=float, default=1.10)
     parser.add_argument("--run", type=int, default=16, help="longueur minimale d'un palier (pixels)")
-    parser.add_argument("--dark", type=float, default=0.10, help="luminance maximale de la zone sombre")
+    parser.add_argument("--dark", type=float, default=DARK_NITS, help="niveau maximal de la zone sombre, en nits (20)")
+    parser.add_argument("--dark-pq", type=float, default=None, help="le même seuil en code PQ (0 à 1), prioritaire")
     args = parser.parse_args()
-    values = [bands(read_ppm16(path), args.run, args.dark) for path in args.images]
+    dark = args.dark_pq if args.dark_pq is not None else dark_code(args.dark)
+    values = [bands(read_ppm16(path), args.run, dark) for path in args.images]
     for path, value in zip(args.images, values):
         print(f"{path}\t{value:.1f} paliers par mégapixel")
     if args.compare:
