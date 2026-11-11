@@ -6,11 +6,13 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "app/play/build_progress.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/live_settings.h"
 #include "app/play/options.h"
@@ -23,11 +25,10 @@
 
 namespace ajp::app::play {
 
-// Les moteurs du cache, ceux de cette lecture en tête (SPAN à span_size, RIFE à rife_size).
+// Les moteurs du cache, ceux de cette lecture en tête : loaded, les moteurs que la chaîne a construits
+// (B08-12 : la variante mouvement ou le fusionné de RIFE, pas seulement le modèle tel que livré).
 std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
-                                       const std::filesystem::path& span, WorkSize span_size,
-                                       const std::optional<std::filesystem::path>& rife,
-                                       const kernels::RifeGeometry& rife_size);
+                                       std::span<const LoadedEngine> loaded);
 
 // Le multiplicateur en centièmes (250) écrit à la française : « 2,5 », « 3,75 », « 4 ».
 std::string auto_factor_text(int centi);

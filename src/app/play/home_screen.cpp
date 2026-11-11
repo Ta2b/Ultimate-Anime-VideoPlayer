@@ -175,7 +175,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
       .hdr_output = !h.options.sdr && system_hdr(content_peak_nits(h.screen.window())),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
-      .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
+      .engines = engine_badges(h.paths.engines, {}),
       .chosen_engines = chosen_line(st.engines),
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
       .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),

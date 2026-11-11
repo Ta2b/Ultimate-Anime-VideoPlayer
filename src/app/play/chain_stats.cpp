@@ -51,9 +51,7 @@ std::string_view auto_reason_label(core::AutoReason reason) {
 }  // namespace
 
 std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
-                                       const std::filesystem::path& span, WorkSize span_size,
-                                       const std::optional<std::filesystem::path>& rife,
-                                       const kernels::RifeGeometry& rife_size) {
+                                       std::span<const LoadedEngine> loaded_engines) {
   std::vector<EngineBadge> badges;
   for (const PastBuild& past : past_builds(cache_dir)) {
     std::string file = past.onnx.filename().string();
@@ -62,11 +60,8 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
     const bool is_rife = lower_file.find("rife") != std::string::npos;
     SpanVariantKind variant_kind = SpanVariantKind::Int8;
     const std::optional<std::string> int8 = span_int8_source(file, &variant_kind);
-    const bool loaded = is_rife ? rife && past.onnx.filename() == rife->filename() &&
-                                      past.width == rife_size.padded_width &&
-                                      past.height == rife_size.padded_height
-                                : past.onnx.filename() == span.filename() && past.width == span_size.width &&
-                                      past.height == span_size.height;
+    const bool loaded =
+        std::ranges::any_of(loaded_engines, [&](const LoadedEngine& e) { return built_from(e, past); });
     badges.push_back(EngineBadge{
         .name = is_rife ? std::format("RIFE · {}", past.onnx.stem().string())
                 : int8  ? std::format("SPAN · {} · {}", model_label(*int8), variant_text(variant_kind))

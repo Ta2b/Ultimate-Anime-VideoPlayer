@@ -14,6 +14,7 @@
 
 #include "core/charconv.h"
 #include "core/dir_entries.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -144,6 +145,20 @@ std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
     if (auto past = read_build_log(log_ends(path, size))) builds.push_back(std::move(*past));
   }
   return builds;
+}
+
+bool built_from(const LoadedEngine& engine, const PastBuild& past) {
+  const std::string ext = core::to_utf8(engine.onnx.extension());
+  if (ext == ".rifefused" || ext == ".drbafused") {
+    // « rife-fusion1-1088x1920-<empreinte>-image.rifefused » : ses morceaux portent le même début.
+    std::string stem = core::to_utf8(engine.onnx.stem());
+    for (const std::string_view tail : {"-image", "-motion"}) {
+      if (stem.ends_with(tail)) stem.resize(stem.size() - tail.size());
+    }
+    return !stem.empty() && core::to_utf8(past.onnx.filename()).starts_with(stem + "-");
+  }
+  return past.onnx.filename() == engine.onnx.filename() && past.width == engine.width &&
+         past.height == engine.height;
 }
 
 namespace {

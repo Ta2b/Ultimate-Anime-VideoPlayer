@@ -196,6 +196,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
     Player& p;
     ~BuilderRelease() { p.builder.reset(); }
   } builder_release{p};
+  p.loaded_engines.clear();
   const int width = p.video.width;
   const int height = p.video.height;
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
@@ -221,6 +222,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
         if (p.notice.empty() && c.fallback_fresh) p.notice = fused_refusal_notice(c.opened);
         c.played = std::move(plan->settings);
         c.stage_notes.insert(c.stage_notes.begin(), plan->notes.begin(), plan->notes.end());
+        c.loaded_engines = std::exchange(p.loaded_engines, {});
       }
       return std::move(*chain);
     }

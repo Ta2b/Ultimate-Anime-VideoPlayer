@@ -180,6 +180,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   auto loaded = backend.load(**artifact);
   backend.use_lane(gpu::Lane::Upscale);
   if (!loaded) return std::unexpected(std::move(loaded.error()));
+  p.loaded_engines.push_back(
+      {.onnx = onnx, .width = static_cast<int>(shape.dims[3]), .height = static_cast<int>(shape.dims[2])});
   return std::optional(std::move(*loaded));
 }
 

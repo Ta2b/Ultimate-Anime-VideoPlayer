@@ -120,6 +120,9 @@ struct Player {
   // B08-03 : l'instance de construction des moteurs d'une ouverture (EngineRequest::builder), posée par
   // prepare_chain et rendue à sa fin : elle ne garde pas un contexte CUDA pendant la lecture.
   std::shared_ptr<BackendLibrary::Instance> builder;
+  // B08-12 : les moteurs que prepare_engine a chargés pour la préparation en cours (ChainEngines les
+  // reprend).
+  std::vector<LoadedEngine> loaded_engines;
 };
 
 // Les messages des backends, sur le canal « backend » du journal.
