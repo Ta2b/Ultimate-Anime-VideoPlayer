@@ -174,5 +174,9 @@ jobs:
           # Un dépôt public à part porte les releases (le lecteur télécharge ses moteurs sans compte) : secret
           # AJP_RELEASE_TOKEN qui peut y écrire. Seule étape à porter ce jeton, après toute construction (A28-08).
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
-        run: tools/release/attach-assets.sh "$AJP_TAG" "$RUNNER_TEMP"/package/ajp-*.tar.gz \
-          "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage" "$RUNNER_TEMP/package/engines.lock" "$RUNNER_TEMP/package/SHA256SUMS"
+        # Bloc « | » : dans un scalaire simple, YAML replie le saut de ligne en espace et la barre oblique échappait
+        # cette espace (« \ /chemin… », fichier introuvable : v0.11.0-rc.2).
+        run: |
+          tools/release/attach-assets.sh "$AJP_TAG" "$RUNNER_TEMP"/package/ajp-*.tar.gz \
+            "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage" "$RUNNER_TEMP/package/engines.lock" \
+            "$RUNNER_TEMP/package/SHA256SUMS"
