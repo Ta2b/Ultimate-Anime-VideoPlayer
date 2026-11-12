@@ -37,6 +37,15 @@ target_compile_definitions(ajp_app_tests PRIVATE AJP_MEDIA_CLIP_DIR="${CMAKE_CUR
 # ([.e2e]) : seul ce test le lance, hors des préréglages filtrés (Windows, macOS sans GPU).
 target_compile_definitions(ajp_app_tests PRIVATE AJP_PLAYER_EXE="$<TARGET_FILE:ajp>")
 add_dependencies(ajp_app_tests ajp)
+# Sans les chemins de l'arbre de construction (Release, C18-06), le lecteur ne cherche ses backends qu'à côté de
+# lui, comme dans le paquet : le test y met une copie du backend Vulkan (package-linux.sh prend chaque fichier par
+# son nom, la copie n'entre pas dans l'archive).
+if(TARGET ajp_backend_vulkan AND NOT AJP_DEV_BACKEND_PATHS)
+  add_custom_command(TARGET ajp_app_tests POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:ajp_backend_vulkan>" "$<TARGET_FILE_DIR:ajp>"
+    VERBATIM)
+  add_dependencies(ajp_app_tests ajp_backend_vulkan)
+endif()
 add_test(NAME "e2e: lecture de bout en bout et scénarios de recette" COMMAND ajp_app_tests "[e2e]")
 set_tests_properties("e2e: lecture de bout en bout et scénarios de recette" PROPERTIES TIMEOUT 400 RUN_SERIAL TRUE)
 
