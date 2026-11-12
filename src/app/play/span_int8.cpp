@@ -150,7 +150,7 @@ std::string variant_scores(const SpanInt8& variant) {
 std::optional<SpanInt8Lookup> size_judgement(const toml::table& receipt, const std::string& where,
                                              const SpanFp8Context& fp8, bool old_gate,
                                              const SpanInt8& variant) {
-  if (auto old = outdated(receipt, where, fp8, old_gate)) return *old;
+  if (auto old = outdated(receipt, where, fp8, old_gate)) return old;
   const std::string size = gpu::span_fp8::size_key(fp8.width, fp8.height);
   const auto listed = [&](std::string_view key) {
     if (const toml::array* sizes = receipt[key].as_array())
