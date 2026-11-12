@@ -74,7 +74,9 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                  wizard.update_mode == UpdateMode::Notify, pick);
       if (pick) wizard.update_mode = UpdateMode::Notify;
       pick = false;
-      radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == UpdateMode::Never, pick);
+      radio_note(i18n::tr("Never"),
+                 i18n::tr("No update notifications. Engine packages of this version are still looked up."),
+                 wizard.update_mode == UpdateMode::Never, pick);
       if (pick) wizard.update_mode = UpdateMode::Never;
       section(i18n::tr("Default player"));
       ImGui::Checkbox(i18n::tr("Make it the default video player"), &wizard.make_default);

@@ -70,6 +70,7 @@
 #include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
+#include "app/play/updater.h"
 #include "app/play/upscale_stage.h"
 #include "app/play/user_keys.h"
 #include "app/play/visible_error.h"
@@ -602,6 +603,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (const auto notice = session.take_notice())
         p.ui.controls().warn(
             i18n::ui_tr_format("Playback goes on after an error: {}", visible_error(*notice)), host_now_us());
+      if (p.update_news && p.update_news->take_unseen())
+        p.ui.controls().warn(i18n::ui_tr_format("Update {} available (Settings > General > Application)",
+                                                load_update_state(p.update_news->file).latest_version),
+                             host_now_us());
       free_missing_seen = shown.missing;
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);

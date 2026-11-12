@@ -208,17 +208,17 @@ void announce_first(i18n::Translated& notice, i18n::Translated& first) {
 
 // Annoncés une fois par lancement, pas à chaque vidéo.
 struct Announced {
-  bool update = false;
   bool calibration = false;
 };
 
 // « Me prévenir » : une version plus récente vue par la dernière vérification. P3.11 : une calibration faite
 // sur une autre carte ne sert plus ; la refaire est proposé.
-void announce_once(Player& player, Announced& announced, const std::filesystem::path& update_file,
-                   UpdateMode mode, const std::string& gpu, int display_height) {
-  const UpdateState update = load_update_state(update_file);
-  if (!announced.update && mode == UpdateMode::Notify && !update.latest_version.empty()) {
-    announced.update = true;
+void announce_once(Player& player, Announced& announced, UpdateNews& news, UpdateMode mode,
+                   const std::string& gpu, int display_height) {
+  player.update_news = &news;
+  const UpdateState update = load_update_state(news.file);
+  if (!news.shown.load() && mode == UpdateMode::Notify && !update.latest_version.empty()) {
+    news.shown.store(true);
     player.notice =
         i18n::ui_tr_format("Update {} available (Settings > General > Application)", update.latest_version);
   }
@@ -299,8 +299,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     }
   }
   std::atomic<bool> playing{false};  // la vérification des mises à jour attend la fin de la vidéo
+  UpdateNews update_news{.file = paths::update_state(paths.data)};  // avant le fil qui le pose
   std::jthread update_check;
-  const std::filesystem::path update_file = paths::update_state(paths.data);
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_with_notes(settings_path, startup_notes);
@@ -391,7 +391,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   }
   // Après l'assistant, qui choisit le mode des mises à jour (A18-03).
   if (!options.bench_out && !options.data_dir)
-    update_check = start_update_check(settings_path, paths, playing);
+    update_check = start_update_check(settings_path, paths, playing, update_news);
   // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
   // Une seule relance par mise à jour : si le module reste périmé après elle, on ne boucle pas.
   const std::filesystem::path relaunch_marker = paths.data / "engines-relaunched";
@@ -598,7 +598,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     player.manual_tracks = &manual_tracks;
     player.relaunch_on_loss =
         !scripted && relaunch_allowed(relaunch_after_loss.lost_recently, relaunch_after_loss.launched_s);
-    announce_once(player, announced, update_file, saved->update_mode, here.name, host.display_height);
+    announce_once(player, announced, update_news, saved->update_mode, here.name, host.display_height);
     announce_first(player.notice, relaunch_note);
     announce_first(player.notice, engine_fallback);
     // Déjà traduites par set_aside() : montrées telles quelles.

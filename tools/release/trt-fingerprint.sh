@@ -7,7 +7,8 @@
 #
 # Entrées communes : le code que le module lie (src/core, gpu, kernels, prepare), CUTLASS (noyaux SPAN FP8), les
 # définitions CMake (cmake/, le CMakeLists.txt racine sans sa ligne VERSION, qui change à chaque release sans
-# toucher le module, et CMakePresets.json, qui porte les options du préréglage de livraison) et versions.env.
+# toucher le module, et CMakePresets.json, qui porte les options du préréglage de livraison) et, de versions.env, les
+# seules lignes CUDA_*, TENSORRT_* et AJP_RELEASE_REPO (C51-15).
 # Linux : la recette des dépendances, l'extraction de trtexec et des en-têtes TensorRT (linux-tensorrt.sh), le workflow
 # qui construit le paquet (architectures passées à CMake), l'image du préflight, l'empaquetage et l'index des fichiers
 # NVIDIA (B51-09). Windows :
@@ -30,13 +31,18 @@ if [ "$platform" = linux ]; then
     .github/workflows/trt-package.yml)
 else
   paths+=(vcpkg.json ports tools/deps/windows-tensorrt.ps1 tools/release/package-windows.ps1
-    tools/release/nvidia-vendor/tensorrt-windows-x64.lock)
+    tools/release/nvidia-vendor/tensorrt-windows-x64.lock tools/release/windows/sign.ps1)
 fi
 {
   git ls-files -- "${paths[@]}" | LC_ALL=C sort | while IFS= read -r file; do
     # Fins de ligne ramenées à LF : l'empreinte est la même quel que soit le poste qui l'a extraite.
     if [ "$file" = CMakeLists.txt ]; then
       sed '/^  VERSION [0-9.]*$/d' "$file" | tr -d '\r' | sha256sum
+    elif [ "$file" = tools/release/versions.env ]; then
+      # Les seules lignes qui touchent le module : le kit CUDA, TensorRT et le dépôt des releases (les liens de
+      # l'index). Meson, les paquets apt, appimagetool et le reste portent le lecteur : une mise à jour de l'un
+      # d'eux ne refait pas un paquet TensorRT de une à deux heures (C51-15).
+      tr -d '\r' < "$file" | grep -E '^(CUDA_|TENSORRT_|AJP_RELEASE_REPO=)' | sha256sum
     else
       tr -d '\r' < "$file" | sha256sum
     fi | cut -d' ' -f1 | sed "s|\$|  $file|"
