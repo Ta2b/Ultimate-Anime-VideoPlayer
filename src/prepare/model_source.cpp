@@ -74,8 +74,9 @@ struct KnownContent {
   std::string key;
 };
 
-std::mutex g_known_mutex;
-std::map<std::string, KnownContent> g_known;  // par SHA-256 de l'ONNX
+// Les contenus déjà hachés, par SHA-256 de l'ONNX : cache du processus, sous mutex.
+std::mutex g_known_mutex;                     // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::map<std::string, KnownContent> g_known;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 std::vector<std::pair<std::filesystem::path, Stamp>> weight_stamps(
     const std::filesystem::path& folder, const std::vector<std::string>& locations) {

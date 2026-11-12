@@ -84,7 +84,7 @@ class Pipeline {
     std::vector<ExternalSubtitle> externals;
     media::TrackChoice choice;
   };
-  static std::expected<SourceRead, Refusal> read_source(PipelineConfig config);
+  static std::expected<SourceRead, Refusal> read_source(const PipelineConfig& config);
   // Ouvre le fichier (ou prend read, déjà lu), choisit les pistes, ouvre le décodeur et lance les threads. Le
   // thread source part en dernier : tout ce qu'il nourrit existe déjà.
   static std::expected<std::unique_ptr<Pipeline>, Refusal> open(

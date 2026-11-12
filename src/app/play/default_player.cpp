@@ -15,6 +15,7 @@
 #include <stop_token>
 #include <system_error>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #include "app/play/i18n.h"
@@ -509,7 +510,7 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
     const std::filesystem::path mimeapps = place.home / ".config" / "mimeapps.list";
     if (auto text = core::read_text_file_if_present(mimeapps); text && *text) {
       if (const std::string cleaned = without_desktop_id(**text, kDesktopId); cleaned != **text)
-        (void)core::write_text_atomically(mimeapps, cleaned);
+        std::ignore = core::write_text_atomically(mimeapps, cleaned);
     }
   }
   refresh_desktop_database(file.parent_path());

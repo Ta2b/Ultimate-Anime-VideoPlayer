@@ -114,7 +114,7 @@ struct VideoDecoder::State {
   std::optional<ColorInfo>
       last_color;  // la dernière couleur valide, pour une image dont l'étiquette est refusée
   bool color_fallback_logged = false;
-  std::chrono::steady_clock::time_point last_data_log{};
+  std::chrono::steady_clock::time_point last_data_log;
   int data_errors_unlogged = 0;
 
   // Données abîmées : l'image en cause est perdue, le décodage continue. Une ligne par seconde au plus avec

@@ -133,7 +133,7 @@ std::vector<std::string> wanted_subtitles(const media::LanguagePriorities& langu
 
 }  // namespace
 
-std::expected<Pipeline::SourceRead, Refusal> Pipeline::read_source(PipelineConfig config) {
+std::expected<Pipeline::SourceRead, Refusal> Pipeline::read_source(const PipelineConfig& config) {
   auto demuxer = media::Demuxer::open(config.file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   // P3.73 : les sous-titres à côté de la vidéo concourent avec ceux du conteneur, à leur langue lue dans le
@@ -173,6 +173,11 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   media::Demuxer* demuxer = &read->demuxer;
   std::vector<ExternalSubtitle>& externals = read->externals;
   const media::TrackChoice& choice = read->choice;
+  // read_source refuse un fichier sans vidéo ; une lecture venue d'ailleurs se vérifie ici aussi.
+  if (!choice.video) {
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable,
+                                   std::format("{}: no video track", prepare::utf8_path(config.file))});
+  }
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();
   for (const media::Chapter& chapter : demuxer->chapters())
@@ -373,7 +378,7 @@ std::expected<void, Refusal> Pipeline::open_subtitles(
   if (!thread) {
     // C13-06 : un étage qui manque laisse la vidéo continuer. Sans fil des sous-titres, la lecture se fait
     // sans eux, avec un avis ; le menu n'en propose aucun, et un fichier glissé est refusé (subs_inbox_ nul).
-    mail_.report("subs", std::move(thread.error()), false);
+    mail_.report("subs", thread.error(), false);
     subs_inbox_.reset();
     menu_.subtitles.clear();
     menu_.subtitle_selected.reset();

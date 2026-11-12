@@ -77,7 +77,7 @@ class PathFileSink final : public spdlog::sinks::base_sink<std::mutex> {
   std::size_t parts_;
   std::ofstream out_;
   std::size_t written_ = 0;
-  std::chrono::steady_clock::time_point tried_at_{};
+  std::chrono::steady_clock::time_point tried_at_;
 };
 
 }  // namespace

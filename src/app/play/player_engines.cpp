@@ -177,7 +177,8 @@ namespace {
 
 // TensorRT ouvert avec une seule voie de calcul, faute de mémoire vidéo libre (C37-04) : dit à l'écran une
 // fois, au début de la lecture suivante.
-std::atomic<bool> g_single_lane{false};
+// État du processus, atomique : posé par une préparation, lu une fois à la lecture suivante.
+std::atomic<bool> g_single_lane{false};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 }  // namespace
 
