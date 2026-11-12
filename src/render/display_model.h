@@ -57,6 +57,10 @@ struct DisplayContract {
   // qu'une valeur par défaut.
   enum class PeakSource : std::uint8_t { Default, Compositor, Headroom, Edid };
   PeakSource peak_source = PeakSource::Default;
+  // D'où vient la courbe du limiteur (C11-04) : le plein champ du système (DXGI), de DisplayID, le MaxFALL de
+  // l'EDID, ou la table QD-OLED par défaut.
+  enum class AblSource : std::uint8_t { Default, System, DisplayId, Edid };
+  AblSource abl_source = AblSource::Default;
 
   double k() const { return reference_nits > 0.0 ? reference_nits / kContentReferenceNits : 1.0; }
   double content_peak_nits() const { return panel_peak_nits / k(); }      // C_pk
@@ -81,6 +85,10 @@ ContractMetadata contract_metadata(const DisplayContract& contract);
 // × oled_abl_ratio, C41-06 : une dalle de 800 cd/m² ne tient pas en plein champ les 261 d'une QD-OLED de
 // 1016) ; le pic partout pour un LCD.
 std::array<double, 5> default_abl(double panel_peak_nits, bool oled);
+// L_max par surface quand l'écran dit ce qu'il tient plein champ (C11-04 : DXGI MaxFullFrameLuminance,
+// DisplayID, MaxFALL de l'EDID) : la forme de la courbe QD-OLED, en log, ramenée entre le pic (2 %) et cette
+// valeur (100 %). Plein champ au pic ou plus : le pic partout.
+std::array<double, 5> abl_to_full_frame(double panel_peak_nits, double full_frame_nits);
 
 // La part de L_max(2 %) que la courbe QD-OLED garde à cette surface (1 à 2 % et moins, 0,257 à 100 %).
 double oled_abl_ratio(double area);

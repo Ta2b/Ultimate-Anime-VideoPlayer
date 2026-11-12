@@ -262,6 +262,20 @@ std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts) {
   return facts.edid_peak.value_or(kUnknownPeakNits);
 }
 
+std::optional<ContentPeak> peak_of(const PeakFacts& facts) {
+  using Source = ContentPeak::Source;
+  if (!facts.sdl_hdr && !(facts.windows && facts.system_hdr_active)) return std::nullopt;
+  if (facts.system_peak && *facts.system_peak > 0.0)
+    return ContentPeak{
+        .nits = *facts.system_peak, .source = Source::Compositor, .full_frame_nits = facts.system_full_frame};
+  const std::optional<double> estimated = uncalibrated_peak_nits(facts);
+  if (!estimated) return std::nullopt;
+  // La source de l'estimation, pour le journal : la marge de SDL, ou la crête de l'EDID quand elle l'emporte.
+  Source source = facts.sdl_hdr ? Source::Headroom : Source::Default;
+  if (facts.windows && facts.edid_peak && *estimated == *facts.edid_peak) source = Source::Edid;
+  return ContentPeak{.nits = *estimated, .source = source};
+}
+
 // Crête vue par le contenu sur l'écran de la fenêtre : le pic que le système a calibré (system_peak.h),
 // sinon ce que uncalibrated_peak_nits déduit de la marge HDR de SDL3 ; rien si l'écran n'est pas en HDR
 // (display.md).
@@ -270,6 +284,11 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
 }
 
 std::optional<double> content_peak_nits(SDL_Window* window, const DisplaySdl& sdl) {
+  const std::optional<ContentPeak> peak = content_peak(window, sdl);
+  return peak ? std::optional(peak->nits) : std::nullopt;
+}
+
+std::optional<ContentPeak> content_peak(SDL_Window* window, const DisplaySdl& sdl) {
   const SDL_PropertiesID props = SDL_GetWindowProperties(window);
   const float headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F);
   PeakFacts facts{
@@ -279,18 +298,22 @@ std::optional<double> content_peak_nits(SDL_Window* window, const DisplaySdl& sd
   facts.windows = true;
   const std::optional<WindowMonitor> monitor = window_monitor(window);
   const wchar_t* device = monitor ? monitor->info.szDevice : nullptr;
-  if (facts.sdl_hdr) {
-    // Le pic que Windows a calibré (application « Étalonnage HDR ») : MaxLuminance de la sortie DXGI de
-    // l'écran de la fenêtre. Sous Windows le connecteur ne sert pas : demandé même sans EDID au registre
-    // (dock, écran virtuel, A11-07).
-    if (const auto calibrated = system_peak_nits({}, headroom, monitor ? monitor->handle : nullptr))
-      return calibrated;
-    facts.sdr_white_nits = windows_sdr_white_nits(device);
-  } else {
+  if (!facts.sdl_hdr) {
     facts.system_hdr_active = windows_hdr_active(device);
     if (!facts.system_hdr_active) return std::nullopt;
   }
-  if (const auto display = read_display(sdl.name)) facts.edid_peak = display->peak_nits;
+  // Le pic que Windows a calibré (application « Étalonnage HDR ») : MaxLuminance de la sortie DXGI de
+  // l'écran de la fenêtre, que SDL voie le HDR ou non (C11-01). Sous Windows le connecteur ne sert pas :
+  // demandé même sans EDID au registre (dock, écran virtuel, A11-07).
+  double full_frame = 0.0;
+  facts.system_peak = system_peak_nits({}, headroom, monitor ? monitor->handle : nullptr, {}, &full_frame);
+  if (full_frame > 0.0) facts.system_full_frame = full_frame;
+  if (!facts.system_peak) {
+    if (facts.sdl_hdr) facts.sdr_white_nits = windows_sdr_white_nits(device);
+    // C11-07 : l'EDID de l'écran de la fenêtre, par son instance, pas le premier écran du même nom.
+    if (const auto display = read_display(sdl.name, monitor_interface(window)))
+      facts.edid_peak = display->peak_nits;
+  }
 #else
   if (!facts.sdl_hdr) return std::nullopt;
   // La marge de SDL est relative au blanc de référence du compositeur (KDE : la « luminosité SDR »), pas à
@@ -298,11 +321,10 @@ std::optional<double> content_peak_nits(SDL_Window* window, const DisplaySdl& sd
   if (const auto display = read_display(sdl.name)) {
     // B11-04 : l'entrée KWin de cet écran, pas celle d'un ancien écran du même port.
     const std::string edid = kwin_edid_key(display->manufacturer, display->product);
-    if (const auto calibrated = system_peak_nits(display->connector, headroom, nullptr, edid))
-      return calibrated;
+    facts.system_peak = system_peak_nits(display->connector, headroom, nullptr, edid);
   }
 #endif
-  return uncalibrated_peak_nits(facts);
+  return peak_of(facts);
 }
 
 static_assert(limits::kTrueHdrPeak.lo == static_cast<int>(kMinHdrPeakNits));  // un seul seuil (P3.66)

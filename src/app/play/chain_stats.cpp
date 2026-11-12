@@ -178,8 +178,9 @@ void log_gpu_warning(const std::string& warning, const std::string& line) {
 }  // namespace
 
 std::optional<std::string> ChainStats::read_gpu() const {
-  if (telemetry_ == nullptr) return std::nullopt;
-  const std::optional<GpuSample> sample = telemetry_->sample(host_now_us());
+  GpuTelemetry* const telemetry = telemetry_ != nullptr ? telemetry_->get() : nullptr;
+  if (telemetry == nullptr) return std::nullopt;
+  const std::optional<GpuSample> sample = telemetry->sample(host_now_us());
   if (!sample) return std::nullopt;
   std::string line = telemetry_line(*sample);
   const std::string warning = telemetry_warning(*sample);

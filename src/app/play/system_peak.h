@@ -18,6 +18,17 @@ struct KwinOutput {
   std::optional<double> peak_override;
   std::optional<double> reference;
 };
+// Le pic vu par le contenu sur l'écran de la fenêtre (content_peak, host_facts.h) et d'où il vient (C11-09) :
+// Compositor seulement pour le pic que le système a calibré (DXGI, KDE), Headroom pour la marge de SDL
+// (× blanc), Edid pour la crête de l'EDID, Default pour la valeur prudente de Windows sans rien d'autre.
+struct ContentPeak {
+  enum class Source : std::uint8_t { Default, Compositor, Headroom, Edid };
+  double nits = 0.0;
+  Source source = Source::Default;
+  std::optional<double> full_frame_nits;  // Windows : MaxFullFrameLuminance de DXGI, avec le pic calibré
+  friend bool operator==(const ContentPeak&, const ContentPeak&) = default;
+};
+
 // connector : « DP-1 » (le préfixe « card1- » de DRM est ôté). Rien si la sortie n'y est pas.
 // edid : le début de « edidIdentifier » de l'écran branché (kwin_edid_key), vide si inconnu. KWin garde une
 // entrée par écran déjà vu sur ce port : celle de cet écran l'emporte (A11-04) ; sans elle, celle où le HDR
@@ -43,6 +54,7 @@ std::optional<std::int64_t> kwin_config_stamp();
 // Le fichier de KDE se cherche sous ~/.config : XDG_CONFIG_HOME n'est pas lu (aucune variable
 // d'environnement dans src/, B11-12).
 std::optional<double> system_peak_nits(std::string_view connector, double headroom,
-                                       const void* monitor = nullptr, std::string_view edid = {});
+                                       const void* monitor = nullptr, std::string_view edid = {},
+                                       double* full_frame_nits = nullptr);
 
 }  // namespace ajp::app::play

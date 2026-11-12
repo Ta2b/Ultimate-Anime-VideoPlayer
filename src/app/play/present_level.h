@@ -18,8 +18,9 @@ enum class PresentLevel : std::uint8_t { Open, Wayland, Wait, Timing, TimingAbso
 
 // --present=… : auto choisit le meilleur niveau disponible ; un niveau nommé n'est jamais dépassé, et
 // retombe sur le meilleur en dessous, sauf wait (le défaut, options.h), qui prend un niveau qui date quand il
-// y en a un (choose_present_level). open est la présentation d'avant.
-enum class PresentWanted : std::uint8_t { Open, Auto, Wayland, Wait, Timing };
+// y en a un (choose_present_level). timing relit les dates sans en viser ; timing-absolute vise une date
+// (presentAtAbsoluteTime), pour comparer les deux. open est la présentation d'avant.
+enum class PresentWanted : std::uint8_t { Open, Auto, Wayland, Wait, Timing, TimingAbsolute };
 
 // Ce que l'appareil (fonctionnalités activées) et la surface (capacités) offrent.
 struct PresentCaps {
@@ -38,6 +39,7 @@ constexpr std::optional<PresentWanted> parse_present(std::string_view text) {
   if (text == "wayland") return PresentWanted::Wayland;
   if (text == "wait") return PresentWanted::Wait;
   if (text == "timing") return PresentWanted::Timing;
+  if (text == "timing-absolute") return PresentWanted::TimingAbsolute;
   return std::nullopt;
 }
 
@@ -91,7 +93,8 @@ constexpr PresentLevel choose_present_level(const PresentCaps& caps, PresentWant
   if (wanted == PresentWanted::Open) return Open;
   if (wanted == PresentWanted::Wayland) return available(Wayland, caps) ? Wayland : Open;
   if (wanted != PresentWanted::Wait) {
-    if (available(TimingAbsolute, caps)) return TimingAbsolute;
+    // La date visée seulement à auto et timing-absolute : timing ne fait que relire (C10-02).
+    if (wanted != PresentWanted::Timing && available(TimingAbsolute, caps)) return TimingAbsolute;
     if (available(Timing, caps)) return Timing;
   }
   if (available(Wayland, caps)) return Wayland;
@@ -104,13 +107,15 @@ constexpr bool timing_level(PresentLevel level) {
 }
 
 // Present timing reste muet (A10-06) : kSilentPresents présentations parties, aucune date revenue. Le niveau
-// retombe alors sur fallback_level : wp_presentation s'il est ouvert, sinon le sondage.
+// retombe alors sur fallback_level : wp_presentation s'il est ouvert, sinon le sondage s'il est offert,
+// sinon rien (C10-03 : un niveau « wait » sans present_wait2 ne sondait rien et trompait le journal).
 inline constexpr std::uint64_t kSilentPresents = 120;
 constexpr bool feedback_silent(std::uint64_t issued, std::uint64_t returned) {
   return returned == 0 && issued >= kSilentPresents;
 }
-constexpr PresentLevel fallback_level(bool wayland_open) {
-  return wayland_open ? PresentLevel::Wayland : PresentLevel::Wait;
+constexpr PresentLevel fallback_level(bool wayland_open, const PresentCaps& caps) {
+  if (wayland_open) return PresentLevel::Wayland;
+  return available(PresentLevel::Wait, caps) ? PresentLevel::Wait : PresentLevel::Open;
 }
 
 // Swapchain hors Open : 4 images, 2 en vol (une image visée d'avance, une à l'écran) ; Open garde celle
@@ -133,6 +138,15 @@ constexpr RefreshState vrr_state(std::uint64_t duration_ns, std::uint64_t interv
   if (interval_ns == UINT64_MAX) return RefreshState::Variable;
   if (interval_ns == duration_ns) return RefreshState::Fixed;
   return RefreshState::Unknown;
+}
+
+// L'état de la fréquence lu par wp_presentation (C10-01) : la durée du rafraîchissement de chaque retour, 0
+// quand la sortie n'a plus de fréquence constante (VRR) ou qu'elle est inconnue, et le drapeau
+// WP_PRESENTATION_FEEDBACK_KIND_VSYNC, sans lequel l'image n'est pas partie au vblank (déchirement). Fixe
+// seulement avec les deux ; le protocole ne distingue pas un VRR d'un rafraîchissement inconnu.
+inline constexpr std::uint32_t kWaylandKindVsync = 0x1;
+constexpr RefreshState wayland_refresh_state(std::uint32_t refresh_ns, std::uint32_t flags) {
+  return refresh_ns != 0 && (flags & kWaylandKindVsync) != 0 ? RefreshState::Fixed : RefreshState::Unknown;
 }
 
 // Un relevé de l'horloge hôte rendu par Vulkan, en nanosecondes (A10-07). Sous Linux le domaine
