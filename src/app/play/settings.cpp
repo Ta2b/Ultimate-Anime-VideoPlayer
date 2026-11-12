@@ -148,13 +148,13 @@ std::string_view name(SpanOrder order) {
 std::string_view label(SpanOrder order) {
   switch (order) {
     case SpanOrder::Auto:
-      return i18n::tr("Auto (after SPAN above 1080p)");
+      return i18n::tr("Auto (after SPAN above 1080p or from ×3)");
     case SpanOrder::Before:
       return i18n::tr("Before SPAN (best quality)");
     case SpanOrder::After:
       return i18n::tr("After SPAN (fastest)");
   }
-  return i18n::tr("Auto (after SPAN above 1080p)");
+  return i18n::tr("Auto (after SPAN above 1080p or from ×3)");
 }
 
 std::string_view name(FinalScaler scaler) {

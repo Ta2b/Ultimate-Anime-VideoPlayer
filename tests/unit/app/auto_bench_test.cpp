@@ -29,16 +29,16 @@ BenchRun run(Tier level, std::int64_t lost = 0, std::int64_t presents = 2000, st
 
 TEST_CASE("un essai tient quand peu d'images sont perdues et le retard est court", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
-  CHECK(holds(run(Tier::Fast)));
-  CHECK(holds(run(Tier::Fast, 40)));        // 2 %
-  CHECK_FALSE(holds(run(Tier::Fast, 41)));  // juste au-dessus
-  CHECK_FALSE(holds(run(Tier::Fast, 0, 2000, 6060 * 2 + 1)));
-  CHECK(holds(run(Tier::Fast, 0, 2000, 6060 * 2)));
+  CHECK(holds(run(Tier::Quality)));
+  CHECK(holds(run(Tier::Quality, 40)));        // 2 %
+  CHECK_FALSE(holds(run(Tier::Quality, 41)));  // juste au-dessus
+  CHECK_FALSE(holds(run(Tier::Quality, 0, 2000, 6060 * 2 + 1)));
+  CHECK(holds(run(Tier::Quality, 0, 2000, 6060 * 2)));
 }
 
 TEST_CASE("un essai trop court ne tient pas", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
-  CHECK_FALSE(holds(run(Tier::Light, 0, 50)));
+  CHECK_FALSE(holds(run(Tier::Fast, 0, 50)));
 }
 
 TEST_CASE("la recherche monte tant que ça tient puis s'arrête", "[auto_bench]") {
@@ -46,32 +46,32 @@ TEST_CASE("la recherche monte tant que ça tient puis s'arrête", "[auto_bench]"
   std::vector<BenchRun> runs;
   CHECK(next_level(runs, Tier::Normal) == Tier::Normal);
   runs.push_back(run(Tier::Normal));
-  CHECK(next_level(runs, Tier::Normal) == Tier::Fast);
-  runs.push_back(run(Tier::Fast));
+  CHECK(next_level(runs, Tier::Normal) == Tier::Quality);
+  runs.push_back(run(Tier::Quality));
   CHECK(next_level(runs, Tier::Normal) == Tier::Ultra);
   runs.push_back(run(Tier::Ultra, 500));
   CHECK_FALSE(next_level(runs, Tier::Normal));  // Ultra ne tient pas, Rapide tient : fini
-  CHECK(best_level(runs) == Tier::Fast);
+  CHECK(best_level(runs) == Tier::Quality);
 }
 
 TEST_CASE("la recherche descend quand le niveau estimé ne tient pas", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
-  std::vector<BenchRun> runs{run(Tier::Fast, 500)};
-  CHECK(next_level(runs, Tier::Fast) == Tier::Normal);
+  std::vector<BenchRun> runs{run(Tier::Quality, 500)};
+  CHECK(next_level(runs, Tier::Quality) == Tier::Normal);
   runs.push_back(run(Tier::Normal, 500));
-  CHECK(next_level(runs, Tier::Fast) == Tier::Light);
-  runs.push_back(run(Tier::Light));
-  CHECK_FALSE(next_level(runs, Tier::Fast));
-  CHECK(best_level(runs) == Tier::Light);
+  CHECK(next_level(runs, Tier::Quality) == Tier::Fast);
+  runs.push_back(run(Tier::Fast));
+  CHECK_FALSE(next_level(runs, Tier::Quality));
+  CHECK(best_level(runs) == Tier::Fast);
 }
 
 TEST_CASE("rien ne tient : Économe, et la recherche s'arrête en bas", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
-  const std::vector<BenchRun> runs{run(Tier::Light, 500)};
-  CHECK(next_level(runs, Tier::Light) == Tier::Economy);
+  const std::vector<BenchRun> runs{run(Tier::Fast, 500)};
+  CHECK(next_level(runs, Tier::Fast) == Tier::Economy);
   std::vector<BenchRun> all = runs;
   all.push_back(run(Tier::Economy, 500));
-  CHECK_FALSE(next_level(all, Tier::Light));
+  CHECK_FALSE(next_level(all, Tier::Fast));
   CHECK(best_level(all) == Tier::Economy);
 }
 
@@ -89,11 +89,11 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
   CHECK(read->gpu == result.gpu);
   CHECK(read->level == Tier::Ultra);
   CHECK(read->date == "2026-10-28");
-  CHECK_FALSE(parse_bench("version = 2\nlevel = 9\ngpu = \"x\""));
+  CHECK_FALSE(parse_bench("version = 3\nlevel = 9\ngpu = \"x\""));
   // B07-06 : un bench.toml d'une version plus ancienne (d'autres chaînes) ne décide plus.
   CHECK_FALSE(parse_bench("version = 1\nlevel = 3\ngpu = \"x\""));
   CHECK_FALSE(parse_bench("level = 3\ngpu = \"x\""));
-  CHECK(parse_bench("version = 2\nlevel = 3\ngpu = \"x\""));
+  CHECK(parse_bench("version = 3\nlevel = 3\ngpu = \"x\""));
   CHECK_FALSE(parse_bench("level = 1"));
   CHECK_FALSE(parse_bench("gpu = ["));
   CHECK_FALSE(load_bench(std::filesystem::temp_directory_path() / "ajp-no-such-bench.toml"));
@@ -109,11 +109,11 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
 TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
-  CHECK(effective_tier(gpu, std::nullopt) == Tier::Fast);  // l'estimation
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}) == Tier::Ultra);
+  CHECK(effective_tier(gpu, std::nullopt, false) == Tier::Quality);  // l'estimation
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}, false) == Tier::Ultra);
   // Une autre carte (changement de matériel) : la mesure ne vaut plus.
-  CHECK(effective_tier(gpu, BenchResult{.gpu = "NVIDIA GeForce GTX 1060", .level = Tier::Economy}) ==
-        Tier::Fast);
+  CHECK(effective_tier(gpu, BenchResult{.gpu = "NVIDIA GeForce GTX 1060", .level = Tier::Economy}, false) ==
+        Tier::Quality);
 }
 
 TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
@@ -122,24 +122,23 @@ TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
                      .driver = "2400",
                      .vendor = GpuVendor::Nvidia,
                      .tensor_cores = true};
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}) ==
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}, false) ==
         Tier::Ultra);
   // Pilotes illisibles qui diffèrent : la mesure ne vaut plus.
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "v2300", .level = Tier::Ultra}) ==
-        Tier::Fast);
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "v2300", .level = Tier::Ultra}, false) ==
+        Tier::Quality);
   // A37-09 : 580.82 puis 580.95 garde la mesure ; 590.10 la jette, comme la calibration.
   GpuFacts updated = gpu;
   updated.driver = std::to_string((580U << 22U) | (95U << 14U));
   const std::string before = std::to_string((580U << 22U) | (82U << 14U));
-  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra}) ==
-        Tier::Ultra);
+  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra},
+                       false) == Tier::Ultra);
   updated.driver = std::to_string((590U << 22U) | (10U << 14U));
-  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra}) ==
-        Tier::Fast);
+  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra},
+                       false) == Tier::Quality);
   CHECK(driver_branch_changed(before, updated.driver));
   CHECK_FALSE(driver_branch_changed(before, ""));
-  const auto read =
-      parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Light}));
+  const auto read = parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Fast}));
   REQUIRE(read);
   CHECK(read->driver == "2400");
 }
@@ -147,12 +146,12 @@ TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
 TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
   const BenchReading reading{
-      .gpu = "g", .driver = "7", .run = run(Tier::Fast, 10), .span_variant = "FP8 CUTLASS"};
+      .gpu = "g", .driver = "7", .run = run(Tier::Quality, 10), .span_variant = "FP8 CUTLASS"};
   const auto read = parse_reading(format_reading(reading));
   REQUIRE(read);
   CHECK(read->gpu == "g");
   CHECK(read->driver == "7");
-  CHECK(read->run.level == Tier::Fast);
+  CHECK(read->run.level == Tier::Quality);
   CHECK(read->run.presents == 2000);
   CHECK(read->run.dropped + read->run.missing == 10);
   CHECK(read->run.lag_p95_us == 3000);
@@ -163,7 +162,7 @@ TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
 }
 
 TEST_CASE("la lecture d'un essai : le profil GPU fait l'aller-retour en TOML", "[auto_bench][profile]") {
-  BenchReading reading{.gpu = "g", .driver = "7", .run = run(Tier::Fast, 10)};
+  BenchReading reading{.gpu = "g", .driver = "7", .run = run(Tier::Quality, 10)};
   reading.gpu_stages = {
       ajp::gpu::GpuStageSummary{
           .name = "rôle agrandissement", .count = 1200, .total_ms = 5400.5, .median_ms = 4.5, .p95_ms = 5.25},
@@ -175,13 +174,13 @@ TEST_CASE("la lecture d'un essai : le profil GPU fait l'aller-retour en TOML", "
   const auto read = parse_reading(format_reading(reading));
   REQUIRE(read);
   CHECK(read->gpu_stages == reading.gpu_stages);
-  CHECK(parse_reading(format_reading(BenchReading{.run = run(Tier::Fast, 10)}))->gpu_stages.empty());
+  CHECK(parse_reading(format_reading(BenchReading{.run = run(Tier::Quality, 10)}))->gpu_stages.empty());
 }
 
 TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
   const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .work_dir = "/tmp/w", .seconds = 9};
-  const auto args = bench_child_args(plan, Tier::Light, "/tmp/w/d", "/tmp/w/o.toml");
+  const auto args = bench_child_args(plan, Tier::Fast, "/tmp/w/d", "/tmp/w/o.toml");
   const auto has = [&](std::string_view arg) { return std::ranges::find(args, arg) != args.end(); };
   CHECK(args.front() == "play");
   CHECK(has("--mute"));
@@ -190,7 +189,7 @@ TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau
   CHECK((has("--hidden") || has("--window=320x180")));  // masquée, ou petite et visible sous GNOME / Wayland
   CHECK_FALSE(has("--fullscreen"));
   const BenchPlan visible{.executable = "/x/ajp", .video = "/v/a.mkv", .silent = false};
-  const auto shown = bench_child_args(visible, Tier::Light, "/d", "/o");
+  const auto shown = bench_child_args(visible, Tier::Fast, "/d", "/o");
   CHECK(std::ranges::find(shown, "--fullscreen") != shown.end());
   CHECK(std::ranges::find(shown, "--hidden") == shown.end());
   CHECK(has("--bench-level=1"));
@@ -228,9 +227,9 @@ TEST_CASE("ajp bench : options et refus", "[auto_bench]") {
 TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
   BenchOutcome outcome;
-  outcome.estimated = Tier::Fast;
-  outcome.runs = {run(Tier::Fast), run(Tier::Ultra, 600)};
-  outcome.result = BenchResult{.gpu = "g", .driver = "", .level = Tier::Fast};
+  outcome.estimated = Tier::Quality;
+  outcome.runs = {run(Tier::Quality), run(Tier::Ultra, 600)};
+  outcome.result = BenchResult{.gpu = "g", .driver = "", .level = Tier::Quality};
   const std::string report = format_bench_report(outcome);
   CHECK(report.contains("tient"));
   CHECK(report.contains("ne tient pas"));
@@ -287,7 +286,7 @@ TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto
   ajp::app::play::FrenchUi french;
   BenchResult result{.gpu = "NVIDIA GeForce RTX 4070 Ti",
                      .driver = "615.78",
-                     .level = Tier::Fast,
+                     .level = Tier::Quality,
                      .date = "2026-10-29",
                      .work_height = 900,
                      .rife_model = "rife_v4.25.onnx"};
@@ -297,13 +296,13 @@ TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto
   CHECK(back->rife_model == "rife_v4.25.onnx");
   // Un bench.toml sans exploration : rien d'exploré.
   const auto bare =
-      parse_bench("version = 2\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
+      parse_bench("version = 3\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
   REQUIRE(bare);
   CHECK(bare->work_height == 0);
   CHECK(bare->rife_model.empty());
   // B07-06 : celui d'une version d'avant (d'autres chaînes) se lit sans planter, mais ne décide plus.
   CHECK_FALSE(parse_bench("version = 1\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\n").has_value());
-  CHECK_FALSE(parse_bench("version = 2\ngpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
+  CHECK_FALSE(parse_bench("version = 3\ngpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
 }
 
 TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_bench][exploration]") {
@@ -317,4 +316,49 @@ TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_
   REQUIRE(back);
   CHECK(back->work_height == 720);
   CHECK(back->rife_model == "rife_v4.22_lite.onnx");
+}
+
+TEST_CASE("le banc juge un niveau comme la calibration juge ses essais (C07-06)", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
+  // Dix secondes sur un écran à 60 Hz, RIFE ×2 à 48 i/s : tient.
+  BenchReading reading{
+      .gpu = "x",
+      .run = {.level = Tier::Normal, .presents = 600, .lag_p95_us = 3000, .period_us = 16'667},
+      .interval_mean_us = 20'833,
+      .new_frames = 480};
+  CHECK(holds(judged_run(reading)));
+  // L'Auto a coupé RIFE sans perdre une image : 24 i/s au lieu de 48, le niveau ne tient pas.
+  BenchReading cut = reading;
+  cut.interval_mean_us = 41'667;
+  cut.new_frames = 240;
+  CHECK(holds(cut.run));  // l'ancienne règle le disait tenu
+  CHECK_FALSE(holds(judged_run(cut)));
+  // 2 % de pertes par présentation (une saccade toutes les 2 s) : tenu pour l'ancienne règle, pas pour
+  // celle des images visées.
+  BenchReading lossy = reading;
+  lossy.run.dropped = 12;
+  CHECK(holds(lossy.run));
+  CHECK_FALSE(holds(judged_run(lossy)));
+  // Économe ne joue pas RIFE : 24 i/s y suffisent.
+  BenchReading economy = cut;
+  economy.run.level = Tier::Economy;
+  CHECK(holds(judged_run(economy)));
+}
+
+TEST_CASE("bench.toml note le moteur et ne vaut que pour lui (C07-06)", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
+  const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
+  const BenchResult tensorrt{.gpu = gpu.name, .level = Tier::Ultra, .engine = "tensorrt"};
+  const auto back = parse_bench(format_bench(tensorrt));
+  REQUIRE(back);
+  CHECK(back->engine == "tensorrt");
+  CHECK(effective_tier(gpu, *back, true) == Tier::Ultra);
+  // Le paquet TensorRT refusé, Vulkan joue : l'estimation reprend.
+  CHECK(effective_tier(gpu, *back, false) == Tier::Quality);
+  CHECK_FALSE(measured_here(*back, gpu, false));
+  const BenchResult vulkan{.gpu = gpu.name, .level = Tier::Normal, .engine = "vulkan"};
+  CHECK(effective_tier(gpu, vulkan, false) == Tier::Normal);
+  CHECK(effective_tier(gpu, vulkan, true) == Tier::Quality);
+  // Une mesure de la version 2 (verdict lâche, moteur non noté) ne décide plus.
+  CHECK_FALSE(parse_bench("version = 2\nlevel = 3\ngpu = \"x\""));
 }

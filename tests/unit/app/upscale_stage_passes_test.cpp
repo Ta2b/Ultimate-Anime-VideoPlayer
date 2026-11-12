@@ -1,6 +1,7 @@
 // L'étage gpu, ce qu'il paie et ce qu'il écrit dans deux cas du Rapide (audit 09) : RIFE mouvement sans
 // « garder les poses » à un seul instant hors du milieu (B09-01), et DistilDRBA dont la sortie chargée
-// d'écrire b passe en retard pendant qu'elle attend un slot (B09-03).
+// d'écrire b passe en retard pendant qu'elle attend un slot (B09-03) ; et la première paire d'un plan avec
+// les poses, qui attend sa propre mesure (C09-04).
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -122,6 +123,27 @@ TEST_CASE(
   const std::vector<std::string> shape = shape_of(rig.sink.frames());
   REQUIRE(shape.size() >= 2);
   CHECK(shape[1] == "2");
+}
+
+TEST_CASE("Étage gpu : RIFE mouvement avec poses, la première paire d'un plan attend sa mesure (C09-04)",
+          "[app][stage]") {
+  // Un plan qui commence en mouvement fort : sans paire d'avant pour décider, la première paire mesure le
+  // sien et a RIFE à chaque instant, au lieu du milieu extrapolé (contours doublés).
+  Rig rig;
+  rig.live->set_keep_poses(true);
+  UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.backend.motion_max(40.0F);
+  rig.feed(1, 3);
+  REQUIRE(rig.collect(7));
+  rig.stage.reset();
+  // (1,2) : le milieu, sa mesure attendue (forte), RIFE à 1/3 et 2/3 ; (2,3) décidée sur la mesure en fond
+  // de (1,2) : de même, sans attente.
+  CHECK(rig.backend.count("engine rife_motion") == 3 + 3);
+  CHECK(rig.backend.count("flow_max_take") == 1 + 1);
+  CHECK(rig.backend.count("flow_max_now") == 0);
 }
 
 }  // namespace ajp::app::play

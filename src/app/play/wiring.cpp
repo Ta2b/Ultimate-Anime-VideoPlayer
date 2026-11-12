@@ -73,7 +73,7 @@ void MainMail::failed(const Refusal& refusal) {
 
 ThreadReport MainMail::reporter(std::string stage) {
   return ThreadReport([this, stage = std::move(stage)](const Refusal& refusal) {
-    report(stage, refusal, refusal.code == RefusalCode::ThreadFailed || refusal.key == kFatalStageKey);
+    report(stage, refusal, refusal.code == RefusalCode::ThreadFailed || is_fatal_stage_key(refusal.key));
   });
 }
 

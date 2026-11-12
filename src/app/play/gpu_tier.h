@@ -17,11 +17,11 @@
 
 namespace ajp::app::play {
 
-enum class Tier : std::uint8_t { Economy, Light, Normal, Fast, Ultra };
+enum class Tier : std::uint8_t { Economy, Fast, Normal, Quality, Ultra };
 inline constexpr int kTierCount = 5;
 
 // Les noms du menu : « Economy », « Fast », « Normal », « Quality », « Ultra » (en français Économe, Rapide,
-// Normal, Qualité, Ultra) ; Tier::Light est « Fast », Tier::Fast est « Quality ».
+// Normal, Qualité, Ultra), ceux des valeurs. Les fichiers gardent l'entier (0 à 4), inchangé.
 std::string_view tier_label(Tier tier);
 
 struct TierRule {
@@ -44,7 +44,7 @@ const TierTable& builtin_tier_table();
 extern const std::string_view kGpuTiersToml;
 
 struct TierEstimate {
-  Tier tier = Tier::Light;
+  Tier tier = Tier::Fast;
   bool matched = false;     // une règle de la table : sinon estimation par les faits
   bool integrated = false;  // iGPU
 };

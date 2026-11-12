@@ -128,7 +128,11 @@ struct FakePlayer {
                                          .dropped = 0,
                                          .missing = 0,
                                          .lag_p95_us = 1000,
-                                         .period_us = 16'667}};
+                                         .period_us = 16'667},
+                                 // RIFE ×2 à 48 i/s sur l'écran à 60 Hz : le verdict de la calibration le
+                                 // dit tenu (C07-06).
+                                 .interval_mean_us = 20'833,
+                                 .new_frames = 1200};
       std::ofstream(dir / std::format("lecture-{}.toml", level)) << format_reading(reading);
     }
     std::ofstream script(exe);

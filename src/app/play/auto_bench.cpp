@@ -26,7 +26,7 @@ constexpr std::int64_t kDefaultPeriodUs = 16'667;  // 60 Hz
 }  // namespace
 
 bool holds(const BenchRun& run) {
-  if (run.presents < kMinPresents) return false;
+  if (run.short_of_target || run.presents < kMinPresents) return false;
   const double lost = static_cast<double>(run.dropped + run.missing) / static_cast<double>(run.presents);
   const std::int64_t period = run.period_us > 0 ? run.period_us : kDefaultPeriodUs;
   return lost <= kMaxLossRate && run.lag_p95_us <= kMaxLagPeriods * period;
@@ -80,6 +80,7 @@ std::string format_bench(const BenchResult& result) {
   root.insert("date", result.date);
   if (result.work_height > 0) root.insert("work_height", static_cast<std::int64_t>(result.work_height));
   if (!result.rife_model.empty()) root.insert("rife_model", result.rife_model);
+  if (!result.engine.empty()) root.insert("engine", result.engine);
   std::ostringstream out;
   out << root << '\n';
   return out.str();
@@ -110,6 +111,7 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
     return refuse(RefusalCode::FieldOutOfRange, "bench.toml : work_height hors plage");
   result.work_height = static_cast<int>(height);
   result.rife_model = root["rife_model"].value_or(std::string());
+  result.engine = root["engine"].value_or(std::string());
   return result;
 }
 
@@ -243,12 +245,14 @@ bool driver_branch_changed(std::string_view measured, std::string_view now) {
   return *before != *after;
 }
 
-bool measured_here(const BenchResult& measured, const GpuFacts& gpu) {
-  return measured.gpu == gpu.name && !driver_branch_changed(measured.driver, gpu.driver);
+bool measured_here(const BenchResult& measured, const GpuFacts& gpu, bool tensorrt) {
+  if (measured.gpu != gpu.name || driver_branch_changed(measured.driver, gpu.driver)) return false;
+  // Un niveau mesuré sous TensorRT déborde Vulkan, celui de Vulkan bride TensorRT (C07-06).
+  return measured.engine.empty() || (measured.engine == "tensorrt") == tensorrt;
 }
 
-Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured) {
-  if (measured && measured_here(*measured, gpu)) return measured->level;
+Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured, bool tensorrt) {
+  if (measured && measured_here(*measured, gpu, tensorrt)) return measured->level;
   return estimate_tier(gpu).tier;
 }
 

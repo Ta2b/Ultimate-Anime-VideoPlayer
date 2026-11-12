@@ -138,6 +138,13 @@ std::optional<SpanInt8Lookup> outdated(const toml::table& receipt, const std::st
   return std::nullopt;
 }
 
+// Repris dans « Ready: … » et les refus du menu : dans la langue de l'interface (C07-09).
+std::string variant_scores(const SpanInt8& variant) {
+  return i18n::tr_format(
+      "mean PSNR {} dB, worst {} dB, worst SSIM {}", std::format("{:.1f}", variant.psnr_mean_db),
+      std::format("{:.1f}", variant.psnr_worst_db), std::format("{:.4f}", variant.ssim_worst));
+}
+
 }  // namespace
 
 bool span_fp8_cutlass_model(const std::filesystem::path& span) {
@@ -206,8 +213,7 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
                          .psnr_worst_db = receipt["psnr_worst_db"].value_or(0.0),
                          .ssim_worst = receipt["ssim_worst"].value_or(0.0),
                          .receipt_v2 = v2};
-  const std::string scores = std::format("PSNR moyen {:.1f} dB, pire {:.1f} dB, pire SSIM {:.4f}",
-                                         variant.psnr_mean_db, variant.psnr_worst_db, variant.ssim_worst);
+  const std::string scores = variant_scores(variant);
   // Un refus d'une porte plus ancienne, ou d'une autre carte ou d'autres noyaux, se refait (stale).
   const bool old_gate =
       v2 && fp8 != nullptr && receipt["gate_version"].value_or(std::int64_t{1}) < gpu::span_fp8::kGateVersion;

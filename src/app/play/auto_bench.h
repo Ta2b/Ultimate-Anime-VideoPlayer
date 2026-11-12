@@ -28,13 +28,16 @@ struct BenchRun {
   std::int64_t missing = 0;     // images manquées (GPU en retard), hors celles volontaires
   std::int64_t lag_p95_us = 0;  // retard de présentation, 95e centile
   std::int64_t period_us = 0;   // période de l'écran ; 0 : inconnue (60 Hz)
+  // C07-06 : le verdict de la calibration (trial_holds, machine_calibration.h) a dit non : pertes par image
+  // visée au-dessus du seuil, ou RIFE coupé par l'Auto. Posé par celui qui lance l'essai, pas lu du fichier.
+  bool short_of_target = false;
 };
 
 inline constexpr double kMaxLossRate = 0.02;       // images perdues ou manquées, par présentation
 inline constexpr int kMaxLagPeriods = 2;           // retard p95 toléré, en périodes de l'écran
 inline constexpr std::int64_t kMinPresents = 120;  // sous ce nombre, l'essai ne dit rien
 
-// La machine tient-elle ce niveau ? Un essai trop court ne tient pas.
+// La machine tient-elle ce niveau ? Un essai trop court, ou en deçà de sa cadence visée, ne tient pas.
 bool holds(const BenchRun& run);
 
 // Le prochain niveau à essayer : l'estimé d'abord ; après un essai qui tient, le niveau au-dessus ; après un
@@ -87,6 +90,9 @@ struct BenchResult {
   // vide : la chaîne du niveau telle quelle.
   int work_height = 0;
   std::string rife_model;
+  // Le moteur qui a joué les essais (« tensorrt », « vulkan », « coreml ») : un niveau mesuré sous TensorRT
+  // ne vaut pas sous Vulkan, ni l'inverse (C07-06, même règle que calibration_use). Vide : inconnu.
+  std::string engine;
 };
 
 // Les essais d'exploration après le niveau : le prochain palier de hauteur de travail au-dessus de celle qui
@@ -96,8 +102,9 @@ std::optional<int> next_work_height(int tenue, int source_height);
 std::optional<std::string> next_rife_model(const std::string& tenu);
 
 // La version de bench.toml : à relever quand les chaînes des niveaux changent (modèles, hauteurs), pour
-// qu'une mesure faite avec d'autres chaînes ne décide plus (B07-06). 2 : les chaînes actuelles des niveaux.
-inline constexpr std::int64_t kBenchVersion = 2;
+// qu'une mesure faite avec d'autres chaînes ne décide plus (B07-06). 2 : les chaînes actuelles des niveaux ;
+// 3 : le verdict de la calibration et le moteur noté (C07-06).
+inline constexpr std::int64_t kBenchVersion = 3;
 std::string format_bench(const BenchResult& result);
 std::expected<BenchResult, Refusal> parse_bench(std::string_view toml);
 std::expected<BenchResult, Refusal> load_bench(
@@ -108,10 +115,11 @@ std::expected<void, Refusal> save_bench(const std::filesystem::path& file, const
 // mineure du pilote et se marque « à refaire » quand sa branche change : la majeure de driverVersion, codée
 // au bit 22 par NVIDIA (580.82) comme par Mesa (25.2.4). Pilote inconnu d'un côté : rien n'a changé.
 bool driver_branch_changed(std::string_view measured, std::string_view now);
-// La mesure est-elle de cette carte et de cette branche de pilote ?
-bool measured_here(const BenchResult& measured, const GpuFacts& gpu);
-// La tranche à appliquer : la mesure si elle est de cette carte et de cette branche de pilote, sinon
-// l'estimation.
-Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured);
+// La mesure est-elle de cette carte, de cette branche de pilote et de ce moteur ? tensorrt : TensorRT joue
+// l'agrandissement ici (CalibrationHost::tensorrt).
+bool measured_here(const BenchResult& measured, const GpuFacts& gpu, bool tensorrt);
+// La tranche à appliquer : la mesure si elle est de cette carte, de cette branche de pilote et de ce moteur,
+// sinon l'estimation.
+Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured, bool tensorrt);
 
 }  // namespace ajp::app::play

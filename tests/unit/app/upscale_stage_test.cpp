@@ -304,13 +304,14 @@ TEST_CASE("Étage gpu : RIFE mouvement avec poses, une seule image intermédiair
   rig.feed(1, 5);  // calme : le milieu seul, une passe par paire
   REQUIRE(rig.collect(7));
   CHECK(rig.backend.count("engine rife_motion") == 4);
-  CHECK(rig.backend.count("flow_max_start") == 4);
+  // Une mesure par paire, et celle que la première paire du plan attend (C09-04).
+  CHECK(rig.backend.count("flow_max_start") == 4 + 1);
   rig.backend.motion_max(40.0F);
   rig.feed(6, 11);
   REQUIRE(rig.collect(16));
   rig.stage.reset();
   // Six paires de plus, chacune mesurée ; dès la mesure forte relue, RIFE aussi à l'instant hors milieu.
-  CHECK(rig.backend.count("flow_max_start") == 10);
+  CHECK(rig.backend.count("flow_max_start") == 10 + 1);
   CHECK(rig.backend.count("engine rife_motion") == 15);
   CHECK(rig.backend.count("flow_max_now") == 0);
 }

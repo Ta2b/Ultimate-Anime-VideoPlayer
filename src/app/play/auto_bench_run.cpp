@@ -191,10 +191,19 @@ BenchReading worse(const BenchReading& x, const BenchReading& y) {
 // que rien ne l'explique (A18-18).
 bool explore_held(const Trial& trial, std::vector<std::string>& notes) {
   if (!trial.reading && !trial.why.empty()) notes.push_back(trial.why);
-  return trial.reading && holds(trial.reading->run);
+  return trial.reading && holds(judged_run(*trial.reading));
 }
 
 }  // namespace
+
+BenchRun judged_run(const BenchReading& reading) {
+  BenchRun run = reading.run;
+  // Économe ne joue ni SPAN ni RIFE (auto_config.cpp) ; les autres niveaux jouent les deux.
+  const bool full = run.level != Tier::Economy;
+  const ChainCandidate chain{.span = full, .rife = full, .height = reading.work_height};
+  run.short_of_target = !trial_holds(chain, reading, trial_target_fps(chain, run.period_us));
+  return run;
+}
 
 std::expected<BenchReading, Refusal> play_variant(const BenchPlan& plan, const Variant& variant, int index,
                                                   const std::stop_token& stop,
@@ -275,8 +284,6 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
   };
   const auto log = log_channel("app");
   BenchOutcome outcome;
-  std::string gpu;
-  std::string driver;
   std::optional<Tier> level;                          // absent : « auto », le premier essai
   std::vector<std::optional<BenchReading>> readings;  // une par essai, comme outcome.runs
   int index = 0;
@@ -300,8 +307,9 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
     if (first) {
       if (!trial.reading) return refuse(RefusalCode::DecodeFailed, trial.why);
       outcome.estimated = trial.reading->run.level;
-      gpu = trial.reading->gpu;
-      driver = trial.reading->driver;
+      // La carte, le pilote et le moteur de l'essai : un niveau ne vaut que pour eux (C07-06).
+      outcome.result = {
+          .gpu = trial.reading->gpu, .driver = trial.reading->driver, .engine = trial.reading->engine};
       first_elapsed = trial.elapsed;
     }
     if (!first && !trial.reading && trial.timed_out && any_held) {
@@ -313,14 +321,14 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
       break;
     }
     if (!trial.reading) outcome.notes.push_back(trial.why);
-    outcome.runs.push_back(trial.reading ? trial.reading->run
+    outcome.runs.push_back(trial.reading ? judged_run(*trial.reading)
                                          : BenchRun{.level = current});  // vide : ne tient pas
     readings.push_back(trial.reading);
     if (holds(outcome.runs.back())) any_held = true;
     level = next_level(outcome.runs, outcome.estimated);
     if (!level) break;
   }
-  outcome.result = BenchResult{.gpu = gpu, .driver = driver, .level = best_level(outcome.runs)};
+  outcome.result.level = best_level(outcome.runs);
 
   // L'exploration, une fois le niveau connu : la hauteur de travail au-dessus de celle du niveau tant que la
   // machine tient, puis le modèle RIFE au-dessus du modèle léger. Le multiplicateur reste au mode Auto, qui

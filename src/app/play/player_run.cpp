@@ -127,11 +127,18 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
+// L'anneau refusé à l'ouverture du pipeline : la retraite le lit sous sa clé (C09-01, links.h).
+Refusal ring_refusal(Refusal refusal) {
+  refusal.key = std::string(kRingRefusalKey);
+  return refusal;
+}
+
 // B31-02 : l'étage que ce refus retire pour la réouverture (stage_fallback.h, retreat_stage) ; rien pour le
 // banc, qui mesure la chaîne demandée ou rien.
 std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusal& refusal) {
   return retreat_stage(p.options.bench_out ? nullptr : p.stages, refusal, c.played, c.interpolates(),
-                       c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file);
+                       c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file,
+                       {.display_hz = c.opened.display_hz, .source_fps = c.opened.source_fps});
 }
 
 // Les annonces de début de lecture : la reprise là où elle s'était arrêtée, et TensorRT ouvert avec une
@@ -284,8 +291,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       },
       std::move(*read));
   if (!pipeline) {
-    // B31-02 : l'anneau ou l'étage refusé retire un étage, et la chaîne se rouvre au même endroit sans lui.
-    if (stage_refused && retreat(p, c, pipeline.error()))
+    // B31-02 : l'anneau ou l'étage refusé retire un étage, et la chaîne se rouvre au même endroit sans lui ;
+    // aucun des deux ne nomme son étage : l'interpolation d'abord (kRingRefusalKey, C09-01).
+    if (stage_refused && retreat(p, c, ring_refusal(pipeline.error())))
       return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
     return std::unexpected(std::move(pipeline.error()));
   }

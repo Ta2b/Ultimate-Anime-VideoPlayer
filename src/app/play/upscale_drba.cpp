@@ -78,8 +78,9 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
     drba_.before_ok = previous_ && previous_->epoch == frame.epoch &&
                       !cut_measured(*bridged, drba_.bridge_left_pts_us, drba_.bridge_right_pts_us);
   }
-  // b est déjà ingérée si elle est arrivée derrière l'image précédente.
-  if (drba_.after_id == frame.id && drba_.after_epoch == frame.epoch) {
+  // b est déjà ingérée si elle est arrivée derrière l'image précédente, avec la réduction d'aujourd'hui : une
+  // réduction changée au menu entre-temps la fait ingérer de nouveau, comme take_ahead (C09-07).
+  if (drba_.after_id == frame.id && drba_.after_epoch == frame.epoch && drba_.after_reduce == spec.reduce) {
     std::swap(rgb_[current_], drba_.after);
     if (small_[current_]) {
       std::swap(small_[current_], drba_.small_after);
@@ -179,6 +180,7 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   }
   drba_.after_id = after->id;
   drba_.after_epoch = after->epoch;
+  drba_.after_reduce = spec.reduce;
   drba_.left_pts_us = frame.pts_us;
   drba_.right_pts_us = after->pts_us;
   if (!measure) return {};
@@ -256,7 +258,8 @@ std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& cal
   // D6 : les mêmes images, un autre instant : le moteur fusionné garde leurs réductions et leurs encodages.
   if (*times01 && *times12) setup_.distil_drba->next_times_only();
   const std::array inputs{drba_.pair01->tensor(), drba_.pair12->tensor()};
-  if (auto ok = setup_.backend->enqueue(*setup_.distil_drba, inputs, results); !ok) return ok;
+  if (auto ok = setup_.backend->enqueue(*setup_.distil_drba, inputs, results); !ok)
+    return blame_stage(std::move(ok), kMotionRefusalKey);
   ++drba_.runs;
   if (!whole) ++drba_.edges;
   return {};

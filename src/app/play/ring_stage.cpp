@@ -113,8 +113,9 @@ void RingStage::fail(const ThreadReport& report, const Refusal& refusal) {
     return;
   }
   // Fatal pour main par sa clé, le code gardé : DeviceLost dit « relancer » et déclenche la relance (A31-01).
+  // L'étage nommé par le refus (C09-01) reste dans la clé : main ne retire que lui.
   Refusal fatal = refusal;
-  fatal.key = std::string(kFatalStageKey);
+  fatal.key = fatal_stage_key(refusal.key);
   report(fatal);
 }
 

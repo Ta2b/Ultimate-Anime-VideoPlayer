@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <span>
 
 #include "app/play/anime4k_choice.h"
 #include "app/play/i18n.h"
@@ -74,12 +75,12 @@ constexpr std::array<int, kTierCount> kWorkOffset{0, -1, 0, 0, 0};
 // audits) : réduire une source 1080p à la moitié de l'écran jette plus de la moitié de ses pixels avant le
 // réseau, sans mesure qui le justifie. Sur un écran plus petit que la sortie de SPAN, libplacebo réduit.
 constexpr bool keeps_source(Tier level) {
-  return level == Tier::Fast || level == Tier::Ultra;
+  return level == Tier::Quality || level == Tier::Ultra;
 }
 // Le plus grand multiplicateur ×k du mode auto.
 constexpr std::array<int, kTierCount> kFactorCap{0, 2, 3, 4, 4};
 
-// Le modèle du niveau (RIFE 4.22 lite, ou 4.25 pour Qualité et Ultra), ou en Auto le modèle plus fin
+// Le modèle du niveau (RIFE 4.22 lite, ou 4.26 pour Qualité et Ultra), ou en Auto le modèle plus fin
 // que la machine a exploré quand il tient aussi.
 void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& machine,
               std::string_view model) {
@@ -105,7 +106,7 @@ void set_span(PlaySettings& out, Tier level, int work) {
   out.work_height = economy && !economy_upscales ? 0 : work;
   out.model = std::string(level_span_model(level));
   if (kLightSpanInAuto && economy) out.model = std::string(kEconomySpanModel);
-  if (kLightSpanInAuto && level == Tier::Light) out.model = std::string(kLightTierSpanModel);
+  if (kLightSpanInAuto && level == Tier::Fast) out.model = std::string(kLightTierSpanModel);
   if (kAnime4kInAuto && economy) out.model = std::string(kAnime4kFast);
 }
 
@@ -125,10 +126,38 @@ int level_work_height(Tier level, Priority priority, int display_height) {
   return kWorkHeights[static_cast<std::size_t>(step)];
 }
 
+// Le budget par image (C07-02) : SPAN tourne une fois par image source, et son coût suit le nombre de pixels
+// (la hauteur au carré, à rapport d'image égal). Une hauteur tenue à kCalibrationFps (la calibration, ou le
+// budget du niveau : 14,25 ms pour 41,7 ms par image) ne tient plus à 60 i/s, où l'image n'a que 16,7 ms : la
+// hauteur descend au plus haut palier de heights dont le débit de pixels reste sous celui de la mesure, avec
+// kRateMargin de marge. 30 i/s (29,97 du NTSC) garde ainsi la hauteur mesurée : 25 % de pixels par seconde en
+// plus, que la marge des essais couvre (à confirmer sur la RTX, voir la PR) ; 50 et 60 i/s descendent de
+// 1080p à 720p. Cadence inconnue (0) : 24 i/s, rien ne change.
+constexpr double kRateMargin = 1.25;
+int height_for_rate(int height, double fps, std::span<const int> heights) {
+  if (!(fps > kCalibrationFps * kRateMargin) || height <= 0) return height;
+  const double budget =
+      static_cast<double>(height) * static_cast<double>(height) * kCalibrationFps * kRateMargin;
+  int kept = heights.front();
+  for (const int step : heights) {
+    if (step <= height && static_cast<double>(step) * static_cast<double>(step) * fps <= budget) kept = step;
+  }
+  return std::min(kept, height);
+}
+
 // Le multiplicateur que la fréquence demande, arrondi avec 1 % de tolérance (P3.14) : 59,94 Hz sur une source
 // à 30 i/s vaut ×2, pas ×1.
 int wanted_factor(double display_hz, double fps) {
   return static_cast<int>(std::floor((display_hz / fps) + 0.01));
+}
+
+// Le palier de la calibration juste sous height ; le plus bas s'il n'y en a pas (C07-01 : jamais au-dessus).
+int calibration_step_below(int height) {
+  int below = kCalibrationHeights.front();
+  for (const int step : kCalibrationHeights) {
+    if (step < height) below = step;
+  }
+  return std::min(below, height);
 }
 
 // Auto calibré : la chaîne mesurée (SPAN, sa hauteur, son modèle en FP16 ; RIFE en mode Instantané ou rien,
@@ -140,12 +169,21 @@ void follow_calibration(PlaySettings& out, Priority priority, const CalibratedCh
   // Sans SPAN, la calibration a mesuré la chaîne à la taille de la source (candidate_settings) : la hauteur
   // du niveau réduirait la source sans la réagrandir, une perte d'image ni mesurée ni annoncée.
   if (!cal.span) out.work_height = 0;
-  if (cal.span && cal.height > 0) {
-    // La priorité Fluidité descend d'un palier sous la mesure, pour la marge de l'interpolation ; Image
-    // garde la mesure, le plus haut palier qui tient.
-    int height = cal.height;
-    if (priority == Priority::Fluidity)
-      height = kWorkHeights[static_cast<std::size_t>(std::max(0, step_below(cal.height) - 1))];
+  int height = cal.span ? cal.height : 0;
+  // La priorité Image prend le plus haut palier où SPAN seul a tenu, quand la chaîne recommandée (la fluidité
+  // d'abord) est plus bas ; RIFE suit en mode Rapide, qui ne garde que les images que la carte a le temps de
+  // faire (C07-04).
+  const bool image = priority == Priority::Image && cal.span_height > height;
+  if (image) {
+    out.upscale = true;
+    height = cal.span_height;
+  }
+  if (height > 0) {
+    // La priorité Fluidité descend d'un palier mesuré sous la mesure, pour la marge de l'interpolation ;
+    // jamais au-dessus d'elle ni hors des paliers essayés (C07-01).
+    if (priority == Priority::Fluidity) height = calibration_step_below(height);
+    // La mesure vaut à kCalibrationFps : une source plus rapide descend d'autant (C07-02).
+    height = height_for_rate(height, source.fps, kCalibrationHeights);
     out.work_height =
         source.height > 0 ? std::min(height, std::max(source.height, kWorkHeights.front())) : height;
   }
@@ -201,11 +239,11 @@ std::optional<Tier> chain_level(Preset preset, Tier detected) {
     case Preset::Economy:
       return Tier::Economy;
     case Preset::Fast:
-      return Tier::Light;
+      return Tier::Fast;
     case Preset::Normal:
       return Tier::Normal;
     case Preset::Quality:
-      return Tier::Fast;
+      return Tier::Quality;
     case Preset::Ultra:
       return Tier::Ultra;
     case Preset::Custom:
@@ -219,7 +257,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   std::optional<Tier> level = chain_level(settings.preset, machine.tier);
   if (!level) return settings;
   // Une carte estimée Économe que la calibration a vue tenir SPAN suit la mesure, pas l'estimation.
-  if (settings.preset == Preset::Auto && machine.calibrated && *level == Tier::Economy) level = Tier::Light;
+  if (settings.preset == Preset::Auto && machine.calibrated && *level == Tier::Economy) level = Tier::Fast;
   const auto at = static_cast<std::size_t>(*level);
   PlaySettings out = settings;
   const double display_hz = machine.display_hz > 0.0 ? machine.display_hz : 60.0;
@@ -230,6 +268,8 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
     work = std::max(work,
                     machine.explored_work_height);  // l'exploration a trouvé que la machine tient plus haut
   if (source.height > 0) work = std::min(work, std::max(source.height, kWorkHeights.front()));
+  // Le budget du niveau vaut à 24 i/s : une source plus rapide descend d'autant (C07-02).
+  work = height_for_rate(work, source.fps, kWorkHeights);
 
   // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle (P3.20 : une 4K reste
   // en 4K, 0 ne réduit rien).
@@ -260,11 +300,11 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       out.rife_factor = 0;
       out.rife_auto = false;
       break;
-    case Tier::Light:
+    case Tier::Fast:
     case Tier::Normal:
       use_rife(out, settings, machine, level_rife_model(*level));
       break;
-    case Tier::Fast:
+    case Tier::Quality:
     case Tier::Ultra:
       // DistilDRBA y rentre quand sa porte de qualité est passée (kDistilDrbaInAuto).
       if (kDistilDrbaInAuto) {

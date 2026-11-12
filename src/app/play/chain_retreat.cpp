@@ -6,7 +6,7 @@
 namespace ajp::app::play {
 
 bool retreats(const Refusal& failure, const ChainEngines& c) {
-  return (failure.key == kFatalStageKey || display_retreats(failure)) &&
+  return (is_fatal_stage_key(failure.key) || display_retreats(failure)) &&
          failure.code != RefusalCode::DeviceLost && c.backend && c.backend->kernels()->health();
 }
 

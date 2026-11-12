@@ -25,10 +25,10 @@ src/app/play/settings_system.cpp	ajp::app::play::updates_page	26	90
 src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	52	192
 src/app/play/span_int8.cpp	ajp::app::play::find_span_variant	26	70
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	38	104
-src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	163	246
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::produce	37	91
-src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::start	39	62
+src/app/play/upscale_start.cpp	ajp::app::play::UpscaleStage::allocate	48	73
+src/app/play/upscale_start.cpp	ajp::app::play::UpscaleStage::start	39	62
 src/core/model_index.cpp	ajp::core::parse_vendor_file	27	59
 src/export/av_handles.cpp	ajp::exporter::color_of	34	105
 src/export/muxer.cpp	ajp::exporter::Muxer::begin	39	122

@@ -43,16 +43,16 @@ std::optional<GpuVendor> vendor_of(std::string_view key) {
 }  // namespace
 
 // Les noms du menu (auto_config.h : chain_level), pour que l'assistant et le menu disent le même niveau :
-// la tranche Light est le niveau Rapide, la tranche Fast le niveau Qualité.
+// Tier::Fast est le niveau Rapide, Tier::Quality le niveau Qualité : les noms suivent ceux du menu.
 std::string_view tier_label(Tier tier) {
   switch (tier) {
     case Tier::Economy:
       return i18n::tr("Economy");
-    case Tier::Light:
+    case Tier::Fast:
       return i18n::tr("Fast");
     case Tier::Normal:
       return i18n::tr("Normal");
-    case Tier::Fast:
+    case Tier::Quality:
       return i18n::tr("Quality");
     case Tier::Ultra:
       return i18n::tr("Ultra");
@@ -114,9 +114,9 @@ TierEstimate estimate_tier(const TierTable& table, const GpuFacts& gpu) {
   if (gpu.vram_bytes != 0 && gpu.vram_bytes < 2 * kGiB)
     return {.tier = Tier::Economy, .integrated = integrated};
   if (gpu.tensor_cores || gpu.wmma) {
-    return {.tier = gpu.vram_bytes >= 12 * kGiB ? Tier::Fast : Tier::Normal, .integrated = integrated};
+    return {.tier = gpu.vram_bytes >= 12 * kGiB ? Tier::Quality : Tier::Normal, .integrated = integrated};
   }
-  return {.tier = Tier::Light, .integrated = integrated};
+  return {.tier = Tier::Fast, .integrated = integrated};
 }
 
 }  // namespace ajp::app::play

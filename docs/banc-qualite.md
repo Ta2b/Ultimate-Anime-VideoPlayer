@@ -296,12 +296,63 @@ protégé), par `--calibration extrait.mkv --plans 5` :
 
 Le temps de ces chaînes ne se mesure que sur la carte : voir `docs/audits/A-CONFIRMER.md` (A49-01, A49-02).
 
+## Ordre du warp et de SPAN
+
+`tools/bench/qualite/ordre.py` mesure ce que l'image créée perd quand le warp et le mélange passent après SPAN
+(audits C09-02 et C32-01). Les deux ordres du lecteur : « avant », le warp à la taille de travail puis SPAN sur
+l'image créée ; « après », SPAN sur chaque source puis le warp des images agrandies, le flot et le masque de RIFE
+mis à l'échelle (`src/kernels/spec/warp.h`). Le mouvement de synthèse de `sources.py`, fait à la taille de sortie
+(la vérité) ; sa moitié est la source. Chaque image créée se compare à la vraie image du milieu, à SPAN de la
+vraie image du milieu (ce que serait l'image si elle était une source : l'écart dit si elle « pompe » face aux
+sources qui l'entourent), et par sa netteté (énergie du gradient, rapportée à SPAN de la vraie image).
+
+```sh
+python3 -I tools/bench/qualite/ordre.py --modeles ~/.cache/ajp-release-models/modeles --md ordre.md
+```
+
+| RIFE | Allure | Ordre | PSNR vrai (dB) | PSNR face à SPAN de la vraie (dB) | Netteté | SSIM |
+|---|---|---|---:|---:|---:|---:|
+| rife_v4.22_lite.onnx | lent | avant | 41,73 | 52,36 | 0,961 | 0,9866 |
+| rife_v4.22_lite.onnx | lent | après | 41,88 | 47,23 | 0,948 | 0,9872 |
+| rife_v4.22_lite.onnx | moyen | avant | 40,39 | 49,89 | 0,959 | 0,9870 |
+| rife_v4.22_lite.onnx | moyen | après | 40,47 | 46,88 | 0,941 | 0,9876 |
+| rife_v4.22_lite.onnx | rapide | avant | 38,15 | 40,25 | 0,899 | 0,9810 |
+| rife_v4.22_lite.onnx | rapide | après | 38,15 | 39,96 | 0,895 | 0,9811 |
+| rife_v4.22_lite.onnx | pose | avant | 37,50 | 47,89 | 0,970 | 0,9815 |
+| rife_v4.22_lite.onnx | pose | après | 37,61 | 47,39 | 0,953 | 0,9819 |
+| rife_v4.22_lite.onnx | toutes | avant | 39,44 | 47,60 | 0,947 | 0,9840 |
+| rife_v4.22_lite.onnx | toutes | après | 39,53 | 45,37 | 0,935 | 0,9845 |
+| rife_v4.26.onnx | lent | avant | 41,78 | 53,80 | 0,974 | 0,9867 |
+| rife_v4.26.onnx | lent | après | 41,81 | 47,48 | 0,972 | 0,9870 |
+| rife_v4.26.onnx | moyen | avant | 40,58 | 52,08 | 0,968 | 0,9873 |
+| rife_v4.26.onnx | moyen | après | 40,59 | 48,26 | 0,961 | 0,9877 |
+| rife_v4.26.onnx | rapide | avant | 39,06 | 41,84 | 0,902 | 0,9826 |
+| rife_v4.26.onnx | rapide | après | 39,00 | 41,37 | 0,901 | 0,9827 |
+| rife_v4.26.onnx | pose | avant | 37,54 | 49,02 | 0,978 | 0,9816 |
+| rife_v4.26.onnx | pose | après | 37,61 | 48,45 | 0,968 | 0,9818 |
+| rife_v4.26.onnx | toutes | avant | 39,74 | 49,18 | 0,956 | 0,9845 |
+| rife_v4.26.onnx | toutes | après | 39,75 | 46,39 | 0,951 | 0,9848 |
+
+Ce que ces chiffres disent :
+
+- **La fidélité à la vraie image est la même** dans les deux ordres (±0,1 dB, SSIM à 0,0005 près) : le warp
+  des images agrandies, avec un flot mis à l'échelle, ne perd rien de mesurable face à SPAN de l'image créée.
+- **L'image créée après SPAN ressemble moins à une source** : 2,2 dB (RIFE 4.22 lite) et 2,8 dB (RIFE 4.26) de
+  moins face à SPAN de la vraie image, et 0,5 à 1,3 % de netteté en moins. Le mélange de deux images agrandies
+  adoucit un peu les traits que SPAN renforce ; sur un plan rapide l'écart tombe sous 0,5 dB.
+- Le seuil de l'Auto en tient compte (`warp_after_span`, `src/app/play/settings.h`) : le warp ne passe après
+  SPAN qu'au-dessus de 1080 lignes de sortie ou dès ×3, là où une passe de SPAN par image créée coûte plus que
+  ce léger adoucissement.
+
+Limites : translation de calques à l'échelle ½, ONNX Runtime sur processeur, warp en float64 sans l'arrondi du
+warp par texture. Le temps des deux ordres ne se mesure que sur la carte (« À tester » de la PR E03).
+
 ## Limites
 
 - Sur processeur, ONNX Runtime range les tenseurs FP16 en demi-précision mais fait les sommes de chaque couche
   en FP32. La fidélité mesurée est un plancher : un moteur qui somme aussi en FP16 perd davantage.
 - Le banc mesure les graphes, pas le lecteur : ni les moteurs TensorRT, ni le moteur Vulkan, ni les chaînes
-  fusionnées, ni le warp après SPAN, ni la hauteur de travail.
+  fusionnées, ni la hauteur de travail ; le warp après SPAN, seulement par `ordre.py`.
 - La référence FP32 a les poids du fichier livré, déjà arrondis en FP16.
 - Les temps sont ceux du processeur : ils classent à peine les réseaux et ne valent pas ceux du lecteur.
 - Le mouvement de synthèse est une translation de calques : ni déformation, ni rotation, ni animation « sur

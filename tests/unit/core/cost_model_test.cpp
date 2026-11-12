@@ -55,3 +55,27 @@ TEST_CASE("modèle de coût : après une coupe, les pointes de la scène d'avant
   CHECK(m.spike(now) == Approx(1.0).margin(0.05));
   CHECK(m.samples(3) == 8);
 }
+
+TEST_CASE("modèle de coût : un accroc isolé ne déplace pas la moyenne (C07-08)", "[core][cost_model]") {
+  // Lecture ×3 : une paire coûte 10 ms ; un alt-tab donne une paire à 300 ms. La moyenne montait vers 53 ms ;
+  // l'accroc n'y entre plus qu'à trois fois la moyenne.
+  CostModel model;
+  std::int64_t now = 1'000'000;
+  for (int i = 0; i < 24; ++i) {
+    model.add(3, 10'000, now);
+    now += 41'000;
+  }
+  model.add(3, 300'000, now);
+  const auto line = model.fit(now);
+  REQUIRE(line.has_value());
+  const double cost = line->a + 3.0 * line->b;
+  CHECK(cost < 14'000.0);
+  // Une vraie hausse (un plan lourd, 25 ms par paire) passe en quelques paires.
+  for (int i = 0; i < 8; ++i) {
+    now += 41'000;
+    model.add(3, 25'000, now);
+  }
+  const auto heavy = model.fit(now);
+  REQUIRE(heavy.has_value());
+  CHECK(heavy->a + 3.0 * heavy->b > 20'000.0);
+}

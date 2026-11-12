@@ -396,12 +396,12 @@ int run_bench_command(const std::vector<std::string_view>& args) {
 // « ajp calibrate [--display-height=N] [--tier=N] [--visible] » : le bench de la page « Résultats du bench »,
 // en ligne de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de
 // l'utilisateur. --tier : le niveau de la carte (0 Économe à 4 Ultra), qui donne les modèles joués
-// (auto_config.h) ; cette commande n'ouvre pas la carte et ne peut pas l'estimer : sans --tier, 3 (Rapide,
-// Tier::Fast), le niveau de la RTX 4070 Ti du poste de mesure.
+// (auto_config.h) ; cette commande n'ouvre pas la carte et ne peut pas l'estimer : sans --tier, 3 (Qualité,
+// Tier::Quality), le niveau de la RTX 4070 Ti du poste de mesure.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
   int display_height = 2160;
-  int tier = static_cast<int>(play::Tier::Fast);
+  int tier = static_cast<int>(play::Tier::Quality);
   bool silent = true;
   constexpr const char* kUsage = "ajp calibrate [--display-height=N 360..4320] [--tier=N 0..4] [--visible]\n";
   for (const std::string_view arg : args) {

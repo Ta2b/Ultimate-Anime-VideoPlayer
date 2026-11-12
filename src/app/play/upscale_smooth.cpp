@@ -133,7 +133,7 @@ std::expected<void, Refusal> UpscaleStage::span_smooth_b() {
   use_lane(gpu::Lane::Upscale);
   const std::array inputs{smooth_b_rgb()};
   std::array results{spanned_[span_ahead_buf_]->tensor()};
-  auto ok = setup_.backend->enqueue(*setup_.engine, inputs, results);
+  auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
   use_lane(back);
   return ok;
 }
