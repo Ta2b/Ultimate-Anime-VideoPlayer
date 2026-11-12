@@ -26,3 +26,19 @@ leak:libcuda.so
 leak:libnvidia-glcore.so
 leak:libnvidia-glsi.so
 leak:libnvidia-gpucomp.so
+#
+# Lecteur entier sous ASan (ci.yml, étendue complète), fuites des bibliothèques du système :
+# - fontconfig : FcInit (app/play/ui.cpp, system_font) charge la configuration par défaut, gardée tout le
+#   processus ; FcFini n'est pas appelé exprès, libass s'en sert jusqu'à la fin. Les tampons d'expat qu'elle
+#   garde sont les siens.
+# - libX11 : _Xutf8TextListToTextProperty, appelé par SDL_X11_SetWindowTitle, garde quelques octets par titre
+#   (tests e2e sous xvfb).
+# - ALSA : la détection des appareils de SDL (ALSA_DetectDevices) passe par libasound et ses greffons, déchargés
+#   avant la fin : leurs allocations n'ont plus de nom de module, d'où la ligne sur l'appelant.
+# - SDL3 : deux allocations internes de 88 octets (SDL_realloc_REAL), dont la pile s'arrête dans libSDL3 (construite
+#   sans pointeurs de cadre). Une fuite de notre code qui passerait par SDL_realloc garderait nos cadres au-dessus
+#   et resterait visible sur Windows et sous tsan.
+leak:libfontconfig.so
+leak:_Xutf8TextListToTextProperty
+leak:ALSA_DetectDevices
+leak:SDL_realloc_REAL

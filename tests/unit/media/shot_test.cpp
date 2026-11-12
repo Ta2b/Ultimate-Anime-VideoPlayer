@@ -294,12 +294,18 @@ TEST_CASE("plans : les zones d'une image en cd/m² gardent sa luminance moyenne"
   CHECK(zones.at(0) > 10.0F * zones.at(15));  // le quart clair porte presque toute la lumière
 }
 
+// L'attente d'une pré-analyse entière, en pas de 100 ms : 5 min.
+// D'ordinaire, elle finit en quelques secondes. Sous ASan, avec le lecteur
+// entier en CI (ctest -j 3), elle dépassait la minute d'avant. La boucle
+// sort dès la fin : rien n'est plus lent quand tout va bien.
+constexpr int kProbeWait = 3000;
+
 TEST_CASE("plans : dix-huit plans fixes de 6 s se découpent en dix-huit plans", "[media][shots]") {
   const std::filesystem::path clip = test::require_clip(test::shots_clip());
   const auto shared = std::make_shared<ShotTimeline>();
   ShotTimeline& timeline = *shared;
   const auto probe = ShotProbe::start(clip, shared, 0);
-  for (int i = 0; i < 600 && !probe->finished(); ++i)
+  for (int i = 0; i < kProbeWait && !probe->finished(); ++i)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());
   REQUIRE_FALSE(probe->failure());
@@ -320,7 +326,7 @@ TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[medi
   const auto shared = std::make_shared<ShotTimeline>();
   ShotTimeline& timeline = *shared;
   const auto probe = ShotProbe::start(clip, shared, 30'000'000, ShotProbeOptions{.lead_us = 120'000'000});
-  for (int i = 0; i < 600 && !probe->finished(); ++i)
+  for (int i = 0; i < kProbeWait && !probe->finished(); ++i)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());
   REQUIRE_FALSE(probe->failure());
@@ -433,7 +439,7 @@ TEST_CASE("plans : NVDEC réduit retrouve les plans du logiciel", "[.shot_nvdec]
     const auto shared = std::make_shared<ShotTimeline>();
     ShotTimeline& timeline = *shared;
     const auto probe = ShotProbe::start(clip, shared, 0, std::move(options));
-    for (int i = 0; i < 600 && !probe->finished(); ++i)
+    for (int i = 0; i < kProbeWait && !probe->finished(); ++i)
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     REQUIRE(probe->finished());
     REQUIRE_FALSE(probe->failure());
