@@ -118,6 +118,15 @@ TEST_CASE("Une piste choisie à la main se retrouve dans la vidéo suivante par 
   CHECK_FALSE(matching_track(next, TrackKind::Subtitle, german, 3));  // aucune : les préréglages décident
   CHECK_FALSE(matching_track(next, TrackKind::Audio, french, std::nullopt) == 3);  // jamais d'un autre type
 
+  // C14-04 : pistes « und » dont seul le titre nomme la langue, comme le lit le choix automatique.
+  const std::vector<media::TrackInfo> untagged{
+      track(1, TrackKind::Audio, "aac", "und", "Japonais"),
+      track(2, TrackKind::Audio, "aac", "und", "Français"),
+  };
+  const auto french_by_title = track_like(untagged[1]);
+  REQUIRE(french_by_title);
+  CHECK(matching_track(untagged, TrackKind::Audio, *french_by_title, std::nullopt) == 2);
+
   CHECK_FALSE(track_like(track(2, TrackKind::Audio, "aac", "", "Stereo")));  // sans langue : rien à retrouver
   CHECK_FALSE(track_like(track(2, TrackKind::Audio, "aac", "und", "")));
 }

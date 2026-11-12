@@ -9,6 +9,7 @@
 #include "app/play/i18n.h"
 #include "core/text.h"
 #include "media/language.h"
+#include "media/track_language.h"
 
 namespace ajp::app::play {
 namespace {
@@ -101,14 +102,16 @@ std::optional<int> next_audio(const TrackMenu& menu) {
 }
 
 std::optional<TrackLike> track_like(const media::TrackInfo& track) {
-  if (language_name(track.language).empty()) return std::nullopt;  // absente ou « und »
-  return TrackLike{.language = track.language, .title = track.title};
+  // La langue comme le choix automatique la lit : la balise, sinon le titre (« Français » sur une piste « und »).
+  std::string language = media::track_language(track);
+  if (language_name(language).empty()) return std::nullopt;  // absente ou « und »
+  return TrackLike{.language = std::move(language), .title = track.title};
 }
 
 std::optional<int> matching_track(std::span<const media::TrackInfo> tracks, media::TrackKind kind,
                                   const TrackLike& wanted, std::optional<int> fallback) {
   const auto alike = [&](const media::TrackInfo& track) {
-    return track.kind == kind && same_language(track.language, wanted.language);
+    return track.kind == kind && same_language(media::track_language(track), wanted.language);
   };
   const auto same_title = std::ranges::find_if(
       tracks, [&](const media::TrackInfo& track) { return alike(track) && track.title == wanted.title; });

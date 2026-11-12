@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdint>
 #include <deque>
 #include <format>
@@ -22,6 +23,8 @@ extern "C" {
 #include "core/frame.h"
 #include "core/utf8_path.h"
 #include "media/av_util.h"
+#include "media/frame_rate.h"
+#include "media/tag_text.h"
 #include "media/log.h"
 
 namespace ajp::media {
@@ -72,30 +75,29 @@ constexpr int kMaxRetryWaitMs = 1000;
 // suivant, sans attente. Au-delà, le reste du fichier est tenu pour illisible.
 constexpr int kDataRetries = 64;
 
+// Une erreur de lecture qui peut guérir en attendant : une panne d'E/S ou de réseau (C14-02).
+bool io_error_may_heal(int err) {
+  for (const int code : {EIO, ETIMEDOUT, ECONNRESET, ECONNABORTED, ENETDOWN, ENETUNREACH, ENETRESET, EHOSTUNREACH,
+                         EAGAIN, ENODEV, ENXIO, EPIPE}) {
+    if (err == AVERROR(code)) return true;
+  }
+#ifdef ESTALE  // absent de la bibliothèque C de Windows
+  if (err == AVERROR(ESTALE)) return true;
+#endif
+  return false;
+}
+
 // FFmpeg attend un chemin UTF-8, Windows compris : path::string() y rendrait la
 // page de code ANSI, ou lèverait une exception devant un nom en japonais.
 std::string utf8_path(const std::filesystem::path& path) {
   return core::to_utf8(path);
 }
 
-// B35-05 : un titre de piste ou de chapitre vient du fichier. Coupé à kMaxTagBytes octets UTF-8 entiers, les
-// caractères de contrôle (saut de ligne, tabulation, NUL ne passe pas) deviennent des espaces.
-constexpr std::size_t kMaxTagBytes = 256;
-
+// B35-05 : un titre de piste ou de chapitre vient du fichier ; clean_tag_text le borne et le nettoie (C14-08).
 std::string tag(const AVDictionary* metadata, const char* key) {
   const AVDictionaryEntry* entry = av_dict_get(metadata, key, nullptr, 0);
   if (entry == nullptr || entry->value == nullptr) return {};
-  std::string text(entry->value);
-  if (text.size() > kMaxTagBytes) {
-    std::size_t cut = kMaxTagBytes;
-    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0U) == 0x80U)
-      --cut;  // pas au milieu d'un caractère
-    text.resize(cut);
-  }
-  for (char& c : text) {
-    if (static_cast<unsigned char>(c) < 0x20U || c == 0x7F) c = ' ';
-  }
-  return text;
+  return clean_tag_text(entry->value);
 }
 
 // B14-01, B35-06 : FFmpeg lit tout préfixe « lettres: » d'au moins deux caractères comme un protocole
@@ -126,7 +128,7 @@ Rational frame_rate_of(const AVStream& stream) {
   AVRational rate = stream.avg_frame_rate;
   if (rate.num <= 0 || rate.den <= 0) rate = stream.r_frame_rate;
   if (rate.num <= 0 || rate.den <= 0) return {};
-  return {rate.num, rate.den};
+  return standard_frame_rate({rate.num, rate.den});
 }
 
 // Les bornes d'une vidéo lisible (A35-06) et le nombre de chapitres gardés (A35-02).
@@ -461,6 +463,13 @@ std::expected<bool, Refusal> Demuxer::State::on_read_error(int err, RetryState& 
   if (err == AVERROR_EXIT || interrupted.load())
     return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", err);
   const bool data = err == AVERROR_INVALIDDATA;
+  // C14-02 : seules les pannes d'E/S qui peuvent guérir (disque qui se réveille, Wi-Fi qui change de point d'accès)
+  // sont retentées. ENOMEM, EINVAL, AVERROR_BUG… ne guérissent pas : pas de gel de 20 s pour rien.
+  if (!data && !io_error_may_heal(err)) {
+    auto refused = refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet, erreur qui ne guérit pas", err);
+    refused.error().recoverable = true;
+    return refused;
+  }
   int& errors = data ? retry.data_errors : retry.io_errors;
   const int io_budget_ms = fault.io_budget_ms > 0 ? fault.io_budget_ms : kIoRetryBudgetMs;
   if (data ? errors >= kDataRetries : retry.io_waited_ms >= io_budget_ms) {

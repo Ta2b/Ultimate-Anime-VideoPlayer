@@ -35,6 +35,9 @@ std::optional<std::size_t> chapter_step(std::span<const ChapterMark> chapters, s
 bool is_credits_chapter(const ChapterMark& chapter) {
   std::string title = chapter.title;
   title = core::ascii_lower(title);
+  // Le É capital (U+00C9) en é : la mise en minuscules ASCII le laisse, et « GÉNÉRIQUE » doit se reconnaître.
+  for (std::size_t at = title.find("\xC3\x89"); at != std::string::npos; at = title.find("\xC3\x89", at + 2))
+    title.replace(at, 2, "\xC3\xA9");
   // Les mots du titre : lettres seules, « OP2 » donne « op ».
   std::vector<std::string_view> words;
   std::size_t at = 0;
@@ -45,8 +48,9 @@ bool is_credits_chapter(const ChapterMark& chapter) {
     if (end > at) words.emplace_back(title.data() + at, end - at);
     at = end;
   }
-  // « Avant-générique », « Pre-credits », « Preview » : ce qui précède un générique n'en est pas un.
-  constexpr std::string_view kBefore[] = {"avant", "pre", "preview", "recap"};
+  // « Avant-générique », « Pre-credits », « Preview » : ce qui précède un générique n'en est pas un. « Pré »
+  // s'écrit « pr » une fois le é écarté du découpage en lettres ASCII (C14-03).
+  constexpr std::string_view kBefore[] = {"avant", "pre", "pr", "preview", "recap"};
   // Les titres japonais (P3.82) : アバン (avant-générique) et 予告 (aperçu) n'en sont pas ; オープニング,
   // エンディング et スタッフ (générique des crédits) en sont.
   constexpr std::string_view kBeforeJa[] = {"アバン", "予告"};
