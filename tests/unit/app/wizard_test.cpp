@@ -43,7 +43,7 @@ TEST_CASE("Prêt : Calibrer maintenant ou Régler moi-même ; un écran sauté n
   Wizard wizard = begin_wizard({.engine_choice = true}, 0);
   wizard.update_mode = UpdateMode::Never;
   wizard.interface_language = "fr";
-  CHECK(wizard_settings(wizard, {}).first_run_step == kWizardSteps);
+  CHECK(wizard_settings({}).first_run_step == kWizardSteps);
   const PlaySettings play = wizard_play_settings(wizard, PlaySettings{});
   CHECK(play.update_mode == UpdateMode::Never);
   CHECK(play.language == "fr");

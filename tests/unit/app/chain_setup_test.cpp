@@ -206,21 +206,28 @@ TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien
   CHECK_FALSE(visible_error(Refusal{RefusalCode::CacheIo, ""}).empty());
 }
 
-TEST_CASE("B39-03 : un moteur qui ne se construit pas dit pourquoi, au moins mémoire, délai et pilote",
+TEST_CASE("B39-02 : les faits de la lecture vont en tête du rapport, vidéo, écran, sortie, chaîne",
           "[app][chain]") {
-  const std::string generic = visible_error(Refusal{RefusalCode::BuilderFailed, "échec"});
-  const std::string timeout = visible_error(Refusal{RefusalCode::BuilderTimeout, "délai dépassé"});
-  const std::string memory = visible_error(
-      Refusal{RefusalCode::BuilderFailed, "trtexec ; dernière erreur : Error Code 2: OutOfMemory"});
-  const std::string driver = visible_error(
-      Refusal{RefusalCode::BuilderCrashed, "dernière erreur : CUDA driver version is insufficient"});
-  CHECK(timeout != generic);
-  CHECK(memory != generic);
-  CHECK(driver != generic);
-  CHECK(timeout != memory);
-  CHECK(memory != driver);
-  // Une cause inconnue garde la phrase générale, sans détail technique.
-  CHECK(visible_error(Refusal{RefusalCode::SdkRejected, "autre"}) == generic);
+  const auto facts = playback_facts({.file = "ep01.mkv",
+                                     .codec = "hevc",
+                                     .width = 1920,
+                                     .height = 1080,
+                                     .frame_rate = 23.976,
+                                     .transfer = "PQ",
+                                     .screen = "pic 1000 nits",
+                                     .hdr_output = true,
+                                     .chain = "SPAN ×2 · RIFE ×2"});
+  REQUIRE(facts.size() == 4);
+  CHECK(facts[0].first == "Vidéo");
+  CHECK(facts[0].second.contains("hevc"));
+  CHECK(facts[0].second.contains("1920x1080"));
+  CHECK(facts[0].second.contains("23.976"));
+  CHECK(facts[0].second.contains("source PQ"));
+  CHECK(facts[1].second == "pic 1000 nits");
+  CHECK(facts[2].second == "HDR10");
+  CHECK(facts[3].second == "SPAN ×2 · RIFE ×2");
+  // Cadence inconnue : dit, pas « 0 i/s ».
+  CHECK(playback_facts({.file = "a.mkv"})[0].second.contains("cadence inconnue"));
 }
 
 }  // namespace ajp::app::play

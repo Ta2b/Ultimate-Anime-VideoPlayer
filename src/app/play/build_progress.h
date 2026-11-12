@@ -34,6 +34,11 @@ class BuildProgress {
   // La fraction à afficher à cet instant, 0 à 1 ; 1 seulement une fois finie.
   float fraction(std::int64_t now_us) const;
   double elapsed_seconds(std::int64_t now_us) const;
+  // Plus d'une fois et demie la durée attendue (B24-08) : la barre à 99 % ne dirait plus rien, l'écran
+  // passe à la barre sans pourcentage, avec le temps écoulé dans le détail.
+  bool overdue(std::int64_t now_us) const {
+    return !finished_ && elapsed_seconds(now_us) > 1.5 * expected_s_;
+  }
   double expected_seconds() const { return expected_s_; }
 
  private:

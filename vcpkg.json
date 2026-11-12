@@ -31,6 +31,7 @@
             "swresample",
             "swscale",
             "dav1d",
+            "zlib",
             "nvcodec",
             "vulkan",
             {
@@ -62,7 +63,6 @@
           ]
         },
         "vulkan-headers",
-        "nanobench",
         {
           "name": "shaderc",
           "host": true
@@ -77,6 +77,38 @@
       ]
     }
   },
+  "overrides": [
+    {
+      "name": "ffmpeg",
+      "version": "9.0.2",
+      "port-version": 6
+    },
+    {
+      "name": "sdl3",
+      "version": "3.4.20",
+      "port-version": 0
+    },
+    {
+      "name": "spdlog",
+      "version": "1.17.0",
+      "port-version": 1
+    },
+    {
+      "name": "tomlplusplus",
+      "version": "3.4.0",
+      "port-version": 1
+    },
+    {
+      "name": "imgui",
+      "version": "1.93.0",
+      "port-version": 0
+    },
+    {
+      "name": "vulkan-headers",
+      "version": "1.4.363.0",
+      "port-version": 0
+    }
+  ],
   "default-features": [
     "tests"
   ],

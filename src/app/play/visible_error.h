@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "app/play/i18n.h"
-#include "core/text.h"
 #include "core/types.h"
 
 namespace ajp::app::play {
@@ -121,52 +120,22 @@ inline constexpr std::array kErrorFamilies{
     std::pair{RefusalCode::EncodeFailed, ErrorFamily::Encode},
 };
 
-// Ce que la construction d'un moteur a dit de sa cause : trtexec l'écrit en anglais dans le détail du refus
-// (« dernière erreur »). Sans elle, « le moteur n'a pas pu être préparé » ne dit pas s'il faut libérer de la
-// mémoire, attendre ou mettre le pilote à jour (B39-03).
-enum class BuildCause : std::uint8_t { Unknown, Timeout, Memory, Driver };
-
-inline bool mentions(std::string_view text, std::string_view needle) {
-  return core::ascii_lower(text).contains(needle);
-}
-
-inline BuildCause build_cause(const Refusal& refusal) {
-  if (refusal.code == RefusalCode::BuilderTimeout) return BuildCause::Timeout;
-  constexpr std::array<std::string_view, 6> kMemory{"out of memory",       "outofmemory",
-                                                    "memory allocation",   "not enough memory",
-                                                    "insufficient memory", "failed to allocate"};
-  constexpr std::array<std::string_view, 5> kDriver{"driver version is insufficient",
-                                                    "driver/library version", "no kernel image",
-                                                    "unsupported gpu architecture", "driver is too old"};
-  for (const std::string_view needle : kMemory)
-    if (mentions(refusal.detail, needle)) return BuildCause::Memory;
-  for (const std::string_view needle : kDriver)
-    if (mentions(refusal.detail, needle)) return BuildCause::Driver;
-  return BuildCause::Unknown;
-}
-
 inline ErrorFamily error_family(RefusalCode code) {
   for (const auto& [known, family] : kErrorFamilies)
     if (known == code) return family;
   return ErrorFamily::Other;
 }
 
-// La phrase d'un moteur qui ne se construit pas : sa cause quand trtexec l'a dite (B39-03).
-inline std::string builder_message(const Refusal& refusal) {
-  switch (build_cause(refusal)) {
-    case BuildCause::Timeout:
-      return i18n::tr("the engine build took too long: try again, or choose a lighter setting");
-    case BuildCause::Memory:
-      return i18n::tr("not enough GPU memory to build the engine: choose a lighter setting");
-    case BuildCause::Driver:
-      return i18n::tr("the graphics driver refused the engine build: update it");
-    case BuildCause::Unknown:
-      break;
-  }
+}  // namespace detail
+
+// Le moteur GPU : le pilote refusé et le délai dépassé disent ce qui aide, le reste reste général (B43).
+inline std::string builder_error(RefusalCode code) {
+  if (code == RefusalCode::SdkRejected)
+    return i18n::tr("the GPU engine could not be prepared: update the graphics driver");
+  if (code == RefusalCode::BuilderTimeout)
+    return i18n::tr("the GPU engine took too long to prepare: try again");
   return i18n::tr("the GPU engine could not be prepared");
 }
-
-}  // namespace detail
 
 inline std::string visible_error(const Refusal& refusal) {
   if (refusal.key == kDolbyVision5Key)
@@ -206,7 +175,7 @@ inline std::string visible_error(const Refusal& refusal) {
     case detail::ErrorFamily::CacheBusy:
       return i18n::tr("another player window is preparing the same engine: try again in a moment");
     case detail::ErrorFamily::Builder:
-      return detail::builder_message(refusal);
+      return builder_error(refusal.code);
     case detail::ErrorFamily::Component:
       return i18n::tr("a component of the player is missing or out of date: reinstall it");
     case detail::ErrorFamily::Driver:

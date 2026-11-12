@@ -14,6 +14,7 @@
 #include "app/play/i18n.h"
 #include "core/charconv.h"
 #include "core/dir_entries.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 
@@ -139,7 +140,7 @@ std::optional<PastBuild> read_build_log(std::string_view text) {
   if (!size || core::from_chars(number.data(), number.data() + number.size(), seconds).ec != std::errc{} ||
       !std::isfinite(seconds) || !(seconds > 0.0))
     return std::nullopt;
-  return PastBuild{.onnx = std::filesystem::path(std::string(*onnx)),
+  return PastBuild{.onnx = core::path_from_utf8(*onnx),
                    .width = size->second,
                    .height = size->first,
                    .pixels = std::int64_t{size->first} * size->second,
@@ -153,7 +154,9 @@ std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
   for (const auto& entry : core::dir_entries(cache_dir, error)) {
     if (read >= kMaxLogs) break;
     const std::filesystem::path& path = entry.path();
-    if (!path.string().ends_with(".build.log") || !entry.is_regular_file(error)) continue;
+    // Le nom seul, en UTF-8 : path::string() lèverait sous Windows sur un profil hors de la page de code
+    // (B24-02).
+    if (!core::to_utf8(path.filename()).ends_with(".build.log") || !entry.is_regular_file(error)) continue;
     const std::uintmax_t size = entry.file_size(error);
     if (size > kMaxLogBytes || error) continue;
     ++read;

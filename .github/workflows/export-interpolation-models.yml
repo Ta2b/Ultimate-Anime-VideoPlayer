@@ -26,7 +26,8 @@ permissions:
   contents: read
 
 env:
-  DISTIL_DRBA_COMMIT: db51bde
+  DISTIL_DRBA_COMMIT: db51bdeb452685cba9aee227c6dba42e67753b55
+  DISTIL_DRBA_WEIGHTS_SHA256: 9de2437c40928d13c48fff0d5e1021b78c8446d544143a964d56c8a2b387c3ed
 
 jobs:
   export:
@@ -41,12 +42,14 @@ jobs:
           python-version: "3.12"
       - name: Outils Python
         run: |
-          pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
-          pip install onnx==1.23.2 onnxruntime==1.31.1 numpy==2.5.4
+          # Versions et empreintes figées dans tools/ci/requirements/export-modeles.txt (pip-compile --generate-hashes
+          # depuis export-modeles.in) : une roue changée sur l'index est refusée.
+          pip install --require-hashes -r tools/ci/requirements/export-modeles.txt
       - name: DistilDRBA v2 lite (flot entier et demi-flot)
         run: |
           git clone https://github.com/routineLife1/DistilDRBA "$RUNNER_TEMP/DistilDRBA"
           git -C "$RUNNER_TEMP/DistilDRBA" checkout "$DISTIL_DRBA_COMMIT"
+          echo "$DISTIL_DRBA_WEIGHTS_SHA256  $RUNNER_TEMP/DistilDRBA/weights/v2_lite.pkl" | sha256sum -c -
           python -I tools/drba/export_distil_drba.py "$RUNNER_TEMP/DistilDRBA" \
             --weights "$RUNNER_TEMP/DistilDRBA/weights/v2_lite.pkl" --out out/distil_drba_v2_lite.onnx
           python -I tools/drba/export_distil_drba.py "$RUNNER_TEMP/DistilDRBA" \

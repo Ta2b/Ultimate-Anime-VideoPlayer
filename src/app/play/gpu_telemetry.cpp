@@ -9,6 +9,7 @@
 #include <fstream>
 #include <mutex>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 #include "app/play/i18n.h"
@@ -224,11 +225,12 @@ std::string read_text(const std::filesystem::path& path) {
 // Un entier de sysfs, 0 s'il manque ou ne se lit pas.
 std::uint64_t read_number(const std::filesystem::path& path, int base = 10) {
   const std::string text = read_text(path);
-  try {
-    return text.empty() ? 0 : std::stoull(text, nullptr, base);
-  } catch (const std::exception&) {
-    return 0;
-  }
+  std::string_view digits = text;
+  while (!digits.empty() && (digits.front() == ' ' || digits.front() == '\n')) digits.remove_prefix(1);
+  if (base == 16 && digits.starts_with("0x")) digits.remove_prefix(2);  // sysfs écrit « 0x1002 »
+  std::uint64_t value = 0;
+  const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value, base);
+  return error == std::errc{} ? value : 0;
 }
 
 // Le dossier sysfs de la carte AMD (vendeur 0x1002, ce deviceID) ; vide si introuvable. Plusieurs

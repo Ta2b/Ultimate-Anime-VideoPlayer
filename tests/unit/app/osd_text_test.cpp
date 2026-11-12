@@ -34,6 +34,13 @@ TEST_CASE("OSD : script ASS", "[app][osd]") {
     CHECK(dialogue_text(osd_script(std::vector<std::string>{}, kSize)).empty());
   }
   SECTION("balises, échappements et fins de ligne neutralisés") {
-    CHECK(dialogue_text(osd_script(std::vector<std::string>{"{\\b1}x\\N\r\ny"}, kSize)) == "(/b1)x/Ny");
+    CHECK(dialogue_text(osd_script(std::vector<std::string>{"{\\b1}x\\N\r\ny"}, kSize)) == "(∖b1)x∖Ny");
+  }
+  SECTION("un chemin Windows garde sa forme, sans saut de ligne sur « \\new » (B24-12)") {
+    CHECK(dialogue_text(osd_script(std::vector<std::string>{"C:\\Videos\\new\\a.mkv"}, kSize)) ==
+          "C:∖Videos∖new∖a.mkv");
+  }
+  SECTION("les lignes longues se coupent à la largeur de la fenêtre (WrapStyle 0)") {
+    CHECK(osd_script(std::vector<std::string>{"a"}, kSize).contains("WrapStyle: 0"));
   }
 }

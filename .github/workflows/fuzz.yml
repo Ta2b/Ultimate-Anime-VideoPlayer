@@ -53,10 +53,14 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-fuzz-${{ github.sha }}
           restore-keys: ccache-fuzz-
+      # libass instrumenté par ASan (B35-02) : la cible ass_render lit des scripts forgés et les rend sur quatre fils ;
+      # l'instrumentation du lecteur s'arrête à la frontière de la bibliothèque, qui, sans elle, ne voit aucune
+      # écriture hors d'un tampon.
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
         env:
           CC: gcc-13
           CXX: g++-13
+          AJP_LIBASS_CFLAGS: -fsanitize=address -fno-omit-frame-pointer -g -O1
       - name: Construction
         env:
           CC: clang-20

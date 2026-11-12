@@ -7,7 +7,7 @@
 # « env: lanceur » : un fait posé par le lanceur d'un paquet (AppImage), pas une option de l'utilisateur.
 set -euo pipefail
 names='secure_getenv|getenv|_wgetenv|getenv_s|_wgetenv_s|_dupenv_s|_wdupenv_s|SDL_getenv|SDL_getenv_unsafe'
-names+='|SDL_GetEnvironment\w*|GetEnvironmentVariable[AW]?|GetEnvironmentStrings[AW]?|_NSGetEnviron'
+names+='|SDL_GetEnvironment\w*|GetEnvironmentVariable[AW]?|GetEnvironmentStrings[AW]?|ExpandEnvironmentStrings[AW]?|_NSGetEnviron'
 names+='|environ|_environ|__environ|_wenviron'
 hits=$(git ls-files -z -- 'src/*' | AJP_ENV_NAMES="$names" xargs -0 perl -ne '
   BEGIN { $re = qr/\b(?:$ENV{AJP_ENV_NAMES})\b/ }

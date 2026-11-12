@@ -21,6 +21,7 @@
 #include "app/play/i18n.h"
 #include "app/play/input.h"
 #include "app/play/paths.h"
+#include "app/play/problem_report.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -105,7 +106,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
       const auto seconds = [](double s) { return format_clock(static_cast<std::int64_t>(s * 1e6), 0); };
       const PrepareView view{
           .label = i18n::ui_tr_format("Preparing engine {}", engine.name),
-          .fraction = progress.fraction(now),
+          .fraction = progress.overdue(now) ? std::nullopt : std::optional(progress.fraction(now)),
           .details = {build_stage_text(status.stage),
                       i18n::tr_format("elapsed {} · expected ~{}", seconds(progress.elapsed_seconds(now)),
                                       seconds(progress.expected_seconds())),
@@ -137,6 +138,8 @@ gpu::BackendLog backend_log() {
         break;
       case gpu::BackendLogLevel::Info:
         channel->info("{}", message);
+        // La version de TensorRT sur la carte, en tête du rapport (B39-02) : la fin du journal la perd.
+        if (message.starts_with("TensorRT ")) note_report_fact("TensorRT", message);
         break;
       case gpu::BackendLogLevel::Warn:
         channel->warn("{}", message);

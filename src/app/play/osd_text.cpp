@@ -10,7 +10,9 @@ namespace ajp::app::play {
 namespace {
 
 // Neutralise ce qu'ASS interprète dans un texte de dialogue : accolades (en parenthèses) et barre
-// oblique ; les fins de ligne, qui couperaient la ligne Dialogue, sont retirées.
+// oblique inverse ; les fins de ligne, qui couperaient la ligne Dialogue, sont retirées. La barre devient
+// « ∖ » (U+2216, ressemblante) : un chemin Windows garde sa forme au lieu de passer en « / » (B24-12), et
+// « \n », « \N », « \h » d'un nom de dossier ne deviennent pas des sauts de ligne.
 std::string escaped(std::string_view line) {
   std::string out;
   out.reserve(line.size());
@@ -20,7 +22,7 @@ std::string escaped(std::string_view line) {
     } else if (c == '}') {
       out += ')';
     } else if (c == '\\') {
-      out += '/';
+      out += "\xE2\x88\x96";
     } else if (c != '\n' && c != '\r') {
       out += c;
     }
@@ -39,7 +41,7 @@ std::string osd_script(std::span<const std::string> lines, OutputSize size) {
     text += escaped(lines[i]);
   }
   return std::format(
-      "[Script Info]\nScriptType: v4.00+\nPlayResX: {}\nPlayResY: {}\nWrapStyle: 2\nScaledBorderAndShadow: "
+      "[Script Info]\nScriptType: v4.00+\nPlayResX: {}\nPlayResY: {}\nWrapStyle: 0\nScaledBorderAndShadow: "
       "yes\n\n"
       "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
       "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
