@@ -1,6 +1,6 @@
 # RIFE fusionné (six moteurs TensorRT et noyaux CUDA)
 
-Sous TensorRT, RIFE 4.25 et 4.22 lite (et les candidats 4.26 et 4.25 lite, [`rife-candidats.md`](rife-candidats.md))
+Sous TensorRT, RIFE 4.26, 4.25, 4.22 lite et 4.25 lite ([`rife-candidats.md`](rife-candidats.md))
 peuvent tourner coupés en six petits moteurs (l'encodeur et les blocs, des
 convolutions à basse résolution) reliés par des noyaux CUDA maison pour tout ce qui travaille en pleine résolution
 (DepthToSpace, Resize, flot, grille, GridSample, Concat, mélange à masque). Par défaut quand la découpe est valide ;

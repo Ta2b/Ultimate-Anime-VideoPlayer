@@ -2,7 +2,9 @@
 
 Question de Tatoub (novembre 2026) : sans se fier aux rumeurs, RIFE 4.25 lite vaut-il mieux que 4.22 lite, et 4.26
 mieux que 4.25, en temps par image et en qualité ? Ce document donne ce qui se mesure sans carte graphique, puis le
-protocole ABAB à passer sur la RTX. **Le modèle par défaut ne change pas** tant que la RTX n'a pas répondu.
+protocole ABAB à passer sur la RTX. Sur ces mesures, Tatoub a choisi les niveaux du menu (docs/interpolation.md) :
+Très rapide 4.25 lite, Rapide 4.22 lite, Équilibré 4.26 (le défaut sur une RTX) ; 4.25 et DistilDRBA en réglages
+avancés. Le protocole ABAB reste celui qui le vérifie sur la RTX.
 
 ## Les fichiers
 
@@ -115,7 +117,7 @@ est en Debug et ses temps ne valent rien). Les fichiers de Re:Zero restent sur l
    (`ajp play ReZero-18.mkv --start=960 --rife-model=…`), plein écran, en regardant les traits fins et les cheveux
    qui bougent, le texte et les bords de l'image (fantômes, traits dédoublés, cassures), les poses tenues.
 
-Ce qui fera changer le défaut : B plus rapide hors bruit (banc_resume : « gain acquis ») sans perte au banc de
-qualité sur l'épisode ni défaut vu à l'œil ; ou B meilleur au banc et à l'œil pour un coût que la carte tient.
-4.25 lite part avec un handicap mesuré ici (ci-dessus) : il ne remplacerait 4.22 lite que si la RTX montre un gain
-de temps qui le justifie, et pour les petites cartes plutôt que sur la RTX.
+Ce qui ferait revenir sur les niveaux : 4.26 nettement plus lent que 4.25 (banc_resume : « gain acquis » en
+faveur de 4.25), ou moins bon au banc sur l'épisode ou à l'œil ; 4.25 lite sans gain de temps sur 4.22 lite qui
+paie ses 2,9 dB. Les deux sont livrés depuis ce choix (`tools/release/fetch-models.sh`) : `--rife-model=` les
+trouve par leur nom dans le dossier `rife/` du lecteur, `candidats.sh` ne sert plus qu'hors d'un paquet.

@@ -221,7 +221,8 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends p7zip-full
           tools/release/fetch-models.sh "$HOME/ajp/models"
           # Sans modèle, les tests se sauteraient en silence : leur présence se vérifie ici.
-          for model in rife_v4.22_lite.onnx rife_v4.25.onnx distil_drba_v2_lite.onnx distil_drba_v2_lite_s05.onnx; do
+          for model in rife_v4.26.onnx rife_v4.25.onnx rife_v4.22_lite.onnx rife_v4.25_lite.onnx distil_drba_v2_lite.onnx \
+            distil_drba_v2_lite_s05.onnx; do
             test -f "$HOME/ajp/models/rife/$model" || { echo "modèle absent : $model" >&2; exit 1; }
           done
           # Lancés hors de ctest, donc hors de check-skips.sh : leur rapport JUnit est lu ici. Un cas sauté (stockage

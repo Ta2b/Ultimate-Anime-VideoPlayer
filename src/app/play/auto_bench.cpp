@@ -9,6 +9,7 @@
 #include <sstream>
 #include <utility>
 
+#include "app/play/auto_config.h"
 #include "core/text_file.h"
 #include "core/utf8_path.h"
 
@@ -42,7 +43,7 @@ std::optional<int> next_work_height(int tenue, int source_height) {
 }
 
 std::optional<std::string> next_rife_model(const std::string& tenu) {
-  if (tenu == "rife_v4.22_lite.onnx") return std::string("rife_v4.25.onnx");
+  if (tenu == kLightRifeModel) return std::string(kQualityRifeModel);
   return std::nullopt;
 }
 

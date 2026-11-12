@@ -1,8 +1,8 @@
 # Banc de qualité des réseaux
 
-Ce banc donne un chiffre à toute affirmation sur la qualité de SPAN, ArtCNN, RIFE 4.25, RIFE 4.22 lite et DistilDRBA :
-chaque réseau livré est comparé à sa référence FP32 et à la vraie image. Il tourne sans carte graphique (ONNX
-Runtime sur processeur), ici comme en CI (`.github/workflows/qualite.yml`).
+Ce banc donne un chiffre à toute affirmation sur la qualité de SPAN, ArtCNN, RIFE (4.26, 4.25, 4.22 lite, 4.25
+lite) et DistilDRBA : chaque réseau livré est comparé à sa référence FP32 et à la vraie image. Il tourne sans
+carte graphique (ONNX Runtime sur processeur), ici comme en CI (`.github/workflows/qualite.yml`).
 
 Règle qu'il sert : une baisse de qualité faite pour la vitesse est un défaut, sauf mesure. Une correction de
 qualité donne sa mesure avant et après avec ce banc.
@@ -63,6 +63,8 @@ mesure du gain de vitesse qui le justifie.
 | SPAN V3.1 Performance (b5f48) | 80,02 | 75,76 | 0,41 | 0,13 | 0,16 | 41,67 | 41,67 | 0,9892 |
 | RIFE 4.25 | 56,09 | 50,28 | 41,43 | 9,29 | 14,34 | 47,24 | 48,09 | 0,9958 |
 | RIFE 4.22 lite | 56,29 | 50,55 | 25,26 | 9,07 | 13,86 | 47,56 | 48,48 | 0,9969 |
+| RIFE 4.26 (ajouté en novembre 2026) | 55,74 | 50,22 | 26,71 | 9,61 | 14,79 | 47,45 | 48,52 | 0,9962 |
+| RIFE 4.25 lite (ajouté en novembre 2026) | 55,87 | 50,02 | 30,62 | 9,65 | 14,87 | 45,23 | 45,71 | 0,9946 |
 | DistilDRBA v2 lite | 77,51 | 73,96 | 1,19 | 0,42 | 0,60 | 35,76 | 35,76 | 0,9691 |
 | Bicubique ×2 (repère de SPAN) | | | | | | 42,13 | | 0,9892 |
 
