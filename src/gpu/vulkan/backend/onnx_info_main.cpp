@@ -1,8 +1,9 @@
 // ajp_onnx_info : charge un modèle ONNX dans l'IR et imprime opérateurs,
 // formes et mémoire, avant et après les passes. --run exécute l'interpréteur
 // sur une entrée déterministe (et --dump écrit la première sortie en float32 brut),
-// pour comparer à une autre implémentation. --vulkan décrit et exécute le graphe que le moteur
-// Vulkan abaisse : le même prepare_graph, passes propres au moteur comprises (A44-10).
+// pour comparer à une autre implémentation. --vulkan décrit le graphe que le moteur Vulkan abaisse : le même
+// prepare_graph, passes propres au moteur comprises (A44-10). Avec --run, le repli des Cast entre flottants
+// est laissé de côté : l'interpréteur n'exécute pas le graphe replié (C44-01).
 #include <charconv>
 #include <cmath>
 #include <exception>
@@ -174,7 +175,14 @@ std::expected<void, ajp::Refusal> generic_passes(Graph& graph) {
 std::expected<void, ajp::Refusal> vulkan_passes(Graph& graph, const Options& options) {
   namespace net = ajp::gpu::vk::net;
   const net::Target target{.f16_storage = true, .matrix_units = options.matrices};
-  if (auto done = net::engine_passes(graph, options.model, !options.fp32, target); !done) return done;
+  // C44-01 : l'interpréteur exige des types égaux aux opérateurs binaires, que le repli des Cast entre
+  // flottants (noyaux typés du moteur) ne respecte plus. Avec --run, le graphe garde donc ses Cast : il est
+  // exécuté tel que le moteur le lirait, au repli des Cast près.
+  const bool fold_casts = !options.run;
+  if (auto done = net::engine_passes(graph, options.model, !options.fp32, target, fold_casts); !done)
+    return done;
+  if (!fold_casts)
+    std::cout << "Cast entre flottants gardés (--run : l'interpréteur ne lit pas le graphe replié)\n";
   std::cout << std::format("Après la préparation Vulkan ({}, {}) : {} nœuds\n  {}\n",
                            options.matrices ? "matrices coopératives" : "sans matrices",
                            options.fp32 ? "float" : "float16 du modèle", graph.nodes.size(),

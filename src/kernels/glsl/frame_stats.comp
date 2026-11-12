@@ -98,8 +98,14 @@ vec3 nits_of(vec3 e) {
          AJP_FS_SDR_WHITE_NITS;
 }
 
+// maxRGB en cd/m² d'un point voisin. En SDR et en PQ, l'EOTF de chaque canal est la même fonction croissante :
+// le plus grand des trois résultats est celui du plus grand canal encodé, une seule puissance au lieu de trois
+// (C50-07). En HLG le gain dépend des trois canaux : le calcul complet.
 float maxrgb_of(uint gx, uint gy) {
-  vec3 n = nits_of(encoded(gx, gy));
+  vec3 e = encoded(gx, gy);
+  if (pc.transfer == 1u) return pq_eotf(max(max(e.r, e.g), e.b));
+  if (pc.transfer == 0u) return pow(max(max(e.r, e.g), e.b), AJP_BT1886_GAMMA) * AJP_FS_SDR_WHITE_NITS;
+  vec3 n = nits_of(e);
   return max(max(n.r, n.g), n.b);
 }
 

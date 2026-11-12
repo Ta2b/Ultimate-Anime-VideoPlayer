@@ -33,7 +33,8 @@ struct LiveScene {
 class LiveScenes {
  public:
   // L'analyse d'une image source. Un pts qui recule (un saut) ouvre une scène.
-  void push(std::int64_t pts_us, const kernels::FrameStats& stats);
+  void push(std::int64_t pts_us, const kernels::FrameStats& stats,
+            kernels::FrameTransfer transfer = kernels::FrameTransfer::Sdr);
   // La scène de l'image à pts_us : la dernière analysée à ou avant elle, à moins de max_gap_us.
   std::optional<LiveScene> at(std::int64_t pts_us, std::int64_t max_gap_us = 500'000) const;
   // Une image source dont l'analyse a été perdue (relecture GPU en retard) : le limiteur en tient compte.

@@ -8,7 +8,9 @@
 #             volée ou perdue que les lecteurs ne doivent plus croire (docs/signature-des-releases.md).
 #   VERSION   0.5.0 (ou 0.5.0-rc.1)             CANAL   stable (le canal Préversions est retiré : seule la valeur
 #                                               « stable » est écrite, le lecteur ne lit plus ce champ)
-#   DOSSIER   contient ajp-linux-x64.tar.gz, ajp-windows-x64.zip, ajp-macos-arm64.zip (ceux qui existent)
+#   DOSSIER   contient ajp-linux-x64.tar.gz, ajp-windows-x64.zip, ajp-macos-arm64.zip, et les fichiers que les
+#             utilisateurs prennent en pratique, ajp-linux-x86_64.AppImage et ajp-windows-x64-setup.exe (ceux qui
+#             existent) ; le lecteur ignore ces sections (C51-08)
 #   URL-DE-BASE   https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0
 # Produit DOSSIER/manifest.toml et DOSSIER/manifest.toml.sig (Ed25519, hexadécimal), à joindre à la release.
 #
@@ -45,7 +47,8 @@ out="$dir/manifest.toml"
     for hex in "${revoke[@]}"; do printf '%s"%s"' "$sep" "$hex"; sep=", "; done
     printf ']\n'
   fi
-  for entry in "linux-x64:ajp-linux-x64.tar.gz" "windows-x64:ajp-windows-x64.zip" "macos-arm64:ajp-macos-arm64.zip"; do
+  for entry in "linux-x64:ajp-linux-x64.tar.gz" "windows-x64:ajp-windows-x64.zip" "macos-arm64:ajp-macos-arm64.zip" \
+  "linux-appimage:ajp-linux-x86_64.AppImage" "windows-setup:ajp-windows-x64-setup.exe"; do
     section=${entry%%:*} file=${entry#*:}
     [ -f "$dir/$file" ] || continue
     echo "[$section]"

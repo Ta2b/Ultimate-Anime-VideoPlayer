@@ -13,6 +13,7 @@
 #include <span>
 #include <sstream>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -581,7 +582,7 @@ std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph,
   // estampille avant la première et après chacune (fin de pipeline : chaque intervalle couvre une
   // passe entière). Sans, la préparation à part, puis une passe par soumission, chronométrée sur
   // l'hôte.
-  const bool stamped = period_ns_ > 0.0;
+  const bool stamped = period_ns_ > 0.0 && !std::exchange(host_once_, false);
   const std::uint32_t passes = options.warmup + std::max<std::uint32_t>(1, options.passes);
   const std::uint32_t repeats = std::max<std::uint32_t>(1, options.repeats);
   const std::uint32_t recorded = stamped ? passes : 1;
@@ -648,13 +649,7 @@ std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph,
         !ok) {
       return std::unexpected(ok.error());
     }
-    // Des estampilles qui n'avancent pas d'une passe à l'autre ne mesurent rien : la mesure se reprend ; au
-    // troisième relevé raté de la séance seulement, elle passe à l'hôte pour ce choix et les suivants (un
-    // raté isolé ne change plus l'horloge de toutes les mesures, P2.45).
-    if (std::ranges::adjacent_find(ticks, std::greater_equal<>()) != ticks.end()) {
-      if (++bad_stamps_ >= 3) period_ns_ = 0.0;
-      return measure_with(graph, node, choice, options);
-    }
+    if (const auto again = stamp_retry(ticks, options)) return measure_with(graph, node, choice, *again);
     for (std::uint32_t pass = options.warmup; pass < passes; ++pass) {
       const double us = static_cast<double>(ticks[pass + 1] - ticks[pass]) * period_ns_ / 1000.0;
       samples.push_back(us / repeats);
@@ -676,6 +671,38 @@ std::expected<Measured, Refusal> Autotuner::measure_with(const ir::Graph& graph,
     result.output = as_floats(bytes, graph.tensors[n.outputs[0]].type);
   }
   return result;
+}
+
+// Des estampilles à l'envers ne mesurent rien : la mesure se reprend ; au troisième relevé raté de la séance
+// seulement, elle passe à l'hôte pour ce choix et les suivants (un raté isolé ne change plus l'horloge de
+// toutes les mesures, P2.45). Des estampilles égales (nœud plus court que la résolution de l'horloge) ne sont
+// pas un raté de l'horloge : plus de dispatchs par passe, et, au plafond, l'hôte pour ce choix seul (C45-06).
+std::optional<TunerOptions> Autotuner::stamp_retry(std::span<const std::uint64_t> ticks,
+                                                   const TunerOptions& options) {
+  switch (check_stamps(ticks)) {
+    case StampCheck::Ok:
+      break;
+    case StampCheck::Backwards:
+      if (++bad_stamps_ >= 3) period_ns_ = 0.0;
+      return options;
+    case StampCheck::Flat: {
+      const std::uint32_t repeats = std::max<std::uint32_t>(1, options.repeats);
+      if (repeats >= kMaxStampRepeats) {
+        host_once_ = true;
+        return options;
+      }
+      TunerOptions longer = options;
+      longer.repeats = longer_repeats(repeats);
+      return longer;
+    }
+  }
+  return std::nullopt;
+}
+
+StampCheck check_stamps(std::span<const std::uint64_t> ticks) {
+  if (std::ranges::adjacent_find(ticks, std::greater<>()) != ticks.end()) return StampCheck::Backwards;
+  if (std::ranges::adjacent_find(ticks, std::equal_to<>()) != ticks.end()) return StampCheck::Flat;
+  return StampCheck::Ok;
 }
 
 }  // namespace ajp::gpu::vk::net

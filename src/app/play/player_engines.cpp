@@ -13,6 +13,7 @@
 #include "app/play/apple_model.h"
 #include "app/play/build_progress.h"
 #include "app/play/chain_setup.h"
+#include "app/play/chain_shape.h"
 #include "app/play/controls.h"
 #include "app/play/crash_dump.h"
 #include "app/play/derived_model.h"
@@ -25,6 +26,8 @@
 #include "app/play/paths.h"
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
+#include "app/play/resume.h"
+#include "app/play/sleep_watch.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -46,9 +49,17 @@ constexpr std::int32_t kBuildFrameMs = 100;
 
 // Une vidéo glissée pendant une préparation : gardée pour la lecture, qui passe à elle (A08-08). Vrai si c'en
 // est une ; des sous-titres ou autre chose sont écartés au journal, la chaîne n'est pas encore ouverte.
-bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dropped_video) {
+bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dropped_video,
+               const std::filesystem::path& current) {
   const std::optional<Dropped> drop = dropped(event);
   if (!drop) return false;
+  // La vidéo déjà en préparation (un second double-clic impatient) : rien à changer, la construction
+  // en cours, minutes de travail, ne doit pas être détruite pour recommencer sur le même fichier.
+  if (drop->kind == DropKind::Video && same_video_file(drop->path, current)) {
+    log_channel("app")->info("vidéo glissée déjà en préparation, ignorée : {}",
+                             prepare::utf8_path(drop->path.filename()));
+    return false;
+  }
   if (drop->kind != DropKind::Video) {
     log_channel("app")->info("fichier glissé pendant une construction, écarté : {}",
                              prepare::utf8_path(drop->path.filename()));
@@ -65,10 +76,12 @@ bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dro
 // montre les détails (details, repris ensuite par les statistiques de la lecture).
 std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
     EngineBuild& build, PlaceboScreen& screen, PlayerUi& ui, const EngineLabel& engine, bool& details,
-    SnapshotPlan& snapshot, std::optional<std::filesystem::path>& dropped_video) {
+    SnapshotPlan& snapshot, std::optional<std::filesystem::path>& dropped_video,
+    const std::filesystem::path& current) {
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   BuildProgress progress(engine.expected_s, started);
+  const AwakeWhile awake;  // une construction dure des minutes sans touche
   std::vector<Input> actions;
   bool watch_now = false;
   bool show_failed = false;  // une ligne de journal, pas une toutes les 100 ms
@@ -81,7 +94,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      if (keep_drop(event, dropped_video)) return std::unexpected(dropped_video_refusal());
+      if (keep_drop(event, dropped_video, current)) return std::unexpected(dropped_video_refusal());
       if (ui.handle(event, host_now_us(), actions)) continue;
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
@@ -174,7 +187,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
   // B29-09 : le hachage d'un ONNX (la première fois du lancement) et le chargement d'un moteur prennent des
   // centaines de ms à plusieurs secondes ; la fenêtre est pompée pendant ce temps.
-  auto sha256 = run_pumped<std::string>("sha256", [&onnx] { return prepare::sha256_file_known(onnx); });
+  auto sha256 = run_pumped<std::string>(
+      "sha256", [onnx = std::filesystem::path(onnx)] { return prepare::sha256_file_known(onnx); });
   if (!sha256) return std::unexpected(std::move(sha256.error()));
   LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
   auto build = EngineBuild::start(
@@ -189,14 +203,23 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
   note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
-  auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video);
+  auto artifact =
+      wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video, p.options.file);
   if (!artifact) return std::unexpected(std::move(artifact.error()));
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
+  // C45-01 : une perte de précision consentie à la vitesse (repli Vulkan) se dit à l'écran, pas au journal
+  // seul.
+  if (const i18n::Translated reduced = reduced_precision_notice(label.name, (*artifact)->reduced);
+      !reduced.empty()) {
+    p.notice = p.notice.empty() ? reduced : p.notice + i18n::Translated::data(" · ") + reduced;
+  }
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
   backend.use_lane(lane);
   note_crash_stage(std::format("chargement du moteur {} ({})", label.name, label.backend));
-  auto loaded = run_pumped<std::unique_ptr<gpu::Engine>>(
+  // backend et artifact sont à l'appelant : la croix attend la fin du chargement (quelques secondes) au lieu
+  // de laisser le thread les lire détruits.
+  auto loaded = run_pumped_borrowing<std::unique_ptr<gpu::Engine>>(
       "engine-load", [&backend, &artifact] { return backend.load(**artifact); });
   backend.use_lane(gpu::Lane::Upscale);
   if (!loaded) return std::unexpected(std::move(loaded.error()));
@@ -231,7 +254,7 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
     }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      if (keep_drop(event, p.dropped_video)) {
+      if (keep_drop(event, p.dropped_video, p.options.file)) {
         stop_and_wait(note);
         return std::nullopt;
       }

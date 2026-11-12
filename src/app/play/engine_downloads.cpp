@@ -18,7 +18,9 @@
 #include "app/play/engine_versions.h"
 #include "app/play/home_screen.h"
 #include "app/play/i18n.h"
+#include "app/play/player_engines.h"
 #include "app/play/pumped_task.h"
+#include "app/play/sleep_watch.h"
 #include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -66,6 +68,11 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
                    });
   if (!worker) return std::unexpected(std::move(worker.error()));
   DeferredDrops drops;  // une vidéo envoyée par un second lancement pendant l'installation (B29-04)
+  // « Annuler et regarder » : le téléchargement s'arrête (le thread rend la main vite, il lit le jeton), la
+  // vidéo se lit sans ce moteur, l'ancien paquet gardé ou Vulkan. Fermer la fenêtre reste une sortie.
+  const AwakeWhile awake;  // 650 Mo à tirer : l'écran ne s'éteint pas en route
+  bool watch_now = false;
+  bool cancelling = false;
   while (true) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -75,11 +82,24 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
         return std::nullopt;
       }
     }
+    if (watch_now && !cancelling) {
+      cancelling = true;
+      worker->request_stop();
+    }
     PrepareView view;
     {
       const std::scoped_lock lock(shared->mutex);
-      if (shared->result) return std::move(shared->result);
-      view = PrepareView{.label = label, .fraction = shared->fraction, .details = {shared->stage}};
+      if (shared->result) {
+        if (!cancelling) return std::move(shared->result);
+        // i18n-ok : journal
+        const std::string detail = "installation annulée";
+        return std::expected<void, Refusal>(std::unexpected(
+            Refusal{.code = RefusalCode::Cancelled, .detail = detail, .key = std::string(kWatchNowKey)}));
+      }
+      view = PrepareView{.label = label,
+                         .fraction = shared->fraction,
+                         .details = {shared->stage},
+                         .watch_now = cancelling ? nullptr : &watch_now};
     }
     if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
       log_channel("app")->warn("installation : {}", shown.error().detail);
@@ -91,7 +111,8 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
 }  // namespace
 
 std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui, const EngineCatalog& catalog,
-                                            const FirstRunView& view, core::Settings& engines) {
+                                            const FirstRunView& view, core::Settings& engines,
+                                            std::vector<core::EngineId>* failed) {
   const auto log = log_channel("app");
   for (const EngineRow& row : view.engines) {
     if (!row.download || !chosen(engines, row.offer.id)) continue;
@@ -114,8 +135,10 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
     }
     log->warn("{} not installed: {}", engine_label(row.offer.id), outcome->error().detail);
     ui.controls().defer(
-        i18n::ui_tr_format("{} not installed: {}", engine_label(row.offer.id), i18n::tr("Vulkan instead")));
+        i18n::ui_tr_format("{} not installed: {}", engine_label(row.offer.id),
+                           i18n::tr("Vulkan for now; install it in Settings > General > Engines")));
     engines = without_engine(std::move(engines), row.offer.id);
+    if (failed != nullptr) failed->push_back(row.offer.id);
   }
   return true;
 }
@@ -135,7 +158,9 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
       // Ouverte sur un thread, la fenêtre pompée ; à jour, elle reste ouverte pour le choix du moteur qui
       // suit (keep_open).
       auto opened = run_pumped<std::shared_ptr<BackendLibrary>>(
-          "backend", [&library] { return BackendLibrary::open(std::span(&library, 1)); });
+          "backend", [library] { return BackendLibrary::open(std::span(&library, 1)); });
+      if (!opened && opened.error().key == kWindowClosedKey)
+        return false;  // la croix : plus rien à mettre à jour
       if (opened) BackendLibrary::keep_open(std::move(*opened));
       if (opened || opened.error().code != RefusalCode::AbiMismatch) continue;
       // Le paquet de l'index est celui qui est installé : le retélécharger ne changerait rien (A06-03). La

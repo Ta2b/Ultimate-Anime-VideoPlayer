@@ -15,9 +15,12 @@
 
 namespace ajp::app::play {
 
-// false : fenêtre fermée pendant les téléchargements. engines perd les moteurs non installés.
+// false : fenêtre fermée pendant les téléchargements. engines perd les moteurs non installés, que failed
+// (s'il est donné) liste : l'assistant ne calibre pas sous Vulkan un poste dont le moteur recommandé a
+// échoué.
 std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui, const EngineCatalog& catalog,
-                                            const FirstRunView& view, core::Settings& engines);
+                                            const FirstRunView& view, core::Settings& engines,
+                                            std::vector<core::EngineId>* failed = nullptr);
 
 // Les moteurs choisis et installés dont le module parle une autre interface que ce lecteur
 // (gpu::kBackendAbi : installés par une version précédente) se réinstallent depuis le paquet de

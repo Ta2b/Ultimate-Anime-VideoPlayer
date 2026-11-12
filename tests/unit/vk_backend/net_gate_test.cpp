@@ -7,8 +7,11 @@
 #include <cstddef>
 #include <limits>
 #include <optional>
+#include <stop_token>
+#include <string>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "../gpu_ir/onnx_builder.h"
@@ -164,4 +167,125 @@ TEST_CASE("Porte de bout en bout : une précision réduite gardée s'annonce ave
   // Porte jugée sans le jumeau en float : la perte n'est pas chiffrée, elle est dite non mesurée.
   gated.against_float = false;
   CHECK(vk::net::reduced_precision_notice("span", choices, gated, measured).contains("perte non mesurée"));
+}
+
+TEST_CASE("Porte de bout en bout : l'avis chiffré pour l'écran suit le journal", "[vk_backend][net][gate]") {
+  using vk::net::KernelChoice;
+  using vk::net::ReducedChoice;
+  const std::vector<KernelChoice> choices{{.variant = "direct"}, {.variant = "coopmat_acc16"}};
+  vk::net::Gated gated{.choices = choices, .against_float = true, .db = 80.9, .floor_db = 81.6};
+  CHECK(vk::net::precision_notice(std::vector<KernelChoice>{{.variant = "direct"}}, gated, {}).layers == 0);
+  const std::vector<ReducedChoice> measured{
+      {.node = 1, .variant = "coopmat_acc16", .chosen_us = 100.0, .full_precision_us = 150.0}};
+  const PrecisionNotice notice = vk::net::precision_notice(choices, gated, measured);
+  CHECK(notice.layers == 1);
+  CHECK(notice.loss_measured);
+  CHECK(notice.loss_db == Catch::Approx(80.9F));
+  CHECK(notice.gain_measured);
+  CHECK(notice.gain_percent == Catch::Approx(50.0F));
+  // Choix repris du cache, et porte jugée sans le jumeau en float : ni gain ni perte chiffrés, et l'écran le
+  // dit.
+  gated.against_float = false;
+  const PrecisionNotice unmeasured = vk::net::precision_notice(
+      choices, gated, std::vector<ReducedChoice>{{.node = 1, .variant = "coopmat_acc16"}});
+  CHECK(unmeasured.layers == 1);
+  CHECK_FALSE(unmeasured.loss_measured);
+  CHECK_FALSE(unmeasured.gain_measured);
+}
+
+// C45-04 (b) : des noyaux de référence exacts (200 dB) ne rejettent pas une variante juste mais pas
+// identique.
+TEST_CASE("Porte de bout en bout : un plancher exact ne rejette pas une variante à l'arrondi près",
+          "[vk_backend][net][gate]") {
+  using vk::net::gate_verdict;
+  using vk::net::GateVerdict;
+  CHECK(gate_verdict(vk::net::kGateExactDb, 100.0, std::nullopt) == GateVerdict::Keep);
+  CHECK(gate_verdict(vk::net::kGateExactDb, 140.0, std::nullopt) == GateVerdict::Keep);
+  // Une vraie perte reste rejetée, même sous un plancher exact.
+  CHECK(gate_verdict(vk::net::kGateExactDb, 70.0, std::nullopt) == GateVerdict::Reference);
+  CHECK(gate_verdict(vk::net::kGateExactDb, 70.0, 100.0) == GateVerdict::FullPrecision);
+  // Un plancher mesuré (float16) garde sa règle : le plafond ne l'atteint pas.
+  CHECK(vk::net::kGateExactFloorDb > 82.0);
+  CHECK(gate_verdict(81.6, 81.2, std::nullopt) == GateVerdict::Keep);
+  CHECK(gate_verdict(81.6, 80.0, std::nullopt) == GateVerdict::Reference);
+}
+
+namespace {
+
+// Un Conv 3×3 en float dont les poids débordent le float32 : sa sortie est infinie, jumeau et référence
+// compris.
+ir::Graph overflowing_graph() {
+  using namespace ajp::gpu::ir::test;
+  ModelBuilder m;
+  m.input("x", {1, 4, 8, 8})
+      .weight("w", {4, 4, 3, 3}, std::vector<float>(4 * 4 * 3 * 3, 3.0e38F))
+      .node("Conv", {"x", "w"}, {"y"}, {attr_ints("pads", {1, 1, 1, 1})})
+      .output("y");
+  ir::Graph graph = require_value(ir::load_onnx(m.bytes()));
+  require_ok(ir::infer_shapes(graph));
+  (void)require_value(ir::optimize(graph));
+  return graph;
+}
+
+}  // namespace
+
+// C45-04 (a) : un réseau dont le calcul de référence n'est pas fini est refusé, pas gardé faute de juge.
+TEST_CASE("Porte de bout en bout : un calcul de référence non fini refuse la construction",
+          "[vk_backend][net][gate]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = overflowing_graph();
+  std::vector<vk::net::KernelChoice> other;
+  bool differs = false;
+  const auto reference = require_value(vk::net::reference_choices(graph, rig.target));
+  for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
+    const auto options = require_value(vk::net::candidates(graph, k, rig.target));
+    const auto exact =
+        std::ranges::find_if(options.rbegin(), options.rend(),
+                             [](const vk::net::KernelChoice& c) { return !vk::net::low_precision(c); });
+    other.push_back(exact != options.rend() ? *exact : options.back());
+    differs = differs || other.back() != reference[k];
+  }
+  if (!differs) SKIP("une seule variante pour ce nœud : la porte rend les choix sans juger");
+  const auto gated =
+      vk::net::gate_network(*rig.context, *rig.memory, *rig.pipelines, graph, other, rig.target);
+  REQUIRE_FALSE(gated.has_value());
+  CHECK(gated.error().code == ajp::RefusalCode::GraphInvalid);
+}
+
+// C45-02 : un arrêt demandé traverse la porte, et la progression avance avec les rejeux.
+TEST_CASE("Porte de bout en bout : l'arrêt est lu entre deux rejeux, la progression avance",
+          "[vk_backend][net][gate]") {
+  NetRig rig = make_net_rig();
+  const bool half = rig.target.f16_storage;
+  const ir::Graph graph = build(half);
+  std::vector<vk::net::KernelChoice> other;
+  for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
+    const auto options = require_value(vk::net::candidates(graph, k, rig.target));
+    const auto exact =
+        std::ranges::find_if(options.rbegin(), options.rend(),
+                             [](const vk::net::KernelChoice& c) { return !vk::net::low_precision(c); });
+    other.push_back(exact != options.rend() ? *exact : options.back());
+  }
+  const auto reference = require_value(vk::net::reference_choices(graph, rig.target));
+  if (other == reference) SKIP("aucune variante autre que la référence");
+
+  std::vector<float> fractions;
+  const vk::net::GateWatch watching{
+      .report = [&](float fraction, const std::string&) { fractions.push_back(fraction); },
+      .from = 0.5F,
+      .to = 1.0F};
+  require_value(
+      vk::net::gate_network(*rig.context, *rig.memory, *rig.pipelines, graph, other, rig.target, watching));
+  REQUIRE_FALSE(fractions.empty());
+  CHECK(std::ranges::is_sorted(fractions));
+  CHECK(fractions.front() > 0.5F);
+  CHECK(fractions.back() <= 1.0F);
+
+  std::stop_source source;
+  source.request_stop();
+  const vk::net::GateWatch stopped{.stop = source.get_token()};
+  const auto cancelled =
+      vk::net::gate_network(*rig.context, *rig.memory, *rig.pipelines, graph, other, rig.target, stopped);
+  REQUIRE_FALSE(cancelled.has_value());
+  CHECK(cancelled.error().code == ajp::RefusalCode::Cancelled);
 }

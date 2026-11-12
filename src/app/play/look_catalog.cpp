@@ -20,7 +20,8 @@ std::filesystem::path shipped_luts_dir() {
   // Les LUT livrées avec le lecteur : luts/ à côté de SDL_GetBasePath (Contents/Resources dans AJP.app),
   // comme models/.
   const char* base = SDL_GetBasePath();
-  return base == nullptr ? std::filesystem::path() : std::filesystem::path(base) / "luts";
+  // C41-08 : les octets UTF-8 de SDL lus en UTF-8, sans dépendre de la page de code de Windows.
+  return base == nullptr ? std::filesystem::path() : core::path_from_utf8(base) / "luts";
 }
 
 std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
@@ -32,10 +33,10 @@ std::expected<render::CubeLut, Refusal> load_look(const std::string& key,
   if (key.empty() || key.find('/') != std::string::npos || key.find('\\') != std::string::npos ||
       key.find(':') != std::string::npos || name.filename() != name || extension != ".cube")
     return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : nom de fichier invalide"});
-  std::filesystem::path path = luts_dir / key;
+  std::filesystem::path path = luts_dir / name;
   std::ifstream file(path, std::ios::binary);
   if (!file) {  // pas chez l'utilisateur : celui livré
-    path = shipped_luts_dir() / key;
+    path = shipped_luts_dir() / name;
     file.open(path, std::ios::binary);
   }
   if (!file) return std::unexpected(Refusal{RefusalCode::FileUnreadable, "look : " + key + " introuvable"});

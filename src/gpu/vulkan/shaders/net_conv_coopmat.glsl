@@ -291,6 +291,9 @@ void main() {
         if (ACT != kActNone) {
           for (int e = 0; e < v.length(); ++e) v[e] = net_activate(ACT, v[e], ALPHA, LO, HI, 0.0);
         }
+        // Plafonné comme to_half des autres sorties (C49-01) : coopmat<float16_t>(v) donnerait ±Inf au-delà de
+        // ±65 504 sur les tuiles pleines, alors que la tuile incomplète de la même couche écrit ±65 504.
+        for (int e = 0; e < v.length(); ++e) v[e] = isnan(v[e]) ? v[e] : clamp(v[e], -65504.0, 65504.0);
         coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> vh =
             coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(v);
         coopMatStore(vh, dst_h.v, (n * HOUT * WOUT + p0) * CYP + j * 16u, CYP,
@@ -318,7 +321,13 @@ void main() {
         if (e / 16u < count && co < COUT) {
           uint oy = p / WOUT;
           uint ox = p % WOUT;
+#ifdef AJP_COOPMAT_ACC16
+          // Les sommes float16 ne partent jamais du biais (initialisation sous #ifndef plus haut) : il s'ajoute
+          // toujours ici, quel que soit DIRECT_EPI (C49-03).
+          float v = tile_c[sg * 256u + e] + bias.v[co];
+#else
           float v = tile_c[sg * 256u + e] + (DIRECT_EPI == 1u ? 0.0 : bias.v[co]);  // biais déjà sommé
+#endif
           if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
           if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));

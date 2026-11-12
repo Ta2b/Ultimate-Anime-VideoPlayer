@@ -74,7 +74,9 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                  wizard.update_mode == UpdateMode::Notify, pick);
       if (pick) wizard.update_mode = UpdateMode::Notify;
       pick = false;
-      radio_note(i18n::tr("Never"), i18n::tr("No checks."), wizard.update_mode == UpdateMode::Never, pick);
+      radio_note(i18n::tr("Never"),
+                 i18n::tr("No update notifications. Engine packages of this version are still looked up."),
+                 wizard.update_mode == UpdateMode::Never, pick);
       if (pick) wizard.update_mode = UpdateMode::Never;
       section(i18n::tr("Default player"));
       ImGui::Checkbox(i18n::tr("Make it the default video player"), &wizard.make_default);
@@ -149,7 +151,11 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (!is_last(wizard)) {
-      if (ImGui::Button(i18n::tr("Skip"), {0.0F, tall})) skip(wizard);
+      if (ImGui::Button(i18n::tr("Skip"), {0.0F, tall})) {
+        // « Passer » sur l'écran Moteur ne vaut pas accord : rien ne se télécharge sous licence.
+        if (current(wizard) == WizardStep::Engines && view.first_time) decline_downloads(view);
+        skip(wizard);
+      }
       ImGui::SameLine();
     }
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);

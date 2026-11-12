@@ -1,11 +1,11 @@
-// Méga plan A2 (essai --anime-shots) : la méthode « HDR anime » (--hdr-anime) décide par plan. Son
-// exposition des surfaces (an_lift) et sa marge des éclats (la luminance moyenne de la scène, fs_apl) sont
-// fixées par la pré-analyse, une fois par plan, et changent à l'image de coupe (audit F3 : un glissé après
-// la coupe se voyait, un changement à la coupe est masqué par elle). La règle de l'exposition est celle de
-// l'ancienne courbe par plan (8.5, render::kAnimeExposureSlope) : 0,25 diaphragme par diaphragme d'APL du
-// plan rapportée à la médiane de la série, mais bornée à |E| ≤ kAnimeSurfaceMaxE : la peau et les surfaces
-// restent ancrées (±5 % d'un plan à l'autre, ≈ 3 ΔE) ; la marge des éclats suit, elle, la lumière de chaque
-// plan.
+// Méga plan A2 (--anime-shots, actif par défaut ; la sortie SDR seule, la sortie HDR garde le relèvement fixe
+// : render::steady_hdr) : la méthode « HDR anime » décide par plan. Son exposition des surfaces (an_lift) et
+// sa marge des éclats (la luminance moyenne de la scène, fs_apl) sont fixées par la pré-analyse, une fois par
+// plan, et changent à l'image de coupe (audit F3 : un glissé après la coupe se voyait, un changement à la
+// coupe est masqué par elle). La règle de l'exposition est celle de l'ancienne courbe par plan (8.5,
+// render::kAnimeExposureSlope) : 0,25 diaphragme par diaphragme d'APL du plan rapportée à la médiane de la
+// série, mais bornée à |E| ≤ kAnimeSurfaceMaxE : la peau et les surfaces restent ancrées (±5 % d'un plan à
+// l'autre, ≈ 3 ΔE) ; la marge des éclats suit, elle, la lumière de chaque plan.
 #pragma once
 
 #include <cstdint>

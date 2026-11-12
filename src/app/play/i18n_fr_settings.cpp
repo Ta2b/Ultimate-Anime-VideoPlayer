@@ -13,12 +13,27 @@ constexpr std::array kSettingsPages{
     Entry{"SPAN off", "SPAN coupé"},
     Entry{"Apply", "Appliquer"},
     Entry{"Calibration results", "Résultats de la calibration"},
+    Entry{"Calibration done: no setting held the target, the lightest is kept ({}).",
+          "Calibration terminée : aucun réglage ne tient la cadence visée, le plus léger est gardé ({})."},
+    Entry{"working resolution {}p instead of {}p", "résolution de travail {}p au lieu de {}p"},
+    Entry{"no interpolation", "sans interpolation"},
+    Entry{"Calibration done: full quality kept, {:.1f} of {:.0f} frames per second measured.",
+          "Calibration terminée : pleine qualité gardée, {:.1f} images par seconde mesurées sur {:.0f} "
+          "visées."},
+    Entry{"Calibration done: {} to hold {:.1f} of {:.0f} frames per second.",
+          "Calibration terminée : {} pour tenir {:.1f} images par seconde sur {:.0f} visées."},
+    Entry{"The next heavier setting lost {:.1f} % of its frames in this test.",
+          "Le réglage juste au-dessus perdait {:.1f} % de ses images à ce banc."},
+    Entry{
+        "Calibration skipped: the engine did not install. Install it in Settings > General > Engines, then "
+        "calibrate again (Video > Post-processing).",
+        "Calibration non lancée : le moteur ne s'est pas installé. Installez-le dans Paramètres > Général > "
+        "Moteurs, puis refaites la calibration (Vidéo > Post-traitement)."},
     Entry{"Cancel##calibration", "Annuler##calibration"},
     Entry{"Interpolation runs in Auto Instant mode. The working resolution goes up to the 1080p of the test "
           "sequence; SPAN doubles it.",
-          "L'interpolation tourne en mode auto Instantané. La résolution de travail monte jusqu'à la 1080p "
-          "de la "
-          "séquence d'essai ; SPAN la double."},
+          "L'interpolation tourne en mode auto Instantané. La résolution de travail monte jusqu'à 1080p, la "
+          "hauteur de la séquence d'essai ; SPAN la double."},
     Entry{"Measured by an older version: Auto keeps its estimate. Run the calibration again.",
           "Mesuré par une version plus ancienne : Auto garde son estimation. Refaites la calibration."},
     Entry{"Measured with another engine: Auto keeps its estimate. Run the calibration again.",
@@ -224,7 +239,7 @@ constexpr std::array kSettingsPages{
         "Positive: subtitles later. Keys z and x: 100 ms. Ctrl+click the slider to type a value (up to "
         "±30,000 ms). This session only.",
         "Positif : les sous-titres plus tard. Touches z et x : 100 ms. Ctrl+clic sur le curseur pour saisir "
-        "une valeur (jusqu'à ±30 000 ms). Pour cette séance seulement."},
+        "une valeur (jusqu'à ±30 000 ms). Pour cette séance seulement."},
     Entry{"Subtitle size", "Taille des sous-titres"},
     Entry{
         "The first preference whose tracks exist is used when a file opens. Applies to the next file.",

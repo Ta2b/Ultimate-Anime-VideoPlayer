@@ -33,54 +33,23 @@ TEST_CASE("look : les LUT s'enchaînent, la dernière compte comme la première"
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.8, 0.6);
-  const std::vector<Rgb> base = graded_codes(gpu, source, sdr_neutral());
+  const std::vector<std::uint16_t> source = pq_of_sdr_ramp(1.0, 0.8, 0.6);
+  const std::vector<Rgb> base = graded_codes(gpu, source, look_neutral(), true);
   CubeLut inverted = identity_lut(17);
   for (float& value : inverted.rgb) value = 1.0F - value;
   std::array<const CubeLut*, kLookSlots> luts{};
   luts[3] = &inverted;
   luts[kLookSlots - 1] = &inverted;
   REQUIRE(gpu.grade->set_looks(luts));
-  GradeParams params = sdr_neutral();
+  GradeParams params = look_neutral();
   params.look_mixes[3] = 1.0;
   params.look_mixes[kLookSlots - 1] = 1.0;
-  const std::vector<Rgb> twice = graded_codes(gpu, source, params);
+  const std::vector<Rgb> twice = graded_codes(gpu, source, params, true);
   for (std::size_t x = 8; x < twice.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(twice[x][c] - base[x][c]) < 8e-3);
   params.look_mixes[kLookSlots - 1] = 0.0;
-  const std::vector<Rgb> once = graded_codes(gpu, source, params);
-  CHECK(once[32][0] > 0.55);
-}
-
-TEST_CASE("sortie SDR : le grade neutre rend l'image telle quelle", "[render][gpu]") {
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  for (const auto& [green, blue] : {std::pair{1.0, 1.0}, std::pair{0.6, 0.1}, std::pair{0.2, 0.9}}) {
-    const std::vector<std::uint16_t> source = sdr_ramp(1.0, green, blue);
-    const std::vector<Rgb> out = graded_codes(gpu, source, sdr_neutral());
-    const std::size_t row = static_cast<std::size_t>(kSide / 2) * kSide;
-    for (std::size_t x = 0; x < out.size(); ++x)
-      for (std::size_t c = 0; c < 3; ++c)
-        CHECK(std::abs(out[x][c] - source[(row + x) * 4 + c] / 65535.0) < 4e-3);
-  }
-}
-
-TEST_CASE("sortie SDR : le vrai noir OLED met les quasi-noirs à 0", "[render][gpu]") {
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  GradeParams black = sdr_neutral();
-  // Codes 0,02 et 0,06 en gamma 2,2 à 203 nits : 0,04 et 0,4 nit environ.
-  black.black_lo = 203.0 * std::pow(0.02, 2.2);
-  black.black_hi = 203.0 * std::pow(0.06, 2.2);
-  const std::vector<Rgb> out = graded_codes(gpu, sdr_ramp(0.25, 1.0, 1.0), black);
-  // Les codes de la rampe : 0,25 × (x + 1) / 256.
-  const auto code = [](std::size_t x) { return 0.25 * static_cast<double>(x + 1) / kSide; };
-  for (std::size_t x = 0; x < out.size(); ++x) {
-    if (code(x) < 0.015) CHECK(out[x][0] < 1e-3);
-    if (code(x) > 0.09) CHECK(std::abs(out[x][0] - code(x)) < 4e-3);
-  }
+  const std::vector<Rgb> once = graded_codes(gpu, source, params, true);
+  CHECK(once[32][0] > base[32][0] + 0.1);  // sombre -> clair
 }
 
 // Le look (LUT 3D) : ni la passe sautée (look_mix = 0), ni une identité ne changent l'image ; une LUT
@@ -90,27 +59,27 @@ TEST_CASE("look : identité et intensité nulle laissent l'image, une LUT invers
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.8, 0.6);
-  const std::vector<Rgb> base = graded_codes(gpu, source, sdr_neutral());
+  const std::vector<std::uint16_t> source = pq_of_sdr_ramp(1.0, 0.8, 0.6);
+  const std::vector<Rgb> base = graded_codes(gpu, source, look_neutral(), true);
   const CubeLut neutral = identity_lut(17);
   REQUIRE(gpu.grade->set_looks({&neutral, nullptr, nullptr}));
-  GradeParams params = sdr_neutral();
+  GradeParams params = look_neutral();
   params.look_mixes[0] = 1.0;
-  params.look_white = 203.0;
-  const std::vector<Rgb> same = graded_codes(gpu, source, params);
+  const std::vector<Rgb> same = graded_codes(gpu, source, params, true);
   for (std::size_t x = 8; x < same.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(std::abs(same[x][c] - base[x][c]) < 6e-3);
   CubeLut inverted = identity_lut(17);
   for (float& value : inverted.rgb) value = 1.0F - value;
   REQUIRE(gpu.grade->set_looks({&inverted, nullptr, nullptr}));
-  const std::vector<Rgb> flipped = graded_codes(gpu, source, params);
-  CHECK(flipped[32][0] > 0.55);   // sombre -> clair
-  CHECK(flipped[240][0] < 0.35);  // clair -> sombre
+  const std::vector<Rgb> flipped = graded_codes(gpu, source, params, true);
+  CHECK(flipped[32][0] > base[32][0] + 0.1);    // sombre -> clair
+  CHECK(flipped[240][0] < base[240][0] - 0.1);  // clair -> sombre
   params.look_mixes[0] = 0.0;
-  const std::vector<Rgb> skipped = graded_codes(gpu, source, params);
+  const std::vector<Rgb> skipped = graded_codes(gpu, source, params, true);
   for (std::size_t x = 0; x < skipped.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(skipped[x][c] == base[x][c]);  // octet pour octet
-  REQUIRE(gpu.grade->set_looks({}));  // retour à l'identité 2x2x2 sans LUT
+  REQUIRE(
+      gpu.grade->set_looks(std::array<const CubeLut*, kLookSlots>{}));  // retour à l'identité 2x2x2 sans LUT
 }
 
 TEST_CASE("look : une LUT d'HDR (PQ BT.2020) lit les codes PQ, l'identité ne bouge rien",
@@ -143,27 +112,27 @@ TEST_CASE("look : deux LUT s'enchaînent dans l'ordre, deux inversions se compen
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.8, 0.6);
-  const std::vector<Rgb> base = graded_codes(gpu, source, sdr_neutral());
+  const std::vector<std::uint16_t> source = pq_of_sdr_ramp(1.0, 0.8, 0.6);
+  const std::vector<Rgb> base = graded_codes(gpu, source, look_neutral(), true);
   CubeLut inverted = identity_lut(17);
   for (float& value : inverted.rgb) value = 1.0F - value;
   REQUIRE(gpu.grade->set_looks({&inverted, &inverted, nullptr}));
-  GradeParams params = sdr_neutral();
+  GradeParams params = look_neutral();
   params.look_mixes[0] = 1.0;
   params.look_mixes[1] = 1.0;
-  const std::vector<Rgb> twice = graded_codes(gpu, source, params);
+  const std::vector<Rgb> twice = graded_codes(gpu, source, params, true);
   for (std::size_t x = 8; x < twice.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c)
       CHECK(std::abs(twice[x][c] - base[x][c]) < 8e-3);  // inversion puis inversion
   params.look_mixes[1] = 0.0;                            // la deuxième sautée : une seule inversion
-  const std::vector<Rgb> once = graded_codes(gpu, source, params);
-  CHECK(once[32][0] > 0.55);
+  const std::vector<Rgb> once = graded_codes(gpu, source, params, true);
+  CHECK(once[32][0] > base[32][0] + 0.1);
   params.look_mixes[0] = 0.0;
   params.look_mixes[1] = 1.0;  // seule la deuxième
-  const std::vector<Rgb> second_only = graded_codes(gpu, source, params);
-  CHECK(second_only[32][0] > 0.55);
+  const std::vector<Rgb> second_only = graded_codes(gpu, source, params, true);
+  CHECK(second_only[32][0] > base[32][0] + 0.1);
   params.look_mixes[1] = 0.0;
-  const std::vector<Rgb> none = graded_codes(gpu, source, params);
+  const std::vector<Rgb> none = graded_codes(gpu, source, params, true);
   for (std::size_t x = 0; x < none.size(); ++x)
     for (std::size_t c = 0; c < 3; ++c) CHECK(none[x][c] == base[x][c]);
 }

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <string>
 
@@ -71,15 +73,39 @@ TEST_CASE("refus nommés : taille, lignes, nombres, LUT 1D, taille de fichier", 
   CHECK_FALSE(parse_cube("DOMAIN_MIN 1 1 1\nDOMAIN_MAX 0 0 0\nLUT_3D_SIZE 17\n0 0 0\n"));
 }
 
-TEST_CASE("le bloc de texture annonce sa taille et porte 8 octets par point", "[render][lut]") {
+TEST_CASE("le bloc de texture annonce sa taille et porte 16 octets par point", "[render][lut]") {
   const CubeLut lut = identity_lut(17);
   const std::string block = lut_texture_block(lut, "AJG_LUT");
-  CHECK(block.starts_with("//!TEXTURE AJG_LUT\n//!SIZE 17 17 17\n//!FORMAT rgba16hf\n"));
+  CHECK(block.starts_with("//!TEXTURE AJG_LUT\n//!SIZE 17 17 17\n//!FORMAT rgba32f\n"));
   std::size_t hex = 0;
   const std::size_t data = block.find("CLAMP\n") + 6;
   for (std::size_t i = data; i < block.size(); ++i)
     if (block[i] != '\n') ++hex;
-  CHECK(hex == 17U * 17U * 17U * 16U);  // 4 composantes × 2 octets × 2 chiffres
+  CHECK(hex == 17U * 17U * 17U * 32U);  // 4 composantes × 4 octets × 2 chiffres
+}
+
+// C41-02 : la texture porte les nœuds tels quels. En demi-flottants, un nœud de LUT de PQ s'arrondissait d'au
+// plus 0,25 code 10 bits (les quatre LUT livrées), jusqu'à 2 codes sur la pile de 19 emplacements.
+TEST_CASE("le bloc de texture garde chaque nœud au bit près (C41-02)", "[render][lut]") {
+  CubeLut lut = identity_lut(2);
+  lut.rgb.at(0) = 0.5126953F;  // un code PQ que le demi-flottant arrondit de 0,25 code 10 bits
+  lut.rgb.at(1) = 0.123456789F;
+  lut.rgb.at(2) = 0.987654321F;
+  const std::string block = lut_texture_block(lut, "AJG_LUT");
+  const std::size_t data = block.find("CLAMP\n") + 6;
+  const auto read = [&](std::size_t component) {
+    std::uint32_t bits = 0;
+    for (unsigned byte = 0; byte < 4U; ++byte) {
+      const std::string pair = block.substr(data + (component * 8) + (byte * 2), 2);
+      bits |= static_cast<std::uint32_t>(std::stoul(pair, nullptr, 16)) << (8U * byte);
+    }
+    return std::bit_cast<float>(bits);
+  };
+  for (std::size_t c = 0; c < 3; ++c) {
+    INFO("composante " << c);
+    CHECK(read(c) == lut.rgb.at(c));
+  }
+  CHECK(read(3) == 1.0F);
 }
 
 }  // namespace ajp::render

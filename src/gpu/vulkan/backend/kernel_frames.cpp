@@ -401,6 +401,7 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
   if (!dst) return std::unexpected(dst.error());
   auto color = detail::color_spec(frame.color);
   if (!color) return std::unexpected(color.error());
+  pair_levels_ = kernels::pair_levels(color->range);  // les mesures de paire suivent la plage de la source
   const kernels::Filter chroma = spec.chroma;
   // Tenseur plus petit que l'image : réduction fusionnée, l'image entière passe par un tenseur
   // F32 de l'enregistrement puis par les tables de reduce_weights.

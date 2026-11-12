@@ -38,7 +38,7 @@ float plane_tap(uint p, FusedTap t) {
 }
 
 // Catmull-Rom (kernels/spec/rife_fused.h : RifeWarp), comme le noyau CUDA : 4 × 4 points en FP32 autour de la
-// position du tap (déjà ramenée dans l'image), points répétés au bord, sortie bornée à [0, 1].
+// position du tap (déjà ramenée dans l'image), points répétés au bord, sortie bornée aux quatre points centraux (C50-08).
 vec4 catmull_rom(float t) {
   float t2 = t * t;
   float t3 = t2 * t;
@@ -51,16 +51,23 @@ float plane_cubic(uint p, FusedTap t) {
   vec4 wx = catmull_rom(t.wx);
   vec4 wy = catmull_rom(t.wy);
   precise float sum = 0.0;
+  float lo = 3.4e38;
+  float hi = -3.4e38;
   for (int j = 0; j < 4; ++j) {
     uint yy = uint(clamp(int(t.y0) - 1 + j, 0, int(pc.height) - 1));
     precise float row = 0.0;
     for (int i = 0; i < 4; ++i) {
       uint xx = uint(clamp(int(t.x0) - 1 + i, 0, int(pc.width) - 1));
-      row += float(input_planes.v[base + yy * pc.width + xx]) * wx[i];
+      float v = float(input_planes.v[base + yy * pc.width + xx]);
+      row += v * wx[i];
+      if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
+        lo = min(lo, v);
+        hi = max(hi, v);
+      }
     }
     sum += row * wy[j];
   }
-  return clamp(sum, 0.0, 1.0);
+  return min(max(sum, lo), hi);
 }
 
 void main() {

@@ -17,13 +17,13 @@
 namespace ajp::app::play {
 
 std::jthread start_update_check(const std::filesystem::path& settings_path, const PlayerPaths& paths,
-                                std::atomic<bool>& playing) {
+                                std::atomic<bool>& playing, UpdateNews& news) {
   const std::filesystem::path update_file = paths::update_state(paths.data);
   auto started = start_thread(
       "updates", ThreadReport([](const Refusal& refused) {
         log_channel("app")->warn("mise à jour : {}", refused.detail);  // i18n-ok : journal
       }),
-      [=, &playing](const std::stop_token& stop, const ThreadReport&) {
+      [=, &playing, &news](const std::stop_token& stop, const ThreadReport&) {
         std::mutex mutex;
         std::condition_variable_any wake;
         for (bool first = true; !stop.stop_requested(); first = false) {
@@ -35,6 +35,9 @@ std::jthread start_update_check(const std::filesystem::path& settings_path, cons
                                        std::chrono::system_clock::now().time_since_epoch())
                                        .count();
           check_updates_if_due(update_file, mode, frequency, first || !playing.load(), now, stop);
+          if (mode == UpdateMode::Notify && !news.shown.load() &&
+              !load_update_state(update_file).latest_version.empty())
+            news.fresh.store(true);
           if (frequency == UpdateFrequency::Launch) return;
           std::unique_lock lock(mutex);
           wake.wait_for(lock, stop, std::chrono::minutes(30), [] { return false; });
