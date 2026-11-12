@@ -3,42 +3,24 @@
 //!SAVE AJG_LOCAL
 //!WIDTH HOOKED.w 8 /
 //!HEIGHT HOOKED.h 8 /
-//!COMPONENTS 3
-//!DESC AnimeJaNai HDR grade - luminance et couleur locales 1/8
+//!COMPONENTS 1
+//!DESC AnimeJaNai HDR grade - luminance locale 1/8
 
-// Moyenne 8x8 de la luminance, stockee en PQ (domaine perceptuel uniforme), et de la couleur comme la
-// mesure de RTX HDR la prend (le SDR encode, 0 a 1) : y, le « bleu » max(0, B - max(R, V)) des ciels et
-// aplats bleus satures ; z, la chroma max - min. 16 lectures bilineaires couvrent exactement le bloc 8x8.
-vec3 ajg_sdr_rgb(vec3 e) {
-    if (sdr_out > 0.5) return clamp(e, 0.0, 1.0);
+// Moyenne 8x8 de la luminance, stockee en PQ (domaine perceptuel uniforme). 16 lectures bilineaires couvrent
+// exactement le bloc 8x8. C41-03 : le « bleu » et la chroma du bloc, que rien ne lisait, ne sont plus calcules.
+float ajg_pq_y(vec3 e) {
     vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
     vec3 n = pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
-    return pow(clamp(n * 10000.0 / 203.0, 0.0, 1.0), vec3(1.0 / 2.4));
-}
-float ajg_pq_y(vec3 e) {
-    float y;
-    if (sdr_out > 0.5) {
-        // Luminance BT.709 du SDR, en nits / 10000 comme le PQ.
-        y = dot(pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)), vec3(0.2126, 0.7152, 0.0722)) * peak / 10000.0;
-    } else {
-        vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
-        vec3 n = pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
-        y = dot(n, vec3(0.2627, 0.6780, 0.0593));
-    }
-    float q = pow(y, 0.1593017578125);
+    float q = pow(dot(n, vec3(0.2627, 0.6780, 0.0593)), 0.1593017578125);
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
 }
 vec4 hook() {
-    vec3 acc = vec3(0.0);
+    float acc = 0.0;
     for (int j = 0; j < 4; j++)
     for (int i = 0; i < 4; i++) {
         vec2 o = vec2(float(i) * 2.0 - 3.0, float(j) * 2.0 - 3.0) * HOOKED_pt;
-        vec3 e = HOOKED_tex(HOOKED_pos + o).rgb;
-        vec3 c = ajg_sdr_rgb(e);
-        float hi = max(c.r, max(c.g, c.b));
-        float lo = min(c.r, min(c.g, c.b));
-        acc += vec3(ajg_pq_y(e), max(0.0, c.b - max(c.r, c.g)), hi - lo);
+        acc += ajg_pq_y(HOOKED_tex(HOOKED_pos + o).rgb);
     }
-    return vec4(acc / 16.0, 1.0);
+    return vec4(acc / 16.0, 0.0, 0.0, 1.0);
 }
 

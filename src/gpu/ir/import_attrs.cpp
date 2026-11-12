@@ -197,15 +197,20 @@ std::expected<Attrs, Refusal> resize_attrs(const AttrReader& r) {
                                       {"ceil", NearestMode::Ceil}});
   auto policy = r.text("keep_aspect_ratio_policy", "stretch");
   auto antialias = r.integer("antialias", 0);
+  auto exclude_outside = r.integer("exclude_outside", 0);
   auto axes = r.integers("axes");
   if (!mode) return std::unexpected(mode.error());
   if (!coord) return std::unexpected(coord.error());
   if (!nearest) return std::unexpected(nearest.error());
   if (!policy) return std::unexpected(policy.error());
   if (!antialias) return std::unexpected(antialias.error());
+  if (!exclude_outside) return std::unexpected(exclude_outside.error());
   if (!axes) return std::unexpected(axes.error());
   if (*policy != "stretch") return r.unsupported("keep_aspect_ratio_policy autre que stretch");
   if (*antialias != 0) return r.unsupported("antialias non pris en charge");
+  // C44-05 : exclude_outside = 1 pondère autrement les voisins hors cadre ; le calcul ne le fait pas, donc
+  // refus.
+  if (*exclude_outside != 0) return r.unsupported("exclude_outside non pris en charge");
   return ResizeAttrs{.mode = *mode, .coord = *coord, .nearest = *nearest, .axes = std::move(*axes)};
 }
 

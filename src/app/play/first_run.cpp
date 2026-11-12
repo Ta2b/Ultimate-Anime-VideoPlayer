@@ -277,19 +277,29 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
         break;
     }
     // Premier passage : le moteur recommandé pour cette carte (TensorRT sur une RTX) est coché d'office, sa
-    // licence affichée à côté et acceptée par le geste « Suivant » (B25-01). Décochée ou
-    // refusée à l'écran, elle reste hors du choix. Coché à l'assistant puis la fenêtre fermée pendant le
-    // téléchargement : le choix est écrit avant (A25-10), la case et l'accord de la licence reviennent à la
-    // reprise.
-    const bool implied = !current.first_run_done && offer.preselected;
+    // licence affichée à côté et acceptée par le geste « Suivant ». Décochée ou refusée à l'écran (ou
+    // l'écran passé par « Passer »), elle reste hors du choix. Une fois l'écran Moteur passé, le choix qui
+    // y a été fait (écrit à chaque pas, ou avant le téléchargement) prime sur la présélection : la fenêtre
+    // fermée en route, l'assistant reprend avec les mêmes cases.
+    const bool decided = current.first_run_step >= static_cast<int>(WizardStep::Engines);
+    const bool settled = current.first_run_done || decided;
+    const bool implied = !settled && offer.preselected;
     const bool agreed = row.download && (chosen(current, offer.id) || (implied && row.usable));
-    const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected || agreed;
+    const bool wanted = settled ? chosen(current, offer.id) : offer.preselected || agreed;
     row.chosen =
         offer.id == core::EngineId::Vulkan || (wanted && row.usable && (row.license.empty() || agreed));
     row.license_accepted = agreed;
     view.engines.push_back(std::move(row));
   }
   return view;
+}
+
+void decline_downloads(FirstRunView& view) {
+  for (EngineRow& row : view.engines) {
+    if (!row.download) continue;
+    row.chosen = false;
+    row.license_accepted = false;
+  }
 }
 
 core::Settings settings_after(const FirstRunView& view, core::Settings settings) {

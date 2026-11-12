@@ -29,7 +29,9 @@ constexpr auto kFreshFor = std::chrono::hours(24);
 constexpr auto kAbsentFor = std::chrono::hours(2);
 // Un échec qui n'est pas un 404 (hors ligne, portail captif, délai) : un nouvel essai quelques heures après.
 constexpr auto kRetryAfter = std::chrono::hours(6);
-constexpr int kFetchSeconds = 8;
+// Un seul budget pour les deux requêtes (l'index puis sa signature), pas 8 s chacune plus la marge du
+// processus (C26-08).
+constexpr int kFetchSeconds = 16;
 
 std::string read_text(const std::filesystem::path& file) {
   std::ifstream in(file, std::ios::binary);
@@ -42,19 +44,6 @@ bool fresh(const std::filesystem::path& file, std::filesystem::file_time_type::d
   if (error) return false;
   const auto age = std::filesystem::file_time_type::clock::now() - written;
   return age >= std::filesystem::file_time_type::duration::zero() && age < within;
-}
-
-// Une marque (« .absent », « .tried ») ne vaut que pour la version du lecteur qui l'a posée : après une mise
-// à jour, le 404 ou la panne d'avant ne retient plus rien (C06-01, C06-04).
-bool marker_fresh(const std::filesystem::path& file, std::chrono::hours within, std::string_view version) {
-  if (!fresh(file, within)) return false;
-  std::string text = read_text(file);
-  while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
-  return text == version;
-}
-
-void put_marker(const std::filesystem::path& file, std::string_view version) {
-  std::ofstream(file, std::ios::binary | std::ios::trunc) << version << '\n';
 }
 
 }  // namespace
@@ -135,13 +124,38 @@ std::filesystem::path beside(const std::filesystem::path& cache, std::string_vie
 
 }  // namespace
 
-bool release_index_due(const std::filesystem::path& cache, std::string_view version) {
-  // Une copie fraîche d'une autre version (celle d'avant une mise à jour du lecteur) ne vaut rien :
-  // merge_release_copy l'écarterait, et le catalogue n'aurait plus de paquet TensorRT jusqu'au lendemain
-  // (C06-01).
-  const bool kept = fresh(cache) && release_index_tag(read_text(cache)) == std::format("v{}", version);
-  return !kept && !marker_fresh(beside(cache, ".absent"), kAbsentFor, version) &&
-         !marker_fresh(beside(cache, ".tried"), kRetryAfter, version);
+namespace {
+
+// La marque (.absent, .tried) dit pour quelle version elle a été posée : celle d'une autre version, ou
+// d'avant cette règle (un simple retour à la ligne), ne retient rien (C26-01).
+bool marker_for(const std::filesystem::path& file, std::string_view version) {
+  std::string text = read_text(file);
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
+  return !text.empty() && text == version;
+}
+
+void write_marker(const std::filesystem::path& file, std::string_view version) {
+  std::ofstream(file, std::ios::binary | std::ios::trunc) << version << '\n';
+}
+
+}  // namespace
+
+bool release_index_due(const std::filesystem::path& cache, std::string_view version, bool once_per_version) {
+  const std::filesystem::path absent = beside(cache, ".absent");
+  const std::filesystem::path tried = beside(cache, ".tried");
+  std::error_code error;
+  // Une copie d'une autre release (le lecteur vient d'être remplacé) ne vaut rien, fût-elle d'hier.
+  const bool cache_current = std::filesystem::exists(cache, error) &&
+                             release_index_tag(read_text(cache)) == std::format("v{}", version);
+  const bool absent_current = std::filesystem::exists(absent, error) && marker_for(absent, version);
+  const bool tried_current = marker_for(tried, version);
+  const auto within = once_per_version ? std::filesystem::file_time_type::duration::max() : kFreshFor;
+  // Un 404 se retient moins qu'une copie : le paquet TensorRT est joint à la release après coup, quelques
+  // minutes ou heures après sa publication (C06-04).
+  const auto absent_within = once_per_version ? within : kAbsentFor;
+  if (cache_current && fresh(cache, within)) return false;
+  if (absent_current && fresh(absent, absent_within)) return false;
+  return !(tried_current && fresh(tried, kRetryAfter));
 }
 
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
@@ -160,8 +174,13 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
   const std::filesystem::path sig_part = beside(signature, ".part");
   std::filesystem::remove(part, error);
   std::filesystem::remove(sig_part, error);
-  auto got = fetch(url, part, kFetchSeconds, stop);
-  if (got) got = fetch(url + ".sig", sig_part, kFetchSeconds, stop);
+  const auto begun = std::chrono::steady_clock::now();
+  auto got = fetch(url, part, kFetchSeconds / 2, stop);
+  if (got) {
+    const auto spent =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - begun);
+    got = fetch(url + ".sig", sig_part, std::max(2, kFetchSeconds - static_cast<int>(spent.count())), stop);
+  }
   if (got) {
     // L'ancienne copie part d'abord, puis la signature, puis le texte : un arrêt entre deux renommages laisse
     // une copie absente (relue au lancement suivant), jamais une signature neuve à côté d'un texte ancien
@@ -182,9 +201,9 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
     // plus.
     std::filesystem::remove(cache, error);
     std::filesystem::remove(signature, error);
-    put_marker(absent, version);
+    write_marker(absent, version);
   } else {
-    put_marker(tried, version);
+    write_marker(tried, version);
   }
   log->info("moteurs de la release : {}", got.error().detail);
 }

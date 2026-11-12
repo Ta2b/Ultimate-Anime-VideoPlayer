@@ -4,6 +4,7 @@
 #include <cmath>
 #include <format>
 #include <utility>
+#include <vector>
 
 #include "app/play/controls.h"
 #include "app/play/placebo_impl.h"
@@ -66,15 +67,20 @@ std::expected<bool, Refusal> Overlays::add(Layer& layer, const subs::SubtitleFra
   // sans montée est décalée ici, panneaux de la moitié basse compris.
   if (ui_bottom > 0 && frame.line_lift == 0.0F) {
     const float height = static_cast<float>(out.height);
+    std::vector<std::pair<float, float>> spans;
+    spans.reserve(layer.parts.size());
+    for (const pl_overlay_part& part : layer.parts) spans.emplace_back(part.dst.y0, part.dst.y1);
+    // Seul le paquet collé au bas de l'image monte (C24-03) : un panneau lié au décor reste en place.
+    const std::vector<bool> lifted = bottom_cluster(spans, height);
     float bottom = 0.0F;
-    for (const pl_overlay_part& part : layer.parts) {
-      if (part.dst.y0 >= height * 0.5F) bottom = std::max(bottom, part.dst.y1);
+    for (std::size_t i = 0; i < spans.size(); ++i) {
+      if (lifted[i]) bottom = std::max(bottom, spans[i].second);
     }
     const float lift = subtitle_lift(bottom, height, static_cast<float>(ui_bottom));
-    for (pl_overlay_part& part : layer.parts) {
-      if (lift > 0.0F && part.dst.y0 >= height * 0.5F) {
-        part.dst.y0 -= lift;
-        part.dst.y1 -= lift;
+    for (std::size_t i = 0; i < layer.parts.size(); ++i) {
+      if (lift > 0.0F && lifted[i]) {
+        layer.parts[i].dst.y0 -= lift;
+        layer.parts[i].dst.y1 -= lift;
       }
     }
   }

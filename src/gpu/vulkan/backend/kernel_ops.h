@@ -232,6 +232,8 @@ class VulkanKernelOps final : public KernelOps {
   // Retire les enregistrements dont la clé porte un tampon ou une image détruits depuis la
   // dernière recherche : leur poignée peut déjà désigner un autre objet (destroyed_log.h).
   void forget_destroyed();
+  // Détruit une vue après l'avoir notée au journal des destructions (C45-03).
+  void destroy_view(VkImageView view);
   std::expected<void, Refusal> submit(Recording& recording, std::span<const TimelinePoint> waits = {},
                                       std::span<const TimelinePoint> signals = {});
   void reclaim();
@@ -318,7 +320,8 @@ class VulkanKernelOps final : public KernelOps {
     std::uint32_t blocks = 0;
     std::uint32_t width = 0;  // taille des images mesurées, pour l'écart de chaque bloc
     std::uint32_t height = 0;
-    double area = 0.0;  // aire remplie de RIFE
+    double area = 0.0;      // aire remplie de RIFE
+    float levels = 219.0F;  // pas de luma de la source lors de la mesure
   };
   struct FlowRead {
     std::optional<Buffer> result;
@@ -335,6 +338,7 @@ class VulkanKernelOps final : public KernelOps {
   };
   std::array<StatsRead, kPendingReadbacks> stats_reads_;
   std::uint64_t stats_tickets_ = 0;
+  float pair_levels_ = 219.0F;      // pas de luma de la dernière source ingérée (kernels::pair_levels)
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   // Le tampon d'un emplacement, agrandi au besoin une fois finie l'exécution qui l'écrit encore.

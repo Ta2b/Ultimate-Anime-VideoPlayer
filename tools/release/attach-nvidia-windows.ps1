@@ -76,7 +76,11 @@ if ($LASTEXITCODE -eq 0 -and (Test-Path $previous)) {
 if ($Tag -like "trt-*") {
   $names = gh release view $Tag -R $repo --json assets -q '.assets[].name'
   if ($names -contains "engines-nvidia.lock") { throw "$repo $Tag a déjà son paquet TensorRT : une release trt-* ne se réécrit pas (un autre appel l'a joint entre-temps ?)" }
-  gh release upload $Tag -R $repo $archive $out
+  # L'archive d'abord, le lock en dernier : le lock dit « publié », un envoi interrompu laisse une archive
+  # orpheline que la reprise remplace, jamais un lock sans archive (C51-11).
+  gh release upload $Tag -R $repo --clobber $archive
+  if ($LASTEXITCODE -ne 0) { throw "envoi de l'archive dans la release $Tag" }
+  gh release upload $Tag -R $repo $out
 } else {
   gh release upload $Tag -R $repo --clobber $archive $out
 }

@@ -38,8 +38,8 @@ void pair_scale_checkbox(PlaySettings& d) {
   ImGui::EndDisabled();
   panel::tip(
       i18n::tr("Trial: pairs that move a lot estimate motion on a half-size image, with a second engine "
-               "built the first time. Cheaper on fast pans; small objects may lose precision. RIFE only. "
-               "Reloads playback."));
+               "built the first time. Time saved not measured; small objects may lose precision (loss not "
+               "measured). RIFE only. Reloads playback."));
 }
 
 struct HeightChoice {
@@ -496,18 +496,18 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything."));
   } else if (four_k) {
     note(
-        i18n::tr("4K output: RIFE estimates motion on a lighter 720p copy (less precise motion; the loss "
-                 "is not measured)."));
+        i18n::tr("4K output: RIFE estimates motion on a 720p copy (less precise motion; time saved and "
+                 "loss not measured)."));
   }
   // « Lisser les dessins tenus » (upscale_smooth.cpp) : RIFE seulement, à la place des poses gardées.
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Smooth held drawings"), &d.smooth_drawings);
   panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("A drawing held for 2 to 6 frames glides towards the next drawing instead of freezing, then "
-               "jumping. Longer holds keep the copy, scene cuts stay cuts. RIFE only; replaces Keep poses. "
-               "Reloads playback."));
+  panel::tip(i18n::tr(
+      "Trial: a drawing held for 2 to 6 frames glides towards the next drawing instead of freezing, then "
+      "jumping. Longer holds keep the copy, scene cuts stay cuts. RIFE only; replaces Keep poses. "
+      "Reloads playback."));
   const bool smoothed = d.smooth_drawings && d.motion_engine == MotionEngine::Rife;
   note(smoothed ? i18n::tr("Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.")
                 : i18n::tr("Scene cuts and held drawings are not interpolated."));
@@ -525,7 +525,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   ImGui::EndDisabled();
   panel::tip(
       i18n::tr("Splits RIFE into small TensorRT engines: 1.4 ms instead of 4.5 ms per pass on an RTX 4070 "
-               "Ti, the image within 53 dB of the whole network. TensorRT only. Reloads playback; built on "
+               "Ti, the image at about 53 dB PSNR against the whole network. TensorRT only. Reloads "
+               "playback; built on "
                "first use for this size."));
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::DistilDrba);
   ImGui::Checkbox(i18n::tr("Fused DistilDRBA"), &d.drba_fused);

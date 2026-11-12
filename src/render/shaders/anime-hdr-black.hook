@@ -13,9 +13,6 @@
 // 2. Sortie HDR (kwin_on) : la compression vers le pic de l'écran, puis les éclats, appliqués en dernier.
 // 3. Sortie SDR de la méthode anime (sdr_tm) : le PQ ramené au SDR par la courbe du plan.
 //
-// Sortie SDR sans la méthode anime (sdr_out = 1, comme le grade) : l'image est en BT.709 gamma sdr_gamma,
-// son blanc à `peak` nits ; le pied du vrai noir s'applique sur les nits ainsi décodés.
-//
 // Toutes les passes sur HOOKED gardent quatre composantes (COMPONENTS 4) : l'alpha porte la montée des
 // émetteurs de la passe anime jusqu'à la sortie HDR (3-anime.hook, an_late).
 
@@ -33,26 +30,12 @@
 //!MAXIMUM 50.0
 0.0
 
-//!PARAM sdr_out
-//!DESC 1 = sortie SDR BT.709 (gamma sdr_gamma, blanc à peak nits), 0 = PQ BT.2020
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
 //!PARAM sdr_gamma
 //!DESC Sortie SDR : exposant du transfert de l'écran
 //!TYPE float
 //!MINIMUM 1.8
 //!MAXIMUM 2.8
 2.2
-
-//!PARAM peak
-//!DESC Sortie SDR : blanc de l'image (nits)
-//!TYPE float
-//!MINIMUM 100.0
-//!MAXIMUM 10000.0
-1000.0
 
 //!PARAM kwin_on
 //!DESC 1 = l'image porte ses métadonnées HDR (--hdr-metadata) : la compression vers l'écran est faite ici
@@ -134,18 +117,15 @@ vec4 hook() {
 //!DESC AnimeJaNai HDR - vrai noir OLED
 
 float ajb_pq_to_nits(float e) {
-    if (sdr_out > 0.5) return pow(clamp(e, 0.0, 1.0), sdr_gamma) * peak;
     float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
     return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
 }
 vec3 ajb_pq_to_nits3(vec3 e) {
-    if (sdr_out > 0.5) return pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)) * peak;
     vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
     return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6),
                          vec3(6.27739463));
 }
 vec3 ajb_nits_to_pq3(vec3 n) {
-    if (sdr_out > 0.5) return pow(clamp(n / peak, 0.0, 1.0), vec3(1.0 / sdr_gamma));
     vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }

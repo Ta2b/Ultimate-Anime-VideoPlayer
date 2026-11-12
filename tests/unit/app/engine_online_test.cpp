@@ -270,6 +270,56 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   fs::remove_all(dir);
 }
 
+// Une copie fraîche ou un 404 retenu pour la version précédente ne retiennent rien pour la nouvelle (C26-01)
+// : le lecteur remplacé à la main le jour même relit l'index tout de suite.
+TEST_CASE("Moteurs de la release : une copie ou une marque d'une autre version ne retient rien (C26-01)",
+          "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-version";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  write(cache, signed_index());  // étiquette v1.2.3, écrite à l'instant
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.3.0"));
+
+  // Un 404 de la 1.2.3 ne vaut pas pour la 1.3.0, dont le paquet TensorRT peut arriver dix minutes plus tard.
+  fs::remove(cache);
+  const UpdateFetch missing = [](std::string_view, const fs::path&, int,
+                                 const std::stop_token&) -> std::expected<void, Refusal> {
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "404"});
+  };
+  refresh_release_index(cache, "o/r", "1.2.3", missing, std::stop_token{});
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.3.0"));
+
+  // Idem d'un échec réseau retenu quelques heures.
+  fs::remove(dir / "engines-nvidia.lock.absent");
+  const UpdateFetch offline = [](std::string_view, const fs::path&, int,
+                                 const std::stop_token&) -> std::expected<void, Refusal> {
+    return std::unexpected(Refusal{RefusalCode::IoFailed, "hors ligne"});
+  };
+  refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.3.0"));
+  fs::remove_all(dir);
+}
+
+// Sur « Jamais », l'index des moteurs se relit une fois par version, sans péremption quotidienne (C26-02).
+TEST_CASE("Moteurs de la release : sur « Jamais », une fois par version et non chaque jour (C26-02)",
+          "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-never";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  CHECK(release_index_due(cache, "1.2.3", true));  // aucune copie : à relire
+  write(cache, signed_index());
+  fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(24 * 30));
+  CHECK(release_index_due(cache, "1.2.3"));              // périodique : périmée
+  CHECK_FALSE(release_index_due(cache, "1.2.3", true));  // une fois par version : la copie suffit
+  CHECK(release_index_due(cache, "1.3.0", true));        // nouvelle version : à relire
+  fs::remove_all(dir);
+}
+
 TEST_CASE(
     "Moteurs de la release : un index signé d'une autre release, ou sans étiquette, est écarté (B51-06)",
     "[app][install]") {

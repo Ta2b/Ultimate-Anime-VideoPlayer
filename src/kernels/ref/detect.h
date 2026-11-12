@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "kernels/image.h"
 #include "kernels/spec/detect.h"
@@ -20,5 +21,18 @@ Result<double> scene_score(const PlaneU16& a, const PlaneU16& b, Format format, 
 
 // Pire écart moyen d'un bloc 16 × 16, en 1/256 de niveau 8 bits. À comparer avec is_held.
 Result<std::uint32_t> block_diff_max(const PlaneU16& a, const PlaneU16& b, Format format);
+
+// Ce que mesurent rgb_pair_diff.comp et pair_diff (spec/detect.h, « la mesure que le lecteur fait
+// réellement ») sur deux images RGB ingérées : score de coupe, pire bloc, somme de chaque bloc 16 × 16.
+struct PairMeasure {
+  double scene_score = 0.0;
+  std::uint32_t worst_block = 0;
+  double total = 0.0;
+  std::vector<double> block_sums;  // un par bloc, rangée après rangée
+};
+
+Result<PairMeasure> pair_scores(const RgbImage& a, const RgbImage& b, float levels,
+                                const RifeGeometry& geometry, float kr = coefficients(Matrix::Bt709).kr,
+                                float kb = coefficients(Matrix::Bt709).kb);
 
 }  // namespace ajp::kernels::ref

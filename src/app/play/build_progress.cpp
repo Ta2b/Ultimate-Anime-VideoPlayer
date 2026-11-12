@@ -151,19 +151,31 @@ std::optional<PastBuild> read_build_log(std::string_view text) {
 }
 
 std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
-  std::vector<PastBuild> builds;
+  // C24-06 : les plus récents d'abord. L'ordre du dossier est arbitraire : un cache de plus de kMaxLogs
+  // journaux pouvait laisser hors de la lecture ceux du modèle en cours.
+  struct Candidate {
+    std::filesystem::path path;
+    std::uintmax_t size = 0;
+    std::filesystem::file_time_type time{};
+  };
+  std::vector<Candidate> candidates;
   std::error_code error;
-  std::size_t read = 0;
   for (const auto& entry : core::dir_entries(cache_dir, error)) {
-    if (read >= kMaxLogs) break;
     const std::filesystem::path& path = entry.path();
     // Le nom seul, en UTF-8 : path::string() lèverait sous Windows sur un profil hors de la page de code
     // (B24-02).
     if (!core::to_utf8(path.filename()).ends_with(".build.log") || !entry.is_regular_file(error)) continue;
     const std::uintmax_t size = entry.file_size(error);
     if (size > kMaxLogBytes || error) continue;
-    ++read;
-    if (auto past = read_build_log(log_ends(path, size))) builds.push_back(std::move(*past));
+    const auto time = entry.last_write_time(error);
+    candidates.push_back({path, size, error ? std::filesystem::file_time_type{} : time});
+  }
+  std::ranges::stable_sort(candidates,
+                           [](const Candidate& a, const Candidate& b) { return a.time > b.time; });
+  if (candidates.size() > kMaxLogs) candidates.resize(kMaxLogs);
+  std::vector<PastBuild> builds;
+  for (const Candidate& c : candidates) {
+    if (auto past = read_build_log(log_ends(c.path, c.size))) builds.push_back(std::move(*past));
   }
   return builds;
 }

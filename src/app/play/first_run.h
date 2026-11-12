@@ -115,6 +115,9 @@ struct FirstRunView {
   // Ouvert pendant une lecture, l'assistant entier compris (A25-14) : « Annuler » rend la lecture, fermer
   // la fenêtre n'est plus la seule sortie.
   bool during_playback = false;
+  // Le vrai premier lancement (first_run_done faux) : les téléchargements sous licence présélectionnés n'ont
+  // été acceptés par personne tant que l'écran Moteur n'a pas été passé par « Suivant ».
+  bool first_time = false;
   // L'assistant du premier lancement (wizard.h) ; vide au rouvrir depuis l'onglet Moteurs (revisit).
   Wizard wizard;
   WizardFacts facts;
@@ -129,6 +132,10 @@ struct FirstRunView {
 // Les lignes de recommend_engines pour ce GPU, cochées selon la présélection au premier lancement,
 // selon le choix de current ensuite (Vulkan toujours).
 FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const core::Settings& current = {});
+
+// Les moteurs à télécharger décochés et leur licence refusée : « Passer » sur l'écran Moteur, ou un
+// assistant dont cet écran n'a pas été vu (aucune licence montrée, aucun accord). Vulkan, déjà là, reste.
+void decline_downloads(FirstRunView& view);
 
 // settings avec les moteurs choisis, ceux présents, les préférés qui en découlent, et
 // first_run_done.

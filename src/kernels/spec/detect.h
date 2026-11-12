@@ -11,6 +11,7 @@
 
 #include <cstdint>
 
+#include "kernels/spec/color.h"
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 #include "kernels/spec/rife.h"
 
@@ -48,6 +49,26 @@ constexpr std::uint32_t held_scale(Format f) {
 
 constexpr bool is_held(std::uint32_t worst_block, std::uint32_t threshold = kHeldThreshold) {
   return std::uint64_t{worst_block} * 100U <= std::uint64_t{threshold} * 256U;
+}
+
+// La mesure que le lecteur fait réellement (C50-01). Il ne compare pas les codes YUV ci-dessus mais le RGB
+// qu'il a ingéré (rgb_pair_diff.comp côté Vulkan, pair_diff côté TensorRT) :
+//   Y  = kr R + (1 − kr − kb) G + kb B en float, aux coefficients de la source (BT.709 en repli Vulkan) ;
+//   s  = Σ |Ya − Yb| sur un bloc 16 × 16 tronqué aux bords, réduit en float ;
+//   total = Σ des s des blocs, en double sur l'hôte ;
+//   score de coupe = total × (niveaux / 255) / (pw × ph) ;
+//   pire bloc = max des tronque(s / n × niveaux × 256), n = pixels du bloc ;
+// niveaux = pair_levels(plage de la source) : le RGB ingéré garde l'échelle de la plage de la source, qu'un
+// pas de 219 (limitée) ou de 255 (pleine) ramène en niveaux 8 bits. Prendre 219 en plage pleine donnait un
+// score 14,1 % trop bas (0,168 au lieu de 0,196) et un pire bloc de même. Les seuils ci-dessus s'appliquent
+// à ces valeurs. Référence : ref::pair_scores ; tests : tests/unit/kernels/detect_test.cpp,
+// tests/unit/vk_compute/detect_test.cpp.
+constexpr float pair_levels(Range range) {
+  return range == Range::Full ? 255.0F : 219.0F;
+}
+
+constexpr double pair_scene_score(double total, float levels, double filled_area) {
+  return total * (static_cast<double>(levels) / 255.0) / filled_area;
 }
 
 }  // namespace ajp::kernels

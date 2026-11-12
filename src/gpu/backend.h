@@ -88,7 +88,9 @@ namespace ajp::gpu {
 // 36 : Engine::next_pair_follows (RIFE fusionné : l'encodage de B repris comme celui de A à la paire
 // suivante).
 // 37 : Motion::warp (le warp final en Catmull-Rom, en option).
-inline constexpr int kBackendAbi = 37;
+// 38 : Artifact::reduced (l'avis de précision réduite du repli Vulkan, montré à l'écran : C45-01).
+// 39 : Artifact::reused (le moteur vient du cache : un refus au chargement le met de côté, C05-01).
+inline constexpr int kBackendAbi = 39;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -178,6 +180,19 @@ struct Progress {
   std::stop_token stop;
 };
 
+// Une perte de précision consentie à la vitesse (repli Vulkan : sommes en float16 gardées par l'autotuner,
+// dans la limite de la porte de fidélité). Le lecteur la montre à l'écran ; le journal ne suffit pas
+// (C45-01). layers = 0 : rien à dire. Les valeurs non mesurées le sont dites : une perte non jugée contre le
+// calcul en float, un gain repris du cache de l'autotuner.
+struct PrecisionNotice {
+  std::uint32_t layers = 0;
+  bool loss_measured = false;
+  float loss_db = 0.0F;  // PSNR des choix gardés contre le calcul en float
+  bool gain_measured = false;
+  float gain_percent = 0.0F;  // vitesse gagnée sur les couches mesurées, face aux sommes en float
+  friend bool operator==(const PrecisionNotice&, const PrecisionNotice&) = default;
+};
+
 // Résultat sérialisé d'une construction (moteur TensorRT, SPIR-V réglé…), mis en cache.
 struct Artifact {
   std::string cache_key;
@@ -185,6 +200,7 @@ struct Artifact {
   // Vrai quand le moteur vient du cache, pas de cette construction : s'il est refusé au chargement, il peut
   // être périmé (pilote changé) ou abîmé, et le reconstruire a un sens (C05-01).
   bool reused = false;
+  PrecisionNotice reduced;  // vide hors du repli Vulkan
 };
 
 // La dérivation native du paquet « .span8 » (Backend::derive_span_fp8, docs/span-fp8-cutlass.md).
