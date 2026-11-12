@@ -54,7 +54,8 @@ TEST_CASE("Cache des moteurs : un moteur sans usage depuis longtemps part, avec 
   CHECK_FALSE(fs::exists(dir / "aji-v3-old.engine.build.log"));
   CHECK_FALSE(fs::exists(dir / "aji-v3-old.engine.layers.json"));
   CHECK(fs::exists(dir / "aji-v3-old.engine.key-lock"));  // les verrous restent
-  CHECK_FALSE(fs::exists(dir / "aji-timing-0123.cache"));
+  // Un moteur gardé a servi depuis peu : le timing cache de ce GPU reste, même s'il n'a pas bougé (C05-06).
+  CHECK(fs::exists(dir / "aji-timing-0123.cache"));
   CHECK(fs::exists(fresh));
   CHECK(fs::exists(dir / "autre.bin"));
 }

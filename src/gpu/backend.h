@@ -182,6 +182,9 @@ struct Progress {
 struct Artifact {
   std::string cache_key;
   std::filesystem::path path;
+  // Vrai quand le moteur vient du cache, pas de cette construction : s'il est refusé au chargement, il peut
+  // être périmé (pilote changé) ou abîmé, et le reconstruire a un sens (C05-01).
+  bool reused = false;
 };
 
 // La dérivation native du paquet « .span8 » (Backend::derive_span_fp8, docs/span-fp8-cutlass.md).

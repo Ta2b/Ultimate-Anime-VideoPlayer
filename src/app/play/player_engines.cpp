@@ -1,6 +1,7 @@
 #include "app/play/player_engines.h"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <string_view>
 #include <utility>
@@ -30,6 +31,7 @@
 #include "core/utf8_path.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/rife.h"
+#include "prepare/cache.h"
 #include "prepare/drba_split.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
@@ -167,33 +169,51 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   // centaines de ms à plusieurs secondes ; la fenêtre est pompée pendant ce temps.
   auto sha256 = run_pumped<std::string>("sha256", [&onnx] { return prepare::sha256_file_known(onnx); });
   if (!sha256) return std::unexpected(std::move(sha256.error()));
-  LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
-  auto build = EngineBuild::start(
-      EngineRequest{.library = p.library,
-                    .init = init,
-                    .model = {.id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha256},
-                    .shapes = {.min = shape, .opt = shape, .max = shape},
-                    .builder = p.builder,
-                    .wake = &LoopWake::push,
-                    .wake_context = &ready});
-  if (!build) return std::unexpected(std::move(build.error()));
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
-  note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
-  auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video);
-  if (!artifact) return std::unexpected(std::move(artifact.error()));
-  if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
-  log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
-  show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
-  backend.use_lane(lane);
-  note_crash_stage(std::format("chargement du moteur {} ({})", label.name, label.backend));
-  auto loaded = run_pumped<std::unique_ptr<gpu::Engine>>(
-      "engine-load", [&backend, &artifact] { return backend.load(**artifact); });
-  backend.use_lane(gpu::Lane::Upscale);
-  if (!loaded) return std::unexpected(std::move(loaded.error()));
-  p.loaded_engines.push_back(
-      {.onnx = onnx, .width = static_cast<int>(shape.dims[3]), .height = static_cast<int>(shape.dims[2])});
-  return std::optional(std::move(*loaded));
+  // Un moteur repris du cache que le runtime refuse au chargement (pilote mis à jour ou changé, plan abîmé
+  // sans changer de taille) est mis de côté et reconstruit une fois : sans cela, « Réessayer » rendait le
+  // même fichier à chaque ouverture, jusqu'à un effacement du cache à la main (C05-01).
+  for (int attempt = 0;; ++attempt) {
+    LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
+    auto build = EngineBuild::start(
+        EngineRequest{.library = p.library,
+                      .init = init,
+                      .model = {.id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha256},
+                      .shapes = {.min = shape, .opt = shape, .max = shape},
+                      .builder = p.builder,
+                      .wake = &LoopWake::push,
+                      .wake_context = &ready});
+    if (!build) return std::unexpected(std::move(build.error()));
+    note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
+    auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video);
+    if (!artifact) return std::unexpected(std::move(artifact.error()));
+    if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
+    log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
+    show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
+    backend.use_lane(lane);
+    note_crash_stage(std::format("chargement du moteur {} ({})", label.name, label.backend));
+    auto loaded = run_pumped<std::unique_ptr<gpu::Engine>>(
+        "engine-load", [&backend, &artifact] { return backend.load(**artifact); });
+    backend.use_lane(gpu::Lane::Upscale);
+    if (!loaded) {
+      // Seul un plan refusé par le runtime (VendorCallFailed) accuse le fichier : pas un manque de mémoire
+      // vidéo, pas un appareil perdu.
+      const bool plan_refused = loaded.error().code == RefusalCode::VendorCallFailed &&
+                                (*artifact)->cache_key.starts_with("aji-v3-");
+      if (plan_refused) {
+        const auto aside = prepare::set_aside_entry(
+            prepare::CacheEntry{.destination = (*artifact)->path, .max_wait = std::chrono::seconds(10)});
+        log_channel("app")->warn("moteur {} refusé au chargement ({}), mis de côté{}", label.name,
+                                 loaded.error().detail, aside ? "" : " : " + aside.error().detail);
+        if (aside && (*artifact)->reused && attempt == 0) continue;  // une reconstruction, une seule
+      }
+      return std::unexpected(std::move(loaded.error()));
+    }
+    p.loaded_engines.push_back(
+        {.onnx = onnx, .width = static_cast<int>(shape.dims[3]), .height = static_cast<int>(shape.dims[2])});
+    return std::optional(std::move(*loaded));
+  }
 }
 
 std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,

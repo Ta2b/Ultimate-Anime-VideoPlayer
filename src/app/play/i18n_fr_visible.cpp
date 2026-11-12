@@ -73,6 +73,7 @@ constexpr std::array kVisibleTexts{
     Entry{"Preparing engine {}", "Préparation du moteur {}"},
     Entry{"Preparing", "Préparation"},
     Entry{"Waiting for another build on this GPU", "En attente d'une autre construction sur ce GPU"},
+    Entry{"Waiting for another build of this engine", "En attente d'une autre construction de ce moteur"},
     Entry{"Engine in cache", "Moteur en cache"},
     Entry{"Starting trtexec", "Démarrage de trtexec"},
     Entry{"Reading the model", "Lecture du modèle"},
