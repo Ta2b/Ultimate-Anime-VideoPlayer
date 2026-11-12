@@ -24,10 +24,12 @@ std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, Chai
   if (c.rife_fused) {
     auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g,
                                     prepare::RifeFusedOutput::Motion);
-    if (fused && !*fused) return std::nullopt;
-    if (fused) engine = std::move(**fused);
-    if (!fused)
+    if (fused) {
+      if (!*fused) return std::nullopt;
+      engine = std::move(**fused);
+    } else {
       log->warn("RIFE à demi-taille : fusionné indisponible ({}), RIFE entier", fused.error().detail);
+    }
   }
   if (!engine) {
     auto derived = motion_model(*c.rife_model, models_dir);
@@ -42,11 +44,11 @@ std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, Chai
                                              .width = g.padded_width,
                                              .height = g.padded_height},
                                  gpu::Lane::Interpolate);
-    if (loaded && !*loaded) return std::nullopt;
     if (!loaded) {
       log->warn("échelle par paire ignorée : {}", loaded.error().detail);
       return true;
     }
+    if (!*loaded) return std::nullopt;
     engine = std::move(**loaded);
   }
   c.rife_motion_half = std::move(*engine);
