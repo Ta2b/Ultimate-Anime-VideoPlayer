@@ -3,6 +3,8 @@
 #include <utility>
 
 #include "core/clock.h"
+#include "core/log.h"
+#include "core/thread.h"
 
 namespace ajp::app::play {
 
@@ -15,7 +17,18 @@ DisplayReaders system_display_readers() {
 
 DisplayProbe::DisplayProbe(SDL_Window* window, DisplayReaders readers, void (*wake)(void*), void* context)
     : window_(window), readers_(std::move(readers)), wake_(wake), context_(context) {
-  thread_ = std::jthread([this](const std::stop_token& stop) { run(stop); });
+  // Par start_thread (C30-08) : un fil refusé par le système ne fait pas lever le constructeur, les relevés
+  // se font alors sur le thread principal (ask).
+  auto started =
+      start_thread("ecran", ThreadReport([](const Refusal& refused) {
+                     log_channel("app")->warn("relevé de l'écran : {}", refused.detail);  // i18n-ok : journal
+                   }),
+                   [this](const std::stop_token& stop, const ThreadReport&) { run(stop); });
+  if (started)
+    thread_ = std::move(*started);
+  else
+    log_channel("app")->warn("relevé de l'écran sans fil, fait sur place : {}",  // i18n-ok : journal
+                             started.error().detail);
 }
 
 DisplayProbe::~DisplayProbe() {
@@ -34,7 +47,23 @@ void DisplayProbe::ask(DisplaySdl sdl, bool peak, bool vrr, std::string connecto
                        .vrr = vrr || had_vrr || !connector.empty(),
                        .connector = std::move(connector)};
   }
+  if (!thread_.joinable()) {
+    serve_pending();
+    return;
+  }
   changed_.notify_one();
+}
+
+void DisplayProbe::serve_pending() {
+  Request request;
+  {
+    const std::scoped_lock lock(mutex_);
+    if (!pending_) return;
+    request = std::move(*pending_);
+    pending_.reset();
+    running_ = true;
+  }
+  serve(request);
 }
 
 std::optional<DisplayReading> DisplayProbe::take() {
@@ -58,6 +87,12 @@ void DisplayProbe::run(const std::stop_token& stop) {
       pending_.reset();
       running_ = true;
     }
+    serve(request);
+  }
+}
+
+void DisplayProbe::serve(const Request& request) {
+  {
     const std::int64_t start = host_now_us();
     DisplayReading reading;
     if (readers_.hz) reading.hz = readers_.hz(window_, request.sdl);

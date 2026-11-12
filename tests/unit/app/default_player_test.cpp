@@ -34,6 +34,24 @@ bool has(const std::vector<RegistryValue>& values, std::string_view key, std::st
          values.end();
 }
 
+TEST_CASE("Lecteur par défaut : la désinscription retire la fiche de mimeapps.list (C36-09)",
+          "[app][default_player]") {
+  const std::string before =
+      "[Default Applications]\n"
+      "video/x-matroska=io.github.ta2b.ajp.desktop;\n"
+      "video/mp4=io.github.ta2b.ajp.desktop;vlc.desktop;\n"
+      "text/plain=kate.desktop;\n"
+      "[Added Associations]\n"
+      "video/webm=vlc.desktop;io.github.ta2b.ajp.desktop\n";
+  CHECK(without_desktop_id(before, kDesktopId) ==
+        "[Default Applications]\n"
+        "video/mp4=vlc.desktop;\n"
+        "text/plain=kate.desktop;\n"
+        "[Added Associations]\n"
+        "video/webm=vlc.desktop;\n");
+  CHECK(without_desktop_id("text/plain=kate.desktop;\n", kDesktopId) == "text/plain=kate.desktop;\n");
+}
+
 TEST_CASE("Lecteur par défaut : le .desktop nomme le lecteur et les types vidéo", "[app][default_player]") {
   ajp::app::play::FrenchUi french;
   const auto entry = desktop_entry("/opt/ajp-linux-x64/ajp");

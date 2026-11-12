@@ -59,7 +59,8 @@ void abandon_thread(std::jthread thread, std::function<bool()> finished, Abandon
   AbandonedRegistry& registry = abandoned();
   const std::scoped_lock lock(registry.mutex);
   reap(registry.threads);
-  registry.threads.push_back(Left{.thread = std::move(thread), .finished = std::move(finished), .kind = kind});
+  registry.threads.push_back(
+      Left{.thread = std::move(thread), .finished = std::move(finished), .kind = kind});
 }
 
 std::size_t abandoned_running() {

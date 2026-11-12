@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain.h"
+#include "app/play/invalid_copies.h"
 #include "app/play/settings.h"
 
 namespace ajp::app::play {
@@ -300,3 +301,20 @@ TEST_CASE("play.toml : une édition à la main survit à la relecture du fil des
 
 }  // namespace
 }  // namespace ajp::app::play
+
+TEST_CASE("C36-10 : seules les trois dernières copies mises de côté restent", "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-invalid-copies";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  for (const char* stamp :
+       {"20260101-000000", "20260201-000000", "20260301-000000", "20260401-000000", "20260501-000000"})
+    std::ofstream(dir / (std::string("play.toml.invalide-") + stamp)) << "x";
+  std::ofstream(dir / "settings.toml.invalide-20250101-000000") << "x";  // un autre fichier : à lui
+  ajp::app::play::prune_invalid_copies(dir / "play.toml");
+  CHECK_FALSE(std::filesystem::exists(dir / "play.toml.invalide-20260101-000000"));
+  CHECK_FALSE(std::filesystem::exists(dir / "play.toml.invalide-20260201-000000"));
+  CHECK(std::filesystem::exists(dir / "play.toml.invalide-20260301-000000"));
+  CHECK(std::filesystem::exists(dir / "play.toml.invalide-20260501-000000"));
+  CHECK(std::filesystem::exists(dir / "settings.toml.invalide-20250101-000000"));
+  std::filesystem::remove_all(dir);
+}

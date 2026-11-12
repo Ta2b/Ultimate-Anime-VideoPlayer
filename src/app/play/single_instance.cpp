@@ -58,7 +58,11 @@ bool push_forwarded_files(const std::vector<std::string>& files) {
   // Sans fichier (l'icône relancée), un dépôt vide : la fenêtre passe devant, rien ne s'ouvre.
   const std::vector<std::string> dropped = files.empty() ? std::vector<std::string>{std::string()} : files;
   bool all = true;
+  // Les 64 derniers seulement (C33-06) : SDL a lu les plus anciens depuis longtemps. deque ne déplace pas les
+  // autres éléments en retirant le premier, leurs pointeurs restent bons.
+  constexpr std::size_t kHeldFiles = 64;
   for (const std::string& file : dropped) {
+    while (held.size() >= kHeldFiles) held.pop_front();
     held.push_back(file);
     SDL_Event drop{};
     drop.type = SDL_EVENT_DROP_FILE;
@@ -153,10 +157,19 @@ class InstanceListener {
   ~InstanceListener() {
     if (thread_.joinable()) {
       thread_.request_stop();
-      // ConnectNamedPipe attend un client : ce lancement s'y connecte lui-même pour la libérer.
-      HANDLE self =
-          CreateFileW(name_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-      if (self != INVALID_HANDLE_VALUE) CloseHandle(self);
+      // ConnectNamedPipe attend un client : ce lancement s'y connecte lui-même pour la libérer. Le thread
+      // peut être entre DisconnectNamedPipe et ConnectNamedPipe (ERROR_PIPE_BUSY ici, puis attente sans fin
+      // là) : réessayé jusqu'à sa sortie, avec CancelSynchronousIo qui rompt l'appel bloqué (C30-09).
+      constexpr int kReleaseAttempts = 300;  // 3 s
+      for (int attempt = 0; attempt < kReleaseAttempts && !served_.load(std::memory_order_acquire);
+           ++attempt) {
+        CancelSynchronousIo(static_cast<HANDLE>(thread_.native_handle()));
+        HANDLE self =
+            CreateFileW(name_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (self != INVALID_HANDLE_VALUE) CloseHandle(self);
+        if (!served_.load(std::memory_order_acquire))
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
       thread_.join();
     }
     CloseHandle(pipe_);
@@ -167,7 +180,10 @@ class InstanceListener {
                                   const auto log = log_channel("app");
                                   log->warn("instance : {}", refusal.detail);
                                 }),
-                                [this](const std::stop_token& stop, const ThreadReport&) { serve(stop); });
+                                [this](const std::stop_token& stop, const ThreadReport&) {
+                                  serve(stop);
+                                  served_.store(true, std::memory_order_release);
+                                });
     if (started) thread_ = std::move(*started);
   }
 
@@ -234,6 +250,7 @@ class InstanceListener {
   HANDLE pipe_;
   DWORD last_error_ = 0;  // la dernière erreur de ConnectNamedPipe journalisée
   std::wstring name_;
+  std::atomic<bool> served_{false};  // serve a rendu la main
   std::jthread thread_;
 };
 
@@ -482,7 +499,7 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
         if (take_over) {
           if (std::chrono::steady_clock::now() >= until) {
             const auto log = log_channel("app");
-        log->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
+            log->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
             return {};
           }
           std::this_thread::sleep_for(kSlice);

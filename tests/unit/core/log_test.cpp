@@ -149,6 +149,11 @@ TEST_CASE("Journal nettoyé : les chemins sont réduits au nom de leur fichier (
   ajp::set_log_home("");
   REQUIRE(seen.size() == 1);
   CHECK(seen.front() == "cache …/x.bin");
+  // C35-05 : un nom de fichier qui porte un saut de ligne ou une séquence ESC n'écrit pas de fausse ligne.
+  sink->log(
+      spdlog::details::log_msg("app", spdlog::level::info, "ouvre Ep 01\n[app] [info] faux\x1b[31m.mkv"));
+  REQUIRE(seen.size() == 2);
+  CHECK(seen.back() == "ouvre Ep 01\n    [app] [info] faux\\x1B[31m.mkv");
 }
 
 TEST_CASE("Journal : le fichier s'ouvre par son chemin et tourne en parts (B33-06)", "[log]") {

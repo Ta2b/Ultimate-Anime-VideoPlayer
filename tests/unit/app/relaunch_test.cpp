@@ -69,19 +69,22 @@ TEST_CASE("relaunch.txt : périmé, daté du futur, incomplet ou à clé inconnu
   CHECK_FALSE(write_relaunch_target(store, RelaunchTarget{.file = "/v/a\nb.mkv", .written_s = 1}));
 }
 
-TEST_CASE("take_relaunch : seul le processus relancé prend la vidéo, un lancement ordinaire retire le fichier",
-          "[app][relaunch]") {
+TEST_CASE(
+    "take_relaunch : seul le processus relancé prend la vidéo, un lancement ordinaire retire le fichier",
+    "[app][relaunch]") {
   const std::filesystem::path dir = fresh_dir("ajp-relaunch-take");
   const PlayerPaths paths{.data = dir};
-  REQUIRE(write_relaunch_target(relaunch_target_file(dir),
-                                RelaunchTarget{.file = "/v/b.mkv", .start_us = 5, .written_s = relaunch_now_s()}));
+  REQUIRE(write_relaunch_target(
+      relaunch_target_file(dir),
+      RelaunchTarget{.file = "/v/b.mkv", .start_us = 5, .written_s = relaunch_now_s()}));
   PlayOptions plain;
   plain.file = "/v/mien.mkv";
   CHECK_FALSE(take_relaunch(plain, paths, relaunch_now_s()));
   CHECK(plain.file == "/v/mien.mkv");
   CHECK_FALSE(std::filesystem::exists(relaunch_target_file(dir)));
-  REQUIRE(write_relaunch_target(relaunch_target_file(dir),
-                                RelaunchTarget{.file = "/v/b.mkv", .start_us = 5, .written_s = relaunch_now_s()}));
+  REQUIRE(write_relaunch_target(
+      relaunch_target_file(dir),
+      RelaunchTarget{.file = "/v/b.mkv", .start_us = 5, .written_s = relaunch_now_s()}));
   PlayOptions relaunched;
   relaunched.relaunched = RelaunchedFor::GpuLost;
   const auto taken = take_relaunch(relaunched, paths, relaunch_now_s());

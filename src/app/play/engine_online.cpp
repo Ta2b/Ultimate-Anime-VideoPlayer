@@ -120,13 +120,37 @@ std::filesystem::path beside(const std::filesystem::path& cache, std::string_vie
 
 }  // namespace
 
-bool release_index_due(const std::filesystem::path& cache) {
-  return !fresh(cache) && !fresh(beside(cache, ".absent")) && !fresh(beside(cache, ".tried"), kRetryAfter);
+namespace {
+
+// La version écrite dans une marque (« .version », « .absent », « .tried ») ; vide pour une marque d'avant.
+std::string stamped(const std::filesystem::path& mark) {
+  std::ifstream in(mark, std::ios::binary);
+  std::string line;
+  std::getline(in, line);
+  return line;
+}
+
+void stamp(const std::filesystem::path& mark, std::string_view version) {
+  std::ofstream(mark, std::ios::binary | std::ios::trunc) << version << '\n';
+}
+
+}  // namespace
+
+bool release_index_due(const std::filesystem::path& cache, std::string_view version) {
+  // C36-05 : une copie ou une marque posée par une autre version du lecteur ne vaut pas pour celle-ci (la
+  // release N+1 installée le lendemain d'un lancement de N relit son index tout de suite).
+  const auto same = [&](const std::filesystem::path& mark) {
+    return version.empty() || stamped(mark) == version;
+  };
+  const std::filesystem::path absent = beside(cache, ".absent");
+  const std::filesystem::path tried = beside(cache, ".tried");
+  return !(fresh(cache) && same(beside(cache, ".version"))) && !(fresh(absent) && same(absent)) &&
+         !(fresh(tried, kRetryAfter) && same(tried));
 }
 
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
                            std::string_view version, const UpdateFetch& fetch, const std::stop_token& stop) {
-  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache)) return;
+  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache, version)) return;
   const std::string url = release_download_prefix(repo, version) + "engines-nvidia.lock";
   const std::filesystem::path signature = beside(cache, ".sig");
   // Un 404 se retient un jour, comme une copie fraîche : sans paquet NVIDIA dans la release, le lancement
@@ -150,6 +174,7 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
     std::filesystem::rename(sig_part, signature, error);
     if (!error) std::filesystem::rename(part, cache, error);
     if (error) log->info("moteurs de la release : {}", error.message());
+    if (!error) stamp(beside(cache, ".version"), version);
     return;
   }
   std::filesystem::remove(part, error);
@@ -160,9 +185,9 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
     // plus.
     std::filesystem::remove(cache, error);
     std::filesystem::remove(signature, error);
-    std::ofstream(absent, std::ios::binary | std::ios::trunc).put('\n');
+    stamp(absent, version);
   } else {
-    std::ofstream(tried, std::ios::binary | std::ios::trunc).put('\n');
+    stamp(tried, version);
   }
   log->info("moteurs de la release : {}", got.error().detail);
 }

@@ -142,6 +142,8 @@ constexpr std::array kVisibleTexts{
     Entry{"Dolby Vision profile 5 is not supported (no HDR10 or SDR picture in this file)",
           "Dolby Vision profil 5 non pris en charge (ce fichier n'a pas d'image HDR10 ou SDR)"},
     Entry{"this file has sound only, no picture to play", "ce fichier n'a que du son, aucune image à lire"},
+    Entry{"the display was turned off or disconnected: restart the player",
+          "l'écran a été éteint ou débranché : relancez le lecteur"},
     Entry{"the subtitles could not be drawn: playback continues without them",
           "les sous-titres n'ont pas pu être dessinés : la lecture continue sans eux"},
     Entry{"image subtitles (PGS, VobSub) are not supported: no subtitles",

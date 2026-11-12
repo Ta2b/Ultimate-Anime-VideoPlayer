@@ -7,6 +7,7 @@
 #include <type_traits>
 
 #include "core/log.h"
+#include "core/thread.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -130,18 +131,28 @@ struct SleepNotice::Listener {
       log_channel("app")->info("veille : signal PrepareForSleep refusé, la pause se fera au réveil");
       return;
     }
-    take_lock();
-    thread = std::jthread([this](const std::stop_token& stop) {
-      constexpr std::uint64_t kWaitUs = 200'000;  // le fil revoit stop à ce rythme
-      while (!stop.stop_requested()) {
-        int r = 0;
-        do {
-          r = sd.process(bus, nullptr);
-        } while (r > 0 && !stop.stop_requested());
-        if (r < 0) break;
-        sd.wait(bus, kWaitUs);
-      }
-    });
+    take_lock();  // avant le fil : sd-bus ne se partage pas entre deux threads
+    // Par start_thread (C30-08) : sans fil, la veille se voit au réveil, comme sans bus.
+    auto started = start_thread("veille", ThreadReport([](const Refusal&) {}),
+                                [this](const std::stop_token& stop, const ThreadReport&) {
+                                  constexpr std::uint64_t kWaitUs =
+                                      200'000;  // le fil revoit stop à ce rythme
+                                  while (!stop.stop_requested()) {
+                                    int r = 0;
+                                    do {
+                                      r = sd.process(bus, nullptr);
+                                    } while (r > 0 && !stop.stop_requested());
+                                    if (r < 0) break;
+                                    sd.wait(bus, kWaitUs);
+                                  }
+                                });
+    if (!started) {
+      release_lock();
+      log_channel("app")->info("veille : fil refusé ({}), la pause se fera au réveil",
+                               started.error().detail);
+      return;
+    }
+    thread = std::move(*started);
   }
 
   ~Listener() {

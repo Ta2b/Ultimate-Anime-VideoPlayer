@@ -14,8 +14,7 @@
 
 namespace ajp::app::play {
 
-DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& place,
-                       bool purge_updates) {
+DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& place, bool purge_updates) {
   const auto said = [](const std::string& line) { log_channel("app")->info("données : {}", line); };
   // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois. Sous
   // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/ajp (A36-08).
@@ -32,12 +31,12 @@ DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& pla
   // quand elle se voit, pour mesurer ce qu'elle coûte au lancement sur un disque lent.
   const auto tidy_from = std::chrono::steady_clock::now();
   tidy_at_launch(data, places.cache / "engines",
-                                 [](const std::string& line) { log_channel("app")->info("{}", line); });
+                 [](const std::string& line) { log_channel("app")->info("{}", line); });
   if (const auto took = std::chrono::steady_clock::now() - tidy_from; took > std::chrono::milliseconds(100))
     said(std::format("rangement au lancement en {} ms",
                      std::chrono::duration_cast<std::chrono::milliseconds>(took).count()));
-  // Un lecteur inscrit dont le dossier a bougé suit sa nouvelle place (A19-06) ; hors du chemin de la première
-  // image (C18-05) : registre ou fiche .desktop, et update-desktop-database, sur un fil de fond.
+  // Un lecteur inscrit dont le dossier a bougé suit sa nouvelle place (A19-06) ; hors du chemin de la
+  // première image (C18-05) : registre ou fiche .desktop, et update-desktop-database, sur un fil de fond.
   const auto registered = std::make_shared<std::atomic<bool>>(false);
   auto registration = start_thread(
       "inscription", ThreadReport([registered](const Refusal&) { registered->store(true); }),
@@ -46,8 +45,7 @@ DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& pla
           log_channel("app")->info("données : inscription refaite à la nouvelle place du lecteur");
         registered->store(true);
       });
-  if (registration)
-    abandon_thread(std::move(*registration), [registered] { return registered->load(); });
+  if (registration) abandon_thread(std::move(*registration), [registered] { return registered->load(); });
   return places;
 }
 

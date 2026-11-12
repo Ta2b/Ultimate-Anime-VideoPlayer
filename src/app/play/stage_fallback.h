@@ -126,9 +126,9 @@ std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemo
 // plus profond, le moteur le plus lourd), puis SPAN. played : les réglages que la chaîne jouait ; motion et
 // upscale : les étages chargés. Rend l'étage retenu dans memory, rien quand il n'y a rien à retirer ou que le
 // refus n'est pas celui d'un étage (appareil perdu, source qui change de taille, annulation).
-// C31-05 : un refus de l'affichage qui peut venir de la mémoire vidéo prise par les étages (allocation ou appel
-// refusé par libplacebo, Vulkan ou le pilote), sans clé d'étage : il retire un étage comme un refus d'étage
-// quand l'appareil reste sain.
+// C31-05 : un refus de l'affichage qui peut venir de la mémoire vidéo prise par les étages (allocation ou
+// appel refusé par libplacebo, Vulkan ou le pilote), sans clé d'étage : il retire un étage comme un refus
+// d'étage quand l'appareil reste sain.
 bool display_retreats(const Refusal& refusal);
 std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,
                                         const PlaySettings& played, bool motion, bool upscale,

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -106,6 +107,12 @@ bool is_separator(char c) {
   return c == '/' || c == '\\';
 }
 
+// Les caractères de contrôle d'une ligne du journal, la tabulation exceptée.
+bool is_control(char c) {
+  const auto byte = static_cast<unsigned char>(c);
+  return (byte < 0x20 && c != '\t') || byte == 0x7F;
+}
+
 bool is_digit(char c) {
   return c >= '0' && c <= '9';
 }
@@ -183,6 +190,23 @@ class RedactingSink final : public spdlog::sinks::sink {
         reduce_log_paths(redact_log_text(std::string_view(msg.payload.data(), msg.payload.size())));
     spdlog::details::log_msg copy = msg;
     copy.payload = text;
+    // Un nom de fichier porte ce qu'il veut sous Linux : un « \n » y écrirait de fausses lignes au journal
+    // joint à un rapport public, une séquence ESC brouillerait le terminal (C35-05). Les contrôles sont
+    // écrits « \xNN » ; une ligne qui suit un « \n » est décalée, elle ne peut plus passer pour une ligne du
+    // journal (les rapports sur plusieurs lignes, voulus, restent lisibles).
+    std::string clean;
+    if (std::ranges::any_of(text, is_control)) {
+      clean.reserve(text.size() + 8);
+      for (const char c : text) {
+        if (c == '\n')
+          clean += "\n    ";
+        else if (is_control(c))
+          clean += std::format("\\x{:02X}", static_cast<unsigned char>(c));
+        else
+          clean += c;
+      }
+      copy.payload = clean;
+    }
     inner_->log(copy);
   }
   void flush() override { inner_->flush(); }

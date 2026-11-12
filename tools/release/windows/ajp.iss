@@ -73,5 +73,8 @@ begin
   begin
     DelTree(Roaming, True, True, True);
     DelTree(Local, True, True, True);
+    { C36-09 : les dossiers parents « ajp », vides désormais (RemoveDir ne retire qu'un dossier vide). }
+    RemoveDir(ExpandConstant('{userappdata}\ajp'));
+    RemoveDir(ExpandConstant('{localappdata}\ajp'));
   end;
 end;

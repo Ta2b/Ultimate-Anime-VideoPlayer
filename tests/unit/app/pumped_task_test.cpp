@@ -49,7 +49,8 @@ TEST_CASE("run_pumped_for : les sondes laissées à leur sort sont gardées, bor
   CHECK(abandoned_running() == 0);
 }
 
-TEST_CASE("C30-02, C33-05 : un fil de fond bloqué ne fait pas refuser la sonde d'un fichier", "[app][pumped]") {
+TEST_CASE("C30-02, C33-05 : un fil de fond bloqué ne fait pas refuser la sonde d'un fichier",
+          "[app][pumped]") {
   REQUIRE(settle_abandoned_threads(std::chrono::seconds(5)));
   std::atomic<bool> release = false;
   // Sous-titres en avance et pré-analyse bloqués sur un NAS muet : abandonnés comme fils de fond.

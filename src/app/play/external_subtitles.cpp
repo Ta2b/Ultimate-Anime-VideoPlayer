@@ -106,7 +106,8 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
   std::size_t scanned = 0;
   for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
     if (++scanned > kMaxScannedEntries) break;
-    if (it->is_directory(error) && is_subs_dir(core::ascii_lower(core::to_utf8(it->path().filename()))))
+    std::error_code entry;  // C35-06 : une entrée illisible n'arrête plus le parcours
+    if (it->is_directory(entry) && is_subs_dir(core::ascii_lower(core::to_utf8(it->path().filename()))))
       dirs.push_back(it->path());
   }
   for (std::size_t d = 0; d < dirs.size(); ++d) {
@@ -122,12 +123,15 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
       }
       const std::filesystem::path& path = it->path();
       const std::string name = core::ascii_lower(core::to_utf8(path.stem()));
-      if (d > 0 && it->is_directory(error)) {
+      std::error_code entry;  // distinct de celui de l'itérateur (C35-06)
+      if (d > 0 && it->is_directory(entry)) {
         if (tags_after(core::ascii_lower(core::to_utf8(path.filename())), stem)) {
           std::error_code inner;
-          for (std::filesystem::directory_iterator sub(path, inner), stop; !inner && sub != stop;
-               sub.increment(inner)) {
-            if (sub->is_regular_file(inner) && is_subtitle(sub->path()))
+          std::size_t inside = 0;  // la même borne que les deux autres parcours (C35-06)
+          for (std::filesystem::directory_iterator sub(path, inner), stop;
+               !inner && sub != stop && ++inside <= kMaxScannedEntries; sub.increment(inner)) {
+            std::error_code file_error;
+            if (sub->is_regular_file(file_error) && is_subtitle(sub->path()))
               add(found, sub->path(), core::ascii_lower(core::to_utf8(sub->path().stem())));
           }
         }
@@ -136,7 +140,7 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
       // B35-07 : le nom d'abord, un stat par entrée seulement pour ce qui commence comme la vidéo.
       if (!is_subtitle(path)) continue;
       const auto rest = tags_after(name, stem);
-      if (rest && it->is_regular_file(error)) add(found, path, *rest);
+      if (rest && it->is_regular_file(entry)) add(found, path, *rest);
     }
   }
   // La langue voulue d'abord : la coupe à kMaxExternalSubtitles ne doit pas la laisser de côté.

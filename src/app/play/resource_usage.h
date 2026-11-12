@@ -35,4 +35,15 @@ std::string resource_drift(const ProcessResources& first, const ProcessResources
 // mémoire vidéo et un avertissement de dérive (B33-05 : un essai de 8 h se lit dans ajp.log seul).
 std::jthread start_resource_log();
 
+// C33-03 : les ressources une fois la chaîne démontée (anneau compris), au journal à la destruction. Déclaré
+// en tête de run_chain : c'est ce relevé qui se compare d'une réouverture à l'autre, pas celui de la chaîne
+// encore vivante.
+class ResourcesAfterTeardown {
+ public:
+  ResourcesAfterTeardown() = default;
+  ResourcesAfterTeardown(const ResourcesAfterTeardown&) = delete;
+  ResourcesAfterTeardown& operator=(const ResourcesAfterTeardown&) = delete;
+  ~ResourcesAfterTeardown();
+};
+
 }  // namespace ajp::app::play

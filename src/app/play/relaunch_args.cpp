@@ -11,7 +11,8 @@
 
 namespace ajp::app::play {
 
-std::vector<std::string> relaunch_arguments(std::span<const std::string_view> launched, RelaunchedFor reason) {
+std::vector<std::string> relaunch_arguments(std::span<const std::string_view> launched,
+                                            RelaunchedFor reason) {
   std::vector<std::string> arguments;
   for (const std::string_view argument : launched)
     if (!argument.starts_with("--relaunched=")) arguments.emplace_back(argument);

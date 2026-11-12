@@ -32,6 +32,14 @@ inline bool settings_save_due(LatestWriter& writer, PlayerUi& ui, bool& dirty, s
   return dirty && now_us - saved_at >= kSettingsSaveEveryUs;
 }
 
+// L'écriture de play.toml postée à l'écrivain, avec le numéro de son instantané (C30-03) : elle ne passe pas
+// par-dessus une écriture directe plus récente.
+inline LatestWriter::Job save_job(const std::filesystem::path& path, PlaySettings saved) {
+  return [path, saved = std::move(saved), ticket = settings_ticket()] {
+    return save_settings(path, saved, ticket);
+  };
+}
+
 // Vide l'écrivain (attente bornée) puis, si play.toml a échoué, un dernier essai sur place : après la
 // fermeture de la chaîne, plus personne ne reprend ce réglage.
 inline void finish_settings_writes(LatestWriter& writer, const std::filesystem::path& path,

@@ -1,5 +1,6 @@
 #include "app/play/resource_usage.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
@@ -114,7 +115,17 @@ std::string device_memory_text() {
 
 }  // namespace
 
+namespace {
+// Chaque chaîne ouverte : le relevé suivant devient la référence de la dérive (C33-02). L'accueil, relevé
+// avant la première chaîne, ne fait plus crier à la fuite pendant toute la séance.
+std::atomic<std::uint64_t>& chains_opened() {
+  static std::atomic<std::uint64_t> opened{0};
+  return opened;
+}
+}  // namespace
+
 void set_device_memory_reader(DeviceMemoryReader reader) {
+  if (reader) chains_opened().fetch_add(1, std::memory_order_relaxed);
   const std::scoped_lock lock(reader_mutex());
   reader_slot() = std::move(reader);
 }
@@ -130,7 +141,17 @@ std::string resource_drift(const ProcessResources& first, const ProcessResources
       static_cast<double>(*now.handles) > kDrift * static_cast<double>(*first.handles))
     out += std::format("{}{} descripteurs contre {} au premier relevé",  // i18n-ok : journal
                        out.empty() ? "" : ", ", *now.handles, *first.handles);
+  // Les fils : le seul signal d'un fil abandonné ou oublié (C33-02).
+  if (first.threads && now.threads && *first.threads > 0 &&
+      static_cast<double>(*now.threads) > kDrift * static_cast<double>(*first.threads))
+    out += std::format("{}{} threads contre {} au premier relevé",  // i18n-ok : journal
+                       out.empty() ? "" : ", ", *now.threads, *first.threads);
   return out;
+}
+
+ResourcesAfterTeardown::~ResourcesAfterTeardown() {
+  log_channel("app")->info("ressources après la fermeture de la chaîne : {}",  // i18n-ok : journal
+                           describe(process_resources()));
 }
 
 std::jthread start_resource_log() {
@@ -142,12 +163,17 @@ std::jthread start_resource_log() {
         std::mutex mutex;
         std::condition_variable_any wake;
         std::optional<ProcessResources> first;
+        std::uint64_t chain = chains_opened().load(std::memory_order_relaxed);
         while (true) {
           std::unique_lock lock(mutex);
           if (wake.wait_for(lock, stop, std::chrono::minutes(5), [] { return false; }) ||
               stop.stop_requested())
             return;
           const ProcessResources now = process_resources();
+          if (const std::uint64_t opened = chains_opened().load(std::memory_order_relaxed); opened != chain) {
+            chain = opened;
+            first.reset();
+          }
           if (!first) first = now;
           log_channel("app")->info("ressources : {}{}", describe(now), device_memory_text());  // i18n-ok
           if (const std::string drift = resource_drift(*first, now); !drift.empty())

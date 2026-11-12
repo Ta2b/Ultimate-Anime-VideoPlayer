@@ -48,8 +48,8 @@ const StageMemory::Entry* StageMemory::find(ChainStage stage, std::string_view s
 void StageMemory::remember(Entry entry) {
   const auto same = [&](const Entry& e) { return e.stage == entry.stage && e.signature == entry.signature; };
   if (entry.for_file_only()) {
-    // Une annulation (ou une mémoire pleine passagère, C31-09) ne vaut que pour sa vidéo : elle ne remplace ni
-    // le refus réel de la même signature, qui vaut pour toutes les vidéos, ni l'entrée d'une autre vidéo
+    // Une annulation (ou une mémoire pleine passagère, C31-09) ne vaut que pour sa vidéo : elle ne remplace
+    // ni le refus réel de la même signature, qui vaut pour toutes les vidéos, ni l'entrée d'une autre vidéo
     // (B29-03).
     if (std::ranges::any_of(entries_, [&](const Entry& e) { return same(e) && !e.for_file_only(); })) return;
     std::erase_if(entries_, [&](const Entry& e) { return same(e) && e.file == entry.file; });
@@ -109,9 +109,9 @@ void InnerFallbacks::failed(ChainStage stage, std::string key, const Refusal& re
 }
 
 bool display_retreats(const Refusal& refusal) {
-  return refusal.key.empty() && (refusal.code == RefusalCode::GpuMemoryExhausted ||
-                                 refusal.code == RefusalCode::VendorCallFailed ||
-                                 refusal.code == RefusalCode::VulkanCallFailed);
+  return refusal.key.empty() &&
+         (refusal.code == RefusalCode::GpuMemoryExhausted || refusal.code == RefusalCode::VendorCallFailed ||
+          refusal.code == RefusalCode::VulkanCallFailed);
 }
 
 std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,

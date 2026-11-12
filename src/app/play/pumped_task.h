@@ -3,10 +3,13 @@
 // secondes. Les événements restent dans la file de SDL, lus ensuite par la boucle qui les attend.
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <format>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -14,7 +17,6 @@
 #include <string_view>
 #include <thread>
 #include <utility>
-#include <cstdint>
 
 #include "core/thread.h"
 #include "core/types.h"
@@ -25,13 +27,15 @@ namespace ajp::app::play {
 void pump_window_events();
 
 // Les threads que run_pumped_for laisse à son sort, gardés plutôt que détachés (A30-05) : finished dit s'il a
-// rendu la main. Au-delà de kMaxAbandonedThreads sondes encore bloquées, une nouvelle sonde est refusée tout de
-// suite au lieu d'ajouter un thread et un descripteur bloqués de plus (A33-07). C30-02, C33-05 : le plafond ne
-// compte que les sondes ; un fil de fond abandonné (sous-titres en avance, pré-analyse des plans, question du
-// lecteur par défaut) ne fait plus refuser la sonde d'un fichier local ni celle de l'épisode suivant.
+// rendu la main. Au-delà de kMaxAbandonedThreads sondes encore bloquées, une nouvelle sonde est refusée tout
+// de suite au lieu d'ajouter un thread et un descripteur bloqués de plus (A33-07). C30-02, C33-05 : le
+// plafond ne compte que les sondes ; un fil de fond abandonné (sous-titres en avance, pré-analyse des plans,
+// question du lecteur par défaut) ne fait plus refuser la sonde d'un fichier local ni celle de l'épisode
+// suivant.
 enum class Abandoned : std::uint8_t { Probe, Background };
 inline constexpr std::size_t kMaxAbandonedThreads = 2;
-void abandon_thread(std::jthread thread, std::function<bool()> finished, Abandoned kind = Abandoned::Background);
+void abandon_thread(std::jthread thread, std::function<bool()> finished,
+                    Abandoned kind = Abandoned::Background);
 // Tous les threads abandonnés encore en route, ou seulement ceux d'une sorte.
 std::size_t abandoned_running();
 std::size_t abandoned_running(Abandoned kind);
@@ -39,6 +43,35 @@ std::size_t abandoned_running(Abandoned kind);
 // Faux si l'un reste bloqué : il pourrait journaliser après close_log ou toucher SDL après SDL_Quit, et
 // l'appelant termine alors par std::quick_exit, ses fichiers déjà écrits (A30-05).
 bool settle_abandoned_threads(std::chrono::milliseconds grace);
+
+// Comme start_task, mais le futur rendu n'attend pas la tâche à sa destruction : le fil est gardé au registre
+// des abandonnés, settle_abandoned_threads décide à la sortie. Pour une commande du système sans arrêt
+// possible (xdg-mime, update-desktop-database) que l'utilisateur peut lancer juste avant de quitter (C30-06).
+template <class T, class Fn>
+std::shared_ptr<std::future<std::expected<T, Refusal>>> start_abandonable_task(std::string_view name, Fn fn) {
+  using Result = std::expected<T, Refusal>;
+  auto promise = std::make_shared<std::promise<Result>>();
+  auto future = std::make_shared<std::future<Result>>(promise->get_future());
+  auto ready = std::make_shared<std::atomic<bool>>(false);
+  auto started = start_thread(
+      name, ThreadReport([](const Refusal&) {}),
+      [promise, ready, fn = std::move(fn), where = std::format("tâche {}", name)](  // i18n-ok : journal
+          const std::stop_token&, const ThreadReport&) mutable {
+        try {
+          promise->set_value(Result(fn()));
+        } catch (...) {
+          promise->set_value(
+              Result(std::unexpected(refusal_from_exception(RefusalCode::ThreadFailed, where))));
+        }
+        ready->store(true, std::memory_order_release);
+      });
+  if (!started) {
+    promise->set_value(Result(std::unexpected(std::move(started.error()))));
+    return future;
+  }
+  abandon_thread(std::move(*started), [ready] { return ready->load(std::memory_order_acquire); });
+  return future;
+}
 
 // La fermeture de la fenêtre demandée (SDL_EVENT_QUIT, croix) : vue sans la retirer de la file, la boucle
 // qui suit la lit aussi.
@@ -62,7 +95,8 @@ class PumpedTask {
   // l'attend plus (C30-01) : rien de ce qu'il a fabriqué ne meurt plus tard sur un autre thread.
   template <class Fn>
   static std::expected<PumpedTask, Refusal> start(std::string_view name, bool bounded, Fn fn) {
-    if (const std::size_t stuck = abandoned_running(Abandoned::Probe); bounded && stuck >= kMaxAbandonedThreads) {
+    if (const std::size_t stuck = abandoned_running(Abandoned::Probe);
+        bounded && stuck >= kMaxAbandonedThreads) {
       std::string detail = std::format("{} : {} essais précédents ne répondent toujours pas",  // i18n-ok
                                        name, stuck);
       return std::unexpected(Refusal{RefusalCode::IoFailed, std::move(detail)});

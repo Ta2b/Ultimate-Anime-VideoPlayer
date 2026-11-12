@@ -23,9 +23,10 @@ std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path&
 // probe_once sur un thread, borné à kProbeLimit ; window_open : la fenêtre est pompée et peut se fermer.
 std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file, bool window_open);
 
-// C18-01 : la sonde du fichier donné au lancement part avant l'ouverture de la fenêtre, puis s'attend une fois
-// la fenêtre ouverte (finish_given_probe), pompée : un fichier sur un NAS ou un disque en veille ne laisse plus
-// jusqu'à 20 s sans rien à l'écran. Rien si le thread est refusé : la sonde se fait alors à la première vidéo.
+// C18-01 : la sonde du fichier donné au lancement part avant l'ouverture de la fenêtre, puis s'attend une
+// fois la fenêtre ouverte (finish_given_probe), pompée : un fichier sur un NAS ou un disque en veille ne
+// laisse plus jusqu'à 20 s sans rien à l'écran. Rien si le thread est refusé : la sonde se fait alors à la
+// première vidéo.
 using GivenProbe = PumpedTask<media::TrackInfo>;
 std::optional<GivenProbe> start_given_probe(const std::filesystem::path& file);
 std::expected<media::TrackInfo, Refusal> finish_given_probe(GivenProbe& probe);

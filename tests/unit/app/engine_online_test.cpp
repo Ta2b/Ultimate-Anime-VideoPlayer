@@ -243,6 +243,9 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   CHECK(asked == 1);
   CHECK(fs::exists(dir / "engines-nvidia.lock.tried"));
   CHECK_FALSE(release_index_due(cache));
+  // C36-05 : la marque de la 1.2.3 ne retient pas la 1.2.4, installée juste après.
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.2.4"));
   // La copie gardée et signée sert toujours.
   EngineCatalog catalog = empty_catalog();
   merge_release_copy(catalog, read_release_index(cache), "o/r", {std::string(kTestKey)}, "1.2.3");

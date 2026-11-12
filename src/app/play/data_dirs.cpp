@@ -123,9 +123,10 @@ int move_entries(const std::filesystem::path& from, const std::filesystem::path&
       error.clear();
       fs::copy(source, staging, fs::copy_options::recursive, error);
       constexpr std::string_view kCopied = "{} : copie en {} s";  // i18n-ok : journal
-      say(std::format(kCopied, core::to_utf8(source),
-                      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - copy_from)
-                          .count()));
+      say(std::format(
+          kCopied, core::to_utf8(source),
+          std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - copy_from)
+              .count()));
       if (!error) fs::rename(staging, target, error);
       if (error) {
         std::error_code ignored;

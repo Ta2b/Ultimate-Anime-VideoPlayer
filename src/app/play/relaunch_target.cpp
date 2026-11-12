@@ -54,9 +54,9 @@ std::expected<void, Refusal> write_relaunch_target(const std::filesystem::path& 
   if (file.find_first_of("\n\r") != std::string::npos)
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "relance : chemin à saut de ligne"});
   const std::string start = target.start_us ? std::format("start_us={}\n", *target.start_us) : std::string();
-  return core::write_text_atomically(store, std::format("file={}\n{}paused={}\nreason={}\nwritten_s={}\n", file,
-                                                        start, target.paused ? 1 : 0, reason_name(target.reason),
-                                                        target.written_s));
+  return core::write_text_atomically(
+      store, std::format("file={}\n{}paused={}\nreason={}\nwritten_s={}\n", file, start,
+                         target.paused ? 1 : 0, reason_name(target.reason), target.written_s));
 }
 
 std::optional<RelaunchTarget> take_relaunch_target(const std::filesystem::path& store, std::int64_t now_s) {
@@ -143,8 +143,9 @@ void set_stuck_relaunch(void (*relaunch)()) {
 void exit_stuck(std::string_view why) {
   const auto log = log_channel("app");
   const bool relaunch = relaunch_asked().load(std::memory_order_acquire);
-  log->error("{} : le GPU ne répond plus, le lecteur sort sans l'attendre{}", why,
-             relaunch ? " et se relance" : "");
+  // La cause vient de l'appelant (C30-05) : un démontage bloqué peut aussi être une lecture de fichier sur
+  // un partage réseau muet, pas seulement le GPU.
+  log->error("{} : le lecteur sort sans l'attendre{}", why, relaunch ? " et se relance" : "");
   log->flush();
   if (void (*const again)() = stuck_relaunch().load(std::memory_order_acquire); relaunch && again != nullptr)
     again();  // POSIX : execv remplace le processus ; Windows : le nouveau lecteur part, celui-ci sort

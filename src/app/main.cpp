@@ -25,7 +25,7 @@ extern "C" {
 #include <spawn.h>
 #include <unistd.h>
 
-extern char** environ;  // NOLINT : posix_spawn le prend tel quel
+extern char** environ;  // NOLINT : env: hérité, posix_spawn le transmet tel quel
 #endif
 #include <cerrno>
 #include <cstdio>
@@ -199,7 +199,7 @@ int write_report(const std::optional<std::filesystem::path>& file, const std::st
 // B39-01 : après une relance voulue (perte du GPU, moteur mis à jour), la séance d'avant n'a pas planté mais
 // son journal, ajp.log.1, porte la cause : le rapport le joint aussi.
 void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file,
-                       ajp::app::play::RelaunchedFor relaunched) {
+                       ajp::app::play::RelaunchedFor relaunched, bool scripted) {
   namespace play = ajp::app::play;
   if (!log_file.empty()) play::install_crash_dumps(log_file.parent_path() / "crashes");  // B36-08
   play::set_report_log_file(log_file);
@@ -207,7 +207,9 @@ void start_diagnostics(const std::filesystem::path& settings_dir, const std::fil
   play::note_report_fact("Système", play::os_description());
   if (const std::string build = play::build_id_description(); !build.empty())
     play::note_report_fact("Build", build);
-  if (!settings_dir.empty() && play::begin_session(settings_dir))
+  // C36-07 : un lancement scripté (--keys, --snapshot, banc) partage le dossier du lecteur sans être lui :
+  // il ne prend ni ne retire la marque du lecteur qui tourne peut-être à côté.
+  if (!scripted && !settings_dir.empty() && play::begin_session(settings_dir))
     ajp::log_channel("app")->warn(
         "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");
   if (relaunched != play::RelaunchedFor::None) {
@@ -275,7 +277,9 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
   arguments.push_back(nullptr);
   if (fresh) {
     pid_t child = 0;
-    const int spawned = posix_spawn(&child, executable.c_str(), nullptr, nullptr, arguments.data(), environ);
+    // env: hérité, le bloc passe tel quel à l'enfant, aucune valeur n'en est lue.
+    const int spawned =
+        posix_spawn(&child, executable.c_str(), nullptr, nullptr, arguments.data(), environ);  // env: hérité
     if (spawned == 0) return 0;
     return relaunch_failed(log_file,
                            std::format("posix_spawn : {} (errno {})", std::strerror(spawned), spawned));
@@ -539,6 +543,12 @@ std::expected<void, ajp::Refusal> play_then_settle(const ajp::app::play::PlayOpt
   return played;
 }
 
+// C36-07 : un lancement qui ne tient pas l'instance du lecteur (--data-dir, banc, --keys, --snapshot) : il
+// partage le dossier des réglages sans être le lecteur de l'utilisateur.
+bool scripted_launch(const ajp::app::play::PlayOptions& options, std::span<const std::string_view> args) {
+  return options.data_dir || options.bench_out || !ajp::app::play::shares_instance(args);
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 int run_player(int argc, char** argv) {
   // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
@@ -631,7 +641,7 @@ int run_player(int argc, char** argv) {
   }
   const std::filesystem::path log_file =
       open_journal(place.home, data, options->data_dir ? settings_dir : std::filesystem::path());
-  start_diagnostics(settings_dir, log_file, options->relaunched);
+  start_diagnostics(settings_dir, log_file, options->relaunched, scripted_launch(*options, args));
   report_role_refusals();
   // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
   ajp::set_thread_role(ajp::ThreadRole::Playback);

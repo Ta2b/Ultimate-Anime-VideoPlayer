@@ -327,7 +327,8 @@ TEST_CASE("C31-05 : un refus de l'affichage sans clé retire un étage, pas une 
   CHECK(display_retreats(Refusal{RefusalCode::VulkanCallFailed, "vkAllocateMemory"}));
   CHECK_FALSE(display_retreats(Refusal{RefusalCode::DeviceLost, "perdu"}));
   CHECK_FALSE(display_retreats(Refusal{RefusalCode::DecodeFailed, "paquet abîmé"}));
-  CHECK_FALSE(display_retreats(Refusal{.code = RefusalCode::VendorCallFailed, .detail = "x", .key = "autre"}));
+  CHECK_FALSE(
+      display_retreats(Refusal{.code = RefusalCode::VendorCallFailed, .detail = "x", .key = "autre"}));
   // Le repli lui-même : l'interpolation d'abord, comme pour un refus d'étage.
   StageMemory memory;
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);

@@ -42,8 +42,8 @@ inline Refusal cuda_refusal(cudaError_t error, std::string_view call) {
   if (sticky(error))
     return Refusal{RefusalCode::DeviceLost, std::format("contexte CUDA perdu : relancer le lecteur ({} : {})",
                                                         call, cudaGetErrorName(error))};
-  // C31-04 : un pilote trop ancien pour le runtime CUDA du paquet ne se répare pas en réinstallant le moteur :
-  // SdkRejected, que l'écran dit « mettre à jour le pilote graphique ».
+  // C31-04 : un pilote trop ancien pour le runtime CUDA du paquet ne se répare pas en réinstallant le moteur
+  // : SdkRejected, que l'écran dit « mettre à jour le pilote graphique ».
   if (error == cudaErrorInsufficientDriver)
     return Refusal{RefusalCode::SdkRejected,
                    std::format("{} : pilote NVIDIA trop ancien pour le CUDA du paquet ({})", call,

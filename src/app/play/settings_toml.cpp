@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "app/play/auto_config.h"
+#include "app/play/invalid_copies.h"
 #include "app/play/settings.h"
 #include "app/play/settings_refuse.h"
 #include "app/play/settings_toml_lenient.h"
@@ -485,6 +486,7 @@ std::expected<void, Refusal> keep_invalid_copy(const std::filesystem::path& path
                                                            core::to_utf8(path), error.message()));
   log_channel("app")->warn("{} invalide : copie gardée dans {}", core::to_utf8(path.filename()),
                            core::to_utf8(aside.filename()));
+  prune_invalid_copies(path);  // C36-10
   return {};
 }
 

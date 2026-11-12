@@ -60,6 +60,7 @@
 #include "app/play/present_stats.h"
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
+#include "app/play/resource_usage.h"
 #include "app/play/resume.h"
 #include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
@@ -136,9 +137,30 @@ std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusa
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+namespace {
+
+// B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
+// rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
+// C31-05 : un refus de l'affichage (mémoire vidéo saturée, pl_render_image refusé) sur un appareil sain
+// retire aussi un étage, l'interpolation d'abord, au lieu d'arrêter la vidéo.
+bool retreats(const Refusal& failure, const ChainEngines& c) {
+  return (failure.key == kFatalStageKey || display_retreats(failure)) &&
+         failure.code != RefusalCode::DeviceLost && c.backend && c.backend->kernels()->health();
+}
+
+// C30-05 : la cause dite au journal, pas seulement le GPU.
+void teardown_stuck() {
+  exit_stuck(
+      "fermeture de la chaîne bloquée depuis 60 s (GPU muet, ou fichier sur un disque ou un partage "
+      "qui ne répond plus)");
+}
+
+}  // namespace
+
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
+  const ResourcesAfterTeardown after_teardown;  // C33-03 : détruit après l'anneau (ring_release)
   // B31-03 : une perte du GPU pendant la préparation relance au départ demandé, pas à 0:00.
   p.stopped_at_us = std::max<std::int64_t>(start_us, 0);
   p.stopped_paused = start_paused;
@@ -619,8 +641,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     ui_frame.changed |= snapshot_now;
     for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
     if (settings_save_due(writer, p.ui, chain.dirty, saved_at, host_now_us())) {  // B31-08, B36-01
-      writer.post("play.toml", [path = p.settings_path, saved = saved_settings(),
-                                ticket = settings_ticket()] { return save_settings(path, saved, ticket); });
+      writer.post("play.toml", save_job(p.settings_path, saved_settings()));
       chain.dirty = false;
       saved_at = host_now_us();
     }
@@ -649,9 +670,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   screen_saver.want(false);
   if (chain.dirty) {
-    writer.post("play.toml", [path = p.settings_path, saved = saved_settings(), ticket = settings_ticket()] {
-      return save_settings(path, saved, ticket);
-    });
+    writer.post("play.toml", save_job(p.settings_path, saved_settings()));
   }
   remember();
   stats_sink.reset();
@@ -716,13 +735,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       chain.reopen = chain.running;
     }
   }
-  // B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
-  // rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
-  // C31-05 : un refus de l'affichage (mémoire vidéo saturée, pl_render_image refusé) sur un appareil sain
-  // retire aussi un étage, l'interpolation d'abord, au lieu d'arrêter la vidéo.
-  if (failure && (failure->key == kFatalStageKey || display_retreats(*failure)) &&
-      failure->code != RefusalCode::DeviceLost && c.backend && c.backend->kernels()->health() &&
-      retreat(p, c, *failure)) {
+  // B31-02, C31-05 : un refus de l'étage GPU ou de l'affichage retire un étage (retreats).
+  if (failure && retreats(*failure, c) && retreat(p, c, *failure)) {
     failure.reset();
     chain.reopen = chain.running;
     chain.next_file.reset();
@@ -753,7 +767,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // démontage bloqué la fait au lieu de laisser une fenêtre figée.
   if (failure && failure->code == RefusalCode::DeviceLost && p.relaunch_on_loss)
     (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, p.stopped_paused, RelaunchReason::GpuLost);
-  const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
+  const CloseWatch teardown(kTeardownLimit, teardown_stuck);
   session.end();
   out.flush();
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)

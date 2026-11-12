@@ -42,7 +42,9 @@ int merge_release_index(EngineCatalog& catalog, std::string_view text, std::stri
 
 // Faux tant qu'une copie gardée a moins d'un jour, qu'un 404 a moins d'un jour, ou qu'un autre échec a moins
 // de quelques heures : rien à demander au réseau.
-bool release_index_due(const std::filesystem::path& cache);
+// version : celle du lecteur ; une copie ou une marque d'une autre version est due (C36-05). Vide : toute
+// version.
+bool release_index_due(const std::filesystem::path& cache, std::string_view version = {});
 // Relit engines-nvidia.lock et sa signature de la release si c'est dû (release_index_due), en quelques
 // secondes au plus, dans cache et cache.sig ; hors du thread de la fenêtre (A18-02). stop coupe curl.
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,

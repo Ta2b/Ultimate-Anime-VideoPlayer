@@ -133,7 +133,8 @@ std::optional<std::vector<FlashSpan>> take_flashes(const std::string& in, std::s
 // C36-02 : un fichier par variante (« <clé>-<variante>.shots ») : le même épisode vu sur deux écrans de pics
 // différents, ou avec et sans la recherche des visages, garde ses deux analyses au lieu de refaire la
 // pré-analyse de tout le fichier à chaque changement. La variante 0 garde l'ancien nom.
-std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key, std::uint32_t variant) {
+std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key,
+                              std::uint32_t variant) {
   if (variant == 0) return dir / (key + kExtension);
   return dir / std::format("{}-{:08x}{}", key, variant, kExtension);
 }

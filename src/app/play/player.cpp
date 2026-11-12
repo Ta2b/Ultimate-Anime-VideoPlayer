@@ -41,6 +41,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/invalid_copies.h"
 #include "app/play/look_catalog.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/model_choice.h"
@@ -100,6 +101,7 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
   }
   log_channel("app")->warn("{} mis de côté dans {}", core::to_utf8(path.filename()),
                            core::to_utf8(aside.filename()));
+  prune_invalid_copies(path);  // C36-10
   return i18n::tr_format("{} was invalid: copy kept as {}", core::to_utf8(path.filename()),
                          core::to_utf8(aside.filename()));
 }
@@ -229,6 +231,58 @@ std::string unreadable_text(const std::filesystem::path& file, const std::option
                          visible_error(*why));
 }
 
+// Un essai scripté (banc, capture, touches, fenêtre cachée) : son code de sortie dit un fichier illisible.
+bool scripted_open(const PlayOptions& options) {
+  return options.hidden || options.bench_out || options.snapshot || !options.keys.empty();
+}
+
+// C18-01 : la sonde du fichier donné, attendue la fenêtre ouverte. Faux : la fenêtre a été fermée pendant
+// l'attente. Lu, le titre de la fenêtre nomme le fichier ; illisible, la raison va à l'accueil.
+bool settle_given_probe(std::optional<GivenProbe>& probe, PlaceboScreen& screen, PlayerUi& ui,
+                        const std::filesystem::path& file, std::optional<media::TrackInfo>& given,
+                        std::optional<Refusal>& unreadable_why) {
+  if (!probe) return true;
+  show_loading(screen, ui, i18n::ui_tr("Loading"));
+  auto video = finish_given_probe(*probe);
+  probe.reset();
+  if (!video && video.error().code == RefusalCode::Cancelled) return false;
+  if (video) {
+    given = std::move(*video);
+    SDL_SetWindowTitle(screen.window(), std::format("ajp — {}", core::to_utf8(file.filename())).c_str());
+    ui.set_title(core::to_utf8(file.filename()));
+    return true;
+  }
+  // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux ne dirait
+  // rien. L'accueil s'ouvre avec la raison.
+  log_channel("app")->warn("{}", video.error().detail);
+  unreadable_why = std::move(video.error());
+  return true;
+}
+
+// C31-07 : l'avis d'une relance après une perte du GPU vient de --relaunched=, que le lecteur relancé reçoit
+// toujours, même sans relaunch.txt (perte à l'accueil ou à l'écran des moteurs, disque plein) : sur la vidéo
+// rouverte, sinon à l'accueil (problem).
+i18n::Translated relaunch_notice(const PlayOptions& options, const std::optional<RelaunchTarget>& reopened,
+                                 bool video_reopens, std::string& problem) {
+  if (options.relaunched != RelaunchedFor::GpuLost &&
+      !(reopened && reopened->reason == RelaunchReason::GpuLost))
+    return {};
+  i18n::Translated note = i18n::ui_tr("The graphics card stopped responding: the player restarted");
+  if (video_reopens) return note;
+  problem += problem.empty() ? note.str() : " · " + note.str();
+  return {};
+}
+
+// A31-03, C31-04 : le moteur choisi remplacé à l'ouverture ; un pilote trop ancien se dit comme tel.
+i18n::Translated fallback_notice(std::optional<RefusalCode> passed_over, core::EngineId wanted,
+                                 core::EngineId in_use) {
+  if (passed_over == RefusalCode::SdkRejected)
+    return i18n::ui_tr_format("{} needs a newer graphics driver: {} is used, slower", engine_label(wanted),
+                              engine_label(in_use));
+  return i18n::ui_tr_format("{} unavailable: {} is used, slower (Settings > General > Engines)",
+                            engine_label(wanted), engine_label(in_use));
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -247,7 +301,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   std::optional<media::TrackInfo> given;
   std::optional<Refusal> unreadable_why;  // le fichier donné ne se lit pas : dit à l'accueil, à sa place
   std::optional<GivenProbe> given_probe;
-  if (!options.file.empty() && (options.hidden || options.bench_out || options.snapshot || !options.keys.empty())) {
+  if (!options.file.empty() && scripted_open(options)) {
     auto video = probe_video(options.file, false);
     if (!video) return std::unexpected(std::move(video.error()));
     given = std::move(*video);
@@ -294,22 +348,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   auto ui = PlayerUi::create((*screen)->window(), given ? core::to_utf8(options.file.filename()) : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
   note_ignored_keys((*ui)->controls());
-  if (given_probe) {
-    show_loading(**screen, **ui, i18n::ui_tr("Loading"));
-    auto video = finish_given_probe(*given_probe);
-    given_probe.reset();
-    if (!video && video.error().code == RefusalCode::Cancelled) return {};  // fenêtre fermée pendant la sonde
-    if (video) {
-      given = std::move(*video);
-      SDL_SetWindowTitle((*screen)->window(), std::format("ajp — {}", core::to_utf8(options.file.filename())).c_str());
-      (*ui)->set_title(core::to_utf8(options.file.filename()));
-    } else {
-      // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux ne
-      // dirait rien. L'accueil s'ouvre avec la raison.
-      log->warn("{}", video.error().detail);
-      unreadable_why = std::move(video.error());
-    }
-  }
+  if (!settle_given_probe(given_probe, **screen, **ui, options.file, given, unreadable_why)) return {};
   const std::string unreadable = unreadable_text(options.file, unreadable_why);  // B18-03
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
   class Release {
@@ -416,16 +455,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     forced_start = reopened_after->start_us;
     forced_paused = reopened_after->paused;
   }
-  // C31-07 : l'avis vient de --relaunched=, que le lecteur relancé reçoit toujours, même sans relaunch.txt
-  // (perte à l'accueil ou à l'écran des moteurs, disque plein) : sur la vidéo rouverte, sinon à l'accueil.
-  if (options.relaunched == RelaunchedFor::GpuLost ||
-      (reopened_after && reopened_after->reason == RelaunchReason::GpuLost)) {
-    relaunch_note = i18n::ui_tr("The graphics card stopped responding: the player restarted");
-    if (file.empty() || !given) {
-      problem += problem.empty() ? relaunch_note.str() : " · " + relaunch_note.str();
-      relaunch_note = {};
-    }
-  }
+  relaunch_note = relaunch_notice(options, reopened_after, !file.empty() && given, problem);  // C31-07
   Announced announced;  // la mise à jour vue, la calibration d'une autre carte
   const HomeScreen home{.screen = **screen,
                         .ui = **ui,
@@ -553,12 +583,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // plus lent ; dit à l'écran une fois, la raison au journal et dans Général > Moteurs.
       if (const std::optional<core::EngineId> in_use = engine_of_library(library->path());
           wanted && in_use && wanted != in_use)
-        engine_fallback =
-            library->passed_over_code() == RefusalCode::SdkRejected  // C31-04 : le pilote, pas le moteur
-                ? i18n::ui_tr_format("{} needs a newer graphics driver: {} is used, slower", engine_label(*wanted),
-                                     engine_label(*in_use))
-                : i18n::ui_tr_format("{} unavailable: {} is used, slower (Settings > General > Engines)",
-                                     engine_label(*wanted), engine_label(*in_use));
+        engine_fallback = fallback_notice(library->passed_over_code(), *wanted, *in_use);
     }
 
     Player player{.options = file_options,
