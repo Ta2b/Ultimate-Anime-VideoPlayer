@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <optional>
@@ -52,11 +53,13 @@ class HostUploads {
   HostUploads(const HostUploads&) = delete;
   HostUploads& operator=(const HostUploads&) = delete;
 
-  // Envoie les plans de data (mémoire hôte, au format de layout) ; consumer attend la fin de
-  // l'envoi avant ce qui y est enfilé ensuite. data peut être rendue au décodeur dès le retour.
+  // Envoie les plans de frame (mémoire hôte, au format de layout) ; consumer attend la fin de
+  // l'envoi avant ce qui y est enfilé ensuite. Les pixels peuvent être rendus au décodeur dès le retour.
+  // La même source que l'envoi précédent (rgb_ puis small_ qui l'ingèrent l'une après l'autre, C32-03)
+  // reprend ses plans sur l'appareil : ni copie hôte ni envoi de plus.
   // Refus : ShapeInvalid (plan trop court ou pas de ligne trop petit), VendorCallFailed.
-  std::expected<Planes, Refusal> upload(const FrameData& data, const Layout& layout, cudaStream_t consumer,
-                                        GpuTiming& timing);
+  std::expected<Planes, Refusal> upload(const DecodedFrame& frame, const Layout& layout,
+                                        cudaStream_t consumer, GpuTiming& timing);
   // Après la lecture des plans enfilée sur consumer : leur tampon d'appareil se réutilise quand elle
   // est finie.
   std::expected<void, Refusal> consumed(cudaStream_t consumer);
@@ -71,11 +74,29 @@ class HostUploads {
     bool used = false;
   };
   std::expected<void, Refusal> reserve(Slot& slot, std::size_t bytes);
+  std::expected<Planes, Refusal> reuse(cudaStream_t consumer);
 
   cudaStream_t transfer_ = nullptr;
   std::array<Slot, kDepth> slots_{};
   std::size_t next_ = 0;
   Slot* pending_ = nullptr;  // l'envoi dont la lecture reste à marquer
+  // L'image envoyée : son identité (le pool recycle les adresses, les SourceId repartent après un seek).
+  struct Source {
+    SourceId id;
+    std::uint32_t epoch = 0;
+    const FrameData* data = nullptr;
+    friend bool operator==(const Source&, const Source&) = default;
+  };
+  // Le dernier envoi : sa source, ses plans, la file qui l'a lu en dernier (reuse).
+  struct Last {
+    Source source;
+    Layout layout;
+    Slot* slot = nullptr;
+    Planes planes;
+    cudaStream_t reader = nullptr;
+  };
+  std::optional<Last> last_;
+  bool reusable(const Source& source, const Layout& layout) const;
   // Les tampons épinglés remplacés par un plus grand, rendus à la destruction (cudaFreeHost synchronise
   // l'appareil, C01-05).
   std::vector<std::byte*> outgrown_;

@@ -91,8 +91,37 @@ std::expected<void, Refusal> HostUploads::reserve(Slot& slot, std::size_t bytes)
   return {};
 }
 
-std::expected<HostUploads::Planes, Refusal> HostUploads::upload(const FrameData& data, const Layout& layout,
-                                                                cudaStream_t consumer, GpuTiming& timing) {
+bool HostUploads::reusable(const Source& source, const Layout& layout) const {
+  return last_ && pending_ == nullptr && last_->source == source && last_->layout.planes == layout.planes &&
+         last_->layout.row_bytes == layout.row_bytes && last_->layout.rows == layout.rows;
+}
+
+std::expected<HostUploads::Planes, Refusal> HostUploads::reuse(cudaStream_t consumer) {
+  Last& last = *last_;
+  Slot& slot = *last.slot;
+  // L'envoi d'abord ; puis, sur une autre file, la lecture précédente : l'événement de lecture que
+  // consumed() reposera sur cette file couvre alors les deux lectures, et la file d'envoi n'écrasera le
+  // tampon qu'après elles.
+  if (auto ok = cuda_check(cudaStreamWaitEvent(consumer, slot.copied, 0), "cudaStreamWaitEvent"); !ok)
+    return std::unexpected(ok.error());
+  if (last.reader != nullptr && last.reader != consumer) {
+    if (auto ok = cuda_check(cudaStreamWaitEvent(consumer, slot.read, 0), "cudaStreamWaitEvent"); !ok)
+      return std::unexpected(ok.error());
+  }
+  pending_ = &slot;
+  last.reader = consumer;
+  return last.planes;
+}
+
+std::expected<HostUploads::Planes, Refusal> HostUploads::upload(const DecodedFrame& frame,
+                                                                const Layout& layout, cudaStream_t consumer,
+                                                                GpuTiming& timing) {
+  const FrameData& data = *frame.data;
+  const Source source{.id = frame.id, .epoch = frame.epoch, .data = frame.data.get()};
+  // Seul l'envoi le plus récent se reprend : avec kDepth envois à tour de rôle, son tampon ne se réécrit
+  // pas avant deux autres envois. Sa lecture précédente est déjà marquée (consumed suit chaque ingestion).
+  if (reusable(source, layout)) return reuse(consumer);
+  last_.reset();
   if (layout.planes < 2 || layout.planes > 3 || data.plane_count() < layout.planes) {
     return std::unexpected(Refusal{
         RefusalCode::ShapeInvalid,
@@ -157,11 +186,13 @@ std::expected<HostUploads::Planes, Refusal> HostUploads::upload(const FrameData&
     return std::unexpected(ok.error());
   pending_ = &slot;
   const auto* device = static_cast<const std::byte*>(slot.device);
-  return Planes{.luma = device + offset[0],
-                .chroma = device + offset[1],
-                .chroma_v = layout.planes == 3 ? device + offset[2] : nullptr,
-                .luma_pitch = pitch[0],
-                .chroma_pitch = pitch[1]};
+  const Planes planes{.luma = device + offset[0],
+                      .chroma = device + offset[1],
+                      .chroma_v = layout.planes == 3 ? device + offset[2] : nullptr,
+                      .luma_pitch = pitch[0],
+                      .chroma_pitch = pitch[1]};
+  last_ = Last{.source = source, .layout = layout, .slot = &slot, .planes = planes, .reader = consumer};
+  return planes;
 }
 
 std::expected<void, Refusal> HostUploads::consumed(cudaStream_t consumer) {
