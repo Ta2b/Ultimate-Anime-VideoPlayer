@@ -53,14 +53,13 @@ std::optional<double> sdr_gamma(const pl_color_space& color) {
   }
 }
 
-// Le grade d'une cible : celui du PQ, ou celui du SDR à l'exposant de la cible.
-// Vers un écran SDR, le rendu PQ ramené au SDR (GradeChoice::sdr_anime).
+// Le grade d'une cible : celui du PQ ; vers un écran SDR, le rendu PQ ramené au SDR (GradeChoice::sdr_anime),
+// à l'exposant de la cible.
 std::optional<render::GradeParams> grade_for(const render::GradeChoice& choice, const pl_color_space& color) {
   if (color.transfer == PL_COLOR_TRC_PQ) return choice.pq;
   const std::optional<double> gamma = sdr_gamma(color);
-  const std::optional<render::GradeParams>& sdr = choice.sdr_anime ? choice.sdr_anime : choice.sdr;
-  if (!gamma || !sdr) return std::nullopt;
-  render::GradeParams params = *sdr;
+  if (!gamma || !choice.sdr_anime) return std::nullopt;
+  render::GradeParams params = *choice.sdr_anime;
   params.sdr_gamma = *gamma;
   return params;
 }
@@ -244,6 +243,7 @@ void PlaceboScreen::Impl::match_kwin() {
   const std::optional<render::Grade::KwinMatch> match =
       on ? std::optional(render::Grade::KwinMatch{.reference = reference, .peak = hint.panel_peak_nits})
          : std::nullopt;
+  // C41-04 : à chaque présentation, rien n'est refait tant que l'appariement ne change pas (Grade le sait).
   if (match != kwin_applied) ++grade_serial;
   kwin_applied = match;
   grade->set_kwin_match(match);
@@ -255,15 +255,8 @@ void PlaceboScreen::Impl::match_kwin() {
   // MaxFALL (P3.59, A41-02) : celui du contrat d'écran quand il le connaît (le plein écran du limiteur),
   // sinon la moyenne réelle d'une image toute blanche : le blanc des surfaces que la dernière passe rend, en
   // unités du contenu (au relèvement fixe, pas celui du plan : l'annonce ne bouge pas à chaque coupe).
-  // Avant, 233 nits étaient annoncés pour un blanc rendu à 695.
-  const double contract_fall = contract ? render::contract_metadata(*contract).max_fall : 0.0;
-  // Sous le plafond des flashs, le blanc est celui du pic non plafonné : l'annonce ne bouge pas (B41-03).
-  std::optional<render::OutputTune> tune = grade->output();
-  if (tune && announced_peak > peak)
-    tune = render::output_tune(params, grade->looks(), reference, announced.panel_peak_nits);
-  const double surfaces =
-      tune ? tune->white * render::kContentReferenceNits / reference : params.sdr_white * render::kAnimeLift;
-  const double max_fall = on ? std::min(max_nits, contract_fall > 0.0 ? contract_fall : surfaces) : 0.0;
+  // Avant, 233 nits étaient annoncés pour un blanc rendu à 695. Sans la dernière passe (`on` faux), rien.
+  const double max_fall = on ? announced_fall(max_nits, reference, announced.panel_peak_nits) : 0.0;
   if (max_nits == hinted_max_nits && max_fall == hinted_max_fall) return;
   hinted_max_nits = max_nits;
   hinted_max_fall = max_fall;
@@ -279,29 +272,33 @@ void PlaceboScreen::Impl::match_kwin() {
                 max_nits, max_fall, announced_peak, reference);
 }
 
+double PlaceboScreen::Impl::announced_fall(double max_nits, double reference, double announced_panel_peak) {
+  const double contract_fall = contract ? render::contract_metadata(*contract).max_fall : 0.0;
+  if (contract_fall > 0.0) return std::min(max_nits, contract_fall);
+  const render::GradeParams& params = grade->params();
+  // Sous le plafond des flashs, le blanc est celui du pic non plafonné : l'annonce ne bouge pas (B41-03).
+  // Le rendu non plafonné est gardé d'une image à l'autre (C41-04).
+  std::optional<render::OutputTune> tune = grade->output();
+  if (tune && params.uncapped_peak > params.peak) {
+    if (!uncapped_tune || uncapped_tune->params != params || uncapped_tune->reference != reference ||
+        uncapped_tune->panel_peak != announced_panel_peak) {
+      uncapped_tune =
+          UncappedTune{.params = params,
+                       .reference = reference,
+                       .panel_peak = announced_panel_peak,
+                       .tune = render::output_tune(params, grade->looks(), reference, announced_panel_peak)};
+    }
+    tune = uncapped_tune->tune;
+  }
+  return std::min(max_nits, tune ? tune->white * render::kContentReferenceNits / reference : max_nits);
+}
+
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
   return grade && grade_loaded_pq == pq && (pq || sdr_gamma(target).has_value());
 }
 
 namespace {
-// Les LUT posées sur le grade, copiées pour la rampe : une LUT vide (size 0) pour un emplacement sans LUT.
-std::vector<render::CubeLut> copy_looks(
-    const std::array<const render::CubeLut*, render::kLookSlots>& placed) {
-  std::vector<render::CubeLut> looks(render::kLookSlots);
-  for (std::size_t i = 0; i < render::kLookSlots; ++i)
-    if (placed.at(i) != nullptr) looks[i] = *placed.at(i);
-  return looks;
-}
-
-std::array<const render::CubeLut*, render::kLookSlots> look_slots_of(
-    const std::vector<render::CubeLut>& looks) {
-  std::array<const render::CubeLut*, render::kLookSlots> slots{};
-  for (std::size_t i = 0; i < slots.size() && i < looks.size(); ++i)
-    slots.at(i) = looks[i].size > 0 ? &looks[i] : nullptr;
-  return slots;
-}
-
 // Les nits d'un code SDR lu en sortie de la rampe. Sortie SDR de la méthode anime : le vrai noir travaille
 // sur l'image en PQ, que la dernière passe divise par tm_white ; un code y vaut donc code^gamma × tm_white
 // (A41-07 : le pic HDR servait d'échelle).
@@ -326,13 +323,14 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   params.black_hi = 0.0;
   // P3.61 : la rampe passe aussi par la pile de LUT, que le vrai noir suit à l'écran ; mesurée sans elle, ses
   // seuils écrasaient une seconde fois les huit premières marches. Les mêmes LUT, aux mêmes intensités.
-  std::vector<render::CubeLut> looks = copy_looks(s.grade->looks());
+  // Partagées avec l'écran et comparées par identité (C41-05) : ni copie ni comparaison de 8 Mo à chaque
+  // rampe.
+  std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> looks = s.grade->shared_looks();
   if (s.last_ramp && s.last_ramp->params == params && s.last_ramp->hdr == s.hdr_output &&
       std::ranges::equal(s.last_ramp->levels, levels) && s.last_ramp->looks == looks)
     return s.last_ramp->nits;
   if (s.ramp_looks != looks) {
-    if (auto set = s.ramp_grade->set_looks(look_slots_of(looks)); !set)
-      return std::unexpected(std::move(set.error()));
+    if (auto set = s.ramp_grade->set_looks(looks); !set) return std::unexpected(std::move(set.error()));
     s.ramp_looks = looks;
   }
   s.ramp_grade->set_params(params);

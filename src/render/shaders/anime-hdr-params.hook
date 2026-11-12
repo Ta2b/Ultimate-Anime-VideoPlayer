@@ -4,9 +4,8 @@
 // https://github.com/Ta2b/mpv-AnimeJaNai-HDR (commit 33ff79d) ; seuls restent les paramètres que le grade
 // anime lit encore.
 //
-// L'image arrive sur OUTPUT déjà encodée en PQ BT.2020 pour l'écran. Sur une sortie SDR (sdr_out = 1), elle est
-// en BT.709 au gamma sdr_gamma, son blanc à `peak` nits ; sdr_tm = 1 la passe d'abord en PQ (anime-hdr-black
-// la ramène au SDR).
+// L'image arrive sur OUTPUT déjà encodée en PQ BT.2020 pour l'écran. Sur une sortie SDR, elle est en BT.709 au
+// gamma sdr_gamma : sdr_tm = 1 la passe d'abord en PQ (anime-hdr-black la ramène au SDR).
 
 //!PARAM peak
 //!DESC Pic de sortie (nits)
@@ -50,13 +49,6 @@
 //!MAXIMUM 1000.0
 203.0
 
-//!PARAM sdr_out
-//!DESC 1 = sortie SDR BT.709 (gamma sdr_gamma, blanc a peak nits), 0 = PQ BT.2020
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
 //!PARAM sdr_gamma
 //!DESC Sortie SDR : exposant du transfert de l'ecran (2,2 sRGB, 2,4 BT.1886)
 //!TYPE float
@@ -70,6 +62,34 @@
 //!MINIMUM 0.0
 //!MAXIMUM 1.0
 0.0
+
+//!PARAM an_gate_lo
+//!DESC Porte des emetteurs : code PQ de 0,55 x le blanc de la source (Grade::write_params)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.5
+
+//!PARAM an_gate_hi
+//!DESC Porte des emetteurs : code PQ de 0,95 x le blanc de la source
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.6
+
+//!PARAM an_spark_lo
+//!DESC Etincelles : code PQ de 0,6 x le blanc de la source
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.5
+
+//!PARAM an_spark_hi
+//!DESC Etincelles : code PQ du blanc de la source
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.6
 
 //!PARAM adapt
 //!DESC 1 = blanc de la source a sdr_white, aplats a la moitie du pic (route native) ; 0 = blanc papier
