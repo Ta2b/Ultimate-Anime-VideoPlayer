@@ -212,6 +212,21 @@ TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien
   CHECK_FALSE(visible_error(Refusal{RefusalCode::CacheIo, ""}).empty());
 }
 
+TEST_CASE("C45-01 : une précision réduite gardée se dit à l'écran, chiffrée ou non mesurée", "[app][chain]") {
+  CHECK(reduced_precision_notice("SPAN", gpu::PrecisionNotice{}).empty());
+  const gpu::PrecisionNotice measured{
+      .layers = 4, .loss_measured = true, .loss_db = 80.9F, .gain_measured = true, .gain_percent = 50.0F};
+  const std::string full = reduced_precision_notice("SPAN", measured).str();
+  CHECK(full.contains("SPAN"));
+  CHECK(full.contains("4"));
+  CHECK(full.contains("80"));
+  CHECK(full.contains("+50"));
+  const std::string blind = reduced_precision_notice("SPAN", gpu::PrecisionNotice{.layers = 2}).str();
+  CHECK_FALSE(blind.contains("dB"));
+  CHECK_FALSE(blind.empty());
+  CHECK(blind != full);
+}
+
 TEST_CASE("B08-01 : Ctrl+I rallume l'interpolation au facteur que la séance avait, pas à ×3",
           "[app][chain]") {
   using Pair = std::pair<int, int>;

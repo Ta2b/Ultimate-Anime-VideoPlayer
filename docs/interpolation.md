@@ -56,7 +56,7 @@ Case « Warp de l'interpolation plus net (Catmull-Rom) » (Vidéo, sous le multi
 cubic_warp` de `play.toml`, éteinte par défaut). RIFE déplace chaque pixel des deux images source selon son flot,
 puis les mélange ; le réseau lit la source en bilinéaire, qui adoucit un trait fin déplacé d'une fraction de
 pixel. L'option lit les images source par un filtre de Catmull-Rom (Keys, a = −0,5), 4 × 4 points en FP32, la
-position bornée à l'image, les points du bord répétés et la valeur bornée à [0, 1]
+position bornée à l'image, les points du bord répétés et la valeur bornée au minimum et au maximum des quatre points centraux (les sur-blancs de la source passent, le ringing d'un trait net est coupé ; C50-08)
 (`catmull_rom_weights`, `src/kernels/spec/warp.h`). Le flot et le masque restent lus en bilinéaire.
 
 - RIFE seulement : DistilDRBA et le moteur système n'ont pas d'étage de warp. Le RIFE entier (non fusionné) fait
@@ -92,6 +92,24 @@ Binaire `linux-release` ou `windows-release`, TensorRT, RIFE 4.26 (Équilibré) 
 
 L'option devient le défaut si le coût reste sous 0,3 ms par image en 1080p, sans image en retard de plus à
 165 Hz, et si les traits sont plus nets sans halo ni perte de PSNR. Sinon elle reste un essai, ou se retire.
+
+## Une seule passe RIFE par paire calme (C50-02)
+
+Sous le mouvement maximal `kSingleRunMotion720` (15 px à 720p, mis à l'échelle de la hauteur de RIFE par
+`single_run_motion`, `src/kernels/spec/warp.h`), RIFE ne passe qu'une fois par paire, au milieu ; les autres
+instants se déduisent par `warp_blend_at`, le mouvement en ligne droite et la loi de mélange. C'est un compromis
+**de qualité contre du temps**, consenti par défaut (poses gardées) : un mouvement courbe ou accéléré sous le
+seuil (bras qui tourne, caméra qui freine) suit une droite, et les occlusions gardent le masque du milieu. Au ×2
+(t = ½ seul) rien ne change.
+
+- Le seuil vient d'animejanai-inference-rtx. Le **gain de temps et la perte de qualité ne sont pas mesurés** ici :
+  la mesure de la loi de mélange (`warp.h`) porte sur le mélange, pas sur le seuil.
+- Le journal de fin dit la part de paires servies par une passe (« RIFE mouvement : N passes ; N paires à une
+  passe »).
+- Mesure à faire sur la RTX (`linux-release` ou `windows-release`, TensorRT, RIFE 4.26 puis 4.22 lite) : réduire
+  des extraits à 24 images/s à une image sur trois, interpoler à t = ⅓ et ⅔, comparer aux vraies images (PSNR,
+  pire bloc), une fois avec le seuil à 15 px et une fois à 0 (RIFE à chaque instant) ; relever le temps par image
+  de l'étage avec `--stats=`. Le seuil se règle ou s'annonce d'après ces chiffres.
 
 ## Échelle par paire (essai)
 

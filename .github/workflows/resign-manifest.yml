@@ -2,10 +2,11 @@ name: Re-signer le manifeste
 
 # Le manifeste des mises à jour expire 120 jours après sa signature (sign-manifest.sh) : sans release dans ce délai,
 # tout le parc verrait une erreur (SEC-24). Chaque semaine, celui de la « latest » est re-signé quand il lui reste moins
-# de 45 jours (marge de six semaines, pas de quinze jours), avec les mêmes archives, revérifiées. À la main, il est
-# re-signé sans condition. Un échec ouvre une issue dans ce dépôt : personne ne lit un journal de planification
-# (B51-14). GitHub arrête les planifications d'un dépôt public sans activité pendant 60 jours : l'issue et le
-# manifeste qui expire sont alors le seul signal, et un commit sur main suffit à réarmer.
+# de 90 jours (signé depuis plus de 30 jours) : bien avant les 60 jours après lesquels GitHub arrête les planifications
+# d'un dépôt public sans activité (C51-03). Les archives sont celles que l'ancien manifeste nomme, vérifiées contre lui
+# avant d'être signées à nouveau (resign-manifest.sh, C51-02). À la main, il est re-signé sans condition. Un échec
+# ouvre une issue dans ce dépôt : personne ne lit un journal de planification (B51-14). Chaque passage réarme aussi la
+# planification (étape « Planification »), et un commit sur main suffit à la réarmer à la main.
 on:
   schedule:
     - cron: "17 6 * * 1"
@@ -22,6 +23,10 @@ jobs:
   resign:
     runs-on: ubuntu-24.04
     environment: release
+    # Pour réarmer la planification de ce workflow (étape « Planification »), rien d'autre.
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -37,11 +42,11 @@ jobs:
           echo "TAG=$tag" >>"$GITHUB_ENV"
           dir="$RUNNER_TEMP/release"
           mkdir -p "$dir"
-          gh release download "$tag" -R "$AJP_RELEASE_REPO" -D "$dir" -p manifest.toml
+          gh release download "$tag" -R "$AJP_RELEASE_REPO" -D "$dir" -p manifest.toml -p manifest.toml.sig
           expires="$(sed -n 's/^expires = "\(.*\)"$/\1/p' "$dir/manifest.toml")"
           left=$(( ( $(date -u -d "$expires" +%s) - $(date -u +%s) ) / 86400 ))
           echo "$tag : le manifeste expire le $expires ($left jours)" | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$EVENT" = schedule ] && [ "$left" -ge 45 ]; then echo "SKIP=1" >>"$GITHUB_ENV"; fi
+          if [ "$EVENT" = schedule ] && [ "$left" -ge 90 ]; then echo "SKIP=1" >>"$GITHUB_ENV"; fi
       - name: Signature
         if: env.SKIP != '1'
         env:
@@ -50,13 +55,16 @@ jobs:
         run: |
           [ -n "$UPDATE_KEY" ] || { echo "::error::secret AJP_UPDATE_KEY absent de l'environnement release"; exit 1; }
           dir="$RUNNER_TEMP/release"
+          # Le manifeste actuel, déjà dans le dossier, et ses archives : chacune est vérifiée contre lui avant
+          # d'être signée à nouveau (C51-02).
           gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
-            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip
+            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip \
+            -p ajp-linux-x86_64.AppImage -p ajp-windows-x64-setup.exe --skip-existing
           key="$RUNNER_TEMP/ajp-update-key.pem"
           trap 'rm -f "$key"' EXIT
           # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
           tools/release/update-key.sh "$key"
-          AJP_UPDATE_KEY="$key" tools/release/sign-manifest.sh "${TAG#v}" stable "$dir" \
+          AJP_UPDATE_KEY="$key" tools/release/resign-manifest.sh "${TAG#v}" "$dir" \
             "https://github.com/$AJP_RELEASE_REPO/releases/download/$TAG" \
             "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
           pub="$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
@@ -71,6 +79,13 @@ jobs:
           dir="$RUNNER_TEMP/release"
           gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
           echo "manifeste de $TAG re-signé" | tee -a "$GITHUB_STEP_SUMMARY"
+      # GitHub désactive les planifications d'un dépôt public sans activité depuis 60 jours : « enable » sur un
+      # workflow déjà actif ne coûte rien, et sur un workflow désactivé le réactive (C51-03).
+      - name: Planification
+        if: ${{ always() && github.event_name == 'schedule' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable resign-manifest.yml -R "$GITHUB_REPOSITORY" || echo "::warning::planification non réarmée"
 
   # Un échec de la re-signature (jeton expiré, environnement refusé, release sans manifeste) ne reste pas dans un
   # journal : une issue, une seule tant qu'elle est ouverte (B51-14).
@@ -90,6 +105,6 @@ jobs:
           title="La re-signature du manifeste des mises à jour a échoué"
           open="$(gh issue list -R "$REPO" --state open --search "\"$title\" in:title" --json number -q length)"
           if [ "${open:-0}" -gt 0 ]; then echo "une issue est déjà ouverte"; exit 0; fi
-          gh issue create -R "$REPO" --title "$title" --body "Le manifeste de la « latest » expire dans moins de 45 jours et sa re-signature a échoué : $RUN_URL
+          gh issue create -R "$REPO" --title "$title" --body "Le manifeste de la « latest » expire dans moins de 90 jours et sa re-signature a échoué : $RUN_URL
 
           Sans manifeste valide, tous les lecteurs affichent une erreur de mise à jour. Relancer « Re-signer le manifeste » à la main une fois la cause levée (secret AJP_UPDATE_KEY, jeton AJP_RELEASE_TOKEN, environnement release)."

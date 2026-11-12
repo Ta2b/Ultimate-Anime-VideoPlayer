@@ -27,6 +27,26 @@ done
 [ -s "$dir/ajp-macos-arm64.zip" ] || echo "::warning::$tag : pas d'archive macOS (hors cible) : publiée sans elle"
 [ "$fail" -eq 0 ] || exit 1
 
+# L'engines.lock de Linux est lu dans l'archive vérifiée, comme celui de Windows ci-dessous : le fichier joint à
+# part à la release n'est lié à aucune construction, et c'est lui qui nomme le module que l'index signé fera
+# installer (C51-01). Il ne sert plus : il est remplacé par celui de l'archive, et une différence est une erreur.
+python3 -I - "$dir/ajp-linux-x64.tar.gz" "$dir/engines.lock" <<'PY' || fail=1
+import sys, tarfile
+with tarfile.open(sys.argv[1], "r:gz") as t:
+    members = [m for m in t.getmembers() if m.isfile() and m.name.split("/")[-1] == "engines.lock"]
+    if not members:
+        sys.exit("::error::ajp-linux-x64.tar.gz sans engines.lock")
+    inside = t.extractfile(members[0]).read()
+try:
+    joint = open(sys.argv[2], "rb").read()
+except FileNotFoundError:
+    joint = None
+open(sys.argv[2], "wb").write(inside)
+if joint is not None and joint != inside:
+    sys.exit("::error::l'engines.lock joint à la release n'est pas celui de ajp-linux-x64.tar.gz : fichier remplacé ou resté d'une autre construction")
+PY
+[ "$fail" -eq 0 ] || exit 1
+
 # L'engines.lock livré dans le zip Windows (ajp/engines.lock ; séparateur / ou \ selon Compress-Archive).
 python3 -I - "$dir/ajp-windows-x64.zip" "$dir/engines-windows.lock" <<'PY'
 import sys, zipfile

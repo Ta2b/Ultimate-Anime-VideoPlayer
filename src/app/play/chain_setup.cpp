@@ -271,6 +271,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       return std::move(*chain);
     }
     StageFailure& failure = chain.error();
+    if (failure.refusal.key == kWindowClosedKey) return std::nullopt;  // fenêtre fermée, comme « q »
     // Une vidéo glissée arrête toute la préparation : rien n'est retenu, la lecture passe à elle (A08-08).
     // Un appareil perdu n'est pas un refus de l'étage : la chaîne entière s'arrête, la relance suit (A31-02).
     if (!failure.stage || failure.refusal.key == kDroppedVideoKey ||
@@ -389,9 +390,8 @@ std::optional<SpanInt8> usable_variant(SpanVariantKind kind, const ModelChoice& 
 }
 
 // Le SPAN FP8 choisi à la main se prépare ici, sur l'écran de chargement ; la tâche de fond ne le refait pas.
-// Le bench (--bench-out) ne valide jamais sur son clip : une mire synthétique aux bords nets jugerait le
-// FP8 bien plus durement qu'un épisode et écrirait ses refus dans le reçu de l'utilisateur. Faux : la fenêtre
-// fermée ; refus : une vidéo glissée pendant la préparation.
+// Le bench (--bench-out) ne valide pas sur sa mire, trop dure pour le FP8, ni n'écrit ses refus au reçu.
+// Faux : la fenêtre fermée ; refus : une vidéo glissée pendant la préparation.
 std::expected<bool, StageFailure> prepare_manual_fp8(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                                      const PlaySettings& settings,
                                                      const SpanFp8Context& fp8_context) {
@@ -620,7 +620,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p);
   auto backend = run_pumped<BackendLibrary::Instance>(  // B29-09 : la fenêtre pompée
-      "backend", [&p, &init] { return BackendLibrary::create(p.library, init); });
+      "backend", [library = p.library, init] { return BackendLibrary::create(library, init); });
   if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
   c.backend_name = c.backend->capabilities().name;

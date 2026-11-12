@@ -39,6 +39,7 @@
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/distil_drba.h"
+#include "kernels/spec/frame_stats.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
@@ -254,6 +255,7 @@ class UpscaleStage final : public RingStage {
   struct PendingStats {
     std::uint64_t ticket = 0;
     std::int64_t pts_us = 0;
+    kernels::FrameTransfer transfer = kernels::FrameTransfer::Sdr;  // le limiteur de flashs (C42-04)
   };
   std::vector<PendingStats> stats_pending_;
   std::uint64_t stats_dropped_ = 0;  // relectures abandonnées (A42-18), journalisées une fois

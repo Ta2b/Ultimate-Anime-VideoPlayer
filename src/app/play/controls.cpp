@@ -34,6 +34,25 @@ float subtitle_lift(float text_bottom, float height, float reserved) {
   return std::max(0.0F, text_bottom - (height - reserved));
 }
 
+std::vector<bool> bottom_cluster(std::span<const std::pair<float, float>> spans, float height) {
+  std::vector<bool> in(spans.size(), false);
+  std::vector<std::size_t> order;
+  for (std::size_t i = 0; i < spans.size(); ++i) {
+    if (spans[i].first >= height * 0.5F) order.push_back(i);
+  }
+  std::ranges::sort(order, [&](std::size_t a, std::size_t b) { return spans[a].second > spans[b].second; });
+  const float gap = height * 0.05F;
+  float top = 0.0F;  // haut du paquet déjà formé
+  bool started = false;
+  for (const std::size_t i : order) {
+    if (started && spans[i].second < top - gap) continue;  // séparé du paquet du bas
+    in[i] = true;
+    top = started ? std::min(top, spans[i].first) : spans[i].first;
+    started = true;
+  }
+  return in;
+}
+
 float line_lift(int reserved, int height) {
   if (reserved <= 0 || height <= 0) return 0.0F;
   return std::min(static_cast<float>(reserved) / static_cast<float>(height), subs::kMaxLineLift);
@@ -104,7 +123,7 @@ cmd::SetVolume Controls::toggle_mute() {
 
 std::optional<Controls::VideoClick> Controls::click(int clicks) {
   if (clicks == 1) return VideoClick::TogglePause;
-  if (clicks == 2) return VideoClick::FullscreenUndoPause;
+  if (clicks == 2) return VideoClick::Fullscreen;
   return std::nullopt;
 }
 

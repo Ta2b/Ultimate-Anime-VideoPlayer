@@ -19,8 +19,9 @@ namespace ajp::kernels {
 // Le filtre qui lit les images déformées (le warp final de RIFE : la fin de RIFE fusionné et le warp de la
 // variante mouvement ; le flot et le masque restent lus en bilinéaire) : bilinéaire comme le GridSample du
 // graphe, ou Catmull-Rom en option (Keys, a = −0,5 : 4 × 4 points en FP32, position ramenée dans l'image et
-// points répétés au bord comme le bilinéaire, sortie bornée à [0, 1], où vivent les images ; le dépassement
-// de la cubique sur un trait net est ainsi coupé).
+// points répétés au bord comme le bilinéaire, sortie bornée au minimum et au maximum des quatre points
+// centraux : le dépassement de la cubique sur un trait net est coupé, mais les sur-blancs et les négatifs que
+// la chaîne ne borne qu'à la quantification passent comme sur les images source, C50-08).
 enum class RifeWarp : std::uint8_t { Bilinear, CatmullRom };
 
 // Les poids de Catmull-Rom des points −1, 0, 1, 2 pour une fraction t de [0, 1) ; leur somme vaut 1.
@@ -73,7 +74,9 @@ inline constexpr float kBlendLawC = 0.0F;
 inline constexpr float kMaskEpsilon = 1e-4F;
 
 // Sous ce mouvement maximal, mesuré à 720p et mis à l'échelle de la hauteur où RIFE travaille,
-// une seule passe RIFE sert toute la paire (warp_blend_at aux autres instants).
+// une seule passe RIFE sert toute la paire (warp_blend_at aux autres instants). Compromis de qualité contre
+// du temps dont ni le gain ni la perte ne sont mesurés (valeur reprise d'animejanai-inference-rtx) : voir
+// « Une seule passe RIFE par paire calme » dans docs/interpolation.md, qui donne la mesure à faire.
 inline constexpr float kSingleRunMotion720 = 15.0F;
 
 // Mouvement « maximal » d'une paire : le percentile 99,9 % des déplacements par point (le plus

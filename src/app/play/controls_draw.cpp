@@ -81,8 +81,9 @@ bool round_button(const Pen& pen, const char* id, ImVec2 center, float size) {
 }
 
 void tooltip(std::string_view text) {
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-    ImGui::SetTooltip("%.*s", static_cast<int>(text.size()), text.data());
+  if (!ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) return;
+  const std::string shown = french_spaces(text);  // « : », « % » ne passent pas seuls en début de ligne
+  ImGui::SetTooltip("%s", shown.c_str());
 }
 
 // Bulle de texte centrée sur x, posée au-dessus de bottom, gardée entre min_x et max_x. Au
@@ -131,7 +132,7 @@ float preparing_text_limit(float x0, float x1, bool button, float scale) {
 }
 
 // L'infobulle du bouton lecture/pause avec la touche réellement liée dans [keys] (B24-07) ; les autres
-// infobulles nomment des touches fixes (f, m, a, j, p, Page haut/bas).
+// infobulles nomment des touches fixes (f, m, a, j, p, Page précédente/suivante).
 std::string pause_tooltip(bool paused) {
   const std::optional<core::Chord>& chord = configured_keys().chord(core::Action::TogglePause);
   if (!chord) return std::string(paused ? i18n::tr("Play") : i18n::tr("Pause"));
@@ -140,7 +141,10 @@ std::string pause_tooltip(bool paused) {
   return paused ? i18n::tr_format("Play ({})", shown) : i18n::tr_format("Pause ({})", shown);
 }
 
-void draw_toast(const Controls& controls, float width, float scale, std::int64_t now_us) {
+// C24-07 : en bas, centré, au-dessus de la barre quand elle est là : le haut porte le titre et les lignes de
+// l'OSD (statistiques), qu'un message en haut à droite masquait.
+void draw_toast(const Controls& controls, float width, float height, float bottom, float scale,
+                std::int64_t now_us) {
   const auto toast = controls.toast(now_us);
   if (!toast) return;
   // Typographie française des messages brefs (B43-12) : « : », « % » ne passent pas seuls en début de ligne.
@@ -155,7 +159,8 @@ void draw_toast(const Controls& controls, float width, float scale, std::int64_t
   ImFont* font = ImGui::GetFont();
   const float font_size = ImGui::GetFontSize();
   const ImVec2 size = font->CalcTextSizeA(font_size, FLT_MAX, wrap, text.data(), text.data() + text.size());
-  const ImVec2 p0{width - size.x - 2.0F * pad.x - kPad * scale, kPad * scale};  // en haut à droite
+  const ImVec2 p0{(width - size.x - 2.0F * pad.x) * 0.5F,
+                  height - bottom - size.y - 2.0F * pad.y - kPad * scale};
   list->AddRectFilled(p0, {p0.x + size.x + 2.0F * pad.x, p0.y + size.y + 2.0F * pad.y},
                       black(0.72F * opacity), (font_size + 2.0F * pad.y) * 0.5F);
   list->AddText(font, font_size, {p0.x + pad.x, p0.y + pad.y}, white(opacity), text.data(),
@@ -367,7 +372,7 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     ImGui::PopStyleVar();
   }
   controls.set_held(held);
-  draw_toast(controls, width, s, now_us);
+  draw_toast(controls, width, height, opacity > 0.0F ? controls_height(s) : 0.0F, s, now_us);
   return opacity > 0.0F || controls.toast_opacity(now_us) > 0.0F;
 }
 

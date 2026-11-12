@@ -101,16 +101,29 @@ std::optional<Input> fullscreen_shortcut(const SDL_KeyboardEvent& event) {
   return std::nullopt;
 }
 
+// C24-05 : la touche qui a lancé la rafale de seeks ; le relâchement d'une autre (Maj, Ctrl) n'y met pas fin.
+SDL_Scancode& held_seek_key() {
+  static SDL_Scancode key = SDL_SCANCODE_UNKNOWN;
+  return key;
+}
+
+// Vrai, une fois, au relâchement de la touche de la rafale.
+bool seek_key_released(SDL_Scancode released) {
+  SDL_Scancode& key = held_seek_key();
+  if (key == SDL_SCANCODE_UNKNOWN || key != released) return false;
+  key = SDL_SCANCODE_UNKNOWN;
+  return true;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) {
   // P3.43 : une touche de seek maintenue saute de point clé en point clé ; au relâchement, un seek exact
   // à la position atteinte. Le thread de la fenêtre seul lit les touches.
-  static bool seek_repeated = false;
   if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
     return Command{cmd::Quit{}};
-  if (event.type == SDL_EVENT_KEY_UP && std::exchange(seek_repeated, false))
+  if (event.type == SDL_EVENT_KEY_UP && seek_key_released(event.key.scancode))
     return Command{cmd::SeekRelative{.delta_us = 0, .exact = true}};
   if (event.type != SDL_EVENT_KEY_DOWN) return std::nullopt;
   if (event.key.repeat) {
@@ -129,7 +142,7 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
     if (!command) return std::nullopt;
     if (auto* seek = std::get_if<cmd::SeekRelative>(&*command)) {
       seek->exact = false;
-      seek_repeated = true;
+      held_seek_key() = event.key.scancode;
       return *command;
     }
     if (std::holds_alternative<cmd::StepFrame>(*command)) return *command;

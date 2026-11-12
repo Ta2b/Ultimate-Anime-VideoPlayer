@@ -38,15 +38,25 @@ bool settle_abandoned_threads(std::chrono::milliseconds grace);
 // qui suit la lit aussi.
 bool window_close_requested();
 
+// La clé du refus rendu quand la fenêtre se ferme pendant l'attente : ce n'est ni un échec de l'étage ni
+// « Annuler et regarder », la lecture s'arrête (watch_now, prepare_chain, play).
+inline constexpr std::string_view kWindowClosedKey = "window.closed";
+
+// Combien de temps un travail qui emprunte l'état de l'appelant (run_pumped_borrowing) est encore attendu
+// après la croix, avant d'être laissé à son sort.
+inline constexpr std::chrono::seconds kBorrowGrace{15};
+
 namespace detail {
 
 // Le travail sur un thread, la fenêtre pompée (pump) tant qu'il tourne. Passé limit (s'il y en a un), ou à
 // la fermeture de la fenêtre (closable), le thread est laissé à son sort (abandon_thread : il finira ou
-// restera bloqué sans retenir la fermeture) et le refus le dit.
+// restera bloqué sans retenir la fermeture) et le refus le dit. borrowing : le travail lit l'état de
+// l'appelant, qui ne doit pas disparaître sous lui ; la fermeture est alors attendue jusqu'à kBorrowGrace
+// (la fenêtre reste pompée), et seulement passé ce délai le thread est abandonné.
 template <class T, class Fn>
 std::expected<T, Refusal> run_pumped_until(std::string_view name,
                                            std::optional<std::chrono::milliseconds> limit, bool pump,
-                                           bool closable, Fn fn) {
+                                           bool closable, Fn fn, bool borrowing = false) {
   struct Shared {
     std::mutex mutex;
     std::optional<std::expected<T, Refusal>> result;
@@ -70,16 +80,28 @@ std::expected<T, Refusal> run_pumped_until(std::string_view name,
   if (!started) return std::unexpected(std::move(started.error()));
   constexpr auto kSlice = std::chrono::milliseconds(16);
   const auto from = std::chrono::steady_clock::now();
+  const auto window_closed = [&name] {
+    std::string detail = std::format("{} : fenêtre fermée pendant l'attente", name);  // i18n-ok : journal
+    return std::unexpected(Refusal{
+        .code = RefusalCode::Cancelled, .detail = std::move(detail), .key = std::string(kWindowClosedKey)});
+  };
   bool closed = false;
+  std::optional<std::chrono::steady_clock::time_point> close_seen;
   while (!limit || std::chrono::steady_clock::now() - from < *limit) {
     {
       const std::scoped_lock lock(shared->mutex);
-      if (shared->result) return std::move(*shared->result);
+      // Fini après la croix : le résultat est jeté, la fermeture prime.
+      if (shared->result)
+        return close_seen ? std::expected<T, Refusal>(window_closed()) : std::move(*shared->result);
     }
     if (pump) pump_window_events();
     if (closable && window_close_requested()) {
-      closed = true;
-      break;
+      const auto now = std::chrono::steady_clock::now();
+      if (!close_seen) close_seen = now;
+      if (!borrowing || now - *close_seen >= kBorrowGrace) {
+        closed = true;
+        break;
+      }
     }
     std::this_thread::sleep_for(kSlice);
   }
@@ -87,10 +109,7 @@ std::expected<T, Refusal> run_pumped_until(std::string_view name,
     const std::scoped_lock lock(shared->mutex);
     return shared->result.has_value();
   });
-  if (closed) {
-    std::string detail = std::format("{} : fenêtre fermée pendant l'attente", name);  // i18n-ok : journal
-    return std::unexpected(Refusal{RefusalCode::Cancelled, std::move(detail)});
-  }
+  if (closed) return window_closed();
   const auto seconds = limit->count() / 1000;
   std::string detail = std::format("{} : pas de réponse en {} s", name, seconds);  // i18n-ok : journal
   return std::unexpected(Refusal{RefusalCode::IoFailed, std::move(detail)});
@@ -100,10 +119,21 @@ std::expected<T, Refusal> run_pumped_until(std::string_view name,
 
 // Le travail sur un thread, la fenêtre pompée pendant l'attente. Fermer la fenêtre pendant ce temps
 // (chargement de TensorRT, cuInit bloqué après un TDR) rend Cancelled tout de suite, le thread laissé à son
-// sort (B30-06) : la croix répond, au lieu d'attendre un travail qui peut ne jamais finir.
+// sort (B30-06) : la croix répond, au lieu d'attendre un travail qui peut ne jamais finir. Le thread survit
+// donc à l'appelant : fn ne capture RIEN par référence (copies, ou shared_ptr), sinon il lirait une pile ou
+// un objet détruit. Un travail qui doit emprunter l'état de l'appelant passe par run_pumped_borrowing.
 template <class T, class Fn>
 std::expected<T, Refusal> run_pumped(std::string_view name, Fn fn) {
   return detail::run_pumped_until<T>(name, std::nullopt, true, true, std::move(fn));
+}
+
+// run_pumped pour un travail qui lit des objets de l'appelant (un backend, un artefact) : à la fermeture de
+// la fenêtre le thread est attendu (au plus kBorrowGrace) au lieu d'être abandonné, sinon l'appelant rendrait
+// la main et détruirait ce que le thread lit encore. Un travail qui peut ne jamais finir (cuInit après un
+// TDR) ne doit capturer que des copies et passer par run_pumped.
+template <class T, class Fn>
+std::expected<T, Refusal> run_pumped_borrowing(std::string_view name, Fn fn) {
+  return detail::run_pumped_until<T>(name, std::nullopt, true, true, std::move(fn), true);
 }
 
 // run_pumped borné à limit (P2.15) : un partage réseau muet bloque read() dans le noyau, hors de portée du

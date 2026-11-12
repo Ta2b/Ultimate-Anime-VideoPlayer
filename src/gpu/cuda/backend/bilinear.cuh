@@ -79,6 +79,8 @@ struct CatmullRom {
             static_cast<std::size_t>(t.plane_w) +
         static_cast<std::size_t>(t.ox);
     float sum = 0.0F;
+    float lo = 3.0e38F;  // la sortie reste entre le plus petit et le plus grand des quatre points centraux
+    float hi = -3.0e38F;
 #pragma unroll
     for (int j = 0; j < 4; ++j) {
       const auto yy = static_cast<std::size_t>(min(max(y0 - 1 + j, 0), t.fh - 1));
@@ -86,11 +88,16 @@ struct CatmullRom {
 #pragma unroll
       for (int i = 0; i < 4; ++i) {
         const auto xx = static_cast<std::size_t>(min(max(x0 - 1 + i, 0), t.fw - 1));
-        row += __half2float(p[yy * static_cast<std::size_t>(t.plane_w) + xx]) * wx[i];
+        const float v = __half2float(p[yy * static_cast<std::size_t>(t.plane_w) + xx]);
+        row += v * wx[i];
+        if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
+          lo = fminf(lo, v);
+          hi = fmaxf(hi, v);
+        }
       }
       sum += row * wy[j];
     }
-    return fminf(fmaxf(sum, 0.0F), 1.0F);
+    return fminf(fmaxf(sum, lo), hi);
   }
 };
 
