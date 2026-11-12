@@ -1,5 +1,4 @@
 #include "app/play/player_engines.h"
-#include "app/play/resume.h"
 
 #include <algorithm>
 #include <format>
@@ -26,6 +25,8 @@
 #include "app/play/paths.h"
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
+#include "app/play/resume.h"
+#include "app/play/sleep_watch.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -79,6 +80,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   BuildProgress progress(engine.expected_s, started);
+  const AwakeWhile awake;  // une construction dure des minutes sans touche
   std::vector<Input> actions;
   bool watch_now = false;
   while (true) {
@@ -191,7 +193,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
   note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
-  auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video, p.options.file);
+  auto artifact =
+      wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video, p.options.file);
   if (!artifact) return std::unexpected(std::move(artifact.error()));
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));

@@ -407,9 +407,18 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   if (engines_updated && !relaunched && paths.relaunch != nullptr) {
     // Le module remplacé ne se charge pas sous le même nom dans ce processus : le lecteur repart, et le
     // moteur choisi s'ouvre au lancement suivant sans autre geste.
-    if (std::ofstream(relaunch_marker) << "1\n") log->info("moteurs mis à jour : le lecteur se relance");
-    *paths.relaunch = true;
-    return {};
+    // Le marqueur est la seule garde contre une boucle de relances : sans lui (disque plein, dossier en
+    // lecture seule), pas de relance, le lancement continue (Vulkan prend la suite si le module reste
+    // périmé).
+    std::ofstream marker(relaunch_marker);
+    marker << "1\n";
+    marker.flush();
+    if (marker) {
+      log->info("moteurs mis à jour : le lecteur se relance");
+      *paths.relaunch = true;
+      return {};
+    }
+    log->warn("moteurs mis à jour : marqueur {} non écrit, pas de relance", core::to_utf8(relaunch_marker));
   }
 
   // Lancé sans fichier, l'accueil choisit la vidéo, et il revient à la fin de chacune. Une vidéo
@@ -529,9 +538,18 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
     // Le module chargé a été remplacé sur le disque (moteur mis à jour depuis l'écran des moteurs) : il ne se
     // recharge pas sous le même nom dans ce processus, le lecteur se relance sur cette vidéo.
+    // La position de reprise (resume_from) n'est lue que plus bas : la relance la calcule ici, sinon la vidéo
+    // rouverte repartait de 0:00 (la cible de relance vaut toujours « forcée »).
+    const auto relaunch_start_us = [&] {
+      if (forced_start) return *forced_start;
+      if (file_options.resume && engines->resume_position) {
+        if (const auto at = resume_from(paths::resume(settings_path.parent_path()), file)) return *at;
+      }
+      return file_options.start_us;
+    };
     if (library && library->replaced_on_disk() && paths.relaunch != nullptr) {
       log->info("moteur mis à jour : le lecteur se relance");
-      ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
+      ask_relaunch(paths, file, relaunch_start_us(), forced_paused, RelaunchReason::EngineUpdated);
       return {};
     }
     // Un autre moteur choisi depuis (accueil, Paramètres) : la bibliothèque se rouvre sur lui, sinon le choix
@@ -550,7 +568,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       }
       if (stale_updated && paths.relaunch != nullptr) {
         log->info("moteurs mis à jour : le lecteur se relance");
-        ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
+        ask_relaunch(paths, file, relaunch_start_us(), forced_paused, RelaunchReason::EngineUpdated);
         return {};
       }
       show_loading(**screen, **ui, i18n::ui_tr("Loading"));
@@ -559,7 +577,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       auto opened = open_backend(catalog, paths, *engines, probe);
       if (!opened) {
         if (opened.error().code == RefusalCode::Cancelled) return {};  // fenêtre fermée (B30-06)
-        if (relaunch_after_loss(opened.error(), file, forced_start.value_or(0), forced_paused)) return {};
+        if (relaunch_after_loss(opened.error(), file, relaunch_start_us(), forced_paused)) return {};
         if (scripted) return std::unexpected(std::move(opened.error()));
         // A18-13, B31-09 : la vidéo, choisie à l'accueil ou par double-clic, y ramène avec la raison.
         problem = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(file.filename()),

@@ -84,6 +84,7 @@ constexpr std::array kVisibleTexts{
     Entry{"Ready: ", "Prêt : "},
     Entry{"Rejected: ", "Refusé : "},
     Entry{"Updating {}", "Mise à jour de {}"},
+    Entry{"The folder does not answer", "Le dossier ne répond pas"},
     Entry{"Vulkan for now; install it in Settings > General > Engines",
           "Vulkan pour l'instant ; installez-le dans Paramètres > Général > Moteurs"},
     Entry{"a file could not be read or written", "un fichier n'a pas pu être lu ou écrit"},

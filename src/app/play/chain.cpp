@@ -11,9 +11,10 @@
 #include "app/play/episodes.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/i18n.h"
-#include "app/play/resume.h"
 #include "app/play/look_catalog.h"
 #include "app/play/present_stats.h"
+#include "app/play/pumped_task.h"
+#include "app/play/resume.h"
 #include "app/play/visible_error.h"
 #include "audio/devices.h"
 #include "core/clock.h"
@@ -446,7 +447,18 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); },
           [&](const StepEpisode& step) {
-            const auto neighbour = sibling_episode(to.file, step.direction);
+            // Hors du thread de la fenêtre, borné comme la fin d'épisode : un dossier sur un NAS lent ou
+            // endormi ne fige plus l'image ni l'interface le temps du parcours.
+            constexpr std::chrono::milliseconds kFolderLimit{5000};
+            auto searched = run_pumped_for<std::optional<std::filesystem::path>>(
+                "next-episode", kFolderLimit, true,
+                [file = to.file, direction = step.direction] { return sibling_episode(file, direction); });
+            if (!searched) {
+              log_channel("app")->warn("épisode voisin : {}", searched.error().detail);
+              controls.notify(i18n::ui_tr("The folder does not answer"), now_us);
+              return;
+            }
+            const std::optional<std::filesystem::path> neighbour = std::move(*searched);
             if (!neighbour) {
               controls.notify(step.direction > 0 ? i18n::ui_tr("No next episode in this folder")
                                                  : i18n::ui_tr("No previous episode in this folder"),

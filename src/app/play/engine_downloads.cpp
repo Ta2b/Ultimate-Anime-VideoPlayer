@@ -20,6 +20,7 @@
 #include "app/play/i18n.h"
 #include "app/play/player_engines.h"
 #include "app/play/pumped_task.h"
+#include "app/play/sleep_watch.h"
 #include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -69,6 +70,7 @@ std::optional<std::expected<void, Refusal>> run_install(PlaceboScreen& screen, P
   DeferredDrops drops;  // une vidéo envoyée par un second lancement pendant l'installation (B29-04)
   // « Annuler et regarder » : le téléchargement s'arrête (le thread rend la main vite, il lit le jeton), la
   // vidéo se lit sans ce moteur, l'ancien paquet gardé ou Vulkan. Fermer la fenêtre reste une sortie.
+  const AwakeWhile awake;  // 650 Mo à tirer : l'écran ne s'éteint pas en route
   bool watch_now = false;
   bool cancelling = false;
   while (true) {

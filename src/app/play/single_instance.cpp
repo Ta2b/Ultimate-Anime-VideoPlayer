@@ -10,6 +10,7 @@
 #include <mutex>
 #include <optional>
 #include <stop_token>
+#include <system_error>
 #include <thread>
 #include <utility>
 
@@ -477,7 +478,14 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
         listener->start();
         return {.forwarded = false, .listener = std::move(listener)};
       }
-      if (errno != EADDRINUSE) return {};
+      // Système de fichiers sans sockets (exFAT, NTFS monté), quota, droits : sans trace, deux fenêtres
+      // s'ouvraient sans que rien au journal n'explique pourquoi.
+      const int failure = errno;
+      if (failure != EADDRINUSE) {
+        log_channel("app")->warn("instance : socket {} impossible ({}), pas d'instance unique",
+                                 core::to_utf8(path), std::generic_category().message(failure));
+        return {};
+      }
     }
   } catch (...) {  // NOLINT(bugprone-empty-catch) : sans instance unique, le lecteur démarre quand même
   }

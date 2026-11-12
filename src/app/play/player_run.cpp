@@ -752,6 +752,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
   session.end();
   out.flush();
+  // Le démontage qui suit se compte en secondes (jointure des fils, attente du GPU, moteurs TensorRT) :
+  // fenêtre visible et figée, Windows la marque « Ne répond pas » au bout de cinq secondes. La croix la cache
+  // d'abord (l'image figée ne reste pas) ; une réouverture montre « Chargement » au lieu d'une image qui ne
+  // répond plus.
+  if (session.quit_asked() && !reopen) {
+    SDL_HideWindow(out.window());
+    SDL_SyncWindow(out.window());
+  } else if (reopen) {
+    show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
+  }
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
   // A31-16 : un refus fatal vu d'abord ailleurs (NVDEC au réveil, l'écran) sur un appareil mort : le backend

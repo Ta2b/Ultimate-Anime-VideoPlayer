@@ -32,6 +32,7 @@
 #include "app/play/pumped_task.h"
 #include "app/play/scripted_input.h"
 #include "app/play/settings.h"
+#include "app/play/sleep_watch.h"
 #include "app/play/updater.h"
 #include "app/play/user_keys.h"
 #include "app/play/wizard.h"
@@ -184,6 +185,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     log->warn("calibration de la machine : {}", worker.error().detail);
     return base;
   }
+  const AwakeWhile awake;  // jusqu'à vingt minutes sans toucher à rien
   bool watch_now = false;
   bool show_failed = false;  // l'échec de l'affichage est déjà journalisé
   std::vector<Input> ignored;
