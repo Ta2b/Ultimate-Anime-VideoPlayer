@@ -257,7 +257,6 @@ void apply_oled_care(Chain& to, const PlaySettings& s) {
 void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) {
   PlaySettings s = wanted;
   s.grade_values.scene_light = to.scene_light;
-  s.grade_values.anime_exposure = to.anime_e;
   s.grade_values.series_apl_nits = to.anime_series_apl;
   s.grade_values.skin_tones = wanted.face_skin ? to.skin_tones : render::SkinTones{};
   to.series_apl_sent = to.anime_series_apl;
@@ -301,11 +300,10 @@ bool take_skins(Chain& to, const ShotScene& scene, bool planned) {
 }
 
 // La lumière de la scène pour le grade en trois passes : envoyée quand elle change vraiment (light_moved), au
-// plus tous les dixièmes de seconde, sauf à une coupe. Sous --anime-shots (méga plan A2), un plan de la
-// pré-analyse fixe aussi l'exposition de la méthode « HDR anime » ; l'une et l'autre changent à la coupe et
-// glissent hors coupe (anime_shots.h), avec le même seuil et la même cadence (B42-08 : un fondu
-// reconstruisait le grade à chaque image). B38-14 : en sortie HDR, la lumière de la scène et l'exposition par
-// plan sont effacées (render::steady_hdr) : rien à calculer ni à renvoyer, sauf la série des noirs profonds
+// plus tous les dixièmes de seconde, sauf à une coupe. Sous --anime-shots (méga plan A2), celle d'un plan de
+// la pré-analyse change à la coupe et glisse hors coupe (anime_shots.h), avec le même seuil et la même
+// cadence (B42-08 : un fondu reconstruisait le grade à chaque image). B38-14 : en sortie HDR, la lumière de
+// la scène est effacée (render::steady_hdr) : rien à calculer ni à renvoyer, sauf la série des noirs profonds
 // quand elle change.
 void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t now_us, bool cut,
                 bool planned) {
@@ -313,29 +311,24 @@ void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t n
   if (take_skins(to, *scene, planned)) set_grade(to, to.running, true);
   if (to.screen.hdr_output()) {
     to.scene_light.reset();  // revenue en SDR, la sortie reçoit aussitôt la lumière de sa scène
-    to.anime_e = 0.0;
     if (std::abs(to.anime_series_apl - to.series_apl_sent) > 0.01 * std::max(to.series_apl_sent, 1.0))
       set_grade(to, to.running, true);
     return;
   }
   render::SceneLight light = scene->light;
   if (to.anime_shots && planned) {
-    to.anime_glide.aim({.e = anime_exposure(light.apl_nits, to.anime_series_apl), .light = light}, now_us,
-                       cut);
+    to.anime_glide.aim({.light = light}, now_us, cut);
     const AnimeShotLook shown = to.anime_glide.at(now_us);
     // Le glissé fini : sa valeur exacte part, même sous le seuil.
-    const bool settled = !to.anime_glide.gliding(now_us) &&
-                         (shown.e != to.anime_e || !to.scene_light || shown.light != *to.scene_light);
-    const bool moved = std::abs(shown.e - to.anime_e) > 0.005 || !to.scene_light ||
-                       light_moved(shown.light, *to.scene_light) || settled;
+    const bool settled =
+        !to.anime_glide.gliding(now_us) && (!to.scene_light || shown.light != *to.scene_light);
+    const bool moved = !to.scene_light || light_moved(shown.light, *to.scene_light) || settled;
     if (!moved || (!cut && to.scene_light && now_us - to.scene_light_at_us < kSceneLightEveryUs)) return;
-    to.anime_e = shown.e;
     to.scene_light = shown.light;
     to.scene_light_at_us = now_us;
     set_grade(to, to.running, true);
     return;
   }
-  to.anime_e = 0.0;  // sans plan analysé : le relèvement fixe
   if (to.scene_light) {
     const bool moved = light_moved(light, *to.scene_light);
     if (!moved || (!cut && now_us - to.scene_light_at_us < kSceneLightEveryUs)) return;

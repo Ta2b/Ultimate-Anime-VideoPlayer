@@ -33,17 +33,6 @@ render::GradeContext pq_context() {
 
 }  // namespace
 
-TEST_CASE("anime par plan : l'exposition suit la règle de la courbe par plan, bornée", "[app][anime]") {
-  CHECK(anime_exposure(40.0, 0.0) == 0.0);
-  CHECK(anime_exposure(0.0, 40.0) == 0.0);
-  CHECK(anime_exposure(40.0, 40.0) == Approx(0.0));
-  // Audit F3 : les surfaces restent ancrées, ±5 % au plus d'un plan à l'autre (|E| ≤ 0,07).
-  CHECK(anime_exposure(36.0, 40.0) == Approx(-render::kAnimeExposureSlope * std::log2(0.9)));
-  CHECK(anime_exposure(20.0, 40.0) == Approx(kAnimeSurfaceMaxE));
-  CHECK(anime_exposure(160.0, 40.0) == Approx(-kAnimeSurfaceMaxE));
-  CHECK(std::exp2(kAnimeSurfaceMaxE) <= 1.05 + 1e-9);
-}
-
 TEST_CASE("anime par plan : la série est la médiane des APL connues", "[app][anime]") {
   CHECK(series_apl_of({}) == 0.0);
   CHECK(series_apl_of({shot_of(10.0F), shot_of(0.0F), shot_of(80.0F), shot_of(30.0F)}) == Approx(30.0));
@@ -52,8 +41,8 @@ TEST_CASE("anime par plan : la série est la médiane des APL connues", "[app][a
 TEST_CASE("anime par plan : une coupe change à l'image de coupe, sans glissé après elle", "[app][anime]") {
   AnimeGlide glide;
   CHECK_FALSE(glide.known());
-  const AnimeShotLook dark{.e = 0.07, .light = {.apl_nits = 10.0, .lit = 0.0}};
-  const AnimeShotLook bright{.e = -0.07, .light = {.apl_nits = 90.0, .lit = 0.4}};
+  const AnimeShotLook dark{.light = {.apl_nits = 10.0, .lit = 0.0}};
+  const AnimeShotLook bright{.light = {.apl_nits = 90.0, .lit = 0.4}};
   glide.aim(dark, 1'000'000, true);  // le premier plan
   CHECK(glide.at(1'000'000) == dark);
   CHECK_FALSE(glide.gliding(1'000'000));
@@ -77,23 +66,20 @@ TEST_CASE("anime par plan : une coupe change à l'image de coupe, sans glissé a
   CHECK_FALSE(glide.gliding(2'500'000));
 }
 
-TEST_CASE("anime par plan : l'exposition relève les surfaces du grade, rien sans elle", "[app][anime]") {
+// C41-01 : l'exposition par plan est retirée ; les surfaces gardent le même relèvement quelle que soit la
+// lumière du plan.
+TEST_CASE("anime par plan : les surfaces gardent le relèvement fixe, quelle que soit la scène",
+          "[app][anime]") {
   render::GradeSettings s;
-  s.scene_light = render::SceneLight{.apl_nits = 30.0, .lit = 0.1};
-  const auto plain = render::decide_grade(s, pq_context());
-  REQUIRE(plain.has_value());
-  CHECK(plain->params.an_lift == Approx(render::kAnimeLift));
-  s.anime_exposure = 0.25;
-  const auto lifted = render::decide_grade(s, pq_context());
-  REQUIRE(lifted.has_value());
-  CHECK(lifted->params.an_lift == Approx(render::kAnimeLift * std::exp2(0.25)));
-  s.anime_exposure = -3.0;  // borné
-  const auto low = render::decide_grade(s, pq_context());
-  REQUIRE(low.has_value());
-  CHECK(low->params.an_lift == Approx(render::kAnimeLift * std::exp2(-render::kAnimeExposureMaxE)));
+  for (const double apl : {5.0, 30.0, 150.0}) {
+    s.scene_light = render::SceneLight{.apl_nits = apl, .lit = 0.1};
+    const auto decision = render::decide_grade(s, pq_context());
+    REQUIRE(decision.has_value());
+    CHECK(decision->params.an_lift == render::kAnimeLift);
+  }
 }
 
-TEST_CASE("anime par plan : en HDR, la luminosité ne suit ni le plan ni la scène ; en SDR, si",
+TEST_CASE("anime par plan : en HDR, la luminosité ne suit ni le plan ni la scène ; en SDR, la marge seule",
           "[app][anime]") {
   // Retour d'essai de la rc.4 : l'exposition par plan et la marge des éclats selon la scène, amplifiées par
   // la pile de LUT, faisaient sauter un même décor d'un plan à l'autre. La dalle limite les scènes claires.
@@ -103,15 +89,15 @@ TEST_CASE("anime par plan : en HDR, la luminosité ne suit ni le plan ni la scè
   REQUIRE(still.pq.has_value());
   REQUIRE(still.sdr_anime.has_value());
   s.grade_values.scene_light = render::SceneLight{.apl_nits = 150.0, .lit = 0.6};  // une scène très claire
-  s.grade_values.anime_exposure = -0.25;
   const render::GradeChoice bright = grade_of(s, 1000);
   REQUIRE(bright.pq.has_value());
   REQUIRE(bright.sdr_anime.has_value());
   CHECK(bright.pq->an_lift == Approx(render::kAnimeLift));
   CHECK(bright.pq->fs_apl < 0.0);  // clé inconnue : la marge des éclats au pic
   CHECK(*bright.pq == *still.pq);
-  // La sortie SDR garde sa courbe par plan.
-  CHECK(bright.sdr_anime->an_lift < still.sdr_anime->an_lift);
+  // La sortie SDR garde la marge des éclats par plan ; ses surfaces ne bougent pas (C41-01).
+  CHECK(bright.sdr_anime->an_lift == still.sdr_anime->an_lift);
+  CHECK(bright.sdr_anime->tm_white == still.sdr_anime->tm_white);
   CHECK(bright.sdr_anime->tm_top < still.sdr_anime->tm_top);
 }
 

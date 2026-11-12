@@ -26,10 +26,15 @@ la dernière passe (`anime-hdr-black.hook`, réglée par `src/render/output_tune
   qui faisait sauter un même décor entre un gros plan sombre et un plan large clair. Plus de limiteur de
   scène : la marge des éclats ne tombe plus à la moitié du pic dans une scène claire, la dalle limite
   elle-même. Les deux se déclenchaient bien plus souvent depuis que les coupes de l'animation tenue sont
-  trouvées (#676). La sortie SDR garde sa courbe par plan (`steady_hdr`, `render/grade_params.h`). Restent
+  trouvées (#676). La sortie SDR garde sa marge des éclats par plan (`steady_hdr`, `render/grade_params.h`). Restent
   adaptatifs : les lumières décidées zone par zone, et les noirs profonds selon la série. Piste si une scène
   paraît trop sombre ou trop claire : une exposition par décor (une suite de plans du même lieu), glissée
   lentement d'un décor à l'autre.
+- **Exposition par plan retirée aussi en SDR (Tatoub, 12/11/2026, audit C41-01).** En sortie SDR, la courbe
+  vers le SDR ramenait le blanc des surfaces (`tm_white`) avec l'exposition du plan et l'annulait : elle ne
+  changeait rien. Plutôt que de la rendre visible (les mêmes sauts qu'en HDR), elle est retirée partout. Les
+  surfaces gardent le relèvement fixe (`kAnimeLift`, 1,15) ; la marge des éclats (`tm_top`) suit toujours le
+  plan.
 - **MaxFALL annoncé** : le blanc des surfaces réellement rendu (une image toute blanche), ou la moyenne
   plein écran du contrat d'écran quand il la connaît.
 - **Noirs (décision 17 du 09/11/2026).** Le noir pur reste un vrai noir : 0 sous RVB 4. Au-dessus, la LUT de
@@ -86,16 +91,15 @@ Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) res
 | Étape | Drapeau | Ce qui change | État |
 | --- | --- | --- | --- |
 | A1 | `--hdr-anime` | La carte des émetteurs, portes tirées des gains réels de `decide_grade` | fait |
-| A2 | `--anime-shots` | Exposition des surfaces et marge des éclats fixées par plan (pré-analyse), posées à l'image de coupe, sans glissé (un changement à la coupe ne se voit pas ; `app/play/anime_shots.h`) | codé, à mesurer |
+| A2 | `--anime-shots` | Marge des éclats fixée par plan (pré-analyse, sortie SDR), posée à l'image de coupe, sans glissé (un changement à la coupe ne se voit pas ; `app/play/anime_shots.h`) | codé, à mesurer |
 | A3 | `--anime-guided` | Carte locale lue par un sur-échantillonnage bilatéral joint guidé par le pixel : le halo ne déborde plus | codé, à mesurer |
 | A4 | aucun | Visages : cascade LBP (lbpcascade_animeface), doublons, palette de peau par plan (`media/faces.h`, `media/face_cascade.h`) | branché derrière `face_skin`, éteint par défaut (« Peau des visages ») |
 | A6 | aucun | Réseau des émetteurs : étiquettes (port numpy de A5), jeu de données, entraînement et export ONNX (`tools/grade/emitters/`) | scripts écrits, entraînement plus tard |
 | A5 | aucun | Mesures d'émetteurs v2, référence CPU (`render/emitters.h`) : pixel, bloc, couronne ; néon admis | codé, juge et étiquettes |
 
 ## A2 : décisions par plan
-L'exposition suit la règle de la courbe par plan (`render/curve.h`) : 0,25 diaphragme par diaphragme
-d'APL du plan rapportée à la médiane de la série, bornée à ±0,25. Sans plan analysé, le relèvement reste
-fixe (1,15).
+La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
+relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).
 
 ## A3 : écarts au plan
 Le lissage temporel existait déjà sur la carte de zone (`2-area.hook`). Tout le grade se fait à l'écran.

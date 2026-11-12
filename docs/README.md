@@ -42,7 +42,7 @@ prendre pour l'état du code.
 | Retiré | Quand | Ce qui le remplace |
 |---|---|---|
 | RTX HDR, Maxine, émulation TrueHDR | ADR 0001, PR #530 | le grade HDR anime seul |
-| HDR adaptatif et sa calibration | PR #530 | le grade HDR anime (lumière fixe en HDR, courbe par plan en SDR) |
+| HDR adaptatif et sa calibration | PR #530 | le grade HDR anime (lumière fixe en HDR, marge des éclats par plan en SDR) |
 | Profils (Ctrl+1 à 9, profil de démarrage) | PR #531 | `play.toml` garde la dernière chaîne ; `user.toml` ne garde que `[keys]` |
 | Méthode HDR (bouton, écran de l'assistant, `hdr.engine`) | PR #532 | `system_hdr` (`src/app/play/host_facts.h`) |
 | Ancien arbre en cinq catégories | PR #533 | Vidéo, Audio et lecture, Général ([ADR 0012](adr/0012-lecteur-simple.md)) |
