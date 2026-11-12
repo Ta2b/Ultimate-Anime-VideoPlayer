@@ -533,7 +533,7 @@ std::string play_usage(bool debug) {
       "  --first-run            welcome screen (engines), even if already seen\n"
       "  --keys=S:key,…         keys pressed automatically (tests), e.g. 3:Right,5:Space;\n"
       "                         export or export=FILE.mkv (or .mp4, .mov) starts exporting\n"
-      "                         the current chain\n"
+      "                         the current chain (export-lossless=FILE.mkv: lossless FFV1)\n"
       "  --work-height=N        shrinks the source to N lines before SPAN (default: the preset's; 0 never)\n"
       "  --rife=N               ×N interpolation (1.5, 2 to 10; default: the preset's; 0 none)\n"
       "  --rife-model=FILE      RIFE model (default: the preset's, {} without one)\n"

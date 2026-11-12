@@ -33,6 +33,7 @@
 #include "core/gpu_device.h"
 #include "core/ring.h"
 #include "core/sample_reservoir.h"
+#include "render/anime4k.h"
 #include "render/grade.h"
 #include "render/sharpen.h"
 #include "subs/subtitle_frame.h"
@@ -139,6 +140,13 @@ struct PlaceboScreen::Impl {
   void open_shader_cache(const std::filesystem::path& file);
   void save_shader_cache();
   std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target) const;
+  // Les hooks de l'image vidéo, dans leur ordre (Anime4K, netteté, grade) ; leur nombre.
+  std::size_t video_hooks(std::array<const pl_hook*, 16>& hooks, const pl_frame* image,
+                          bool graded_now) const;
+  // Une passe rendue (rappel de libplacebo) : son temps GPU, compté à l'affichage, au grade ou à Anime4K.
+  void note_pass(const pl_dispatch_info& pass) const;
+  // Les temps de la dernière composition d'une image vidéo, gardés pour le profil de fin de séance.
+  void keep_pass_times(bool graded_now) const;
   // La composition gardée (ShowRequest::redraws_expected) : vidéo et sous-titres composés dans `composed`
   // quand la clé change, puis recopiés dans la cible. false : la cible ne se prête pas à la copie, rien n'est
   // dessiné et la composition directe s'impose.
@@ -239,6 +247,14 @@ struct PlaceboScreen::Impl {
   bool frame_debanded = false;  // l'image montrée a été débandée avant SPAN (RingFrame::debanded, P3.56)
   int sharpness = 0;            // posé par set_finish, 0 à 100 %
   std::optional<render::Sharpen> sharpen;  // absent si le hook ne se lit pas (dit au journal)
+  // Anime4K de la chaîne ouverte (set_anime4k) : ses shaders passent devant la netteté et le grade.
+  std::optional<render::Anime4k> anime4k;
+  // La clé de composition d'Anime4K : 0 sans lui, sinon 1 + son choix.
+  int anime4k_key() const {
+    if (!anime4k) return 0;
+    const render::Anime4kChoice c = anime4k->choice();
+    return 1 + (static_cast<int>(c.size) * 3) + static_cast<int>(c.mode);
+  }
   // Augmenté à chaque changement de ce que le grade applique (app/play/compose_key.h) : paramètres, looks,
   // KWin, couleur de la source, nouvelle scène.
   std::uint64_t grade_serial = 0;
@@ -270,6 +286,8 @@ struct PlaceboScreen::Impl {
   std::optional<RampMeasure> last_ramp;
   std::vector<render::CubeLut> ramp_looks;  // la pile posée sur ramp_grade (size 0 : aucune)
   mutable std::uint64_t grade_frame_ns = 0;
+  mutable std::uint64_t anime4k_frame_ns = 0;  // les passes d'Anime4K de la dernière composition
+  mutable core::SampleReservoir<std::uint32_t> anime4k_gpu_us{std::size_t{1} << 20};
   mutable std::uint64_t display_frame_ns = 0;  // toutes les passes de l'affichage, de la dernière composition
   // Le profil GPU du grade : un échantillon uniforme sur toute la lecture au-delà de 2^20 images (A33-05).
   mutable core::SampleReservoir<std::uint32_t> grade_gpu_us{std::size_t{1} << 20};

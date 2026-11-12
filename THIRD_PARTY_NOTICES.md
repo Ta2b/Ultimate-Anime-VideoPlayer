@@ -48,6 +48,34 @@ FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous
 ## ArtCNN C4F32 (modèle livré depuis la 0.10.2) et C4F16
 ArtCNN, © 2024 João Chrisóstomo, licence MIT (texte dans `tools/upscale/models/ArtCNN-LICENSE.txt`, à joindre à toute redistribution des modèles `2x_ArtCNN_C4F32_rgb_fp16.onnx` et `2x_ArtCNN_C4F16_rgb_fp16.onnx`).
 
+## Anime4K (shaders embarqués)
+Anime4K, © 2019-2021 bloc97, licence MIT. Neuf shaders GLSL de mpv (commit `7684e95`, `third_party/anime4k/`),
+embarqués tels quels dans le lecteur pour l'agrandissement Anime4K (Vidéo > Modèle). https://github.com/bloc97/Anime4K
+
+```
+MIT License
+
+Copyright (c) 2019 bloc97
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Moteurs facultatifs téléchargés depuis l'écran de bienvenue
 MoltenVK (Apache-2.0) sur Mac. TensorRT, CUDA et cuDNN sont sous les licences propriétaires de NVIDIA, que l'utilisateur accepte à l'écran avant le téléchargement.
 

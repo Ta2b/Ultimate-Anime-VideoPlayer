@@ -160,6 +160,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "chain_hdr.cpp",
                                         "chain_shots.cpp",
                                         "chain_setup.cpp",
+                                        "chain_upscaler.cpp",
                                         "chapters.cpp",
                                         "drba_fused_choice.cpp",
                                         "rife_fused_choice.cpp",
