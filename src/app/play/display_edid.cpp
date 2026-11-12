@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <filesystem>
 #include <format>
@@ -213,7 +214,9 @@ std::optional<render::Chromaticities> edid_primaries(std::span<const std::uint8_
   const std::uint8_t low_rg = base[0x19];
   const std::uint8_t low_bw = base[0x1A];
   const auto at = [&](std::size_t high, std::uint8_t low, unsigned shift) {
-    return static_cast<double>((static_cast<unsigned>(base[high]) << 2U) | ((low >> shift) & 0x03U)) / 1024.0;
+    return static_cast<double>((static_cast<unsigned>(base[high]) << 2U) |
+                               (static_cast<unsigned>(low >> shift) & 0x03U)) /
+           1024.0;
   };
   const render::Chromaticities c{.rx = at(0x1B, low_rg, 6),
                                  .ry = at(0x1C, low_rg, 4),
@@ -405,7 +408,10 @@ class DrmOutput {
     if (dash == std::string::npos) return std::nullopt;
     const std::string connector_text = first_line(dir / "connector_id");
     if (connector_text.empty()) return std::nullopt;
-    const auto connector = static_cast<std::uint32_t>(std::strtoul(connector_text.c_str(), nullptr, 10));
+    std::uint32_t connector = 0;
+    if (std::from_chars(connector_text.data(), connector_text.data() + connector_text.size(), connector).ec !=
+        std::errc{})
+      return std::nullopt;
     const int fd = ::open(("/dev/dri/" + name.substr(0, dash)).c_str(), O_RDONLY | O_CLOEXEC);
     if (fd < 0) return std::nullopt;
     return DrmOutput(fd, connector);

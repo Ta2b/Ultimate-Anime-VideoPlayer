@@ -22,6 +22,8 @@ function Pinned([string]$Name) {
   return $line.Matches[0].Groups[1].Value
 }
 $Series = Pinned "CUDA_REDIST_SERIES"
+$CudaPinned = Pinned "CUDA_REDIST_VERSION"
+$ManifestExpected = Pinned "CUDA_REDIST_MANIFEST_SHA256"
 $TrtUrl = Pinned "TENSORRT_WINDOWS_URL"
 $TrtExpected = Pinned "TENSORRT_WINDOWS_SHA256"
 
@@ -30,14 +32,15 @@ $Dir = (Resolve-Path $Dir).Path
 $Downloads = Join-Path $Dir "downloads"
 New-Item -ItemType Directory -Force -Path $Downloads | Out-Null
 
-# --- Le kit CUDA : le dernier manifeste redistrib_<série>.<n>.json. ---
+# --- Le kit CUDA : le manifeste redistrib_<version>.json épinglé (versions.env), par son empreinte. ---
 $Redist = "https://developer.download.nvidia.com/compute/cuda/redist"
-$index = (Invoke-WebRequest -Uri "$Redist/" -UseBasicParsing).Content
-$releases = [regex]::Matches($index, "redistrib_($([regex]::Escape($Series))\.\d+)\.json") |
-  ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique { [version]$_ }
-if (-not $releases) { throw "aucun manifeste CUDA $Series dans $Redist" }
-$Cuda = @($releases)[-1]
-$Manifest = Invoke-RestMethod -Uri "$Redist/redistrib_$Cuda.json"
+if (-not $CudaPinned.StartsWith("$Series.")) { throw "CUDA $CudaPinned hors de la série $Series" }
+$Cuda = $CudaPinned
+$ManifestFile = Join-Path $Downloads "redistrib_$Cuda.json"
+Invoke-WebRequest -Uri "$Redist/redistrib_$Cuda.json" -OutFile $ManifestFile -UseBasicParsing
+$ManifestSha = (Get-FileHash $ManifestFile -Algorithm SHA256).Hash.ToLower()
+if ($ManifestSha -ne $ManifestExpected) { throw "manifeste CUDA $Cuda : empreinte $ManifestSha, attendue $ManifestExpected" }
+$Manifest = Get-Content $ManifestFile -Raw | ConvertFrom-Json
 Write-Host "CUDA $Cuda (manifeste redistrib_$Cuda.json)"
 
 $CudaRoot = Join-Path $Dir "cuda"

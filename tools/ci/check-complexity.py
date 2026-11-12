@@ -5,25 +5,48 @@ Les fonctions qui dépassent déjà sont listées dans complexity-baseline.txt a
 que baisser. Une nouvelle fonction au-delà des bornes, ou une fonction listée qui grossit, est refusée. Une
 fonction découpée sous les bornes se retire de la liste (--update la réécrit).
 """
+import csv
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BASELINE = os.path.join(os.path.dirname(__file__), "complexity-baseline.txt")
 MAX_CCN, MAX_LENGTH = 25, 120
 
 
-def measure():
-    out = subprocess.run([sys.executable, "-m", "lizard", "--csv", "-l", "cpp", "src"], cwd=ROOT, check=True,
+def lizard_rows(root, targets):
+    out = subprocess.run([sys.executable, "-m", "lizard", "--csv", "-l", "cpp", *targets], cwd=root, check=True,
                          capture_output=True, text=True).stdout
-    found = {}
     for line in out.splitlines():
         # NLOC, CCN, token, PARAM, length, location, file, function, long_name, start, end
-        cells = next(iter(__import__("csv").reader([line])))
-        if len(cells) < 9:
-            continue
-        ccn, length, path, name = int(cells[1]), int(cells[4]), cells[6], cells[7]
+        cells = next(iter(csv.reader([line])))
+        if len(cells) >= 9:
+            yield int(cells[1]), int(cells[4]), cells[6], cells[7]
+
+
+def cuda_rows():
+    """Les .cu et .cuh de src/ (les noyaux TensorRT), que lizard ne lit pas sous leur extension : copiés en .cpp
+    dans un dossier temporaire qui garde les chemins, mesurés, puis renommés comme à l'origine (B28-06)."""
+    files = subprocess.run(["git", "ls-files", "-z", "--", "src/*.cu", "src/*.cuh"], cwd=ROOT, check=True,
+                           capture_output=True, text=True).stdout.split("\0")
+    files = [f for f in files if f]
+    if not files:
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        for f in files:
+            dest = os.path.join(tmp, f + ".cpp")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copyfile(os.path.join(ROOT, f), dest)
+        for ccn, length, path, name in lizard_rows(tmp, ["src"]):
+            yield ccn, length, path.removesuffix(".cpp"), name
+
+
+def measure():
+    found = {}
+    for ccn, length, path, name in [*lizard_rows(ROOT, ["src"]), *cuda_rows()]:
         if ccn > MAX_CCN or length > MAX_LENGTH:
             key = f"{os.path.relpath(path, ROOT) if os.path.isabs(path) else path}\t{name}"
             prev = found.get(key)
