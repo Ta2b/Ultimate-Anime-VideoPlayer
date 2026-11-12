@@ -502,7 +502,9 @@ std::filesystem::path open_journal(const std::filesystem::path& home, const std:
   ajp::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
   log_open() = true;
   if (logs_to_file) {
-    spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
+    // Un plantage dans un pilote ne vide rien (pas de vidage sûr depuis un signal) : un quart de seconde au
+    // plus de perdu, l'étage qui tournait reste au journal (C20-03).
+    spdlog::flush_every(std::chrono::milliseconds(250));
     ajp::log_channel("app")->info("journal : {} · ajp {}", ajp::core::to_utf8(log_file.filename()),
                                   ajp::app::play::installed_version());
   } else if (!log_file.empty()) {

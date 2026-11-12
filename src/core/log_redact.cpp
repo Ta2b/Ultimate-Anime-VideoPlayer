@@ -106,6 +106,10 @@ bool is_separator(char c) {
   return c == '/' || c == '\\';
 }
 
+bool is_digit(char c) {
+  return c >= '0' && c <= '9';
+}
+
 // Ce qui peut précéder un chemin : le début, un blanc, une ponctuation d'ouverture ou de liaison, ou un
 // caractère hors ASCII (flèche, espace insécable : ses octets valent 0x80 et plus). Liste large exprès : un
 // chemin non reconnu part en clair, avec le nom d'utilisateur, dans une issue publique (B19-05, B39-07).
@@ -154,7 +158,14 @@ std::size_t path_end(std::string_view text, std::size_t at) {
     if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
         rest.starts_with("; "))
       break;
-    if (opener == '(' && c == ')') break;
+    if ((opener == '(' && c == ')') || (opener == '\'' && c == '\'')) break;
+    // « ep.mkv (24000/1001 fps) » : la parenthèse ouverte après un blanc commente le chemin, sauf si elle
+    // ferme sur un séparateur (« Anime (2020)/ep.mkv », un nom de dossier) (C20-01).
+    if (rest.starts_with(" (")) {
+      const std::size_t close = rest.find(')');
+      if (close == std::string_view::npos || close + 1 >= rest.size() || !is_separator(rest[close + 1]))
+        break;
+    }
     if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
     ++end;
   }
@@ -245,7 +256,9 @@ std::string reduce_log_paths(std::string_view text) {
     std::size_t last = std::string_view::npos;
     std::size_t separators = 0;
     for (std::size_t i = at; i < end; ++i) {
-      if (is_separator(text[i])) {
+      // « 3/4 », « 16/9 » : une fraction après le nom n'est pas son dossier (C20-01).
+      const bool fraction = i > at && i + 1 < end && is_digit(text[i - 1]) && is_digit(text[i + 1]);
+      if (is_separator(text[i]) && !fraction) {
         last = i;
         ++separators;
       }

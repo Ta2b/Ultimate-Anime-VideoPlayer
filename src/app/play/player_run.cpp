@@ -525,7 +525,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   SleepWatch sleep_watch;
   SleepNotice sleep_notice(&LoopWake::push, &wake);  // B31-01 : la veille dite avant
   bool sleep_announced = false;
-  bool lost_paused = false;  // C31-01 : la veille a mis en pause avant la perte du GPU
+  bool lost_paused = false;          // C31-01 : la veille a mis en pause avant la perte du GPU
   const WindowEvents window_events;  // B31-13 : la barre de titre tenue sous Windows n'est pas une veille
   ScreenSaverHold screen_saver;      // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
@@ -619,8 +619,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     ui_frame.changed |= snapshot_now;
     for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
     if (settings_save_due(writer, p.ui, chain.dirty, saved_at, host_now_us())) {  // B31-08, B36-01
-      writer.post("play.toml",
-                  [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
+      writer.post("play.toml", [path = p.settings_path, saved = saved_settings(),
+                                ticket = settings_ticket()] { return save_settings(path, saved, ticket); });
       chain.dirty = false;
       saved_at = host_now_us();
     }
@@ -649,8 +649,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   screen_saver.want(false);
   if (chain.dirty) {
-    writer.post("play.toml",
-                [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
+    writer.post("play.toml", [path = p.settings_path, saved = saved_settings(), ticket = settings_ticket()] {
+      return save_settings(path, saved, ticket);
+    });
   }
   remember();
   stats_sink.reset();

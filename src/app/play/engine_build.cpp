@@ -7,6 +7,7 @@
 #include "app/play/bench_events.h"
 #include "core/file_sync.h"
 #include "core/thread.h"
+#include "core/thread_role.h"
 
 namespace ajp::app::play {
 
@@ -39,6 +40,7 @@ std::expected<std::unique_ptr<EngineBuild>, Refusal> EngineBuild::start(EngineRe
         if (wake != nullptr) wake(context);
       }),
       [self, request = std::move(request)](const std::stop_token& stop, const ThreadReport&) mutable {
+        set_thread_role(ThreadRole::Background);  // une reconstruction ne concurrence pas le rendu (C20-06)
         self->run(stop, request);
       });
   if (!thread) return std::unexpected(std::move(thread.error()));

@@ -2,6 +2,7 @@
 // (format_settings, save_settings). Les valeurs lues passent par validate() (settings.cpp).
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -529,7 +530,52 @@ std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& 
   return parse_settings_lenient(**text);
 }
 
+namespace {
+
+// L'ordre des écritures de play.toml (C30-03) : le fil « écriture » et le thread principal écrivent le même
+// fichier. Une écriture n'a lieu que sous ce verrou, et jamais par-dessus un instantané plus récent.
+struct SaveOrder {
+  std::mutex mutex;
+  std::atomic<std::uint64_t> next{1};
+  std::map<std::filesystem::path, std::uint64_t> written;
+};
+
+SaveOrder& save_order() {
+  static SaveOrder order;
+  return order;
+}
+
+std::expected<void, Refusal> save_settings_locked(const std::filesystem::path& path,
+                                                  const PlaySettings& settings);
+
+}  // namespace
+
+std::uint64_t settings_ticket() {
+  return save_order().next.fetch_add(1, std::memory_order_relaxed);
+}
+
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
+  return save_settings(path, settings, settings_ticket());
+}
+
+std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings,
+                                           std::uint64_t ticket) {
+  SaveOrder& order = save_order();
+  const std::scoped_lock lock(order.mutex);
+  if (const auto at = order.written.find(path); at != order.written.end() && at->second > ticket) {
+    log_channel("app")->debug("{} : écriture plus ancienne que la dernière, sautée",
+                              core::to_utf8(path.filename()));
+    return {};
+  }
+  auto written = save_settings_locked(path, settings);
+  if (written) order.written[path] = ticket;
+  return written;
+}
+
+namespace {
+
+std::expected<void, Refusal> save_settings_locked(const std::filesystem::path& path,
+                                                  const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
   // Un fichier qui ne s'est pas lu au lancement : la séance tourne sur les défauts, les écrire le
   // remplacerait (B22-02).
@@ -593,5 +639,7 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   if (fresh) remember(path, std::move(fresh).table());
   return written;
 }
+
+}  // namespace
 
 }  // namespace ajp::app::play

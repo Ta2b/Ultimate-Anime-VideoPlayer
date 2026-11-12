@@ -26,6 +26,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/thread.h"
+#include "core/thread_role.h"
 #include "render/cube_lut.h"
 
 namespace ajp::app::play {
@@ -192,6 +193,7 @@ void LookLoader::request(const PlaySettings& s, const std::filesystem::path& lut
       "looks",
       ThreadReport([](const Refusal& refused) { log_channel("app")->warn("looks : {}", refused.detail); }),
       [state = state_](const std::stop_token& stop, const ThreadReport&) {
+        set_thread_role(ThreadRole::Background);  // lecture des .cube, du fond (C20-06)
         std::unique_lock lock(state->mutex);
         while (state->wake.wait(lock, stop, [&] { return state->pending.has_value(); })) {
           if (stop.stop_requested()) break;  // la demande vue avec l'arrêt ne se lit plus

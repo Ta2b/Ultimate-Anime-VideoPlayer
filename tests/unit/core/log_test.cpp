@@ -131,6 +131,13 @@ TEST_CASE("Journal nettoyé : les chemins sont réduits au nom de leur fichier (
         "journal : …/ajp.log · ajp 1.0");
   CHECK(ajp::reduce_log_paths("vidéo /run/media/x/Données SSD/a.mkv, 24 i/s") == "vidéo …/a.mkv, 24 i/s");
   CHECK(ajp::reduce_log_paths("1/2 et /s") == "1/2 et /s");  // pas des dossiers
+  // C20-01 : une fraction ou une parenthèse après le nom ne le mange plus.
+  CHECK(ajp::reduce_log_paths("ouvre /home/jean/Videos/ep01.mkv (24000/1001 fps, 1920x1080)") ==
+        "ouvre …/ep01.mkv (24000/1001 fps, 1920x1080)");
+  CHECK(ajp::reduce_log_paths("modèle /opt/ajp/models/span.onnx chargé en 0.8 s (cache 3/4)") ==
+        "modèle …/span.onnx chargé en 0.8 s (cache 3/4)");
+  CHECK(ajp::reduce_log_paths("échec '/home/jean/Videos/ep.mkv' (lu 1/2)") == "échec '…/ep.mkv' (lu 1/2)");
+  CHECK(ajp::reduce_log_paths("vidéo /home/jean/Anime (2020)/ep.mkv") == "vidéo …/ep.mkv");
   // Le puits : le dossier personnel, puis les chemins.
   std::vector<std::string> seen;
   ajp::set_log_home("/home/jean");

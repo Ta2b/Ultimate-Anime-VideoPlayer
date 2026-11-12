@@ -1,5 +1,6 @@
 // play.toml ne perd rien : une écriture refusée se rattrape à la suivante (A22-02), un retour à une
 // version plus ancienne garde les valeurs et les clés de la plus récente (A36-01, A22-06).
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -187,6 +188,24 @@ TEST_CASE("C36-01 : play.toml illisible au lancement puis libéré, les changeme
   CHECK(reread->volume == 0.5F);
   // Ce que la séance n'a pas changé reste celui du fichier.
   CHECK(reread->smooth_motion == before_launch.smooth_motion);
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("C30-03 : une écriture différée plus ancienne n'écrase pas l'écriture directe qui la suit",
+          "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-order";
+  std::filesystem::remove_all(dir);
+  const std::filesystem::path path = dir / "play.toml";
+  PlaySettings older;
+  older.volume = 0.25F;
+  const std::uint64_t posted = settings_ticket();  // l'écriture postée au fil, en retard
+  PlaySettings newer;
+  newer.volume = 0.75F;
+  REQUIRE(save_settings(path, newer));          // le thread principal écrit tout de suite
+  REQUIRE(save_settings(path, older, posted));  // puis le fil finit : sautée
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->volume == 0.75F);
   std::filesystem::remove_all(dir);
 }
 

@@ -202,6 +202,9 @@ std::expected<void, Refusal> write_atomic(const std::filesystem::path& given,
     return std::unexpected(
         Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", to_utf8(temp), synced.message())});
   }
+  // Les droits de l'ancien fichier (un play.toml mis en 0600) restent les siens (C20-08).
+  if (const auto kept = std::filesystem::status(path, error); !error && std::filesystem::exists(kept))
+    std::filesystem::permissions(temp, kept.permissions(), error);
   if (const std::error_code renamed = rename_retrying(temp, path)) {
     std::filesystem::remove(temp, error);
     return std::unexpected(
