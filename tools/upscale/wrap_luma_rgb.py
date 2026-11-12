@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Un modèle ×2 qui n'agrandit que la luma (ArtCNN, P6.7) en un modèle RGB que le lecteur joue comme SPAN.
 
-  python3 -I tools/upscale/wrap_luma_rgb.py ArtCNN_C4F32.onnx 2x_ArtCNN_C4F32_rgb_fp16.onnx
-  python3 -I tools/upscale/wrap_luma_rgb.py ArtCNN_C4F16.onnx 2x_ArtCNN_C4F16_rgb_fp16.onnx
+  python3 -I tools/upscale/wrap_luma_rgb.py ArtCNN_C4F32.onnx 2x_ArtCNN_C4F32_rgb_fp16.onnx [--chroma cubic]
+  python3 -I tools/upscale/wrap_luma_rgb.py ArtCNN_C4F16.onnx 2x_ArtCNN_C4F16_rgb_fp16.onnx [--chroma cubic]
 
-Les deux modèles livrés viennent d'Artoriuz/ArtCNN au commit 0837e53 (dossier ONNX) ; l'enveloppe est
-déterministe : relancée avec onnx 1.23, elle redonne au bit près les fichiers de tools/upscale/models.
+Les deux modèles livrés viennent d'Artoriuz/ArtCNN au commit 0837e53 (dossier ONNX), enveloppés avec la chroma
+par défaut ; l'enveloppe est déterministe : relancée avec onnx 1.23, elle redonne au bit près les fichiers de
+tools/upscale/models.
 
 Entrée et sortie comme les SPAN d'AnimeJaNai : [1, 3, H, W] en FP16, R'G'B' entre 0 et 1. Dedans, en FP32 :
 la luma Y' (BT.709) passe par le réseau ; la différence R'G'B' − Y' (la couleur, sans détail fin) est agrandie
-en bilinéaire, puis ajoutée à la luma agrandie. Le réseau d'origine est recopié tel quel, nœuds et poids
+en bilinéaire (défaut, celui du modèle livré) ou en bicubique (--chroma cubic, à mesurer contre la remontée
+Spline36 avec tools/bench/qualite/chroma444.py avant de changer le modèle livré : B46-11), puis ajoutée à la
+luma agrandie. Le réseau d'origine est recopié tel quel, nœuds et poids
 préfixés « luma/ ». Demande le paquet onnx.
 """
 import sys
@@ -22,7 +25,7 @@ PREFIX = "luma/"
 LUMA_709 = (0.2126, 0.7152, 0.0722)
 
 
-def wrap(model: onnx.ModelProto) -> onnx.ModelProto:
+def wrap(model: onnx.ModelProto, chroma: str = "linear") -> onnx.ModelProto:
     inner = model.graph
     if len(inner.input) != 1 or len(inner.output) != 1:
         raise SystemExit("le réseau doit avoir une entrée et une sortie")
@@ -39,8 +42,9 @@ def wrap(model: onnx.ModelProto) -> onnx.ModelProto:
         helper.make_node("Conv", ["rgb", "luma_weights"], ["y"]),
         helper.make_node("Concat", ["y", "y", "y"], ["y3"], axis=1),
         helper.make_node("Sub", ["rgb", "y3"], ["chroma"]),
-        helper.make_node("Resize", ["chroma", "", "scales"], ["chroma_up"], mode="linear",
-                         coordinate_transformation_mode="half_pixel"),
+        helper.make_node("Resize", ["chroma", "", "scales"], ["chroma_up"], mode=chroma,
+                         coordinate_transformation_mode="half_pixel",
+                         **({"cubic_coeff_a": -0.5} if chroma == "cubic" else {})),
     ]
     for node in inner.node:
         copy = onnx.NodeProto()
@@ -81,8 +85,12 @@ def wrap(model: onnx.ModelProto) -> onnx.ModelProto:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    args = sys.argv[1:]
+    mode = "linear"
+    if len(args) == 4 and args[2] == "--chroma" and args[3] in ("linear", "cubic"):
+        mode, args = args[3], args[:2]
+    if len(args) != 2:
         print(__doc__)
         sys.exit(2)
-    onnx.save(wrap(onnx.load(sys.argv[1])), sys.argv[2])
-    print(f"écrit : {sys.argv[2]}")
+    onnx.save(wrap(onnx.load(args[0]), mode), args[1])
+    print(f"écrit : {args[1]} (chroma {mode})")

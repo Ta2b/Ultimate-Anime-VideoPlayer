@@ -36,11 +36,6 @@ def warp(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
     return F.grid_sample(image, grid, mode="bilinear", padding_mode="border", align_corners=True)
 
 
-def resize_flow(flow: torch.Tensor, factor: float) -> torch.Tensor:
-    """Le flot mis à une autre échelle : la grille et les déplacements ensemble."""
-    return F.interpolate(flow, scale_factor=factor, mode="bilinear", align_corners=False) * factor
-
-
 def conv(cin: int, cout: int, stride: int = 1) -> nn.Sequential:
     return nn.Sequential(nn.Conv2d(cin, cout, 3, stride, 1), nn.PReLU(cout))
 

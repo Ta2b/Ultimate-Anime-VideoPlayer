@@ -63,10 +63,27 @@ index c5b3a1d..6ae4ebb 100644
  // resources) directly with the API user. The use of this API is a bit sketchy
  // and requires careful communication of Vulkan API state.
 diff --git a/src/vulkan/swapchain.c b/src/vulkan/swapchain.c
-index c4b6952..fd9f400 100644
+index c4b6952..08bb75c 100644
 --- a/src/vulkan/swapchain.c
 +++ b/src/vulkan/swapchain.c
-@@ -31,6 +31,7 @@ struct vk_swapchain {
+@@ -23,6 +23,16 @@
+ #include "swapchain.h"
+ #include "pl_thread.h"
+ 
++// Closed-loop presentation (present ids and present timing) needs both
++// extensions: with older Vulkan headers the code below is compiled out and
++// the player silently loses its frame timing, so refuse to build instead
++#ifndef VK_KHR_present_id2
++#error "ajp: the Vulkan headers lack VK_KHR_present_id2 (Vulkan-Headers 1.4.363 expected)"
++#endif
++#ifndef VK_EXT_present_timing
++#error "ajp: the Vulkan headers lack VK_EXT_present_timing (Vulkan-Headers 1.4.363 expected)"
++#endif
++
+ struct vk_swapchain {
+     VkSwapchainKHR swapchain;
+     // state of the images:
+@@ -31,6 +41,7 @@ struct vk_swapchain {
      PL_ARRAY(VkSemaphore) sems_in;  // pool of semaphores used to acquire images
      PL_ARRAY(VkSemaphore) sems_out; // pool of semaphores used to present images
      PL_ARRAY(VkFence) fences_out;   // pool of fences for presented images
@@ -74,7 +91,7 @@ index c4b6952..fd9f400 100644
      int idx_sems_in;                // index of next free semaphore to acquire
      int last_imgidx;                // the image index last acquired (for submit)
  };
-@@ -58,6 +59,8 @@ struct priv {
+@@ -58,6 +69,8 @@ struct priv {
      struct pl_color_repr color_repr;
      struct pl_color_space color_space;
      struct pl_hdr_metadata hdr_metadata;
@@ -83,7 +100,7 @@ index c4b6952..fd9f400 100644
  };
  
  static const struct pl_sw_fns vulkan_swapchain;
-@@ -406,7 +409,8 @@ pl_swapchain pl_vulkan_create_swapchain(pl_vulkan plvk,
+@@ -406,7 +419,8 @@ pl_swapchain pl_vulkan_create_swapchain(pl_vulkan plvk,
                                                : VK_SHARING_MODE_EXCLUSIVE,
          .queueFamilyIndexCount = vk->pools.num,
          .pQueueFamilyIndices = p->queue_families,
@@ -93,7 +110,7 @@ index c4b6952..fd9f400 100644
          .presentMode = params->present_mode,
          .clipped = true,
      };
-@@ -479,8 +483,19 @@ static bool swapchain_destroy(pl_swapchain sw, struct vk_swapchain **ptr,
+@@ -479,8 +493,19 @@ static bool swapchain_destroy(pl_swapchain sw, struct vk_swapchain **ptr,
          return true;
  
      if (vk_sw->fences_out.num > 0) {
@@ -115,7 +132,7 @@ index c4b6952..fd9f400 100644
          if (res == VK_NOT_READY || res == VK_TIMEOUT)
              return false;
          for (int i = 0; i < vk_sw->fences_out.num; i++)
-@@ -529,6 +544,8 @@ static void vk_sw_destroy(pl_swapchain sw)
+@@ -529,6 +554,8 @@ static void vk_sw_destroy(pl_swapchain sw)
  
      cleanup_retired_swapchains(sw, UINT64_MAX);
      swapchain_destroy(sw, &p->current, UINT64_MAX);
@@ -124,7 +141,7 @@ index c4b6952..fd9f400 100644
  
      pl_mutex_destroy(&p->lock);
      pl_free((void *) sw);
-@@ -782,6 +799,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
+@@ -782,6 +809,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
      p->cur_width = sinfo.imageExtent.width;
      p->cur_height = sinfo.imageExtent.height;
  
@@ -134,7 +151,7 @@ index c4b6952..fd9f400 100644
      PL_DEBUG(sw, "(Re)creating swapchain of size %dx%d",
               sinfo.imageExtent.width,
               sinfo.imageExtent.height);
-@@ -842,7 +862,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
+@@ -842,7 +872,9 @@ static bool vk_sw_recreate(pl_swapchain sw, int w, int h)
          snprintf(name, sizeof(name), "present fence #%d", i);
          PL_VK_NAME(FENCE, fence, name);
          PL_ARRAY_APPEND(current, current->fences_out, fence);
@@ -144,7 +161,7 @@ index c4b6952..fd9f400 100644
  
      // Note: `p->color_space.hdr` is (re-)applied by `set_hdr_metadata`
      map_color_space(sinfo.imageColorSpace, &p->color_space);
-@@ -901,8 +923,24 @@ static bool vk_sw_start_frame(pl_swapchain sw,
+@@ -901,8 +933,30 @@ static bool vk_sw_start_frame(pl_swapchain sw,
              p->current->last_imgidx = imgidx;
              if (p->current->fences_out.num > 0) {
                  VkFence *pfence = &p->current->fences_out.elem[imgidx];
@@ -162,6 +179,12 @@ index c4b6952..fd9f400 100644
 +                    };
 +                    VkFence fresh;
 +                    VK(vk->CreateFence(vk->dev, &finfo, PL_VK_ALLOC, &fresh));
++                    // Logged for the first few cases, then every 64th: how
++                    // often a driver refuses the present is worth knowing
++                    if (p->orphans.num < 8 || p->orphans.num % 64 == 0)
++                        PL_WARN(sw, "Present fence #%d not signaled after 50 ms, "
++                                "replaced (%d orphaned fences so far)",
++                                imgidx, p->orphans.num + 1);
 +                    PL_ARRAY_APPEND(sw, p->orphans, *pfence);
 +                    *pfence = fresh;
 +                } else {
@@ -171,7 +194,7 @@ index c4b6952..fd9f400 100644
              }
              if (!vk_sw_image_init(sw, imgidx))
                  goto error;
-@@ -950,7 +988,16 @@ static void present_cb(struct priv *p, void *arg)
+@@ -950,7 +1004,16 @@ static void present_cb(struct priv *p, void *arg)
  
  VK_CB_FUNC_DEF(present_cb);
  
@@ -188,7 +211,7 @@ index c4b6952..fd9f400 100644
  {
      pl_gpu gpu = sw->gpu;
      struct priv *p = PL_PRIV(sw);
-@@ -1013,13 +1060,45 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
+@@ -1013,13 +1076,45 @@ static bool vk_sw_submit_frame(pl_swapchain sw)
      if (current->fences_out.num > 0) {
          VkFence *pfence = &current->fences_out.elem[idx];
          fenceInfo.pFences = pfence;
@@ -235,7 +258,7 @@ index c4b6952..fd9f400 100644
      pl_mutex_unlock(&p->lock);
  
      switch (res) {
-@@ -1105,6 +1184,22 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
+@@ -1105,6 +1200,22 @@ bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw)
      return p->suboptimal;
  }
  

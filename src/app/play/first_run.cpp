@@ -102,8 +102,11 @@ void engine_row(EngineRow& row) {
     ImGui::Checkbox(i18n::tr("I accept its licence"), &row.license_accepted);
     ImGui::SameLine();
     ImGui::TextLinkOpenURL(i18n::tr("Read the licence"), row.license.c_str());
-    if (!row.license_accepted)
+    if (!row.license_accepted) {
       ImGui::TextColored(kWarnColor, "%s", i18n::tr("Not installed until its licence is accepted."));
+    } else {
+      note(i18n::tr("Continuing installs it under this licence; untick the box to skip it."));
+    }
   }
   ImGui::Unindent(ImGui::GetFrameHeightWithSpacing());
   ImGui::Spacing();
@@ -272,11 +275,14 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
         row.status = here.coreml ? i18n::tr("bundled with the player") : i18n::tr("not in this package");
         break;
     }
-    // Coché à l'assistant puis la fenêtre fermée pendant le téléchargement : le choix est écrit avant
-    // (A25-10), la case et l'accord de la licence reviennent à la reprise.
-    const bool agreed = row.download && chosen(current, offer.id);
+    // Premier passage : le moteur recommandé pour cette carte (TensorRT sur une RTX) est coché d'office, sa
+    // licence affichée à côté et acceptée par le geste « Suivant » (B25-01). Décochée ou
+    // refusée à l'écran, elle reste hors du choix. Coché à l'assistant puis la fenêtre fermée pendant le
+    // téléchargement : le choix est écrit avant (A25-10), la case et l'accord de la licence reviennent à la
+    // reprise.
+    const bool implied = !current.first_run_done && offer.preselected;
+    const bool agreed = row.download && (chosen(current, offer.id) || (implied && row.usable));
     const bool wanted = current.first_run_done ? chosen(current, offer.id) : offer.preselected || agreed;
-    // Une licence ne se coche jamais d'office : le moteur qui en demande une attend l'accord.
     row.chosen =
         offer.id == core::EngineId::Vulkan || (wanted && row.usable && (row.license.empty() || agreed));
     row.license_accepted = agreed;
@@ -292,8 +298,8 @@ core::Settings settings_after(const FirstRunView& view, core::Settings settings)
   for (const EngineRow& row : view.engines) {
     // Un moteur à télécharger compte comme installé une fois coché (install_chosen le télécharge,
     // without_engine le retire s'il échoue) ; avec sa licence acceptée seulement.
-    const bool taken = row.usable && (row.chosen || row.offer.id == core::EngineId::Vulkan) &&
-                       (!row.download || row.license.empty() || row.license_accepted);
+    const bool taken =
+        row.usable && (row.chosen || row.offer.id == core::EngineId::Vulkan) && engine_installs(row);
     if (row.usable && (!row.download || taken)) settings.installed_engines.push_back(row.offer.id);
     if (taken) settings.chosen_engines.push_back(row.offer.id);
   }
@@ -377,14 +383,18 @@ std::string_view reason_label(core::Reason reason) {
   return "?";
 }
 
+bool engine_installs(const EngineRow& row) {
+  return !row.download || row.license.empty() || row.license_accepted;
+}
+
 std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
   std::string kept;
   std::uint64_t bytes = 0;
   std::vector<std::string> refused;
   for (const EngineRow& row : rows) {
     const std::string_view label = engine_label(row.offer.id);
-    // Le moteur recommandé pour cette carte reste décoché (sa licence ne se coche jamais d'office) : la
-    // calibration mesurerait l'autre sans le dire (A25-02).
+    // Le moteur recommandé pour cette carte décoché à l'écran : la calibration mesurerait l'autre sans le
+    // dire (A25-02).
     if (row.usable && !row.chosen && std::ranges::contains(row.offer.badges, core::Badge::Recommended) &&
         row.offer.id != core::EngineId::Vulkan)
       refused.push_back(i18n::tr_format(

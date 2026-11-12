@@ -41,9 +41,9 @@ FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous
 
 4 LUT 3D `.cube` (« HDR LUT ver.9.1 », générées par DaVinci Resolve) ajoutées au dépôt à la demande de son propriétaire, qui répond de leur redistribution ; auteur et licence d'origine non indiqués dans l'archive reçue (ni readme ni licence), voir `data/luts/ATTRIBUTION.md`. À compléter dès qu'ils sont connus, ou à retirer si l'auteur s'y oppose.
 
-## Images d'exemple de la calibration du grade (data/calibration)
+## Plans de test du grade (data/calibration)
 
-Huit images fixes tirées de Re:Zero kara Hajimeru Isekai Seikatsu (saison 4, épisode 18, © Tappei Nagatsuki, KADOKAWA / Re:Zero 4 Partners) et de Tensei Shitara Slime Datta Ken (saison 4, épisode 24, © Fuse, Micro Magazine / Tensura Project), ajoutées à la demande du propriétaire du dépôt pour la seule calibration du grade (Réglages > Vidéo). Elles restent la propriété de leurs ayants droit ; liste et instants dans `data/calibration/SOURCES.md`.
+`calibration.mkv` : dix-huit plans fixes de 6 s (H.264 1920×1080, 108 s, extraits de Blu-ray et de WEB-DL), tirés d'Akudama Drive (saison 1, épisode 1), des Enfants du Temps (film), de Violet Evergarden (saison 1, épisode 1), de Frieren (saison 1, épisode 1), de Your Name (film), de Re:Zero kara Hajimeru Isekai Seikatsu (saison 4, épisode 18, © Tappei Nagatsuki, KADOKAWA / Re:Zero 4 Partners), de Tensei Shitara Slime Datta Ken (saison 4, épisode 24, © Fuse, Micro Magazine / Tensura Project) et de Black Clover (saison 2, épisode 5). Ajoutés à la demande du propriétaire du dépôt, qui répond de leur redistribution, pour les seuls tests et comparaisons du grade (test de bout en bout, banc de qualité, `tools/ring/banding.py`, `tools/grade/compare_shots.sh`). Le lecteur n'embarque pas cette vidéo et ne s'en sert plus pour calibrer : la calibration du grade adaptatif est retirée. Les images restent la propriété de leurs ayants droit ; liste et instants dans `data/calibration/SOURCES.md`.
 
 ## ArtCNN C4F32 (modèle livré depuis la 0.10.2) et C4F16
 ArtCNN, © 2024 João Chrisóstomo, licence MIT (texte dans `tools/upscale/models/ArtCNN-LICENSE.txt`, à joindre à toute redistribution des modèles `2x_ArtCNN_C4F32_rgb_fp16.onnx` et `2x_ArtCNN_C4F16_rgb_fp16.onnx`).

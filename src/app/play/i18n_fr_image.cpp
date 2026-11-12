@@ -17,8 +17,10 @@ constexpr std::array kImageTabs{
         "détail "
         "(grain, textures), sans SPAN."},
     Entry{" (recommended)", " (recommandé)"},
-    Entry{"4K output: RIFE estimates motion on a lighter 720p copy.",
-          "Sortie 4K : RIFE estime le mouvement sur une copie 720p, plus légère."},
+    Entry{"4K output: RIFE estimates motion on a lighter 720p copy (less precise motion; the loss is not "
+          "measured).",
+          "Sortie 4K : RIFE estime le mouvement sur une copie 720p, plus légère (mouvement moins précis ; la "
+          "perte n'est pas mesurée)."},
     Entry{"4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything.",
           "Sortie 4K : ×3 et plus demandent un GPU haut de gamme. Une résolution de travail de 720p allège "
           "tout."},
@@ -27,11 +29,16 @@ constexpr std::array kImageTabs{
         "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un GPU rapide, sinon "
         "des images sont sautées."},
     Entry{
-        "After SPAN upscales each source frame once, then warps it: faster. Before SPAN also cleans each "
-        "in-between frame. Auto picks After from ×3 or above 1080p. Reloads playback.",
-        "Après SPAN agrandit chaque image source une fois, puis la déforme : plus rapide. Avant SPAN nettoie "
-        "aussi chaque image intermédiaire. Auto choisit Après dès ×3 ou au-dessus de 1080p. Recharge la "
-        "lecture."},
+        "After SPAN upscales each source frame once, then warps it: faster (about 8 ms saved per "
+        "frame from 1080p to 4K on an RTX 4070 Ti), but SPAN no longer cleans the warp defects of the "
+        "in-between frames; the image quality of the two orders is not compared. Before SPAN also "
+        "cleans each in-between frame. Auto picks After above 1080p, and from ×3 for a fixed "
+        "multiplier. Reloads playback.",
+        "Après SPAN agrandit chaque image source une fois, puis la déforme : plus rapide (environ 8 ms "
+        "gagnées par image de 1080p à 4K sur une RTX 4070 Ti), mais SPAN ne nettoie plus les défauts du warp "
+        "des images intermédiaires ; la qualité d'image des deux ordres n'est pas comparée. Avant SPAN "
+        "nettoie aussi chaque image intermédiaire. Auto choisit Après au-dessus de 1080p, et dès ×3 pour un "
+        "multiplicateur fixe. Recharge la lecture."},
     Entry{"Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.",
           "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4+), sans modèle à télécharger. Moteur "
@@ -53,19 +60,23 @@ constexpr std::array kImageTabs{
           "L'export ne saute aucune image : chaque image créée coûte une passe."},
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
-    Entry{"Very fast", "Très rapide"},
+    Entry{"DistilDRBA", "DistilDRBA"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},
-    Entry{"DistilDRBA: the lightest up to ×5; it keeps characters animated on twos on their rhythm. One "
-          "frame of delay.",
-          "DistilDRBA : le plus léger jusqu'à ×5 ; les personnages animés à une image sur deux gardent leur "
-          "rythme. Une image de retard."},
+    Entry{"DistilDRBA: keeps characters animated on twos on their rhythm. One frame of delay. Its speed and "
+          "image quality against RIFE are not compared yet, so Auto does not use it.",
+          "DistilDRBA : les personnages animés à une image sur deux gardent leur rythme. Une image de "
+          "retard. Sa vitesse et sa qualité d'image face à RIFE ne sont pas encore comparées : Auto ne "
+          "l'utilise pas."},
     Entry{"RIFE 4.22 lite: light and clean, for most graphics cards.",
           "RIFE 4.22 lite : léger et propre, pour la plupart des cartes graphiques."},
     Entry{"RIFE 4.25: cleaner in-between frames, for recent graphics cards.",
           "RIFE 4.25 : des images intermédiaires plus propres, pour les cartes graphiques récentes."},
-    Entry{"Very fast is the lightest, Balanced the cleanest. Applies after a short reload.",
-          "Très rapide est le plus léger, Équilibré le plus propre. S'applique après un court rechargement."},
+    Entry{"Fast and Balanced are RIFE models; DistilDRBA keeps poses. Their speed and image quality are not "
+          "compared in this version. Applies after a short reload.",
+          "Rapide et Équilibré sont des modèles RIFE ; DistilDRBA garde les poses. Leur vitesse et leur "
+          "qualité d'image ne sont pas comparées dans cette version. S'applique après un court "
+          "rechargement."},
     Entry{"Greyed out: above the display ({:.0f} Hz for {:.3f} fps).",
           "Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s)."},
     Entry{"Greyed out: turn on RIFE at ×2 or more, or playback stalls.",
@@ -82,16 +93,16 @@ constexpr std::array kImageTabs{
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
-    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more than "
-          "C4F32).",
-          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger (C4F16 "
-          "plus "
-          "que C4F32)."},
-    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more than "
-          "C4F32). FP8: prepared once on this PC, then faster, at the cost of some precision.",
-          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger (C4F16 "
-          "plus "
-          "que C4F32). FP8 : préparé une fois sur ce PC, puis plus rapide, au prix d'un peu de précision."},
+    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more "
+          "than C4F32).",
+          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger "
+          "(C4F16 plus que C4F32)."},
+    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more "
+          "than C4F32). FP8: prepared once on this PC, then about 37 % faster per pass (14.7 to 9.2 ms "
+          "at 1080p on an RTX 4070 Ti), at about 49 to 52 dB PSNR against FP16.",
+          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger "
+          "(C4F16 plus que C4F32). FP8 : préparé une fois sur ce PC, puis environ 37 % plus rapide par "
+          "passe (14,7 à 9,2 ms en 1080p sur une RTX 4070 Ti), à environ 49 à 52 dB de PSNR face au FP16."},
     Entry{"DistilDRBA is running: fused engines.", "DistilDRBA tourne : moteurs fusionnés."},
     Entry{"DistilDRBA is running: whole network.", "DistilDRBA tourne : réseau entier."},
     Entry{"Motion variant: one SPAN pass per source frame.",
@@ -112,8 +123,8 @@ constexpr std::array kImageTabs{
           "RIFE fusionné indisponible ({}) : le réseau entier tourne, plus lent"},
     Entry{"Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter.",
           "Au-delà de ×5, DistilDRBA calcule plus que RIFE : Rapide (RIFE 4.22 lite) est plus léger."},
-    Entry{"Here Auto goes up to ×{} ({:.0f} Hz display).",
-          "Ici Auto monte jusqu'à ×{} (écran de {:.0f} Hz)."},
+    Entry{"Here Auto goes up to ×{} ({:.0f} fps limit).",
+          "Ici Auto monte jusqu'à ×{} (plafond de {:.0f} i/s)."},
     Entry{"Interpolation precision", "Précision de l'interpolation"},
     Entry{"Fused engines only run at Balanced precision: the whole network is used instead.",
           "Les moteurs fusionnés ne tournent qu'au cran Équilibre : le réseau entier sert à la place."},
@@ -121,7 +132,6 @@ constexpr std::array kImageTabs{
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},
     Entry{"SPAN ×2 (AnimeJaNai)", "SPAN ×2 (AnimeJaNai)"},
-    Entry{"SSimDownscaler (coming soon)", "SSimDownscaler (à venir)"},
     Entry{"Scene cuts and held drawings are not interpolated.",
           "Les coupes de scène et les dessins tenus ne sont pas interpolés."},
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},
@@ -130,14 +140,18 @@ constexpr std::array kImageTabs{
     Entry{"Spline36 is AnimeJaNai's sharp choice; Hermite is sharp without halos. Applies live.",
           "Spline36 est le choix net d'AnimeJaNai ; Hermite est net sans halo. En direct."},
     Entry{
-        "Splits DistilDRBA into small TensorRT engines: more than twice as fast. TensorRT only, Balanced "
-        "precision. Reloads playback; built on first use for this size.",
-        "Coupe DistilDRBA en petits moteurs TensorRT : plus de deux fois plus rapide. TensorRT seulement, "
-        "précision Équilibre. Recharge la lecture ; construit à la première utilisation pour cette taille."},
-    Entry{"Splits RIFE into small TensorRT engines: about three times faster. TensorRT only. Reloads "
-          "playback; built on first use for this size.",
-          "Coupe RIFE en petits moteurs TensorRT : environ trois fois plus rapide. TensorRT seulement. "
-          "Recharge la lecture ; construit à la première utilisation pour cette taille."},
+        "Splits DistilDRBA into small TensorRT engines: 0.92 ms instead of 2.10 ms per pass at 1088×1920 on "
+        "an RTX 4070 Ti. TensorRT only, Balanced precision. Reloads playback; built on first use for this "
+        "size.",
+        "Coupe DistilDRBA en petits moteurs TensorRT : 0,92 ms au lieu de 2,10 ms par passe en 1088×1920 "
+        "sur une RTX 4070 Ti. TensorRT seulement, précision Équilibre. Recharge la lecture ; construit à la "
+        "première utilisation pour cette taille."},
+    Entry{"Splits RIFE into small TensorRT engines: 1.4 ms instead of 4.5 ms per pass on an RTX 4070 Ti, "
+          "the image within 53 dB of the whole network. TensorRT only. Reloads playback; built on first use "
+          "for this size.",
+          "Coupe RIFE en petits moteurs TensorRT : 1,4 ms au lieu de 4,5 ms par passe sur une RTX 4070 Ti, "
+          "l'image à 53 dB du réseau entier. TensorRT seulement. Recharge la lecture ; construit à la "
+          "première utilisation pour cette taille."},
     Entry{"Stable", "Stable"},
     Entry{
         "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps and falls back to "

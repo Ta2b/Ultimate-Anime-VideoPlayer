@@ -1,0 +1,19 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 640
+PlayResY: 360
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,sans-serif,36,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,20,1
+Style: Top,sans-serif,36,&H0000FFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,8,10,10,20,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Bas de l'écran
+Dialogue: 0,0:00:01.00,0:00:02.00,Top,,0,0,0,,En haut
+Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\an7\pos(40,60)\bord0\1c&H0000FF&}Rouge
+Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\an7\pos(40,60)\bord0\alpha&H80&}Transparent
+Dialogue: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,{\an7\move(40,60,440,60)\bord0}Glisse

@@ -3,7 +3,7 @@
 #
 # Deux sources possibles : le manifeste vcpkg (Windows), ou un préfixe construit par
 # tools/deps/linux-from-source.sh (Linux, CI) ou macos-from-source.sh. Ce que le dépôt fixe lui-même y est aux
-# mêmes références (tools/ci/check-deps-versions.sh le vérifie). Le reste ne l'est pas : sous Linux, dav1d,
+# mêmes références (tools/ci/check-deps-versions.sh le vérifie, y compris les "overrides" de vcpkg.json). Le reste ne l'est pas : sous Linux, dav1d,
 # lcms2, shaderc, FriBidi, FreeType et HarfBuzz viennent de la distribution (Ubuntu 24.04 pour le paquet),
 # sous Windows de la baseline de vcpkg, plus récente. Un écart mesuré entre les deux systèmes peut donc venir
 # de ces bibliothèques (docs/audits/A-CONFIRMER.md, A27-04).
@@ -38,10 +38,10 @@ find_package(spdlog CONFIG REQUIRED)
 ajp_alias_dep(spdlog spdlog::spdlog)
 target_compile_definitions(ajp_dep_spdlog INTERFACE SPDLOG_USE_STD_FORMAT)
 
-# CUDA 13.4, seulement avec AJP_WITH_CUDA (backend TensorRT et ses noyaux). Le runtime statique
+# CUDA 13.4 (au moins ; la version exacte livrée est épinglée dans tools/release/versions.env), seulement avec AJP_WITH_CUDA (backend TensorRT et ses noyaux). Le runtime statique
 # charge le pilote (libcuda) à l'exécution : sans pilote, un binaire démarre et refuse proprement.
 if(AJP_WITH_CUDA)
-  find_package(CUDAToolkit 13 REQUIRED)
+  find_package(CUDAToolkit 13.4 REQUIRED)
   ajp_alias_dep(cudart CUDA::cudart_static)
   # NVTX3 (en-têtes seuls, kit CUDA) : plages de src/core/trace.h pour Nsight Systems.
   if(TARGET CUDA::nvtx3)
@@ -117,7 +117,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
 endif()
 
-find_package(SDL3 CONFIG REQUIRED)
+# SDL 3.4 : le HDR de Windows en dépend (host_facts.cpp) ; vcpkg.json et DEPS la fixent à 3.4.20.
+find_package(SDL3 3.4 CONFIG REQUIRED)
+message(STATUS "SDL3 ${SDL3_VERSION}, FFmpeg (libavformat ${AJP_FFMPEG_libavformat_VERSION}, libavcodec ${AJP_FFMPEG_libavcodec_VERSION})")
 
 ajp_alias_dep(sdl3 SDL3::SDL3)
 
@@ -169,11 +171,6 @@ else()
   ajp_alias_dep(imgui ajp_imgui)
 endif()
 
-find_path(AJP_NANOBENCH_DIR nanobench.h REQUIRED)
-add_library(ajp_dep_nanobench INTERFACE)
-target_include_directories(ajp_dep_nanobench SYSTEM INTERFACE "${AJP_NANOBENCH_DIR}")
-add_library(ajp::dep::nanobench ALIAS ajp_dep_nanobench)
-
 # TensorRT 11.3, seulement avec AJP_WITH_CUDA : en-têtes publics et libnvinfer. Sous Linux,
 # AJP_TENSORRT_ROOT pointe un dossier include/ lib/ bin/ (sur le PC de référence ~/ajp-sdk/tensorrt :
 # bibliothèques du paquet PyPI tensorrt-cu13-libs, en-têtes de NVIDIA/TensorRT, trtexec).
@@ -181,6 +178,24 @@ add_library(ajp::dep::nanobench ALIAS ajp_dep_nanobench)
 if(AJP_WITH_CUDA)
   set(AJP_TENSORRT_ROOT "" CACHE PATH "Racine de TensorRT 11 : include/, lib/ et bin/trtexec")
   find_path(AJP_TENSORRT_INCLUDE_DIR NvInfer.h HINTS "${AJP_TENSORRT_ROOT}/include" REQUIRED)
+  # La version des en-têtes : un TensorRT 10.x trouvé par ailleurs passerait la configuration et ne
+  # casserait que plus loin (symbole absent, moteur refusé au chargement).
+  file(STRINGS "${AJP_TENSORRT_INCLUDE_DIR}/NvInferVersion.h" AJP_TRT_VERSION_LINES
+       REGEX "^#define TRT_(MAJOR|MINOR)_ENTERPRISE [0-9]+")
+  set(AJP_TRT_MAJOR "")
+  set(AJP_TRT_MINOR "")
+  foreach(line IN LISTS AJP_TRT_VERSION_LINES)
+    if(line MATCHES "TRT_MAJOR_ENTERPRISE ([0-9]+)")
+      set(AJP_TRT_MAJOR "${CMAKE_MATCH_1}")
+    elseif(line MATCHES "TRT_MINOR_ENTERPRISE ([0-9]+)")
+      set(AJP_TRT_MINOR "${CMAKE_MATCH_1}")
+    endif()
+  endforeach()
+  if(NOT AJP_TRT_MAJOR STREQUAL "11" OR NOT AJP_TRT_MINOR STREQUAL "3")
+    message(FATAL_ERROR "TensorRT 11.3 exigé, les en-têtes de ${AJP_TENSORRT_INCLUDE_DIR} sont en "
+                        "'${AJP_TRT_MAJOR}.${AJP_TRT_MINOR}' (AJP_TENSORRT_ROOT)")
+  endif()
+  message(STATUS "TensorRT ${AJP_TRT_MAJOR}.${AJP_TRT_MINOR} (${AJP_TENSORRT_INCLUDE_DIR})")
   # Sous Windows, les bibliothèques d'import portent la version (nvinfer_11.lib).
   find_library(AJP_NVINFER_LIBRARY NAMES nvinfer nvinfer_11 HINTS "${AJP_TENSORRT_ROOT}/lib" REQUIRED)
   find_library(AJP_NVONNXPARSER_LIBRARY NAMES nvonnxparser nvonnxparser_11 HINTS "${AJP_TENSORRT_ROOT}/lib"

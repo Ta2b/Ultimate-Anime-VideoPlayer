@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -17,7 +18,10 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "app/play/pumped_task.h"
 #include "core/file_sync.h"
+#include "core/text.h"
+#include "core/thread.h"
 #include "core/utf8_path.h"
 #include "prepare/process.h"
 #include "prepare/utf8.h"
@@ -33,6 +37,7 @@
 #include <windows.h>
 // Le shell après windows.h.
 #include <shlobj.h>
+#include <shlwapi.h>
 
 #include <SDL3/SDL_misc.h>
 #endif
@@ -41,14 +46,17 @@ namespace ajp::app::play {
 namespace {
 
 // Les conteneurs vidéo courants, tous lus par FFmpeg. AVI a deux noms dans shared-mime-info.
-constexpr std::array<std::string_view, 15> kMimeTypes{
-    "video/x-matroska", "video/webm",    "video/mp4",  "video/x-m4v",     "video/quicktime",
-    "video/x-msvideo",  "video/vnd.avi", "video/mpeg", "video/mp2t",      "video/x-flv",
-    "video/x-ms-wmv",   "video/ogg",     "video/3gpp", "video/x-ogm+ogg", "video/x-theora+ogg"};
+constexpr std::array<std::string_view, 16> kMimeTypes{
+    "video/x-matroska", "video/webm",      "video/mp4",          "video/x-m4v",
+    "video/quicktime",  "video/x-msvideo", "video/vnd.avi",      "video/mpeg",
+    "video/mp2t",       "video/x-flv",     "video/x-ms-wmv",     "video/ogg",
+    "video/3gpp",       "video/x-ogm+ogg", "video/x-theora+ogg", "video/x-ms-asf"};
 // La seule table des extensions vidéo (P3.85) : inscription, épisodes, fichiers glissés, boîte « Ouvrir ».
-constexpr std::array<std::string_view, 15> kExtensions{".mkv", ".webm", ".mp4",  ".m4v", ".mov",
-                                                       ".avi", ".mpg",  ".mpeg", ".ts",  ".m2ts",
-                                                       ".mts", ".flv",  ".wmv",  ".ogv", ".3gp"};
+// .ogm (type x-ogm+ogg déclaré), .vob, .asf et .divx : d'anciens fichiers d'anime que FFmpeg lit et que la
+// boîte « Ouvrir une vidéo » et « Ouvrir avec » refusaient (B19-10).
+constexpr std::array<std::string_view, 19> kExtensions{
+    ".mkv", ".webm", ".mp4", ".m4v", ".mov", ".avi", ".mpg", ".mpeg", ".ts",  ".m2ts",
+    ".mts", ".flv",  ".wmv", ".ogv", ".3gp", ".ogm", ".vob", ".asf",  ".divx"};
 
 constexpr std::string_view kClasses = "Software\\Classes\\";
 constexpr std::string_view kCapabilities = "Software\\AJP\\Capabilities";
@@ -181,7 +189,8 @@ const char* video_dialog_pattern() {
   return pattern.c_str();
 }
 
-std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable) {
+std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable,
+                                                  bool icon_installed) {
   const std::string path = prepare::utf8_path(executable);
   const bool control = std::ranges::any_of(path, [](char c) {
     const auto byte = static_cast<unsigned char>(c);
@@ -202,19 +211,62 @@ std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& e
       "GenericName[fr]=Lecteur vidéo\n"
       "Comment=Upscaled and interpolated anime in real time\n"
       "Comment[fr]=Anime agrandi et interpolé en temps réel\n"
-      "Icon=video-x-generic\n"
+      "Icon={}\n"
+      "StartupWMClass={}\n"
       "TryExec={}\n"
       "Exec={} %f\n"
       "Terminal=false\n"
       "Categories=AudioVideo;Video;Player;\n"
       "MimeType={}\n",
-      kAppName, desktop_string(path), exec_argument(path), mimes);
+      kAppName, icon_installed ? kAppId : std::string_view("video-x-generic"), kAppId, desktop_string(path),
+      exec_argument(path), mimes);
 }
 
 std::filesystem::path desktop_file(const PlayerPlace& place) {
   const std::filesystem::path data = place.data.empty() ? place.home / ".local" / "share" : place.data;
   return data / "applications" / std::string(kDesktopId);
 }
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+// B19-01 : l'icône du lecteur sous <données>/icons/hicolor, où le bureau la cherche par son nom. Elle vient
+// de ajp.png à côté de l'exécutable (le paquet Linux la livre) ; sans elle, la fiche garde l'icône générique.
+std::filesystem::path icon_file(const PlayerPlace& place) {
+  const std::filesystem::path data = place.data.empty() ? place.home / ".local" / "share" : place.data;
+  return data / "icons" / "hicolor" / "256x256" / "apps" / (std::string(kAppId) + ".png");
+}
+
+bool install_icon(const PlayerPlace& place) {
+  namespace fs = std::filesystem;
+  std::error_code error;
+  const fs::path source = place.executable.parent_path() / "ajp.png";
+  if (!fs::is_regular_file(source, error)) return false;
+  const fs::path target = icon_file(place);
+  if (fs::is_regular_file(target, error) && fs::file_size(target, error) == fs::file_size(source, error))
+    return true;
+  fs::create_directories(target.parent_path(), error);
+  return !error && fs::copy_file(source, target, fs::copy_options::overwrite_existing, error) && !error;
+}
+
+// B19-07 : une fiche qui nomme encore un autre exécutable présent n'est pas reprise (deux installations
+// qui alternent la réécriraient, avec update-desktop-database, à chaque lancement) ; seule celle dont
+// l'exécutable a disparu suit celui-ci.
+bool names_other_live_launcher(const std::string& current, const std::string& wanted) {
+  const auto try_exec = [](const std::string& text) {
+    constexpr std::string_view kKey = "\nTryExec=";
+    const std::size_t at = text.find(kKey);
+    if (at == std::string::npos) return std::string();
+    const std::size_t start = at + kKey.size();
+    return text.substr(start, text.find('\n', start) - start);
+  };
+  const std::string old_launcher = try_exec(current);
+  if (old_launcher.empty() || old_launcher == try_exec(wanted)) return false;
+  std::string path = old_launcher;
+  for (std::size_t at = path.find("\\\\"); at != std::string::npos; at = path.find("\\\\", at + 1))
+    path.erase(at, 1);  // « \\ » du fichier : une barre inverse
+  std::error_code error;
+  return std::filesystem::is_regular_file(core::path_from_utf8(path), error);
+}
+#endif
 
 std::filesystem::path user_data(std::filesystem::path pref) {
   if (pref.empty()) return {};
@@ -267,8 +319,13 @@ namespace {
 // A19-04 : la question part sur un fil à elle (xdg-mime peut prendre 10 s, deux fois) ; tant qu'elle n'a
 // pas de réponse, le lecteur n'est pas dit « par défaut ». generation écarte la réponse d'une question
 // posée avant une inscription ou un retrait.
-std::mutex g_default_mutex;              // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-std::optional<bool> g_default_known;     // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::mutex g_default_mutex;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::optional<bool> g_default_known;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+// Quand elle a été posée : la réponse se repose après ce délai (B19-09). Sous Windows, le réglage se change
+// dans la page des paramètres du système, après le clic ; la valeur gardée toute la séance restait fausse.
+std::chrono::steady_clock::time_point
+    g_default_known_at;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+constexpr std::chrono::seconds kDefaultFresh{20};
 bool g_default_asking = false;           // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 std::uint64_t g_default_generation = 0;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
@@ -311,7 +368,7 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
 #else
   if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, i18n::tr("default player: home folder unknown"));
-  auto text = desktop_entry(launcher_of(place));
+  auto text = desktop_entry(launcher_of(place), install_icon(place));
   if (!text) return std::unexpected(std::move(text.error()));
   const std::filesystem::path file = desktop_file(place);
   if (auto written = core::write_text_atomically(file, *text); !written)
@@ -349,10 +406,10 @@ bool refresh_registration(const PlayerPlace& place) {
   std::error_code error;
   if ((place.home.empty() && place.data.empty()) || !std::filesystem::is_regular_file(file, error))
     return false;
-  const auto wanted = desktop_entry(launcher_of(place));
+  const auto wanted = desktop_entry(launcher_of(place), install_icon(place));
   std::ifstream in(file, std::ios::binary);
   const std::string current{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-  if (!wanted || current == *wanted) return false;
+  if (!wanted || current == *wanted || names_other_live_launcher(current, *wanted)) return false;
   if (!core::write_text_atomically(file, *wanted)) return false;
   refresh_desktop_database(file.parent_path());
   return true;
@@ -380,6 +437,7 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
     }
     return std::string(i18n::tr("AJP was not registered: nothing to remove."));
   }
+  std::filesystem::remove(icon_file(place), error);  // l'icône copiée à l'inscription
   refresh_desktop_database(file.parent_path());
   return std::string(i18n::tr("AJP is no longer in \"Open with\"."));
 #endif
@@ -449,6 +507,18 @@ std::string user_choice(std::string_view extension) {
     return {};
   return core::to_utf8(std::filesystem::path(std::wstring(data.data())));
 }
+
+// B34-09 : l'exécutable que Windows associe à l'extension pour « open », par la règle du système (UserChoice,
+// UserChoiceLatest des Windows 11 récents, règles de la machine) et non par la seule clé UserChoice.
+std::string associated_executable(std::string_view extension) {
+  const std::wstring name = wide(std::string(extension));
+  std::array<wchar_t, 1024> data{};
+  DWORD size = static_cast<DWORD>(data.size());
+  if (FAILED(AssocQueryStringW(ASSOCF_NOTRUNCATE, ASSOCSTR_EXECUTABLE, name.c_str(), L"open", data.data(),
+                               &size)))
+    return {};
+  return core::to_utf8(std::filesystem::path(std::wstring(data.data())));
+}
 #elif !defined(__APPLE__)
 constexpr std::array<std::string_view, 2> kAskedMimes{"video/x-matroska", "video/mp4"};
 
@@ -464,7 +534,7 @@ bool xdg_default_is_ajp(const char* tool, std::string_view mime) {
 bool query_default_player() {
 #if defined(_WIN32)
   return std::ranges::all_of(kAskedExtensions, [](std::string_view extension) {
-    return user_choice_is_ajp(user_choice(extension));
+    return user_choice_is_ajp(user_choice(extension)) || executable_is_ajp(associated_executable(extension));
   });
 #elif defined(__APPLE__)
   return false;  // le Finder ne le dit pas sans LaunchServices : la case suffit
@@ -481,34 +551,60 @@ bool query_default_player() {
 }  // namespace
 
 bool user_choice_is_ajp(std::string_view prog_id) {
-  return prog_id == kProgId;
+  // « Ouvrir avec > Toujours » écrit « Applications\ajp.exe » et non notre ProgId (B19-02).
+  constexpr std::string_view kApplication = "Applications\\ajp.exe";
+  if (prog_id == kProgId) return true;
+  return prog_id.size() == kApplication.size() &&
+         std::ranges::equal(prog_id, kApplication,
+                            [](char a, char b) { return core::ascii_lower(a) == core::ascii_lower(b); });
+}
+
+bool executable_is_ajp(std::string_view executable) {
+  const std::size_t cut = executable.find_last_of("/\\");
+  const std::string_view name = cut == std::string_view::npos ? executable : executable.substr(cut + 1);
+  return core::ascii_lower(name) == "ajp.exe";
 }
 
 bool is_default_player(const PlayerPlace& place) {
   static_cast<void>(place);
   const std::scoped_lock lock(g_default_mutex);
-  if (g_default_known) return *g_default_known;
+  const bool fresh = g_default_known && std::chrono::steady_clock::now() - g_default_known_at < kDefaultFresh;
+  if (fresh) return *g_default_known;
+  const bool stale_answer =
+      g_default_known.value_or(false);  // celle d'avant, le temps que la nouvelle vienne
   if (!g_default_asking) {
     g_default_asking = true;
     const std::uint64_t generation = g_default_generation;
-    try {
-      std::thread([generation] {
-        bool answer = false;
-        try {
-          answer = query_default_player();
-        } catch (...) {  // NOLINT(bugprone-empty-catch) : sans réponse, pas par défaut
-        }
-        const std::scoped_lock done(g_default_mutex);
-        if (generation != g_default_generation) return;
-        g_default_known = answer;
-        g_default_asking = false;
-      }).detach();
-    } catch (...) {  // pas de fil : la question n'est pas posée, le lecteur n'est pas dit par défaut
+    // Par start_thread, gardé par abandon_thread : la question (xdg-mime, 10 s au plus, deux fois) ne retient
+    // pas la sortie et n'est plus un thread détaché hors de core/thread.h (B30-03, B33-08).
+    const auto finished = std::make_shared<std::atomic<bool>>(false);
+    auto started =
+        start_thread("default-player", ThreadReport([](const Refusal&) {}),
+                     [generation, finished](const std::stop_token&, const ThreadReport&) {
+                       bool answer = false;
+                       try {
+                         answer = query_default_player();
+                       } catch (...) {  // NOLINT(bugprone-empty-catch) : sans réponse, pas par défaut
+                       }
+                       {
+                         const std::scoped_lock done(g_default_mutex);
+                         if (generation == g_default_generation) {
+                           g_default_known = answer;
+                           g_default_known_at = std::chrono::steady_clock::now();
+                           g_default_asking = false;
+                         }
+                       }
+                       finished->store(true);
+                     });
+    if (started) {
+      abandon_thread(std::move(*started), [finished] { return finished->load(); });
+    } else {  // pas de fil : la question n'est pas posée, le lecteur n'est pas dit par défaut
       g_default_known = false;
+      g_default_known_at = std::chrono::steady_clock::now();
       g_default_asking = false;
     }
   }
-  return false;
+  return stale_answer;
 }
 
 void leave_lone_console() {

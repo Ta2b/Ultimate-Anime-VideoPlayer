@@ -1,0 +1,18 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 640
+PlayResY: 360
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,sans-serif,36,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,20,1
+Style: Top,sans-serif,36,&H0000FFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,8,10,10,20,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:10.00,Default,,0,0,0,,{\p1\pos(0,0)\bord0\1c&HFFFFFF&}m 0 0 l 640 0 640 360 0 360
+Dialogue: 1,0:00:00.00,0:00:10.00,Default,,0,0,0,,{\p2\clip(m 10 10 b 100 0 200 100 300 10 l 300 200 10 200)\blur20\be10}m 0 0 b 50 0 100 50 100 100 l 0 100
+Dialogue: 2,0:00:01.00,0:00:09.00,Default,,0,0,0,,{\iclip(m 0 0 l 320 0 320 180 0 180)\p1\fscx300\fscy300\frz45\t(\blur500\be100)}m 0 0 l 50 0 50 50 0 50
+Dialogue: 3,0:00:02.00,0:00:08.00,Default,,0,0,0,,{\clip(0,0,640,360)\t(0,6000,\clip(100,100,300,300))\pos(320,180)}Clip animé

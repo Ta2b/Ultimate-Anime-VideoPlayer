@@ -16,11 +16,12 @@ constexpr std::array kWizardTexts{
     Entry{
         "\"Calibrate now\" tests several settings on a very demanding sequence: picture resolution, SPAN "
         "upscaling and RIFE smoothness, and keeps the best combination this machine sustains. Only a "
-        "progress bar is shown; it takes a few minutes, longer the first time (the engines are built once).",
+        "progress bar is shown; the estimate below is longer with TensorRT, which builds its engines during "
+        "the test.",
         "« Calibrer maintenant » essaie plusieurs réglages sur une séquence très éprouvante : résolution de "
         "l'image, agrandissement SPAN et fluidité RIFE, et garde la meilleure combinaison que la machine "
-        "tient. Seule une barre de chargement s'affiche ; cela prend quelques minutes, plus la première fois "
-        "(les moteurs se construisent une fois)."},
+        "tient. Seule une barre de chargement s'affiche ; l'estimation ci-dessous est plus longue avec "
+        "TensorRT, qui construit ses moteurs pendant l'essai."},
     Entry{"\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
           "Post-processing.",
           "« Régler moi-même » : le préréglage Auto estimé pour cette carte, modifiable dans Vidéo > "
@@ -78,6 +79,8 @@ constexpr std::array kWizardTexts{
     Entry{"Read the licence", "Lire la licence"},
     Entry{"Not installed until its licence is accepted.",
           "Pas installé tant que sa licence n'est pas acceptée."},
+    Entry{"Continuing installs it under this licence; untick the box to skip it.",
+          "Continuer l'installe sous cette licence ; décochez la case pour l'éviter."},
     Entry{"{} is not available here: {}", "{} n'est pas disponible ici : {}"},
     Entry{"{}: recommended for this card but not selected. The calibration will measure a slower engine.",
           "{} : recommandé pour cette carte mais pas coché. La calibration mesurera un moteur plus lent."},

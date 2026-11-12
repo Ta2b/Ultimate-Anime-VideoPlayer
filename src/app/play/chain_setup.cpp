@@ -43,6 +43,40 @@ void warn_span_fallback(spdlog::logger& log, PrecisionTier tier) {
 
 }  // namespace
 
+std::vector<std::pair<std::string, std::string>> playback_facts(const PlaybackFacts& facts) {
+  std::string rate =
+      facts.frame_rate > 0.0 ? std::format("{:.3f} i/s", facts.frame_rate) : "cadence inconnue";
+  std::vector<std::pair<std::string, std::string>> out;
+  out.emplace_back("Vidéo", std::format("{} · {} · {}x{} · {} · source {}", facts.file, facts.codec,
+                                        facts.width, facts.height, rate, facts.transfer));
+  out.emplace_back("Écran", facts.screen);
+  out.emplace_back("Sortie", facts.hdr_output ? "HDR10" : "SDR (image gradée)");
+  out.emplace_back("Chaîne jouée", facts.chain);
+  return out;
+}
+
+void note_playback_facts(const media::TrackInfo& video, const ColorInfo& source, const std::string& screen,
+                         bool hdr_output, const std::string& chain, const std::filesystem::path& file) {
+  const PlaybackFacts facts{
+      .file = core::to_utf8(file.filename()),
+      .codec = video.codec,
+      .width = video.width,
+      .height = video.height,
+      .frame_rate = video.frame_rate.den > 0 ? static_cast<double>(video.frame_rate.num) /
+                                                   static_cast<double>(video.frame_rate.den)
+                                             : 0.0,
+      .transfer = source.transfer == Transfer::Pq ? "PQ" : (source.transfer == Transfer::Hlg ? "HLG" : "SDR"),
+      .screen = screen,
+      .hdr_output = hdr_output,
+      .chain = chain};
+  for (const auto& [name, value] : playback_facts(facts)) note_report_fact(name, value);
+}
+
+void announce_playback(const Player& p, const ColorInfo& source, bool hdr_output, const std::string& chain) {
+  log_channel("app")->info("{} : {}", prepare::utf8_path(p.options.file.filename()), chain);
+  note_playback_facts(p.video, source, describe_hdr(p.screen.window()), hdr_output, chain, p.options.file);
+}
+
 std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
                                                      const std::optional<ModelChoice>& rife) {
   std::vector<std::filesystem::path> dirs;
@@ -143,7 +177,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .rife_height = rife_motion   ? rife_size.height
                      : drba_motion ? drba_size.height
                                    : 0,
-      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, top_factor),
+      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, order_factor),
       // En lecture (horloge présente), un instant déjà passé n'est ni calculé ni écrit, en Rapide comme à pas
       // constant : l'image serait jetée par la présentation (audit F11).
       .late_fate = clock != nullptr,
@@ -158,7 +192,7 @@ using Prepared = std::expected<std::optional<ChainEngines>, StageFailure>;
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings);
 
 // La forme de l'ouverture (chain_shape.h) : l'anneau de ces réglages et l'ordre du warp que les moteurs
-// chargés ont pris (c.top_factor), avec l'écran et la source d'où ils viennent.
+// chargés ont pris (c.order_factor), avec l'écran et la source d'où ils viennent.
 void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings) {
   c.opened = {.display_hz = display_refresh_hz(p.screen.window()),
               .source_fps = fps_of(p.video.frame_rate),
@@ -171,10 +205,11 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
   c.opened.drba_fused_capable = c.backend != nullptr && c.backend->capabilities().drba_fused;
   c.opened.drba_fused_refused = c.opened.drba ? c.drba_fused_refused : std::nullopt;
   c.opened.rife_fused_refused = c.rife_fused ? std::nullopt : c.rife_fused_refused;
+  if (c.opened.rife_loaded) c.opened.loaded = loaded_by(settings);
   c.opened.shape = {
       .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}),
       .warp_after_span =
-          c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.top_factor)};
+          c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.order_factor)};
 }
 
 }  // namespace
@@ -408,6 +443,15 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
   return true;
 }
 
+// Le moteur retenu : au journal et au rapport de problème (B39-02).
+void announce_backend(spdlog::logger& log, const gpu::Backend& backend, const std::string& name,
+                      const std::filesystem::path& library) {
+  const auto& caps = backend.capabilities();
+  log.info("backend {} ({}) depuis {}/{}", name, caps.device_name,
+           core::to_utf8(library.parent_path().filename()), core::to_utf8(library.filename()));
+  note_report_fact("Backend", std::format("{} sur {} · {}", name, caps.device_name, caps.driver_version));
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
@@ -424,7 +468,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     c.model = std::move(*chosen);
   }
   c.factor = c.model ? kSpanFactor : 1;
-  c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
+  c.order_factor = order_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
   c.work = chain_work_size(settings, video.width, video.height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
@@ -464,8 +508,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
   c.backend_name = c.backend->capabilities().name;
-  log->info("backend {} ({}) depuis {}", c.backend_name, c.backend->capabilities().device_name,
-            p.library->path().string());
+  announce_backend(*log, *c.backend, c.backend_name, p.library->path());
   // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
   if (const std::string rebar = rebar_text(gpu);
       c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
@@ -494,7 +537,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
     // créée.
     bool motion =
-        settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
+        settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.order_factor);
     // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
     // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
     const bool smaller = motion && c.rife_size.height < c.work.height;

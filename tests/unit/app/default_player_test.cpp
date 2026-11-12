@@ -49,6 +49,18 @@ TEST_CASE("Lecteur par défaut : le .desktop nomme le lecteur et les types vidé
   CHECK(mimes.contains("video/x-matroska;"));
 }
 
+TEST_CASE("Lecteur par défaut : la fiche porte l'identifiant de l'application et l'icône (B19-01)",
+          "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
+  const auto plain = desktop_entry("/opt/ajp-linux-x64/ajp");
+  REQUIRE(plain);
+  CHECK(line_of(*plain, "StartupWMClass") == "io.github.ta2b.ajp");  // l'app_id de la fenêtre
+  CHECK(line_of(*plain, "Icon") == "video-x-generic");               // pas d'icône installée : la générique
+  const auto with_icon = desktop_entry("/opt/ajp-linux-x64/ajp", true);
+  REQUIRE(with_icon);
+  CHECK(line_of(*with_icon, "Icon") == "io.github.ta2b.ajp");
+}
+
 TEST_CASE("Lecteur par défaut : Exec échappe le chemin selon la spécification XDG", "[app][default_player]") {
   ajp::app::play::FrenchUi french;
   // Entre guillemets, « " », « ` », « $ » et « \ » prennent une barre oblique inverse et « % » se
@@ -153,6 +165,26 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
   CHECK(nowhere.error().code == RefusalCode::FieldMissing);
 }
 
+TEST_CASE("Lecteur par défaut : deux installations ne se disputent pas la fiche (B19-07)",
+          "[app][default_player]") {
+  ajp::app::play::FrenchUi french;
+  const fs::path home = fs::temp_directory_path() / "ajp-default-player-two-test";
+  std::error_code error;
+  fs::remove_all(home, error);
+  fs::create_directories(home / "a", error);
+  fs::create_directories(home / "b", error);
+  std::ofstream(home / "a" / "ajp") << "x";
+  std::ofstream(home / "b" / "ajp") << "x";
+  const PlayerPlace first{.executable = home / "a" / "ajp", .home = home};
+  const PlayerPlace second{.executable = home / "b" / "ajp", .home = home};
+  REQUIRE(register_player(first));
+  CHECK_FALSE(refresh_registration(second));  // la première existe encore : la fiche reste à elle
+  CHECK(refresh_registration(first) == false);
+  fs::remove(home / "a" / "ajp", error);
+  CHECK(refresh_registration(second));  // la première a disparu : la fiche suit la seconde
+  fs::remove_all(home, error);
+}
+
 TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_HOME)",
           "[app][default_player]") {
   ajp::app::play::FrenchUi french;
@@ -196,6 +228,12 @@ TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_pla
   // une machine chargée peut, lui, prendre plus de 200 ms.
   CHECK(std::chrono::steady_clock::now() - asked < std::chrono::seconds(1));
   CHECK(user_choice_is_ajp("AJP.Video"));
+  CHECK(user_choice_is_ajp("Applications\\ajp.exe"));  // « Ouvrir avec > Toujours » (B19-02)
+  CHECK(user_choice_is_ajp("applications\\AJP.EXE"));
+  CHECK_FALSE(user_choice_is_ajp("Applications\\vlc.exe"));
+  CHECK(executable_is_ajp(R"(C:\Users\t\AppData\Local\Programs\AJP\ajp.exe)"));  // B34-09
+  CHECK_FALSE(executable_is_ajp(R"(C:\Program Files\VideoLAN\vlc.exe)"));
+  CHECK_FALSE(executable_is_ajp(""));
   CHECK_FALSE(user_choice_is_ajp("VLC.mkv"));
   CHECK_FALSE(user_choice_is_ajp(""));
 }

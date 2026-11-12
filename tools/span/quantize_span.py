@@ -4,23 +4,28 @@ calibration « entropy » (INT8) ou « max » (FP8) sur des images d'anime, gard
 modèle d'origine.
 
 --precision choisit la variante : int8 (par défaut), fp8 (E4M3, le cran Performance du lecteur, RTX 40 et
-après) ou fp32 (le cran Qualité : calcul en FP32, E/S en FP16, sans quantification). Un SPAN en FP8 n'est écrit
-que s'il va plus vite que le FP16 : une mesure faite à la main (RTX 4070 Ti, TensorRT 11.3, SPAN Balanced HD
+après) ou fp32 (le cran Qualité : calcul en FP32, E/S en FP16, sans quantification). Un SPAN en FP8 ou en INT8
+n'est écrit que s'il va plus vite que le FP16 : une mesure faite à la main (RTX 4070 Ti, TensorRT 11.3, SPAN Balanced HD
 V3.1, 1088×1920) donne 19,90 ms en FP8 contre 17,34 ms en FP16 quand les Q/DQ ne sont pas fusionnés. Le
-script chronomètre donc les deux avec trtexec (--trtexec) et exige --min-speedup ; --skip-speed-check écrit
-la variante sans mesure.
+script chronomètre donc les deux avec trtexec (--trtexec) et exige --min-speedup (FP8 comme INT8, car le
+lecteur prend l'INT8 à la place du FP16 dès que le reçu passe) ; --skip-speed-check écrit la variante sans
+mesure. Le FP32 (cran Qualité) ne cherche pas la vitesse : pas de contrôle.
 
 TensorRT 11 est fortement typé : l'INT8 vient des nœuds QuantizeLinear/DequantizeLinear du graphe,
 le reste en FP16, entrée et sortie comprises (le lecteur refuse d'autres E/S). Le lecteur prend la
 variante d'un modèle sous TensorRT quand elle est dans son dossier « modeles » avec un reçu qui
 passe ses garde-fous (src/app/play/span_int8.h) ; supprimer les deux fichiers ramène le FP16.
 
+Les garde-fous du FP8 par Q/DQ (30 dB en moyenne, 26 au pire, SSIM 0,93) sont plus lâches que ceux de l'INT8 :
+c'est le choix du cran Performance, la perte se juge à l'œil. Le script l'annonce, avec le gain mesuré.
+
 Le corpus : des images SDR 8 bits d'anime, tirées de vos vidéos, par exemple
     ffmpeg -i episode.mkv -vf "select=not(mod(n\\,480))" -fps_mode vfr corpus/ep01_%04d.png
 Il ne doit contenir aucune sortie de RTX HDR, TrueHDR ou RTX Video (licence NVIDIA : pas
 d'entraînement ni de réglage sur leurs sorties). Le script refuse les fichiers dont le chemin le
 laisse croire et toute image de plus de 8 bits par canal ; le reste est de votre ressort. Un
-cinquième des images (choisies par leur SHA-256) sert à la validation, jamais à la calibration.
+cinquième des images (choisies par leur SHA-256) sert à la validation, jamais à la calibration : il en faut
+40 au moins, pour 8 images de validation (les gardes « moyen » et « pire » portent sur elles).
 
 Le modèle INT8 est dérivé des poids d'AnimeJaNai : il se construit chez vous et ne se publie pas.
 
@@ -52,6 +57,7 @@ MIN_PSNR_MEAN_DB = 42.0
 MIN_PSNR_WORST_DB = 38.0
 MIN_SSIM_WORST = 0.985
 
+MIN_CORPUS, MIN_VALIDATION = 40, 8  # B46-10 : deux images ne montrent pas les scènes à risque
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 HDR_SUFFIXES = {".exr", ".hdr", ".jxr", ".avif", ".heic", ".heif", ".tif", ".tiff"}
 NVIDIA_OUTPUTS = re.compile(r"rtx[ _.-]?(hdr|vsr|video)|true[ _.-]?hdr|nvidia[ _.-]?(hdr|vsr)", re.IGNORECASE)
@@ -97,8 +103,9 @@ def corpus(folder: Path) -> tuple[list[Path], list[Path], str]:
             fail(f"{relative} : PNG de plus de 8 bits par canal refusé (SPAN lit des images SDR)")
         images.append((sha256_file(path), path))
     images.sort()
-    if len(images) < 10:
-        fail(f"{folder} : {len(images)} images, 10 au moins (8 de calibration, 2 de validation)")
+    if len(images) < MIN_CORPUS:
+        fail(f"{folder} : {len(images)} images, {MIN_CORPUS} au moins ({MIN_CORPUS - MIN_VALIDATION} de calibration, "
+             f"{MIN_VALIDATION} de validation)")
     calibration = [p for i, (_, p) in enumerate(images) if i % 5 != 4]
     validation = [p for i, (_, p) in enumerate(images) if i % 5 == 4]
     manifest = hashlib.sha256("\n".join(sha for sha, _ in images).encode()).hexdigest()
@@ -195,6 +202,45 @@ def fp16_io(model: onnx.ModelProto) -> onnx.ModelProto:
     return model
 
 
+# Sans elles, Model Optimizer quantifierait autre chose que demandé (format, données, méthode, E/S).
+ESSENTIAL_OPTIONS = ("onnx_path", "quantize_mode", "calibration_data", "calibration_method", "output_path",
+                     "high_precision_dtype")
+FP8_TYPES = {TensorProto.FLOAT8E4M3FN}
+
+
+def qdq_types(model: onnx.ModelProto) -> list[int | None]:
+    """Le type quantifié de chaque QuantizeLinear (zéro-point ou attribut output_dtype), None s'il est inconnu."""
+    constants = {t.name: t.data_type for t in model.graph.initializer}
+    for node in model.graph.node:
+        if node.op_type == "Constant":
+            for attribute in node.attribute:
+                if attribute.name == "value":
+                    constants[node.output[0]] = attribute.t.data_type
+    types: list[int | None] = []
+    for node in model.graph.node:
+        if node.op_type != "QuantizeLinear":
+            continue
+        declared = next((a.i for a in node.attribute if a.name == "output_dtype" and a.i), None)
+        if declared is not None:
+            types.append(declared)
+        elif len(node.input) >= 3 and node.input[2]:
+            types.append(constants.get(node.input[2]))
+        else:
+            types.append(TensorProto.UINT8)  # sans zéro-point ni output_dtype, l'ONNX rend de l'UINT8
+    return types
+
+
+def check_qdq_format(model: onnx.ModelProto, mode: str) -> None:
+    """B46-08 : le graphe écrit contient bien le format annoncé par le reçu (FP8 E4M3, ou INT8 sans FP8)."""
+    types = qdq_types(model)
+    if mode == "fp8":
+        bad = sum(1 for t in types if t not in FP8_TYPES)
+        if bad:
+            fail(f"{bad} nœud(s) QuantizeLinear sur {len(types)} ne sont pas en FLOAT8E4M3FN : ce n'est pas du FP8")
+    elif any(t in FP8_TYPES for t in types):
+        fail("des nœuds QuantizeLinear en FP8 dans un modèle INT8")
+
+
 def quantize_modelopt(source32: Path, output: Path, data: np.ndarray, input_name: str, method: str, eps: list[str], mode: str = "int8") -> str:
     try:
         import modelopt
@@ -213,6 +259,12 @@ def quantize_modelopt(source32: Path, output: Path, data: np.ndarray, input_name
         "high_precision_dtype": "fp16",
     }
     accepted = inspect.signature(quantize).parameters
+    missing = [k for k in ESSENTIAL_OPTIONS if k not in accepted]
+    if missing:  # B46-08 : une option renommée donnerait en silence le défaut de Model Optimizer
+        fail(f"la version de Model Optimizer installée ne connaît plus {', '.join(missing)} : adapter le script")
+    for k in wanted:
+        if k not in accepted:
+            print(f"  option {k} ignorée par cette version de Model Optimizer")
     quantize(**{k: v for k, v in wanted.items() if k in accepted})
     return f"modelopt {getattr(modelopt, '__version__', '?')}"
 
@@ -267,7 +319,9 @@ def blur(x: np.ndarray, w: np.ndarray) -> np.ndarray:
 
 
 def ssim(a: np.ndarray, b: np.ndarray) -> float:
-    """SSIM de la luminance BT.709 (fenêtre gaussienne 11, σ 1,5 ; Wang et al. 2004)."""
+    """SSIM de la luminance BT.709 (fenêtre gaussienne 11, σ 1,5 ; Wang et al. 2004).
+
+   Définition de référence. Quatre définitions coexistent (B46-09) : blocs 8×8 (mesures.py, interp_fp8.py), gaussien 11 σ 1,5 (quantize_span.py), 7×7 uniforme par canal (commun.py) ; chaque seuil a été fixé avec la sienne, ne pas les comparer d'un outil à l'autre."""
     luma = np.array([0.2126, 0.7152, 0.0722])[:, None, None]
     x, y = (a * luma).sum(0), (b * luma).sum(0)
     w = gaussian()
@@ -303,10 +357,10 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True, help="le dossier « modeles » des données du lecteur")
     parser.add_argument("--precision", choices=tuple(PRECISIONS), default="int8", help="int8 (défaut), fp8 ou fp32")
     parser.add_argument("--method", choices=("entropy", "max"), default=None, help="entropy pour l'INT8, max pour le FP8")
-    parser.add_argument("--trtexec", default="trtexec", help="trtexec (TensorRT 11) pour la mesure de vitesse du FP8")
+    parser.add_argument("--trtexec", default="trtexec", help="trtexec (TensorRT 11) pour la mesure de vitesse (INT8 et FP8)")
     parser.add_argument("--speed-shape", default="1088x1920", help="hauteur x largeur de la mesure de vitesse")
-    parser.add_argument("--min-speedup", type=float, default=1.05, help="gain exigé du FP8 sur le FP16 (1,05)")
-    parser.add_argument("--skip-speed-check", action="store_true", help="écrire le FP8 sans le chronométrer")
+    parser.add_argument("--min-speedup", type=float, default=1.05, help="gain exigé de l'INT8 ou du FP8 sur le FP16 (1,05)")
+    parser.add_argument("--skip-speed-check", action="store_true", help="écrire l'INT8 ou le FP8 sans le chronométrer")
     parser.add_argument("--crop", type=int, default=256, help="côté des découpes de calibration (256)")
     parser.add_argument("--crops", type=int, default=256, help="nombre de découpes de calibration (256)")
     parser.add_argument("--valid-size", default="960x540", help="taille des images de validation (960x540)")
@@ -353,6 +407,7 @@ def main() -> int:
             nodes = sum(1 for n in result.graph.node if n.op_type in ("QuantizeLinear", "DequantizeLinear"))
             if nodes == 0:
                 fail("Model Optimizer n'a posé aucun nœud Q/DQ")
+            check_qdq_format(result, precision["mode"])
         onnx.checker.check_model(result)
         onnx.save(result, str(quantized))
 
@@ -369,14 +424,16 @@ def main() -> int:
         ssim_worst = min(s[1] for s in scores)
         passed = psnr_mean >= args.min_psnr and psnr_worst >= args.min_worst_psnr and ssim_worst >= args.min_ssim
         speedup = 0.0
-        if passed and args.precision == "fp8" and not args.skip_speed_check:
+        # B46-02 : le contrôle de vitesse vaut pour toute variante quantifiée (l'INT8 est choisi à la place du FP16).
+        if passed and args.precision in ("int8", "fp8") and not args.skip_speed_check:
             speed_h, speed_w = (int(v) for v in args.speed_shape.lower().split("x"))
             half_ms = trtexec_ms(args.trtexec, source, speed_h, speed_w)
             fp8_ms = trtexec_ms(args.trtexec, quantized, speed_h, speed_w)
             speedup = half_ms / fp8_ms
-            print(f"  trtexec {speed_h}x{speed_w} : FP16 {half_ms:.2f} ms, FP8 {fp8_ms:.2f} ms (×{speedup:.2f})")
+            label = args.precision.upper()
+            print(f"  trtexec {speed_h}x{speed_w} : FP16 {half_ms:.2f} ms, {label} {fp8_ms:.2f} ms (×{speedup:.2f})")
             if speedup < args.min_speedup:
-                print(f"  FP8 pas assez rapide (×{speedup:.2f}, il faut ×{args.min_speedup:.2f}) : non écrit")
+                print(f"  {label} pas assez rapide (×{speedup:.2f}, il faut ×{args.min_speedup:.2f}) : non écrit")
                 passed = False
         if passed:
             target.write_bytes(quantized.read_bytes())
@@ -407,6 +464,10 @@ def main() -> int:
             "passed": passed,
         },
     )
+    if passed and args.precision == "fp8":
+        # B46-06 : perte consentie pour la vitesse, annoncée avec son gain (mesuré, ou « non mesuré »).
+        gain = f"×{speedup:.2f} mesuré contre le FP16" if speedup else "gain non mesuré"
+        print(f"  perte consentie (FP8 Q/DQ, gardes lâches) : PSNR {psnr_mean:.2f} dB, SSIM {ssim_worst:.4f} ; {gain}")
     verdict = "passe" if passed else "ÉCHEC, modèle non écrit"
     print(f"PSNR moyen {psnr_mean:.2f} dB, pire {psnr_worst:.2f} dB, pire SSIM {ssim_worst:.4f} : {verdict}")
     print(f"reçu {receipt}")

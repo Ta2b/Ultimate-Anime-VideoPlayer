@@ -207,7 +207,7 @@ def main() -> int:
     parser.add_argument("--calib-size", type=int, default=576, help="côté des découpes de calibration (576)")
     parser.add_argument("--calib-crops", type=int, default=32, help="nombre de découpes de calibration (32)")
     parser.add_argument("--valid-size", default="1920x1088", help="taille maximale des images de validation")
-    parser.add_argument("--max-valid", type=int, default=4, help="images de validation au plus (4)")
+    parser.add_argument("--max-valid", type=int, default=q.MIN_VALIDATION, help="images de validation au plus (8)")
     parser.add_argument("--min-psnr", type=float, default=MIN_PSNR_MEAN_DB)
     parser.add_argument("--min-worst-psnr", type=float, default=MIN_PSNR_WORST_DB)
     parser.add_argument("--min-ssim", type=float, default=MIN_SSIM_WORST)
