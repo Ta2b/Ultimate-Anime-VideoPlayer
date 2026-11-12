@@ -145,3 +145,40 @@ TEST_CASE("détection : paires et tampons de résultat hors contrat refusés", "
   require_refusal(kr.block_diff(r, a.view, a.view, tiny.view()), RefusalCode::InputMismatch);
   CHECK(require_value(r.finish())->dispatches() == 0);
 }
+
+TEST_CASE("mesure de paire RGB : score, blocs et pire bloc contre pair_scores, aux deux plages (C50-01)",
+          "[vk_compute][detect]") {
+  Rig rig = make_rig();
+  for (const k::Range range : {k::Range::Limited, k::Range::Full}) {
+    const float levels = k::pair_levels(range);
+    INFO("niveaux " << levels);
+    const int w = 100;
+    const int h = 70;
+    const k::RgbImage a = synthetic_rgb(w, h, 11, 0.0F, 1.0F);
+    const k::RgbImage b = synthetic_rgb(w, h, 12, 0.0F, 1.0F);
+    TensorBuffer ga = upload_rgb(rig, a, Precision::F32);
+    TensorBuffer gb = upload_rgb(rig, b, Precision::F32);
+    const std::uint32_t count = KernelRunner::block_count(static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
+    Buffer sums = make_buffer(rig, VkDeviceSize{count} * sizeof(float), MemoryUse::Readback);
+    Buffer worst = make_buffer(rig, sizeof(std::uint32_t), MemoryUse::Readback);
+    record_and_run(rig, [&](Recorder& r) {
+      return rig.kernels().rgb_pair_diff(r, ga.view, gb.view, sums.view(), worst.view(), levels);
+    });
+    const k::RifeGeometry g = k::rife_geometry(w, h);
+    const auto want = k::ref::pair_scores(a, b, levels, g);
+    REQUIRE(want);
+    const std::vector<float> got_sums = read_as<float>(rig, sums, count);
+    REQUIRE(got_sums.size() == want->block_sums.size());
+    double total = 0.0;
+    for (std::size_t i = 0; i < got_sums.size(); ++i) {
+      CHECK(std::fabs(double{got_sums[i]} - want->block_sums[i]) <= 1e-4 * want->block_sums[i] + 1e-6);
+      total += double{got_sums[i]};
+    }
+    const double area = static_cast<double>(g.padded_width) * g.padded_height;
+    CHECK(std::fabs(k::pair_scene_score(total, levels, area) - want->scene_score) <=
+          k::tolerance::kSceneScoreRelative * want->scene_score);
+    const std::uint32_t got_worst = read_as<std::uint32_t>(rig, worst, 1U)[0];
+    // La troncature du pire bloc peut différer d'un pas selon l'ordre des sommes.
+    CHECK(std::abs(static_cast<int>(got_worst) - static_cast<int>(want->worst_block)) <= 2);
+  }
+}

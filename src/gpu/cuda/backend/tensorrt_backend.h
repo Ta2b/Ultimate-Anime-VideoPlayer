@@ -358,6 +358,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
     cudaEvent_t done = nullptr;
     std::uint64_t ticket = 0;
     double area = 0.0;  // aire remplie de RIFE
+    float levels = 219.0F;  // pas de luma de la source lors de la mesure
   };
   struct FlowRead {
     unsigned int* device = nullptr;  // histogramme des déplacements (kernels::kFlowBins cases)
