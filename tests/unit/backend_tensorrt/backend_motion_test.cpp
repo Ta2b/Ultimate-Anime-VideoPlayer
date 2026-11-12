@@ -24,6 +24,7 @@
 #include "kernels/ref/half.h"
 #include "kernels/ref/warp.h"
 #include "kernels/spec/detect.h"
+#include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/tolerance.h"
 #include "prepare/sha256.h"
@@ -289,6 +290,42 @@ TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage 
             .code == RefusalCode::FieldOutOfRange);
   CHECK(loaded.backend->kernels()->rife_crop((*back)->tensor(), (*back)->tensor()).error().code ==
         RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("Backend TensorRT : réduction Area de moitié, celle de l'échelle par paire",
+          "[backend_tensorrt][cuda][rife]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 64;
+  constexpr int h = 36;
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto full = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto half = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h / 2, w / 2}});
+  REQUIRE(full);
+  REQUIRE(half);
+  const std::vector<float> values = ramp(w, h);
+  upload((*full)->tensor(), values);
+  REQUIRE(loaded.backend->kernels()->resample((*full)->tensor(), kernels::Filter::Area, (*half)->tensor()));
+  const auto got = download((*half)->tensor());
+  const auto in = [&](int c, int x, int y) {
+    return kernels::ref::round_to_half(values[static_cast<std::size_t>((c * h + y) * w + x)]);
+  };
+  double worst = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    for (int y = 0; y < h / 2; ++y) {
+      for (int x = 0; x < w / 2; ++x) {
+        const float mean = (in(c, 2 * x, 2 * y) + in(c, 2 * x + 1, 2 * y) + in(c, 2 * x, 2 * y + 1) +
+                            in(c, 2 * x + 1, 2 * y + 1)) /
+                           4.0F;
+        const float out = got[static_cast<std::size_t>((c * (h / 2) + y) * (w / 2) + x)];
+        worst = std::max(worst, static_cast<double>(std::fabs(out - mean)));
+      }
+    }
+  }
+  CHECK(worst < 1e-3);
+  // Agrandir n'est pas une réduction Area : refusé, comme avant.
+  CHECK_FALSE(
+      loaded.backend->kernels()->resample((*half)->tensor(), kernels::Filter::Area, (*full)->tensor()));
 }
 
 TEST_CASE("Backend TensorRT : mesures d'une paire, coupe de scène et pire bloc",
