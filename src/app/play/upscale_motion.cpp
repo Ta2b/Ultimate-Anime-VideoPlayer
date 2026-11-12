@@ -19,8 +19,12 @@
 namespace ajp::app::play {
 
 std::expected<void, Refusal> UpscaleStage::enqueue_rife(gpu::Engine& engine, std::span<gpu::Tensor> results) {
-  const std::array<std::uint64_t, 2> images = rife_in_images_[rife_pair_];
-  const RifeEncoded& last = rife_encoded_;
+  return enqueue_on(engine, rife_in(), rife_in_images_[rife_pair_], rife_encoded_, results);
+}
+
+std::expected<void, Refusal> UpscaleStage::enqueue_on(gpu::Engine& engine, const gpu::Tensor& input,
+                                                      const std::array<std::uint64_t, 2>& images,
+                                                      RifeEncoded& last, std::span<gpu::Tensor> results) {
   // Le numéro d'une image ne revient jamais : des numéros égaux sont les mêmes pixels, dans le même tampon
   // d'entrée pour l'instant seul. Un autre moteur entre-temps (variante des paires calmes) a son propre
   // encodage : rien n'est annoncé.
@@ -37,10 +41,9 @@ std::expected<void, Refusal> UpscaleStage::enqueue_rife(gpu::Engine& engine, std
   } else {
     ++encodes_cold_;
   }
-  const std::array inputs{rife_in()};
+  const std::array inputs{input};
   auto queued = setup_.backend->enqueue(engine, inputs, results);
-  rife_encoded_ =
-      queued ? RifeEncoded{.engine = &engine, .buffer = rife_pair_, .images = images} : RifeEncoded{};
+  last = queued ? RifeEncoded{.engine = &engine, .buffer = rife_pair_, .images = images} : RifeEncoded{};
   return queued;
 }
 
@@ -83,6 +86,7 @@ void UpscaleStage::forget_motion() {
   motion_.known = false;  // une mesure encore en vol ne vaut plus
   warm_from_ = nullptr;   // ni les blocs grossiers d'une autre scène (P6.15)
   rife_encoded_ = {};     // ni l'encodage des images d'avant la coupe ou le saut
+  half_.encoded = {};
 }
 
 std::expected<void, Refusal> UpscaleStage::settle_motion() {
@@ -110,6 +114,31 @@ std::expected<void, Refusal> UpscaleStage::blend_poses(const gpu::Tensor& a, con
   gpu::KernelOps& ops = *setup_.backend->kernels();
   return out.ring != nullptr ? ops.warp_blend_poses_ring(a, b, motion, previous, t, *out.ring)
                              : ops.warp_blend_poses(a, b, motion, previous, t, *out.tensor);
+}
+
+std::expected<void, Refusal> UpscaleStage::interpolate_direct(float t, const gpu::Motion& other,
+                                                              const gpu::Tensor& a, const gpu::Tensor& b,
+                                                              const Target& out) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  // Échelle par paire : seule une paire forte passe au second RIFE, pas l'instant unique hors du milieu.
+  auto run = run_strong(t, other, strong_motion_);
+  if (!run) return std::unexpected(std::move(run.error()));
+  if (first_middle()) {
+    // Au premier instant s, le plus grand déplacement vaut max(s, 1 − s) de celui de la paire,
+    // contre 1/2 au milieu : mis à l'échelle du milieu (et de RIFE) pour le seuil, relu à la paire
+    // suivante.
+    auto ticket = ops.flow_max_start(run->motion);
+    if (ticket) {
+      motion_ =
+          PendingMotion{.ticket = *ticket, .scale = run->scale * 0.5F / std::max(t, 1.0F - t), .known = true};
+    } else {
+      flow_max_async_ = false;
+    }
+  }
+  if (warps_spanned()) {
+    if (auto ok = span_current(); !ok) return ok;
+  }
+  return blend(a, b, run->motion, 0.5F, out);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -180,23 +209,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
       now_ = PairMotion::Moving;
     }
   }
-  if (direct_run_) {
-    if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
-    if (first_middle()) {
-      // Au premier instant s, le plus grand déplacement vaut max(s, 1 − s) de celui de la paire,
-      // contre 1/2 au milieu : mis à l'échelle du milieu pour le seuil, relu à la paire suivante.
-      auto ticket = ops.flow_max_start(other);
-      if (ticket) {
-        motion_ = PendingMotion{.ticket = *ticket, .scale = 0.5F / std::max(t, 1.0F - t), .known = true};
-      } else {
-        flow_max_async_ = false;
-      }
-    }
-    if (warps_spanned()) {
-      if (auto ok = span_current(); !ok) return ok;
-    }
-    return blend(a, b, other, 0.5F, out);
-  }
+  if (direct_run_) return interpolate_direct(t, other, a, b, out);
   // Warp après SPAN : b agrandie ici (si la relecture du mouvement maximal ne l'a pas déjà enfilée),
   // après la passe de RIFE et la mesure que l'hôte attend : elles ne passent pas derrière SPAN.
   if (warps_spanned()) {
@@ -205,8 +218,9 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   // Garder les poses, mouvement fort : RIFE à l'instant exact (l'atout de RIFE), les poses ne valent que pour
   // les paires calmes, où le milieu extrapolé ne laisse pas de double contour.
   if (poses_ && strong_motion_ && t != 0.5F) {
-    if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
-    return blend(a, b, other, 0.5F, out);
+    auto run = run_strong(t, other, true);
+    if (!run) return std::unexpected(std::move(run.error()));
+    return blend(a, b, run->motion, 0.5F, out);
   }
   if (poses_ && before_ != PairMotion::Unknown) {
     const gpu::Motion previous = mid_motion(mid_ ^ 1U);
@@ -214,8 +228,9 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   }
   if (single_run_ || t == 0.5F) return blend(a, b, middle, t, out);
   // Mouvement fort : RIFE à cet instant, son mouvement tel quel.
-  if (auto ok = run_motion(t, other.flow, other.mask); !ok) return ok;
-  return blend(a, b, other, 0.5F, out);
+  auto run = run_strong(t, other, true);
+  if (!run) return std::unexpected(std::move(run.error()));
+  return blend(a, b, run->motion, 0.5F, out);
 }
 
 }  // namespace ajp::app::play

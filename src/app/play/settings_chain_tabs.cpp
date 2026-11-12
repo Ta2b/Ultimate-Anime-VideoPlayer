@@ -21,6 +21,17 @@ using panel::section;
 
 namespace {
 
+// L'échelle par paire (PlaySettings::pair_scale) : un essai, éteint par défaut.
+void pair_scale_checkbox(PlaySettings& d) {
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox(i18n::tr("Lighter RIFE on fast motion (half size)"), &d.pair_scale);
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("Trial: pairs that move a lot estimate motion on a half-size image, with a second engine "
+               "built the first time. Cheaper on fast pans; small objects may lose precision. RIFE only. "
+               "Reloads playback."));
+}
+
 struct HeightChoice {
   int lines;
   const char* label;
@@ -490,6 +501,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   const bool smoothed = d.smooth_drawings && d.motion_engine == MotionEngine::Rife;
   note(smoothed ? i18n::tr("Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.")
                 : i18n::tr("Scene cuts and held drawings are not interpolated."));
+  pair_scale_checkbox(d);
   if (!panel::advanced()) return;  // poses, ordre du traitement et Smooth Motion : réglages avancés
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife || smoothed);
   ImGui::Checkbox(i18n::tr("Keep poses (DRBA) with RIFE"), &d.keep_poses);

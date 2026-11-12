@@ -107,6 +107,27 @@ TEST_CASE("play.toml : « Lisser les dessins tenus », absent d'un ancien fichie
   std::filesystem::remove(path);
 }
 
+// Un play.toml d'avant l'échelle par paire se lit, l'option éteinte ; allumée, elle se relit.
+TEST_CASE("play.toml : l'échelle par paire, absente d'un ancien fichier, s'enregistre",
+          "[app][settings][pair_scale]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-pair-scale.toml";
+  REQUIRE(save_settings(path, PlaySettings{}));
+  std::string text = read_text(path);
+  const std::size_t line = text.find("pair_scale = false\n");
+  REQUIRE(line != std::string::npos);
+  text.erase(line, std::string("pair_scale = false\n").size());
+  write_text(path, text);
+  auto old = load_settings(path);
+  REQUIRE(old);
+  CHECK_FALSE(old->pair_scale);
+  old->pair_scale = true;
+  REQUIRE(save_settings(path, *old));
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->pair_scale);
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite (B22-02)", "[app][settings]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable";
   std::filesystem::remove_all(dir);
