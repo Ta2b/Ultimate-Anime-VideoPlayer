@@ -33,6 +33,16 @@ Le paquet du lecteur de la même exécution reprend ensuite son index dans l'`en
 sans TensorRT Windows échoue. Pousser l'étiquette, c'est accepter les licences du kit CUDA et de TensorRT de NVIDIA
 pour cette construction. Lancé à la main sans étiquette, la case `tensorrt` construit le paquet en artefact seulement.
 
+## Horloges pendant la lecture
+
+À 24 i/s, le GPU dort entre deux paires et le pilote baisse ses horloges (1790 MHz relevés en lecture contre 2825
+MHz au banc) : une paire à mouvement fort qui suit une scène calme démarre à bas régime (piste N1 de la deuxième
+passe TensorRT). Sous Windows, le réglage se pose pour le lecteur seul, sans droits d'administrateur : Panneau de
+configuration NVIDIA > Gérer les paramètres 3D > Paramètres de programme > `ajp.exe` > Mode de gestion de
+l'alimentation > « Préférer les performances maximales ». La consommation monte pendant la lecture seulement.
+À mesurer : la même lecture avec et sans, images en retard et manquées de la ligne « fin », et la ligne « GPU … »
+de fin de lecture pour les horloges.
+
 ## À essayer sur le poste Windows (non fait : aucune machine Windows côté développement)
 
 1. `package-windows.ps1` sort `ajp-engine-tensorrt-windows-x64.tar.gz` avec `ajp_backend_tensorrt.dll` et `trtexec.exe`.

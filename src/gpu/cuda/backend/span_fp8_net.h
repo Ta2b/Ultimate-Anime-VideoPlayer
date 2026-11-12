@@ -35,7 +35,8 @@ struct SpanFp8Weights {
   SpanFp8ConvView attention[kBlocks];
   SpanFp8ConvView concat;
   SpanFp8ConvView pixel;
-  bool acc16 = false;  // conv_cat et to_pixel accumulent en f16 (étape 3.5a)
+  bool acc16 =
+      false;  // conv_cat, to_pixel (étape 3.5a) et les blocs FP8 (kKernelsVersion 3) accumulent en f16
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.
@@ -56,8 +57,9 @@ class SpanFp8Net {
   static bool supported_device(int major, int minor);
   // La version des noyaux, écrite au reçu (étape 3.7b) : à augmenter à chaque changement de ce qu'ils
   // calculent (un paquet validé avec d'autres noyaux se revalide). 1 : état après les étapes 3.1 à 3.5 ;
-  // 2 : poids FP8 des blocs à une échelle par canal de sortie (étape 10.3).
-  static constexpr int kKernelsVersion = 2;
+  // 2 : poids FP8 des blocs à une échelle par canal de sortie (étape 10.3) ; 3 : la variante acc16 accumule
+  // aussi les blocs FP8 en f16, poids rangés 16 fois plus bas (deuxième passe TensorRT, N3).
+  static constexpr int kKernelsVersion = 3;
 
   // Envoie les poids sur l'appareil courant (FP8 pour les blocs) et prépare les lancements. height et width
   // sont déjà jugés par span_fp8::size_refusal. Nul si l'envoi échoue ; status et error disent pourquoi.

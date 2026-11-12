@@ -190,7 +190,8 @@ void level_section(PlaySettings& d, const SettingsChoices& choices) {
                     .explored_work_height = choices.explored_work_height,
                     .explored_rife_model = choices.explored_rife_model,
                     .calibrated = choices.calibrated,
-                    .display_width = choices.display_width},
+                    .display_width = choices.display_width,
+                    .span_fp8 = choices.span_fp8},
             core::SourceInfo{
                 .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
       }

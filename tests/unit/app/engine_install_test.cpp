@@ -635,6 +635,14 @@ TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toute
   CHECK(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 4070 Ti"));
   CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 5080"));  // pas avant une mesure (A37-01)
   CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 3060"));
+  // Le b8f64 en FP8 par défaut : TensorRT en service, Ada, et un paquet Linux (sous Windows, aucun noyau).
+#if defined(__linux__)
+  CHECK(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", true));
+#else
+  CHECK_FALSE(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", true));
+#endif
+  CHECK_FALSE(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", false));
+  CHECK_FALSE(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 3060", true));
   CHECK(ajp::app::play::effective_cuda_arch("sm90", "RTX 4050") == "sm90");
   CHECK(ajp::app::play::effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
   CHECK(ajp::app::play::effective_cuda_arch("", "inconnue") == "ptx");

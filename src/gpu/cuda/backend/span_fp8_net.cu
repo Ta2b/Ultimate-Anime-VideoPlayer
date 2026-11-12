@@ -36,6 +36,19 @@ using LPIX = sk::Launcher<C16, 2, false>;  // to_pixel, DepthToSpace fondu (éta
 using C16H = sk::Cfg<F16, 128, 32, 32, 4, F16>;
 using LCATH = sk::Launcher<C16H, 0, false>;
 using LPIXH = sk::Launcher<C16H, 2, false>;
+// Les blocs FP8 à accumulateur f16 (mma m16n8k32 .f16.e4m3.e4m3.f16) avec le même drapeau : sur les GeForce
+// Ada, l'accumulation f32 des mma FP8 tourne à la moitié du débit de l'accumulation f16 (piste N3 de la
+// deuxième passe TensorRT). Les poids y sont rangés kAcc16Headroom fois plus bas pour que les sommes tiennent
+// en f16.
+using C8H = sk::Cfg<E4, 128, 64, 32, 3, F16>;
+using L8H = sk::Launcher<C8H, 0, true>;
+using LTH = sk::Launcher<C8H, 1, false>;
+// Un produit de deux E4M3 au maximum (448 × 448) dépasse le plus grand f16 (65504) : à accumulateur f16, le
+// maximum de chaque canal de poids est rangé à 448 / 16 = 28. E4M3 étant flottant, la précision relative ne
+// change pas ; seuls les poids sous 1/1792 du maximum de leur canal passent en dénormaux. La porte du reçu
+// juge la variante (keep_acc16) : des sommes qui débordent font échouer sa validation, et le paquet garde le
+// f32.
+constexpr float kAcc16Headroom = 16.F;
 
 constexpr int kBlocks = SpanFp8Weights::kBlocks;
 constexpr int kChannels = 64;
@@ -46,8 +59,10 @@ constexpr int kScaleCount = SpanFp8Weights::kScales;
 
 // Poids FP8 d'un bloc, rangés [sortie][ligne][colonne][entrée] : échelle par canal de sortie (étape 10.3,
 // gpu/span_fp8/quantize.h) « maximum du canal / 448 » (1 pour un canal nul), arrondi au plus proche, saturé.
+// headroom > 1 : l'échelle est multipliée d'autant (maximum du canal rangé à 448 / headroom), pour les blocs
+// à accumulateur f16.
 std::array<float, 64> quantize_fp8(const std::uint16_t* half_bits, std::size_t count,
-                                   std::vector<std::uint8_t>& out) {
+                                   std::vector<std::uint8_t>& out, float headroom = 1.F) {
   constexpr std::size_t kOut = 64;
   const std::size_t per = count / kOut;
   std::vector<float> values(count);
@@ -60,6 +75,7 @@ std::array<float, 64> quantize_fp8(const std::uint16_t* half_bits, std::size_t c
   const std::vector<float> channel = span_fp8::channel_scales(values, kOut);
   std::array<float, kOut> scales{};
   std::copy(channel.begin(), channel.end(), scales.begin());
+  for (float& scale : scales) scale *= headroom;
   out.resize(values.size());
   for (std::size_t c = 0; c < kOut; ++c) {
     for (std::size_t i = c * per; i < (c + 1) * per; ++i)
@@ -101,6 +117,8 @@ struct SpanFp8Net::Impl {
   LPIX pix;
   LCATH cat16;
   LPIXH pix16;
+  std::array<L8H, kBlocks> la16, lb16;  // blocs à accumulateur f16 (acc16)
+  std::array<LTH, kBlocks> lc16;
   bool acc16 = false;
   void* workspace = nullptr;
   cudaError_t attribute = cudaSuccess;
@@ -158,7 +176,11 @@ struct SpanFp8Net::Impl {
           k.out16 = cat_in + 3 * kChannels;
           k.ld16 = kConcat;
         }
-        la[bi].init(h, w, 3, 1, kChannels, kChannels, reinterpret_cast<const E4*>(xin), bw.w[0].as<E4>(), k);
+        const auto* in8 = reinterpret_cast<const E4*>(xin);
+        if (acc16)
+          la16[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[0].as<E4>(), k);
+        else
+          la[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[0].as<E4>(), k);
       }
       {
         sk::KP k;
@@ -166,7 +188,11 @@ struct SpanFp8Net::Impl {
         k.bias = bw.b[1].as<float>();
         k.out8 = r2;
         k.inv_s8 = 1.F / s_r2;
-        lb[bi].init(h, w, 3, 1, kChannels, kChannels, reinterpret_cast<const E4*>(r1), bw.w[1].as<E4>(), k);
+        const auto* in8 = reinterpret_cast<const E4*>(r1);
+        if (acc16)
+          lb16[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[1].as<E4>(), k);
+        else
+          lb[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[1].as<E4>(), k);
       }
       {  // fin de bloc : c3, attention 1x1, tanh, saut, produit
         sk::KP k;
@@ -188,7 +214,11 @@ struct SpanFp8Net::Impl {
           k.out16 = cat_in + kChannels;
           k.ld16 = kConcat;
         }
-        lc[bi].init(h, w, 3, 1, kChannels, kChannels, reinterpret_cast<const E4*>(r2), bw.w[2].as<E4>(), k);
+        const auto* in8 = reinterpret_cast<const E4*>(r2);
+        if (acc16)
+          lc16[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[2].as<E4>(), k);
+        else
+          lc[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[2].as<E4>(), k);
       }
     }
     {
@@ -210,7 +240,8 @@ struct SpanFp8Net::Impl {
     }
     attribute = c1.attribute;
     for (std::size_t b = 0; b < static_cast<std::size_t>(used); ++b)
-      for (const cudaError_t e : {la[b].attribute, lb[b].attribute, lc[b].attribute})
+      for (const cudaError_t e : {la[b].attribute, lb[b].attribute, lc[b].attribute, la16[b].attribute,
+                                  lb16[b].attribute, lc16[b].attribute})
         if (attribute == cudaSuccess) attribute = e;
     for (const cudaError_t e : {cat.attribute, pix.attribute, cat16.attribute, pix16.attribute})
       if (attribute == cudaSuccess) attribute = e;
@@ -284,7 +315,8 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
     Impl::BlockWeights& bw = impl->blocks[b];
     for (std::size_t i = 0; i < 3; ++i) {
       std::vector<std::uint8_t> q;
-      bw.w_scale[i] = quantize_fp8(weights.conv[b][i].weights, kBlockWeights, q);
+      bw.w_scale[i] =
+          quantize_fp8(weights.conv[b][i].weights, kBlockWeights, q, impl->acc16 ? kAcc16Headroom : 1.F);
       // L'activation qui entre dans la convolution i du bloc b : celle de bind (s_in, s_r1, s_r2).
       const float s_act =
           i == 0 ? (b == 0 ? impl->scales[0] : impl->scales[1 + 3 * (b - 1) + 2]) : impl->scales[i + 3 * b];
@@ -323,9 +355,15 @@ bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string
                                                n.width);
   n.c1.launch(stream);
   for (std::size_t b = 0; b < static_cast<std::size_t>(n.used); ++b) {
-    n.la[b].launch(stream);
-    n.lb[b].launch(stream);
-    n.lc[b].launch(stream);
+    if (n.acc16) {
+      n.la16[b].launch(stream);
+      n.lb16[b].launch(stream);
+      n.lc16[b].launch(stream);
+    } else {
+      n.la[b].launch(stream);
+      n.lb[b].launch(stream);
+      n.lc[b].launch(stream);
+    }
   }
   if (n.acc16)
     n.cat16.launch(stream);

@@ -99,12 +99,12 @@ constexpr std::string_view kLightTierSpanModel = kLightSpanModel;
 // SPAN de la tranche : rien en Économe (sauf Anime4K ou le modèle léger s'ils sont admis, P6.7), le modèle
 // du niveau au-dessus (level_span_model) ; les modèles légers, s'ils sont admis, dans les deux tranches du
 // bas ; Anime4K, s'il est admis, en Économe avant eux.
-void set_span(PlaySettings& out, Tier level, int work) {
+void set_span(PlaySettings& out, Tier level, int work, bool span_fp8) {
   const bool economy = level == Tier::Economy;
   const bool economy_upscales = kLightSpanInAuto || kAnime4kInAuto;
   out.upscale = !economy || economy_upscales;
   out.work_height = economy && !economy_upscales ? 0 : work;
-  out.model = std::string(level_span_model(level));
+  out.model = std::string(level_span_model(level, span_fp8));
   if (kLightSpanInAuto && economy) out.model = std::string(kEconomySpanModel);
   if (kLightSpanInAuto && level == Tier::Fast) out.model = std::string(kLightTierSpanModel);
   if (kAnime4kInAuto && economy) out.model = std::string(kAnime4kFast);
@@ -161,10 +161,10 @@ int calibration_step_below(int height) {
 }
 
 // Auto calibré : la chaîne mesurée (SPAN, sa hauteur, son modèle en FP16 ; RIFE en mode Instantané ou rien,
-// avec le modèle mesuré), adaptée à la source comme le reste d'Auto. Le FP8 n'y est plus posé (A49-03, ADR
-// 0007 suspendue).
+// avec le modèle mesuré), adaptée à la source comme le reste d'Auto. SPAN au cran Performance (ADR 0007
+// reprise) ; sur un poste aux noyaux FP8, le b8f64 à la place du modèle par défaut.
 void follow_calibration(PlaySettings& out, Priority priority, const CalibratedChain& cal,
-                        const core::SourceInfo& source) {
+                        const core::SourceInfo& source, bool span_fp8) {
   out.upscale = cal.span;
   // Sans SPAN, la calibration a mesuré la chaîne à la taille de la source (candidate_settings) : la hauteur
   // du niveau réduirait la source sans la réagrandir, une perte d'image ni mesurée ni annoncée.
@@ -187,8 +187,9 @@ void follow_calibration(PlaySettings& out, Priority priority, const CalibratedCh
     out.work_height =
         source.height > 0 ? std::min(height, std::max(source.height, kWorkHeights.front())) : height;
   }
-  out.model = cal.span_model;
-  out.span_precision = PrecisionTier::Balanced;
+  // Le modèle par défaut (vide) mesuré sur un poste aux noyaux FP8 de SPAN : le b8f64, qui y passe en FP8.
+  out.model = cal.span_model.empty() && span_fp8 ? std::string(kQualitySpanModel) : cal.span_model;
+  out.span_precision = PrecisionTier::Performance;  // le FP8 quand son paquet passe la porte (ADR 0007)
   out.motion_engine = MotionEngine::Rife;
   out.rife_model = cal.rife_model.empty() ? std::string(kLightRifeModel) : cal.rife_model;
   out.auto_free = cal.rife;
@@ -200,8 +201,8 @@ void follow_calibration(PlaySettings& out, Priority priority, const CalibratedCh
 
 }  // namespace
 
-std::string_view level_span_model(Tier level) {
-  return keeps_source(level) ? kQualitySpanModel : std::string_view{};
+std::string_view level_span_model(Tier level, bool span_fp8) {
+  return keeps_source(level) || span_fp8 ? kQualitySpanModel : std::string_view{};
 }
 std::string_view level_rife_model(Tier level) {
   return keeps_source(level) ? kQualityRifeModel : kLightRifeModel;
@@ -273,7 +274,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
 
   // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle (P3.20 : une 4K reste
   // en 4K, 0 ne réduit rien).
-  set_span(out, *level, work);
+  set_span(out, *level, work, machine.span_fp8);
   // SPAN réduit puis réagrandit : la calibration mesure ainsi (candidate_settings), et sans ce réglage une
   // source plus haute que le palier passerait telle quelle, sans SPAN, sous un préréglage qui l'annonce.
   out.restore_lines = true;
@@ -290,9 +291,10 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   out.rife_factor = factor >= 2 ? factor : 0;
   out.rife_factor_den = 1;
   out.keep_poses = true;  // mesuré A/B (4070 Ti, ×3) : tient mieux, qualité équivalente
-  // SPAN en FP16 : le FP8 se choisit à la main dans la liste des modèles (« … · FP8 ») tant que sa qualité et
-  // son gain sur le FP16 ne sont pas jugés à l'œil et mesurés ; les préréglages ne le posent plus.
-  out.span_precision = PrecisionTier::Balanced;
+  // SPAN au cran Performance (ADR 0007 reprise, deuxième passe TensorRT) : le paquet FP8 CUTLASS quand son
+  // reçu v2 passe la porte sur cette carte, sinon l'INT8 qui la passe, sinon le FP16 tel que livré
+  // (span_variant_order). 9,2 ms contre 14,7 ms par source 1080p au banc de la RTX 4070 Ti.
+  out.span_precision = PrecisionTier::Performance;
   out.motion_precision = PrecisionTier::Balanced;
   out.rife_model.clear();
   switch (*level) {
@@ -317,7 +319,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   // Auto calibré : la chaîne mesurée, adaptée à la source et à la cadence de cette vidéo
   // (follow_calibration).
   if (settings.preset == Preset::Auto && machine.calibrated)
-    follow_calibration(out, settings.priority, *machine.calibrated, source);
+    follow_calibration(out, settings.priority, *machine.calibrated, source, machine.span_fp8);
   return out;
 }
 

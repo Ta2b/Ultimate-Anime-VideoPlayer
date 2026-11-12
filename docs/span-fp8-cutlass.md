@@ -94,6 +94,16 @@ le même résultat ; (B) garde le plus simple, et la seule chose à écrire pour
 | `tools/span/derive_span_fp8.py` | calibration, paquet, reçu |
 | `third_party/cutlass/` | CUTLASS 4.8.1, BSD-3-Clause, en-têtes seulement (259 fichiers, avec `LICENSE.txt`) |
 
+### Accumulateur f16 (variante acc16)
+
+La dérivation juge deux variantes et ne garde la seconde que si elle passe la porte, perd au plus
+`kMaxAcc16PsnrLossDb` et va plus vite (`keep_acc16`). Depuis `kKernelsVersion` 3 (12 novembre 2026, piste N3 de la
+deuxième passe TensorRT), la variante acc16 accumule en f16 non seulement `conv_cat` et `to_pixel`, mais aussi les
+24 convolutions FP8 des blocs (`C8H`, mma m16n8k32 `.f16.e4m3.e4m3.f16`) : sur les GeForce Ada, l'accumulation
+f32 des mma FP8 tourne à la moitié du débit. Pour que les sommes tiennent en f16, les poids des blocs sont rangés
+avec un maximum de 448 / 16 par canal (`kAcc16Headroom`), l'échelle reprise par `alpha_col`. À mesurer sur la
+RTX : `kernels_ms_acc16` du reçu contre `kernels_ms`, et la perte de PSNR qu'il note.
+
 ### Zone de travail
 
 768 octets par pixel de caractéristiques (400 Mo à 1080p) : la concaténation FP16 de 256 canaux (512 o) et quatre

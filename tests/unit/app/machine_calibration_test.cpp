@@ -125,15 +125,15 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, modèles du niv
   CHECK(s.rife_auto);
   CHECK(s.auto_free);
   CHECK(s.rife_factor == 2);
-  CHECK(s.true_hdr_peak == 800);  // le reste des réglages de l'utilisateur
-  CHECK(s.model.empty());         // SPAN par défaut (Performance Sharp) en FP16
-  CHECK(s.span_precision == PrecisionTier::Balanced);
-  // Niveau Qualité : le b8f64 et RIFE 4.25, toujours en FP16 (A49-03 : plus de FP8 posé par la calibration).
+  CHECK(s.true_hdr_peak == 800);                          // le reste des réglages de l'utilisateur
+  CHECK(s.model.empty());                                 // SPAN par défaut (Performance Sharp)
+  CHECK(s.span_precision == PrecisionTier::Performance);  // ce que l'Auto joue (ADR 0007 reprise)
+  // Niveau Qualité : le b8f64 et RIFE 4.26, au même cran que l'Auto.
   const PlaySettings fine = candidate_settings({.span = true, .rife = true, .height = 1080}, base,
                                                calibration_models(Tier::Quality));
   CHECK(fine.model == kQualitySpanModel);
   CHECK(fine.rife_model == "rife_v4.26.onnx");
-  CHECK(fine.span_precision == PrecisionTier::Balanced);
+  CHECK(fine.span_precision == PrecisionTier::Performance);
   CHECK(fine.work_height == 1080);
   const PlaySettings plain = candidate_settings({.span = false, .rife = false, .height = 0}, base);
   CHECK_FALSE(plain.upscale);
