@@ -12,7 +12,9 @@ name: CI
 #   Windows. Sur une autre branche que main, clang-tidy et la tâche CUDA de Windows ne regardent que ce qui
 #   diffère de main ;
 # - complète : en plus, asan-ubsan et tsan sur tout le lecteur au lieu des sous-ensembles, le lecteur avec le GCC
-#   d'Arch et les moteurs fusionnés sur les modèles livrés. À lancer avant une release finale. La version livrée
+#   d'Arch, les moteurs fusionnés sur les modèles livrés et le lecteur entier compilé avec clang-20 en -Werror
+#   (libFuzzer, sans le lancer). À lancer avant une release finale : la garde de release exige, pour une étiquette
+#   sans suffixe de préversion, le témoin « verdict » d'un lancement complet sur main, sans dérogation (C28-05). La version livrée
 #   (linux-release) se construit et se teste dans release-linux.yml, sur le paquet même.
 # macOS n'a plus de tâche : son support est délaissé pour l'instant ; release-macos.yml reste lançable à la main.
 # Versions et paquets : tools/release/versions.env.
@@ -21,6 +23,10 @@ on:
     inputs:
       complete:
         description: "Étendue complète (sanitizers sur tout le lecteur, version livrée, Arch, moteurs fusionnés)"
+        type: boolean
+        default: false
+      allow_arch_red:
+        description: "Dérogation : un échec des tâches d'Arch ne fait pas échouer le lancement (une étiquette finale la refuse)"
         type: boolean
         default: false
 
@@ -52,6 +58,7 @@ jobs:
   core:
     name: Cœur (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -94,11 +101,13 @@ jobs:
 
   # Le cœur avec le compilateur d'Arch (celui de CachyOS, le poste du propriétaire), en -Werror : un GCC plus
   # récent que celui de la CI apporte des avertissements que rien d'autre ne voit avant lui. Arch avance en
-  # continu : la tâche signale sans bloquer (continue-on-error), à lire quand elle passe au rouge.
+  # continu, mais un GCC qui casse le « cmake --build » de CachyOS est un défaut de la cible (C28-04) : la tâche fait
+  # échouer le lancement, donc la garde de release le refuse. Dérogation à la main : l'entrée allow_arch_red.
   arch:
     name: Cœur (GCC d'Arch)
     runs-on: ubuntu-24.04
-    continue-on-error: true
+    timeout-minutes: 60
+    continue-on-error: ${{ inputs.allow_arch_red }}
     container: archlinux:latest
     env:
       AJP_DEPS_PREFIX: /opt/ajp-deps
@@ -106,6 +115,8 @@ jobs:
     steps:
       - run: pacman -Syu --noconfirm --needed base-devel git cmake ninja ccache pkgconf python
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: gcc --version | head -n 1
       - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" /tmp/deps-src
@@ -117,13 +128,14 @@ jobs:
 
   # Le lecteur entier avec le compilateur d'Arch (B28-11) : le cœur seul ne voyait pas les avertissements que le
   # GCC d'Arch ajoute dans src/app, src/render ou src/media, et le `cmake --build` de CachyOS échouait là où la CI
-  # restait verte. Vulkan logiciel sous Xvfb pour les tests. Comme la tâche du cœur : signale sans bloquer. Étendue
+  # restait verte. Vulkan logiciel sous Xvfb pour les tests. Comme la tâche du cœur : bloque, sauf dérogation. Étendue
   # complète seulement : sans cache de dépendances dans son conteneur, elle prend 28 min, la plus longue.
   arch-player:
     name: Lecteur (GCC d'Arch)
     if: inputs.complete
     runs-on: ubuntu-24.04
-    continue-on-error: true
+    timeout-minutes: 75
+    continue-on-error: ${{ inputs.allow_arch_red }}
     container: archlinux:latest
     env:
       AJP_DEPS_PREFIX: /opt/ajp-deps
@@ -137,6 +149,8 @@ jobs:
           libxss libxtst libxfixes libxinerama libxkbcommon libxkbcommon-x11 wayland wayland-protocols libdecor
           libdrm libva mesa dbus xorg-server-xvfb xorg-xauth ttf-dejavu
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: gcc --version | head -n 1
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" /tmp/deps-src
@@ -158,6 +172,7 @@ jobs:
   player:
     name: Lecteur Linux (${{ matrix.name }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     # L'étendue courante passe tsan sur les tests choisis et asan sur les cibles de fuzz ; la complète, asan-ubsan et
     # tsan sur tout le lecteur, plus longs.
     strategy:
@@ -183,7 +198,7 @@ jobs:
           source tools/release/versions.env
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS ccache ${{ matrix.tidy && 'clang-20 clang-tidy-20' || '' }}
-          pip install --user "meson==$MESON_VERSION"
+          pip install --user --require-hashes -r tools/ci/requirements/meson.txt
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
@@ -261,6 +276,7 @@ jobs:
     # Dans les deux étendues (P1.17). Un lancement sur main garde aussi à jour le cache vcpkg d'un manifeste ou de
     # ports changés, que lisent ensuite les autres branches.
     runs-on: windows-2025
+    timeout-minutes: 90
     env:
       SCCACHE_GHA_ENABLED: "true"
       AJP_VCPKG: C:\v
@@ -347,6 +363,7 @@ jobs:
   windows-cuda:
     name: Windows (CUDA et TensorRT, MSVC)
     runs-on: windows-2025
+    timeout-minutes: 75
     env:
       SCCACHE_GHA_ENABLED: "true"
       AJP_VCPKG: C:\v
@@ -429,6 +446,7 @@ jobs:
   cuda:
     name: Lecteur Linux (CUDA et TensorRT)
     runs-on: ubuntu-24.04
+    timeout-minutes: 75
     env:
       CC: gcc-13
       CXX: g++-13
@@ -444,7 +462,7 @@ jobs:
           source tools/release/versions.env
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache clang-tidy-20
-          pip install --user "meson==$MESON_VERSION"
+          pip install --user --require-hashes -r tools/ci/requirements/meson.txt
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
@@ -467,3 +485,73 @@ jobs:
         env:
           AJP_TIDY_ONLY: ^src/gpu/cuda/
         run: tools/ci/clang-tidy-src.sh build/linux-prefix-cuda
+
+  # Le lecteur entier avec clang-20 en -Werror (C28-15) : les cibles de fuzz l'étaient seules, dans la campagne Fuzz
+  # que personne ne lance à chaque lot, et un avertissement de clang dans src/app, render ou media n'y paraissait
+  # qu'au prochain lancement. Construction seule, sans l'exécuter ; étendue complète.
+  clang-player:
+    name: Lecteur (clang-20, libFuzzer)
+    if: inputs.complete
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache clang-20 libclang-rt-20-dev
+          pip install --user --require-hashes -r tools/ci/requirements/meson.txt
+      # Les dépendances du lecteur sous gcc-13 : des bibliothèques C ou à l'ABI de libstdc++, que clang lie.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
+          restore-keys: deps-player-gcc-13-
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-player-clang-${{ github.sha }}
+          restore-keys: ccache-player-clang-
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+        env:
+          CC: gcc-13
+          CXX: g++-13
+      - name: Construction (comme la campagne Fuzz)
+        env:
+          CC: clang-20
+          CXX: clang++-20
+        run: |
+          cmake --preset linux-prefix -B build/clang-player -DCMAKE_BUILD_TYPE=RelWithDebInfo -DAJP_FUZZ_LIBFUZZER=ON \
+            "-DCMAKE_CXX_FLAGS=-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+          targets="$(python3 -I tools/ci/fuzz-targets.py)"
+          cmake --build build/clang-player --target $(printf 'ajp_fuzz_%s ' $targets)
+      - run: ccache -s
+
+  # Le témoin du lancement (C28-05) : la garde de release ne se contente pas d'un lancement vert, elle lit ce fichier.
+  # Il n'existe que si aucune tâche n'a échoué. Une étiquette finale (sans « - ») exige complete=true, ref=main et
+  # allow_arch_red=false ; une préversion n'exige que le vert.
+  verdict:
+    name: Témoin du lancement
+    needs: [rules, core, arch, arch-player, clang-player, player, windows, windows-cuda, cuda]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Écrire le témoin
+        env:
+          COMPLETE: ${{ inputs.complete }}
+          ALLOW_ARCH_RED: ${{ inputs.allow_arch_red }}
+          REF: ${{ github.ref }}
+        run: |
+          mkdir verdict
+          printf '{"complete": %s, "allow_arch_red": %s, "ref": "%s", "sha": "%s"}\n' \
+            "$COMPLETE" "$ALLOW_ARCH_RED" "$REF" "$GITHUB_SHA" | tee verdict/ci-verdict.json
+          cat verdict/ci-verdict.json >>"$GITHUB_STEP_SUMMARY"
+          [ "$ALLOW_ARCH_RED" != true ] || echo "::warning::dérogation allow_arch_red : un échec d'Arch n'a pas fait échouer ce lancement"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-verdict
+          path: verdict/ci-verdict.json

@@ -34,6 +34,7 @@ void note_gpu_facts(const GpuFacts& gpu, const PlaySettings& settings, const Gpu
   note_report_fact("GPU", gpu_line(gpu));
   note_report_fact("Préréglage", label(settings.preset));
   if (device.vendor() == GpuVendor::Nvidia) note_report_fact("Pilote NVIDIA", device.driver_version);
+  note_system_library_facts();
 }
 
 // Le cran de précision voulu n'est pas tenu : le journal et le rapport le disent (A39-07).

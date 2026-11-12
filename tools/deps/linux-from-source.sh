@@ -160,17 +160,30 @@ PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
   --buildtype=release -Dvulkan=enabled -Dvk-proc-addr=enabled -Dshaderc=enabled -Dglslang=disabled
   -Dlcms=enabled -Dopengl=disabled -Dd3d11=disabled -Dlibdovi=disabled -Dunwind=disabled
   -Dxxhash=disabled -Ddemos=false -Dtests=false
-  -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml")
-# Le registre Vulkan vient de vulkan-headers : une autre version rebâtit libplacebo.
+  -Dvulkan-registry="$PREFIX/share/vulkan/registry/vk.xml" -Dc_args="-I$PREFIX/include")
+# Les en-têtes et le registre Vulkan viennent de vulkan-headers, comme sous Windows (C27-01) : le sous-module
+# 3rdparty/Vulkan-Headers de libplacebo, s'il est initialisé, passe devant et force son propre vk.xml (meson.build de
+# src/vulkan : « Prefer our Vulkan headers »), d'une autre version que celle du correctif de présentation. Seuls les
+# trois sous-modules que le port Windows prend sont donc initialisés, et -I place les en-têtes du préfixe devant
+# ceux du système. Une autre version de vulkan-headers rebâtit libplacebo (sa version entre dans la signature).
 # Le correctif de présentation (chantier 6.1), le même que le port vcpkg : sa somme entre dans la signature.
 placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
 signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(sha256sum "$placebo_patch" | cut -c1-16)$(system_libs shaderc lcms2)"
 if ! done_marker libplacebo "$signature"; then
   pristine libplacebo
-  git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
+  # Un clone gardé d'avant ce réglage peut avoir le sous-module des en-têtes Vulkan : il le ferait préférer à ceux du préfixe.
+  git -C "$WORK/libplacebo" submodule deinit -f -q -- 3rdparty/Vulkan-Headers 2>/dev/null || true
+  rm -rf "$WORK/libplacebo/3rdparty/Vulkan-Headers/include" "$WORK/libplacebo/3rdparty/Vulkan-Headers/registry"
+  git -C "$WORK/libplacebo" submodule update --init --depth 1 -q 3rdparty/jinja 3rdparty/markupsafe 3rdparty/fast_float
   git -C "$WORK/libplacebo" apply "$placebo_patch"
   rm -rf "$WORK/libplacebo/_build"
   meson setup "$WORK/libplacebo/_build" "$WORK/libplacebo" "${PLACEBO_OPTS[@]}"
+  # Aucune compilation ne doit lire les en-têtes d'un sous-module (C27-01) : le correctif de présentation est écrit
+  # pour ceux de vulkan-headers.
+  if grep -q '3rdparty/Vulkan-Headers' "$WORK/libplacebo/_build/compile_commands.json"; then
+    echo "libplacebo : construit avec les en-têtes de 3rdparty/Vulkan-Headers au lieu de ceux de $PREFIX" >&2
+    exit 1
+  fi
   meson compile -C "$WORK/libplacebo/_build"
   meson install -C "$WORK/libplacebo/_build"
   mark libplacebo "$signature"

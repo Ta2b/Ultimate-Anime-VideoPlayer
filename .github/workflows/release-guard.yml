@@ -5,7 +5,14 @@ name: Garde de release
 # - l'étiquette doit dire la version de project() dans CMakeLists.txt : v<VERSION>, ou v<VERSION>-<suffixe> pour une
 #   préversion (A28-04) ; le suffixe est compilé dans le binaire (package-*.sh, AJP_VERSION_SUFFIX) ;
 # - ci.yml doit être vert sur ce commit. Une étiquette poussée en même temps que son commit sur main attend la fin
-#   de ci.yml : relancer alors la release.
+#   de ci.yml : relancer alors la release ;
+# - une étiquette finale (sans suffixe de préversion) exige de plus le témoin « ci-verdict » d'un lancement
+#   COMPLET de ci.yml sur main, sans dérogation pour Arch (C28-05) : les sanitizers sur tout le lecteur, le GCC d'Arch,
+#   clang-20 et les moteurs fusionnés ne sont que dans l'étendue complète. Le lancement courant, ou fait sur une
+#   branche dont le SHA est devenu celui de main par avance rapide, ne suffit pas ;
+# - une étiquette finale exige aussi les rapports des tests matériels du poste NVIDIA, Linux et Windows, joints à la
+#   release de l'étiquette (C28-02) : TensorRT, noyaux CUDA, NVDEC et FP8 ne tournent pas en CI
+#   (tools/release/hardware_report.py, docs/signature-des-releases.md).
 # Sans étiquette (artefact seulement), rien n'est vérifié.
 on:
   workflow_call:
@@ -22,6 +29,7 @@ jobs:
   guard:
     name: Étiquette, version et CI verte
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: inputs.tag != ''
@@ -58,3 +66,38 @@ jobs:
             echo "::error::ci.yml n'est pas vert sur $GITHUB_SHA : pas de release"
             exit 1
           fi
+          # Une étiquette finale : un lancement complet, sur main, sans dérogation, dont le témoin le dit.
+          if [[ "$TAG" != *-* ]]; then
+            complete=0
+            for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success \
+              --limit 30 --json databaseId -q '.[].databaseId'); do
+              dir="$(mktemp -d)"
+              gh run download "$id" -R "$GITHUB_REPOSITORY" -n ci-verdict -D "$dir" 2>/dev/null || continue
+              if jq -e --arg sha "$GITHUB_SHA" \
+                '.complete == true and .allow_arch_red == false and .ref == "refs/heads/main" and .sha == $sha' \
+                "$dir/ci-verdict.json" >/dev/null; then
+                complete=1
+                echo "lancement complet de ci.yml sur main : $id"
+                break
+              fi
+            done
+            if [ "$complete" -eq 0 ]; then
+              echo "::error::$TAG est une étiquette finale : lancer CI avec « complete » sur main, sans dérogation d'Arch, sur $GITHUB_SHA, et vert (pas de témoin ci-verdict conforme)"
+              exit 1
+            fi
+          fi
+      # Ce que la CI ne peut pas juger sans carte NVIDIA (C28-02) : le rapport des tests cachés du poste de référence,
+      # Linux et Windows, pour ce commit, sans échec et sous le plafond de sauts. Une préversion n'en a pas besoin.
+      - name: Rapports des tests matériels (étiquette finale)
+        if: inputs.tag != '' && !contains(inputs.tag, '-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          dir="$(mktemp -d)"
+          for platform in linux windows; do
+            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "hardware-report-$platform.json" -D "$dir" \
+              || { echo "::error::hardware-report-$platform.json manque dans la release $TAG : lancer les tests matériels sur le poste $platform et le joindre (tools/release/hardware_report.py)"; exit 1; }
+            python3 -I tools/release/hardware_report.py check --sha "$GITHUB_SHA" --platform "$platform" \
+              "$dir/hardware-report-$platform.json" || { echo "::error::rapport des tests matériels $platform refusé"; exit 1; }
+          done

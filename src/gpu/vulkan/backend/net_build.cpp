@@ -39,7 +39,7 @@ std::expected<void, Refusal> check_interface(const ir::Graph& graph) {
 
 std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& model_id, bool fp16,
                                            const Target& target) {
-  // La grille des GridSample en float (DistilDRBA exporté avant novembre 2026 : A44-01), avant que le
+  // La grille des GridSample en float (DistilDRBA des premiers exports : A44-01), avant que le
   // pliage des constantes n'arrondisse sa base à travers son Cast.
   (void)ir::promote_grid_chains(graph);
   // Les ConvTranspose deviennent des Conv là où celles-ci passent par les matrices coopératives
@@ -217,7 +217,7 @@ int purge_stale_temporaries(const std::filesystem::path& folder, std::chrono::se
   for (std::filesystem::directory_iterator it(folder, error), end; !error && it != end; it.increment(error)) {
     if (!it->is_regular_file(error)) continue;
     const std::string name = core::to_utf8(it->path().filename());
-    // « .<nom>.<instant>-<fil>.tmp » de core::write_atomic, « <nom>.tmp-<n>-<n> » d'avant novembre 2026.
+    // « .<nom>.<instant>-<fil>.tmp » de core::write_atomic, « <nom>.tmp-<n>-<n> » des versions précédentes.
     const bool temporary = (name.starts_with('.') && name.ends_with(".tmp")) || name.contains(".tmp-");
     if (!temporary) continue;
     const auto written = it->last_write_time(error);

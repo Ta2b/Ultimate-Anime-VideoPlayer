@@ -77,6 +77,7 @@ jobs:
     # Sans étiquette, le job tensorrt est sauté : le paquet se construit quand même.
     if: ${{ !cancelled() && needs.rules.result == 'success' && needs.guard.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     outputs:
       archive-sha256: ${{ steps.sums.outputs.archive }}
     steps:
@@ -95,7 +96,7 @@ jobs:
           source tools/release/versions.env
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE $APT_TESTS
-          pip install --user "meson==$MESON_VERSION"
+          pip install --user --require-hashes -r tools/ci/requirements/meson.txt
           echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
       # L'index du paquet TensorRT, pris AVANT toute construction : le jeton n'est jamais dans l'environnement d'un
       # code tiers (A28-08). Le paquet vit dans la release « trt-<empreinte> » (trt-package.yml, job tensorrt) ; un
