@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstddef>
 #include <utility>
 
@@ -30,7 +31,7 @@ double sample(const double* plane, int height, int width, double fy, double fx) 
 }
 
 // Échantillon de Catmull-Rom (spec/rife_fused.h : RifeWarp) : position ramenée dans le plan, points répétés
-// au bord, sortie bornée à [0, 1].
+// au bord, sortie bornée au minimum et au maximum des quatre points centraux (anti-ringing local, C50-08).
 double sample_cubic(const double* plane, int height, int width, double fy, double fx) {
   fy = std::clamp(fy, 0.0, static_cast<double>(height - 1));
   fx = std::clamp(fx, 0.0, static_cast<double>(width - 1));
@@ -39,14 +40,22 @@ double sample_cubic(const double* plane, int height, int width, double fy, doubl
   const std::array<double, 4> wy = catmull_rom_weights(fy - y0);
   const std::array<double, 4> wx = catmull_rom_weights(fx - x0);
   double sum = 0.0;
+  double lo = std::numeric_limits<double>::infinity();
+  double hi = -std::numeric_limits<double>::infinity();
   for (int j = 0; j < 4; ++j) {
     const int yy = std::clamp(y0 - 1 + j, 0, height - 1);
     double row = 0.0;
-    for (int i = 0; i < 4; ++i)
-      row += plane[at(yy, std::clamp(x0 - 1 + i, 0, width - 1), width)] * wx[static_cast<std::size_t>(i)];
+    for (int i = 0; i < 4; ++i) {
+      const double v = plane[at(yy, std::clamp(x0 - 1 + i, 0, width - 1), width)];
+      row += v * wx[static_cast<std::size_t>(i)];
+      if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
+        lo = std::min(lo, v);
+        hi = std::max(hi, v);
+      }
+    }
     sum += row * wy[static_cast<std::size_t>(j)];
   }
-  return std::clamp(sum, 0.0, 1.0);
+  return std::clamp(sum, lo, hi);
 }
 
 // Resize linéaire, coordonnées demi-pixel, d'un plan h × w vers oh × ow (ONNX Resize, mode linear).

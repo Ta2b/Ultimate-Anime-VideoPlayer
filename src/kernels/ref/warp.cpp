@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <format>
+#include <limits>
 #include <string_view>
 
 #include "kernels/ref/check.h"
@@ -36,7 +37,8 @@ float bilinear_at(const PlaneF& p, float x, float y) {
 }
 
 // Lecture de Catmull-Rom (spec/warp.h : RifeWarp) : position ramenée dans le plan, points répétés au bord,
-// sortie bornée à [0, 1].
+// sortie bornée au minimum et au maximum des quatre points centraux (anti-ringing local : le dépassement de la
+// cubique sur un trait net est coupé, mais les sur-blancs et les négatifs de la source passent, C50-08).
 float catmull_rom_at(const PlaneF& p, float x, float y) {
   const int w = p.width;
   const int h = p.height;
@@ -47,14 +49,22 @@ float catmull_rom_at(const PlaneF& p, float x, float y) {
   const std::array<float, 4> wx = catmull_rom_weights(x - static_cast<float>(x0));
   const std::array<float, 4> wy = catmull_rom_weights(y - static_cast<float>(y0));
   float sum = 0.0F;
+  float lo = std::numeric_limits<float>::infinity();
+  float hi = -std::numeric_limits<float>::infinity();
   for (int j = 0; j < 4; ++j) {
     const int yy = std::clamp(y0 - 1 + j, 0, h - 1);
     float row = 0.0F;
-    for (int i = 0; i < 4; ++i)
-      row += p.at(std::clamp(x0 - 1 + i, 0, w - 1), yy) * wx[static_cast<std::size_t>(i)];
+    for (int i = 0; i < 4; ++i) {
+      const float v = p.at(std::clamp(x0 - 1 + i, 0, w - 1), yy);
+      row += v * wx[static_cast<std::size_t>(i)];
+      if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
+        lo = std::fmin(lo, v);
+        hi = std::fmax(hi, v);
+      }
+    }
     sum += row * wy[static_cast<std::size_t>(j)];
   }
-  return std::clamp(sum, 0.0F, 1.0F);
+  return std::fmin(std::fmax(sum, lo), hi);
 }
 
 float image_at(const PlaneF& p, RifeWarp warp, float x, float y) {
