@@ -199,13 +199,23 @@ Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « É
 Choix de la référence : le SPAN FP16 des noyaux CUTLASS, pas TensorRT (un moteur TensorRT coûte une minute de construction et ses
 tenseurs intermédiaires sont fondus). Elle colle à ONNX Runtime FP32 : maxima à 0,13 % près et 78,8 dB sur une image 1920×1088
 (`ajp_span_fp8_run --reference`). **Porte 4 (B02-01)** : le gain sur TensorRT FP16 est mesuré et exigé à la dérivation
-comme par l'outil Python. Une fois la qualité admise, `time_span_fp16` (`span_fp16_time.cpp`) charge le moteur SPAN FP16 que
-la chaîne construit pour la même taille (lu dans le cache, construit s'il manque), le passe 5 fois à chaud puis prend la
-médiane de 5 lots de 5 passes enchaînées ; le reçu porte `trt_fp16_ms` et `speedup`, un rapport sous 1,05 refuse le paquet
-(pour de bon, la note dit « pas plus rapide que TensorRT FP16 ») et le message de réussite dit le gain. Un paquet admis par
-une porte plus ancienne se refait. La préparation lancée pendant la lecture (panneau, préréglage, B02-08) laisse la carte
-120 ms après chaque image et le reçu porte `timed_during_playback = true` : ses deux temps sont pris sous la charge de la
-lecture. Le reçu a les clés de l'outil Python, plus `reference` et `derived_by` ; un paquet de l'un se
+comme par l'outil Python ; le reçu porte `trt_fp16_ms` et `speedup`, un rapport sous 1,05 refuse le paquet (pour de bon, la
+note dit « pas plus rapide que TensorRT FP16 ») et le message de réussite dit le gain. Un paquet admis par une porte plus
+ancienne se refait. **Porte 5 (chantier E01)** : `build_span_fp16` (`span_fp16_engine.cpp`) demande le moteur SPAN FP16 que
+la chaîne construit à la taille de travail (lu dans le cache, construit s'il manque) et la requête le passe au backend
+(`SpanFp8Request::fp16`), qui le chronomètre avec le FP8 et la variante f16 (`span_timing.cpp`) : même processus, même flux
+à la priorité la plus basse, FP8 par graphe rejoué comme en lecture, TensorRT par ses graphes, événements CUDA vérifiés
+autour de chaque lot (une passe de chauffe, deux mesurées), onze tours intercalés dans un ordre qui s'inverse, médianes.
+Avant, le FP8 était mesuré par événements sur ce flux et le FP16 à l'horloge de l'hôte sur la voie Upscale, à la priorité
+maximale : le rapport dépendait de la charge du moment. Les temps se prennent à la taille de travail (`timing_width`), la
+qualité sur la découpe d'au plus `kCropMaxWidth` × `kCropMaxHeight` ; `size_key` est la taille de travail entière, une
+taille au-delà de 1920×1088 a donc sa propre entrée de `validated_sizes` (`timed_size` au reçu). La variante f16 n'est
+gardée que si elle va au moins 2 % plus vite (`kMinAcc16Gain`), et le message dit ce qu'elle coûte et rapporte
+(`acc16_psnr_loss_db`, `kernels_ms_f32` au reçu). Les maxima se relèvent aussi sur les images de validation : un tenseur
+au-delà de 448 × son échelle y serait écrêté par `__NV_SATFINITE`, la porte refuse (`clipped_tensors`, `peak_ratio` au
+reçu). Une source PQ ou HLG ne prend jamais le paquet (`hdr_source`). La préparation lancée pendant la lecture (panneau,
+préréglage, B02-08) laisse la carte 120 ms après chaque image et chaque lot de la mesure, et le reçu porte
+`timed_during_playback = true`. Le reçu a les clés de l'outil Python, plus `reference` et `derived_by` ; un paquet de l'un se
 lit chez l'autre (tests `[.span_compat]` : poids identiques octet pour octet, reçu Python accepté par `find_span_variant`).
 Interface de backend : `kBackendAbi` passe à 12 (`derive_span_fp8`), les backends installés se réinstallent.
 

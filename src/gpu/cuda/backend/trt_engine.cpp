@@ -154,7 +154,6 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
 std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActivations>& arena,
                                               std::span<const Tensor> inputs,
                                               std::span<const Tensor> outputs) {
-  if (arena) arena->set_last_user(this);
   if (inputs.size() != inputs_.size() || outputs.size() != outputs_.size()) {
     return refuse(RefusalCode::ShapeInvalid, "nombre d'entrées ou de sorties différent du moteur");
   }
@@ -177,6 +176,9 @@ std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActiva
     drop_graphs();
     shared_generation_ = shared_->generation();
   }
+  // Ses activations écrivent le bas de la zone : un moteur fusionné qui y gardait des tampons plus bas que
+  // leur fin les refait (C03-01). Un moteur à mémoire propre n'écrit pas la zone.
+  if (shared_) shared_->used(this, activation_bytes());
   const auto bind = [this](const std::string& name, const Tensor& tensor, const Shape& expected) -> bool {
     if (tensor.type != TensorType::F16 || !(tensor.shape == expected)) return false;
     // NOLINTNEXTLINE(performance-no-int-to-ptr) : un tenseur porte son adresse CUDA en entier

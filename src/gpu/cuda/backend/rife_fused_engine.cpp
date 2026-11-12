@@ -28,6 +28,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   engine->warp_ = key.warp;
   engine->outputs_ =
       key.motion ? std::vector<std::string>{"flow", "mask"} : std::vector<std::string>{"output"};
+  engine->window_ = kernels::Window{.x = 0, .y = 0, .width = key.width, .height = key.height};
   const int h = key.height;
   const int w = key.width;
   std::int64_t activation = 0;
@@ -56,7 +57,8 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
     engine->blocks_.push_back(std::move(*block));
   }
   engine->layout_ = kernels::rife_fused_layout(key.plan, h, w);
-  engine->scratch_offset_ = kernels::fused_align(static_cast<std::size_t>(activation));
+  engine->own_activation_ = activation;
+  engine->scratch_offset_ = engine->scratch_offset_for(*shared);
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
 
   // Une image de zéros trois fois par toute la chaîne, sur un flux à part : exécution à froid, capture,
@@ -83,8 +85,8 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   if (cudaError_t e = cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking); e != cudaSuccess)
     return failed(e, "cudaStreamCreate");
   // L'essai écrit dans la zone d'activation partagée de la voie, sur un flux à lui : le travail encore
-  // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue nomme ce moteur
-  // dernier utilisateur de la zone : celui qui y gardait ses tampons les refait.
+  // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue déclare ce qu'il y écrit :
+  // un autre moteur qui y gardait ses tampons les refait.
   if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
   const auto in = reinterpret_cast<std::uintptr_t>(scratch_input);
   const auto out = reinterpret_cast<std::uintptr_t>(scratch_output);
@@ -113,6 +115,16 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   engine->kept_.reset();
   engine->hint_ = Hint::None;
   return engine;
+}
+
+void RifeFusedEngine::set_window(const kernels::Window& window) {
+  const bool inside = window.x >= 0 && window.y >= 0 && window.width >= 1 && window.height >= 1 &&
+                      window.x + window.width <= width_ && window.y + window.height <= height_;
+  window_ = inside ? window : kernels::Window{.x = 0, .y = 0, .width = width_, .height = height_};
+}
+
+std::size_t RifeFusedEngine::scratch_offset_for(const SharedActivations& zone) const {
+  return kernels::fused_align(static_cast<std::size_t>(std::max(own_activation_, zone.activation_peak())));
 }
 
 std::expected<void, Refusal> RifeFusedEngine::use_zone(const std::shared_ptr<SharedActivations>& zone) {
@@ -217,6 +229,10 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
   } else {
     finish.image = fused_address(outputs[0]);
     finish.cubic = warp_ == kernels::RifeWarp::CatmullRom ? 1 : 0;
+    finish.window_left = window_.x;
+    finish.window_top = window_.y;
+    finish.window_width = window_.width;
+    finish.window_height = window_.height;
   }
   return cuda_check(launch_fused_finish(finish, stream), "fused_finish<<<>>>");
 }
@@ -243,28 +259,39 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
               : !matches(outputs[0], Shape{.dims = {1, 3, h, w}}))
     return refuse(RefusalCode::ShapeInvalid,
                   "RIFE fusionné : sortie de forme ou de type différents du moteur");
-  // Lancé sur une autre voie que celle du chargement, ou la zone a grandi : tampons repris à leur place,
-  // graphes jetés.
-  const auto needed = static_cast<std::int64_t>(scratch_offset_ + layout_.bytes);
-  if (arena != zone_ || arena->bytes() < needed || zone_generation_ != arena->generation()) {
+  // Lancé sur une autre voie que celle du chargement, la zone a grandi, ou un moteur entier de la zone a des
+  // activations plus hautes que les tampons (un SPAN chargé après) : tampons repris au-dessus, graphes jetés.
+  const std::size_t offset = scratch_offset_for(*arena);
+  const auto needed = static_cast<std::int64_t>(offset + layout_.bytes);
+  if (arena != zone_ || offset != scratch_offset_ || arena->bytes() < needed ||
+      zone_generation_ != arena->generation()) {
+    scratch_offset_ = offset;
     if (auto ok = use_zone(arena); !ok) {
       kept_.reset();
       return ok;
     }
   }
-  // L'encodage gardé sert si la zone, une fois prise, est celle du dernier appel mené au bout et que personne
-  // n'y a écrit depuis ; tout le reste (autre voie, zone agrandie, autre moteur, appel en échec) encode les
-  // deux images.
+  // L'encodage gardé sert si la zone, une fois prise, est celle du dernier appel mené au bout, les tampons à
+  // la même place, et qu'aucun autre moteur n'a écrit sur eux depuis (C03-01 : un SPAN qui passe entre deux
+  // appels n'écrit que sous eux) ; tout le reste (autre voie, zone agrandie, autre moteur fusionné, appel en
+  // échec) encode les deux images.
   const std::uintptr_t input = inputs[0].handle + inputs[0].offset;
-  const bool intact = kept_ && arena->last_user() == this && kept_->zone == arena->data() &&
-                      kept_->generation == arena->generation();
+  const bool intact = kept_ && arena->kept_by(this) && kept_->zone == arena->data() &&
+                      kept_->generation == arena->generation() && kept_->offset == scratch_offset_;
   Encode encode = Encode::Both;
   if (intact && hint == Hint::TimesOnly && kept_->input == input) encode = Encode::None;
   if (intact && hint == Hint::Follows) encode = Encode::Second;
   kept_.reset();
+  ++encodes_[static_cast<std::size_t>(encode)];
   auto queued = enqueue_chain(stream, arena, inputs, outputs, encode);
-  arena->set_last_user(this);  // après les morceaux, qui se sont nommés
-  if (queued) kept_ = Kept{.input = input, .zone = arena->data(), .generation = arena->generation()};
+  // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés) : le gardien d'avant, s'il
+  // était un autre moteur fusionné, les refera.
+  arena->wrote(this, static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
+  if (queued) {
+    arena->keep(this, static_cast<std::int64_t>(scratch_offset_));
+    kept_ = Kept{
+        .input = input, .zone = arena->data(), .generation = arena->generation(), .offset = scratch_offset_};
+  }
   return queued;
 }
 
@@ -272,10 +299,14 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
                                                             const std::shared_ptr<SharedActivations>& arena,
                                                             std::span<const Tensor> inputs,
                                                             std::span<const Tensor> outputs, Encode encode) {
+  // La fenêtre de l'image, paramètre du warp final : seize bits par champ (tailles bornées par
+  // rife_fused_size_valid).
+  const auto field = [](int v) { return static_cast<std::uintptr_t>(static_cast<std::uint16_t>(v)); };
   const FusedGraphs::Key key{inputs[0].handle + inputs[0].offset,
                              outputs[0].handle + outputs[0].offset,
                              outputs.size() > 1 ? outputs[1].handle + outputs[1].offset : 0,
-                             0,
+                             field(window_.x) | field(window_.y) << 16U | field(window_.width) << 32U |
+                                 field(window_.height) << 48U,
                              reinterpret_cast<std::uintptr_t>(arena->data()),
                              static_cast<std::uintptr_t>(arena->generation()),
                              static_cast<std::uintptr_t>(encode)};

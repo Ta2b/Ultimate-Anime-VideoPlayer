@@ -29,8 +29,9 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSp
   const Shape expected{.dims = {1, kernels::kDrbaFusedInputPlanes, h, w}};
   if (!(shapes.min == expected) || !(shapes.opt == expected) || !(shapes.max == expected)) {
     return refuse(RefusalCode::ShapeInvalid,
-                  std::format("DistilDRBA fusionné : forme fixe 1×7×{}×{} attendue, le manifeste dit {}×{}",
-                              h, w, h, w));
+                  std::format("DistilDRBA fusionné : forme fixe 1×7×{}×{} (celle du manifeste) attendue, "
+                              "demandée {}",
+                              h, w, shape_text(shapes)));
   }
   // Un moteur publié doit se désérialiser ici : sinon le constructeur le refait.
   const prepare::EngineCheck check =
@@ -85,17 +86,20 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_drba_fused
 std::expected<void, Refusal> TensorRtBackend::enqueue_drba_fused(DrbaFusedEngine& engine,
                                                                  std::span<const Tensor> inputs,
                                                                  std::span<Tensor> outputs) {
-  if (auto ok = bind(); !ok) return ok;
+  // Un refus avant la chaîne ne laisse pas l'annonce de cet appel au suivant (C03-05) : la paire suivante
+  // réécrit les mêmes tampons pair01 et pair12.
+  if (auto ok = bind(); !ok) {
+    engine.drop_hint();
+    return ok;
+  }
   // La chaîne lit les entrées, écrit la sortie, la zone d'activation et son propre contexte.
   const std::shared_ptr<SharedActivations>& zone = arena();
-  std::vector<std::uintptr_t> reads;
-  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(zone.get()),
-                                     reinterpret_cast<std::uintptr_t>(&engine)};
-  for (const Tensor& tensor : inputs) reads.push_back(tensor.handle);
-  for (const Tensor& tensor : outputs) writes.push_back(tensor.handle);
-  if (auto ok = order(reads, writes); !ok) return ok;
+  if (auto ok = order_engine(&engine, inputs, outputs, false); !ok) {
+    engine.drop_hint();
+    return ok;
+  }
   const Shape shape = engine.input_shape();
-  GpuTiming& timing = stage(std::format("moteur DistilDRBA fusionné {}×{}", shape.dims[3], shape.dims[2]));
+  GpuTiming& timing = stage_named("moteur DistilDRBA fusionné {}×{}", shape.dims[3], shape.dims[2]);
   role(Role::Interpolation).begin(stream_);
   timing.begin(stream_);
   auto queued = engine.enqueue(stream_, zone, inputs, outputs);

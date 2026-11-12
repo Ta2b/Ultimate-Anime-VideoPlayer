@@ -53,15 +53,18 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
     engine->blocks_[static_cast<std::size_t>(b)] = std::move(*block);
   }
   engine->layout_ = kernels::drba_fused_layout(key.plan, h, w);
-  engine->scratch_offset_ = kernels::drba_fused_align(static_cast<std::size_t>(activation));
+  engine->own_activation_ = activation;
+  engine->scratch_offset_ = engine->scratch_offset_for(*shared);
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
 
   // Une paire de zéros trois fois par toute la chaîne, sur un flux à part : exécution à froid, capture,
   // rejeu.
   const std::size_t in_bytes = std::size_t{kernels::kDrbaFusedInputPlanes} * static_cast<std::size_t>(h) *
                                static_cast<std::size_t>(w) * 2U;
-  const std::size_t out_bytes =
-      std::size_t{3} * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
+  // Cinq plans : l'image (trois) pour la variante image, le flot (quatre) et le masque (un) pour la variante
+  // mouvement.
+  const std::size_t plane_bytes = static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
+  const std::size_t out_bytes = std::size_t{5} * plane_bytes;
   FusedScratch scratch;
   void*& scratch_input01 = scratch.buffers[0];
   void*& scratch_input12 = scratch.buffers[1];
@@ -83,19 +86,25 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   if (cudaError_t e = cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking); e != cudaSuccess)
     return failed(e, "cudaStreamCreate");
   // L'essai écrit dans la zone d'activation partagée de la voie, sur un flux à lui : le travail encore
-  // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue nomme ce moteur
-  // dernier utilisateur de la zone : celui qui y gardait ses tampons les refait.
+  // en vol sur les voies (SPAN, un autre moteur) finit avant (A03-05). enqueue déclare ce qu'il y écrit :
+  // un autre moteur qui y gardait ses tampons les refait.
   if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
+  const auto out = reinterpret_cast<std::uintptr_t>(scratch_output);
   const Tensor inputs[]{fused_tensor(reinterpret_cast<std::uintptr_t>(scratch_input01), 0,
                                      kernels::kDrbaFusedInputPlanes, h, w),
                         fused_tensor(reinterpret_cast<std::uintptr_t>(scratch_input12), 0,
                                      kernels::kDrbaFusedInputPlanes, h, w)};
-  const Tensor outputs[]{fused_tensor(reinterpret_cast<std::uintptr_t>(scratch_output), 0, 3, h, w)};
-  for (int pass = 0; pass < 3; ++pass) {
-    if (auto ok = engine->enqueue(scratch.stream, shared, inputs, outputs); !ok)
-      return std::unexpected(std::move(ok.error()));
-    if (cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
-      return failed(e, "exécution");
+  const Tensor image[]{fused_tensor(out, 0, 3, h, w)};
+  const Tensor motion[]{fused_tensor(out, 0, 4, h, w), fused_tensor(out + 4U * plane_bytes, 0, 1, h, w)};
+  // Les deux variantes, chacune exécutée, capturée et rejouée (C03-06) : l'appelant choisit la sienne à
+  // chaque appel (le warp après SPAN prend le flot et le masque), un noyau qui ne tourne pas se voit ici.
+  for (const std::span<const Tensor> outputs : {std::span<const Tensor>(image), std::span<const Tensor>(motion)}) {
+    for (int pass = 0; pass < 3; ++pass) {
+      if (auto ok = engine->enqueue(scratch.stream, shared, inputs, outputs); !ok)
+        return std::unexpected(std::move(ok.error()));
+      if (cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess)
+        return failed(e, "exécution");
+    }
   }
   // Une capture refusée pendant l'essai laisse la chaîne tourner sans graphe : ce n'est pas un refus. Les
   // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus ; les séries d'échecs repartent
@@ -106,6 +115,10 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   engine->kept_.reset();
   engine->times_only_next_ = false;
   return engine;
+}
+
+std::size_t DrbaFusedEngine::scratch_offset_for(const SharedActivations& zone) const {
+  return kernels::drba_fused_align(static_cast<std::size_t>(std::max(own_activation_, zone.activation_peak())));
 }
 
 std::expected<void, Refusal> DrbaFusedEngine::use_zone(const std::shared_ptr<SharedActivations>& zone) {
@@ -206,6 +219,9 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
+  // L'annonce ne vaut que pour cet appel, refusé ou non (C03-05) : un refus de forme ne la laisse pas à la
+  // paire suivante, qui réécrit les mêmes tampons.
+  const bool announced = std::exchange(times_only_next_, false);
   if (inputs.size() != 2 || (outputs.size() != 1 && outputs.size() != 2))
     return refuse(RefusalCode::ShapeInvalid,
                   "DistilDRBA fusionné : nombre d'entrées ou de sorties différent du moteur");
@@ -225,18 +241,37 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                  !matches(outputs[1], Shape{.dims = {1, 1, h, w}})))
     return refuse(RefusalCode::ShapeInvalid,
                   "DistilDRBA fusionné : flot 1×4 et masque 1×1 à la taille du moteur attendus");
-  // D6 : les mêmes paires, la même zone, que personne n'a touchée depuis l'appel précédent mené au bout.
+  // Lancé sur une autre voie que celle du chargement, la zone a grandi, ou un moteur entier de la zone a des
+  // activations plus hautes que les tampons (un SPAN chargé après) : tampons repris au-dessus, graphes jetés.
+  const std::size_t offset = scratch_offset_for(*arena);
+  const auto needed = static_cast<std::int64_t>(offset + layout_.bytes);
+  if (arena != zone_ || offset != scratch_offset_ || arena->bytes() < needed ||
+      zone_generation_ != arena->generation()) {
+    scratch_offset_ = offset;
+    if (auto ok = use_zone(arena); !ok) {
+      kept_.reset();
+      return ok;
+    }
+  }
+  // D6 : les mêmes paires, la même zone, les tampons à la même place, que personne n'a touchés depuis l'appel
+  // précédent mené au bout (un moteur entier de la zone n'écrit que sous eux, C03-01).
   const std::uintptr_t pair01 = inputs[0].handle + inputs[0].offset;
   const std::uintptr_t pair12 = inputs[1].handle + inputs[1].offset;
-  const bool times_only = std::exchange(times_only_next_, false) && kept_ && arena->last_user() == this &&
-                          kept_->zone == arena->data() && kept_->generation == arena->generation() &&
+  const bool times_only = announced && kept_ && arena->kept_by(this) && kept_->zone == arena->data() &&
+                          kept_->generation == arena->generation() && kept_->offset == scratch_offset_ &&
                           kept_->pair01 == pair01 && kept_->pair12 == pair12;
   kept_.reset();
   auto queued = enqueue_chain(stream, arena, inputs, outputs, times_only);
-  arena->set_last_user(this);  // après les morceaux, qui se sont nommés
-  if (queued)
-    kept_ =
-        Kept{.pair01 = pair01, .pair12 = pair12, .zone = arena->data(), .generation = arena->generation()};
+  // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés).
+  arena->wrote(this, static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
+  if (queued) {
+    arena->keep(this, static_cast<std::int64_t>(scratch_offset_));
+    kept_ = Kept{.pair01 = pair01,
+                 .pair12 = pair12,
+                 .zone = arena->data(),
+                 .generation = arena->generation(),
+                 .offset = scratch_offset_};
+  }
   return queued;
 }
 
@@ -246,12 +281,6 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
                                                             std::span<const Tensor> outputs,
                                                             bool times_only) {
   const bool motion = outputs.size() == 2;
-  // Lancé sur une autre voie que celle du chargement, ou la zone a grandi : tampons repris à leur place,
-  // graphes jetés.
-  const auto needed = static_cast<std::int64_t>(scratch_offset_ + layout_.bytes);
-  if (arena != zone_ || arena->bytes() < needed || zone_generation_ != arena->generation()) {
-    if (auto ok = use_zone(arena); !ok) return ok;
-  }
   const FusedGraphs::Key key{inputs[0].handle + inputs[0].offset,
                              inputs[1].handle + inputs[1].offset,
                              outputs[0].handle + outputs[0].offset,

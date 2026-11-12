@@ -138,16 +138,19 @@ L'option devient le défaut si le gain dépasse 1 ms par image sur les paires fo
 sur les traits fins ni scintillement, et pour moins de 300 Mo de VRAM en plus. Sinon elle reste un essai, ou se
 retire.
 
-## Warp du backend TensorRT : lecture filtrée
+## Warp du backend TensorRT : lecture exacte, lecture filtrée à l'essai
 
-Sous TensorRT, le warp et le mélange des images intermédiaires (`warp_blend_filtered`,
-`src/gpu/cuda/backend/warp_kernels.cu`) lisent les images, le flot et le masque par le filtre bilinéaire de
-la texture. Sa fraction est sur 8 bits : l'écart avec le warp exact (`warp_blend`) va jusqu'au gradient local
-divisé par 512, soit environ un demi-niveau 8 bits sur un trait noir net. C'est une perte de qualité consentie
-pour la vitesse, dont le gain est **non mesuré** (audit B03-03). Mesure à faire sur la RTX :
-`ncu --kernel-name regex:warp_blend` sur 30 s de lecture ×3 en 1080p et en 4K, chaque noyau forcé tour à tour,
-plus le temps par image de `--stats=`. Si le gain est sous 0,1 ms par image, la lecture exacte redevient le
-défaut ; sinon le chiffre s'écrit ici.
+Sous TensorRT, le warp et le mélange des images intermédiaires lisent les images, le flot et le masque
+exactement (`warp_blend`, `src/gpu/cuda/backend/warp_kernels.cu` : quatre chargements et poids en float).
+La lecture par le filtre bilinéaire de la texture (`warp_blend_filtered`) a une fraction sur 8 bits : l'écart
+au warp exact va jusqu'au gradient local divisé par 512, soit environ un demi-niveau 8 bits sur un trait noir
+net. Son gain n'a jamais été mesuré : c'était une perte de qualité consentie pour une vitesse inconnue, donc
+elle n'est plus le défaut. Elle reste derrière l'option d'essai `--filtered-warp` (éteinte), pour la mesure.
+
+Mesure à faire sur la RTX : `ncu --kernel-name regex:warp_blend` sur 30 s de lecture ×3 en 1080p et en 4K,
+une fois sans option, une fois avec `--filtered-warp`, plus le temps par image de `--stats=`. Si le gain dépasse
+0,1 ms par image, il s'écrit ici avec son chiffre et la question de rallumer le chemin filtré se pose ; sinon
+le chemin filtré se retire.
 
 ## GMFSS retiré
 

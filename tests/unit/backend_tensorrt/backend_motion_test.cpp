@@ -43,6 +43,7 @@ struct WarpCase {
   int h = 0;
   kernels::Window area;
   double tolerance = 0.0;
+  bool filtered = false;  // l'essai --filtered-warp (BackendInit::filtered_warp)
 };
 
 void check_warp(const WarpCase& wc) {
@@ -89,7 +90,7 @@ void check_warp(const WarpCase& wc) {
       }
     }
   }
-  Loaded loaded;
+  Loaded loaded(wc.filtered);
   REQUIRE(loaded.backend != nullptr);
   auto alloc = [&](std::int64_t c, std::int64_t hh, std::int64_t ww) {
     auto t = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, c, hh, ww}});
@@ -199,16 +200,30 @@ TEST_CASE("Backend TensorRT : warp et mélange par le mouvement, contre la réf�
               .tolerance = 2e-3});
 }
 
-TEST_CASE("Backend TensorRT : warp par objets texture, deux pixels par fil, contre la référence",
+TEST_CASE("Backend TensorRT : warp exact par défaut, même aux largeurs des objets texture (C01-01)",
           "[backend_tensorrt][cuda]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  // Largeurs de 128 et 192 octets : le filtre bilinéaire matériel et la sortie half2.
+  // Largeurs de 128 et 192 octets, au pas des objets texture : sans --filtered-warp, la lecture reste exacte,
+  // à l'arrondi FP16 de la sortie près (le filtre matériel s'écartait jusqu'à kWarpFiltered).
   check_warp({.pw = 64,
               .ph = 48,
               .w = 96,
               .h = 48,
               .area = {.x = 0, .y = 8, .width = 64, .height = 32},
-              .tolerance = kernels::tolerance::kWarpFiltered});
+              .tolerance = 2e-3});
+}
+
+TEST_CASE("Backend TensorRT : warp par objets texture (--filtered-warp), deux pixels par fil",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // Largeurs de 128 et 192 octets : le filtre bilinéaire matériel et la sortie half2, à l'essai seulement.
+  check_warp({.pw = 64,
+              .ph = 48,
+              .w = 96,
+              .h = 48,
+              .area = {.x = 0, .y = 8, .width = 64, .height = 32},
+              .tolerance = kernels::tolerance::kWarpFiltered,
+              .filtered = true});
 }
 
 TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage de la fenêtre",
@@ -310,6 +325,20 @@ TEST_CASE("Backend TensorRT : mesures d'une paire, coupe de scène et pire bloc"
   CHECK(moved->worst_block == static_cast<std::uint32_t>(0.25F * 219.0F * 256.0F));
   const double expected = 32.0 * 32.0 * 0.25 * (219.0 / 255.0) / (64.0 * 64.0);
   CHECK(std::fabs(moved->scene_score - expected) < 1e-4);
+
+  // C03-02 : une source en plage pleine, où ΔY = 1 couvre les 255 codes : le score de coupe suit la plage,
+  // comme le pire bloc, au lieu de rester au pas 219/255.
+  kernels::YuvImage image(kernels::Format::Nv12, w, h, 128, 128, 128);
+  auto ingested = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  REQUIRE(ingested);
+  DecodedFrame frame = frame_of(std::make_shared<CudaNv12>(image), w, h);
+  frame.color = ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Full, .siting = ChromaSiting::Left};
+  REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*ingested)->tensor()));
+  auto full = loaded.backend->kernels()->scores_now((*a)->tensor(), (*b)->tensor());
+  REQUIRE(full);
+  CHECK(full->worst_block == static_cast<std::uint32_t>(0.25F * 255.0F * 256.0F));
+  const double expected_full = 32.0 * 32.0 * 0.25 / (64.0 * 64.0);
+  CHECK(std::fabs(full->scene_score - expected_full) < 1e-4);
 }
 
 // Un dessin d'anime : dégradés lents, aplats clairs proches du blanc, traits noirs d'un point et un

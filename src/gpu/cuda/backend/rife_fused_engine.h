@@ -2,11 +2,13 @@
 // les blocs, des convolutions à basse résolution) reliés par les noyaux CUDA de rife_fused_kernels.h, le tout
 // enfilé sur le flux du backend et capturé dans un seul graphe CUDA. L'interface est celle du moteur RIFE
 // entier : une entrée 1 × 11 × H × W (rife_input) et une sortie 1 × 3 × H × W, ou, pour la variante
-// mouvement, le flot 1 × 4 × H × W et le masque 1 × 1 × H × W. Les tampons intermédiaires vivent à la suite
-// des activations des moteurs dans la zone partagée de la voie (SharedActivations) : rien d'alloué de plus.
+// mouvement, le flot 1 × 4 × H × W et le masque 1 × 1 × H × W. Les tampons intermédiaires vivent dans la zone
+// partagée de la voie (SharedActivations), au-dessus des activations de tous les moteurs entiers qui la
+// partagent (C03-01 : la zone grandit de leur taille quand SPAN y a les plus grandes activations).
 // L'encodeur prend une image à la fois : l'encodage d'une paire se garde d'un appel à l'autre, entier pour un
 // autre instant de la même paire (next_times_only), celui de B pour A à la paire suivante
-// (next_pair_follows), tant que la zone n'a servi à aucun autre moteur.
+// (next_pair_follows), tant qu'aucun autre moteur n'a écrit sur ces tampons : un SPAN qui passe entre deux
+// appels sur la même voie n'écrit que sous eux.
 #pragma once
 
 #include <array>
@@ -25,6 +27,7 @@
 #include "gpu/cuda/backend/fused_keys.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "kernels/spec/rife_fused.h"
+#include "kernels/spec/warp.h"
 
 namespace nvinfer1 {
 class IRuntime;
@@ -63,6 +66,17 @@ class RifeFusedEngine final : public Engine {
   void next_pair_follows() override { hint_ = Hint::Follows; }
   // L'annonce oubliée : le backend a refusé l'appel avant d'enfiler la chaîne.
   void drop_hint() { hint_ = Hint::None; }
+  // La fenêtre de l'image source dans le tenseur rempli (kernels::rife_window), que le backend connaît par
+  // rife_input : le warp final de la variante image n'en sort pas (C03-03). Hors du tenseur : le tenseur.
+  void set_window(const kernels::Window& window);
+  // Les appels menés jusqu'à l'encodeur depuis le chargement : les deux images encodées, B seule, aucune (les
+  // tests de l'encodage gardé, C03-09).
+  struct EncodeCounts {
+    std::uint64_t both = 0;
+    std::uint64_t second = 0;
+    std::uint64_t none = 0;
+  };
+  EncodeCounts encode_counts() const { return {.both = encodes_[0], .second = encodes_[1], .none = encodes_[2]}; }
 
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }
@@ -81,6 +95,7 @@ class RifeFusedEngine final : public Engine {
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
                                              Encode encode);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
+  std::size_t scratch_offset_for(const SharedActivations& zone) const;
 
   std::unique_ptr<TrtEngine> encode_;
   std::vector<std::unique_ptr<TrtEngine>> blocks_;
@@ -89,9 +104,12 @@ class RifeFusedEngine final : public Engine {
   int width_ = 0;
   bool motion_ = false;
   kernels::RifeWarp warp_ = kernels::RifeWarp::Bilinear;
+  kernels::Window window_;  // set_window
   kernels::RifeFusedLayout layout_;
-  std::size_t scratch_offset_ =
-      0;  // début des tampons intermédiaires dans la zone : après les activations des moteurs
+  // Début des tampons intermédiaires dans la zone : au-dessus des activations de ses morceaux et de celles
+  // des moteurs entiers de la même zone (SharedActivations::activation_peak, C03-01).
+  std::size_t scratch_offset_ = 0;
+  std::int64_t own_activation_ = 0;  // les plus grandes activations de ses morceaux
   std::vector<std::string> inputs_{"input"};
   std::vector<std::string> outputs_;
   std::shared_ptr<SharedActivations> zone_;
@@ -108,9 +126,11 @@ class RifeFusedEngine final : public Engine {
     std::uintptr_t input = 0;
     const void* zone = nullptr;
     std::uint64_t generation = 0;
+    std::size_t offset = 0;  // scratch_offset_ de l'appel
   };
   std::optional<Kept> kept_;
   Hint hint_ = Hint::None;
+  std::array<std::uint64_t, 3> encodes_{};  // appels par travail de l'encodeur (Encode), pour les tests
 };
 
 }  // namespace ajp::gpu::cuda

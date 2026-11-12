@@ -106,6 +106,8 @@ void TensorRtBackend::destroy_lanes() {
     }
     if (streams_[lane] != nullptr) cudaStreamDestroy(streams_[lane]);
     streams_[lane] = nullptr;
+    if (free_marks_[lane] != nullptr) cudaEventDestroy(free_marks_[lane]);
+    free_marks_[lane] = nullptr;
   }
   stream_ = nullptr;
   // La réserve CUDA garde son sommet pendant la lecture (tune_pool) ; à la fermeture de la chaîne, ce

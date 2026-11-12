@@ -89,7 +89,29 @@ __device__ __forceinline__ void catmull_rom(float t, float (&w)[4]) {
   w[3] = 0.5F * t3 - 0.5F * t2;
 }
 
-__device__ __forceinline__ float catmull_rom_sample(const __half* plane, const Tap& t, int w, int h) {
+// La fenêtre de l'image source dans le tenseur rempli : [left, right[ × [top, bottom[.
+struct Bounds {
+  int left, top, right, bottom;
+};
+
+// pixel_tap borné à la fenêtre de l'image au lieu du tenseur rempli (C03-03) : le warp final ne lit jamais
+// la bordure noire du remplissage, comme le warp après SPAN (bilinear.cuh).
+__device__ __forceinline__ Tap window_tap(int x, int y, float flow_x, float flow_y, const Bounds& b) {
+  float ix = __fadd_rn(static_cast<float>(x), flow_x);
+  float iy = __fadd_rn(static_cast<float>(y), flow_y);
+  ix = fminf(fmaxf(ix, static_cast<float>(b.left)), static_cast<float>(b.right - 1));
+  iy = fminf(fmaxf(iy, static_cast<float>(b.top)), static_cast<float>(b.bottom - 1));
+  Tap t;
+  t.x0 = static_cast<int>(ix);
+  t.y0 = static_cast<int>(iy);
+  t.x1 = min(t.x0 + 1, b.right - 1);
+  t.y1 = min(t.y0 + 1, b.bottom - 1);
+  t.wx = ix - static_cast<float>(t.x0);
+  t.wy = iy - static_cast<float>(t.y0);
+  return t;
+}
+
+__device__ __forceinline__ float catmull_rom_sample(const __half* plane, const Tap& t, int w, const Bounds& b) {
   float wx[4];
   float wy[4];
   catmull_rom(t.wx, wx);
@@ -98,11 +120,11 @@ __device__ __forceinline__ float catmull_rom_sample(const __half* plane, const T
   float sum = 0.0F;
 #pragma unroll
   for (int j = 0; j < 4; ++j) {
-    const auto yy = static_cast<std::size_t>(min(max(t.y0 - 1 + j, 0), h - 1));
+    const auto yy = static_cast<std::size_t>(min(max(t.y0 - 1 + j, b.top), b.bottom - 1));
     float row = 0.0F;
 #pragma unroll
     for (int i = 0; i < 4; ++i) {
-      const auto xx = static_cast<std::size_t>(min(max(t.x0 - 1 + i, 0), w - 1));
+      const auto xx = static_cast<std::size_t>(min(max(t.x0 - 1 + i, b.left), b.right - 1));
       row += __half2float(plane[yy * stride + xx]) * wx[i];
     }
     sum += row * wy[j];
@@ -269,13 +291,17 @@ __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
     return;
   }
   float warped[2][3];
+  const Bounds window{.left = p.window_left,
+                      .top = p.window_top,
+                      .right = p.window_left + p.window_width,
+                      .bottom = p.window_top + p.window_height};
 #pragma unroll
   for (int n = 0; n < 2; ++n) {
-    const Tap tap = pixel_tap(x, y, fl[2 * n], fl[2 * n + 1], p.width, p.height);
+    const Tap tap = window_tap(x, y, fl[2 * n], fl[2 * n + 1], window);
 #pragma unroll
     for (int ch = 0; ch < 3; ++ch) {
       const __half* source = input + static_cast<std::size_t>(3 * n + ch) * plane;
-      warped[n][ch] = rounded(p.cubic != 0 ? catmull_rom_sample(source, tap, p.width, p.height)
+      warped[n][ch] = rounded(p.cubic != 0 ? catmull_rom_sample(source, tap, p.width, window)
                                            : bilinear(source, tap, p.width));
     }
   }

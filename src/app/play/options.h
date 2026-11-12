@@ -151,6 +151,9 @@ struct PlayOptions {
   // --profile-dispatches : temps GPU et nombre de dispatchs par shader des réseaux Vulkan, au journal
   // quand un réseau se décharge (BackendInit::profile_dispatches).
   bool profile_dispatches = false;
+  // --filtered-warp (essai) : le warp TensorRT lit par texture (BackendInit::filtered_warp), pour mesurer son
+  // gain ; éteint, la lecture exacte.
+  bool filtered_warp = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;

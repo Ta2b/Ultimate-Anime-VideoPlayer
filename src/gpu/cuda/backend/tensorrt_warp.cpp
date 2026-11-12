@@ -115,7 +115,12 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
     return refuse(RefusalCode::FieldOutOfRange, std::format("warp_blend : instant {}", t));
   if (auto ok = check_motion(motion); !ok) return ok;
   if (auto ok = bind_joined(target.ring); !ok) return ok;
-  trim_textures();
+  // La lecture par texture (fraction sur 8 bits) seulement à l'essai, pour la mesurer : par défaut, sans
+  // objet texture, le noyau lit exactement (docs/interpolation.md).
+  const auto texture_of = [this](const Tensor& tensor) -> cudaTextureObject_t {
+    return filtered_warp_ ? texture(tensor) : 0;
+  };
+  if (filtered_warp_) trim_textures();
   const WarpBlendParams params{
       .a = address(a),
       .b = address(b),
@@ -135,11 +140,11 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       .keep_poses = poses.keep,
       .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
       .out = out != nullptr ? const_cast<void*>(address(*out)) : nullptr,  // NOLINT : écrit
-      .textures = {.a = texture(a),
-                   .b = texture(b),
-                   .flow = texture(motion.flow),
-                   .mask = texture(motion.mask),
-                   .previous_flow = poses.previous != nullptr ? texture(poses.previous->flow) : 0}};
+      .textures = {.a = texture_of(a),
+                   .b = texture_of(b),
+                   .flow = texture_of(motion.flow),
+                   .mask = texture_of(motion.mask),
+                   .previous_flow = poses.previous != nullptr ? texture_of(poses.previous->flow) : 0}};
   const std::array reads{a.handle, b.handle, motion.flow.handle, motion.mask.handle,
                          poses.previous != nullptr ? poses.previous->flow.handle : std::uintptr_t{0}};
   const std::array writes{out != nullptr ? out->handle : 0};

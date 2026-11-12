@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <string_view>
 
 namespace ajp::gpu::span_fp8 {
@@ -111,6 +112,13 @@ std::string receipt_text(const Receipt& r, std::string_view comment) {
   whole("hard_images", r.verdict.hard_images);
   whole("gate_version", kGateVersion);
   if (r.timed_during_playback) out += "timed_during_playback = true\n";
+  if (!r.timed_size.empty()) text("timed_size", r.timed_size);
+  whole("clipped_tensors", r.verdict.clipped_tensors);
+  real("peak_ratio", r.verdict.peak_ratio);
+  if (r.acc16) {
+    real("acc16_psnr_loss_db", r.acc16_psnr_loss_db);
+    real("kernels_ms_f32", r.kernels_ms_f32);
+  }
   out += sizes_line("validated_sizes", r.validated_sizes) + "\n";
   out += sizes_line("refused_sizes", r.refused_sizes) + "\n";
   return out;
@@ -143,8 +151,8 @@ std::string with_sizes(std::string_view receipt, const std::vector<std::string>&
 }
 
 std::string size_key(int width, int height) {
-  const Crop crop = kernel_crop(width, height);
-  return std::format("{}x{}", crop.width, crop.height);
+  const Crop even = kernel_crop(width, height, width, height);
+  return std::format("{}x{}", even.width, even.height);
 }
 
 Crop kernel_crop(int width, int height, int max_width, int max_height) {
@@ -175,8 +183,26 @@ Verdict judge_hardened(std::span<const ImageScore> scores, std::span<const Image
   return verdict;
 }
 
-bool keep_acc16(const Verdict& f32, const Verdict& f16) {
-  return f32.passed && f16.passed && f32.psnr_mean_db - f16.psnr_mean_db <= kMaxAcc16PsnrLossDb;
+void judge_peaks(Verdict& verdict, std::span<const float> peaks, std::span<const float> scales,
+                 std::size_t blocks) {
+  const std::size_t count = std::min({scale_count(blocks), peaks.size(), scales.size()});
+  verdict.clipped_tensors = 0;
+  verdict.peak_ratio = 0.0;
+  for (std::size_t i = 0; i < count; ++i) {
+    const double limit = static_cast<double>(scales[i]) * static_cast<double>(kE4m3Max);
+    // Un maximum non fini déborde : écrêté, comme un dépassement.
+    const double ratio = std::isfinite(peaks[i]) && limit > 0.0 ? static_cast<double>(peaks[i]) / limit
+                                                                : std::numeric_limits<double>::infinity();
+    verdict.peak_ratio = std::max(verdict.peak_ratio, ratio);
+    // 1e-5 : l'arrondi en f32 de l'échelle (maximum × 1,25 / 448) ; un maximum à la limite tient en E4M3.
+    if (ratio > 1.0 + 1e-5) ++verdict.clipped_tensors;
+  }
+  if (verdict.clipped_tensors > 0) verdict.passed = false;
+}
+
+bool keep_acc16(const Verdict& f32, const Verdict& f16, double ms_f32, double ms_f16) {
+  const bool faster = ms_f32 > 0.0 && ms_f16 > 0.0 && ms_f16 * (1.0 + kMinAcc16Gain) <= ms_f32;
+  return f32.passed && f16.passed && f32.psnr_mean_db - f16.psnr_mean_db <= kMaxAcc16PsnrLossDb && faster;
 }
 
 }  // namespace ajp::gpu::span_fp8

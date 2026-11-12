@@ -88,7 +88,9 @@ namespace ajp::gpu {
 // 36 : Engine::next_pair_follows (RIFE fusionné : l'encodage de B repris comme celui de A à la paire
 // suivante).
 // 37 : Motion::warp (le warp final en Catmull-Rom, en option).
-inline constexpr int kBackendAbi = 37;
+// 38 : BackendInit::filtered_warp (le warp par texture, à l'essai) ; SpanFp8Request::fp16, timing_width et
+// timing_height ; SpanFp8Derivation::trt_fp16_ms, timed_size et validation_peaks (E01).
+inline constexpr int kBackendAbi = 38;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -109,6 +111,11 @@ struct BackendInit {
   // --profile-dispatches (option d'essai) : temps GPU et nombre de dispatchs par shader des réseaux, au
   // journal quand un réseau se décharge. Lu par le backend Vulkan ; sans effet ailleurs.
   bool profile_dispatches = false;
+  // --filtered-warp (option d'essai, éteinte par défaut) : le warp des images intermédiaires lit images, flot
+  // et masque par le filtre bilinéaire matériel (fraction sur 8 bits, écart au warp exact jusqu'au gradient
+  // local / 512). Perte de qualité dont le gain n'est pas mesuré : elle ne sert qu'à la mesure de
+  // docs/interpolation.md. Lu par le backend TensorRT ; sans effet ailleurs.
+  bool filtered_warp = false;
   // Rempli quand ajp_backend_create rend nullptr : AbiMismatch, DeviceMismatch,
   // LibraryUnavailable… ; nullptr si l'appelant n'en veut pas.
   Refusal* refusal = nullptr;
@@ -205,6 +212,14 @@ struct SpanFp8Request {
   // Étape 3.6 : refus GpuMemoryExhausted si la VRAM libre est sous min_free_ratio × le besoin estimé de la
   // dérivation (0 : pas de contrôle ; la préparation lancée par un préréglage met 1,5).
   double min_free_ratio = 0.0;
+  // C02-01 : le moteur TensorRT du SPAN FP16 que la lecture garde sans le paquet, construit pour
+  // timing_width × timing_height (Backend::build) ; le backend le chronomètre comme le FP8, sur le même flux
+  // et par tours intercalés (trt_fp16_ms). Absent : rien n'est mesuré contre lui (essais, outils).
+  std::optional<Artifact> fp16;
+  // C02-05 : la taille de travail de la lecture, où les temps se mesurent ; la qualité se juge sur la découpe
+  // des images (au plus span_fp8::kCropMaxWidth × kCropMaxHeight). 0 : la taille des images de validation.
+  int timing_width = 0;
+  int timing_height = 0;
 };
 
 struct SpanFp8ImageScore {
@@ -229,6 +244,13 @@ struct SpanFp8Derivation {
   std::string gpu_arch;     // « sm_89 » (étape 3.7b)
   int kernels_version = 0;  // SpanFp8Net::kKernelsVersion
   std::string reference;    // d'où vient la sortie de référence, « cutlass-fp16 »
+  // C02-01 : une passe du SPAN FP16 de TensorRT (SpanFp8Request::fp16), mesurée avec les noyaux FP8 ; 0 :
+  // non mesuré.
+  double trt_fp16_ms = 0.0;
+  std::string timed_size;  // « 2560x1440 » : la taille où les trois temps ont été pris (C02-05)
+  // C02-04 : le maximum de |valeur| de chaque tenseur quantifié, relevé par la référence FP16 sur les images
+  // de calibration et de validation (pas les cas durs) : span_fp8::judge_peaks le compare à 448 × scales.
+  std::array<float, 25> validation_peaks{};
 };
 
 // Moteur chargé et prêt à recevoir enqueue(). Possédé par un Program. Son code vit dans la

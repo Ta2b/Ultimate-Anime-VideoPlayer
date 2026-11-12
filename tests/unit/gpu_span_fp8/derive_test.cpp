@@ -1,6 +1,7 @@
 // Ce que toute dérivation du paquet « .span8 » partage : échelles, verdict, reçu, tailles prises (sans GPU).
 #include "gpu/span_fp8/derive.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -119,7 +120,7 @@ TEST_CASE("un score non fini refuse, où qu'il soit dans la liste (A02-01)", "[s
   const std::vector<ImageScore> with_nan{good, good, {0.0, 0.0, kNotFiniteError, kNotFiniteError}};
   CHECK_FALSE(judge_hardened(with_nan, {}).passed);
   CHECK_FALSE(keep_acc16(judge_hardened(std::vector<ImageScore>{good, good, good}, {}),
-                         judge_hardened(with_nan, {})));
+                         judge_hardened(with_nan, {}), 9.3, 8.9));
 }
 
 TEST_CASE("l'accumulateur f16 n'est gardé qu'à 0,3 dB de PSNR moyen du f32, porte passée (3.5a)",
@@ -127,16 +128,59 @@ TEST_CASE("l'accumulateur f16 n'est gardé qu'à 0,3 dB de PSNR moyen du f32, po
   const Verdict f32{.psnr_mean_db = 48.0, .psnr_worst_db = 44.0, .ssim_worst = 0.99, .passed = true};
   Verdict f16 = f32;
   f16.psnr_mean_db = 47.75;
-  CHECK(keep_acc16(f32, f16));
+  CHECK(keep_acc16(f32, f16, 9.3, 8.9));
   f16.psnr_mean_db = 47.6;
-  CHECK_FALSE(keep_acc16(f32, f16));  // perd 0,4 dB
+  CHECK_FALSE(keep_acc16(f32, f16, 9.3, 8.9));  // perd 0,4 dB
   f16.psnr_mean_db = 48.2;
   f16.passed = false;
-  CHECK_FALSE(keep_acc16(f32, f16));  // meilleur en moyenne, mais la porte ne passe pas
+  CHECK_FALSE(keep_acc16(f32, f16, 9.3, 8.9));  // meilleur en moyenne, mais la porte ne passe pas
   Verdict failed = f32;
   failed.passed = false;
   f16.passed = true;
-  CHECK_FALSE(keep_acc16(failed, f16));
+  CHECK_FALSE(keep_acc16(failed, f16, 9.3, 8.9));
+}
+
+TEST_CASE("l'accumulateur f16 n'est gardé que s'il va plus vite (C02-03)", "[span_fp8][derive]") {
+  // Le cas du rapport d'audit : −0,25 dB, et une variante plus lente ; sans les temps, elle était gardée.
+  const Verdict f32{.psnr_mean_db = 48.0, .psnr_worst_db = 44.0, .ssim_worst = 0.99, .passed = true};
+  Verdict f16 = f32;
+  f16.psnr_mean_db = 47.75;
+  CHECK_FALSE(keep_acc16(f32, f16, 9.3, 9.6));   // plus lente
+  CHECK_FALSE(keep_acc16(f32, f16, 9.3, 9.25));  // 0,5 % : sous kMinAcc16Gain
+  CHECK(keep_acc16(f32, f16, 9.3, 9.3 / (1.0 + kMinAcc16Gain)));
+  CHECK_FALSE(keep_acc16(f32, f16, 0.0, 8.9));  // un temps non mesuré ne garde rien
+  CHECK_FALSE(keep_acc16(f32, f16, 9.3, 0.0));
+}
+
+TEST_CASE("un tenseur qui dépasse 448 × son échelle sur la validation refuse (C02-04)",
+          "[span_fp8][derive]") {
+  std::array<float, kScaleCount> peaks{};
+  peaks.fill(10.0F);
+  const auto scales = scales_from_peaks(peaks, kBlocks);
+  REQUIRE(scales);
+  const Verdict passed{.psnr_mean_db = 48.0, .psnr_worst_db = 44.0, .ssim_worst = 0.99, .passed = true};
+  Verdict verdict = passed;
+  judge_peaks(verdict, peaks, *scales);  // les maxima de la calibration : la marge de 1,25
+  CHECK(verdict.passed);
+  CHECK(verdict.clipped_tensors == 0);
+  CHECK(verdict.peak_ratio == Catch::Approx(1.0 / kScaleHeadroom));
+  std::array<float, kScaleCount> seen = peaks;
+  seen[7] = 12.5F;  // juste à la marge : pas d'écrêtage
+  verdict = passed;
+  judge_peaks(verdict, seen, *scales);
+  CHECK(verdict.passed);
+  seen[7] = 13.0F;  // au-delà
+  seen[24] = std::numeric_limits<float>::infinity();
+  verdict = passed;
+  judge_peaks(verdict, seen, *scales);
+  CHECK_FALSE(verdict.passed);
+  CHECK(verdict.clipped_tensors == 2);
+  CHECK(std::isinf(verdict.peak_ratio));
+  // À 5 blocs, les tenseurs au-delà du 16e ne servent pas.
+  verdict = passed;
+  judge_peaks(verdict, seen, *scales, 5);
+  CHECK(verdict.clipped_tensors == 1);
+  CHECK(verdict.peak_ratio == Catch::Approx(13.0 / 12.5));
 }
 
 TEST_CASE("le reçu a les clés et la mise en forme de l'outil Python", "[span_fp8][derive]") {
@@ -175,7 +219,15 @@ TEST_CASE("le reçu v2 lie le paquet à l'appareil, aux noyaux et aux tailles ju
   receipt.verdict.error_p999_worst = 3.0 / 255.0;
   receipt.verdict.hard_images = 9;
   receipt.validated_sizes = {"1280x720"};
+  receipt.timed_size = "1280x720";
+  receipt.acc16_psnr_loss_db = 0.21;
+  receipt.kernels_ms_f32 = 9.3;
+  receipt.verdict.peak_ratio = 0.9;
   const std::string text = receipt_text(receipt, "essai");
+  // Chantier E01 : la taille des temps, l'écrêtage, ce que la variante f16 a coûté.
+  CHECK(text.find("timed_size = \"1280x720\"\nclipped_tensors = 0\npeak_ratio = 0.9000\n") !=
+        std::string::npos);
+  CHECK(text.find("acc16_psnr_loss_db = 0.2100\nkernels_ms_f32 = 9.3000\n") != std::string::npos);
   CHECK(text.find("gpu_arch = \"sm_89\"\n") != std::string::npos);
   CHECK(text.find("kernels_version = 1\n") != std::string::npos);
   CHECK(text.find("blocks = 5\nchannels = 48\naccumulator = \"f16\"\n") != std::string::npos);
@@ -188,7 +240,11 @@ TEST_CASE("le reçu v2 lie le paquet à l'appareil, aux noyaux et aux tailles ju
   CHECK(more.ends_with("validated_sizes = [\"1280x720\", \"1920x1080\"]\nrefused_sizes = [\"960x540\"]\n"));
   CHECK(more.find("validated_sizes = [\"1280x720\"]\n") == std::string::npos);  // l'ancienne ligne remplacée
   CHECK(size_key(1280, 720) == "1280x720");
-  CHECK(size_key(3840, 2160) == "1920x1088");  // la découpe que la préparation ferait
+  // C02-05 : la taille de travail entière, paire ; une taille au-delà de la découpe a sa propre clé.
+  CHECK(size_key(1919, 1081) == "1918x1080");
+  CHECK(size_key(2560, 1440) != size_key(1920, 1088));
+  CHECK(size_key(3840, 2160) != size_key(2560, 1440));
+  CHECK(size_key(3840, 2160) == "3840x2160");
 }
 
 TEST_CASE("les images de dérivation se ramènent à une taille que les noyaux prennent", "[span_fp8][derive]") {
@@ -196,6 +252,8 @@ TEST_CASE("les images de dérivation se ramènent à une taille que les noyaux p
   CHECK(kernel_crop(1920, 1080).height == 1080);
   CHECK(kernel_crop(3840, 2160).width == 1920);  // une découpe, pas une réduction
   CHECK(kernel_crop(3840, 2160).height == 1088);
+  CHECK(kernel_crop(3840, 2160).width == kCropMaxWidth);  // C02-11 : une seule constante
+  CHECK(kernel_crop(3840, 2160).height == kCropMaxHeight);
   CHECK(kernel_crop(1280, 720).width == 1280);
   CHECK(kernel_crop(1000, 1000).width == 1000);  // toute largeur paire (étape 3.1)
   CHECK(kernel_crop(999, 1000).width == 998);

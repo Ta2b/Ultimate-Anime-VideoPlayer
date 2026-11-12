@@ -49,7 +49,9 @@ struct StillsSpec {
   int candidates = 24;  // instants essayés, de 8 % à 92 % de la durée
   int minimum = 8;      // en dessous, la vidéo ne donne pas de corpus : refus
   // La découpe : au plus max_width × max_height, au centre, ramenée à un multiple de align_width ×
-  // align_height (ce que les noyaux du SPAN FP8 prennent : toute taille paire, étape 3.1).
+  // align_height (ce que les noyaux du SPAN FP8 prennent : toute taille paire, étape 3.1). La préparation
+  // passe span_fp8::kCropMaxWidth et kCropMaxHeight (gpu/span_fp8/derive.h, C02-11) ; ces valeurs par défaut
+  // les recopient, un static_assert de app/play/span_derive.cpp les tient égales.
   int max_width = 1920;
   int max_height = 1088;
   int align_width = 2;

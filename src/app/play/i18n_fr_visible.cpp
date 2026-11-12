@@ -172,8 +172,10 @@ constexpr std::array kVisibleTexts{
           "{} : dérivé sur {}, ce GPU est {} : à préparer de nouveau"},
     Entry{"{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)",
           "{} : pas plus rapide que TensorRT FP16 ({:.2f} fois plus vite, il faut {:.2f})"},
-    Entry{"{}: prepared by an older player, gain over FP16 not measured: prepare it again",
-          "{} : préparé par un lecteur plus ancien, sans mesure du gain sur le FP16 : à préparer de nouveau"},
+    Entry{
+        "{}: prepared by an older player under an older quality and speed gate: prepare it again",
+        "{} : préparé par un lecteur plus ancien, sous une porte de qualité et de vitesse plus ancienne : à "
+        "préparer de nouveau"},
     Entry{
         "Performance mode rejected: FP8 kernels {} ms against {} ms for TensorRT FP16 ({}× as fast, at least "
         "{}× is required). Playback stays on TensorRT FP16.",
@@ -182,7 +184,16 @@ constexpr std::array kVisibleTexts{
     Entry{"TensorRT FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the quality given above.",
           "TensorRT FP16 prend ici {} ms : les noyaux FP8 vont {} fois plus vite, pour la qualité dite plus "
           "haut."},
-    Entry{"TensorRT FP16 timing", "mesure de TensorRT FP16"},
+    Entry{"TensorRT FP16 engine", "moteur TensorRT FP16"},
+    Entry{"The f16 accumulator variant is kept: it costs {} dB of mean PSNR and saves {} % of the time.",
+          "La variante à accumulateur f16 est gardée : elle coûte {} dB de PSNR moyen et fait gagner {} % du "
+          "temps."},
+    Entry{"Performance mode rejected: {} FP8 tensors would clip on the validation frames (peak at {}× their "
+          "range): the calibration frames do not cover this video. Playback stays on TensorRT FP16.",
+          "Mode Performance refusé : {} tenseurs FP8 seraient écrêtés sur les images de validation (maximum "
+          "à {} "
+          "fois leur plage) : les images de calibration ne couvrent pas cette vidéo. La lecture reste sur "
+          "TensorRT FP16."},
     Entry{"{}: kernels version {}, this engine has {}: prepare it again",
           "{} : noyaux en version {}, ce moteur a la {} : à préparer de nouveau"},
     Entry{"{}: the engine package of this version is out of date, Vulkan instead",

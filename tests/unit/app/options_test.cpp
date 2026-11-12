@@ -142,6 +142,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto profiled = parse({"épisode.mkv", "--profile-dispatches"});
   REQUIRE(profiled);
   CHECK(profiled->profile_dispatches);
+  // C01-01 : la lecture filtrée du warp TensorRT n'est qu'un essai, éteint par défaut.
+  CHECK_FALSE(options->filtered_warp);
+  const auto filtered = parse({"épisode.mkv", "--filtered-warp"});
+  REQUIRE(filtered);
+  CHECK(filtered->filtered_warp);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {

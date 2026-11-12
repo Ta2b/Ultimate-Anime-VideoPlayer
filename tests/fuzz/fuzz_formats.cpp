@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "../support/span_fp8_synthetic.h"
 #include "core/keys.h"
 #include "fuzz_check.h"
 #include "fuzz_targets.h"
@@ -46,7 +47,7 @@ int ajp::fuzz::span_package(const std::uint8_t* data, std::size_t size) {
   const int blocks =
       pkg::kMinBlocks +
       static_cast<int>(((data[0] >> 2U) & 7U) % static_cast<unsigned>(pkg::kBlocks - pkg::kMinBlocks + 1));
-  std::vector<std::byte> bytes = pkg::serialize(pkg::synthetic(0.01F, blocks));
+  std::vector<std::byte> bytes = pkg::serialize(pkg::testing::synthetic(0.01F, blocks));
   const std::size_t at =
       (data[1] & 0x80U) != 0U
           ? data[2] % pkg::kHeaderBytes

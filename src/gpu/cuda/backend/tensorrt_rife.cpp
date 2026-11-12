@@ -2,10 +2,12 @@
 // instant seul par rife_time, les paires suivantes sans le maillage par rife_pair), recadrage de
 // la sortie (rife_crop, du contrat) et mesures d'une paire (scores_start, scores_take).
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <cuda.h>
 #include <format>
+#include <span>
 #include <string>
 
 #include "gpu/cuda/backend/cuda_status.h"
@@ -83,6 +85,11 @@ std::expected<void, Refusal> TensorRtBackend::fill_rife(const Tensor& a, const T
   // Le plan de l'instant est réécrit en entier : plus rien à reposer pour cette entrée.
   const std::uintptr_t key = input.handle + input.offset;
   std::erase_if(stale_times_, [key](const StaleTime& stale) { return stale.key == key; });
+  // La fenêtre de l'image dans cette entrée, que le warp final de RIFE fusionné ne quitte pas (C03-03).
+  std::erase_if(rife_windows_, [key](const RifeWindow& known) { return known.key == key; });
+  if (rife_windows_.size() >= kStaleTimes) rife_windows_.erase(rife_windows_.begin());
+  rife_windows_.push_back(
+      {.key = key, .window = {.x = g.left, .y = g.top, .width = g.width, .height = g.height}});
   GpuTiming& timing = stage("entrée de RIFE");
   timing.begin(stream_);
   auto launched =
@@ -104,6 +111,7 @@ void TensorRtBackend::note_rife_reader(const Tensor& input, bool compact) {
 
 void TensorRtBackend::forget_rife_input(std::uintptr_t key) {
   std::erase(compact_rife_inputs_, key);
+  std::erase_if(rife_windows_, [key](const RifeWindow& known) { return known.key == key; });
   std::erase_if(stale_times_, [key](const StaleTime& stale) { return stale.key == key; });
 }
 
@@ -155,8 +163,21 @@ std::expected<void, Refusal> TensorRtBackend::rife_time(const Tensor& input, flo
   const std::uintptr_t key = input.handle + input.offset;
   std::erase_if(stale_times_, [key](const StaleTime& stale) { return stale.key == key; });
   if (compact) {
-    if (stale_times_.size() >= 8) stale_times_.erase(stale_times_.begin());
-    stale_times_.push_back({.key = key, .plane = time_plane, .count = plane, .half = half});
+    if (stale_times_.size() >= kStaleTimes) {
+      // Le plus ancien n'est pas oublié avec son plan à moitié écrit : reposé tout de suite, sur cette voie,
+      // pour un moteur entier qui lirait encore cette entrée.
+      const StaleTime oldest = stale_times_.front();
+      stale_times_.erase(stale_times_.begin());
+      const std::array writes{oldest.handle};
+      if (auto ok = order(std::span<const std::uintptr_t>{}, writes); !ok) return ok;
+      if (const CUresult reset =
+              cuMemsetD16Async(static_cast<CUdeviceptr>(oldest.plane), oldest.half, oldest.count, stream_);
+          reset != CUDA_SUCCESS)
+        return refuse(RefusalCode::VendorCallFailed,
+                      std::format("cuMemsetD16Async : erreur {}", static_cast<int>(reset)));
+    }
+    stale_times_.push_back(
+        {.key = key, .handle = input.handle, .plane = time_plane, .count = plane, .half = half});
   }
   return {};
 }
@@ -232,6 +253,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
   pair_tickets_ = ticket;
   slot.ticket = ticket;
   slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
+  slot.levels = static_cast<double>(pair_levels_);
   return ticket;
 }
 
@@ -243,8 +265,10 @@ std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ti
   // Elle ne couvre que la mesure, pas ce que le flux a reçu depuis.
   if (auto ok = wait_event(slot.done); !ok) return std::unexpected(std::move(ok.error()));
   slot.ticket = 0;
-  // Σ |ΔY| × (pas 8 bits / 255) : l'écart en codes rapporté à la crête, sur l'aire remplie de RIFE.
-  const double scene = slot.host->total * (219.0 / 255.0) / slot.area;
+  // Σ |ΔY| × (pas 8 bits / 255) : l'écart en codes rapporté à la crête (kernels/spec/detect.h), sur l'aire
+  // remplie de RIFE. Le pas est celui de la plage de la source, comme pour le pire bloc : 219 en limitée,
+  // 255 en pleine, où ΔY = 1 couvre toute la crête (C03-02).
+  const double scene = slot.host->total * (slot.levels / 255.0) / slot.area;
   return PairScores{
       .scene_score = scene, .worst_block = slot.host->worst, .identical = slot.host->total == 0.0};
 }
