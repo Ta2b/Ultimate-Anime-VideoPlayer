@@ -22,9 +22,11 @@ namespace {
 
 // Les fichiers de NVIDIA ne viennent que de là, comme dans l'engines.lock livré.
 constexpr std::string_view kVendorPrefix = "https://pypi.nvidia.com/";
-// Relu au plus une fois par jour : un paquet joint après coup paraît au lancement du lendemain au plus tard,
-// ou tout de suite après un lancement sans copie gardée.
+// Relu au plus une fois par jour : une copie gardée de cette version, fraîche, ne se redemande pas.
 constexpr auto kFreshFor = std::chrono::hours(24);
+// Un 404 se retient moins : le paquet TensorRT est joint à la release après coup, quelques minutes ou heures
+// après sa publication, et la requête de 8 s au plus ne coûte presque rien (C06-04).
+constexpr auto kAbsentFor = std::chrono::hours(2);
 // Un échec qui n'est pas un 404 (hors ligne, portail captif, délai) : un nouvel essai quelques heures après.
 constexpr auto kRetryAfter = std::chrono::hours(6);
 constexpr int kFetchSeconds = 8;
@@ -40,6 +42,19 @@ bool fresh(const std::filesystem::path& file, std::filesystem::file_time_type::d
   if (error) return false;
   const auto age = std::filesystem::file_time_type::clock::now() - written;
   return age >= std::filesystem::file_time_type::duration::zero() && age < within;
+}
+
+// Une marque (« .absent », « .tried ») ne vaut que pour la version du lecteur qui l'a posée : après une mise
+// à jour, le 404 ou la panne d'avant ne retient plus rien (C06-01, C06-04).
+bool marker_fresh(const std::filesystem::path& file, std::chrono::hours within, std::string_view version) {
+  if (!fresh(file, within)) return false;
+  std::string text = read_text(file);
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
+  return text == version;
+}
+
+void put_marker(const std::filesystem::path& file, std::string_view version) {
+  std::ofstream(file, std::ios::binary | std::ios::trunc) << version << '\n';
 }
 
 }  // namespace
@@ -120,18 +135,22 @@ std::filesystem::path beside(const std::filesystem::path& cache, std::string_vie
 
 }  // namespace
 
-bool release_index_due(const std::filesystem::path& cache) {
-  return !fresh(cache) && !fresh(beside(cache, ".absent")) && !fresh(beside(cache, ".tried"), kRetryAfter);
+bool release_index_due(const std::filesystem::path& cache, std::string_view version) {
+  // Une copie fraîche d'une autre version (celle d'avant une mise à jour du lecteur) ne vaut rien :
+  // merge_release_copy l'écarterait, et le catalogue n'aurait plus de paquet TensorRT jusqu'au lendemain
+  // (C06-01).
+  const bool kept = fresh(cache) && release_index_tag(read_text(cache)) == std::format("v{}", version);
+  return !kept && !marker_fresh(beside(cache, ".absent"), kAbsentFor, version) &&
+         !marker_fresh(beside(cache, ".tried"), kRetryAfter, version);
 }
 
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,
                            std::string_view version, const UpdateFetch& fetch, const std::stop_token& stop) {
-  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache)) return;
+  if (repo.empty() || version.empty() || !fetch || !release_index_due(cache, version)) return;
   const std::string url = release_download_prefix(repo, version) + "engines-nvidia.lock";
   const std::filesystem::path signature = beside(cache, ".sig");
-  // Un 404 se retient un jour, comme une copie fraîche : sans paquet NVIDIA dans la release, le lancement
-  // suivant ne refait pas la requête (A38-10). Un autre échec (hors ligne, portail captif) se retient
-  // quelques heures (A18-02).
+  // Un 404 se retient quelques heures (A38-10, C06-04), un autre échec (hors ligne, portail captif) un peu
+  // plus (A18-02) : les deux marques portent la version du lecteur, et une mise à jour les rend sans effet.
   const std::filesystem::path absent = beside(cache, ".absent");
   const std::filesystem::path tried = beside(cache, ".tried");
   const auto log = log_channel("app");
@@ -144,9 +163,12 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
   auto got = fetch(url, part, kFetchSeconds, stop);
   if (got) got = fetch(url + ".sig", sig_part, kFetchSeconds, stop);
   if (got) {
-    // La signature d'abord : une copie gardée a toujours la sienne à côté.
+    // L'ancienne copie part d'abord, puis la signature, puis le texte : un arrêt entre deux renommages laisse
+    // une copie absente (relue au lancement suivant), jamais une signature neuve à côté d'un texte ancien
+    // daté de moins d'un jour, que release_index_signed écarterait pour vingt-quatre heures (C06-10).
     std::filesystem::remove(absent, error);
     std::filesystem::remove(tried, error);
+    std::filesystem::remove(cache, error);
     std::filesystem::rename(sig_part, signature, error);
     if (!error) std::filesystem::rename(part, cache, error);
     if (error) log->info("moteurs de la release : {}", error.message());
@@ -160,9 +182,9 @@ void refresh_release_index(const std::filesystem::path& cache, std::string_view 
     // plus.
     std::filesystem::remove(cache, error);
     std::filesystem::remove(signature, error);
-    std::ofstream(absent, std::ios::binary | std::ios::trunc).put('\n');
+    put_marker(absent, version);
   } else {
-    std::ofstream(tried, std::ios::binary | std::ios::trunc).put('\n');
+    put_marker(tried, version);
   }
   log->info("moteurs de la release : {}", got.error().detail);
 }

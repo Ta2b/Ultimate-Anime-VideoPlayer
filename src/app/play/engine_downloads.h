@@ -19,6 +19,13 @@ namespace ajp::app::play {
 std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui, const EngineCatalog& catalog,
                                             const FirstRunView& view, core::Settings& engines);
 
+// Les moteurs choisis dont l'installation a échoué pour une panne passagère (engine_retry.h) se réinstallent,
+// au plus un essai toutes les six heures chacun ; engines les compte installés ou, pour un refus définitif,
+// les retire. changed passe à vrai quand engines a changé (à écrire). false : fenêtre fermée.
+std::expected<bool, Refusal> retry_postponed_installs(PlaceboScreen& screen, PlayerUi& ui,
+                                                      const EngineCatalog& catalog, core::Settings& engines,
+                                                      bool& changed);
+
 // Les moteurs choisis et installés dont le module parle une autre interface que ce lecteur
 // (gpu::kBackendAbi : installés par une version précédente) se réinstallent depuis le paquet de
 // cette version, sous la licence déjà acceptée pour eux. Une licence changée attend l'onglet Moteurs ;

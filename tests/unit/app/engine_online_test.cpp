@@ -232,7 +232,7 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   write(cache, signed_index());
   write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
   fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
-  CHECK(release_index_due(cache));
+  CHECK(release_index_due(cache, "1.2.3"));
   int asked = 0;
   const UpdateFetch offline = [&](std::string_view, const fs::path&, int,
                                   const std::stop_token&) -> std::expected<void, Refusal> {
@@ -242,7 +242,7 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 1);
   CHECK(fs::exists(dir / "engines-nvidia.lock.tried"));
-  CHECK_FALSE(release_index_due(cache));
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
   // La copie gardée et signée sert toujours.
   EngineCatalog catalog = empty_catalog();
   merge_release_copy(catalog, read_release_index(cache), "o/r", {std::string(kTestKey)}, "1.2.3");
@@ -252,7 +252,7 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   CHECK(asked == 1);
   fs::last_write_time(dir / "engines-nvidia.lock.tried",
                       fs::file_time_type::clock::now() - std::chrono::hours(7));
-  CHECK(release_index_due(cache));
+  CHECK(release_index_due(cache, "1.2.3"));
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
   CHECK(asked == 2);
 
@@ -328,4 +328,74 @@ TEST_CASE("Moteurs de la release : un index ne se lit pas comme un manifeste, ni
   EngineCatalog catalog = empty_catalog();
   CHECK(merge_release_index(catalog, manifest, kPrefix) == 0);
   CHECK(catalog.packages.empty());
+}
+
+// C06-01 : après une mise à jour du lecteur, la copie gardée (étiquette de la version d'avant), encore
+// fraîche, ne retient plus la relecture : sans cela, le catalogue n'a plus de paquet TensorRT jusqu'au
+// lendemain.
+TEST_CASE("Moteurs de la release : une copie fraîche d'une autre version est relue (C06-01)",
+          "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-newer";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  write(cache, signed_index());  // étiquette v1.2.3
+  write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));  // la bonne version, fraîche : rien à demander
+  CHECK(release_index_due(cache, "1.2.4"));        // le lecteur a été mis à jour : à relire
+  int asked = 0;
+  const UpdateFetch offline = [&](std::string_view, const fs::path&, int,
+                                  const std::stop_token&) -> std::expected<void, Refusal> {
+    ++asked;
+    return std::unexpected(Refusal{RefusalCode::IoFailed, "hors ligne"});
+  };
+  refresh_release_index(cache, "o/r", "1.2.4", offline, std::stop_token{});
+  CHECK(asked == 1);
+  fs::remove_all(dir);
+}
+
+// C06-04 : un 404 se retient deux heures, pas un jour, et seulement pour la version qui l'a vu.
+TEST_CASE("Moteurs de la release : un 404 se retient deux heures et pour sa version (C06-04)",
+          "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-404";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  const UpdateFetch missing = [](std::string_view, const fs::path&, int,
+                                 const std::stop_token&) -> std::expected<void, Refusal> {
+    return std::unexpected(Refusal{RefusalCode::TrackUnavailable, "404"});
+  };
+  refresh_release_index(cache, "o/r", "1.2.3", missing, std::stop_token{});
+  REQUIRE(fs::exists(dir / "engines-nvidia.lock.absent"));
+  CHECK_FALSE(release_index_due(cache, "1.2.3"));
+  CHECK(release_index_due(cache, "1.2.4"));  // le 404 de l'ancienne version ne retient rien
+  fs::last_write_time(dir / "engines-nvidia.lock.absent",
+                      fs::file_time_type::clock::now() - std::chrono::hours(3));
+  CHECK(release_index_due(cache, "1.2.3"));
+  fs::remove_all(dir);
+}
+
+// C06-10 : une relecture réussie laisse le texte et la signature de la même relecture, jamais l'un des deux
+// d'une autre ; l'ancienne copie est retirée avant les renommages.
+TEST_CASE("Moteurs de la release : la copie relue remplace l'ancienne en entier (C06-10)", "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-pair";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  write(cache, "ancien texte\n");
+  write(dir / "engines-nvidia.lock.sig", "ancienne signature\n");
+  fs::last_write_time(cache, fs::file_time_type::clock::now() - std::chrono::hours(48));
+  const UpdateFetch fetch = [](std::string_view url, const fs::path& to, int,
+                               const std::stop_token&) -> std::expected<void, Refusal> {
+    write(to, url.ends_with(".sig") ? "nouvelle signature\n" : "nouveau texte\n");
+    return {};
+  };
+  refresh_release_index(cache, "o/r", "1.2.3", fetch, std::stop_token{});
+  const ReleaseIndexCopy copy = read_release_index(cache);
+  CHECK(copy.text == "nouveau texte\n");
+  CHECK(copy.signature == "nouvelle signature\n");
+  // Une copie sans texte (arrêt entre les renommages) est à relire, pas fraîche.
+  fs::remove(cache);
+  CHECK(release_index_due(cache, "1.2.3"));
+  fs::remove_all(dir);
 }

@@ -398,6 +398,17 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   std::error_code marker_error;
   const bool relaunched = std::filesystem::remove(relaunch_marker, marker_error);
   bool engines_updated = false;
+  // Un moteur choisi dont le téléchargement a échoué sur une panne passagère se réessaie d'abord (C06-02).
+  if (!options.bench_out && !options.data_dir) {
+    bool retried_changes = false;
+    auto retried = retry_postponed_installs(**screen, **ui, catalog, *engines, retried_changes);
+    if (!retried) return std::unexpected(std::move(retried.error()));
+    if (!*retried) return {};
+    if (retried_changes) {
+      if (auto written = core::save_settings(engines_path, *engines); !written)
+        log->warn("{}", written.error().detail);
+    }
+  }
   auto updated = update_stale_engines(**screen, **ui, catalog, *engines, engines_updated);
   // Le moteur vérifié ici : un autre choisi ensuite à l'accueil se vérifie à son ouverture.
   const std::optional<core::EngineId> checked_engine =

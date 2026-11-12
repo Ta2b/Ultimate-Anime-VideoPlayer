@@ -101,7 +101,7 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
                                 "2",
                                 "--max-time",
                                 std::to_string(max_seconds)};
-  for (std::string& arg : curl_system_args()) args.push_back(std::move(arg));
+  for (std::string& arg : curl_system_args(url)) args.push_back(std::move(arg));
   // Le fichier s'écrit par son seul nom, dans le dossier de travail de curl : sous Windows, un dossier
   // d'utilisateur hors de la page de code ANSI n'est pas relu par curl, un nom ASCII l'est toujours (B26-06).
   // Un nom qui n'est pas ASCII garde le chemin complet.

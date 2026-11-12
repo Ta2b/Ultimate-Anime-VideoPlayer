@@ -159,6 +159,8 @@ constexpr std::array kVisibleTexts{
     Entry{"video frames", "images de la vidéo"},
     Entry{"writing", "écriture"},
     Entry{"{} not installed: {}", "{} non installé : {}"},
+    Entry{"{} not installed: Vulkan instead, the next launch will try again",
+          "{} non installé : Vulkan à la place, le prochain lancement réessaiera"},
     Entry{"{} not updated: Vulkan instead", "{} non mis à jour : Vulkan à la place"},
     Entry{"{} unreadable: {}", "{} illisible : {}"},
     Entry{"{} was invalid: copy kept as {}", "{} était invalide : copie gardée sous {}"},

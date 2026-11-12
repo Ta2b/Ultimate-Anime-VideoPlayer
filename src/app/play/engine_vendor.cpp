@@ -73,6 +73,12 @@ Appended append_chunk(const std::filesystem::path& chunk, const std::filesystem:
   if (error) return Appended::Added;  // rien de lisible : la reprise suivante le dira
   if (size > limit) return Appended::TooLong;
   if (size == 0) return Appended::Added;
+  // Premier passage : le .part n'existe pas encore, le morceau devient le .part d'un renommage, sans recopier
+  // 215 à 321 Mo octet par octet (C06-06). Un renommage refusé retombe sur la recopie.
+  const std::uintmax_t have =
+      std::filesystem::exists(packed, error) ? std::filesystem::file_size(packed, error) : 0;
+  if (!error && have == 0 && !core::rename_retrying(chunk, packed, kInstallRenamePatience))
+    return Appended::Added;
   std::ifstream piece(chunk, std::ios::binary);
   std::ofstream whole(packed, std::ios::binary | std::ios::app);
   if (!piece || !whole) return Appended::Unwritable;
@@ -100,7 +106,7 @@ std::expected<void, Refusal> pull_packed(const core::VendorFile& file, const std
   std::optional<Refusal> failure;
   for (int attempt = 0; attempt < 4 && have < file.packed_size; ++attempt) {
     std::filesystem::remove(chunk, error);
-    std::vector<std::string> args = curl_download_args(progress.allow_local_files);
+    std::vector<std::string> args = curl_download_args(progress.allow_local_files, file.url);
     // --max-filesize : un serveur ou un proxy qui ignore la plage et rend la roue entière (200) est arrêté
     // tout de suite (A06-07).
     args.insert(args.end(), {"--progress-bar", "--max-filesize", std::to_string(file.packed_size - have),
@@ -261,21 +267,23 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   std::filesystem::path partial = dest;
   partial += ".partiel";
   const auto unpacked = unpack_vendor_file(file, packed, partial, progress.stop);
-  // Annulé pendant la décompression, le .part (déjà entier, vérifié) reste : la reprise le décompresse sans
-  // le retélécharger (B06-05).
-  if (progress.stop.stop_requested()) {
-    std::error_code ignored;
-    std::filesystem::remove(chunk, ignored);
-  } else {
-    cleanup();
+  std::error_code ignored;
+  std::filesystem::remove(chunk, ignored);
+  if (!unpacked) {
+    // Une annulation ou un disque plein (FileUnwritable) gardent le .part, entier : la reprise le décompresse
+    // sans retélécharger ses 215 à 321 Mo (B06-05, C06-05). Tout autre refus (SHA-256 ou taille faux, flux
+    // illisible) accuse ses octets : ils ne se reprendraient pas.
+    if (unpacked.error().code != RefusalCode::Cancelled &&
+        unpacked.error().code != RefusalCode::FileUnwritable)
+      cleanup();
+    return unpacked;
   }
-  if (!unpacked) return unpacked;
   error = core::rename_retrying(partial, dest, kInstallRenamePatience);
   if (error) {
-    std::error_code ignored;
     std::filesystem::remove(partial, ignored);
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", core::to_utf8(dest), error.message()));
   }
+  cleanup();
   if (progress.report) progress.report(1.0F, file.name);
   return {};
 }

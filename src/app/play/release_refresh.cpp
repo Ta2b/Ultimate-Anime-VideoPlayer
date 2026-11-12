@@ -18,7 +18,7 @@ ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPat
   ReleaseRefresh refresh{.cache = paths::data_root(paths) / "engines-nvidia.lock"};
   refresh.before = read_release_index(refresh.cache);
   const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
-  if (!online || release_repo().empty() || !release_index_due(refresh.cache)) return refresh;
+  if (!online || release_repo().empty() || !release_index_due(refresh.cache, installed_version())) return refresh;
   auto done = std::make_shared<std::atomic<bool>>(false);
   auto started = start_thread(
       "release-index", ThreadReport([done](const Refusal& refused) {
