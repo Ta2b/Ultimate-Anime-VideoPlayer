@@ -371,8 +371,9 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   CHECK(loaded->shots.at(1).meta == shots.at(1).meta);
   CHECK(loaded->shots.at(1).end_us == 3'000'000);
   {
-    // Un fichier d'une autre version de l'analyse (ou du format d'avant, sans version) se refait.
-    const std::filesystem::path file = dir / (key + ".shots");
+    // Un fichier d'une autre version de l'analyse (ou du format d'avant, sans version) se refait. La variante
+    // 1 a son propre fichier (C36-02).
+    const std::filesystem::path file = dir / (key + "-00000001.shots");
     std::string bytes;
     {
       std::ifstream in(file, std::ios::binary);

@@ -497,6 +497,7 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
     set_unreadable(path, true);
     return std::unexpected(read_text.error());
   }
+  set_unreadable(path, false);  // C36-01 : lu de nouveau (relecture après l'assistant), plus de refus
   if (!*read_text) return PlaySettings{};  // absent
   const std::string& text = **read_text;
   std::vector<std::string> dropped;
@@ -532,9 +533,20 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
   // Un fichier qui ne s'est pas lu au lancement : la séance tourne sur les défauts, les écrire le
   // remplacerait (B22-02).
-  if (is_unreadable(path))
-    return refuse(RefusalCode::FileUnwritable,
-                  std::format("{} : illisible au lancement, non réécrit", core::to_utf8(path)));
+  // C36-01 : relu à chaque essai ; un refus passager (antivirus, indexeur) ne bloque plus toute la séance.
+  if (is_unreadable(path)) {
+    if (auto again = read_file(path); !again)
+      return refuse(RefusalCode::FileUnwritable,
+                    std::format("{} : illisible au lancement, non réécrit", core::to_utf8(path)));
+    set_unreadable(path, false);
+    log_channel("app")->info("{} se lit de nouveau : les changements de la séance y sont écrits",
+                             core::to_utf8(path.filename()));
+    // La séance a démarré sur les défauts : ils sont la base de la fusion, et seules les valeurs changées
+    // depuis remplacent celles du fichier.
+    if (!remembered(path))
+      if (toml::parse_result base = toml::parse(format_settings(PlaySettings{})); base)
+        remember(path, std::move(base).table());
+  }
   std::string text = format_settings(settings);
   // Mis en forme et lu une seule fois : la fusion et la base de la suivante partent de la même table
   // (A22-16).

@@ -130,8 +130,12 @@ std::optional<std::vector<FlashSpan>> take_flashes(const std::string& in, std::s
   return flashes;
 }
 
-std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key) {
-  return dir / (key + kExtension);
+// C36-02 : un fichier par variante (« <clé>-<variante>.shots ») : le même épisode vu sur deux écrans de pics
+// différents, ou avec et sans la recherche des visages, garde ses deux analyses au lieu de refaire la
+// pré-analyse de tout le fichier à chaque changement. La variante 0 garde l'ancien nom.
+std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key, std::uint32_t variant) {
+  if (variant == 0) return dir / (key + kExtension);
+  return dir / std::format("{}-{:08x}{}", key, variant, kExtension);
 }
 
 // Un reste d'écriture du cache : « <clé>.shots.part » (avant B36-04), ou « .<clé>.shots.<…>.tmp »
@@ -210,7 +214,7 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
   // B36-04, B33-07 : l'écriture atomique du projet (temporaire au nom unique, écrit sur le disque, retiré sur
   // un échec) : deux lecteurs qui gardent la même vidéo n'écrivent plus le même fichier, et une coupure ne
   // laisse ni fichier vide ni reste.
-  const std::filesystem::path file = file_of(dir, key);
+  const std::filesystem::path file = file_of(dir, key, variant);
   if (!core::write_atomic(file, std::as_bytes(std::span(out)))) return false;
   trim(dir, keep, file);
   return true;
@@ -219,7 +223,7 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
 std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, const std::string& key,
                                            std::uint32_t variant) {
   if (key.empty()) return std::nullopt;
-  const std::filesystem::path file = file_of(dir, key);
+  const std::filesystem::path file = file_of(dir, key, variant);
   std::ifstream stream(file, std::ios::binary);
   if (!stream) return std::nullopt;
   // Lu d'un bloc à sa taille (B42-06), au plus ce que kMaxShots et kMaxFlashes permettent.

@@ -165,6 +165,31 @@ TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite 
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("C36-01 : play.toml illisible au lancement puis libéré, les changements de la séance s'écrivent",
+          "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable-then-free";
+  std::filesystem::remove_all(dir);
+  const std::filesystem::path path = dir / "play.toml";
+  std::filesystem::create_directories(path);  // tenu par un antivirus au lancement
+  REQUIRE_FALSE(load_settings(path));
+  // Libéré une seconde plus tard : le fichier d'avant, avec ses choix à lui.
+  std::filesystem::remove_all(path);
+  PlaySettings before_launch;
+  before_launch.smooth_motion = !PlaySettings{}.smooth_motion;
+  REQUIRE(save_settings(dir / "autre.toml", before_launch));
+  std::filesystem::rename(dir / "autre.toml", path);
+  // La séance, partie des défauts, change le volume : écrit (avant : « illisible au lancement » sans fin).
+  PlaySettings session;
+  session.volume = 0.5F;
+  REQUIRE(save_settings(path, session));
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->volume == 0.5F);
+  // Ce que la séance n'a pas changé reste celui du fichier.
+  CHECK(reread->smooth_motion == before_launch.smooth_motion);
+  std::filesystem::remove_all(dir);
+}
+
 // B22-04 : un TOML invalide, édité à la main pendant la lecture, est gardé en copie avant d'être remplacé.
 TEST_CASE("play.toml invalide : une copie est gardée avant la réécriture (B22-04)", "[app][settings]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-invalid-copy";
