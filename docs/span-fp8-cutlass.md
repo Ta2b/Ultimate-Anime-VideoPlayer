@@ -144,7 +144,9 @@ Le corpus est celui de `quantize_span.py` (images d'anime SDR 8 bits, aucune sor
 un cinquième des images, choisies par SHA-256, valide et ne calibre jamais). Le script : contrôle le graphe
 (prend le b8f64 et le b5f48, ce dernier rangé en 64 canaux remplis de zéros), calibre en FP32 sur ONNX Runtime CPU, écrit le paquet, fait
 tourner les noyaux du lecteur sur les images de validation (`ajp_span_fp8_run`) et les compare au SPAN d'origine
-en FP32, mesure (avec `--trtexec`) le gain sur TensorRT FP16 et exige 1,05. Il écrit
+en FP32, mesure (`--trtexec` est obligatoire, C46-17) le gain sur TensorRT FP16 et exige 1,05. La calibration prend aussi 4
+images pleines à la taille jouée (`--calib-full`, C46-20) : les maxima croissent avec la surface. Le lecteur refuse
+de son côté un reçu v1 (ou INT8, FP8 par Q/DQ) dont le `speedup` est absent ou sous 1,05 (C46-06). Il écrit
 `<nom>-fp8c-<16 chiffres du SHA-256 du modèle>.span8` et son reçu `.toml` (format `ajp-span-fp8c-v1`) ; si un
 garde-fou échoue, seul le reçu est écrit (`passed = false`) et un paquet d'avant est retiré.
 

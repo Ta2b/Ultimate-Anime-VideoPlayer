@@ -5,7 +5,8 @@
 # Environnement : L (le lanceur, lancer.sh), CAL (calibration.mkv), STILLS (les extraits de make_stills.sh),
 # BASE (dossier de réglages copié pour chaque capture, grade et looks de l'utilisateur), WINDOW (taille des
 # instantanés, défaut 1920x1080 ; la taille de l'anneau pour « à taille égale », 3840x2160 pour la 4K),
-# SNAP_AT (seconde de la capture après le début, 6 : le grade adaptatif a une constante de temps), SHOTS
+# SNAP_AT (seconde de la capture après le début du plan, 4 : le grade adaptatif a une constante de temps ; la
+# capture reste dans le plan nommé, SNAP_AT est ramené à la durée du plan moins 1 s, C46-01), SHOTS
 # (défaut : le shots30.tsv à côté). Un plan dont l'extrait manque est sauté et dit.
 # Critères (docs/adr/0009-grade-dans-l-anneau.md) : par plan p95 ≤ MAX_P95 (1, 2,5 en 4K) et
 # p99,9 ≤ MAX_P999 (3) ; code retour 1 si un plan les dépasse, si une capture manque, si la mesure échoue ou
@@ -20,7 +21,7 @@ CAL=${CAL:-$HOME/ajp-test/ajp-linux-x64/calibration/calibration.mkv}
 STILLS=${STILLS:-$HOME/ajp-test/stills}
 BASE=${BASE:-}
 WINDOW=${WINDOW:-1920x1080}
-SNAP_AT=${SNAP_AT:-6}
+SNAP_AT=${SNAP_AT:-4}
 SHOTS=${SHOTS:-$here/shots30.tsv}
 if [[ "$WINDOW" == 3840x2160 ]]; then MAX_P95=${MAX_P95:-2.5}; else MAX_P95=${MAX_P95:-1}; fi
 MAX_P999=${MAX_P999:-3}
@@ -29,9 +30,25 @@ mkdir -p "$out/frames"
 summary="$out/resume.tsv"
 printf 'plan\tgenre\tmoyenne\tp95\tp99\tp99.9\tmax\tverdict\n' > "$summary"
 
+# Durée du plan (s) : jusqu'au plan suivant du même fichier de SHOTS, sinon jusqu'à la fin du fichier (ffprobe).
+plan_duration() {  # plan_duration FICHIER DÉBUT SOURCE
+  local next total
+  next=$(awk -F'\t' -v src="$3" -v t="$2" '$0 !~ /^#/ && $2 == src && $3 + 0 > t + 0 { if (m == "" || $3 + 0 < m) m = $3 + 0 } END { print m }' "$SHOTS")
+  if [[ -n "$next" ]]; then
+    echo $((next - $2))
+    return
+  fi
+  total=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" 2> /dev/null | cut -d. -f1)
+  [[ "$total" =~ ^[0-9]+$ ]] && echo $((total - $2)) || echo 0
+}
+
 capture() {  # capture NOM FICHIER DÉBUT OPTIONS SORTIE
-  local d
+  local d snap=$SNAP_AT
   d=$(mktemp -d)
+  # La capture reste dans le plan : au plus (durée − 1) s après son début (0 si la durée est inconnue : on garde SNAP_AT).
+  local dur
+  dur=$(plan_duration "$2" "$3" "$source")
+  if ((dur > 1 && snap > dur - 1)); then snap=$((dur - 1)); fi
   [[ -n "$BASE" ]] && cp "$BASE"/*.toml "$d/" 2>/dev/null
   local waited=0
   while pgrep -x ajp > /dev/null; do  # une instance à la fois
@@ -45,7 +62,7 @@ capture() {  # capture NOM FICHIER DÉBUT OPTIONS SORTIE
   done
   # shellcheck disable=SC2086
   timeout 180 "$L" "$2" --start="$3" --no-resume --mute --window="$WINDOW" --data-dir="$d" \
-    --snapshot="$5" --snapshot-at="$SNAP_AT" --snapshot-frames=1 --seconds=$((SNAP_AT + 3)) $4 \
+    --snapshot="$5" --snapshot-at="$snap" --snapshot-frames=1 --seconds=$((snap + 3)) $4 \
     > "${5%.pq.ppm}.log" 2>&1
   local rc=$?
   rm -rf "$d"
