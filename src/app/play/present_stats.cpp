@@ -2,7 +2,10 @@
 
 #include <array>
 #include <cstdint>
+#include <format>
+#include <ostream>
 #include <string_view>
+#include <utility>
 
 namespace ajp::app::play {
 namespace {
@@ -61,6 +64,27 @@ std::string stats_line(const PresentRecord& record) {
   }
   line += '\n';
   return line;
+}
+
+void StatsSink::add(const PresentRecord& record, std::int64_t now_us) {
+  pending_ += stats_line(record);
+  if (posted_at_us_ == 0) posted_at_us_ = now_us;
+  if (now_us - posted_at_us_ >= kEveryUs || pending_.size() >= kMaxBytes) {
+    flush();
+    posted_at_us_ = now_us;
+  }
+}
+
+void StatsSink::flush() {
+  if (pending_.empty()) return;
+  // Une clé par paquet, dans l'ordre (le fil d'écriture prend les clés en attente dans l'ordre) : aucun
+  // paquet n'en remplace un autre.
+  writer_.post(std::format("stats.{:012}", ++chunks_),
+               [out = &out_, text = std::exchange(pending_, {})]() -> std::expected<void, Refusal> {
+                 out->write(text.data(), static_cast<std::streamsize>(text.size()));
+                 out->flush();
+                 return {};
+               });
 }
 
 }  // namespace ajp::app::play

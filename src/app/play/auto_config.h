@@ -24,10 +24,11 @@ namespace ajp::app::play {
 // manuel de DistilDRBA reste ouvert.
 inline constexpr bool kDistilDrbaInAuto = false;
 
-// ArtCNN C4F32 (kLightSpanModel, P6.7) dans les tranches Économe et Léger : faux tant que le banc sur iGPU
-// n'a pas montré une meilleure image qu'Économe (sans agrandissement) au même coût (docs/phase6-a-tester.md).
-// Vrai, Économe agrandit avec lui au lieu de jouer la source telle quelle, et Léger le prend à la place de
-// SPAN. Le choix manuel dans la liste des modèles reste ouvert.
+// ArtCNN (P6.7) dans les tranches Économe et Léger : faux tant que le banc sur petite carte
+// (tools/bench/banc_leger.sh, docs/phase6-a-tester.md) n'a pas montré une meilleure image qu'Économe (sans
+// agrandissement) au même coût. Vrai, Économe agrandit avec ArtCNN C4F16 au lieu de jouer la source telle
+// quelle, et Léger prend ArtCNN C4F32 à la place de SPAN (kEconomySpanModel et kLightTierSpanModel,
+// auto_config.cpp). Le choix manuel dans la liste des modèles reste ouvert.
 inline constexpr bool kLightSpanInAuto = false;
 
 std::string_view key(

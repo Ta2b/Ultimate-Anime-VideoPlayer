@@ -26,11 +26,9 @@ inline constexpr double kExactTolerance = 1e-5;
 inline constexpr int kMaxVsyncsPerFrame = 16;
 }  // namespace pacing
 
-// La vitesse de lecture qui fait tenir à chaque image de output_fps un nombre entier de vsyncs
-// d'un écran fixe à refresh_hz, à kMaxSpeedChange près ; 1 sans calage possible (sortie plus
-// rapide que l'écran, rapport trop loin d'un entier, valeur inconnue).
-double vsync_speed(double refresh_hz, double output_fps);
-// La même, ou rien quand aucun calage n'est possible : distingue « calé à la vitesse 1 » de « pas calé ».
+// La vitesse de lecture qui fait tenir à chaque image de output_fps un nombre entier de vsyncs d'un écran
+// fixe à refresh_hz, à kMaxSpeedChange près ; rien sans calage possible (sortie plus rapide que l'écran,
+// rapport trop loin d'un entier, valeur inconnue). Rien n'est pas « calé à la vitesse 1 ».
 std::optional<double> vsync_lock(double refresh_hz, double output_fps);
 
 // Le facteur qui cale la cible : une petite fraction à pacing::kMaxSpeedChange près, sinon la fraction

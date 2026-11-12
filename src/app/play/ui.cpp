@@ -654,6 +654,13 @@ void PlayerUi::set_black_status(std::string status) {
   input_pending_ = true;
 }
 
+void PlayerUi::set_display_output(bool hdr_output, int auto_peak) {
+  if (choices_.hdr_output == hdr_output && choices_.auto_peak == auto_peak) return;
+  choices_.hdr_output = hdr_output;
+  choices_.auto_peak = auto_peak;
+  input_pending_ = true;
+}
+
 void PlayerUi::set_running(const PlaySettings& running) {
   running_ = running;
   input_pending_ = true;
