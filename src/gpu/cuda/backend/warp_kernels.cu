@@ -74,6 +74,18 @@ __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
   return tp;
 }
 
+// Le mélange des deux images lues par Catmull-Rom (option cubic, éteinte par défaut), hors ligne : ses 16
+// lectures par canal ne doivent pas peser sur les registres du chemin bilinéaire, et, fondues dans
+// warp_pixel, elles faisaient déborder warp_blend en mémoire locale (ptxas --warn-on-spills).
+__device__ __noinline__ void cubic_blend(const Planes& a, const Planes& b, float pax, float pay, float pbx,
+                                         float pby, float weight, float* rgb) {
+  for (int c = 0; c < 3; ++c) {
+    const float va = CatmullRom::sample(a, c, pax, pay);
+    const float vb = CatmullRom::sample(b, c, pbx, pby);
+    rgb[c] = va * weight + vb * (1.0F - weight);
+  }
+}
+
 // Les trois canaux du pixel (x, y) de la sortie : mouvement lu dans la fenêtre, puis les deux
 // images déformées et mélangées.
 template <typename S>
@@ -117,11 +129,13 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   const Planes b = image_planes(p, p.b, p.textures.b);
   const float fx = static_cast<float>(x);
   const float fy = static_cast<float>(y);
+  if (p.cubic) {
+    cubic_blend(a, b, fx + sx * ax, fy + sy * ay, fx + sx * bx, fy + sy * by, weight, rgb);
+    return;
+  }
   for (int c = 0; c < 3; ++c) {
-    const float va = p.cubic ? CatmullRom::sample(a, c, fx + sx * ax, fy + sy * ay)
-                             : S::sample(a, c, fx + sx * ax, fy + sy * ay);
-    const float vb = p.cubic ? CatmullRom::sample(b, c, fx + sx * bx, fy + sy * by)
-                             : S::sample(b, c, fx + sx * bx, fy + sy * by);
+    const float va = S::sample(a, c, fx + sx * ax, fy + sy * ay);
+    const float vb = S::sample(b, c, fx + sx * bx, fy + sy * by);
     rgb[c] = va * weight + vb * (1.0F - weight);
   }
 }
