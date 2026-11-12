@@ -78,7 +78,7 @@ void language_section(PlaySettings& d) {
     if (ImGui::Selectable("Français", d.language == "fr")) d.language = "fr";  // i18n-ok
     ImGui::EndCombo();
   }
-  i18n::set_language(i18n::language_from_code(d.language));
+  // La langue se pose par apply_live quand elle change, pas ici à chaque image (C23-11).
 }
 
 void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
@@ -143,6 +143,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   const char* frequency = d.update_frequency == UpdateFrequency::Launch   ? i18n::tr("At every launch")
                           : d.update_frequency == UpdateFrequency::Weekly ? i18n::tr("Weekly")
                                                                           : i18n::tr("Daily");
+  ImGui::BeginDisabled(d.update_mode == UpdateMode::Never);  // sans vérification, la fréquence ne sert à rien
   if (ImGui::BeginCombo(i18n::tr("Frequency"), frequency)) {
     if (ImGui::Selectable(i18n::tr("At every launch"), d.update_frequency == UpdateFrequency::Launch))
       d.update_frequency = UpdateFrequency::Launch;
@@ -152,6 +153,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
       d.update_frequency = UpdateFrequency::Weekly;
     ImGui::EndCombo();
   }
+  ImGui::EndDisabled();
   note(i18n::tr_format("Installed version: {}", installed_version()));
   if (!state.latest_version.empty()) note(i18n::tr_format("Available: {}", state.latest_version));
   if (state.last_check_unix > 0) {

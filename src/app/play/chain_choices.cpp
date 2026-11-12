@@ -22,7 +22,7 @@
 namespace ajp::app::play {
 
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
-                              const std::string& fp8_reason, int auto_peak) {
+                              int auto_peak) {
   const media::TrackInfo& video = p.video;
   const PlaceboScreen& out = p.screen;
   const bool rife_loaded = c.interpolates();
@@ -66,7 +66,6 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .source_file = p.options.file,
       .display_height = display_height(out.window()),
       .span_prepare = span_prepare,
-      .fp8_reason = fp8_reason,
       .span_job = p.span_job.note,
       .stage_note = stage_panel_note(c.stage_notes)};
 }

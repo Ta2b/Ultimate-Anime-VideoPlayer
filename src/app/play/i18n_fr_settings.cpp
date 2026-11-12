@@ -271,6 +271,7 @@ constexpr std::array kSettingsPages{
     Entry{"the interpolation engine loads (built the first time for this size)",
           "le moteur d'interpolation est chargé (construit la première fois pour cette taille)"},
     Entry{"the output device changes", "l'appareil de sortie change"},
+    Entry{"the working resolution changes", "la résolution de travail change"},
     Entry{"warp order follows the output", "l'ordre du warp suit la sortie"},
     Entry{"warp runs after SPAN", "le warp passe après SPAN"},
     Entry{"warp runs before SPAN", "le warp passe avant SPAN"},

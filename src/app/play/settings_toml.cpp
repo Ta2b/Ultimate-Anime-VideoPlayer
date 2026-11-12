@@ -461,6 +461,14 @@ bool is_unreadable(const std::filesystem::path& path) {
 // fichier est ouvert sans partage de lecture) se réessaie quelques fois ; un fichier qui reste illisible est
 // refusé, jamais lu comme « absent » (B22-02).
 std::expected<std::optional<std::string>, Refusal> read_file(const std::filesystem::path& path) {
+  // Un play.toml normal tient dans quelques Ko : au-delà d'un Mo, ce n'est pas le nôtre, et la lecture lâche
+  // (une copie de la table par clé) coûterait des minutes. Refusé, nommé, jamais écrasé (C22-07).
+  constexpr std::uintmax_t kMaxBytes = std::uintmax_t{1} << 20;
+  std::error_code size_error;
+  if (const auto size = std::filesystem::file_size(path, size_error); !size_error && size > kMaxBytes)
+    return refuse(RefusalCode::FileUnreadable,
+                  std::format("{} : {} octets, au-delà de {} (pas un fichier de réglages)",
+                              core::to_utf8(path), size, kMaxBytes));
   constexpr int kAttempts = 4;
   constexpr auto kPause = std::chrono::milliseconds(120);
   auto text = core::read_text_file_if_present(path);
@@ -474,16 +482,33 @@ std::expected<std::optional<std::string>, Refusal> read_file(const std::filesyst
 // Un play.toml au TOML invalide va être remplacé : une copie le garde d'abord (« play.toml.invalide-AAAAMMJJ-
 // HHMMSS »), pour qu'une édition à la main faite en séance ne se perde pas (B22-04). Refusé sans copie.
 std::expected<void, Refusal> keep_invalid_copy(const std::filesystem::path& path) {
+  // Au plus kKept copies, les plus récentes ; une copie identique déjà gardée suffit (C22-06) : un disque qui
+  // refuse l'écriture ne remplit pas le dossier d'une copie toutes les dix secondes.
+  constexpr std::size_t kKept = 5;
+  const std::string prefix = core::to_utf8(path.filename()) + ".invalide-";
+  std::vector<std::filesystem::path> copies;
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(path.parent_path(), error)) {
+    if (core::to_utf8(entry.path().filename()).starts_with(prefix)) copies.push_back(entry.path());
+  }
+  std::ranges::sort(copies);  // l'horodatage trie les noms
+  const auto current = core::read_text_file_if_present(path);
+  for (const std::filesystem::path& copy : copies) {
+    const auto kept = core::read_text_file_if_present(copy);
+    if (current && kept && *current == *kept) return {};
+  }
   const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
   std::filesystem::path aside = path;
   aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
-  std::error_code error;
   std::filesystem::copy_file(path, aside, std::filesystem::copy_options::overwrite_existing, error);
   if (error)
     return refuse(RefusalCode::FileUnwritable, std::format("{} : copie de l'ancien fichier impossible ({})",
                                                            core::to_utf8(path), error.message()));
   log_channel("app")->warn("{} invalide : copie gardée dans {}", core::to_utf8(path.filename()),
                            core::to_utf8(aside.filename()));
+  copies.push_back(aside);
+  std::ranges::sort(copies);
+  for (std::size_t i = 0; i + kKept < copies.size(); ++i) std::filesystem::remove(copies[i], error);
   return {};
 }
 
@@ -497,6 +522,8 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
     set_unreadable(path, true);
     return std::unexpected(read_text.error());
   }
+  // Lu, ou absent : le verrou passager est tombé, les écritures reprennent (C22-01).
+  set_unreadable(path, false);
   if (!*read_text) return PlaySettings{};  // absent
   const std::string& text = **read_text;
   std::vector<std::string> dropped;
@@ -521,6 +548,12 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
   return settings;
 }
 
+std::expected<core::Settings, Refusal> load_engine_settings(const std::filesystem::path& path,
+                                                            std::vector<std::string>* skipped) {
+  if (auto text = read_file(path); !text) return std::unexpected(text.error());
+  return core::load_settings(path, skipped);
+}
+
 std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& path) {
   auto text = core::read_text_file_if_present(path);
   if (!text) return std::unexpected(text.error());
@@ -530,9 +563,10 @@ std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& 
 
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
-  // Un fichier qui ne s'est pas lu au lancement : la séance tourne sur les défauts, les écrire le
-  // remplacerait (B22-02).
-  if (is_unreadable(path))
+  // Un fichier qui ne s'est jamais lu dans ce processus : la séance tourne sur les défauts, les écrire le
+  // remplacerait (B22-02). Un fichier lu au moins une fois (base gardée) qui n'a manqué qu'une relecture est
+  // retenté plus bas : s'il se lit, le verrou est tombé et le drapeau se baisse (C22-01).
+  if (is_unreadable(path) && !remembered(path))
     return refuse(RefusalCode::FileUnwritable,
                   std::format("{} : illisible au lancement, non réécrit", core::to_utf8(path)));
   std::string text = format_settings(settings);
@@ -543,6 +577,7 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   // qui existe sans se lire n'est pas écrasé : l'écriture est refusée, et reprise au tour suivant.
   auto existing = read_file(path);
   if (!existing) return std::unexpected(existing.error());
+  set_unreadable(path, false);
   if (*existing) {
     toml::parse_result old = toml::parse(**existing);
     if (!old) {

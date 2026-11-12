@@ -358,7 +358,7 @@ void auto_cap_row(PlaySettings& d, const SettingsChoices& choices) {
   // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
   // GPU.
   const auto cap_label = [](int cap) {
-    return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : std::format("{} i/s", cap);
+    return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : i18n::tr_format("{} fps", cap);
   };
   if (ImGui::BeginCombo(i18n::tr("Auto limit"), cap_label(d.auto_cap).c_str())) {
     for (const int cap : {0, 120, 60}) {
@@ -462,8 +462,20 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       panel::tip(i18n::tr("VRR unavailable: turn on G-Sync / FreeSync / Adaptive Sync to avoid judder."));
     } else if (choices.window_fullscreen && !choices.display_vrr_armed) {
       note(i18n::tr("VRR is turned off by the system: motion may judder."));
+#ifdef _WIN32
+      panel::tip(
+          i18n::tr("VRR is off in the system: turn on Variable refresh rate in Settings > System > "
+                   "Display > Graphics."));
+#else
       panel::tip(i18n::tr("VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync)."));
+#endif
     }
+#ifndef _WIN32
+    else if (!choices.window_fullscreen && !choices.display_vrr_armed) {
+      // Hors plein écran, KDE n'arme pas le VRR (C23-09).
+      note(i18n::tr("VRR only works in full screen here: motion may judder in a window."));
+    }
+#endif
   }
   // En lecture, les facteurs fixes sont masqués : rien n'y est grisé. L'export les montre, grisés (B23-05).
   if (exporting && choices.source_fps > 0.0 && choices.display_hz > 0.0) {
@@ -489,15 +501,21 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (d.motion_engine == MotionEngine::DistilDrba && now.num > 5 * now.den) {
     note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter."));
   }
+  // La copie 720p de RIFE : la même condition que la chaîne, sur la taille de travail réellement jouée
+  // (C23-04).
+  const bool reduced_motion =
+      now.num > now.den && choices.source_height > 0 &&
+      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height));
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
   } else if (four_k && now.num >= 3 * now.den) {
     note(i18n::tr(
         "4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything."));
-  } else if (four_k) {
+  } else if (reduced_motion) {
+    // Le gain de vitesse n'est pas mesuré : la note le dit, sans chiffre inventé (C23-03).
     note(
-        i18n::tr("4K output: RIFE estimates motion on a lighter 720p copy (less precise motion; the loss "
-                 "is not measured)."));
+        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less "
+                 "precise motion; the speed gained and the quality lost are not measured)."));
   }
   // « Lisser les dessins tenus » (upscale_smooth.cpp) : RIFE seulement, à la place des poses gardées.
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
