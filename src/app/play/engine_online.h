@@ -40,9 +40,13 @@ bool release_index_signed(std::string_view text, std::string_view signature,
 // récent). Rend le nombre de moteurs pris ; une entrée hors de la release est écartée et dite dans problem.
 int merge_release_index(EngineCatalog& catalog, std::string_view text, std::string_view prefix);
 
-// Faux tant qu'une copie gardée a moins d'un jour, qu'un 404 a moins d'un jour, ou qu'un autre échec a moins
-// de quelques heures : rien à demander au réseau.
-bool release_index_due(const std::filesystem::path& cache);
+// Faux tant qu'une copie gardée de la release de cette version a moins d'un jour, qu'un 404 pour cette
+// version a moins d'un jour, ou qu'un autre échec a moins de quelques heures : rien à demander au réseau. Une
+// copie ou une marque d'une autre version ne retient rien. once_per_version (mises à jour sur « Jamais ») :
+// la copie et le 404 de cette version valent sans limite d'âge, l'index n'est pas une vérification
+// périodique.
+bool release_index_due(const std::filesystem::path& cache, std::string_view version,
+                       bool once_per_version = false);
 // Relit engines-nvidia.lock et sa signature de la release si c'est dû (release_index_due), en quelques
 // secondes au plus, dans cache et cache.sig ; hors du thread de la fenêtre (A18-02). stop coupe curl.
 void refresh_release_index(const std::filesystem::path& cache, std::string_view repo,

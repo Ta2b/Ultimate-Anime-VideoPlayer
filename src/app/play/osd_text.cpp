@@ -1,6 +1,7 @@
 #include "app/play/osd_text.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <format>
 #include <utility>
@@ -54,6 +55,11 @@ std::string osd_script(std::span<const std::string> lines, OutputSize size) {
       size.width, size.height, font, font, font, font, text);
 }
 
+bool osd_refresh_due(bool had_text, bool has_text, bool size_changed, std::int64_t since_render_us) {
+  if (size_changed || had_text != has_text || !had_text) return true;
+  return since_render_us >= kOsdRefreshUs;
+}
+
 OsdText::OsdText(subs::AssLibrary library, subs::SubtitleRenderer renderer)
     : library_(std::move(library)), renderer_(std::move(renderer)) {
   // Tout vit sur le thread main : un atlas relâché revient directement dans la réserve.
@@ -77,8 +83,14 @@ std::expected<std::unique_ptr<OsdText>, Refusal> OsdText::create() {
 std::expected<const subs::SubtitleFrame*, Refusal> OsdText::render(std::span<const std::string> lines,
                                                                    OutputSize size) {
   if (size.width <= 0 || size.height <= 0) return nullptr;  // fenêtre réduite (P2.18)
-  const bool same = size == size_ && std::ranges::equal(lines, lines_);
+  bool same = size == size_ && std::ranges::equal(lines, lines_);
+  const std::int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                                  std::chrono::steady_clock::now().time_since_epoch())
+                                  .count();
+  if (!same && !osd_refresh_due(!lines_.empty(), !lines.empty(), size != size_, now_us - rendered_at_us_))
+    same = true;  // le texte précédent reste affiché jusqu'au prochain rendu
   if (!same) {
+    rendered_at_us_ = now_us;
     auto track = subs::SubtitleTrack::from_ass(library_, osd_script(lines, size));
     if (!track) return std::unexpected(std::move(track.error()));
     track_.emplace(std::move(*track));

@@ -497,11 +497,11 @@ DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::
   ajp::app::play::move_heavy_data(data, places.heavy, said);
   places.cache = ajp::app::play::cache_data(place.home, places.heavy);
   ajp::app::play::move_cache_data(places.heavy, places.cache, said);
-  ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), said);
   // La mise à jour n'est plus qu'une notification : les archives préparées et la copie de l'ancienne
   // installation des versions qui s'appliquaient elles-mêmes se retirent (A26-06) ; le cache des moteurs
   // TensorRT est borné (A33-04).
   if (!purge_updates) return places;  // --data-dir, banc : ni le dossier de l'utilisateur ni son bureau
+  ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), said);
   ajp::app::play::tidy_at_launch(data, places.cache / "engines",
                                  [](const std::string& line) { ajp::log_channel("app")->info("{}", line); });
   // Un lecteur inscrit dont le dossier a bougé suit sa nouvelle place (A19-06).

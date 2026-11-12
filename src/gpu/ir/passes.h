@@ -64,8 +64,11 @@ int assign_layout(Graph& graph);
 // Vers float, la conversion est exacte : les lecteurs autres que les convolutions lisent la
 // source. Vers float16, le producteur du résultat, s'il en est le seul lecteur et n'est pas une
 // convolution, l'écrit lui-même en float16, avec le même arrondi. Un Cast entre types égaux
-// disparaît. Hors de optimize() : l'interpréteur n'arrondit qu'aux Cast, ses sorties sur le
-// graphe obtenu peuvent s'écarter d'un arrondi float16. Renvoie le nombre de Cast retirés.
+// disparaît. Hors de optimize() : l'interpréteur n'arrondit qu'aux Cast, et le graphe obtenu n'est plus
+// exécutable par lui quand un Cast retiré alimentait un opérateur binaire (Add, Sub, Mul…) qui lit aussi un
+// opérande de l'autre type : infer_binary exige des types égaux (C44-01). Le graphe replié est celui des
+// noyaux typés du moteur, pas celui de l'interpréteur ; pour l'exécuter, ne pas appeler cette passe.
+// Renvoie le nombre de Cast retirés.
 int fold_float_casts(Graph& graph);
 
 // La grille de chaque GridSample en float : sa somme base + flot × pas, les Cast qui arrondissent ses

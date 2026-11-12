@@ -290,6 +290,44 @@ TEST_CASE("KernelOps : écriture d'un slot du ring", "[vk_backend][kernels]") {
                   RefusalCode::FieldOutOfRange);
 }
 
+// C45-03 : les enregistrements d'un ring sont clés sur la poignée de sa vue. Une vue d'une génération
+// révolue, détruite, entre au journal des destructions : son enregistrement s'oublie, et ne se rejoue pas si
+// le pilote rend la même poignée à une vue suivante.
+TEST_CASE("KernelOps : les enregistrements d'un ring changé de génération s'oublient",
+          "[vk_backend][kernels]") {
+  TempDir dir("ring-generations");
+  auto backend = make_backend(dir.path());
+  auto& vulkan = dynamic_cast<vk::VulkanKernelOps&>(*backend->kernels());
+  auto image = vk::StorageImage::create(backend->context(), backend->memory(), 20, 12);
+  if (!image && image.error().code == RefusalCode::FeatureUnavailable) SKIP(describe(image.error()));
+  REQUIRE(image);
+  auto semaphore = require_value(vk::TimelineSemaphore::create(backend->context(), 0));
+  const auto bits = [](auto handle) { return vk::detail::to_bits(handle); };
+  const k::RgbImage rgb = stored(synthetic_rgb(20, 12, 21, -0.2F, 1.2F), TensorType::F32);
+  auto t = rgb_tensor(*backend, 20, 12, TensorType::F32);
+  write_tensor(*backend, t->tensor(), rgb_bytes(rgb, TensorType::F32));
+  const std::size_t before = vulkan.recordings();
+  const std::uint64_t destroyed_before = backend->context().destroyed().mark();
+  constexpr std::uint32_t kGenerations = 6;
+  for (std::uint32_t generation = 1; generation <= kGenerations; ++generation) {
+    const RingSlotDesc slot{.index = 0,
+                            .generation = generation,
+                            .width = 20,
+                            .height = 12,
+                            .image = bits(image->image()),
+                            .semaphore = bits(semaphore.handle())};
+    const std::uint64_t wait = 2ULL * (generation - 1);
+    if (wait > 0) require_ok(semaphore.signal(wait));
+    require_ok(vulkan.write_ring(t->tensor(), slot, {.wait_value = wait, .signal_value = wait + 1}));
+    require_ok(backend->context().wait_on_host(semaphore.at(wait + 1)));
+  }
+  // Les vues des générations révolues sont détruites : chacune est entrée au journal (sans quoi
+  // l'enregistrement clé sur sa poignée resterait, et se rejouerait si le pilote la redonne à une vue
+  // suivante).
+  CHECK(backend->context().destroyed().mark() - destroyed_before >= kGenerations - 2);
+  CHECK(vulkan.recordings() - before < kGenerations);
+}
+
 TEST_CASE("Voies : les dépendances d'une voie à l'autre se déduisent des tampons", "[vk_backend][kernels]") {
   // Un appareil à une file (lavapipe) : les voies en plus reprennent la file principale, mais
   // chacune a sa timeline et ses attentes, que la couche de validation vérifie.

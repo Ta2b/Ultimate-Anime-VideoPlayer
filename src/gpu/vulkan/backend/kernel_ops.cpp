@@ -118,7 +118,15 @@ VulkanKernelOps::~VulkanKernelOps() {
   context_.before_flush({});
   release_plane_views();
   if (!context_.settle(queue_.lasts())) return;
-  for (const RingView& v : ring_views_) context_.fn().vkDestroyImageView(context_.device(), v.view, nullptr);
+  for (const RingView& v : ring_views_) destroy_view(v.view);
+}
+
+// C45-03 : une vue détruite entre au journal des destructions avant de partir, comme un tampon ou une image :
+// le pilote en rend volontiers la poignée à la vue suivante, et un enregistrement clé sur l'ancienne (ring,
+// plans d'une image décodée) serait rejoué vers un objet détruit.
+void VulkanKernelOps::destroy_view(VkImageView view) {
+  context_.destroyed().note(handle_word(view));
+  context_.fn().vkDestroyImageView(context_.device(), view, nullptr);
 }
 
 std::expected<void, Refusal> VulkanKernelOps::submit(Recording& recording,
@@ -135,7 +143,7 @@ void VulkanKernelOps::reclaim() {
   std::erase_if(retained_, [&](const Retained& r) { return r.until <= *completed; });
   std::erase_if(ring_views_, [&](const RingView& v) {
     if (v.generation >= ring_generation_ || v.last_write > *completed) return false;
-    context_.fn().vkDestroyImageView(context_.device(), v.view, nullptr);
+    destroy_view(v.view);
     return true;
   });
 }

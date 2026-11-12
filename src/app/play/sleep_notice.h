@@ -6,7 +6,9 @@
 //   (Inhibit) retient la veille le temps que la lecture se mette en pause ; le signal PrepareForSleep(true)
 //   l'annonce, le verrou est rendu dès la pause faite, et repris au réveil (PrepareForSleep(false)).
 // - Windows : PowerRegisterSuspendResumeNotification (powrprof.dll), PBT_APMSUSPEND. Le rappel vient d'un fil
-//   du système, qui attend la pause un moment borné.
+//   du système, qui attend la pause un moment borné. Les portables en veille moderne (Modern Standby, S0)
+//   ne reçoivent pas PBT_APMSUSPEND : l'extinction de l'écran (GUID_CONSOLE_DISPLAY_STATE, couvercle
+//   fermé compris) annonce aussi la veille, et son rallumage la dit finie.
 // - macOS : rien (hors de la cible) ; SleepWatch reste le filet partout.
 //
 // L'annonce passe au thread main par SleepGate : le fil du système appelle announce, qui réveille la boucle
@@ -31,12 +33,18 @@ class SleepGate {
   bool take();
   // Thread main : la lecture est en pause, la veille peut suivre.
   void ready();
+  // Fil du système : la veille est finie ou annulée (réveil, écran rallumé). Réveille la boucle, qui lâche
+  // alors l'annonce qu'aucun trou de temps ne confirme (C29-06).
+  void resumed();
+  // Thread main : un réveil dit par le système, une fois.
+  bool take_resumed();
 
  private:
   void (*wake_)(void*);
   void* context_;
   std::mutex mutex_;
   std::condition_variable changed_;
+  bool resumed_ = false;    // un réveil à prendre par la boucle
   bool announced_ = false;  // à prendre par la boucle
   bool ready_ = false;      // la boucle a fini
 };
@@ -51,6 +59,7 @@ class SleepNotice {
 
   bool take() { return gate_.take(); }
   void ready() { gate_.ready(); }
+  bool take_resumed() { return gate_.take_resumed(); }
 
  private:
   SleepGate gate_;

@@ -3,6 +3,7 @@
 # B51-10, B51-16) : chacun doit refuser le défaut qu'il garde, et laisser passer le cas sain.
 set -euo pipefail
 R="$(cd "$(dirname "$0")/../release" && pwd)"
+CI="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 cd "$work"
@@ -49,9 +50,10 @@ psha="$(sha256sum payload.tar.gz | cut -d' ' -f1)" psize="$(stat -c %s payload.t
 printf '#!/bin/bash\nout=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done; cp "%s/payload.tar.gz" "$out"\n' "$work" > bin/curl
 chmod +x bin/curl
 check_dir() {  # dossier d'une release factice
-  mkdir -p "$1"
-  echo x > "$1/ajp-linux-x64.tar.gz"
+  mkdir -p "$1" "$1.stage/ajp-linux-x64"
   { echo 'version = 1'; engine linux trt-A "$2" "$3"; } > "$1/engines.lock"
+  cp "$1/engines.lock" "$1.stage/ajp-linux-x64/engines.lock"
+  tar -C "$1.stage" -czf "$1/ajp-linux-x64.tar.gz" ajp-linux-x64
   { echo 'version = 1'; engine windows trt-win-A "$2" "$3"; } > w.lock
   python3 -I -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1], 'w'); z.write('w.lock', 'ajp/engines.lock')" "$1/ajp-windows-x64.zip"
 }
@@ -59,7 +61,22 @@ check_dir good_rel "$psha" "$psize"
 check_dir bad_rel "$(printf 'f%.0s' {1..64})" "$psize"
 expect 0 "release complète, archives des moteurs vérifiées" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 good_rel
 expect 1 "archive de moteur réécrite après coup" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 bad_rel
+# C51-01 : l'engines.lock joint à part n'est pas cru ; celui de l'archive vérifiée prime, et une différence est refusée.
+cp -r good_rel swapped_rel
+{ echo 'version = 1'; engine linux trt-EVIL "$psha" "$psize"; } > swapped_rel/engines.lock
+expect 1 "engines.lock Linux remplacé dans la release" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 swapped_rel
 sed -i '/^\[\[vendor_file\]\]/,$d' good_rel/engines.lock
+cp good_rel/engines.lock good_rel.stage/ajp-linux-x64/engines.lock
+tar -C good_rel.stage -czf good_rel/ajp-linux-x64.tar.gz ajp-linux-x64
 python3 -I -c "import zipfile; z = zipfile.ZipFile('good_rel/ajp-windows-x64.zip', 'w'); z.writestr('ajp/engines.lock', 'version = 1\n')"
 expect 1 "release finale sans [[vendor_file]] ni TensorRT Windows" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 good_rel
+
+# C51-04 : pas de release finale sans clé de secours compilée.
+printf 'set(AJP_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(AJP_UPDATE_PUBKEY_BACKUP "" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" > cmake-vide.txt
+printf 'set(AJP_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(AJP_UPDATE_PUBKEY_BACKUP "%s" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" > cmake-secours.txt
+printf 'set(AJP_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(AJP_UPDATE_PUBKEY_BACKUP "%s" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" "$(printf 'A%.0s' {1..64})" > cmake-meme.txt
+expect 1 "release finale sans clé de secours" "$CI/check-backup-key.sh" v1.0.0 cmake-vide.txt
+expect 0 "préversion sans clé de secours" "$CI/check-backup-key.sh" v1.0.0-rc.1 cmake-vide.txt
+expect 0 "release finale avec clé de secours" "$CI/check-backup-key.sh" v1.0.0 cmake-secours.txt
+expect 1 "clé de secours égale à la clé active" "$CI/check-backup-key.sh" v1.0.0 cmake-meme.txt
 exit "$fail"

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <memory>
 #include <optional>
@@ -15,6 +16,12 @@
 
 namespace ajp::render {
 namespace {
+
+// Le code PQ (ST 2084) de `nits`.
+double pq_code(double nits) {
+  const double y = std::pow(std::clamp(nits / 10000.0, 0.0, 1.0), 0.1593017578125);
+  return std::pow((0.8359375 + (18.8515625 * y)) / (1.0 + (18.6875 * y)), 78.84375);
+}
 
 // Un //!PARAM et le champ de GradeParams qui le règle.
 struct ParamBinding {
@@ -36,7 +43,6 @@ constexpr std::array kGradeParams = {
     ParamBinding{"spec_gain", &GradeParams::spec_gain},
     ParamBinding{"adapt", &GradeParams::adapt},
     ParamBinding{"sdr_white", &GradeParams::sdr_white},
-    ParamBinding{"sdr_out", &GradeParams::sdr_out},
     ParamBinding{"sdr_tm", &GradeParams::sdr_tm},
     ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
     ParamBinding{"chroma", &GradeParams::chroma},
@@ -57,9 +63,9 @@ constexpr std::array kGradeParams = {
 };
 
 constexpr std::array kLookParams = {
-    ParamBinding{"look_white", &GradeParams::look_white}, ParamBinding{"look_pq", &GradeParams::look_pq},
-    ParamBinding{"look_clean", &GradeParams::look_clean}, ParamBinding{"sdr_out", &GradeParams::sdr_out},
-    ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},   ParamBinding{"peak", &GradeParams::peak},
+    ParamBinding{"look_white", &GradeParams::look_white},
+    ParamBinding{"look_pq", &GradeParams::look_pq},
+    ParamBinding{"look_clean", &GradeParams::look_clean},
 };
 
 // Sortie SDR de la méthode anime (GradeParams::sdr_tm) : la première passe met l'image SDR de la cible en PQ
@@ -151,10 +157,9 @@ std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
 }
 
 constexpr std::array kBlackParams = {
-    ParamBinding{"black_lo", &GradeParams::black_lo}, ParamBinding{"black_hi", &GradeParams::black_hi},
-    ParamBinding{"sdr_out", &GradeParams::sdr_out},   ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma},
-    ParamBinding{"peak", &GradeParams::peak},         ParamBinding{"sdr_tm", &GradeParams::sdr_tm},
-    ParamBinding{"tm_white", &GradeParams::tm_white}, ParamBinding{"tm_top", &GradeParams::tm_top},
+    ParamBinding{"black_lo", &GradeParams::black_lo},   ParamBinding{"black_hi", &GradeParams::black_hi},
+    ParamBinding{"sdr_gamma", &GradeParams::sdr_gamma}, ParamBinding{"sdr_tm", &GradeParams::sdr_tm},
+    ParamBinding{"tm_white", &GradeParams::tm_white},   ParamBinding{"tm_top", &GradeParams::tm_top},
 };
 
 pl_var_data* find_param(const pl_hook& hook, std::string_view name) {
@@ -209,6 +214,7 @@ std::expected<ParsedHook, Refusal> parse_look(pl_gpu gpu, std::string_view text)
 struct Grade::Impl {
   float video_fps = 24.0F;
   std::optional<Grade::KwinMatch> kwin;  // set_kwin_match, réécrit dans un hook refait
+  bool kwin_put = false;                 // kwin déjà écrit dans les hooks
   void put_kwin();
   // La sortie HDR : le sommet de la courbe, le blanc rendu et le plafond des éclats, recalculés dès que les
   // paramètres, la pile ou l'écran changent ; rien sans la dernière passe.
@@ -220,7 +226,9 @@ struct Grade::Impl {
   std::array<const pl_hook*, 3> hooks{};
   GradeParams params;
   pl_gpu gpu = nullptr;
-  // Les LUT du look (copies : celles de set_looks ne vivent que le temps de l'appel).
+  // Les LUT du look (copies : celles de set_looks ne vivent que le temps de l'appel), une par contenu
+  // distinct, partagée entre les emplacements qui la répètent (C41-05 : la pile livrée en a 19 pour 4
+  // fichiers).
   std::array<std::shared_ptr<const CubeLut>, kLookSlots> sources;
   std::array<const CubeLut*, kLookSlots> looks() const {
     std::array<const CubeLut*, kLookSlots> out{};
@@ -269,18 +277,41 @@ std::expected<void, Refusal> Grade::set_looks(const std::array<const CubeLut*, k
   pl_mpv_user_shader_destroy(&impl_->look.hook);
   impl_->look = std::move(*look);
   impl_->hooks[1] = impl_->look.hook;
+  std::array<std::shared_ptr<const CubeLut>, kLookSlots> sources;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
-    if (luts[i] != nullptr)
-      impl_->sources[i] = std::make_shared<const CubeLut>(*luts[i]);
-    else
-      impl_->sources[i].reset();
+    if (luts[i] == nullptr) continue;
+    for (std::size_t j = 0; j < i && !sources[i]; ++j)
+      if (sources[j] && (luts[j] == luts[i] || *sources[j] == *luts[i])) sources[i] = sources[j];
+    // Déjà posée (la même pile reposée) : gardée sans copie.
+    for (std::size_t j = 0; j < kLookSlots && !sources[i]; ++j)
+      if (impl_->sources[j].get() == luts[i]) sources[i] = impl_->sources[j];
+    if (!sources[i]) sources[i] = std::make_shared<const CubeLut>(*luts[i]);
   }
+  impl_->sources = std::move(sources);
   impl_->write_params();  // les paramètres repartent dans le nouveau hook
+  return {};
+}
+
+std::expected<void, Refusal> Grade::set_looks(
+    const std::array<std::shared_ptr<const CubeLut>, kLookSlots>& luts) {
+  std::array<const CubeLut*, kLookSlots> slots{};
+  for (std::size_t i = 0; i < kLookSlots; ++i) slots[i] = luts[i].get();
+  auto look = parse_look(impl_->gpu, look_text(slots));
+  if (!look) return std::unexpected(look.error());
+  pl_mpv_user_shader_destroy(&impl_->look.hook);
+  impl_->look = std::move(*look);
+  impl_->hooks[1] = impl_->look.hook;
+  impl_->sources = luts;
+  impl_->write_params();
   return {};
 }
 
 std::array<const CubeLut*, kLookSlots> Grade::looks() const {
   return impl_->looks();
+}
+
+std::array<std::shared_ptr<const CubeLut>, kLookSlots> Grade::shared_looks() const {
+  return impl_->sources;
 }
 
 Grade::Grade(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -311,6 +342,18 @@ void Grade::Impl::write_params() {
     toe->f = static_cast<float>(active && params.look_pq > 0.5 ? white * kAnimeLift : 0.0);
   }
   if (pl_var_data* on = find_param(look_hook, "look_on")) on->f = active ? 1.0F : 0.0F;
+  // C41-03 : les seuils des émetteurs de la passe anime, en codes PQ, ne dépendent que des paramètres ; la
+  // passe les recalculait à chaque pixel.
+  {
+    const double white = params.adapt > 0.5 ? params.sdr_white : params.paper;
+    const auto put = [this](std::string_view name, double nits) {
+      if (pl_var_data* data = find_param(*grade.hook, name)) data->f = static_cast<float>(pq_code(nits));
+    };
+    put("an_gate_lo", 0.55 * white);
+    put("an_gate_hi", 0.95 * white);
+    put("an_spark_lo", 0.6 * white);
+    put("an_spark_hi", white);
+  }
   put_output();
 }
 
@@ -337,7 +380,11 @@ void Grade::set_video_fps(double fps) {
 }
 
 void Grade::set_kwin_match(std::optional<KwinMatch> match) {
+  // C41-04 : appelé à chaque présentation ; la dernière passe (output_tune, une traversée de la pile) n'est
+  // refaite que si l'appariement change. set_params et set_looks la refont d'eux-mêmes.
+  if (impl_->kwin_put && match == impl_->kwin) return;
   impl_->kwin = match;
+  impl_->kwin_put = true;
   impl_->put_kwin();
 }
 

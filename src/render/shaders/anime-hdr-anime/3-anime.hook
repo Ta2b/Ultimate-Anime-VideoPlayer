@@ -137,7 +137,6 @@ float an_local(float y_pq, float plain) {
 }
 vec4 hook() {
     vec4 px = HOOKED_tex(HOOKED_pos);
-    if (sdr_out > 0.5) return px;
     // Le niveau du blanc de la source : le blanc SDR (203) pour la route native (adapt), sinon le blanc papier
     // (decide_grade pose paper = 0,5 x pic sur la route native : ce n'est alors pas le blanc de la source).
     float white = adapt > 0.5 ? sdr_white : paper;
@@ -154,14 +153,15 @@ vec4 hook() {
     // Carte des emetteurs : plus clair que le voisinage, et proche du blanc SDR (porte sur le niveau du bloc :
     // un aplat sombre plus clair que son entourage n'est pas une lumiere).
     float iso = smoothstep(0.05, 0.25, local_pq - area_pq);
-    float gate = smoothstep(pq_of(0.55 * white), pq_of(0.95 * white), local_pq);
+    // C41-03 : les seuils ne dependent que des parametres, calcules une fois par Grade::write_params.
+    float gate = smoothstep(an_gate_lo, an_gate_hi, local_pq);
     // Audit F2 : une peau n'est jamais une lumiere. Une peau claire pres d'un fond sombre gardait la porte
     // ouverte et s'eclairait comme une lampe au bord des visages. La teinte et la saturation ne dependent pas
     // de la luminance : le grain d'une peau ne fait pas osciller la porte (pas de damier).
     gate *= 1.0 - skin_like(lin);
     // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain), et il est proche du
     // blanc. La porte compare des codes PQ (y_pq) : y, en nits, la laissait ouverte des 1 nit.
-    float spark = smoothstep(0.08, 0.20, y_pq - local_bilin) * smoothstep(pq_of(0.6 * white), pq_of(white), y_pq);
+    float spark = smoothstep(0.08, 0.20, y_pq - local_bilin) * smoothstep(an_spark_lo, an_spark_hi, y_pq);
     // P3.53 : la peau n'est pas plus une etincelle qu'une lumiere, et un blanc serre entre deux traits noirs
     // (texte cerne, trait fin) non plus. Le noir d'un trait (sous 1 % du blanc) a 2 px de part et d'autre
     // ferme la porte ; le ciel d'une nuit, plus clair, la laisse ouverte aux etoiles.

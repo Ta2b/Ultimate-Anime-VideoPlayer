@@ -36,7 +36,7 @@ inline constexpr std::uint32_t kShotAnalysis = 3;
 inline constexpr std::size_t kShotCacheKeep = 400;  // fichiers gardés
 
 // Écrit les plans sous dir (créé au besoin), par un fichier temporaire renommé ; faux si l'écriture
-// échoue. Au-delà de keep fichiers, les plus anciens partent.
+// échoue. Au-delà de keep fichiers, les plus anciens partent. Chaque variante a son fichier (C42-05).
 bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, std::span<const Shot> shots,
                      bool complete, std::size_t keep = kShotCacheKeep,
                      std::span<const FlashSpan> flashes = {}, std::uint32_t variant = 0);

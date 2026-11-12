@@ -216,18 +216,6 @@ TEST_CASE("HDR anime : route adaptative (paper = demi-pic), la lumière monte au
   CHECK(luma(wall[128]) == Catch::Approx(1.15 * 60.0).epsilon(0.03));
 }
 
-TEST_CASE("HDR anime : sortie SDR inchangée", "[render][gpu]") {
-  Gpu gpu;
-  require_device(gpu);
-  REQUIRE(gpu.grade);
-  const std::vector<std::uint16_t> source = sdr_ramp(1.0, 0.9, 0.8);
-  const std::vector<Rgb> out = graded_codes(gpu, source, sdr_neutral());
-  for (std::size_t x = 8; x < out.size(); x += 16) {
-    const double expected = 1.0 * (static_cast<double>(x) + 1.0) / kSide;
-    CHECK(out[x][0] == Catch::Approx(expected).margin(0.01));
-  }
-}
-
 TEST_CASE("HDR anime vers un écran SDR : le rendu PQ revient au SDR, identique sous le genou",
           "[render][gpu]") {
   Gpu gpu;

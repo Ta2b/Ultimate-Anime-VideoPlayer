@@ -208,17 +208,17 @@ void announce_first(i18n::Translated& notice, i18n::Translated& first) {
 
 // Annoncés une fois par lancement, pas à chaque vidéo.
 struct Announced {
-  bool update = false;
   bool calibration = false;
 };
 
 // « Me prévenir » : une version plus récente vue par la dernière vérification. P3.11 : une calibration faite
 // sur une autre carte ne sert plus ; la refaire est proposé.
-void announce_once(Player& player, Announced& announced, const std::filesystem::path& update_file,
-                   UpdateMode mode, const std::string& gpu, int display_height) {
-  const UpdateState update = load_update_state(update_file);
-  if (!announced.update && mode == UpdateMode::Notify && !update.latest_version.empty()) {
-    announced.update = true;
+void announce_once(Player& player, Announced& announced, UpdateNews& news, UpdateMode mode,
+                   const std::string& gpu, int display_height) {
+  player.update_news = &news;
+  const UpdateState update = load_update_state(news.file);
+  if (!news.shown.load() && mode == UpdateMode::Notify && !update.latest_version.empty()) {
+    news.shown.store(true);
     player.notice =
         i18n::ui_tr_format("Update {} available (Settings > General > Application)", update.latest_version);
   }
@@ -270,6 +270,50 @@ std::string unreadable_text(const std::filesystem::path& file, const std::option
                          visible_error(*why));
 }
 
+// Le marqueur est la seule garde contre une boucle de relances : sans lui (disque plein, dossier en
+// lecture seule), pas de relance, le lancement continue (Vulkan prend la suite si le module reste périmé).
+bool write_relaunch_marker(const std::filesystem::path& marker_path) {
+  std::ofstream marker(marker_path);
+  marker << "1\n";
+  marker.flush();
+  if (marker) return true;
+  log_channel("app")->warn("moteurs mis à jour : marqueur {} non écrit, pas de relance",
+                           core::to_utf8(marker_path.filename()));
+  return false;
+}
+
+// La position de reprise (resume_from) n'est lue que plus bas : la relance la calcule ici, sinon la vidéo
+// rouverte repartait de 0:00 (la cible de relance vaut toujours « forcée »).
+std::int64_t relaunch_position(const std::optional<std::int64_t>& forced_start,
+                               const PlayOptions& file_options, const core::Settings& engines,
+                               const std::filesystem::path& settings_path,
+                               const std::filesystem::path& file) {
+  if (forced_start) return *forced_start;
+  if (file_options.resume && engines.resume_position) {
+    if (const auto at = resume_from(paths::resume(settings_path.parent_path()), file)) return *at;
+  }
+  return file_options.start_us;
+}
+
+// Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
+std::expected<void, Refusal> probe_given_file(const PlayOptions& options,
+                                              std::optional<media::TrackInfo>& given,
+                                              std::optional<Refusal>& unreadable_why) {
+  if (options.file.empty()) return {};
+  auto video = probe_video(options.file, false);
+  if (video) {
+    given = std::move(*video);
+  } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
+    return std::unexpected(std::move(video.error()));  // un essai scripté : le code de sortie le dit
+  } else {
+    // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
+    // ne dirait rien. L'accueil s'ouvre avec la raison.
+    log_channel("app")->warn("{}", video.error().detail);
+    unreadable_why = std::move(video.error());
+  }
+  return {};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -282,25 +326,13 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::optional<RelaunchTarget> reopened_after = take_relaunch(options, paths, launched_s);
   set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
-  // Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
   std::optional<media::TrackInfo> given;
   std::optional<Refusal> unreadable_why;  // le fichier donné ne se lit pas : dit à l'accueil, à sa place
-  if (!options.file.empty()) {
-    auto video = probe_video(options.file, false);
-    if (video) {
-      given = std::move(*video);
-    } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
-      return std::unexpected(std::move(video.error()));  // un essai scripté : le code de sortie le dit
-    } else {
-      // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
-      // ne dirait rien. L'accueil s'ouvre avec la raison.
-      log_channel("app")->warn("{}", video.error().detail);
-      unreadable_why = std::move(video.error());
-    }
-  }
+  if (auto probed = probe_given_file(options, given, unreadable_why); !probed)
+    return std::unexpected(std::move(probed.error()));
   std::atomic<bool> playing{false};  // la vérification des mises à jour attend la fin de la vidéo
+  UpdateNews update_news{.file = paths::update_state(paths.data)};  // avant le fil qui le pose
   std::jthread update_check;
-  const std::filesystem::path update_file = paths::update_state(paths.data);
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_with_notes(settings_path, startup_notes);
@@ -391,7 +423,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   }
   // Après l'assistant, qui choisit le mode des mises à jour (A18-03).
   if (!options.bench_out && !options.data_dir)
-    update_check = start_update_check(settings_path, paths, playing);
+    update_check = start_update_check(settings_path, paths, playing, update_news);
   // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
   // Une seule relance par mise à jour : si le module reste périmé après elle, on ne boucle pas.
   const std::filesystem::path relaunch_marker = paths.data / "engines-relaunched";
@@ -404,10 +436,10 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];
   if (!updated) return std::unexpected(std::move(updated.error()));
   if (!*updated) return {};
-  if (engines_updated && !relaunched && paths.relaunch != nullptr) {
-    // Le module remplacé ne se charge pas sous le même nom dans ce processus : le lecteur repart, et le
-    // moteur choisi s'ouvre au lancement suivant sans autre geste.
-    if (std::ofstream(relaunch_marker) << "1\n") log->info("moteurs mis à jour : le lecteur se relance");
+  // Le module remplacé ne se charge pas sous le même nom dans ce processus : le lecteur repart, et le moteur
+  // choisi s'ouvre au lancement suivant sans autre geste.
+  if (engines_updated && !relaunched && paths.relaunch != nullptr && write_relaunch_marker(relaunch_marker)) {
+    log->info("moteurs mis à jour : le lecteur se relance");
     *paths.relaunch = true;
     return {};
   }
@@ -529,9 +561,12 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
     // Le module chargé a été remplacé sur le disque (moteur mis à jour depuis l'écran des moteurs) : il ne se
     // recharge pas sous le même nom dans ce processus, le lecteur se relance sur cette vidéo.
+    const auto relaunch_start_us = [&] {
+      return relaunch_position(forced_start, file_options, *engines, settings_path, file);
+    };
     if (library && library->replaced_on_disk() && paths.relaunch != nullptr) {
       log->info("moteur mis à jour : le lecteur se relance");
-      ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
+      ask_relaunch(paths, file, relaunch_start_us(), forced_paused, RelaunchReason::EngineUpdated);
       return {};
     }
     // Un autre moteur choisi depuis (accueil, Paramètres) : la bibliothèque se rouvre sur lui, sinon le choix
@@ -550,7 +585,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       }
       if (stale_updated && paths.relaunch != nullptr) {
         log->info("moteurs mis à jour : le lecteur se relance");
-        ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
+        ask_relaunch(paths, file, relaunch_start_us(), forced_paused, RelaunchReason::EngineUpdated);
         return {};
       }
       show_loading(**screen, **ui, i18n::ui_tr("Loading"));
@@ -559,7 +594,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       auto opened = open_backend(catalog, paths, *engines, probe);
       if (!opened) {
         if (opened.error().code == RefusalCode::Cancelled) return {};  // fenêtre fermée (B30-06)
-        if (relaunch_after_loss(opened.error(), file, forced_start.value_or(0), forced_paused)) return {};
+        if (relaunch_after_loss(opened.error(), file, relaunch_start_us(), forced_paused)) return {};
         if (scripted) return std::unexpected(std::move(opened.error()));
         // A18-13, B31-09 : la vidéo, choisie à l'accueil ou par double-clic, y ramène avec la raison.
         problem = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(file.filename()),
@@ -598,7 +633,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     player.manual_tracks = &manual_tracks;
     player.relaunch_on_loss =
         !scripted && relaunch_allowed(relaunch_after_loss.lost_recently, relaunch_after_loss.launched_s);
-    announce_once(player, announced, update_file, saved->update_mode, here.name, host.display_height);
+    announce_once(player, announced, update_news, saved->update_mode, here.name, host.display_height);
     announce_first(player.notice, relaunch_note);
     announce_first(player.notice, engine_fallback);
     // Déjà traduites par set_aside() : montrées telles quelles.
@@ -696,6 +731,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // P3.10 : ouvert par double-clic, l'échec ne ferme plus la fenêtre sans un mot ; seuls les lancements
       // pilotés (essais, banc, captures) gardent le code de sortie.
       if (scripted || player.quit) return result;
+      if (result.error().key == kWindowClosedKey) return {};  // la croix pendant un chargement : on quitte
       // Le GPU perdu : une relance sur cette vidéo, à cet instant (relaunch_after_loss).
       if (relaunch_after_loss(result.error(), file, player.stopped_at_us, false)) return {};
       log->error("{}", result.error().detail);
@@ -744,9 +780,9 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
   std::array<const render::CubeLut*, render::kLookSlots> luts{};
   std::array<double, render::kLookSlots> mixes{};
   for (std::size_t i = 0; i < render::kLookSlots && i < slots.size(); ++i) {
-    const std::optional<render::CubeLut>& lut = looks.luts.at(i);
-    if (!lut.has_value()) continue;
-    luts.at(i) = &*lut;
+    const render::CubeLut* lut = looks.luts.at(i).get();
+    if (lut == nullptr) continue;
+    luts.at(i) = lut;
     mixes.at(i) = slots[i].mix;
     log_channel("app")->info("--bake-looks : {} à {:.0f} %", slots[i].key, 100.0 * slots[i].mix);
   }

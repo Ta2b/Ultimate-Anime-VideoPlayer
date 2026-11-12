@@ -41,18 +41,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-std::int64_t unix_now() {
-  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
-      .count();
-}
-
-std::string read_all(const fs::path& file) {
-  std::ifstream in(file, std::ios::binary);
-  std::ostringstream text;
-  text << in.rdbuf();
-  return text.str();
-}
-
 // Un dossier neuf, à nous seuls, pour le manifeste : mkdtemp (0700, nom imprévisible) hors Windows ; sous
 // Windows, le dossier temporaire est celui de l'utilisateur, et un nom tiré au hasard doit ne pas exister. Un
 // dossier préparé d'avance (lien symbolique que curl -o suivrait) n'est jamais repris.
@@ -76,6 +64,9 @@ std::expected<fs::path, Refusal> private_temp_dir() {
 #endif
 }
 
+// Les clés révoquées retenues dans update.toml : une clé compilée en a au plus quelques-unes (C26-05).
+constexpr std::size_t kMaxRevokedKeys = 16;
+
 // Au-delà, le fichier lu n'est ni un manifeste ni un index de moteurs : curl l'abandonne.
 constexpr std::int64_t kMaxFetchBytes = std::int64_t{1} << 20;
 
@@ -89,17 +80,11 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
   // -q en premier : aucun .curlrc ne change ce que fait curl ; https seulement, redirections comprises ;
   // un manifeste ou un index tient en quelques Ko (SEC-13, A35-05). Sous Windows, le proxy et la révocation
   // vérifiée au mieux, comme les moteurs (A06-13).
-  std::vector<std::string> args{"-q",
-                                "-fsSL",
-                                "--proto",
-                                "=https",
-                                "--proto-redir",
-                                "=https",
-                                "--max-filesize",
-                                std::to_string(kMaxFetchBytes),
-                                "--retry",
-                                "2",
-                                "--max-time",
+  std::vector<std::string> args{"-q", "-fsSL", "--proto", "=https", "--proto-redir", "=https",
+                                "--max-filesize", std::to_string(kMaxFetchBytes),
+                                // --max-filesize ne coupe pas un corps découpé : le débit borné limite ce
+                                // qu'un flux sans fin écrit avant le contrôle de taille (C26-07).
+                                "--limit-rate", "1M", "--retry", "2", "--max-time",
                                 std::to_string(max_seconds)};
   for (std::string& arg : curl_system_args()) args.push_back(std::move(arg));
   // Le fichier s'écrit par son seul nom, dans le dossier de travail de curl : sous Windows, un dossier
@@ -148,8 +133,26 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
 std::string_view release_repo() {
   return AJP_RELEASE_REPO;
 }
-std::string_view update_public_key() {
-  return AJP_UPDATE_PUBKEY;
+
+std::string read_all(const fs::path& file) {
+  std::ifstream in(file, std::ios::binary);
+  std::ostringstream text;
+  text << in.rdbuf();
+  return text.str();
+}
+
+std::int64_t unix_now() {
+  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+std::string download_page_url(std::string_view notes_url, std::string_view repo) {
+  const std::string prefix = std::format("https://github.com/{}/", repo);
+  // Sans « .. » : un chemin remonté sortirait du dépôt des releases.
+  if (!repo.empty() && notes_url.starts_with(prefix) && notes_url.size() > prefix.size() &&
+      !notes_url.contains(".."))
+    return std::string(notes_url);
+  return releases_page(repo);
 }
 
 std::vector<std::string> update_public_keys(const std::vector<std::string>& revoked) {
@@ -236,13 +239,14 @@ namespace {
 // Les révocations qu'un manifeste signé par keys[signer] peut porter : une clé ne révoque que celles qui la
 // précèdent dans la liste (l'active, puis la clé de secours). Une clé qui tient l'active ne peut donc pas
 // révoquer la clé de secours, seule parade à son vol ; la clé de secours peut révoquer l'active. Une clé que
-// le lecteur ne connaît pas (déjà révoquée, ou ancienne) est retenue telle quelle (B26-02).
+// le lecteur ne connaît pas est ignorée : elle ne signe rien ici, et la retenir désactiverait les mises à
+// jour d'une version future qui la compilerait (C26-05).
 std::vector<std::string> allowed_revocations(const std::vector<std::string>& keys, std::size_t signer,
                                              const std::vector<std::string>& wanted) {
   std::vector<std::string> allowed;
   for (const std::string& key : wanted) {
     const auto known = std::ranges::find(keys, key);
-    if (known != keys.end() && static_cast<std::size_t>(known - keys.begin()) >= signer) continue;
+    if (known == keys.end() || static_cast<std::size_t>(known - keys.begin()) >= signer) continue;
     allowed.push_back(key);
   }
   return allowed;
@@ -310,19 +314,14 @@ std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop
   const auto order = core::compare_versions(manifest->version, installed);
   if (order && *order > 0) {
     result.message = i18n::tr_format("{} is available", manifest->version);
+    // Une page hors du dépôt des releases n'est pas retenue : le bouton retombe sur la page des releases.
+    if (download_page_url(manifest->notes_url, release_repo()) != manifest->notes_url)
+      manifest->notes_url.clear();
     result.newer = std::move(*manifest);
   } else {
     result.message = i18n::tr("The player is up to date");
   }
   return result;
-}
-
-std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop) {
-  return check_for_update(stop, fetch, update_public_keys({}), installed_version());
-}
-
-std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop) {
-  return run_update_check(state, stop, fetch, unix_now());
 }
 
 std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop,
@@ -338,9 +337,18 @@ std::expected<std::string, Refusal> run_update_check(UpdateState& state, const s
                         checked.error().code == RefusalCode::FieldMissing ||
                         checked.error().code == RefusalCode::FileUnreadable;
   if (answered) state.last_check_unix = now_unix;
+  if (answered) {
+    // Une clé que ce binaire ne compile pas ne retient rien : un update.toml d'avant cette règle s'en
+    // débarrasse (C26-05).
+    const std::vector<std::string> compiled = update_public_keys({});
+    std::erase_if(state.revoked_keys, [&](const std::string& key) {
+      return std::ranges::find(compiled, core::ascii_lower(key)) == compiled.end();
+    });
+  }
   if (checked)
     for (std::string& key : checked->revoked_keys)
-      if (std::ranges::find(state.revoked_keys, key) == state.revoked_keys.end())
+      if (state.revoked_keys.size() < kMaxRevokedKeys &&
+          std::ranges::find(state.revoked_keys, key) == state.revoked_keys.end())
         state.revoked_keys.push_back(std::move(key));
   if (!checked) {
     state.last_error = checked.error().detail;
