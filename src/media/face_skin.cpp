@@ -141,7 +141,8 @@ std::optional<SkinTone> palette_of(const Reader& reader, const DecodedFrame& fra
       if (const auto tone = tone_at(reader, frame, x, y)) samples.push_back(*tone);
     }
   }
-  if (samples.size() * 4 < static_cast<std::size_t>(kCols * kRows)) return std::nullopt;
+  if (samples.size() * 4 < static_cast<std::size_t>(kCols) * static_cast<std::size_t>(kRows))
+    return std::nullopt;
   return face_palette(samples);
 }
 
