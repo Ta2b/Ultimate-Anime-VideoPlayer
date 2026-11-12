@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -198,6 +199,12 @@ class VkContext {
       if (point.semaphore == semaphore) point = {};
   }
   bool stalled() const { return stalled_.load(std::memory_order_acquire); }
+  // Un objet qu'un GPU tenu pour bloqué ne laisse pas détruire (pipelines, modules, caches : un
+  // enregistrement peut encore s'en servir) : sa destruction est remise à la fin du contexte, après l'attente
+  // de l'appareil. Sur un GPU qui reste bloqué, le contexte ne détruit rien non plus et la fin du processus
+  // rend le tout.
+  void retire(std::function<void()> destroy) const;
+  std::size_t retired() const;
   // Appareil perdu (P2.8) : un appel a rendu VK_ERROR_DEVICE_LOST. Plus aucune soumission ne part, chacune
   // est refusée en DeviceLost ; seul un nouveau contexte (relancer le lecteur) en sort. Sûr depuis tout fil.
   bool lost() const { return lost_.load(std::memory_order_acquire); }
@@ -282,6 +289,8 @@ class VkContext {
   // Par voie : le premier signal de la dernière soumission.
   // mutable : un sémaphore détruit s'en retire (forget), settle ne l'attend plus.
   mutable std::vector<TimelinePoint> last_submitted_ = std::vector<TimelinePoint>(1);
+  mutable std::mutex retired_mutex_;
+  mutable std::vector<std::function<void()>> retired_;
   std::atomic<bool> stalled_{false};  // une fin de vie a attendu en vain : plus aucune n'attend
   std::chrono::milliseconds settle_floor_ = kSettleFloor;
   std::atomic<std::int64_t> longest_wait_ns_{0};  // la plus longue attente hôte réussie

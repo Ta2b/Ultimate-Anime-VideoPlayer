@@ -301,7 +301,8 @@ TEST_CASE("contexte : GPU tenu pour bloqué, puis réarmé quand il a rattrapé 
 // C49-04 : un GPU tenu pour bloqué garde aussi ses pipelines, modules et caches (un enregistrement dont la
 // fin de vie a attendu en vain peut encore s'en servir). Le test ne voit que l'absence de plantage et de
 // refus de la couche de validation ; la garde est celle des tampons (buffer.cpp), posée ici dans les deux
-// destructeurs.
+// destructeurs. Ce que le GPU bloqué n'a pas laissé détruire est remis au contexte (retire) et libéré à sa
+// fin une fois le GPU rattrapé : le test ne laisse rien fuir.
 TEST_CASE("contexte : un GPU bloqué laisse les pipelines à leur place, la destruction ne touche à rien",
           "[vk_compute][context]") {
   auto ctx = require_value(VkContext::create({.settle_floor = std::chrono::milliseconds(50)}));
@@ -313,6 +314,7 @@ TEST_CASE("contexte : un GPU bloqué laisse les pipelines à leur place, la dest
     CHECK_FALSE(ctx->settle(timeline.at(1)));
     REQUIRE(ctx->stalled());
   }  // ~PipelineCache et ~Pipeline avec stalled() vrai : rien n'est détruit, rien ne plante
+  CHECK(ctx->retired() == 2);  // les pipelines (un, sous le cache) puis le cache et ses modules
   REQUIRE(timeline.signal(1));
   CHECK(ctx->settle(timeline.at(1)));
   CHECK_FALSE(ctx->stalled());
