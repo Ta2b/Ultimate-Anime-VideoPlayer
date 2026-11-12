@@ -25,14 +25,18 @@ namespace {
 class LogHub final : public spdlog::sinks::dist_sink_mt {
  public:
   // Posé avant que le journal asynchrone ne serve, jamais changé ensuite.
-  // Faible : le pool tient les lignes, qui tiennent le logger, qui tient ce répartiteur ; un lien fort
-  // empêcherait close_log de détruire le pool, donc de vider sa file.
-  void watch(const std::shared_ptr<spdlog::details::thread_pool>& pool) { pool_ = pool; }
+  // Ni fort ni faible : le pool tient les lignes, qui tiennent le logger, qui tient ce répartiteur ; un lien
+  // fort empêcherait close_log de détruire le pool, donc de vider sa file. Un lien faible verrouillé ici
+  // (weak_ptr::lock) donnait au fil du pool, le temps d'une ligne, la dernière référence pendant
+  // spdlog::shutdown : le pool se détruisait alors sur son propre fil, qui ne peut pas se joindre, et
+  // std::terminate arrêtait le processus à la fermeture (core_log_close, asan et gcc-13). Seul le fil du pool
+  // appelle sink_it_, et le pool le joint avant de libérer sa file : le pointeur nu reste valide pour lui.
+  void watch(spdlog::details::thread_pool* pool) { pool_ = pool; }
 
  protected:
   void sink_it_(const spdlog::details::log_msg& msg) override {
-    if (const auto pool = pool_.lock()) {
-      const std::size_t lost = pool->overrun_counter();
+    if (pool_ != nullptr) {
+      const std::size_t lost = pool_->overrun_counter();
       if (lost != seen_lost_) {
         const std::string text = std::format(
             "journal : {} ligne(s) perdue(s) avant celle-ci, la file était pleine",  // i18n-ok : journal
@@ -46,8 +50,8 @@ class LogHub final : public spdlog::sinks::dist_sink_mt {
   }
 
  private:
-  std::weak_ptr<spdlog::details::thread_pool> pool_;
-  std::size_t seen_lost_ = 0;  // sous le verrou du répartiteur
+  spdlog::details::thread_pool* pool_ = nullptr;  // à lui seul, jamais propriétaire (voir watch)
+  std::size_t seen_lost_ = 0;                     // sous le verrou du répartiteur
 };
 
 std::shared_ptr<LogHub> hub_of(const spdlog::logger& logger) {
@@ -137,7 +141,7 @@ void install_log_sinks(std::vector<spdlog::sink_ptr> sinks, spdlog::level::level
     std::shared_ptr<spdlog::logger> routed;
     if (asynchronous) {
       spdlog::init_thread_pool(kLogQueue, 1);
-      hub->watch(spdlog::thread_pool());
+      hub->watch(spdlog::thread_pool().get());
       routed = std::make_shared<spdlog::async_logger>(current->name(), hub, spdlog::thread_pool(),
                                                       spdlog::async_overflow_policy::overrun_oldest);
     } else {
