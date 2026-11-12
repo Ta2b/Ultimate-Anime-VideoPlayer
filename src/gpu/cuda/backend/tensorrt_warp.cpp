@@ -165,7 +165,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::flow_max_start(const Moti
   const std::uint64_t ticket = flow_tickets_ + 1;
   FlowRead& slot = flow_reads_[ticket % flow_reads_.size()];
   std::expected<void, Refusal> ready = bind();
-  if (ready) ready = reserve_readback(slot, kHistogramBytes);
+  if (ready) ready = reserve_readback(slot, kHistogramBytes, kHostWaitedEvent);
   if (ready) ready = order({motion.flow.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready) ready = cuda_check(cudaMemsetAsync(slot.device, 0, kHistogramBytes, stream_), "cudaMemsetAsync");
   if (ready) {

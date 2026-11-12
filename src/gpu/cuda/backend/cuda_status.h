@@ -83,11 +83,17 @@ inline std::expected<void, Refusal> cuda_check(cudaError_t error, std::string_vi
   return std::unexpected(cuda_refusal(error, call));
 }
 
+// Événement que l'hôte attend (cudaEventSynchronize) : le fil dort au lieu de tourner dans le pilote
+// (A32-11). Les événements seulement interrogés ou attendus par un flux gardent cudaEventDisableTiming.
+constexpr unsigned kHostWaitedEvent = cudaEventDisableTiming | cudaEventBlockingSync;
+
 // Emplacement de relecture (device, host, done) : prend chaque morceau qui manque encore. Un échec
 // partiel (mémoire épinglée refusée une fois) laisse les morceaux pris et reprend les autres au ticket
-// suivant, au lieu de garder un emplacement à moitié prêt pour toute la séance (A01-04).
+// suivant, au lieu de garder un emplacement à moitié prêt pour toute la séance (A01-04). Un emplacement
+// que l'hôte attend passe kHostWaitedEvent.
 template <typename Slot>
-std::expected<void, Refusal> reserve_readback(Slot& slot, std::size_t bytes) {
+std::expected<void, Refusal> reserve_readback(Slot& slot, std::size_t bytes,
+                                              unsigned event_flags = cudaEventDisableTiming) {
   if (slot.device == nullptr) {
     if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&slot.device), bytes), "cudaMalloc"); !ok)
       return ok;
@@ -98,7 +104,7 @@ std::expected<void, Refusal> reserve_readback(Slot& slot, std::size_t bytes) {
       return ok;
   }
   if (slot.done == nullptr)
-    return cuda_check(cudaEventCreateWithFlags(&slot.done, cudaEventDisableTiming), "cudaEventCreate");
+    return cuda_check(cudaEventCreateWithFlags(&slot.done, event_flags), "cudaEventCreate");
   return {};
 }
 

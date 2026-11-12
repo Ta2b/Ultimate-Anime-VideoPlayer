@@ -30,7 +30,15 @@ vec3 nits_to_pq(vec3 n) {
     vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }
-float pq_of(float nits) { return nits_to_pq(vec3(nits)).x; }
+// Versions scalaires (A32-13) : une seule composante utile, pas trois pow par appel.
+float pq_of(float nits) {
+    float q = pow(clamp(nits / 10000.0, 0.0, 1.0), 0.1593017578125);
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
+}
+float pq_to_nit(float e) {
+    float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
+    return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
+}
 
 // Epaule douce vers `top` : pente 1 au genou, jamais au-dessus du sommet.
 float shoulder(float v, float knee, float top) {
@@ -148,7 +156,7 @@ vec4 hook() {
     float local_bilin = AJG_LOCAL_tex(AJG_LOCAL_pos).x;  // en PQ, comme toute la carte
     float local_pq = an_local(y_pq, local_bilin);
     float area_pq = AJG_AREAT_tex(AJG_AREAT_pos).x;
-    float base = max(pq_to_nits(vec3(local_pq)).x, 1e-3);
+    float base = max(pq_to_nit(local_pq), 1e-3);
 
     // Carte des emetteurs : plus clair que le voisinage, et proche du blanc SDR (porte sur le niveau du bloc :
     // un aplat sombre plus clair que son entourage n'est pas une lumiere).

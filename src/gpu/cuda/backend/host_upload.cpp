@@ -57,12 +57,10 @@ HostUploads::~HostUploads() {
 
 std::expected<void, Refusal> HostUploads::reserve(Slot& slot, std::size_t bytes) {
   if (slot.copied == nullptr) {
-    if (auto ok =
-            cuda_check(cudaEventCreateWithFlags(&slot.copied, cudaEventDisableTiming), "cudaEventCreate");
+    if (auto ok = cuda_check(cudaEventCreateWithFlags(&slot.copied, kHostWaitedEvent), "cudaEventCreate");
         !ok)
       return ok;
-    if (auto ok = cuda_check(cudaEventCreateWithFlags(&slot.read, cudaEventDisableTiming), "cudaEventCreate");
-        !ok)
+    if (auto ok = cuda_check(cudaEventCreateWithFlags(&slot.read, kHostWaitedEvent), "cudaEventCreate"); !ok)
       return ok;
   }
   if (bytes <= slot.bytes) return {};
