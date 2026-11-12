@@ -42,6 +42,11 @@ std::vector<Step> steps_of(FieldMode mode) {
       return {{"fieldmatch", "order=auto:combmatch=full"}, kBwdif, {"decimate", ""}};
     make_logger()->warn("fieldmatch ou decimate absent de FFmpeg : télécinéma désentrelacé par bwdif seul");
   }
+  if (mode == FieldMode::MatchFields) {
+    if (avfilter_get_by_name("fieldmatch") != nullptr)
+      return {{"fieldmatch", "order=auto:combmatch=full"}, kBwdif};
+    make_logger()->warn("fieldmatch absent de FFmpeg : champs du même instant désentrelacés par bwdif seul");
+  }
   return {kBwdif};
 }
 
