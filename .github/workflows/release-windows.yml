@@ -23,9 +23,9 @@ on:
         type: boolean
         default: false
       span_fp8:
-        description: "Avec TensorRT : construire les noyaux CUTLASS du SPAN FP8 sous MSVC (décocher pour un paquet sans)"
+        description: "Sans étiquette, avec TensorRT : construire aussi les noyaux CUTLASS du SPAN FP8 sous MSVC (essai 12.4)"
         type: boolean
-        default: true
+        default: false
   workflow_call:
     inputs:
       tag:
@@ -180,9 +180,8 @@ jobs:
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           $env:AJP_WITH_CUDA = "ON"
-          # Le SPAN FP8 sous MSVC, comme sous Linux : le reçu v2 refait sur la carte décide s'il sert. Une étiquette
-          # (workflow_call, sans l'entrée) le construit aussi ; seul un lancement à la main qui le décoche s'en passe.
-          $env:AJP_WITH_SPAN_FP8 = if ($env:IN_SPAN_FP8 -eq "false") { "OFF" } else { "ON" }
+          # Le SPAN FP8 sous MSVC reste un essai : jamais dans le paquet d'une empreinte publiée.
+          if ($env:IN_SPAN_FP8 -eq "true" -and -not $env:AJP_TAG) { $env:AJP_WITH_SPAN_FP8 = "ON" }
           # Les liens de l'index nomment la release fixe de l'empreinte, celle que lit le paquet du lecteur.
           $env:AJP_RELEASE_TAG = "trt-win-$env:FP"
           $env:AJP_WITHOUT_MODELS = "1"
