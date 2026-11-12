@@ -128,13 +128,13 @@ std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemo
                                      const StageRates& rates = {});
 
 // B31-02 : un refus venu après la préparation retire un étage comme un refus de la préparation, s'il en nomme
-// un (C09-01, links.h) : l'anneau refusé à l'ouverture du pipeline (kRingRefusalKey : l'interpolation d'abord,
-// l'anneau le plus profond et le moteur le plus lourd, puis SPAN), ou le refus d'un réseau pendant la lecture
-// (kSpanRefusalKey, kMotionRefusalKey : cet étage seul). Un refus qui ne nomme aucun étage (ingestion d'un
-// format refusé, mesure) ne retire rien : il arrête la vidéo, et les suivantes jouent leur chaîne. played : les
-// réglages que la chaîne jouait ; motion et upscale : les étages chargés. Rend l'étage retenu dans memory, rien
-// quand il n'y a rien à retirer ou que le refus n'est pas celui d'un étage (appareil perdu, source qui change
-// de taille, annulation).
+// un (C09-01, links.h) : l'anneau refusé à l'ouverture du pipeline (kRingRefusalKey : l'interpolation
+// d'abord, l'anneau le plus profond et le moteur le plus lourd, puis SPAN), ou le refus d'un réseau pendant
+// la lecture (kSpanRefusalKey, kMotionRefusalKey : cet étage seul). Un refus qui ne nomme aucun étage
+// (ingestion d'un format refusé, mesure) ne retire rien : il arrête la vidéo, et les suivantes jouent leur
+// chaîne. played : les réglages que la chaîne jouait ; motion et upscale : les étages chargés. Rend l'étage
+// retenu dans memory, rien quand il n'y a rien à retirer ou que le refus n'est pas celui d'un étage (appareil
+// perdu, source qui change de taille, annulation).
 std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,
                                         const PlaySettings& played, bool motion, bool upscale,
                                         int source_width, int source_height, std::string_view library,

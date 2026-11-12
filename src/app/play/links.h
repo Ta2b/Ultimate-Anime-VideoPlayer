@@ -46,12 +46,14 @@ struct StreamEnded {
 // garde DeviceLost, GpuMemoryExhausted… au lieu de les réécrire en ThreadFailed, et le message les dit.
 inline constexpr std::string_view kFatalStageKey = "stage.fatal";
 // C09-01 : la clé d'un refus que rend un réseau de la chaîne (enqueue de SPAN, de RIFE ou de DistilDRBA), ou
-// l'anneau refusé à l'ouverture (mémoire vidéo) : le repli en lecture (stage_fallback.h, retreat_stage) ne retire
-// que l'étage nommé, et un refus qui n'en nomme aucun (ingestion, mesure) reste fatal sans rien retirer.
+// l'anneau refusé à l'ouverture (mémoire vidéo) : le repli en lecture (stage_fallback.h, retreat_stage) ne
+// retire que l'étage nommé, et un refus qui n'en nomme aucun (ingestion, mesure) reste fatal sans rien
+// retirer.
 inline constexpr std::string_view kSpanRefusalKey = "stage.span";
 inline constexpr std::string_view kMotionRefusalKey = "stage.motion";
 inline constexpr std::string_view kRingRefusalKey = "stage.ring";
-// La clé fatale d'un refus de l'étage gpu, qui garde l'étage nommé : « stage.fatal », « stage.fatal|stage.span ».
+// La clé fatale d'un refus de l'étage gpu, qui garde l'étage nommé : « stage.fatal », «
+// stage.fatal|stage.span ».
 inline std::string fatal_stage_key(std::string_view blamed) {
   std::string key(kFatalStageKey);
   if (blamed == kSpanRefusalKey || blamed == kMotionRefusalKey) (key += '|') += blamed;
@@ -61,7 +63,8 @@ inline bool is_fatal_stage_key(std::string_view key) {
   return key == kFatalStageKey || (key.starts_with(kFatalStageKey) && key.size() > kFatalStageKey.size() &&
                                    key[kFatalStageKey.size()] == '|');
 }
-// L'étage qu'une clé nomme (kSpanRefusalKey, kMotionRefusalKey ou kRingRefusalKey), fatale ou non ; vide : aucun.
+// L'étage qu'une clé nomme (kSpanRefusalKey, kMotionRefusalKey ou kRingRefusalKey), fatale ou non ; vide :
+// aucun.
 inline std::string_view blamed_stage_key(std::string_view key) {
   if (is_fatal_stage_key(key)) key.remove_prefix(std::min(key.size(), kFatalStageKey.size() + 1));
   if (key == kSpanRefusalKey || key == kMotionRefusalKey || key == kRingRefusalKey) return key;

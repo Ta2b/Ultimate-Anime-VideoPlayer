@@ -234,7 +234,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     if (ring_refused) {
       Refusal ring = pipeline.error();
       ring.key = std::string(kRingRefusalKey);
-      if (retreat(p, c, ring)) return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
+      if (retreat(p, c, ring))
+        return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
     }
     return std::unexpected(std::move(pipeline.error()));
   }

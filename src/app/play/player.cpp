@@ -500,9 +500,13 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     // La tranche mesurée par « Calibrer cette machine » (bench.toml), si elle est de cette carte.
     std::optional<BenchResult> measured_tier;
     if (auto bench = load_bench(paths::bench(settings_path.parent_path()))) measured_tier = std::move(*bench);
+    // La carte et le moteur de cette ouverture : la mesure ne vaut que pour eux (A37-09, C07-06).
+    const GpuFacts here = gpu_facts(**screen);
+    const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
+                                                  library_wanted, *engines, catalog, paths);
     // Le préréglage (Auto, Rapide…) refait la chaîne pour cette carte, cet écran et cette vidéo ;
     // Personnalisé laisse les réglages tels quels.
-    Tier tier = effective_tier(gpu_facts(**screen), measured_tier);
+    Tier tier = effective_tier(here, measured_tier, host.tensorrt);
     if (file_options.bench_level) {
       // Un essai du benchmark : la chaîne du niveau demandé (ou de l'estimé), sans priorité ni profil.
       if (*file_options.bench_level >= 0) tier = static_cast<Tier>(*file_options.bench_level);
@@ -510,14 +514,9 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       chosen.preset = Preset::Auto;
       chosen.priority = Priority::Balance;
     }
-    // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et cette branche de pilote
-    // (A37-09), et pas pour un essai.
-    const GpuFacts here = gpu_facts(**screen);
-    const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
-                                                  library_wanted, *engines, catalog, paths);
-    const BenchResult* explored =
-        measured_tier && !file_options.bench_level && measured_here(*measured_tier, here) ? &*measured_tier
-                                                                                          : nullptr;
+    // L'exploration du benchmark (bench.toml) ne vaut pas pour un essai.
+    const bool bench_here = measured_tier && measured_here(*measured_tier, here, host.tensorrt);
+    const BenchResult* explored = bench_here && !file_options.bench_level ? &*measured_tier : nullptr;
     const auto machine_now = [&] {
       return machine_of(
           (*screen)->window(), tier, explored,

@@ -21,24 +21,25 @@ namespace ajp::app::play {
 void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, const PlayerPaths& paths,
                        const EngineCatalog& catalog, const std::filesystem::path& settings_dir) {
   // La tranche de la machine pour Vidéo > Post-traitement : la mesure de « Calibrer cette machine » si elle
-  // est de cette carte et de cette branche de pilote (A37-09), sinon l'estimation.
+  // est de cette carte, de cette branche de pilote et de ce moteur (A37-09, C07-06), sinon l'estimation.
   std::optional<BenchResult> measured;
   if (auto bench = load_bench(paths::bench(settings_dir))) measured = std::move(*bench);
   const GpuFacts machine = gpu_facts(screen);
-  choices.machine_tier = static_cast<int>(effective_tier(machine, measured));
-  choices.estimated_tier = static_cast<int>(estimate_tier(machine).tier);
-  const bool explored = measured && measured_here(*measured, machine);
-  choices.bench_text = explored ? i18n::tr_format("Last optimization: {}", measured->date) : std::string();
-  // La machine que le lecteur passe à apply_preset à l'ouverture d'une vidéo (player.cpp), pour que « Auto »
-  // choisi au panneau donne la même chaîne (A23-03).
-  choices.explored_work_height = explored ? measured->work_height : 0;
-  choices.explored_rife_model = explored ? measured->rife_model : std::string();
   // Le moteur en service : celui de la bibliothèque chargée, ou à l'accueil le préféré s'il est installé.
   choices.calibration_host = {.gpu = machine.name,
                               .display_height = display_height(screen.window()),
                               .tensorrt = choices.engine_in_use == core::EngineId::TensorRt &&
                                           tensorrt_backend_present(catalog, paths),
                               .driver = machine.driver};
+  const bool tensorrt = choices.calibration_host.tensorrt;
+  choices.machine_tier = static_cast<int>(effective_tier(machine, measured, tensorrt));
+  choices.estimated_tier = static_cast<int>(estimate_tier(machine).tier);
+  const bool explored = measured && measured_here(*measured, machine, tensorrt);
+  choices.bench_text = explored ? i18n::tr_format("Last optimization: {}", measured->date) : std::string();
+  // La machine que le lecteur passe à apply_preset à l'ouverture d'une vidéo (player.cpp), pour que « Auto »
+  // choisi au panneau donne la même chaîne (A23-03).
+  choices.explored_work_height = explored ? measured->work_height : 0;
+  choices.explored_rife_model = explored ? measured->rife_model : std::string();
   choices.display_width = display_width(screen.window());  // un écran 21:9 se mesure à sa vraie taille
   choices.calibrated = calibrated_chain(settings_dir, choices.calibration_host);
   choices.gpu_name = machine.name;

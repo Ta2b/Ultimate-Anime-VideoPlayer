@@ -296,17 +296,17 @@ TEST_CASE("B31-02 : un appareil perdu ou sans mémoire de séance ne retire rien
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   CHECK_FALSE(retreat_stage(&memory, Refusal{RefusalCode::DeviceLost, "perdu"}, wanted, true, true, kWidth,
                             kHeight, kLibrary, "ep01.mkv"));
-  CHECK_FALSE(retreat_stage(nullptr,
-                            Refusal{.code = RefusalCode::GpuMemoryExhausted,
-                                    .detail = "x",
-                                    .key = std::string(kRingRefusalKey)},
-                            wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv"));
+  CHECK_FALSE(retreat_stage(
+      nullptr,
+      Refusal{.code = RefusalCode::GpuMemoryExhausted, .detail = "x", .key = std::string(kRingRefusalKey)},
+      wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv"));
   CHECK(memory.empty());
 }
 
 // C09-01 : un refus de l'étage GPU qui ne vient d'aucun moteur (ingestion d'un format que le backend ne lit
 // pas) ne retire rien : la vidéo s'arrête comme avant, et les suivantes jouent la chaîne demandée.
-TEST_CASE("C09-01 : un refus d'ingestion d'une vidéo ne retire rien aux vidéos suivantes", "[stage_fallback]") {
+TEST_CASE("C09-01 : un refus d'ingestion d'une vidéo ne retire rien aux vidéos suivantes",
+          "[stage_fallback]") {
   StageMemory memory;
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   const Refusal ingest{.code = RefusalCode::FormatUnsupported,
@@ -325,7 +325,8 @@ TEST_CASE("C09-01 : un refus d'un réseau en lecture ne retire que son étage", 
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   // SPAN refusé : SPAN part, l'interpolation reste.
   StageMemory memory;
-  const Refusal span{.code = RefusalCode::VendorCallFailed, .detail = "enqueue", .key = fatal_stage_key(kSpanRefusalKey)};
+  const Refusal span{
+      .code = RefusalCode::VendorCallFailed, .detail = "enqueue", .key = fatal_stage_key(kSpanRefusalKey)};
   REQUIRE(retreat_stage(&memory, span, wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
           ChainStage::Upscale);
   auto plan = plan_stages(wanted, memory, kWidth, kHeight, kLibrary, "ep01.mkv", true);
@@ -334,7 +335,8 @@ TEST_CASE("C09-01 : un refus d'un réseau en lecture ne retire que son étage", 
   CHECK(plan->settings.rife_factor == 2);
   // L'interpolation refusée : elle part seule.
   StageMemory other;
-  const Refusal rife{.code = RefusalCode::VendorCallFailed, .detail = "enqueue", .key = fatal_stage_key(kMotionRefusalKey)};
+  const Refusal rife{
+      .code = RefusalCode::VendorCallFailed, .detail = "enqueue", .key = fatal_stage_key(kMotionRefusalKey)};
   REQUIRE(retreat_stage(&other, rife, wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
           ChainStage::Motion);
   plan = plan_stages(wanted, other, kWidth, kHeight, kLibrary, "ep01.mkv", true);
@@ -352,15 +354,20 @@ TEST_CASE("C09-03 : la signature de l'interpolation suit l'ordre réel du warp e
   s.rife_auto = true;
   s.rife_factor = 3;
   s.span_order = SpanOrder::Auto;
-  // Source 960 × 540, sortie de 1080 lignes, Auto Stable jusqu'à ×3 : sur 60 Hz, ×2 au plus, le warp avant SPAN.
-  const std::string at60 = stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 60.0, .source_fps = 23.976});
+  // Source 960 × 540, sortie de 1080 lignes, Auto Stable jusqu'à ×3 : sur 60 Hz, ×2 au plus, le warp avant
+  // SPAN.
+  const std::string at60 =
+      stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 60.0, .source_fps = 23.976});
   CHECK(at60.ends_with("warp-before"));
   // Sur 144 Hz, ×3 : après SPAN, comme la chaîne.
-  const std::string at144 = stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976});
+  const std::string at144 =
+      stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976});
   CHECK(at144.ends_with("warp-after"));
   // Sans SPAN, l'ordre ne vaut rien : avant.
   s.upscale = false;
-  CHECK(stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976}).ends_with("warp-before"));
+  CHECK(
+      stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976})
+          .ends_with("warp-before"));
 }
 
 }  // namespace ajp::app::play

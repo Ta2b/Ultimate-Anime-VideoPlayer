@@ -56,7 +56,7 @@ TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
 TEST_CASE("la résolution de travail suit l'écran et la tranche", "[auto_config]") {
   CHECK(applied(Preset::Auto, Tier::Normal, 1080, 60.0).work_height == 540);  // 540p -> 1080p
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 60.0).work_height == 720);  // 720p -> 1440p
-  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 60.0).work_height == 540);   // la carte légère reste à 540p
+  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 60.0).work_height == 540);    // la carte légère reste à 540p
   CHECK(applied(Preset::Auto, Tier::Normal, 0, 0.0).work_height == 540);      // écran inconnu : 1080p
   // Jamais plus que la source.
   const core::SourceInfo sd{.width = 640, .height = 480, .fps = 23.976};
@@ -357,9 +357,11 @@ TEST_CASE("C07-02 : une source à 60 i/s ne garde pas la hauteur mesurée à 24 
   CHECK(out.upscale);
   CHECK(out.work_height == 720);  // 1080² × 24 × 1,25 : 763 lignes au plus, le palier mesuré en dessous
   // Même règle sans calibration : Qualité garde la source à 24 i/s, pas à 60.
-  const PlaySettings quality = apply_preset(with(Preset::Quality), Machine{Tier::Quality, 1440, 144.0}, k1080p60);
+  const PlaySettings quality =
+      apply_preset(with(Preset::Quality), Machine{Tier::Quality, 1440, 144.0}, k1080p60);
   CHECK(quality.work_height == 720);
-  CHECK(apply_preset(with(Preset::Quality), Machine{Tier::Quality, 1440, 144.0}, k1080p24).work_height == 1080);
+  CHECK(apply_preset(with(Preset::Quality), Machine{Tier::Quality, 1440, 144.0}, k1080p24).work_height ==
+        1080);
   // 30 i/s (29,97) : 25 % de pixels par seconde en plus, la hauteur mesurée reste.
   const core::SourceInfo k1080p30{.width = 1920, .height = 1080, .fps = 29.97};
   CHECK(apply_preset(with(Preset::Auto), fast, k1080p30).work_height == 1080);
@@ -370,16 +372,18 @@ TEST_CASE("C07-02 : une source à 60 i/s ne garde pas la hauteur mesurée à 24 
 
 TEST_CASE("C07-04 : sous l'Auto calibré, la priorité Image prend le plus haut SPAN seul", "[auto_config]") {
   // SPAN seul tient 1080p, SPAN + RIFE seulement 480p : la recommandation met la fluidité d'abord.
-  const Machine machine{.tier = Tier::Normal,
-                        .display_height = 1080,
-                        .display_hz = 60.0,
-                        .calibrated = CalibratedChain{.span = true, .rife = true, .height = 480, .span_height = 1080}};
+  const Machine machine{
+      .tier = Tier::Normal,
+      .display_height = 1080,
+      .display_hz = 60.0,
+      .calibrated = CalibratedChain{.span = true, .rife = true, .height = 480, .span_height = 1080}};
   const PlaySettings balance = apply_preset(with(Preset::Auto, Priority::Balance), machine, k1080p24);
   CHECK(balance.work_height == 480);
   const PlaySettings image = apply_preset(with(Preset::Auto, Priority::Image), machine, k1080p24);
   CHECK(image.upscale);
   CHECK(image.work_height == 1080);
-  CHECK(image.auto_free);  // RIFE en mode Rapide, qui ne garde que les images que la carte a le temps de faire
+  CHECK(
+      image.auto_free);  // RIFE en mode Rapide, qui ne garde que les images que la carte a le temps de faire
   CHECK(image.rife_auto);
   // RIFE seul recommandé (SPAN + RIFE ne tient nulle part) : Image rend SPAN seul à son palier.
   Machine rife_only = machine;

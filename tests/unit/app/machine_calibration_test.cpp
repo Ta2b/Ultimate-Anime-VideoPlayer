@@ -129,8 +129,8 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, modèles du niv
   CHECK(s.model.empty());         // SPAN par défaut (Performance Sharp) en FP16
   CHECK(s.span_precision == PrecisionTier::Balanced);
   // Niveau Qualité : le b8f64 et RIFE 4.25, toujours en FP16 (A49-03 : plus de FP8 posé par la calibration).
-  const PlaySettings fine =
-      candidate_settings({.span = true, .rife = true, .height = 1080}, base, calibration_models(Tier::Quality));
+  const PlaySettings fine = candidate_settings({.span = true, .rife = true, .height = 1080}, base,
+                                               calibration_models(Tier::Quality));
   CHECK(fine.model == kQualitySpanModel);
   CHECK(fine.rife_model == "rife_v4.26.onnx");
   CHECK(fine.span_precision == PrecisionTier::Balanced);

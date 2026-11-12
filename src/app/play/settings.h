@@ -119,10 +119,10 @@ enum class SpanOrder : std::uint8_t { Auto, Before, After };
 inline constexpr int kSpanOrderCount = 3;
 inline constexpr int kWarpAfterSpanAbove = 1080;
 std::string_view name(SpanOrder order);   // « auto », la clé de play.toml
-std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p) », pour le menu
+std::string_view label(SpanOrder order);  // « Auto (après SPAN au-dessus de 1080p ou dès ×3) », pour le menu
 inline constexpr int kWarpAfterSpanFactor = 3;
-// Le warp passe-t-il après SPAN pour une sortie de output_height lignes, au facteur choisi à la main
-// (max_factor, arrondi au-dessous ; 0 : inconnu ou Auto) ?
+// Le warp passe-t-il après SPAN pour une sortie de output_height lignes, au plus haut facteur de la chaîne
+// (max_factor, arrondi au-dessous, order_factor ; 0 : inconnu) ?
 constexpr bool warp_after_span(SpanOrder order, int output_height, int max_factor = 0) {
   return order == SpanOrder::After || (order == SpanOrder::Auto && (output_height > kWarpAfterSpanAbove ||
                                                                     max_factor >= kWarpAfterSpanFactor));

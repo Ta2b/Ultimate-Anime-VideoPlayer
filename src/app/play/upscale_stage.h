@@ -507,6 +507,8 @@ class UpscaleStage final : public RingStage {
     std::optional<SourceId> after_id;
     bool after_debanded = false;  // l'image d'après, ingérée en avance, a été débandée (A09-07)
     std::uint32_t after_epoch = 0;
+    gpu::Reduction
+        after_reduce;  // la réduction de son ingestion : changée en direct, elle se refait (C09-07)
     std::optional<gpu::PairScores> after_scores;  // mesures de (b, after), si prises
     // Mesure de (b, after) lancée sans attente (scores_start) : relue à la première sortie qui
     // en a besoin, ou à l'arrivée de after, le GPU ayant alors fini.
@@ -563,6 +565,9 @@ class UpscaleStage final : public RingStage {
   // La mesure en vol relue (sans attente : une paire est passée), strong_motion_ et motion_measured_ mis à
   // jour.
   std::expected<void, Refusal> settle_motion();
+  // Avec les poses, la première paire d'un plan (motion_measured_ faux) attend la mesure de son milieu pour
+  // strong_motion_ (C09-04).
+  std::expected<void, Refusal> measure_first_pair(const gpu::Motion& middle, float t);
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;
   std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu

@@ -100,6 +100,23 @@ std::expected<void, Refusal> UpscaleStage::settle_motion() {
   return {};
 }
 
+std::expected<void, Refusal> UpscaleStage::measure_first_pair(const gpu::Motion& middle, float t) {
+  // C09-04 : la première paire d'un plan (après une coupe ou un saut) n'a pas de paire d'avant pour décider :
+  // sa propre mesure est attendue, comme sans poses, s'il reste un instant hors du milieu. Une attente de
+  // l'hôte par plan, SPAN de b enfilé avant elle quand le warp le suit.
+  if (!flow_max_async_ || motion_measured_ || (intermediates_ <= 1 && t == 0.5F)) return {};
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  auto ticket = ops.flow_max_start(middle);
+  if (!ticket) return {};
+  if (warps_spanned()) {
+    if (auto ok = span_current(); !ok) return ok;
+  }
+  auto biggest = ops.flow_max_take(*ticket);
+  if (!biggest) return std::unexpected(std::move(biggest.error()));
+  strong_motion_ = *biggest >= kernels::single_run_motion(setup_.rife_height);
+  return {};
+}
+
 std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu::Tensor& b,
                                                  const gpu::Motion& motion, float t,
                                                  const Target& out) const {
@@ -170,12 +187,13 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
       if (auto ok = run_motion(0.5F, middle.flow, middle.mask, calm_pair()); !ok) return ok;
       if (poses_) {
         single_run_ = true;
-        motion_measured_ = false;
         // Audit F10 : le mouvement du milieu mesuré en fond, relu à la paire suivante (settle_motion) ; une
         // paire qui suit un mouvement fort a RIFE à chaque instant, et non le milieu extrapolé. Mesuré à
         // chaque paire, une seule image intermédiaire comprise : en Rapide sur un GPU chargé (ou à ×1,5),
         // l'unique instant tombe rarement à 1/2, et sans mesure il gardait le milieu extrapolé en plein
         // mouvement (hachures, contours doublés).
+        if (auto ok = measure_first_pair(middle, t); !ok) return ok;
+        motion_measured_ = false;
         if (flow_max_async_) {
           if (auto ticket = ops.flow_max_start(middle))
             motion_ = PendingMotion{.ticket = *ticket, .scale = 1.0F, .known = true};

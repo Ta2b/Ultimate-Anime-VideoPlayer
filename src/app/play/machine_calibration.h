@@ -108,8 +108,8 @@ std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& 
 int calibration_start_height(Tier tier);
 // La chaîne recommandée, la fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent
 // ensemble, avec les modèles de Qualité s'ils y tiennent aussi ; sinon le plus haut SPAN seul ; RIFE seul si
-// SPAN ne tient nulle part ; ni SPAN ni RIFE si rien ne tient. Les autres paliers restent au tableau, au choix
-// de l'utilisateur.
+// SPAN ne tient nulle part ; ni SPAN ni RIFE si rien ne tient. Les autres paliers restent au tableau, au
+// choix de l'utilisateur.
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 // Le plus haut palier où SPAN seul a tenu ; 0 : aucun (CalibratedChain::span_height).
 int best_span_alone(const std::vector<CandidateTrial>& tried);
@@ -129,8 +129,8 @@ struct MachineCalibration {
   std::string date;  // AAAA-MM-JJ
   int display_height = 0;
   int version = kCalibrationVersion;  // celle du fichier relu ; sous kCalibrationVersion : pas suivie
-  // Les modèles de la chaîne recommandée : ceux du niveau, ou finer_models() quand chosen.finer. Les essais de
-  // la famille 3 (finer) ont joué finer_models(), les autres ceux du niveau.
+  // Les modèles de la chaîne recommandée : ceux du niveau, ou finer_models() quand chosen.finer. Les essais
+  // de la famille 3 (finer) ont joué finer_models(), les autres ceux du niveau.
   CalibrationModels models;
   std::string engine;       // le moteur qui a joué les essais (« tensorrt », « vulkan »…) ; vide : inconnu
   std::string driver;       // le pilote de la carte pendant la mesure ; vide : inconnu
@@ -203,7 +203,8 @@ struct CalibrationTrials {
 std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlayer& play,
                                                                  const std::stop_token& stop,
                                                                  const std::function<void(float)>& fraction,
-                                                                 int start_height = 0, bool try_finer = false);
+                                                                 int start_height = 0,
+                                                                 bool try_finer = false);
 
 // Les essais, l'un après l'autre (au plus une dizaine) : base porte les réglages de l'utilisateur, tier le
 // niveau estimé de la carte (ses modèles : calibration_models), fraction reçoit l'avancement (0 à 1). La

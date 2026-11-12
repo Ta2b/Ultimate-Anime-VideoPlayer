@@ -156,8 +156,8 @@ TEST_CASE("B22-03 : en Auto, l'ordre du warp ne suit ni la charge ni le plafond"
 
 TEST_CASE("C32-01 : en Auto, l'ordre du warp suit le plus haut facteur de l'écran, comme à la main",
           "[app][chain]") {
-  // Rapide à 165 Hz (×6 possible), sortie de 1080 lignes : après SPAN, comme ×3 choisi à la main ; avant, sept
-  // passes de SPAN par source au lieu d'une.
+  // Rapide à 165 Hz (×6 possible), sortie de 1080 lignes : après SPAN, comme ×3 choisi à la main ; avant,
+  // sept passes de SPAN par source au lieu d'une.
   PlaySettings fast = fast_settings();
   CHECK(order_factor(fast, 165.0, 23.976) == 6);
   CHECK(chain_shape(fast, opened_for(fast, 1080)).warp_after_span);

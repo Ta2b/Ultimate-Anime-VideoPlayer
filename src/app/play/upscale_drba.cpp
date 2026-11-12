@@ -78,8 +78,9 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
     drba_.before_ok = previous_ && previous_->epoch == frame.epoch &&
                       !cut_measured(*bridged, drba_.bridge_left_pts_us, drba_.bridge_right_pts_us);
   }
-  // b est déjà ingérée si elle est arrivée derrière l'image précédente.
-  if (drba_.after_id == frame.id && drba_.after_epoch == frame.epoch) {
+  // b est déjà ingérée si elle est arrivée derrière l'image précédente, avec la réduction d'aujourd'hui : une
+  // réduction changée au menu entre-temps la fait ingérer de nouveau, comme take_ahead (C09-07).
+  if (drba_.after_id == frame.id && drba_.after_epoch == frame.epoch && drba_.after_reduce == spec.reduce) {
     std::swap(rgb_[current_], drba_.after);
     if (small_[current_]) {
       std::swap(small_[current_], drba_.small_after);
@@ -179,6 +180,7 @@ std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, 
   }
   drba_.after_id = after->id;
   drba_.after_epoch = after->epoch;
+  drba_.after_reduce = spec.reduce;
   drba_.left_pts_us = frame.pts_us;
   drba_.right_pts_us = after->pts_us;
   if (!measure) return {};

@@ -243,9 +243,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   p.loaded_engines.clear();
   const int width = p.video.width;
   const int height = p.video.height;
-  // L'écran et la cadence de l'ouverture : en Auto, l'ordre du warp en dépend (C09-03).
-  const StageRates rates{.display_hz = display_refresh_hz(p.screen.window()),
-                         .source_fps = fps_of(p.video.frame_rate)};
+  const StageRates rates{display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate)};  // C09-03
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
   constexpr int kAttempts = 5;
   std::optional<StageFailure> last;

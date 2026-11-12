@@ -207,7 +207,8 @@ ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
     if (!trial.holds || !trial.chain.span) continue;
     if (!trial.chain.rife && rife_holds) continue;
     // À palier égal, les modèles de Qualité passent devant ceux du niveau (C07-03).
-    const int rank = (trial.chain.height * 2) + (trial.chain.finer ? 1 : 0) + (trial.chain.rife ? 100'000 : 0);
+    const int rank =
+        (trial.chain.height * 2) + (trial.chain.finer ? 1 : 0) + (trial.chain.rife ? 100'000 : 0);
     if (rank > best_rank) {
       best_rank = rank;
       best = &trial;
@@ -391,8 +392,8 @@ std::optional<CalibratedChain> followed_chain(const MachineCalibration& calibrat
                                               const CalibrationHost& host) {
   if (calibration_use(calibration, host) != CalibrationUse::Followed) return std::nullopt;
   const ChainCandidate& chosen = calibration.chosen;
-  // La priorité Image prend le plus haut SPAN seul, joué avec les modèles du niveau ; il ne passe au-dessus de
-  // la chaîne recommandée que si elle n'est pas celle des modèles de Qualité (tenue au plus haut palier).
+  // La priorité Image prend le plus haut SPAN seul, joué avec les modèles du niveau ; il ne passe au-dessus
+  // de la chaîne recommandée que si elle n'est pas celle des modèles de Qualité (tenue au plus haut palier).
   const int span_alone = chosen.finer ? 0 : best_span_alone(calibration.tried);
   return CalibratedChain{
       .span = chosen.span,
@@ -515,7 +516,7 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
                         first ? plan.first_allowance : plan.build_allowance);
   };
   auto trials = run_calibration_trials(play, stop, fraction, calibration_start_height(tier),
-                                      out.models != finer_models());
+                                       out.models != finer_models());
   if (!trials) return std::unexpected(std::move(trials.error()));
   out.tried = std::move(trials->tried);
   out.gpu = std::move(trials->gpu);

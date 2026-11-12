@@ -558,12 +558,12 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("After SPAN upscales each source frame once, then warps it: faster (one SPAN pass per source "
-               "frame instead of one per shown frame, about 14.7 ms each from 1080p to 4K on an RTX 4070 Ti). "
-               "On the quality bench, as close to the true frame as Before (within 0.1 dB), about 1% softer. "
-               "Before SPAN also cleans each in-between frame. Auto picks After above 1080p, and from ×3 (the "
-               "highest multiplier Auto reaches on this display, or a fixed one). Reloads playback."));
+  panel::tip(i18n::tr(
+      "After SPAN upscales each source frame once, then warps it: faster (one SPAN pass per source "
+      "frame instead of one per shown frame, about 14.7 ms each from 1080p to 4K on an RTX 4070 Ti). "
+      "On the quality bench, as close to the true frame as Before (within 0.1 dB), about 1% softer. "
+      "Before SPAN also cleans each in-between frame. Auto picks After above 1080p, and from ×3 (the "
+      "highest multiplier Auto reaches on this display, or a fixed one). Reloads playback."));
   if (!exporting && choices.nvidia) smooth_motion_section(d, choices);
 }
 

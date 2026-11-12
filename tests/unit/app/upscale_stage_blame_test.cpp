@@ -1,5 +1,5 @@
-// C09-01 : un refus d'un réseau pendant la lecture nomme l'étage qui l'a rendu ; un refus qui ne vient d'aucun
-// réseau (ingestion) n'en nomme aucun. Le repli (stage_fallback.h) ne retire que l'étage nommé.
+// C09-01 : un refus d'un réseau pendant la lecture nomme l'étage qui l'a rendu ; un refus qui ne vient
+// d'aucun réseau (ingestion) n'en nomme aucun. Le repli (stage_fallback.h) ne retire que l'étage nommé.
 #include <chrono>
 #include <string>
 #include <thread>
@@ -24,7 +24,8 @@ std::vector<Refusal> refused_by(const std::string& engine, bool with_rife) {
   rig.start(rig.setup(with_rife, Factor{.num = 2, .den = 1}));
   rig.feed(1, 4);
   const auto deadline = std::chrono::steady_clock::now() + 2s;
-  while (rig.reported().empty() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
+  while (rig.reported().empty() && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(1ms);
   rig.stage.reset();
   return rig.reported();
 }

@@ -131,12 +131,13 @@ int level_work_height(Tier level, Priority priority, int display_height) {
 // budget du niveau : 14,25 ms pour 41,7 ms par image) ne tient plus à 60 i/s, où l'image n'a que 16,7 ms : la
 // hauteur descend au plus haut palier de heights dont le débit de pixels reste sous celui de la mesure, avec
 // kRateMargin de marge. 30 i/s (29,97 du NTSC) garde ainsi la hauteur mesurée : 25 % de pixels par seconde en
-// plus, que la marge des essais couvre (à confirmer sur la RTX, voir la PR) ; 50 et 60 i/s descendent de 1080p à
-// 720p. Cadence inconnue (0) : 24 i/s, rien ne change.
+// plus, que la marge des essais couvre (à confirmer sur la RTX, voir la PR) ; 50 et 60 i/s descendent de
+// 1080p à 720p. Cadence inconnue (0) : 24 i/s, rien ne change.
 constexpr double kRateMargin = 1.25;
 int height_for_rate(int height, double fps, std::span<const int> heights) {
   if (!(fps > kCalibrationFps * kRateMargin) || height <= 0) return height;
-  const double budget = static_cast<double>(height) * static_cast<double>(height) * kCalibrationFps * kRateMargin;
+  const double budget =
+      static_cast<double>(height) * static_cast<double>(height) * kCalibrationFps * kRateMargin;
   int kept = heights.front();
   for (const int step : heights) {
     if (step <= height && static_cast<double>(step) * static_cast<double>(step) * fps <= budget) kept = step;
@@ -178,8 +179,8 @@ void follow_calibration(PlaySettings& out, Priority priority, const CalibratedCh
     height = cal.span_height;
   }
   if (height > 0) {
-    // La priorité Fluidité descend d'un palier mesuré sous la mesure, pour la marge de l'interpolation ; jamais
-    // au-dessus d'elle ni hors des paliers essayés (C07-01).
+    // La priorité Fluidité descend d'un palier mesuré sous la mesure, pour la marge de l'interpolation ;
+    // jamais au-dessus d'elle ni hors des paliers essayés (C07-01).
     if (priority == Priority::Fluidity) height = calibration_step_below(height);
     // La mesure vaut à kCalibrationFps : une source plus rapide descend d'autant (C07-02).
     height = height_for_rate(height, source.fps, kCalibrationHeights);

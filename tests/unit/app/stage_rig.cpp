@@ -119,7 +119,8 @@ std::expected<void, Refusal> FakeBackend::enqueue(gpu::Engine& engine, std::span
   const std::string& name = static_cast<const FakeEngine&>(engine).name();
   {
     const std::scoped_lock lock(mutex_);
-    if (name == refused_engine_) return refuse(RefusalCode::VendorCallFailed, std::format("moteur {} refusé", name));
+    if (name == refused_engine_)
+      return refuse(RefusalCode::VendorCallFailed, std::format("moteur {} refusé", name));
   }
   if (name == "span") {  // la sortie de SPAN porte l'image de son entrée
     const std::scoped_lock lock(mutex_);

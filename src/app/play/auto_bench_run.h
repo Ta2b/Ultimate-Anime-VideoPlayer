@@ -110,6 +110,11 @@ struct BenchOutcome {
   BenchResult result;  // la carte, le pilote, le niveau gardé ; la date est à poser par l'appelant
 };
 
+// C07-06 : la mesure d'un niveau, jugée comme la calibration juge ses essais (trial_holds,
+// machine_calibration.h) : les pertes par image visée, et la part de RIFE quand le niveau le joue (l'Auto
+// peut le couper sans perdre une image). short_of_target posé quand ce verdict dit non.
+BenchRun judged_run(const BenchReading& reading);
+
 // Joue les essais : l'estimé d'abord, puis next_level jusqu'à fin, puis l'exploration. progress reçoit la
 // phrase de chaque étape (« Étape 2 sur 4 : … ») ; plan.shown reçoit l'avancement structuré. Refus :
 // Cancelled sur demande d'arrêt, DecodeFailed si le premier essai ne rend rien (le détail dit pourquoi, avec

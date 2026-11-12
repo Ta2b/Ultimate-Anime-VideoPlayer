@@ -29,8 +29,8 @@ TEST_CASE("C07-03 : une carte qui tient le plus haut palier essaie les modèles 
           "[calibration-machine]") {
   using C = ChainCandidate;
   const C finer{.span = true, .rife = true, .height = 1080, .finer = true};
-  // Une RTX 3080 estimée Normal (720p) tient tout : SPAN seul monte à 1080, SPAN + RIFE tient à 1080, puis les
-  // modèles de Qualité y sont essayés, et gardés.
+  // Une RTX 3080 estimée Normal (720p) tient tout : SPAN seul monte à 1080, SPAN + RIFE tient à 1080, puis
+  // les modèles de Qualité y sont essayés, et gardés.
   auto tried = search([](const C&) { return true; }, 720, true);
   REQUIRE(tried.size() == 4);
   CHECK(tried.back().chain == finer);
@@ -82,7 +82,8 @@ TEST_CASE("C07-03 : la recommandation aux modèles de Qualité se relit et l'Aut
   CHECK_FALSE(old->chosen.finer);
 }
 
-TEST_CASE("C07-04 : la calibration garde le plus haut SPAN seul pour la priorité Image", "[calibration-machine]") {
+TEST_CASE("C07-04 : la calibration garde le plus haut SPAN seul pour la priorité Image",
+          "[calibration-machine]") {
   using C = ChainCandidate;
   // SPAN seul tient 1080p, SPAN + RIFE seulement 480p.
   const auto tried = search([](const C& c) { return !c.rife || c.height <= 480; }, 720, true);

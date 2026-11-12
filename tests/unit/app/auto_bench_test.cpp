@@ -89,11 +89,11 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
   CHECK(read->gpu == result.gpu);
   CHECK(read->level == Tier::Ultra);
   CHECK(read->date == "2026-10-28");
-  CHECK_FALSE(parse_bench("version = 2\nlevel = 9\ngpu = \"x\""));
+  CHECK_FALSE(parse_bench("version = 3\nlevel = 9\ngpu = \"x\""));
   // B07-06 : un bench.toml d'une version plus ancienne (d'autres chaînes) ne décide plus.
   CHECK_FALSE(parse_bench("version = 1\nlevel = 3\ngpu = \"x\""));
   CHECK_FALSE(parse_bench("level = 3\ngpu = \"x\""));
-  CHECK(parse_bench("version = 2\nlevel = 3\ngpu = \"x\""));
+  CHECK(parse_bench("version = 3\nlevel = 3\ngpu = \"x\""));
   CHECK_FALSE(parse_bench("level = 1"));
   CHECK_FALSE(parse_bench("gpu = ["));
   CHECK_FALSE(load_bench(std::filesystem::temp_directory_path() / "ajp-no-such-bench.toml"));
@@ -109,10 +109,10 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
 TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[auto_bench]") {
   ajp::app::play::FrenchUi french;
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
-  CHECK(effective_tier(gpu, std::nullopt) == Tier::Quality);  // l'estimation
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}) == Tier::Ultra);
+  CHECK(effective_tier(gpu, std::nullopt, false) == Tier::Quality);  // l'estimation
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}, false) == Tier::Ultra);
   // Une autre carte (changement de matériel) : la mesure ne vaut plus.
-  CHECK(effective_tier(gpu, BenchResult{.gpu = "NVIDIA GeForce GTX 1060", .level = Tier::Economy}) ==
+  CHECK(effective_tier(gpu, BenchResult{.gpu = "NVIDIA GeForce GTX 1060", .level = Tier::Economy}, false) ==
         Tier::Quality);
 }
 
@@ -122,24 +122,23 @@ TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
                      .driver = "2400",
                      .vendor = GpuVendor::Nvidia,
                      .tensor_cores = true};
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}) ==
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "2400", .level = Tier::Ultra}, false) ==
         Tier::Ultra);
   // Pilotes illisibles qui diffèrent : la mesure ne vaut plus.
-  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "v2300", .level = Tier::Ultra}) ==
+  CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .driver = "v2300", .level = Tier::Ultra}, false) ==
         Tier::Quality);
   // A37-09 : 580.82 puis 580.95 garde la mesure ; 590.10 la jette, comme la calibration.
   GpuFacts updated = gpu;
   updated.driver = std::to_string((580U << 22U) | (95U << 14U));
   const std::string before = std::to_string((580U << 22U) | (82U << 14U));
-  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra}) ==
-        Tier::Ultra);
+  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra},
+                       false) == Tier::Ultra);
   updated.driver = std::to_string((590U << 22U) | (10U << 14U));
-  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra}) ==
-        Tier::Quality);
+  CHECK(effective_tier(updated, BenchResult{.gpu = gpu.name, .driver = before, .level = Tier::Ultra},
+                       false) == Tier::Quality);
   CHECK(driver_branch_changed(before, updated.driver));
   CHECK_FALSE(driver_branch_changed(before, ""));
-  const auto read =
-      parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Fast}));
+  const auto read = parse_bench(format_bench(BenchResult{.gpu = "g", .driver = "2400", .level = Tier::Fast}));
   REQUIRE(read);
   CHECK(read->driver == "2400");
 }
@@ -297,13 +296,13 @@ TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto
   CHECK(back->rife_model == "rife_v4.25.onnx");
   // Un bench.toml sans exploration : rien d'exploré.
   const auto bare =
-      parse_bench("version = 2\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
+      parse_bench("version = 3\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\ndate = \"2026-10-28\"\n");
   REQUIRE(bare);
   CHECK(bare->work_height == 0);
   CHECK(bare->rife_model.empty());
   // B07-06 : celui d'une version d'avant (d'autres chaînes) se lit sans planter, mais ne décide plus.
   CHECK_FALSE(parse_bench("version = 1\ngpu = \"x\"\ndriver = \"y\"\nlevel = 2\n").has_value());
-  CHECK_FALSE(parse_bench("version = 2\ngpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
+  CHECK_FALSE(parse_bench("version = 3\ngpu = \"x\"\nlevel = 2\nwork_height = 99999\n").has_value());
 }
 
 TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_bench][exploration]") {
@@ -317,4 +316,49 @@ TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_
   REQUIRE(back);
   CHECK(back->work_height == 720);
   CHECK(back->rife_model == "rife_v4.22_lite.onnx");
+}
+
+TEST_CASE("le banc juge un niveau comme la calibration juge ses essais (C07-06)", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
+  // Dix secondes sur un écran à 60 Hz, RIFE ×2 à 48 i/s : tient.
+  BenchReading reading{
+      .gpu = "x",
+      .run = {.level = Tier::Normal, .presents = 600, .lag_p95_us = 3000, .period_us = 16'667},
+      .interval_mean_us = 20'833,
+      .new_frames = 480};
+  CHECK(holds(judged_run(reading)));
+  // L'Auto a coupé RIFE sans perdre une image : 24 i/s au lieu de 48, le niveau ne tient pas.
+  BenchReading cut = reading;
+  cut.interval_mean_us = 41'667;
+  cut.new_frames = 240;
+  CHECK(holds(cut.run));  // l'ancienne règle le disait tenu
+  CHECK_FALSE(holds(judged_run(cut)));
+  // 2 % de pertes par présentation (une saccade toutes les 2 s) : tenu pour l'ancienne règle, pas pour
+  // celle des images visées.
+  BenchReading lossy = reading;
+  lossy.run.dropped = 12;
+  CHECK(holds(lossy.run));
+  CHECK_FALSE(holds(judged_run(lossy)));
+  // Économe ne joue pas RIFE : 24 i/s y suffisent.
+  BenchReading economy = cut;
+  economy.run.level = Tier::Economy;
+  CHECK(holds(judged_run(economy)));
+}
+
+TEST_CASE("bench.toml note le moteur et ne vaut que pour lui (C07-06)", "[auto_bench]") {
+  ajp::app::play::FrenchUi french;
+  const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
+  const BenchResult tensorrt{.gpu = gpu.name, .level = Tier::Ultra, .engine = "tensorrt"};
+  const auto back = parse_bench(format_bench(tensorrt));
+  REQUIRE(back);
+  CHECK(back->engine == "tensorrt");
+  CHECK(effective_tier(gpu, *back, true) == Tier::Ultra);
+  // Le paquet TensorRT refusé, Vulkan joue : l'estimation reprend.
+  CHECK(effective_tier(gpu, *back, false) == Tier::Quality);
+  CHECK_FALSE(measured_here(*back, gpu, false));
+  const BenchResult vulkan{.gpu = gpu.name, .level = Tier::Normal, .engine = "vulkan"};
+  CHECK(effective_tier(gpu, vulkan, false) == Tier::Normal);
+  CHECK(effective_tier(gpu, vulkan, true) == Tier::Quality);
+  // Une mesure de la version 2 (verdict lâche, moteur non noté) ne décide plus.
+  CHECK_FALSE(parse_bench("version = 2\nlevel = 3\ngpu = \"x\""));
 }
