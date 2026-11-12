@@ -40,8 +40,9 @@ namespace ajp::app::play {
 struct ShotWork;  // chain_shots.h
 
 // Les LUT d'un look lues sur un fil de fond (1.11) : le résultat, posé sur l'écran au tour suivant.
+// Un fichier répété dans la pile (le contraste y est sept fois) n'est gardé qu'une fois, partagé (C41-05).
 struct LoadedLooks {
-  std::array<std::optional<render::CubeLut>, render::kLookSlots> luts;
+  std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> luts;
   std::vector<std::string> failed;  // les clés illisibles
 };
 // Un seul fil de lecture des LUT, qui ne garde que la dernière demande (P2.9) : cent allers-retours du
@@ -175,6 +176,9 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak,
                              const std::optional<DisplayFacts>& display = {},
                              const std::optional<render::BlackThresholds>& black = {},
                              bool source_hdr = false);
+// Flashs dangereux (P3.51) : le grade PQ plafonné vers 250 nits, le plein champ d'une OLED ; son pic d'avant
+// reste dans uncapped_peak pour l'annonce HDR (B41-03). Un pic déjà plus bas ne bouge pas.
+void cap_flash_peak(render::GradeChoice& choice);
 // La sortie de l'écran, pour l'OSD et le journal.
 // La ligne « Sortie » des contrôles ; une source HDR sans « étalonnage des sources HDR » le dit : le grade
 // coché n'y fait rien (mode Neutre).
