@@ -85,7 +85,6 @@ Outcome run(const Scenario& s, std::uint32_t seed = 1) {
       rate.lost(now, lost);
     }
     rate.pair_cost(images, static_cast<std::int64_t>(gpu), now);
-    rate.produced(images, now);
     out.produced += images;
     out.mean_n += n;
     // Le meilleur candidat que ce plan tient vraiment, sans marge.
@@ -178,26 +177,20 @@ TEST_CASE("Rapide à pas constant : N reste constant dans un plan sans perte", "
   CHECK_FALSE(rate.take_changed());
 }
 
-TEST_CASE("Rapide à pas constant : le repli seulement à N = 1", "[free][steady]") {
+TEST_CASE("Rapide à pas constant : des pertes en rafale descendent jusqu'à 1, gelé jusqu'à la coupe",
+          "[free][steady]") {
   SteadyRate rate;
   rate.configure({}, {.vrr = true, .hz = 164.78}, kFps);
   rate.prior({.a = 3000.0, .b = 5000.0});
   std::int64_t now = 2'000'000;
-  for (int i = 0; i < 100; ++i, now += 41'708) rate.produced(6, now);
-  // Des pertes en rafale : l'urgence descend d'un demi-pas à chaque fois, jusqu'à 1.
+  // Des pertes en rafale : l'urgence descend d'un demi-pas à chaque fois, jusqu'à 1. Aucun repli au-delà :
+  // couper RIFE qui ne suit plus est l'affaire du lecteur (app/play/motion_cut.h).
   int guard = 0;
   while (!(rate.factor() == Ratio{1, 1}) && guard++ < 40) {
-    CHECK_FALSE(rate.should_fall_back(now));
     rate.lost(now, 2);
     now += 10'000;
   }
   REQUIRE(rate.factor() == Ratio{1, 1});
-  now += 5'000'000;  // hors du calme du démarrage, dont les pertes ne comptent pas (A12-08)
-  for (int i = 0; i < 40; ++i, now += 41'708) {
-    rate.produced(1, now);
-    rate.lost(now, 1);
-  }
-  CHECK(rate.should_fall_back(now));
   CHECK(rate.info().frozen);
   rate.scene_cut(now);  // la coupe dégèle et repart de l'a priori
   CHECK_FALSE(rate.info().frozen);
@@ -219,40 +212,6 @@ TEST_CASE("Rapide à pas constant : sans a priori, N part de 1 et monte après q
   INFO("pertes " << o.lost << ", N moyen " << o.mean_n << ", optimum " << o.optimum_n);
   CHECK(static_cast<double>(o.lost) <= 0.002 * static_cast<double>(o.produced));
   CHECK(o.mean_n >= 0.75 * o.optimum_n);
-}
-
-TEST_CASE("A12-08 : les pertes du démarrage et des reprises ne replient pas le pas constant",
-          "[free][steady]") {
-  SteadyRate rate;
-  rate.configure({}, {.vrr = true, .hz = 164.78}, kFps);  // sans a priori : N part de 1
-  std::int64_t now = 2'000'000;
-  // La première seconde perd une image par paire (moteurs qui chauffent) : aucun repli.
-  for (int i = 0; i < 24; ++i, now += 41'708) {
-    rate.produced(1, now);
-    rate.lost(now, 1);
-    CHECK_FALSE(rate.should_fall_back(now));
-  }
-  // Puis quatre secondes propres : toujours rien.
-  for (int i = 0; i < 96; ++i, now += 41'708) rate.produced(1, now);
-  CHECK_FALSE(rate.should_fall_back(now));
-  // Un seek : les pertes de la reprise ne comptent pas non plus.
-  rate.settle(now);
-  for (int i = 0; i < 24; ++i, now += 41'708) {
-    rate.produced(1, now);
-    rate.lost(now, 1);
-  }
-  CHECK_FALSE(rate.should_fall_back(now));
-  // En régime, un à-coup isolé (douze pertes dans la même tranche de 250 ms) ne replie pas ; des pertes
-  // durables, si, comme pour le Rapide.
-  now += 6'000'000;
-  for (int i = 0; i < 100; ++i, now += 41'708) rate.produced(1, now);
-  rate.lost(now, 12);
-  CHECK_FALSE(rate.should_fall_back(now));
-  for (int i = 0; i < 40; ++i, now += 41'708) {
-    rate.produced(1, now);
-    rate.lost(now, 1);
-  }
-  CHECK(rate.should_fall_back(now));
 }
 
 }  // namespace ajp::core

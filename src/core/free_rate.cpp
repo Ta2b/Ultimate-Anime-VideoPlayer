@@ -12,16 +12,14 @@ FreeRate::Bucket& FreeRate::bucket(std::int64_t now_us) {
   return b;
 }
 
-void FreeRate::sum(std::int64_t now_us, std::int64_t span_us, int& produced, int& lost) const {
-  produced = 0;
-  lost = 0;
+int FreeRate::produced_in(std::int64_t now_us, std::int64_t span_us) const {
+  int produced = 0;
   const std::int64_t last = now_us / kBucketUs;
   const std::int64_t first = last - (span_us + kBucketUs - 1) / kBucketUs + 1;
   for (const Bucket& b : buckets_) {
-    if (b.index < first || b.index > last) continue;
-    produced += b.produced;
-    lost += b.lost;
+    if (b.index >= first && b.index <= last) produced += b.produced;
   }
+  return produced;
 }
 
 void FreeRate::cost(int images, std::int64_t busy_us, std::int64_t now_us, bool heavy) {
@@ -55,20 +53,17 @@ void FreeRate::missed(std::int64_t now_us, std::int64_t lost) {
       std::min(kPressureMax, pressure(now_us) * std::pow(kPressureStep, static_cast<double>(counted)));
   last_loss_us_ = now_us;
   lost_total_ += static_cast<std::uint32_t>(lost);
-  if (now_us >= quiet_until_us_) bucket(now_us).lost += static_cast<int>(std::min<std::int64_t>(lost, 1000));
 }
 
 void FreeRate::settle(std::int64_t now_us) {
   settled_until_us_ = std::max(settled_until_us_, now_us + kSettleUs);
-  quiet_until_us_ = std::max(quiet_until_us_, now_us + kStartUs);
 }
 
 void FreeRate::reset(std::int64_t now_us) {
   const std::int64_t gap = min_gap_us_;
   *this = FreeRate{};
   min_gap_us_ = gap;
-  settled_until_us_ = now_us + kStartUs;  // le démarrage perd toujours quelques images : pas de repli dessus
-  quiet_until_us_ = settled_until_us_;
+  settled_until_us_ = now_us + kStartUs;  // le démarrage perd toujours quelques images
 }
 
 double FreeRate::pressure(std::int64_t now_us) const {
@@ -88,26 +83,11 @@ std::int64_t FreeRate::step_us(std::int64_t now_us, bool heavy) const {
   return std::max(step, min_gap_us_);
 }
 
-bool FreeRate::should_fall_back(std::int64_t now_us) const {
-  int produced = 0;
-  int lost = 0;
-  sum(now_us, kFallbackWindowUs, produced, lost);
-  const std::int64_t first = now_us / kBucketUs - (kFallbackWindowUs + kBucketUs - 1) / kBucketUs + 1;
-  const auto spread = std::ranges::count_if(buckets_, [&](const Bucket& b) {
-    return b.lost > 0 && b.index >= first && b.index <= now_us / kBucketUs;
-  });
-  return fallback_due(
-      {.min_lost = kFallbackMinLost, .per_mille = kFallbackPerMille, .min_buckets = kFallbackMinBuckets},
-      lost, produced, static_cast<int>(spread));
-}
-
 FreeInfo FreeRate::info(std::int64_t now_us) const {
   FreeInfo out;
-  int produced = 0;
-  int lost = 0;
   // B12-05 : les tranches finies seules. La tranche en cours, à peine entamée, faisait sous-compter la
   // cadence et la charge de 0 à 12,5 % en dents de scie toutes les 250 ms.
-  sum(now_us - kBucketUs, kInfoWindowUs, produced, lost);
+  const int produced = produced_in(now_us - kBucketUs, kInfoWindowUs);
   out.fps = static_cast<double>(produced) * 1e6 / static_cast<double>(kInfoWindowUs);
   out.service_us = static_cast<std::int64_t>(std::llround(service_us_));
   out.heavy_service_us = static_cast<std::int64_t>(std::llround(heavy_us_));

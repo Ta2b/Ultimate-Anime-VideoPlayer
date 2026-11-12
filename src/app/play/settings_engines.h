@@ -25,8 +25,8 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
                  std::vector<Input>& actions, std::string& engines_dir, FolderField& folder);
 
 // En tête de Vidéo > Post-traitement : les étages que la chaîne joue sans eux (SPAN, interpolation refusés ou
-// annulés, cran ramené à Équilibre) et « Réessayer », qui pousse RetryStages. Rien quand la chaîne demandée
-// tourne.
+// annulés, cran ramené à Équilibre), l'interpolation coupée faute de carte (motion_cut.h) et « Réessayer »,
+// qui pousse RetryStages. Rien quand la chaîne demandée tourne.
 void stages_note(const SettingsChoices& choices, std::vector<Input>& actions);
 
 }  // namespace ajp::app::play

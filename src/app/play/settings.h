@@ -212,8 +212,12 @@ struct PlaySettings {
   // Mode d'Auto : « libre » (Rapide, le défaut depuis C6 : aucun palier, chaque image est calculée à
   // l'instant exact où elle sera vue, core/free_grid.h) ou « recommande » (Stable : paliers,
   // core/auto_rate.h). En direct ; Rapide se replie sans bruit sur Stable quand l'écran ou le moteur ne le
-  // permettent pas, et quand il perd trop d'images.
+  // permettent pas. RIFE en retard laisse l'image d'origine à l'écran, sans repli.
   bool auto_free = true;
+  // « Couper l'interpolation si la carte ne suit pas » (motion_cut.h) : en Rapide, RIFE qui ne produit plus
+  // une image interpolée par paire de la source pendant une dizaine de secondes est coupé pour la vidéo en
+  // cours, et la carte rendue à SPAN. Décoché : RIFE continue quoi qu'il arrive. En direct.
+  bool auto_off = true;
   MotionEngine motion_engine = MotionEngine::Rife;
   std::string rife_model;  // fichier ONNX de RIFE (nom seul) ; vide : le défaut de la carte
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme

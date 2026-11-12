@@ -166,9 +166,10 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
 }
 
 void stages_note(const SettingsChoices& choices, std::vector<Input>& actions) {
-  if (choices.stage_note.empty()) return;
+  if (choices.stage_note.empty() && choices.motion_note.empty()) return;
   ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-  panel::wrapped(choices.stage_note);
+  if (!choices.stage_note.empty()) panel::wrapped(choices.stage_note);
+  if (!choices.motion_note.empty()) panel::wrapped(choices.motion_note);
   ImGui::PopStyleColor();
   if (ImGui::Button(i18n::tr("Retry"))) actions.emplace_back(RetryStages{});
   note(i18n::tr("Playback reopens at the same spot and prepares these engines again."));

@@ -44,16 +44,6 @@ TEST_CASE("Rapide : jamais moins de 1, aucune interpolation sans facteur", "[app
   CHECK(top_factor(s, 165.0, 23.976) == 1);
 }
 
-TEST_CASE("Repli du Rapide : la séance passe en Stable, le choix des réglages reste", "[app][settings]") {
-  PlaySettings s;
-  s.auto_free = true;
-  CHECK(free_requested(s, false));
-  CHECK_FALSE(free_requested(s, true));
-  CHECK(s.auto_free);  // play.toml garde Rapide
-  s.auto_free = false;
-  CHECK_FALSE(free_requested(s, false));
-}
-
 namespace {
 
 // Une chaîne ouverte pour s : 1080p de sortie, 23,976 i/s, écran à 165 Hz, SPAN et RIFE chargés.

@@ -183,11 +183,6 @@ struct ChainEngines {
                        std::vector<RingSlotDesc> slots) const;
 };
 
-// Le Rapide est demandé : choisi dans les réglages et pas replié pour cette séance.
-constexpr bool free_requested(const PlaySettings& settings, bool fallback) {
-  return settings.auto_free && !fallback;
-}
-
 // Le module du moteur (TensorRT, Vulkan) : il entre dans les signatures des refus retenus.
 std::string library_name(const Player& p);
 

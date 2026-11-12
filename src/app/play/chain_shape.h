@@ -95,4 +95,9 @@ ChainShape chain_shape(const PlaySettings& settings, const OpenedChain& at);
 // qualité sous ×3, le garder après serait une baisse de qualité sans mesure).
 bool fits(const OpenedChain& opened, const PlaySettings& wanted);
 
+// Pourquoi le mode Rapide (core/free_grid.h) ne peut pas tourner : il lui faut un moteur qui calcule à un
+// instant libre et la fréquence de l'écran (ou un VRR armé). Vide : il le peut ; sinon l'Auto Stable le
+// remplace.
+std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known);
+
 }  // namespace ajp::app::play

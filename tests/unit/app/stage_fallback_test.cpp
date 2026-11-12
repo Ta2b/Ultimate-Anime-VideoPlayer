@@ -168,6 +168,17 @@ TEST_CASE("Étages : le refus de l'interpolation suit l'ordre du warp, pas le fa
                                                                                     kLibrary));
 }
 
+TEST_CASE("Étages : l'interpolation refusée avec l'échelle par paire revient sans elle", "[app][stages]") {
+  PlaySettings half = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  half.pair_scale = true;
+  StageMemory memory;
+  refuse(memory, ChainStage::Motion, half);
+  CHECK(plan(half, memory)->settings.rife_factor == 0);
+  PlaySettings full = half;
+  full.pair_scale = false;
+  CHECK(plan(full, memory)->settings.rife_factor == half.rife_factor);
+}
+
 TEST_CASE("Étages : un refus vaut pour la séance, « Réessayer » l'oublie", "[app][stages]") {
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   StageMemory memory;

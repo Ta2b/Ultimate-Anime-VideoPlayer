@@ -418,6 +418,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.rife_auto = wanted.rife_auto;
   s.auto_cap = wanted.auto_cap;
   s.auto_free = wanted.auto_free;
+  s.auto_off = wanted.auto_off;
   if (!wanted.upscale) s.span_precision = wanted.span_precision;  // sans SPAN, rien à recharger
   if (!running.upscale && !wanted.upscale) {  // idem pour le modèle et les traits (C22-05)
     s.model = wanted.model;

@@ -204,6 +204,10 @@ class UpscaleStage final : public RingStage {
   // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
   // mouvement.
   void count_measured(const PairFacts& facts);
+  // Une paire du Rapide de `written` images : la cadence de FreeRate, et le compte de « Couper
+  // l'interpolation si la carte ne suit pas » (motion_cut.h). `source_only` : le Rapide l'a réduite à sa
+  // source faute de temps.
+  void count_free(const PairFacts& facts, int written, bool source_only);
   // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
   // journal, seulement quand le menu Statistiques le demande.
   void mark_pair(const DecodedFrame& frame, const PairFacts& facts);

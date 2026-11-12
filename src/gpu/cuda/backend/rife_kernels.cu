@@ -70,6 +70,41 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_crop(Ri
     out[static_cast<std::size_t>(c) * out_plane + to] = in[static_cast<std::size_t>(c) * in_plane + from];
 }
 
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) area_reduce(AreaReduceParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.out_width || y >= p.out_height) return;
+  const float sx = static_cast<float>(p.in_width) / static_cast<float>(p.out_width);
+  const float sy = static_cast<float>(p.in_height) / static_cast<float>(p.out_height);
+  const float x0 = static_cast<float>(x) * sx;
+  const float y0 = static_cast<float>(y) * sy;
+  const float x1 = x0 + sx;
+  const float y1 = y0 + sy;
+  const int last_x = min(static_cast<int>(ceilf(x1)), p.in_width);
+  const int last_y = min(static_cast<int>(ceilf(y1)), p.in_height);
+  const std::size_t in_plane = static_cast<std::size_t>(p.in_width) * static_cast<std::size_t>(p.in_height);
+  const std::size_t out_plane =
+      static_cast<std::size_t>(p.out_width) * static_cast<std::size_t>(p.out_height);
+  const auto* in = static_cast<const __half*>(p.in);
+  auto* out = static_cast<__half*>(p.out);
+  float sum[3] = {0.0F, 0.0F, 0.0F};
+#pragma unroll 1
+  for (int j = static_cast<int>(floorf(y0)); j < last_y; ++j) {
+    const float wy = fminf(y1, static_cast<float>(j + 1)) - fmaxf(y0, static_cast<float>(j));
+#pragma unroll 1
+    for (int i = static_cast<int>(floorf(x0)); i < last_x; ++i) {
+      const float w = wy * (fminf(x1, static_cast<float>(i + 1)) - fmaxf(x0, static_cast<float>(i)));
+      const std::size_t from = at(i, j, p.in_width);
+      for (int c = 0; c < 3; ++c)
+        sum[c] += __half2float(in[static_cast<std::size_t>(c) * in_plane + from]) * w;
+    }
+  }
+  const float norm = 1.0F / (sx * sy);
+  const std::size_t to = at(x, y, p.out_width);
+  for (int c = 0; c < 3; ++c)
+    out[static_cast<std::size_t>(c) * out_plane + to] = __float2half_rn(sum[c] * norm);
+}
+
 // Luma du pixel pointé dans le plan R de trois plans RGB consécutifs, aux coefficients de la source.
 __device__ float luma(const __half* red, std::size_t plane, float kr, float kb) {
   return kr * __half2float(red[0]) + (1.0F - kr - kb) * __half2float(red[plane]) +
@@ -119,6 +154,11 @@ cudaError_t launch_rife_input(const RifeInputParams& params, cudaStream_t stream
 
 cudaError_t launch_rife_crop(const RifeCropParams& params, cudaStream_t stream) {
   rife_crop<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_area_reduce(const AreaReduceParams& params, cudaStream_t stream) {
+  area_reduce<<<grid_for(params.out_width, params.out_height), dim3(kBlock, kBlock), 0, stream>>>(params);
   return cudaGetLastError();
 }
 

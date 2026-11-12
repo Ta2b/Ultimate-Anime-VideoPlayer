@@ -38,8 +38,6 @@ constexpr std::array kPlayer{
     Entry{"Export cancelled", "Export annulé"},
     Entry{"Export done: {} ({} frames, {:.0f} MB, {})", "Export terminé : {} ({} images, {:.0f} Mo, {})"},
     Entry{"Export stopped: {}", "Export arrêté : {}"},
-    Entry{"Instant mode: too many frames lost, back to Stable",
-          "Mode Instantané : trop d'images perdues, retour au mode Stable"},
     Entry{"Chapters stored in other files are not played (linked opening or ending)",
           "Les chapitres rangés dans d'autres fichiers ne sont pas joués (générique lié)"},
     Entry{"French", "Français"},

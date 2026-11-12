@@ -189,6 +189,20 @@ void UpscaleStage::count_measured(const PairFacts& facts) {
   }
 }
 
+// Une paire du Rapide : ses images entrent dans la cadence (FreeRate) et dans le compte de « Couper
+// l'interpolation si la carte ne suit pas » (motion_cut.h) : une paire qui bouge doit au moins une
+// image interpolée. Une coupe ou un dessin tenu n'en doivent pas ; une paire réduite à sa source parce que
+// RIFE est en retard (l'écart du Rapide, ou N = 1 du pas constant) en doit une sans la porter.
+void UpscaleStage::count_free(const PairFacts& facts, int written, bool source_only) {
+  if (written > 0) setup_.live->free_produced(written, host_now_us());
+  if (intermediates_ > 0) {
+    setup_.live->count_owed(intermediates_);
+    return;
+  }
+  const bool by_design = facts.scores && (pair_cut(facts) || kernels::is_held(facts.scores->worst_block));
+  if (source_only && !by_design) setup_.live->count_owed(0);
+}
+
 void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) {
   if (setup_.live == nullptr || !setup_.live->pair_marks_on() || !facts.scores || !previous_) return;
   const bool cut = pair_cut(facts);

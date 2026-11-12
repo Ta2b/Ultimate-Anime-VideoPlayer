@@ -246,6 +246,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<ImportedSlot*, Refusal> begin_slot(const RingSlotDesc& desc, const RingWrite& sync);
   // La fin de l'écriture d'un slot : le signal de signal_value.
   std::expected<void, Refusal> finish_slot(const ImportedSlot& slot, const RingWrite& sync);
+  // resample à une taille plus petite, en Area (tensorrt_kernels.cpp).
+  std::expected<void, Refusal> area_reduce(const Tensor& in, kernels::Filter filter, const Tensor& out);
   // Où écrit un warp ou une composition : le tenseur out, ou directement le slot de ring.
   struct Target {
     const Tensor* out = nullptr;

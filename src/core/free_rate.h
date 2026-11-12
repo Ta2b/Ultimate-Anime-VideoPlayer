@@ -13,17 +13,17 @@
 //   au-dessus de l'écart des sources et plus aucune paire ne la corrigerait (A12-12).
 // - Contre-pression : une image sautée ou manquée à l'écran élargit l'écart tout de suite (× 1,12 par
 //   image perdue, au plus × 2) ; elle ne se relâche qu'après 1 s sans perte, puis lentement (3 s).
-// - Repli : 5 % d'images perdues ou plus sur 5 s (et au moins 10) rendent la main au mode Auto.
+// - Aucun repli : une paire que l'écart réduit à sa source laisse l'image d'origine à l'écran, et l'image
+//   interpolée revient dès que le GPU suit. Couper RIFE qui ne suit plus du tout est l'affaire du lecteur
+//   (app/play/motion_cut.h).
 // - Mouvement fort anticipé : une paire en mouvement fort coûte bien plus par image (RIFE à chaque instant au
 //   lieu du milieu et des poses). Son temps de service se mesure à part, et le lecteur, qui sait une paire à
 //   l'avance qu'elle sera lourde, planifie son écart sur ce temps-là, avant que la chaîne ne décroche. Sans
 //   mesure lourde encore, l'écart est celui d'une paire calme × kHeavyGuess.
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <cstdint>
-#include <utility>
 
 namespace ajp::core {
 
@@ -37,19 +37,6 @@ struct FreeInfo {
   std::uint32_t lost = 0;             // images perdues depuis le début
 };
 
-// La règle du repli, commune au Rapide et au Rapide à pas constant (A12-08) : des pertes d'au moins
-// per_mille des images produites sur la fenêtre, au moins min_lost, réparties sur min_buckets tranches
-// (des pertes durables, pas un à-coup isolé).
-struct FallbackRule {
-  int min_lost = 10;
-  int per_mille = 50;  // 5 %
-  int min_buckets = 4;
-};
-constexpr bool fallback_due(const FallbackRule& rule, int lost, int produced, int buckets_with_loss) {
-  return lost >= rule.min_lost && produced > 0 && lost * 1000 >= produced * rule.per_mille &&
-         buckets_with_loss >= rule.min_buckets;
-}
-
 class FreeRate {
  public:
   static constexpr double kMargin = 1.10;
@@ -57,20 +44,14 @@ class FreeRate {
   static constexpr double kPressureMax = 2.0;
   static constexpr std::int64_t kCalmUs = 1'000'000;     // sans perte avant que la pression se relâche
   static constexpr std::int64_t kReleaseUs = 3'000'000;  // constante de temps du relâchement
-  static constexpr std::int64_t kFallbackWindowUs = 5'000'000;
   // La cadence affichée (FreeInfo::fps) : les images des 2 dernières secondes, assez court pour suivre un
   // changement de plan, assez long pour ne pas sautiller.
   static constexpr std::int64_t kInfoWindowUs = 2'000'000;
   static constexpr std::int64_t kSettleUs = 1'200'000;  // après seek ou reprise : mesures ignorées
   static constexpr std::int64_t kStartUs =
-      5'000'000;  // après l'activation du mode (démarrage, moteurs qui chauffent)
+      5'000'000;  // après l'activation du mode : mesures ignorées (démarrage, moteurs qui chauffent)
   static constexpr std::int64_t kMaxSampleUs = 300'000;
   static constexpr std::int64_t kBucketUs = 250'000;
-  static constexpr int kFallbackMinLost = 10;
-  static constexpr int kFallbackPerMille = 50;  // 5 %
-  // Des pertes durables seulement : réparties sur au moins 4 tranches de 250 ms de la fenêtre (une seconde),
-  // pas un à-coup isolé.
-  static constexpr int kFallbackMinBuckets = 4;
   static constexpr double kHeavyGuess = 2.0;  // paire lourde jamais mesurée : coût d'une calme × 2
 
   // L'écart minimal entre deux images (période de l'écran ou du plafond), en µs de temps réel.
@@ -92,8 +73,7 @@ class FreeRate {
   void produced(int images, std::int64_t now_us);
   // `lost` images sautées ou manquées à l'écran depuis le dernier appel.
   void missed(std::int64_t now_us, std::int64_t lost);
-  // Seek, reprise, (re)chargement : les mesures du coût s'arrêtent kSettleUs ; les pertes ne comptent pas
-  // pour le repli pendant kStartUs, comme au démarrage (la file se remplit, les moteurs repartent).
+  // Seek, reprise, (re)chargement : les mesures du coût s'arrêtent kSettleUs.
   void settle(std::int64_t now_us);
   // Repart de zéro (le mode vient d'être activé).
   void reset(std::int64_t now_us);
@@ -102,17 +82,15 @@ class FreeRate {
   // minimal. 0 tant qu'aucune mesure n'existe. `heavy` : pour une paire annoncée en mouvement fort.
   std::int64_t step_us(std::int64_t now_us, bool heavy = false) const;
   double pressure(std::int64_t now_us) const;
-  bool should_fall_back(std::int64_t now_us) const;
   FreeInfo info(std::int64_t now_us) const;
 
  private:
   struct Bucket {
     std::int64_t index = -1;  // now_us / kBucketUs ; -1 : vide
     int produced = 0;
-    int lost = 0;
   };
   Bucket& bucket(std::int64_t now_us);
-  void sum(std::int64_t now_us, std::int64_t span_us, int& produced, int& lost) const;
+  int produced_in(std::int64_t now_us, std::int64_t span_us) const;  // les images des tranches de la durée
 
   std::int64_t min_gap_us_ = 0;
   double service_us_ = 0.0;
@@ -120,37 +98,8 @@ class FreeRate {
   double pressure_ = 1.0;
   std::int64_t last_loss_us_ = 0;
   std::int64_t settled_until_us_ = 0;
-  std::int64_t quiet_until_us_ = 0;  // avant : les pertes ne comptent pas pour le repli
   std::uint32_t lost_total_ = 0;
   std::array<Bucket, 24> buckets_{};
-};
-
-// Le repli du Rapide vers Stable, pour la séance : il revient au Rapide après un calme, plus long à chaque
-// repli (3 min, 6, 12… au plus 30 min, P3.38) ; un choix explicite du mode l'efface.
-class FreeFallback {
- public:
-  static constexpr std::int64_t kRetryUs = 180'000'000;
-  static constexpr std::int64_t kRetryMaxUs = 1'800'000'000;
-
-  // Vrai au premier repli seulement : le message ne se répète pas sur une carte limite (P3.38).
-  bool fell_back(std::int64_t now_us) {
-    active_ = true;
-    retry_at_us_ = now_us + delay_us_;
-    delay_us_ = std::min(delay_us_ * 2, kRetryMaxUs);
-    return !std::exchange(told_, true);
-  }
-  // Vrai tant que le repli tient ; faux dès que l'heure de réessayer le Rapide est venue.
-  bool active(std::int64_t now_us) {
-    if (active_ && now_us >= retry_at_us_) active_ = false;
-    return active_;
-  }
-  void clear() { *this = FreeFallback{}; }
-
- private:
-  bool active_ = false;
-  bool told_ = false;
-  std::int64_t retry_at_us_ = 0;
-  std::int64_t delay_us_ = kRetryUs;
 };
 
 }  // namespace ajp::core
