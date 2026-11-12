@@ -17,19 +17,12 @@
 
 #include "app/play/anime4k_choice.h"
 #include "app/play/chain_shape.h"
+#include "app/play/settings_refuse.h"
 #include "core/utf8_path.h"
 #include "render/cube_lut.h"
 
 namespace ajp::app::play {
 namespace {
-
-// Le refus d'une clé du fichier (P2.11) : la clé, « audio.delay_ms », dans Refusal::key, que la lecture
-// tolérante écarte sans relire le texte ; le détail commence par elle.
-std::unexpected<Refusal> refuse_key(RefusalCode code, std::string key, std::string_view rest = {}) {
-  std::string detail = key;
-  detail += rest;
-  return std::unexpected(Refusal{.code = code, .detail = std::move(detail), .key = std::move(key)});
-}
 
 struct DownscaleName {
   Downscale filter;
@@ -155,13 +148,13 @@ std::string_view name(SpanOrder order) {
 std::string_view label(SpanOrder order) {
   switch (order) {
     case SpanOrder::Auto:
-      return i18n::tr("Auto (after SPAN above 1080p or from ×3)");
+      return i18n::tr("Auto (after SPAN above 1080p)");
     case SpanOrder::Before:
       return i18n::tr("Before SPAN (best quality)");
     case SpanOrder::After:
       return i18n::tr("After SPAN (fastest)");
   }
-  return i18n::tr("Auto (after SPAN above 1080p or from ×3)");
+  return i18n::tr("Auto (after SPAN above 1080p)");
 }
 
 std::string_view name(FinalScaler scaler) {
@@ -285,15 +278,16 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
     return refuse_key(
         RefusalCode::FieldOutOfRange, "languages.presets",
         std::format(" : {} préréglages, {} au plus", s.language_presets.size(), limits::kLanguagePresets));
-  for (const media::LanguagePreset& preset : s.language_presets) {
-    if (auto ok = check_languages(
-            "languages.audio", preset.audio.empty() ? std::vector<std::string>{} : std::vector{preset.audio});
-        !ok)
+  // La clé du fichier, « languages.audio_2 » : la lecture tolérante écarte celle-là seule, les autres langues
+  // valides restent (B22-06).
+  for (std::size_t i = 0; i < s.language_presets.size(); ++i) {
+    const media::LanguagePreset& preset = s.language_presets[i];
+    const auto tags = [](const std::string& tag) {
+      return tag.empty() ? std::vector<std::string>{} : std::vector{tag};
+    };
+    if (auto ok = check_languages(std::format("languages.audio_{}", i + 1), tags(preset.audio)); !ok)
       return std::unexpected(ok.error());
-    if (auto ok =
-            check_languages("languages.subtitles", preset.subtitles.empty() ? std::vector<std::string>{}
-                                                                            : std::vector{preset.subtitles});
-        !ok)
+    if (auto ok = check_languages(std::format("languages.subtitles_{}", i + 1), tags(preset.subtitles)); !ok)
       return std::unexpected(ok.error());
   }
   if (s.true_hdr_peak != 0) {
@@ -393,6 +387,20 @@ PlayOptions options_for(const PlayOptions& options, const PlaySettings& s) {
   out.rife_factor_den = s.rife_factor_den;
   out.true_hdr_peak = s.true_hdr_peak;
   return out;
+}
+
+std::string ignored_values_note(const std::vector<std::string>& ignored) {
+  constexpr std::size_t kShown = 3;
+  std::string keys;
+  for (std::size_t i = 0; i < ignored.size() && i < kShown; ++i) {
+    // « section.clé (raison) » ou « [section] (raison) » : la clé seule.
+    const std::string& entry = ignored[i];
+    const std::string key = entry.substr(0, entry.find(" ("));
+    keys += keys.empty() ? key : ", " + key;
+  }
+  if (keys.empty()) return {};
+  if (ignored.size() > kShown) keys += ", …";
+  return i18n::tr_format("Invalid settings in play.toml went back to their default: {}", keys);
 }
 
 PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
@@ -517,46 +525,60 @@ Change reopen_for(const std::vector<std::string>& reasons) {
 
 }  // namespace
 
+// Le moteur d'interpolation chargé : celui de l'ouverture, pas le réglage en cours. Interpolation coupée, un
+// choix de moteur, de modèle, de précision, de fusion ou d'ordre passe en direct (live_part) sans rien
+// recharger : à son retour, c'est la chaîne chargée qu'il faut comparer au choix (B22-01).
+static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, const OpenedChain* opened) {
+  PlaySettings base = running;
+  if (!rife_loaded || opened == nullptr || !opened->loaded) return base;
+  base.motion_engine = opened->loaded->motion_engine;
+  base.rife_model = opened->loaded->rife_model;
+  base.motion_precision = opened->loaded->motion_precision;
+  base.span_order = opened->loaded->span_order;
+  base.rife_fused = opened->loaded->rife_fused;
+  base.drba_fused = opened->loaded->drba_fused;
+  return base;
+}
+
 Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
                       const OpenedChain* opened) {
   std::vector<std::string> reopen;
+  const PlaySettings base = loaded_base(running, rife_loaded, opened);
   if (running.upscale != wanted.upscale || running.model != wanted.model ||
       running.work_height != wanted.work_height || running.restore_lines != wanted.restore_lines)
     reopen.emplace_back(upscale_reason(wanted));
   if (running.audio_device != wanted.audio_device) reopen.emplace_back(i18n::tr("the output device changes"));
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
     reopen.emplace_back(i18n::tr("the interpolation engine loads (built the first time for this size)"));
-  if (wanted.rife_factor >= 2 && running.motion_engine != wanted.motion_engine)
+  if (wanted.rife_factor >= 2 && base.motion_engine != wanted.motion_engine)
     reopen.emplace_back(i18n::tr("the interpolation engine changes"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
-      running.rife_fused != wanted.rife_fused)
+      base.rife_fused != wanted.rife_fused)
     reopen.emplace_back(wanted.rife_fused
                             ? i18n::tr("fused RIFE (six engines, built the first time for this size)")
                             : i18n::tr("whole RIFE instead of fused RIFE"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::DistilDrba &&
-      running.drba_fused != wanted.drba_fused)
+      base.drba_fused != wanted.drba_fused)
     reopen.emplace_back(wanted.drba_fused
                             ? i18n::tr("fused DistilDRBA (four engines, built the first time for this size)")
                             : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
-      running.rife_model != wanted.rife_model)
+      base.rife_model != wanted.rife_model)
     reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));
-  if (wanted.rife_factor >= 2 && running.span_order != wanted.span_order) {
+  if (wanted.rife_factor >= 2 && base.span_order != wanted.span_order)
     reopen.emplace_back(wanted.span_order == SpanOrder::Before  ? i18n::tr("warp runs before SPAN")
                         : wanted.span_order == SpanOrder::After ? i18n::tr("warp runs after SPAN")
                                                                 : i18n::tr("warp order follows the output"));
-  }
-  if (wanted.upscale && running.span_precision != wanted.span_precision) {
+  if (wanted.upscale && running.span_precision != wanted.span_precision)
     reopen.emplace_back(i18n::tr_format("SPAN switches to {} (built the first time for this size)",
                                         precision_text(wanted.span_precision)));
-  }
-  if (wanted.rife_factor >= 2 && running.motion_engine == wanted.motion_engine &&
-      running.motion_precision != wanted.motion_precision) {
+  if (wanted.rife_factor >= 2 && base.motion_engine == wanted.motion_engine &&
+      base.motion_precision != wanted.motion_precision) {
     reopen.emplace_back(i18n::tr_format("{} switches to {} (built the first time for this size)",
                                         label(wanted.motion_engine),
                                         precision_text(wanted.motion_precision)));
   }
-  add_shape_reasons(reopen, running, wanted, opened);
+  add_shape_reasons(reopen, base, wanted, opened);
   if (!reopen.empty()) return reopen_for(reopen);
   if (running == wanted) return {};
   return Change{.cost = ChangeCost::Live};

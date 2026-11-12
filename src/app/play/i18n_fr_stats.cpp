@@ -53,7 +53,7 @@ constexpr std::array kStatsTexts{
     Entry{"no RIFE", "pas de RIFE"},
     Entry{"no upscaling · {}", "sans agrandissement · {}"},
     Entry{"smoothness {}{} fps · missed {}{} · p95 delay {}{}",
-          "fluidité {}{} im/s · manquées {}{} · retard p95 {}{}"},
+          "fluidité {}{} i/s · manquées {}{} · retard p95 {}{}"},
     Entry{"video memory {:.0f} / {:.0f} MiB", "mémoire vidéo {:.0f} / {:.0f} Mio"},
     Entry{"{} cannot compute at a free instant", "{} ne calcule pas à un instant libre"},
     Entry{"{} frames · {:.1f} fps · elapsed {} · left ~{}", "{} images · {:.1f} i/s · écoulé {} · reste ~{}"},

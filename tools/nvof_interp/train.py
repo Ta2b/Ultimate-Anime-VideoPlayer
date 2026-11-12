@@ -96,7 +96,7 @@ def main() -> None:
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
     start, best = 0, 0.0
     if args.resume and (args.out / "last.pt").exists():
-        state = torch.load(args.out / "last.pt", map_location=device)
+        state = torch.load(args.out / "last.pt", map_location=device, weights_only=True)
         net.load_state_dict(state["net"])
         optim.load_state_dict(state["optim"])
         sched.load_state_dict(state["sched"])

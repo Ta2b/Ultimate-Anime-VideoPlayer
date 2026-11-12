@@ -11,7 +11,7 @@ IncludeBlocks: Regroup
 IncludeCategories:
   - Regex: '^"'
     Priority: 3
-  - Regex: '^<(catch2|toml\+\+|spdlog|SDL3|libplacebo|ass|imgui|vulkan|libav|nanobench)'
+  - Regex: '^<(catch2|toml\+\+|spdlog|SDL3|libplacebo|ass|imgui|vulkan|lib(av|sw))'
     Priority: 2
   - Regex: '^<'
     Priority: 1

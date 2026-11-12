@@ -1,9 +1,16 @@
 """Aides communes : images PPM, entrées DistilDRBA (pair01, pair12 en 7 plans), noms de tenseurs aux coupes."""
+import os
+from pathlib import Path
+
 import numpy as np
 
 H, W = 1088, 1920
-MODELE = "/home/ta2b/.cache/ajp/modeles/distil_drba_v2_lite-1920x1088-7048367e94f6c43d.onnx"
-IMAGES = {n: f"/tmp/claude-1000/poses-A/{n}.ppm" for n in ("s5", "s9", "s14")}
+# Chemins hors du dépôt (B46-14) : AJP_DRBA_MODELE (l'ONNX DistilDRBA 1920x1088, par défaut celui du cache du
+# lecteur) et AJP_POSES_DIR (le dossier de s5.ppm, s9.ppm et s14.ppm, 8 bits, au moins 2220 x 1238 px).
+MODELE = os.environ.get("AJP_DRBA_MODELE") or str(
+    Path.home() / ".cache" / "ajp" / "modeles" / "distil_drba_v2_lite-1920x1088-7048367e94f6c43d.onnx")
+POSES = os.environ.get("AJP_POSES_DIR", "")
+IMAGES = {n: os.path.join(POSES, f"{n}.ppm") for n in ("s5", "s9", "s14")}
 
 # Tenseurs aux coupes (graphe plié par plie.py).
 ENC_IN = ["/Resize_output_0/cast16", "/Resize_1_output_0/cast16", "/Resize_2_output_0/cast16"]
@@ -35,6 +42,8 @@ def lire_ppm(chemin):
 
 def trois_images(nom, decalage, x0=300, y0=150):
     """Trois recadrages W x H de l'image `nom`, décalés de `decalage` px chacun (mouvement régulier)."""
+    if not POSES:
+        raise SystemExit("commun.py : AJP_POSES_DIR doit désigner le dossier de s5.ppm, s9.ppm et s14.ppm")
     img = lire_ppm(IMAGES[nom])
     return [img[y0:y0 + H, x0 + k * decalage:x0 + k * decalage + W] for k in range(3)]
 
@@ -64,7 +73,9 @@ def psnr(a, b, crete=1.0):
 
 
 def ssim(a, b, crete=1.0, fenetre=7):
-    """SSIM à fenêtre uniforme 7x7 en float64, moyenne sur les canaux (a, b : (C, H, W))."""
+    """SSIM à fenêtre uniforme 7x7 en float64, moyenne sur les canaux (a, b : (C, H, W)).
+
+    Quatre définitions coexistent (B46-09) : blocs 8×8 (mesures.py, interp_fp8.py), gaussien 11 σ 1,5 (quantize_span.py), 7×7 uniforme par canal (commun.py) ; chaque seuil a été fixé avec la sienne, ne pas les comparer d'un outil à l'autre."""
     c1, c2 = (0.01 * crete) ** 2, (0.03 * crete) ** 2
     n = fenetre * fenetre
     out = []

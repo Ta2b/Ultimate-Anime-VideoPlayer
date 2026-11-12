@@ -11,7 +11,7 @@ ajp_add_module(app
     play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/ring_watcher.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/latest_writer.cpp play/loop_wait.cpp
     play/anime_shots.cpp play/gpu_profile_out.cpp play/display_contract.cpp play/cut_book.cpp play/user_keys.cpp play/resume.cpp
-    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/sleep_watch.cpp play/relaunch_target.cpp play/stage_fallback.cpp play/chain_choices.cpp play/session_subtitles.cpp play/session_osd.cpp play/session_display.cpp play/settings.cpp play/settings_toml.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/mapped_file.cpp
+    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/sleep_watch.cpp play/relaunch_target.cpp play/stage_fallback.cpp play/chain_choices.cpp play/session_subtitles.cpp play/session_osd.cpp play/session_display.cpp play/settings.cpp play/settings_toml.cpp play/settings_format.cpp play/settings_history.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/mapped_file.cpp
     play/upscale_ahead.cpp play/upscale_drba.cpp play/upscale_late.cpp play/upscale_fate.cpp play/upscale_motion.cpp play/upscale_smooth.cpp play/upscale_stage.cpp play/vulkan_share.cpp play/wiring.cpp
   DEPS ajp::core ajp::core_log ajp::core_os ajp::media ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::export
@@ -30,7 +30,7 @@ add_custom_command(
 # Le registre et SHChangeNotify de l'inscription comme lecteur par défaut (default_player.cpp) :
 # advapi32 et shell32. Les minidumps de plantage (crash_dump.cpp) : dbghelp.
 if(WIN32)
-  target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 winmm user32 dbghelp winhttp ole32)
+  target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 shlwapi winmm user32 dbghelp winhttp ole32)
 endif()
 # wp_presentation (placebo_wayland.cpp) : le code client du protocole, produit par wayland-scanner depuis
 # third_party/wayland-protocols/presentation-time.xml.
@@ -104,6 +104,7 @@ add_executable(ajp main.cpp)
 # semblait s'ouvrir deux fois). main() reste le point d'entrée ; d'un terminal, leave_lone_console() reprend
 # sa console.
 if(WIN32)
+  target_sources(ajp PRIVATE ajp.rc)
   set_target_properties(ajp PROPERTIES WIN32_EXECUTABLE TRUE)
   if(MSVC)
     target_link_options(ajp PRIVATE /ENTRY:mainCRTStartup)

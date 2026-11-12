@@ -3,7 +3,7 @@
 # rendent 0 sur « abc » sans rien dire, sscanf lit au-delà de ce qu'on croit. Interdits dans src/, hors
 # commentaires et chaînes.
 set -euo pipefail
-names='atoi|atol|atoll|atof|sscanf|swscanf|vsscanf'
+names='atoi|atol|atoll|atof|sscanf|swscanf|vsscanf|strtod|strtof|strtold|strtol|strtoll|strtoul|strtoull|stoi|stol|stoll|stoul|stoull|stof|stod|stold'
 hits=$(git ls-files -z -- 'src/*' | AJP_NAMES="$names" xargs -0 perl -ne '
   BEGIN { $re = qr/\b(?:$ENV{AJP_NAMES})\s*\(/ }
   (my $code = $_) =~ s{\x27(?:\\.|[^\x27\\])\x27}{}g;

@@ -167,6 +167,7 @@ struct PlaceboScreen::Impl {
   // L'instantané demandé (--snapshot), numéroté s'il y en a plusieurs ; un refus est écrit au journal.
   void take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                      const ImDrawData* drawn_ui);
+  std::string device_choice;  // la carte préférée à l'ouverture (B37-01), lue par libplacebo
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
   pl_log log = nullptr;

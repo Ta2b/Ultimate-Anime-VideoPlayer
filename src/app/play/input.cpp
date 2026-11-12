@@ -91,6 +91,16 @@ std::optional<Input> audio_delay_step(const SDL_KeyboardEvent& event) {
   return std::nullopt;
 }
 
+// B24-03 : F11 et Alt + Entrée, les deux gestes du bureau pour le plein écran, quand aucune touche de [keys]
+// ne les a pris.
+std::optional<Input> fullscreen_shortcut(const SDL_KeyboardEvent& event) {
+  if ((event.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI | SDL_KMOD_SHIFT)) != 0) return std::nullopt;
+  const bool alt = (event.mod & SDL_KMOD_ALT) != 0;
+  if (!alt && event.key == SDLK_F11) return ToggleFullscreen{};
+  if (alt && (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER)) return ToggleFullscreen{};
+  return std::nullopt;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -147,14 +157,14 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   if (plain && event.key.key == SDLK_DOWN) return VolumeStep{.delta = -kVolumeStep};
   bool shift = (mod & SDL_KMOD_SHIFT) != 0;
   const auto key = chord_key(event.key, shift);
-  if (!key) return std::nullopt;
+  if (!key) return fullscreen_shortcut(event.key);
   const core::Chord chord{.key = *key,
                           .ctrl = (mod & SDL_KMOD_CTRL) != 0,
                           .alt = (mod & SDL_KMOD_ALT) != 0,
                           .shift = shift,
                           .meta = (mod & SDL_KMOD_GUI) != 0};
   if (auto command = keys.command_for(chord)) return *command;
-  return std::nullopt;
+  return fullscreen_shortcut(event.key);
 }
 
 }  // namespace ajp::app::play

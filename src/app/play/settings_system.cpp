@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <ctime>
 #include <expected>
 #include <format>
@@ -249,9 +250,36 @@ void span_prepare_section(const SpanPrepare& prepare, PrepareNote& state) {
   }
 }
 
+namespace {
+
+// Encode une valeur pour une chaîne de requête (tout ce qui n'est pas non réservé passe en %XX).
+std::string url_encoded(std::string_view text) {
+  std::string out;
+  for (const char raw : text) {
+    const auto c = static_cast<unsigned char>(raw);
+    if (std::isalnum(c) != 0 || c == '-' || c == '_' || c == '.' || c == '~') {
+      out.push_back(raw);
+    } else {
+      out += std::format("%{:02X}", c);
+    }
+  }
+  return out;
+}
+
+// La page du signalement avec ce que le lecteur sait déjà : version, carte graphique et pilote vidéo
+// (B39-06). Aucun chemin n'y passe. Le dépôt est celui qui porte le formulaire
+// (.github/ISSUE_TEMPLATE/bug.yml) : le dépôt des releases, lui, n'a pas ce formulaire.
+std::string issue_url(const std::string& gpu_name) {
+  std::string url = "https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/issues/new?template=bug.yml";
+  url += "&version=" + url_encoded(installed_version());
+  if (!gpu_name.empty()) url += "&gpu=" + url_encoded(gpu_name);
+  return url;
+}
+
+}  // namespace
+
 void report_problem_section(const PlayerPlace& place, const std::string& gpu_name) {
-  constexpr const char* kIssueUrl =
-      "https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/issues/new?template=bug.yml";
+  const std::string issue = issue_url(gpu_name);
   // Ce que le dernier clic a donné, montré sous le bouton.
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) : le seul thread de l'interface
   static std::string last;
@@ -261,8 +289,8 @@ void report_problem_section(const PlayerPlace& place, const std::string& gpu_nam
     if (const char* driver = SDL_GetCurrentVideoDriver(); driver != nullptr)
       note_report_fact("SDL video", driver);
     ImGui::SetClipboardText(current_report(core::to_utf8(place.home)).c_str());
-    last = SDL_OpenURL(kIssueUrl) ? i18n::tr("Report copied. Paste it into the page that opened.")
-                                  : i18n::tr_format("Report copied. Open {} and paste it there.", kIssueUrl);
+    last = SDL_OpenURL(issue.c_str()) ? i18n::tr("Report copied. Paste it into the page that opened.")
+                                      : i18n::tr_format("Report copied. Open {} and paste it there.", issue);
   }
   if (!last.empty()) panel::wrapped(last.c_str());
   panel::tip(i18n::tr(

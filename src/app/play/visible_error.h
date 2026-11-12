@@ -128,6 +128,15 @@ inline ErrorFamily error_family(RefusalCode code) {
 
 }  // namespace detail
 
+// Le moteur GPU : le pilote refusé et le délai dépassé disent ce qui aide, le reste reste général (B43).
+inline std::string builder_error(RefusalCode code) {
+  if (code == RefusalCode::SdkRejected)
+    return i18n::tr("the GPU engine could not be prepared: update the graphics driver");
+  if (code == RefusalCode::BuilderTimeout)
+    return i18n::tr("the GPU engine took too long to prepare: try again");
+  return i18n::tr("the GPU engine could not be prepared");
+}
+
 inline std::string visible_error(const Refusal& refusal) {
   if (refusal.key == kDolbyVision5Key)
     return i18n::tr("Dolby Vision profile 5 is not supported (no HDR10 or SDR picture in this file)");
@@ -166,7 +175,7 @@ inline std::string visible_error(const Refusal& refusal) {
     case detail::ErrorFamily::CacheBusy:
       return i18n::tr("another player window is preparing the same engine: try again in a moment");
     case detail::ErrorFamily::Builder:
-      return i18n::tr("the GPU engine could not be prepared");
+      return builder_error(refusal.code);
     case detail::ErrorFamily::Component:
       return i18n::tr("a component of the player is missing or out of date: reinstall it");
     case detail::ErrorFamily::Driver:

@@ -40,6 +40,7 @@
 #include "app/play/latest_writer.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
+#include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
 #include "app/play/single_instance.h"
 #include "app/play/span_auto.h"
@@ -177,7 +178,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
       .chosen_engines = chosen_line(st.engines),
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
-      .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),
+      .display_text = display ? describe(*display) : std::string(i18n::tr("EDID unreadable: OLED unknown")),
       .source_file = {},
       .display_height = display_height(h.screen.window()),
       .span_prepare = {.note = i18n::tr("Open a video: the player prepares Performance mode on its frames.")},
@@ -274,7 +275,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   PlaySettings from_file = st.saved;
   PlaySettings running = home_settings(h, st.saved);
   PlaySettings started = running;
-  const auto refresh = [&] { h.ui.set_settings(running, home_choices(h, st, running)); };
+  const auto refresh = [&] { h.ui.set_settings(running, home_choices(h, st, running), &h.catalog); };
   refresh();
   h.ui.open_settings();
   const auto pick = std::make_shared<FilePick>();
@@ -367,7 +368,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                  input);
     }
     actions.clear();
-    if (dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) save();
+    if (settings_save_due(writer, h.ui, dirty, saved_at, host_now_us())) save();  // B31-08, B36-01
     st.snapshot.maybe(h.screen, opened);
     view.dialog_open = pick->open();
     const ImDrawData* draw = h.ui.home(host_now_us(), view, actions);

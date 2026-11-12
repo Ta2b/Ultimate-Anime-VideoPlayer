@@ -254,3 +254,31 @@ TEST_CASE("Réglages : un ancien settings.toml avec langues et délai se relit (
   CHECK(text->find("audio_delay_ms = -120") != std::string::npos);
   CHECK(text->find("subtitles") != std::string::npos);
 }
+
+TEST_CASE("Réglages : un moteur d'une version plus récente reste à la réécriture (B22-07)", "[settings]") {
+  const std::string newer =
+      "version = 2\n[engines]\nchosen = [\"vulkan\", \"nouveau\"]\ninstalled = [\"vulkan\", \"nouveau\"]\n"
+      "[engines.preferred]\nupscale = \"nouveau\"\ninterpolate = \"vulkan\"\n";
+  std::vector<std::string> skipped;
+  auto settings = parse_settings(newer, &skipped);
+  REQUIRE(settings);
+  CHECK_FALSE(skipped.empty());  // le moteur inconnu est écarté à la lecture
+  CHECK_FALSE(settings->preferred[0]);
+  auto text = format_settings(*settings, newer);
+  REQUIRE(text);
+  CHECK(text->find("nouveau") != std::string::npos);
+  // La préférence inconnue reste ; la connue se réécrit comme avant.
+  CHECK(text->find("upscale = \"nouveau\"") != std::string::npos);
+  CHECK(text->find("interpolate = \"vulkan\"") != std::string::npos);
+  // « nouveau » reste dans les deux listes et dans la préférence : trois fois.
+  std::size_t kept = 0;
+  for (auto at = text->find("nouveau"); at != std::string::npos; at = text->find("nouveau", at + 1)) ++kept;
+  CHECK(kept == 3);
+  // Une préférence que l'utilisateur retire (moteur connu) s'efface.
+  Settings cleared = *settings;
+  cleared.preferred[1].reset();
+  auto without = format_settings(cleared, *text);
+  REQUIRE(without);
+  CHECK(without->find("interpolate") == std::string::npos);
+  CHECK(without->find("nouveau") != std::string::npos);
+}

@@ -1,0 +1,5 @@
+[keys]
+pause = 3
+toggle_osd = ["F1"]
+[other]
+x = 1

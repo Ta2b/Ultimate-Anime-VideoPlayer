@@ -7,12 +7,11 @@
 #include <format>
 
 extern "C" {
-#include <libswresample/swresample.h>
-
 #include <libavutil/channel_layout.h>
 #include <libavutil/frame.h>
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
+#include <libswresample/swresample.h>
 }
 
 #include "av/av_error.h"

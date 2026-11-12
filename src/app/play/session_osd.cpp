@@ -1,5 +1,4 @@
 // Ce que la session montre hors de l'image : les lignes de l'OSD et l'état de la barre de lecture.
-#include <algorithm>
 #include <format>
 
 #include "app/play/i18n.h"
@@ -18,7 +17,6 @@ void Session::frame_lines(std::vector<std::string>& lines) const {
   std::string synced;
   if (speed_ != 1.0) {
     synced = i18n::tr_format(" · locked to the display {:+.3f} %", (speed_ - 1.0) * 100.0);
-    std::ranges::replace(synced, '.', ',');
   }
   lines.push_back(i18n::tr_format(
       "smoothness {}{} fps · missed {}{} · p95 delay {}{}", format_fps(stats_.shown_fps),
