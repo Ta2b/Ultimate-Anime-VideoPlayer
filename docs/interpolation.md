@@ -8,22 +8,27 @@ de calcul qui l'exécute (TensorRT, Vulkan, Core ML) est un autre choix : voir `
 
 | Moteur | Clé `play.toml` | Lecture | Export | Code |
 |---|---|---|---|---|
-| RIFE (4.22 lite, 4.25…) | `rife` | oui, par défaut | oui | `src/app/play/rife_*`, `kernels/spec/rife*` |
+| RIFE (4.25 lite, 4.22 lite, 4.26, 4.25) | `rife` | oui, par défaut | oui | `src/app/play/rife_*`, `kernels/spec/rife*` |
 | DistilDRBA | `distil_drba` | oui | oui | `kernels/spec/distil_drba.h` |
 | Apple (VideoToolbox) | `apple` | macOS seulement | non | `gpu/system_interpolator.h` |
 
 ## Ce que montre le menu
 
 Le menu ne nomme pas les modèles, il propose des niveaux (`kInterpLevels`, `settings.h`). Le nom du modèle ne
-s'affiche qu'en mode avancé, à côté du niveau.
+s'affiche qu'en mode avancé, à côté du niveau. Les niveaux suivent le choix de Tatoub de novembre 2026, sur les
+mesures de `docs/rife-candidats.md`.
 
 | Niveau | Moteur, modèle |
 |---|---|
-| Très rapide | DistilDRBA (garde lui-même les poses, une image de retard) |
+| Très rapide | RIFE 4.25 lite (deux fois moins de calcul que 4.22 lite, 2,9 dB de moins au banc ; repli hors RTX si 4.22 lite manque) |
 | Rapide | RIFE 4.22 lite (le défaut hors RTX) |
-| Équilibré | RIFE 4.25 (le défaut sur une RTX) |
+| Équilibré | RIFE 4.26 (le défaut sur une RTX, et l'Auto en Qualité et Ultra) |
+| RIFE 4.25, réglages avancés | l'ancien Équilibré : même qualité que 4.26, environ 9 % de calcul en plus |
+| DistilDRBA, réglages avancés | garde lui-même les poses, une image de retard ; ni plus rapide ni plus propre que RIFE à ce jour, hors de l'Auto (`kDistilDrbaInAuto`) |
 | Système (macOS) | interpolation d'Apple, sur un Mac seulement |
 
+En Personnalisé, un ancien `play.toml` qui nomme RIFE 4.25 ou DistilDRBA les garde : la liste montre alors leur
+nom, même hors du mode avancé. Une calibration faite avec RIFE 4.25 le garde aussi jusqu'à la suivante, qui joue 4.26.
 Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « Arrêt » et « Auto » en lecture.
 Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
 `--rife=N` ou par `play.toml`, pour le diagnostic.

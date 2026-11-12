@@ -147,14 +147,15 @@ jobs:
         env:
           AJP_TEST_VULKAN_VALIDATION: "off"
         run: ctest --preset linux-release
-      # Les modèles livrés passent la découpe du chemin fusionné (RIFE 4.25, 4.22 lite, DistilDRBA et son demi-flot) :
-      # un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur (A28-07). Un
-      # saut compte comme un échec.
+      # Les modèles livrés passent la découpe du chemin fusionné (RIFE 4.26, 4.25, 4.22 lite, 4.25 lite, DistilDRBA et
+      # son demi-flot) : un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur
+      # (A28-07). Un saut compte comme un échec.
       - name: Découpe des modèles livrés
         if: env.AJP_TAG != ''
         run: |
           models="$RUNNER_TEMP/package/ajp-linux-x64/models/rife"
-          for f in rife_v4.25.onnx rife_v4.22_lite.onnx distil_drba_v2_lite.onnx distil_drba_v2_lite_s05.onnx; do
+          for f in rife_v4.26.onnx rife_v4.25.onnx rife_v4.22_lite.onnx rife_v4.25_lite.onnx distil_drba_v2_lite.onnx \
+            distil_drba_v2_lite_s05.onnx; do
             [ -f "$models/$f" ] || { echo "::error::modèle livré absent : $f"; exit 1; }
           done
           cmake --preset linux-release -DAJP_RIFE_MODEL_DIR="$models" -DAJP_DRBA_MODEL_DIR="$models"
