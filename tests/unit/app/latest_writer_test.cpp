@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -11,6 +12,8 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "app/play/save_failure.h"
 
 namespace ajp::app::play {
 
@@ -87,16 +90,16 @@ TEST_CASE("Écritures : flush borné, une écriture lente ne retient pas l'affic
 TEST_CASE("Écritures : un refus se rapporte une fois, une réussite l'efface (B31-08, B36-01)",
           "[app][writer]") {
   LatestWriter writer;
-  CHECK_FALSE(writer.take_failure());
+  CHECK(writer.take_failures().empty());
   writer.post("play.toml", []() -> std::expected<void, Refusal> {
     return std::unexpected(Refusal{RefusalCode::FileUnwritable, "disque plein"});
   });
   REQUIRE(writer.flush());
-  const auto failed = writer.take_failure();
-  REQUIRE(failed);
-  CHECK(failed->key == "play.toml");
-  CHECK(failed->refusal.code == RefusalCode::FileUnwritable);
-  CHECK_FALSE(writer.take_failure());  // une seule fois
+  const auto failed = writer.take_failures();
+  REQUIRE(failed.size() == 1);
+  CHECK(failed[0].key == "play.toml");
+  CHECK(failed[0].refusal.code == RefusalCode::FileUnwritable);
+  CHECK(writer.take_failures().empty());  // une seule fois
   // Refusé, puis réussi avant que l'affichage ne l'ait vu : rien à dire.
   writer.post("resume", []() -> std::expected<void, Refusal> {
     return std::unexpected(Refusal{RefusalCode::FileUnwritable, "verrou"});
@@ -104,7 +107,40 @@ TEST_CASE("Écritures : un refus se rapporte une fois, une réussite l'efface (B
   REQUIRE(writer.flush());
   writer.post("resume", []() -> std::expected<void, Refusal> { return {}; });
   REQUIRE(writer.flush());
-  CHECK_FALSE(writer.take_failure());
+  CHECK(writer.take_failures().empty());
+}
+
+// C22-02 : deux clés refusées ensemble sont relevées toutes les deux, dans l'ordre des clés.
+TEST_CASE("Écritures : tous les refus sont relevés d'un coup (C22-02)", "[app][writer]") {
+  LatestWriter writer;
+  const auto fail = []() -> std::expected<void, Refusal> {
+    return std::unexpected(Refusal{RefusalCode::FileUnwritable, "disque plein"});
+  };
+  writer.post("auto_memory", fail);
+  writer.post("play.toml", fail);
+  REQUIRE(writer.flush());
+  const auto failed = writer.take_failures();
+  REQUIRE(failed.size() == 2);
+  CHECK(failed[0].key == "auto_memory");
+  CHECK(failed[1].key == "play.toml");
+  CHECK(writer.take_failures().empty());
+}
+
+// C22-02 : à la sortie, le dernier essai de play.toml a lieu même si une autre clé a échoué avant lui.
+TEST_CASE("Écritures : un refus d'une autre clé ne cache pas celui de play.toml à la sortie (C22-02)",
+          "[app][writer]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-finish-writes";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  LatestWriter writer;
+  const auto fail = []() -> std::expected<void, Refusal> {
+    return std::unexpected(Refusal{RefusalCode::FileUnwritable, "disque plein"});
+  };
+  writer.post("auto_memory", fail);
+  writer.post("play.toml", fail);
+  finish_settings_writes(writer, dir / "play.toml", PlaySettings{});
+  CHECK(std::filesystem::exists(dir / "play.toml"));
+  std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("Écritures : détruit pendant une écriture lente, le writer rend la main et la finit seule",

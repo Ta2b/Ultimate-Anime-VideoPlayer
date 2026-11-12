@@ -49,7 +49,7 @@ SNAPSHOT = re.compile(r"^(?P<name>.+?)(?:-(?P<index>\d{3}))?\.pq\.ppm$")
 
 
 def skin_hue():
-    """La teinte ICtCp de la peau sRGB (255, 224, 196) à 100 nits, comme src/render/curve.cpp."""
+    """La teinte ICtCp de la peau sRGB (255, 224, 196) à 100 nits, (la teinte que le grade vise sur la peau)."""
     srgb = np.array([255.0, 224.0, 196.0]) / 255.0
     lin = np.where(srgb <= 0.04045, srgb / 12.92, ((srgb + 0.055) / 1.055) ** 2.4)
     to2020 = np.array([[0.6274, 0.3293, 0.0433], [0.0691, 0.9195, 0.0114], [0.0164, 0.0880, 0.8956]])
@@ -152,6 +152,19 @@ def group(folder):
     return shots
 
 
+SIGNED = {"peau_diaph"}  # mesures signées : le pire est le plus grand |x|, pas le plus grand x (C46-07)
+
+
+def worst(key, values):
+    return max(values, key=abs) if key in SIGNED else max(values)
+
+
+def reference_path(ref_dir, name, path):
+    """L'image de référence d'une image de candidat : le même nom, sinon l'image unique du plan (« NOM.pq.ppm »)."""
+    ref_path = os.path.join(ref_dir, os.path.basename(path))
+    return ref_path if os.path.exists(ref_path) else os.path.join(ref_dir, f"{name}.pq.ppm")
+
+
 def check(args):
     static = set(filter(None, args.static.split(",")))
     results = {}
@@ -161,13 +174,11 @@ def check(args):
         for path in paths:
             ref = None
             if args.ref:
-                ref_path = os.path.join(args.ref, os.path.basename(path))
-                if not os.path.exists(ref_path):  # une seule image de référence pour la suite
-                    ref_path = os.path.join(args.ref, f"{name}.pq.ppm")
+                ref_path = reference_path(args.ref, name, path)  # une seule image de référence pour la suite
                 ref = read_ppm16(ref_path) if os.path.exists(ref_path) else None
             frames.append(frame_checks(read_ppm16(path), ref, args))
         apls = [f["apl"] for f in frames]
-        row = {k: max(f[k] for f in frames) for k in frames[0] if not k.startswith("ok_")}
+        row = {k: worst(k, [f[k] for f in frames]) for k in frames[0] if not k.startswith("ok_")}
         row.update({k: all(f[k] for f in frames) for k in frames[0] if k.startswith("ok_")})
         if len(apls) >= 3:
             sigma = float(np.std(apls) / max(np.mean(apls), 1e-6))
@@ -178,7 +189,9 @@ def check(args):
             row["coupes"] = len(errors)
             row["ok_coupes"] = not errors
         if args.cvvdp and args.ref:
-            score = cvvdp_score(paths[0], os.path.join(args.ref, os.path.basename(paths[0])))
+            # Toutes les images de la suite, la pire décide (C46-08) ; « non mesuré » si pycvvdp manque.
+            scores = [cvvdp_score(path, reference_path(args.ref, name, path)) for path in paths]
+            score = None if any(v is None for v in scores) else min(scores)
             row["cvvdp"] = "non mesuré" if score is None else score
             if score is not None:
                 row["ok_cvvdp"] = score >= MIN_CVVDP

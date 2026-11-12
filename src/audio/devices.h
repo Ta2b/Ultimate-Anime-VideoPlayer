@@ -23,6 +23,14 @@ struct AudioDevice {
 // Les appareils de lecture, le défaut du système marqué. Vide si le sous-système audio n'est pas prêt.
 std::vector<AudioDevice> playback_devices();
 
+// Marque comme défaut l'appareil de ce nom, un seul : le premier. Deux DAC identiques portent le même nom, et
+// les marquer tous deux ferait choisir au hasard (C16-09). Sans appareil de ce nom, personne n'est marqué :
+// le premier de la liste n'est pas le défaut du système.
+void mark_default_device(std::vector<AudioDevice>& devices, std::string_view default_name);
+
+// Le défaut du système tel que SDL le décrit (son format préféré), pour quand la liste ne le nomme pas.
+std::optional<AudioDevice> system_default_device();
+
 // L'appareil de ce nom ; celui du système si name est vide ou n'existe plus.
 std::optional<AudioDevice> resolve_device(const std::vector<AudioDevice>& devices, std::string_view name);
 

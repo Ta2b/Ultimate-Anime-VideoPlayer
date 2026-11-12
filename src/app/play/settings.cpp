@@ -308,7 +308,8 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   for (const auto& [field, value] : {std::pair{"grade.anime_contrast", s.grade_values.anime_contrast},
                                      std::pair{"grade.anime_saturation", s.grade_values.anime_saturation},
                                      std::pair{"grade.anime_highlights", s.grade_values.anime_highlights}}) {
-    if (auto in = check(field, value, core::Range<int>{0, 200}); !in) return std::unexpected(in.error());
+    if (auto in = check(field, value, render::grade_limits::kAnimePercent); !in)
+      return std::unexpected(in.error());
   }
   // Un dossier d'installation sans retour à la ligne ni octet nul, d'une longueur de chemin (A22-09).
   if (s.engines_dir.size() > kMaxEnginesDirBytes ||
@@ -418,6 +419,10 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.auto_cap = wanted.auto_cap;
   s.auto_free = wanted.auto_free;
   if (!wanted.upscale) s.span_precision = wanted.span_precision;  // sans SPAN, rien à recharger
+  if (!running.upscale && !wanted.upscale) {  // idem pour le modèle et les traits (C22-05)
+    s.model = wanted.model;
+    s.restore_lines = wanted.restore_lines;
+  }
   if (rife_loaded || wanted.rife_factor < 2) {
     s.rife_factor = wanted.rife_factor;
     s.rife_factor_den = wanted.rife_factor_den;
@@ -448,7 +453,9 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.update_mode = wanted.update_mode;
   s.update_frequency = wanted.update_frequency;
   s.language = wanted.language;
-  s.audio_delay_ms = wanted.audio_delay_ms;
+  // Le délai d'un autre appareil ne vaut qu'à la réouverture : en direct, le son de l'appareil en cours ne
+  // se décale pas, et ce délai ne s'enregistre pas pour lui (C23-01).
+  if (wanted.audio_device == running.audio_device) s.audio_delay_ms = wanted.audio_delay_ms;
   s.display_sync = wanted.display_sync;
   s.video_latency_ms = wanted.video_latency_ms;
   s.volume = wanted.volume;
@@ -578,9 +585,15 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
                       const OpenedChain* opened) {
   std::vector<std::string> reopen;
   const PlaySettings base = loaded_base(running, rife_loaded, opened);
-  if (running.upscale != wanted.upscale || running.model != wanted.model ||
-      running.work_height != wanted.work_height || running.restore_lines != wanted.restore_lines)
+  // Agrandissement éteint des deux côtés : le modèle et les traits ne rechargent rien (live_part les prend) ;
+  // la hauteur de travail réduit encore l'image, sans SPAN à recharger (C22-05).
+  const bool upscaling = running.upscale || wanted.upscale;
+  if (running.upscale != wanted.upscale ||
+      (upscaling && (running.model != wanted.model || running.restore_lines != wanted.restore_lines ||
+                     running.work_height != wanted.work_height)))
     reopen.emplace_back(upscale_reason(wanted));
+  else if (running.work_height != wanted.work_height)
+    reopen.emplace_back(i18n::tr("the working resolution changes"));
   if (running.audio_device != wanted.audio_device) reopen.emplace_back(i18n::tr("the output device changes"));
   if (wanted.rife_factor >= 2 && running.rife_factor < 2 && !rife_loaded)
     reopen.emplace_back(i18n::tr("the interpolation engine loads (built the first time for this size)"));

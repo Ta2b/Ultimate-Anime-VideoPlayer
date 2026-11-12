@@ -16,14 +16,14 @@ body:
     id: version
     attributes:
       label: ajp version / Version
-      placeholder: "0.10.0 (menu General, Application page)"
+      placeholder: "0.11.0 (menu General, Application page)"
     validations:
       required: true
   - type: dropdown
     id: os
     attributes:
       label: System / Système
-      options: [Windows 11, Windows 10, Linux, macOS]
+      options: [Windows 11, Linux, macOS]
     validations:
       required: true
   - type: input
@@ -63,12 +63,12 @@ body:
       label: Crash? / Plantage ?
       description: |-
         If the player crashed, the report holds the previous session, with the build id of the program. Windows: keep
-        the .dmp of the crashes folder (it may hold paths), we will ask for it privately. Linux: do NOT paste the output
+        the .dmp of the crashes folder, %LOCALAPPDATA%\ajp\ajp\crashes (it may hold paths; see docs/support.md), we will ask for it privately. Linux: do NOT paste the output
         of "coredumpctl info ajp" (it holds your user name, the command line with the path of your video and the
         install folder). This line keeps the signal, the date and the build ids, without folders:
         coredumpctl info ajp | grep -E 'Signal:|Timestamp:|build-id' | sed -E 's#/[^ ]*/##g'
         / Si le lecteur a planté, le rapport contient la séance d'avant, avec l'identifiant de build du programme.
-        Windows : gardez le .dmp du dossier crashes (il peut contenir des chemins), nous le demanderons en privé.
+        Windows : gardez le .dmp du dossier %LOCALAPPDATA%\ajp\ajp\crashes (il peut contenir des chemins ; voir docs/support.md), nous le demanderons en privé.
         Linux : ne collez PAS la sortie de « coredumpctl info ajp » (elle contient votre nom d'utilisateur, la ligne
         de commande avec le chemin de votre vidéo et le dossier d'installation). Cette ligne garde le signal, la date
         et les identifiants de build, sans dossiers :

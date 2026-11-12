@@ -5,7 +5,7 @@ demandée à OSV (https://osv.dev), qui range les avis de sécurité (CVE, OSS-F
 
   tools/ci/deps_vulns.py
 
-Versions lues : tools/deps/linux-from-source.sh (Linux), les ports de la baseline de vcpkg.json et ports/libass
+Versions lues : tools/deps/linux-from-source.sh (Linux), les ports de vcpkg.json (l'override avant la baseline : c'est lui que Windows livre) et ports/libass
 (Windows) ; libdav1d et libsvtav1enc du paquet Linux viennent d'Ubuntu 24.04 (APT_PLAYER de versions.env) :
 leur version installée est demandée à dpkg, puis à OSV dans l'écosystème Ubuntu. Les avis écartés exprès, avec leur raison, sont dans
 tools/ci/deps-vulns-ignore.txt. Écrit un tableau Markdown ; code 0 si rien n'est ouvert, 1 sinon.
@@ -19,7 +19,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deps_lag import ROOT, ls_remote, port_version  # noqa: E402
+from deps_lag import ROOT, ls_remote, port_version, shipped_version  # noqa: E402
 
 OSV = "https://api.osv.dev/v1/query"
 # Les ports de vcpkg qui touchent des octets hostiles, leur dépôt et le nom de l'étiquette d'une version.
@@ -76,9 +76,11 @@ def shipped():
     for name, url, ref, commit in re.findall(r'^  "(\S+) (https://\S+) (\S+) ([0-9a-f]{40})"$', script, re.M):
         if name in LINUX:
             out.append((f"{name} (Linux)", ref, url, {"commit": commit}))
-    baseline = json.loads((ROOT / "vcpkg.json").read_text())["builtin-baseline"]
+    manifest = json.loads((ROOT / "vcpkg.json").read_text())
+    baseline = manifest["builtin-baseline"]
     for port, (url, tag_of) in PORTS.items():
-        version = port_version(baseline, port)
+        # La version livrée : l'override de vcpkg.json avant la baseline (C28-11).
+        version = shipped_version(manifest, port, baseline)
         if not version:
             # Hors ligne, 404 ou GitHub lent : la bibliothèque n'a pas été relevée. Elle est dite introuvable (code 1)
             # et non passée sous silence, sans quoi « Aucune faille connue » refermerait l'issue ouverte (B28-08).

@@ -198,3 +198,66 @@ TEST_CASE("bwdif garde l'horodatage deviné d'une image sans pts (A15-05)", "[me
     CHECK(out[i]->best_effort_timestamp == out[i]->pts);
   }
 }
+
+namespace {
+
+// Des bandes obliques qui avancent de 4 pixels par image, progressives, posées dans une image marquée
+// entrelacée : les deux champs sont du même instant (2:2 d'un DVD PAL, MBAFF progressif).
+FramePtr progressive_in_two_fields(int n) {
+  FramePtr f(av_frame_alloc());
+  f->width = 352;
+  f->height = 288;
+  f->format = AV_PIX_FMT_YUV420P;
+  REQUIRE(av_frame_get_buffer(f.get(), 0) == 0);
+  for (int y = 0; y < f->height; ++y) {
+    for (int x = 0; x < f->width; ++x) {
+      const int u = (x + y + 4 * n) % 32;
+      f->data[0][y * f->linesize[0] + x] =
+          static_cast<std::uint8_t>(30 + (u < 16 ? u * 12 : (32 - u) * 12) + (y / 8 % 4) * 5);
+    }
+  }
+  for (int plane = 1; plane < 3; ++plane)
+    for (int y = 0; y < f->height / 2; ++y)
+      for (int x = 0; x < f->width / 2; ++x) f->data[plane][y * f->linesize[plane] + x] = 128;
+  f->flags |= AV_FRAME_FLAG_INTERLACED | AV_FRAME_FLAG_TOP_FIELD_FIRST;
+  f->pts = n * 40'000;
+  return f;
+}
+
+double squared_error(const AVFrame& a, const AVFrame& b) {
+  double total = 0.0;
+  for (int y = 0; y < a.height; ++y)
+    for (int x = 0; x < a.width; ++x) {
+      const double d = a.data[0][y * a.linesize[0] + x] - b.data[0][y * b.linesize[0] + x];
+      total += d * d;
+    }
+  return total / (a.width * a.height);
+}
+
+double error_against_source(Deinterlacer& deinterlacer) {
+  std::vector<FramePtr> frames;
+  for (int n = 0; n < 25; ++n) frames.push_back(progressive_in_two_fields(n));
+  const std::vector<FramePtr> out = run(deinterlacer, std::move(frames));
+  REQUIRE(out.size() == 25);
+  double total = 0.0;
+  for (std::size_t i = 2; i < out.size(); ++i) {  // le démarrage du graphe mis à part
+    const FramePtr source = progressive_in_two_fields(static_cast<int>(out[i]->pts / 40'000));
+    total += squared_error(*out[i], *source);
+  }
+  return total / static_cast<double>(out.size() - 2);
+}
+
+}  // namespace
+
+// C15-01 : des champs du même instant ne perdent pas la moitié de leur résolution verticale. Mesuré hors du
+// dépôt sur ce motif : bwdif seul 39,9 dB, fieldmatch puis bwdif sans écart.
+TEST_CASE("Champs du même instant : fieldmatch les recoud, bwdif seul les interpole (C15-01)",
+          "[media][deinterlace]") {
+  Deinterlacer plain(FieldMode::Deinterlace);
+  Deinterlacer matched(FieldMode::MatchFields);
+  const double plain_error = error_against_source(plain);
+  const double matched_error = error_against_source(matched);
+  CAPTURE(plain_error, matched_error);
+  CHECK(plain_error > 1.0);
+  CHECK(matched_error < plain_error / 4.0);
+}
